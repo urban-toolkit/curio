@@ -10,6 +10,10 @@
    then Save scenario; then the second one into the same set. The saved spec holds the set, each scenario's context and
    outcomes, and the shared nodes carry both scenarios' circles. Collapsing
    the shared outcomes makes one box of cards, which the set keeps.
+3. A drawer opened over Define scenario: with a node picked, that node's
+   Provenance pill opens its runs in the provenance drawer, over Define.
+   Escape closes the provenance drawer alone; Define still lists the node,
+   and its Save saves the scenario.
 
 Nothing here runs a node, so neither test needs WebGPU.
 
@@ -24,6 +28,8 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from playwright.sync_api import expect
+
 from .utils import (
     REPO_ROOT,
     api_json,
@@ -35,7 +41,9 @@ from .utils import (
     require_user_auth,
     save_dataflow,
     stub_login_and_enter_workflow,
+    wait_for_drawer_closed,
 )
+from .walkthroughs.steps import PROVENANCE_DRAWER
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -214,3 +222,66 @@ def test_two_scenarios_defined_step_by_step_share_one_set(
     box.dispatch_event("dblclick")
     node_locator(page, "chart").wait_for(state="visible", timeout=10000)
     assert page.locator(f'[data-shared-header="group:{set_id}:outcomes"]').inner_text().startswith("Shared outcomes")
+
+
+#: True once *nodeId*'s node lies left of Define scenario's panel, whole.
+_LEFT_OF_DEFINE_JS = """(nodeId) => {
+    const node = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+    const panel = document.querySelector('[data-testid="scenario-define-panel"]');
+    if (!node || !panel) return false;
+    const box = node.getBoundingClientRect();
+    return box.width > 0 && box.right < panel.getBoundingClientRect().left;
+}"""
+
+
+def test_a_drawer_opened_over_define_scenario_closes_alone(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    session = stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Scenario Sets Define Stack",
+        username="scenario_sets_define_stack_e2e",
+        project_name="Heights",
+        project_spec=_spec(),
+    )
+    require_owner_view(page)
+    for node_id in ("load", "real", "tall", "chart"):
+        node_locator(page, node_id).wait_for(state="visible", timeout=45000)
+
+    # Define scenario, with Real heights picked on the canvas.
+    _select(page, "real")
+    page.get_by_role("button", name="View menu").click()
+    page.get_by_role("button", name="Define scenario", exact=True).click()
+    panel = page.get_by_test_id("scenario-define-panel")
+    panel.wait_for(state="visible", timeout=10000)
+    picked = panel.get_by_role("region", name="Scenario-specific nodes").get_by_text(TITLES["real"])
+    picked.wait_for(timeout=10000)
+
+    # The node beside the panel, then its Provenance pill: the provenance
+    # drawer slides in over Define.
+    page.evaluate("() => window.__curio_reactFlow.setViewport({ x: -270, y: 200, zoom: 0.6 })")
+    page.wait_for_function(_LEFT_OF_DEFINE_JS, arg="real", timeout=10000)
+    node_locator(page, "real").locator('.nav-link[data-rr-ui-event-key="provenance"]').first.click()
+    expect(page.get_by_role("dialog", name="Node provenance")).to_be_visible(timeout=20000)
+
+    # One Escape closes the provenance drawer alone, and Define is as it was.
+    page.keyboard.press("Escape")
+    wait_for_drawer_closed(page, PROVENANCE_DRAWER)
+    expect(panel).to_be_visible()
+    expect(picked).to_be_visible()
+
+    panel.get_by_role("button", name="Next: shared context & outcomes").click()
+    panel.get_by_role("button", name="Next: name & set").click()
+    panel.get_by_test_id("scenario-define-name").fill("Real heights")
+    panel.get_by_test_id("scenario-define-save").click()
+    panel.wait_for(state="detached", timeout=10000)
+
+    save_dataflow(page)
+    project_id = session["project"]["id"]
+    saved = api_json(f"{current_server}/api/projects/{project_id}", session["token"])["spec"]["dataflow"]
+    assert [(s["name"], s["nodes"]) for s in saved["scenarios"]] == [("Real heights", ["real"])], saved["scenarios"]

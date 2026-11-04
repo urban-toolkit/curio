@@ -4,7 +4,7 @@ import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "../../packages/publishing/useDrawerDragThrough";
-import { modalStackDepth } from "../../ModalShell";
+import { isTopDrawer } from "../../ModalShell";
 import { useDatasetDetails } from "../../datasets/catalog/datasetDetailsContext";
 import { useModelCatalogDrawer } from "../../../providers/modelCatalog";
 import {
@@ -98,12 +98,12 @@ export const DiscoveryCatalogDrawer: React.FC<DiscoveryCatalogDrawerProps> = ({
   };
 
   // Escape dismisses this drawer, as it does its peers: a modal on top (a
-  // source's details, a dataset's) owns Escape while it is open, and a pinned
-  // drawer is being deliberately kept open.
+  // source's details, a dataset's) or a drawer opened over it owns Escape
+  // while it is open, and a pinned drawer is being deliberately kept open.
   useEffect(() => {
     if (!presented) return;
     const onKey = (ev: KeyboardEvent) => {
-      if (modalStackDepth() > 0) return;
+      if (!isTopDrawer(drawerRef.current)) return;
       if (ev.key === "Escape" && !pinned) onRequestClose?.();
     };
     window.addEventListener("keydown", onKey);
@@ -143,6 +143,7 @@ export const DiscoveryCatalogDrawer: React.FC<DiscoveryCatalogDrawerProps> = ({
           aria-modal="true"
           aria-labelledby="discovery-catalog-title"
           tabIndex={-1}
+          data-curio-open-drawer={presented || undefined}
           onTransitionEnd={handleDrawerTransitionEnd}
         >
           <DrawerHeader

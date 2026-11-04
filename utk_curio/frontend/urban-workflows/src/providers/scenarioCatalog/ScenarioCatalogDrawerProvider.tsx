@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { ScenarioCatalogDrawer } from "../../components/scenarios/catalog";
 import { ScenarioDefinePanel } from "../../components/scenarios/define/ScenarioDefinePanel";
-import { useScenarioUi } from "../../components/scenarios/scenarioUi";
+import { useScenarioUi, type ScenarioDefine } from "../../components/scenarios/scenarioUi";
 import { useSlideDrawerPresentation } from "../../hook/useSlideDrawerPresentation";
 import type { DrawerTab } from "../../services/packages";
 import {
@@ -26,9 +26,28 @@ export function ScenarioCatalogDrawerProvider({ children }: { children: React.Re
     finishExit: finishClose,
   } = useSlideDrawerPresentation();
   const [tab, setTab] = useState<DrawerTab>("browse");
-  // The define panel, beside the canvas rather than over it: a scenario
-  // being made, or one whose context and outcomes are edited.
+  // Define scenario, a drawer beside the canvas rather than over it: a
+  // scenario being made, or one whose context and outcomes are edited. It
+  // slides in and out as its peers do, and keeps the scenario it defines
+  // through its exit slide.
   const { define } = useScenarioUi();
+  const {
+    mounted: defineMounted,
+    presented: definePresented,
+    open: openDefine,
+    close: closeDefine,
+    finishExit: finishDefine,
+  } = useSlideDrawerPresentation();
+  const [defining, setDefining] = useState<ScenarioDefine | null>(null);
+  useEffect(() => {
+    if (define) {
+      setDefining(define);
+      // Open already, it shows the scenario asked for in place.
+      if (!definePresented) openDefine();
+    } else if (defineMounted) {
+      closeDefine();
+    }
+  }, [define, defineMounted, definePresented, openDefine, closeDefine]);
 
   const openScenarioCatalogDrawer = useCallback(
     (options?: OpenScenarioCatalogDrawerOptions) => {
@@ -73,18 +92,23 @@ export function ScenarioCatalogDrawerProvider({ children }: { children: React.Re
       )
     : null;
 
+  const definePanel = defineMounted && defining
+    ? createPortal(
+        <ScenarioDefinePanel
+          key={defining.mode === "edit" ? `edit-${defining.scenarioId}` : `new-${(defining.nodes ?? []).join(",")}`}
+          define={defining}
+          presented={definePresented}
+          onExitComplete={finishDefine}
+        />,
+        document.body,
+      )
+    : null;
+
   return (
     <ScenarioCatalogDrawerContext.Provider value={ctx}>
       {children}
       {drawer}
-      {define &&
-        createPortal(
-          <ScenarioDefinePanel
-            key={define.mode === "edit" ? `edit-${define.scenarioId}` : `new-${(define.nodes ?? []).join(",")}`}
-            define={define}
-          />,
-          document.body,
-        )}
+      {definePanel}
     </ScenarioCatalogDrawerContext.Provider>
   );
 }

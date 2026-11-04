@@ -6,7 +6,7 @@ import { DrawerTabs } from "../../packages/publishing/DrawerTabs";
 import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "../../packages/publishing/useDrawerDragThrough";
-import { modalStackDepth } from "../../ModalShell";
+import { isTopDrawer } from "../../ModalShell";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import type { DrawerTab } from "../../../services/packages";
@@ -94,12 +94,13 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
   const dragThrough = useDrawerDragThrough();
 
   // Escape dismisses this drawer, as it does its peers: a modal on top (a
-  // scenario's details, the leave question) owns Escape while it is open, and
-  // a pinned drawer is being deliberately kept open.
+  // scenario's details, the leave question) or a drawer opened over it owns
+  // Escape while it is open, and a pinned drawer is being deliberately kept
+  // open.
   useEffect(() => {
     if (!presented) return;
     const onKey = (ev: KeyboardEvent) => {
-      if (modalStackDepth() > 0) return;
+      if (!isTopDrawer(drawerRef.current)) return;
       if (ev.key === "Escape" && !pinned) onRequestClose?.();
     };
     window.addEventListener("keydown", onKey);
@@ -153,6 +154,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
           aria-modal="true"
           aria-labelledby="scenario-catalog-title"
           tabIndex={-1}
+          data-curio-open-drawer={presented || undefined}
           onTransitionEnd={handleDrawerTransitionEnd}
         >
           <DrawerHeader

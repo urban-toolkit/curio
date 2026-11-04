@@ -93,7 +93,7 @@ function ui(over: Partial<ScenarioUi> = {}): ScenarioUi {
 function renderPanel(define: NonNullable<ScenarioUi["define"]>, value = ui()) {
   render(
     <ScenarioUiContext.Provider value={{ ...value, define }}>
-      <ScenarioDefinePanel define={define} />
+      <ScenarioDefinePanel define={define} presented onExitComplete={jest.fn()} />
     </ScenarioUiContext.Provider>,
   );
   return value;
@@ -271,7 +271,8 @@ describe("Edit scenario", () => {
     mockFlow.scenarios = [{ ...EXISTING, outcomes: ["chart"] }];
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }];
     renderPanel({ mode: "edit", scenarioId: "e" });
-    expect(screen.getByRole("dialog", { name: "Define scenario" })).toHaveTextContent("Edit scenario: Existing");
+    // Its title names the dialog.
+    expect(screen.getByRole("dialog", { name: "Edit scenario: Existing" })).toHaveTextContent("Edit scenario: Existing");
     expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(
       expect.arrayContaining(["1Scenario-specific nodes", "2Shared context & outcomes", "3Name & set"]),
     );
@@ -313,14 +314,31 @@ describe("Edit scenario", () => {
     ]);
   });
 
-  test("its set is renamed there; a name another set has is refused until it is changed", () => {
+  test("its last step names a new set or picks one: no field renames a set it has", () => {
     mockFlow.scenarios = [EXISTING, { ...TOWERS, set: "roads" }];
     mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }, { id: "roads", name: "Roads" }];
     renderPanel({ mode: "edit", scenarioId: "e" });
     click("Next: shared context & outcomes");
     click("Next: name & set");
-    const setName = screen.getByTestId("scenario-define-existing-set-name");
-    expect(setName).toHaveValue("Park shade");
+    // Its set is chosen, by name: the pencil in In project renames it.
+    expect(screen.getByRole("radio", { name: /Park shade/ })).toBeChecked();
+    expect(screen.getAllByRole("textbox").map((box) => box.getAttribute("data-testid"))).toEqual(["scenario-define-name"]);
+    fireEvent.click(screen.getByRole("radio", { name: /Roads/ }));
+    expect(screen.getAllByRole("textbox").map((box) => box.getAttribute("data-testid"))).toEqual(["scenario-define-name"]);
+    fireEvent.click(screen.getByTestId("scenario-define-save"));
+    const [scenarios, sets] = mockFlow.setScenarios.mock.calls[0];
+    expect(sets).toEqual([{ id: "roads", name: "Roads" }]);
+    expect(scenarios[0]).toEqual(expect.objectContaining({ id: "e", set: "roads" }));
+  });
+
+  test("a new set's name another set has is refused until it is changed", () => {
+    mockFlow.scenarios = [EXISTING, { ...TOWERS, set: "roads" }];
+    mockFlow.scenarioSets = [{ id: "park", name: "Park shade" }, { id: "roads", name: "Roads" }];
+    renderPanel({ mode: "edit", scenarioId: "e" });
+    click("Next: shared context & outcomes");
+    click("Next: name & set");
+    fireEvent.click(screen.getByRole("radio", { name: /Create a new scenario set/ }));
+    const setName = screen.getByTestId("scenario-define-set-name");
     fireEvent.change(setName, { target: { value: " roads " } });
     expect(screen.getByRole("alert")).toHaveTextContent('already has a scenario set "Roads"');
     expect(screen.getByTestId("scenario-define-save")).toBeDisabled();
@@ -329,7 +347,8 @@ describe("Edit scenario", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     fireEvent.click(screen.getByTestId("scenario-define-save"));
     const [, sets] = mockFlow.setScenarios.mock.calls[0];
-    expect(sets).toEqual([{ id: "park", name: "Park shade at noon" }, { id: "roads", name: "Roads" }]);
+    // The set it left, with no scenario now, goes.
+    expect(sets.map((s: { name: string }) => s.name)).toEqual(["Roads", "Park shade at noon"]);
   });
 
   test("its own name is fine; a sibling's is not", () => {

@@ -4,7 +4,8 @@
  * ModalShell routes Escape through a bubble-phase `window` listener, and
  * `stopPropagation` cannot silence a peer listener registered on the same
  * target first. So each surface that closes itself on Escape has to stand down
- * on its own, by asking `modalStackDepth()`.
+ * on its own: a drawer by asking whether it is the top layer
+ * (`isTopDrawer`), any other surface by asking `modalStackDepth()`.
  *
  * Two of the four already did. The agent chat panel and the fork picker did
  * not, and a modal opened over either one took it down too: API Settings closed
@@ -22,20 +23,36 @@ import path from "path";
 const SRC = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
-/** Every file that closes something on a `window` keydown Escape. The Node
- *  Catalog drawer's listener is the Model Catalog drawer's too. */
-const WINDOW_ESCAPE_LISTENERS = [
+/** Every drawer that closes on a `window` keydown Escape: each answers only
+ *  while it is the top layer, so it stands down for a modal and for a drawer
+ *  opened over it (`isTopDrawer`). The Node Catalog drawer's listener is the
+ *  Model Catalog drawer's too. */
+const DRAWER_ESCAPE_LISTENERS = [
   "components/packages/publishing/NodeCatalogDrawer.tsx",
   "components/datasets/catalog/DatasetCatalogDrawer.tsx",
   "components/discovery/catalog/DiscoveryCatalogDrawer.tsx",
   "components/scenarios/catalog/ScenarioCatalogDrawer.tsx",
-  "providers/AgentCatalogDrawerProvider.tsx",
+  "components/agents/catalog/AgentCatalogDrawer.tsx",
+];
+
+/** Every other file that closes something on a `window` keydown Escape. */
+const PANEL_ESCAPE_LISTENERS = [
   "components/agents/attach/AgentChatPanel.tsx",
   "components/packages/ForkFamilyPicker.tsx",
 ];
 
+const WINDOW_ESCAPE_LISTENERS = [...DRAWER_ESCAPE_LISTENERS, ...PANEL_ESCAPE_LISTENERS];
+
 describe("window Escape listeners defer to an open modal", () => {
-  test.each(WINDOW_ESCAPE_LISTENERS)(
+  test.each(DRAWER_ESCAPE_LISTENERS)(
+    "%s stands down unless it is the top layer",
+    (file) => {
+      expect(read(file)).toMatch(/if \(!isTopDrawer\((drawerRef|panelRef)\.current\)\) return;/);
+      expect(read(file)).toMatch(/data-curio-open-drawer=\{presented \|\| undefined\}/);
+    },
+  );
+
+  test.each(PANEL_ESCAPE_LISTENERS)(
     "%s stands down while a modal is open",
     (file) => {
       expect(read(file)).toContain("if (modalStackDepth() > 0) return;");
@@ -55,21 +72,23 @@ describe("window Escape listeners defer to an open modal", () => {
 
   test("the top bar's drawers hold a layer, so everything under them stands down", () => {
     // API Settings opens over a catalog drawer (Discovery's "Add yours in API
-    // Settings") or the agent chat panel. Holding a layer of the stack is what
-    // makes the listeners above stand down; the drawer itself then answers
-    // Escape only while it is the one layer.
+    // Settings") or the agent chat panel. Holding a drawer's layer of the
+    // stack is what makes the panels above stand down; the drawer itself then
+    // answers Escape only while it is the top layer, as each catalog drawer
+    // does.
     const source = read("components/layout/HeaderDrawer.tsx");
-    expect(source).toContain("holdModalStack()");
-    expect(source).toContain("if (modalStackDepth() > 1) return;");
+    expect(source).toContain("holdDrawerLayer()");
+    expect(source).toContain("if (!isTopDrawer(drawerRef.current)) return;");
+    expect(source).toContain("data-curio-open-drawer={presented || undefined}");
     expect(source).toContain('window.addEventListener("keydown"');
   });
 
-  test("ModalShell still exports the depth the guards read", () => {
+  test("ModalShell still exports the depth and the top layer the guards read", () => {
     // Two competing Escape implementations reached main in parallel and only
     // one exports this. If the other ever comes back, every guard above
     // silently stops compiling against it.
-    expect(read("components/ModalShell.tsx")).toContain(
-      "export function modalStackDepth()",
-    );
+    const source = read("components/ModalShell.tsx");
+    expect(source).toContain("export function modalStackDepth()");
+    expect(source).toContain("export function isTopDrawer(");
   });
 });

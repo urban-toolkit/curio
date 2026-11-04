@@ -1,50 +1,20 @@
-/* The define panel: beside the canvas, not over it, so the canvas stays
-   usable for picking nodes to add. */
-.panel {
-  position: fixed;
-  top: 72px;
-  right: 16px;
-  bottom: 16px;
-  width: 380px;
-  z-index: var(--curio-z-dialog);
+/* Define scenario's own parts. The drawer is HeaderDrawer's, beside the
+   canvas; the buttons, fields and hints are ../../modal-content.module.css's. */
+
+.content {
   display: flex;
   flex-direction: column;
-  background: var(--curio-card-bg);
-  border: 1px solid var(--curio-border);
-  border-radius: var(--curio-radius-lg);
-  box-shadow: var(--curio-shadow-modal);
-  font-family: var(--curio-font-family);
-  color: var(--curio-text-primary);
+  gap: 12px;
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 16px 8px;
-}
-
-.title {
-  font-size: var(--curio-font-size-lg);
-  font-weight: 700;
-}
-
-.close {
-  margin-left: auto;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: var(--curio-radius-md);
-  background: none;
-  font-size: 20px;
-  color: var(--curio-text-secondary);
-  cursor: pointer;
+.flush {
+  margin: 0;
 }
 
 .steps {
   list-style: none;
   margin: 0;
-  padding: 0 16px 12px;
+  padding: 0 0 12px;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -83,50 +53,15 @@
   color: var(--curio-text-primary);
 }
 
-.body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 .lead {
   margin: 0;
   font-size: var(--curio-font-size-sm);
-}
-
-.hint {
-  margin: 0;
-  font-size: var(--curio-font-size-xs);
-  color: var(--curio-text-secondary);
-  line-height: 1.45;
 }
 
 .empty {
   margin: 0;
   font-size: var(--curio-font-size-xs);
   color: var(--curio-text-muted);
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: var(--curio-font-size-xs);
-  color: var(--curio-text-secondary);
-}
-
-.field input,
-.choiceText input {
-  font: inherit;
-  font-size: var(--curio-font-size-sm);
-  color: var(--curio-text-primary);
-  padding: 7px 9px;
-  border: 1px solid var(--curio-border-strong);
-  border-radius: var(--curio-radius-md);
-  background: var(--curio-card-bg);
 }
 
 .choices {
@@ -145,6 +80,7 @@
   padding: 10px;
   border: 1px solid var(--curio-border);
   border-radius: var(--curio-radius-md);
+  background: var(--curio-card-bg);
   cursor: pointer;
 }
 
@@ -163,6 +99,7 @@
 
 .dots {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   font-size: var(--curio-font-size-xs);
@@ -175,19 +112,17 @@
   border-radius: 50%;
 }
 
+.member {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 8px;
+}
+
 .part {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.partTitle {
-  margin: 0;
-  font-size: var(--curio-font-size-xs);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--curio-text-secondary);
 }
 
 .group {
@@ -217,7 +152,7 @@
   padding: 4px 4px 4px 10px;
   border: 1px solid var(--curio-border);
   border-radius: var(--curio-radius-md);
-  background: var(--curio-surface-muted);
+  background: var(--curio-card-bg);
   font-size: var(--curio-font-size-sm);
 }
 
@@ -236,39 +171,14 @@
   border-radius: var(--curio-radius-sm);
   background: none;
   color: var(--curio-text-secondary);
-  font-size: 16px;
   cursor: pointer;
 }
 
-.footer {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  padding: 12px 16px;
-  border-top: 1px solid var(--curio-border);
+.remove:hover {
+  background: var(--curio-surface-muted);
 }
 
-.primary,
-.secondary {
-  font: inherit;
-  font-size: var(--curio-font-size-sm);
-  font-weight: 600;
-  min-height: 36px;
-  padding: 6px 12px;
-  border-radius: var(--curio-radius-md);
-  cursor: pointer;
-}
-
-.primary {
-  border: 1px solid var(--curio-text-primary);
-  background: var(--curio-text-primary);
-  color: var(--curio-card-bg);
-}
-
-.secondary {
-  border: 1px solid var(--curio-border-strong);
-  background: var(--curio-card-bg);
-  color: var(--curio-text-primary);
+.addButton {
   align-self: flex-start;
 }
 
@@ -292,30 +202,13 @@
   color: var(--curio-text-primary);
 }
 
-.member {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-right: 8px;
-}
-
-.dots {
-  flex-wrap: wrap;
-}
-
-.primary:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 /* Why the name cannot be used: another scenario of the set has it. */
 .problem {
   font-size: var(--curio-font-size-xs);
   color: var(--curio-danger-text);
 }
 
-.field input[aria-invalid="true"],
-.choiceText input[aria-invalid="true"] {
+.content input[aria-invalid="true"] {
   border-color: var(--curio-danger-text);
 }
 
@@ -331,4 +224,10 @@
   height: 28px;
   padding: 2px;
   cursor: pointer;
+}
+
+/* The drawers' footer, its buttons at the right. */
+.footer {
+  composes: footer from "../../packages/publishing/DrawerFooter.module.css";
+  justify-content: flex-end;
 }

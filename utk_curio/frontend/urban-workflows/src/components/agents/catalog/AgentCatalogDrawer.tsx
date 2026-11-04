@@ -27,6 +27,7 @@ import cardStyles from "../../packages/publishing/PackageCard.module.css";
 import styles from "./AgentCatalogDrawer.module.css";
 import { AgentScope, useAgentCatalogDrawer } from "./useAgentCatalogDrawer";
 import ConfirmDialog from "../../ConfirmDialog";
+import { isTopDrawer } from "../../ModalShell";
 
 export interface AgentCatalogDrawerProps {
   /** When true, the scrim fades in and the panel slides in from the right
@@ -39,7 +40,7 @@ export interface AgentCatalogDrawerProps {
   /** Pinned keeps the drawer open (backdrop/Escape won't dismiss it). */
   pinned: boolean;
   onPinToggle: () => void;
-  /** Scrim-click dismissal (gated by the pin). */
+  /** Scrim-click and Escape dismissal (gated by the pin). */
   onRequestClose?: () => void;
   /** Called once the exit transition finishes (the owner unmounts then). */
   onExitComplete?: () => void;
@@ -175,6 +176,20 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
     panelRef.current?.focus();
   }, [presented]);
 
+  useEffect(() => {
+    if (!presented) return;
+    const onKey = (e: KeyboardEvent) => {
+      // A modal rendered inside this drawer (API Settings, agent import), or
+      // a drawer opened over it, owns Escape while it is open. This listener
+      // was registered first, so the modal cannot stop it from firing - it
+      // has to stand down itself.
+      if (!isTopDrawer(panelRef.current)) return;
+      if (e.key === "Escape" && !pinned) onRequestClose?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [presented, pinned, onRequestClose]);
+
   // The exit slide reports completion from the panel's own transform
   // transition (memo dev/43); the owner's timer is the fallback.
   const handlePanelTransitionEnd = useCallback(
@@ -213,6 +228,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
         aria-modal="true"
         aria-labelledby="agent-catalog-drawer-title"
         tabIndex={-1}
+        data-curio-open-drawer={presented || undefined}
         onTransitionEnd={handlePanelTransitionEnd}
       >
       <DrawerHeader

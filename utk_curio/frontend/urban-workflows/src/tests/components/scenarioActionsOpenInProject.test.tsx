@@ -147,7 +147,9 @@ describe("the scenario commands", () => {
       expect.objectContaining({ nodes: ["scale-copy"], set: "park", context: ["load"], outcomes: [] }),
     );
     expect(next[1].color).not.toBe(original.color);
-    const panel = await screen.findByTestId("scenario-define-panel");
+    // Once it has slid in, Define scenario is the dialog of the copy.
+    const panel = await screen.findByRole("dialog", { name: `Edit scenario: ${next[1].name}` });
+    expect(panel).toHaveAttribute("data-testid", "scenario-define-panel");
     expect(within(panel).getByRole("listitem", { current: "step" })).toHaveTextContent("Name & set");
     expect(within(panel).getByTestId("scenario-define-name")).toHaveValue(next[1].name);
     expect(within(panel).getByRole("radio", { name: /Heights/ })).toBeChecked();

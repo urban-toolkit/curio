@@ -158,7 +158,7 @@ describe("Escape dismisses every catalog drawer, and every one honours its pin",
   const ESCAPE_OWNERS: [string, string][] = [
     ["data", "components/datasets/catalog/DatasetCatalogDrawer.tsx"],
     ["node", "components/packages/publishing/NodeCatalogDrawer.tsx"],
-    ["agent", "providers/AgentCatalogDrawerProvider.tsx"],
+    ["agent", "components/agents/catalog/AgentCatalogDrawer.tsx"],
     // The Model Catalog drawer is the Node Catalog drawer over model packages.
     ["model", "components/packages/publishing/NodeCatalogDrawer.tsx"],
     ["scenario", "components/scenarios/catalog/ScenarioCatalogDrawer.tsx"],
@@ -172,14 +172,15 @@ describe("Escape dismisses every catalog drawer, and every one honours its pin",
     expect(read(file)).toMatch(/key === "Escape" && !pinned/);
   });
 
-  test.each(ESCAPE_OWNERS)("the %s drawer stands down for an open modal", (_kind, file) => {
-    // ModalShell registers every dialog; a confirmation on top owns Escape.
-    expect(read(file)).toContain("modalStackDepth() > 0");
+  test.each(ESCAPE_OWNERS)("the %s drawer stands down for an open modal or a drawer over it", (_kind, file) => {
+    // ModalShell registers every dialog; a confirmation on top owns Escape,
+    // and so does a drawer opened over this one (drawersOverDefine.test.tsx).
+    expect(read(file)).toContain("if (!isTopDrawer(");
   });
 
   test("the header drawer's Escape respects its pin, which the provenance drawer has", () => {
-    // It holds a layer of the modal stack itself, so it stands down above 1
-    // (escapeDefersToModal.test.ts).
+    // It holds a drawer's layer of the modal stack, and answers only while it
+    // is the top layer (escapeDefersToModal.test.ts).
     const header = read("components/layout/HeaderDrawer.tsx");
     expect(header).toMatch(/key === "Escape" && !pinned/);
     expect(header).toMatch(/if \(!pinned\) onRequestClose\(\);/);

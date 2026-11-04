@@ -11,13 +11,17 @@ import styles from "./ModalShell.module.css";
  * catalog drawers listen on `window` too, and a drawer that renders a modal
  * inside itself (the Agent Catalog holds API Settings and agent import) mounted
  * first — so its listener runs first and `stopPropagation` from the modal cannot
- * help. `modalStackDepth` lets those drawers stand down instead.
+ * help. `isTopDrawer` lets those drawers stand down instead, and
+ * `modalStackDepth` the other surfaces under them.
  *
  * Among modals, "which one is on top" is decided from the DOM rather than from
  * mount order: React commits child effects before parent ones, so the registry
  * order is inside-out and cannot be trusted for it.
  */
 const modalStack = new Set<symbol>();
+/** The layers of the stack the drawers hold (`holdDrawerLayer`), as against
+ *  the modals, menus and reviews that open over a drawer. */
+const drawerLayers = new Set<symbol>();
 
 /** How many ModalShell dialogs, and drawers holding the stack, are open. */
 export function modalStackDepth(): number {
@@ -32,15 +36,44 @@ function isTopModal(self: HTMLElement | null): boolean {
   return open[open.length - 1] === self;
 }
 
-/** Count a drawer that opens over the catalog drawers (API Settings, Monitor)
- *  as one more layer, so every Escape listener below it stands down. Returns
- *  the release, for an effect's cleanup. */
+/** Count a menu or a review opened over a drawer as one more layer, so every
+ *  Escape listener below it stands down. Returns the release, for an effect's
+ *  cleanup. */
 export function holdModalStack(): () => void {
-  const token = Symbol("curio-header-drawer");
+  const token = Symbol("curio-layer");
   modalStack.add(token);
   return () => {
     modalStack.delete(token);
   };
+}
+
+/** A header drawer's layer of the stack (API Settings, Monitor, provenance,
+ *  Define scenario): while it is held every Escape listener under the drawers
+ *  stands down, as for `holdModalStack`, and `isTopDrawer` counts it as a
+ *  drawer's, not as a layer over the drawers. Returns the release. */
+export function holdDrawerLayer(): () => void {
+  const token = Symbol("curio-drawer");
+  modalStack.add(token);
+  drawerLayers.add(token);
+  return () => {
+    modalStack.delete(token);
+    drawerLayers.delete(token);
+  };
+}
+
+/**
+ * Whether the drawer whose panel is `self` is the top layer, the one an Escape
+ * closes; each drawer marks its panel `data-curio-open-drawer` while it is
+ * presented. A modal, a menu or a review open over the drawers holds a layer
+ * of the stack no drawer holds, and takes Escape while it is open. Among the
+ * open drawers the top one is the last in document order, as `isTopModal`
+ * finds the top modal: portals all land in document.body, so a drawer opened
+ * over another comes after it.
+ */
+export function isTopDrawer(self: HTMLElement | null): boolean {
+  if (!self || modalStack.size > drawerLayers.size) return false;
+  const open = document.querySelectorAll<HTMLElement>("[data-curio-open-drawer]");
+  return open[open.length - 1] === self;
 }
 
 interface ModalShellProps {

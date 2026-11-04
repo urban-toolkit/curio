@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useStore, type ReactFlowState } from "reactflow";
 import { v4 as uuid } from "uuid";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faXmark } from "@fortawesome/free-solid-svg-icons";
 
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
@@ -13,6 +15,8 @@ import {
   uniqueSetName,
 } from "../../../utils/scenarios/scenarioEdits";
 import { inferContextOutcomes, newSetId } from "../../../utils/scenarios/scenarioSets";
+import { HeaderDrawer } from "../../layout/HeaderDrawer";
+import modal from "../../modal-content.module.css";
 import { nodeLabel } from "../scenarioLabels";
 import { useScenarioUi, type ScenarioDefine } from "../scenarioUi";
 import styles from "./ScenarioDefinePanel.module.css";
@@ -31,8 +35,18 @@ const selectedOf = (s: ReactFlowState) =>
     .map((n) => n.id)
     .join("\n");
 
+export interface ScenarioDefinePanelProps {
+  define: ScenarioDefine;
+  /** At rest beside the canvas; false while it slides in or out. */
+  presented: boolean;
+  /** Its exit slide ended. */
+  onExitComplete: () => void;
+}
+
 /**
- * Define scenario, beside the canvas so the canvas stays usable:
+ * Define scenario, a drawer beside the canvas so the canvas stays usable
+ * (`HeaderDrawer`'s `beside`): a drawer opened while it is open slides in over
+ * it, and closing that drawer comes back to it as it was.
  *
  * 1. Scenario-specific nodes: the person selects on the canvas the nodes unique to the
  *    scenario and adds them (the canvas selection when the panel opened is
@@ -41,16 +55,16 @@ const selectedOf = (s: ReactFlowState) =>
  *    of them) and the outcomes (every node downstream), which the canvas
  *    marks; the person confirms them, removes some, or adds selected nodes.
  * 3. Name & set: the scenario is named, given a color, and put in one of this dataflow's
- *    scenario sets, or in a new one. Save scenario writes it; nothing is
- *    written before.
+ *    scenario sets, or in a new one, named there. Save scenario writes it;
+ *    nothing is written before. A set is renamed with its pencil in the
+ *    Scenario Catalog drawer's In project tab.
  *
  * Opened on a saved scenario (Edit scenario, "edit"), it is the same three
  * steps, starting from what the scenario keeps: its nodes, its context and
- * outcomes, its name, color and set, whose name can be changed there too
- * (a name another set has is refused). Its Save changes the scenario in
- * place, from step 2 on.
+ * outcomes, its name, color and set. Its Save changes the scenario in place,
+ * from step 2 on.
  */
-export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
+export function ScenarioDefinePanel({ define, presented, onExitComplete }: ScenarioDefinePanelProps) {
   const { scenarios, scenarioSets, nodes, edges, setScenarios, workflowNameRef } = useFlowContext();
   const { setDefine, setPreview } = useScenarioUi();
   const { showToast } = useToastContext();
@@ -84,9 +98,6 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
   // The nodes the shared lists were found from: other nodes find them anew.
   const [listsFor, setListsFor] = useState(() => (editing ? editing.nodes.join() : ""));
   const [color, setColor] = useState(() => editing?.color ?? nextScenarioColor(scenarios));
-  // Edit scenario: the name typed for the existing set chosen, which Save
-  // gives that set.
-  const [setRenames, setSetRenames] = useState<Record<string, string>>({});
   const [name, setName] = useState(() => editing?.name ?? nextScenarioName(scenarios));
   const [choice, setChoice] = useState<SetChoice>(() =>
     editing?.set && scenarioSets.some((x) => x.id === editing.set)
@@ -98,18 +109,11 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
 
   // While it is open the canvas marks the scenario's nodes' context and outcomes.
   useEffect(() => {
-    setPreview(lists && step >= 2 ? { context: lists.context, outcomes: lists.outcomes } : null);
-  }, [lists, step, setPreview]);
+    setPreview(presented && lists && step >= 2 ? { context: lists.context, outcomes: lists.outcomes } : null);
+  }, [presented, lists, step, setPreview]);
   useEffect(() => () => setPreview(null), [setPreview]);
 
   const close = () => setDefine(null);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setDefine(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [setDefine]);
 
   const infer = (ids: string[]) => {
     const found = inferContextOutcomes(ids, nodeIds, edges, new Set([...boxedByOthers, ...ids]));
@@ -152,15 +156,8 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
 
   // No two scenarios of a set share a name; a new set has none yet.
   const nameProblem = scenarioNameProblem(scenarios, scenarioSets, setId, name, editing?.id);
-  // No two sets of a dataflow share a name either: a new one, or the chosen
-  // one renamed.
-  const renamed = choice.kind === "existing" ? setRenames[choice.setId] : undefined;
-  const setProblem =
-    choice.kind === "new"
-      ? setNameProblem(scenarioSets, choice.name)
-      : renamed !== undefined
-        ? setNameProblem(scenarioSets, renamed, choice.setId)
-        : null;
+  // No two sets of a dataflow share a name either.
+  const setProblem = choice.kind === "new" ? setNameProblem(scenarioSets, choice.name) : null;
 
   const save = () => {
     if (!lists) return;
@@ -173,26 +170,19 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
       showToast(nameProblem, "warning");
       return;
     }
+    if (setProblem) {
+      showToast(setProblem, "warning");
+      return;
+    }
     let sets = scenarioSets;
     let target: string;
     // The scenario's id: a new set's comes from it.
     const scenarioId = editing ? editing.id : uuid();
     if (choice.kind === "new") {
-      const setName = choice.name.trim();
-      if (setProblem) {
-        showToast(setProblem, "warning");
-        return;
-      }
       target = newSetId(scenarioId, scenarioSets.map((s) => s.id));
-      sets = [...scenarioSets, { id: target, name: setName }];
+      sets = [...scenarioSets, { id: target, name: choice.name.trim() }];
     } else {
-      if (setProblem) {
-        showToast(setProblem, "warning");
-        return;
-      }
       target = choice.setId;
-      const newName = renamed?.trim();
-      if (newName) sets = scenarioSets.map((x) => (x.id === target && x.name !== newName ? { ...x, name: newName } : x));
     }
     if (editing) {
       const next = scenarios.map((s) =>
@@ -226,8 +216,14 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
       {ids.map((id) => (
         <li key={id} className={styles.row} data-node={id}>
           <span className={styles.rowLabel}>{labelOf(id)}</span>
-          <button type="button" className={styles.remove} aria-label={`Remove ${labelOf(id)}`} onClick={() => remove(part, id)}>
-            ×
+          <button
+            type="button"
+            className={styles.remove}
+            aria-label={`Remove ${labelOf(id)}`}
+            data-tooltip={`Remove ${labelOf(id)}`}
+            onClick={() => remove(part, id)}
+          >
+            <FontAwesomeIcon icon={faXmark} aria-hidden />
           </button>
         </li>
       ))}
@@ -247,8 +243,8 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
         : [{ label: null, ids: rows }];
     return (
       <section className={styles.part} aria-label={title} data-testid={`scenario-define-${part}`}>
-        <h3 className={styles.partTitle}>{title}</h3>
-        <p className={styles.hint}>{hint}</p>
+        <h3 className={`${modal.fieldLabel} ${styles.flush}`}>{title}</h3>
+        <p className={`${modal.hint} ${styles.flush}`}>{hint}</p>
         {rows.length === 0 && <p className={styles.empty}>None</p>}
         {groups.map(
           (g) =>
@@ -259,34 +255,74 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
               </div>
             ),
         )}
-        <button type="button" className={styles.secondary} onClick={() => addSelected(part)}>
+        <button type="button" className={`${modal.ghostBtn} ${styles.addButton}`} onClick={() => addSelected(part)}>
           + Add selected node
         </button>
       </section>
     );
   };
 
-  return (
-    <aside className={styles.panel} role="dialog" aria-label="Define scenario" data-testid="scenario-define-panel">
-      <header className={styles.header}>
-        <div className={styles.title}>{editing ? `Edit scenario: ${editing.name}` : "Define scenario"}</div>
-        <button type="button" className={styles.close} aria-label="Close" onClick={close}>
-          ×
+  const footer = (
+    <footer className={styles.footer}>
+      <button type="button" className={modal.ghostBtn} onClick={close}>
+        Cancel
+      </button>
+      {step > 1 && (
+        <button type="button" className={modal.ghostBtn} onClick={() => setStep(step - 1)}>
+          Back
         </button>
-      </header>
-      <ol className={styles.steps} aria-label="Steps">
-        {STEPS.map((label, index) => {
-          const n = index + 1;
-          const state = n < step ? "done" : n === step ? "current" : "todo";
-          return (
-            <li key={label} className={styles.step} data-state={state} aria-current={state === "current" ? "step" : undefined}>
-              <span className={styles.stepMark}>{state === "done" ? "✓" : n}</span>
-              {label}
-            </li>
-          );
-        })}
-      </ol>
-      <div className={styles.body}>
+      )}
+      {step === 1 && (
+        <button type="button" className={modal.primaryBtn} onClick={toReview} disabled={members.length === 0}>
+          Next: shared context & outcomes
+        </button>
+      )}
+      {step === 2 && (
+        <button type="button" className={editing ? modal.ghostBtn : modal.primaryBtn} onClick={() => setStep(3)}>
+          Next: name & set
+        </button>
+      )}
+      {(step === 3 || (editing && step === 2)) && (
+        <button
+          type="button"
+          className={modal.primaryBtn}
+          onClick={save}
+          disabled={!!nameProblem || !!setProblem}
+          data-testid="scenario-define-save"
+        >
+          {editing ? "Save" : "Save scenario"}
+        </button>
+      )}
+    </footer>
+  );
+
+  return (
+    <HeaderDrawer
+      presented={presented}
+      onRequestClose={close}
+      onExitComplete={onExitComplete}
+      title={editing ? `Edit scenario: ${editing.name}` : "Define scenario"}
+      titleId="scenario-define-title"
+      name="scenario-define"
+      wide={false}
+      beside
+      footer={footer}
+      testId="scenario-define-panel"
+    >
+      <div className={styles.content}>
+        <ol className={styles.steps} aria-label="Steps">
+          {STEPS.map((label, index) => {
+            const n = index + 1;
+            const state = n < step ? "done" : n === step ? "current" : "todo";
+            return (
+              <li key={label} className={styles.step} data-state={state} aria-current={state === "current" ? "step" : undefined}>
+                <span className={styles.stepMark}>{state === "done" ? "✓" : n}</span>
+                {label}
+              </li>
+            );
+          })}
+        </ol>
+
         {step === 1 &&
           list(
             "nodes",
@@ -314,9 +350,10 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
 
         {step === 3 && (
           <>
-            <label className={styles.field}>
-              Scenario name
+            <label className={modal.field}>
+              <span className={modal.fieldLabel}>Scenario name</span>
               <input
+                className={modal.input}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 data-testid="scenario-define-name"
@@ -329,8 +366,8 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
                 </span>
               )}
             </label>
-            <label className={`${styles.field} ${styles.colorField}`}>
-              Color
+            <label className={`${modal.field} ${styles.colorField}`}>
+              <span className={modal.fieldLabel}>Color</span>
               <input
                 type="color"
                 value={color}
@@ -340,7 +377,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
             </label>
             <fieldset className={styles.choices}>
               <legend className={styles.question}>Which scenario set does it belong to?</legend>
-              <p className={styles.hint}>
+              <p className={`${modal.hint} ${styles.flush}`}>
                 A scenario set holds the scenarios that answer one question. They are compared on the same context and
                 outcomes; scenarios of different sets never mix.
               </p>
@@ -356,24 +393,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
                       onChange={() => setChoice({ kind: "existing", setId: s.id })}
                     />
                     <span className={styles.choiceText}>
-                      {editing && on ? (
-                        <>
-                          <input
-                            aria-label="Scenario set name"
-                            value={setRenames[s.id] ?? s.name}
-                            onChange={(e) => setSetRenames((now) => ({ ...now, [s.id]: e.target.value }))}
-                            data-testid="scenario-define-existing-set-name"
-                            aria-invalid={setProblem ? true : undefined}
-                          />
-                          {setProblem && (
-                            <span className={styles.problem} role="alert">
-                              {setProblem}
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <b>{s.name}</b>
-                      )}
+                      <b>{s.name}</b>
                       <span className={styles.dots}>
                         {its.map((x) => (
                           <span key={x.id} className={styles.member}>
@@ -397,6 +417,7 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
                   <b>Create a new scenario set</b>
                   {choice.kind === "new" && (
                     <input
+                      className={modal.input}
                       aria-label="New scenario set name"
                       value={choice.name}
                       onChange={(e) => setChoice({ kind: "new", name: e.target.value })}
@@ -415,37 +436,6 @@ export function ScenarioDefinePanel({ define }: { define: ScenarioDefine }) {
           </>
         )}
       </div>
-      <footer className={styles.footer}>
-        <button type="button" className={styles.secondary} onClick={close}>
-          Cancel
-        </button>
-        {step > 1 && (
-          <button type="button" className={styles.secondary} onClick={() => setStep(step - 1)}>
-            Back
-          </button>
-        )}
-        {step === 1 && (
-          <button type="button" className={styles.primary} onClick={toReview} disabled={members.length === 0}>
-            Next: shared context & outcomes
-          </button>
-        )}
-        {step === 2 && (
-          <button type="button" className={editing ? styles.secondary : styles.primary} onClick={() => setStep(3)}>
-            Next: name & set
-          </button>
-        )}
-        {(step === 3 || (editing && step === 2)) && (
-          <button
-            type="button"
-            className={styles.primary}
-            onClick={save}
-            disabled={!!nameProblem || !!setProblem}
-            data-testid="scenario-define-save"
-          >
-            {editing ? "Save" : "Save scenario"}
-          </button>
-        )}
-      </footer>
-    </aside>
+    </HeaderDrawer>
   );
 }

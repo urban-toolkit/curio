@@ -16,7 +16,7 @@ import shell from "components/packages/publishing/CatalogDrawerShell.module.css"
 import { useDrawerDragThrough } from "components/packages/publishing/useDrawerDragThrough";
 import styles from "./DatasetCatalogDrawer.module.css";
 import ConfirmDialog from "../../ConfirmDialog";
-import { modalStackDepth } from "../../ModalShell";
+import { isTopDrawer } from "../../ModalShell";
 
 export interface DatasetCatalogDrawerProps {
   presented: boolean;
@@ -67,12 +67,13 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   // gesture on either peer pressed it here and nothing happened.
   //
   // Two conditions, both shared with the Agent drawer: a modal rendered on top
-  // (the add/remove confirmation, the dataset detail) owns Escape while it is
-  // open, and a pinned drawer is being deliberately kept open.
+  // (the add/remove confirmation, the dataset detail) or a drawer opened over
+  // it owns Escape while it is open, and a pinned drawer is being deliberately
+  // kept open.
   useEffect(() => {
     if (!presented) return;
     const onKey = (ev: KeyboardEvent) => {
-      if (modalStackDepth() > 0) return;
+      if (!isTopDrawer(drawerRef.current)) return;
       if (ev.key === "Escape" && !pinned) onRequestClose?.();
     };
     window.addEventListener("keydown", onKey);
@@ -118,6 +119,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           aria-modal="true"
           aria-labelledby="dataset-catalog-title"
           tabIndex={-1}
+          data-curio-open-drawer={presented || undefined}
           onTransitionEnd={handleDrawerTransitionEnd}
         >
           <DrawerHeader
