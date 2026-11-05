@@ -44,6 +44,8 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from urllib.parse import unquote
 
+from utk_curio.backend.app.agents.domain import content
+
 GRAMMAR_AUTK = "autk-grammar"
 
 #: OpenAI's strict mode: closed objects, every key required, optional ones nullable.
@@ -286,7 +288,9 @@ class ReplySchema:
         if not isinstance(value, dict):
             return text
         document = _Codec(self).decode(value, self.annotated)
-        return json.dumps(document, indent=2, ensure_ascii=False)
+        # A node holds a document as this text, as it holds one a tool call
+        # gives as a value.
+        return content.document_text(document) or text
 
     def encode(self, document: dict) -> tuple[object, list[str]]:
         """*document* as a constrained reply would write it, and the paths of
