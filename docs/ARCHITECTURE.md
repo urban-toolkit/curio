@@ -1780,6 +1780,8 @@ Everything an agent reads is hand-written Markdown in `agents/`, the Agent Catal
   | `inputs.chip:<k>`, `inputs.chip:<k>.<column>`, `inputs.chip:<k>:<layer>`, `inputs.chip:<k>:<layer>.<column>` | The chip node code reads input *k* by, a column of it, one of its layers or a column of that layer, `[!! input_0:roads !!]` | `code_references.reference_text`, `input_reference_inner` |
   | `inputs.stacked_column:<column>` | The chip of a column of every input's rows stacked, `[!! inputs.sunlight !!]` | `code_references.stacked_reference_inner` |
   | `selections.reference:<name>`, `selections.id_cap` | The reference node code places a selection tag by, `[!! selection picked !!]`, and the most ids a tag holds | `code_references.selection_reference_inner`, `SELECTION_ID_CAP` |
+  | `widgets.name_pattern`, `widgets.max`, `widgets.label_chars`, `widgets.value_chars` | The pattern a widget's name matches, the most widgets an agent declares on a node, and the most characters a widget's label and its default or value as JSON hold | `code_references.WIDGET_NAME_RE`, `widget_grammar.MAX_WIDGETS`, `_TEXT_MAX_CHARS`, `_VALUE_MAX_CHARS` |
+  | `dashboards.data_mb`, `dashboards.kept_days` | The most data a dashboard's page carries, in MB, and the days a kept output serves the runs that need it | `dashboard_payload.DEFAULT_PAYLOAD_LIMIT_BYTES`, `kept.KEPT_DAYS` |
   | `builtin.not_code` | The built-in templates whose nodes hold no Python or JavaScript code, one per line | The built-in manifest, by the rule `builtin.control` uses |
   | `note.palette` | The colour names a node's appearance accepts | `note_palette.NOTE_PALETTE` |
   | `egress.calls_per_run` | The web calls one run may make | `egress_policy.MAX_CALLS_PER_RUN` |
@@ -1788,6 +1790,7 @@ Everything an agent reads is hand-written Markdown in `agents/`, the Agent Catal
   | `input_contract.single`, `input_contract.several`, `input_contract.gathered` | The `inputContract` kinds a node's inputs can have | `input_contract.KIND_SINGLE`, `KIND_SEVERAL`, `KIND_GATHERED` |
   | `vega.runtime_field:<name>` | A field Curio adds to every row a Vega-Lite node reads | `document_validation.RUNTIME_FIELDS` |
   | `backend.handler_pattern`, `backend.timeout_classes`, `backend.server_code_permission`, `backend.server_network_permission`, `backend.data_dir_env` | The package backend contract's names | `packages/domain/backend_contract.py` |
+  | `backend.default_timeout_class`, `backend.payload_mib`, `backend.result_mib`, `backend.data_dir_mib` | The timeout class of a handler that declares none, and the most a handler's payload, its result and its persistent directory hold, in MiB | `backend_contract.DEFAULT_TIMEOUT_CLASS`, `PAYLOAD_MAX_BYTES`, `RESULT_MAX_BYTES`, `backend_runtime.DATA_DIR_MAX_BYTES` |
   | `include:<path>` | A page of the base entry, rendered, whole | The page |
   | `vega.starter_ladder`, `autk.starter_ladder` | A starter ladder, one line per rule in order: the layers and column roles it needs, the mark or family it writes, and its description | `contracts.VEGA_STARTER_LADDER`, `AUTK_STARTER_LADDER` |
   | `starter.dtype_roles` | Which pandas dtypes give which column role, in the order they are tried | `contracts.DTYPE_ROLES` |
