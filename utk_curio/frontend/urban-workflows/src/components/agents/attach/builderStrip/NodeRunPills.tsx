@@ -3,8 +3,9 @@ import React from "react";
 import styles from "../AgentBuilderStrip.module.css";
 import { STATUS_LABEL, type SolveWaitingRow } from "./builderStripDerived";
 
-/** One pill per plan node: its live or persisted status in words, whose turn
- * it is (dev/131: "needs you" / "waiting upstream"), and the per-node Solve. */
+/** One pill per plan node: its name, its live or persisted status in words,
+ * whose turn it is (dev/131: "needs you" / "waiting upstream"), and the
+ * per-node Solve. */
 export const NodeRunPills: React.FC<{
   entries: Array<[string, string]>;
   userBlockedIds: Set<string>;
@@ -14,16 +15,19 @@ export const NodeRunPills: React.FC<{
   onSolveNode?: (nodeId: string) => void;
   /** The name of the agent an attachment of this dataflow binds, from the live list. */
   agentNameOf?: (attachmentId: string) => string | null;
-}> = ({ entries, userBlockedIds, solveWaiting, solveRunning, nodeSolving, onSolveNode, agentNameOf }) => (
+  /** The name a node's header shows; its short id when it is not on the canvas. */
+  nodeNameOf: (nodeId: string) => string;
+}> = ({ entries, userBlockedIds, solveWaiting, solveRunning, nodeSolving, onSolveNode, agentNameOf, nodeNameOf }) => (
   <ul className={styles.nodeRuns} aria-live="polite" aria-label="Plan node progress">
     {entries.map(([nodeId, status]) => {
+      const name = nodeNameOf(nodeId);
       const needsUser = userBlockedIds.has(nodeId);
       const waiting = (solveWaiting ?? []).find((w) => w.nodeId === nodeId);
       // The node's own agent that holds its candidates, by its manifest's name.
       const finder = waiting?.attachmentId ? agentNameOf?.(waiting.attachmentId) ?? null : null;
       return (
         <li key={nodeId} className={`${styles.nodeRun}${needsUser ? ` ${styles.nodeNeedsUser}` : ""}`}>
-          <span className={styles.nodeId}>{nodeId.slice(0, 8)}</span>
+          <span className={styles.nodeName} data-tooltip={name}>{name}</span>
           <span className={styles[`status_${status}` as keyof typeof styles] ?? ""}>{STATUS_LABEL[status] ?? status}</span>
           {needsUser ? (
             <span className={styles.needsYou} data-tooltip={waiting?.reason ?? undefined}>
@@ -39,7 +43,7 @@ export const NodeRunPills: React.FC<{
             <button
               type="button"
               className={styles.nodeSolve}
-              aria-label={`Solve node ${nodeId.slice(0, 8)} on its own`}
+              aria-label={`Solve node ${name} on its own`}
               data-tooltip={
                 needsUser
                   ? `This node is waiting for you to confirm a source: open its ${finder ?? "candidates"} first`
