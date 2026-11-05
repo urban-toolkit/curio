@@ -160,8 +160,9 @@ def _node_types(value):
 def test_nothing_shipped_names_data_transformation():
     """Data Transformation is gone (komar41's #1327): a Python Computation node
     runs the same code. No shipped dataflow, prompt fixture, skill evaluation
-    file or test dataflow holds a node of its type, and no package, agent page
-    or skill page names it, so no palette, example or agent offers it."""
+    file or test dataflow holds a node of its type, and no package, agent page,
+    skill page or skill evaluation names it, so no palette, example, agent or
+    evaluation offers it."""
     import json
 
     root = REAL_CATALOG.parent
@@ -181,6 +182,7 @@ def test_nothing_shipped_names_data_transformation():
         *(path for path in root.glob("packages/**/*") if path.suffix in (".json", ".md", ".py", ".js", ".tsx")),
         *root.glob("agents/**/*.md"),
         *root.glob("skills/**/*.md"),
+        *root.glob("skills/*/evals/*.json"),
     ]
     naming = sorted(
         str(path.relative_to(root)) for path in pages

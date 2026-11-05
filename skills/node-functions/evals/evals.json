@@ -9,7 +9,7 @@
       "prompt": "Add a node that loads the trees.parquet and cta_stations.geojson files of the Chicago Loop Layers dataset and keeps the trees within 50 m of a CTA 'L' station.",
       "expected_output": "One new Python node whose code loads each file on its own, curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\") and curio_load_data(\"data.curio.chicago-loop-layers\", part=\"cta_stations.geojson\"), and returns the trees within 50 m of a station, opening no file by a path of its own.",
       "assertions": [
-        "The answer creates one new node (node.create) of a Python code template, such as Python Computation, Data Transformation or Data Loading.",
+        "The answer creates one new node (node.create) of a Python code template, such as Python Computation or Data Loading.",
         "The code it writes loads the trees with curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\"): the dataset's id and the file's name, each written as a string.",
         "The code loads the stations the same way, with part=\"cta_stations.geojson\".",
         "The code opens no file by a path of its own: no gpd.read_file, pd.read_parquet or curio_data_path for either file.",

@@ -4,7 +4,7 @@
     {
       "case": 1,
       "assertions": [
-        "The answer makes one node.create whose nodeType is curio.builtin/data-transformation or curio.builtin/computation-analysis.",
+        "The answer makes one node.create whose nodeType is curio.builtin/computation-analysis.",
         "The answer proposes no package: no package.install and no package.draft.apply.",
         "The answer does not say a new node type or package has to be written for this.",
         "The code it writes computes, for each zip code, the share of roofs whose VEGETATED_SQFT is above 10,000."

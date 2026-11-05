@@ -4,7 +4,7 @@
     {
       "case": 1,
       "assertions": [
-        "The answer creates one new node (node.create) of a Python code template, such as Python Computation or Data Transformation.",
+        "The answer creates one new node (node.create) of a Python code template, such as Python Computation.",
         "The code it writes reads the two tables by indexing its one input: input_0[0] and input_0[1], or the chip [!! input_0 !!] indexed the same way.",
         "The code reads no input_1: both tables arrive together, as one tuple, on one input circle.",
         "The code returns the two row counts with return, as a DataFrame or a dict."
