@@ -174,6 +174,49 @@ def test_the_page_the_summary_and_the_numbers_later_runs_compare_with(tmp_path):
     assert not (tmp_path / report.SUMMARIES / f"{GEMMA}.json").exists()
 
 
+def test_the_benchmark_s_leaderboard_and_main_s_last_run(tmp_path):
+    """The page and the summary hold the benchmark of each model's run: its
+    leaderboard, each skill's success per model, and the run against main's
+    last run of the model, case by case, or why they do not compare."""
+    from utk_curio.backend.app.agents.evaluation import benchmark
+
+    floors, prices, previous = _config(tmp_path)
+    folder = _results(tmp_path)
+    scored = benchmark.score(folder)
+    # trees passed half its assertions, birds all of its one: 75% over both cases.
+    assert scored["overall"]["success"]["value"] == 0.75
+    lower = json.loads(json.dumps(scored))
+    for entry in lower["cases"].values():
+        entry["with_skill"] = [0.0 for _ in entry.get("with_skill") or []]
+    _write(previous / f"{report.slug(HAIKU)}.json", {"skills": {}, "benchmark": lower})
+    runs, _ = report.build(tmp_path, [HAIKU], scope={}, probes={HAIKU: {"ok": True, "seconds": 1.0}},
+                           previous=previous, floors=floors, prices=prices)
+    assert runs[0].scored["cases"] == scored["cases"]
+    assert runs[0].compared["overall"]["success"]["verdict"] == benchmark.BETTER
+    summary = (tmp_path / report.SUMMARY).read_text(encoding="utf-8")
+    assert f"### Benchmark, version {scored['version']}" in summary
+    assert f"| {HAIKU} | 75% [50, 100] |" in summary
+    assert "Against main's last run" in summary and "every case both measured: better, +75" in summary
+    page = (tmp_path / report.PAGE).read_text(encoding="utf-8")
+    assert "Each skill's success per model" in page and "Fails on (under 50%)" in page
+    numbers = json.loads((tmp_path / report.SUMMARIES / f"{HAIKU}.json").read_text(encoding="utf-8"))
+    assert numbers["benchmark"]["cases"] == scored["cases"]
+
+    # A run of main on another set is not compared, and the page says why.
+    _write(previous / f"{report.slug(HAIKU)}.json", {"skills": {}, "benchmark": {**lower, "version": "another"}})
+    report.build(tmp_path, [HAIKU], scope={}, probes={HAIKU: {"ok": True, "seconds": 1.0}}, previous=previous,
+                 floors=floors, prices=prices)
+    assert ("No comparison with main's last run: the two runs measured different sets"
+            in (tmp_path / report.SUMMARY).read_text(encoding="utf-8"))
+    # Nor one another model graded, such as a run of main that graded itself
+    # against a run the benchmark's fixed grader graded.
+    _write(previous / f"{report.slug(HAIKU)}.json", {"skills": {}, "benchmark": {**lower, "grader": "grader-model"}})
+    report.build(tmp_path, [HAIKU], scope={}, probes={HAIKU: {"ok": True, "seconds": 1.0}}, previous=previous,
+                 floors=floors, prices=prices)
+    assert ("No comparison with main's last run: the two runs were graded by different models"
+            in (tmp_path / report.SUMMARY).read_text(encoding="utf-8"))
+
+
 def test_the_floors_and_the_prices_files_hold_what_the_report_reads():
     from utk_curio.backend.app.agents.evaluation import skill_evals
 

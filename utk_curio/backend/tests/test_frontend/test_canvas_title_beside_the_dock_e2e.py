@@ -4,8 +4,9 @@ The title sits at the top left of the canvas and the dock, with the dataflow's
 goal and the canvas agents, at the top middle, on the same row. A long name was
 drawn over the dock, its Goal label and the start of the goal. Now the title is
 cut short with an ellipsis where the dock starts, as a node's title is cut in
-its header, and its tooltip gives the whole name. A short title, and a long one
-with no dock beside it, are shown whole as before.
+its header, and its tooltip gives the whole name; opened for renaming, its
+field stays clear of the dock too. A short title, and a long one with no dock
+beside it, are shown whole as before.
 
 The dataflow's row and its spec carry the same name here, so the canvas shows
 it on every build, before and after a create named the dataflow as its row.
@@ -25,6 +26,7 @@ from .utils import (
     CLOSEUP_PIXEL_THRESHOLD,
     _wait_for_reactflow_ready,
     hover_until_tooltip_says,
+    no_tooltip,
     require_owner_view,
     require_project_page,
     require_user_auth,
@@ -178,6 +180,36 @@ def _title_ends_before_the_dock(page, what: str) -> dict:
     return page.evaluate(_LAYOUT_JS)
 
 
+#: The title's rename field: the title's own first child while it is renamed.
+RENAME_FIELD = "[data-curio-canvas-title] > input"
+
+# The rename field's box and the dock's, and whether the field ends at or left
+# of the dock's left edge.
+_FIELD_BESIDE_THE_DOCK_JS = """() => {
+    const field = document.querySelector('[data-curio-canvas-title] > input');
+    const dock = document.querySelector('[role="toolbar"][aria-label="Canvas agents"]');
+    const box = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return {left: r.left, right: r.right, top: r.top, bottom: r.bottom};
+    };
+    const [f, d] = [box(field), box(dock)];
+    return {field: f, dock: d, clear: !!f && !!d && f.right <= d.left + 0.5};
+}"""
+
+
+def _rename_field_ends_before_the_dock(page, what: str) -> None:
+    """Wait until the title's rename field ends at or left of the dock's left
+    edge; the failure gives both boxes."""
+    try:
+        page.wait_for_function(f"() => ({_FIELD_BESIDE_THE_DOCK_JS})().clear", timeout=10000)
+    except Exception:  # noqa: BLE001 - the failure says what the page laid out
+        layout = page.evaluate(_FIELD_BESIDE_THE_DOCK_JS)
+        raise AssertionError(
+            f"{what}: the rename field runs into the agents' dock. Field {layout['field']}, dock {layout['dock']}"
+        ) from None
+
+
 def test_a_long_title_stops_before_the_agents_dock_and_shows_whole_on_hover(
     app_frontend: "FrontendPage", current_server: str, page,
 ):
@@ -198,6 +230,13 @@ def test_a_long_title_stops_before_the_agents_dock_and_shows_whole_on_hover(
     # The whole name is the title's tooltip.
     tip = hover_until_tooltip_says(page, TITLE, "the canvas title", [LONG_NAME])
     _frame(page, "long-title-tooltip", frames_failed, keep_tooltip=True, clip_rect=tooltip_close_up(page, tip))
+    # Opened for renaming, the title is a field, which stays clear of the dock.
+    # The tooltip goes first, so the click reaches the title.
+    page.mouse.move(2, 2)
+    no_tooltip(page, "the pointer left the canvas title", timeout=5000)
+    page.locator(TITLE).click()
+    expect(page.locator(RENAME_FIELD)).to_be_visible(timeout=10000)
+    _rename_field_ends_before_the_dock(page, "The long name opened for renaming")
     assert not frames_failed, "\n".join(frames_failed)
 
 

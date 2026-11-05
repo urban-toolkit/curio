@@ -197,6 +197,8 @@ class TestThePlanLands:
         copy = next(n for n in nodes if "copiedFrom" in n.get("metadata", {}))
         assert shadows["metadata"]["widgets"] == [FACTOR]
         assert copy["metadata"] == {"widgets": [{**FACTOR, "value": 2}], "copiedFrom": [shadows["id"]]}
+        # A plan names its nodes, a copy as its original: the title its header shows.
+        assert (shadows["title"], copy["title"]) == ("Shadows", "Shadows")
         assert copy["goal"] == shadows["goal"]
         keep = ("id", "name", "color", "description", "nodes")
         assert [{k: s[k] for k in keep if k in s} for s in spec["dataflow"]["scenarios"]] == [
@@ -218,6 +220,7 @@ class TestThePlanLands:
         # The bridge carries the widgets and the lineage to the live canvas.
         created = {n["id"]: n for n in canvas["nodes"]}
         assert created[copy["id"]]["metadata"]["copiedFrom"] == [shadows["id"]]
+        assert (created[shadows["id"]]["title"], created[copy["id"]]["title"]) == ("Shadows", "Shadows")
         # And the agent reads the scenarios back with their parts.
         from utk_curio.backend.app.agents.application import tools
         from utk_curio.backend.app.projects.services import _user_dir_key

@@ -1232,6 +1232,40 @@ class TestDataflowPlanApply:
         assert set(session["nodeRuns"]) == {load["id"], analyze["id"]}
         assert set(session["nodeRuns"].values()) == {"pending"}
 
+    def test_a_landed_plan_titles_each_node_as_the_plan_names_it(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """A node a plan lands is named as the plan names it, the way the
+        shipped examples name their nodes: its title, which its header shows in
+        place of its template's name. So it is in the saved dataflow, which a
+        canvas the dataflow's doc binds reads, in the plan a canvas no doc binds
+        takes whole, and in each of the plan's steps, which such a canvas takes
+        one at a time."""
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(client, user, token, alice_project, monkeypatch)
+        body = helper._run(client, token, alice_project, att_id).get_json()
+        card = _landed_plan(body)
+        rows = card["plan"]["nodes"]
+        planned = sorted((row["ref"], row["title"]) for row in rows)
+
+        def named(nodes):
+            # Each node by the plan row whose intent ends its goal, with the title it holds.
+            return sorted(
+                (next(row["ref"] for row in rows if node["goal"].endswith(" " + row["intent"])), node.get("title"))
+                for node in nodes
+            )
+
+        assert named(card["canvas"]["nodes"]) == planned
+        [landed] = [entry for entry in body["changes"] if entry["tool"] == "dataflow.plan.write"]
+        stepped = []
+        for step in landed["steps"]:
+            mutations = step["canvas"] if isinstance(step["canvas"], list) else [step["canvas"]]
+            stepped += [node for m in mutations if m.get("kind") == "graph-created" for node in m["nodes"]]
+        assert named(stepped) == planned, landed["steps"]
+        saved = [n for n in self._spec(user, alice_project)["dataflow"]["nodes"] if n["id"] != "n1"]
+        assert named(saved) == planned
+
     def test_plan_carried_content_is_refused_at_mint(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # dev/67-5 supersedes dev/52's "trivial code" allowance (67-0: no
         # shortcut): plans describe intent; content is generated and

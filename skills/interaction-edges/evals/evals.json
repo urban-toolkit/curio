@@ -12,6 +12,9 @@
         "The plan adds an edge of kind interaction between the bar chart (b601d363-50fd-4209-bee2-9997dcb050f3) and the new map.",
         "The plan adds no new Data Pool node.",
         "The answer or the map node's intent says the two views match selections by the zip column (for example the map layer selecting by zip through selectFields), because the chart's bars are zip code totals and the map's features are single roofs."
+      ],
+      "checks": [
+        {"assertion": 3, "kind": "node-added", "type": "curio.builtin/data-pool", "absent": true}
       ]
     },
     {
@@ -23,6 +26,10 @@
         "The Simple View's data comes from a Data Pool, directly or through a node that keeps the pool's selected rows.",
         "The plan links the bar chart (b601d363-50fd-4209-bee2-9997dcb050f3) to that same Data Pool with an edge of kind interaction.",
         "The answer or a node's intent says the clicked roofs are the pool's rows whose \"interacted\" column is \"1\"."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "dataflow.plan.write"},
+        {"assertion": 1, "kind": "node-added", "type": "curio.builtin/vis-simple"}
       ]
     },
     {
@@ -36,6 +43,14 @@
         "The answer uses node.settings.write on node ia-pool.",
         "The change it makes sets the pool's dataPool betweenCharts to MERGE_AND.",
         "The answer creates no new node and no new content for the pool."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "node.settings.write", "node": "ia-pool"},
+        {"assertion": 2, "kind": "tool", "tool": "node.settings.write", "args": {"dataPool.betweenCharts": "MERGE_AND"}},
+        {"assertion": 3, "kind": "tool", "tool": "node.create", "absent": true},
+        {"assertion": 3, "kind": "tool", "tool": "dataflow.plan.write", "absent": true},
+        {"assertion": 3, "kind": "tool", "tool": "node.content.write", "node": "ia-pool", "absent": true},
+        {"assertion": 3, "kind": "delegate", "capability": "node.content.generate", "node": "ia-pool", "absent": true}
       ]
     },
     {

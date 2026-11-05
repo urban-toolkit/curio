@@ -35,6 +35,13 @@
         "The answer tells the user to pin the Roofs table themselves, with the pin in the node's header.",
         "The answer makes no change: no node.create, node.settings.write, node.content.write or dataflow plan.",
         "The answer does not claim the table is now pinned or on the dashboard."
+      ],
+      "checks": [
+        {"assertion": 2, "kind": "unchanged"},
+        {"assertion": 2, "kind": "tool", "tool": "node.create", "absent": true},
+        {"assertion": 2, "kind": "tool", "tool": "node.settings.write", "absent": true},
+        {"assertion": 2, "kind": "tool", "tool": "node.content.write", "absent": true},
+        {"assertion": 2, "kind": "tool", "tool": "dataflow.plan.write", "absent": true}
       ]
     },
     {
