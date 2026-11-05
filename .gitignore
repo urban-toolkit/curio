@@ -33,8 +33,10 @@ site/
 coverage/
 
 curio_docker_log.txt
-# A deployment's own curio.py arguments (docker-compose.deploy.yml).
+# A deployment's own curio.py arguments (docker-compose.deploy.yml), and the
+# LLM endpoint file the Deploy workflow writes beside it.
 docker-compose.site.yml
+/.secrets/
 test_file.txt
 
 /data/
