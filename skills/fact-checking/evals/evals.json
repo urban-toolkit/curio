@@ -16,7 +16,8 @@
       ],
       "checks": [
         {"assertion": 1, "kind": "tool", "tool": "web.fetch"},
-        {"assertion": 5, "kind": "tool", "tool": "node.create", "absent": true}
+        {"assertion": 5, "kind": "tool", "tool": "node.create", "absent": true},
+        {"assertion": 5, "kind": "node-added", "type": "curio.builtin/note", "absent": true}
       ]
     },
     {
