@@ -36,6 +36,17 @@ export function isUnauthorized(error: unknown): boolean {
   return (error as { status?: number } | null)?.status === 401;
 }
 
+/**
+ * Whether a failed request may pass when it is sent again: it got no answer
+ * (it could not connect, or the browser dropped it, as Chromium drops every
+ * request in flight when the machine's network changes) or a server error (a
+ * server restarting). Any other answer is the server's word on it.
+ */
+export function mayPassAgain(error: unknown): boolean {
+  const status = (error as { status?: number } | null)?.status;
+  return typeof status !== "number" || status >= 500;
+}
+
 export async function apiFetch<T = unknown>(
   path: string,
   opts: RequestInit = {}
