@@ -146,7 +146,7 @@ def graders_from(value: str) -> list[str]:
     """The graders a ``CURIO_EVAL_GRADER`` value names, the best first: one
     model's name, or a JSON list of them."""
     value = (value or "").strip()
-    if not value.startswith("["):
+    if not value.startswith(("[", "{")):
         return [value] if value else []
     try:
         found = json.loads(value)
