@@ -1,11 +1,12 @@
 /**
  * The agents attached to a dataflow are kept beside its doc, so no change of
  * the doc tells a tab of them. The room does: when someone attaches an agent
- * to the dataflow or takes one off, the server tells the tabs of its owner
- * and editors (`agent_attachments_changed`), and each lists the agents again
- * at once, with no click on its canvas. What the room tells of another
- * dataflow lists nothing here. A tab back in the room after a time away lists
- * them again, as it may have missed what the room told meanwhile.
+ * to the dataflow, takes one off or changes one, such as its chat's title,
+ * the server tells the tabs of its owner and editors
+ * (`agent_attachments_changed`), and each lists the agents again at once,
+ * with no click on its canvas. What the room tells of another dataflow lists
+ * nothing here. A tab back in the room after a time away lists them again,
+ * as it may have missed what the room told meanwhile.
  *
  * The room is the real `CollaborationProvider` on a fake socket, so the event
  * reaches the dock only if the provider hands it on.
@@ -143,10 +144,11 @@ async function settle() {
   }
 }
 
-/** The agents this tab's dock shows, by name. */
+/** The agents this tab's dock shows, by name, with their chat's title. */
 const Dock: React.FC = () => {
   const ctx = useAgentAttachmentsContext();
-  return <div data-testid="dock">{(ctx?.attachments ?? []).map((a) => a.name).join("|")}</div>;
+  const shown = (ctx?.attachments ?? []).map((a) => (a.title ? `${a.name}: ${a.title}` : a.name));
+  return <div data-testid="dock">{shown.join("|")}</div>;
 };
 
 /** Ana's tab on dataflow p1, in its room, its dock listed once. */
@@ -205,6 +207,20 @@ test("an agent someone else attaches or takes off shows in this tab's dock at on
   fire(socket, ATTACHMENTS_CHANGED, { projectId: "p1" });
   await waitFor(() => expect(screen.getByTestId("dock").textContent).toBe("Node Builder"));
   expect(api.listAttachments).toHaveBeenCalledTimes(listed + 2);
+});
+
+test("a new title Ben gives his agent's chat shows in this tab's dock at once, with no click", async () => {
+  api.listAttachments.mockResolvedValue({ attachments: [ANAS, BENS] } as never);
+  const socket = await anasTabInTheRoom();
+  expect(screen.getByTestId("dock").textContent).toBe("Node Builder|Dataset Finder");
+  const listed = api.listAttachments.mock.calls.length;
+
+  // Ben renames his agent's chat on his tab, and the server tells the room.
+  const renamed = { ...BENS, title: "Parks by the river", titleEdited: true };
+  api.listAttachments.mockResolvedValue({ attachments: [ANAS, renamed] } as never);
+  fire(socket, ATTACHMENTS_CHANGED, { projectId: "p1" });
+  await waitFor(() => expect(screen.getByTestId("dock")).toHaveTextContent("Dataset Finder: Parks by the river"));
+  expect(api.listAttachments).toHaveBeenCalledTimes(listed + 1);
 });
 
 test("a tab back in the room after a time away lists the agents again", async () => {
