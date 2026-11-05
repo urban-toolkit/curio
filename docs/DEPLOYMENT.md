@@ -341,7 +341,7 @@ To give both stacks an LLM endpoint of their own (the Deployment default and **T
 
 1. In the repository's **Settings → Environments**, open `dev` and add the secrets `CURIO_DEPLOY_API_KEY` (the endpoint's key) and `CURIO_DEPLOY_BASE_URL` (its OpenAI-compatible base URL). Do the same for `stable`.
 2. In **Settings → Secrets and variables → Actions → Variables**, add the repository variable `CURIO_DEPLOY_MODELS`, a JSON list of the endpoint's model names, such as `["model-a", "model-b"]`. The first is the Deployment default.
-3. Deploy. Each deploy writes the two secrets to `.secrets/llm-endpoint` in the stack's checkout, a file only the `deploy` user reads, and starts the stack with `--llm-endpoint-file` and `--llm-models`. The job's log masks the URL and its host.
+3. Deploy. Each deploy writes the two secrets and the models as one endpoint, named **This Curio**, to `.secrets/llm-endpoint` in the stack's checkout, a file only the `deploy` user reads, and starts the stack with `--llm-endpoint-file`. The job's log masks the URL and its host.
 4. Sign in to the stack and open **API Settings**: the **API keys** tab shows the Deployment default row with the first model.
 
 Without both secrets, the deploy removes `.secrets/llm-endpoint` and the stack has no endpoint of its own.

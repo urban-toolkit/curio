@@ -49,9 +49,9 @@ name: Deploy
 #   7. The stacks' own LLM endpoint (optional): secrets CURIO_DEPLOY_API_KEY
 #      and CURIO_DEPLOY_BASE_URL on the dev and stable environments, and the
 #      repository variable CURIO_DEPLOY_MODELS, a JSON list of model names
-#      whose first is the Deployment default. Each deploy writes the two
-#      secrets to the checkout's .secrets/llm-endpoint (owner-only) and starts
-#      the stack with --llm-endpoint-file and --llm-models.
+#      whose first is the Deployment default. Each deploy writes them as one
+#      endpoint, [This Curio], to the checkout's .secrets/llm-endpoint
+#      (owner-only) and starts the stack with --llm-endpoint-file.
 
 on:
   push:
@@ -129,10 +129,21 @@ jobs:
         env:
           CURIO_DEPLOY_API_KEY: ${{ secrets.CURIO_DEPLOY_API_KEY }}
           CURIO_DEPLOY_BASE_URL: ${{ secrets.CURIO_DEPLOY_BASE_URL }}
+          CURIO_DEPLOY_MODELS: ${{ vars.CURIO_DEPLOY_MODELS }}
         run: |
           python3 scripts/ci_skill_evals.py mask --env CURIO_DEPLOY_BASE_URL
           if [ -n "$CURIO_DEPLOY_API_KEY" ] && [ -n "$CURIO_DEPLOY_BASE_URL" ]; then
-            printf 'base_url=%s\napi_key=%s\n' "$CURIO_DEPLOY_BASE_URL" "$CURIO_DEPLOY_API_KEY" \
+            # One endpoint, under the name users see in API Settings, with the
+            # variable's models as a comma list (the first is the default).
+            models="$(printf '%s' "${CURIO_DEPLOY_MODELS:-[]}" | jq -r 'join(",")')"
+            case "$models" in
+              ''|*[!A-Za-z0-9._/:,-]*)
+                echo "::error::CURIO_DEPLOY_MODELS must be a JSON list of model names"
+                exit 1
+                ;;
+            esac
+            printf '[This Curio]\nbase_url=%s\napi_key=%s\nmodels=%s\n' \
+              "$CURIO_DEPLOY_BASE_URL" "$CURIO_DEPLOY_API_KEY" "$models" \
               | ssh -i ~/.ssh/id_ed25519 deploy@utk \
                   'umask 077 && mkdir -p /srv/curio-dev/.secrets && cat > /srv/curio-dev/.secrets/llm-endpoint.new && mv /srv/curio-dev/.secrets/llm-endpoint.new /srv/curio-dev/.secrets/llm-endpoint'
             echo "Sent the LLM endpoint"
@@ -144,18 +155,11 @@ jobs:
       - name: Deploy to curio-dev stack
         env:
           REF_INPUT: ${{ inputs.ref || '' }}
-          CURIO_DEPLOY_MODELS: ${{ vars.CURIO_DEPLOY_MODELS }}
         run: |
-          # The endpoint's models, a JSON list, go as a comma list. ssh hands
-          # the remote shell one string, so each argument is quoted for it.
-          models="$(printf '%s' "${CURIO_DEPLOY_MODELS:-[]}" | jq -r 'join(",")')"
-          printf -v ref_arg '%q' "$REF_INPUT"
-          printf -v models_arg '%q' "$models"
           ssh -i ~/.ssh/id_ed25519 deploy@utk \
-            bash -s "$ref_arg" "$models_arg" <<'EOF'
+            bash -s "$REF_INPUT" <<'EOF'
           set -euo pipefail
           ref="${1:-}"
-          models="${2:-}"
           cd /srv/curio-dev
           git fetch --prune --tags origin
           # Reset the package catalog before checking out. Earlier builds
@@ -183,18 +187,12 @@ jobs:
             echo "::error::Docker Compose $compose_version is older than 2.24.4, which docker-compose.site.yml needs"
             exit 1
           fi
-          # The LLM endpoint the job sent, when this release reads one: Compose
-          # mounts the file read-only, so only its path and the model names are
-          # on the command line.
+          # The LLM endpoints the job sent, when this release reads them:
+          # Compose mounts the file read-only, so only its path is on the
+          # command line.
           llm_args=""
           if [ -s .secrets/llm-endpoint ] && grep -q -e '"--llm-endpoint-file"' utk_curio/main.py; then
-            case "$models" in
-              ''|*[!A-Za-z0-9._/:,-]*)
-                echo "::error::CURIO_DEPLOY_MODELS must be a JSON list of model names"
-                exit 1
-                ;;
-            esac
-            llm_args=", \"--llm-endpoint-file\", \"/run/secrets/curio_llm_endpoint\", \"--llm-models\", \"$models\""
+            llm_args=', "--llm-endpoint-file", "/run/secrets/curio_llm_endpoint"'
           fi
           # This stack's container name, host ports and curio.py arguments
           # (docker-compose.deploy.yml). The backend is /api on whichever host
@@ -344,10 +342,21 @@ jobs:
         env:
           CURIO_DEPLOY_API_KEY: ${{ secrets.CURIO_DEPLOY_API_KEY }}
           CURIO_DEPLOY_BASE_URL: ${{ secrets.CURIO_DEPLOY_BASE_URL }}
+          CURIO_DEPLOY_MODELS: ${{ vars.CURIO_DEPLOY_MODELS }}
         run: |
           python3 scripts/ci_skill_evals.py mask --env CURIO_DEPLOY_BASE_URL
           if [ -n "$CURIO_DEPLOY_API_KEY" ] && [ -n "$CURIO_DEPLOY_BASE_URL" ]; then
-            printf 'base_url=%s\napi_key=%s\n' "$CURIO_DEPLOY_BASE_URL" "$CURIO_DEPLOY_API_KEY" \
+            # One endpoint, under the name users see in API Settings, with the
+            # variable's models as a comma list (the first is the default).
+            models="$(printf '%s' "${CURIO_DEPLOY_MODELS:-[]}" | jq -r 'join(",")')"
+            case "$models" in
+              ''|*[!A-Za-z0-9._/:,-]*)
+                echo "::error::CURIO_DEPLOY_MODELS must be a JSON list of model names"
+                exit 1
+                ;;
+            esac
+            printf '[This Curio]\nbase_url=%s\napi_key=%s\nmodels=%s\n' \
+              "$CURIO_DEPLOY_BASE_URL" "$CURIO_DEPLOY_API_KEY" "$models" \
               | ssh -i ~/.ssh/id_ed25519 deploy@utk \
                   'umask 077 && mkdir -p /srv/curio/.secrets && cat > /srv/curio/.secrets/llm-endpoint.new && mv /srv/curio/.secrets/llm-endpoint.new /srv/curio/.secrets/llm-endpoint'
             echo "Sent the LLM endpoint"
@@ -359,18 +368,11 @@ jobs:
       - name: Deploy to stable stack
         env:
           REF_INPUT: ${{ inputs.ref || '' }}
-          CURIO_DEPLOY_MODELS: ${{ vars.CURIO_DEPLOY_MODELS }}
         run: |
-          # As for curio-dev: the models as a comma list, each argument quoted
-          # for the remote shell.
-          models="$(printf '%s' "${CURIO_DEPLOY_MODELS:-[]}" | jq -r 'join(",")')"
-          printf -v ref_arg '%q' "$REF_INPUT"
-          printf -v models_arg '%q' "$models"
           ssh -i ~/.ssh/id_ed25519 deploy@utk \
-            bash -s "$ref_arg" "$models_arg" <<'EOF'
+            bash -s "$REF_INPUT" <<'EOF'
           set -euo pipefail
           ref="${1:-}"
-          models="${2:-}"
           cd /srv/curio
           git fetch --prune --tags origin
           # Reset the package catalog before checking out. Earlier builds
@@ -403,17 +405,11 @@ jobs:
               echo "::error::Docker Compose $compose_version is older than 2.24.4, which docker-compose.site.yml needs"
               exit 1
             fi
-            # The LLM endpoint the job sent, when this release reads one, as
-            # curio-dev mounts it.
+            # The LLM endpoints the job sent, when this release reads them, as
+            # curio-dev mounts them.
             llm_args=""
             if [ -s .secrets/llm-endpoint ] && grep -q -e '"--llm-endpoint-file"' utk_curio/main.py; then
-              case "$models" in
-                ''|*[!A-Za-z0-9._/:,-]*)
-                  echo "::error::CURIO_DEPLOY_MODELS must be a JSON list of model names"
-                  exit 1
-                  ;;
-              esac
-              llm_args=", \"--llm-endpoint-file\", \"/run/secrets/curio_llm_endpoint\", \"--llm-models\", \"$models\""
+              llm_args=', "--llm-endpoint-file", "/run/secrets/curio_llm_endpoint"'
             fi
             cat > docker-compose.site.yml <<'SITE'
           services:
