@@ -167,6 +167,73 @@ def _position(page, node_id: str):
     return page.evaluate(_POSITION_JS, node_id)
 
 
+#: Whether *id*'s node stands more than *far* canvas units from *start*.
+_MOVED_JS = """([id, start, far]) => {
+    const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
+    return !!node && Math.hypot(node.position.x - start[0], node.position.y - start[1]) > far;
+}"""
+
+# Before the app's own scripts, so d3's timers, which take requestAnimationFrame
+# when the app loads and move React Flow's viewport through it, go through this.
+# Switched on, it keeps every callback, as a page that draws no frame does. The
+# page's next pointer move lets them go and runs them at once: on a busy runner
+# the frame that brings a page short of frames its next move runs them right
+# after the move, so the view lands between the move and the press after it.
+_HOLD_FRAMES_UNTIL_A_MOVE_JS = """(() => {
+    const request = window.requestAnimationFrame.bind(window);
+    const cancel = window.cancelAnimationFrame.bind(window);
+    let held = null;
+    let nextId = -1;
+    window.requestAnimationFrame = (callback) => {
+        if (!held) return request(callback);
+        const id = nextId--;
+        held.set(id, callback);
+        return id;
+    };
+    window.cancelAnimationFrame = (id) => {
+        if (held && held.delete(id)) return;
+        cancel(id);
+    };
+    window.__curioTestHoldFrames = () => { held = held || new Map(); };
+    window.addEventListener("mousemove", () => {
+        if (!held) return;
+        const deferred = [...held.values()];
+        held = null;
+        const now = performance.now();
+        for (const callback of deferred) {
+            try { callback(now); } catch (error) { console.error(error); }
+        }
+    }, true);
+})();"""
+
+# A frame asked for now: whether it ran tells whether frames are held.
+_ASK_FOR_A_FRAME_JS = """() => {
+    window.__curioTestFrameRan = false;
+    window.requestAnimationFrame(() => { window.__curioTestFrameRan = true; });
+}"""
+
+# What a press at a client point reaches: whether it is in *id*'s header, and
+# whether the node drags from there, as React Flow judges it (no `nodrag`
+# between the point and the node); the element there; and the view.
+_PRESS_POINT_JS = """([x, y, id]) => {
+    const hit = document.elementFromPoint(x, y);
+    const node = hit && hit.closest(`.react-flow__node[data-id="${id}"]`);
+    const header = hit && hit.closest(".curio-node-header");
+    let drags = !!node;
+    for (let at = hit; node && at && at !== node; at = at.parentElement) {
+        if (at.classList.contains("nodrag")) drags = false;
+    }
+    const name = (el) => !el ? "nothing" : el.tagName.toLowerCase() + (typeof el.className === "string"
+        ? el.className.split(" ").filter(Boolean).map((c) => "." + c).join("") : "");
+    const inNode = hit && hit.closest(".react-flow__node");
+    return {
+        header: !!node && !!header && node.contains(header),
+        drags,
+        hit: name(hit) + (inNode ? ` in node ${inNode.getAttribute("data-id")}` : ""),
+        viewport: window.__curio_reactFlow.getViewport(),
+    };
+}"""
+
 _SELECT_ONLY_JS = """(id) => window.__curio_reactFlow.setNodes(
     (nodes) => nodes.map((node) => ({ ...node, selected: node.id === id })))"""
 
@@ -224,8 +291,13 @@ def test_typing_in_a_node_shows_in_the_other_tab_with_the_typists_cursor_and_und
     assert "# typed by the owner" in read_node_code(editor, CODE_NODE)
 
 
-def test_a_widget_a_scenario_and_a_drag_show_in_the_other_tab(room):
-    owner = room.person(OWNER, "Doc Owner", owns=True)
+@pytest.mark.parametrize("frames", ["drawn", "held"])
+def test_a_widget_a_scenario_and_a_drag_show_in_the_other_tab(room, frames):
+    """*frames* ``held``: the owner's page draws no frame from the drag's
+    framing until her first pointer move, as the busy runner of run
+    41966029009 did (``_HOLD_FRAMES_UNTIL_A_MOVE_JS``)."""
+    hold = (lambda page: page.add_init_script(_HOLD_FRAMES_UNTIL_A_MOVE_JS)) if frames == "held" else None
+    owner = room.person(OWNER, "Doc Owner", owns=True, before_open=hold)
     editor = room.person(EDITOR, "Doc Editor")
     room.invite(EDITOR)
     room.open(owner)
@@ -252,25 +324,45 @@ def test_a_widget_a_scenario_and_a_drag_show_in_the_other_tab(room):
         raise AssertionError("the owner's collapsed scenario never showed as a box in the editor's tab") from exc
 
     # A drag: live in the other tab while it goes, and the place at the drop.
+    if frames == "held":
+        owner.evaluate("() => window.__curioTestHoldFrames()")
+        owner.evaluate(_ASK_FOR_A_FRAME_JS)
+        owner.wait_for_timeout(500)
+        assert not owner.evaluate("() => window.__curioTestFrameRan"), (
+            "an animation frame ran while the owner's frames were held back, so this test proves nothing"
+        )
     for page in (owner, editor):
         _wait_for_reactflow_ready(page)
         page.evaluate("() => window.__curio_reactFlow.setViewport({x: 100, y: 200, zoom: 1})")
     start = _position(editor, CODE_NODE)
+    owner_start = _position(owner, CODE_NODE)
     box = node_locator(owner, CODE_NODE).bounding_box()
     x, y = box["x"] + box["width"] / 2, box["y"] + 15
     owner.mouse.move(x, y)
+    if frames == "held":
+        try:
+            owner.wait_for_function("() => window.__curioTestFrameRan === true", polling=100, timeout=10000)
+        except Exception as exc:  # noqa: BLE001
+            raise AssertionError("the owner's pointer move did not let her frames go") from exc
+    # The press lands where the box was read: on her node's header, a place
+    # the node drags from.
+    pressed = owner.evaluate(_PRESS_POINT_JS, [x, y, CODE_NODE])
+    assert pressed["header"] and pressed["drags"], (
+        f"the owner's press at {x:.0f}, {y:.0f} is on {pressed['hit']}, not on a part of her node's header "
+        f"it drags from: the canvas shows {pressed['viewport']}, and the node's box was read as {box}"
+    )
     owner.mouse.down()
     for i in range(1, 21):
         owner.mouse.move(x + 8 * i, y + 4 * i)
         owner.wait_for_timeout(20)
     try:
-        editor.wait_for_function(
-            """([id, start]) => {
-                const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
-                return !!node && Math.hypot(node.position.x - start[0], node.position.y - start[1]) > 60;
-            }""",
-            arg=[CODE_NODE, start], timeout=10000,
-        )
+        owner.wait_for_function(_MOVED_JS, arg=[CODE_NODE, owner_start, 60], timeout=10000)
+    except Exception as exc:  # noqa: BLE001
+        raise AssertionError(
+            f"the owner's drag did not move her own node: {_position(owner, CODE_NODE)}, from {owner_start}"
+        ) from exc
+    try:
+        editor.wait_for_function(_MOVED_JS, arg=[CODE_NODE, start, 60], timeout=10000)
     except Exception as exc:  # noqa: BLE001
         raise AssertionError(f"the owner's drag did not show in the editor's tab while it went: {_position(editor, CODE_NODE)}") from exc
     owner.mouse.up()
