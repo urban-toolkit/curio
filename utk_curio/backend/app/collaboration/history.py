@@ -1503,7 +1503,8 @@ def put_back(user_key: str, project_id: str, point_id: str, by: dict) -> dict:
     it, but for what :data:`KEPT_BY_A_PUT_BACK` names, for every tab, and a
     version named after it, its parent the version put back. ``refused``: the
     nodes whose code someone changed while it was being put back, which keep
-    theirs."""
+    theirs. ``removed``: the nodes it took out, which the tab that asked for
+    it tells the others it removed (``presence.noteRemoval``)."""
     folder = _folder(user_key, project_id)
     point = next((p for p in _read_points(folder) if p["id"] == point_id and _listed(p)), None)
     if point is None:
@@ -1515,6 +1516,9 @@ def put_back(user_key: str, project_id: str, point_id: str, by: dict) -> dict:
     if spec is None:
         raise HistoryError("This dataflow has no saved spec.", 404)
     flow = spec.get("dataflow") if isinstance(spec.get("dataflow"), dict) else {}
+    back = {node.get("id") for node in target.get("nodes") or [] if isinstance(node, dict)}
+    removed = [node.get("id") for node in flow.get("nodes") or []
+               if isinstance(node, dict) and node.get("id") not in back]
     kept = doc_mapping.OUTSIDE_THE_DOC | KEPT_BY_A_PUT_BACK
     spec["dataflow"] = {**{name: value for name, value in target.items() if name not in kept},
                         **{name: value for name, value in flow.items() if name in kept}}
@@ -1525,7 +1529,7 @@ def put_back(user_key: str, project_id: str, point_id: str, by: dict) -> dict:
         with _held(user_key, project_id) as entry:
             doc_id, day, end = dataflow_docs.log_end(entry)
             _add(entry, {**made, "doc": doc_id, "day": day, "start": end, "end": end})
-    return {"refused": list(written.refused)}
+    return {"refused": list(written.refused), "removed": removed if written.wrote else []}
 
 
 def write_code(user_key: str, project_id: str, by: dict, node_id: str, *, expect: str, code: str,
