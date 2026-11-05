@@ -54,6 +54,10 @@
         "The answer writes no Autark document for node sensors-map.",
         "The answer says the map cannot draw the sensors table because the table has no geometry column.",
         "The answer says the Air sensors node should return a GeoDataFrame with its active geometry set, points built from LONGITUDE and LATITUDE; a change to that node may do so."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "node.content.write", "node": "sensors-map", "absent": true},
+        {"assertion": 1, "kind": "delegate", "capability": "node.content.generate", "node": "sensors-map", "absent": true}
       ]
     }
   ],

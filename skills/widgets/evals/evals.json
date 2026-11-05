@@ -62,7 +62,11 @@
         "The answer changes neither loader's code: no node.content.write on f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4 or a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5."
       ],
       "checks": [
-        {"assertion": 1, "kind": "tool", "tool": "node.settings.write", "node": "c7246f52-d977-5353-9951-bcb855d2ebda", "args": {"widgets.timeline": "2050 - 2080"}}
+        {"assertion": 1, "kind": "tool", "tool": "node.settings.write", "node": "c7246f52-d977-5353-9951-bcb855d2ebda", "args": {"widgets.timeline": "2050 - 2080"}},
+        {"assertion": 3, "kind": "tool", "tool": "node.content.write", "node": "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4", "absent": true},
+        {"assertion": 3, "kind": "tool", "tool": "node.content.write", "node": "a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5", "absent": true},
+        {"assertion": 3, "kind": "delegate", "capability": "node.content.generate", "node": "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4", "absent": true},
+        {"assertion": 3, "kind": "delegate", "capability": "node.content.generate", "node": "a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5", "absent": true}
       ]
     }
   ],

@@ -45,7 +45,12 @@
         "The answer creates no new node and no new content for the pool."
       ],
       "checks": [
-        {"assertion": 2, "kind": "tool", "tool": "node.settings.write", "args": {"dataPool.betweenCharts": "MERGE_AND"}}
+        {"assertion": 1, "kind": "tool", "tool": "node.settings.write", "node": "ia-pool"},
+        {"assertion": 2, "kind": "tool", "tool": "node.settings.write", "args": {"dataPool.betweenCharts": "MERGE_AND"}},
+        {"assertion": 3, "kind": "tool", "tool": "node.create", "absent": true},
+        {"assertion": 3, "kind": "tool", "tool": "dataflow.plan.write", "absent": true},
+        {"assertion": 3, "kind": "tool", "tool": "node.content.write", "node": "ia-pool", "absent": true},
+        {"assertion": 3, "kind": "delegate", "capability": "node.content.generate", "node": "ia-pool", "absent": true}
       ]
     },
     {
