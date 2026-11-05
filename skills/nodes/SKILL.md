@@ -20,7 +20,7 @@ A node's "type" is the id of the template it was made from. A run that can place
 
 {{builtin.nodes}}
 
-A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to in "targetHandle": {{inputs.handles}}, circle 0 first.
+A node that accepts more than one connection takes each one on its own input circle, numbered from 0 in the order they were connected. An edge names the circle it connects to, in a plan in "toHandle" and in the dataflow in "targetHandle": {{inputs.handles}}, circle 0 first.
 
 A {{template.label:curio.builtin/data-pool}} node is represented to the user as a table.
 
@@ -30,12 +30,12 @@ A {{template.label:curio.builtin/data-loading}} node's python code brings data i
 
 A {{template.label:curio.builtin/data-transformation}} node's python code reads its inputs and returns them transformed.
 
-A {{template.label:curio.builtin/data-summary}} node starts with python code that returns a summary of the table on its input, its shape, dtypes, missing values and describe(), and shows that summary as tables.
+A {{template.label:curio.builtin/data-summary}} node starts with python code that returns a summary of the table on its input in the keys "shape", "dtypes", "missing" and "describe", and shows only those keys, "missing" only when a column has missing values.
 
 A {{template.label:curio.builtin/js-computation}} node runs JavaScript in Node.js: each input circle is its own variable, input_0, input_1 and so on, and `return` passes its output on.
 
-A {{template.label:curio.builtin/data-export}} node's python code writes the data on its input to a file, which its Download button saves; a run writes the file and never downloads it. It starts with a text widget named file_name and the code `return curio_export(input_0, {{widgets.reference:file_name}})`, which writes a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF and anything else as JSON, and returns the file's name. Code that writes another format writes it to `curio_output_file("<name>")` and returns that path.
+A {{template.label:curio.builtin/data-export}} node's python code writes the data on its input to a file, which its Download button saves; a run writes the file and never downloads it. It starts with a text widget named file_name and the code `return curio_export(input_0, {{widgets.reference:file_name}})`, which writes a table as CSV, a GeoDataFrame as GeoJSON or a raster as GeoTIFF, and returns the file's name. Code that writes another format writes it to `curio_output_file("<name>")` and returns that path.
 
-A {{template.label:curio.builtin/spatial-join}} node holds no code: it pairs the rows of the GeoDataFrames on its two input circles whose shapes meet. A plan or a node.create gives a new one its operation and output in "spatialJoin", and one already on the canvas changes them through node.settings.write.
+A {{template.label:curio.builtin/spatial-join}} node holds no code: it pairs the rows of the GeoDataFrames on its two input circles whose shapes meet. A plan or a node.create gives a new one its operation and output in "spatialJoin", and one already on the canvas changes them through node.settings.write. Its output "pairs" is one row per pair, input_0's row with input_1's columns added ("<column>_right" when input_0 has the name); "counts" is input_1's rows, each with "point_count", its number of pairs.
 
 A {{template.label:curio.builtin/note}} node is a note on the canvas, a title and a short markdown text on a color of its own; it connects to nothing and runs nothing.
