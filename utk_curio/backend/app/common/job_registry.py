@@ -12,7 +12,9 @@ while so a reconnecting client can still replay them. What follows a job's end
 (``on_finish``, such as the next chat turn waiting for its attachment) runs once
 the job is no longer live. Jobs do not survive a restart: the registry is the
 source of truth for liveness and the event log only, and whatever owns the work
-persists its own record.
+persists its own record. A job can be registered before it runs
+(:meth:`JobRegistry.register`, then :meth:`JobRegistry.run`), so a record its
+caller writes in between already names a live job.
 """
 
 from __future__ import annotations
@@ -181,6 +183,26 @@ class JobRegistry:
         text. *on_finish* is called with the job on its thread once it is no
         longer live and its subscribers have its end, so it may start the next
         job of the same key."""
+        job = self.register(
+            user_key=user_key, project_id=project_id, key=key, kind=kind,
+            job_id=job_id, redact_values=redact_values,
+        )
+        return self.run(job, events, app_context=app_context, on_finish=on_finish)
+
+    def register(
+        self,
+        *,
+        user_key: str,
+        project_id: str,
+        key: str,
+        kind: str,
+        job_id: str,
+        redact_values: dict | None = None,
+    ) -> Job:
+        """Register *job_id* as the key's live job before anything runs it, so
+        the record its caller writes next names a job this process holds.
+        :meth:`run` then drives its events, and :meth:`fail` ends it when the
+        caller fails before that."""
         if kind not in self.kinds:
             raise ValueError(f"unknown job kind {kind!r}")
         self.check_can_start(user_key, key)
@@ -191,6 +213,26 @@ class JobRegistry:
         with self._lock:
             self._jobs[job_id] = job
             self._by_key[(user_key, key)] = job_id
+        return job
+
+    def fail(self, job: Job, message: str) -> None:
+        """End a registered *job* that never ran, its caller having failed
+        before :meth:`run`: a terminal ``error`` event, as a failed generator
+        ends with, and the key may start a job again."""
+        from utk_curio.common.redaction import redact
+
+        self.publish(job, ("error", (redact(message, job.redact_values) or "")[:300]))
+        self._end(job, "error")
+
+    def run(
+        self,
+        job: Job,
+        events: Iterator[tuple[str, Any]],
+        app_context: Callable | None = None,
+        on_finish: Callable[[Job], None] | None = None,
+    ) -> Job:
+        """Drive a registered *job*'s *events* on a daemon thread, as
+        :meth:`start` does."""
         if app_context is None:
             # The generator runs outside the request; give it the app context
             # the request had (config, extensions) when one is available.
@@ -203,7 +245,7 @@ class JobRegistry:
                 app_context = None
         thread = threading.Thread(
             target=self._run, args=(job, events, app_context, on_finish), daemon=True,
-            name=f"{self.name}-job-{kind}-{job_id[:8]}",
+            name=f"{self.name}-job-{job.kind}-{job.job_id[:8]}",
         )
         job.thread = thread
         thread.start()
@@ -227,19 +269,23 @@ class JobRegistry:
             self.publish(job, ("error", f"job failed: {(redact(str(exc), job.redact_values) or '')[:300]}"))
             status = "error"
         finally:
-            with job.lock:
-                job.status = status
-                job.finished_at = time.time()
-                job.heartbeat_at = job.finished_at
-                for q in job.subscribers:
-                    q.put(_SENTINEL)
-                job.subscribers.clear()
+            self._end(job, status)
             if on_finish is not None:
                 try:
                     on_finish(job)
                 except Exception:  # what follows a job never takes its thread down unlogged
                     log.error("%s job %s (%s): what follows its end failed:\n%s", self.name,
                               job.job_id, job.kind, traceback.format_exc())
+
+    @staticmethod
+    def _end(job: Job, status: str) -> None:
+        with job.lock:
+            job.status = status
+            job.finished_at = time.time()
+            job.heartbeat_at = job.finished_at
+            for q in job.subscribers:
+                q.put(_SENTINEL)
+            job.subscribers.clear()
 
     @staticmethod
     def publish(job: Job, item: tuple[str, Any]) -> None:
