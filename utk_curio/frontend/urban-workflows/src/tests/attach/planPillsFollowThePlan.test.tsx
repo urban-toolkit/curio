@@ -4,7 +4,9 @@
  * nodeRuns are keyed by node id, and the server's answer sorts those keys, so
  * the order they come in says nothing of the plan. A node the plan does not
  * list, one an earlier plan placed, follows the plan's nodes in the canvas's
- * order, and a node that is no longer on the canvas comes last.
+ * order, and a node that is no longer on the canvas comes last. With several
+ * nodes awaiting a source, their Open Dataset Finder buttons read in the
+ * pills' order too, whatever order the live batch's remedies come in.
  */
 import React from "react";
 import { render, screen, within } from "@testing-library/react";
@@ -34,7 +36,7 @@ jest.mock("../../providers/FlowProvider", () => ({
 }));
 
 import { AgentBuilderStrip } from "../../components/agents/attach/AgentBuilderStrip";
-import type { AgentAttachment } from "../../services/agents";
+import type { AgentAttachment, AgentRemedy } from "../../services/agents";
 
 /** The Dataflow Builder after its plan landed: the plan's refs in its order
  *  (`appliedRefs`), each with the node it placed, as the server sends them. */
@@ -81,9 +83,16 @@ function pillNames(): Array<string | null | undefined> {
     .map((pill) => pill.firstElementChild?.textContent);
 }
 
-function renderStrip(value: AgentAttachment) {
-  render(<AgentBuilderStrip attachment={value} onSolve={jest.fn()} onComposePrompt={jest.fn()} />);
+function renderStrip(value: AgentAttachment, props: Partial<React.ComponentProps<typeof AgentBuilderStrip>> = {}) {
+  render(<AgentBuilderStrip attachment={value} onSolve={jest.fn()} onComposePrompt={jest.fn()} {...props} />);
 }
+
+/** A node awaiting a source: its own Dataset Finder holds the candidates. */
+const awaitingSource = (nodeId: string): AgentRemedy => ({
+  kind: "dataset-selection",
+  attachmentId: `finder-${nodeId}`,
+  nodeId,
+});
 
 test("the pills list the plan's nodes in the plan's order, whatever order nodeRuns come in", () => {
   renderStrip(
@@ -117,4 +126,29 @@ test("a node the plan does not list follows the plan's, in the canvas's order, a
     GONE_FIRST.slice(0, 8),
     GONE_LAST.slice(0, 8),
   ]);
+});
+
+test("the Open Dataset Finder buttons of the nodes awaiting a source read in the pills' order", () => {
+  renderStrip(
+    attachment(
+      [["streets", STREETS], ["grid", GRID], ["buildings", BUILDINGS]],
+      { [GRID]: "pending", [BUILDINGS]: "pending", [STREETS]: "pending" },
+    ),
+    {
+      // The live batch's remedies, keyed in yet another order.
+      solveRemedies: {
+        [BUILDINGS]: awaitingSource(BUILDINGS),
+        [STREETS]: awaitingSource(STREETS),
+        [GRID]: awaitingSource(GRID),
+      },
+      onOpenChat: jest.fn(),
+      agentNameOf: () => "Dataset Finder",
+    },
+  );
+  const plan = ["Load streets", "Make open-ground grid", "Load existing buildings"];
+  const group = screen.getByRole("group", { name: "Nodes awaiting a dataset selection" });
+  expect(within(group).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual(
+    plan.map((name) => `Open Dataset Finder for ${name}`),
+  );
+  expect(pillNames()).toEqual(plan);
 });
