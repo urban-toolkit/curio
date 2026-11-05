@@ -69,7 +69,7 @@ describe("DataflowThumbnail without a highlight", () => {
     const barColours = [
       "var(--curio-category-data-fg)",
       "var(--curio-category-computation-fg)",
-      "var(--curio-category-data-fg)",
+      "var(--curio-category-computation-fg)",
       "var(--curio-category-vis-fg)",
     ];
     expect(boxes).toHaveLength(2 * barColours.length);

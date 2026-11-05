@@ -15,7 +15,6 @@ import {
   faChartLine,
   faCity,
   faCube,
-  faDatabase,
   faDownload,
   faHandPointer,
   faNoteSticky,
@@ -52,7 +51,6 @@ export function resolveIconRef(ref: string | null | undefined): IconDefinition {
 // The icons curio.builtin@1's templates name, and the cube.
 registerIcon('fa-solid:upload', faUpload);
 registerIcon('fa-solid:download', faDownload);
-registerIcon('fa-solid:database', faDatabase);
 registerIcon('fa-solid:server', faServer);
 registerIcon('fa-solid:rectangle-list', faRectangleList);
 registerIcon('fa-solid:chart-line', faChartLine);

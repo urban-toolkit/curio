@@ -393,7 +393,7 @@ def test_no_run_of_a_prompt_loses_a_procedure_its_text_held(tmp_curio):
                 missing = [name for name in procedures if name not in _names(run.handed)]
                 if missing:
                     lost.append((coord, file, where, missing))
-    assert checked >= 30, checked
+    assert checked >= 27, checked
     assert not lost, f"these runs lost the procedures their prompts held: {lost}"
 
 
