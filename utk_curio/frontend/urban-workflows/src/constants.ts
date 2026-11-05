@@ -25,7 +25,6 @@ export const DEFAULT_WORKFLOW_NAME = "DefaultDataflow";
 export enum NodeType {
   DATA_LOADING = "curio.builtin/data-loading",
   DATA_EXPORT = "curio.builtin/data-export",
-  DATA_TRANSFORMATION = "curio.builtin/data-transformation",
   COMPUTATION_ANALYSIS = "curio.builtin/computation-analysis",
   DATA_SUMMARY = "curio.builtin/data-summary",
   VIS_VEGA = "curio.builtin/vis-vega",

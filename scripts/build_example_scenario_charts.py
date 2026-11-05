@@ -5,7 +5,7 @@ Each table illustrates one way to chart a comparison of scenarios, and each is
 a CSV dataset of its own in the Data Catalog, ``datasets/data.curio.example-*@1``.
 Every row names its scenario in the ``case`` column. The test dataflow
 ``docs/examples/dataflows/scenario-comparison-charts.json`` keeps each
-scenario's rows in a Data Transformation node, and charts each table's
+scenario's rows in a Python Computation node, and charts each table's
 scenarios with a chart of the Vega-Lite package that takes each scenario's
 node on an input of its own.
 

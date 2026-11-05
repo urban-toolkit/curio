@@ -121,40 +121,6 @@
       "opensOnControls": true
     },
     {
-      "category": "data",
-      "description": "The Data Transformation box is responsible for performing any kinds of transformations to the data.",
-      "editor": "code",
-      "engine": "python",
-      "hasCode": true,
-      "hasGrammar": false,
-      "hasWidgets": true,
-      "iconRef": "fa-solid:database",
-      "id": "data-transformation",
-      "inputPorts": [
-        {
-          "cardinality": "[1,n]",
-          "types": [
-            "DATAFRAME",
-            "GEODATAFRAME",
-            "RASTER"
-          ]
-        }
-      ],
-      "label": "Data Transformation",
-      "behavior": "code",
-      "outputPorts": [
-        {
-          "cardinality": "[1,2]",
-          "types": [
-            "DATAFRAME",
-            "GEODATAFRAME",
-            "RASTER"
-          ]
-        }
-      ],
-      "paletteOrder": 3
-    },
-    {
       "bidirectional": true,
       "category": "data",
       "description": "Shows its input as a table and passes the rows on to every node it feeds, marking in an interacted column the rows selected in the views linked to it by interaction edges. Linked to another Data Pool, it passes that pool the marks of the rows its linked column names.",

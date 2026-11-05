@@ -320,8 +320,8 @@ export const useColumnFilterBehavior: NodeBehaviorHook = (data, nodeState) => {
   } else if (!frame) {
     body = (
       <span style={S.hint}>
-        Connect a DataFrame upstream and run that node. Any Data Loading or Data
-        Transformation node works.
+        Connect a DataFrame upstream and run that node. Any Data Loading or Python
+        Computation node works.
       </span>
     );
   } else if (numeric.length === 0) {

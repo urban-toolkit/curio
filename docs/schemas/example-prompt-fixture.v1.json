@@ -63,7 +63,7 @@
       "type": "string",
       "minLength": 40,
       "maxLength": 4000,
-      "description": "What a person would type. Must leak no implementation: no node or edge id, no canonical template id, no line of node content, no plan-grammar token, no JSON. Human node-kind names (\"Data Transformation\", \"Vega-Lite\") are fine -- the walkthroughs use them."
+      "description": "What a person would type. Must leak no implementation: no node or edge id, no canonical template id, no line of node content, no plan-grammar token, no JSON. Human node-kind names (\"Python Computation\", \"Vega-Lite\") are fine -- the walkthroughs use them."
     },
     "context": {
       "type": [

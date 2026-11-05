@@ -272,7 +272,7 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   // What each circle holds, read circle by circle. Not `data.input`: that
   // names only the latest arrival, and when both inputs landed in one render
-  // (a Run All of example 10 handed a join the Data Transformation's polygons
+  // (a Run All of example 10 handed a join the Python Computation's polygons
   // and a Simple View's points 50 ms apart) this effect saw only the second,
   // and the join said it had nothing to join when the run asked it. A
   // circle's value is resolved once, when it changes.

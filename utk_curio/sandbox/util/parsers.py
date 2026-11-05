@@ -60,7 +60,7 @@ from utk_curio.sandbox.util.codec import (
 # I/O type checking — RETIRED (memo dev/120).
 #
 # ``checkIOType`` used to dispatch on the legacy uppercase node names
-# (DATA_LOADING / DATA_TRANSFORMATION / DATA_EXPORT) and refuse inputs and
+# (DATA_LOADING, DATA_EXPORT and the other code nodes) and refuse inputs and
 # outputs outside a hand-typed copy of the builtin manifest's port types. Every
 # caller has sent the namespaced id (``curio.builtin/data-loading``) since the
 # package registry landed, so the check has been a no-op on the browser path,
