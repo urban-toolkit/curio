@@ -11,7 +11,9 @@
   code. It reads the models from ``CURIO_EVAL_MODELS`` (a JSON list) and the
   endpoint from ``CURIO_EVAL_BASE_URL`` and ``CURIO_EVAL_API_KEY``.
   1. Each model is probed with one short request, and one that does not
-     answer is not run.
+     answer is not run. So is ``CURIO_EVAL_GRADER_MODEL``, the benchmark's
+     one grader for every model, when it names one: if it does not answer,
+     no model runs.
   2. Each model that answered runs ``agent_eval.py skills --scope``, side by
      side, into ``results/<model>/``. Each runs ``CURIO_EVAL_JOBS`` workers,
      a number or a JSON object of a number per model, 4 when unset.
@@ -59,6 +61,8 @@ ENV_MODELS = "CURIO_EVAL_MODELS"
 ENV_JOBS = "CURIO_EVAL_JOBS"
 ENV_BASE_URL = "CURIO_EVAL_BASE_URL"
 ENV_API_KEY = "CURIO_EVAL_API_KEY"
+#: The benchmark's one grader for every model, which the workers read (``skill_eval_worker.ENV_GRADER``).
+ENV_GRADER = "CURIO_EVAL_GRADER_MODEL"
 
 
 def _say(text: str) -> None:
@@ -223,13 +227,19 @@ def cmd_run(args) -> int:
     def scrub(text: str) -> str:
         return scrub_text(text, values=secrets)
 
-    _say(f"{len(models)} model(s): {', '.join(models)}; {len(scope.get('measures') or {})} skill(s) measured; "
-         f"{_limits()}")
-    with ThreadPoolExecutor(max_workers=len(models)) as pool:
-        probes = dict(zip(models, pool.map(lambda model: probe(model, base_url, api_key, scrub), models)))
+    grader = os.environ.get(ENV_GRADER, "").strip()
+    asked = models + ([grader] if grader and grader not in models else [])
+    _say(f"{len(models)} model(s): {', '.join(models)}; graded by {grader or 'each model itself'}; "
+         f"{len(scope.get('measures') or {})} skill(s) measured; {_limits()}")
+    with ThreadPoolExecutor(max_workers=len(asked)) as pool:
+        probes = dict(zip(asked, pool.map(lambda model: probe(model, base_url, api_key, scrub), asked)))
     for model, answer in probes.items():
         _say(f"probe {model}: " + (f"answered in {answer['seconds']} s" if answer["ok"]
                                    else f"FAILED, {answer['error']}"))
+    if grader and not probes[grader]["ok"]:
+        # Every grade would fail: no model runs.
+        for model in models:
+            probes[model] = {"ok": False, "error": f"its grader, {grader}, did not answer its probe"}
 
     env = {key: value for key, value in os.environ.items() if key not in (ENV_MODELS, ENV_JOBS)}
     processes: dict[str, subprocess.Popen] = {}

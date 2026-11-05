@@ -12,6 +12,11 @@
         "Its spec uses \"mark\": \"geoshape\" and colors by the field accessibility as quantitative.",
         "The spec has no \"data\" field, and the answer creates no node that converts the GeoDataFrame (no shapely mapping, no x/y or longitude/latitude columns, no plain DataFrame).",
         "The spec writes no projection, or only {\"type\": \"identity\", \"reflectY\": true}; it writes no mercator, albersUsa or other projection for longitude and latitude, since the frame is in EPSG:3395 metres."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "node-added", "type": "curio.builtin/vis-vega", "count": 1},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"mark\"\\s*:\\s*(?:\\{[^{}]*\"type\"\\s*:\\s*)?\"geoshape\""},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"color\"\\s*:\\s*\\{(?=(?:[^{}]|\\{[^{}]*\\})*\"field\"\\s*:\\s*\"accessibility\")(?=(?:[^{}]|\\{[^{}]*\\})*\"type\"\\s*:\\s*\"quantitative\")"}
       ]
     },
     {
@@ -35,6 +40,13 @@
         "The layer that draws the centroids names their column: \"shape\": {\"field\": \"centroid\", \"type\": \"geojson\"}.",
         "The layer that draws the areas colors by roofs as quantitative.",
         "The centroids are not drawn from longitude and latitude fields or with x and y encodings, and no node is added to make such columns."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "spec", "node": "zip-map", "path": "layer.1"},
+        {"assertion": 1, "kind": "spec", "node": "zip-map", "path": "layer.2", "absent": true},
+        {"assertion": 1, "kind": "code", "node": "zip-map", "pattern": "(?s:\"geoshape\".*\"geoshape\")"},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"shape\"\\s*:\\s*\\{(?=(?:[^{}]|\\{[^{}]*\\})*\"field\"\\s*:\\s*\"centroid\")(?=(?:[^{}]|\\{[^{}]*\\})*\"type\"\\s*:\\s*\"geojson\")"},
+        {"assertion": 3, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"color\"\\s*:\\s*\\{(?=(?:[^{}]|\\{[^{}]*\\})*\"field\"\\s*:\\s*\"roofs\")(?=(?:[^{}]|\\{[^{}]*\\})*\"type\"\\s*:\\s*\"quantitative\")"}
       ]
     }
   ],

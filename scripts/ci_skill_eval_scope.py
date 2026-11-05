@@ -78,7 +78,7 @@ AGENT_PATHS = (
     re.compile(r"^agents/"),
     re.compile(r"^skills/[^/]+$"),
     re.compile(r"^utk_curio/backend/app/agents/"),
-    re.compile(r"^utk_curio/tools/(agent_eval|skill_eval_[a-z_]+)\.py$"),
+    re.compile(r"^utk_curio/tools/(agent_eval|skill_eval_[a-z_]+|skill_benchmark)\.py$"),
     re.compile(r"^packages/[^/]+/manifest\.json$"),
     re.compile(r"^docs/schemas/trill\.v1\.json$"),
     re.compile(r"^scripts/(ci_skill_eval[a-z_]*|skill_eval[a-z_]*)\.(py|json)$"),

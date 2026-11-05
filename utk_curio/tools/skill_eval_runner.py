@@ -16,7 +16,9 @@ writes, under ``--out``, one folder per run of the tool:
   dataflow and the installs it asked for), ``transcript.json``,
   ``timing.json``, ``grading.json`` and ``run.json``, and
   ``<skill>/benchmark.json``;
-- ``summary.json`` and ``summary.md``; ``logs/``, each worker's warnings.
+- ``summary.json`` and ``summary.md``; ``benchmark.json``, the run scored as
+  the skills benchmark scores it (``agents/evaluation/benchmark.py``);
+  ``logs/``, each worker's warnings.
 
 The endpoint is read from ``CURIO_EVAL_BASE_URL``, ``CURIO_EVAL_API_KEY`` and
 ``CURIO_EVAL_MODEL``, and handed to the workers in their environment, never
@@ -48,7 +50,8 @@ from pathlib import Path
 
 from utk_curio import shipped
 from utk_curio.backend.app.agents.domain import skills as skill_format
-from utk_curio.backend.app.agents.evaluation import skill_evals
+from utk_curio.backend.app.agents.evaluation import benchmark, skill_evals
+from utk_curio.tools import skill_benchmark as benchmark_command
 from utk_curio.backend.app.agents.evaluation.report import scrub
 
 #: The worker each job runs.
@@ -58,6 +61,8 @@ _NOT_INHERITED = ("CURIO_TESTING", "CURIO_DEV", "CURIO_NO_AUTH", "CURIO_STATE_DI
                   "CURIO_PACKAGES_ROOT", "CURIO_SHARED_DATA")
 #: The record each run writes last, which marks it done.
 RECORD = "run.json"
+#: The variable naming one grader for every model (``skill_eval_worker.ENV_GRADER``).
+GRADER_VARIABLE = "CURIO_EVAL_GRADER_MODEL"
 
 
 def add_parser(sub) -> None:
@@ -353,6 +358,9 @@ def run(args) -> int:
             "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "skills": {s.name: _digest(s.folder / skill_format.SKILL_FILE) for s in chosen},
             "isReleaseGate": False,
+            # The benchmark's set this run measured, and who graded it (benchmark.py).
+            "benchmarkVersion": benchmark.version(evals),
+            "grader": os.environ.get(GRADER_VARIABLE, "").strip() or endpoint.model,
         }
         if measured:
             meta["measures"] = {s.name: measured[s.name].as_dict() for s in chosen}
@@ -370,6 +378,7 @@ def run(args) -> int:
         workers.close()
     hours = (time.monotonic() - started) / 3600
     _report(folder, chosen, meta)
+    _write(folder / benchmark_command.BENCHMARK_FILE, benchmark.score(folder, {s.name: s for s in evals}))
     _say(f"wrote {folder / 'summary.md'} after {hours * 60:.1f} minutes")
     if args.pilot is not None:
         whole = skill_evals.plan(_selected(argparse.Namespace(**{**vars(args), "pilot": None}), evals),

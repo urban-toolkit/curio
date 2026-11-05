@@ -17,7 +17,9 @@ test case: ``agent``, the agent whose chat runs it (``<id>@<major>``);
 ``dataflow``, the dataflow its project starts as (a path in Curio's shipped
 folders, or in the skill's folder when it starts with ``evals/``); and
 ``target``, what the agent is attached to (``{"kind": "canvas"}``, the
-default, or ``{"kind": "node", "node": <id>}``).
+default, or ``{"kind": "node", "node": <id>}``). A test case may also hold
+``checks``: assertions decided from a run's own record, with no model
+(``checks.py``).
 
 ``agent_eval.py skills`` runs each trigger query and each test case three
 times (:data:`RUNS`):
@@ -53,6 +55,7 @@ from urllib.parse import urlsplit
 
 from utk_curio import shipped
 from utk_curio.backend.app.agents.domain import skills as skill_format
+from utk_curio.backend.app.agents.evaluation import checks as case_checks
 
 #: The file of a skill's ``evals/`` folder that holds its evaluations.
 EVALS_FILE = "evals.json"
@@ -121,6 +124,8 @@ class Case:
     expected_output: str
     assertions: tuple[str, ...]
     context: Context
+    #: The assertions its run's record decides, with no model (``checks.py``).
+    checks: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -232,10 +237,11 @@ def _case(raw, folder: Path, default: Context | None, seen: set, problems: list[
         problems.append(f"{where}: assertions must be a list of statements")
         assertions = []
     context = _context(raw, folder, default, where, problems)
+    found = case_checks.read(raw.get("checks"), len(assertions), where, problems)
     if context is None or not _text(raw.get("prompt")) or not _text(raw.get("expected_output")):
         return None
     return Case(id=case_id, prompt=raw["prompt"], expected_output=raw["expected_output"],
-                assertions=tuple(assertions), context=context)
+                assertions=tuple(assertions), context=context, checks=found)
 
 
 def _queries(raw, problems: list[str]) -> tuple[Query, ...]:

@@ -11,6 +11,9 @@
         "The answer makes one node.create of type curio.vega-lite/lollipops.",
         "The answer sets the chart's value widget to median.",
         "The answer tells the user to connect each scenario's Shadow over the ground node to an input circle of its own on the chart."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "node-added", "type": "curio.vega-lite/lollipops", "count": 1}
       ]
     },
     {
@@ -24,6 +27,10 @@
         "The plan sets the chart's x widget to rain_exposure and its y widget to wind_exposure.",
         "The plan wires c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36 and e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23 into the chart, one data edge from each.",
         "The plan adds no node that merges the two metrics tables before the chart."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "dataflow.plan.write"},
+        {"assertion": 1, "kind": "node-added", "type": "curio.vega-lite/points"}
       ]
     }
   ],
