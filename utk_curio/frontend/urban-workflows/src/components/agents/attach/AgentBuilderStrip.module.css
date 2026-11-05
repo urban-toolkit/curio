@@ -72,9 +72,8 @@
   background: var(--curio-card-bg);
 }
 
-.nodeId {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--curio-text-secondary);
+.nodeName {
+  color: var(--curio-text-primary);
 }
 
 .status_pending { color: var(--curio-text-secondary); }

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import type { AgentAttachment, AgentRemedy, AgentSolveWave } from "../../../services/agents";
 import { LlmConfigAction, remedyOf } from "../../llmConfigs/LlmConfigAction";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { nodeLabel } from "../../scenarios/scenarioLabels";
 import styles from "./AgentBuilderStrip.module.css";
 import { BatchActions } from "./builderStrip/BatchActions";
 import { MissingSpecialistReview } from "./builderStrip/MissingSpecialistReview";
@@ -104,8 +105,13 @@ export const AgentBuilderStrip: React.FC<{
   onCancelSimulate,
   simulationActivity,
 }) => {
-  const { playAllNodes, isRunActive: browserRunActive, serverRunActive } = useFlowContext();
+  const { playAllNodes, isRunActive: browserRunActive, serverRunActive, nodes } = useFlowContext();
   const isRunActive = browserRunActive || serverRunActive;
+  // Each plan node by the name its header shows, its title, else its
+  // template's label; its short id only when it is not on the canvas.
+  const flowNodes: Array<{ id: string; data?: unknown }> = Array.isArray(nodes) ? nodes : [];
+  const nodeNameOf = (nodeId: string): string =>
+    nodeLabel(flowNodes.find((node) => node.id === nodeId), nodeId);
   const [solving, setSolving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
@@ -275,6 +281,7 @@ export const AgentBuilderStrip: React.FC<{
           nodeSolving={nodeSolving}
           onSolveNode={onSolveNode ? (nodeId) => void solveOne(nodeId) : undefined}
           agentNameOf={agentNameOf}
+          nodeNameOf={nodeNameOf}
         />
       ) : null}
       {solveRunning && (solvePass ?? 0) > 0 ? (
@@ -294,6 +301,7 @@ export const AgentBuilderStrip: React.FC<{
         selectionRemedies={selectionRemediesOf(solveRemedies)}
         onOpenChat={onOpenChat}
         agentNameOf={agentNameOf}
+        nodeNameOf={nodeNameOf}
       />
       {installReview && (onApplyProposal || onDismissProposal) ? (
         <MissingSpecialistReview
