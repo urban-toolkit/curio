@@ -9,7 +9,8 @@
  * editors, and moves a watcher's view to the node it is writing. The Activity
  * list says when an agent joined, who asked it, and what it did as it left.
  * An agent's `editing` can list several nodes, which the dock and the removal
- * question (`presence.editorsOf`) both read.
+ * question (`presence.editorsOf`) both read. Each state shows as the page
+ * handles it, even when a busy page handles two back to back.
  *
  * The awareness is y-protocols' own, fed the updates the server would relay.
  */
@@ -89,6 +90,31 @@ let mine: Awareness;
 /** Another peer's state reaches this tab, as the server relays it. */
 function relay(theirs: Awareness) {
   act(() => applyAwarenessUpdate(mine, encodeAwarenessUpdate(theirs, [theirs.clientID]), "server"));
+}
+
+/** *states* of *theirs* reach this tab one after another, as a busy page
+ *  handles the server's messages: each in a task of its own, back to back,
+ *  with only microtasks between, never the task React draws a change of
+ *  default priority in (CI run 41954734007). Outside act(), as the page has
+ *  it; what React put off is drawn at the end. */
+async function relayedBackToBack(theirs: Awareness, states: Array<Record<string, unknown>>) {
+  const scope = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+  const actEnvironment = scope.IS_REACT_ACT_ENVIRONMENT;
+  scope.IS_REACT_ACT_ENVIRONMENT = false;
+  try {
+    for (const state of states) {
+      theirs.setLocalState(state);
+      applyAwarenessUpdate(mine, encodeAwarenessUpdate(theirs, [theirs.clientID]), "server");
+      // The microtasks the message leaves: React's sync renders, and the
+      // records of what changed on the page.
+      for (let turn = 0; turn < 5; turn += 1) await Promise.resolve();
+    }
+  } finally {
+    scope.IS_REACT_ACT_ENVIRONMENT = actEnvironment;
+  }
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 /** Someone else, a tab or an agent at work, is in the room with *state*. */
@@ -340,5 +366,37 @@ describe("an agent at work in the canvas's dock", () => {
     agent.setLocalStateField("editing", ["n-load"]);
     relay(agent);
     expect(samePeople(before, peopleOf(mine, own))).toBe(false);
+  });
+
+  test("its chip names the node it writes while it writes it, though a busy page handles both its states before it draws again", async () => {
+    // Ana's tab in CI run 41954734007: the agent's chip never said it was
+    // editing the first node it wrote.
+    const agent = joins({ user: NODE_BUILDER, skills: ["map-edits"], editing: null, writes: null });
+    dock({ onSelect: jest.fn() });
+    // What the agent's chip says, each time it changes.
+    const said: Array<string | null> = [];
+    const record = () => {
+      const now = chipOf("agent-nb")?.getAttribute("aria-label") ?? null;
+      if (said[said.length - 1] !== now) said.push(now);
+    };
+    record();
+    const observer = new MutationObserver(record);
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+    try {
+      // Its state naming the node just before its write, then naming none a
+      // second after it (`agent_peers.Holding`).
+      await relayedBackToBack(agent, [
+        { user: NODE_BUILDER, skills: ["map-edits"], editing: "n-map", writes: "code" },
+        { user: NODE_BUILDER, skills: ["map-edits"], editing: null, writes: null },
+      ]);
+    } finally {
+      observer.disconnect();
+    }
+
+    expect(said).toEqual([
+      "Node Builder (asked by Ana), using map-edits",
+      "Node Builder (asked by Ana), editing Map Editor, using map-edits",
+      "Node Builder (asked by Ana), using map-edits",
+    ]);
   });
 });
