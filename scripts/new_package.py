@@ -124,6 +124,29 @@ function sessionToken(): string {
   return hit ? decodeURIComponent(hit[1]) : '';
 }
 
+// Keep rows as an output with `window.curio.storeOutput`, which answers the
+// reference to hand on in their place, as every node hands on its output: a
+// Python or JavaScript node reads only a stored output, and a save records
+// only those. On a host that does not publish it, post them to `/storeOutput`.
+async function store(nodeId: string, value: { data: any; dataType: string }): Promise<any> {
+  const keep = typeof window !== 'undefined' ? (window as any).curio?.storeOutput : undefined;
+  if (typeof keep === 'function') return keep(nodeId, value);
+  const token = sessionToken();
+  const res = await fetch(`${BACKEND_URL}/storeOutput`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ value }),
+  });
+  const answer = await res.json().catch(() => ({}));
+  if (!res.ok || !answer?.output?.path) {
+    throw new Error(answer?.error || `Could not keep the output (HTTP ${res.status})`);
+  }
+  return answer.output;
+}
+
 // Payload shapes Curio recognises directly. Anything else is a generic
 // envelope wrapped around one of these, so peel until we reach a known type.
 const KNOWN_TYPES = new Set(['dataframe', 'geodataframe', 'outputs']);
@@ -148,12 +171,11 @@ function unwrap(value: any): any {
  * both:
  *
  *   { path: 'art-12', dataType: 'dataframe' }  a sandbox artifact reference,
- *                                              which is what every Python or
- *                                              JS node produces -> read it
- *                                              with `window.curio.fetchData`
- *   { data: {...},    dataType: 'dataframe' }  an inline payload, which is what
- *                                              another custom-UI node produces
- *                                              -> use it as-is
+ *                                              which is what every node
+ *                                              produces -> read it with
+ *                                              `window.curio.fetchData`
+ *   { data: {...},    dataType: 'dataframe' }  an inline payload -> use it
+ *                                              as-is
  */
 async function resolveInput(input: any): Promise<any> {
   if (input == null || input === '') return null;
@@ -208,16 +230,17 @@ export const __HOOK_NAME__: NodeBehaviorHook = (data, nodeState) => {
 
   const columns = columnNames(payload);
 
-  // Push a result downstream. `dataType` must match an output port type
-  // declared in manifest.json, lowercased.
-  const emit = useCallback(() => {
+  // Push a result downstream: keep it, then hand on the reference. `dataType`
+  // must match an output port type declared in manifest.json, lowercased.
+  const emit = useCallback(async () => {
     const frame = payload?.dataType === 'dataframe' ? payload.data : payload;
     if (!frame || !column) return;
     try {
-      data.outputCallback(data.nodeId, {
+      const stored = await store(data.nodeId, {
         data: { [column]: frame[column] },
         dataType: 'dataframe',
       });
+      data.outputCallback(data.nodeId, stored);
       nodeState.setOutput({ code: 'success', content: '' });
     } catch (e: any) {
       nodeState.setOutput({ code: 'error', content: e.message || String(e) });

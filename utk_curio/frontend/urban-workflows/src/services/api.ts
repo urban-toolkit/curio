@@ -2,6 +2,7 @@ import { getToken } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
 import { embeddedArtifact, EmbeddedEnvelope, embeddedRaster, EmbeddedRaster } from "../standalone/dashboardPayload";
 import { dashboardRunRead } from "./runs/dashboardRunFiles";
+import { askedOfPage, keepPageResult } from "./runs/dashboardRunSteps";
 import { dataflowRead } from "./dataflowReads";
 
 export const ARROW_IPC_MIME = "application/vnd.apache.arrow.stream";
@@ -174,6 +175,37 @@ export async function fetchData(fileName: string) {
         console.error("Error:", error instanceof Error ? error.message : String(error));
         throw error;
     }
+}
+
+/** Rows a node made in the browser, as it hands them on. */
+export interface NodeRows {
+    dataType: "dataframe" | "geodataframe";
+    data: unknown;
+}
+
+/**
+ * Keep the rows *nodeId* made in the browser as an output, and answer the
+ * reference to hand on in their place, `{path, dataType}`, as a run's output
+ * is: a Python or JavaScript node reads only a stored output, and a save
+ * records only those. A dashboard viewer's run that asked this page for the
+ * node keeps them for this page instead (`keepPageResult`).
+ */
+export async function storeOutput(nodeId: string, value: NodeRows): Promise<{ path: string; dataType: string }> {
+    if (askedOfPage(nodeId)) return keepPageResult(nodeId, value);
+    const token = getToken();
+    const response = await fetch(`${backendUrl()}/storeOutput`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ value }),
+    });
+    const answer = await response.json().catch(() => ({}));
+    if (!response.ok || typeof answer?.output?.path !== "string" || !answer.output.path) {
+        throw new Error(answer?.error || `Could not keep the output (HTTP ${response.status})`);
+    }
+    return answer.output;
 }
 
 /**

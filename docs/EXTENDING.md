@@ -529,7 +529,9 @@ The smallest possible package adds one template plus its behavior hook. Use this
    ```tsx
    import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
    export const useMyNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
-     // Read `data.input` from upstream, push downstream via `data.outputCallback`.
+     // Read `data.input` from upstream. To push rows downstream, keep them with
+     //   `window.curio.storeOutput(data.nodeId, { data, dataType })` and hand the
+     //   reference it answers to `data.outputCallback`.
      // Return `{ contentComponent: <YourUI /> }` to render a body, or omit for
      //   icon-only nodes (also set `containerStyle.noContent: true` in the
      //   manifest; see §4.4 for the spatial-join hook).
