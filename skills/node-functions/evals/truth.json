@@ -109,7 +109,7 @@
           "nodes": {
             "added": [
               {
-                "content": "import geopandas as gpd\n\n# The trees and the CTA 'L' stations of the Chicago Loop Layers dataset, each\n# file loaded on its own.\ntrees = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\")\nstations = gpd.read_file(\"cta_stations.geojson\")\n# The trees within 50 m of a station, measured in metres in the trees' UTM zone.\nutm = trees.estimate_utm_crs()\nnear = stations.to_crs(utm).buffer(50).union_all()\nclose = trees[trees.to_crs(utm).within(near)]\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nclose.metadata = {\"layerType\": \"points\"}\nreturn close\n",
+                "content": "import geopandas as gpd\n\n# The trees and the CTA 'L' stations of the Chicago Loop Layers dataset, each\n# file loaded on its own.\ntrees = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\")\nstations = gpd.read_file(\"cta_stations.geojson\")\n# The trees within 50 m of a station, measured in metres in the trees' UTM zone.\nutm = trees.estimate_utm_crs()\nnear = stations.to_crs(utm).buffer(50).union_all()\nclose = trees[trees.to_crs(utm).within(near)]\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nclose.metadata = {\"layerType\": \"points\"}\nreturn close",
                 "goal": "Load the Chicago Loop Layers dataset's trees and CTA 'L' stations and keep the trees within 50 m of a station.",
                 "id": "23c5d956-b04c-47fb-b6bd-8936609bb3d9",
                 "metadata": {
@@ -156,7 +156,7 @@
             "nodeType": "curio.builtin/data-loading",
             "title": "Trees near 'L' stations",
             "goal": "Load the Chicago Loop Layers dataset's trees and CTA 'L' stations and keep the trees within 50 m of a station.",
-            "content": "# The trees and the CTA 'L' stations of the Chicago Loop Layers dataset, each\n# file loaded on its own.\ntrees = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\")\nstations = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"cta_stations.geojson\")\n# The trees within 50 m of a station, measured in metres in the trees' UTM zone.\nutm = trees.estimate_utm_crs()\nnear = stations.to_crs(utm).buffer(50).union_all()\nclose = trees[trees.to_crs(utm).within(near)]\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nclose.metadata = {\"layerType\": \"points\"}\nreturn close\n"
+            "content": "import geopandas as gpd\n\n# The trees and the CTA 'L' stations of the Chicago Loop Layers dataset, each\n# file loaded on its own.\ntrees = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\")\nstations = gpd.read_file(\"cta_stations.geojson\")\n# The trees within 50 m of a station, measured in metres in the trees' UTM zone.\nutm = trees.estimate_utm_crs()\nnear = stations.to_crs(utm).buffer(50).union_all()\nclose = trees[trees.to_crs(utm).within(near)]\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nclose.metadata = {\"layerType\": \"points\"}\nreturn close\n"
           }
         }
       ]
@@ -349,7 +349,7 @@
           "nodes": {
             "added": [
               {
-                "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ghost-segmenter\")\nreturn curio_segment(photos, model, classes=[\"vegetation\", \"sky\"])\n",
+                "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ghost-segmenter\")\nreturn curio_segment(photos, model, classes=[\"vegetation\", \"sky\"])",
                 "goal": "Label the Lincoln Park street photos with the segmentation model and give each photo's share of vegetation and of sky, with its overlay.",
                 "id": "6c0e4336-3009-4e8c-8a5b-413af693af6d",
                 "title": "Vegetation and sky",
@@ -390,7 +390,7 @@
             "nodeType": "curio.builtin/computation-analysis",
             "title": "Vegetation and sky",
             "goal": "Label the Lincoln Park street photos with the segmentation model and give each photo's share of vegetation and of sky, with its overlay.",
-            "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nreturn curio_segment(photos, model, classes=[\"vegetation\", \"sky\"])\n"
+            "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ghost-segmenter\")\nreturn curio_segment(photos, model, classes=[\"vegetation\", \"sky\"])\n"
           }
         }
       ]

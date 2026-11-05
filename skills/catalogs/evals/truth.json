@@ -43,7 +43,7 @@
           "nodes": {
             "added": [
               {
-                "content": "import pandas as pd\n\n# Chicago's building footprints, from the city's data portal.\nreturn pd.read_csv(\"https://data.cityofchicago.org/api/views/hz9b-7nh8/rows.csv\")\n",
+                "content": "import pandas as pd\n\n# Chicago's building footprints, from the city's data portal.\nreturn pd.read_csv(\"https://data.cityofchicago.org/api/views/hz9b-7nh8/rows.csv\")",
                 "goal": "Load Chicago's building footprints from the city's data portal.",
                 "id": "0d7e3a6c-55a1-4d2e-9b8f-6c1a2e4f8b31",
                 "metadata": {

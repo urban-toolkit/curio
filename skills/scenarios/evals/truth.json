@@ -455,7 +455,7 @@
                 "changes": {
                   "content": {
                     "before": "import pandas as pd\n\nreal = [!! input_0 !!]\ntaller = [!! input_1 !!]\ncomparison = pd.DataFrame({\n    'scenario': ['Real heights', 'Twice as tall'],\n    'mean_shadow_m': [round(real['shadow_m'].mean(), 1), round(taller['shadow_m'].mean(), 1)],\n})\ncomparison.metadata = {'name': 'Mean shadow per scenario'}\nreturn comparison\n",
-                    "after": "import pandas as pd\n\nreal = [!! input_0 !!]\ntaller = [!! input_1 !!]\ncomparison = pd.DataFrame({\n    'scenario': ['Real heights', 'Twice as tall'],\n    'mean_shadow_m': [round(real['shadow_m'].mean(), 1), round(taller['shadow_m'].mean(), 1)],\n})\ncomparison.metadata = {'name': 'Mean shadow per scenario'}\ncomparison[\"color\"] = [!! scenario colors !!]\nreturn comparison\n"
+                    "after": "import pandas as pd\n\nreal = [!! input_0 !!]\ntaller = [!! input_1 !!]\ncomparison = pd.DataFrame({\n    'scenario': ['Real heights', 'Twice as tall'],\n    'mean_shadow_m': [round(real['shadow_m'].mean(), 1), round(taller['shadow_m'].mean(), 1)],\n})\ncomparison.metadata = {'name': 'Mean shadow per scenario'}\ncomparison[\"color\"] = [!! scenario colors !!]\nreturn comparison"
                   }
                 }
               }

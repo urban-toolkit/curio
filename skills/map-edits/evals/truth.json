@@ -95,7 +95,7 @@
                 "changes": {
                   "content": {
                     "before": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [], by_input=True)\n",
-                    "after": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"set\", \"layer\": \"table_osm_buildings\", \"where\": \"height > 60\", \"column\": \"height\", \"value\": 60},\n])\n"
+                    "after": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"set\", \"layer\": \"table_osm_buildings\", \"where\": \"height > 60\", \"column\": \"height\", \"value\": 60},\n])"
                   }
                 }
               }
@@ -222,7 +222,7 @@
                 "changes": {
                   "content": {
                     "before": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [], by_input=True)\n",
-                    "after": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"set\", \"layer\": \"table_osm_buildings\", \"ids\": [30311742], \"where\": \"building_id == 30311742 and osm_id == 245900117\", \"column\": \"height\", \"value\": 60},\n], by_input=True)\n"
+                    "after": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"set\", \"layer\": \"table_osm_buildings\", \"ids\": [30311742], \"where\": \"building_id == 30311742 and osm_id == 245900117\", \"column\": \"height\", \"value\": 60},\n], by_input=True)"
                   }
                 }
               }
@@ -579,7 +579,7 @@
                 "changes": {
                   "content": {
                     "before": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [], by_input=True)\n",
-                    "after": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"delete\", \"layer\": \"table_osm_parks\", \"where\": \"area < 10000\"},\n], by_input=True)\n"
+                    "after": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"delete\", \"layer\": \"table_osm_parks\", \"where\": \"area < 10000\"},\n], by_input=True)"
                   }
                 }
               }

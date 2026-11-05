@@ -109,7 +109,7 @@
                 "changes": {
                   "content": {
                     "before": "return input_0[\"VEGETATED_SQFT\"].mean()",
-                    "after": "picked = [!! selection picked_zips !!]\nreturn input_0[input_0[\"zip\"].isin(picked)][\"VEGETATED_SQFT\"].mean()\n"
+                    "after": "picked = [!! selection picked_zips !!]\nreturn input_0[input_0[\"zip\"].isin(picked)][\"VEGETATED_SQFT\"].mean()"
                   }
                 }
               }

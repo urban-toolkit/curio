@@ -107,7 +107,7 @@
           "nodes": {
             "added": [
               {
-                "content": "import pandas as pd\n\nreturn pd.read_csv(\"https://data.cityofchicago.org/api/views/8yq3-m6wp/rows.csv\")\n",
+                "content": "import pandas as pd\n\nreturn pd.read_csv(\"https://data.cityofchicago.org/api/views/8yq3-m6wp/rows.csv\")",
                 "goal": "Load the Chicago Energy Usage 2010 dataset from the Data Catalog.",
                 "id": "9a231e38-6ae0-47cc-b5b2-6d9daf374073",
                 "metadata": {
@@ -154,7 +154,7 @@
             "nodeType": "curio.builtin/data-loading",
             "title": "Chicago Energy Usage 2010",
             "goal": "Load the Chicago Energy Usage 2010 dataset from the Data Catalog.",
-            "content": "df = curio_load_data(\"data.cityofchicago.energy-usage-2010\")\nreturn df\n"
+            "content": "import pandas as pd\n\nreturn pd.read_csv(\"https://data.cityofchicago.org/api/views/8yq3-m6wp/rows.csv\")\n"
           }
         }
       ]
@@ -188,7 +188,7 @@
           "nodes": {
             "added": [
               {
-                "content": "import requests\n\napi_key = \"AbCdEf0123456789xyzXYZ-_\"\nurl = \"https://www.airnowapi.org/aq/observation/zipCode/current/\"\nreturn requests.get(url, params={\"format\": \"application/json\", \"zipCode\": \"60601\", \"API_KEY\": api_key}).json()\n",
+                "content": "import requests\n\napi_key = \"AbCdEf0123456789xyzXYZ-_\"\nurl = \"https://www.airnowapi.org/aq/observation/zipCode/current/\"\nreturn requests.get(url, params={\"format\": \"application/json\", \"zipCode\": \"60601\", \"API_KEY\": api_key}).json()",
                 "goal": "Pull today's air quality readings for Chicago from the AirNow API.",
                 "id": "4b8e2f1a-6c3d-4a5e-9f70-1d2c3b4a5e6f",
                 "metadata": {
@@ -348,7 +348,7 @@
           "nodes": {
             "added": [
               {
-                "content": "import pandas as pd\n\nreturn pd.read_csv(\"https://data.cityofchicago.org/api/views/hz9b-7nh8/rows.csv\")\n",
+                "content": "import pandas as pd\n\nreturn pd.read_csv(\"https://data.cityofchicago.org/api/views/hz9b-7nh8/rows.csv\")",
                 "goal": "Download Chicago's building footprints from the city's open data portal API.",
                 "id": "9a3c1e7b-2f4d-4b6a-8c0e-5d7f9a1b3c2e",
                 "metadata": {

@@ -178,7 +178,7 @@
           "nodes": {
             "added": [
               {
-                "content": "data = curio_load_data(\"data.cityofchicago.neighbourhoods\")\nreturn data\n",
+                "content": "data = curio_load_data(\"data.cityofchicago.neighbourhoods\")\nreturn data",
                 "goal": "Load the Chicago Neighborhoods boundaries through the node's data widget.",
                 "id": "2b339ca3-3a03-4b8b-a4d2-d71ad715861c",
                 "metadata": {
@@ -225,7 +225,7 @@
             "nodeType": "curio.builtin/data-loading",
             "title": "Chicago Neighborhoods",
             "goal": "Load the Chicago Neighborhoods boundaries through the node's data widget.",
-            "content": "data = curio_load_data([!! data !!])\nreturn data\n",
+            "content": "data = curio_load_data(\"data.cityofchicago.neighbourhoods\")\nreturn data\n",
             "widgets": [
               {
                 "name": "data",
