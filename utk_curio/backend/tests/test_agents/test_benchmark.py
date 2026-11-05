@@ -135,6 +135,40 @@ def test_a_run_s_record_is_read_from_its_folder_and_its_case_s_dataflow(tmp_path
     assert empty.calls == [] and empty.changed == {} and empty.reply == ""
 
 
+def test_a_call_that_names_no_node_is_on_the_node_the_agent_is_attached_to():
+    checks = _checks()
+    calls = [
+        {"tool": "node.settings.write", "status": "applied", "arguments": {"dataPool": {"betweenCharts": "MERGE_AND"}}},
+        {"tool": "node.content.write", "status": "refused"},
+        {"tool": "delegate", "capability": "node.content.generate", "status": "ok", "inputs": {"instruction": "A map."}},
+    ]
+    on_pool, on_canvas = checks.RunRecord(calls=calls, attached="pool"), checks.RunRecord(calls=calls)
+    write = _check("tool", tool="node.settings.write", node="pool")
+    assert checks.passes(write, on_pool)
+    assert not checks.passes(_check("tool", tool="node.settings.write", node="pool", absent=True), on_pool)
+    assert not checks.passes(write, on_canvas)
+    # The record holds no arguments of a call that landed nothing, so no node it was on.
+    assert not checks.passes(_check("tool", tool="node.content.write", status="refused", node="pool"), on_pool)
+    delegated = _check("delegate", capability="node.content.generate", node="pool")
+    assert checks.passes(delegated, on_pool)
+    assert not checks.passes(delegated, on_canvas)
+    # A delegation that names a nodeType writes the template of a new node.
+    new_node = checks.RunRecord(calls=[{"tool": "delegate", "capability": "node.content.generate", "status": "ok",
+                                        "inputs": {"nodeType": "curio.builtin/vis-vega"}}], attached="pool")
+    assert not checks.passes(delegated, new_node)
+
+
+def test_a_spec_check_reads_a_chip_outside_a_string_as_a_string():
+    checks = _checks()
+    content = ('{"data": {"values": [1]}, "encoding": {"color": '
+               '{"field": "scenario_name", "scale": [!! scenario colors !!]}}}')
+    run = checks.RunRecord(changed={"nodes": {"added": [
+        {"id": "chart", "type": "curio.builtin/vis-vega", "content": content}]}})
+    assert checks.passes(_check("spec", path="data"), run)
+    assert not checks.passes(_check("spec", path="data", absent=True), run)
+    assert checks.passes(_check("spec", path="encoding.color.scale", equals="[!! scenario colors !!]"), run)
+
+
 def _write_skill(folder: Path, cases: list[dict], queries: list[dict] | None = None) -> None:
     (folder / "evals").mkdir(parents=True)
     (folder / "SKILL.md").write_text(
@@ -277,6 +311,26 @@ def _scored_folder(tmp_path: Path):
             trigger["error"] = "the run answered 502: Connection error."
         _record(base / "triggers" / "q02" / f"run-{run}", trigger)
     return folder, evals
+
+
+def test_a_case_s_checks_read_the_node_its_agent_is_attached_to(tmp_path):
+    benchmark, skill_evals = _benchmark(), _skill_evals()
+    source = tmp_path / "skills" / "pool-joins"
+    _write_skill(source, [{**_case(1, ["It joins the charts' selections on the pool."],
+                                   [{"assertion": 1, "kind": "tool", "tool": "node.settings.write", "node": "pool"}]),
+                           "target": {"kind": "node", "node": "pool"}}])
+    evals = {"pool-joins": skill_evals.read(source)}
+    folder = tmp_path / "skills-20261104-000000"
+    folder.mkdir()
+    (folder / "run.json").write_text(json.dumps({"run": folder.name, "model": "measured-model"}), encoding="utf-8")
+    _record(folder / "pool-joins" / "eval-1" / "with_skill" / "run-1",
+            _task("pool-joins", 1, "with_skill", 1, [False]),
+            calls=[{"tool": "node.settings.write", "status": "applied",
+                    "arguments": {"dataPool": {"betweenCharts": "MERGE_AND"}}}])
+    scored = benchmark.score(folder, evals)
+    assert [(item["assertion"], item["grader"], item["check"]) for item in scored["disagreements"]] == [
+        (1, False, True)]
+    assert scored["cases"]["pool-joins/1"]["with_skill"] == [1.0]
 
 
 def test_a_run_folder_is_scored_per_skill_and_over_every_case(tmp_path):

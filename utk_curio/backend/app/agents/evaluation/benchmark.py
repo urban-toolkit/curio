@@ -172,7 +172,9 @@ def _final(case: skill_evals.Case | None, record: Mapping, folder: Path) -> tupl
     graded = [item.get("passed") is True for item in results if isinstance(item, Mapping)]
     if case is None or not case.checks:
         return graded, []
-    decided = case_checks.decided(case.checks, case_checks.RunRecord.of(folder, case.context.dataflow))
+    context = case.context
+    attached = context.node if context.target == skill_evals.NODE else None
+    decided = case_checks.decided(case.checks, case_checks.RunRecord.of(folder, context.dataflow, attached))
     final, differ = list(graded), []
     for place, passed in decided.items():
         if place <= len(final):

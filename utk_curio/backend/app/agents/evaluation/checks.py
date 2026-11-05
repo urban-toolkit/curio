@@ -12,8 +12,9 @@ What a check reads of a run, all of it written by ``skill_eval_worker.py``:
 ``outputs/calls.json`` (each tool call, its status and, for a call whose
 change landed, its arguments; each delegation, its capability and inputs),
 ``outputs/changes.json`` (the nodes, connections and scenarios the run added,
-changed or removed), ``outputs/reply.md``, and the test case's dataflow, for
-the type of a node the run did not add.
+changed or removed), ``outputs/reply.md``, the test case's dataflow, for
+the type of a node the run did not add, and the node the run's agent was
+attached to, if any.
 
 The kinds, each with what it holds (``absent: true`` turns any of them into
 "the run did not"):
@@ -21,8 +22,12 @@ The kinds, each with what it holds (``absent: true`` turns any of them into
 - ``tool``: the run called ``tool``, and its call landed (status ``ok`` or
   ``applied``, or the ``status`` named); on ``node`` when named, and with
   ``args``, each a dotted path into the call's arguments and the value there.
+  A call whose arguments name no node is on the node the agent is attached
+  to, as the tools resolve it (``tools.py``'s ``_resolve_node_id``).
 - ``delegate``: the run delegated ``capability``, on ``node`` when named, and
-  the delegation ended ``ok`` (or the ``status`` named).
+  the delegation ended ``ok`` (or the ``status`` named). A delegation whose
+  inputs name no node and no ``nodeType`` is on the node the agent is
+  attached to (``turns/delegates.py``'s ``_delegate_target_node_id``).
 - ``node-added``: the run added a node of ``type`` (``count`` of them, when named).
 - ``edge-added``: the run added a connection from a node of type ``from`` to
   one of type ``to``; an interaction edge when ``interaction`` is true, a data
@@ -31,7 +36,9 @@ The kinds, each with what it holds (``absent: true`` turns any of them into
   ``type``, or any) matches the regular expression ``pattern``. With
   ``absent``, a node was written and none of what it wrote matches.
 - ``spec``: the content of a node the run wrote, read as JSON, holds the
-  dotted ``path`` (equal to ``equals`` when named). With ``absent``, a node
+  dotted ``path`` (equal to ``equals`` when named). A chip outside a string,
+  such as ``"scale": [!! scenario colors !!]``, reads as a string of its own
+  text (``code_references.with_chip_placeholders``). With ``absent``, a node
   was written and none of what it wrote holds it.
 - ``unchanged``: the run added, changed and removed nothing.
 - ``reply``: the reply matches the regular expression ``pattern``, in any case.
@@ -44,6 +51,8 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from utk_curio.backend.app.execution import code_references
 
 #: The statuses of a call whose work landed: a read's, and a write's.
 LANDED = ("ok", "applied")
@@ -146,11 +155,13 @@ class RunRecord:
     reply: str = ""
     #: The type of each node of the dataflow the run started on, by its id.
     types: dict = field(default_factory=dict)
+    #: The node the run's agent was attached to, or None on the canvas.
+    attached: str | None = None
 
     @classmethod
-    def of(cls, folder: Path, dataflow: Path | None = None) -> "RunRecord":
+    def of(cls, folder: Path, dataflow: Path | None = None, attached: str | None = None) -> "RunRecord":
         """The record of the run in *folder* (``.../run-<k>``), whose test case
-        started on *dataflow*."""
+        started on *dataflow* with its agent attached to the node *attached*."""
         folder = Path(folder)
         changes = _json(folder / "outputs" / "changes.json") or {}
         try:
@@ -166,7 +177,7 @@ class RunRecord:
         calls = _json(folder / "outputs" / "calls.json")
         return cls(calls=calls if isinstance(calls, list) else [],
                    changed=changes.get("changed") if isinstance(changes.get("changed"), dict) else {},
-                   reply=reply, types=types)
+                   reply=reply, types=types, attached=attached)
 
     def _of(self, kind: str, how: str) -> list:
         found = (self.changed.get(kind) or {}).get(how)
@@ -211,13 +222,15 @@ def _at(value, path: str):
     return value, True
 
 
-def _node_of(arguments) -> str | None:
+def _node_of(arguments, attached: str | None = None) -> str | None:
+    """The node a call's recorded *arguments* name, else *attached*; None for
+    a call whose arguments the record does not hold."""
     if not isinstance(arguments, Mapping):
         return None
     for key in ("nodeId", "node", "id"):
         if arguments.get(key) is not None:
             return str(arguments[key])
-    return None
+    return attached
 
 
 def _holds(check: Check, run: RunRecord) -> bool:
@@ -228,18 +241,24 @@ def _holds(check: Check, run: RunRecord) -> bool:
         for call in run.calls:
             if not isinstance(call, Mapping) or call.get("tool") != holds["tool"] or call.get("status") not in statuses:
                 continue
-            arguments = call.get("arguments") if isinstance(call.get("arguments"), Mapping) else {}
-            if "node" in holds and _node_of(arguments) != str(holds["node"]):
+            if "node" in holds and _node_of(call.get("arguments"), run.attached) != str(holds["node"]):
                 continue
+            arguments = call.get("arguments") if isinstance(call.get("arguments"), Mapping) else {}
             if all(_at(arguments, path) == (value, True) for path, value in (holds.get("args") or {}).items()):
                 return True
         return False
     if kind == "delegate":
         status = holds.get("status", "ok")
-        return any(isinstance(call, Mapping) and call.get("tool") == "delegate"
-                   and call.get("capability") == holds["capability"] and call.get("status") == status
-                   and ("node" not in holds or _node_of(call.get("inputs")) == str(holds["node"]))
-                   for call in run.calls)
+        for call in run.calls:
+            if not (isinstance(call, Mapping) and call.get("tool") == "delegate"
+                    and call.get("capability") == holds["capability"] and call.get("status") == status):
+                continue
+            inputs = call.get("inputs")
+            # A delegation that names a nodeType writes a new node's template.
+            attached = None if isinstance(inputs, Mapping) and inputs.get("nodeType") else run.attached
+            if "node" not in holds or _node_of(inputs, attached) == str(holds["node"]):
+                return True
+        return False
     if kind == "node-added":
         count = sum(1 for node in run.added_nodes() if node.get("type") == holds["type"])
         return count == holds["count"] if "count" in holds else count > 0
@@ -257,7 +276,7 @@ def _holds(check: Check, run: RunRecord) -> bool:
     if kind == "spec":
         for text in run.written(holds.get("node"), holds.get("type")):
             try:
-                value, there = _at(json.loads(text), str(holds["path"]))
+                value, there = _at(json.loads(code_references.with_chip_placeholders(text)), str(holds["path"]))
             except ValueError:
                 continue
             if there and ("equals" not in holds or value == holds["equals"]):
