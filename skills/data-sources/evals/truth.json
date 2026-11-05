@@ -189,7 +189,18 @@
             "added": [
               {
                 "content": "import requests\n\napi_key = \"AbCdEf0123456789xyzXYZ-_\"\nurl = \"https://www.airnowapi.org/aq/observation/zipCode/current/\"\nreturn requests.get(url, params={\"format\": \"application/json\", \"zipCode\": \"60601\", \"API_KEY\": api_key}).json()\n",
+                "goal": "Pull today's air quality readings for Chicago from the AirNow API.",
                 "id": "4b8e2f1a-6c3d-4a5e-9f70-1d2c3b4a5e6f",
+                "metadata": {
+                  "widgets": [
+                    {
+                      "default": "",
+                      "label": "Data",
+                      "name": "data",
+                      "type": "dataset"
+                    }
+                  ]
+                },
                 "title": "Chicago air quality",
                 "type": "curio.builtin/data-loading"
               }
@@ -200,7 +211,7 @@
           {
             "tool": "node.create",
             "kind": "node",
-            "summary": "Created a new Data Loading node · Chicago air quality",
+            "summary": "Created a new Data Loading node · Chicago air quality · widgets data",
             "lines": [
               "Data Loading · curio.builtin/data-loading",
               "node 4b8e2f1a-6c3d-4a5e-9f70-1d2c3b4a5e6f"
@@ -219,6 +230,7 @@
           "arguments": {
             "nodeType": "curio.builtin/data-loading",
             "title": "Chicago air quality",
+            "goal": "Pull today's air quality readings for Chicago from the AirNow API.",
             "content": "import requests\n\napi_key = \"AbCdEf0123456789xyzXYZ-_\"\nurl = \"https://www.airnowapi.org/aq/observation/zipCode/current/\"\nreturn requests.get(url, params={\"format\": \"application/json\", \"zipCode\": \"60601\", \"API_KEY\": api_key}).json()\n"
           }
         }
@@ -337,7 +349,18 @@
             "added": [
               {
                 "content": "import pandas as pd\n\nreturn pd.read_csv(\"https://data.cityofchicago.org/api/views/hz9b-7nh8/rows.csv\")\n",
+                "goal": "Download Chicago's building footprints from the city's open data portal API.",
                 "id": "9a3c1e7b-2f4d-4b6a-8c0e-5d7f9a1b3c2e",
+                "metadata": {
+                  "widgets": [
+                    {
+                      "default": "",
+                      "label": "Data",
+                      "name": "data",
+                      "type": "dataset"
+                    }
+                  ]
+                },
                 "title": "Chicago building footprints",
                 "type": "curio.builtin/data-loading"
               }
@@ -348,7 +371,7 @@
           {
             "tool": "node.create",
             "kind": "node",
-            "summary": "Created a new Data Loading node · Chicago building footprints",
+            "summary": "Created a new Data Loading node · Chicago building footprints · widgets data",
             "lines": [
               "Data Loading · curio.builtin/data-loading",
               "node 9a3c1e7b-2f4d-4b6a-8c0e-5d7f9a1b3c2e"
@@ -367,6 +390,7 @@
           "arguments": {
             "nodeType": "curio.builtin/data-loading",
             "title": "Chicago building footprints",
+            "goal": "Download Chicago's building footprints from the city's open data portal API.",
             "content": "import pandas as pd\n\nreturn pd.read_csv(\"https://data.cityofchicago.org/api/views/hz9b-7nh8/rows.csv\")\n"
           }
         }

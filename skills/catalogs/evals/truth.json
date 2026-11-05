@@ -44,7 +44,18 @@
             "added": [
               {
                 "content": "import pandas as pd\n\n# Chicago's building footprints, from the city's data portal.\nreturn pd.read_csv(\"https://data.cityofchicago.org/api/views/hz9b-7nh8/rows.csv\")\n",
+                "goal": "Load Chicago's building footprints from the city's data portal.",
                 "id": "0d7e3a6c-55a1-4d2e-9b8f-6c1a2e4f8b31",
+                "metadata": {
+                  "widgets": [
+                    {
+                      "default": "",
+                      "label": "Data",
+                      "name": "data",
+                      "type": "dataset"
+                    }
+                  ]
+                },
                 "title": "Chicago building footprints",
                 "type": "curio.builtin/data-loading"
               }
@@ -55,7 +66,7 @@
           {
             "tool": "node.create",
             "kind": "node",
-            "summary": "Created a new Data Loading node · Chicago building footprints",
+            "summary": "Created a new Data Loading node · Chicago building footprints · widgets data",
             "lines": [
               "Data Loading · curio.builtin/data-loading",
               "node 0d7e3a6c-55a1-4d2e-9b8f-6c1a2e4f8b31"
@@ -74,6 +85,7 @@
           "arguments": {
             "nodeType": "curio.builtin/data-loading",
             "title": "Chicago building footprints",
+            "goal": "Load Chicago's building footprints from the city's data portal.",
             "content": "import pandas as pd\n\n# Chicago's building footprints, from the city's data portal.\nreturn pd.read_csv(\"https://data.cityofchicago.org/api/views/hz9b-7nh8/rows.csv\")\n"
           }
         }

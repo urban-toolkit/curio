@@ -201,7 +201,7 @@
       "case": 2,
       "name": "golden",
       "kind": "golden",
-      "source": "docs/examples/dataflows/data-pool-vega-2.json: its Data Pool 5f658c2a-5124-4421-807f-9ce343d160ce, fed by the roofs, feeding a new Simple View, and the bar chart b601d363-50fd-4209-bee2-9997dcb050f3 linked to the pool by an interaction edge, as docs/examples/dataflows/interaction-vega-simple.json links its chart and pool; the pool's interacted column, \"1\" on a selected row, as utk_curio/frontend/urban-workflows/src/tests/adapters/node/components/ImageCardGrid.test.tsx and behaviors.test.tsx read it",
+      "source": "docs/examples/dataflows/data-pool-vega-2.json: its Data Pool 5f658c2a-5124-4421-807f-9ce343d160ce, fed by the roofs, feeding a new Simple View, and the bar chart b601d363-50fd-4209-bee2-9997dcb050f3 linked to the pool by an interaction edge, as docs/examples/dataflows/interaction-vega-simple.json links its chart and pool; the pool's interacted column, \"1\" on a selected row, as utk_curio/frontend/urban-workflows/src/tests/adapters/node/components/ImageCardGrid.test.tsx and utk_curio/frontend/urban-workflows/src/tests/adapters/node/behaviors.test.tsx read it",
       "fails": [],
       "reply": "The plan adds a Simple View, Clicked roofs, under the chart, fed by the Data Pool already on the canvas, and links the bar chart to that pool with an interaction edge. A Simple View shows a selection only through a Data Pool: the pool marks the clicked roofs, the rows whose \"interacted\" column is \"1\".",
       "changes": {
