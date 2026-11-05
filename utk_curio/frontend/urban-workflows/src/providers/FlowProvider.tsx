@@ -58,7 +58,7 @@ import { isHostedGuest } from "../components/apiSettings/useHostedGuest";
 import { DEFAULT_SAVE_OUTPUT_DATASET } from "../utils/saveOutputDataset";
 import { writeNodeSettings, type NodeSettings } from "../utils/nodeSettingsWriters";
 import { authApi } from "../utils/authApi";
-import { refreshAgentsWhenKept, useOnceDrawn } from "./flow/agentDockAfterRemovals";
+import { refreshAgentsWhenKept, removesNodes, useOnceDrawn } from "./flow/agentDockAfterRemovals";
 
 /** How long leaving a dataflow bound to its doc waits for the server to keep
  *  this tab's last change before it asks whether to leave without it. */
@@ -382,15 +382,18 @@ const FlowProvider = ({
     });
     // A node or a connection removed takes the agents attached to it along,
     // once the server has the removal (agentDockAfterRemovals.ts). The dock
-    // asks once the canvas has drawn the removal, whose write sends it.
+    // asks once the canvas has drawn the removal, whose write sends it, and
+    // only for a removal, whoever hands changes on here. An agent attached,
+    // taken off or changed reaches the dock through the room
+    // (useAttachmentsInTheRoom).
     const onceDrawn = useOnceDrawn();
     const onNodesDelete = useCallback((...removed: Parameters<typeof dropNodes>) => {
         dropNodes(...removed);
-        onceDrawn(() => void refreshAgentsWhenKept(docBridgeRef.current?.whenKept));
+        if (removesNodes(removed[0])) onceDrawn(() => void refreshAgentsWhenKept(docBridgeRef.current?.whenKept));
     }, [dropNodes, onceDrawn]);
     const onEdgesDelete = useCallback((...removed: Parameters<typeof dropEdges>) => {
         dropEdges(...removed);
-        onceDrawn(() => void refreshAgentsWhenKept(docBridgeRef.current?.whenKept));
+        if (removed[0].length > 0) onceDrawn(() => void refreshAgentsWhenKept(docBridgeRef.current?.whenKept));
     }, [dropEdges, onceDrawn]);
 
     const { onConnect, isValidConnection, handOverAlongEdges } = useConnect({

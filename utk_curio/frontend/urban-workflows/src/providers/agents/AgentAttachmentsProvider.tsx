@@ -7,6 +7,7 @@ import { useAgentProposals, type AgentProposalsSlice } from "./useAgentProposals
 import { useAgentSolve, type AgentSolveSlice } from "./useAgentSolve";
 import { useAgentSimulation, type AgentSimulationSlice } from "./useAgentSimulation";
 import { useAgentNodeRuns, type AgentNodeRunsSlice } from "./useAgentNodeRuns";
+import { useAttachmentsInTheRoom } from "./useAttachmentsInTheRoom";
 
 /**
  * One source of truth for a project's agent attachments, shared by the canvas
@@ -21,7 +22,9 @@ import { useAgentNodeRuns, type AgentNodeRunsSlice } from "./useAgentNodeRuns";
  * `useAgentProposals` (an install's review, a change's Undo, the canvas bridge),
  * `useAgentSolve` (the batch, the per-node Solve, the job re-attach),
  * `useAgentSimulation`, `useAgentNodeRuns` — and the context value keeps every
- * key it had, so no consumer changed.
+ * key it had, so no consumer changed. The list is read again whenever the
+ * room says someone attached an agent, took one off or changed one
+ * (`useAttachmentsInTheRoom`).
  */
 export interface AgentAttachmentsContextValue
   extends AgentAttachmentsState,
@@ -54,6 +57,7 @@ export const AgentAttachmentsProvider: React.FC<{
   const dataflowId = useAgentsDataflowId();
   const effectiveProjectId = enabled ? dataflowId : null;
   const state = useAgentAttachments(effectiveProjectId);
+  useAttachmentsInTheRoom(effectiveProjectId, state.reload);
   const session = useAgentSession(effectiveProjectId, state);
   const { projectRef, refreshAfterMutation, setSelectedId, ...sessionValue } = session;
   const proposals = useAgentProposals({ effectiveProjectId, projectRef, refreshAfterMutation });

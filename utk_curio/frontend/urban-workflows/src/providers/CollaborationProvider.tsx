@@ -54,7 +54,12 @@ import { backendUrl } from "../utils/backendUrl";
 import { collabSocketTarget } from "../utils/collabSocketTarget";
 import { roleIn, writesDoc, type RoomRole } from "./collab/participants";
 import { DataflowDocProvider, KEPT_WAIT_MS } from "./collab/docProvider";
-import { CONNECTION_DROPPED_EVENT, DataflowDocContext, type DocBinding } from "./collab/docContext";
+import {
+    ATTACHMENTS_CHANGED_EVENT,
+    CONNECTION_DROPPED_EVENT,
+    DataflowDocContext,
+    type DocBinding,
+} from "./collab/docContext";
 import { HISTORY_CHANGED_EVENT } from "./history/serverHistory";
 import { EDITOR_REQUESTS_CHANGED_EVENT } from "../services/editorRequests";
 import { remoteCursorStyle } from "./collab/presence";
@@ -232,6 +237,7 @@ const REMOTE_EVENTS = [
     HISTORY_CHANGED_EVENT,
     EDITOR_REQUESTS_CHANGED_EVENT,
     AGENT_TURN_EVENT,
+    ATTACHMENTS_CHANGED_EVENT,
 ] as const;
 
 export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({

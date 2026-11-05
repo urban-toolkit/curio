@@ -1511,3 +1511,39 @@ describe("AgentAttachmentsProvider — dev/115 verified Solve as a background jo
     expect(api.getSession).toHaveBeenCalled();
   });
 });
+
+/** A turn that hands work to another agent may attach that agent for it: on
+ * a tab no room holds, which hears nothing of the room, the listing is read
+ * again when the turn ends, even when the chat is titled and the turn landed
+ * no change, so the agent the delegation attached shows then. */
+describe("AgentAttachmentsProvider after a turn that hands work to another agent", () => {
+  it("reads the listing again when the turn ends, so the agent it attached shows", async () => {
+    api.listAttachments.mockResolvedValue({
+      attachments: [{ ...attachment, title: "Already Titled" }],
+    });
+    api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
+      onEvent?.("delegate_requested", { capability: "node.build" });
+      onEvent?.("delegate_result", { capability: "node.build", name: "Node Builder", status: "ok" });
+      onDelta("built");
+      return { reply: "built", executionId: "e2", usage: { inputTokens: 7, outputTokens: 9 } };
+    });
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId("titles")).toHaveTextContent("Already Titled"));
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    const before = api.listAttachments.mock.calls.length;
+    // The delegation attached the Node Builder for its work.
+    api.listAttachments.mockResolvedValue({
+      attachments: [
+        { ...attachment, title: "Already Titled" },
+        { ...attachment, attachmentId: "a2", title: "Built for the chat" },
+      ],
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText("send"));
+    });
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("agent:built"));
+    await waitFor(() => expect(screen.getByTestId("titles")).toHaveTextContent("Already Titled,Built for the chat"));
+    expect(api.listAttachments.mock.calls.length).toBe(before + 1);
+  });
+});

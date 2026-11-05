@@ -226,3 +226,13 @@ test("a Shift+drag around a node selects that node and no other", () => {
     .filter((change: NodeChange) => change.type === "select");
   expect(selections).toEqual([{ id: "a", type: "select", selected: true }]);
 });
+
+test("the node changes a Shift+drag makes go to onNodesChange alone: none reaches the removal handler", () => {
+  const { pane } = drawCanvas();
+  shiftDrag(pane, [230, 190], [80, 80], 5);
+  const changed = mockFlow.onNodesChange.mock.calls.flatMap(([changes]: [NodeChange[]]) => changes);
+  expect(changed.some((change: NodeChange) => change.type === "select")).toBe(true);
+  // MainCanvas hands the removal handler (`onNodesDelete`) only removals.
+  const handedToRemoval = mockFlow.onNodesDelete.mock.calls.flatMap(([changes]: [NodeChange[]]) => changes);
+  expect(handedToRemoval).toEqual([]);
+});

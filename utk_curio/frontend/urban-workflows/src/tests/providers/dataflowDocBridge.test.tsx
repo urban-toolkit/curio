@@ -1422,4 +1422,38 @@ describe("a removal and the agents' dock", () => {
         expect(written).toEqual([]);
         await waitFor(() => expect(asked).toHaveBeenCalled());
     });
+
+    test("a drag's moves and drop, a selection and a new size ask the dock nothing; a removal asks once", async () => {
+        const { socket } = await openOnItsSocket();
+        const before = socket.sent.length;
+
+        // Each change goes on as the canvas hands every node change on
+        // (MainCanvas's handleNodesChange): to onNodesDelete, then onNodesChange.
+        const handOn = (changes: Parameters<FlowApi["onNodesDelete"]>[0]) => act(() => {
+            api.onNodesDelete(changes);
+            api.onNodesChange(changes);
+        });
+        handOn([{ type: "select", id: "m", selected: true }]);
+        handOn([{ type: "position", id: "m", position: { x: 620, y: 20 }, dragging: true }]);
+        handOn([{ type: "position", id: "m", position: { x: 640, y: 40 }, dragging: true }]);
+        handOn([{ type: "position", id: "m", position: { x: 640, y: 40 }, dragging: false }]);
+        handOn([{ type: "dimensions", id: "m", dimensions: { width: 320, height: 240 } }]);
+        await flush();
+        await flush();
+        // The server keeps what the drop wrote, so a dock that asked would ask now.
+        await act(async () => socket.sent.slice(before).forEach(({ ack }) => ack?.({ ok: true })));
+        await flush();
+        await flush();
+        expect(asked).not.toHaveBeenCalled();
+
+        // A removal still asks, once the server has it.
+        const removing = socket.sent.length;
+        act(() => api.applyReviewedRemovals(["m"], ["n-m"]));
+        await flush();
+        await flush();
+        await act(async () => socket.sent.slice(removing).forEach(({ ack }) => ack?.({ ok: true })));
+        await waitFor(() => expect(asked).toHaveBeenCalled());
+        await flush();
+        expect(asked).toHaveBeenCalledTimes(1);
+    });
 });

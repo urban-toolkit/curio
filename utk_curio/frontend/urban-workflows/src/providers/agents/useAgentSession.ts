@@ -283,11 +283,12 @@ export function useAgentSession(
         ]);
       else replaceLastAgentTurn(attachmentId, reply, execution, content);
       forgetAsk(ask, true);
-      // The first exchange may title the conversation (memo dev/25), and a
-      // proposal or a change moves the listing's mirrors: every tab that
-      // followed the turn reads the listing again.
+      // The first exchange may title the conversation (memo dev/25), a
+      // proposal or a change moves the listing's mirrors, and a delegation
+      // may attach its agent: every tab that followed the turn reads the
+      // listing again, one no room holds among them.
       const untitled = !attachmentsRef.current.find((a) => a.attachmentId === attachmentId)?.title;
-      if (sawProposal || untitled) void reloadRef.current();
+      if (sawProposal || ask.delegated || untitled) void reloadRef.current();
     },
     [appendTurns, replaceLastAgentTurn, forgetAsk],
   );
@@ -366,6 +367,7 @@ export function useAgentSession(
       }
       if (name === "tool_result") ask.toolCalls.push(toolCallOf(data));
       if (name === "review_required") ask.sawProposal = true;
+      if (name === "delegate_requested" || name === "delegate_result") ask.delegated = true;
       const line = toolActivityLine(name, data);
       if (line)
         setToolActivity((prev) => ({
@@ -454,6 +456,7 @@ export function useAgentSession(
         const data = event.data ?? {};
         if (event.event === "tool_result") ask.toolCalls.push(toolCallOf(data));
         if (event.event === "review_required" || event.event === "change") ask.sawProposal = true;
+        if (event.event === "delegate_requested" || event.event === "delegate_result") ask.delegated = true;
         if (event.event === "usage") liveUsage = usageOf(data);
         const line = toolActivityLine(event.event, data);
         if (line) lines = [...lines, line];
