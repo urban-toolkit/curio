@@ -141,7 +141,8 @@ jobs:
           CURIO_EVAL_API_KEY: ${{ secrets.CURIO_EVAL_API_KEY }}
           CURIO_EVAL_MODELS: ${{ inputs.models || vars.CURIO_EVAL_MODELS }}
           CURIO_EVAL_JOBS: ${{ vars.CURIO_EVAL_JOBS }}
-          # The benchmark's one grader for every model; unset, each model grades its own answers.
+          # The benchmark's graders, one model or a JSON list, the best first: each model is graded by
+          # the first that is not itself. Unset, each model grades its own answers.
           CURIO_EVAL_GRADER_MODEL: ${{ vars.CURIO_EVAL_GRADER }}
           CURIO_EVAL_COMMIT: ${{ github.sha }}
           CURIO_EVAL_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

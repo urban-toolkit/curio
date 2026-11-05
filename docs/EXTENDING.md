@@ -808,6 +808,8 @@ CURIO_EVAL_BASE_URL='<base URL>' CURIO_EVAL_API_KEY='<key>' CURIO_EVAL_MODEL='<m
     - `benchmark compare <a> <b>` pairs two runs of one version, one model and one grader case by case, and says per skill whether `b` is better, worse or not shown different.
     - `benchmark run` runs every skill whole.
   - **One grader for every model:** `CURIO_EVAL_GRADER_MODEL` names it, on the same endpoint. Without it, each model grades its own answers.
+    - On GitHub, the repository variable `CURIO_EVAL_GRADER` names one grader, or a JSON list of them with the best first.
+    - Each model is graded by the first that is not itself, so the best grader's own answers go to the next one.
   - **The grader truth:** a skill's `evals/truth.json` holds prepared answers of its test cases, each with the example or the test it was built from. A golden answer meets every assertion of its case, and a mutant fails exactly the ones its `fails` names.
     - `--only grade` grades each of them with the model measured, with no run of the agent. That model's grades are what is measured, so `CURIO_EVAL_GRADER_MODEL` does not apply.
     - `benchmark.json`'s `as_grader` counts how often the model's grades agree with the truth, with its false passes and false fails, apart for the assertions checks decide, where no grader's verdict reaches a score.
@@ -821,7 +823,7 @@ CURIO_EVAL_BASE_URL='<base URL>' CURIO_EVAL_API_KEY='<key>' CURIO_EVAL_MODEL='<m
     - anything else: nothing.
 
     The other values are `smoke`, `core`, `full`, `graders` (each model grades every skill's grader truth, once) and skill names.
-  - **Its report:** its page, `curio-skill-evals-report.html`, is the run's artifact, and its tables are in the run's summary. It holds the benchmark's leaderboard, each skill's success per model, and each model compared with main's last run, which is what later runs compare with. A `graders` run holds each model's agreement with the grader truth and names the best usable grader; later runs do not compare with it. The repository variable `CURIO_EVAL_GRADER` names the one grader.
+  - **Its report:** its page, `curio-skill-evals-report.html`, is the run's artifact, and its tables are in the run's summary. It holds the benchmark's leaderboard, each skill's success per model, and each model compared with main's last run, which is what later runs compare with. A `graders` run holds each model's agreement with the grader truth and names the best usable grader; later runs do not compare with it. The repository variable `CURIO_EVAL_GRADER` names the graders.
   - **What fails it:**
     - a model that does not answer its probe;
     - a run left in an error after the retries;
