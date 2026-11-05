@@ -757,4 +757,33 @@ describe("binding", () => {
         expect(docToDataflow(provider.doc).edges.map((e: any) => [e.source, e.target])).toEqual([["n", "m"]]);
         other.destroy();
     });
+
+    test("Put it back hands the node it puts back the output its source holds", async () => {
+        await open(serverDoc(spec().dataflow));
+        act(() => api.applyNewOutput({ nodeId: "n", output: { path: "points", dataType: "outputs" } }));
+        await flush();
+        act(() => provider.awareness.setLocalStateField("editing", "m"));
+        const other = new (require("y-protocols/awareness").Awareness)(new Y.Doc());
+        const { encodeAwarenessUpdate, applyAwarenessUpdate } = require("y-protocols/awareness");
+        await act(async () => {
+            other.setLocalState({ user: { name: "Fabio" }, removed: { nodes: ["m"], at: Date.now() } });
+            applyAwarenessUpdate(provider.awareness, encodeAwarenessUpdate(other, [other.clientID]), provider);
+        });
+        await fromAnotherTab((df) => {
+            df.nodes = df.nodes.filter((n: any) => n.id !== "m");
+            df.edges = [];
+        });
+        expect(canvasNode("m")).toBeUndefined();
+        const [, , options] = mockShowToast.mock.calls.find(([text]) => /removed this node/.test(text)) ?? [];
+        expect(options?.action?.label).toBe("Put it back");
+
+        // The node comes back as this tab last had it, with no input of its
+        // own: what it holds after is what its connection handed it.
+        await act(async () => options.action.onClick());
+        await flush();
+        expect(api.edges.map((e: any) => [e.source, e.target])).toEqual([["n", "m"]]);
+        expect(canvasNode("m")?.data?.input).toEqual({ path: "points", dataType: "outputs" });
+        expect(canvasNode("m")?.data?.source).toBe("n");
+        other.destroy();
+    });
 });
