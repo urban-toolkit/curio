@@ -96,6 +96,16 @@ class TestPolicyScan:
         blocked = next(f for f in findings if f.code == code)
         assert "backend/handler.py:" in blocked.message
 
+    def test_the_dynamic_import_finding_names_the_import_the_probe_takes(self):
+        """The fix the importlib finding names is the package contract's: a
+        declared dependency is imported inside the handler, since it is not
+        installed when the probe loads the entry. An import at the top of the
+        entry fails the probe."""
+        findings = self._scan(f"{_OK_HANDLER}\nimport importlib\n")
+        [blocked] = [f for f in findings if f.code == "backend-dynamic-import"]
+        assert "at the top of the entry" not in blocked.message
+        assert "inside the handler for a declared dependency" in blocked.message
+
     def test_network_blocks_undeclared_and_warns_declared(self):
         src = "import requests\ndef handle(payload):\n    return {}\n"
         undeclared = self._scan(src, net=False)
