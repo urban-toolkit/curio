@@ -19,7 +19,9 @@ gives all fail here:
 
 ``dataflow.read`` lists each node's selection tags, which the selection skill
 names, and the catalogs skill says what each catalog holds and which tools
-reach it.
+reach it. Each limit a skill states that the code owns, such as the most
+widgets a node declares or the most data a dashboard carries, is a marker
+filled from the constant that owns it.
 
 New names are read inside each test, so this module imports on a checkout
 without them and each test fails on its own.
@@ -179,6 +181,52 @@ def test_the_chip_markers_write_the_runtimes_chips():
     for bad in ("inputs.chip:0:", "inputs.chip:roads", "selections.reference:2x", "selections.reference:a b"):
         with pytest.raises(contracts.PromptTemplateError):
             render(bad)
+
+
+_MIB = 1024 * 1024
+_WIDGETS = "utk_curio.backend.app.agents.domain.widget_grammar"
+_BACKEND = "utk_curio.backend.app.packages.domain.backend_contract"
+#: Each limit a skill states that the code owns: the skill, the marker its
+#: SKILL.md holds, the module and the constant it is filled from, what it
+#: writes now, and a value of the constant with the words the skill then says.
+LIMITS = [
+    ("widgets", "{{widgets.max}}", _WIDGETS, "MAX_WIDGETS", "16", 987, "declares at most 987 widgets"),
+    ("widgets", "{{widgets.label_chars}}", _WIDGETS, "_TEXT_MAX_CHARS", "80", 987, '"label" of up to 987 characters'),
+    ("widgets", "{{widgets.value_chars}}", _WIDGETS, "_VALUE_MAX_CHARS", "2,000", 9870,
+     "a value up to 9,870 characters as JSON"),
+    ("widgets", "{{widgets.name_pattern}}", "utk_curio.backend.app.execution.code_references", "WIDGET_NAME_RE",
+     r"^[A-Za-z_][A-Za-z0-9_]{0,63}$", re.compile(r"^[a-z]{1,9}$"), '"name" matching ^[a-z]{1,9}$'),
+    ("dashboards", "{{dashboards.data_mb}}", "utk_curio.backend.app.projects.dashboard_payload",
+     "DEFAULT_PAYLOAD_LIMIT_BYTES", "25", 987 * _MIB, "Its saved data is over 987 MB"),
+    ("dashboards", "{{dashboards.kept_days}}", "utk_curio.backend.app.runs.kept", "KEPT_DAYS", "7", 987,
+     "kept for 987 days"),
+    ("package-contract", "{{backend.payload_mib}}", _BACKEND, "PAYLOAD_MAX_BYTES", "2", 987 * _MIB,
+     "payloads up to 987 MiB"),
+    ("package-contract", "{{backend.result_mib}}", _BACKEND, "RESULT_MAX_BYTES", "8", 987 * _MIB,
+     "results up to 987 MiB"),
+    ("package-contract", "{{backend.data_dir_mib}}", "utk_curio.backend.app.packages.infrastructure.backend_runtime",
+     "DATA_DIR_MAX_BYTES", "64", 987 * _MIB, "directory of up to 987 MiB"),
+    ("package-contract", "{{backend.default_timeout_class}}", _BACKEND, "DEFAULT_TIMEOUT_CLASS", '"standard"', "long",
+     '("long" when left out)'),
+]
+
+
+@pytest.mark.parametrize("skill, marker, module, name, now, value, said", LIMITS, ids=[limit[3] for limit in LIMITS])
+def test_each_limit_a_skill_states_is_filled_from_the_code_that_owns_it(skill, marker, module, name, now, value,
+                                                                         said, monkeypatch):
+    """The skill holds the marker, not the value, the marker writes the
+    constant as the code holds it now, and a change to the constant reaches
+    the skill as a run reads it."""
+    import importlib
+
+    from utk_curio.backend.app.agents.domain import agent_text, contracts
+
+    source = (SKILLS / skill / "SKILL.md").read_text(encoding="utf-8")
+    assert marker in source, f"skills/{skill}/SKILL.md states {name} without the marker {marker}"
+    assert contracts.render_template(marker) == now
+    monkeypatch.setenv("CURIO_DEV", "1")
+    monkeypatch.setattr(importlib.import_module(module), name, value)
+    assert said in agent_text.skill_text(skill), f"{name} set to {value!r} did not reach skills/{skill}"
 
 
 def test_every_function_node_code_calls_is_in_the_functions_skill():
