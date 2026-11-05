@@ -16,7 +16,7 @@ flowchart LR
   S1[Image Segmentation<br/>DDRNet23-Slim]
   G1[`Simple View`<br/>photos and overlays]
   L[`Data Loading`<br/>neighborhood polygons]
-  T[`Data Transformation`<br/>rename pri_neigh to neighborhood]
+  T[`Python Computation`<br/>rename pri_neigh to neighborhood]
   S2[Image Segmentation<br/>a Hugging Face model]
   G2[`Simple View`<br/>the second model's overlays]
 
@@ -82,7 +82,7 @@ Wire Image Segmentation → `Simple View`. It is a built-in node with no configu
 
 Clicking a card selects its row in the views linked to the `Simple View` by an interaction edge. `Simple View` passes its input straight through, so the Spatial Join downstream receives the same frame Image Segmentation emitted.
 
-## Step 4: Load and prepare neighborhood polygons (`Data Loading`, `Data Transformation`)
+## Step 4: Load and prepare neighborhood polygons (`Data Loading`, `Python Computation`)
 
 The Data Catalog ships Chicago's [Boundaries, Neighborhoods](https://data.cityofchicago.org/d/y6yq-dbs2) layer as `data.cityofchicago.neighborhoods` (98 polygons named in `pri_neigh`). Any FeatureCollection works as long as each Polygon feature carries a string property to use as the tag.
 
@@ -103,7 +103,7 @@ gdf.__dict__["metadata"] = {"name": "chicago_neighborhoods"}
 return gdf
 ```
 
-The Spatial Join adds every column of the neighborhoods to each photo it pairs with one. The Chicago neighborhoods file calls the name `pri_neigh`; this example renames it to `neighborhood` with a `Data Transformation` node, the column the charts read.
+The Spatial Join adds every column of the neighborhoods to each photo it pairs with one. The Chicago neighborhoods file calls the name `pri_neigh`; this example renames it to `neighborhood` with a `Python Computation` node, the column the charts read.
 
 ```python
 # Each Spatial Join adds these polygons' columns to every photo it pairs
@@ -123,7 +123,7 @@ return gdf
 
 ## Step 5: Pair each photo with its neighborhood and chart it (`Spatial Join`, `Vega-Lite`)
 
-The Spatial Join node (built-in, in `curio.builtin@1`) has two input circles on its left edge, each a hollow ring that fills in once wired: **input_0** (the upper, blue one) and **input_1** (the lower, green one). Wire the `Simple View` output to the blue circle and the `Data Transformation` output to the green circle, and run them. The operation stays at **intersects** and the output at **One row per pair**, the defaults.
+The Spatial Join node (built-in, in `curio.builtin@1`) has two input circles on its left edge, each a hollow ring that fills in once wired: **input_0** (the upper, blue one) and **input_1** (the lower, green one). Wire the `Simple View` output to the blue circle and the `Python Computation` output to the green circle, and run them. The operation stays at **intersects** and the output at **One row per pair**, the defaults.
 
 The node emits one row per photo and neighborhood that meet: the photo's own columns, with the neighborhood's columns (`neighborhood`, `sec_neigh`, `shape_area`, `shape_len`) added. A photo outside every neighborhood has no pair and is left out; every one of the 40 sample photos has one.
 
@@ -250,7 +250,7 @@ The sample is a fixed set of photos. To take photos of another place from Mapill
 9. Click **Download**. The photos land in the Data Catalog as a collection of their own, each with its creator.
 10. In the example's first node, replace `data.curio.mapillary-sample` with the new collection's id (drag the collection from the Data Catalog onto the node to do it), and run the dataflow.
 
-For another city, swap the neighborhood polygons in Step 4 for that city's, and rename its name column to `neighborhood` in the `Data Transformation`: NYC's boroughs file calls it `BoroName`.
+For another city, swap the neighborhood polygons in Step 4 for that city's, and rename its name column to `neighborhood` in the `Python Computation`: NYC's boroughs file calls it `BoroName`.
 
 ## Expected output
 

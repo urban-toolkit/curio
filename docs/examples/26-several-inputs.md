@@ -1,8 +1,8 @@
 # Example: Several inputs
 
 One node fed by several others, in each kind of node that takes several inputs:
-Python Computation, Data Transformation, JS Computation, Vega-Lite, Autark and
-Data Pool. One of the inputs carries a tuple. The data are the air quality
+Python Computation, JS Computation, Vega-Lite, Autark and Data Pool. One of the
+inputs carries a tuple. The data are the air quality
 readings and stations of [example 20](20-storage-folder-of-csv-files.md), and the
 ZIP codes of Chicago's Loop.
 
@@ -15,7 +15,7 @@ node reads it (see [Several inputs](../USAGE.md#several-inputs)):
 
 | Node | One input | Several inputs |
 |---|---|---|
-| Python, Data Transformation, JavaScript | `input_0` is the input | `input_0`, `input_1`, ..., one variable per circle; `[!! input_k !!]` runs as `input_k` |
+| Python, JavaScript | `input_0` is the input | `input_0`, `input_1`, ..., one variable per circle; `[!! input_k !!]` runs as `input_k` |
 | Vega-Lite | the dataset `input_0` | the datasets `input_0`, `input_1`, ... |
 | Autark | the table `input_0` | the tables `input_0`, `input_1`, ... |
 | Data Pool | one tab | a tab per input |
@@ -42,7 +42,7 @@ flowchart LR
   S[`Data Loading`<br/>the stations] -->|input_0| J[`Python Computation`<br/>Join three inputs]
   M -->|input_1| J
   Z[`Data Loading`<br/>the ZIP codes] -->|input_2| J
-  R -->|input_0| T[`Data Transformation`<br/>Name the readings]
+  R -->|input_0| T[`Python Computation`<br/>Name the readings]
   J -->|input_1| T
   Z -->|input_0| X[`JS Computation`<br/>Stations per ZIP]
   J -->|input_1| X
@@ -133,7 +133,10 @@ Each station comes out with its mean, its peak and its ZIP code: Clark and
 Madison in 60603 (mean 8.0), State and Lake in 60601 (10.0), and Michigan and
 Adams in 60604 (12.0).
 
-## Two inputs in Data Transformation
+## Two inputs in a second Python node
+
+**Name the readings** takes the readings on circle 0 and Join's stations on
+circle 1:
 
 ```python
 readings, stations = [!! input_0 !!], [!! input_1 !!]

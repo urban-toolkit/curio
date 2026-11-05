@@ -24,11 +24,11 @@ flowchart LR
   R -->|input_0| Z[`Python Computation`<br/>zonal stats]
   U -->|input_1| Z
   S -->|input_2| Z
-  Z --> T[`Data Transformation`<br/>reproject + filter]
+  Z --> T[`Python Computation`<br/>reproject + filter]
 
   T --> M[autk-grammar<br/>thematic map + picking]
   T --> SC[`Vega-Lite`<br/>linked scatter]
-  T --> BX[`Data Transformation`<br/>gt_65 only] --> BV[`Vega-Lite`<br/>boxplot]
+  T --> BX[`Python Computation`<br/>gt_65 only] --> BV[`Vega-Lite`<br/>boxplot]
 
   M <-. Interaction .-> SC
 ```
@@ -187,7 +187,7 @@ result = gdf.loc[:, [gdf.geometry.name, "mean", "gt_65"]]
 return result
 ```
 
-## Step 6: Reproject and filter (`Data Transformation`)
+## Step 6: Reproject and filter (`Python Computation`)
 
 Drop polygons with non-positive UTCI and reproject to EPSG:3395 so the `autk-grammar` map downstream sees the CRS its tile pipeline expects. The `metadata.name` keeps the table referenceable as `census` throughout the rest of the dataflow.
 
@@ -253,7 +253,7 @@ A Vega-Lite scatter of `gt_65` vs `mean` UTCI. Its interval selection colors the
 
 ## Step 9: Boxplot of older-adult population (`Vega-Lite`)
 
-Add a `Data Transformation` node that drops everything but `gt_65`, then a Vega-Lite boxplot reading from it. This view summarises the distribution of older-adult counts independent of UTCI.
+Add a `Python Computation` node that drops everything but `gt_65`, then a Vega-Lite boxplot reading from it. This view summarises the distribution of older-adult counts independent of UTCI.
 
 ```python
 gdf = input_0

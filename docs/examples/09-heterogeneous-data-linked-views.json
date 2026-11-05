@@ -69,7 +69,7 @@
       },
       {
         "id": "3cc268ee-ec4b-4921-ac69-6d0bb3691cb4",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1935,
         "y": 430,
         "content": "import geopandas as gpd\n\ngdf = input_0\n\nfiltered_gdf = gdf.set_crs(32632)\nfiltered_gdf = filtered_gdf.to_crs(3395)\n\nfiltered_gdf = filtered_gdf[filtered_gdf['mean']>0]\n\n# Use __dict__ to bypass pandas' \"new attribute\" UserWarning on sliced\n# DataFrames; curio reads .metadata back via getattr (parsers.py).\nfiltered_gdf.__dict__['metadata'] = {\n   'name': 'census'\n}\n\nreturn filtered_gdf",
@@ -82,7 +82,7 @@
       },
       {
         "id": "35bd75ce-005e-40e1-9172-7caef9ccf046",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 2580,
         "y": 0,
         "content": "gdf = input_0\nreturn gdf.loc[:, [\"gt_65\"]]",

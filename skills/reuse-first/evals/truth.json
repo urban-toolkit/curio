@@ -33,9 +33,9 @@
       "case": 1,
       "name": "golden",
       "kind": "golden",
-      "source": "docs/examples/dataflows/data-pool-vega-2.json node f9e2b9af-23e6-4db3-9140-38bfecd6afc5 (a Data Transformation), its content: the roofs on input_0 grouped by zip over VEGETATED_SQFT, here the share above the 10,000 square feet the prompt names",
+      "source": "docs/examples/dataflows/data-pool-vega-2.json node f9e2b9af-23e6-4db3-9140-38bfecd6afc5 (a Python Computation), its content: the roofs on input_0 grouped by zip over VEGETATED_SQFT, here the share above the 10,000 square feet the prompt names",
       "fails": [],
-      "reply": "I added a Data Transformation node, Share of large green roofs, a template already listed: its code computes, for each zip code, the share of its roofs whose VEGETATED_SQFT is above 10,000. No package or new node type is needed for this. Connect the roofs to its input, after the Data Pool.",
+      "reply": "I added a Python Computation node, Share of large green roofs, a template already listed: its code computes, for each zip code, the share of its roofs whose VEGETATED_SQFT is above 10,000. No package or new node type is needed for this. Connect the roofs to its input, after the Data Pool.",
       "changes": {
         "changed": {
           "nodes": {
@@ -45,7 +45,7 @@
                 "goal": "For each zip code, the share of its green roofs with more than 10,000 square feet of vegetation.",
                 "id": "66b159de-9abb-466d-bb56-83cc938f00b3",
                 "title": "Share of large green roofs",
-                "type": "curio.builtin/data-transformation"
+                "type": "curio.builtin/computation-analysis"
               }
             ]
           }
@@ -54,13 +54,13 @@
           {
             "tool": "node.create",
             "kind": "node",
-            "summary": "Created a new Data Transformation node · Share of large green roofs",
+            "summary": "Created a new Python Computation node · Share of large green roofs",
             "lines": [
-              "Data Transformation · curio.builtin/data-transformation",
+              "Python Computation · curio.builtin/computation-analysis",
               "node 66b159de-9abb-466d-bb56-83cc938f00b3"
             ],
             "nodeId": "66b159de-9abb-466d-bb56-83cc938f00b3",
-            "nodeType": "curio.builtin/data-transformation",
+            "nodeType": "curio.builtin/computation-analysis",
             "undo": true
           }
         ],
@@ -71,7 +71,7 @@
           "tool": "node.create",
           "status": "applied",
           "arguments": {
-            "nodeType": "curio.builtin/data-transformation",
+            "nodeType": "curio.builtin/computation-analysis",
             "title": "Share of large green roofs",
             "goal": "For each zip code, the share of its green roofs with more than 10,000 square feet of vegetation.",
             "content": "# For each zip code, the share of its green roofs with more than 10,000 square\n# feet of vegetation.\nroofs = input_0\nlarge = roofs['VEGETATED_SQFT'] > 10000\nshare = large.groupby(roofs['zip']).mean().reset_index(name='share_over_10000_sqft')\nreturn share\n"
@@ -88,7 +88,7 @@
         1,
         4
       ],
-      "reply": "Here is the code for a Data Transformation node that computes the share:\n\n```python\n# For each zip code, the share of its green roofs with more than 10,000 square\n# feet of vegetation.\nroofs = input_0\nlarge = roofs['VEGETATED_SQFT'] > 10000\nshare = large.groupby(roofs['zip']).mean().reset_index(name='share_over_10000_sqft')\nreturn share\n```",
+      "reply": "Here is the code for a Python Computation node that computes the share:\n\n```python\n# For each zip code, the share of its green roofs with more than 10,000 square\n# feet of vegetation.\nroofs = input_0\nlarge = roofs['VEGETATED_SQFT'] > 10000\nshare = large.groupby(roofs['zip']).mean().reset_index(name='share_over_10000_sqft')\nreturn share\n```",
       "changes": {
         "changed": {},
         "cards": [],

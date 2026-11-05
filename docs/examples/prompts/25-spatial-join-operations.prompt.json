@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/25-spatial-join-operations.json",
-    "sha256": "2dba353027cd4773a6d893eb72bb20d2035b3d171cda6adb413f29666f3de989",
+    "sha256": "0e3cbcfa72ec08f5ebdc4aab5bec5f758316c806eacbdbb633e36883d52128fa",
     "walkthrough": null
   },
   "prompt": "From the Data Catalog, load Chicago's green roofs, a sample of Project Sidewalk labels spread across the city, the city's neighborhoods and its ZIP codes, and show every kind of spatial join side by side: the neighborhood each green roof is in; a map of how many sidewalk labels lie within each neighborhood; the labels each neighborhood contains, by type; which neighborhoods border each other; which ZIP codes each neighborhood overlaps; which neighborhoods each ZIP border runs through; and how far each green roof is from the nearest sidewalk label. Add two small squares that share an edge and three points, one inside a square, one on the shared edge and one outside both, and show that the point on the edge meets both squares but lies within neither.",
@@ -21,6 +21,13 @@
   },
   "expected": {
     "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
       {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
@@ -60,13 +67,6 @@
         "ref": "loader6",
         "type": "curio.builtin/data-loading",
         "role": "loader",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform1",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
         "executable": true,
         "hasContent": true
       },
@@ -199,20 +199,20 @@
     ],
     "edges": [
       {
-        "from": "loader1",
-        "to": "transform1",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "endpoint3",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "loader2",
+        "from": "analysis1",
         "to": "endpoint1",
         "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "endpoint4",
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "loader2",
@@ -220,10 +220,9 @@
         "kind": "data"
       },
       {
-        "from": "loader3",
-        "to": "endpoint1",
-        "kind": "data",
-        "slot": 1
+        "from": "loader2",
+        "to": "endpoint3",
+        "kind": "data"
       },
       {
         "from": "loader3",
@@ -232,42 +231,48 @@
         "slot": 1
       },
       {
-        "from": "loader4",
-        "to": "endpoint4",
-        "kind": "data"
-      },
-      {
-        "from": "loader4",
-        "to": "endpoint5",
-        "kind": "data"
-      },
-      {
-        "from": "loader5",
-        "to": "endpoint4",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "loader5",
-        "to": "endpoint6",
-        "kind": "data"
-      },
-      {
-        "from": "loader5",
-        "to": "endpoint7",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "loader6",
+        "from": "loader3",
         "to": "endpoint3",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader4",
+        "to": "endpoint5",
         "kind": "data"
       },
       {
-        "from": "loader6",
+        "from": "loader4",
+        "to": "endpoint6",
+        "kind": "data"
+      },
+      {
+        "from": "loader5",
         "to": "endpoint5",
         "kind": "data",
         "slot": 1
+      },
+      {
+        "from": "loader5",
+        "to": "endpoint7",
+        "kind": "data"
+      },
+      {
+        "from": "loader5",
+        "to": "endpoint8",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader6",
+        "to": "endpoint1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader6",
+        "to": "endpoint4",
+        "kind": "data"
       },
       {
         "from": "loader6",
@@ -278,7 +283,8 @@
       {
         "from": "loader6",
         "to": "endpoint7",
-        "kind": "data"
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "loader6",
@@ -287,34 +293,28 @@
       },
       {
         "from": "loader6",
-        "to": "endpoint8",
-        "kind": "data",
-        "slot": 1
+        "to": "endpoint9",
+        "kind": "data"
       },
       {
         "from": "loader6",
         "to": "endpoint9",
         "kind": "data",
         "slot": 1
-      },
-      {
-        "from": "transform1",
-        "to": "endpoint9",
-        "kind": "data"
       },
       {
         "from": "endpoint1",
-        "to": "visualization1",
+        "to": "visualization3",
         "kind": "data"
       },
       {
         "from": "endpoint2",
-        "to": "visualization2",
+        "to": "visualization1",
         "kind": "data"
       },
       {
         "from": "endpoint3",
-        "to": "visualization3",
+        "to": "visualization2",
         "kind": "data"
       },
       {
@@ -385,12 +385,8 @@
       "outputKind": "geodataframe"
     },
     {
-      "ref": "transform1",
+      "ref": "analysis1",
       "outputKind": "geodataframe"
-    },
-    {
-      "ref": "endpoint1",
-      "slotOrderMatters": true
     },
     {
       "ref": "endpoint2",
@@ -422,6 +418,10 @@
     },
     {
       "ref": "endpoint9",
+      "slotOrderMatters": true
+    },
+    {
+      "ref": "endpoint1",
       "slotOrderMatters": true
     }
   ],

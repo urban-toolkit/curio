@@ -22,7 +22,7 @@
       },
       {
         "id": "12966e12-1bef-594c-952a-7ae727386ab3",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 0,
         "title": "Weekday: pedestrians",
@@ -50,7 +50,7 @@
       },
       {
         "id": "a1b065fc-187d-5052-9458-e514b0a1bfcc",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1290,
         "y": 0,
         "title": "Weekend: pedestrians",
@@ -169,7 +169,7 @@
       },
       {
         "id": "2bf52afd-8076-515d-8c6d-d3992fcf8133",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 680,
         "title": "As built: damage curves",
@@ -197,7 +197,7 @@
       },
       {
         "id": "3b35a741-b4ed-5b4a-9a19-d797b6afc56d",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1290,
         "y": 680,
         "title": "Floodproofed: damage curves",
@@ -310,7 +310,7 @@
       },
       {
         "id": "8d4274fa-96a4-54ce-bc6f-4abd4a67ab8e",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 1280,
         "title": "10-year storm: flooded streets",
@@ -339,7 +339,7 @@
       },
       {
         "id": "d3d87ea8-da7f-5ea5-a99d-2cbbb7359a62",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1290,
         "y": 1280,
         "title": "50-year storm: flooded streets",
@@ -372,7 +372,7 @@
       },
       {
         "id": "5029ab15-57f4-5435-887b-3f5b77f12f7d",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1935,
         "y": 1280,
         "title": "100-year storm: flooded streets",
@@ -479,7 +479,7 @@
       },
       {
         "id": "d4d81b71-ed00-591d-af5e-0007a08c7073",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 1880,
         "title": "10-year storm: peak depths",
@@ -508,7 +508,7 @@
       },
       {
         "id": "903b70c7-fd6d-5425-863a-02c38136c912",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1290,
         "y": 1880,
         "title": "50-year storm: peak depths",
@@ -541,7 +541,7 @@
       },
       {
         "id": "00f08ae3-36c9-5686-9600-d2228d8bc2f2",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1935,
         "y": 1880,
         "title": "100-year storm: peak depths",
@@ -626,7 +626,7 @@
       },
       {
         "id": "3859810a-f0ef-51fd-ac8f-061d874d95ed",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 2480,
         "title": "Today: trips",
@@ -656,7 +656,7 @@
       },
       {
         "id": "cfe2284f-10ff-522d-86c8-9642b21b0311",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1290,
         "y": 2480,
         "title": "Bus lanes: trips",
@@ -690,7 +690,7 @@
       },
       {
         "id": "6a97b972-f553-54d0-8b4f-26316c9d2c2b",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1935,
         "y": 2480,
         "title": "Bike network: trips",
@@ -724,7 +724,7 @@
       },
       {
         "id": "01472302-d892-5564-b553-d0930ae10ab8",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 2580,
         "y": 2480,
         "title": "Car-free center: trips",
@@ -834,7 +834,7 @@
       },
       {
         "id": "73b3ca51-979d-5828-ae8a-bd259347458f",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 3060,
         "title": "Concrete frame: carbon",
@@ -862,7 +862,7 @@
       },
       {
         "id": "aa3b54f0-d52c-5512-b269-083a70bd256c",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1290,
         "y": 3060,
         "title": "Timber frame: carbon",
@@ -960,7 +960,7 @@
       },
       {
         "id": "fd5ce06e-4d57-592f-972a-53cb9f1cfe0f",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 3660,
         "title": "Open lawn: shade",
@@ -988,7 +988,7 @@
       },
       {
         "id": "e81e1508-6097-5f65-b0be-9c22aefc8d2f",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1290,
         "y": 3660,
         "title": "Tree canopy: shade",
@@ -1073,7 +1073,7 @@
       },
       {
         "id": "50cdd541-d71b-5799-a63f-0ea593f969ae",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 4260,
         "title": "Route A: route factors",
@@ -1102,7 +1102,7 @@
       },
       {
         "id": "16883e88-37dc-5135-97db-51aefaa54e74",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1290,
         "y": 4260,
         "title": "Route B: route factors",
@@ -1135,7 +1135,7 @@
       },
       {
         "id": "9387eb51-380f-56b5-a099-7ac9d29138f4",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1935,
         "y": 4260,
         "title": "Route C: route factors",
@@ -1214,7 +1214,7 @@
       },
       {
         "id": "0f7a3acb-545c-53b2-9226-65b2610c1190",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 4860,
         "title": "Extensive roof: roof systems",
@@ -1243,7 +1243,7 @@
       },
       {
         "id": "7ed1b26c-6aef-5d45-bff5-06fec2599a84",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1290,
         "y": 4860,
         "title": "Semi-intensive roof: roof systems",
@@ -1276,7 +1276,7 @@
       },
       {
         "id": "efca0e7f-2f73-5ca4-82a8-0ed946610742",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1935,
         "y": 4860,
         "title": "Intensive roof: roof systems",
@@ -2103,7 +2103,7 @@
       }
     ],
     "name": "Nine ways to chart scenario comparisons",
-    "description": "Nine example tables, each charted a different way to compare its scenarios: lines with a band, curves by state, bars with error bars, ensemble strips, grouped bars, stacked bars with totals, donuts, a weighted matrix and a table. In each row a Data Transformation node per scenario keeps its rows, and a Vega-Lite chart takes each scenario's node on an input of its own.",
+    "description": "Nine example tables, each charted a different way to compare its scenarios: lines with a band, curves by state, bars with error bars, ensemble strips, grouped bars, stacked bars with totals, donuts, a weighted matrix and a table. In each row a Python Computation node per scenario keeps its rows, and a Vega-Lite chart takes each scenario's node on an input of its own.",
     "task": "",
     "timestamp": 1792195200000,
     "provenance_id": "scenario-comparison-charts",

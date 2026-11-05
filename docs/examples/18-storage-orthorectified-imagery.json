@@ -50,7 +50,7 @@
       },
       {
         "id": "orthos-2024",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 662,
         "y": 430,
         "content": "tiles = input_0\n\nreturn tiles[tiles[\"year\"] == 2024]\n",

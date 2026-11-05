@@ -69,7 +69,7 @@
             "changed": [
               {
                 "id": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5",
-                "type": "curio.builtin/data-transformation",
+                "type": "curio.builtin/computation-analysis",
                 "changes": {
                   "content": {
                     "before": "import geopandas as gpd\r\n\r\njoined = input_0\r\n\r\n# filter out the top 10 zip codes from the joined dataframe on 'zip' by square feet\r\ntop_10_largest = joined.groupby('zip')['VEGETATED_SQFT'].sum().reset_index().sort_values(by='VEGETATED_SQFT', ascending=False).head(10)\r\n\r\nreturn top_10_largest",
@@ -84,9 +84,9 @@
           {
             "tool": "node.content.write",
             "kind": "content",
-            "summary": "Replaced the content of the Data Transformation node",
+            "summary": "Replaced the content of the Python Computation node",
             "lines": [
-              "Data Transformation node"
+              "Python Computation node"
             ],
             "nodeId": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5",
             "undo": true

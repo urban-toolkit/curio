@@ -10,7 +10,7 @@ flowchart LR
   S[Data Loading<br/>sidewalk labels, points]
   N[Data Loading<br/>neighborhoods, polygons]
   Z[Data Loading<br/>ZIP codes, polygons]
-  B[Data Transformation<br/>ZIP borders, lines]
+  B[Python Computation<br/>ZIP borders, lines]
   Q[Data Loading<br/>two squares]
   E[Data Loading<br/>three points]
 
@@ -45,7 +45,7 @@ Loaded from the [Data Catalog](../DATA-CATALOG.md) by id.
 | Chicago neighborhoods | `data.cityofchicago.neighborhoods` | 98 polygons |
 | Chicago Boundary (ZIP polygons) | `data.utk.chicago-boundary` | 61 polygons |
 
-A `Data Transformation` turns each ZIP polygon into its border, a line:
+A `Python Computation` turns each ZIP polygon into its border, a line:
 
 ```python
 # Each ZIP's border as a line, for the crosses operation.
