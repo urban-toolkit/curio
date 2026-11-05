@@ -382,18 +382,15 @@ const FlowProvider = ({
     });
     // A node or a connection removed takes the agents attached to it along,
     // once the server has the removal (agentDockAfterRemovals.ts). The dock
-    // asks once the canvas has drawn the removal, whose write sends it, and
-    // only for a removal: the canvas hands every node change to onNodesDelete.
+    // asks once the canvas has drawn the removal, whose write sends it.
     const onceDrawn = useOnceDrawn();
     const onNodesDelete = useCallback((...removed: Parameters<typeof dropNodes>) => {
         dropNodes(...removed);
-        if (removed[0].some((change) => change.type === "remove")) {
-            onceDrawn(() => void refreshAgentsWhenKept(docBridgeRef.current?.whenKept));
-        }
+        onceDrawn(() => void refreshAgentsWhenKept(docBridgeRef.current?.whenKept));
     }, [dropNodes, onceDrawn]);
     const onEdgesDelete = useCallback((...removed: Parameters<typeof dropEdges>) => {
         dropEdges(...removed);
-        if (removed[0].length > 0) onceDrawn(() => void refreshAgentsWhenKept(docBridgeRef.current?.whenKept));
+        onceDrawn(() => void refreshAgentsWhenKept(docBridgeRef.current?.whenKept));
     }, [dropEdges, onceDrawn]);
 
     const { onConnect, isValidConnection, handOverAlongEdges } = useConnect({

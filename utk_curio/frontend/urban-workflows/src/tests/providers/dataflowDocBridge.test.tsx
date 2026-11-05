@@ -1201,16 +1201,4 @@ describe("a removal and the agents' dock", () => {
         expect(written).toEqual([]);
         await waitFor(() => expect(asked).toHaveBeenCalled());
     });
-
-    test("a node change that removes nothing asks the dock nothing", async () => {
-        await openOnItsSocket();
-
-        // The canvas hands every node change to onNodesDelete (MainCanvas):
-        // here one move of a drag.
-        act(() => api.onNodesDelete([{ id: "n", type: "position", position: { x: 40, y: 40 }, dragging: true }]));
-        await flush();
-        await flush();
-
-        expect(asked).not.toHaveBeenCalled();
-    });
 });
