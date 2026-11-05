@@ -707,13 +707,14 @@ class TestTheOldLlmSettingsAreGone:
         from utk_curio import main as launcher
 
         assert flag not in _parser_flags()
-        monkeypatch.setattr("sys.argv", ["curio.py", "start", flag, "value"])
+        # One token, so the value is not read as the start command's server.
+        monkeypatch.setattr("sys.argv", ["curio.py", "start", f"{flag}=value"])
         # The launcher's shutdown handlers stay out of the test process.
         monkeypatch.setattr(signal, "signal", lambda *args, **kwargs: None)
         with pytest.raises(SystemExit) as exited:
             launcher.main()
         assert exited.value.code == 2, f"curio.py start {flag} did not stop at its arguments"
-        assert "unrecognized arguments" in capsys.readouterr().err
+        assert f"unrecognized arguments: {flag}=value" in capsys.readouterr().err
 
     @pytest.mark.parametrize("keyword", [
         "llm_provider", "llm_base_url", "llm_model", "llm_models",
