@@ -385,14 +385,20 @@ describe("the dataflow's own fields, connections and scenarios", () => {
         await fromAnotherTab((df) => {
             df.nodes.push({ id: "m", type: TYPE, x: 600, y: 0, content: "y = 1\n" });
         });
-        // As after every change (the canvas sets its suggestion count again),
-        // an update that changes nothing: once it renders, React holds no
-        // work for the canvas.
+        const before = docToDataflow(provider.doc);
+        const after = JSON.parse(JSON.stringify(before));
+        after.edges.push({ id: "n-m", source: "n", target: "m", sourceHandle: "out", targetHandle: "in" });
+        // No work is left for the canvas, as between two of the server's
+        // changes (after each change the canvas sets its suggestion count
+        // again, which renders once with nothing new). Two updates that change
+        // nothing leave it so even when a render was still due (a timer of the
+        // canvas's fit), and nothing runs between them and the connection.
         act(() => api.setOutputs((outputs) => outputs));
-        await flush();
-        await fromAnotherTab((df) => {
-            df.edges.push({ id: "n-m", source: "n", target: "m", sourceHandle: "out", targetHandle: "in" });
+        act(() => api.setOutputs((outputs) => outputs));
+        act(() => {
+            provider.doc.transact(() => applyDataflow(provider.doc, before, after), provider);
         });
+        await flush();
         expect(api.edges.map((e: any) => e.id)).toEqual(["n-m"]);
         expect(canvasNode("m").data.input).toEqual({ path: "points", dataType: "outputs" });
         expect(canvasNode("m").data.source).toBe("n");
