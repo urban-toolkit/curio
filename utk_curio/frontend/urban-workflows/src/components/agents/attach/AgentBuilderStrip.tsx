@@ -129,12 +129,15 @@ export const AgentBuilderStrip: React.FC<{
   const nodeRuns = session.nodeRuns ?? {};
   // The live overlay wins per node while the batch streams (dev/63); the
   // persisted session takes back over on the terminal refetch. The pills
-  // read in the plan's order, as its card lists its nodes.
+  // read in the plan's order, as its card lists its nodes, and so do the
+  // Open Dataset Finder buttons of the nodes awaiting a source.
+  const canvasIds = flowNodes.map((node) => node.id);
   const entries = inPlanOrder(
     Object.entries({ ...nodeRuns, ...(solveProgress ?? {}) }),
     attachment.planProposal,
-    flowNodes.map((node) => node.id),
+    canvasIds,
   );
+  const selectionRemedies = inPlanOrder(selectionRemediesOf(solveRemedies), attachment.planProposal, canvasIds);
   const pending = entries.filter(([, s]) => s === "pending").map(([id]) => id);
   const failed = entries.filter(([, s]) => s === "failed").map(([id]) => id);
   const unresolved = pending.length + failed.length;
@@ -304,7 +307,7 @@ export const AgentBuilderStrip: React.FC<{
         reasons={distinctLines(solveErrors)}
         notices={distinctLines(solveNotices)}
         remedies={remediesByHost(solveRemedies)}
-        selectionRemedies={selectionRemediesOf(solveRemedies)}
+        selectionRemedies={selectionRemedies}
         onOpenChat={onOpenChat}
         agentNameOf={agentNameOf}
         nodeNameOf={nodeNameOf}
