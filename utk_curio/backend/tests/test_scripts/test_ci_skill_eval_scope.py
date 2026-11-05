@@ -225,6 +225,12 @@ def test_each_measure_is_one_the_evaluations_read(tree):
     assert scope.RUNS == skill_evals.RUNS
 
 
+def test_the_scope_finds_the_grader_truth_where_its_reader_reads_it():
+    from utk_curio.backend.app.agents.evaluation import grader_truth
+
+    assert scope.TRUTH_FILE == grader_truth.TRUTH_FILE
+
+
 def test_on_github_a_scope_goes_to_the_step_s_output_or_nothing_and_a_failure_is_written_down(tmp_path, monkeypatch):
     output, summary = tmp_path / "output", tmp_path / "summary"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
