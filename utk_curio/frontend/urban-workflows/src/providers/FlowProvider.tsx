@@ -383,9 +383,9 @@ const FlowProvider = ({
     // A node or a connection removed takes the agents attached to it along,
     // once the server has the removal (agentDockAfterRemovals.ts). The dock
     // asks once the canvas has drawn the removal, whose write sends it, and
-    // only for a removal: the canvas hands every node change on here, each
-    // move of a drag among them. An agent attached or taken off reaches the
-    // dock through the room (useAttachmentsInTheRoom).
+    // only for a removal, whoever hands changes on here. An agent attached,
+    // taken off or changed reaches the dock through the room
+    // (useAttachmentsInTheRoom).
     const onceDrawn = useOnceDrawn();
     const onNodesDelete = useCallback((...removed: Parameters<typeof dropNodes>) => {
         dropNodes(...removed);

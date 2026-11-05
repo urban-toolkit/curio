@@ -23,7 +23,7 @@ import { useAttachmentsInTheRoom } from "./useAttachmentsInTheRoom";
  * `useAgentSolve` (the batch, the per-node Solve, the job re-attach),
  * `useAgentSimulation`, `useAgentNodeRuns` — and the context value keeps every
  * key it had, so no consumer changed. The list is read again whenever the
- * room says someone attached an agent or took one off
+ * room says someone attached an agent, took one off or changed one
  * (`useAttachmentsInTheRoom`).
  */
 export interface AgentAttachmentsContextValue

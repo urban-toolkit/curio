@@ -105,10 +105,11 @@ it, so every change reaches the doc's tabs and its log:
   meanwhile to a node the writer removes is taken out there too, and its
   drawer is told who removed the node. The agents' sections
   (``doc_mapping.OUTSIDE_THE_DOC``) are written beside the doc, and a change
-  to them alone is written to the file alone. An agent a write attaches to the
-  dataflow or takes off it is told to the tabs of its owner and editors
+  to them alone is written to the file alone. A write that changes the agents'
+  attachments, an agent attached or taken off or an attachment's record, is
+  told to the tabs of the dataflow's owner and editors
   (:data:`ATTACHMENTS_CHANGED_EVENT`), as :func:`put` tells one too: no change
-  of the doc tells a tab of the attachments.
+  of the doc tells a tab of them.
 * The whole-dataflow PUT is the one deliberate exception (:func:`put`): its
   transaction makes the doc match the PUT. A dataflow made anew starts through
   :func:`create`.
@@ -197,8 +198,12 @@ RULES_ORIGIN = "rules"
 #: What a tab whose connection a merge rule took out is told, on its socket.
 CONNECTION_DROPPED_EVENT = "connection_dropped"
 #: What the tabs of a dataflow's owner and editors are told when a write
-#: attaches an agent to it or takes one off (:func:`_tell_attachments`).
+#: changes its agents' attachments: an agent attached or taken off, or one's
+#: record, such as its chat's title (:func:`_tell_attachments`).
 ATTACHMENTS_CHANGED_EVENT = "agent_attachments_changed"
+#: After one such word, at most one more per dataflow in this many seconds: a
+#: change made during the wait is told when it ends.
+ATTACHMENTS_TOLD_EVERY_S = 0.25
 #: How many removed nodes an open doc remembers the remover of.
 REMOVERS_KEPT = 500
 
@@ -1343,9 +1348,9 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
     * The agents' sections are written beside the doc
       (:func:`_merged_beside`). A change to them alone is written to the file
       alone: a tab gets none of it, and the doc reads the file's next
-      revision as one that changed nothing it holds. An agent the write
-      attaches or takes off is told to the tabs of the dataflow's owner and
-      editors, each of which lists its agents again
+      revision as one that changed nothing it holds. A change the write makes
+      to the agents' attachments is told to the tabs of the dataflow's owner
+      and editors, each of which lists its agents again
       (:func:`_tell_attachments`).
     * Nothing is written when the writer changed nothing, nor for a dataflow
       deleted meanwhile, whose folder must not come back.
@@ -1368,13 +1373,13 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
     if doc_mapping.same(_writable(spec), spec.base):
         spec.written = Written(False)
         return spec.written
-    attached = _attachment_ids(spec.base)
+    attachments = _attachments_of(spec.base)
     written = _write(user_key, project_id, spec.base, spec, actor, on_refused=on_refused, on_dropped=on_dropped,
                      point=point, backfilled=backfilled)
     spec.base = copy.deepcopy(_writable(spec))
     spec.written = written
     if written.wrote:
-        _tell_attachments(project_id, attached, _attachment_ids(spec.base))
+        _tell_attachments(project_id, attachments, _attachments_of(spec.base))
     return written
 
 
@@ -1409,7 +1414,7 @@ def put(user_key: str, project_id: str, spec: dict, *, over: Optional[Live], act
     history = {key: spec[key] for key in storage.HISTORY_KEYS if key in spec}
     written = _write(str(user_key), project_id, over.base, spec, actor, history=history, backfilled=backfilled)
     if written.wrote:
-        _tell_attachments(project_id, _attachment_ids(over.base), _attachment_ids(spec))
+        _tell_attachments(project_id, _attachments_of(over.base), _attachments_of(spec))
     return written
 
 
@@ -1656,27 +1661,86 @@ def _merged_section(name: str, before, after, theirs):
     return out
 
 
-def _attachment_ids(spec) -> frozenset:
-    """The ids of the agents' attachments *spec* holds beside the doc."""
-    section = _dataflow_of(spec).get("agentAttachments") if isinstance(spec, dict) else None
-    if not isinstance(section, list):
-        return frozenset()
-    key_of = _SECTION_KEYS["agentAttachments"]
-    return frozenset(key for key in map(key_of, section) if key is not None)
+@dataclass
+class _AttachmentsWait:
+    """A dataflow's wait after a word of its agents: whether a change came
+    during it, which is told when it ends, and the app to tell it with."""
+
+    timer: threading.Timer
+    changed: bool = False
+    app: object = None
 
 
-def _tell_attachments(project_id: str, before: frozenset, after: frozenset) -> None:
-    """Tell the tabs of the dataflow's owner and editors that a write attached
-    an agent to it or took one off (*before* and *after* are the attachments'
-    ids), so each lists its agents again: no change of the doc tells a tab of
-    them. A watcher's tab lists none and is told nothing, as is every tab of a
-    write that attached and took off no agent."""
-    if before == after:
+#: Each dataflow whose room was told of its agents less than
+#: :data:`ATTACHMENTS_TOLD_EVERY_S` ago, by id.
+_attachments_waits: dict[str, _AttachmentsWait] = {}
+_attachments_waits_lock = threading.Lock()
+
+
+def _attachments_of(spec):
+    """The agents' attachments *spec* holds beside the doc, as written."""
+    return _member(_dataflow_of(spec), "agentAttachments") if isinstance(spec, dict) else doc_mapping.MISSING
+
+
+def _tell_attachments(project_id: str, before, after) -> None:
+    """Tell the tabs of the dataflow's owner and editors that a write changed
+    its agents' attachments, from *before* to *after*: an agent attached or
+    taken off, or an attachment's record, such as its chat's title. Each tab
+    lists its agents again: no change of the doc tells a tab of them. A
+    watcher's tab lists none and is told nothing, as is every tab of a write
+    that left the attachments as they were. The word goes at once, then at
+    most one more every :data:`ATTACHMENTS_TOLD_EVERY_S`: a change made during
+    the wait, a burst's last among them, is told when the wait ends."""
+    if doc_mapping.same(before, after):
         return
+    app = _app_at_hand()
+    with _attachments_waits_lock:
+        wait = _attachments_waits.get(project_id)
+        if wait is not None:
+            wait.changed = True
+            wait.app = app or wait.app
+            return
+        _attachments_waits[project_id] = _AttachmentsWait(_wait_after_word(project_id), app=app)
+    _say_attachments_changed(project_id, app)
+
+
+def _wait_after_word(project_id: str) -> threading.Timer:
+    """The wait after a word of *project_id*'s agents, started."""
+    timer = threading.Timer(ATTACHMENTS_TOLD_EVERY_S, _attachments_wait_ends, args=(project_id,))
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
+def _attachments_wait_ends(project_id: str) -> None:
+    """A change made during the wait is told now, and another wait starts;
+    with none, the dataflow waits no more."""
+    with _attachments_waits_lock:
+        wait = _attachments_waits.get(project_id)
+        if wait is None:
+            return
+        if not wait.changed:
+            del _attachments_waits[project_id]
+            return
+        wait.changed = False
+        wait.timer = _wait_after_word(project_id)
+        app = wait.app
+    _say_attachments_changed(project_id, app)
+
+
+def _say_attachments_changed(project_id: str, app) -> None:
     try:
-        roles.tell_editors(project_id, ATTACHMENTS_CHANGED_EVENT, {"projectId": project_id})
+        roles.tell_editors(project_id, ATTACHMENTS_CHANGED_EVENT, {"projectId": project_id}, app=app)
     except Exception:  # noqa: BLE001 - the write stands whether or not the room heard of it
         logger.exception("the room of dataflow %s could not be told its agents changed", project_id)
+
+
+def _app_at_hand():
+    """The app of the request or job at hand, for a word told when a wait
+    ends, on the wait's own thread, which holds no app context."""
+    from flask import current_app, has_app_context
+
+    return current_app._get_current_object() if has_app_context() else None
 
 
 def _keyed_by(entries, key_of) -> Optional[dict]:

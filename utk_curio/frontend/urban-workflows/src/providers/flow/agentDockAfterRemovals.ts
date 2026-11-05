@@ -12,10 +12,10 @@
  * the server has the removal, and on another tab's removal it diffs a canvas
  * that still draws what the doc took out.
  *
- * The dock asks only after a removal (`removesNodes`): the canvas hands every
- * node change to the removal handler, each move of a drag among them. An
- * agent attached or taken off reaches the dock through the dataflow's room
- * (`useAttachmentsInTheRoom`).
+ * The dock asks only after a removal (`removesNodes`), whoever hands node
+ * changes to the removal handler; the canvas hands it only its removals. An
+ * agent attached, taken off or changed reaches the dock through the
+ * dataflow's room (`useAttachmentsInTheRoom`).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { NodeChange } from "reactflow";

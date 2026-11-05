@@ -781,7 +781,10 @@ export function MainCanvas() {
         // A drag shows live in the others' tabs; its place is written at the drop.
         dataflowDocRef.current?.noteDrag(changes);
         if (dirty) markDirty();
-        onNodesDelete(changes);
+        // The removal handler takes the removals alone: a drag's moves, a
+        // selection and a new size go to onNodesChange only.
+        const removals = changes.filter((change) => change.type === "remove");
+        if (removals.length > 0) onNodesDelete(removals);
         return onNodesChange(changes);
     }, [onNodesDelete, onNodesChange, markDirty]);
 

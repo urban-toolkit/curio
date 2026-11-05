@@ -39,6 +39,9 @@ export interface LiveAsk {
   toolCalls: AgentToolCall[];
   /** It proposed an install or landed a change: the listing moved with it. */
   sawProposal: boolean;
+  /** It handed work to another agent, which may be attached for it: the
+   * listing may have moved with it. */
+  delegated?: boolean;
   /** Its message is the transcript's: its turn runs, or this tab placed it
    * there when it asked of an agent that had nothing to do. */
   inTranscript: boolean;

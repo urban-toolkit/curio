@@ -1,10 +1,11 @@
 /**
  * The agents attached to the dataflow are kept beside its doc, so no change
  * of the doc tells this tab of them: the room does. When someone attaches an
- * agent to the dataflow or takes one off, the server tells the tabs of its
- * owner and editors (`ATTACHMENTS_CHANGED_EVENT`, `dataflow_docs.py`), and
- * this tab lists the agents again. A tab back in the room after a time away
- * lists them again too, as it may have missed what the room told meanwhile.
+ * agent to the dataflow, takes one off or changes one (its chat's title, its
+ * intent, its proposals), the server tells the tabs of its owner and editors
+ * (`ATTACHMENTS_CHANGED_EVENT`, `dataflow_docs.py`), and this tab lists the
+ * agents again. A tab back in the room after a time away lists them again
+ * too, as it may have missed what the room told meanwhile.
  */
 import { useEffect, useRef } from "react";
 
