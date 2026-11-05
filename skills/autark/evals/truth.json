@@ -1,0 +1,325 @@
+{
+  "skill_name": "autark",
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/11-autark-pbf-loading.json node pbf-plot, its content (a plot of table_osm_buildings: mark bar, axis height and @transform, the binning-1d preset, events brushX), with the Chicago Loop's title from docs/examples/dataflows/interaction-autark.json node ia-plot's content",
+      "fails": [],
+      "reply": "I added an Autark node, Building heights, whose document is one plot: a bar mark over the buildings' height, binned by the binning-1d transform, its dataRef table_osm_buildings, the name the OpenStreetMap layers node gives its buildings, and \"events\": [\"brushX\"], so you can brush it. It has no data section and no map: it reads its input and draws one view. Connect the OpenStreetMap layers node to its input on the canvas; I cannot add connections.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_buildings\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"height\",\n      \"@transform\"\n    ],\n    \"title\": \"Chicago Loop building heights\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 12\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  }\n}",
+                "goal": "Show a brushable histogram of building heights.",
+                "id": "389eda52-e6cf-4c2a-8a6b-c337d5859650",
+                "title": "Building heights",
+                "type": "curio.builtin/autk-grammar"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Autark node · Building heights",
+            "lines": [
+              "Autark · curio.builtin/autk-grammar",
+              "node 389eda52-e6cf-4c2a-8a6b-c337d5859650"
+            ],
+            "nodeId": "389eda52-e6cf-4c2a-8a6b-c337d5859650",
+            "nodeType": "curio.builtin/autk-grammar",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/autk-grammar",
+            "title": "Building heights",
+            "goal": "Show a brushable histogram of building heights.",
+            "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_buildings\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"height\",\n      \"@transform\"\n    ],\n    \"title\": \"Chicago Loop building heights\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 12\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "reply": "Here is the document for an Autark histogram of the buildings' heights. Add an Autark node, paste it in and connect the OpenStreetMap layers node to it:\n\n```json\n{\n  \"plot\": {\n    \"dataRef\": \"table_osm_buildings\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"height\",\n      \"@transform\"\n    ],\n    \"title\": \"Chicago Loop building heights\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 12\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  }\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "refused-spec",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_document_validation.py::TestOneViewPerNode::test_a_document_with_a_map_and_a_plot_is_refused_with_the_fix: a document with a map and a plot is refused by the document check",
+      "fails": [
+        4
+      ],
+      "reply": "I added an Autark node, Building heights, whose document is one plot: a bar mark over the buildings' height, binned by the binning-1d transform, its dataRef table_osm_buildings, the name the OpenStreetMap layers node gives its buildings, and \"events\": [\"brushX\"], so you can brush it. It has no data section and no map: it reads its input and draws one view. Connect the OpenStreetMap layers node to its input on the canvas; I cannot add connections.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_buildings\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"height\",\n      \"@transform\"\n    ],\n    \"title\": \"Chicago Loop building heights\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 12\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  },\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_buildings\"\n      }\n    ]\n  }\n}",
+                "goal": "Show a brushable histogram of building heights.",
+                "id": "389eda52-e6cf-4c2a-8a6b-c337d5859650",
+                "title": "Building heights",
+                "type": "curio.builtin/autk-grammar"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Autark node · Building heights",
+            "lines": [
+              "Autark · curio.builtin/autk-grammar",
+              "node 389eda52-e6cf-4c2a-8a6b-c337d5859650"
+            ],
+            "nodeId": "389eda52-e6cf-4c2a-8a6b-c337d5859650",
+            "nodeType": "curio.builtin/autk-grammar",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/autk-grammar",
+            "title": "Building heights",
+            "goal": "Show a brushable histogram of building heights.",
+            "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_buildings\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"height\",\n      \"@transform\"\n    ],\n    \"title\": \"Chicago Loop building heights\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 12\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  },\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_buildings\"\n      }\n    ]\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "golden",
+      "kind": "golden",
+      "source": "Curio's one-view rule in its own words, utk_curio/frontend/urban-workflows/src/contracts/autkGrammar.json oneView, pinned by utk_curio/backend/tests/test_agents/test_document_validation.py::TestOneViewPerNode; the stations' ada values and their node as docs/examples/dataflows/chicago-loop-layers.json node d517325b-266b-575d-ab48-2685bb889536's content maps them (its CTA station layer, getFnv ada) and node 5abae988-9ecb-5f71-85cc-958df3999990's content returns them",
+      "fails": [],
+      "reply": "I left this map's document as it is. An Autark node draws one view: one map or one plot. Put each in its own Autark node, and link them with interaction edges.\n\nSo the bar chart goes in an Autark node of its own: add an Autark node, connect the CTA 'L' stations node to it, and give it a document with one plot, \"mark\": \"bar\" over the stations' ada values (accessible, not accessible or unknown). Then link the two views with an interaction edge, so picking stations in one highlights them in the other.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": []
+    },
+    {
+      "case": 2,
+      "name": "refused-spec",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_document_validation.py::TestOneViewPerNode::test_a_document_with_a_map_and_a_plot_is_refused_with_the_fix: a document with a map and a plot is refused by the document check: the downtown map's document with a plot of the stations added",
+      "fails": [
+        1
+      ],
+      "reply": "I left this map's document as it is. An Autark node draws one view: one map or one plot. Put each in its own Autark node, and link them with interaction edges.\n\nSo the bar chart goes in an Autark node of its own: add an Autark node, connect the CTA 'L' stations node to it, and give it a document with one plot, \"mark\": \"bar\" over the stations' ada values (accessible, not accessible or unknown). Then link the two views with an interaction edge, so picking stations in one highlights them in the other.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "d517325b-266b-575d-ab48-2685bb889536",
+                "type": "curio.builtin/autk-grammar",
+                "title": "Downtown Chicago layers",
+                "changes": {
+                  "content": {
+                    "before": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0:input_0 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"RPL_THEMES\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateOrRd\",\n        \"colorMapRange\": [\n          0,\n          1\n        ],\n        \"title\": \"Social vulnerability (SVI percentile)\",\n        \"opacity\": 0.55,\n        \"isPick\": true\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_water !!]\",\n        \"title\": \"Water\",\n        \"color\": \"#6baed6\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_parks !!]\",\n        \"title\": \"Parks\",\n        \"color\": \"#74c476\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_roads !!]\",\n        \"title\": \"Roads\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:input_2 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"legend\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"CTA 'L' line\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_buildings !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          250\n        ],\n        \"title\": \"Building height (m)\",\n        \"isPick\": true\n      },\n      {\n        \"dataRef\": \"[!! input_0:input_3 !!]\",\n        \"title\": \"Trees\",\n        \"color\": \"#238b45\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:input_4 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"ada\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeSet1\",\n        \"title\": \"CTA station\",\n        \"isPick\": true\n      }\n    ]\n  }\n}",
+                    "after": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0:input_0 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"RPL_THEMES\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateOrRd\",\n        \"colorMapRange\": [\n          0,\n          1\n        ],\n        \"title\": \"Social vulnerability (SVI percentile)\",\n        \"opacity\": 0.55,\n        \"isPick\": true\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_water !!]\",\n        \"title\": \"Water\",\n        \"color\": \"#6baed6\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_parks !!]\",\n        \"title\": \"Parks\",\n        \"color\": \"#74c476\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_roads !!]\",\n        \"title\": \"Roads\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:input_2 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"legend\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"CTA 'L' line\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_buildings !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          250\n        ],\n        \"title\": \"Building height (m)\",\n        \"isPick\": true\n      },\n      {\n        \"dataRef\": \"[!! input_0:input_3 !!]\",\n        \"title\": \"Trees\",\n        \"color\": \"#238b45\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:input_4 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"ada\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeSet1\",\n        \"title\": \"CTA station\",\n        \"isPick\": true\n      }\n    ]\n  },\n  \"plot\": {\n    \"dataRef\": \"[!! input_0:input_4 !!]\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"ada\"\n    ],\n    \"title\": \"CTA stations by accessibility\"\n  }\n}"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Autark node · Downtown Chicago layers",
+            "lines": [
+              "Autark node · Downtown Chicago layers"
+            ],
+            "nodeId": "d517325b-266b-575d-ab48-2685bb889536",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "d517325b-266b-575d-ab48-2685bb889536",
+            "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0:input_0 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"RPL_THEMES\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateOrRd\",\n        \"colorMapRange\": [\n          0,\n          1\n        ],\n        \"title\": \"Social vulnerability (SVI percentile)\",\n        \"opacity\": 0.55,\n        \"isPick\": true\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_water !!]\",\n        \"title\": \"Water\",\n        \"color\": \"#6baed6\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_parks !!]\",\n        \"title\": \"Parks\",\n        \"color\": \"#74c476\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_roads !!]\",\n        \"title\": \"Roads\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:input_2 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"legend\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"CTA 'L' line\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:table_osm_buildings !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0,\n          250\n        ],\n        \"title\": \"Building height (m)\",\n        \"isPick\": true\n      },\n      {\n        \"dataRef\": \"[!! input_0:input_3 !!]\",\n        \"title\": \"Trees\",\n        \"color\": \"#238b45\"\n      },\n      {\n        \"dataRef\": \"[!! input_0:input_4 !!]\",\n        \"isColorMap\": true,\n        \"getFnv\": \"ada\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeSet1\",\n        \"title\": \"CTA station\",\n        \"isPick\": true\n      }\n    ]\n  },\n  \"plot\": {\n    \"dataRef\": \"[!! input_0:input_4 !!]\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"ada\"\n    ],\n    \"title\": \"CTA stations by accessibility\"\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/dataflows/chicago-loop-layers.json node d517325b-266b-575d-ab48-2685bb889536, its content's CTA 'L' line layer (getFnv legend, categorical, schemeTableau10), alone, its dataRef the new node's first input, input_0, as utk_curio/frontend/urban-workflows/src/utils/autkDefaultSpec.ts names a lone input's table (autkDefaultSpec.test.ts: 'a layer with only categories is coloured by the first')",
+      "fails": [],
+      "reply": "I added an Autark node, CTA 'L' lines map, whose document is a map with one layer that reads the node's first input, input_0, colored by legend as categories (\"getFnv\": \"legend\", \"getFnvType\": \"categorical\", schemeTableau10). It has no data section: the lines reach it on its input. Connect the CTA 'L' lines node to its input on the canvas; I cannot add connections.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"input_0\",\n        \"isColorMap\": true,\n        \"getFnv\": \"legend\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"CTA 'L' line\"\n      }\n    ]\n  }\n}",
+                "goal": "Draw the CTA 'L' lines, colored by each line's legend code.",
+                "id": "e2595ca9-7a22-4e0c-a49c-a87fbf64b9fa",
+                "title": "CTA 'L' lines map",
+                "type": "curio.builtin/autk-grammar"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Autark node · CTA 'L' lines map",
+            "lines": [
+              "Autark · curio.builtin/autk-grammar",
+              "node e2595ca9-7a22-4e0c-a49c-a87fbf64b9fa"
+            ],
+            "nodeId": "e2595ca9-7a22-4e0c-a49c-a87fbf64b9fa",
+            "nodeType": "curio.builtin/autk-grammar",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/autk-grammar",
+            "title": "CTA 'L' lines map",
+            "goal": "Draw the CTA 'L' lines, colored by each line's legend code.",
+            "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"input_0\",\n        \"isColorMap\": true,\n        \"getFnv\": \"legend\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"CTA 'L' line\"\n      }\n    ]\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reply": "Here is the document for an Autark map of the CTA 'L' lines. Add an Autark node, paste it in and connect the CTA 'L' lines node to it:\n\n```json\n{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"input_0\",\n        \"isColorMap\": true,\n        \"getFnv\": \"legend\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"CTA 'L' line\"\n      }\n    ]\n  }\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "refused-layer",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_document_validation.py::TestAutkGrammar::test_a_layer_without_a_dataref_is_invalid: a layer with no dataRef is refused by the document check",
+      "fails": [
+        2
+      ],
+      "reply": "I added an Autark node, CTA 'L' lines map, whose document is a map with one layer that reads the node's first input, input_0, colored by legend as categories (\"getFnv\": \"legend\", \"getFnvType\": \"categorical\", schemeTableau10). It has no data section: the lines reach it on its input. Connect the CTA 'L' lines node to its input on the canvas; I cannot add connections.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"isColorMap\": true,\n        \"getFnv\": \"legend\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"CTA 'L' line\"\n      }\n    ]\n  }\n}",
+                "goal": "Draw the CTA 'L' lines, colored by each line's legend code.",
+                "id": "e2595ca9-7a22-4e0c-a49c-a87fbf64b9fa",
+                "title": "CTA 'L' lines map",
+                "type": "curio.builtin/autk-grammar"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Autark node · CTA 'L' lines map",
+            "lines": [
+              "Autark · curio.builtin/autk-grammar",
+              "node e2595ca9-7a22-4e0c-a49c-a87fbf64b9fa"
+            ],
+            "nodeId": "e2595ca9-7a22-4e0c-a49c-a87fbf64b9fa",
+            "nodeType": "curio.builtin/autk-grammar",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/autk-grammar",
+            "title": "CTA 'L' lines map",
+            "goal": "Draw the CTA 'L' lines, colored by each line's legend code.",
+            "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"isColorMap\": true,\n        \"getFnv\": \"legend\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"CTA 'L' line\"\n      }\n    ]\n  }\n}"
+          }
+        }
+      ]
+    }
+  ],
+  "gaps": []
+}

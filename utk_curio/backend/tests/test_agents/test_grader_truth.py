@@ -199,6 +199,58 @@ def _vega_refuses(node_id: str, columns: list[str]):
     return refused
 
 
+def _autk_refuses(node_id: str | None = None):
+    """The document check refuses each Autark document the answer wrote (into *node_id*)."""
+    def refused(answer) -> bool:
+        dv = _dv()
+        written = [text for _, node_type, text in _written(answer, node_id) if node_type == AUTK]
+        return bool(written) and all(dv.validate(AUTK, text)["status"] == dv.STATUS_INVALID for text in written)
+    return refused
+
+
+def _templates() -> dict:
+    """Each shipped template by its type, as its manifest writes it: the roster the plan check reads."""
+    found = {}
+    for path in sorted((REPO_ROOT / "packages").glob("*/manifest.json")):
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        package = path.parent.name.split("@", 1)[0]
+        for template in manifest.get("templates") or []:
+            found[f"{package}/{template['id']}"] = template
+    return found
+
+
+def _plan_refuses(dataflow: str):
+    """The plan check refuses the interaction edges of the plan the answer wrote
+    over the case's *dataflow* (``plan_topology.interaction_edge_errors``)."""
+    def refused(answer) -> bool:
+        from utk_curio.backend.app.agents.domain import plan_topology
+
+        nodes = json.loads((REPO_ROOT / dataflow).read_text(encoding="utf-8"))["dataflow"]["nodes"]
+        types = {node["id"]: node.get("type") for node in nodes}
+        [plan] = [c["arguments"] for c in answer.calls if c["tool"] == "dataflow.plan.write" and c["status"] == "applied"]
+        planned = {node["ref"]: node["nodeType"] for node in plan.get("nodes") or []}
+        return bool(plan_topology.interaction_edge_errors(
+            plan, lambda end: planned.get(end) or types.get(end), _templates()))
+    return refused
+
+
+def _grounding_refuses(*, datasets=(), models=None, data_loading: bool = False):
+    """The grounding gate, on an account with *datasets* in its Data Catalog
+    and *models* added, refuses the code the answer wrote."""
+    def refused(answer) -> bool:
+        from utk_curio.backend.app.agents.application import source_grounding as sg
+
+        ctx = sg.GroundingContext(
+            catalog_ids={i: sg.CatalogRef(i, i, "", "") for i in datasets}, is_data_loading=data_loading,
+            models=None if models is None else {m: (1,) for m in models}, code_engine="python")
+        return any(not sg.check_grounding(text, "python", ctx).ok for _, _, text in _written(answer))
+    return refused
+
+
+LAYERS = "docs/examples/dataflows/chicago-loop-layers.json"
+QUAD = "docs/examples/dataflows/quad-cities-flood-vulnerability.json"
+
+
 def _refusals() -> dict:
     """Each ``refused-`` mutant, by its skill, case and name, and the check its
     source names, which refuses its planted output and passes its golden answer's."""
@@ -206,6 +258,16 @@ def _refusals() -> dict:
         ("vega-lite-starter", 1, "refused-field"): _vega_refuses("scores-chart", ["side", "accessibility", "coverage"]),
         ("vega-lite-starter", 2, "refused-field"): _vega_refuses("counts-chart", ["hour", "pedestrians", "cyclists"]),
         ("vega-lite-starter", 3, "refused-field"): _vega_refuses("roofs-chart", ["roof_id", "VEGETATED_SQFT"]),
+        ("autark-starter", 1, "refused-layer"): _autk_refuses("blocks-map"),
+        ("autark-starter", 2, "refused-layer"): _autk_refuses("blocks-parks-map"),
+        ("autark", 1, "refused-spec"): _autk_refuses(),
+        ("autark", 2, "refused-spec"): _autk_refuses("d517325b-266b-575d-ab48-2685bb889536"),
+        ("autark", 3, "refused-layer"): _autk_refuses(),
+        ("rasterization", 4, "refused-edge"): _plan_refuses(QUAD),
+        ("node-functions", 1, "refused-code"): _grounding_refuses(
+            datasets=["data.curio.chicago-loop-layers"], data_loading=True),
+        ("node-functions", 3, "refused-code"): _grounding_refuses(
+            datasets=["data.curio.mapillary-sample"], models=["model.curio.ddrnet23-slim"]),
     }
 
 
