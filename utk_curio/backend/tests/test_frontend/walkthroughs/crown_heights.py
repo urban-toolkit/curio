@@ -445,29 +445,49 @@ def _by_title(saved: dict, title: str) -> dict:
     return found[0]
 
 
+def _builder_session(ctx: Ctx, token: str, project_id: str, agent) -> dict:
+    """*agent*'s session on the dataflow: whether Solve is solving, and the
+    outcome Solve gave each planned node (``nodeRuns``)."""
+    cards = api_json(f"{ctx.backend}/api/agents/projects/{project_id}/attachments", token)["attachments"]
+    card = next(c for c in cards if c.get("coord") == agent.dir_name)
+    return card.get("builderSession") or {}
+
+
 def _solve(ctx: Ctx, agent, panel, token: str, project_id: str, titles: list[str]) -> dict[str, dict]:
-    """Press Solve, and wait until each node of *titles* holds its content in
-    the saved dataflow. Returns them, by title. A Solve that leaves one empty
-    says what its progress list reads and how many calls reached the model."""
+    """Press Solve, and wait until it ends with each node of *titles* solved
+    and holding its content in the saved dataflow. Returns them, by title.
+    Content alone is not enough: a node that held content before Solve wrote
+    is skipped. A Solve that leaves one unsolved says each node's outcome,
+    what its progress list reads and how many calls reached the model."""
     page = ctx.page
     strip = page.get_by_role("group", name=agent.name).first
     solve = strip.get_by_role("button", name=re.compile(r"^(Solve|Retry \d+ \w+)$"))
     expect(solve).to_be_visible(timeout=30000)
-    ctx.click(solve, hold=1500)
+    with page.expect_response(
+        lambda r: r.request.method == "POST" and r.url.endswith("/solve/stream"), timeout=60000,
+    ) as answered:
+        ctx.click(solve, hold=1500)
+    assert answered.value.status == 200, f"the server refused Solve: HTTP {answered.value.status}"
     ctx.mark("cut", "start")
     deadline = time.time() + SOLVE_S
     while True:
+        session = _builder_session(ctx, token, project_id, agent)
+        runs = session.get("nodeRuns") or {}
         saved = _saved(ctx, token, project_id)
         filled = {title: _by_title(saved, title) for title in titles}
+        outcomes = {title: runs.get(node["id"]) for title, node in filled.items()}
         empty = sorted(title for title, node in filled.items() if not (node.get("content") or "").strip())
-        if not empty:
+        ended = session.get("phase") != "solving" and not session.get("solveExecutionId")
+        solved = all(outcome == "solved" for outcome in outcomes.values())
+        if ended and solved and not empty:
             break
-        if time.time() >= deadline:
+        if (ended and not solved) or time.time() >= deadline:
             progress = panel.get_by_label("Plan node progress")
             said = progress.first.inner_text() if progress.count() else "no progress list"
+            when = "ended" if ended else f"was still solving after {SOLVE_S:.0f} s"
             raise AssertionError(
-                f"Solve left {empty} empty after {SOLVE_S:.0f} s. Its progress list reads {said!r}, "
-                f"and the model was called {len(captured_agent_prompts(ctx.backend))} times."
+                f"Solve {when} with the outcomes {outcomes}, and {empty or 'no node'} empty. Its progress "
+                f"list reads {said!r}, and the model was called {len(captured_agent_prompts(ctx.backend))} times."
             )
         page.wait_for_timeout(1000)
     ctx.mark("cut", "end")
