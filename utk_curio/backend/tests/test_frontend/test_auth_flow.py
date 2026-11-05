@@ -60,9 +60,18 @@ def test_signup_signin_flow(app_frontend: FrontendPage, page):
 #
 # Every page load asks /api/auth/me. The server answers a dead session with 401
 # and nothing else; a check the browser aborted because the page navigated
-# away, or one that met a server error, says nothing about the session. The
-# routes below fail that one request on purpose, so the load it belongs to shows
-# the sign-in page either way: what is under test is the NEXT load.
+# away, or one that met a server error, says nothing about the session, so the
+# load asks again after each of SESSION_CHECK_WAITS_MS (UserProvider.tsx, 7.5 s
+# in all) before it shows the sign-in page. The routes below fail every check
+# of one load on purpose, so that load shows the sign-in page either way: what
+# is under test is the NEXT load.
+#
+# Except the last test: there only the load's first check fails, as when the
+# machine's network changes under it, and the load itself opens signed in.
+
+#: The sign-in page of a load whose every check fails comes after its checks
+#: and the 7.5 s of waits between them.
+FAILED_CHECKS_TIMEOUT_MS = 30000
 
 
 @pytest.fixture()
@@ -93,7 +102,8 @@ def _session_cookie(page):
 def _reload_with_failing_session_check(page, fail) -> None:
     page.route("**/api/auth/me", fail)
     page.reload()
-    expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible(timeout=15000)
+    expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible(
+        timeout=FAILED_CHECKS_TIMEOUT_MS)
     page.unroute("**/api/auth/me", fail)
 
 
@@ -128,3 +138,31 @@ def test_a_refused_session_check_signs_out(signed_in):
 
     page.goto(f"{signed_in.base}/projects")
     expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible(timeout=15000)
+
+
+def test_a_session_check_the_browser_dropped_is_asked_again(signed_in):
+    """A load whose first session check the browser drops still opens signed in.
+
+    Chromium fails every request in flight when the machine's network changes
+    (net::ERR_NETWORK_CHANGED). On a CI runner that once hit a page's only
+    check, and a signed-in owner's dataflow opened on the sign-in page. Here
+    the load's first check fails the same way and the next one goes through.
+    """
+    page = signed_in.page
+    checks = []
+
+    def _drop_the_first(route):
+        if route.request.method == "GET":
+            checks.append(route.request.url)
+            if len(checks) == 1:
+                route.abort("internetdisconnected")
+                return
+        route.continue_()
+
+    page.route("**/api/auth/me", _drop_the_first)
+    page.reload()
+    wait_for_projects_page(page, timeout=15000)
+    expect(page.get_by_test_id("signout-button")).to_be_visible(timeout=15000)
+    page.unroute("**/api/auth/me", _drop_the_first)
+    assert len(checks) >= 2, f"the page checked its session {len(checks)} time(s): it never asked again"
+    assert _session_cookie(page) == signed_in.token, "the dropped check deleted the session cookie"
