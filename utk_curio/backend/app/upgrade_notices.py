@@ -70,21 +70,18 @@ def check_upgrade_notices() -> list[str]:
     except OSError:  # a notice never stops a boot
         pass
 
-    # A deployment that set only a guest key used to inherit a built-in guest
-    # model. Curio now ships no model name at all, so that deployment resolves
-    # nothing and guests fail at run time rather than at boot.
-    from utk_curio.backend.config import (
-        GUEST_LLM_API_KEY,
-        GUEST_LLM_MODEL,
-    )
+    # This Curio's own LLM endpoints are read only from the file
+    # --llm-endpoint-file names. The launcher refuses to start with one of the
+    # variables that used to set them; one left in utk_curio/backend/.env
+    # reaches only the backend, which reads none of them.
+    from utk_curio.common.llm_endpoint import RETIRED_VARIABLES
 
-    if GUEST_LLM_API_KEY and not GUEST_LLM_MODEL:
-        log.warning(
-            "GUEST_LLM_API_KEY is set but no guest model resolves. Curio no "
-            "longer ships a default model name, so guest AI will fail at run "
-            "time. Set GUEST_LLM_MODEL, or --llm-model for the deployment "
-            "default guests inherit."
-        )
-        warned.append("GUEST_LLM_MODEL")
+    for name in RETIRED_VARIABLES:
+        if name in os.environ:
+            log.warning(
+                "%s is set but no longer read. Put this Curio's LLM endpoints, "
+                "keys and models in the file --llm-endpoint-file names.", name,
+            )
+            warned.append(name)
 
     return warned
