@@ -206,6 +206,21 @@ export function normalizedDataflow(dataflow: Fields): Fields {
     }
 }
 
+/** The writer's *base* without its connections to a node *doc* no longer
+ *  holds. Such a connection points nowhere: the canvas stops drawing it, and
+ *  the server takes it out and tells whoever drew it
+ *  (`dataflow_docs._drop_dangling_connections`). So the writer never writes
+ *  its take-out, which, sent in one update with the connection, as a tab that
+ *  reconnects sends its changes, would hide it from the server. A node this
+ *  tab removes is still in the doc when its write starts, so its connections
+ *  go with it. */
+function withoutDangling(base: Fields, doc: Y.Doc): Fields {
+    if (!Array.isArray(base.edges)) return base;
+    const nodes = doc.getMap("nodes");
+    const edges = (base.edges as Fields[]).filter((e) => nodes.has(e.source as string) && nodes.has(e.target as string));
+    return edges.length === base.edges.length ? base : { ...base, edges };
+}
+
 /** The doc's Trill, its nodes and edges by id. */
 interface DocState {
     nodes: Map<string, Fields>;
@@ -419,7 +434,8 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         const kept = new Set((target.nodes as Fields[]).map((n) => n.id as string));
         const removed = (base.nodes as Fields[]).map((n) => n.id as string).filter((id) => !kept.has(id));
         if (removed.length) noteRemoval(bound.provider.awareness, removed);
-        bound.provider.doc.transact(() => applyDataflow(bound.provider.doc, base, target), CANVAS_ORIGIN);
+        const doc = bound.provider.doc;
+        doc.transact(() => applyDataflow(doc, withoutDangling(base, doc), target), CANVAS_ORIGIN);
     }, [canvasTrill]);
 
     // ------------------------------------------------------------------
@@ -599,21 +615,9 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         }
 
         // What the canvas loses: connections first, as the Delete key sends them.
-        // One the doc still holds, to a node it lost, points nowhere. The canvas
-        // stops drawing it but its writer leaves it to the server, which takes
-        // it out and tells whoever drew it: a take-out sent in one update with
-        // the drawing, as a tab that reconnects sends its changes, hides both.
         const gone = new Set(removedNodes);
-        const nowhere = new Set<string>();
         for (const edge of current.edges) {
-            if ((gone.has(edge.source) || gone.has(edge.target)) && !goneEdges.includes(edge)) {
-                goneEdges.push(edge);
-                nowhere.add(edge.id);
-            }
-        }
-        const base = writerBaseRef.current;
-        if (base && nowhere.size && Array.isArray(base.edges)) {
-            writerBaseRef.current = { ...base, edges: (base.edges as Fields[]).filter((e) => !nowhere.has(e.id as string)) };
+            if ((gone.has(edge.source) || gone.has(edge.target)) && !goneEdges.includes(edge)) goneEdges.push(edge);
         }
         if (goneEdges.length) {
             const ids = new Set(goneEdges.map((e) => e.id));
