@@ -205,6 +205,29 @@ def test_a_package_skills_test_cases_run_on_a_dataflow_that_uses_its_package():
             assert package in _packages_of(case.context.dataflow), (evals.name, case.id)
 
 
+def test_every_node_a_shipped_check_names_is_one_its_case_dataflow_holds():
+    """A check that names a node decides from that node's calls or content,
+    so the node is one of its test case's dataflow: a check on a node the
+    dataflow does not hold decides from nothing the run could do. Every
+    check's format is read with its file (``skill_evals.read``)."""
+    skill_evals = _skill_evals()
+    named = 0
+    for evals in skill_evals.shipped_evals():
+        for case in evals.cases:
+            for check in case.checks:
+                node = check.holds.get("node")
+                if node is None:
+                    continue
+                named += 1
+                where = (evals.name, case.id, check.as_dict())
+                assert case.context.dataflow is not None, where
+                spec = json.loads(case.context.dataflow.read_text(encoding="utf-8"))
+                nodes = (spec.get("dataflow") or {}).get("nodes") or []
+                ids = {str(n.get("id")) for n in nodes if isinstance(n, dict)}
+                assert str(node) in ids, where
+    assert named, "no shipped check names a node"
+
+
 def test_a_file_that_breaks_the_format_is_refused_naming_each_problem(tmp_path):
     skill_evals = _skill_evals()
     folder = tmp_path / "street-trees"

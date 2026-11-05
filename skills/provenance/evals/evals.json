@@ -12,6 +12,11 @@
         "The answer says the user puts an earlier version back from the node's Provenance drawer.",
         "The answer does not claim it restored, reverted or undid the node's code.",
         "The answer makes no change to the transformation node's content (no node.content.write)."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "node.history.read"},
+        {"assertion": 4, "kind": "tool", "tool": "node.content.write", "node": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5", "absent": true},
+        {"assertion": 4, "kind": "delegate", "capability": "node.content.generate", "node": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5", "absent": true}
       ]
     },
     {
@@ -23,6 +28,10 @@
         "The content it writes keeps the pasted code's logic: roofs over 1000 vegetated square feet, summed by zip, the top 5 returned.",
         "The pasted code is back in the node as the agent's change, which the user can undo: the reply says the code is back, the transformation node's content now holds the pasted code, and the change card for node f9e2b9af-23e6-4db3-9140-38bfecd6afc5 offers its Undo (\"undo\": true).",
         "The answer creates no new node."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "code", "node": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5", "pattern": "\\S"},
+        {"assertion": 4, "kind": "tool", "tool": "node.create", "absent": true}
       ]
     },
     {
@@ -46,6 +55,9 @@
         "The run calls node.history.read.",
         "The answer reports no run or edit of the node that its history does not hold (the history of a fresh dataflow holds none, so it may say nothing has changed yet).",
         "The answer names no history entry by its id: any entry it mentions is named by when it was made."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "node.history.read"}
       ]
     }
   ],

@@ -13,6 +13,12 @@
         "The code is one return curio_edit_features(...) statement, comment lines aside, with no chip and no other statement.",
         "Its first argument is still [input_0, input_1, input_2, input_3, input_4], with by_input=True.",
         "It holds an edit that caps height at 60 on the buildings layer, table_osm_buildings (named in the edit or in the call's layer argument): op set with where \"height > 60\", column height and value 60, or op expr whose value is min(height, 60)."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "code", "node": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f", "pattern": "\\S"},
+        {"assertion": 1, "kind": "tool", "tool": "node.create", "absent": true},
+        {"assertion": 3, "kind": "code", "node": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f", "pattern": "curio_edit_features\\(\\s*\\[\\s*input_0\\s*,\\s*input_1\\s*,\\s*input_2\\s*,\\s*input_3\\s*,\\s*input_4\\s*\\]"},
+        {"assertion": 3, "kind": "code", "node": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f", "pattern": "by_input\\s*=\\s*True\\b"}
       ]
     },
     {
@@ -26,6 +32,15 @@
         "That edit names the part by a where on both ids, such as \"building_id == 30311742 and osm_id == 245900117\".",
         "The edit does not name the part by ids [30311742] keyed on building_id, which would change every part of the building.",
         "The edit applies to the buildings layer, table_osm_buildings, named in the edit or in the call's layer argument."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "code", "node": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f", "pattern": "curio_edit_features\\(\\s*\\[\\s*input_0\\s*,\\s*input_1\\s*,\\s*input_2\\s*,\\s*input_3\\s*,\\s*input_4\\s*\\]"},
+        {"assertion": 1, "kind": "code", "node": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f", "pattern": "by_input\\s*=\\s*True\\b"},
+        {"assertion": 1, "kind": "code", "node": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f", "pattern": "(?s:curio_edit_features\\(.*curio_edit_features\\()", "absent": true},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/edit-features", "pattern": "\\{(?=[^{}]*[\"']op[\"']\\s*:\\s*[\"']set[\"'])(?=[^{}]*[\"']column[\"']\\s*:\\s*[\"']height[\"'])(?=[^{}]*[\"']value[\"']\\s*:\\s*60(?:\\.0+)?\\b)"},
+        {"assertion": 3, "kind": "code", "type": "curio.builtin/edit-features", "pattern": "[\"']where[\"']\\s*:\\s*[\"'](?=[^\"']*\\bbuilding_id\\s*==\\s*30311742\\b)(?=[^\"']*\\bosm_id\\s*==\\s*245900117\\b)"},
+        {"assertion": 4, "kind": "code", "type": "curio.builtin/edit-features", "pattern": "[\"']ids[\"']\\s*:\\s*\\[[^\\]]*\\b30311742\\b", "absent": true},
+        {"assertion": 5, "kind": "code", "type": "curio.builtin/edit-features", "pattern": "[\"']table_osm_buildings[\"']"}
       ]
     },
     {
@@ -38,6 +53,9 @@
         "The plan adds a Map Editor node (curio.builtin/edit-features) whose data comes from the OpenStreetMap layers node, 8de3c334-a7ef-515e-9ec8-6b65c1680a5e.",
         "That node's intent has a sentence, or a clause after a colon or a semicolon, that starts with Remove (or another word that names edits, such as delete or drop) and says the two tallest towers are removed by their building_id.",
         "The Map Editor node feeds a new Autark map node, and an interaction edge links the two."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "dataflow.plan.write"}
       ]
     },
     {

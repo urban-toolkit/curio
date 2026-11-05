@@ -13,6 +13,16 @@
         "The plot's \"dataRef\" is table_osm_buildings, the name the OpenStreetMap layers node gives its buildings.",
         "The document has no \"data\" section that loads OpenStreetMap again, and no \"map\": it reads its input and draws one view.",
         "The plot names a brush event, such as \"events\": [\"brushX\"]."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "node-added", "type": "curio.builtin/autk-grammar", "count": 1},
+        {"assertion": 2, "kind": "spec", "type": "curio.builtin/autk-grammar", "path": "plot.mark", "equals": "bar"},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/autk-grammar", "pattern": "\"preset\"\\s*:\\s*\"binning-1d\""},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/autk-grammar", "pattern": "\"axis\"\\s*:\\s*[\\[{][^\\]}]*\"height\""},
+        {"assertion": 3, "kind": "spec", "type": "curio.builtin/autk-grammar", "path": "plot.dataRef", "equals": "table_osm_buildings"},
+        {"assertion": 4, "kind": "spec", "type": "curio.builtin/autk-grammar", "path": "data", "absent": true},
+        {"assertion": 4, "kind": "spec", "type": "curio.builtin/autk-grammar", "path": "map", "absent": true},
+        {"assertion": 5, "kind": "code", "type": "curio.builtin/autk-grammar", "pattern": "\"events\"\\s*:\\s*(?:\\[[^\\]]*)?\"brush"}
       ]
     },
     {
@@ -36,6 +46,15 @@
         "Its document is a \"map\" with one layerRef whose \"dataRef\" is the node's first input: input_0, or the chip [!! input_0 !!].",
         "That layer colors by the legend column as categories: \"getFnv\": \"legend\" with \"getFnvType\": \"categorical\".",
         "The document has no \"data\" section: the lines reach the node on its input and are not loaded again from a file or a URL."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "node-added", "type": "curio.builtin/autk-grammar", "count": 1},
+        {"assertion": 2, "kind": "spec", "type": "curio.builtin/autk-grammar", "path": "map.layerRefs.0"},
+        {"assertion": 2, "kind": "spec", "type": "curio.builtin/autk-grammar", "path": "map.layerRefs.1", "absent": true},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/autk-grammar", "pattern": "\"dataRef\"\\s*:\\s*(?:\"input_0\"|\"\\[!!\\s*input_0\\s*!!\\]\"|\\[!!\\s*input_0\\s*!!\\])"},
+        {"assertion": 3, "kind": "code", "type": "curio.builtin/autk-grammar", "pattern": "\"getFnv\"\\s*:\\s*\"legend\""},
+        {"assertion": 3, "kind": "code", "type": "curio.builtin/autk-grammar", "pattern": "\"getFnvType\"\\s*:\\s*\"categorical\""},
+        {"assertion": 4, "kind": "spec", "type": "curio.builtin/autk-grammar", "path": "data", "absent": true}
       ]
     }
   ],

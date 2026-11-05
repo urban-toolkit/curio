@@ -11,6 +11,9 @@
         "The answer writes a dataflow plan (dataflow.plan.write).",
         "The plan does not feed the list itself into the Vega-Lite node: a Python node it adds turns the list from node 7877e099-7c1b-4496-8be7-43264794aea4 into a DataFrame first, or the answer also changes that node so it returns a DataFrame.",
         "The Vega-Lite node receives exactly one data edge, from the node that hands it the table."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "dataflow.plan.write"}
       ]
     },
     {
@@ -23,6 +26,9 @@
         "The plan adds a Data Export node (curio.builtin/data-export) fed by the top 10 node, f9e2b9af-23e6-4db3-9140-38bfecd6afc5.",
         "No data edge in the plan leaves the Data Export node.",
         "The second chart's data edge comes from f9e2b9af-23e6-4db3-9140-38bfecd6afc5, the table the export writes, not from the Data Export node."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "dataflow.plan.write"}
       ]
     },
     {
@@ -34,6 +40,9 @@
         "The answer writes a dataflow plan (dataflow.plan.write).",
         "No data edge carries the raster itself into the Vega-Lite node: the node that feeds the chart hands it a table (a DataFrame) of cell positions and depths, made from the raster by Python code, in a node of its own or in a loader whose intent says it turns the cells into such a table.",
         "The Vega-Lite node receives exactly one data edge."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "dataflow.plan.write"}
       ]
     }
   ]
