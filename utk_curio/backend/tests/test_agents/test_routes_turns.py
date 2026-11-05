@@ -312,8 +312,9 @@ class TestExecutionRecords:
         # the (empty) shipped defaults.
         from utk_curio.backend import config as backend_config
 
-        DEFAULT_LLM_API_TYPE = backend_config.DEFAULT_LLM_API_TYPE
-        DEFAULT_LLM_MODEL = backend_config.DEFAULT_LLM_MODEL
+        # The Deployment default: the first endpoint's first model.
+        DEFAULT_LLM_API_TYPE = backend_config.DEFAULT_LLM_ENDPOINTS[0].api_type
+        DEFAULT_LLM_MODEL = backend_config.DEFAULT_LLM_ENDPOINTS[0].models[0]
 
         self._mock_provider(monkeypatch, usage={"inputTokens": 12, "outputTokens": 34})
         _, token = user_and_token
@@ -344,8 +345,10 @@ class TestExecutionRecords:
         # Unconfigured test user → the deployment-default provider (DEC-039).
         assert pins["provider"] == DEFAULT_LLM_API_TYPE
         assert pins["model"] == DEFAULT_LLM_MODEL
+        # The deployment's endpoint is named by its label, never its host.
         assert pins["llm"] == {"configId": None, "label": "Deployment default",
-                               "baseUrlHost": "127.0.0.1:9", "source": "deployment"}
+                               "baseUrlHost": "", "source": "deployment"}
+        assert "127.0.0.1:9" not in json.dumps(turns)
         # dev/39: granted tools are pinned, every one, in the declared order,
         # then skill.read, which a run that lists skills is granted.
         assert pins["tools"] == [

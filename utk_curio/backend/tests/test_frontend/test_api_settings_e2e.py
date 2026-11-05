@@ -30,6 +30,7 @@ import json
 import re
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
+from urllib.request import Request, urlopen
 
 import pytest
 from playwright.sync_api import expect
@@ -292,7 +293,54 @@ def test_a_live_listing_is_offered_as_suggestions_not_a_replay(api_settings):
 # ---------------------------------------------------------------------------
 
 
+#: This Curio's stand-in endpoints (``/api/testing/llm-deployment``): fake
+#: names, hosts, keys and model ids, never real ones.
+DEPLOYMENT_HOST = "llm.example.test"
+DEPLOYMENT_KEY = "fake-deployment-key-" + "d" * 16
+SECOND_KEY = "fake-second-key-" + "s" * 16
+DEPLOYMENT_FILE = f"""\
+[Gateway]
+base_url=https://{DEPLOYMENT_HOST}/v1
+api_key={DEPLOYMENT_KEY}
+models=model-a,model-b
+
+[Second]
+base_url=https://second.{DEPLOYMENT_HOST}/v1
+api_key={SECOND_KEY}
+models=model-b,model-c
+"""
+DEPLOYMENT_ENDPOINTS = [
+    {"name": "Gateway", "models": ["model-a", "model-b"]},
+    {"name": "Second", "models": ["model-b", "model-c"]},
+]
+
+
+def _llm_deployment(backend: str, method: str, body: dict | None = None) -> dict:
+    request = Request(
+        f"{backend}/api/testing/llm-deployment",
+        data=json.dumps(body or {}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method=method,
+    )
+    with urlopen(request, timeout=10) as response:  # noqa: S310 - the test's own backend
+        return json.loads(response.read().decode("utf-8"))
+
+
 def test_a_configuration_is_saved_and_its_key_never_reaches_the_page(api_settings):
+    page = api_settings.page
+    # This Curio offers endpoints of its own, as --llm-endpoint-file does:
+    # neither their hosts nor their keys may reach the page.
+    offered = _llm_deployment(api_settings.backend, "POST", {"file": DEPLOYMENT_FILE})
+    assert offered["endpoints"] == DEPLOYMENT_ENDPOINTS, offered
+    try:
+        page.reload()
+        _wait_for_keys(page)
+        _a_configuration_is_saved_and_its_key_never_reaches_the_page(api_settings)
+    finally:
+        _llm_deployment(api_settings.backend, "DELETE")
+
+
+def _a_configuration_is_saved_and_its_key_never_reaches_the_page(api_settings):
     page = api_settings.page
     config = _add_configuration(
         page, label="Work Gemini", tab="Gemini", key=KEY, model="gemini-2.0-flash",
@@ -319,6 +367,46 @@ def test_a_configuration_is_saved_and_its_key_never_reaches_the_page(api_setting
         "() => Array.from(document.querySelectorAll('input')).map(i => i.value)"
     )
     assert not any(KEY in value for value in values)
+
+    # This Curio install: one choice among its endpoints' models, grouped by
+    # endpoint, with nothing to fetch.
+    _show_tab(page, "API keys")
+    _wait_for_keys(page)
+    editor = _open_editor(page)
+    editor.get_by_label("Label").fill("Here")
+    _tab(editor, "This Curio install").click()
+    expect(editor).to_contain_text("Runs on this Curio install's own endpoint with its key.")
+    expect(editor.get_by_role("button", name=re.compile(r"^(Fetch|Refresh) models"))).to_have_count(0)
+    model = editor.get_by_label("Model")
+    groups = model.locator("optgroup")
+    expect(groups).to_have_count(2)
+    for number, endpoint in enumerate(DEPLOYMENT_ENDPOINTS):
+        expect(groups.nth(number)).to_have_attribute("label", endpoint["name"])
+        expect(groups.nth(number).locator("option")).to_have_text(endpoint["models"])
+    # The same model name on the second endpoint.
+    model.select_option(json.dumps(["Second", "model-b"], separators=(",", ":")))
+    with page.expect_response(
+        lambda r: r.url.endswith("/api/agents/llm/configs") and r.request.method == "POST",
+        timeout=30000,
+    ) as created:
+        editor.get_by_role("button", name="Add configuration", exact=True).click()
+    assert created.value.status == 201, created.value.text()
+    here = created.value.json()["config"]
+    assert (here["endpoint"], here["endpointName"], here["model"], here["baseUrlHost"]) == (
+        "deployment", "Second", "model-b", "",
+    ), here
+    expect(_row(page, "Here")).to_be_visible(timeout=15000)
+
+    listing = _listing(api_settings)
+    assert listing["deployment"]["endpoints"] == DEPLOYMENT_ENDPOINTS, listing["deployment"]
+    for text in (json.dumps(listing), created.value.text(), page.content()):
+        assert DEPLOYMENT_HOST not in text and DEPLOYMENT_KEY not in text and SECOND_KEY not in text
+    values = page.evaluate(
+        "() => Array.from(document.querySelectorAll('input, select')).map(i => i.value)"
+    )
+    assert not any(
+        DEPLOYMENT_HOST in value or DEPLOYMENT_KEY in value or SECOND_KEY in value for value in values
+    )
 
 
 def test_the_editor_says_saved_only_on_the_configurations_own_endpoint(api_settings):
