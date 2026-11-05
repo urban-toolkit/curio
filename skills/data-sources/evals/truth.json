@@ -1,0 +1,377 @@
+{
+  "skill_name": "data-sources",
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "catalog.search's row for data.cityofchicago.energy-usage-2010, its loader line, df = curio_load_data(\"data.cityofchicago.energy-usage-2010\") (datasets/data.cityofchicago.energy-usage-2010@1), as docs/examples/05-vega-lite-multi-view-drilldown.json node 7d41f188-ec81-4642-ba73-eeb46ae8ebe2's content loads it",
+      "fails": [],
+      "reply": "I added a Data Loading node, Chicago Energy Usage 2010. Its code loads the dataset by its Data Catalog id with the loader line catalog.search gives, df = curio_load_data(\"data.cityofchicago.energy-usage-2010\"), and names no file path or URL.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "df = curio_load_data(\"data.cityofchicago.energy-usage-2010\")\nreturn df",
+                "goal": "Load the Chicago Energy Usage 2010 dataset from the Data Catalog.",
+                "id": "9a231e38-6ae0-47cc-b5b2-6d9daf374073",
+                "metadata": {
+                  "widgets": [
+                    {
+                      "default": "",
+                      "label": "Data",
+                      "name": "data",
+                      "type": "dataset"
+                    }
+                  ]
+                },
+                "title": "Chicago Energy Usage 2010",
+                "type": "curio.builtin/data-loading"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Data Loading node · Chicago Energy Usage 2010 · widgets data",
+            "lines": [
+              "Data Loading · curio.builtin/data-loading",
+              "node 9a231e38-6ae0-47cc-b5b2-6d9daf374073"
+            ],
+            "nodeId": "9a231e38-6ae0-47cc-b5b2-6d9daf374073",
+            "nodeType": "curio.builtin/data-loading",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/data-loading",
+            "title": "Chicago Energy Usage 2010",
+            "goal": "Load the Chicago Energy Usage 2010 dataset from the Data Catalog.",
+            "content": "df = curio_load_data(\"data.cityofchicago.energy-usage-2010\")\nreturn df\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3
+      ],
+      "reply": "Here is the code for a Data Loading node that loads it:\n\n```python\ndf = curio_load_data(\"data.cityofchicago.energy-usage-2010\")\nreturn df\n\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "refused-code",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_source_grounding.py::TestVerdicts::test_no_probe_available_refuses_honestly: a URL no tool verified is refused by the grounding gate: the dataset read from a portal URL written from memory",
+      "fails": [
+        2,
+        3
+      ],
+      "reply": "I added a Data Loading node, Chicago Energy Usage 2010. Its code loads the dataset by its Data Catalog id with the loader line catalog.search gives, df = curio_load_data(\"data.cityofchicago.energy-usage-2010\"), and names no file path or URL.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "import pandas as pd\n\nreturn pd.read_csv(\"https://data.cityofchicago.org/api/views/8yq3-m6wp/rows.csv\")\n",
+                "goal": "Load the Chicago Energy Usage 2010 dataset from the Data Catalog.",
+                "id": "9a231e38-6ae0-47cc-b5b2-6d9daf374073",
+                "metadata": {
+                  "widgets": [
+                    {
+                      "default": "",
+                      "label": "Data",
+                      "name": "data",
+                      "type": "dataset"
+                    }
+                  ]
+                },
+                "title": "Chicago Energy Usage 2010",
+                "type": "curio.builtin/data-loading"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Data Loading node · Chicago Energy Usage 2010 · widgets data",
+            "lines": [
+              "Data Loading · curio.builtin/data-loading",
+              "node 9a231e38-6ae0-47cc-b5b2-6d9daf374073"
+            ],
+            "nodeId": "9a231e38-6ae0-47cc-b5b2-6d9daf374073",
+            "nodeType": "curio.builtin/data-loading",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/data-loading",
+            "title": "Chicago Energy Usage 2010",
+            "goal": "Load the Chicago Energy Usage 2010 dataset from the Data Catalog.",
+            "content": "df = curio_load_data(\"data.cityofchicago.energy-usage-2010\")\nreturn df\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "golden",
+      "kind": "golden",
+      "source": "The AirNow API host as utk_curio/backend/tests/test_agents/test_benchmark.py's sample record names it (\"The AirNow host, www.airnowapi.org, needs a key.\"); utk_curio/backend/tests/test_agents/test_source_grounding.py::TestConnectionKeys (a key node code reads is a Node code key saved for its host, read with curio_secret(\"<name>\"), never written in the code: test_secret_calls_and_hosts, test_a_pasted_key_is_refused_and_the_route_named)",
+      "fails": [],
+      "reply": "I did not add a node. AirNow's API, at its host www.airnowapi.org, needs a key, and this account has no key saved for that host, so a node's code would have nothing to read.\n\nSave a Node code key for www.airnowapi.org in API Settings first, under a name of your choice. A node's code then reads it with curio_secret(\"<name>\"), and the key is written in no code.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": []
+    },
+    {
+      "case": 2,
+      "name": "refused-code",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_source_grounding.py::TestConnectionKeys::test_a_pasted_key_is_refused_and_the_route_named: a credential literal in code is refused by the grounding gate: the test's own key literal, in a node that reads AirNow",
+      "fails": [
+        1,
+        4
+      ],
+      "reply": "I did not add a node. AirNow's API, at its host www.airnowapi.org, needs a key, and this account has no key saved for that host, so a node's code would have nothing to read.\n\nSave a Node code key for www.airnowapi.org in API Settings first, under a name of your choice. A node's code then reads it with curio_secret(\"<name>\"), and the key is written in no code.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "import requests\n\napi_key = \"AbCdEf0123456789xyzXYZ-_\"\nurl = \"https://www.airnowapi.org/aq/observation/zipCode/current/\"\nreturn requests.get(url, params={\"format\": \"application/json\", \"zipCode\": \"60601\", \"API_KEY\": api_key}).json()\n",
+                "id": "4b8e2f1a-6c3d-4a5e-9f70-1d2c3b4a5e6f",
+                "title": "Chicago air quality",
+                "type": "curio.builtin/data-loading"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Data Loading node · Chicago air quality",
+            "lines": [
+              "Data Loading · curio.builtin/data-loading",
+              "node 4b8e2f1a-6c3d-4a5e-9f70-1d2c3b4a5e6f"
+            ],
+            "nodeId": "4b8e2f1a-6c3d-4a5e-9f70-1d2c3b4a5e6f",
+            "nodeType": "curio.builtin/data-loading",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/data-loading",
+            "title": "Chicago air quality",
+            "content": "import requests\n\napi_key = \"AbCdEf0123456789xyzXYZ-_\"\nurl = \"https://www.airnowapi.org/aq/observation/zipCode/current/\"\nreturn requests.get(url, params={\"format\": \"application/json\", \"zipCode\": \"60601\", \"API_KEY\": api_key}).json()\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/backend/tests/test_agents/test_source_grounding.py's MADE_UP_ROOFS, 50 made-up roofs with a zip code and a vegetated area built in the code, which TestVerdicts::test_made_up_roofs_the_person_asked_for_are_grounded passes as synthetic for this case's words",
+      "fails": [],
+      "reply": "I added a Data Loading node, Synthetic green roofs. Its code builds 50 made-up roofs in the code, each with a zip code and a vegetated area, and reads no file, dataset or URL. Swap it for the real numbers when you have them.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "import numpy as np\nimport pandas as pd\n\n# Made-up data: 50 fake green roofs, not real permits.\nrng = np.random.default_rng(42)\nzips = [\"60601\", \"60602\", \"60606\", \"60607\", \"60611\", \"60614\"]\nroofs = pd.DataFrame({\n    \"zip_code\": rng.choice(zips, size=50),\n    \"vegetated_sqft\": rng.uniform(500, 20000, size=50).round(0),\n})\nreturn roofs",
+                "goal": "Build about 50 made-up green roofs, each with a zip code and a vegetated area, to try the chart.",
+                "id": "77c76870-fa5e-4612-a8bd-92f049cb5407",
+                "metadata": {
+                  "widgets": [
+                    {
+                      "default": "",
+                      "label": "Data",
+                      "name": "data",
+                      "type": "dataset"
+                    }
+                  ]
+                },
+                "title": "Synthetic green roofs",
+                "type": "curio.builtin/data-loading"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Data Loading node · Synthetic green roofs · widgets data",
+            "lines": [
+              "Data Loading · curio.builtin/data-loading",
+              "node 77c76870-fa5e-4612-a8bd-92f049cb5407"
+            ],
+            "nodeId": "77c76870-fa5e-4612-a8bd-92f049cb5407",
+            "nodeType": "curio.builtin/data-loading",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/data-loading",
+            "title": "Synthetic green roofs",
+            "goal": "Build about 50 made-up green roofs, each with a zip code and a vegetated area, to try the chart.",
+            "content": "import numpy as np\nimport pandas as pd\n\n# Made-up data: 50 fake green roofs, not real permits.\nrng = np.random.default_rng(42)\nzips = [\"60601\", \"60602\", \"60606\", \"60607\", \"60611\", \"60614\"]\nroofs = pd.DataFrame({\n    \"zip_code\": rng.choice(zips, size=50),\n    \"vegetated_sqft\": rng.uniform(500, 20000, size=50).round(0),\n})\nreturn roofs"
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3
+      ],
+      "reply": "Here is the code for a node of made-up roofs:\n\n```python\nimport numpy as np\nimport pandas as pd\n\n# Made-up data: 50 fake green roofs, not real permits.\nrng = np.random.default_rng(42)\nzips = [\"60601\", \"60602\", \"60606\", \"60607\", \"60611\", \"60614\"]\nroofs = pd.DataFrame({\n    \"zip_code\": rng.choice(zips, size=50),\n    \"vegetated_sqft\": rng.uniform(500, 20000, size=50).round(0),\n})\nreturn roofs\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 4,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/backend/tests/test_agents/test_source_grounding.py::TestVerdicts (a URL no tool verified is refused: test_unverified_url_is_probed_and_404_refused, test_url_in_user_text_is_not_evidence, test_no_probe_available_refuses_honestly); the Dataset Finder's portal search as utk_curio/backend/tests/test_discovery/test_agent_seam.py runs it",
+      "fails": [],
+      "reply": "I did not add a node yet. This run holds no verified URL for Chicago's building footprints, and I will not write a portal URL from memory: Curio refuses a URL no tool has verified.\n\nPick a source first: the Dataset Finder can search the City of Chicago's portal for building footprint candidates, or you can give me the dataset's API URL. Once you pick and confirm one, I will build the node from it.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": []
+    },
+    {
+      "case": 4,
+      "name": "refused-code",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_source_grounding.py::TestVerdicts::test_no_probe_available_refuses_honestly: a URL no tool verified is refused by the grounding gate: a portal URL written from memory",
+      "fails": [
+        1,
+        2
+      ],
+      "reply": "I did not add a node yet. This run holds no verified URL for Chicago's building footprints, and I will not write a portal URL from memory: Curio refuses a URL no tool has verified.\n\nPick a source first: the Dataset Finder can search the City of Chicago's portal for building footprint candidates, or you can give me the dataset's API URL. Once you pick and confirm one, I will build the node from it.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "import pandas as pd\n\nreturn pd.read_csv(\"https://data.cityofchicago.org/api/views/hz9b-7nh8/rows.csv\")\n",
+                "id": "9a3c1e7b-2f4d-4b6a-8c0e-5d7f9a1b3c2e",
+                "title": "Chicago building footprints",
+                "type": "curio.builtin/data-loading"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Data Loading node · Chicago building footprints",
+            "lines": [
+              "Data Loading · curio.builtin/data-loading",
+              "node 9a3c1e7b-2f4d-4b6a-8c0e-5d7f9a1b3c2e"
+            ],
+            "nodeId": "9a3c1e7b-2f4d-4b6a-8c0e-5d7f9a1b3c2e",
+            "nodeType": "curio.builtin/data-loading",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/data-loading",
+            "title": "Chicago building footprints",
+            "content": "import pandas as pd\n\nreturn pd.read_csv(\"https://data.cityofchicago.org/api/views/hz9b-7nh8/rows.csv\")\n"
+          }
+        }
+      ]
+    }
+  ],
+  "gaps": []
+}

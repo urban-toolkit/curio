@@ -323,6 +323,11 @@ def _refusals() -> dict:
         ("map-edits", 2, "refused-map-edit"): _map_edits_refuses(LAYERS_EDITOR),
         ("map-edits", 3, "refused-edge"): _plan_refuses(LAYERS),
         ("map-edits", 4, "refused-map-edit"): _map_edits_refuses(LAYERS_EDITOR),
+        ("catalogs", 2, "refused-code"): _grounding_refuses(data_loading=True),
+        ("data-sources", 1, "refused-code"): _grounding_refuses(
+            datasets=["data.cityofchicago.energy-usage-2010"], data_loading=True),
+        ("data-sources", 2, "refused-code"): _grounding_refuses(data_loading=True),
+        ("data-sources", 4, "refused-code"): _grounding_refuses(data_loading=True),
         ("node-control", 2, "refused-code"): _grounding_refuses(),
         ("nodes", 3, "refused-code"): _grounding_refuses(datasets=["data.cityofchicago.neighborhoods"],
                                                          data_loading=True),
