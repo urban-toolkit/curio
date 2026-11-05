@@ -1,5 +1,35 @@
 {
   "skill_name": "research-notes",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The first note it creates is a node.create of curio.builtin/note titled \"Question\" whose content is the user's question as written: How much cooler do green roofs keep Chicago's roofs in summer?",
+        "After it come one note per finding, two in all, each a node.create of curio.builtin/note.",
+        "Each finding note's content is markdown that carries its source as a [source](https://...) link.",
+        "The finding notes state only what the user gave, with no figures or sources added.",
+        "The reply also states the answer in prose."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The run calls web.search.",
+        "The first note it creates is a node.create of curio.builtin/note titled \"Question\" whose content is the question: Which US cities publish their street trees as open data?",
+        "Each other note it creates is a curio.builtin/note that holds one finding, with a [source](https://...) link to where it was found.",
+        "The reply states the answer in prose as well."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer creates one note per finding in the text, three finding notes in all (the number of trees, the canopy share, the planting priority), each a node.create of curio.builtin/note.",
+        "Every note it creates has a backgroundColor that is a blue (the palette's blue is #cfe8f7), the color the user asked for, not the default yellow (#fef3c0) or green (#d5f0d1).",
+        "Each finding note's content is markdown (a bold label or a bullet) rather than the user's paragraph copied whole.",
+        "The notes add no facts, figures or sources beyond the user's text."
+      ]
+    }
+  ],
   "answers": [
     {
       "case": 1,

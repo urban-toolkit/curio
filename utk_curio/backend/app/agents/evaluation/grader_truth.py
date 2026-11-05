@@ -43,9 +43,16 @@ shown of a run, in the shapes ``skill_eval_worker.py`` writes them: ``reply``
 The file::
 
     {"skill_name": "<the skill's name>",
+     "cases": [{"case": 1, "assertions": ["...", "..."]}],
      "answers": [{"case": 1, "name": "golden", "kind": "golden", "source": "...",
                   "fails": [], "reply": "...", "changes": {...}, "calls": [...]}],
      "gaps": [{"case": 3, "why": "..."}]}
+
+``cases`` holds, for each test case, the assertions its answers were built
+against, word for word. ``fails`` names assertions by their place, so a case
+whose assertions changed since makes every ``fails`` of its answers suspect:
+the file is refused, naming the case, until each answer's ``fails`` is checked
+against the new assertions and they are copied into its entry.
 
 :func:`read` reads one skill's file and :func:`shipped` every shipped skill's;
 both raise :class:`TruthError` naming every problem.
@@ -204,12 +211,13 @@ def _truth(data, evals: skill_evals.SkillEvals, problems: list[str]) -> Truth | 
     if not isinstance(data, Mapping):
         problems.append("it is no JSON object")
         return None
-    unknown = sorted(set(data) - {"skill_name", "answers", "gaps"})
+    unknown = sorted(set(data) - {"skill_name", "cases", "answers", "gaps"})
     if unknown:
         problems.append(f"it takes no {', '.join(unknown)}")
     if data.get("skill_name") != evals.name:
         problems.append(f"skill_name must be {evals.name!r}, its skill's name")
     cases = {case.id: case for case in evals.cases}
+    _built_against(data.get("cases"), cases, problems)
     raw_answers = data.get("answers")
     if not isinstance(raw_answers, list):
         problems.append("answers must be a list")
@@ -234,6 +242,36 @@ def _truth(data, evals: skill_evals.SkillEvals, problems: list[str]) -> Truth | 
         if case_id not in golden and case_id not in gapped:
             problems.append(f"case {case_id} has neither a golden answer nor a gap")
     return Truth(skill=evals.name, answers=tuple(answers), gaps=tuple(gaps))
+
+
+def _built_against(raw, cases: Mapping, problems: list[str]) -> None:
+    """Each case's entry in ``cases``: the assertions its answers were built
+    against, which must be its assertions now, word for word, since ``fails``
+    names them by their place."""
+    if not isinstance(raw, list):
+        problems.append("cases must be a list of each test case and the assertions its answers were built against")
+        return
+    recorded: dict = {}
+    for at, entry in enumerate(raw, start=1):
+        here = f"cases[{at}]"
+        if (not isinstance(entry, Mapping) or set(entry) != {"case", "assertions"}
+                or not isinstance(entry["assertions"], list) or not all(_text(a) for a in entry["assertions"])):
+            problems.append(f"{here} must be a case and the assertions its answers were built against")
+            continue
+        case_id = entry["case"]
+        if not isinstance(case_id, int) or isinstance(case_id, bool) or case_id not in cases:
+            problems.append(f"{here}: case must be the id of one of its skill's test cases, not {case_id!r}")
+        elif case_id in recorded:
+            problems.append(f"{here}: case {case_id} has two entries")
+        else:
+            recorded[case_id] = tuple(entry["assertions"])
+    for case_id, case in cases.items():
+        if case_id not in recorded:
+            problems.append(f"case {case_id} has no entry in cases: record the assertions its answers were built "
+                            "against")
+        elif recorded[case_id] != tuple(case.assertions):
+            problems.append(f"case {case_id}'s assertions are not the ones its truth was built against: check each "
+                            "of its answers' fails against its assertions now, then copy them into its entry in cases")
 
 
 def _text(value) -> bool:
@@ -310,7 +348,7 @@ def _gaps(raw, cases: Mapping, problems: list[str]) -> list[dict]:
         if not isinstance(item, Mapping) or set(item) != {"case", "why"}:
             problems.append(f"{here} must be a case and why")
             continue
-        if item["case"] not in cases or isinstance(item["case"], bool):
+        if not isinstance(item["case"], int) or isinstance(item["case"], bool) or item["case"] not in cases:
             problems.append(f"{here}: case must be the id of one of its skill's test cases, not {item['case']!r}")
             continue
         if not _text(item["why"]):

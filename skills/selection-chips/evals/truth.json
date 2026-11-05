@@ -1,5 +1,33 @@
 {
   "skill_name": "selection-chips",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer makes a content change of node c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70 (node.content.write), not a new node.",
+        "The code it writes places the selection reference [!! selection picked_zips !!] where it uses the clicked zip codes.",
+        "The code keeps the rows of its input whose zip value is in that list, such as input_0[input_0[\"zip\"].isin(picked)], and returns them.",
+        "No zip code value, such as 60607 or 60614, is typed into the code."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "No code it writes for node e8d24b91-3f05-4c7a-b6d1-0a9c27e5f413 places a selection reference; in particular it does not use picked_zips, the tag of another node.",
+        "The answer says this node has no selection tag yet, and that the user adds one in the node's Widgets tab, picking the bar chart as its view and zip as its column.",
+        "No code it writes types zip codes in place of the selection."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer makes a content change of node c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70 (node.content.write).",
+        "The code it writes places the selection reference [!! selection picked_zips !!].",
+        "When that list is empty, the code returns its input's rows unchanged, testing for an empty list (such as `if not picked` or `len(picked) == 0`), not only for None.",
+        "Otherwise the code keeps the rows whose zip value is in the list, and no zip code is typed into the code."
+      ]
+    }
+  ],
   "answers": [
     {
       "case": 1,

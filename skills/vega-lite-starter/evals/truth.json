@@ -1,5 +1,34 @@
 {
   "skill_name": "vega-lite-starter",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer makes a content change of node scores-chart (node.content.write) holding a Vega-Lite spec.",
+        "The spec draws \"mark\": \"bar\" with side on x as nominal.",
+        "The spec puts accessibility on y as quantitative with an explicit \"aggregate\": \"mean\".",
+        "The spec has no \"data\" field."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer makes a content change of node counts-chart (node.content.write) holding a Vega-Lite spec.",
+        "The spec draws \"mark\": \"line\" with hour on x as temporal.",
+        "The spec puts pedestrians, the first quantitative column, on y as quantitative, and does not fold cyclists in beside it.",
+        "The spec has no \"data\" field."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer makes a content change of node roofs-chart (node.content.write) holding a Vega-Lite spec.",
+        "roof_id is on no axis or channel of the spec: the chart draws no bar per roof.",
+        "The spec draws \"mark\": \"bar\" with VEGETATED_SQFT binned on x (\"bin\": true or a bin object).",
+        "The spec puts \"aggregate\": \"count\" on y."
+      ]
+    }
+  ],
   "answers": [
     {
       "case": 1,

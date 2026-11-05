@@ -430,3 +430,62 @@ def test_a_truth_file_that_breaks_the_format_is_refused_naming_each_problem(tmp_
                     "case 1 has a golden answer and a gap", "why must say why",
                     "case 3 has neither a golden answer nor a gap"):
         assert problem in message, (problem, message)
+
+
+def test_a_truth_built_against_other_assertions_is_refused_until_its_fails_are_checked(tmp_path):
+    """``fails`` names assertions by their place, so each case's entry in
+    ``cases`` keeps the assertions its answers were built against. A case whose
+    assertions changed since, or that has no entry, is refused by name, and
+    the file reads again once the new assertions are copied in."""
+    grader_truth, skill_evals = _grader_truth(), _skill_evals()
+    folder = tmp_path / "street-trees"
+    (folder / "evals").mkdir(parents=True)
+    (folder / "SKILL.md").write_text(
+        f"---\nname: {folder.name}\ndescription: Use this skill when counting street trees.\n---\n## Trees\n",
+        encoding="utf-8")
+    built = ["It counts oaks.", "It names its source."]
+    cases = [{"id": n, "prompt": "Count the oaks.", "expected_output": "A count.", "assertions": built}
+             for n in (1, 2)]
+    evals_file = folder / "evals" / "evals.json"
+    evals_file.write_text(json.dumps({
+        "skill_name": folder.name, "agent": "agent.you.tree-counter@1", "evals": cases}), encoding="utf-8")
+    golden = {"case": 1, "name": "golden", "kind": "golden", "source": "an example", "fails": [],
+              "reply": "There are 12 oaks, by the 2026 census.",
+              "changes": {"changed": {}, "cards": [], "awaiting_review": []}, "calls": []}
+    truth = {"skill_name": folder.name, "cases": [{"case": n, "assertions": built} for n in (1, 2)],
+             "answers": [golden, {**golden, "name": "fenced", "kind": "mutant", "fails": [2]}],
+             "gaps": [{"case": 2, "why": "no source holds it"}]}
+    (folder / "evals" / grader_truth.TRUTH_FILE).write_text(json.dumps(truth), encoding="utf-8")
+    assert [a.name for a in grader_truth.read(skill_evals.read(folder)).answers] == ["golden", "fenced"]
+
+    # Case 1's assertions change: its mutant's fails [2] may no longer name what it fails.
+    cases[0]["assertions"] = ["It names its source.", "It counts oaks."]
+    evals_file.write_text(json.dumps({
+        "skill_name": folder.name, "agent": "agent.you.tree-counter@1", "evals": cases}), encoding="utf-8")
+    with pytest.raises(grader_truth.TruthError) as stale:
+        grader_truth.read(skill_evals.read(folder))
+    message = str(stale.value)
+    assert ("case 1's assertions are not the ones its truth was built against: check each of its answers' "
+            "fails against its assertions now, then copy them into its entry in cases") in message, message
+    assert "case 2's" not in message, message
+
+    # A case with no entry is refused too.
+    truth["cases"] = [{"case": 2, "assertions": built}]
+    (folder / "evals" / grader_truth.TRUTH_FILE).write_text(json.dumps(truth), encoding="utf-8")
+    with pytest.raises(grader_truth.TruthError) as missing:
+        grader_truth.read(skill_evals.read(folder))
+    assert "case 1 has no entry in cases" in str(missing.value), str(missing.value)
+
+    # Its fails checked against the new assertions (now the first), and the new assertions copied in.
+    truth["cases"] = [{"case": 1, "assertions": cases[0]["assertions"]}, {"case": 2, "assertions": built}]
+    truth["answers"][1]["fails"] = [1]
+    (folder / "evals" / grader_truth.TRUTH_FILE).write_text(json.dumps(truth), encoding="utf-8")
+    assert grader_truth.read(skill_evals.read(folder)).answers[1].fails == (1,)
+
+
+def test_each_shipped_case_s_entry_holds_its_assertions_now():
+    """The shipped truth was built against each case's assertions as they are."""
+    for evals, truth in _shipped():
+        raw = json.loads(_grader_truth().truth_file(evals).read_text(encoding="utf-8"))
+        recorded = {entry["case"]: entry["assertions"] for entry in raw["cases"]}
+        assert recorded == {case.id: list(case.assertions) for case in evals.cases}, evals.name

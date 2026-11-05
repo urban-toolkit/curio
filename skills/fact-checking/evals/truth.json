@@ -1,5 +1,35 @@
 {
   "skill_name": "fact-checking",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The run calls web.fetch at least once.",
+        "Each finding, on the dataset id and on each of the two fields, is labeled VERIFIED, REPORTED or UNVERIFIED.",
+        "Each finding names the URL that was probed for it.",
+        "The answer says the checks were made now, in this session.",
+        "The answer creates no notes (no node.create)."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer states plainly, as its finding, that zz9q-4kfx could not be confirmed as the green roofs dataset (for example that it answered 404 or was not found).",
+        "The finding on zz9q-4kfx is not labeled VERIFIED and is not worded as probably right.",
+        "The answer names the URL it probed and says it checked it now.",
+        "Any other dataset id the answer offers carries its own label and the URL it was checked at."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The run makes at most four web.search and web.fetch calls in all.",
+        "The answer gives a finding for each of the seven ids, each labeled VERIFIED, REPORTED or UNVERIFIED.",
+        "No id is labeled VERIFIED without the URL it was probed at.",
+        "If any id went unprobed, the answer labels it UNVERIFIED and says the web call budget is why it was not checked."
+      ]
+    }
+  ],
   "answers": [],
   "gaps": [
     {

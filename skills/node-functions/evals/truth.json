@@ -1,5 +1,47 @@
 {
   "skill_name": "node-functions",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer creates one new node (node.create) of a Python code template, such as Python Computation, Data Transformation or Data Loading.",
+        "The code it writes loads the trees with curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\"): the dataset's id and the file's name, each written as a string.",
+        "The code loads the stations the same way, with part=\"cta_stations.geojson\".",
+        "The code opens no file by a path of its own: no gpd.read_file, pd.read_parquet or curio_data_path for either file.",
+        "The code returns the trees that lie within 50 m of a station."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer creates one new node (node.create) of a Python code template.",
+        "The code it writes calls curio_load_data with the dataset id \"data.scout.flood-depth-2050-2080-no-nbs\" and a bounds argument.",
+        "The bounds are ordered west, south, east, north: (-90.60, 41.50, -90.55, 41.53), not in the order the prompt named them.",
+        "The code makes no window of its own: it opens no raster by a path (no rasterio.open on curio_data_path or a file name) and builds no rasterio window from the box.",
+        "The code reads the cells from the dataset curio_load_data returns, leaves out the cells with no value (masked or nodata), and returns their mean."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer creates one new node (node.create) of a Python code template.",
+        "The code it writes reads the photos with curio_load_collection(\"data.curio.mapillary-sample\").",
+        "The code loads the model with curio_load_model and the model's id written as a string, model.curio.ddrnet23-slim (with or without @1).",
+        "The code labels the photos by calling curio_segment with the collection's rows and the loaded model, with classes naming vegetation and sky; it runs no model session and counts no pixels itself.",
+        "The code returns the rows curio_segment gives, or a part of them that keeps vegetation_pct, sky_pct and overlay_url."
+      ]
+    },
+    {
+      "case": 4,
+      "assertions": [
+        "The answer creates one new node (node.create) of a Python code template.",
+        "The code it writes reads the collection with curio_load_collection(\"data.curio.storage-survey\") and takes the video's row from it.",
+        "For each frame, the code calls curio_derived_file with the row's dataset_id and file_id, the frame's time in milliseconds (0, 500, 1000, ...) and kind=\"video\".",
+        "The code writes each frame image to the path in the row curio_derived_file returns, and makes no folder or file path of its own (no tempfile, no hard-coded directory).",
+        "The code returns the frames' rows, which carry the thumbnail and image_url that curio_derived_file gives."
+      ]
+    }
+  ],
   "answers": [
     {
       "case": 1,
@@ -248,7 +290,7 @@
       "case": 3,
       "name": "golden",
       "kind": "golden",
-      "source": "docs/examples/10-street-vision-cv-analysis.json nodes 5988175e-84aa-4964-84de-aba7d55cf122 (its content's curio_load_collection line) and 4067fb98-3ed5-497a-97a5-41a98ce1085b (its content's curio_load_model line and its curio_segment call), with the two classes the prompt names. Driven with model.curio.ddrnet23-slim@1 added to the account, as the prompt says it is: the evaluation account adds no model, so models.search lists none and the grounding gate refuses this curio_load_model",
+      "source": "docs/examples/10-street-vision-cv-analysis.json nodes 5988175e-84aa-4964-84de-aba7d55cf122 (its content's curio_load_collection line) and 4067fb98-3ed5-497a-97a5-41a98ce1085b (its content's curio_load_model line and its curio_segment call), with the two classes the prompt names; the model in the account, as the case's models field adds it, which models.search lists",
       "fails": [],
       "reply": "I added a Python Computation node, Vegetation and sky. Its code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), loads the model with curio_load_model(\"model.curio.ddrnet23-slim\"), and labels them with curio_segment(photos, model, classes=[\"vegetation\", \"sky\"]), returning its rows: each photo's vegetation_pct and sky_pct, and overlay_url, the link to its overlay.",
       "changes": {

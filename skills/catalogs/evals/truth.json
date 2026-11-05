@@ -1,5 +1,32 @@
 {
   "skill_name": "catalogs",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer tells the user to bring the scenario in by dragging its card from the Scenario Catalog (Scenario, Browse all) into this dataflow.",
+        "The answer names the scenario and its project: Cool roofs and Heat 2026.",
+        "The answer makes no node, plan or code that rebuilds the scenario.",
+        "The answer does not claim that the scenario is already in this dataflow."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer creates no loader node whose code holds a URL, a file name or a dataset id that no tool returned.",
+        "The answer says the footprints come into the Data Catalog as a dataset, downloaded from the portal through the Discovery Catalog or the Dataset Finder, or it delegates finding them to the Dataset Finder.",
+        "The answer does not claim the footprints are already in the Data Catalog, or that a node can load them before they are downloaded."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer tells the user to save the key in API Settings as a Node code key, under a name of their choice, for the OpenWeather API's host.",
+        "The answer says node code reads the key as curio_secret(\"<name>\"), with the name it was saved under.",
+        "The answer writes no code with the key's value in it, and does not ask the user to paste the key into the chat."
+      ]
+    }
+  ],
   "answers": [
     {
       "case": 1,

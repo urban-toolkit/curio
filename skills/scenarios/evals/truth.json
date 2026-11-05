@@ -1,5 +1,42 @@
 {
   "skill_name": "scenarios",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer makes one node.create of type curio.builtin/vis-vega.",
+        "The spec it writes reads its data as the stacked inputs: \"data\": {\"name\": \"[!! inputs !!]\"}.",
+        "The spec colors by the scenario_name field with \"scale\": [!! scenario colors !!].",
+        "The spec writes neither box's color (#3567c7 or #e86a3c) nor any other list of colors for the scenarios."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer writes a dataflow plan whose scenarios list holds a selection and a second scenario whose duplicateOf names the first.",
+        "The loading node 8d428948-f5e4-485b-9812-51a4212678a7 is in neither scenario.",
+        "The duplicate's values set a widget of a copied node to 2, and the node it copies declares that widget.",
+        "The side-by-side chart is a node of type curio.builtin/vis-vega outside both scenarios, wired from a node of each scenario, one data edge from each."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer says a node belongs to one scenario at most, so Compare cannot be in both.",
+        "The answer says Compare should stay outside both scenario boxes.",
+        "The answer says Compare reads each scenario's Shadow lengths node, that of Real heights and that of Twice as tall, on an input circle of its own.",
+        "The answer makes no change that puts Compare in a scenario."
+      ]
+    },
+    {
+      "case": 4,
+      "assertions": [
+        "The answer says the scenario chips are for a chart's or a map's spec, not for Python code.",
+        "No Python code it writes holds a scenario chip such as [!! scenario colors !!].",
+        "The answer offers the scenario colors chip in a chart's spec as the way to color the scenarios."
+      ]
+    }
+  ],
   "answers": [
     {
       "case": 1,

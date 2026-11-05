@@ -1,5 +1,33 @@
 {
   "skill_name": "reuse-first",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer makes one node.create whose nodeType is curio.builtin/data-transformation or curio.builtin/computation-analysis.",
+        "The answer proposes no package: no package.install and no package.draft.apply.",
+        "The answer does not say a new node type or package has to be written for this.",
+        "The code it writes computes, for each zip code, the share of roofs whose VEGETATED_SQFT is above 10,000."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer proposes package.install with dirName curio.example-ui@1.",
+        "The install's reason names the step that needs it: filtering the top zip codes' rows from controls in the node.",
+        "The answer drafts no package of its own (no package.draft.apply) and asks for none to be written.",
+        "The answer does not claim the package is installed or the node exists before the user applies the install."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer says the Rasterization package (curio.rasterization@1) is already in this project.",
+        "The answer proposes no package.install.",
+        "The answer proposes no package draft and asks for no package to be written."
+      ]
+    }
+  ],
   "answers": [
     {
       "case": 1,

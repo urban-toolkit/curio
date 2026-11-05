@@ -1,5 +1,34 @@
 {
   "skill_name": "node-control",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer creates one new node (node.create) of a Python code template, such as Python Computation or Data Transformation.",
+        "The code it writes reads the two tables by indexing its one input: input_0[0] and input_0[1], or the chip [!! input_0 !!] indexed the same way.",
+        "The code reads no input_1: both tables arrive together, as one tuple, on one input circle.",
+        "The code returns the two row counts with return, as a DataFrame or a dict."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer creates one new node (node.create) of a Python code template.",
+        "The code it writes reads the buildings from its input through the layer chip [!! input_0:table_osm_buildings !!], or curio_layer(input_0, \"table_osm_buildings\", 0), and returns how many rows that layer has.",
+        "The code loads no data of its own (no OpenStreetMap file, URL or Data Catalog dataset) and parses no Autark spec.",
+        "The answer does not say the OpenStreetMap layers node has nothing to pass on, and does not tell the user to load the buildings in another node instead."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "No Vega-Lite spec it writes has a \"data\" field or inline \"values\".",
+        "The answer adds the rows in the loading node's Python code (node 8d428948-f5e4-485b-9812-51a4212678a7), whose DataFrame gains J with 60 and K with 33 in columns a and b and is still returned, or tells the user to add them there.",
+        "The answer says the chart draws the table the node before it returns, so the new rows go in that node.",
+        "The answer creates no new node: the new bars come from rows of the existing loading node."
+      ]
+    }
+  ],
   "answers": [
     {
       "case": 1,

@@ -1,5 +1,42 @@
 {
   "skill_name": "widgets",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer creates one new node (node.create) that declares a widget of type checkbox-group or multi-select whose choices are 60601, 60614 and 60622.",
+        "That widget's default is a list holding all three zip codes.",
+        "The code places the widget's reference on its own where a list of values is used, such as .isin([!! zips !!]) with the widget's own name.",
+        "The code neither splits, parses nor quotes the reference to make a list of it: no .split(, no json.loads or eval, and no quotes around the reference."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer creates one new node (node.create) that declares a widget of type checkbox with a default of true.",
+        "The code uses the widget's reference on its own as a true or false value, such as if [!! drop_small !!]: with the widget's own name.",
+        "The code never compares the reference with a text, such as \"true\" or \"True\", and never puts it in quotes.",
+        "When the box is not ticked, the code returns every roof."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer uses node.settings.write on node f325441e-55be-4415-aa1b-b2055f590de2 to set its widget number_multiplier to 25.",
+        "The reply tells the user the factor is now set in the multiplier node's Number Multiplier widget, where they can change it later.",
+        "No code the answer writes holds the number 25: it changes no node's code to type the factor in place of the widget.",
+        "The answer creates no new node."
+      ]
+    },
+    {
+      "case": 4,
+      "assertions": [
+        "The answer uses node.settings.write on node c7246f52-d977-5353-9951-bcb855d2ebda to set its widget timeline to \"2050 - 2080\".",
+        "The reply says both depth layers follow the one Projection period setting, which is where the period was changed.",
+        "The answer changes neither loader's code: no node.content.write on f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4 or a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5."
+      ]
+    }
+  ],
   "answers": [
     {
       "case": 1,

@@ -4,7 +4,7 @@
     "manifest.json": "7826b981430812bd230c1eee1f0babbe7e5f6ac8ecb9b178699ffa05f94c51d2",
     "skills/rasterization/SKILL.md": "876eab34e2dfae9ce4b6b3336e3ac6cf637361def2602928ee38669f63ab74e2",
     "skills/rasterization/evals/evals.json": "cfd0668e9dbb72f38a6d2abe799055100b14e62d3e7fc6e994cf731399674cbe",
-    "skills/rasterization/evals/truth.json": "025fefc473d49ae7b9907e09287e8cb25859fe19d2cff30cca87f75f237cc5e1",
+    "skills/rasterization/evals/truth.json": "012a0adb665b45a9afb123321d76d5f17ce57c962f7979510b678ed02fdfde97",
     "sources/raster-calculator.py": "463a522521da2453290c6a06525edf97f305eb4082dc304b85c8fbe9e28761dc",
     "sources/rasterize-buildings.py": "b0739294eb6951269f77f4adc06abbd6f012c96c365932cfe7a857cac86fecf6",
     "sources/scout_rasters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

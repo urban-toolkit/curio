@@ -1,5 +1,41 @@
 {
   "skill_name": "dashboards",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer writes a dataflow plan that adds a node upstream of the map to load the Chicago Loop buildings the map's data section loads now, such as an Autark node (curio.builtin/autk-grammar) whose spec holds only that section.",
+        "The plan connects that new node into the Loop buildings map (loop-map) with a data edge.",
+        "The answer says the map's own spec must then drop its \"data\" section and draw the new node's output instead.",
+        "The answer neither unpins nor removes the map, and does not give unpinning it as the fix."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer says viewers can change the top_n slider (How many zip codes) of the Top zip codes node.",
+        "The answer says viewers cannot change the zip_prefix text widget (Zip code prefix).",
+        "The answer says a viewer's change never changes the saved dataflow or its saved outputs.",
+        "The answer says what a viewer's run makes is kept for 7 days."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer tells the user to pin the Roofs table themselves, with the pin in the node's header.",
+        "The answer makes no change: no node.create, node.settings.write, node.content.write or dataflow plan.",
+        "The answer does not claim the table is now pinned or on the dashboard."
+      ]
+    },
+    {
+      "case": 4,
+      "assertions": [
+        "The answer writes a dataflow plan whose removeNodes holds roofs-chart.",
+        "The plan removes no other node.",
+        "The answer says removing the chart also takes its tile off the dashboard."
+      ]
+    }
+  ],
   "answers": [
     {
       "case": 1,

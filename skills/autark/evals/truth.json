@@ -1,5 +1,35 @@
 {
   "skill_name": "autark",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer creates one new node (node.create) of type curio.builtin/autk-grammar.",
+        "Its document has a \"plot\" with \"mark\": \"bar\", a \"binning-1d\" transform and an \"axis\" that names height.",
+        "The plot's \"dataRef\" is table_osm_buildings, the name the OpenStreetMap layers node gives its buildings.",
+        "The document has no \"data\" section that loads OpenStreetMap again, and no \"map\": it reads its input and draws one view.",
+        "The plot names a brush event, such as \"events\": [\"brushX\"]."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "No document it writes holds both a \"map\" and a \"plot\".",
+        "The answer says an Autark node draws one view, one map or one plot, so the bar chart goes in an Autark node of its own.",
+        "The answer says the two views can be linked with an interaction edge.",
+        "The answer offers the bar chart as a node of its own: a new node (node.create) of type curio.builtin/autk-grammar whose plot has \"mark\": \"bar\" over the stations' ada values, or the steps to add one."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer creates one new node (node.create) of type curio.builtin/autk-grammar.",
+        "Its document is a \"map\" with one layerRef whose \"dataRef\" is the node's first input: input_0, or the chip [!! input_0 !!].",
+        "That layer colors by the legend column as categories: \"getFnv\": \"legend\" with \"getFnvType\": \"categorical\".",
+        "The document has no \"data\" section: the lines reach the node on its input and are not loaded again from a file or a URL."
+      ]
+    }
+  ],
   "answers": [
     {
       "case": 1,

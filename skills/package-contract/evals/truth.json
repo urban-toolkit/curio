@@ -1,5 +1,35 @@
 {
   "skill_name": "package-contract",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer says the manifest needs a top-level backend object with an entry file under backend/ and a list of handlers.",
+        "The answer gives each handler a timeoutClass of quick or standard.",
+        "The answer names the server-code permission, and adds server-network only when the code reaches the network.",
+        "The answer says to import sklearn inside the handler function rather than at module level, because declared dependencies are installed at Apply and are missing when the build's probe loads the entry.",
+        "The answer says the template that runs the handler declares backendHandler with the handler's name."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer says a server kept running between runs is not allowed in a package's backend, since each worker serves one request and socket servers are blocked.",
+        "The answer says the backend worker cannot read an API key, since no secrets or credentials exist there.",
+        "The answer reports these needs as findings, naming what they wait on in Curio (an activation lifecycle for a resident service, or secret mediation for the key), rather than code that works around them.",
+        "The answer proposes no package draft that holds a websocket server or code that reads the key."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer says the module-level import of geopandas fails the build's probe and must move inside handle.",
+        "The answer says the policy scan blocks subprocess.",
+        "The answer says payload['input'] holds the upstream JSON itself, not a path to a file.",
+        "Any fixed code the answer gives imports geopandas inside handle and calls no subprocess."
+      ]
+    }
+  ],
   "answers": [
     {
       "case": 1,

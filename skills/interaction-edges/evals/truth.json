@@ -1,5 +1,41 @@
 {
   "skill_name": "interaction-edges",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer writes a dataflow plan (dataflow.plan.write) that adds a map node fed with the roofs, of type curio.builtin/autk-grammar or curio.builtin/vis-vega.",
+        "The plan adds an edge of kind interaction between the bar chart (b601d363-50fd-4209-bee2-9997dcb050f3) and the new map.",
+        "The plan adds no new Data Pool node.",
+        "The answer or the map node's intent says the two views match selections by the zip column (for example the map layer selecting by zip through selectFields), because the chart's bars are zip code totals and the map's features are single roofs."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer writes a dataflow plan that adds a node of type curio.builtin/vis-simple.",
+        "The Simple View's data comes from a Data Pool, directly or through a node that keeps the pool's selected rows.",
+        "The plan links the bar chart (b601d363-50fd-4209-bee2-9997dcb050f3) to that same Data Pool with an edge of kind interaction.",
+        "The answer or a node's intent says the clicked roofs are the pool's rows whose \"interacted\" column is \"1\"."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer uses node.settings.write on node ia-pool.",
+        "The change it makes sets the pool's dataPool betweenCharts to MERGE_AND.",
+        "The answer creates no new node and no new content for the pool."
+      ]
+    },
+    {
+      "case": 4,
+      "assertions": [
+        "The answer adds no edge of kind interaction into the Data Loading node (a1abfa78-6517-4606-9660-c7eeeeb49851).",
+        "The answer says an interaction edge links views, Data Pools or Map Editors, and cannot go into a Data Loading node.",
+        "The answer offers another way to get only the clicked zip code's roofs, such as linking the chart to a Data Pool whose marked rows a later node keeps."
+      ]
+    }
+  ],
   "answers": [
     {
       "case": 1,
