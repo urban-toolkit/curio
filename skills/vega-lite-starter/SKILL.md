@@ -13,15 +13,16 @@ metadata:
   curio-behaviors: vega
   curio-refusals: document-invalid
 ---
-## The starter spec a Vega-Lite node writes for itself
+## The starter spec a Vega-Lite node suggests
 
 When a Vega-Lite node is connected to a node that has already run, and its editor
 is still empty, Curio fills it with a starter spec chosen from the input's
-column types. Generate specs that agree with this ladder unless the user asks
-for something else. Otherwise the AI and the node produce different charts for
-the same input, which is worse than either alone. Each rule names the column
-roles it needs (at least one column of each, unless it gives a count), then
-the mark it writes and what it shows. First match wins:
+column types. Until someone edits it, the starter is not the node's saved spec:
+a spec you write replaces it. Generate specs that agree with this ladder unless
+the user asks for something else. Otherwise the AI and the node produce
+different charts for the same input, which is worse than either alone. Each
+rule names the column roles it needs (at least one column of each, unless it
+gives a count), then the mark it writes and what it shows. First match wins:
 
 {{vega.starter_ladder}}
 - nothing usable -> no spec at all

@@ -12,15 +12,16 @@ metadata:
   version: "1.0.0"
   curio-behaviors: autk-grammar
 ---
-## The starter document an Autark node writes for itself
+## The starter document an Autark node suggests
 
 When an Autark node is connected to a node that has already run, and its
 editor is still empty, Curio fills it with a starter document chosen from the
-input's layers, the same way a Vega-Lite node fills itself. Generate documents
-that agree with this ladder unless the user asks for something else. Each rule
-names the layers with geometry it needs and the column roles each of them needs
-(at least one column of each), then the family the document writes and what it
-draws. First match wins:
+input's layers, the same way a Vega-Lite node fills itself. Until someone edits
+it, the starter is not the node's saved document: a document you write replaces
+it. Generate documents that agree with this ladder unless the user asks for
+something else. Each rule names the layers with geometry it needs and the column
+roles each of them needs (at least one column of each), then the family the
+document writes and what it draws. First match wins:
 
 {{autk.starter_ladder}}
 - no geometry -> no document at all
