@@ -31,7 +31,7 @@ and each skill shown better or worse.
 The same tables, shorter, go to ``summary.md`` for the job summary, and each
 model's numbers, its benchmark among them, to ``summaries/<model>.json``, which
 the next runs compare with. :func:`gate` says what fails the run: a probe that
-failed, a run left in an error, a runner that failed, a skill under its floor.
+failed, a run left in an error, a runner that failed, a skill shown worse than main's last run.
 
     python3 scripts/skill_evals_report.py <out folder>
 
@@ -268,11 +268,18 @@ def read_model(model: str, folder: Path | None, *, floors: dict, previous: dict 
     return found
 
 
+#: What a comparison with main's last run says of each skill: its key, its label.
+COMPARED = (("success", "success"), ("trigger_recall", "should trigger"), ("false_triggers", "should not"))
+
+
 def gate(models: list[ModelRun]) -> list[str]:
     """What fails the run, one line each: a model that did not answer its
     probe, a runner that failed, runs left in an error after the runner's
-    retries, and a skill measured whole whose pass rate with the skill is
-    under its floor."""
+    retries, and a skill shown worse than main's last run, by the 95%
+    interval of the paired difference (``benchmark.compare``). A floor only
+    informs: a skill's share passed with the skill swings by more than 15
+    points between two runs of a few cases, where the paired interval
+    tells noise from a change (the owner's call, 11-05)."""
     problems = []
     for run in models:
         if run.probe is not None and not run.probe.get("ok"):
@@ -287,10 +294,13 @@ def gate(models: list[ModelRun]) -> list[str]:
             paths = [path for row in run.rows for path in row.error_paths]
             problems.append(f"{run.model}: {run.errors} run(s) left in an error after the runner's retries, "
                             f"such as {'; '.join(paths[:3])}")
-        for row in run.rows:
-            if row.under_floor:
-                problems.append(f"{run.model}: {row.skill} passed {row.with_rate:.0%} with the skill, "
-                                f"under its floor of {row.floor:.0%}")
+        compared = run.compared or {}
+        for name, items in sorted((compared.get("skills") or {}).items()):
+            worse = [f"{label} {_signed(items[key])}" for key, label in COMPARED
+                     if (items.get(key) or {}).get("verdict") == "worse"]
+            if worse:
+                problems.append(f"{run.model}: {name} is shown worse than main's last run: "
+                                + "; ".join(worse) + " points")
     return problems
 
 
@@ -452,9 +462,7 @@ def _compare_lines(run: ModelRun) -> list[str]:
     lines = [f"Against main's last run ({found.get('a')}), every case both measured: "
              f"{found['overall']['success']['verdict']}, {_signed(found['overall']['success'])} points."]
     for name, items in sorted((found.get("skills") or {}).items()):
-        moved = [f"{label} {items[key]['verdict']} ({_signed(items[key])})"
-                 for key, label in (("success", "success"), ("trigger_recall", "should trigger"),
-                                    ("false_triggers", "should not"))
+        moved = [f"{label} {items[key]['verdict']} ({_signed(items[key])})" for key, label in COMPARED
                  if items.get(key) and items[key]["verdict"] != "not shown different"]
         if moved:
             lines.append(f"{name}: " + "; ".join(moved) + ".")
@@ -545,8 +553,8 @@ def markdown(models: list[ModelRun], problems: list[str], *, scope: dict, page_u
     if problems:
         lines += ["**Failed:**", ""] + [f"- {problem}" for problem in problems] + [""]
     else:
-        lines += ["**Passed:** every model answered, no run was left in an error, and no skill is under its floor.",
-                  ""]
+        lines += ["**Passed:** every model answered, no run was left in an error, and no skill is shown worse "
+                  "than main's last run.", ""]
     lines += ["| Model | Probe | Runs | Errors | Tokens | Cost |", "|---|---|---|---|---|---|"]
     for run in models:
         lines.append(f"| `{run.model}` | {_probe(run)} | {run.runs} | {run.errors} | "
@@ -667,7 +675,7 @@ def page(models: list[ModelRun], problems: list[str], *, scope: dict, run_url: s
         parts.append("</ul>")
     else:
         parts.append('<p class="good">Passed: every model answered, no run was left in an error, '
-                     "and no skill is under its floor.</p>")
+                     "and no skill is shown worse than main's last run.</p>")
     parts.append('<h2>Models</h2><div class="wrap"><table><tr><th>Model</th><th>Probe</th><th>Skills</th>'
                  "<th>Runs</th><th>Errors</th><th>Input tokens</th><th>Output tokens</th><th>Cost at list price</th>"
                  "</tr>")

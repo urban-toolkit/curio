@@ -120,7 +120,7 @@ def test_each_skill_is_read_from_its_summary_and_its_runs_records(tmp_path):
     assert trees.triggers["should_trigger_rate"] == 0.5 and birds.triggers is None
 
 
-def test_the_node_fails_on_a_probe_an_error_a_runner_and_a_floor_and_only_a_whole_measure_meets_a_floor(tmp_path):
+def test_the_node_fails_on_a_probe_an_error_and_a_runner_and_a_floor_only_informs(tmp_path):
     floors, prices, previous = _config(tmp_path)
     _results(tmp_path)
     runs, problems = report.build(tmp_path, [HAIKU, GEMMA], scope={"measure": "changed", "why": ["trees changed"]},
@@ -131,10 +131,39 @@ def test_the_node_fails_on_a_probe_an_error_a_runner_and_a_floor_and_only_a_whol
     assert f"{GEMMA} did not answer its probe: APIConnectionError" in text
     assert f"{HAIKU}'s runner ended with 1" in text
     assert f"{HAIKU}: 1 run(s) left in an error" in text and "triggers/q01/run-1" in text
-    assert f"{HAIKU}: trees passed 50% with the skill, under its floor of 60%" in text
-    # birds is under its floor too, but its smoke case measures no floor.
-    assert "birds" not in text
-    assert len(problems) == 4
+    assert len(problems) == 3
+    # trees passed 50% with the skill, under its floor of 60%: the report says so, and nothing fails.
+    summary = (tmp_path / report.SUMMARY).read_text(encoding="utf-8")
+    assert "floor" not in text and "60% (under)" in summary
+    # birds is under its floor too, but its smoke case is held to no floor.
+    assert "90% (under)" not in summary
+
+
+def test_a_skill_shown_worse_than_main_s_last_run_fails_the_run(tmp_path):
+    """A run fails where the paired compare with main's last run of the
+    model shows a skill worse, and passes where it shows none different."""
+    from utk_curio.backend.app.agents.evaluation import benchmark
+
+    floors, prices, previous = _config(tmp_path)
+    folder = _results(tmp_path)
+    (folder / "trees" / "triggers").joinpath("q01", "run-1", "run.json").unlink()
+    scored = benchmark.score(folder)
+    higher = json.loads(json.dumps(scored))
+    for entry in higher["cases"].values():
+        entry["with_skill"] = [1.0 for _ in entry.get("with_skill") or []]
+    _write(previous / f"{report.slug(HAIKU)}.json", {"skills": {}, "benchmark": higher})
+    probes = {HAIKU: {"ok": True, "seconds": 1.0}}
+    runs, problems = report.build(tmp_path, [HAIKU], scope={}, probes=probes, exits={HAIKU: 0},
+                                  previous=previous, floors=floors, prices=prices)
+    # trees passed half of what main's run passed whole; birds passed all, as main did.
+    assert runs[0].compared["skills"]["trees"]["success"]["verdict"] == benchmark.WORSE
+    assert problems == [f"{HAIKU}: trees is shown worse than main's last run: success -50 [-50, -50] points"]
+    assert "**Failed:**" in (tmp_path / report.SUMMARY).read_text(encoding="utf-8")
+    # The same run against main's own numbers shows nothing different, and passes.
+    _write(previous / f"{report.slug(HAIKU)}.json", {"skills": {}, "benchmark": scored})
+    _, problems = report.build(tmp_path, [HAIKU], scope={}, probes=probes, exits={HAIKU: 0},
+                               previous=previous, floors=floors, prices=prices)
+    assert problems == []
 
 
 def test_a_run_with_nothing_wrong_passes(tmp_path):
@@ -157,7 +186,7 @@ def test_the_page_the_summary_and_the_numbers_later_runs_compare_with(tmp_path):
                  page_url="https://example.invalid/page")
     page = (tmp_path / report.PAGE).read_text(encoding="utf-8")
     assert page.startswith("<!doctype html>") and page.rstrip().endswith("</html>")
-    for text in (HAIKU, GEMMA, "trees", "birds", "under its floor of 60%", "trees changed",
+    for text in (HAIKU, GEMMA, "trees", "birds", "60% (under)", "trees changed",
                  "The answer names the &lt;b&gt;oak&lt;/b&gt;.", f"{HAIKU}/skills-20261104-200000/trees/eval-1",
                  "https://example.invalid/run/1", "abc123"):
         assert text in page, text
