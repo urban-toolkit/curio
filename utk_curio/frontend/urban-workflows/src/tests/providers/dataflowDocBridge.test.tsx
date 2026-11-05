@@ -504,6 +504,24 @@ describe("the dataflow's own fields, connections and scenarios", () => {
         expect(canvasNode("k")).toBeUndefined();
     });
 
+    test("a node another tab adds and removes before this canvas draws it stays out of the doc", async () => {
+        await open(serverDoc(spec().dataflow));
+        // The node's change and its removal, with no render between them.
+        const before = docToDataflow(provider.doc);
+        const withNode = JSON.parse(JSON.stringify(before));
+        withNode.nodes.push({ id: "k", type: TYPE, x: 50, y: 60, content: "z = 1\n" });
+        const without = JSON.parse(JSON.stringify(before));
+        await act(async () => {
+            provider.doc.transact(() => applyDataflow(provider.doc, before, withNode), provider);
+            provider.doc.transact(() => applyDataflow(provider.doc, withNode, without), provider);
+        });
+        await flush();
+        await flush();
+        // This canvas's writes, after it drew what came, never put it back.
+        expect(docToDataflow(provider.doc).nodes.map((n: any) => n.id)).toEqual(["n", "m"]);
+        expect(canvasNode("k")).toBeUndefined();
+    });
+
     test("this canvas's removal of a node takes it and its connections out of the doc", async () => {
         await open(serverDoc(spec().dataflow));
         act(() => api.applyReviewedRemovals(["m"], ["n-m"]));

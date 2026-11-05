@@ -552,10 +552,13 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             const now = next.nodes.get(id);
             const onCanvas = canvasNodes.get(id);
             if (!now) {
-                if (!onCanvas) continue;
+                // A node an earlier change added that the canvas has not drawn
+                // yet goes too, its removal after that add. Drawn, it would be
+                // new to the writer, which would put it back in the doc.
+                if (!onCanvas && !was) continue;
                 removedNodes.push(id);
                 const editing = (awareness?.getLocalState() as { editing?: string | null } | null)?.editing;
-                if (editing === id) {
+                if (onCanvas && editing === id) {
                     removedWhileEditing(onCanvas, current.edges.filter((e) => e.source === id || e.target === id));
                 }
                 continue;
