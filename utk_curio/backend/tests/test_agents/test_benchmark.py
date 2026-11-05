@@ -472,6 +472,26 @@ def test_a_compare_finds_a_difference_planted_in_its_samples():
     assert backwards["skills"]["street-trees"]["false_triggers"]["verdict"] == benchmark.WORSE
 
 
+def test_a_compare_pairs_only_what_both_runs_measured_more_than_once():
+    """A smoke measure runs each case once: paired with a whole run's three,
+    its interval would read the whole run's spread alone, and one failed run
+    would show a skill worse. Such a case or query is left out of the compare."""
+    benchmark = _benchmark()
+    whole = {f"street-trees/{at}": {"skill": "street-trees", "case": at, "with_skill": [1.0, 1.0, 1.0]}
+             for at in (1, 2)}
+    smoke = {key: {**entry, "with_skill": [0.0]} for key, entry in whole.items()}
+    found = benchmark.compare(_scored(whole), _scored(smoke))
+    assert found["overall"]["success"]["n"] == 0 and found["overall"]["success"]["verdict"] == benchmark.SAME
+    assert found["skills"] == {}
+    queries = {"street-trees/q01": {"skill": "street-trees", "should_trigger": True, "runs": [1.0, 1.0, 1.0]}}
+    once = {"street-trees/q01": {**queries["street-trees/q01"], "runs": [0.0]}}
+    assert benchmark.compare(_scored({}, queries), _scored({}, once))["skills"] == {}
+    # Two runs of each case are enough to pair, and the drop shows.
+    twice = {key: {**entry, "with_skill": [0.0, 0.0]} for key, entry in whole.items()}
+    found = benchmark.compare(_scored(whole), _scored(twice))
+    assert found["overall"]["success"]["n"] == 2 and found["overall"]["success"]["verdict"] == benchmark.WORSE
+
+
 def test_two_halves_of_one_run_are_not_shown_different():
     benchmark = _benchmark()
     first, second = {}, {}

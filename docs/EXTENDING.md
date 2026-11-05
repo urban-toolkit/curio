@@ -828,6 +828,8 @@ CURIO_EVAL_BASE_URL='<base URL>' CURIO_EVAL_API_KEY='<key>' CURIO_EVAL_MODEL='<m
     - a model that does not answer its probe;
     - a run left in an error after the retries;
     - a file that holds the endpoint;
-    - a skill measured whole whose pass rate with the skill is under its floor in [`skill_eval_floors.json`](../scripts/skill_eval_floors.json).
+    - a skill shown worse than main's last run: the 95% interval of the paired difference lies below zero.
+
+    Each skill's floor in [`skill_eval_floors.json`](../scripts/skill_eval_floors.json), 15 points under its baseline, shows on the report beside its pass rate and fails nothing.
 
   `test_skill_evals.py` holds every skill's `evals/evals.json` to the rules above.

@@ -60,6 +60,10 @@ SEED = 20261104
 RECORD = "run.json"
 #: The verdicts of a comparison.
 BETTER, WORSE, SAME = "better", "worse", "not shown different"
+#: The runs of a case or a query that each of two runs must hold for a compare
+#: to pair them. A smoke measure's one run says nothing of its spread, so its
+#: interval would read the other run's spread alone.
+COMPARE_RUNS = 2
 #: The least share of a grader's verdicts on unchecked assertions that agree
 #: with the grader truth, for the benchmark to grade with it.
 GRADER_FLOOR = 0.9
@@ -374,9 +378,10 @@ def _verdict(found: Mapping) -> str:
 def compare(a: Mapping, b: Mapping, *, seed: int = SEED) -> dict:
     """Whether *b* is better than *a*, worse or not shown different, per skill
     and over every case both measured, on the success of each case with the
-    skill and on the trigger rates of each query, paired. Both must be of
-    one version, one model and one grader; raises :class:`CompareRefused`
-    otherwise."""
+    skill and on the trigger rates of each query, paired. A case or a query
+    is paired only where each run holds :data:`COMPARE_RUNS` runs of it.
+    Both must be of one version, one model and one grader; raises
+    :class:`CompareRefused` otherwise."""
     if a.get("version") != b.get("version"):
         raise CompareRefused(f"the two runs measured different sets: version {a.get('version')} "
                              f"and {b.get('version')}")
@@ -385,6 +390,9 @@ def compare(a: Mapping, b: Mapping, *, seed: int = SEED) -> dict:
     if a.get("grader") != b.get("grader"):
         raise CompareRefused(f"the two runs were graded by different models: {a.get('grader')} "
                              f"and {b.get('grader')}")
+
+    def enough(first, second) -> bool:
+        return len(first or []) >= COMPARE_RUNS and len(second or []) >= COMPARE_RUNS
 
     def paired_success(keys) -> dict:
         found = _paired({key: a["cases"][key].get(skill_evals.WITH_SKILL) or [] for key in keys},
@@ -401,8 +409,11 @@ def compare(a: Mapping, b: Mapping, *, seed: int = SEED) -> dict:
             verdict = WORSE if verdict == BETTER else BETTER
         return {**found, "verdict": verdict}
 
-    both_cases = sorted(set(a.get("cases") or {}) & set(b.get("cases") or {}))
-    both_queries = sorted(set(a.get("queries") or {}) & set(b.get("queries") or {}))
+    both_cases = sorted(key for key in set(a.get("cases") or {}) & set(b.get("cases") or {})
+                        if enough(a["cases"][key].get(skill_evals.WITH_SKILL),
+                                  b["cases"][key].get(skill_evals.WITH_SKILL)))
+    both_queries = sorted(key for key in set(a.get("queries") or {}) & set(b.get("queries") or {})
+                          if enough(a["queries"][key]["runs"], b["queries"][key]["runs"]))
     skills = sorted({key.split("/")[0] for key in both_cases + both_queries})
     out = {"version": a.get("version"), "model": a.get("model"), "a": a.get("run"), "b": b.get("run"),
            "overall": {"success": paired_success(both_cases)}, "skills": {}}

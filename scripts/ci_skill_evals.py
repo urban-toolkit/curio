@@ -22,7 +22,7 @@
      its host.
 
   It fails on a probe that failed, a runner that failed, a run left in an
-  error, a leak or a skill under its floor.
+  error, a leak or a skill shown worse than main's last run.
 
 The key and the base URL go to the runners in their environment only. No
 output names either, and every line a runner prints is scrubbed of both
