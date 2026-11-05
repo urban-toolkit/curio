@@ -786,6 +786,37 @@ describe("binding", () => {
         expect(canvasNode("m")?.data?.source).toBe("n");
         other.destroy();
     });
+
+    test("a node an agent removes while this tab edits its code names the agent as its chip does", async () => {
+        await open(serverDoc(spec().dataflow));
+        act(() => provider.awareness.setLocalStateField("editing", "n"));
+        const agent = new (require("y-protocols/awareness").Awareness)(new Y.Doc());
+        const { encodeAwarenessUpdate, applyAwarenessUpdate } = require("y-protocols/awareness");
+        // The agent's state as the server sends it (`agent_peers.py`), with
+        // the node its write removes named just before the write.
+        await act(async () => {
+            agent.setLocalState({
+                user: {
+                    participant_id: "agent-5f0c", user_id: null, name: "Dataflow Builder",
+                    agent: {
+                        attachmentId: "att-1", coord: "agent.curio.dataflow-builder@1", category: "canvas",
+                        askedBy: { account: "7", name: "Ana" },
+                    },
+                },
+                skills: [], editing: null, writes: null, pointer: null, carrying: null,
+                removed: { nodes: ["n"], at: Date.now() },
+            });
+            applyAwarenessUpdate(provider.awareness, encodeAwarenessUpdate(agent, [agent.clientID]), provider);
+        });
+        await fromAnotherTab((df) => {
+            df.nodes = df.nodes.filter((n: any) => n.id !== "n");
+            df.edges = [];
+        });
+        expect(canvasNode()).toBeUndefined();
+        const [message] = mockShowToast.mock.calls.find(([text]) => /removed this node/.test(text)) ?? [];
+        expect(message).toBe("Dataflow Builder (asked by Ana) removed this node while you were editing it.");
+        agent.destroy();
+    });
 });
 
 /** One person's tab of the dataflow: its canvas, bound to a doc of its own. */

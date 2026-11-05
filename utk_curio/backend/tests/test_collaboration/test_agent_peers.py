@@ -169,6 +169,14 @@ def _add_edge(edge_id: str, source: str, target: str):
     return change
 
 
+def _remove_node(node_id: str):
+    def change(dataflow):
+        dataflow["nodes"] = [node for node in dataflow["nodes"] if node["id"] != node_id]
+        dataflow["edges"] = [edge for edge in dataflow["edges"] if node_id not in (edge["source"], edge["target"])]
+
+    return change
+
+
 def _remove_chart(doc):
     from pycrdt import Map
 
@@ -514,6 +522,36 @@ def test_a_drag_shows_its_pointer_and_what_it_carries_for_its_length_before_its_
     assert landed_first is False, "the node landed before its drag ended"
     assert after["pointer"] is None and after["carrying"] is None, "the drag outlived its drop"
     assert "filter" in _ids(bob.dataflow())
+
+
+def test_a_removal_names_the_nodes_it_removes_from_before_its_write_to_a_second_after(room, monkeypatch):
+    bob = room.tab("bob")
+    seen: list = []
+
+    def _sleep(seconds):
+        # The second after the write: the chart is gone from bob's doc, and
+        # the agent's state still says it removed it.
+        seen.append((seconds, bob.others()[peer.client_id].get("removed"), "chart" in _ids(bob.dataflow())))
+        _a_writer_lands_at_once(room)
+
+    monkeypatch.setattr(room.peers, "_sleep", _sleep)
+    with room.agent() as peer:
+        before = int(time.time() * 1000)
+        acted = room.peers.act(peer, room.peers.Action(
+            what="remove the chart", write=room.writes(peer, _remove_node("chart")), removes=("chart",),
+            did=(("removed", "node", "chart"),),
+        ))
+        after = bob.others()[peer.client_id]
+        end = int(time.time() * 1000)
+
+    assert acted.landed, acted
+    [(seconds, removed, still_there)] = seen
+    assert seconds == room.peers.KEEP_AFTER_WRITE_S
+    assert isinstance(removed, dict) and set(removed) == {"nodes", "at"} and removed["nodes"] == ["chart"], removed
+    assert before <= removed["at"] <= end, removed
+    assert still_there is False, "the chart was still in a tab's doc a second after the agent removed it"
+    assert after["removed"] is None, "the agent's removal outlived its second"
+    assert (after["editing"], after["writes"]) == (None, None)
 
 
 def test_with_no_tab_bound_an_agent_waits_for_nothing(room):

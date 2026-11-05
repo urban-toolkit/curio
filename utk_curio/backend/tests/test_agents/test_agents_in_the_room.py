@@ -22,9 +22,12 @@ import json
 
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents.test_agent_changes import (
+    CA,
+    DFB,
     _ask,
     _by_id,
     _cards,
+    _plan_tail,
     _saved,
     _setup,
 )
@@ -224,6 +227,63 @@ def test_a_content_write_holds_its_node_from_before_the_write_to_a_second_after_
     assert timeline[held] == ("kept", agent_peers.KEEP_AFTER_WRITE_S, agent, NEW_CODE), timeline[held]
     assert timeline[unlocked][2] == agent
     assert room_state.snapshot(room)["locks"] == {}, "a lock outlived the turn"
+
+
+def test_a_plans_removal_names_the_nodes_in_the_agents_state_from_before_the_write_to_a_second_after(
+    client, user_and_token, tmp_curio, monkeypatch,
+):
+    """alice's Dataflow Builder replaces the loader with a plan. Just before
+    the plan's removal lands, the agent's state names the loader in
+    ``removed``, so a tab that was editing it says the agent removed it; the
+    note stays a second while a tab is bound, the loader gone by then, and
+    goes."""
+    from utk_curio.backend.app.collaboration import agent_peers, dataflow_docs
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    project, att = _setup(client, user, token, coord=DFB)
+    key = _user_dir_key(user)
+    timeline: list = []
+    real_state, real_write = dataflow_docs.set_agent_state, dataflow_docs.write
+
+    def set_agent_state(at_project, client_id, fields, *, joining=False):
+        if at_project == project and "removed" in fields and not joining:
+            timeline.append(("removed", fields["removed"]))
+        return real_state(at_project, client_id, fields, joining=joining)
+
+    def write(user_key, project_id, spec, actor, **kwargs):
+        if project_id == project:
+            timeline.append(("write", "load" in _by_id(spec["dataflow"])))
+        return real_write(user_key, project_id, spec, actor, **kwargs)
+
+    def kept(seconds):
+        timeline.append(("kept", seconds, "load" in _by_id(dataflow_docs.live(key, project)["dataflow"])))
+
+    monkeypatch.setattr(dataflow_docs, "set_agent_state", set_agent_state)
+    monkeypatch.setattr(dataflow_docs, "write", write)
+    # A tab is bound to the dataflow's doc: the second after the write is kept.
+    monkeypatch.setattr(dataflow_docs, "has_tabs", lambda project_id: True)
+    monkeypatch.setattr(agent_peers, "_sleep", kept)
+    plan = {
+        "goal": "replace the loader",
+        "nodes": [{"ref": "a", "nodeType": CA, "title": "API Fetch", "intent": "fetch from the api"}],
+        "edges": [{"from": "a", "to": "sum"}],
+        "removeNodes": ["load"],
+    }
+
+    body, _calls = _ask(client, token, project, att, monkeypatch, ["Here.\n" + _plan_tail(plan)])
+
+    assert [card["status"] for card in _cards(body)] == ["applied"], body["content"]
+    named = _at(timeline, "removed")
+    note = timeline[named][1]
+    assert isinstance(note, dict) and set(note) == {"nodes", "at"} and note["nodes"] == ["load"], note
+    assert isinstance(note["at"], int), note
+    wrote = _at(timeline, "write", False)
+    held = _at(timeline, "kept", agent_peers.KEEP_AFTER_WRITE_S)
+    cleared = _at(timeline, "removed", None)
+    assert named < wrote < held < cleared, timeline
+    assert timeline[held] == ("kept", agent_peers.KEEP_AFTER_WRITE_S, False), timeline[held]
+    assert "load" not in _by_id(_saved(client, token, project))
 
 
 def test_a_batch_solves_wave_holds_its_nodes_outside_the_spec_lock_and_names_them_all(
