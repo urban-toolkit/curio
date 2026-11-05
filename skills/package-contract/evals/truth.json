@@ -1,0 +1,48 @@
+{
+  "skill_name": "package-contract",
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/backend/tests/test_packages/test_backend_contract.py::TestManifestBackend (test_parses_declaration, test_bad_entry_refused_naming_the_grammar, test_handler_validation, test_server_code_permission_required, test_template_backend_handler_cross_checked) and its grammar, utk_curio/backend/app/packages/domain/backend_contract.py (HANDLER_NAME_RE, TIMEOUT_CLASSES); utk_curio/backend/tests/test_packages/test_backend_build.py::TestPolicyScan::test_network_blocks_undeclared_and_warns_declared; utk_curio/backend/tests/test_packages/test_backend_build.py::TestProbingPhase::test_probe_failure_blocks_apply_naming_the_handler (a module-level import of a module that is not there fails the probe); skills/package-contract/SKILL.md, the package contract Curio ships (declared dependencies install at Apply)",
+      "fails": [],
+      "reply": "Its manifest needs a top-level backend object: an entry, the handler file under backend/ (such as backend/handler.py), and a list of handlers, each named to match ^[a-z][a-z0-9-]{0,63}$, such as fit-regression, with a timeoutClass of quick or standard. Its permissions need server-code, and server-network only if the code reaches the network. The template that runs it declares backendHandler with the handler's name.\n\nDeclare scikit-learn as a python dependency, and import sklearn inside the handler function, not at module level: declared dependencies are installed at Apply, so they are missing when the build's probe loads the entry, and a module-level import of one fails the probe.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": []
+    },
+    {
+      "case": 2,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/backend/tests/test_packages/test_backend_build.py::TestPolicyScan::test_escape_hatch_families_block (socketserver is backend-resident-server, a web framework backend-resident-service: utk_curio/backend/app/packages/builder/policy.py, \"serving sockets is a resident service ... handlers only answer invocations\"); utk_curio/backend/tests/test_packages/test_backend_runtime.py::TestInvokeHandler::test_worker_env_is_scrubbed_of_host_secrets (the worker's environment holds none of the host's variables); skills/package-contract/SKILL.md, the contract Curio ships (a resident service or an API key is a finding naming the Curio activation lifecycle or the deferred secret mediation)",
+      "fails": [],
+      "reply": "I wrote no package draft for this: both needs are outside what a package's backend can do, so they are findings, not code.\n\n- A websocket server kept running between runs is not allowed in a package's backend: each worker serves one request, a handler only answers that invocation, and the build's policy scan blocks socket servers and other resident services. It waits on an activation lifecycle for resident services in Curio.\n- The backend worker cannot read your weather service's API key: its environment holds none of the host's variables, and no secrets or credentials exist there. It waits on secret mediation for package backends.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": []
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/backend/tests/test_packages/test_backend_build.py::TestProbingPhase::test_probe_failure_blocks_apply_naming_the_handler (a module-level import fails the probe; declared dependencies install at Apply, as skills/package-contract/SKILL.md says the contract); utk_curio/backend/tests/test_packages/test_backend_build.py::TestPolicyScan::test_escape_hatch_families_block (import subprocess is backend-spawn: \"process spawning is not available in the backend sandbox\"); the payload a node run delivers, {\"content\", \"input\": <upstream JSON or null>}, as skills/package-contract/SKILL.md and utk_curio/backend/tests/test_packages/test_backend_route.py::TestBackendRouteMatrix::test_missing_payload_member_is_422 hold it",
+      "fails": [],
+      "reply": "No, it will not pass the build as it is:\n\n- The module-level import of geopandas fails the build's probe: a declared dependency is installed only at Apply, so it is missing when the probe loads the entry. Move the import inside handle.\n- The policy scan blocks subprocess: process spawning is not available in the backend sandbox, so the ogr2ogr call has to go.\n- payload['input'] holds the upstream JSON itself, not a path to a file, so gpd.read_file cannot open it: build the frame from that JSON.\n\nA version that passes:\n\n```python\ndef handle(payload):\n    import geopandas as gpd\n\n    gdf = gpd.GeoDataFrame.from_features(payload['input'])\n    return gdf.buffer(50).to_json()\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": []
+    }
+  ],
+  "gaps": []
+}

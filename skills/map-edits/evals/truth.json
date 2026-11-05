@@ -1,0 +1,638 @@
+{
+  "skill_name": "map-edits",
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/dataflows/chicago-loop-layers.json node ece11802-86f4-5ea9-9faf-f5cf6e2d732f's content, its one call over every input with by_input=True, now holding one edit in the form the node writes, as utk_curio/frontend/urban-workflows/src/utils/editFeatures/editFeaturesCode.cases.json's cases write one: 'a scale where a condition holds' (op, where, column, value) and 'two circles, every input handed to the step, the edit naming its layer' (the edit naming its layer), here a set of height to the 60 m the prompt names where height > 60",
+      "fails": [],
+      "reply": "I changed the Map Editor node's code. It is still one curio_edit_features call over [input_0, input_1, input_2, input_3, input_4] with by_input=True, now holding one edit on the buildings layer, table_osm_buildings: op set where \"height > 60\", column height and value 60, which caps every building at 60 m.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+                "type": "curio.builtin/edit-features",
+                "title": "Edit the map's layers",
+                "changes": {
+                  "content": {
+                    "before": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [], by_input=True)\n",
+                    "after": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"set\", \"layer\": \"table_osm_buildings\", \"where\": \"height > 60\", \"column\": \"height\", \"value\": 60},\n], by_input=True)"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Map Editor node · Edit the map's layers",
+            "lines": [
+              "Map Editor node · Edit the map's layers"
+            ],
+            "nodeId": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+            "content": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"set\", \"layer\": \"table_osm_buildings\", \"where\": \"height > 60\", \"column\": \"height\", \"value\": 60},\n], by_input=True)\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reply": "Here is the Map Editor node's code with every building capped at 60 m:\n\n```python\n# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"set\", \"layer\": \"table_osm_buildings\", \"where\": \"height > 60\", \"column\": \"height\", \"value\": 60},\n], by_input=True)\n\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "refused-map-edit",
+      "kind": "mutant",
+      "source": "utk_curio/sandbox/tests/test_feature_edits_code.py::test_code_the_node_refuses_is_refused_with_the_same_words, its case 'a list of inputs without by_input' of utk_curio/frontend/urban-workflows/src/utils/editFeatures/editFeaturesCode.cases.json: the Map Editor node's reader rejects it, so the content write refuses it (utk_curio/backend/tests/test_agents/test_map_edits_grounding.py::TestTheMintsHoldAnAgentsCodeToTheNodesReader)",
+      "fails": [
+        3
+      ],
+      "reply": "I changed the Map Editor node's code. It is still one curio_edit_features call over [input_0, input_1, input_2, input_3, input_4] with by_input=True, now holding one edit on the buildings layer, table_osm_buildings: op set where \"height > 60\", column height and value 60, which caps every building at 60 m.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+                "type": "curio.builtin/edit-features",
+                "title": "Edit the map's layers",
+                "changes": {
+                  "content": {
+                    "before": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [], by_input=True)\n",
+                    "after": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"set\", \"layer\": \"table_osm_buildings\", \"where\": \"height > 60\", \"column\": \"height\", \"value\": 60},\n])"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Map Editor node · Edit the map's layers",
+            "lines": [
+              "Map Editor node · Edit the map's layers"
+            ],
+            "nodeId": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+            "content": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"set\", \"layer\": \"table_osm_buildings\", \"where\": \"height > 60\", \"column\": \"height\", \"value\": 60},\n])\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/dataflows/chicago-loop-layers.json node ece11802-86f4-5ea9-9faf-f5cf6e2d732f's content, its one call over every input with by_input=True, now holding one edit in the form the node writes, as utk_curio/frontend/urban-workflows/src/utils/editFeatures/editFeaturesCode.cases.json's cases write one: 'a Map Editor log: a raise, a removal switched off and a removal by condition' (an edit naming its features by a where condition) and 'two circles, every input handed to the step, the edit naming its layer', here a set of height to the prompt's 60 m on the one part its two ids name",
+      "fails": [],
+      "reply": "I changed the Map Editor node's code. It is still one curio_edit_features call over [input_0, input_1, input_2, input_3, input_4] with by_input=True, now holding one edit on table_osm_buildings: op set, column height, value 60, on the one part a where on both its ids names, \"building_id == 30311742 and osm_id == 245900117\". The building's other parts keep their heights: naming the building by ids [30311742] keyed on building_id would change every part of it.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+                "type": "curio.builtin/edit-features",
+                "title": "Edit the map's layers",
+                "changes": {
+                  "content": {
+                    "before": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [], by_input=True)\n",
+                    "after": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"set\", \"layer\": \"table_osm_buildings\", \"where\": \"building_id == 30311742 and osm_id == 245900117\", \"column\": \"height\", \"value\": 60},\n], by_input=True)"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Map Editor node · Edit the map's layers",
+            "lines": [
+              "Map Editor node · Edit the map's layers"
+            ],
+            "nodeId": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+            "content": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"set\", \"layer\": \"table_osm_buildings\", \"where\": \"building_id == 30311742 and osm_id == 245900117\", \"column\": \"height\", \"value\": 60},\n], by_input=True)\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "reply": "Here is the Map Editor node's code that lowers only that part to 60 m:\n\n```python\n# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"set\", \"layer\": \"table_osm_buildings\", \"where\": \"building_id == 30311742 and osm_id == 245900117\", \"column\": \"height\", \"value\": 60},\n], by_input=True)\n\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "refused-map-edit",
+      "kind": "mutant",
+      "source": "utk_curio/sandbox/tests/test_feature_edits_code.py::test_code_the_node_refuses_is_refused_with_the_same_words, its case 'an edit naming its features by ids and by a condition' of utk_curio/frontend/urban-workflows/src/utils/editFeatures/editFeaturesCode.cases.json: the Map Editor node's reader rejects it, so the content write refuses it (utk_curio/backend/tests/test_agents/test_map_edits_grounding.py::TestTheMintsHoldAnAgentsCodeToTheNodesReader)",
+      "fails": [
+        4
+      ],
+      "reply": "I changed the Map Editor node's code. It is still one curio_edit_features call over [input_0, input_1, input_2, input_3, input_4] with by_input=True, now holding one edit on table_osm_buildings: op set, column height, value 60, on the one part a where on both its ids names, \"building_id == 30311742 and osm_id == 245900117\". The building's other parts keep their heights: naming the building by ids [30311742] keyed on building_id would change every part of it.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+                "type": "curio.builtin/edit-features",
+                "title": "Edit the map's layers",
+                "changes": {
+                  "content": {
+                    "before": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [], by_input=True)\n",
+                    "after": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"set\", \"layer\": \"table_osm_buildings\", \"ids\": [30311742], \"where\": \"building_id == 30311742 and osm_id == 245900117\", \"column\": \"height\", \"value\": 60},\n], by_input=True)"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Map Editor node · Edit the map's layers",
+            "lines": [
+              "Map Editor node · Edit the map's layers"
+            ],
+            "nodeId": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+            "content": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"set\", \"layer\": \"table_osm_buildings\", \"ids\": [30311742], \"where\": \"building_id == 30311742 and osm_id == 245900117\", \"column\": \"height\", \"value\": 60},\n], by_input=True)\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/dataflows/chicago-loop-shadow-towers.json: its Map Editor node acfa08e6-b472-5174-9ff0-8e469d04c901 (Remove towers, its goal \"Remove the 15 buildings SCOUT's high-rise case removes, by their building_id\") feeding the map 549969fc-8e6a-574d-b9dc-aa38487f51c8 with a data edge and linked to it by an interaction edge; here fed by docs/examples/dataflows/chicago-loop-layers.json's OpenStreetMap layers node 8de3c334-a7ef-515e-9ec8-6b65c1680a5e, its goal the two tallest towers the prompt names",
+      "fails": [],
+      "reply": "The plan adds a Map Editor node, Remove the tallest towers, fed by the OpenStreetMap layers node, whose intent starts with Remove: \"Remove the two tallest towers of downtown by their building_id\". It feeds a new Autark map, Downtown without its tallest towers, drawn beside the current one, and an interaction edge links the two, so a building picked on the map is picked in the Map Editor.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "",
+                "goal": "Remove the tallest towers \u2014 Remove the two tallest towers of downtown by their building_id, from the buildings the OpenStreetMap layers node loads.",
+                "id": "c981d17a-a5e1-4a7c-8897-9feeb31e40d8",
+                "title": "Remove the tallest towers",
+                "type": "curio.builtin/edit-features"
+              },
+              {
+                "content": "",
+                "goal": "Downtown without its tallest towers \u2014 Draw the buildings the Map Editor leaves, colored by height, beside the current map.",
+                "id": "59152c0f-3735-4162-8f40-57f1c194ddb9",
+                "title": "Downtown without its tallest towers",
+                "type": "curio.builtin/autk-grammar"
+              }
+            ]
+          },
+          "edges": {
+            "added": [
+              {
+                "id": "8848b240-4a3c-46a4-9f30-d768efc250bf",
+                "source": "8de3c334-a7ef-515e-9ec8-6b65c1680a5e",
+                "sourceHandle": "out",
+                "target": "c981d17a-a5e1-4a7c-8897-9feeb31e40d8",
+                "targetHandle": "in"
+              },
+              {
+                "id": "f3fe031c-1b1b-42fd-bd54-d61d2cc1ce15",
+                "source": "c981d17a-a5e1-4a7c-8897-9feeb31e40d8",
+                "sourceHandle": "out",
+                "target": "59152c0f-3735-4162-8f40-57f1c194ddb9",
+                "targetHandle": "in"
+              },
+              {
+                "id": "e094ac7d-c020-4c6c-9e84-eac86f5166e9",
+                "source": "c981d17a-a5e1-4a7c-8897-9feeb31e40d8",
+                "sourceHandle": "in/out",
+                "target": "59152c0f-3735-4162-8f40-57f1c194ddb9",
+                "targetHandle": "in/out",
+                "type": "Interaction"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "dataflow.plan.write",
+            "kind": "plan",
+            "summary": "Plan · 2 nodes, 3 edges",
+            "lines": [
+              "+2 nodes · +3 connections",
+              "2 pending for Build & validate or Solve",
+              "agents attached: Node Builder ×2",
+              "no Dataset Finder: does not attach to edit-features nodes",
+              "Topology: acyclic."
+            ],
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "applied",
+          "arguments": {
+            "goal": "Downtown without its two tallest towers, drawn on a map of its own beside the current one.",
+            "nodes": [
+              {
+                "ref": "towers-out",
+                "nodeType": "curio.builtin/edit-features",
+                "title": "Remove the tallest towers",
+                "intent": "Remove the two tallest towers of downtown by their building_id, from the buildings the OpenStreetMap layers node loads."
+              },
+              {
+                "ref": "whatif-map",
+                "nodeType": "curio.builtin/autk-grammar",
+                "title": "Downtown without its tallest towers",
+                "intent": "Draw the buildings the Map Editor leaves, colored by height, beside the current map."
+              }
+            ],
+            "edges": [
+              {
+                "from": "8de3c334-a7ef-515e-9ec8-6b65c1680a5e",
+                "to": "towers-out"
+              },
+              {
+                "from": "towers-out",
+                "to": "whatif-map"
+              },
+              {
+                "from": "towers-out",
+                "to": "whatif-map",
+                "kind": "interaction"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reply": "Here is the plan for the what-if:\n\n```json\n{\n  \"goal\": \"Downtown without its two tallest towers, drawn on a map of its own beside the current one.\",\n  \"nodes\": [\n    {\n      \"ref\": \"towers-out\",\n      \"nodeType\": \"curio.builtin/edit-features\",\n      \"title\": \"Remove the tallest towers\",\n      \"intent\": \"Remove the two tallest towers of downtown by their building_id, from the buildings the OpenStreetMap layers node loads.\"\n    },\n    {\n      \"ref\": \"whatif-map\",\n      \"nodeType\": \"curio.builtin/autk-grammar\",\n      \"title\": \"Downtown without its tallest towers\",\n      \"intent\": \"Draw the buildings the Map Editor leaves, colored by height, beside the current map.\"\n    }\n  ],\n  \"edges\": [\n    {\n      \"from\": \"8de3c334-a7ef-515e-9ec8-6b65c1680a5e\",\n      \"to\": \"towers-out\"\n    },\n    {\n      \"from\": \"towers-out\",\n      \"to\": \"whatif-map\"\n    },\n    {\n      \"from\": \"towers-out\",\n      \"to\": \"whatif-map\",\n      \"kind\": \"interaction\"\n    }\n  ]\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "refused-edge",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_plan_topology.py::TestInteractionEdgeErrors::test_the_interaction_node_links_only_to_a_map_it_feeds_and_the_refusal_names_the_fix: the plan check refuses a Map Editor's interaction edge to a map it does not feed, here the current map",
+      "fails": [
+        4
+      ],
+      "reply": "The plan adds a Map Editor node, Remove the tallest towers, fed by the OpenStreetMap layers node, whose intent starts with Remove: \"Remove the two tallest towers of downtown by their building_id\". It feeds a new Autark map, Downtown without its tallest towers, drawn beside the current one, and an interaction edge links the two, so a building picked on the map is picked in the Map Editor.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "",
+                "goal": "Remove the tallest towers \u2014 Remove the two tallest towers of downtown by their building_id, from the buildings the OpenStreetMap layers node loads.",
+                "id": "c981d17a-a5e1-4a7c-8897-9feeb31e40d8",
+                "title": "Remove the tallest towers",
+                "type": "curio.builtin/edit-features"
+              },
+              {
+                "content": "",
+                "goal": "Downtown without its tallest towers \u2014 Draw the buildings the Map Editor leaves, colored by height, beside the current map.",
+                "id": "59152c0f-3735-4162-8f40-57f1c194ddb9",
+                "title": "Downtown without its tallest towers",
+                "type": "curio.builtin/autk-grammar"
+              }
+            ]
+          },
+          "edges": {
+            "added": [
+              {
+                "id": "8848b240-4a3c-46a4-9f30-d768efc250bf",
+                "source": "8de3c334-a7ef-515e-9ec8-6b65c1680a5e",
+                "sourceHandle": "out",
+                "target": "c981d17a-a5e1-4a7c-8897-9feeb31e40d8",
+                "targetHandle": "in"
+              },
+              {
+                "id": "f3fe031c-1b1b-42fd-bd54-d61d2cc1ce15",
+                "source": "c981d17a-a5e1-4a7c-8897-9feeb31e40d8",
+                "sourceHandle": "out",
+                "target": "59152c0f-3735-4162-8f40-57f1c194ddb9",
+                "targetHandle": "in"
+              },
+              {
+                "id": "e094ac7d-c020-4c6c-9e84-eac86f5166e9",
+                "source": "c981d17a-a5e1-4a7c-8897-9feeb31e40d8",
+                "sourceHandle": "in/out",
+                "target": "d517325b-266b-575d-ab48-2685bb889536",
+                "targetHandle": "in/out",
+                "type": "Interaction"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "dataflow.plan.write",
+            "kind": "plan",
+            "summary": "Plan · 2 nodes, 3 edges",
+            "lines": [
+              "+2 nodes · +3 connections",
+              "2 pending for Build & validate or Solve",
+              "agents attached: Node Builder ×2",
+              "no Dataset Finder: does not attach to edit-features nodes",
+              "Topology: acyclic."
+            ],
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "applied",
+          "arguments": {
+            "goal": "Downtown without its two tallest towers, drawn on a map of its own beside the current one.",
+            "nodes": [
+              {
+                "ref": "towers-out",
+                "nodeType": "curio.builtin/edit-features",
+                "title": "Remove the tallest towers",
+                "intent": "Remove the two tallest towers of downtown by their building_id, from the buildings the OpenStreetMap layers node loads."
+              },
+              {
+                "ref": "whatif-map",
+                "nodeType": "curio.builtin/autk-grammar",
+                "title": "Downtown without its tallest towers",
+                "intent": "Draw the buildings the Map Editor leaves, colored by height, beside the current map."
+              }
+            ],
+            "edges": [
+              {
+                "from": "8de3c334-a7ef-515e-9ec8-6b65c1680a5e",
+                "to": "towers-out"
+              },
+              {
+                "from": "towers-out",
+                "to": "whatif-map"
+              },
+              {
+                "from": "towers-out",
+                "to": "d517325b-266b-575d-ab48-2685bb889536",
+                "kind": "interaction"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": 4,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/dataflows/lower-manhattan-park-shade.json node park-shade-parks, its content: the parks layer read through its chip, [!! input_0:table_osm_parks !!], and kept by their area in metres in their UTM zone (estimate_utm_crs), here at least the 10,000 square metres of one hectare the prompt names",
+      "fails": [],
+      "reply": "I left the Map Editor as it is. Keeping only the parks over a size is an analysis filter, not a what-if edit: it belongs in the node that computes the parks layer, or in a code node before the map, not in the Map Editor's edits.\n\nSo I added a Python Computation node, Parks of a hectare or more, whose code keeps the parks of at least one hectare (10,000 square metres), measured in metres in the parks' UTM zone. Connect the OpenStreetMap layers node to its input and draw its output on the map.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "# OpenStreetMap's parks of at least one hectare (10,000 square metres), their\n# areas in metres in the parks' UTM zone.\nparks = [!! input_0:table_osm_parks !!]\nutm = parks.estimate_utm_crs()\nreturn parks[parks.to_crs(utm).area >= 10000]",
+                "goal": "Keep the OpenStreetMap parks of at least one hectare, for the map.",
+                "id": "410166e6-2742-44eb-93f4-f0803c9a2ccd",
+                "title": "Parks of a hectare or more",
+                "type": "curio.builtin/computation-analysis"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Python Computation node · Parks of a hectare or more",
+            "lines": [
+              "Python Computation · curio.builtin/computation-analysis",
+              "node 410166e6-2742-44eb-93f4-f0803c9a2ccd"
+            ],
+            "nodeId": "410166e6-2742-44eb-93f4-f0803c9a2ccd",
+            "nodeType": "curio.builtin/computation-analysis",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/computation-analysis",
+            "title": "Parks of a hectare or more",
+            "goal": "Keep the OpenStreetMap parks of at least one hectare, for the map.",
+            "content": "# OpenStreetMap's parks of at least one hectare (10,000 square metres), their\n# areas in metres in the parks' UTM zone.\nparks = [!! input_0:table_osm_parks !!]\nutm = parks.estimate_utm_crs()\nreturn parks[parks.to_crs(utm).area >= 10000]\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 4,
+      "name": "refused-map-edit",
+      "kind": "mutant",
+      "source": "utk_curio/sandbox/tests/test_feature_edits_code.py::test_code_the_node_refuses_is_refused_with_the_same_words, its case 'an edit the node does not make' of utk_curio/frontend/urban-workflows/src/utils/editFeatures/editFeaturesCode.cases.json: the Map Editor node's reader rejects it, so the content write refuses it (utk_curio/backend/tests/test_agents/test_map_edits_grounding.py::TestTheMintsHoldAnAgentsCodeToTheNodesReader): a removal of the parks under a hectare",
+      "fails": [
+        1
+      ],
+      "reply": "I left the Map Editor as it is. Keeping only the parks over a size is an analysis filter, not a what-if edit: it belongs in the node that computes the parks layer, or in a code node before the map, not in the Map Editor's edits.\n\nSo I added a Python Computation node, Parks of a hectare or more, whose code keeps the parks of at least one hectare (10,000 square metres), measured in metres in the parks' UTM zone. Connect the OpenStreetMap layers node to its input and draw its output on the map.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "# OpenStreetMap's parks of at least one hectare (10,000 square metres), their\n# areas in metres in the parks' UTM zone.\nparks = [!! input_0:table_osm_parks !!]\nutm = parks.estimate_utm_crs()\nreturn parks[parks.to_crs(utm).area >= 10000]",
+                "goal": "Keep the OpenStreetMap parks of at least one hectare, for the map.",
+                "id": "410166e6-2742-44eb-93f4-f0803c9a2ccd",
+                "title": "Parks of a hectare or more",
+                "type": "curio.builtin/computation-analysis"
+              }
+            ],
+            "changed": [
+              {
+                "id": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+                "type": "curio.builtin/edit-features",
+                "title": "Edit the map's layers",
+                "changes": {
+                  "content": {
+                    "before": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [], by_input=True)\n",
+                    "after": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"delete\", \"layer\": \"table_osm_parks\", \"where\": \"area < 10000\"},\n], by_input=True)"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Python Computation node · Parks of a hectare or more",
+            "lines": [
+              "Python Computation · curio.builtin/computation-analysis",
+              "node 410166e6-2742-44eb-93f4-f0803c9a2ccd"
+            ],
+            "nodeId": "410166e6-2742-44eb-93f4-f0803c9a2ccd",
+            "nodeType": "curio.builtin/computation-analysis",
+            "undo": true
+          },
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Map Editor node · Edit the map's layers",
+            "lines": [
+              "Map Editor node · Edit the map's layers"
+            ],
+            "nodeId": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/computation-analysis",
+            "title": "Parks of a hectare or more",
+            "goal": "Keep the OpenStreetMap parks of at least one hectare, for the map.",
+            "content": "# OpenStreetMap's parks of at least one hectare (10,000 square metres), their\n# areas in metres in the parks' UTM zone.\nparks = [!! input_0:table_osm_parks !!]\nutm = parks.estimate_utm_crs()\nreturn parks[parks.to_crs(utm).area >= 10000]\n"
+          }
+        },
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "ece11802-86f4-5ea9-9faf-f5cf6e2d732f",
+            "content": "# Map Editor writes this code from its edit list: each edit, in the\n# order it was made, on the features whose key is one of its ids. It is\n# written again when the list changes.\nreturn curio_edit_features([input_0, input_1, input_2, input_3, input_4], [\n    {\"op\": \"delete\", \"layer\": \"table_osm_parks\", \"where\": \"area < 10000\"},\n], by_input=True)\n"
+          }
+        }
+      ]
+    }
+  ],
+  "gaps": []
+}

@@ -1,0 +1,483 @@
+{
+  "skill_name": "node-functions",
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/dataflows/chicago-loop-layers.json nodes 84e96936-a53e-59d3-ba8e-ee40a035154b (Trees) and 5abae988-9ecb-5f71-85cc-958df3999990 (CTA 'L' stations), their content's curio_load_data(..., part=...) lines; the distance in metres in the layers' UTM zone as docs/examples/dataflows/crown-heights-1550-bedford-shadow.json node 6f07cb25-d7cc-5fe5-abf4-cfadafdffb59's content measures it (estimate_utm_crs, to_crs, buffer), and the union a filter reads as docs/examples/dataflows/quad-cities-flood-vulnerability.json node f2b4c1ba-30d9-4f4a-97bc-516d5d81a393's content takes it (union_all)",
+      "fails": [],
+      "reply": "I added a Data Loading node, Trees near 'L' stations. Its code loads each file of the Chicago Loop Layers dataset on its own, curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\") and curio_load_data(\"data.curio.chicago-loop-layers\", part=\"cta_stations.geojson\"), and returns the trees within 50 m of a station, measured in metres in the layers' UTM zone. It opens no file by a path of its own.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "# The trees and the CTA 'L' stations of the Chicago Loop Layers dataset, each\n# file loaded on its own.\ntrees = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\")\nstations = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"cta_stations.geojson\")\n# The trees within 50 m of a station, measured in metres in the trees' UTM zone.\nutm = trees.estimate_utm_crs()\nnear = stations.to_crs(utm).buffer(50).union_all()\nclose = trees[trees.to_crs(utm).within(near)]\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nclose.metadata = {\"layerType\": \"points\"}\nreturn close",
+                "goal": "Load the Chicago Loop Layers dataset's trees and CTA 'L' stations and keep the trees within 50 m of a station.",
+                "id": "23c5d956-b04c-47fb-b6bd-8936609bb3d9",
+                "metadata": {
+                  "widgets": [
+                    {
+                      "default": "",
+                      "label": "Data",
+                      "name": "data",
+                      "type": "dataset"
+                    }
+                  ]
+                },
+                "title": "Trees near 'L' stations",
+                "type": "curio.builtin/data-loading"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Data Loading node · Trees near 'L' stations · widgets data",
+            "lines": [
+              "Data Loading · curio.builtin/data-loading",
+              "node 23c5d956-b04c-47fb-b6bd-8936609bb3d9"
+            ],
+            "nodeId": "23c5d956-b04c-47fb-b6bd-8936609bb3d9",
+            "nodeType": "curio.builtin/data-loading",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/data-loading",
+            "title": "Trees near 'L' stations",
+            "goal": "Load the Chicago Loop Layers dataset's trees and CTA 'L' stations and keep the trees within 50 m of a station.",
+            "content": "# The trees and the CTA 'L' stations of the Chicago Loop Layers dataset, each\n# file loaded on its own.\ntrees = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\")\nstations = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"cta_stations.geojson\")\n# The trees within 50 m of a station, measured in metres in the trees' UTM zone.\nutm = trees.estimate_utm_crs()\nnear = stations.to_crs(utm).buffer(50).union_all()\nclose = trees[trees.to_crs(utm).within(near)]\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nclose.metadata = {\"layerType\": \"points\"}\nreturn close\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "reply": "Here is the code for a node that keeps the trees within 50 m of a CTA 'L' station:\n\n```python\n# The trees and the CTA 'L' stations of the Chicago Loop Layers dataset, each\n# file loaded on its own.\ntrees = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\")\nstations = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"cta_stations.geojson\")\n# The trees within 50 m of a station, measured in metres in the trees' UTM zone.\nutm = trees.estimate_utm_crs()\nnear = stations.to_crs(utm).buffer(50).union_all()\nclose = trees[trees.to_crs(utm).within(near)]\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nclose.metadata = {\"layerType\": \"points\"}\nreturn close\n\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "refused-code",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_source_grounding.py::TestVerdicts::test_issue_298_shape_is_refused_with_the_literal_named: a file path no catalog or user names is refused by the grounding gate: cta_stations.geojson opened by a path of the code's own",
+      "fails": [
+        3,
+        4
+      ],
+      "reply": "I added a Data Loading node, Trees near 'L' stations. Its code loads each file of the Chicago Loop Layers dataset on its own, curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\") and curio_load_data(\"data.curio.chicago-loop-layers\", part=\"cta_stations.geojson\"), and returns the trees within 50 m of a station, measured in metres in the layers' UTM zone. It opens no file by a path of its own.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "import geopandas as gpd\n\n# The trees and the CTA 'L' stations of the Chicago Loop Layers dataset, each\n# file loaded on its own.\ntrees = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\")\nstations = gpd.read_file(\"cta_stations.geojson\")\n# The trees within 50 m of a station, measured in metres in the trees' UTM zone.\nutm = trees.estimate_utm_crs()\nnear = stations.to_crs(utm).buffer(50).union_all()\nclose = trees[trees.to_crs(utm).within(near)]\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nclose.metadata = {\"layerType\": \"points\"}\nreturn close",
+                "goal": "Load the Chicago Loop Layers dataset's trees and CTA 'L' stations and keep the trees within 50 m of a station.",
+                "id": "23c5d956-b04c-47fb-b6bd-8936609bb3d9",
+                "metadata": {
+                  "widgets": [
+                    {
+                      "default": "",
+                      "label": "Data",
+                      "name": "data",
+                      "type": "dataset"
+                    }
+                  ]
+                },
+                "title": "Trees near 'L' stations",
+                "type": "curio.builtin/data-loading"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Data Loading node · Trees near 'L' stations · widgets data",
+            "lines": [
+              "Data Loading · curio.builtin/data-loading",
+              "node 23c5d956-b04c-47fb-b6bd-8936609bb3d9"
+            ],
+            "nodeId": "23c5d956-b04c-47fb-b6bd-8936609bb3d9",
+            "nodeType": "curio.builtin/data-loading",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/data-loading",
+            "title": "Trees near 'L' stations",
+            "goal": "Load the Chicago Loop Layers dataset's trees and CTA 'L' stations and keep the trees within 50 m of a station.",
+            "content": "import geopandas as gpd\n\n# The trees and the CTA 'L' stations of the Chicago Loop Layers dataset, each\n# file loaded on its own.\ntrees = curio_load_data(\"data.curio.chicago-loop-layers\", part=\"trees.parquet\")\nstations = gpd.read_file(\"cta_stations.geojson\")\n# The trees within 50 m of a station, measured in metres in the trees' UTM zone.\nutm = trees.estimate_utm_crs()\nnear = stations.to_crs(utm).buffer(50).union_all()\nclose = trees[trees.to_crs(utm).within(near)]\n# Tell the Autark map what kind of layer this is, so it draws it as one.\nclose.metadata = {\"layerType\": \"points\"}\nreturn close\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/dataflows/quad-cities-flood-vulnerability.json node a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5 (Depth without NbS), its content: curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=bounds) with bounds ordered west, south, east, north, here the prompt's box; the masked read of band 1 as node 34326814-c132-4eb4-9d73-268368968592's content reads a depth raster's cells",
+      "fails": [],
+      "reply": "I added a Python Computation node, Mean depth in the box. Its code reads only the window with curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=(-90.60, 41.50, -90.55, 41.53)), the box ordered west, south, east, north as bounds takes it, reads the cells of that window masked so the cells with no value are left out, and returns their mean.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "# The window of SCOUT's flood depth for 2050 to 2080 without NbS inside the box:\n# bounds are west, south, east, north.\ndepth = curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=(-90.60, 41.50, -90.55, 41.53))\n# The cells that hold a depth: the masked read leaves out the nodata cells.\ncells = depth.read(1, masked=True)\nreturn float(cells.mean())",
+                "goal": "Read the cells of the 2050 to 2080 flood depth without NbS inside the box and return the mean depth of the cells that hold one.",
+                "id": "005f44dc-268a-4765-8559-2d9910b8c438",
+                "title": "Mean depth in the box",
+                "type": "curio.builtin/computation-analysis"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Python Computation node · Mean depth in the box",
+            "lines": [
+              "Python Computation · curio.builtin/computation-analysis",
+              "node 005f44dc-268a-4765-8559-2d9910b8c438"
+            ],
+            "nodeId": "005f44dc-268a-4765-8559-2d9910b8c438",
+            "nodeType": "curio.builtin/computation-analysis",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/computation-analysis",
+            "title": "Mean depth in the box",
+            "goal": "Read the cells of the 2050 to 2080 flood depth without NbS inside the box and return the mean depth of the cells that hold one.",
+            "content": "# The window of SCOUT's flood depth for 2050 to 2080 without NbS inside the box:\n# bounds are west, south, east, north.\ndepth = curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=(-90.60, 41.50, -90.55, 41.53))\n# The cells that hold a depth: the masked read leaves out the nodata cells.\ncells = depth.read(1, masked=True)\nreturn float(cells.mean())\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "reply": "Here is the code for a node that reads the box's cells and returns their mean depth:\n\n```python\n# The window of SCOUT's flood depth for 2050 to 2080 without NbS inside the box:\n# bounds are west, south, east, north.\ndepth = curio_load_data(\"data.scout.flood-depth-2050-2080-no-nbs\", bounds=(-90.60, 41.50, -90.55, 41.53))\n# The cells that hold a depth: the masked read leaves out the nodata cells.\ncells = depth.read(1, masked=True)\nreturn float(cells.mean())\n\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/10-street-vision-cv-analysis.json nodes 5988175e-84aa-4964-84de-aba7d55cf122 (its content's curio_load_collection line) and 4067fb98-3ed5-497a-97a5-41a98ce1085b (its content's curio_load_model line and its curio_segment call), with the two classes the prompt names. Driven with model.curio.ddrnet23-slim@1 added to the account, as the prompt says it is: the evaluation account adds no model, so models.search lists none and the grounding gate refuses this curio_load_model",
+      "fails": [],
+      "reply": "I added a Python Computation node, Vegetation and sky. Its code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), loads the model with curio_load_model(\"model.curio.ddrnet23-slim\"), and labels them with curio_segment(photos, model, classes=[\"vegetation\", \"sky\"]), returning its rows: each photo's vegetation_pct and sky_pct, and overlay_url, the link to its overlay.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nreturn curio_segment(photos, model, classes=[\"vegetation\", \"sky\"])",
+                "goal": "Label the Lincoln Park street photos with the segmentation model and give each photo's share of vegetation and of sky, with its overlay.",
+                "id": "6c0e4336-3009-4e8c-8a5b-413af693af6d",
+                "title": "Vegetation and sky",
+                "type": "curio.builtin/computation-analysis"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Python Computation node · Vegetation and sky",
+            "lines": [
+              "Python Computation · curio.builtin/computation-analysis",
+              "node 6c0e4336-3009-4e8c-8a5b-413af693af6d"
+            ],
+            "nodeId": "6c0e4336-3009-4e8c-8a5b-413af693af6d",
+            "nodeType": "curio.builtin/computation-analysis",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "models.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/computation-analysis",
+            "title": "Vegetation and sky",
+            "goal": "Label the Lincoln Park street photos with the segmentation model and give each photo's share of vegetation and of sky, with its overlay.",
+            "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nreturn curio_segment(photos, model, classes=[\"vegetation\", \"sky\"])\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "reply": "Here is the code for a Python node that labels the photos:\n\n```python\n# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nreturn curio_segment(photos, model, classes=[\"vegetation\", \"sky\"])\n\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "models.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "refused-code",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_catalog_gate.py::TestModelIds::test_node_create_with_a_made_up_model_id_proposes_nothing: a curio_load_model of a model the account never added is refused by the grounding gate: the test's made-up model.curio.ghost-segmenter in place of the street-scene model",
+      "fails": [
+        3
+      ],
+      "reply": "I added a Python Computation node, Vegetation and sky. Its code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), loads the model with curio_load_model(\"model.curio.ddrnet23-slim\"), and labels them with curio_segment(photos, model, classes=[\"vegetation\", \"sky\"]), returning its rows: each photo's vegetation_pct and sky_pct, and overlay_url, the link to its overlay.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ghost-segmenter\")\nreturn curio_segment(photos, model, classes=[\"vegetation\", \"sky\"])",
+                "goal": "Label the Lincoln Park street photos with the segmentation model and give each photo's share of vegetation and of sky, with its overlay.",
+                "id": "6c0e4336-3009-4e8c-8a5b-413af693af6d",
+                "title": "Vegetation and sky",
+                "type": "curio.builtin/computation-analysis"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Python Computation node · Vegetation and sky",
+            "lines": [
+              "Python Computation · curio.builtin/computation-analysis",
+              "node 6c0e4336-3009-4e8c-8a5b-413af693af6d"
+            ],
+            "nodeId": "6c0e4336-3009-4e8c-8a5b-413af693af6d",
+            "nodeType": "curio.builtin/computation-analysis",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "models.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/computation-analysis",
+            "title": "Vegetation and sky",
+            "goal": "Label the Lincoln Park street photos with the segmentation model and give each photo's share of vegetation and of sky, with its overlay.",
+            "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ghost-segmenter\")\nreturn curio_segment(photos, model, classes=[\"vegetation\", \"sky\"])\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 4,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/21-storage-photos-and-videos.json node survey-frames (curio.media's Sample Video Frames), its content, reading the collection as node survey-loader's content does, curio_load_collection(\"data.curio.storage-survey\"), at the half second the prompt names (EVERY_SECONDS), and naming curio_derived_file's kind=\"video\", the default skills/node-functions/SKILL.md gives it",
+      "fails": [],
+      "reply": "I added a Python Computation node, Survey video frames. Its code reads the collection with curio_load_collection(\"data.curio.storage-survey\"), takes its video's row, and for each frame at 0, 500, 1000 ms and on gets where to write it from curio_derived_file(dataset_id, file_id, t_ms, kind=\"video\"), writes the frame there as a JPEG and returns the frames' rows, which carry the thumbnail and image_url curio_derived_file gives, so a Simple View shows them as cards.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "\"\"\"Sample Video Frames.\n\nInput: a collection's rows, as Data Loading's `curio_load_collection(...)` returns\nthem. Every video row becomes one row per sampled frame, and each frame is a\nJPEG written beside the collection's other derived files. A frame row has the\ncolumns of an image row (`path`, `thumbnail`, `image_url`, `width`, `height`),\nso Simple View shows the frames and any node that reads images reads them. It\nalso keeps the video's own columns: its fields, its position, and its time,\nmoved forward by the frame's offset. `t_s` is the frame's time in the video,\nand `frame` its number there.\n\nSettings:\n- EVERY_SECONDS: the gap between two sampled frames.\n- MAX_FRAMES_PER_VIDEO: frames kept from one video at most.\n\"\"\"\n\nimport datetime\n\nimport av\nimport geopandas as gpd\nimport pandas as pd\n\nEVERY_SECONDS = 0.5\nMAX_FRAMES_PER_VIDEO = 300\n\n#: A video's own columns that describe the file, not what a frame inherits.\nPER_FILE = {\n    \"file_id\", \"relpath\", \"name\", \"ext\", \"kind\", \"bytes\", \"mtime\", \"duration_s\",\n    \"fps\", \"codec\", \"width\", \"height\", \"path\", \"thumbnail\", \"image_url\",\n    \"audio_url\", \"probe_error\", \"geometry\",\n}\n\n\ndef length_of(container, stream):\n    \"\"\"The video's length in seconds, or None when its file does not say.\"\"\"\n    if stream.duration is not None:\n        return float(stream.duration * stream.time_base)\n    if container.duration is not None:\n        return container.duration / 1_000_000\n    return None\n\n\ndef by_seeking(container, stream, length):\n    \"\"\"The frame showing at each sample time, reached by seeking.\"\"\"\n    targets = [0.0]\n    while len(targets) < MAX_FRAMES_PER_VIDEO and targets[-1] + EVERY_SECONDS < length:\n        targets.append(round(targets[-1] + EVERY_SECONDS, 6))\n    for target in targets:\n        container.seek(int(target / stream.time_base), stream=stream, backward=True)\n        frame = None\n        for candidate in container.decode(stream):\n            frame = candidate\n            if candidate.time is None or candidate.time >= target - 1e-3:\n                break\n        if frame is not None:\n            yield (frame.time if frame.time is not None else target), frame\n\n\ndef by_reading(container, stream, rate):\n    \"\"\"The first frame at or past each sample time, read from the start: for a\n    video whose length its file does not give.\"\"\"\n    wanted = 0.0\n    for index, frame in enumerate(container.decode(stream)):\n        at = frame.time if frame.time is not None else (index / rate if rate else None)\n        if at is None:\n            # Neither a time nor a rate: only the first frame can be placed.\n            if index == 0:\n                yield 0.0, frame\n            return\n        if at >= wanted - 1e-3:\n            yield at, frame\n            wanted = at + EVERY_SECONDS\n\n\nmedia = curio_load_collection(\"data.curio.storage-survey\")\nvideos = media[media[\"kind\"] == \"video\"]\nrows = []\ngeometries = []\nfor _, video in videos.iterrows():\n    if not isinstance(video[\"path\"], str) or not video[\"path\"]:\n        raise ValueError(\n            f\"{video['relpath']} is not on this machine yet; cache the collection's files first\"\n        )\n    with av.open(video[\"path\"]) as container:\n        stream = container.streams.video[0]\n        rate = float(stream.average_rate) if stream.average_rate else None\n        length = length_of(container, stream)\n        sampled = by_seeking(container, stream, length) if length is not None else by_reading(container, stream, rate)\n        last = None\n        for at, frame in sampled:\n            t_s = round(float(at), 3)\n            if t_s == last:\n                continue  # two sample times that land on one frame\n            last = t_s\n            number = int(round(t_s * rate)) if rate else len([r for r in rows if r[\"video_file_id\"] == video[\"file_id\"]])\n            image = frame.to_image()\n            derived = curio_derived_file(video[\"dataset_id\"], video[\"file_id\"], round(t_s * 1000), kind=\"video\")\n            image.save(derived[\"path\"], \"JPEG\", quality=85)\n            row = {k: video[k] for k in video.index if k not in PER_FILE}\n            taken = video.get(\"taken_at\")\n            if isinstance(taken, (pd.Timestamp, datetime.datetime)) and not pd.isna(taken):\n                row[\"taken_at\"] = taken + datetime.timedelta(seconds=t_s)\n            row.update({\n                \"file_id\": derived[\"file_id\"],\n                \"kind\": \"frame\",\n                \"video_file_id\": video[\"file_id\"],\n                \"sequence\": video[\"name\"],\n                \"frame\": number,\n                \"t_s\": t_s,\n                \"width\": image.width,\n                \"height\": image.height,\n                \"path\": derived[\"path\"],\n                \"thumbnail\": derived[\"thumbnail\"],\n                \"image_url\": derived[\"image_url\"],\n            })\n            rows.append(row)\n            geometries.append(video[\"geometry\"] if \"geometry\" in video.index else None)\n            if len([r for r in rows if r[\"video_file_id\"] == video[\"file_id\"]]) >= MAX_FRAMES_PER_VIDEO:\n                break\n\nframes = pd.DataFrame(rows)\nif isinstance(media, gpd.GeoDataFrame) and rows:\n    frames = gpd.GeoDataFrame(frames, geometry=geometries, crs=media.crs)\nreturn frames",
+                "goal": "Take one frame every half second from the video in the Example street survey collection, as rows a Simple View shows as cards.",
+                "id": "a1e9859a-2e9e-478f-b1bf-0c732e7c639e",
+                "title": "Survey video frames",
+                "type": "curio.builtin/computation-analysis"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Python Computation node · Survey video frames",
+            "lines": [
+              "Python Computation · curio.builtin/computation-analysis",
+              "node a1e9859a-2e9e-478f-b1bf-0c732e7c639e"
+            ],
+            "nodeId": "a1e9859a-2e9e-478f-b1bf-0c732e7c639e",
+            "nodeType": "curio.builtin/computation-analysis",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/computation-analysis",
+            "title": "Survey video frames",
+            "goal": "Take one frame every half second from the video in the Example street survey collection, as rows a Simple View shows as cards.",
+            "content": "\"\"\"Sample Video Frames.\n\nInput: a collection's rows, as Data Loading's `curio_load_collection(...)` returns\nthem. Every video row becomes one row per sampled frame, and each frame is a\nJPEG written beside the collection's other derived files. A frame row has the\ncolumns of an image row (`path`, `thumbnail`, `image_url`, `width`, `height`),\nso Simple View shows the frames and any node that reads images reads them. It\nalso keeps the video's own columns: its fields, its position, and its time,\nmoved forward by the frame's offset. `t_s` is the frame's time in the video,\nand `frame` its number there.\n\nSettings:\n- EVERY_SECONDS: the gap between two sampled frames.\n- MAX_FRAMES_PER_VIDEO: frames kept from one video at most.\n\"\"\"\n\nimport datetime\n\nimport av\nimport geopandas as gpd\nimport pandas as pd\n\nEVERY_SECONDS = 0.5\nMAX_FRAMES_PER_VIDEO = 300\n\n#: A video's own columns that describe the file, not what a frame inherits.\nPER_FILE = {\n    \"file_id\", \"relpath\", \"name\", \"ext\", \"kind\", \"bytes\", \"mtime\", \"duration_s\",\n    \"fps\", \"codec\", \"width\", \"height\", \"path\", \"thumbnail\", \"image_url\",\n    \"audio_url\", \"probe_error\", \"geometry\",\n}\n\n\ndef length_of(container, stream):\n    \"\"\"The video's length in seconds, or None when its file does not say.\"\"\"\n    if stream.duration is not None:\n        return float(stream.duration * stream.time_base)\n    if container.duration is not None:\n        return container.duration / 1_000_000\n    return None\n\n\ndef by_seeking(container, stream, length):\n    \"\"\"The frame showing at each sample time, reached by seeking.\"\"\"\n    targets = [0.0]\n    while len(targets) < MAX_FRAMES_PER_VIDEO and targets[-1] + EVERY_SECONDS < length:\n        targets.append(round(targets[-1] + EVERY_SECONDS, 6))\n    for target in targets:\n        container.seek(int(target / stream.time_base), stream=stream, backward=True)\n        frame = None\n        for candidate in container.decode(stream):\n            frame = candidate\n            if candidate.time is None or candidate.time >= target - 1e-3:\n                break\n        if frame is not None:\n            yield (frame.time if frame.time is not None else target), frame\n\n\ndef by_reading(container, stream, rate):\n    \"\"\"The first frame at or past each sample time, read from the start: for a\n    video whose length its file does not give.\"\"\"\n    wanted = 0.0\n    for index, frame in enumerate(container.decode(stream)):\n        at = frame.time if frame.time is not None else (index / rate if rate else None)\n        if at is None:\n            # Neither a time nor a rate: only the first frame can be placed.\n            if index == 0:\n                yield 0.0, frame\n            return\n        if at >= wanted - 1e-3:\n            yield at, frame\n            wanted = at + EVERY_SECONDS\n\n\nmedia = curio_load_collection(\"data.curio.storage-survey\")\nvideos = media[media[\"kind\"] == \"video\"]\nrows = []\ngeometries = []\nfor _, video in videos.iterrows():\n    if not isinstance(video[\"path\"], str) or not video[\"path\"]:\n        raise ValueError(\n            f\"{video['relpath']} is not on this machine yet; cache the collection's files first\"\n        )\n    with av.open(video[\"path\"]) as container:\n        stream = container.streams.video[0]\n        rate = float(stream.average_rate) if stream.average_rate else None\n        length = length_of(container, stream)\n        sampled = by_seeking(container, stream, length) if length is not None else by_reading(container, stream, rate)\n        last = None\n        for at, frame in sampled:\n            t_s = round(float(at), 3)\n            if t_s == last:\n                continue  # two sample times that land on one frame\n            last = t_s\n            number = int(round(t_s * rate)) if rate else len([r for r in rows if r[\"video_file_id\"] == video[\"file_id\"]])\n            image = frame.to_image()\n            derived = curio_derived_file(video[\"dataset_id\"], video[\"file_id\"], round(t_s * 1000), kind=\"video\")\n            image.save(derived[\"path\"], \"JPEG\", quality=85)\n            row = {k: video[k] for k in video.index if k not in PER_FILE}\n            taken = video.get(\"taken_at\")\n            if isinstance(taken, (pd.Timestamp, datetime.datetime)) and not pd.isna(taken):\n                row[\"taken_at\"] = taken + datetime.timedelta(seconds=t_s)\n            row.update({\n                \"file_id\": derived[\"file_id\"],\n                \"kind\": \"frame\",\n                \"video_file_id\": video[\"file_id\"],\n                \"sequence\": video[\"name\"],\n                \"frame\": number,\n                \"t_s\": t_s,\n                \"width\": image.width,\n                \"height\": image.height,\n                \"path\": derived[\"path\"],\n                \"thumbnail\": derived[\"thumbnail\"],\n                \"image_url\": derived[\"image_url\"],\n            })\n            rows.append(row)\n            geometries.append(video[\"geometry\"] if \"geometry\" in video.index else None)\n            if len([r for r in rows if r[\"video_file_id\"] == video[\"file_id\"]]) >= MAX_FRAMES_PER_VIDEO:\n                break\n\nframes = pd.DataFrame(rows)\nif isinstance(media, gpd.GeoDataFrame) and rows:\n    frames = gpd.GeoDataFrame(frames, geometry=geometries, crs=media.crs)\nreturn frames\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 4,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "reply": "Here is the code for a Python node that takes a frame every half second:\n\n```python\n\"\"\"Sample Video Frames.\n\nInput: a collection's rows, as Data Loading's `curio_load_collection(...)` returns\nthem. Every video row becomes one row per sampled frame, and each frame is a\nJPEG written beside the collection's other derived files. A frame row has the\ncolumns of an image row (`path`, `thumbnail`, `image_url`, `width`, `height`),\nso Simple View shows the frames and any node that reads images reads them. It\nalso keeps the video's own columns: its fields, its position, and its time,\nmoved forward by the frame's offset. `t_s` is the frame's time in the video,\nand `frame` its number there.\n\nSettings:\n- EVERY_SECONDS: the gap between two sampled frames.\n- MAX_FRAMES_PER_VIDEO: frames kept from one video at most.\n\"\"\"\n\nimport datetime\n\nimport av\nimport geopandas as gpd\nimport pandas as pd\n\nEVERY_SECONDS = 0.5\nMAX_FRAMES_PER_VIDEO = 300\n\n#: A video's own columns that describe the file, not what a frame inherits.\nPER_FILE = {\n    \"file_id\", \"relpath\", \"name\", \"ext\", \"kind\", \"bytes\", \"mtime\", \"duration_s\",\n    \"fps\", \"codec\", \"width\", \"height\", \"path\", \"thumbnail\", \"image_url\",\n    \"audio_url\", \"probe_error\", \"geometry\",\n}\n\n\ndef length_of(container, stream):\n    \"\"\"The video's length in seconds, or None when its file does not say.\"\"\"\n    if stream.duration is not None:\n        return float(stream.duration * stream.time_base)\n    if container.duration is not None:\n        return container.duration / 1_000_000\n    return None\n\n\ndef by_seeking(container, stream, length):\n    \"\"\"The frame showing at each sample time, reached by seeking.\"\"\"\n    targets = [0.0]\n    while len(targets) < MAX_FRAMES_PER_VIDEO and targets[-1] + EVERY_SECONDS < length:\n        targets.append(round(targets[-1] + EVERY_SECONDS, 6))\n    for target in targets:\n        container.seek(int(target / stream.time_base), stream=stream, backward=True)\n        frame = None\n        for candidate in container.decode(stream):\n            frame = candidate\n            if candidate.time is None or candidate.time >= target - 1e-3:\n                break\n        if frame is not None:\n            yield (frame.time if frame.time is not None else target), frame\n\n\ndef by_reading(container, stream, rate):\n    \"\"\"The first frame at or past each sample time, read from the start: for a\n    video whose length its file does not give.\"\"\"\n    wanted = 0.0\n    for index, frame in enumerate(container.decode(stream)):\n        at = frame.time if frame.time is not None else (index / rate if rate else None)\n        if at is None:\n            # Neither a time nor a rate: only the first frame can be placed.\n            if index == 0:\n                yield 0.0, frame\n            return\n        if at >= wanted - 1e-3:\n            yield at, frame\n            wanted = at + EVERY_SECONDS\n\n\nmedia = curio_load_collection(\"data.curio.storage-survey\")\nvideos = media[media[\"kind\"] == \"video\"]\nrows = []\ngeometries = []\nfor _, video in videos.iterrows():\n    if not isinstance(video[\"path\"], str) or not video[\"path\"]:\n        raise ValueError(\n            f\"{video['relpath']} is not on this machine yet; cache the collection's files first\"\n        )\n    with av.open(video[\"path\"]) as container:\n        stream = container.streams.video[0]\n        rate = float(stream.average_rate) if stream.average_rate else None\n        length = length_of(container, stream)\n        sampled = by_seeking(container, stream, length) if length is not None else by_reading(container, stream, rate)\n        last = None\n        for at, frame in sampled:\n            t_s = round(float(at), 3)\n            if t_s == last:\n                continue  # two sample times that land on one frame\n            last = t_s\n            number = int(round(t_s * rate)) if rate else len([r for r in rows if r[\"video_file_id\"] == video[\"file_id\"]])\n            image = frame.to_image()\n            derived = curio_derived_file(video[\"dataset_id\"], video[\"file_id\"], round(t_s * 1000), kind=\"video\")\n            image.save(derived[\"path\"], \"JPEG\", quality=85)\n            row = {k: video[k] for k in video.index if k not in PER_FILE}\n            taken = video.get(\"taken_at\")\n            if isinstance(taken, (pd.Timestamp, datetime.datetime)) and not pd.isna(taken):\n                row[\"taken_at\"] = taken + datetime.timedelta(seconds=t_s)\n            row.update({\n                \"file_id\": derived[\"file_id\"],\n                \"kind\": \"frame\",\n                \"video_file_id\": video[\"file_id\"],\n                \"sequence\": video[\"name\"],\n                \"frame\": number,\n                \"t_s\": t_s,\n                \"width\": image.width,\n                \"height\": image.height,\n                \"path\": derived[\"path\"],\n                \"thumbnail\": derived[\"thumbnail\"],\n                \"image_url\": derived[\"image_url\"],\n            })\n            rows.append(row)\n            geometries.append(video[\"geometry\"] if \"geometry\" in video.index else None)\n            if len([r for r in rows if r[\"video_file_id\"] == video[\"file_id\"]]) >= MAX_FRAMES_PER_VIDEO:\n                break\n\nframes = pd.DataFrame(rows)\nif isinstance(media, gpd.GeoDataFrame) and rows:\n    frames = gpd.GeoDataFrame(frames, geometry=geometries, crs=media.crs)\nreturn frames\n\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "refused"
+        }
+      ]
+    }
+  ],
+  "gaps": []
+}

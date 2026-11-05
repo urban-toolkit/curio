@@ -1,0 +1,130 @@
+{
+  "skill_name": "provenance",
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/backend/tests/test_agents/test_node_history.py::test_a_node_with_no_history_says_so (a node with no history: \"no run of it or edit to it is recorded yet\"); utk_curio/backend/tests/test_agents/test_node_history.py::test_the_provenance_skill_reaches_every_chat_that_reads_a_nodes_history (putting an entry back is the user's action, from the node's Provenance drawer); over docs/examples/dataflows/data-pool-vega-2.json, a freshly opened project whose transformation node is f9e2b9af-23e6-4db3-9140-38bfecd6afc5",
+      "fails": [],
+      "reply": "I read the transformation node's history: the saved dataflow holds no run of it or edit to it yet, so there is no earlier version of its code to go back to, and I will not guess one. I did not change its code.\n\nPutting an earlier version back is your own action, from the node's Provenance drawer, where each run and edit is listed once it is made. If you have the earlier code, paste it here and I can write it into the node as a change you can undo.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.history.read",
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "golden",
+      "kind": "golden",
+      "source": "The code the prompt pastes, written into docs/examples/dataflows/data-pool-vega-2.json's transformation node f9e2b9af-23e6-4db3-9140-38bfecd6afc5 with node.content.write, which lands as the agent's change with its Undo, as utk_curio/backend/tests/test_agents/test_node_history.py::test_the_provenance_skill_reaches_every_chat_that_reads_a_nodes_history (putting an entry back is the user's action, from the node's Provenance drawer) says the skill words it",
+      "fails": [],
+      "reply": "The code is back: I wrote the code you pasted into the transformation node. It keeps the roofs over 1000 vegetated square feet, sums them by zip and returns the top 5. It landed as my change, so its card offers you its Undo. No node was added.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5",
+                "type": "curio.builtin/data-transformation",
+                "changes": {
+                  "content": {
+                    "before": "import geopandas as gpd\r\n\r\njoined = input_0\r\n\r\n# filter out the top 10 zip codes from the joined dataframe on 'zip' by square feet\r\ntop_10_largest = joined.groupby('zip')['VEGETATED_SQFT'].sum().reset_index().sort_values(by='VEGETATED_SQFT', ascending=False).head(10)\r\n\r\nreturn top_10_largest",
+                    "after": "joined = input_0\nbig = joined[joined['VEGETATED_SQFT'] > 1000]\ntop_5 = big.groupby('zip')['VEGETATED_SQFT'].sum().reset_index().sort_values(by='VEGETATED_SQFT', ascending=False).head(5)\nreturn top_5"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Data Transformation node",
+            "lines": [
+              "Data Transformation node"
+            ],
+            "nodeId": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5",
+            "content": "joined = input_0\nbig = joined[joined['VEGETATED_SQFT'] > 1000]\ntop_5 = big.groupby('zip')['VEGETATED_SQFT'].sum().reset_index().sort_values(by='VEGETATED_SQFT', ascending=False).head(5)\nreturn top_5"
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3
+      ],
+      "reply": "Here is the code to paste back into the transformation node:\n\n```python\njoined = input_0\nbig = joined[joined['VEGETATED_SQFT'] > 1000]\ntop_5 = big.groupby('zip')['VEGETATED_SQFT'].sum().reset_index().sort_values(by='VEGETATED_SQFT', ascending=False).head(5)\nreturn top_5\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/backend/tests/test_agents/test_node_history.py::test_the_node_builder_and_the_dataflow_builder_are_granted_it (no other agent reads a node's history: agents/agent.curio.researcher@1/manifest.json grants no node.history.read); utk_curio/backend/tests/test_agents/test_node_history.py::test_the_provenance_skill_reaches_every_chat_that_reads_a_nodes_history (putting an entry back is the user's action, from the node's Provenance drawer); the drawer's entries, an agent's change an edit named after the agent, as utk_curio/backend/tests/test_agents/test_node_history.py's module docstring says",
+      "fails": [],
+      "reply": "I cannot read a node's history, so I cannot tell who changed the bar chart's spec last or show what it was before, and I will not guess.\n\nThe chart node's Provenance drawer has it: it lists each run of the node and each edit to it, newest first, with its code as the entry left it. An agent's change shows there as an edit named after the agent.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": []
+    },
+    {
+      "case": 4,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/backend/tests/test_agents/test_node_history.py::test_a_node_with_no_history_says_so (a node with no history: \"no run of it or edit to it is recorded yet\"); over docs/examples/dataflows/scenarios.json, a freshly opened project whose Twice as tall Shadow lengths node is d4a8b2c6-1e9f-4a3d-8b72-6c1e0f9a8b93",
+      "fails": [],
+      "reply": "I read the Twice as tall Shadow lengths node's history. The saved dataflow holds no run of it or edit to it yet, so nothing has changed in it since the project was opened. Once it runs or is edited, each entry shows in its Provenance drawer, named by when it was made.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.history.read",
+          "status": "ok"
+        }
+      ]
+    }
+  ],
+  "gaps": []
+}

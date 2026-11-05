@@ -1,0 +1,399 @@
+{
+  "skill_name": "compatibility",
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "packages/curio.builtin@1/manifest.json's ports: a Vega-Lite node (vis-vega) takes a DATAFRAME or a GEODATAFRAME, a Python node (data-transformation, computation-analysis) takes and returns more; docs/examples/dataflows/default-workflow.json node 7877e099-7c1b-4496-8be7-43264794aea4, whose content returns a list (random_array)",
+      "fails": [],
+      "reply": "The node 7877e099-7c1b-4496-8be7-43264794aea4 returns a list, and a Vega-Lite node takes only a DataFrame or a GeoDataFrame, so the plan does not feed the list to the chart. A Python node, Numbers as a table, turns the list into a DataFrame first, and the new Vega-Lite node receives exactly one data edge, from that node.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "",
+                "goal": "Numbers as a table \u2014 Turn the list of 11 random numbers into a DataFrame, one row per number with its place and its value, for the bar chart.",
+                "id": "a4d4c8c8-ff2c-4212-ad6e-7ed28da190c2",
+                "title": "Numbers as a table",
+                "type": "curio.builtin/data-transformation"
+              },
+              {
+                "content": "",
+                "goal": "Random numbers \u2014 A bar chart of the 11 random numbers, one bar per number.",
+                "id": "efc73248-2c67-48f0-b330-bd060a592a24",
+                "title": "Random numbers",
+                "type": "curio.builtin/vis-vega"
+              }
+            ]
+          },
+          "edges": {
+            "added": [
+              {
+                "id": "9b414158-c1b6-4524-9259-0d3435163770",
+                "source": "7877e099-7c1b-4496-8be7-43264794aea4",
+                "sourceHandle": "out",
+                "target": "a4d4c8c8-ff2c-4212-ad6e-7ed28da190c2",
+                "targetHandle": "in"
+              },
+              {
+                "id": "44fe8a18-bcbd-4e19-81e8-65dbf7ba9ebb",
+                "source": "a4d4c8c8-ff2c-4212-ad6e-7ed28da190c2",
+                "sourceHandle": "out",
+                "target": "efc73248-2c67-48f0-b330-bd060a592a24",
+                "targetHandle": "in"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "dataflow.plan.write",
+            "kind": "plan",
+            "summary": "Plan · 2 nodes, 2 edges",
+            "lines": [
+              "+2 nodes · +2 connections",
+              "2 pending for Build & validate or Solve",
+              "agents attached: Node Builder ×2",
+              "no Dataset Finder: does not attach to data-transformation nodes",
+              "Topology: acyclic."
+            ],
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "applied",
+          "arguments": {
+            "goal": "Chart the 11 random numbers as a bar chart in Vega-Lite.",
+            "nodes": [
+              {
+                "ref": "numbers-table",
+                "nodeType": "curio.builtin/data-transformation",
+                "title": "Numbers as a table",
+                "intent": "Turn the list of 11 random numbers into a DataFrame, one row per number with its place and its value, for the bar chart."
+              },
+              {
+                "ref": "numbers-chart",
+                "nodeType": "curio.builtin/vis-vega",
+                "title": "Random numbers",
+                "intent": "A bar chart of the 11 random numbers, one bar per number."
+              }
+            ],
+            "edges": [
+              {
+                "from": "7877e099-7c1b-4496-8be7-43264794aea4",
+                "to": "numbers-table"
+              },
+              {
+                "from": "numbers-table",
+                "to": "numbers-chart"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3
+      ],
+      "reply": "Here is the plan:\n\n```json\n{\n  \"goal\": \"Chart the 11 random numbers as a bar chart in Vega-Lite.\",\n  \"nodes\": [\n    {\n      \"ref\": \"numbers-table\",\n      \"nodeType\": \"curio.builtin/data-transformation\",\n      \"title\": \"Numbers as a table\",\n      \"intent\": \"Turn the list of 11 random numbers into a DataFrame, one row per number with its place and its value, for the bar chart.\"\n    },\n    {\n      \"ref\": \"numbers-chart\",\n      \"nodeType\": \"curio.builtin/vis-vega\",\n      \"title\": \"Random numbers\",\n      \"intent\": \"A bar chart of the 11 random numbers, one bar per number.\"\n    }\n  ],\n  \"edges\": [\n    {\n      \"from\": \"7877e099-7c1b-4496-8be7-43264794aea4\",\n      \"to\": \"numbers-table\"\n    },\n    {\n      \"from\": \"numbers-table\",\n      \"to\": \"numbers-chart\"\n    }\n  ]\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "golden",
+      "kind": "golden",
+      "source": "packages/curio.builtin@1/manifest.json's ports: the Data Export node (data-export) has an input and no output; docs/examples/dataflows/data-pool-vega-2.json's top 10 node f9e2b9af-23e6-4db3-9140-38bfecd6afc5, the table the export writes, feeding both",
+      "fails": [],
+      "reply": "The plan adds a Data Export node fed by the top 10 node (f9e2b9af-23e6-4db3-9140-38bfecd6afc5), which saves the table to a CSV file, and a second Vega-Lite chart fed by that same top 10 node. A Data Export node has no output, so no edge leaves it: the chart draws the table the export writes, from the node that hands it over.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "",
+                "goal": "Top 10 zip codes CSV \u2014 Save the top 10 zip codes to a CSV file.",
+                "id": "bc2cf36d-8f9a-4b9e-a80b-4410daef6fad",
+                "metadata": {
+                  "widgets": [
+                    {
+                      "default": "",
+                      "label": "File name",
+                      "name": "file_name",
+                      "type": "text"
+                    }
+                  ]
+                },
+                "title": "Top 10 zip codes CSV",
+                "type": "curio.builtin/data-export"
+              },
+              {
+                "content": "",
+                "goal": "Top 10 zip codes, again \u2014 A second bar chart of the top 10 zip codes by vegetated square feet.",
+                "id": "01461f2b-db46-4b89-bd6d-85b780c1018d",
+                "title": "Top 10 zip codes, again",
+                "type": "curio.builtin/vis-vega"
+              }
+            ]
+          },
+          "edges": {
+            "added": [
+              {
+                "id": "651e5719-2992-4b6b-9a5f-7897876c7cff",
+                "source": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5",
+                "sourceHandle": "out",
+                "target": "bc2cf36d-8f9a-4b9e-a80b-4410daef6fad",
+                "targetHandle": "in"
+              },
+              {
+                "id": "dcbcf080-f4e6-48a0-b092-912ef964a8a8",
+                "source": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5",
+                "sourceHandle": "out",
+                "target": "01461f2b-db46-4b89-bd6d-85b780c1018d",
+                "targetHandle": "in"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "dataflow.plan.write",
+            "kind": "plan",
+            "summary": "Plan · 2 nodes, 2 edges",
+            "lines": [
+              "+2 nodes · +2 connections",
+              "2 pending for Build & validate or Solve",
+              "agents attached: Node Builder ×2",
+              "no Dataset Finder: does not attach to data-export nodes",
+              "Topology: acyclic."
+            ],
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "applied",
+          "arguments": {
+            "goal": "Save the top 10 zip codes to a CSV file and draw a second bar chart of them.",
+            "nodes": [
+              {
+                "ref": "export",
+                "nodeType": "curio.builtin/data-export",
+                "title": "Top 10 zip codes CSV",
+                "intent": "Save the top 10 zip codes to a CSV file."
+              },
+              {
+                "ref": "second-chart",
+                "nodeType": "curio.builtin/vis-vega",
+                "title": "Top 10 zip codes, again",
+                "intent": "A second bar chart of the top 10 zip codes by vegetated square feet."
+              }
+            ],
+            "edges": [
+              {
+                "from": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5",
+                "to": "export"
+              },
+              {
+                "from": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5",
+                "to": "second-chart"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        4
+      ],
+      "reply": "Here is the plan:\n\n```json\n{\n  \"goal\": \"Save the top 10 zip codes to a CSV file and draw a second bar chart of them.\",\n  \"nodes\": [\n    {\n      \"ref\": \"export\",\n      \"nodeType\": \"curio.builtin/data-export\",\n      \"title\": \"Top 10 zip codes CSV\",\n      \"intent\": \"Save the top 10 zip codes to a CSV file.\"\n    },\n    {\n      \"ref\": \"second-chart\",\n      \"nodeType\": \"curio.builtin/vis-vega\",\n      \"title\": \"Top 10 zip codes, again\",\n      \"intent\": \"A second bar chart of the top 10 zip codes by vegetated square feet.\"\n    }\n  ],\n  \"edges\": [\n    {\n      \"from\": \"f9e2b9af-23e6-4db3-9140-38bfecd6afc5\",\n      \"to\": \"export\"\n    },\n    {\n      \"from\": \"f9e2b9af-23e6-4db3-9140-38bfecd6afc5\",\n      \"to\": \"second-chart\"\n    }\n  ]\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "packages/curio.builtin@1/manifest.json's ports: a Vega-Lite node (vis-vega) takes a DATAFRAME or a GEODATAFRAME, a Python node (data-transformation, computation-analysis) takes and returns more; a GeoTIFF dataset read as a raster (skills/node-functions/SKILL.md's curio_load_data, as docs/examples/dataflows/quad-cities-flood-vulnerability.json's depth loaders read data.scout.flood-depth-2050-2080-no-nbs) and its cells read into a table in Python, as that example's node 34326814-c132-4eb4-9d73-268368968592 reads them (depth.read(1, masked=True))",
+      "fails": [],
+      "reply": "A Vega-Lite node takes only a DataFrame or a GeoDataFrame, so no edge carries the raster itself into the chart. The plan loads the raster, then a Python node turns its cells into a table of positions and depths, one row per cell that holds a depth, and that table is the one data edge the Vega-Lite heatmap receives.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "",
+                "goal": "Flood depth 2050 to 2080, no NbS \u2014 Load the SCOUT flood depth raster for 2050 to 2080 without NbS from the Data Catalog, data.scout.flood-depth-2050-2080-no-nbs.",
+                "id": "059c7c0a-3177-4c65-906e-961a2df5a529",
+                "metadata": {
+                  "widgets": [
+                    {
+                      "default": "",
+                      "label": "Data",
+                      "name": "data",
+                      "type": "dataset"
+                    }
+                  ]
+                },
+                "title": "Flood depth 2050 to 2080, no NbS",
+                "type": "curio.builtin/data-loading"
+              },
+              {
+                "content": "",
+                "goal": "Depth cells as a table \u2014 Turn the raster's cells into a DataFrame of positions and depths: one row per cell that holds a depth, with its column, its row and its depth.",
+                "id": "88fcf1d5-e545-4728-986f-e6563511760e",
+                "title": "Depth cells as a table",
+                "type": "curio.builtin/computation-analysis"
+              },
+              {
+                "content": "",
+                "goal": "Flood depth heatmap \u2014 A heatmap of the depths: each cell's column on x, its row on y, colored by its depth.",
+                "id": "9069bdec-c11a-426e-8031-69bd87b60103",
+                "title": "Flood depth heatmap",
+                "type": "curio.builtin/vis-vega"
+              }
+            ]
+          },
+          "edges": {
+            "added": [
+              {
+                "id": "046c93b9-d3c8-4892-98c8-a087b1550d8b",
+                "source": "059c7c0a-3177-4c65-906e-961a2df5a529",
+                "sourceHandle": "out",
+                "target": "88fcf1d5-e545-4728-986f-e6563511760e",
+                "targetHandle": "in"
+              },
+              {
+                "id": "11c182ea-99be-4be8-abb2-ed1eda3c432e",
+                "source": "88fcf1d5-e545-4728-986f-e6563511760e",
+                "sourceHandle": "out",
+                "target": "9069bdec-c11a-426e-8031-69bd87b60103",
+                "targetHandle": "in"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "dataflow.plan.write",
+            "kind": "plan",
+            "summary": "Plan · 3 nodes, 2 edges",
+            "lines": [
+              "+3 nodes · +2 connections",
+              "3 pending for Build & validate or Solve",
+              "agents attached: Dataset Finder · Node Builder ×3",
+              "no Dataset Finder: does not attach to computation-analysis nodes",
+              "Topology: acyclic."
+            ],
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "applied",
+          "arguments": {
+            "goal": "Show the SCOUT flood depths for 2050 to 2080 without NbS as a Vega-Lite heatmap.",
+            "nodes": [
+              {
+                "ref": "depth",
+                "nodeType": "curio.builtin/data-loading",
+                "title": "Flood depth 2050 to 2080, no NbS",
+                "intent": "Load the SCOUT flood depth raster for 2050 to 2080 without NbS from the Data Catalog, data.scout.flood-depth-2050-2080-no-nbs."
+              },
+              {
+                "ref": "cells",
+                "nodeType": "curio.builtin/computation-analysis",
+                "title": "Depth cells as a table",
+                "intent": "Turn the raster's cells into a DataFrame of positions and depths: one row per cell that holds a depth, with its column, its row and its depth."
+              },
+              {
+                "ref": "heatmap",
+                "nodeType": "curio.builtin/vis-vega",
+                "title": "Flood depth heatmap",
+                "intent": "A heatmap of the depths: each cell's column on x, its row on y, colored by its depth."
+              }
+            ],
+            "edges": [
+              {
+                "from": "depth",
+                "to": "cells"
+              },
+              {
+                "from": "cells",
+                "to": "heatmap"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3
+      ],
+      "reply": "Here is the plan:\n\n```json\n{\n  \"goal\": \"Show the SCOUT flood depths for 2050 to 2080 without NbS as a Vega-Lite heatmap.\",\n  \"nodes\": [\n    {\n      \"ref\": \"depth\",\n      \"nodeType\": \"curio.builtin/data-loading\",\n      \"title\": \"Flood depth 2050 to 2080, no NbS\",\n      \"intent\": \"Load the SCOUT flood depth raster for 2050 to 2080 without NbS from the Data Catalog, data.scout.flood-depth-2050-2080-no-nbs.\"\n    },\n    {\n      \"ref\": \"cells\",\n      \"nodeType\": \"curio.builtin/computation-analysis\",\n      \"title\": \"Depth cells as a table\",\n      \"intent\": \"Turn the raster's cells into a DataFrame of positions and depths: one row per cell that holds a depth, with its column, its row and its depth.\"\n    },\n    {\n      \"ref\": \"heatmap\",\n      \"nodeType\": \"curio.builtin/vis-vega\",\n      \"title\": \"Flood depth heatmap\",\n      \"intent\": \"A heatmap of the depths: each cell's column on x, its row on y, colored by its depth.\"\n    }\n  ],\n  \"edges\": [\n    {\n      \"from\": \"depth\",\n      \"to\": \"cells\"\n    },\n    {\n      \"from\": \"cells\",\n      \"to\": \"heatmap\"\n    }\n  ]\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "refused"
+        }
+      ]
+    }
+  ],
+  "gaps": []
+}

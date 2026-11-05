@@ -1,0 +1,18 @@
+{
+  "skill_name": "fact-checking",
+  "answers": [],
+  "gaps": [
+    {
+      "case": 1,
+      "why": "Its findings are what web.fetch answers now from data.cityofchicago.org for ijzp-q8t2 and its fields primary_type and community_area. A run records each call's tool and status alone (Worker._calls), and no shipped example or test holds the portal's answer today, so no finding's label or URL can be written from a source."
+    },
+    {
+      "case": 2,
+      "why": "Its findings are what web.fetch answers now from data.cityofchicago.org for zz9q-4kfx, whose failed probe is the finding. A run records each call's tool and status alone (Worker._calls), and no shipped example or test holds the portal's answer today, so no finding's label or URL can be written from a source."
+    },
+    {
+      "case": 3,
+      "why": "Its findings are what web.fetch answers now from data.cityofchicago.org for seven dataset ids, four of them at most within the run's web call budget. A run records each call's tool and status alone (Worker._calls), and no shipped example or test holds the portal's answer today, so no finding's label or URL can be written from a source."
+    }
+  ]
+}
