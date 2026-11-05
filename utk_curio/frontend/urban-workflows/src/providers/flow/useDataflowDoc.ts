@@ -621,19 +621,23 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             }));
         }
         for (const node of addedNodes) current.quietly(() => current.addNode(node, current.workflowNameRef.current, true));
+        // Connected outside a setNodes updater. onConnect hands the source's
+        // output over with a setNodes of its own, and React runs an updater at
+        // once when the canvas has nothing left to render: the hand-over then
+        // comes first, and the nodes the updater returns replace it. A node an
+        // earlier change added that the canvas has not drawn yet is taken from
+        // the doc, as that change built it.
         if (newEdges.length) {
-            const added = addedNodes;
-            setNodes((prevNodes) => {
-                current.quietly(() => {
-                    const all = [...prevNodes.filter((n) => !added.some((a) => a.id === n.id)), ...added];
-                    const connected = [...reactFlow.getEdges()].filter((e) => !newEdges.some((n) => n.id === e.id));
-                    for (const edge of newEdges) {
-                        const canvasEdge = canvasEdgeFromTrill(edge);
-                        current.onConnect(canvasEdge, all, connected, current.workflowNameRef.current, true, true);
-                        connected.push(canvasEdge);
-                    }
-                });
-                return prevNodes;
+            const added = new Map(addedNodes.map((node) => [node.id, node]));
+            const all = Array.from(next.nodes, ([id, now]) => added.get(id) ?? canvasNodes.get(id)
+                ?? buildCodeNode(now.type, nodeMetaFromTrill(now, () => ({ x: 0, y: 0 })), runtime()));
+            current.quietly(() => {
+                const connected = [...reactFlow.getEdges()].filter((e) => !newEdges.some((n) => n.id === e.id));
+                for (const edge of newEdges) {
+                    const canvasEdge = canvasEdgeFromTrill(edge);
+                    current.onConnect(canvasEdge, all, connected, current.workflowNameRef.current, true, true);
+                    connected.push(canvasEdge);
+                }
             });
         }
     }, [removedWhileEditing, setNodes, setEdges, reactFlow]);

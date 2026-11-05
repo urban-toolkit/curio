@@ -371,6 +371,61 @@ describe("the dataflow's own fields, connections and scenarios", () => {
         expect(api.edges).toEqual([]);
     });
 
+    test("a connection that comes in a change of its own hands its target the output its source holds", async () => {
+        // An agent's plan as the server writes it, after the loader ran: the
+        // planned node, then its connection, each a change of its own. The
+        // connection lands on a canvas with nothing left to render, where
+        // React runs a setNodes updater at once, inside the call.
+        const dataflow = spec().dataflow;
+        dataflow.nodes = [dataflow.nodes[0]];
+        dataflow.edges = [];
+        await open(serverDoc(dataflow), { dataflow } as any);
+        act(() => api.applyNewOutput({ nodeId: "n", output: { path: "points", dataType: "outputs" } }));
+        await flush();
+        await fromAnotherTab((df) => {
+            df.nodes.push({ id: "m", type: TYPE, x: 600, y: 0, content: "y = 1\n" });
+        });
+        const before = docToDataflow(provider.doc);
+        const after = JSON.parse(JSON.stringify(before));
+        after.edges.push({ id: "n-m", source: "n", target: "m", sourceHandle: "out", targetHandle: "in" });
+        // No work is left for the canvas, as between two of the server's
+        // changes (after each change the canvas sets its suggestion count
+        // again, which renders once with nothing new). Two updates that change
+        // nothing leave it so even when a render was still due (a timer of the
+        // canvas's fit), and nothing runs between them and the connection.
+        act(() => api.setOutputs((outputs) => outputs));
+        act(() => api.setOutputs((outputs) => outputs));
+        act(() => {
+            provider.doc.transact(() => applyDataflow(provider.doc, before, after), provider);
+        });
+        await flush();
+        expect(api.edges.map((e: any) => e.id)).toEqual(["n-m"]);
+        expect(canvasNode("m").data.input).toEqual({ path: "points", dataType: "outputs" });
+        expect(canvasNode("m").data.source).toBe("n");
+    });
+
+    test("a connection that lands before the canvas draws its node connects it and hands it the output", async () => {
+        const dataflow = spec().dataflow;
+        dataflow.nodes = [dataflow.nodes[0]];
+        dataflow.edges = [];
+        await open(serverDoc(dataflow), { dataflow } as any);
+        act(() => api.applyNewOutput({ nodeId: "n", output: { path: "points", dataType: "outputs" } }));
+        await flush();
+        // The node's change and the connection's, with no render between them.
+        const before = docToDataflow(provider.doc);
+        const withNode = JSON.parse(JSON.stringify(before));
+        withNode.nodes.push({ id: "m", type: TYPE, x: 600, y: 0, content: "y = 1\n" });
+        const withEdge = JSON.parse(JSON.stringify(withNode));
+        withEdge.edges.push({ id: "n-m", source: "n", target: "m", sourceHandle: "out", targetHandle: "in" });
+        await act(async () => {
+            provider.doc.transact(() => applyDataflow(provider.doc, before, withNode), provider);
+            provider.doc.transact(() => applyDataflow(provider.doc, withNode, withEdge), provider);
+        });
+        await flush();
+        expect(api.edges.map((e: any) => e.id)).toEqual(["n-m"]);
+        expect(canvasNode("m").data.input).toEqual({ path: "points", dataType: "outputs" });
+    });
+
     test("a node another tab adds and removes comes and goes, built as a load builds it", async () => {
         await open(serverDoc(spec().dataflow));
         await fromAnotherTab((df) => {
