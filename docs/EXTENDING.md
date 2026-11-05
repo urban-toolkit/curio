@@ -781,7 +781,7 @@ Each skill Curio ships holds its evaluations in `evals/evals.json`, as agentskil
   - `"absent": true` turns any of them into "the run did not". For example, `{"assertion": 2, "kind": "tool", "tool": "node.create", "absent": true}` decides "The answer creates no node".
   - Check only an assertion that is exactly what its check reads. A judgment, such as "explains why", stays with the grader.
 
-`agent_eval.py skills` runs them against an OpenAI-compatible endpoint you name in three variables, from a Python environment with Curio's requirements (`pip install -r requirements.txt`). It needs no running Curio: each worker is a backend of its own, and no node runs. Each run sends its message with the context a browser's chat sends beside it: the node its agent is attached to, or the whole dataflow, as the agent's reads say.
+`agent_eval.py skills` runs them against an OpenAI-compatible endpoint you name in three variables, from a Python environment with Curio's requirements (`pip install -r requirements.txt`). It needs no running Curio: each worker is a backend of its own, and no node runs. Each run, and each try of it, starts in a new account, which holds no model or package another run's case added. Each run sends its message with the context a browser's chat sends beside it: the node its agent is attached to, or the whole dataflow, as the agent's reads say.
 
 ```bash
 CURIO_EVAL_BASE_URL='<base URL>' CURIO_EVAL_API_KEY='<key>' CURIO_EVAL_MODEL='<model>' \

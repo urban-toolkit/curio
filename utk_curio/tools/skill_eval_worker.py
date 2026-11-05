@@ -10,13 +10,17 @@ database and a state folder of its own (``CURIO_STATE_DIR``), and no node
 runs, so no sandbox either.
 
 - **The model:** the endpoint of ``CURIO_EVAL_BASE_URL``, ``CURIO_EVAL_API_KEY``
-  and ``CURIO_EVAL_MODEL`` becomes the account's Deployment default, set in
-  this process's settings (``config.DEFAULT_LLM_*``), as an operator sets it.
-  So every call goes through the provider code API Settings uses, and the key
-  is written nowhere: not in an LLM configuration, not in the state folder.
-- **A run:** the model packages its test case names (``models``) added to
-  the account first, as the Model Catalog's Add adds one; a fresh dataflow
-  (the test case's, or an empty one) under a
+  and ``CURIO_EVAL_MODEL`` becomes the Deployment default every account
+  answers with, set in this process's settings (``config.DEFAULT_LLM_*``), as
+  an operator sets it. So every call goes through the provider code API
+  Settings uses, and the key is written nowhere: not in an LLM configuration,
+  not in the state folder.
+- **A run:** a new evaluation account, made for it and for each try of it,
+  so it holds nothing an earlier run's case added, and of the accounts before
+  it keeps only what the endpoint was found to do (:meth:`Worker._sign_in`);
+  the model packages its test case names (``models``) added to the account
+  first, as the Model Catalog's Add adds one; a fresh dataflow (the test
+  case's, or an empty one) under a
   name that says nothing of the skill, its agent installed and attached, the
   message sent to the chat route a browser sends it to, with the context a
   browser's chat composes beside it (``evaluation/run_context.py``: the node
@@ -42,7 +46,8 @@ runs, so no sandbox either.
   finish; a delegated run handed the skill before the chat loaded it then
   makes the run an error.
 - **Retried:** a run whose model call the server failed (a 5xx, a lost
-  connection) runs again on a fresh dataflow, after :data:`RETRY_WAITS_S`;
+  connection) runs again in a new account, on a fresh dataflow, after
+  :data:`RETRY_WAITS_S`;
   the grader waits the same. Its record counts the attempts. A run or a grade
   whose model's server stopped sending is not tried again.
 - **Not run:** the title call a conversation's first turn makes, which
@@ -140,6 +145,10 @@ RETRY_WAITS_S = (15, 45)
 PREVIEW_MAX_CHARS = 16000
 #: The name every run's dataflow has, which says nothing of what it tests.
 PROJECT_NAME = "My dataflow"
+#: Each run's evaluation account: its display name, the same for every one,
+#: and the handle its username and email are made from.
+ACCOUNT_NAME = "Skill evaluation"
+ACCOUNT_HANDLE = "evaluation"
 #: The settings a Deployment default is read from (``provider_config``).
 OPENAI_COMPATIBLE = "openai_compatible"
 #: Loggers that print each request's URL at their INFO level.
@@ -527,7 +536,10 @@ def _grader_spent(usage: dict, turn: "providers.ChatTurn") -> dict:
 
 
 class Worker:
-    """Curio's backend, an evaluation account and the seams of its runs."""
+    """Curio's backend, its runs' evaluation accounts and the seams of its runs."""
+
+    #: How many evaluation accounts this worker has signed in to.
+    accounts = 0
 
     @property
     def grader(self) -> str:
@@ -537,8 +549,6 @@ class Worker:
 
     def __init__(self, endpoint: skill_evals.Endpoint, results: Path, *, stop_early: bool):
         from utk_curio.backend.app.collaboration import dataflow_docs
-        from utk_curio.backend.app.projects.services import _user_dir_key
-        from utk_curio.backend.app.users.models import User, UserSession
 
         self.endpoint = endpoint
         self.secrets = endpoint.secrets()
@@ -557,14 +567,7 @@ class Worker:
         self.context = self.app.app_context()
         self.context.push()
         db.create_all()
-        user = User(username="evaluation", name="Skill evaluation", email="evaluation@localhost")
-        db.session.add(user)
-        db.session.flush()
-        token = uuid.uuid4().hex
-        db.session.add(UserSession(user_id=user.id, token=token))
-        db.session.commit()
-        self.user_key = _user_dir_key(user)
-        self.headers = {"Authorization": f"Bearer {token}"}
+        self._sign_in()
         self.client = self.app.test_client()
         # The endpoint, as an operator's Deployment default: read at each call.
         backend_config.DEFAULT_LLM_API_TYPE = OPENAI_COMPATIBLE
@@ -575,6 +578,54 @@ class Worker:
         self.seams.install()
 
     # --- one run ----------------------------------------------------------------------
+
+    def _sign_in(self) -> None:
+        """Sign in to a new evaluation account, the next run's own: an account
+        made as the worker's first is, so nothing an earlier run's case added
+        to its account, a model or a package of its dataflow, is in this one's
+        catalogs or stores, and no result hangs on which worker a run lands on
+        or after which runs. Each account has the same display name.
+
+        Of the account before it, it keeps what the endpoint was found to do
+        (:meth:`_carry_endpoint`), so a run asks the endpoint nothing a run
+        before it found. Nothing else a run reads of its account needs
+        setting up: the endpoint is the Deployment default, which every
+        account answers with; each run installs and attaches its agent on its
+        own dataflow; the seams are the process's; and no account holds agent
+        skills of its own (``agent-skills.json``)."""
+        from utk_curio.backend.app.projects.services import _user_dir_key
+        from utk_curio.backend.app.users.models import User, UserSession
+
+        before = getattr(self, "user_key", None)
+        self.accounts += 1
+        handle = ACCOUNT_HANDLE if self.accounts == 1 else f"{ACCOUNT_HANDLE}-{self.accounts}"
+        user = User(username=handle, name=ACCOUNT_NAME, email=f"{handle}@localhost")
+        db.session.add(user)
+        db.session.flush()
+        token = uuid.uuid4().hex
+        db.session.add(UserSession(user_id=user.id, token=token))
+        db.session.commit()
+        self.user_key = _user_dir_key(user)
+        self.headers = {"Authorization": f"Bearer {token}"}
+        if before is not None:
+            self._carry_endpoint(before)
+
+    def _carry_endpoint(self, before: str) -> None:
+        """Give the account just signed in to what account *before* found the
+        endpoint does beyond text (``chat_capabilities``): whether its model
+        calls tools natively, which Curio asks an endpoint its table does not
+        know with a charged request and each account remembers, and a refusal
+        of a run's native tools. So no run asks the endpoint again what a run
+        before it found, and each speaks the protocol they found."""
+        from utk_curio.backend.app.agents.repositories import model_catalog
+
+        config = provider_config.deployment_config(before)
+        if config is None:
+            return
+        found = model_catalog.remembered_chat_capabilities(before, config.api_type, config.base_url, config.model)
+        if found is not None:
+            model_catalog.remember_chat_capabilities(
+                self.user_key, config.api_type, config.base_url, config.model, found)
 
     def _json(self, method: str, path: str, payload=None) -> tuple[int, dict]:
         resp = self.client.open(path, method=method, json=payload, headers=self.headers)
@@ -723,8 +774,8 @@ class Worker:
 
     def run(self, task: skill_evals.Task, *, hand: bool = False) -> dict:
         """Run *task* and write its files; returns its record. A run the model's
-        server failed (a 5xx, a lost connection) is run again, on a fresh
-        dataflow, after each wait of :data:`RETRY_WAITS_S`."""
+        server failed (a 5xx, a lost connection) is run again, in a new account
+        on a fresh dataflow, after each wait of :data:`RETRY_WAITS_S`."""
         if task.kind == skill_evals.GRADE:
             return self._grade_answer(task)
         folder = self.results / task.path
@@ -740,6 +791,8 @@ class Worker:
             self.seams.reset(left_out=task.skill if without else None, left_out_text=text if without else None,
                              watch=task.skill if trigger and self.stop_early else None,
                              stop_at_hand_off=trigger and self.stop_early)
+            # Each run, and each try of it, on an account of its own.
+            self._sign_in()
             attempt_started = time.monotonic()
             status, body, project_id, before = self._attempt(task, message, folder, record)
             if not _transient(status, record.get("error")) or len(failed) >= len(RETRY_WAITS_S):
