@@ -2104,8 +2104,11 @@ def _apply_updates(entry: _OpenDoc, updates: dict[str, list[_Queued]], answers: 
         answer = answers.setdefault(sid, _answer())
         answer["answered"] += len(items)
         graph = _graph_keys(entry.doc)
-        #: The connections the socket's updates drew, with their ends.
+        #: The connections the socket's updates drew, with their ends, read
+        #: after an update that leaves the doc more connections than it found:
+        #: typing, a socket's most updates, leaves their count alone.
         appeared: dict[str, tuple] = {}
+        held = len(graph[1])
         with entry.doc.transaction(origin=sid):
             for item in items:
                 if item.data == b"\x00\x00":
@@ -2117,7 +2120,10 @@ def _apply_updates(entry: _OpenDoc, updates: dict[str, list[_Queued]], answers: 
                                 exc_info=True)
                     _refuse(answers, sid, "invalid_message")
                 else:
-                    _appeared(entry.doc, graph[1], appeared)
+                    count = len(entry.doc.get("edges", type=Map))
+                    if count > held:
+                        _appeared(entry.doc, graph[1], appeared)
+                    held = count
         tab = history.Tab(sid, items[-1].me)
         owner_uses.noted(entry, by_owner=_by_its_owner(entry.user_key, tab))
         now = _clocks(entry.doc)
