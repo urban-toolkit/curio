@@ -291,9 +291,7 @@ export function normalizeGeoSpec(
       PROJECTION_CHANNELS.some((channel) => unit?.encoding?.[channel] != null);
 
     if (usesProjection && unit.projection == null && !ancestorHasProjection) {
-      unit.projection = projected
-        ? { type: "identity", reflectY: true }
-        : { type: "mercator" };
+      unit.projection = projectionFor(projected);
     }
   }
 
@@ -338,6 +336,29 @@ function coerceGeoValue(value: any, projected: boolean): any {
   }
 
   return value;
+}
+
+/** A projection normalizeGeoSpec writes into a unit that names none. */
+export type GeoProjection = { type: "identity"; reflectY: true } | { type: "mercator" };
+
+/**
+ * The projection normalizeGeoSpec gives a map of *values* whose spec names
+ * none, from the same check of the CRS and the coordinates: identity with Y
+ * flipped for projected coordinates, mercator for lon/lat and when nothing
+ * says which. The Vega-Lite starter writes its maps' projection from this
+ * (utils/vegaDefaultSpec). Reads *values* without changing them.
+ */
+export function geoProjection(
+  values: any[],
+  opts: { geometryName?: string | null; crsName?: string | null } = {},
+): GeoProjection {
+  const { field } = resolveGeometryField(values, opts.geometryName);
+  return projectionFor(isProjected(values, field, opts.crsName));
+}
+
+/** A new projection object for geometry in projected coordinates, or in lon/lat. */
+function projectionFor(projected: boolean): GeoProjection {
+  return projected ? { type: "identity", reflectY: true } : { type: "mercator" };
 }
 
 /** Sample the geometry actually being drawn to decide the projection. */

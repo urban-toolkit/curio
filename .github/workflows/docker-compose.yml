@@ -192,6 +192,9 @@ env:
 #     cpu], 40 of them) for the rest, and the utk-desktop runners
 #     (utk-desktop-01 and -02, [self-hosted, utk-desktop]) when arcade is full
 #     too.
+#   * arcade-cpu-40 also carries skill-evals, the label of the skills' live
+#     evaluations (skill-evals.yml): one running there holds that CPU runner
+#     as any job does.
 #   * test-gpu: an arcade GPU runner (arcade-gpu-01..04, [self-hosted, arcade,
 #     gpu]) while one is free, then utk-gpu ([self-hosted, utk, gpu]), and
 #     utk-desktop-01 ([self-hosted, utk-desktop-01, gpu]) when utk-gpu is

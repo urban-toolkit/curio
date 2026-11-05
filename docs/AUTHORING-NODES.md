@@ -516,7 +516,9 @@ gives top priority in the `defaultValue` chain.
 does the gating for you: it fills only an empty editor, at most
 once, only after an input has arrived, and never over `data.defaultCode`. Give
 it a reader and a ladder; `vegaBehavior.ts` and `autkGrammarBehavior.tsx` are
-the worked examples.
+the worked examples. Return `defaultValueIsStarter: true` beside the starter,
+as they do: the editor shows it, and the dataflow keeps it as the node's spec
+only once someone edits it, so an agent's write still lands.
 
 ## Things that will trip you up
 

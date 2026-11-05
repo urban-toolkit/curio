@@ -2344,11 +2344,21 @@ def _history_names(ukey: str, rows: list) -> None:
         if named.get("agent"):
             named["agentName"] = agent_name(str(named["agent"]))
             if "preview" in row and not row.get("what"):
-                asked = named.get("name")
-                row["what"] = f"{named['agentName']}, asked by {asked}" if asked else named["agentName"]
+                row["what"] = history_author(named)
             if "preview" not in row and row.get("kind") == "edit" and not row.get("label"):
                 row["label"] = named["agentName"]
         row["by"] = named
+
+
+def history_author(by: dict) -> Optional[str]:
+    """Who made a version or an entry, its ``by`` named by
+    :func:`_history_names`, as the drawer names them: a person by their name,
+    an agent by its own and the account that asked it ("Node Builder, asked
+    by Ana")."""
+    agent, asked = by.get("agentName"), by.get("name")
+    if not agent:
+        return asked or None
+    return f"{agent}, asked by {asked}" if asked else agent
 
 
 def _history_errors(change: Callable[[], dict]) -> dict:
@@ -2373,19 +2383,26 @@ def project_history(user, project_id: str) -> dict:
     return {**listed, "kept": history.has_points(ukey, project_id), "canClear": role == access.OWNER}
 
 
-def node_history(user, project_id: str, node_id: str) -> dict:
+def node_entries(ukey: str, project_id: str, node_id: str, *, code: Optional[str] = None) -> dict:
     """The node's runs and edits as its Provenance drawer lists them, each
-    with its code, and the one its next entry descends from."""
+    with its code and named after who made it, and the one its next entry
+    descends from: what the drawer and the agents' node.history.read read."""
     from utk_curio.backend.app.collaboration import history
 
+    listed = history.entries(ukey, project_id, node_id, code=code)
+    _history_names(ukey, listed["entries"])
+    return listed
+
+
+def node_history(user, project_id: str, node_id: str) -> dict:
+    """The node's runs and edits as its Provenance drawer lists them
+    (:func:`node_entries`), to *user*."""
     _project, ukey, _role = _history_of(user, project_id)
     spec = dataflow_docs.read(ukey, project_id) or {}
     node = next((n for n in (spec.get("dataflow") or {}).get("nodes") or []
                  if isinstance(n, dict) and n.get("id") == node_id), None)
     code = node.get("content") if isinstance(node, dict) and isinstance(node.get("content"), str) else None
-    listed = history.entries(ukey, project_id, node_id, code=code)
-    _history_names(ukey, listed["entries"])
-    return listed
+    return node_entries(ukey, project_id, node_id, code=code)
 
 
 def record_run(user, project_id: str, node_id: str, body: dict) -> dict:

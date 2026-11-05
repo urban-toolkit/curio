@@ -372,12 +372,46 @@ def _write_empty_node_held(user_key, project_id, spec, node_id, candidate: str, 
         return written, None
 
 
+def _change_over_content(user_key, project_id, attachment_id, session_id, node_id, outcome: dict, done: dict,
+                         grounding_base, parts: list, *, executed: bool, asker=None, room_asker=None) -> bool:
+    """Land *outcome*'s candidate over the node's content as the agent's
+    change, with its Undo, and say so in *done* (the change's ids, its canvas
+    mutation as ``landed``) and in *parts* (its card, when it lands in this
+    chat). Code that ran (*executed*) carries the trail that passed; a
+    document the sandbox cannot run carries none, as it has no run's verdict.
+    Whether it landed."""
+    # The job's thread holds no request: the change waits for anyone but
+    # the account that asked, and is named after it.
+    stream: dict = {"asker_id": getattr(asker, "id", None), "asker": asker, "room_asker": room_asker}
+    part, home_att, _mint_text = agents_delegates._mint_content_review_from_delegate(
+        user_key, project_id,
+        node_id=node_id,
+        generated_text=outcome["candidate"],
+        parent_attachment_id=attachment_id,
+        parent_session_id=session_id,
+        local_turn=False,
+        parent_loop_ctx=stream,
+        validation={"verdict": outcome["verdict"], "rounds": outcome["rounds"],
+                    "evidence": outcome["evidence"], "attempts": outcome["attempts"]} if executed else None,
+        grounding_base=grounding_base,
+    )
+    done["landed"] = list(stream.get("_landed") or [])
+    if part is None:
+        return False
+    done["changeId"] = part["changeId"]
+    done["changeAttachmentId"] = home_att
+    if home_att == attachment_id:
+        parts.append(part)
+    return True
+
+
 def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label, had_content,
               grounding_base, outcome: dict, done: dict, asker=None, room_asker=None,
               peer=None) -> tuple[str, str, list]:
     """What the per-node Solve says and shows for its verdict: the text, the card kind and the
-    content parts (the change's card when PASS writes corrected code; the caller adds the attempt
-    trail). Writes the verdict-specific fields (unchanged, written, change ids, remedy) into *done*,
+    content parts (the change's card when PASS writes corrected code, or a corrected document
+    validates; the caller adds the attempt trail). A document that validated is written as code
+    that passed is. Writes the verdict-specific fields (unchanged, written, change ids, remedy) into *done*,
     and the change's canvas mutation as ``landed``, for the stream. *asker*: the person the job
     took when it started, whom a change it writes names, an invited editor among them;
     *room_asker*, the same as the room names them. *peer*: the Solve's agent at work in the room,
@@ -413,27 +447,8 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
         )
         card_kind = "result"
     elif verdict == "pass":
-        # The job's thread holds no request: the change waits for anyone but
-        # the account that asked, and is named after it.
-        stream: dict = {"asker_id": getattr(asker, "id", None), "asker": asker, "room_asker": room_asker}
-        part, home_att, _mint_text = agents_delegates._mint_content_review_from_delegate(
-            user_key, project_id,
-            node_id=node_id,
-            generated_text=outcome["candidate"],
-            parent_attachment_id=attachment_id,
-            parent_session_id=session_id,
-            local_turn=False,
-            parent_loop_ctx=stream,
-            validation={"verdict": verdict, "rounds": rounds,
-                        "evidence": outcome["evidence"], "attempts": attempts},
-            grounding_base=grounding_base,
-        )
-        done["landed"] = list(stream.get("_landed") or [])
-        if part is not None:
-            done["changeId"] = part["changeId"]
-            done["changeAttachmentId"] = home_att
-            if home_att == attachment_id:
-                parts.append(part)
+        if _change_over_content(user_key, project_id, attachment_id, session_id, node_id, outcome, done,
+                                grounding_base, parts, executed=True, asker=asker, room_asker=room_asker):
             text = (
                 f"Solved {label!r}: the corrected code ran successfully after {rounds} "
                 f"round{'s' if rounds != 1 else ''} and was written to the node."
@@ -447,17 +462,42 @@ def _conclude(user_key, project_id, attachment_id, session_id, spec, node, label
             "nothing was run, corrected, or written. Retry when it is back."
         )
         card_kind = "error"
-    elif verdict == "not-executable":
-        # dev/129: a document that validated says so; one that nothing could
-        # check says THAT, and is not written.
-        doc_evidence = outcome.get("evidence") or {}
-        if doc_evidence.get("documentValidated"):
-            text = (
-                f"Validated {label!r}: its {doc_evidence['documentValidated']} document is valid "
-                "and was written — the sandbox cannot run this kind, so it was not executed; "
-                "Play the dataflow to see it render."
+    elif (verdict == "not-executable" and (outcome.get("evidence") or {}).get("documentValidated")
+          and str(outcome.get("candidate") or "").strip()):
+        # dev/129: a document that validated lands as code that passed does:
+        # written into an empty node, and over the node's content as the
+        # agent's change. The node's own document, valid as it is, stays.
+        document = outcome["evidence"]["documentValidated"]
+        unrun = "The sandbox cannot run this kind, so it was not executed: Play the dataflow to see it render."
+        kept = rounds == 1 and attempts and attempts[0].get("source") == "current content"
+        if kept:
+            text = f"Validated {label!r}: its {document} document is valid, so nothing was changed. {unrun}"
+        elif not had_content:
+            written, held_by = _write_empty_node_held(
+                user_key, project_id, spec, node_id, outcome["candidate"],
+                actor=agents_spec_reads._agent_actor(user_key, spec, attachment_id, "solve", asker), peer=peer,
             )
-        elif doc_evidence.get("documentUnchecked") and not doc_evidence.get("documentPassive"):
+            done["written"] = written
+            text = (
+                f"Validated {label!r}: its {document} document is valid and was written to the node. {unrun}"
+                if written else
+                f"Validated {label!r}: its {document} document is valid, but {held_by} is editing the node, "
+                "so nothing was written."
+                if held_by else
+                f"Validated {label!r}: its {document} document is valid, but the node gained content "
+                "meanwhile, so nothing was written."
+            )
+        elif _change_over_content(user_key, project_id, attachment_id, session_id, node_id, outcome, done,
+                                  grounding_base, parts, executed=False, asker=asker, room_asker=room_asker):
+            text = f"Validated {label!r}: the corrected {document} document is valid and was written to the node. {unrun}"
+        else:
+            text = f"Validated {label!r}, but the document could not be written: nothing was changed."
+        card_kind = "result"
+    elif verdict == "not-executable":
+        # dev/129: a document that nothing could check says so, and is not
+        # written.
+        doc_evidence = outcome.get("evidence") or {}
+        if doc_evidence.get("documentUnchecked") and not doc_evidence.get("documentPassive"):
             text = (
                 f"Wrote nothing for {label!r}: {str(doc_evidence['documentUnchecked'])[:200]}. "
                 "Nothing unchecked is put into a node."

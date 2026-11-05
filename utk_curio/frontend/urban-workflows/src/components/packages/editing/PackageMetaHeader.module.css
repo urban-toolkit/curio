@@ -67,6 +67,11 @@
   gap: 4px;
 }
 
+/* A compact header's pill: the package icon alone. */
+.packageBadgeCompact {
+  padding: 2px 5px;
+}
+
 .packageBadge:hover {
   background-color: rgba(53, 103, 199, 0.25);
   border-color: var(--curio-role-published-fg);

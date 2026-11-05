@@ -1,0 +1,198 @@
+name: Skill evaluations
+
+# The skills' live evaluations (docs/EXTENDING.md's "Evaluating a skill"): each
+# skill's evals/evals.json on the models of the repository variable
+# CURIO_EVAL_MODELS, through the endpoint of the secrets CURIO_EVAL_BASE_URL
+# and CURIO_EVAL_API_KEY, scored as the skills benchmark. It runs only when it
+# is started, from the Actions tab or with
+#
+#   gh workflow run skill-evals.yml --ref <branch> -f scope=<scope>
+#
+# on the branch whose skills it measures. Its report,
+# curio-skill-evals-report.html, is this run's artifact, and its tables are in
+# this run's summary. A run on main is what later runs compare with.
+#
+# It runs the branch's own code in the Python of main's newest CI image (the
+# image the Full stack build pushes for each commit of main), so any branch
+# runs without a build of its own. A branch that changes Curio's Python
+# requirements is measured with main's.
+#
+# Every model runs side by side in one job, on the one runner labelled
+# skill-evals (arcade-cpu-40, which also takes CPU jobs between evaluations).
+# So runs queue for it, and each model gets CURIO_EVAL_JOBS workers (4 when
+# unset) and no more.
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'auto (what the branch changes against main), smoke (every skill''s first test case once), core (every skill''s test cases), full (every skill''s trigger queries and test cases), or skill names, comma-separated'
+        type: string
+        default: auto
+      models:
+        description: 'A JSON list of the models to measure; empty for the repository variable CURIO_EVAL_MODELS'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: [self-hosted, arcade, skill-evals]
+    # A run of every skill took gemma4 about 7.5 hours on 10-29.
+    timeout-minutes: 720
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+    env:
+      PROJECT: curio-ci-evals
+    steps:
+      # As the Full stack build's `reclaim` step: a job cancelled before its
+      # end can leave its container running, and its files root-owned. Its
+      # container carries the compose project label of PROJECT, so this finds it.
+      - name: 🧹 Remove stacks an earlier job left, reclaim root-owned files
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          projects=$(docker ps -a --format '{{.Label "com.docker.compose.project"}}' | grep '^curio-ci' | sort -u || true)
+          [ -n "$projects" ] || echo "no stack an earlier job left"
+          for project in $projects; do
+            echo "removing stack $project"
+            docker ps -aq --filter "label=com.docker.compose.project=$project" | xargs -r docker rm -f
+          done
+          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      # Before anything prints: GitHub masks the two secrets, and this has it
+      # mask the base URL's host too.
+      - name: 🙈 Mask the endpoint's host in this job's log
+        env:
+          CURIO_EVAL_BASE_URL: ${{ secrets.CURIO_EVAL_BASE_URL }}
+        run: python3 scripts/ci_skill_evals.py mask
+
+      # What this run measures: what its scope input says, or for auto, what
+      # the branch changes against main (scripts/ci_skill_eval_scope.py).
+      - name: 🧪 Say what this run measures
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SKILL_EVALS: ${{ inputs.scope || 'auto' }}
+          HEAD_REF: ${{ github.ref_name }}
+        run: python3 scripts/ci_skill_eval_scope.py --github
+
+      # Through the environment, never inline: the scope names files a branch chose.
+      - name: 📝 Write down what this run measures
+        if: steps.scope.outputs.skill_evals != ''
+        env:
+          SCOPE: ${{ steps.scope.outputs.skill_evals }}
+        shell: bash
+        run: |
+          mkdir -p skill-evals
+          printf '%s' "$SCOPE" > skill-evals/scope.json
+
+      - name: 📈 Fetch main's last numbers to compare with
+        if: steps.scope.outputs.skill_evals != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci_skill_evals.py previous --out skill-evals/previous
+
+      - uses: docker/login-action@v4
+        if: steps.scope.outputs.skill_evals != ''
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The Full stack build pushes an image for each commit of main it builds;
+      # the newest one there is has the Python every run here uses. Tagged as
+      # start-stack tags a stack's image, so stop-stack's cleanup keeps it for
+      # this runner's next job and removes the older ones.
+      - name: 📥 Pull the image of main's newest commit that has one
+        if: steps.scope.outputs.skill_evals != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=30 --filter=blob:none origin main
+          for sha in $(git log --first-parent -n 30 --format=%H FETCH_HEAD); do
+            image="ghcr.io/${GITHUB_REPOSITORY,,}-ci:${sha}"
+            started=$(date +%s)
+            if docker pull --quiet "$image" > /dev/null 2>&1; then
+              echo "the Python of main's $sha, pulled in $(( $(date +%s) - started )) s;"
+              echo "the code of $GITHUB_REF_NAME ($GITHUB_SHA)"
+              docker tag "$image" "$PROJECT-curio"
+              echo "CURIO_CI_OWN_IMAGE=1" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+          echo "::error::none of main's last 30 commits has a CI image"
+          exit 1
+
+      # The branch's checkout over the image's own code. The secrets reach the
+      # container by name (-e NAME), from this step's environment, never on a
+      # command line.
+      - name: 🧪 Run the skills' evaluations on every model
+        if: steps.scope.outputs.skill_evals != ''
+        timeout-minutes: 700
+        env:
+          CURIO_EVAL_BASE_URL: ${{ secrets.CURIO_EVAL_BASE_URL }}
+          CURIO_EVAL_API_KEY: ${{ secrets.CURIO_EVAL_API_KEY }}
+          CURIO_EVAL_MODELS: ${{ inputs.models || vars.CURIO_EVAL_MODELS }}
+          CURIO_EVAL_JOBS: ${{ vars.CURIO_EVAL_JOBS }}
+          CURIO_EVAL_COMMIT: ${{ github.sha }}
+          CURIO_EVAL_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          docker run --rm --init --label "com.docker.compose.project=$PROJECT" \
+            -v "$PWD:/app" -w /app \
+            -e CURIO_EVAL_BASE_URL -e CURIO_EVAL_API_KEY -e CURIO_EVAL_MODELS -e CURIO_EVAL_JOBS \
+            -e CURIO_EVAL_COMMIT -e CURIO_EVAL_RUN_URL \
+            "$PROJECT-curio" \
+            python scripts/ci_skill_evals.py run --scope skill-evals/scope.json --out skill-evals \
+              --previous skill-evals/previous
+
+      - name: 📤 Upload the report page
+        id: page
+        if: always() && steps.scope.outputs.skill_evals != ''
+        uses: actions/upload-artifact@v7
+        with:
+          path: skill-evals/curio-skill-evals-report.html
+          archive: false
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: 📤 Upload each run's record, transcript and grade
+        if: always() && steps.scope.outputs.skill_evals != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: skill-evals-results
+          path: skill-evals/results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: 📤 Upload each model's numbers, which later runs compare with
+        if: always() && steps.scope.outputs.skill_evals != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: skill-evals-summary
+          path: skill-evals/summaries/
+          if-no-files-found: ignore
+          retention-days: 90
+
+      - name: 🔗 The report's tables in the run summary
+        if: always() && steps.scope.outputs.skill_evals != ''
+        env:
+          PAGE_URL: ${{ steps.page.outputs.artifact-url }}
+        shell: bash
+        run: |
+          {
+            [ -z "$PAGE_URL" ] || printf '[Open curio-skill-evals-report.html](%s): every model, skill and failed assertion.\n\n' "$PAGE_URL"
+            cat skill-evals/summary.md 2>/dev/null || echo "The skill evaluations wrote no summary: see this job's log."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: ./.github/actions/stop-stack
+        if: always()
+        with:
+          project: ${{ env.PROJECT }}
