@@ -527,6 +527,12 @@ def _grader_spent(usage: dict, turn: "providers.ChatTurn") -> dict:
 class Worker:
     """Curio's backend, an evaluation account and the seams of its runs."""
 
+    @property
+    def grader(self) -> str:
+        """The model that grades each answer: CURIO_EVAL_GRADER_MODEL, the
+        benchmark's one grader on the same endpoint, or the model measured."""
+        return os.environ.get(ENV_GRADER, "").strip() or self.endpoint.model
+
     def __init__(self, endpoint: skill_evals.Endpoint, results: Path, *, stop_early: bool):
         from utk_curio.backend.app.collaboration import dataflow_docs
         from utk_curio.backend.app.projects.services import _user_dir_key
@@ -536,9 +542,6 @@ class Worker:
         self.secrets = endpoint.secrets()
         self.results = results
         self.stop_early = stop_early
-        #: The model that grades each answer: CURIO_EVAL_GRADER_MODEL, the
-        #: benchmark's fixed grader, on the same endpoint, or the model measured.
-        self.grader = os.environ.get(ENV_GRADER, "").strip() or endpoint.model
         self.folders = {folder.name: folder for folder in skill_evals.skill_folders()}
         # Writes in this thread, at once, as the unit tests' app makes them.
         dataflow_docs.BACKGROUND = False
@@ -834,9 +837,10 @@ class Worker:
         message = agent_text.fill(agent_text.section(GRADER_PAGE, GRADER_TASK_SECTION), values, where)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": message}]
         config = provider_config.resolve_llm(self.user_key)
-        if self.grader != config.model:
+        named = os.environ.get(ENV_GRADER, "").strip()
+        if named and named != config.model:
             # One grader for every model a benchmark measures: the same endpoint, its model.
-            config = dataclasses.replace(config, model=self.grader)
+            config = dataclasses.replace(config, model=named)
         problem = "no reply"
         spent: dict = {}
         waits = list(RETRY_WAITS_S)

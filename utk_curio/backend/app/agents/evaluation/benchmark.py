@@ -40,14 +40,14 @@ import statistics
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
-from utk_curio import shipped
+from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.evaluation import checks as case_checks
 from utk_curio.backend.app.agents.evaluation import skill_evals
 
 #: The shape of ``benchmark.json``, which a later change to it moves.
 FORMAT = 1
-#: The grader's words, part of the set (the base entry's page).
-GRADER_WORDS = ("agents", "agent.curio.builtin@1", "skill-evals.md")
+#: The grader's words, part of the set: the base entry's page the worker grades with.
+GRADER_PAGE = "skill-evals.md"
 #: How many characters of the set's hash its version keeps.
 VERSION_CHARS = 12
 #: The intervals: their confidence, how many resamples, and the seed, so a
@@ -65,8 +65,10 @@ def version(evals: Iterable[skill_evals.SkillEvals]) -> str:
     """The set's version: a hash of every skill's ``evals/evals.json`` and of
     the grader's words, the same for the same files wherever they are."""
     digest = hashlib.sha256()
-    words = shipped.path(GRADER_WORDS[0]).joinpath(*GRADER_WORDS[1:])
-    digest.update(words.read_bytes() if words.is_file() else b"")
+    try:
+        digest.update(agent_text.page_file(GRADER_PAGE).read_bytes())
+    except (agent_text.AgentTextError, OSError):
+        digest.update(b"")
     for skill in sorted(evals, key=lambda found: found.name):
         digest.update(b"\0" + skill.name.encode("utf-8") + b"\0" + skill.file.read_bytes())
     return digest.hexdigest()[:VERSION_CHARS]
