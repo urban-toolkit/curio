@@ -787,3 +787,106 @@ describe("binding", () => {
         other.destroy();
     });
 });
+
+/** One person's tab of the dataflow: its canvas, bound to a doc of its own. */
+interface Tab {
+    held: DataflowDocProvider;
+    api: FlowApi;
+    code: ReturnType<typeof useCode>;
+}
+
+const TabBridge: React.FC<{ tab: Tab }> = ({ tab }) => {
+    tab.api = useFlowContext();
+    tab.code = useCode();
+    return (
+        <div style={{ width: 800, height: 600 }}>
+            <ReactFlow nodes={tab.api.nodes} edges={tab.api.edges}
+                onNodesChange={tab.api.onNodesChange} onEdgesChange={tab.api.onEdgesChange} />
+        </div>
+    );
+};
+
+/** *name*'s tab, opened on the doc the server holds (*room*): its first sync
+ *  leaves the tab the same doc, item for item, so what one tab changes
+ *  applies to the others. */
+async function openTab(room: Y.Doc, name: string): Promise<Tab> {
+    const held = new DataflowDocProvider(PROJECT, { canWrite: true });
+    Y.applyUpdate(held.doc, Y.encodeStateAsUpdate(room), held);
+    held.synced = true;
+    held.awareness.setLocalStateField("user", { name });
+    setCurrentProject(PROJECT, []);
+    const binding: DocBinding = { provider: held, synced: true };
+    const tab = { held } as Tab;
+    render(
+        <DataflowDocContext.Provider value={binding}>
+            <ReactFlowProvider>
+                <FlowProvider>
+                    <TabBridge tab={tab} />
+                </FlowProvider>
+            </ReactFlowProvider>
+        </DataflowDocContext.Provider>,
+    );
+    await flush();
+    act(() => {
+        tab.code.loadTrill(spec());
+    });
+    await flush();
+    await flush();
+    return tab;
+}
+
+/** What *from*'s doc holds and *to*'s lacks, as the server relays it. */
+async function relayDoc(from: Tab, to: Tab) {
+    await act(async () => {
+        Y.applyUpdate(to.held.doc, Y.encodeStateAsUpdate(from.held.doc, Y.encodeStateVector(to.held.doc)), to.held);
+    });
+    await flush();
+}
+
+/** *from*'s presence, as the server relays it to *to*. */
+async function relayPresence(from: Tab, to: Tab) {
+    const { encodeAwarenessUpdate, applyAwarenessUpdate } = require("y-protocols/awareness");
+    await act(async () => {
+        applyAwarenessUpdate(to.held.awareness,
+            encodeAwarenessUpdate(from.held.awareness, [from.held.awareness.clientID]), to.held);
+    });
+    await flush();
+}
+
+describe("three people on one dataflow", () => {
+    test("a removal names who removed the node, never a tab that only took the removal", async () => {
+        const room = new Y.Doc();
+        dataflowToDoc(spec().dataflow, room, "doc-1");
+        const ana = await openTab(room, "Ana");
+        const ben = await openTab(room, "Ben");
+        const cleo = await openTab(room, "Cleo");
+        const removals = () => mockShowToast.mock.calls.map(([text]) => text)
+            .filter((text) => /removed this node/.test(text));
+        try {
+            act(() => ben.held.awareness.setLocalStateField("editing", "n"));
+
+            // Ana removes the node Ben is editing. Her tab has not heard yet
+            // that he is, so it goes at once.
+            act(() => ana.api.applyRemoveChanges([{ type: "remove", id: "n" }]));
+            await flush();
+            expect(docToDataflow(ana.held.doc).nodes.map((n: any) => n.id)).toEqual(["m"]);
+
+            // The server relays her change: Cleo's tab takes it, then Ben's,
+            // which waits for the note that says who removed the node.
+            await relayDoc(ana, cleo);
+            await relayDoc(ana, ben);
+            expect(cleo.api.nodes.map((n) => n.id)).toEqual(["m"]);
+            expect(ben.api.nodes.map((n) => n.id)).toEqual(["m"]);
+            expect(removals()).toEqual([]);
+
+            // The notes travel apart from the doc's change: Cleo's presence
+            // reaches Ben first, then Ana's.
+            await relayPresence(cleo, ben);
+            await relayPresence(ana, ben);
+            expect(removals()).toEqual(["Ana removed this node while you were editing it."]);
+        } finally {
+            [ana, ben, cleo].forEach((tab) => tab.held.destroy());
+            room.destroy();
+        }
+    });
+});
