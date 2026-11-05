@@ -37,7 +37,10 @@ room (``join_session``, ``events.py``) takes part.
 * A change that leaves a connection pointing at a node that is gone, a node
   removed while someone drew a connection to it, has that connection taken out
   at once, for every tab, and the tab that drew it is told who removed the
-  node (:func:`_drop_dangling_connections`).
+  node (:func:`_drop_dangling_connections`). So is a tab whose own later
+  update took that connection out again, as its canvas does once the removal
+  reaches it, when the batch applies both in one transaction, which then
+  leaves the rule nothing to take out.
 * Awareness is relayed to the doc's other tabs and sent whole to a tab that
   starts. It waits for the doc with the updates: a batch keeps each client's
   latest state and sends each tab one message, its own clients' left out. The
@@ -2060,8 +2063,8 @@ def _apply_batch(entry: _OpenDoc, batch: list[_Queued]) -> dict[str, dict]:
     * Each socket's updates are one transaction, the socket its origin, in the
       order it sent them, so they reach the log as one record: the history's
       point of one author. An answer's ``kept`` is what that transaction moved,
-      and the merge rules run on what it changed
-      (:func:`_drop_dangling_connections`). The batch then makes one write to
+      and the merge rules run on what it changed and on the connections its
+      updates drew, read between them (:func:`_drop_dangling_connections`). The batch then makes one write to
       the log and one message to each tab, every change but the tab's own
       merged into one update, the rules' changes sent to every tab
       (:func:`_logged_and_relayed`); and then the tabs a rule names are told.
@@ -2101,6 +2104,8 @@ def _apply_updates(entry: _OpenDoc, updates: dict[str, list[_Queued]], answers: 
         answer = answers.setdefault(sid, _answer())
         answer["answered"] += len(items)
         graph = _graph_keys(entry.doc)
+        #: The connections the socket's updates drew, with their ends.
+        appeared: dict[str, tuple] = {}
         with entry.doc.transaction(origin=sid):
             for item in items:
                 if item.data == b"\x00\x00":
@@ -2111,6 +2116,8 @@ def _apply_updates(entry: _OpenDoc, updates: dict[str, list[_Queued]], answers: 
                     logger.info("an update from %s for dataflow %s does not apply", sid, entry.project_id,
                                 exc_info=True)
                     _refuse(answers, sid, "invalid_message")
+                else:
+                    _appeared(entry.doc, graph[1], appeared)
         tab = history.Tab(sid, items[-1].me)
         owner_uses.noted(entry, by_owner=_by_its_owner(entry.user_key, tab))
         now = _clocks(entry.doc)
@@ -2118,7 +2125,7 @@ def _apply_updates(entry: _OpenDoc, updates: dict[str, list[_Queued]], answers: 
         changes.append((sid, observed))
         taken.append((tab, history.take_touched(entry)))
         answer["kept"] = {str(client): clock for client, clock in now.items() if clocks.get(client) != clock}
-        notices += _drop_dangling_connections(entry, sid, items[-1].me, graph)
+        notices += _drop_dangling_connections(entry, sid, items[-1].me, graph, appeared)
         owner_uses.noted(entry, by_owner=_by_its_owner(entry.user_key, RULES_ORIGIN))
         ruled, entry.updates = entry.updates, []
         if ruled:
@@ -2161,21 +2168,35 @@ def _graph_keys(doc) -> tuple[frozenset, frozenset]:
 
 
 def _drop_dangling_connections(entry: _OpenDoc, sid: str, me: dict,
-                               before: tuple[frozenset, frozenset]) -> list[tuple[str, dict]]:
+                               before: tuple[frozenset, frozenset],
+                               appeared: Optional[dict[str, tuple]] = None) -> list[tuple[str, dict]]:
     """The merge rule for a connection to a node that is gone, after the change
     the socket *sid* (the participant *me*) brought, *before* being the doc's
-    node and connection ids until then.
+    node and connection ids until then and *appeared* the connections its
+    updates drew, with their ends (:func:`_appeared`).
 
     A node removed while someone drew a connection to it leaves that
     connection pointing nowhere once both changes merge, whichever came first.
     It is taken out at once, in a transaction of the rule's own, whose update
     :func:`_apply_updates` logs and sends every tab with the rest of its batch,
     and the tab that drew it is told who removed the node
-    (:data:`CONNECTION_DROPPED_EVENT`). The notices, each a socket and what it
-    is told, for :func:`_tell` once the change is relayed."""
+    (:data:`CONNECTION_DROPPED_EVENT`).
+
+    The tab that drew it may have taken it out itself: its canvas drops a
+    connection whose node the removal took, and its writer then takes it out
+    of the doc. When the batch applies that update in one transaction with the
+    one that drew the connection, the transaction leaves the doc as it was and
+    the rule nothing to take out; the tab is told all the same, unless it
+    removed the node itself in that transaction. The notices, each a socket
+    and what it is told, for :func:`_tell` once the change is relayed."""
     nodes_before, edges_before = before
     nodes_now, edges_now = _graph_keys(entry.doc)
-    if nodes_now == nodes_before and edges_now == edges_before:
+    taken_back: dict[str, str] = {}
+    for edge_id, ends in (appeared or {}).items():
+        gone = [end for end in ends if end not in nodes_now and end not in nodes_before]
+        if edge_id not in edges_now and gone:
+            taken_back[edge_id] = gone[0]
+    if nodes_now == nodes_before and edges_now == edges_before and not taken_back:
         return []
     for node_id in nodes_before - nodes_now:
         entry.removers.pop(node_id, None)
@@ -2191,16 +2212,37 @@ def _drop_dangling_connections(entry: _OpenDoc, sid: str, me: dict,
         drawer = sid if edge_id in added else entry.edge_authors.get(edge_id)
         if drawer is not None and drawer in entry.tabs:
             drawers.setdefault(drawer, []).append(edge_id)
+    if taken_back and sid in entry.tabs:
+        drawers.setdefault(sid, []).extend(taken_back)
     for edge_id in list(entry.edge_authors):
         if edge_id not in edges_now or edge_id in dangling:
             del entry.edge_authors[edge_id]
-    if not dangling:
-        return []
-    with entry.doc.transaction(origin=RULES_ORIGIN):
-        _take_out(entry.doc, dangling)
+    if dangling:
+        with entry.doc.transaction(origin=RULES_ORIGIN):
+            _take_out(entry.doc, dangling)
+    gone_ends = {**taken_back, **dangling}
+    for drawer, edge_ids in drawers.items():
+        logger.info("dataflow %s: %d connection(s) drawn to a node removed meanwhile were not kept; "
+                    "their drawer is told", entry.project_id, len(edge_ids))
     return [(drawer, {"projectId": entry.project_id, "edgeIds": edge_ids,
-                      "by": entry.removers.get(dangling[edge_ids[0]]) or _user(me)})
+                      "by": entry.removers.get(gone_ends[edge_ids[0]]) or _user(me)})
             for drawer, edge_ids in drawers.items()]
+
+
+def _appeared(doc, before: frozenset, appeared: dict[str, tuple]) -> None:
+    """Note in *appeared* each connection *doc* holds that *before*, the ids
+    the doc held, did not, with its ends. Read between a socket's updates,
+    inside its transaction, it notes a connection one update draws and a later
+    one takes out again, which the transaction's end no longer holds
+    (:func:`_drop_dangling_connections`)."""
+    edges = doc.get("edges", type=Map)
+    for edge_id in edges.keys():
+        if edge_id in before or edge_id in appeared:
+            continue
+        edge = doc_mapping.decode(edges[edge_id])
+        if isinstance(edge, dict):
+            appeared[edge_id] = tuple(end for end in (edge.get("source"), edge.get("target"))
+                                      if isinstance(end, str))
 
 
 def _dangling(doc, edge_ids=None) -> dict[str, str]:
