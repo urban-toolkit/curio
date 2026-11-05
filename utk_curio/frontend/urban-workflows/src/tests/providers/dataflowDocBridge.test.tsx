@@ -57,9 +57,10 @@ jest.mock("../../api/historyApi", () => {
 
 import FlowProvider, { useFlowContext } from "../../providers/FlowProvider";
 import { useCode } from "../../hook/useCode";
-import { DataflowDocContext, type DocBinding } from "../../providers/collab/docContext";
+import { CANVAS_ORIGIN, DataflowDocContext, type DocBinding } from "../../providers/collab/docContext";
 import { DataflowDocProvider } from "../../providers/collab/docProvider";
 import { applyDataflow, dataflowToDoc, docToDataflow } from "../../providers/collab/docMapping";
+import { remoteDrags } from "../../providers/collab/presence";
 import { buildCodeNode, nodeMetaFromTrill } from "../../hook/codeNodes";
 import { METADATA_FIELD_DATA, NODE_FIELD_DATA, trillNodeOf } from "../../providers/flow/useDataflowDoc";
 import { setCurrentProject } from "../../registry/projectPackagesStore";
@@ -67,6 +68,7 @@ import { TrillGenerator } from "../../TrillGenerator";
 import { ConnectionValidator } from "../../ConnectionValidator";
 import { serverHistory } from "../../providers/history/serverHistory";
 import { DataflowProvenance } from "../../components/provenance/DataflowProvenance";
+import { AGENT_DOCK_REFRESH_EVENT } from "../../services/agents/agentEvents";
 
 const PROJECT = "7c3e0f42-5b9a-4d0e-9c1f-2a8b6d4e1f30";
 const TYPE = "curio.builtin/python-computation@1";
@@ -902,6 +904,74 @@ describe("binding", () => {
         expect(api.projectDirty).toBe(false);
     });
 
+    test("a connection the file held to a node someone removed before the first sync stays out of the doc", async () => {
+        // This tab read the file; another tab then removed k, which took its
+        // connection out too. This tab never drew that connection: written
+        // back, it would reach the server, which takes it out again and tells
+        // this tab its connection was not kept.
+        const loaded: any = spec();
+        loaded.dataflow.nodes.push({ ...loaded.dataflow.nodes[1], id: "k", x: 1200 });
+        loaded.dataflow.edges.push({ id: "m-k", source: "m", target: "k", sourceHandle: "out", targetHandle: "in" });
+        const held = serverDoc(spec().dataflow);
+        const holds: boolean[] = [];
+        held.doc.on("update", (_update: Uint8Array, origin: unknown) => {
+            if (origin !== held) holds.push(held.doc.getMap("edges").has("m-k"));
+        });
+        await open(held, loaded);
+
+        expect(canvasNode("k")).toBeUndefined();
+        expect(api.edges.map((e: any) => e.id)).not.toContain("m-k");
+        expect(holds).not.toContain(true);
+        expect(held.doc.getMap("edges").has("m-k")).toBe(false);
+    });
+
+    test("a connection this canvas drew before its doc was there, to a node removed meanwhile, reaches the doc at the bind", async () => {
+        // The file held k, and another tab removed it before this tab's first
+        // sync. The connection reaches the doc all the same, so the server
+        // takes it out and tells this tab who removed k
+        // (`dataflow_docs._drop_dangling_connections`).
+        const loaded: any = spec();
+        loaded.dataflow.nodes.push({ ...loaded.dataflow.nodes[1], id: "k", x: 1200 });
+        const held = serverDoc(spec().dataflow);
+        provider = held;
+        setCurrentProject(PROJECT, []);
+        let joined!: (binding: DocBinding) => void;
+        const Room: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+            const [binding, setBinding] = React.useState<DocBinding | null>(null);
+            joined = setBinding;
+            return <DataflowDocContext.Provider value={binding}>{children}</DataflowDocContext.Provider>;
+        };
+        render(
+            <Room>
+                <ReactFlowProvider>
+                    <FlowProvider>
+                        <Bridge />
+                    </FlowProvider>
+                </ReactFlowProvider>
+            </Room>,
+        );
+        await flush();
+        act(() => {
+            code.loadTrill(loaded);
+        });
+        await flush();
+        await flush();
+        expect(canvasNode("k")).toBeDefined();
+        connect("m", "k");
+        await flush();
+        const drawn = api.edges.find((e: any) => e.target === "k")?.id as string;
+        expect(drawn).toBeTruthy();
+        expect(held.doc.getMap("edges").has(drawn)).toBe(false);
+
+        act(() => joined({ provider: held, synced: true }));
+        await flush();
+        await flush();
+
+        expect(canvasNode("k")).toBeUndefined();
+        expect(api.edges.map((e: any) => e.id)).not.toContain(drawn);
+        expect(held.doc.getMap("edges").has(drawn)).toBe(true);
+    });
+
     test("a bound canvas's history is the server's: the versions its load recorded go, and its edits record none", async () => {
         await open(serverDoc(spec().dataflow));
         const history = serverHistory();
@@ -977,6 +1047,56 @@ describe("binding", () => {
         expect(canvasNode().position).toEqual({ x: 80, y: 95 });
         expect(docNode().x).toBe(80);
         other.destroy();
+    });
+
+    test("this tab's fast drag shows the others where it stops before the drop, and the drop is the last they hear", async () => {
+        await open(serverDoc(spec().dataflow));
+        const { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } = require("y-protocols/awareness");
+        const other = new Awareness(new Y.Doc());
+        // The other tab gets this tab's state each time its provider sends it.
+        const relay = () => {
+            applyAwarenessUpdate(other, encodeAwarenessUpdate(provider.awareness, [provider.awareness.clientID]), "server");
+        };
+        provider.awareness.on("update", relay);
+        // React Flow's changes as MainCanvas hands them on: to the doc's
+        // bridge, then to the canvas.
+        const handOn: FlowApi["onNodesChange"] = (changes) => {
+            act(() => {
+                api.dataflowDoc!.noteDrag(changes);
+                api.onNodesChange(changes);
+            });
+        };
+        const moveTo = (x: number, y: number) => handOn([{ type: "position", id: "n", position: { x, y }, dragging: true }]);
+        // Where the other tab shows the node this tab drags.
+        const seen = () => remoteDrags(other).get("n");
+        jest.useFakeTimers();
+        try {
+            // A fast drag: its second and third moves come within 50 ms of
+            // the first, which the others see at once.
+            moveTo(10, 10);
+            act(() => jest.advanceTimersByTime(10));
+            moveTo(20, 20);
+            act(() => jest.advanceTimersByTime(10));
+            moveTo(30, 30);
+            expect(seen()).toEqual({ x: 10, y: 10 });
+
+            // The pointer holds still: the place it stopped on reaches the
+            // others once the 50 ms have passed, before any drop.
+            act(() => jest.advanceTimersByTime(60));
+            expect(seen()).toEqual({ x: 30, y: 30 });
+
+            // One more move, held back, then the drop at once: the others
+            // hear the drop last, and the doc gets the place it ends on.
+            moveTo(40, 40);
+            handOn([{ type: "position", id: "n", dragging: false }]);
+            act(() => jest.advanceTimersByTime(100));
+            expect(seen()).toBeUndefined();
+            expect(docNode()).toMatchObject({ x: 40, y: 40 });
+        } finally {
+            jest.useRealTimers();
+            provider.awareness.off("update", relay);
+            other.destroy();
+        }
     });
 
     test("a node another tab removes while this tab edits its code says who, and Put it back adds it again", async () => {
@@ -1224,5 +1344,82 @@ describe("three people on one dataflow", () => {
             [ana, ben, cleo].forEach((tab) => tab.held.destroy());
             room.destroy();
         }
+    });
+});
+
+/** A removal takes the agents attached to what it removes along, and the dock
+ *  lists the agents again once the server has it (`agentDockAfterRemovals.ts`). */
+describe("a removal and the agents' dock", () => {
+    /** Each time the dock asks for the agents again. */
+    let asked: jest.Mock;
+
+    beforeEach(() => {
+        asked = jest.fn();
+    });
+
+    afterEach(() => {
+        window.removeEventListener(AGENT_DOCK_REFRESH_EVENT, asked);
+    });
+
+    /** Open the dataflow on a doc whose socket the server has answered every
+     *  message of, so the tab holds no change the server lacks. */
+    async function openOnItsSocket(): Promise<{ held: DataflowDocProvider; socket: RoomSocket }> {
+        const held = serverDoc(spec().dataflow);
+        await open(held);
+        const socket = new RoomSocket();
+        act(() => held.attach(socket));
+        await act(async () => socket.sent[0].ack?.({ ok: true, docId: "doc-1" }));
+        await act(async () => socket.sent.slice(1).forEach(({ ack }) => ack?.({ ok: true })));
+        await flush();
+        expect(held.isKept()).toBe(true);
+        window.addEventListener(AGENT_DOCK_REFRESH_EVENT, asked);
+        return { held, socket };
+    }
+
+    test("this canvas's removal: the dock asks for the agents again once the server has it, not before", async () => {
+        const { held, socket } = await openOnItsSocket();
+        const before = socket.sent.length;
+
+        act(() => api.applyReviewedRemovals(["m"], ["n-m"]));
+        await flush();
+        await flush();
+
+        // The removal went to the server, which has not answered it yet: the
+        // listing would still hold the agents of m and of its connection.
+        expect(held.doc.getMap("nodes").has("m")).toBe(false);
+        const removal = socket.sent.slice(before).filter(({ ack }) => ack);
+        expect(removal.length).toBeGreaterThan(0);
+        expect(asked).not.toHaveBeenCalled();
+
+        await act(async () => removal.forEach(({ ack }) => ack?.({ ok: true })));
+        await waitFor(() => expect(asked).toHaveBeenCalled());
+        await flush();
+        expect(asked).toHaveBeenCalledTimes(1);
+    });
+
+    test("another tab's removal of a node and its connection: this tab writes neither back", async () => {
+        const { held } = await openOnItsSocket();
+        const written: Uint8Array[] = [];
+        const watch = (update: Uint8Array, origin: unknown) => {
+            if (origin === CANVAS_ORIGIN) written.push(update);
+        };
+        held.doc.on("update", watch);
+        try {
+            await fromAnotherTab((df) => {
+                df.nodes = df.nodes.filter((n: any) => n.id !== "m");
+                df.edges = [];
+            });
+            await flush();
+        } finally {
+            held.doc.off("update", watch);
+        }
+
+        expect(canvasNode("m")).toBeUndefined();
+        expect(api.edges).toEqual([]);
+        // Written back, the server would take the connection out again and
+        // tell this tab, which never drew it, that it was not kept.
+        expect(held.doc.getMap("edges").has("n-m")).toBe(false);
+        expect(written).toEqual([]);
+        await waitFor(() => expect(asked).toHaveBeenCalled());
     });
 });
