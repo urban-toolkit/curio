@@ -801,6 +801,74 @@ describe("binding", () => {
         expect(api.projectDirty).toBe(false);
     });
 
+    test("a connection the file held to a node someone removed before the first sync stays out of the doc", async () => {
+        // This tab read the file; another tab then removed k, which took its
+        // connection out too. This tab never drew that connection: written
+        // back, it would reach the server, which takes it out again and tells
+        // this tab its connection was not kept.
+        const loaded: any = spec();
+        loaded.dataflow.nodes.push({ ...loaded.dataflow.nodes[1], id: "k", x: 1200 });
+        loaded.dataflow.edges.push({ id: "m-k", source: "m", target: "k", sourceHandle: "out", targetHandle: "in" });
+        const held = serverDoc(spec().dataflow);
+        const holds: boolean[] = [];
+        held.doc.on("update", (_update: Uint8Array, origin: unknown) => {
+            if (origin !== held) holds.push(held.doc.getMap("edges").has("m-k"));
+        });
+        await open(held, loaded);
+
+        expect(canvasNode("k")).toBeUndefined();
+        expect(api.edges.map((e: any) => e.id)).not.toContain("m-k");
+        expect(holds).not.toContain(true);
+        expect(held.doc.getMap("edges").has("m-k")).toBe(false);
+    });
+
+    test("a connection this canvas drew before its doc was there, to a node removed meanwhile, reaches the doc at the bind", async () => {
+        // The file held k, and another tab removed it before this tab's first
+        // sync. The connection reaches the doc all the same, so the server
+        // takes it out and tells this tab who removed k
+        // (`dataflow_docs._drop_dangling_connections`).
+        const loaded: any = spec();
+        loaded.dataflow.nodes.push({ ...loaded.dataflow.nodes[1], id: "k", x: 1200 });
+        const held = serverDoc(spec().dataflow);
+        provider = held;
+        setCurrentProject(PROJECT, []);
+        let joined!: (binding: DocBinding) => void;
+        const Room: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+            const [binding, setBinding] = React.useState<DocBinding | null>(null);
+            joined = setBinding;
+            return <DataflowDocContext.Provider value={binding}>{children}</DataflowDocContext.Provider>;
+        };
+        render(
+            <Room>
+                <ReactFlowProvider>
+                    <FlowProvider>
+                        <Bridge />
+                    </FlowProvider>
+                </ReactFlowProvider>
+            </Room>,
+        );
+        await flush();
+        act(() => {
+            code.loadTrill(loaded);
+        });
+        await flush();
+        await flush();
+        expect(canvasNode("k")).toBeDefined();
+        connect("m", "k");
+        await flush();
+        const drawn = api.edges.find((e: any) => e.target === "k")?.id as string;
+        expect(drawn).toBeTruthy();
+        expect(held.doc.getMap("edges").has(drawn)).toBe(false);
+
+        act(() => joined({ provider: held, synced: true }));
+        await flush();
+        await flush();
+
+        expect(canvasNode("k")).toBeUndefined();
+        expect(api.edges.map((e: any) => e.id)).not.toContain(drawn);
+        expect(held.doc.getMap("edges").has(drawn)).toBe(true);
+    });
+
     test("a bound canvas's history is the server's: the versions its load recorded go, and its edits record none", async () => {
         await open(serverDoc(spec().dataflow));
         const history = serverHistory();
