@@ -32,7 +32,7 @@
       ],
       "checks": [
         {"assertion": 1, "kind": "node-added", "type": "curio.rasterization/raster-calculator", "count": 1},
-        {"assertion": 3, "kind": "code", "type": "curio.rasterization/raster-calculator", "pattern": "\\bwhere\\s*=\\s*lambda[^:\\n]*:[^\\n]*<\\s*60\\b"}
+        {"assertion": 3, "kind": "code", "type": "curio.rasterization/raster-calculator", "pattern": "\\bwhere\\s*=\\s*lambda[^:\\n]*:[^\\n]*(?:<\\s*60\\b|\\b60\\s*>(?!=))"}
       ]
     },
     {
