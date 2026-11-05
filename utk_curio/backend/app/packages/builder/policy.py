@@ -67,7 +67,8 @@ _BLOCK_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
     (re.compile(r"(?<![\w.])(eval|exec|compile|__import__)\s*\("), "backend-dynamic-code",
      "dynamic code execution defeats the policy scan — write the logic directly"),
     (re.compile(r"^\s*(import|from)\s+importlib\b"), "backend-dynamic-import",
-     "dynamic imports defeat the policy scan — import dependencies at the top of the entry"),
+     "dynamic imports defeat the policy scan: write an import statement instead, inside the handler "
+     "for a declared dependency, which is not installed yet when the probe loads the entry"),
     (re.compile(r"^\s*(import|from)\s+(flask|fastapi|django|aiohttp\.web)\b|Blueprint\s*\(|@\w+\.route\b|\.run\s*\(\s*host\s*="),
      "backend-resident-service",
      "resident services are out of scope (dev/89 Follow-up B) — the sandbox is "

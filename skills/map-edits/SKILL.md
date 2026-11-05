@@ -30,11 +30,12 @@ return curio_edit_features(input_0, [
 - First the input: `input_0`, or, fed by several nodes, every circle's in order, `[input_0, input_1, ...]`, with `by_input=True`.
 - Then the edits, in the order they are made, each a dict.
 - Then, by name, each at most once: `key`, the column whose values identify a feature (`osm_id` or `building_id` on OpenStreetMap layers); `layer`, the layer the edits apply to; `keys`, the column of each other layer an edit names; `new_layers`; `crs`; `by_input`.
+- `new_layers` lists the layers the node makes, each {"name": ..., "geometry": ..., "properties": [...]}: its geometry "Point", "LineString" or "Polygon", and each property {"name": ..., "type": ..., "required": ..., "choices": ..., "default": ...}, its type "text", "number", "boolean", "choice" or "date". A new layer starts empty: its features are the `add` edits whose `layer` names it, each identified by its `id`.
 - Every value is written out: texts in single or double quotes, numbers, True, False, None, lists and dicts. The call is the code's only statement, from the start of its line to the end of the code, with comment lines above it and none inside it. It holds no chip, whose value the node cannot know before a run.
 
 ### The edits
 
-An edit names its features by `ids`, values of its layer's key column, or by `where`, a condition on their properties (`height > 100 and levels >= 30`), never both. `ids` names every row that holds the id: OpenStreetMap's buildings are a row per part, each with its building's `building_id` and an `osm_id` of its own, so an edit by `building_id` changes every part of a building.
+An edit names its features by `ids`, values of its layer's key column, or by `where`, a condition on their properties (`height > 100 and levels >= 30`), never both. A `where` reads the features as the edits before it left them, a `restore`'s as the input has them. `ids` names every row that holds the id: OpenStreetMap's buildings are a row per part, each with its building's `building_id` and an `osm_id` of its own, so an edit by `building_id` changes every part of a building.
 
 | op | fields |
 |---|---|
@@ -51,7 +52,8 @@ An edit names its features by `ids`, values of its layer's key column, or by `wh
 Every edit may also hold `layer`, `label` and `enabled`.
 
 - `set` writes a value: a text, a number, True, False or None. `scale` multiplies a number by `value`, `offset` adds `value` to it, and `expr` writes what an expression of the feature's properties makes (`min(height, 60)`).
-- `geometry` and `add` take a GeoJSON geometry, and `add` an `id` and its `values`.
+- A `where` or an `expr` value names a column by its name, or by any text in backticks ("`Mean Acc shadow` > 2"); writes `true`, `false`, `null`, `and`, `or` and `not` in lowercase, since `True` reads as a column; holds one comparison in each part (`height > 10 and height < 60`, never `10 < height < 60`); and calls only `abs`, `round`, `min` and `max`.
+- `geometry` and `add` take a GeoJSON geometry, and `add` an `id` and its `values`; a run skips an `add` whose `id` its layer already holds.
 - The map's tools change a building's shape one part at a time, each part named by its own id, `where` its `building_id` and its `osm_id` both hold: `{"op": "geometry", "where": "building_id == 29623484 and osm_id == 236608503", "geometry": ...}`. The building's other parts keep their shapes. The node's form sets a value on one part the same way, `{"op": "set", "where": "building_id == 29623484 and osm_id == 236608503", "column": "height", "value": 60}`, and on all of them by `ids`.
 - `add_column` adds a property, with `value`, to every feature that has none.
 
@@ -59,6 +61,6 @@ Every edit may also hold `layer`, `label` and `enabled`.
 
 - What-if changes go in {{template.label:curio.builtin/edit-features}}: a building removed, a height capped, a park drawn. An analysis filter, such as the parks over a size or the roads of one kind, stays in the node that computes it.
 - An id is a value its layer's key column holds. A run prints each id no feature has, and Solve's round fails on that line.
-- An area a `geometry` or `add` edit gives is one the map can draw: an outline that encloses some area and does not cross or touch itself, holes inside their outline and apart from each other, and parts that do not overlap. A run skips an edit that would give a feature any other area and prints why, and Solve's round fails on that line.
+- An area a `geometry` or `add` edit gives is one the map can draw: an outline that encloses some area and does not cross or touch itself, holes inside their outline that do not overlap, touching it or each other only at single points that keep the area in one piece, and parts that do not overlap. A run skips an edit that would give a feature any other area and prints why, and Solve's round fails on that line.
 - Solve makes edits in an empty {{template.label:curio.builtin/edit-features}} node only when its goal names edits; otherwise it gives the node its call with no edits, as the node writes it when dropped, and the user makes the edits on the map. A goal names edits when one of its sentences or lines, or a clause after a colon, a semicolon or a dash between spaces, starts with one of these words: remove, delete, drop, restore, put back, set, change, scale, multiply, raise, lower, increase, decrease, cut, cap, compute, redraw, reshape, move, add, draw.
-- So a plan's {{template.label:curio.builtin/edit-features}} node names its edits in its intent, a sentence each: "Remove the two tallest towers by their building_id", "Cut the parts around the parks down to 60 m". A goal that says what the node is for ("Read the map's layers and edit them on the map") names none.
+- So a plan's {{template.label:curio.builtin/edit-features}} node, whose goal is its title and then its intent, names its edits in its intent, a sentence each: "Remove the two tallest towers by their building_id", "Cut the parts around the parks down to 60 m". A goal that says what the node is for ("Read the map's layers and edit them on the map") names none.

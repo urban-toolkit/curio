@@ -278,49 +278,63 @@ def solve_attachment_stream(
             agents_roster._roster_templates(user_key, project_id),
         ),
     )
-    # The in-flight guard + cancellation identity persist before any provider
-    # work; the cancel endpoint finds the run through ``solveExecutionId``.
-    session["phase"] = "solving"
-    session["solvingSince"] = now
-    session["solveExecutionId"] = solve_execution_id
-    session.pop("cancelRequested", None)
-    dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "solve"))
-    stop = threading.Event()
-    _SOLVE_CANCEL_EVENTS[solve_execution_id] = stop
-    coord = record.get("coord", "")
-    session_id = record.get("sessionId")
-    # dev/115: everything that needs the REQUEST context is resolved here —
-    # the job thread holds no ``g``: the batch's grounding base (catalog refs,
-    # mission + plan texts) and the sandbox's dataset-path mapping.
-    solve_ground = agents_grounding._solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
-    solve_dataset_paths = (
-        agents_grounding._resolve_catalog_execution_paths(project_id, list(solve_ground.get("catalog_ids") or {}))
-        if verify else {}
-    )
-    # dev/126: and the Data Catalog rows the discovery delegate is handed.
-    agents_acquire._settle_discovery_acquisitions(user_key, project_id)
-    solve_catalog_rows = agents_grounding._catalog_rows_for_discovery(user_key, project_id)
-    # dev/132 (closes dev/131 F4): the acting user, so a dataset that arrives
-    # DURING the session can still be resolved to a sandbox path.
-    solve_user = agents_spec_reads._acting_user()
-    events = _solve_events(
-        user_key, project_id, attachment_id, config, targets, nodes_by_id,
-        manifest, coord, session_id, solve_execution_id, stop,
-        spec=spec, verify=verify,
-        grounding_base=solve_ground, dataset_paths=solve_dataset_paths,
-        catalog_rows=solve_catalog_rows, acting_user=solve_user,
-        retry_of=retry_of if isinstance(retry_of, str) else None,
-        # Who asked, as the room names them, read here: the job's thread holds no request.
-        room_asker=agents_room.asker(),
-    )
+    # The job is this process's before the session names it: the tabs list
+    # the agents as soon as the session says solving, and a listing that comes
+    # while this request still resolves what the batch needs finds the
+    # execution live, not one a gone process left (DEC-021's reconcile).
+    try:
+        job = agent_jobs.register_job(
+            user_key=user_key, project_id=project_id, attachment_id=attachment_id,
+            kind="solve-batch", job_id=solve_execution_id,
+            redact_values={"llm-api-key": config.api_key},
+        )
+    except agent_jobs.JobRefused as exc:
+        raise AgentServiceError(str(exc), exc.status)
+    try:
+        # The in-flight guard + cancellation identity persist before any provider
+        # work; the cancel endpoint finds the run through ``solveExecutionId``.
+        session["phase"] = "solving"
+        session["solvingSince"] = now
+        session["solveExecutionId"] = solve_execution_id
+        session.pop("cancelRequested", None)
+        dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._agent_actor(user_key, spec, attachment_id, "solve"))
+        stop = threading.Event()
+        _SOLVE_CANCEL_EVENTS[solve_execution_id] = stop
+        coord = record.get("coord", "")
+        session_id = record.get("sessionId")
+        # dev/115: everything that needs the REQUEST context is resolved here, as
+        # the job thread holds no ``g``: the batch's grounding base (catalog refs,
+        # mission + plan texts) and the sandbox's dataset-path mapping.
+        solve_ground = agents_grounding._solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
+        solve_dataset_paths = (
+            agents_grounding._resolve_catalog_execution_paths(project_id, list(solve_ground.get("catalog_ids") or {}))
+            if verify else {}
+        )
+        # dev/126: and the Data Catalog rows the discovery delegate is handed.
+        agents_acquire._settle_discovery_acquisitions(user_key, project_id)
+        solve_catalog_rows = agents_grounding._catalog_rows_for_discovery(user_key, project_id)
+        # dev/132 (closes dev/131 F4): the acting user, so a dataset that arrives
+        # DURING the session can still be resolved to a sandbox path.
+        solve_user = agents_spec_reads._acting_user()
+        events = _solve_events(
+            user_key, project_id, attachment_id, config, targets, nodes_by_id,
+            manifest, coord, session_id, solve_execution_id, stop,
+            spec=spec, verify=verify,
+            grounding_base=solve_ground, dataset_paths=solve_dataset_paths,
+            catalog_rows=solve_catalog_rows, acting_user=solve_user,
+            retry_of=retry_of if isinstance(retry_of, str) else None,
+            # Who asked, as the room names them, read here: the job's thread holds no request.
+            room_asker=agents_room.asker(),
+        )
+    except Exception as exc:
+        # Nothing will run it. A session it named stays solving until its next
+        # read reconciles it to interrupted, as a gone process's would.
+        agent_jobs.fail_job(job, f"the Solve did not start: {exc}")
+        raise
     # dev/115 (DEC-021, single-process slice): the batch runs as a detached
     # job — the request only SUBSCRIBES (replay + tail); a disconnect no
     # longer ends the Solve, and a reload re-attaches through the jobs stream.
-    job = agent_jobs.start_job(
-        user_key=user_key, project_id=project_id, attachment_id=attachment_id,
-        kind="solve-batch", job_id=solve_execution_id, events=events,
-        redact_values={"llm-api-key": config.api_key},
-    )
+    agent_jobs.run_job(job, events)
     return agent_jobs.subscribe(job)
 
 

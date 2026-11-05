@@ -1494,7 +1494,7 @@ Name features the input holds, by their ids or by a where condition.
 
 Map Editor: the run skips these edits, since the map cannot draw the areas they give:
 {lines}{more}
-Give each area an outline that encloses some area and does not cross or touch itself, holes that lie inside their outline apart from each other, and parts that do not overlap.
+Give each area an outline that encloses some area and does not cross or touch itself, holes inside their outline that do not overlap, touching it or each other only at single points that keep the area in one piece, and parts that do not overlap.
 
 ## map-edits.and-more
 
