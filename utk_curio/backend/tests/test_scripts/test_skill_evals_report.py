@@ -1,9 +1,9 @@
-"""The skill-evals node's report, and what fails the node.
+"""The Skill evaluations workflow's report, and what fails a run of it.
 
 ``scripts/skill_evals_report.py`` reads each model's ``agent_eval.py skills``
 folder and writes ``curio-skill-evals-report.html``, the job summary and each
 model's numbers for the next runs to compare with; its :func:`gate` decides
-whether the node fails. These feed it run folders made up here, shaped as the
+whether the run fails. These feed it run folders made up here, shaped as the
 runner writes them, and check the real floors and prices files' shape.
 """
 from __future__ import annotations
@@ -174,10 +174,10 @@ def test_the_page_the_summary_and_the_numbers_later_runs_compare_with(tmp_path):
     assert not (tmp_path / report.SUMMARIES / f"{GEMMA}.json").exists()
 
 
-def test_the_benchmark_s_leaderboard_and_main_s_last_weekly_run(tmp_path):
+def test_the_benchmark_s_leaderboard_and_main_s_last_run(tmp_path):
     """The page and the summary hold the benchmark of each model's run: its
     leaderboard, each skill's success per model, and the run against main's
-    last weekly run of the model, case by case, or why they do not compare."""
+    last run of the model, case by case, or why they do not compare."""
     from utk_curio.backend.app.agents.evaluation import benchmark
 
     floors, prices, previous = _config(tmp_path)
@@ -196,17 +196,17 @@ def test_the_benchmark_s_leaderboard_and_main_s_last_weekly_run(tmp_path):
     summary = (tmp_path / report.SUMMARY).read_text(encoding="utf-8")
     assert f"### Benchmark, version {scored['version']}" in summary
     assert f"| {HAIKU} | 75% [50, 100] |" in summary
-    assert "Against main's last weekly run" in summary and "every case both measured: better, +75" in summary
+    assert "Against main's last run" in summary and "every case both measured: better, +75" in summary
     page = (tmp_path / report.PAGE).read_text(encoding="utf-8")
     assert "Each skill's success per model" in page and "Fails on (under 50%)" in page
     numbers = json.loads((tmp_path / report.SUMMARIES / f"{HAIKU}.json").read_text(encoding="utf-8"))
     assert numbers["benchmark"]["cases"] == scored["cases"]
 
-    # A weekly run of another set is not compared, and the page says why.
+    # A run of main on another set is not compared, and the page says why.
     _write(previous / f"{report.slug(HAIKU)}.json", {"skills": {}, "benchmark": {**lower, "version": "another"}})
     report.build(tmp_path, [HAIKU], scope={}, probes={HAIKU: {"ok": True, "seconds": 1.0}}, previous=previous,
                  floors=floors, prices=prices)
-    assert ("No comparison with main's last weekly run: the two runs measured different sets"
+    assert ("No comparison with main's last run: the two runs measured different sets"
             in (tmp_path / report.SUMMARY).read_text(encoding="utf-8"))
 
 
