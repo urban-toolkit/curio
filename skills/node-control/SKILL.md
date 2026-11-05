@@ -4,8 +4,8 @@ description: >-
   Use this skill when writing or changing what a node runs. It says whether a node is controlled
   through code, through grammar or not at all, how Python code returns data to pass it on, how
   code reads each input through an input chip, a column chip or a layer chip, how a tuple hands on
-  several values, and how a grammar node such as Vega-Lite receives the table of the node before
-  it, with no data field in its spec.
+  several values, what a grammar node hands on, and how a Vega-Lite spec reads its inputs: the
+  first with no data field, another by naming its dataset.
 license: MIT
 compatibility: Written for Curio's agents, their tools and node code.
 metadata:
@@ -59,7 +59,7 @@ A {{template.label:curio.builtin/vis-vega}} node draws the DataFrame or GeoDataF
     return df
 ```
 
-A Vega-Lite spec with no data field draws the node's first input, input_0, which Curio fills in: with one input, write no data field. With several inputs, each is a dataset named after its circle, input_0, input_1, ..., and the spec or a layer draws another one by naming it, "data": {"name": "input_1"}; the vega-lite-starter skill says more. For example we can connect the previous dataframe into this Vega-Lite grammar:
+A Vega-Lite spec with no data field draws the node's first input, input_0, which Curio fills in, so a spec that draws only it writes none. The spec or a layer draws another input by naming its dataset, "data": {"name": "{{inputs.chip:1}}"}, or every input's rows stacked, "data": {"name": "{{inputs.stacked}}"}; the vega-lite-starter skill says more. For example we can connect the previous dataframe into this Vega-Lite grammar:
 
 ```json
 {
