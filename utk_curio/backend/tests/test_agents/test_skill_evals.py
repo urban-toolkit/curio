@@ -252,6 +252,52 @@ def test_a_file_that_breaks_the_format_is_refused_naming_each_problem(tmp_path):
         assert problem in message, (problem, message)
 
 
+def test_a_case_names_the_model_packages_its_account_holds_and_a_malformed_list_is_refused(tmp_path):
+    """``models``, at the top level or on a test case, names the model packages
+    Curio ships that a run's evaluation account holds; a case's own replaces
+    the top level's, and a run's task carries them to its worker. Anything but
+    a list of shipped model packages, each once, is refused by name."""
+    skill_evals = _skill_evals()
+    ddrnet = "model.curio.ddrnet23-slim@1"
+    folder = tmp_path / "street-trees"
+    evals = _evals()
+    evals["models"] = [ddrnet]
+    evals["evals"].append({**evals["evals"][0], "id": 2, "models": []})
+    _write_skill(folder, evals)
+    read = skill_evals.read(folder)
+    assert read.context.models == (ddrnet,)
+    assert [case.context.models for case in read.cases] == [(ddrnet,), ()]
+    tasks = skill_evals.plan([read], runs=1, kinds=(skill_evals.TASK,))
+    assert [task.context.models for task in tasks] == [(ddrnet,), (ddrnet,), (), ()]
+    assert all(skill_evals.Task.from_dict(json.loads(json.dumps(task.as_dict()))) == task for task in tasks)
+    # A file that names none holds none.
+    assert skill_evals.read(_named(tmp_path / "street-oaks")).context.models == ()
+
+    broken = _evals()
+    broken["models"] = ddrnet
+    broken["evals"].append({**broken["evals"][0], "id": 2, "models": [
+        "ddrnet23-slim", 7, "curio.vega-lite@1", "model.curio.ghost@1", ddrnet, ddrnet]})
+    _write_skill(tmp_path / "street-elms", {**broken, "skill_name": "street-elms"})
+    try:
+        skill_evals.read(tmp_path / "street-elms")
+    except skill_evals.EvalsError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("the file was read")
+    for problem in ("the top level: models must be a list of the model packages its account holds",
+                    "evals[2]: models[1] must name a model package as <id>@<major>, not 'ddrnet23-slim'",
+                    "evals[2]: models[2] must name a model package as <id>@<major>, not 7",
+                    "evals[2]: models[3] 'curio.vega-lite@1' is no model package Curio ships",
+                    "evals[2]: models[4] 'model.curio.ghost@1' is no model package Curio ships",
+                    f"evals[2]: models names {ddrnet!r} twice"):
+        assert problem in message, (problem, message)
+
+
+def _named(folder: Path) -> Path:
+    _write_skill(folder, _evals(folder.name))
+    return folder
+
+
 # --- Counting -------------------------------------------------------------------------
 
 
@@ -330,6 +376,38 @@ def test_each_query_and_test_case_runs_three_times_in_each_of_its_conditions(tmp
     ]
     assert {task.condition for task in tasks if task.kind == "trigger"} == {"with_skill"}
     assert all(skill_evals.Task.from_dict(task.as_dict()) == task for task in tasks)
+
+
+def test_a_grade_run_grades_each_prepared_answer_of_a_case_and_runs_no_agent(tmp_path):
+    """A grade run takes a prepared answer of the grader truth to its case's
+    grader: one run per answer and run, keyed under ``truth/``, holding the
+    answer whole. An answer of a case the skill does not have is left out,
+    and a measure of grade runs reads in the format."""
+    skill_evals = _skill_evals()
+    folder = tmp_path / "street-trees"
+    _write_skill(folder, _evals())
+    golden = {"case": 1, "name": "golden", "kind": "golden", "fails": [], "reply": "Twelve oaks, from the census.",
+              "changes": {"changed": {}, "cards": [], "awaiting_review": []}, "calls": []}
+    mutant = {**golden, "name": "no-source", "kind": "mutant", "fails": [2], "reply": "Twelve oaks."}
+    stray = {**golden, "case": 9, "name": "golden"}
+    tasks = skill_evals.plan([skill_evals.read(folder)], runs=2, kinds=(skill_evals.GRADE,),
+                             answers={"street-trees": [golden, mutant, stray]})
+    assert [task.key for task in tasks] == [
+        "truth/eval-1/golden/run-1", "truth/eval-1/golden/run-2",
+        "truth/eval-1/no-source/run-1", "truth/eval-1/no-source/run-2"]
+    assert {task.kind for task in tasks} == {skill_evals.GRADE}
+    assert tasks[2].answer == mutant and tasks[2].assertions == (
+        "The answer counts oaks.", "The answer names its source.")
+    assert all(skill_evals.Task.from_dict(task.as_dict()) == task for task in tasks)
+    # No answers, no grade runs; and a plan without the kind makes none.
+    assert skill_evals.plan([skill_evals.read(folder)], kinds=(skill_evals.GRADE,)) == []
+    assert all(task.kind != skill_evals.GRADE for task in skill_evals.plan(
+        [skill_evals.read(folder)], answers={"street-trees": [golden]}))
+    measure = skill_evals.Measure.from_dict({"kinds": ["grade"], "runs": 1})
+    assert measure.kinds == ("grade",) and not measure.whole
+    assert [task.key for task in skill_evals.plan_measured(
+        [skill_evals.read(folder)], {"street-trees": measure}, {"street-trees": [golden]})] == [
+        "truth/eval-1/golden/run-1"]
 
 
 def test_a_scope_measures_each_skill_as_its_measure_says(tmp_path):

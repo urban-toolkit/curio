@@ -1,0 +1,413 @@
+{
+  "skill_name": "vega-lite-starter",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer makes a content change of node scores-chart (node.content.write) holding a Vega-Lite spec.",
+        "The spec draws \"mark\": \"bar\" with side on x as nominal.",
+        "The spec puts accessibility on y as quantitative with an explicit \"aggregate\": \"mean\".",
+        "The spec has no \"data\" field."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer makes a content change of node counts-chart (node.content.write) holding a Vega-Lite spec.",
+        "The spec draws \"mark\": \"line\" with hour on x as temporal.",
+        "The spec puts pedestrians, the first quantitative column, on y as quantitative, and does not fold cyclists in beside it.",
+        "The spec has no \"data\" field."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer makes a content change of node roofs-chart (node.content.write) holding a Vega-Lite spec.",
+        "roof_id is on no axis or channel of the spec: the chart draws no bar per roof.",
+        "The spec draws \"mark\": \"bar\" with VEGETATED_SQFT binned on x (\"bin\": true or a bin object).",
+        "The spec puts \"aggregate\": \"count\" on y."
+      ]
+    }
+  ],
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/frontend/urban-workflows/src/utils/vegaDefaultSpec.ts (defaultSpecText, rule nominal+quantitative, over the columns skills/vega-lite-starter/evals/files/scores-counts-roofs.json's neighborhood-scores returns; utk_curio/frontend/urban-workflows/src/tests/utils/vegaDefaultSpec.test.ts: 'nominal + quantitative gives an explicitly aggregated bar')",
+      "fails": [],
+      "reply": "I wrote the Scores chart's spec, the starter Curio writes for a nominal and a quantitative column: a bar with side on x as nominal and accessibility, the first quantitative column, on y as quantitative with \"aggregate\": \"mean\" stated, so the chart draws one bar per side and not one per row. The spec has no data field: the node draws the table Neighborhood scores returns.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "scores-chart",
+                "type": "curio.builtin/vis-vega",
+                "title": "Scores chart",
+                "changes": {
+                  "content": {
+                    "before": "",
+                    "after": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"side\",\n      \"type\": \"nominal\"\n    },\n    \"y\": {\n      \"field\": \"accessibility\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"mean\"\n    }\n  }\n}"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Vega-Lite node · Scores chart",
+            "lines": [
+              "Vega-Lite node · Scores chart"
+            ],
+            "nodeId": "scores-chart",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "scores-chart",
+            "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"side\",\n      \"type\": \"nominal\"\n    },\n    \"y\": {\n      \"field\": \"accessibility\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"mean\"\n    }\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reply": "Here is the Scores chart's spec: a bar of side by the mean of accessibility. Paste it into the node's editor:\n\n```json\n{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"side\",\n      \"type\": \"nominal\"\n    },\n    \"y\": {\n      \"field\": \"accessibility\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"mean\"\n    }\n  }\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "refused-field",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_document_validation.py::TestVegaFieldReferences::test_an_unknown_field_is_invalid_and_the_columns_are_named: a field no input column has is refused by the document check: accessibility_score, which Neighborhood scores does not return",
+      "fails": [
+        3
+      ],
+      "reply": "I wrote the Scores chart's spec, the starter Curio writes for a nominal and a quantitative column: a bar with side on x as nominal and accessibility, the first quantitative column, on y as quantitative with \"aggregate\": \"mean\" stated, so the chart draws one bar per side and not one per row. The spec has no data field: the node draws the table Neighborhood scores returns.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "scores-chart",
+                "type": "curio.builtin/vis-vega",
+                "title": "Scores chart",
+                "changes": {
+                  "content": {
+                    "before": "",
+                    "after": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"side\",\n      \"type\": \"nominal\"\n    },\n    \"y\": {\n      \"field\": \"accessibility_score\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"mean\"\n    }\n  }\n}"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Vega-Lite node · Scores chart",
+            "lines": [
+              "Vega-Lite node · Scores chart"
+            ],
+            "nodeId": "scores-chart",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "scores-chart",
+            "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"side\",\n      \"type\": \"nominal\"\n    },\n    \"y\": {\n      \"field\": \"accessibility_score\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"mean\"\n    }\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/frontend/urban-workflows/src/utils/vegaDefaultSpec.ts (defaultSpecText, rule temporal+quantitative, over the columns skills/vega-lite-starter/evals/files/scores-counts-roofs.json's hourly-counts returns; utk_curio/frontend/urban-workflows/src/tests/utils/vegaDefaultSpec.test.ts: 'temporal + quantitative gives a line')",
+      "fails": [],
+      "reply": "I wrote the Counts chart's spec, the starter Curio writes for a temporal and a quantitative column: a line with hour on x as temporal and pedestrians, the first quantitative column, on y as quantitative. The spec has no data field: the node draws the table Hourly counts returns.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "counts-chart",
+                "type": "curio.builtin/vis-vega",
+                "title": "Counts chart",
+                "changes": {
+                  "content": {
+                    "before": "",
+                    "after": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"line\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"hour\",\n      \"type\": \"temporal\"\n    },\n    \"y\": {\n      \"field\": \"pedestrians\",\n      \"type\": \"quantitative\"\n    }\n  }\n}"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Vega-Lite node · Counts chart",
+            "lines": [
+              "Vega-Lite node · Counts chart"
+            ],
+            "nodeId": "counts-chart",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "counts-chart",
+            "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"line\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"hour\",\n      \"type\": \"temporal\"\n    },\n    \"y\": {\n      \"field\": \"pedestrians\",\n      \"type\": \"quantitative\"\n    }\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reply": "Here is the Counts chart's spec: a line of pedestrians by hour. Paste it into the node's editor:\n\n```json\n{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"line\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"hour\",\n      \"type\": \"temporal\"\n    },\n    \"y\": {\n      \"field\": \"pedestrians\",\n      \"type\": \"quantitative\"\n    }\n  }\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "refused-field",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_document_validation.py::TestVegaFieldReferences::test_an_unknown_field_is_invalid_and_the_columns_are_named: a field no input column has is refused by the document check: pedestrian, which Hourly counts does not return",
+      "fails": [
+        3
+      ],
+      "reply": "I wrote the Counts chart's spec, the starter Curio writes for a temporal and a quantitative column: a line with hour on x as temporal and pedestrians, the first quantitative column, on y as quantitative. The spec has no data field: the node draws the table Hourly counts returns.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "counts-chart",
+                "type": "curio.builtin/vis-vega",
+                "title": "Counts chart",
+                "changes": {
+                  "content": {
+                    "before": "",
+                    "after": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"line\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"hour\",\n      \"type\": \"temporal\"\n    },\n    \"y\": {\n      \"field\": \"pedestrian\",\n      \"type\": \"quantitative\"\n    }\n  }\n}"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Vega-Lite node · Counts chart",
+            "lines": [
+              "Vega-Lite node · Counts chart"
+            ],
+            "nodeId": "counts-chart",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "counts-chart",
+            "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"line\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"hour\",\n      \"type\": \"temporal\"\n    },\n    \"y\": {\n      \"field\": \"pedestrian\",\n      \"type\": \"quantitative\"\n    }\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/frontend/urban-workflows/src/utils/vegaDefaultSpec.ts (defaultSpecText, rule one-quantitative, over the columns skills/vega-lite-starter/evals/files/scores-counts-roofs.json's roof-sizes returns; utk_curio/frontend/urban-workflows/src/tests/utils/vegaDefaultSpec.test.ts: 'a nominal column with one distinct value per row is an identifier' and 'one quantitative column gives a histogram')",
+      "fails": [],
+      "reply": "I wrote the Roofs chart's spec. roof_id holds a different value on every row, so it is an identifier and takes no axis: charting it would draw one bar per roof. That leaves VEGETATED_SQFT, the one quantitative column, so the spec is the starter histogram: a bar mark with VEGETATED_SQFT binned on x and \"aggregate\": \"count\" on y.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "roofs-chart",
+                "type": "curio.builtin/vis-vega",
+                "title": "Roofs chart",
+                "changes": {
+                  "content": {
+                    "before": "",
+                    "after": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"VEGETATED_SQFT\",\n      \"type\": \"quantitative\",\n      \"bin\": true\n    },\n    \"y\": {\n      \"aggregate\": \"count\",\n      \"type\": \"quantitative\"\n    }\n  }\n}"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Vega-Lite node · Roofs chart",
+            "lines": [
+              "Vega-Lite node · Roofs chart"
+            ],
+            "nodeId": "roofs-chart",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "roofs-chart",
+            "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"VEGETATED_SQFT\",\n      \"type\": \"quantitative\",\n      \"bin\": true\n    },\n    \"y\": {\n      \"aggregate\": \"count\",\n      \"type\": \"quantitative\"\n    }\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reply": "Here is the Roofs chart's spec: a histogram of VEGETATED_SQFT. Paste it into the node's editor:\n\n```json\n{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"VEGETATED_SQFT\",\n      \"type\": \"quantitative\",\n      \"bin\": true\n    },\n    \"y\": {\n      \"aggregate\": \"count\",\n      \"type\": \"quantitative\"\n    }\n  }\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "refused-field",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_document_validation.py::TestVegaFieldReferences::test_an_unknown_field_is_invalid_and_the_columns_are_named: a field no input column has is refused by the document check: VEGETATED_SQ_FT, which Roof sizes does not return",
+      "fails": [
+        3
+      ],
+      "reply": "I wrote the Roofs chart's spec. roof_id holds a different value on every row, so it is an identifier and takes no axis: charting it would draw one bar per roof. That leaves VEGETATED_SQFT, the one quantitative column, so the spec is the starter histogram: a bar mark with VEGETATED_SQFT binned on x and \"aggregate\": \"count\" on y.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "roofs-chart",
+                "type": "curio.builtin/vis-vega",
+                "title": "Roofs chart",
+                "changes": {
+                  "content": {
+                    "before": "",
+                    "after": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"VEGETATED_SQ_FT\",\n      \"type\": \"quantitative\",\n      \"bin\": true\n    },\n    \"y\": {\n      \"aggregate\": \"count\",\n      \"type\": \"quantitative\"\n    }\n  }\n}"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Vega-Lite node · Roofs chart",
+            "lines": [
+              "Vega-Lite node · Roofs chart"
+            ],
+            "nodeId": "roofs-chart",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "roofs-chart",
+            "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"VEGETATED_SQ_FT\",\n      \"type\": \"quantitative\",\n      \"bin\": true\n    },\n    \"y\": {\n      \"aggregate\": \"count\",\n      \"type\": \"quantitative\"\n    }\n  }\n}"
+          }
+        }
+      ]
+    }
+  ],
+  "gaps": []
+}

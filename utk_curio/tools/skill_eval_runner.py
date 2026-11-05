@@ -79,8 +79,9 @@ def add_parser(sub) -> None:
                         help="run one skill only (the first, or SKILL) and project the whole run's time")
     parser.add_argument("--runs", type=int, default=skill_evals.RUNS, help="runs of each query and test case")
     parser.add_argument("--jobs", type=int, default=4, help="workers running at once")
-    parser.add_argument("--only", choices=(skill_evals.TRIGGER, skill_evals.TASK), default=None,
-                        help="run only the trigger queries, or only the test cases")
+    parser.add_argument("--only", choices=skill_evals.KINDS, default=None,
+                        help="run only the trigger queries, only the test cases, or only the grade runs, which "
+                             "grade the grader truth's prepared answers with the model measured")
     parser.add_argument("--out", type=Path, default=None, help="where the run's folder goes (default: eval/ "
                                                                     "in Curio's state folder)")
     parser.add_argument("--resume", type=Path, default=None,
@@ -123,6 +124,16 @@ def _write(path: Path, data) -> None:
     temporary = path.with_name(f".{path.name}.tmp")
     temporary.write_text(text, encoding="utf-8")
     os.replace(temporary, path)
+
+
+def _answers() -> dict[str, list[dict]]:
+    """Each skill's prepared answers in the grader truth, as a grade run's task holds them."""
+    from utk_curio.backend.app.agents.evaluation import grader_truth
+
+    return {name: [{"case": answer.case, "name": answer.name, "kind": answer.kind, "fails": list(answer.fails),
+                    "reply": answer.reply, "changes": answer.changes, "calls": answer.calls}
+                   for answer in truth.answers]
+            for name, truth in grader_truth.shipped().items()}
 
 
 def _selected(args, evals) -> list:
@@ -336,10 +347,19 @@ def run(args) -> int:
         unmeasurable = sorted(set(measured) - {skill.name for skill in chosen})
         if unmeasurable:
             _say(f"no evals/evals.json, so not measured: {', '.join(unmeasurable)}")
-        planned = skill_evals.plan_measured(chosen, measured)
     else:
         chosen = _selected(args, evals)
-        planned = skill_evals.plan(chosen, runs=max(1, args.runs), kinds=kinds)
+    answers = None
+    if skill_evals.GRADE in {*kinds, *(kind for measure in measured.values() for kind in measure.kinds)}:
+        try:
+            answers = _answers()
+        except ValueError as exc:
+            print(f"refused: the grader truth cannot be read: {exc}", file=sys.stderr)
+            return 2
+    if measured:
+        planned = skill_evals.plan_measured(chosen, measured, answers)
+    else:
+        planned = skill_evals.plan(chosen, runs=max(1, args.runs), kinds=kinds, answers=answers)
     if args.resume:
         folder = args.resume.resolve()
         if not (folder / RECORD).is_file():

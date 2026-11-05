@@ -60,6 +60,9 @@ SEED = 20261104
 RECORD = "run.json"
 #: The verdicts of a comparison.
 BETTER, WORSE, SAME = "better", "worse", "not shown different"
+#: The least share of a grader's verdicts on unchecked assertions that agree
+#: with the grader truth, for the benchmark to grade with it.
+GRADER_FLOOR = 0.9
 
 
 def version(evals: Iterable[skill_evals.SkillEvals]) -> str:
@@ -202,6 +205,9 @@ def score(folder: Path, evals: Mapping[str, skill_evals.SkillEvals] | None = Non
         record = _json(path)
         if not isinstance(record, Mapping) or not record.get("kind") or not record.get("skill"):
             continue
+        if record.get("kind") == skill_evals.GRADE:
+            # Not a run of the model as an agent: :func:`agreement` reads it.
+            continue
         skill = str(record["skill"])
         mine = per_skill_tally.setdefault(skill, {key: 0 for key in tally})
         run_folder = path.parent
@@ -257,7 +263,63 @@ def score(folder: Path, evals: Mapping[str, skill_evals.SkillEvals] | None = Non
                                   [entry for entry in queries.values() if entry["skill"] == name],
                                   per_skill_tally.get(name, {}), price, seed=seed) for name in skills},
         "cases": cases, "queries": queries, "disagreements": disagreements,
+        "as_grader": agreement(folder, evals),
     }
+
+
+def agreement(folder: Path, evals: Mapping[str, skill_evals.SkillEvals] | None = None) -> dict | None:
+    """How the model of one run folder grades, from its grade runs: each of
+    its verdicts on a prepared answer against that answer's truth (a golden
+    answer meets every assertion, a mutant fails exactly its ``fails``).
+    Counted apart for the assertions a case's checks decide, where no grader's
+    verdict reaches a score, and for the others, which :data:`GRADER_FLOOR`
+    holds the grader to. None when the folder holds no grade run."""
+    folder = Path(folder)
+    if evals is None:
+        evals = {found.name: found for found in skill_evals.shipped_evals()}
+    groups = {name: {"verdicts": 0, "agree": 0, "fails": 0, "false_passes": 0, "passes": 0, "false_fails": 0}
+              for name in ("unchecked", "checked")}
+    answers = errors = input_tokens = output_tokens = 0
+    for path in sorted(folder.glob(f"*/**/{RECORD}")):
+        record = _json(path)
+        if not isinstance(record, Mapping) or record.get("kind") != skill_evals.GRADE:
+            continue
+        answers += 1
+        grading = record.get("grading") if isinstance(record.get("grading"), Mapping) else {}
+        grader = grading.get("grader") if isinstance(grading.get("grader"), Mapping) else {}
+        input_tokens += int(grader.get("inputTokens") or 0)
+        output_tokens += int(grader.get("outputTokens") or 0)
+        results = grading.get("assertion_results")
+        if record.get("error") or not isinstance(results, list) or not results:
+            errors += 1
+            continue
+        skill = evals.get(str(record.get("skill")))
+        case = next((found for found in (skill.cases if skill else ()) if found.id == record.get("case")), None)
+        checked = {check.assertion for check in case.checks} if case else set()
+        fails = {int(place) for place in record.get("fails") or []}
+        for place, item in enumerate(results, start=1):
+            said = isinstance(item, Mapping) and item.get("passed") is True
+            holds = place not in fails
+            group = groups["checked" if place in checked else "unchecked"]
+            group["verdicts"] += 1
+            group["agree"] += int(said == holds)
+            if holds:
+                group["passes"] += 1
+                group["false_fails"] += int(not said)
+            else:
+                group["fails"] += 1
+                group["false_passes"] += int(said)
+    if not answers:
+        return None
+    found: dict = {"answers": answers, "errors": errors, "input_tokens": input_tokens,
+                   "output_tokens": output_tokens, "floor": GRADER_FLOOR}
+    for name, group in groups.items():
+        found[name] = {"agreement": _share(group["agree"], group["verdicts"]),
+                       "false_passes": _share(group["false_passes"], group["fails"]),
+                       "false_fails": _share(group["false_fails"], group["passes"])}
+    value = found["unchecked"]["agreement"]["value"]
+    found["usable"] = value is not None and value >= GRADER_FLOOR
+    return found
 
 
 def _metrics(cases: Iterable[dict], queries: Iterable[dict], tally: Mapping, price: Mapping | None,

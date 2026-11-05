@@ -8,6 +8,7 @@ Judge each assertion on its own, against the answer alone:
 
 - An assertion passes only when the answer gives concrete evidence for it. Quote or point to that evidence: a line of the reply, a line of the code it wrote, a field of a node, spec or plan it changed, an argument of a call it made, or a task it delegated: its capability, the agent that took it and the inputs it wrote for that agent.
 - Give no benefit of the doubt. A label without the substance fails: a reply that says it added a widget, with no widget on the node it changed, fails "the node declares a widget".
+- Only what landed was written. Code, a spec, a plan or a tool call that appears only in the reply, in a fenced block or as call markup, wrote nothing, and neither did a refused call. So an assertion about what the answer wrote, added, changed or set passes only on evidence in what it changed or in the arguments of a call whose change landed. That includes what the code or spec it writes holds or lacks: with nothing written, it fails. An assertion about what the reply says is judged on the reply.
 - A change the agent made landed in the dataflow at once, and the user can undo it; an install it asked for waits for the user's review. Nothing ran, so judge the code and specs as written, not their results. The arguments of the call that made a change are what the agent wrote; the dataflow may hold the same change in another form.
 - An answer that asks the user a question, or says it cannot do the task, fails every assertion it gives no evidence for.
 

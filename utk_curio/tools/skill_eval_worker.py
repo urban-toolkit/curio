@@ -10,11 +10,17 @@ database and a state folder of its own (``CURIO_STATE_DIR``), and no node
 runs, so no sandbox either.
 
 - **The model:** the endpoint of ``CURIO_EVAL_BASE_URL``, ``CURIO_EVAL_API_KEY``
-  and ``CURIO_EVAL_MODEL`` becomes the account's Deployment default, set in
-  this process's settings (``config.DEFAULT_LLM_*``), as an operator sets it.
-  So every call goes through the provider code API Settings uses, and the key
-  is written nowhere: not in an LLM configuration, not in the state folder.
-- **A run:** a fresh dataflow (the test case's, or an empty one) under a
+  and ``CURIO_EVAL_MODEL`` becomes the Deployment default every account
+  answers with, set in this process's settings (``config.DEFAULT_LLM_*``), as
+  an operator sets it. So every call goes through the provider code API
+  Settings uses, and the key is written nowhere: not in an LLM configuration,
+  not in the state folder.
+- **A run:** a new evaluation account, made for it and for each try of it,
+  so it holds nothing an earlier run's case added, and of the accounts before
+  it keeps only what the endpoint was found to do (:meth:`Worker._sign_in`);
+  the model packages its test case names (``models``) added to the account
+  first, as the Model Catalog's Add adds one; a fresh dataflow (the test
+  case's, or an empty one) under a
   name that says nothing of the skill, its agent installed and attached, the
   message sent to the chat route a browser sends it to, with the context a
   browser's chat composes beside it (``evaluation/run_context.py``: the node
@@ -40,7 +46,8 @@ runs, so no sandbox either.
   finish; a delegated run handed the skill before the chat loaded it then
   makes the run an error.
 - **Retried:** a run whose model call the server failed (a 5xx, a lost
-  connection) runs again on a fresh dataflow, after :data:`RETRY_WAITS_S`;
+  connection) runs again in a new account, on a fresh dataflow, after
+  :data:`RETRY_WAITS_S`;
   the grader waits the same. Its record counts the attempts. A run or a grade
   whose model's server stopped sending is not tried again.
 - **Not run:** the title call a conversation's first turn makes, which
@@ -138,6 +145,10 @@ RETRY_WAITS_S = (15, 45)
 PREVIEW_MAX_CHARS = 16000
 #: The name every run's dataflow has, which says nothing of what it tests.
 PROJECT_NAME = "My dataflow"
+#: Each run's evaluation account: its display name, the same for every one,
+#: and the handle its username and email are made from.
+ACCOUNT_NAME = "Skill evaluation"
+ACCOUNT_HANDLE = "evaluation"
 #: The settings a Deployment default is read from (``provider_config``).
 OPENAI_COMPATIBLE = "openai_compatible"
 #: Loggers that print each request's URL at their INFO level.
@@ -525,7 +536,10 @@ def _grader_spent(usage: dict, turn: "providers.ChatTurn") -> dict:
 
 
 class Worker:
-    """Curio's backend, an evaluation account and the seams of its runs."""
+    """Curio's backend, its runs' evaluation accounts and the seams of its runs."""
+
+    #: How many evaluation accounts this worker has signed in to.
+    accounts = 0
 
     @property
     def grader(self) -> str:
@@ -535,8 +549,6 @@ class Worker:
 
     def __init__(self, endpoint: skill_evals.Endpoint, results: Path, *, stop_early: bool):
         from utk_curio.backend.app.collaboration import dataflow_docs
-        from utk_curio.backend.app.projects.services import _user_dir_key
-        from utk_curio.backend.app.users.models import User, UserSession
 
         self.endpoint = endpoint
         self.secrets = endpoint.secrets()
@@ -555,14 +567,7 @@ class Worker:
         self.context = self.app.app_context()
         self.context.push()
         db.create_all()
-        user = User(username="evaluation", name="Skill evaluation", email="evaluation@localhost")
-        db.session.add(user)
-        db.session.flush()
-        token = uuid.uuid4().hex
-        db.session.add(UserSession(user_id=user.id, token=token))
-        db.session.commit()
-        self.user_key = _user_dir_key(user)
-        self.headers = {"Authorization": f"Bearer {token}"}
+        self._sign_in()
         self.client = self.app.test_client()
         # The endpoint, as an operator's Deployment default: read at each call.
         backend_config.DEFAULT_LLM_API_TYPE = OPENAI_COMPATIBLE
@@ -574,10 +579,76 @@ class Worker:
 
     # --- one run ----------------------------------------------------------------------
 
+    def _sign_in(self) -> None:
+        """Sign in to a new evaluation account, the next run's own: an account
+        made as the worker's first is, so nothing an earlier run's case added
+        to its account, a model or a package of its dataflow, is in this one's
+        catalogs or stores, and no result hangs on which worker a run lands on
+        or after which runs. Each account has the same display name.
+
+        Of the account before it, it keeps what the endpoint was found to do
+        (:meth:`_carry_endpoint`), so a run asks the endpoint nothing a run
+        before it found. Nothing else a run reads of its account needs
+        setting up: the endpoint is the Deployment default, which every
+        account answers with; each run installs and attaches its agent on its
+        own dataflow; the seams are the process's; and no account holds agent
+        skills of its own (``agent-skills.json``)."""
+        from utk_curio.backend.app.projects.services import _user_dir_key
+        from utk_curio.backend.app.users.models import User, UserSession
+
+        before = getattr(self, "user_key", None)
+        self.accounts += 1
+        handle = ACCOUNT_HANDLE if self.accounts == 1 else f"{ACCOUNT_HANDLE}-{self.accounts}"
+        user = User(username=handle, name=ACCOUNT_NAME, email=f"{handle}@localhost")
+        db.session.add(user)
+        db.session.flush()
+        token = uuid.uuid4().hex
+        db.session.add(UserSession(user_id=user.id, token=token))
+        db.session.commit()
+        self.user_key = _user_dir_key(user)
+        self.headers = {"Authorization": f"Bearer {token}"}
+        if before is not None:
+            self._carry_endpoint(before)
+
+    def _carry_endpoint(self, before: str) -> None:
+        """Give the account just signed in to what account *before* found the
+        endpoint does beyond text (``chat_capabilities``): whether its model
+        calls tools natively, which Curio asks an endpoint its table does not
+        know with a charged request and each account remembers, and a refusal
+        of a run's native tools. So no run asks the endpoint again what a run
+        before it found, and each speaks the protocol they found."""
+        from utk_curio.backend.app.agents.repositories import model_catalog
+
+        config = provider_config.deployment_config(before)
+        if config is None:
+            return
+        found = model_catalog.remembered_chat_capabilities(before, config.api_type, config.base_url, config.model)
+        if found is not None:
+            model_catalog.remember_chat_capabilities(
+                self.user_key, config.api_type, config.base_url, config.model, found)
+
     def _json(self, method: str, path: str, payload=None) -> tuple[int, dict]:
         resp = self.client.open(path, method=method, json=payload, headers=self.headers)
         body = resp.get_json(silent=True)
         return resp.status_code, body if isinstance(body, dict) else {}
+
+    def _hold_models(self, context: skill_evals.Context) -> None:
+        """Add each model package *context* names to the evaluation account, as
+        the Model Catalog's Add adds one (``POST /api/packages/catalog/install``),
+        unless the account holds it already, so ``models.search`` lists it and
+        the grounding gate lets node code load it."""
+        if not context.models:
+            return
+        status, body = self._json("GET", "/api/packages/catalog?kind=model")
+        if status >= 400:
+            raise RuntimeError(f"the Model Catalog could not be read ({status}): {body.get('error')}")
+        held = {row.get("dirName") for row in body.get("packages") or [] if isinstance(row, dict) and row.get("installed")}
+        for name in context.models:
+            if name in held:
+                continue
+            status, body = self._json("POST", "/api/packages/catalog/install", {"dirName": name})
+            if status >= 400:
+                raise RuntimeError(f"the model {name} could not be added ({status}): {body.get('error')}")
 
     def _project(self, context: skill_evals.Context) -> str:
         spec = {"dataflow": {"nodes": [], "edges": [], "packages": []}}
@@ -677,6 +748,7 @@ class Worker:
         for key in ("error", "stoppedEarly", "handedOff"):
             record.pop(key, None)
         try:
+            self._hold_models(task.context)
             project_id = self._project(task.context)
             attachment = self._attach(project_id, task.context)
             attachment_id = attachment["attachmentId"]
@@ -702,8 +774,10 @@ class Worker:
 
     def run(self, task: skill_evals.Task, *, hand: bool = False) -> dict:
         """Run *task* and write its files; returns its record. A run the model's
-        server failed (a 5xx, a lost connection) is run again, on a fresh
-        dataflow, after each wait of :data:`RETRY_WAITS_S`."""
+        server failed (a 5xx, a lost connection) is run again, in a new account
+        on a fresh dataflow, after each wait of :data:`RETRY_WAITS_S`."""
+        if task.kind == skill_evals.GRADE:
+            return self._grade_answer(task)
         folder = self.results / task.path
         record: dict = {key: value for key, value in task.as_dict().items()
                         if key in ("kind", "skill", "key", "condition", "run", "query", "should_trigger", "case")}
@@ -717,6 +791,8 @@ class Worker:
             self.seams.reset(left_out=task.skill if without else None, left_out_text=text if without else None,
                              watch=task.skill if trigger and self.stop_early else None,
                              stop_at_hand_off=trigger and self.stop_early)
+            # Each run, and each try of it, on an account of its own.
+            self._sign_in()
             attempt_started = time.monotonic()
             status, body, project_id, before = self._attempt(task, message, folder, record)
             if not _transient(status, record.get("error")) or len(failed) >= len(RETRY_WAITS_S):
@@ -756,6 +832,31 @@ class Worker:
                 if grading.get("error"):
                     record["error"] = f"the grader failed: {grading['error']}"
                 _write(folder / "grading.json", scrub(grading, values=self.secrets))
+        record = scrub(record, values=self.secrets)
+        _write(folder / "run.json", record)
+        return record
+
+    def _grade_answer(self, task: skill_evals.Task) -> dict:
+        """Grade *task*'s prepared answer, a grade run: no run of the agent,
+        and the grade every task run gets, by the model measured, whatever
+        CURIO_EVAL_GRADER_MODEL names, since that model is the grader measured."""
+        folder = self.results / task.path
+        answer = task.answer or {}
+        record: dict = {key: value for key, value in task.as_dict().items()
+                        if key in ("kind", "skill", "key", "condition", "run", "case")}
+        record.update({"answer": answer.get("name"), "answerKind": answer.get("kind"),
+                       "fails": list(answer.get("fails") or [])})
+        started = time.monotonic()
+        body = {"reply": str(answer.get("reply") or "")}
+        changes = answer.get("changes") if isinstance(answer.get("changes"), dict) else {}
+        calls = list(answer.get("calls") or [])
+        self._outputs(folder, body, changes, calls)
+        grading = self._grade(task, body, changes, calls, own=True)
+        record["grading"] = grading
+        if grading.get("error"):
+            record["error"] = f"the grader failed: {grading['error']}"
+        _write(folder / "grading.json", scrub(grading, values=self.secrets))
+        record["seconds"] = round(time.monotonic() - started, 3)
         record = scrub(record, values=self.secrets)
         _write(folder / "run.json", record)
         return record
@@ -821,9 +922,11 @@ class Worker:
             shown.append(entry)
         return scrub(shown, values=self.secrets)
 
-    def _grade(self, task: skill_evals.Task, body: dict, changes: dict, calls: list | None = None) -> dict:
+    def _grade(self, task: skill_evals.Task, body: dict, changes: dict, calls: list | None = None, *,
+               own: bool = False) -> dict:
         """The grade of *task*'s answer: its reply, *changes*, what it changed,
-        and *calls*, the tools it called (:meth:`_calls`)."""
+        and *calls*, the tools it called (:meth:`_calls`). *own* grades with
+        the model measured, never the benchmark's one grader."""
         values = {
             "prompt": task.message,
             "expected_output": task.expected_output or "",
@@ -837,10 +940,11 @@ class Worker:
         message = agent_text.fill(agent_text.section(GRADER_PAGE, GRADER_TASK_SECTION), values, where)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": message}]
         config = provider_config.resolve_llm(self.user_key)
-        named = os.environ.get(ENV_GRADER, "").strip()
+        named = "" if own else os.environ.get(ENV_GRADER, "").strip()
         if named and named != config.model:
             # One grader for every model a benchmark measures: the same endpoint, its model.
             config = dataclasses.replace(config, model=named)
+        grader = self.endpoint.model if own else self.grader
         problem = "no reply"
         spent: dict = {}
         waits = list(RETRY_WAITS_S)
@@ -851,7 +955,7 @@ class Worker:
             except providers.ServerStoppedSending as exc:
                 # Not asked again: a new try would only wait out the silence again.
                 problem = provider_config.redact_error(exc, config)
-                return {"error": problem, "grader": {"model": self.grader, "attempts": attempt, **spent}}
+                return {"error": problem, "grader": {"model": grader,"attempts": attempt, **spent}}
             except Exception as exc:  # noqa: BLE001 - a grader that fails is an error of the run
                 problem = provider_config.redact_error(exc, config)
                 if attempt < GRADER_ATTEMPTS and waits:
@@ -871,9 +975,9 @@ class Worker:
                           for text, item in zip(task.assertions, results) if isinstance(item, dict)]
                 if len(graded) == len(task.assertions):
                     return {"assertion_results": graded, "summary": skill_evals.grading_summary(graded),
-                            "grader": {"model": self.grader, "attempts": attempt, **spent}}
+                            "grader": {"model": grader,"attempts": attempt, **spent}}
             problem = "its reply was no list of one result per assertion"
-        return {"error": problem, "grader": {"model": self.grader, "attempts": GRADER_ATTEMPTS, **spent}}
+        return {"error": problem, "grader": {"model": grader,"attempts": GRADER_ATTEMPTS, **spent}}
 
 
 def _protocol() -> "object":

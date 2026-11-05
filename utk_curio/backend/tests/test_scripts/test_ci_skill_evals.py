@@ -60,6 +60,21 @@ def test_the_models_and_each_one_s_workers_come_from_the_repository_s_variables(
             node.jobs_for(value, "gemma4")
 
 
+def test_each_model_is_graded_by_the_first_grader_named_that_is_not_itself():
+    assert node.graders_from("") == [] and node.graders_from(" claude-haiku-5-5 ") == ["claude-haiku-5-5"]
+    graders = node.graders_from('["openai/Qwen/Qwen3.8-27B", "claude-haiku-5-5", "openai/Qwen/Qwen3.8-27B"]')
+    assert graders == ["openai/Qwen/Qwen3.8-27B", "claude-haiku-5-5"]
+    assert node.grader_for("gemma4", graders) == "openai/Qwen/Qwen3.8-27B"
+    # The best grader's own answers go to the next one.
+    assert node.grader_for("openai/Qwen/Qwen3.8-27B", graders) == "claude-haiku-5-5"
+    # With no other grader named, a model grades its own answers, as with none named.
+    assert node.grader_for("claude-haiku-5-5", ["claude-haiku-5-5"]) is None
+    assert node.grader_for("gemma4", []) is None
+    for value in ('["gemma4", 3]', "[gemma4", '{"model": "gemma4"}'):
+        with pytest.raises(ValueError, match="a model's name or a JSON list of them"):
+            node.graders_from(value)
+
+
 def _scope(tmp_path: Path, scope: dict) -> Path:
     path = tmp_path / "scope-in.json"
     path.write_text(json.dumps(scope), encoding="utf-8")
@@ -118,6 +133,34 @@ def test_a_model_that_does_not_answer_its_probe_runs_nothing_and_fails_the_node(
     for text in [captured.out, captured.err] + [path.read_text(encoding="utf-8")
                                                 for path in out.rglob("*") if path.is_file()]:
         assert KEY not in text and "models.example.invalid" not in text
+
+
+def test_a_model_whose_grader_does_not_answer_its_probe_runs_nothing(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv(node.ENV_BASE_URL, BASE_URL)
+    monkeypatch.setenv(node.ENV_API_KEY, KEY)
+    monkeypatch.setenv(node.ENV_MODELS, '["gemma4"]')
+    monkeypatch.setenv(node.ENV_GRADER, '["openai/Qwen/Qwen3.8-27B", "claude-haiku-5-5"]')
+    monkeypatch.delenv(node.ENV_JOBS, raising=False)
+    asked = []
+
+    def probe(model, base_url, api_key, scrub):
+        asked.append(model)
+        if model == "openai/Qwen/Qwen3.8-27B":
+            return {"ok": False, "error": "InternalServerError 502", "attempts": 2}
+        return {"ok": True, "seconds": 1.0}
+
+    def no_runner(*args, **kwargs):
+        raise AssertionError("a model whose grader did not answer started a runner")
+
+    monkeypatch.setattr(node, "probe", probe)
+    monkeypatch.setattr(node.subprocess, "Popen", no_runner)
+    code, out = _run(tmp_path, _scope(tmp_path, {"measure": "smoke", "measures": {"nodes": {}}}))
+    assert code == 1
+    # Only the grader of gemma4's answers is probed beside it.
+    assert sorted(asked) == ["gemma4", "openai/Qwen/Qwen3.8-27B"]
+    assert "gemma4 by openai/Qwen/Qwen3.8-27B" in capsys.readouterr().out
+    assert ("its grader, openai/Qwen/Qwen3.8-27B, did not answer its probe"
+            in (out / "summary.md").read_text(encoding="utf-8"))
 
 
 def test_a_runner_s_lines_reach_the_log_scrubbed(capsys):
