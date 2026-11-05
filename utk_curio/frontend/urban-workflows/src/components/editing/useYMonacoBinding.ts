@@ -8,8 +8,9 @@
  *   someone else's typing. It takes the place of Monaco's own undo, which
  *   would replay this tab's stack over code others changed since.
  * - **Code typed before the bind** (the doc's first sync came after the
- *   editor mounted) goes into the doc first: an editor holding something
- *   else than what was last written into it holds the user's typing.
+ *   editor mounted) goes into the doc first, as this tab's change: an editor
+ *   holding something else than what was last written into it holds the
+ *   user's typing.
  * - **A node with no code in the doc** gets what its editor shows (the
  *   starter of a node just dropped), or, while it shows nothing, its first
  *   change, from a tab that edits the dataflow.
@@ -17,9 +18,11 @@
  *   and the editor shows none of its own (its empty spec, or a starter its
  *   node chose in this tab from its input, `hook/useStarterSpec`), nothing is
  *   written and nothing is bound: y-monaco would carry the starter into the
- *   doc as typing. The editor binds at its first edit, which writes what it
- *   holds then, or when code reaches the node's text from elsewhere (another
- *   tab, an agent, Solve), which takes the starter's place.
+ *   doc as typing. The editor binds at its first edit, or when code reaches
+ *   the node's text from elsewhere (another tab, an agent, Solve), which
+ *   takes the starter's place. At the first edit the node's code starts as
+ *   what the editor showed, and the edit is this tab's first change over it,
+ *   so Ctrl+Z puts the starter back.
  * - **Focus** is the tab's `editing` presence: removing a node someone else
  *   is editing asks first.
  * - **An agent's change** to the node's code or spec, landing while the agent
@@ -126,6 +129,9 @@ export function useYMonacoBinding(
         let edits: { dispose(): void } | null = null;
         let watchedText: Y.Text | null = null;
         let codeCame = false;
+        // That first edit came, and the bind writes it over what the editor
+        // showed before it.
+        let edited = false;
         const undo = takeUndo(editor, monaco);
 
         /** Whether an editor showing *shown* shows none of the node's code:
@@ -187,16 +193,21 @@ export function useYMonacoBinding(
         const awaitCode = (text: Y.Text | null) => {
             const model = editor.getModel?.();
             if (!edits && canWrite && model?.onDidChangeContent) {
+                let shown = model.getValue();
                 edits = model.onDidChangeContent(() => {
-                    const shown = model.getValue();
+                    const before = shown;
+                    shown = model.getValue();
                     const node = nodes.get(nodeId);
                     if (disposed || showsNoCode(shown) || !(node instanceof Y.Map)) return;
                     const held = node.get(CONTENT);
                     stopWaiting();
+                    // The node's code starts as what the editor showed; the
+                    // bind writes the edit over it as this tab's change.
                     doc.transact(() => {
-                        if (held instanceof Y.Text) replaceText(held, shown);
-                        else node.set(CONTENT, new Y.Text(shown));
+                        if (held instanceof Y.Text) replaceText(held, before);
+                        else node.set(CONTENT, new Y.Text(before));
                     }, CANVAS_ORIGIN);
+                    edited = true;
                     void bind();
                 });
             }
@@ -239,10 +250,15 @@ export function useYMonacoBinding(
             const ytext = textOf();
             if (disposed || !model || !ytext || current) return;
             const typed = model.getValue();
-            if (canWrite && typed !== ytext.toString() && typed !== baselineRef.current) {
+            // Made before the editor's typing goes in, so Ctrl+Z undoes it.
+            const manager = new Y.UndoManager(ytext, { trackedOrigins: new Set<unknown>([CANVAS_ORIGIN]) });
+            const firstEdit = edited;
+            edited = false;
+            if (canWrite && typed !== ytext.toString() && (firstEdit || typed !== baselineRef.current)) {
                 doc.transact(() => replaceText(ytext, typed), CANVAS_ORIGIN);
             }
             const made = new MonacoBinding(ytext, model, new Set([editor]), awareness);
+            manager.addTrackedOrigin(made);
             // Code an agent wrote while the editor waited for code replaced
             // what it showed: its lines are marked as a change of the agent's.
             const landed = codeCame;
@@ -251,7 +267,6 @@ export function useYMonacoBinding(
             if (writer?.writes === "code" || writer?.writes === "spec") {
                 markChangedLines(editor, changedLinesBetween(typed, ytext.toString()), agentCategoryKey(writer.category));
             }
-            const manager = new Y.UndoManager(ytext, { trackedOrigins: new Set<unknown>([made, CANVAS_ORIGIN]) });
             // Observed after y-monaco, so a change is in the editor when its
             // lines are marked. What this tab wrote is never an agent's.
             let shown = ytext.toString();

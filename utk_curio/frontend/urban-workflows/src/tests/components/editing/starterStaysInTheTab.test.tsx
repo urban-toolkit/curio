@@ -28,6 +28,7 @@ jest.mock("@monaco-editor/react", () => {
     function makeEditor(initial: string) {
         let value = initial;
         const listeners = new Set<any>();
+        const actions: any[] = [];
         const editor: any = {};
         const changed = () => {
             listeners.forEach((listener) => listener({ changes: [] }));
@@ -58,6 +59,10 @@ jest.mock("@monaco-editor/react", () => {
                 return true;
             },
             pushUndoStop: () => undefined,
+            addAction: (action: any) => {
+                actions.push(action);
+                return { dispose: () => undefined };
+            },
             onDidFocusEditorText: () => ({ dispose: () => undefined }),
             onDidBlurEditorText: () => ({ dispose: () => undefined }),
             hasTextFocus: () => false,
@@ -65,6 +70,10 @@ jest.mock("@monaco-editor/react", () => {
             type(next: string) {
                 value = next;
                 changed();
+            },
+            /** A person presses Ctrl+Z in the editor. */
+            undo() {
+                actions.find((action) => action.id === "curio.undoOwnTyping").run();
             },
         });
         return editor;
@@ -77,7 +86,12 @@ jest.mock("@monaco-editor/react", () => {
         }
         ref.current.props = props;
         React.useEffect(() => {
-            props.onMount?.(ref.current, { languages: { json: { jsonDefaults: { setDiagnosticsOptions: () => undefined } } } });
+            props.onMount?.(ref.current, {
+                languages: { json: { jsonDefaults: { setDiagnosticsOptions: () => undefined } } },
+                // The chords of the editor's undo and redo.
+                KeyMod: { CtrlCmd: 2048, Shift: 1024 },
+                KeyCode: { KeyZ: 56, KeyY: 55 },
+            });
         }, []);
         return React.createElement("div", { "data-testid": "mock-monaco" });
     };
@@ -274,6 +288,18 @@ describe("a planned chart, whose doc holds its empty spec", () => {
 
         await waitFor(() => expect(specIn(provider)).toBe(SOLVED));
         expect(editor().getValue()).toBe(SOLVED);
+    });
+
+    test("puts the starter back at Ctrl+Z after the first edit, in the editor and the doc", async () => {
+        const provider = await handedItsStarter();
+
+        act(() => editor().type(EDITED));
+        await waitFor(() => expect(specIn(provider)).toBe(EDITED));
+        await settle();
+        act(() => editor().undo());
+
+        await waitFor(() => expect(editor().getValue()).toBe(STARTER));
+        expect(specIn(provider)).toBe(STARTER);
     });
 });
 
