@@ -1,6 +1,6 @@
-"""The skill-evals node's steps: masking the endpoint's host, reading the models, and failing a run that cannot measure.
+"""The Skill evaluations workflow's steps: masking the endpoint's host, reading the models, and failing a run that cannot measure.
 
-``scripts/ci_skill_evals.py`` runs in the skill-evals job: on the runner it
+``scripts/ci_skill_evals.py`` runs in the Skill evaluations workflow: on the runner it
 has GitHub mask the base URL's host, and in the CI image it probes each model
 of ``CURIO_EVAL_MODELS``, runs those that answer and fails on what the report
 says. No model is called here: the probe is replaced, and a model that does

@@ -1,4 +1,4 @@
-"""The skill-evals node's report: one page, ``curio-skill-evals-report.html``, of a run on every model.
+"""The Skill evaluations workflow's report: one page, ``curio-skill-evals-report.html``, of a run on every model.
 
 ``scripts/ci_skill_evals.py run`` writes one folder per model, the
 ``agent_eval.py skills`` run folder of that model (``results/<model>/skills-*/``),
@@ -8,7 +8,7 @@ and trigger rates, as the runner counted them) and every run's own record and
 transcript, and shows, per model and skill:
 
 - the pass rate with the skill and without it, the difference, and the change
-  since main's last weekly run (``--previous``, its per-model summaries);
+  since main's last run (``--previous``, its per-model summaries);
 - the floor (``skill_eval_floors.json``), which a skill measured whole is held
   to;
 - how often the skill reached the model (loaded, handed or in the preamble);
@@ -21,7 +21,7 @@ transcript, and shows, per model and skill:
 Each failed assertion is listed with the path of its run in the results
 artifact. The same tables, shorter, go to ``summary.md`` for the job summary,
 and each model's numbers to ``summaries/<model>.json``, which the next runs
-compare with. :func:`gate` says what fails the node: a probe that failed, a
+compare with. :func:`gate` says what fails the run: a probe that failed, a
 run left in an error, a runner that failed, a skill under its floor.
 
     python3 scripts/skill_evals_report.py <out folder>
@@ -238,7 +238,7 @@ def read_model(model: str, folder: Path | None, *, floors: dict, previous: dict 
 
 
 def gate(models: list[ModelRun]) -> list[str]:
-    """What fails the node, one line each: a model that did not answer its
+    """What fails the run, one line each: a model that did not answer its
     probe, a runner that failed, runs left in an error after the runner's
     retries, and a skill measured whole whose pass rate with the skill is
     under its floor."""
@@ -484,7 +484,7 @@ def build(out: Path, models: list[str], *, scope: dict, probes: dict | None = No
           ) -> tuple[list[ModelRun], list[str]]:
     """Read every model's folder under ``out/results/``, write the page, the
     summary and the summaries under *out*, and return the models read and
-    what fails the node."""
+    what fails the run."""
     floor_table, price_table = load_config(floors, "floors"), load_config(prices, "prices")
     runs = []
     for model in models:

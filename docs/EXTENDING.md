@@ -782,10 +782,20 @@ CURIO_EVAL_BASE_URL='<base URL>' CURIO_EVAL_API_KEY='<key>' CURIO_EVAL_MODEL='<m
 - `--pilot` runs one skill (the first, or the one it names) and says how long the whole run would take. `--skills a,b` picks skills, `--only trigger` or `--only task` one kind of run, `--jobs` the workers that run at once (4), and `--resume <folder>` goes on with an interrupted run.
 - Under `--out`, a run writes one folder: for each skill, `triggers.json`, `benchmark.json` and a folder per run with its reply, what it changed in its dataflow and the installs it asked for, the tools it called as the grader reads them (`calls.json`: each call's tool and status, and the arguments of each call whose change landed; each task it delegated is a call of `delegate` in its place, with the capability it asked for, the agent that took it, its status and the inputs it wrote for that agent), its transcript, `timing.json` and `grading.json`; then `summary.md`. A run's `run.json` lists each of its model calls (`modelCalls`): its output tokens, the limit it was asked with, whether the model's thinking came apart from its reply, whether the limit cut it, and whether the server refused the room for thinking. The endpoint's key and base URL come from the variables alone: nothing written holds them or its host, and the tool reads every file again at the end and fails if one does.
 - `--scope <file>` runs each skill a scope names as its measure says: its trigger queries, its test cases, how many runs and which conditions.
-- **In CI.** The skill-evals job of the Full stack build ([`skill-evals.yml`](../.github/workflows/skill-evals.yml)) runs them on every model the repository variable `CURIO_EVAL_MODELS` lists (a JSON list), side by side, through the endpoint of the secrets `CURIO_EVAL_BASE_URL` and `CURIO_EVAL_API_KEY`, on one runner labelled `skill-evals`. It measures what a run changes against main ([`ci_skill_eval_scope.py`](../scripts/ci_skill_eval_scope.py)):
-  - a changed skill: its test cases, three runs both ways, and its trigger queries too when the skill is new or its description or its queries changed;
-  - a core skill, or the preamble that places it: every skill's test cases, three runs both ways;
-  - agent text or code: every other skill's first test case, once, with the skill;
-  - anything else: nothing, and the job does not run.
+- **On GitHub.** The Skill evaluations workflow ([`skill-evals.yml`](../.github/workflows/skill-evals.yml)) runs only when someone starts it, from the Actions tab or with `gh workflow run skill-evals.yml --ref <branch> -f scope=<scope>`, on the branch whose skills it measures.
+  - **What it runs on:** every model the repository variable `CURIO_EVAL_MODELS` lists (a JSON list), or its `models` input, side by side. It reaches them through the endpoint of the secrets `CURIO_EVAL_BASE_URL` and `CURIO_EVAL_API_KEY`, on one runner labelled `skill-evals`, with the branch's own code.
+  - **What it measures:** its `scope` input, `auto` by default, which is what the branch changes against main ([`ci_skill_eval_scope.py`](../scripts/ci_skill_eval_scope.py)):
+    - a changed skill: its test cases, three runs both ways, and its trigger queries too when the skill is new or its description or its queries changed;
+    - a core skill, or the preamble that places it: every skill's test cases, three runs both ways;
+    - agent text or code: every other skill's first test case, once, with the skill;
+    - anything else: nothing.
 
-  A dispatch's `skill_evals` input says what to measure instead: `smoke`, `core`, `full` or skill names. Every Sunday the job measures every skill on main by itself. Its page, `curio-skill-evals-report.html`, sits beside the CI report. The job fails on a model that does not answer its probe, a run left in an error after the retries, a file that holds the endpoint, or a skill measured whole whose pass rate with the skill is under its floor in [`skill_eval_floors.json`](../scripts/skill_eval_floors.json). `test_skill_evals.py` holds every skill's `evals/evals.json` to the rules above.
+    The other values are `smoke`, `core`, `full` and skill names.
+  - **Its report:** its page, `curio-skill-evals-report.html`, is the run's artifact, and its tables are in the run's summary. A run on main is what later runs compare with.
+  - **What fails it:**
+    - a model that does not answer its probe;
+    - a run left in an error after the retries;
+    - a file that holds the endpoint;
+    - a skill measured whole whose pass rate with the skill is under its floor in [`skill_eval_floors.json`](../scripts/skill_eval_floors.json).
+
+  `test_skill_evals.py` holds every skill's `evals/evals.json` to the rules above.

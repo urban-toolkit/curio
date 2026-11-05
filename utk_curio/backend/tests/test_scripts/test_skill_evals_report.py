@@ -1,9 +1,9 @@
-"""The skill-evals node's report, and what fails the node.
+"""The Skill evaluations workflow's report, and what fails a run of it.
 
 ``scripts/skill_evals_report.py`` reads each model's ``agent_eval.py skills``
 folder and writes ``curio-skill-evals-report.html``, the job summary and each
 model's numbers for the next runs to compare with; its :func:`gate` decides
-whether the node fails. These feed it run folders made up here, shaped as the
+whether the run fails. These feed it run folders made up here, shaped as the
 runner writes them, and check the real floors and prices files' shape.
 """
 from __future__ import annotations
