@@ -1615,8 +1615,8 @@ the page opens.
   Any other change runs the nodes it reaches on the server, with your datasets, models and
   packages and none of your keys, and the tiles below show the result. A viewer never
   changes the dataflow, its saved outputs or your Data Catalog, and putting the value back
-  shows the saved outputs. Text, text list and file widgets keep their saved value, and a
-  node that reads a connection key stops with a message. A code node without widgets shows
+  shows the saved outputs. Text, text list, file and dataset widgets keep their saved
+  value, and a node that reads a connection key stops with a message. A code node without widgets shows
   its code, read-only.
 - **What a run makes**, on opening the page or after a change, is kept for 7 days and
   shown to every later viewer with the same values, without running again. After 7 days
