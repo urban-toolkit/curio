@@ -222,7 +222,8 @@ def test_every_node_a_shipped_check_names_is_one_its_case_dataflow_holds():
                 where = (evals.name, case.id, check.as_dict())
                 assert case.context.dataflow is not None, where
                 spec = json.loads(case.context.dataflow.read_text(encoding="utf-8"))
-                ids = {str(n.get("id")) for n in (spec.get("dataflow") or {}).get("nodes") or [] if isinstance(n, dict)}
+                nodes = (spec.get("dataflow") or {}).get("nodes") or []
+                ids = {str(n.get("id")) for n in nodes if isinstance(n, dict)}
                 assert str(node) in ids, where
     assert named, "no shipped check names a node"
 
