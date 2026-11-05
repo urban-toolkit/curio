@@ -17,9 +17,12 @@ test case: ``agent``, the agent whose chat runs it (``<id>@<major>``);
 ``dataflow``, the dataflow its project starts as (a path in Curio's shipped
 folders, or in the skill's folder when it starts with ``evals/``); and
 ``target``, what the agent is attached to (``{"kind": "canvas"}``, the
-default, or ``{"kind": "node", "node": <id>}``). A test case may also hold
-``checks``: assertions decided from a run's own record, with no model
-(``checks.py``).
+default, or ``{"kind": "node", "node": <id>}``); and ``models``, the model
+packages Curio ships that the run's evaluation account holds, each
+``<id>@<major>``, which its worker adds to the account before the run, as the
+Model Catalog's Add adds one (none by default, so ``models.search`` lists
+none). A test case may also hold ``checks``: assertions decided from a run's
+own record, with no model (``checks.py``).
 
 ``agent_eval.py skills`` runs each trigger query and each test case three
 times (:data:`RUNS`):
@@ -60,6 +63,7 @@ from urllib.parse import urlsplit
 from utk_curio import shipped
 from utk_curio.backend.app.agents.domain import skills as skill_format
 from utk_curio.backend.app.agents.evaluation import checks as case_checks
+from utk_curio.backend.app.packages.service import PACKAGE_DIR_RE as _PACKAGE
 
 #: The file of a skill's ``evals/`` folder that holds its evaluations.
 EVALS_FILE = "evals.json"
@@ -86,6 +90,8 @@ ENV_MODEL = "CURIO_EVAL_MODEL"
 #: What a run's agent is attached to when its test case names nothing.
 CANVAS = "canvas"
 NODE = "node"
+#: The kind of package a ``models`` entry names, as its manifest says it.
+MODEL_KIND = "model"
 #: Where a skill's own files for its evaluations start, in a ``dataflow`` path.
 _OWN_PREFIX = f"{skill_format.EVALS_DIR}/"
 #: Hosts a needle is not searched for by name alone: Curio's own text names them.
@@ -99,7 +105,8 @@ class EvalsError(ValueError):
 @dataclass(frozen=True)
 class Context:
     """Where a run happens: the agent whose chat runs it, the dataflow its
-    project starts as, and what the agent is attached to."""
+    project starts as, what the agent is attached to, and the model packages
+    its account holds."""
 
     agent: str
     #: The dataflow's file, or None for an empty dataflow.
@@ -107,6 +114,8 @@ class Context:
     #: ``canvas``, or ``node`` with :attr:`node`.
     target: str = CANVAS
     node: str | None = None
+    #: The model packages its evaluation account holds, each ``<id>@<major>``.
+    models: tuple[str, ...] = ()
 
     def as_dict(self) -> dict:
         return {
@@ -114,13 +123,15 @@ class Context:
             "dataflow": str(self.dataflow) if self.dataflow else None,
             "target": self.target,
             "node": self.node,
+            "models": list(self.models),
         }
 
     @classmethod
     def from_dict(cls, data: Mapping) -> "Context":
         dataflow = data.get("dataflow")
         return cls(agent=data["agent"], dataflow=Path(dataflow) if dataflow else None,
-                   target=data.get("target") or CANVAS, node=data.get("node"))
+                   target=data.get("target") or CANVAS, node=data.get("node"),
+                   models=tuple(data.get("models") or ()))
 
 
 @dataclass(frozen=True)
@@ -198,7 +209,39 @@ def _context(data: Mapping, folder: Path, default: Context | None, where: str,
         ids = {n.get("id") for n in _nodes(dataflow)}
         if node not in ids:
             problems.append(f"{where}: the dataflow holds no node {node!r}")
-    return Context(agent=agent, dataflow=dataflow, target=target, node=node)
+    models = default.models if default else ()
+    if "models" in data:
+        models = _models(data["models"], where, problems)
+    return Context(agent=agent, dataflow=dataflow, target=target, node=node, models=models)
+
+
+def _models(raw, where: str, problems: list[str]) -> tuple[str, ...]:
+    """The model packages *raw* names: each a model package Curio ships, as
+    ``<id>@<major>``, once."""
+    if not isinstance(raw, list):
+        problems.append(f"{where}: models must be a list of the model packages its account holds, each "
+                        f"<id>@<major>, not {raw!r}")
+        return ()
+    found: list[str] = []
+    for at, name in enumerate(raw, start=1):
+        if not _text(name) or not _PACKAGE.match(name):
+            problems.append(f"{where}: models[{at}] must name a model package as <id>@<major>, not {name!r}")
+        elif not _ships_model(name):
+            problems.append(f"{where}: models[{at}] {name!r} is no model package Curio ships")
+        elif name in found:
+            problems.append(f"{where}: models names {name!r} twice")
+        else:
+            found.append(name)
+    return tuple(found)
+
+
+def _ships_model(name: str) -> bool:
+    """Whether Curio ships a package *name* (``<id>@<major>``) of kind ``model``."""
+    try:
+        manifest = json.loads((shipped.path("packages") / name / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(manifest, Mapping) and manifest.get("kind") == MODEL_KIND
 
 
 def _dataflow_path(value, folder: Path, where: str, problems: list[str]) -> Path | None:

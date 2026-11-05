@@ -14,7 +14,9 @@ runs, so no sandbox either.
   this process's settings (``config.DEFAULT_LLM_*``), as an operator sets it.
   So every call goes through the provider code API Settings uses, and the key
   is written nowhere: not in an LLM configuration, not in the state folder.
-- **A run:** a fresh dataflow (the test case's, or an empty one) under a
+- **A run:** the model packages its test case names (``models``) added to
+  the account first, as the Model Catalog's Add adds one; a fresh dataflow
+  (the test case's, or an empty one) under a
   name that says nothing of the skill, its agent installed and attached, the
   message sent to the chat route a browser sends it to, with the context a
   browser's chat composes beside it (``evaluation/run_context.py``: the node
@@ -579,6 +581,24 @@ class Worker:
         body = resp.get_json(silent=True)
         return resp.status_code, body if isinstance(body, dict) else {}
 
+    def _hold_models(self, context: skill_evals.Context) -> None:
+        """Add each model package *context* names to the evaluation account, as
+        the Model Catalog's Add adds one (``POST /api/packages/catalog/install``),
+        unless the account holds it already, so ``models.search`` lists it and
+        the grounding gate lets node code load it."""
+        if not context.models:
+            return
+        status, body = self._json("GET", "/api/packages/catalog?kind=model")
+        if status >= 400:
+            raise RuntimeError(f"the Model Catalog could not be read ({status}): {body.get('error')}")
+        held = {row.get("dirName") for row in body.get("packages") or [] if isinstance(row, dict) and row.get("installed")}
+        for name in context.models:
+            if name in held:
+                continue
+            status, body = self._json("POST", "/api/packages/catalog/install", {"dirName": name})
+            if status >= 400:
+                raise RuntimeError(f"the model {name} could not be added ({status}): {body.get('error')}")
+
     def _project(self, context: skill_evals.Context) -> str:
         spec = {"dataflow": {"nodes": [], "edges": [], "packages": []}}
         if context.dataflow is not None:
@@ -677,6 +697,7 @@ class Worker:
         for key in ("error", "stoppedEarly", "handedOff"):
             record.pop(key, None)
         try:
+            self._hold_models(task.context)
             project_id = self._project(task.context)
             attachment = self._attach(project_id, task.context)
             attachment_id = attachment["attachmentId"]

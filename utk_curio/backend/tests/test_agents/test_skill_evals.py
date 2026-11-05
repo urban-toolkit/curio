@@ -252,6 +252,52 @@ def test_a_file_that_breaks_the_format_is_refused_naming_each_problem(tmp_path):
         assert problem in message, (problem, message)
 
 
+def test_a_case_names_the_model_packages_its_account_holds_and_a_malformed_list_is_refused(tmp_path):
+    """``models``, at the top level or on a test case, names the model packages
+    Curio ships that a run's evaluation account holds; a case's own replaces
+    the top level's, and a run's task carries them to its worker. Anything but
+    a list of shipped model packages, each once, is refused by name."""
+    skill_evals = _skill_evals()
+    ddrnet = "model.curio.ddrnet23-slim@1"
+    folder = tmp_path / "street-trees"
+    evals = _evals()
+    evals["models"] = [ddrnet]
+    evals["evals"].append({**evals["evals"][0], "id": 2, "models": []})
+    _write_skill(folder, evals)
+    read = skill_evals.read(folder)
+    assert read.context.models == (ddrnet,)
+    assert [case.context.models for case in read.cases] == [(ddrnet,), ()]
+    tasks = skill_evals.plan([read], runs=1, kinds=(skill_evals.TASK,))
+    assert [task.context.models for task in tasks] == [(ddrnet,), (ddrnet,), (), ()]
+    assert all(skill_evals.Task.from_dict(json.loads(json.dumps(task.as_dict()))) == task for task in tasks)
+    # A file that names none holds none.
+    assert skill_evals.read(_named(tmp_path / "street-oaks")).context.models == ()
+
+    broken = _evals()
+    broken["models"] = ddrnet
+    broken["evals"].append({**broken["evals"][0], "id": 2, "models": [
+        "ddrnet23-slim", 7, "curio.vega-lite@1", "model.curio.ghost@1", ddrnet, ddrnet]})
+    _write_skill(tmp_path / "street-elms", {**broken, "skill_name": "street-elms"})
+    try:
+        skill_evals.read(tmp_path / "street-elms")
+    except skill_evals.EvalsError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("the file was read")
+    for problem in ("the top level: models must be a list of the model packages its account holds",
+                    "evals[2]: models[1] must name a model package as <id>@<major>, not 'ddrnet23-slim'",
+                    "evals[2]: models[2] must name a model package as <id>@<major>, not 7",
+                    "evals[2]: models[3] 'curio.vega-lite@1' is no model package Curio ships",
+                    "evals[2]: models[4] 'model.curio.ghost@1' is no model package Curio ships",
+                    f"evals[2]: models names {ddrnet!r} twice"):
+        assert problem in message, (problem, message)
+
+
+def _named(folder: Path) -> Path:
+    _write_skill(folder, _evals(folder.name))
+    return folder
+
+
 # --- Counting -------------------------------------------------------------------------
 
 

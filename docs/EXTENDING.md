@@ -768,6 +768,7 @@ Each skill Curio ships holds its evaluations in `evals/evals.json`, as agentskil
 - `skill_name`, and `evals`: test cases, each an `id`, a `prompt` a user would type, an `expected_output` and its `assertions`, which a grader checks each answer against.
 - `trigger_queries`, for a skill a chat loads: about twenty, each a `query` and whether it `should_trigger` the skill, eight to ten of each ([optimizing descriptions](https://agentskills.io/skill-creation/optimizing-descriptions)). A skill the preamble holds, or one an instruction hands to every chat, has none.
 - Curio's fields, at the top level or on a test case: `agent`, whose chat runs it; `dataflow`, the dataflow its project starts as (a shipped example, or a file under the skill's `evals/`); `target`, the canvas (the default, and where trigger queries run) or `{"kind": "node", "node": "<id>"}`.
+- `models`, at the top level or on a test case: the Model Catalog's model packages its evaluation account holds, such as `["model.curio.ddrnet23-slim@1"]`; each run adds them to its account first, as the Model Catalog's Add does, so `models.search` lists them and node code may load them.
 - `checks`, on a test case: assertions its run's own record decides, with no model ([`checks.py`](../utk_curio/backend/app/agents/evaluation/checks.py)).
   - Each check names its assertion by its place, from 1, and one kind:
     - `tool`, a call that landed, on a `node`, with `args`;
