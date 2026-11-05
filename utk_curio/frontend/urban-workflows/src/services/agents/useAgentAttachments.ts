@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { agentsApi } from "./agentsApi";
 import { AGENT_DOCK_REFRESH_EVENT, notifyAgentDockRefresh } from "./agentEvents";
 import type { AgentAttachment, AgentContentPart, AgentRunSkillPins, AgentTarget, AgentUsage } from "./types";
@@ -40,15 +40,21 @@ export function useAgentAttachments(projectId: string | null): AgentAttachmentsS
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Only the newest read's answer is kept: reads can overlap, as the room's
+  // word at once and its word when a wait ends do, and an older answer, or
+  // its failure, can land last.
+  const lastReadRef = useRef(0);
   const reload = useCallback(async () => {
+    const mine = ++lastReadRef.current;
     if (!projectId) {
       setAttachments([]);
       return;
     }
     try {
       const r = await agentsApi.listAttachments(projectId);
-      setAttachments(r.attachments);
+      if (lastReadRef.current === mine) setAttachments(r.attachments);
     } catch (e) {
+      if (lastReadRef.current !== mine) return;
       setError(e instanceof Error ? e.message : "Failed to load attachments");
       setAttachments([]);
     }
