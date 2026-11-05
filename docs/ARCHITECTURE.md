@@ -1933,42 +1933,58 @@ kept by [`llm_configs.py`](../utk_curio/backend/app/agents/infrastructure/llm_co
 every version and project) to a configuration id or `"deployment"`. Nothing
 about the choice goes into a project, attachment or manifest.
 Only the store's own reads (`LlmConfigStore.read` and `record`) carry a key:
-every response carries `hasApiKey` and `baseUrlHost` instead. The file is written through
+every response carries `hasApiKey` and `baseUrlHost` instead, and `baseUrlHost`
+is empty for this Curio install's endpoint, whose host never leaves the server. The file is written through
 [`owner_only_file.py`](../utk_curio/backend/app/common/owner_only_file.py),
 which connection keys and Data source keys use too: a 0700 directory and a 0600 file, written to a
 temp file, fsynced and renamed under an exclusive lock.
 
 A configuration names its own endpoint (`endpoint: "own"`, with `apiType`,
-`baseUrl` and `apiKey`) or this Curio install's (`endpoint: "deployment"`),
-whose type, URL and key are read from the deployment when a run resolves it. A
+`baseUrl` and `apiKey`) or one of this Curio install's (`endpoint:
+"deployment"`, with `endpointName`), whose type, URL and key are read from the
+operator's endpoint file when a run resolves it. Such a configuration takes
+one of that endpoint's models: a create, update or duplicate with an unknown
+endpoint or another model answers 400 naming every endpoint and model on offer
+(`provider_config.offered_refusal`), `/api/agents/provider-models` answers
+with the endpoint's models without asking it, and `resolve_llm` refuses a
+stored one whose endpoint or model left the file with the same sentence. A
 key never follows a configuration to another endpoint: an update that changes
 the type, or the URL's scheme, host or port, needs the key again or
 `clearApiKey`.
 
+The operator's endpoints reach `config.DEFAULT_LLM_ENDPOINTS` only from the
+file `--llm-endpoint-file` names, one section each (`utk_curio/common/llm_endpoint.py`,
+`Endpoint`), whose path the launcher hands to the backend alone. The launcher
+refuses to start while a variable that used to set them is in its environment
+(`llm_endpoint.RETIRED_VARIABLES`), the backend warns of one left in its
+`.env` (`upgrade_notices.py`), and the frontend's servers and build and the
+sandbox start without the variables that could hold a key or URL
+(`llm_endpoint.BACKEND_ONLY_VARIABLES`), so node code cannot read them.
+
 [`provider_config.resolve_llm`](../utk_curio/backend/app/agents/infrastructure/provider_config.py)
-is the one resolver, and it reads `config.DEFAULT_LLM_*` and `GUEST_LLM_*`
-at call time. It needs only the storage key, so it
+is the one resolver, and it reads `config.DEFAULT_LLM_ENDPOINTS` at call
+time. It needs only the storage key, so it
 works in job threads:
 
 1. A hosted guest (a guest on a `--deploy` instance) runs on the guest
-   configuration, `GUEST_LLM_*`, and never opens the file; so does every
-   delegate of a guest's run.
+   configuration, the Deployment default's endpoint and model, and never opens
+   the file; so does every delegate of a guest's run.
 2. An internal agent (`builtin.internal_agent_ids()`, the shipped agents whose
    `catalog.listed` is false) runs on its caller's configuration, always.
 3. Any other agent runs on the configuration chosen for it (`source:
    "assigned"`).
 4. With no choice, a delegated agent runs on its caller's (`source: "caller"`),
    and an attached one on the account's default configuration, else the
-   Deployment default (the deployment's endpoint with
-   `CURIO_DEFAULT_LLM_MODEL`), else the run is refused.
+   Deployment default (the first endpoint of the file with its first model),
+   else the run is refused.
 
 A reference that does not resolve (a choice or a default naming no
-configuration, a withdrawn Deployment default or This Curio install endpoint,
-an unreadable file) is refused, never replaced with another configuration. A
+configuration, a withdrawn Deployment default, a This Curio install endpoint
+or model the file no longer has, an unreadable file) is refused, never replaced with another configuration. A
 refusal is a `ProviderConfigError`, answered as a 400 with
 `remedy: {kind: "llm-config", agentId}`. The local shared guest (a launch
 without `--deploy`) owns a file like any account, and its Deployment default
-reads `GUEST_LLM_*`.
+is everyone's.
 
 Where it is called:
 
@@ -1988,11 +2004,14 @@ Where it is called:
 - `choosable_agents` lists who may have a choice: the catalog cards, published
   definitions and the account's imports, one row per agent id.
 
-The resolved `ProviderConfig` carries `config_id`, `label` and `source`, and
-its `api_key` is left out of its `repr`. Run pins record
-`llm: {configId, label, baseUrlHost, source}`, ledger entries record
-`llmConfigId`, and provider error text is redacted with the call's own key
-before it is streamed, persisted, logged or returned.
+The resolved `ProviderConfig` carries `config_id`, `label`, `source` and
+`on_deployment` (it runs on this Curio's own endpoint), and its `api_key` and
+`base_url` are left out of its `repr`. Run pins record
+`llm: {configId, label, baseUrlHost, source}`, with an empty `baseUrlHost` on
+this Curio's endpoint (`provider_config.shown_host`), ledger entries record
+`llmConfigId`, and provider error text loses the call's own key, and every
+endpoint of the file's key, URL, host and port, and host
+(`providers.redacted_text`) before it is streamed, persisted, logged or returned.
 
 ---
 
@@ -3002,7 +3021,7 @@ Catalog and account scope:
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/agents/catalog` | GET | List the agent definitions available to add: the catalog cards and published definitions, never an internal built-in (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
-| `/api/agents/llm` | GET | The account's LLM configurations (never a key: `hasApiKey` and `baseUrlHost` instead), its default, what the deployment offers, what answers a run now, and the agents whose configuration may be chosen, each with its choice and what it answers with. A hosted guest gets the guest configuration and `editable: false` |
+| `/api/agents/llm` | GET | The account's LLM configurations (never a key: `hasApiKey` and `baseUrlHost` instead, the host empty for this Curio install's endpoint), its default, what the deployment offers (`deployment: {label, endpointOffered, apiType, model, endpoints: [{name, models}]}`, never a host or a key), what answers a run now, and the agents whose configuration may be chosen, each with its choice and what it answers with. A hosted guest gets the guest configuration and `editable: false` |
 | `/api/agents/llm/configs` | POST | Add a configuration. **400** on an unknown field or an invalid one, **403** for a hosted guest |
 | `/api/agents/llm/configs/<id>` | PATCH, DELETE | Change one (a blank key keeps the stored one; a new endpoint needs the key again) or remove it, which resets a removed default and clears the agents chosen for it (`moved`) |
 | `/api/agents/llm/configs/<id>/duplicate` | POST | Copy one, its key included, server-side; `{label?, model?}` |
