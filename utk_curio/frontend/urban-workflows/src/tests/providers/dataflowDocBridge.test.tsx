@@ -49,6 +49,7 @@ import { buildCodeNode, nodeMetaFromTrill } from "../../hook/codeNodes";
 import { METADATA_FIELD_DATA, NODE_FIELD_DATA, trillNodeOf } from "../../providers/flow/useDataflowDoc";
 import { setCurrentProject } from "../../registry/projectPackagesStore";
 import { TrillGenerator } from "../../TrillGenerator";
+import { ConnectionValidator } from "../../ConnectionValidator";
 import { serverHistory } from "../../providers/history/serverHistory";
 
 const PROJECT = "7c3e0f42-5b9a-4d0e-9c1f-2a8b6d4e1f30";
@@ -196,6 +197,19 @@ async function fromAnotherTab(change: (dataflow: any) => void) {
         provider.doc.transact(() => applyDataflow(provider.doc, before, after), provider);
     });
     await flush();
+}
+
+/** This canvas connects *source*'s output to *target*'s input, as a person's
+ *  drag does. The type check reads the node descriptors, which this harness
+ *  registers none of (`setCurrentProject(PROJECT, [])`), so for this one
+ *  connection it is told the two types match, as the loaded registry says. */
+function connect(source: string, target: string) {
+    const compatible = jest.spyOn(ConnectionValidator, "checkBoxCompatibility").mockReturnValue(true);
+    try {
+        act(() => api.onConnect({ source, target, sourceHandle: "out", targetHandle: "in" } as Connection));
+    } finally {
+        compatible.mockRestore();
+    }
 }
 
 /** The room's socket of a tab that comes back: what the tab sends of the
@@ -488,7 +502,8 @@ describe("the dataflow's own fields, connections and scenarios", () => {
         await fromAnotherTab((df) => {
             df.nodes.push({ ...spec().dataflow.nodes[1], id: "k", x: 1200 });
         });
-        act(() => api.onConnect({ source: "m", target: "k", sourceHandle: "out", targetHandle: "in" } as Connection));
+        expect(canvasNode("k")).toBeDefined();
+        connect("m", "k");
         await flush();
         const drawn = api.edges.find((e: any) => e.target === "k")?.id as string;
         expect(drawn).toBeTruthy();
@@ -519,9 +534,11 @@ describe("the dataflow's own fields, connections and scenarios", () => {
 
         // Offline, this tab connects m to k, and another tab, which never
         // sees that, removes k.
-        act(() => api.onConnect({ source: "m", target: "k", sourceHandle: "out", targetHandle: "in" } as Connection));
+        expect(canvasNode("k")).toBeDefined();
+        connect("m", "k");
         await flush();
         const drawn = api.edges.find((e: any) => e.target === "k")?.id as string;
+        expect(drawn).toBeTruthy();
         expect(held.doc.getMap("edges").has(drawn)).toBe(true);
         const before = docToDataflow(server);
         const after = JSON.parse(JSON.stringify(before));
