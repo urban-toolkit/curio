@@ -220,8 +220,8 @@ export function normalizedDataflow(dataflow: Fields): Fields {
 function withoutDangling(base: Fields, doc: Y.Doc): Fields {
     if (!Array.isArray(base.edges)) return base;
     const nodes = doc.getMap("nodes");
-    const held = doc.getMap("edges");
-    const edges = (base.edges as Fields[]).filter((e) => !held.has(e[EDGE_ID] as string)
+    const docEdges = doc.getMap("edges");
+    const edges = (base.edges as Fields[]).filter((e) => !docEdges.has(e[EDGE_ID] as string)
         || (nodes.has(e.source as string) && nodes.has(e.target as string)));
     return edges.length === base.edges.length ? base : { ...base, edges };
 }
