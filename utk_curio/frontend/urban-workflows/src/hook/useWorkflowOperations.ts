@@ -272,10 +272,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // once per edge - and onConnect marks the project dirty, so a dataflow with
     // even one edge came back from disk already reading "Unsaved changes" (#229).
     //
-    // A ref, not state: the replay runs inside a ``setNodes`` updater and has to
-    // read this synchronously. Deliberately NOT a timer or a settle window - it
-    // is opened and closed around the synchronous replay loop alone, so an edit
-    // made a millisecond after the load still marks the dataflow dirty.
+    // A ref, not state: the replay reads it synchronously, a merge's at once
+    // and a full load's inside a ``setNodes`` updater. Deliberately NOT a timer
+    // or a settle window - it is opened and closed around the synchronous
+    // replay loop alone, so an edit made a millisecond after the load still
+    // marks the dataflow dirty.
     const hydratingRef = useRef(false);
 
     // Bumped by every edit. A create captures it before its request and clears
@@ -649,15 +650,15 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // edge does.
         const addedIds = new Set(addedNodes.map((n: Node) => n.id));
 
-        console.log("loadParsedTrill second");
-        setNodes((prevNodes: any) => {
+        /** Replay the loaded edges among *canvas*, the nodes as this load leaves them. */
+        const replayEdges = (canvas: Node[]) => {
             // Replaying persisted edges must not dirty the project: ``onConnect``
             // marks dirty because a user connecting two nodes IS an edit, and this
-            // loop is the same call (#229). Opened and closed INSIDE the updater,
-            // because React may run it long after loadParsedTrill returned (and
-            // twice under StrictMode) - so the window is scoped to exactly the
-            // replay. ``finally`` so a malformed spec throwing inside onConnect
-            // cannot leave dirty-tracking wedged off for the rest of the session.
+            // loop is the same call (#229). Opened and closed around the replay
+            // alone, which a full load runs in a setNodes updater, long after
+            // loadParsedTrill returned (and twice under StrictMode). ``finally``
+            // so a malformed spec throwing inside onConnect cannot leave
+            // dirty-tracking wedged off for the rest of the session.
             hydratingRef.current = true;
             try {
                 // skipValidation=true: these edges come from a saved/imported trill and
@@ -671,27 +672,44 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 const connectedSoFar: any[] = merge ? [...reactFlow.getEdges()] : [];
                 for (const edge of loaded_edges) {
                     if (merge && currentEdgeIds.has(edge.id)) continue;
-                    onConnect(edge, prevNodes, connectedSoFar, workflowName, false, true, addedIds.has(edge.source));
+                    onConnect(edge, canvas, connectedSoFar, workflowName, false, true, addedIds.has(edge.source));
                     connectedSoFar.push(edge);
                 }
             } finally {
                 hydratingRef.current = false;
             }
+        };
 
-            if (!merge) {
+        // The dashboard page frames its own tiles (`useDashboardFit`); the
+        // canvas fit would fight it, and it cannot even complete there since
+        // an unpinned node is `display: none` and never gets measured. A
+        // caller that frames what it added asks for no fit (`fit: false`):
+        // a dropped scenario's box is not a node, so the fit framed its
+        // context alone and left the box out of view (#769).
+        const fitsOnLoad = !presentation && fit !== false;
+
+        console.log("loadParsedTrill second");
+        if (merge) {
+            // A merge replays now, not in a setNodes updater. onConnect hands a
+            // new edge its source's output with a setNodes of its own. A merge
+            // that adds no node queues nothing before an updater, so React runs
+            // one at once, inside the call, and the nodes it returns replace
+            // that hand-over.
+            replayEdges([...priorNodes, ...addedNodes]);
+            if (fitsOnLoad) setFitViewOnLoad(true);
+        } else {
+            // A full load replays in the updater, which runs at the next render
+            // (its nodes are queued above), after the caller restores its
+            // outputs: the replay finds them there and leaves them to
+            // hydrateRestoredOutputs.
+            setNodes((prevNodes: any) => {
+                replayEdges(prevNodes);
                 setInteractions([]);
                 setDashboardPins(pins);
-            }
-
-            // The dashboard page frames its own tiles (`useDashboardFit`); the
-            // canvas fit would fight it, and it cannot even complete there since
-            // an unpinned node is `display: none` and never gets measured. A
-            // caller that frames what it added asks for no fit (`fit: false`):
-            // a dropped scenario's box is not a node, so the fit framed its
-            // context alone and left the box out of view (#769).
-            if (!presentation && fit !== false) setFitViewOnLoad(true);
-            return prevNodes;
-        });
+                if (fitsOnLoad) setFitViewOnLoad(true);
+                return prevNodes;
+            });
+        }
 
         // After the updater, not inside it: a state updater must stay pure, and
         // `addedEdges` never depended on `prevNodes` anyway.

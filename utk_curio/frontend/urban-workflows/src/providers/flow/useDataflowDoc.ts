@@ -442,16 +442,17 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             return current.nodes.some((n) => n.id === other);
         });
         if (survivors.length === 0) return;
-        setNodes((prev) => {
-            const all = prev.some((n) => n.id === fresh.id) ? prev : [...prev, fresh];
-            const connected = [...reactFlow.getEdges()];
-            for (const edge of survivors) {
-                current.onConnect({ ...edge }, all, connected, current.workflowNameRef.current, true, true);
-                connected.push(edge);
-            }
-            return prev;
-        });
-    }, [setNodes, reactFlow]);
+        // Connected outside a setNodes updater: onConnect hands the source's
+        // output over with a setNodes of its own, which an updater React runs
+        // at once would replace with the nodes it returns. Each survivor's
+        // other end is on the canvas, and the node comes back as *fresh*.
+        const all = [...current.nodes, fresh];
+        const connected = [...reactFlow.getEdges()];
+        for (const edge of survivors) {
+            current.onConnect({ ...edge }, all, connected, current.workflowNameRef.current, true, true);
+            connected.push(edge);
+        }
+    }, [reactFlow]);
 
     /** Someone else removed *node* while this tab was editing its code. */
     const removedWhileEditing = useCallback((node: Node, attached: Edge[]) => {
