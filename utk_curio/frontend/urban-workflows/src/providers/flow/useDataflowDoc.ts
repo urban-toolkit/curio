@@ -599,9 +599,21 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         }
 
         // What the canvas loses: connections first, as the Delete key sends them.
+        // One the doc still holds, to a node it lost, points nowhere. The canvas
+        // stops drawing it but its writer leaves it to the server, which takes
+        // it out and tells whoever drew it: a take-out sent in one update with
+        // the drawing, as a tab that reconnects sends its changes, hides both.
         const gone = new Set(removedNodes);
+        const nowhere = new Set<string>();
         for (const edge of current.edges) {
-            if ((gone.has(edge.source) || gone.has(edge.target)) && !goneEdges.includes(edge)) goneEdges.push(edge);
+            if ((gone.has(edge.source) || gone.has(edge.target)) && !goneEdges.includes(edge)) {
+                goneEdges.push(edge);
+                nowhere.add(edge.id);
+            }
+        }
+        const base = writerBaseRef.current;
+        if (base && nowhere.size && Array.isArray(base.edges)) {
+            writerBaseRef.current = { ...base, edges: (base.edges as Fields[]).filter((e) => !nowhere.has(e.id as string)) };
         }
         if (goneEdges.length) {
             const ids = new Set(goneEdges.map((e) => e.id));

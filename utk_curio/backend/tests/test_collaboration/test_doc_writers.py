@@ -183,6 +183,94 @@ def _ever_logged(room, edge_id: str) -> bool:
     return False
 
 
+def _as_the_agent_at_work(room, monkeypatch, work):
+    """Run *work* while the Node Builder, asked by alice, is at work in her
+    dataflow's room, as an agent run is (``agent_peers.at_work``)."""
+    from utk_curio.backend.app.collaboration import agent_peers
+
+    monkeypatch.setattr(agent_peers, "BACKGROUND", False)
+    agent_peers.reset_for_tests()
+    try:
+        with agent_peers.at_work(room.owner_key, room.project_id, attachment_id="t1", coord=BUILDER,
+                                 name="Node Builder", category="node",
+                                 asked_by=agent_peers.asker(room.users["alice"])):
+            return work()
+    finally:
+        agent_peers.reset_for_tests()
+
+
+def _chart_removed(room, spec):
+    """The agent's write of *spec*, which it read, with the chart removed and
+    the one connection into it it knew of."""
+    from utk_curio.backend.app.collaboration.dataflow_docs import by_agent, write
+
+    spec["dataflow"]["nodes"] = [node for node in spec["dataflow"]["nodes"] if node["id"] != "chart"]
+    spec["dataflow"]["edges"] = [edge for edge in spec["dataflow"]["edges"] if edge["id"] != "e1"]
+    return write(room.owner_key, room.project_id, spec, by_agent(BUILDER, room.owner_key, "plan"))
+
+
+def test_a_writers_removal_takes_out_a_connection_a_tab_drew_to_the_node_meanwhile_and_tells_its_drawer(
+        room, monkeypatch):
+    """The agent reads the dataflow; bob then connects the loader to the chart
+    again, and the agent removes the chart with the one connection into it it
+    knew of. bob's connection points nowhere once the write lands: the rule a
+    tab's change meets takes it out in the writer's own transaction, so no tab,
+    read or file holds it, and bob is told the agent removed the node. The
+    writer drew no connection, so it is told of none."""
+    from utk_curio.backend.app.collaboration.dataflow_docs import live
+
+    from .test_dataflow_docs import _connect_to_chart, _dropped
+
+    alice, bob = room.tab("alice"), room.tab("bob")
+    alice.sync()
+    bob.sync()
+    spec = live(room.owner_key, room.project_id)
+    assert bob.edit(_connect_to_chart)[0]["ok"] is True
+
+    written = _as_the_agent_at_work(room, monkeypatch, lambda: _chart_removed(room, spec))
+
+    assert written.wrote and written.dropped == (), written
+    for tab in (alice, bob):
+        seen = tab.dataflow()
+        assert [node["id"] for node in seen["nodes"]] == ["loader"]
+        assert seen["edges"] == [], f"a connection to the node the agent removed was kept: {seen['edges']}"
+    assert room.live()["dataflow"]["edges"] == []
+    assert room.on_disk()["dataflow"]["edges"] == [], room.on_disk()["dataflow"]["edges"]
+    notices = _dropped(bob)
+    assert len(notices) == 1, (
+        f"the connection bob drew to the chart the agent removed was not kept, and bob was never told why: {notices}"
+    )
+    assert notices[0]["edgeIds"] == ["e2"] and notices[0]["projectId"] == room.project_id
+    assert notices[0]["by"]["name"] == "Node Builder", notices[0]["by"]
+    assert _dropped(alice) == [], "a tab that drew no connection was told of one"
+
+
+def test_a_connection_drawn_to_a_node_a_writer_removed_meanwhile_names_the_writer(room, monkeypatch):
+    """The other order: the agent removes the chart first, then bob, who has
+    not seen that, connects the loader to it. The rule takes his connection
+    out and tells him the agent removed the node, never that he did."""
+    from utk_curio.backend.app.collaboration.dataflow_docs import live
+
+    from .test_dataflow_docs import _connect_to_chart, _dropped
+
+    alice, bob = room.tab("alice"), room.tab("bob")
+    alice.sync()
+    bob.sync()
+    _as_the_agent_at_work(room, monkeypatch, lambda: _chart_removed(room, live(room.owner_key, room.project_id)))
+
+    assert bob.edit(_connect_to_chart)[0]["ok"] is True
+
+    for tab in (alice, bob):
+        assert tab.dataflow()["edges"] == []
+    notices = _dropped(bob)
+    assert len(notices) == 1, notices
+    assert notices[0]["edgeIds"] == ["e2"]
+    assert notices[0]["by"]["name"] == "Node Builder", (
+        f"bob was told {notices[0]['by'].get('name')} removed the chart the agent removed"
+    )
+    assert _dropped(alice) == []
+
+
 def test_a_writer_writes_the_spec_it_was_handed_and_nothing_when_it_changed_nothing(room):
     """What a writer hands back is the spec it was handed, which knows what it
     read; a copy is refused rather than written over what changed meanwhile.

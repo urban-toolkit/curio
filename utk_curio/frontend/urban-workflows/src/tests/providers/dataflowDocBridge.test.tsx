@@ -13,8 +13,11 @@
  */
 import React from "react";
 import { act, render } from "@testing-library/react";
-import { ReactFlow, ReactFlowProvider } from "reactflow";
+import { ReactFlow, ReactFlowProvider, type Connection } from "reactflow";
 import * as Y from "yjs";
+import * as decoding from "lib0/decoding";
+import * as encoding from "lib0/encoding";
+import * as syncProtocol from "y-protocols/sync";
 
 class ResizeObserverStub {
     observe() {}
@@ -193,6 +196,36 @@ async function fromAnotherTab(change: (dataflow: any) => void) {
         provider.doc.transact(() => applyDataflow(provider.doc, before, after), provider);
     });
     await flush();
+}
+
+/** The room's socket of a tab that comes back: what the tab sends of the
+ *  doc's protocol is kept, and the server's sync messages reach the provider
+ *  as socket.io hands them over. */
+class RoomSocket {
+    connected = true;
+    sent: Array<{ message: Uint8Array; ack?: (answer: any) => void }> = [];
+    private handlers: Record<string, Array<(payload: any) => void>> = {};
+
+    on(event: string, handler: (payload: any) => void) {
+        (this.handlers[event] ??= []).push(handler);
+    }
+
+    off(event: string, handler: (payload: any) => void) {
+        this.handlers[event] = (this.handlers[event] ?? []).filter((h) => h !== handler);
+    }
+
+    emit(event: string, payload: any, ack?: (answer: any) => void) {
+        if (event === "yjs") this.sent.push({ message: payload.message, ack });
+    }
+
+    /** The server sends the sync message *write* frames. */
+    receive(write: (encoder: encoding.Encoder) => void) {
+        const encoder = encoding.createEncoder();
+        encoding.writeVarUint(encoder, 0);
+        write(encoder);
+        const message = encoding.toUint8Array(encoder);
+        for (const handler of this.handlers.yjs ?? []) handler({ projectId: PROJECT, message: message.slice().buffer });
+    }
 }
 
 const docNode = (id = "n") => docToDataflow(provider.doc).nodes.find((n: any) => n.id === id);
@@ -448,6 +481,85 @@ describe("the dataflow's own fields, connections and scenarios", () => {
         const df = docToDataflow(provider.doc);
         expect(df.nodes.map((n: any) => n.id)).toEqual(["n"]);
         expect(df.edges).toEqual([]);
+    });
+
+    test("a connection to a node another tab removed goes from this canvas and stays in the doc, for the server to take out", async () => {
+        await open(serverDoc(spec().dataflow));
+        await fromAnotherTab((df) => {
+            df.nodes.push({ ...spec().dataflow.nodes[1], id: "k", x: 1200 });
+        });
+        act(() => api.onConnect({ source: "m", target: "k", sourceHandle: "out", targetHandle: "in" } as Connection));
+        await flush();
+        const drawn = api.edges.find((e: any) => e.target === "k")?.id as string;
+        expect(drawn).toBeTruthy();
+        expect(provider.doc.getMap("edges").has(drawn)).toBe(true);
+
+        // The other tab had not seen the connection: it removes the node alone.
+        await fromAnotherTab((df) => {
+            df.nodes = df.nodes.filter((n: any) => n.id !== "k");
+        });
+
+        expect(api.edges.map((e: any) => e.id)).not.toContain(drawn);
+        // The server takes it out and tells this tab who removed the node
+        // (`dataflow_docs._drop_dangling_connections`), which it can only do
+        // while this tab's writer leaves it in.
+        expect(provider.doc.getMap("edges").has(drawn)).toBe(true);
+    });
+
+    test("a tab that comes back sends the connection it drew offline to a node removed meanwhile, never its take-out, so the server sees it", async () => {
+        const dataflow: any = spec().dataflow;
+        dataflow.nodes.push({ ...dataflow.nodes[1], id: "k", x: 1200 });
+        // The server's doc, which this tab synced with before its socket dropped.
+        const server = new Y.Doc();
+        dataflowToDoc(dataflow, server, "doc-1");
+        const held = new DataflowDocProvider(PROJECT, { canWrite: true });
+        Y.applyUpdate(held.doc, Y.encodeStateAsUpdate(server), held);
+        held.synced = true;
+        await open(held, { dataflow: JSON.parse(JSON.stringify(dataflow)) });
+
+        // Offline, this tab connects m to k, and another tab, which never
+        // sees that, removes k.
+        act(() => api.onConnect({ source: "m", target: "k", sourceHandle: "out", targetHandle: "in" } as Connection));
+        await flush();
+        const drawn = api.edges.find((e: any) => e.target === "k")?.id as string;
+        expect(held.doc.getMap("edges").has(drawn)).toBe(true);
+        const before = docToDataflow(server);
+        const after = JSON.parse(JSON.stringify(before));
+        after.nodes = after.nodes.filter((n: any) => n.id !== "k");
+        server.transact(() => applyDataflow(server, before, after));
+
+        // It comes back. The server answers its step 1 as `_start` does: its
+        // step 2, which this canvas takes before the next message comes, then
+        // its own step 1, which this tab answers with all the server lacks of
+        // its changes in one update, then the start's ack, which sends what
+        // the tab held.
+        const socket = new RoomSocket();
+        act(() => held.attach(socket));
+        const [start] = socket.sent;
+        await act(async () => {
+            socket.receive((encoder) => syncProtocol.writeSyncStep2(encoder, server, Y.encodeStateVector(held.doc)));
+        });
+        await flush();
+        expect(api.edges.map((e: any) => e.id)).not.toContain(drawn);
+        await act(async () => {
+            socket.receive((encoder) => syncProtocol.writeSyncStep1(encoder, server));
+        });
+        await act(async () => start.ack?.({ ok: true, docId: "doc-1" }));
+        await flush();
+
+        // The server applies each update in turn and reads its connections
+        // between them, as `_apply_updates` does: the one this tab drew must
+        // show, so the rule takes it out and tells this tab who removed k.
+        const shown: boolean[] = [];
+        for (const { message } of socket.sent.slice(1)) {
+            const decoder = decoding.createDecoder(message);
+            if (decoding.readVarUint(decoder) !== 0) continue;
+            syncProtocol.readSyncMessage(decoder, encoding.createEncoder(), server, "tab");
+            shown.push(server.getMap("edges").has(drawn));
+        }
+        expect(shown.length).toBeGreaterThan(0);
+        expect(shown).toContain(true);
+        expect(held.doc.getMap("edges").has(drawn)).toBe(true);
     });
 });
 

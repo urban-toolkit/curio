@@ -37,10 +37,13 @@ room (``join_session``, ``events.py``) takes part.
 * A change that leaves a connection pointing at a node that is gone, a node
   removed while someone drew a connection to it, has that connection taken out
   at once, for every tab, and the tab that drew it is told who removed the
-  node (:func:`_drop_dangling_connections`). So is a tab whose own later
-  update took that connection out again, as its canvas does once the removal
-  reaches it, when the batch applies both in one transaction, which then
-  leaves the rule nothing to take out.
+  node (:func:`_drop_dangling_connections`), whoever made the change: a tab,
+  a writer or a spec written outside the doc. Only this rule takes it out: a
+  canvas stops drawing it but leaves it in the doc, so a tab that sends it
+  with its later changes as one update, as one that reconnects does, still
+  sends it. A tab of an older page takes it out itself, and is told too when
+  the batch applies both in one transaction, which then leaves the rule
+  nothing to take out.
 * Awareness is relayed to the doc's other tabs and sent whole to a tab that
   starts. It waits for the doc with the updates: a batch keeps each client's
   latest state and sends each tab one message, its own clients' left out. The
@@ -98,7 +101,9 @@ it, so every change reaches the doc's tabs and its log:
   to a node someone removed meanwhile is taken out in the writer's own
   transaction, by the rule a tab's change meets
   (:func:`_drop_dangling_connections`), so it never lands pointing nowhere,
-  and the writer is told (:attr:`Written.dropped`). The agents' sections
+  and the writer is told (:attr:`Written.dropped`). A connection a tab drew
+  meanwhile to a node the writer removes is taken out there too, and its
+  drawer is told who removed the node. The agents' sections
   (``doc_mapping.OUTSIDE_THE_DOC``) are written beside the doc, and a change
   to them alone is written to the file alone.
 * The whole-dataflow PUT is the one deliberate exception (:func:`put`): its
@@ -638,15 +643,20 @@ def _normalized(dataflow: dict) -> dict:
 def _catch_up(entry: _OpenDoc, file: "storage.SpecFile") -> None:
     """Carry a spec written outside the doc, since the doc last read or wrote
     the file, into the doc: one transaction of what that write changed, logged
-    and relayed to every tab like a person's."""
+    and relayed to every tab like a person's. A connection it leaves pointing
+    at a node that is gone is taken out in it, by the rule a tab's change
+    meets (:func:`_drop_dangling_connections`)."""
     if file.revision == entry.revision or not isinstance(file.spec, dict):
         return
     # The doc takes the file's scenarios in sets; its base is the file.
     theirs = _owned(_in_sets(file.spec))
     _roll(entry)
+    graph = _graph_keys(entry.doc)
+    notices: list[tuple[str, dict]] = []
     try:
         with entry.doc.transaction(origin=SPEC_ORIGIN):
             refused = doc_mapping.apply_dataflow(entry.doc, entry.base, theirs)
+            notices = _drop_dangling_connections(entry, None, {}, graph, held=True)
     except doc_mapping.DocMappingError:
         logger.error("dataflow %s: a spec written outside its doc has a node field the doc has no "
                      "place for; the doc keeps its own", entry.project_id, exc_info=True)
@@ -657,6 +667,7 @@ def _catch_up(entry: _OpenDoc, file: "storage.SpecFile") -> None:
                        entry.project_id, node_id)
     entry.revision, entry.base = file.revision, _owned(file.spec)
     _commit(entry, skip_sid=None, origin=SPEC_ORIGIN)
+    _tell(notices)
 
 
 # ---------------------------------------------------------------------------
@@ -1320,7 +1331,9 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
       its ends, checked in the same transaction: one to a node someone
       removed after the writer read the dataflow is taken out there, and is
       in :attr:`Written.dropped`; *on_dropped*, given, is called with those
-      ids before the file is written, as *on_refused* is.
+      ids before the file is written, as *on_refused* is. A connection a tab
+      drew since to a node the writer removes is taken out there too, and
+      the tab is told (:func:`_drop_dangling_connections`).
     * The agents' sections are written beside the doc
       (:func:`_merged_beside`). A change to them alone is written to the file
       alone: a tab gets none of it, and the doc reads the file's next
@@ -1466,8 +1479,10 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
            history: Optional[dict] = None, point: Optional[dict] = None,
            backfilled: Iterable[str] = ()) -> Written:
     """What :func:`write` and :func:`put` write: the change from *base* to
-    *mine*, under the spec lock. A connection it draws whose end the doc no
-    longer holds is taken out in its own transaction (:func:`_dangling`)."""
+    *mine*, under the spec lock. A connection it leaves pointing at a node
+    the doc no longer holds, one it draws or one a tab drew to a node it
+    removes, is taken out in its own transaction
+    (:func:`_drop_dangling_connections`)."""
     if not _has_spec(user_key, project_id):
         return Written(False)
     with _spec_lock(user_key, project_id):
@@ -1496,17 +1511,22 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
                 _catch_up(entry, file)
                 _roll(entry)
                 drawn = _drawn(base, theirs)
+                graph = _graph_keys(entry.doc)
                 with entry.doc.transaction(origin=actor):
                     refused = tuple(doc_mapping.apply_dataflow(
                         entry.doc, doc_mapping.owned(_dataflow_of(base)), doc_mapping.owned(_dataflow_of(theirs)),
                     ))
-                    # Checked again here, under the doc's lock: a node removed
-                    # after the writer read the dataflow takes the writer's
-                    # connections to it out, as the rule a tab's change meets.
+                    # Checked again here, under the doc's lock, by the rule a
+                    # tab's change meets: a node removed after the writer read
+                    # the dataflow takes the writer's connections to it out,
+                    # and a node the writer removes takes out those a tab drew
+                    # to it since, whose drawer is told.
                     dropped = tuple(_dangling(entry.doc, drawn))
                     _take_out(entry.doc, dropped)
+                    notices = _drop_dangling_connections(entry, None, _writer(entry, actor), graph, held=True)
                 owner_uses.noted(entry, by_owner=_by_its_owner(user_key, actor), backfilled=backfilled)
                 _commit(entry, skip_sid=None, origin=actor, point=point)
+                _tell(notices)
                 if refused:
                     for node_id in refused:
                         logger.info("dataflow %s: node %s's code changed while %s worked; the doc's stays",
@@ -1800,6 +1820,25 @@ def _user(me: dict) -> dict:
         "role": me.get("role"),
         **room_state.numbered(me),
     }
+
+
+def _writer(entry: _OpenDoc, actor: Actor) -> dict:
+    """Who a writer is, as the room knows them, for the tabs a merge rule
+    tells of its change (:func:`_drop_dangling_connections`): an agent at work
+    by its state's ``user`` (``agent_peers.py``), a person by a tab of theirs.
+    No one by name otherwise. Under the doc's lock, which reads no database."""
+    if actor.kind == AGENT:
+        with _lock:
+            states = [state for _clock, state in (_agent_states.get(entry.project_id) or {}).values()]
+        for state in states:
+            user = state.get("user") or {}
+            agent = user.get("agent") or {}
+            if agent.get("coord") == actor.agent and (agent.get("askedBy") or {}).get("account") == actor.by:
+                return user
+        return {}
+    if actor.kind == PERSON:
+        return next((me for me in entry.tabs.values() if str(me.get("user_id")) == actor.by), {})
+    return {}
 
 
 def _named(state: dict, me: dict) -> dict:
@@ -2173,9 +2212,10 @@ def _graph_keys(doc) -> tuple[frozenset, frozenset]:
             frozenset(doc.get("edges", type=Map).keys()))
 
 
-def _drop_dangling_connections(entry: _OpenDoc, sid: str, me: dict,
+def _drop_dangling_connections(entry: _OpenDoc, sid: Optional[str], me: dict,
                                before: tuple[frozenset, frozenset],
-                               appeared: Optional[dict[str, tuple]] = None) -> list[tuple[str, dict]]:
+                               appeared: Optional[dict[str, tuple]] = None, *,
+                               held: bool = False) -> list[tuple[str, dict]]:
     """The merge rule for a connection to a node that is gone, after the change
     the socket *sid* (the participant *me*) brought, *before* being the doc's
     node and connection ids until then and *appeared* the connections its
@@ -2186,15 +2226,21 @@ def _drop_dangling_connections(entry: _OpenDoc, sid: str, me: dict,
     It is taken out at once, in a transaction of the rule's own, whose update
     :func:`_apply_updates` logs and sends every tab with the rest of its batch,
     and the tab that drew it is told who removed the node
-    (:data:`CONNECTION_DROPPED_EVENT`).
+    (:data:`CONNECTION_DROPPED_EVENT`). Only this rule takes it out: a canvas
+    stops drawing it but leaves it in the doc (``useDataflowDoc.ts``), so a
+    tab that sends it with its later changes as one update still sends it.
 
-    The tab that drew it may have taken it out itself: its canvas drops a
-    connection whose node the removal took, and its writer then takes it out
-    of the doc. When the batch applies that update in one transaction with the
-    one that drew the connection, the transaction leaves the doc as it was and
-    the rule nothing to take out; the tab is told all the same, unless it
-    removed the node itself in that transaction. The notices, each a socket
-    and what it is told, for :func:`_tell` once the change is relayed."""
+    A change of the server's own, a writer's (:func:`_write`) or a spec
+    written outside the doc (:func:`_catch_up`), meets the rule in its own
+    transaction, which the caller holds (*held*): *sid* is ``None`` and *me*
+    who made it, as the room knows them (:func:`_writer`).
+
+    A tab of a page from before then takes the connection out itself. When the
+    batch applies that update in one transaction with the one that drew the
+    connection, the transaction leaves the doc as it was and the rule nothing
+    to take out; the tab is told all the same, unless it removed the node
+    itself in that transaction. The notices, each a socket and what it is
+    told, for :func:`_tell` once the change is relayed."""
     nodes_before, edges_before = before
     nodes_now, edges_now = _graph_keys(entry.doc)
     taken_back: dict[str, str] = {}
@@ -2210,8 +2256,9 @@ def _drop_dangling_connections(entry: _OpenDoc, sid: str, me: dict,
     while len(entry.removers) > REMOVERS_KEPT:
         entry.removers.pop(next(iter(entry.removers)))
     added = edges_now - edges_before
-    for edge_id in added:
-        entry.edge_authors[edge_id] = sid
+    if sid is not None:
+        for edge_id in added:
+            entry.edge_authors[edge_id] = sid
     dangling = _dangling(entry.doc)
     drawers: dict[str, list[str]] = {}
     for edge_id in dangling:
@@ -2223,7 +2270,9 @@ def _drop_dangling_connections(entry: _OpenDoc, sid: str, me: dict,
     for edge_id in list(entry.edge_authors):
         if edge_id not in edges_now or edge_id in dangling:
             del entry.edge_authors[edge_id]
-    if dangling:
+    if dangling and held:
+        _take_out(entry.doc, dangling)
+    elif dangling:
         with entry.doc.transaction(origin=RULES_ORIGIN):
             _take_out(entry.doc, dangling)
     gone_ends = {**taken_back, **dangling}
