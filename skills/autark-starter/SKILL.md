@@ -25,6 +25,9 @@ draws. First match wins:
 {{autk.starter_ladder}}
 - no geometry -> no document at all
 
-A map draws only tables with geometry. A DataFrame input is read through its one
+Column roles come from pandas dtypes: {{starter.dtype_roles}}.
+
+A map draws tables with geometry, and a raster by one band, though the ladder
+leaves rasters out. A DataFrame input is read through its one
 geometry column; one with no geometry column, or with several, cannot be drawn,
 so have the upstream node return a GeoDataFrame with its active geometry set.

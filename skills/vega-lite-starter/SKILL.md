@@ -27,10 +27,20 @@ the mark it writes and what it shows. First match wins:
 - nothing usable -> no spec at all
 
 Column roles come from pandas dtypes, checked in this order:
-{{starter.dtype_roles}}. A column of any other dtype has no role.
-Never chart `__row_index__`. A nominal column with a different value on every
-row is an identifier: it takes no role, so it is left out before the ladder is
+{{starter.dtype_roles}}. A column of any other dtype has no role, nor do
+`__row_index__` and `interacted`. Never chart `__row_index__`. In an input of 10
+rows or more, a nominal column with a different value on each of its first 100
+rows is an identifier: it takes no role, so it is left out before the ladder is
 matched, since charting it draws one bar per row.
 
 Always state an aggregate on a bar chart. Without one, Vega-Lite silently draws
 one bar per row.
+
+### Several inputs
+
+Each input is the dataset named after its circle, input_0, input_1, and so on.
+A spec that names none draws input_0, so with one input it writes no data field,
+and the spec or a layer draws another input by naming it, as
+`"data": {"name": "{{inputs.chip:1}}"}`. Every input's rows stacked,
+`{{inputs.stacked}}`, carry no geometry. The ladder reads only the first frame
+of the first input.

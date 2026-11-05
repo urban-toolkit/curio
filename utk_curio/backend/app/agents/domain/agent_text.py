@@ -444,7 +444,7 @@ def render_at_start() -> dict[Path, str]:
     ``contracts.PromptTemplateError`` on a marker no field defines or a skill
     that breaks the format's rules, so broken text stops the start, not a
     run, and keeps none of the start's renders: not even a page or a skill
-    another page read while it rendered, as the preamble's Autark section
+    another page read while it rendered, as the ``autark`` skill's section
     reads ``autark-grammar.md`` and the preamble its skills."""
     global _STARTED
     if not _STARTED:
