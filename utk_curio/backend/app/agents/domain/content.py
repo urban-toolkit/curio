@@ -290,18 +290,25 @@ def _pop_content_field(params: dict, path: tuple[str, ...]) -> tuple[str | None,
     """Split *params* into ``(content_string, everything_else)`` for a
     content-class tool.
 
-    The field is lifted only when it is actually a ``str``: a wrong-typed one
-    stays in the remainder, so the mint's own "must be a non-empty string"
-    refusal still fires and small malformed payloads behave exactly as before.
+    The field is lifted when it is a ``str``, or an object or an array: a
+    chart's or a map's document given as the value it is, measured as the
+    text its node lands it as (:func:`document_text`), so the parser and the
+    mint bound the same characters. Whether the node takes a document is the
+    mint's question. A field of any other type stays in the remainder, so the
+    mint's own "must be a non-empty string" refusal still fires and small
+    malformed payloads behave exactly as before.
     """
     cursor: object = params
     for key in path[:-1]:
         if not isinstance(cursor, dict):
             return None, params
         cursor = cursor.get(key)
-    if not isinstance(cursor, dict) or not isinstance(cursor.get(path[-1]), str):
+    if not isinstance(cursor, dict):
         return None, params
-    content_text = cursor[path[-1]]
+    value = cursor.get(path[-1])
+    content_text = value if isinstance(value, str) else document_text(value)
+    if content_text is None:
+        return None, params
     # Shallow copies down the path — the caller's params are never mutated.
     rest = dict(params)
     branch = rest
@@ -627,7 +634,12 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         }
         node_content = node_raw.get("content")
         if node_content is not None:
+            # An object or an array is the JSON document it is, as its text,
+            # as node.create and node.content.write read one: the mint then
+            # judges a planned node's content alike, whichever way it came.
             if not isinstance(node_content, str):
+                node_content = document_text(node_content)
+            if node_content is None:
                 errors.append(agent_text.message("plan.node-content-not-string", where=where))
             elif len(node_content) > PROPOSAL_CONTENT_MAX_CHARS:
                 errors.append(
@@ -1419,7 +1431,21 @@ def delegation_instruction(entries: list[tuple[str, str]], *, native_tools: bool
 _CONTENT_WRAPPER_KEYS = ("content", "code", "source", "result")
 
 
-def extract_node_content(text: object) -> str:
+def document_text(value: object) -> str | None:
+    """*value* as the text of the JSON document it is, when it is an object
+    or an array, else None. A chart's or a map's document a model gives as a
+    value, not as its text, is written as every document Curio decodes is
+    (``reply_schemas.ReplySchema.decode``): indented two spaces, its letters
+    as they are."""
+    if not isinstance(value, (dict, list)):
+        return None
+    try:
+        return json.dumps(value, indent=2, ensure_ascii=False)
+    except (TypeError, ValueError, RecursionError):
+        return None
+
+
+def extract_node_content(text: object, *, document: bool = False) -> str:
     """Extract the executable content from a model's generated-code reply
     (dev/57) — applied at EVERY model-output→node-content boundary (Solve,
     the node-content mints, plan-carried content, the legacy Get Code path).
@@ -1431,7 +1457,17 @@ def extract_node_content(text: object) -> str:
     trimmed and otherwise untouched — preserving legitimate content outranks
     cosmetic cleanup (the legacy ``not controllable`` sentinel passes through
     exactly).
+
+    *document* says the node holds a JSON document, as a chart's or a map's
+    does (its template's content kind is ``grammar``). Content given as an
+    object or an array is then that document, as its text
+    (:func:`document_text`), and takes the path the same document sent as
+    text takes, so the document check judges it as usual. For any other node
+    such a value is no content, as every value that is not a text is: a dict
+    never lands in a node's code as a dict literal.
     """
+    if document and isinstance(text, (dict, list)):
+        text = document_text(text)
     if not isinstance(text, str):
         return ""
     current = text.strip()

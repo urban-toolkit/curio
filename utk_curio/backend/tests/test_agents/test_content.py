@@ -237,15 +237,48 @@ class TestContentClassToolBudgets:
         assert text == "y" * 20000
         assert rest == {"template": {"label": "L"}, "pad": "p"}
         assert params["template"]["content"] == "y" * 20000
-        # A wrong-typed field stays where it is, for the mint's own refusal.
-        wrong = {"template": {"content": {"not": "a string"}}}
-        assert content._pop_content_field(wrong, ("template", "content")) == (None, wrong)
+        # An object or an array is lifted as the JSON text its node lands it
+        # as, so a chart's or a map's document given as a value is budgeted as
+        # content too; the caller's params are still never mutated.
+        document = {"template": {"label": "L", "content": {"map": {"layerRefs": []}}}}
+        assert content._pop_content_field(document, ("template", "content")) == (
+            '{\n  "map": {\n    "layerRefs": []\n  }\n}', {"template": {"label": "L"}})
+        assert document["template"]["content"] == {"map": {"layerRefs": []}}
+        assert content._pop_content_field({"content": ["a"]}, ("content",)) == ('[\n  "a"\n]', {})
+        # Any other wrong-typed field stays where it is, for the mint's own refusal.
+        for value in (7, True, None):
+            wrong = {"template": {"content": value}}
+            assert content._pop_content_field(wrong, ("template", "content")) == (None, wrong)
 
     def test_wrong_typed_content_still_reaches_the_mint(self):
-        # A non-str content field is left in the remainder so the mint's own
-        # "must be a non-empty string" refusal fires — behaviour unchanged.
-        assert content.parse_parts(self._request("node.create", {
-            "nodeType": "a/b", "content": {"not": "a string"}})) is not None
+        # A content field the parser does not lift stays in the remainder, so
+        # the mint's own refusal fires; an object is lifted and reaches the
+        # mint too, which knows whether the node takes a JSON document.
+        for value in ({"not": "a string"}, 7):
+            assert content.parse_parts(self._request("node.create", {
+                "nodeType": "a/b", "content": value})) is not None
+
+    def test_a_document_given_as_an_object_gets_the_content_budget(self):
+        """A map's document given as an object, as muse-glimmer gave Autark's
+        in the 11-05 Skill evaluations pilot (CI run 41953187658), is budgeted
+        as content, by the JSON text its node lands it as. Left among the other
+        params, an object over the classic cap was refused as if the code were
+        outside params.content."""
+        document = {"map": {"layerRefs": [
+            {"dataRef": f"layer_{i}", "style": {"opacity": 0.8, "fill": True}} for i in range(120)]}}
+        params = {"nodeType": "curio.builtin/autk-grammar", "content": document}
+        assert len(json.dumps(params).encode()) > content.TAIL_MAX_BYTES
+        request, errors = content.parse_tool_request_verbose({"tool": "node.create", "params": params})
+        assert errors == [], errors
+        assert request["params"]["content"] == document  # the mint reads the value as it came
+        (part,) = content.parse_parts(self._request("node.create", params))
+        assert part["params"]["content"] == document
+        # Over the mint's bound, by the same number, the error names the field.
+        huge = {"title": "x" * content.PROPOSAL_CONTENT_MAX_CHARS}
+        _, errors = content.parse_tool_request_verbose(
+            {"tool": "node.content.write", "params": {"nodeId": "n1", "content": huge}})
+        count = len(json.dumps(huge, indent=2, ensure_ascii=False))
+        assert errors == [f"params.content is {count} chars (max {content.PROPOSAL_CONTENT_MAX_CHARS})"]
 
     def test_other_tools_are_byte_identical(self):
         assert content.parse_parts(self._request("node.read", {"x": "y" * 2000})) is None
@@ -827,6 +860,22 @@ class TestDataflowPlanPart:
         assert len(parts[0]["nodes"]) == 3
         assert parts[0]["edges"][0] == {"from": "n0", "to": "n1"}
 
+    def test_a_nodes_content_given_as_an_object_is_its_json_text(self):
+        """A planned node's content given as an object or an array is read as
+        its JSON text, as node.create and node.content.write read one, so the
+        mint judges the plan as it judges the same plan carrying that text. A
+        content of any other type is still no string."""
+        document = {"map": {"layerRefs": []}}
+        node = self._plan(n_nodes=1)["nodes"][0]
+        as_text = self._plan(n_nodes=1, nodes=[{**node, "content": json.dumps(document, indent=2)}])
+        as_object = self._plan(n_nodes=1, nodes=[{**node, "content": document}])
+        parsed, errors = content.parse_dataflow_plan_verbose(as_object)
+        assert errors == [], errors
+        assert parsed == content.parse_dataflow_plan_verbose(as_text)[0]
+        assert parsed["nodes"][0]["content"] == '{\n  "map": {\n    "layerRefs": []\n  }\n}'
+        _, errors = content.parse_dataflow_plan_verbose(self._plan(n_nodes=1, nodes=[{**node, "content": 7}]))
+        assert errors == ["nodes[0].content must be a string"]
+
     def test_large_plan_gets_its_own_tail_budget(self):
         # Well past the classic 4096-byte cap — sized-for-real-graphs
         # regression: the app handles far more than a dozen nodes.
@@ -1077,6 +1126,24 @@ class TestExtractNodeContent:
     def test_non_string_and_empty(self):
         assert content.extract_node_content(None) == ""
         assert content.extract_node_content("   ") == ""
+
+    def test_a_document_given_as_an_object_is_its_json_text(self):
+        """A node that holds a JSON document, a chart's or a map's, takes its
+        document as an object or an array too: its JSON text, which takes the
+        path the same text takes. For any other node the value is no content,
+        so a dict never lands in a node's code as a dict literal."""
+        document = {"plot": {"dataRef": "buildings", "mark": "bar", "title": "Façades"}}
+        text = ('{\n  "plot": {\n    "dataRef": "buildings",\n    "mark": "bar",\n'
+                '    "title": "Façades"\n  }\n}')
+        assert content.extract_node_content(document, document=True) == text
+        assert content.extract_node_content(text, document=True) == text
+        assert content.extract_node_content(["a"], document=True) == '[\n  "a"\n]'
+        # A wrapper given as an object unwraps as its text does.
+        wrapped = {"content": json.dumps(document)}
+        assert content.extract_node_content(wrapped, document=True) == json.dumps(document)
+        assert content.extract_node_content(document) == ""
+        assert content.extract_node_content(7, document=True) == ""
+        assert content.extract_node_content(None, document=True) == ""
 
 
 class TestDataflowPlanRevisionGrammar:
