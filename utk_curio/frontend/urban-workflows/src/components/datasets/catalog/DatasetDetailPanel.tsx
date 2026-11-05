@@ -10,7 +10,7 @@ import {
   isDatasetPublishedToCatalog,
   isLayerGroupId,
 } from "../../../services/datasetCatalog";
-import { DatasetDataflowUsageSection, useDatasetDataflowUsage } from "./DatasetDataflowUsage";
+import { DatasetDataflowUsageSection, nodeKindLabel, useDatasetDataflowUsage } from "./DatasetDataflowUsage";
 import {
   CollectionInfoSection,
   CollectionStrip,
@@ -20,7 +20,6 @@ import { DetailLink } from "./DetailLink";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
   downstreamFromDataflowUsage,
-  formatNodeTypeLabel,
   lineageUsageSummary,
   upstreamOriginCaption,
   useDatasetLineage,
@@ -83,7 +82,7 @@ const NodeTypeBadge: React.FC<{
   displayName: string;
 }> = ({ nodeType, displayName }) => {
   if (!nodeType) return null;
-  const label = formatNodeTypeLabel(nodeType);
+  const label = nodeKindLabel(nodeType);
   if (label.toLowerCase() === displayName.trim().toLowerCase()) return null;
   return <span className={styles.lineageNodeBadge}>{label}</span>;
 };

@@ -58,6 +58,8 @@ import type {
   DatasetLineage,
   DatasetLineageNodeUsageRef,
 } from "../../services/datasetLineage";
+import { registerNode } from "../../registry/nodeRegistry";
+import type { NodeDescriptor } from "../../registry/types";
 
 const mockUseDatasetLineage = useDatasetLineage as jest.MockedFunction<
   typeof useDatasetLineage
@@ -196,6 +198,31 @@ describe("DatasetDetailPanel backend usage fallback", () => {
     expect(
       within(usage).getByText("Consumed by Computation Analysis"),
     ).toBeInTheDocument();
+  });
+
+  it("names a consumer by its template's label when the registry holds the template", async () => {
+    // A template id is not always its label: computation-analysis is Python
+    // Computation, as the palette and the node's header call it.
+    registerNode({
+      id: "curio.builtin/computation-analysis@1",
+      label: "Python Computation",
+    } as unknown as NodeDescriptor);
+    usageSpy.mockResolvedValue([
+      backendUsage({ nodes: [{ nodeId: "node-9", nodeType: "curio.builtin/computation-analysis@1" }] }),
+    ]);
+    renderPanel(lineageFixture());
+
+    expect(
+      await within(sidebar()).findByText("Used by 1 node in 1 dataflow"),
+    ).toBeInTheDocument();
+    const usage = within(sidebar()).getByRole("region", {
+      name: "Projects using this dataset",
+    });
+    expect(within(usage).getByText("Consumed by Python Computation")).toBeInTheDocument();
+    const downstream = within(sidebar()).getByText("Downstream usage (1)")
+      .parentElement as HTMLElement;
+    expect(within(downstream).getByText("Python Computation")).toBeInTheDocument();
+    expect(within(downstream).queryByText("Computation Analysis")).not.toBeInTheDocument();
   });
 
   it("prefers live-canvas consumers over backend usage", async () => {
