@@ -20,6 +20,12 @@ export const CANVAS_ORIGIN = "canvas";
  *  node at one of its ends was removed meanwhile (`dataflow_docs.py`). */
 export const CONNECTION_DROPPED_EVENT = "connection_dropped";
 
+/** What the server tells the tabs of the dataflow's owner and editors when a
+ *  write attaches an agent to it or takes one off: the attachments are kept
+ *  beside the doc, whose changes tell a tab nothing of them
+ *  (`dataflow_docs.py`). */
+export const ATTACHMENTS_CHANGED_EVENT = "agent_attachments_changed";
+
 export interface DocBinding {
     /** The provider, which holds the doc and its awareness. */
     provider: DataflowDocProvider;

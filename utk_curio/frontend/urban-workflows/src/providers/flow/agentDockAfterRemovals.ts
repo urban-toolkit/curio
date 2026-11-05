@@ -11,9 +11,21 @@
  * is: it finds nothing of this tab's to wait for, so the dock asks before
  * the server has the removal, and on another tab's removal it diffs a canvas
  * that still draws what the doc took out.
+ *
+ * The dock asks only after a removal (`removesNodes`): the canvas hands every
+ * node change to the removal handler, each move of a drag among them. An
+ * agent attached or taken off reaches the dock through the dataflow's room
+ * (`useAttachmentsInTheRoom`).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { NodeChange } from "reactflow";
+
 import { notifyAgentDockRefresh } from "../../services/agents/agentEvents";
+
+/** Whether *changes* remove a node: a move, a selection or a new size does not. */
+export function removesNodes(changes: readonly NodeChange[]): boolean {
+    return changes.some((change) => change.type === "remove");
+}
 
 export function refreshAgentsWhenKept(whenKept: (() => Promise<unknown>) | undefined): Promise<void> {
     return Promise.resolve(whenKept?.()).then(

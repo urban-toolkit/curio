@@ -6,7 +6,9 @@ import type { AgentAttachment, AgentContentPart, AgentRunSkillPins, AgentTarget,
 /**
  * Self-contained hook for a project's agent attachments: the dock reads them,
  * the canvas attaches on drop, and the chat runs them — all over ``agentsApi``.
- * Stays in sync via the ``curio:agent-dock-refresh`` window event.
+ * Stays in sync via the ``curio:agent-dock-refresh`` window event, and with
+ * the agents someone else attaches or takes off through the dataflow's room
+ * (`providers/agents/useAttachmentsInTheRoom.ts`).
  */
 export interface AgentAttachmentsState {
   attachments: AgentAttachment[];

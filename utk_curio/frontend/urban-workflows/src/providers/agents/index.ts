@@ -7,3 +7,4 @@ export * from "./useAgentProposals";
 export * from "./useAgentSolve";
 export * from "./useAgentSimulation";
 export * from "./useAgentNodeRuns";
+export * from "./useAttachmentsInTheRoom";

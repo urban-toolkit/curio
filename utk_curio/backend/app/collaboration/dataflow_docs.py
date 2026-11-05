@@ -105,7 +105,10 @@ it, so every change reaches the doc's tabs and its log:
   meanwhile to a node the writer removes is taken out there too, and its
   drawer is told who removed the node. The agents' sections
   (``doc_mapping.OUTSIDE_THE_DOC``) are written beside the doc, and a change
-  to them alone is written to the file alone.
+  to them alone is written to the file alone. An agent a write attaches to the
+  dataflow or takes off it is told to the tabs of its owner and editors
+  (:data:`ATTACHMENTS_CHANGED_EVENT`), as :func:`put` tells one too: no change
+  of the doc tells a tab of the attachments.
 * The whole-dataflow PUT is the one deliberate exception (:func:`put`): its
   transaction makes the doc match the PUT. A dataflow made anew starts through
   :func:`create`.
@@ -167,7 +170,7 @@ from pycrdt import (
     write_message,
 )
 
-from utk_curio.backend.app.collaboration import doc_mapping, history, owner_uses, room_state
+from utk_curio.backend.app.collaboration import doc_mapping, history, owner_uses, roles, room_state
 from utk_curio.backend.app.collaboration.events import (
     READ_ONLY_REFUSAL,
     _project,
@@ -193,6 +196,9 @@ SPEC_ORIGIN = "spec"
 RULES_ORIGIN = "rules"
 #: What a tab whose connection a merge rule took out is told, on its socket.
 CONNECTION_DROPPED_EVENT = "connection_dropped"
+#: What the tabs of a dataflow's owner and editors are told when a write
+#: attaches an agent to it or takes one off (:func:`_tell_attachments`).
+ATTACHMENTS_CHANGED_EVENT = "agent_attachments_changed"
 #: How many removed nodes an open doc remembers the remover of.
 REMOVERS_KEPT = 500
 
@@ -1337,7 +1343,10 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
     * The agents' sections are written beside the doc
       (:func:`_merged_beside`). A change to them alone is written to the file
       alone: a tab gets none of it, and the doc reads the file's next
-      revision as one that changed nothing it holds.
+      revision as one that changed nothing it holds. An agent the write
+      attaches or takes off is told to the tabs of the dataflow's owner and
+      editors, each of which lists its agents again
+      (:func:`_tell_attachments`).
     * Nothing is written when the writer changed nothing, nor for a dataflow
       deleted meanwhile, whose folder must not come back.
     * *point*, given, is the history's point the change is (``history.py``):
@@ -1359,10 +1368,13 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
     if doc_mapping.same(_writable(spec), spec.base):
         spec.written = Written(False)
         return spec.written
+    attached = _attachment_ids(spec.base)
     written = _write(user_key, project_id, spec.base, spec, actor, on_refused=on_refused, on_dropped=on_dropped,
                      point=point, backfilled=backfilled)
     spec.base = copy.deepcopy(_writable(spec))
     spec.written = written
+    if written.wrote:
+        _tell_attachments(project_id, attached, _attachment_ids(spec.base))
     return written
 
 
@@ -1395,7 +1407,10 @@ def put(user_key: str, project_id: str, spec: dict, *, over: Optional[Live], act
         create(user_key, project_id, spec, actor)
         return Written(True)
     history = {key: spec[key] for key in storage.HISTORY_KEYS if key in spec}
-    return _write(str(user_key), project_id, over.base, spec, actor, history=history, backfilled=backfilled)
+    written = _write(str(user_key), project_id, over.base, spec, actor, history=history, backfilled=backfilled)
+    if written.wrote:
+        _tell_attachments(project_id, _attachment_ids(over.base), _attachment_ids(spec))
+    return written
 
 
 def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
@@ -1639,6 +1654,29 @@ def _merged_section(name: str, before, after, theirs):
             out.append(entry)  # added meanwhile
     out += [entry for key, entry in now.items() if key not in held and key not in was]
     return out
+
+
+def _attachment_ids(spec) -> frozenset:
+    """The ids of the agents' attachments *spec* holds beside the doc."""
+    section = _dataflow_of(spec).get("agentAttachments") if isinstance(spec, dict) else None
+    if not isinstance(section, list):
+        return frozenset()
+    key_of = _SECTION_KEYS["agentAttachments"]
+    return frozenset(key for key in map(key_of, section) if key is not None)
+
+
+def _tell_attachments(project_id: str, before: frozenset, after: frozenset) -> None:
+    """Tell the tabs of the dataflow's owner and editors that a write attached
+    an agent to it or took one off (*before* and *after* are the attachments'
+    ids), so each lists its agents again: no change of the doc tells a tab of
+    them. A watcher's tab lists none and is told nothing, as is every tab of a
+    write that attached and took off no agent."""
+    if before == after:
+        return
+    try:
+        roles.tell_editors(project_id, ATTACHMENTS_CHANGED_EVENT, {"projectId": project_id})
+    except Exception:  # noqa: BLE001 - the write stands whether or not the room heard of it
+        logger.exception("the room of dataflow %s could not be told its agents changed", project_id)
 
 
 def _keyed_by(entries, key_of) -> Optional[dict]:
