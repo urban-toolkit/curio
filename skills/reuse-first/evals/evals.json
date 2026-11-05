@@ -13,6 +13,12 @@
         "The answer proposes no package: no package.install and no package.draft.apply.",
         "The answer does not say a new node type or package has to be written for this.",
         "The code it writes computes, for each zip code, the share of roofs whose VEGETATED_SQFT is above 10,000."
+      ],
+      "checks": [
+        {"assertion": 2, "kind": "tool", "tool": "package.install", "absent": true},
+        {"assertion": 2, "kind": "tool", "tool": "package.install", "status": "proposed", "absent": true},
+        {"assertion": 2, "kind": "tool", "tool": "package.draft.apply", "absent": true},
+        {"assertion": 2, "kind": "tool", "tool": "package.draft.apply", "status": "proposed", "absent": true}
       ]
     },
     {
@@ -37,6 +43,10 @@
         "The answer says the Rasterization package (curio.rasterization@1) is already in this project.",
         "The answer proposes no package.install.",
         "The answer proposes no package draft and asks for no package to be written."
+      ],
+      "checks": [
+        {"assertion": 2, "kind": "tool", "tool": "package.install", "absent": true},
+        {"assertion": 2, "kind": "tool", "tool": "package.install", "status": "proposed", "absent": true}
       ]
     }
   ],

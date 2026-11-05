@@ -13,6 +13,11 @@
         "The call passes absolute=True.",
         "The call passes output_file=curio_output_file.",
         "The answer says which Accumulated Shadow node to connect to input_0 and which to input_1."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "node-added", "type": "curio.rasterization/raster-calculator", "count": 1},
+        {"assertion": 3, "kind": "code", "type": "curio.rasterization/raster-calculator", "pattern": "\\babsolute\\s*=\\s*True\\b"},
+        {"assertion": 4, "kind": "code", "type": "curio.rasterization/raster-calculator", "pattern": "\\boutput_file\\s*=\\s*curio_output_file\\b"}
       ]
     },
     {
@@ -24,6 +29,10 @@
         "The code it writes imports raster_statistics from scout_rasters.raster_algebra and returns one raster_statistics call over input_0.",
         "The call keeps only the cells under 60 minutes of shadow, through where=.",
         "The answer says to connect the towers removed scenario's Accumulated Shadow node to input_0."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "node-added", "type": "curio.rasterization/raster-calculator", "count": 1},
+        {"assertion": 3, "kind": "code", "type": "curio.rasterization/raster-calculator", "pattern": "\\bwhere\\s*=\\s*lambda[^:\\n]*:[^\\n]*<\\s*60\\b"}
       ]
     },
     {
@@ -34,6 +43,14 @@
         "The answer says the Accumulated Shadow (Deep Umbra) nodes read zoom-16 tiles, so the Rasterize Buildings nodes that feed them should keep zoom 16.",
         "The answer makes no node.settings.write that sets zoom to 18.",
         "The answer creates no new node and writes no new code for the Rasterize Buildings nodes."
+      ],
+      "checks": [
+        {"assertion": 2, "kind": "tool", "tool": "node.settings.write", "args": {"widgets.zoom": 18}, "absent": true},
+        {"assertion": 3, "kind": "tool", "tool": "node.create", "absent": true},
+        {"assertion": 3, "kind": "tool", "tool": "node.content.write", "node": "0fde14ff-f2f8-5510-849e-0ddfa30531f8", "absent": true},
+        {"assertion": 3, "kind": "tool", "tool": "node.content.write", "node": "abd7fc96-4bfc-5eff-85a3-5e4991ba89b9", "absent": true},
+        {"assertion": 3, "kind": "delegate", "capability": "node.content.generate", "node": "0fde14ff-f2f8-5510-849e-0ddfa30531f8", "absent": true},
+        {"assertion": 3, "kind": "delegate", "capability": "node.content.generate", "node": "abd7fc96-4bfc-5eff-85a3-5e4991ba89b9", "absent": true}
       ]
     },
     {
@@ -47,6 +64,10 @@
         "The plan wires both scenarios' Flood depth rasters into that node, one data edge each.",
         "The node's intent says it divides the NbS scenario's depth by the No NbS one's, cell by cell.",
         "The plan adds no curio.builtin/computation-analysis node to do the raster math."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "dataflow.plan.write"},
+        {"assertion": 1, "kind": "node-added", "type": "curio.rasterization/raster-calculator"}
       ]
     }
   ],

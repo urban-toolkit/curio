@@ -37,6 +37,9 @@
         "The answer adds the rows in the loading node's Python code (node 8d428948-f5e4-485b-9812-51a4212678a7), whose DataFrame gains J with 60 and K with 33 in columns a and b and is still returned, or tells the user to add them there.",
         "The answer says the chart draws the table the node before it returns, so the new rows go in that node.",
         "The answer creates no new node: the new bars come from rows of the existing loading node."
+      ],
+      "checks": [
+        {"assertion": 4, "kind": "tool", "tool": "node.create", "absent": true}
       ]
     }
   ]

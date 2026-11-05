@@ -13,6 +13,10 @@
         "The code it writes loads the dataset by its id, data.cityofchicago.energy-usage-2010, through curio_load_data or curio_data_path.",
         "The code it writes names no file path on disk and no URL.",
         "The run calls catalog.search."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "node-added", "type": "curio.builtin/data-loading", "count": 1},
+        {"assertion": 4, "kind": "tool", "tool": "catalog.search"}
       ]
     },
     {
@@ -25,6 +29,9 @@
         "The answer names the AirNow API host as one that needs a saved key.",
         "The answer tells the user to save a key for that host (a Node code key in API Settings) before a node can read it.",
         "No code it writes holds an API key value or a placeholder such as YOUR_API_KEY."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "node.create", "absent": true}
       ]
     },
     {
@@ -48,6 +55,9 @@
         "The answer creates no node in this turn (no node.create).",
         "The answer writes no code with a portal URL written from memory.",
         "The answer asks the user to pick or confirm a source (a candidate the Dataset Finder found, or a URL the user gives) before a node is built."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "node.create", "absent": true}
       ]
     }
   ],

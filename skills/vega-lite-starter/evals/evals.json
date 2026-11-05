@@ -13,6 +13,13 @@
         "The spec draws \"mark\": \"bar\" with side on x as nominal.",
         "The spec puts accessibility on y as quantitative with an explicit \"aggregate\": \"mean\".",
         "The spec has no \"data\" field."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "code", "node": "scores-chart", "pattern": "\"(?:mark|layer|hconcat|vconcat|concat|facet|repeat)\"\\s*:"},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"mark\"\\s*:\\s*(?:\\{[^{}]*\"type\"\\s*:\\s*)?\"bar\""},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"x\"\\s*:\\s*\\{(?=(?:[^{}]|\\{[^{}]*\\})*\"field\"\\s*:\\s*\"side\")(?=(?:[^{}]|\\{[^{}]*\\})*\"type\"\\s*:\\s*\"nominal\")"},
+        {"assertion": 3, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"y\"\\s*:\\s*\\{(?=(?:[^{}]|\\{[^{}]*\\})*\"field\"\\s*:\\s*\"accessibility\")(?=(?:[^{}]|\\{[^{}]*\\})*\"type\"\\s*:\\s*\"quantitative\")(?=(?:[^{}]|\\{[^{}]*\\})*\"aggregate\"\\s*:\\s*\"mean\")"},
+        {"assertion": 4, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"data\"\\s*:", "absent": true}
       ]
     },
     {
@@ -25,6 +32,12 @@
         "The spec draws \"mark\": \"line\" with hour on x as temporal.",
         "The spec puts pedestrians, the first quantitative column, on y as quantitative, and does not fold cyclists in beside it.",
         "The spec has no \"data\" field."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "code", "node": "counts-chart", "pattern": "\"(?:mark|layer|hconcat|vconcat|concat|facet|repeat)\"\\s*:"},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"mark\"\\s*:\\s*(?:\\{[^{}]*\"type\"\\s*:\\s*)?\"line\""},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"x\"\\s*:\\s*\\{(?=(?:[^{}]|\\{[^{}]*\\})*\"field\"\\s*:\\s*\"hour\")(?=(?:[^{}]|\\{[^{}]*\\})*\"type\"\\s*:\\s*\"temporal\")"},
+        {"assertion": 4, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"data\"\\s*:", "absent": true}
       ]
     },
     {
@@ -37,6 +50,12 @@
         "roof_id is on no axis or channel of the spec: the chart draws no bar per roof.",
         "The spec draws \"mark\": \"bar\" with VEGETATED_SQFT binned on x (\"bin\": true or a bin object).",
         "The spec puts \"aggregate\": \"count\" on y."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "code", "node": "roofs-chart", "pattern": "\"(?:mark|layer|hconcat|vconcat|concat|facet|repeat)\"\\s*:"},
+        {"assertion": 3, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"mark\"\\s*:\\s*(?:\\{[^{}]*\"type\"\\s*:\\s*)?\"bar\""},
+        {"assertion": 3, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"x\"\\s*:\\s*\\{(?=(?:[^{}]|\\{[^{}]*\\})*\"field\"\\s*:\\s*\"VEGETATED_SQFT\")(?=(?:[^{}]|\\{[^{}]*\\})*\"bin\"\\s*:\\s*(?:true|\\{|\"binned\"))"},
+        {"assertion": 4, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"y\"\\s*:\\s*\\{(?=(?:[^{}]|\\{[^{}]*\\})*\"aggregate\"\\s*:\\s*\"count\")"}
       ]
     }
   ],

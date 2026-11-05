@@ -14,6 +14,16 @@
         "The layer is colored by population, the first quantitative column: \"getFnv\": \"population\" with \"getFnvType\": \"quantitative\".",
         "The layer sets \"colorMapInterpolator\": \"interpolateViridis\" and a \"title\" that names population.",
         "The document has no \"data\" section."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "spec", "node": "blocks-map", "path": "map.layerRefs.0"},
+        {"assertion": 1, "kind": "spec", "node": "blocks-map", "path": "map.layerRefs.1", "absent": true},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/autk-grammar", "pattern": "\"dataRef\"\\s*:\\s*(?:\"input_0\"|\"\\[!!\\s*input_0\\s*!!\\]\"|\\[!!\\s*input_0\\s*!!\\])"},
+        {"assertion": 3, "kind": "code", "type": "curio.builtin/autk-grammar", "pattern": "\"getFnv\"\\s*:\\s*\"population\""},
+        {"assertion": 3, "kind": "code", "type": "curio.builtin/autk-grammar", "pattern": "\"getFnvType\"\\s*:\\s*\"quantitative\""},
+        {"assertion": 4, "kind": "code", "type": "curio.builtin/autk-grammar", "pattern": "\"colorMapInterpolator\"\\s*:\\s*\"interpolateViridis\""},
+        {"assertion": 4, "kind": "code", "type": "curio.builtin/autk-grammar", "pattern": "\"title\"\\s*:\\s*\"[^\"]*[Pp]opulation"},
+        {"assertion": 5, "kind": "spec", "type": "curio.builtin/autk-grammar", "path": "data", "absent": true}
       ]
     },
     {
@@ -25,6 +35,14 @@
         "The answer makes a content change of node blocks-parks-map (node.content.write) whose document has a \"map\".",
         "The map has exactly two layerRefs, one per input table: \"dataRef\" input_0 (or [!! input_0 !!]) and input_1 (or [!! input_1 !!]).",
         "The document has no \"data\" section: both tables come from the node's inputs."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "spec", "node": "blocks-parks-map", "path": "map"},
+        {"assertion": 2, "kind": "spec", "type": "curio.builtin/autk-grammar", "path": "map.layerRefs.1"},
+        {"assertion": 2, "kind": "spec", "type": "curio.builtin/autk-grammar", "path": "map.layerRefs.2", "absent": true},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/autk-grammar", "pattern": "\"dataRef\"\\s*:\\s*(?:\"input_0\"|\"\\[!!\\s*input_0\\s*!!\\]\"|\\[!!\\s*input_0\\s*!!\\])"},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/autk-grammar", "pattern": "\"dataRef\"\\s*:\\s*(?:\"input_1\"|\"\\[!!\\s*input_1\\s*!!\\]\"|\\[!!\\s*input_1\\s*!!\\])"},
+        {"assertion": 3, "kind": "spec", "type": "curio.builtin/autk-grammar", "path": "data", "absent": true}
       ]
     },
     {
