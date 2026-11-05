@@ -1,0 +1,492 @@
+{
+  "skill_name": "scenarios",
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "packages/curio.vega-lite@1/sources/grouped-bars.vl.json, the Vega-Lite package's Grouped bars starter (the stacked inputs read as \"data\": {\"name\": \"[!! inputs !!]\"}, xOffset and color by scenario_name, \"scale\": [!! scenario colors !!]), its widget chips written as docs/examples/dataflows/scenarios.json's shadow chart c3f9e1a4-2d7b-4c6e-8a91-5b0d2e3f4a82 reads its table: building on x, the sum of shadow_m on y",
+      "fails": [],
+      "reply": "I added a Vega-Lite node, Shadow lengths by scenario. Its spec reads its inputs stacked, \"data\": {\"name\": \"[!! inputs !!]\"}, puts the buildings on x with the two scenarios side by side, and colors the scenario_name field with \"scale\": [!! scenario colors !!], so each scenario is drawn in its box's color and the colors follow a box you recolor later. It writes no colors of its own. Connect each scenario's Shadow lengths node to it.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"building\",\n      \"type\": \"nominal\",\n      \"title\": \"Building\"\n    },\n    \"xOffset\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"sort\": [!! scenario order !!]\n    },\n    \"y\": {\n      \"field\": \"shadow_m\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"sum\",\n      \"title\": \"Shadow length (m)\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!]\n    }\n  }\n}",
+                "goal": "Compare the two scenarios' shadow lengths building by building, each in its box's color.",
+                "id": "3bd47fe2-0c4f-423b-a8f5-a94b08040394",
+                "title": "Shadow lengths by scenario",
+                "type": "curio.builtin/vis-vega"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Vega-Lite node · Shadow lengths by scenario",
+            "lines": [
+              "Vega-Lite · curio.builtin/vis-vega",
+              "node 3bd47fe2-0c4f-423b-a8f5-a94b08040394"
+            ],
+            "nodeId": "3bd47fe2-0c4f-423b-a8f5-a94b08040394",
+            "nodeType": "curio.builtin/vis-vega",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/vis-vega",
+            "title": "Shadow lengths by scenario",
+            "goal": "Compare the two scenarios' shadow lengths building by building, each in its box's color.",
+            "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"building\",\n      \"type\": \"nominal\",\n      \"title\": \"Building\"\n    },\n    \"xOffset\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"sort\": [!! scenario order !!]\n    },\n    \"y\": {\n      \"field\": \"shadow_m\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"sum\",\n      \"title\": \"Shadow length (m)\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!]\n    }\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reply": "Here is the spec for a Vega-Lite node that compares the two scenarios:\n\n```json\n{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"building\",\n      \"type\": \"nominal\",\n      \"title\": \"Building\"\n    },\n    \"xOffset\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"sort\": [!! scenario order !!]\n    },\n    \"y\": {\n      \"field\": \"shadow_m\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"sum\",\n      \"title\": \"Shadow length (m)\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": [!! scenario colors !!]\n    }\n  }\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "refused-spec",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_document_validation.py::TestTheScenarioChipsAreCheckedResolved::test_a_scale_chip_inside_quotes_is_refused_in_its_own_words: a scale chip inside quotes is refused by the document check",
+      "fails": [
+        3
+      ],
+      "reply": "I added a Vega-Lite node, Shadow lengths by scenario. Its spec reads its inputs stacked, \"data\": {\"name\": \"[!! inputs !!]\"}, puts the buildings on x with the two scenarios side by side, and colors the scenario_name field with \"scale\": [!! scenario colors !!], so each scenario is drawn in its box's color and the colors follow a box you recolor later. It writes no colors of its own. Connect each scenario's Shadow lengths node to it.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"building\",\n      \"type\": \"nominal\",\n      \"title\": \"Building\"\n    },\n    \"xOffset\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"sort\": [!! scenario order !!]\n    },\n    \"y\": {\n      \"field\": \"shadow_m\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"sum\",\n      \"title\": \"Shadow length (m)\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": \"[!! scenario colors !!]\"\n    }\n  }\n}",
+                "goal": "Compare the two scenarios' shadow lengths building by building, each in its box's color.",
+                "id": "3bd47fe2-0c4f-423b-a8f5-a94b08040394",
+                "title": "Shadow lengths by scenario",
+                "type": "curio.builtin/vis-vega"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Vega-Lite node · Shadow lengths by scenario",
+            "lines": [
+              "Vega-Lite · curio.builtin/vis-vega",
+              "node 3bd47fe2-0c4f-423b-a8f5-a94b08040394"
+            ],
+            "nodeId": "3bd47fe2-0c4f-423b-a8f5-a94b08040394",
+            "nodeType": "curio.builtin/vis-vega",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/vis-vega",
+            "title": "Shadow lengths by scenario",
+            "goal": "Compare the two scenarios' shadow lengths building by building, each in its box's color.",
+            "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\n    \"name\": \"[!! inputs !!]\"\n  },\n  \"mark\": {\n    \"type\": \"bar\",\n    \"tooltip\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"building\",\n      \"type\": \"nominal\",\n      \"title\": \"Building\"\n    },\n    \"xOffset\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"sort\": [!! scenario order !!]\n    },\n    \"y\": {\n      \"field\": \"shadow_m\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"sum\",\n      \"title\": \"Shadow length (m)\"\n    },\n    \"color\": {\n      \"field\": \"scenario_name\",\n      \"type\": \"nominal\",\n      \"title\": \"Scenario\",\n      \"scale\": \"[!! scenario colors !!]\"\n    }\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/dataflows/scenarios.json: its loader 5b0c2f1e-8a43-4d6e-9f21-3c7a1d9e4b60 as both scenarios' context, a scenario of a node with a number widget (a1e7c3d2-6b5f-4e8a-9c10-2f3d4e5a6b71, height_factor) and its chart, a duplicate whose copy's widget value is 2, and one node outside both fed by each scenario's node on a circle of its own (f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5, Compare); the plan grammar for a duplicate (duplicateOf, copies, values) as utk_curio/backend/tests/test_agents/test_plan_scenario_routes.py's _plan writes it; over docs/examples/dataflows/vega.json's loader 8d428948-f5e4-485b-9812-51a4212678a7",
+      "fails": [],
+      "reply": "The plan keeps the loading node outside both scenarios, as their shared context. It adds Scaled b, which multiplies b by its factor widget, and a bar chart, saved together as the scenario As it is, and a duplicate of it, b doubled, whose values set the copy's factor widget to 2. One Vega-Lite chart outside both scenarios, Both versions, shows the two side by side: it is wired from each scenario's Scaled b node, one data edge from each, each on an input circle of its own.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "",
+                "goal": "Scaled b \u2014 Multiply column b of the loaded table by the factor widget.",
+                "id": "ec0f5b85-36d5-487d-bb9a-264f378fa4dc",
+                "metadata": {
+                  "widgets": [
+                    {
+                      "default": 1,
+                      "label": "Factor",
+                      "name": "factor",
+                      "type": "number"
+                    }
+                  ]
+                },
+                "title": "Scaled b",
+                "type": "curio.builtin/computation-analysis"
+              },
+              {
+                "content": "",
+                "goal": "Bar chart \u2014 One bar per a, its height b.",
+                "id": "aabe6ca4-ff0d-455d-a25c-e41b86f81fad",
+                "title": "Bar chart",
+                "type": "curio.builtin/vis-vega"
+              },
+              {
+                "content": "",
+                "goal": "Both versions \u2014 Show both scenarios' bars side by side, b as it is and b doubled, each in its scenario's color.",
+                "id": "760d264a-b9f8-45b2-b4f9-8db27e25287f",
+                "title": "Both versions",
+                "type": "curio.builtin/vis-vega"
+              },
+              {
+                "content": "",
+                "goal": "Scaled b \u2014 Multiply column b of the loaded table by the factor widget.",
+                "id": "eb81d40c-d2c7-4b90-90e3-577abc573140",
+                "metadata": {
+                  "copiedFrom": [
+                    "ec0f5b85-36d5-487d-bb9a-264f378fa4dc"
+                  ],
+                  "widgets": [
+                    {
+                      "default": 1,
+                      "label": "Factor",
+                      "name": "factor",
+                      "type": "number",
+                      "value": 2
+                    }
+                  ]
+                },
+                "title": "Scaled b",
+                "type": "curio.builtin/computation-analysis"
+              },
+              {
+                "content": "",
+                "goal": "Bar chart \u2014 One bar per a, its height b.",
+                "id": "25ee066b-bbd7-4014-8670-ff94bbfc8c06",
+                "metadata": {
+                  "copiedFrom": [
+                    "aabe6ca4-ff0d-455d-a25c-e41b86f81fad"
+                  ]
+                },
+                "title": "Bar chart",
+                "type": "curio.builtin/vis-vega"
+              }
+            ]
+          },
+          "edges": {
+            "added": [
+              {
+                "id": "5e33d124-e9ec-48d9-8dd2-02e99b76b656",
+                "source": "8d428948-f5e4-485b-9812-51a4212678a7",
+                "sourceHandle": "out",
+                "target": "ec0f5b85-36d5-487d-bb9a-264f378fa4dc",
+                "targetHandle": "in"
+              },
+              {
+                "id": "f5054538-55f0-4c20-8847-94d8d3a8270d",
+                "source": "ec0f5b85-36d5-487d-bb9a-264f378fa4dc",
+                "sourceHandle": "out",
+                "target": "aabe6ca4-ff0d-455d-a25c-e41b86f81fad",
+                "targetHandle": "in"
+              },
+              {
+                "id": "4e68bec4-d368-478a-a75d-e572cd55fee8",
+                "source": "ec0f5b85-36d5-487d-bb9a-264f378fa4dc",
+                "sourceHandle": "out",
+                "target": "760d264a-b9f8-45b2-b4f9-8db27e25287f",
+                "targetHandle": "in"
+              },
+              {
+                "id": "8fbe55df-c484-4eea-aef0-5bc591aa93bc",
+                "source": "eb81d40c-d2c7-4b90-90e3-577abc573140",
+                "sourceHandle": "out",
+                "target": "760d264a-b9f8-45b2-b4f9-8db27e25287f",
+                "targetHandle": "in_1"
+              },
+              {
+                "id": "4dfb05f4-f988-463f-931e-5fae9b3e82a3",
+                "source": "8d428948-f5e4-485b-9812-51a4212678a7",
+                "sourceHandle": "out",
+                "target": "eb81d40c-d2c7-4b90-90e3-577abc573140",
+                "targetHandle": "in"
+              },
+              {
+                "id": "df903438-2c92-400a-87e6-dd335230b8cb",
+                "source": "eb81d40c-d2c7-4b90-90e3-577abc573140",
+                "sourceHandle": "out",
+                "target": "25ee066b-bbd7-4014-8670-ff94bbfc8c06",
+                "targetHandle": "in"
+              }
+            ]
+          },
+          "scenarios": {
+            "added": [
+              {
+                "color": "#3567c7",
+                "context": [
+                  "8d428948-f5e4-485b-9812-51a4212678a7"
+                ],
+                "description": "b as the table holds it.",
+                "id": "a6e17192-ebad-49f8-a04f-23801e1f4239",
+                "name": "As it is",
+                "nodes": [
+                  "ec0f5b85-36d5-487d-bb9a-264f378fa4dc",
+                  "aabe6ca4-ff0d-455d-a25c-e41b86f81fad"
+                ],
+                "outcomes": [
+                  "760d264a-b9f8-45b2-b4f9-8db27e25287f"
+                ],
+                "set": "set-a6e17192-ebad-49f8-a04f-23801e1f4239"
+              },
+              {
+                "color": "#e86a3c",
+                "context": [
+                  "8d428948-f5e4-485b-9812-51a4212678a7"
+                ],
+                "id": "e428b9b6-5fe3-4f1a-8378-b429f226b746",
+                "name": "b doubled",
+                "nodes": [
+                  "eb81d40c-d2c7-4b90-90e3-577abc573140",
+                  "25ee066b-bbd7-4014-8670-ff94bbfc8c06"
+                ],
+                "outcomes": [
+                  "760d264a-b9f8-45b2-b4f9-8db27e25287f"
+                ],
+                "set": "set-a6e17192-ebad-49f8-a04f-23801e1f4239"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "dataflow.plan.write",
+            "kind": "plan",
+            "summary": "Plan · 5 nodes, 6 edges, 2 scenarios",
+            "lines": [
+              "+5 nodes · +6 connections · +2 scenarios",
+              "5 pending for Build & validate or Solve",
+              "agents attached: Node Builder ×5",
+              "no Dataset Finder: does not attach to computation-analysis nodes",
+              "Topology: acyclic."
+            ],
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "applied",
+          "arguments": {
+            "goal": "Compare the bar chart as it is with a version where every b value is doubled.",
+            "nodes": [
+              {
+                "ref": "scaled",
+                "nodeType": "curio.builtin/computation-analysis",
+                "title": "Scaled b",
+                "intent": "Multiply column b of the loaded table by the factor widget.",
+                "widgets": [
+                  {
+                    "name": "factor",
+                    "type": "number",
+                    "label": "Factor",
+                    "default": 1
+                  }
+                ]
+              },
+              {
+                "ref": "chart",
+                "nodeType": "curio.builtin/vis-vega",
+                "title": "Bar chart",
+                "intent": "One bar per a, its height b."
+              },
+              {
+                "ref": "both",
+                "nodeType": "curio.builtin/vis-vega",
+                "title": "Both versions",
+                "intent": "Show both scenarios' bars side by side, b as it is and b doubled, each in its scenario's color."
+              }
+            ],
+            "edges": [
+              {
+                "from": "8d428948-f5e4-485b-9812-51a4212678a7",
+                "to": "scaled"
+              },
+              {
+                "from": "scaled",
+                "to": "chart"
+              },
+              {
+                "from": "scaled",
+                "to": "both"
+              },
+              {
+                "from": "scaled_doubled",
+                "to": "both"
+              }
+            ],
+            "scenarios": [
+              {
+                "name": "As it is",
+                "nodes": [
+                  "scaled",
+                  "chart"
+                ],
+                "description": "b as the table holds it."
+              },
+              {
+                "name": "b doubled",
+                "duplicateOf": "As it is",
+                "copies": {
+                  "scaled": "scaled_doubled",
+                  "chart": "chart_doubled"
+                },
+                "values": {
+                  "scaled_doubled": {
+                    "factor": 2
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reply": "Here is the plan for the two scenarios and the chart that compares them:\n\n```json\n{\n  \"goal\": \"Compare the bar chart as it is with a version where every b value is doubled.\",\n  \"nodes\": [\n    {\n      \"ref\": \"scaled\",\n      \"nodeType\": \"curio.builtin/computation-analysis\",\n      \"title\": \"Scaled b\",\n      \"intent\": \"Multiply column b of the loaded table by the factor widget.\",\n      \"widgets\": [\n        {\n          \"name\": \"factor\",\n          \"type\": \"number\",\n          \"label\": \"Factor\",\n          \"default\": 1\n        }\n      ]\n    },\n    {\n      \"ref\": \"chart\",\n      \"nodeType\": \"curio.builtin/vis-vega\",\n      \"title\": \"Bar chart\",\n      \"intent\": \"One bar per a, its height b.\"\n    },\n    {\n      \"ref\": \"both\",\n      \"nodeType\": \"curio.builtin/vis-vega\",\n      \"title\": \"Both versions\",\n      \"intent\": \"Show both scenarios' bars side by side, b as it is and b doubled, each in its scenario's color.\"\n    }\n  ],\n  \"edges\": [\n    {\n      \"from\": \"8d428948-f5e4-485b-9812-51a4212678a7\",\n      \"to\": \"scaled\"\n    },\n    {\n      \"from\": \"scaled\",\n      \"to\": \"chart\"\n    },\n    {\n      \"from\": \"scaled\",\n      \"to\": \"both\"\n    },\n    {\n      \"from\": \"scaled_doubled\",\n      \"to\": \"both\"\n    }\n  ],\n  \"scenarios\": [\n    {\n      \"name\": \"As it is\",\n      \"nodes\": [\n        \"scaled\",\n        \"chart\"\n      ],\n      \"description\": \"b as the table holds it.\"\n    },\n    {\n      \"name\": \"b doubled\",\n      \"duplicateOf\": \"As it is\",\n      \"copies\": {\n        \"scaled\": \"scaled_doubled\",\n        \"chart\": \"chart_doubled\"\n      },\n      \"values\": {\n        \"scaled_doubled\": {\n          \"factor\": 2\n        }\n      }\n    }\n  ]\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/backend/tests/test_projects/test_scenarios.py::test_a_node_in_two_scenarios_is_a_conflict (\"A node belongs to at most one scenario\"); docs/examples/dataflows/scenarios.json's Compare node f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5, in neither scenario, fed by Real heights' Shadow lengths a1e7c3d2-6b5f-4e8a-9c10-2f3d4e5a6b71 on in and Twice as tall's d4a8b2c6-1e9f-4a3d-8b72-6c1e0f9a8b93 on in_1",
+      "fails": [],
+      "reply": "No. A node belongs to one scenario at most, so Compare cannot be in both boxes. Curio refuses a node in two scenarios.\n\nCompare stays outside both scenario boxes, as their shared outcome: it reads each scenario's Shadow lengths node, Real heights' on its first input circle and Twice as tall's on its second, each on an input circle of its own, and compares the two. I changed nothing.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": []
+    },
+    {
+      "case": 4,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/backend/tests/test_agents/test_content_write_references.py::TestCodeTheNodesRunRefusesIsNotWritten::test_python_code_holding_a_scenario_chip_is_refused_in_the_runs_words: a scenario chip in Python code is refused (\"is for a Vega-Lite or Autark spec, not for code\"); the scenario colors chip in a chart's spec as packages/curio.vega-lite@1/sources/grouped-bars.vl.json colors the scenarios with it",
+      "fails": [],
+      "reply": "I left the Compare node's Python as it is. The scenario chips work in a chart's or a map's spec, not in Python or JavaScript code: Curio refuses [!! scenario colors !!] in code, since it is for a Vega-Lite or Autark spec.\n\nTo color the scenarios, use the chip in a Vega-Lite spec instead: color by scenario_name with \"scale\": [!! scenario colors !!], and each scenario is drawn in its box's color.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": []
+    },
+    {
+      "case": 4,
+      "name": "refused-code",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_content_write_references.py::TestCodeTheNodesRunRefusesIsNotWritten::test_python_code_holding_a_scenario_chip_is_refused_in_the_runs_words: a scenario chip in Python code is refused (\"is for a Vega-Lite or Autark spec, not for code\"): the chip in the Compare node's Python",
+      "fails": [
+        2
+      ],
+      "reply": "I left the Compare node's Python as it is. The scenario chips work in a chart's or a map's spec, not in Python or JavaScript code: Curio refuses [!! scenario colors !!] in code, since it is for a Vega-Lite or Autark spec.\n\nTo color the scenarios, use the chip in a Vega-Lite spec instead: color by scenario_name with \"scale\": [!! scenario colors !!], and each scenario is drawn in its box's color.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5",
+                "type": "curio.builtin/computation-analysis",
+                "changes": {
+                  "content": {
+                    "before": "import pandas as pd\n\nreal = [!! input_0 !!]\ntaller = [!! input_1 !!]\ncomparison = pd.DataFrame({\n    'scenario': ['Real heights', 'Twice as tall'],\n    'mean_shadow_m': [round(real['shadow_m'].mean(), 1), round(taller['shadow_m'].mean(), 1)],\n})\ncomparison.metadata = {'name': 'Mean shadow per scenario'}\nreturn comparison\n",
+                    "after": "import pandas as pd\n\nreal = [!! input_0 !!]\ntaller = [!! input_1 !!]\ncomparison = pd.DataFrame({\n    'scenario': ['Real heights', 'Twice as tall'],\n    'mean_shadow_m': [round(real['shadow_m'].mean(), 1), round(taller['shadow_m'].mean(), 1)],\n})\ncomparison.metadata = {'name': 'Mean shadow per scenario'}\ncomparison[\"color\"] = [!! scenario colors !!]\nreturn comparison\n"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Python Computation node",
+            "lines": [
+              "Python Computation node"
+            ],
+            "nodeId": "f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5",
+            "content": "import pandas as pd\n\nreal = [!! input_0 !!]\ntaller = [!! input_1 !!]\ncomparison = pd.DataFrame({\n    'scenario': ['Real heights', 'Twice as tall'],\n    'mean_shadow_m': [round(real['shadow_m'].mean(), 1), round(taller['shadow_m'].mean(), 1)],\n})\ncomparison.metadata = {'name': 'Mean shadow per scenario'}\ncomparison[\"color\"] = [!! scenario colors !!]\nreturn comparison\n"
+          }
+        }
+      ]
+    }
+  ],
+  "gaps": []
+}

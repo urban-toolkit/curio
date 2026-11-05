@@ -190,12 +190,14 @@ def test_a_document_a_golden_answer_writes_passes_curio_s_own_check_of_it():
     assert held, "no golden answer writes a document"
 
 
-def _vega_refuses(node_id: str, columns: list[str]):
+def _vega_refuses(node_id: str | None = None, columns: list[str] | None = None):
     """The document check, given the columns the node's input has, refuses
-    what the answer wrote into *node_id*."""
+    each Vega-Lite spec the answer wrote (into *node_id*)."""
     def refused(answer) -> bool:
         dv = _dv()
-        return dv.validate(VEGA, _content(answer, node_id), columns=columns)["status"] == dv.STATUS_INVALID
+        written = [text for _, node_type, text in _written(answer, node_id) if node_type == VEGA]
+        return bool(written) and all(
+            dv.validate(VEGA, text, columns=columns)["status"] == dv.STATUS_INVALID for text in written)
     return refused
 
 
@@ -264,9 +266,20 @@ def _reference_refuses(dataflow: str, node_id: str):
     return refused
 
 
+def _map_edits_refuses(node_id: str):
+    """The Map Editor node's reader (``map_edits.read``, which the content write holds code to)
+    finds a problem in what the answer wrote into *node_id*."""
+    def refused(answer) -> bool:
+        from utk_curio.backend.app.agents.domain import map_edits
+
+        return any("problem" in map_edits.read(text) for _, _, text in _written(answer, node_id))
+    return refused
+
+
 LAYERS = "docs/examples/dataflows/chicago-loop-layers.json"
 QUAD = "docs/examples/dataflows/quad-cities-flood-vulnerability.json"
 POOL_VEGA = "docs/examples/dataflows/data-pool-vega-2.json"
+LAYERS_EDITOR = "ece11802-86f4-5ea9-9faf-f5cf6e2d732f"
 
 
 def _refusals() -> dict:
@@ -290,6 +303,13 @@ def _refusals() -> dict:
         ("interaction-edges", 4, "refused-edge"): _plan_refuses(POOL_VEGA),
         ("selection-chips", 2, "refused-code"): _reference_refuses(
             "skills/selection-chips/evals/files/roofs-picked-zips.json", "e8d24b91-3f05-4c7a-b6d1-0a9c27e5f413"),
+        ("map-edits", 1, "refused-map-edit"): _map_edits_refuses(LAYERS_EDITOR),
+        ("map-edits", 2, "refused-map-edit"): _map_edits_refuses(LAYERS_EDITOR),
+        ("map-edits", 3, "refused-edge"): _plan_refuses(LAYERS),
+        ("map-edits", 4, "refused-map-edit"): _map_edits_refuses(LAYERS_EDITOR),
+        ("scenarios", 1, "refused-spec"): _vega_refuses(),
+        ("scenarios", 4, "refused-code"): _reference_refuses(
+            "docs/examples/dataflows/scenarios.json", "f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5"),
     }
 
 
