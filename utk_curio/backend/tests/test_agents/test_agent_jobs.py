@@ -175,6 +175,54 @@ class TestReconcileBuilderSession:
         for session in ({"phase": "ready"}, {"phase": "applied", "solveExecutionId": "x"}, {}, None):
             assert agent_jobs.reconcile_builder_session(session) is False
 
+    def test_an_execution_registered_before_its_job_runs_is_left_alone(self):
+        # The Solve's request registers its job, writes the session, and only
+        # then runs the job; a read in between finds the execution live.
+        job = agent_jobs.register_job(
+            user_key="u", project_id="p", attachment_id="a", kind="solve-batch", job_id="starting",
+        )
+        session = {"phase": "solving", "solveExecutionId": "starting", "solvingSince": 1.0}
+        assert agent_jobs.reconcile_builder_session(session) is False
+        assert session == {"phase": "solving", "solveExecutionId": "starting", "solvingSince": 1.0}
+        agent_jobs.run_job(job, _gen([("done", {})]))
+        job.thread.join(timeout=5)
+        assert job.status == "done"
+
+
+class TestAJobRegisteredBeforeItRuns:
+    def test_it_holds_its_attachment_from_its_registration_until_its_events_end(self):
+        gate = threading.Event()
+        job = agent_jobs.register_job(
+            user_key="u", project_id="p", attachment_id="a", kind="solve-batch", job_id="r1",
+        )
+        assert job.thread is None and agent_jobs.is_live("r1")
+        assert agent_jobs.live_job("u", "a") is job
+        with pytest.raises(agent_jobs.JobRefused) as busy:
+            agent_jobs.check_can_start("u", "a")
+        assert busy.value.status == 409
+        assert agent_jobs.run_job(job, _gen([("a", {}), ("done", {})], gate=gate)) is job
+        gate.set()
+        job.thread.join(timeout=5)
+        assert job.status == "done"
+        assert list(agent_jobs.subscribe(job)) == [("a", {}), ("done", {})]
+        agent_jobs.check_can_start("u", "a")  # its end frees the slot
+
+    def test_one_whose_caller_fails_before_it_runs_ends_with_the_error_and_frees_its_attachment(self):
+        key = "sk-job-secret-0123456789"
+        job = agent_jobs.register_job(
+            user_key="u", project_id="p", attachment_id="a", kind="solve-batch", job_id="r2",
+            redact_values={"llm-api-key": key},
+        )
+        agent_jobs.fail_job(job, f"the Solve did not start: 401 for key {key}")
+        assert job.status == "error" and job.finished_at is not None
+        assert not agent_jobs.is_live("r2") and agent_jobs.live_job("u", "a") is None
+        events = list(agent_jobs.subscribe(job))
+        assert len(events) == 1
+        kind, message = events[0]
+        assert kind == "error" and message.startswith("the Solve did not start: 401 for key")
+        assert key not in message
+        agent_jobs.check_can_start("u", "a")  # nothing holds the attachment
+
 
 class TestRedaction:
     def test_a_failure_neither_publishes_nor_logs_the_key(self, caplog):
