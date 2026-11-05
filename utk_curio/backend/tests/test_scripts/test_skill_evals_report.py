@@ -217,6 +217,53 @@ def test_the_benchmark_s_leaderboard_and_main_s_last_run(tmp_path):
             in (tmp_path / report.SUMMARY).read_text(encoding="utf-8"))
 
 
+def _as_grader(agree: int, of: int = 20) -> dict:
+    """A model's grades of the grader truth, as ``benchmark.agreement`` counts them."""
+    return {"answers": of, "errors": 0, "input_tokens": 1000, "output_tokens": 100, "floor": 0.9,
+            "unchecked": {"agreement": {"value": agree / of, "count": agree, "of": of},
+                          "false_passes": {"value": 0.1, "count": 1, "of": 10},
+                          "false_fails": {"value": 0.0, "count": 0, "of": 10}},
+            "checked": {"agreement": {"value": 1.0, "count": 5, "of": 5},
+                        "false_passes": {"value": 0.0, "count": 0, "of": 2},
+                        "false_fails": {"value": 0.0, "count": 0, "of": 3}},
+            "usable": agree / of >= 0.9}
+
+
+def test_a_run_of_the_graders_shows_each_model_s_agreement_and_names_the_best_usable_one(tmp_path):
+    """A ``graders`` run graded the grader truth's prepared answers and ran no
+    skill: the summary and the page show each model's agreement, the best
+    first, and name the best usable grader. Its grades are no failed
+    assertions of a skill, and later runs do not compare with it."""
+    floors, prices, previous = _config(tmp_path)
+    graders = {"kinds": ["grade"], "runs": 1, "conditions": ["with_skill"], "cases": None}
+    for model, agree in ((GEMMA, 16), (HAIKU, 19)):
+        folder = tmp_path / "results" / report.slug(model) / "skills-20261104-220000"
+        _write(folder / "run.json", {"run": folder.name, "model": model, "kinds": ["trigger", "task"],
+                                     "measures": {"trees": graders}})
+        _write(folder / "summary.json", {"skills": [{"skill": "trees", "errors": 0, "triggers": None,
+                                                     "benchmark": None}]})
+        _write(folder / "benchmark.json", {"version": "v1", "model": model, "cases": {}, "queries": {},
+                                           "skills": {}, "overall": {}, "disagreements": [],
+                                           "as_grader": _as_grader(agree)})
+        _write(folder / "trees" / "truth" / "eval-1" / "no-count" / "run-1" / "run.json", {
+            "kind": "grade", "skill": "trees", "case": 1, "run": 1, "answer": "no-count", "fails": [1],
+            "grading": {"assertion_results": [{"text": "It counts oaks.", "passed": False, "evidence": "None."}]}})
+    scope = {"measure": "graders", "why": ["the dispatch asked for the graders"], "measures": {}}
+    probes = {HAIKU: {"ok": True, "seconds": 1.0}, GEMMA: {"ok": True, "seconds": 1.0}}
+    runs, problems = report.build(tmp_path, [HAIKU, GEMMA], scope=scope, probes=probes, previous=previous,
+                                  floors=floors, prices=prices)
+    assert problems == []
+    assert (runs[0].runs, runs[0].input_tokens, runs[0].output_tokens) == (20, 1000, 100)
+    summary = (tmp_path / report.SUMMARY).read_text(encoding="utf-8")
+    assert "### Graders" in summary and "Best usable grader: `claude-haiku-5-5`." in summary
+    assert summary.index(f"| {HAIKU} | 20 |") < summary.index(f"| {GEMMA} | 20 |")
+    assert "| 95% (19 of 20) |" in summary and "| 80% (16 of 20) |" in summary and "no, under 90%" in summary
+    assert "Failed assertions" not in summary and "### Benchmark" not in summary
+    page = (tmp_path / report.PAGE).read_text(encoding="utf-8")
+    assert "<h2>Graders</h2>" in page and "graded the grader truth" in page
+    assert not list((tmp_path / report.SUMMARIES).glob("*.json"))
+
+
 def test_the_floors_and_the_prices_files_hold_what_the_report_reads():
     from utk_curio.backend.app.agents.evaluation import skill_evals
 

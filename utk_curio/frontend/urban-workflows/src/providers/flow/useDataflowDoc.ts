@@ -206,6 +206,21 @@ export function normalizedDataflow(dataflow: Fields): Fields {
     }
 }
 
+/** The writer's *base* without its connections to a node *doc* no longer
+ *  holds. Such a connection points nowhere: the canvas stops drawing it, and
+ *  the server takes it out and tells whoever drew it
+ *  (`dataflow_docs._drop_dangling_connections`). So the writer never writes
+ *  its take-out, which, sent in one update with the connection, as a tab that
+ *  reconnects sends its changes, would hide it from the server. A node this
+ *  tab removes is still in the doc when its write starts, so its connections
+ *  go with it. */
+function withoutDangling(base: Fields, doc: Y.Doc): Fields {
+    if (!Array.isArray(base.edges)) return base;
+    const nodes = doc.getMap("nodes");
+    const edges = (base.edges as Fields[]).filter((e) => nodes.has(e.source as string) && nodes.has(e.target as string));
+    return edges.length === base.edges.length ? base : { ...base, edges };
+}
+
 /** The doc's Trill, its nodes and edges by id. */
 interface DocState {
     nodes: Map<string, Fields>;
@@ -423,7 +438,8 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         const removed = (base.nodes as Fields[]).map((n) => n.id as string)
             .filter((id) => !kept.has(id) && inDoc.has(id));
         if (removed.length) noteRemoval(bound.provider.awareness, removed);
-        bound.provider.doc.transact(() => applyDataflow(bound.provider.doc, base, target), CANVAS_ORIGIN);
+        const doc = bound.provider.doc;
+        doc.transact(() => applyDataflow(doc, withoutDangling(base, doc), target), CANVAS_ORIGIN);
     }, [canvasTrill]);
 
     // ------------------------------------------------------------------

@@ -1,0 +1,357 @@
+{
+  "skill_name": "research-notes",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The first note it creates is a node.create of curio.builtin/note titled \"Question\" whose content is the user's question as written: How much cooler do green roofs keep Chicago's roofs in summer?",
+        "After it come one note per finding, two in all, each a node.create of curio.builtin/note.",
+        "Each finding note's content is markdown that carries its source as a [source](https://...) link.",
+        "The finding notes state only what the user gave, with no figures or sources added.",
+        "The reply also states the answer in prose."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The run calls web.search.",
+        "The first note it creates is a node.create of curio.builtin/note titled \"Question\" whose content is the question: Which US cities publish their street trees as open data?",
+        "Each other note it creates is a curio.builtin/note that holds one finding, with a [source](https://...) link to where it was found.",
+        "The reply states the answer in prose as well."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer creates one note per finding in the text, three finding notes in all (the number of trees, the canopy share, the planting priority), each a node.create of curio.builtin/note.",
+        "Every note it creates has a backgroundColor that is a blue (the palette's blue is #cfe8f7), the color the user asked for, not the default yellow (#fef3c0) or green (#d5f0d1).",
+        "Each finding note's content is markdown (a bold label or a bullet) rather than the user's paragraph copied whole.",
+        "The notes add no facts, figures or sources beyond the user's text."
+      ]
+    }
+  ],
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/backend/tests/test_agents/test_notes_delegation.py::TestDataflowBuilderNotesLane::test_full_lane_delegate_lands_both_notes (a yellow Question note holding the question, then a green finding note, **label:** finding then - [source](url)); the palette of utk_curio/frontend/urban-workflows/src/contracts/noteColors.json; the question, the two findings and their sources as the prompt gives them",
+      "fails": [],
+      "reply": "Green roofs keep Chicago's roofs much cooler in summer: on hot afternoons Chicago City Hall's green roof measured up to 50 degrees F cooler than the tar roof of the county building next door, and the US EPA says green roof surfaces can be 30 to 40 degrees F cooler than conventional roofs.\n\nThe notes are on the canvas: a yellow Question note with your question, then a green note for each of the two findings, each with its source.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "How much cooler do green roofs keep Chicago's roofs in summer?",
+                "id": "902a27b3-848d-4f6f-b3db-6089b361ab35",
+                "metadata": {
+                  "appearance": {
+                    "backgroundColor": "#fef3c0"
+                  }
+                },
+                "title": "Question",
+                "type": "curio.builtin/note"
+              },
+              {
+                "content": "**Chicago City Hall's green roof:** On hot summer afternoons the green roof of Chicago City Hall measured up to 50 degrees F cooler than the tar roof of the county building next door.\n\n- [source](https://en.wikipedia.org/wiki/Chicago_City_Hall)",
+                "id": "f1a8953e-4784-446a-bacf-452bd47e2f19",
+                "metadata": {
+                  "appearance": {
+                    "backgroundColor": "#d5f0d1"
+                  }
+                },
+                "title": "City Hall's green roof",
+                "type": "curio.builtin/note"
+              },
+              {
+                "content": "**Green roof surfaces:** The US EPA says green roof surfaces can be 30 to 40 degrees F cooler than conventional roofs.\n\n- [source](https://www.epa.gov/heatislands/using-green-roofs-reduce-heat-islands)",
+                "id": "1bf67323-8a67-43d9-ab8b-047867befde9",
+                "metadata": {
+                  "appearance": {
+                    "backgroundColor": "#d5f0d1"
+                  }
+                },
+                "title": "Green roof surfaces",
+                "type": "curio.builtin/note"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Note node · Question",
+            "lines": [
+              "Note · curio.builtin/note",
+              "node 902a27b3-848d-4f6f-b3db-6089b361ab35"
+            ],
+            "nodeId": "902a27b3-848d-4f6f-b3db-6089b361ab35",
+            "nodeType": "curio.builtin/note",
+            "undo": true
+          },
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Note node · City Hall's green roof",
+            "lines": [
+              "Note · curio.builtin/note",
+              "node f1a8953e-4784-446a-bacf-452bd47e2f19"
+            ],
+            "nodeId": "f1a8953e-4784-446a-bacf-452bd47e2f19",
+            "nodeType": "curio.builtin/note",
+            "undo": true
+          },
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Note node · Green roof surfaces",
+            "lines": [
+              "Note · curio.builtin/note",
+              "node 1bf67323-8a67-43d9-ab8b-047867befde9"
+            ],
+            "nodeId": "1bf67323-8a67-43d9-ab8b-047867befde9",
+            "nodeType": "curio.builtin/note",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/note",
+            "title": "Question",
+            "content": "How much cooler do green roofs keep Chicago's roofs in summer?",
+            "appearance": {
+              "backgroundColor": "yellow"
+            }
+          }
+        },
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/note",
+            "title": "City Hall's green roof",
+            "content": "**Chicago City Hall's green roof:** On hot summer afternoons the green roof of Chicago City Hall measured up to 50 degrees F cooler than the tar roof of the county building next door.\n\n- [source](https://en.wikipedia.org/wiki/Chicago_City_Hall)",
+            "appearance": {
+              "backgroundColor": "green"
+            }
+          }
+        },
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/note",
+            "title": "Green roof surfaces",
+            "content": "**Green roof surfaces:** The US EPA says green roof surfaces can be 30 to 40 degrees F cooler than conventional roofs.\n\n- [source](https://www.epa.gov/heatislands/using-green-roofs-reduce-heat-islands)",
+            "appearance": {
+              "backgroundColor": "green"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reply": "Here are the notes, your question first, then one note per finding:\n\n```markdown\nHow much cooler do green roofs keep Chicago's roofs in summer?\n```\n\n```markdown\n**Chicago City Hall's green roof:** On hot summer afternoons the green roof of Chicago City Hall measured up to 50 degrees F cooler than the tar roof of the county building next door.\n\n- [source](https://en.wikipedia.org/wiki/Chicago_City_Hall)\n```\n\n```markdown\n**Green roof surfaces:** The US EPA says green roof surfaces can be 30 to 40 degrees F cooler than conventional roofs.\n\n- [source](https://www.epa.gov/heatislands/using-green-roofs-reduce-heat-islands)\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "refused"
+        },
+        {
+          "tool": "node.create",
+          "status": "refused"
+        },
+        {
+          "tool": "node.create",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/backend/tests/test_agents/test_notes_delegation.py::TestDataflowBuilderNotesLane::test_full_lane_delegate_lands_both_notes (a yellow Question note holding the question, then a green finding note, **label:** finding then - [source](url)); the palette of utk_curio/frontend/urban-workflows/src/contracts/noteColors.json; each finding and the two sources as the prompt gives them, each note in the blue the prompt asks for (#cfe8f7)",
+      "fails": [],
+      "reply": "The three findings are on the canvas as blue notes, one each: the number of trees, the canopy share and the planting priority, each with your two sources.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "**Trees:** The city of Chicago has about 3.6 million trees.\n\n- [source](https://chicagorti.org)\n- [source](https://en.wikipedia.org/wiki/Urban_forest)",
+                "id": "e4eb3319-3e41-408b-9b44-4ae82530bf52",
+                "metadata": {
+                  "appearance": {
+                    "backgroundColor": "#cfe8f7"
+                  }
+                },
+                "title": "Trees",
+                "type": "curio.builtin/note"
+              },
+              {
+                "content": "**Tree canopy:** Chicago's tree canopy covers roughly 16 percent of its land.\n\n- [source](https://chicagorti.org)\n- [source](https://en.wikipedia.org/wiki/Urban_forest)",
+                "id": "836df05c-601e-445e-a125-f35eee533031",
+                "metadata": {
+                  "appearance": {
+                    "backgroundColor": "#cfe8f7"
+                  }
+                },
+                "title": "Tree canopy",
+                "type": "curio.builtin/note"
+              },
+              {
+                "content": "**Planting priority:** The Chicago Region Trees Initiative wants more planting in the neighborhoods with the least canopy.\n\n- [source](https://chicagorti.org)\n- [source](https://en.wikipedia.org/wiki/Urban_forest)",
+                "id": "f5a8625e-9999-4318-ad66-9dc94c153131",
+                "metadata": {
+                  "appearance": {
+                    "backgroundColor": "#cfe8f7"
+                  }
+                },
+                "title": "Planting priority",
+                "type": "curio.builtin/note"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Note node · Trees",
+            "lines": [
+              "Note · curio.builtin/note",
+              "node e4eb3319-3e41-408b-9b44-4ae82530bf52"
+            ],
+            "nodeId": "e4eb3319-3e41-408b-9b44-4ae82530bf52",
+            "nodeType": "curio.builtin/note",
+            "undo": true
+          },
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Note node · Tree canopy",
+            "lines": [
+              "Note · curio.builtin/note",
+              "node 836df05c-601e-445e-a125-f35eee533031"
+            ],
+            "nodeId": "836df05c-601e-445e-a125-f35eee533031",
+            "nodeType": "curio.builtin/note",
+            "undo": true
+          },
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Note node · Planting priority",
+            "lines": [
+              "Note · curio.builtin/note",
+              "node f5a8625e-9999-4318-ad66-9dc94c153131"
+            ],
+            "nodeId": "f5a8625e-9999-4318-ad66-9dc94c153131",
+            "nodeType": "curio.builtin/note",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/note",
+            "title": "Trees",
+            "content": "**Trees:** The city of Chicago has about 3.6 million trees.\n\n- [source](https://chicagorti.org)\n- [source](https://en.wikipedia.org/wiki/Urban_forest)",
+            "appearance": {
+              "backgroundColor": "blue"
+            }
+          }
+        },
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/note",
+            "title": "Tree canopy",
+            "content": "**Tree canopy:** Chicago's tree canopy covers roughly 16 percent of its land.\n\n- [source](https://chicagorti.org)\n- [source](https://en.wikipedia.org/wiki/Urban_forest)",
+            "appearance": {
+              "backgroundColor": "blue"
+            }
+          }
+        },
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/note",
+            "title": "Planting priority",
+            "content": "**Planting priority:** The Chicago Region Trees Initiative wants more planting in the neighborhoods with the least canopy.\n\n- [source](https://chicagorti.org)\n- [source](https://en.wikipedia.org/wiki/Urban_forest)",
+            "appearance": {
+              "backgroundColor": "blue"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reply": "Here are the three notes, one per finding, to add in blue:\n\n```markdown\n**Trees:** The city of Chicago has about 3.6 million trees.\n\n- [source](https://chicagorti.org)\n- [source](https://en.wikipedia.org/wiki/Urban_forest)\n```\n\n```markdown\n**Tree canopy:** Chicago's tree canopy covers roughly 16 percent of its land.\n\n- [source](https://chicagorti.org)\n- [source](https://en.wikipedia.org/wiki/Urban_forest)\n```\n\n```markdown\n**Planting priority:** The Chicago Region Trees Initiative wants more planting in the neighborhoods with the least canopy.\n\n- [source](https://chicagorti.org)\n- [source](https://en.wikipedia.org/wiki/Urban_forest)\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "refused"
+        },
+        {
+          "tool": "node.create",
+          "status": "refused"
+        },
+        {
+          "tool": "node.create",
+          "status": "refused"
+        }
+      ]
+    }
+  ],
+  "gaps": [
+    {
+      "case": 2,
+      "why": "The findings are what a live web.search returns now; no shipped example or test holds the cities and pages a search finds, so no note can be written from a source."
+    }
+  ]
+}

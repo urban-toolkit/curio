@@ -333,6 +333,60 @@ def test_a_case_s_checks_read_the_node_its_agent_is_attached_to(tmp_path):
     assert scored["cases"]["pool-joins/1"]["with_skill"] == [1.0]
 
 
+def _grade(skill: str, case: int, name: str, kind: str, fails: list[int], passed: list[bool] | None) -> dict:
+    record = {"kind": "grade", "skill": skill, "key": f"truth/eval-{case}/{name}/run-1", "run": 1, "case": case,
+              "answer": name, "answerKind": kind, "fails": fails, "seconds": 2.0}
+    grader = {"model": "measured-model", "attempts": 1, "inputTokens": 10, "outputTokens": 1}
+    if passed is None:
+        record["grading"] = {"error": "its reply was no list of one result per assertion", "grader": grader}
+        record["error"] = "the grader failed: its reply was no list of one result per assertion"
+    else:
+        record["grading"] = {"assertion_results": [{"text": f"assertion {at}", "passed": value}
+                                                   for at, value in enumerate(passed, start=1)], "grader": grader}
+    return record
+
+
+def test_a_grader_s_agreement_with_the_grader_truth_is_counted_apart_where_checks_decide(tmp_path):
+    """A model's grades of the grader truth's prepared answers, against what
+    each answer is: a golden answer meets every assertion, a mutant fails its
+    ``fails``. Case 1's second assertion is checked, so its verdicts count
+    apart. Worked out by hand, on the first (unchecked) assertion: the first
+    golden answer is passed (agrees), the second failed (a false fail), the
+    mutant that fails it passed (a false pass), the mutant that fails the
+    second passed (agrees): 2 of 4 agree, under the floor. On the second: 3 of
+    4 agree, the miss a false fail of the first mutant. The fifth grade is an
+    error. Grade runs are no runs of the benchmark's own."""
+    benchmark, skill_evals = _benchmark(), _skill_evals()
+    source = tmp_path / "skills" / "street-trees"
+    _write_skill(source, [_case(1, ["It counts oaks.", "It names an oak."],
+                                [{"assertion": 2, "kind": "reply", "pattern": "oak"}])])
+    evals = {"street-trees": skill_evals.read(source)}
+    folder = tmp_path / "skills-20261104-000000"
+    folder.mkdir()
+    (folder / "run.json").write_text(json.dumps({"run": folder.name, "model": "measured-model"}), encoding="utf-8")
+    graded = [("golden", "golden", [], [True, True]), ("golden-2", "golden", [], [False, True]),
+              ("no-count", "mutant", [1], [True, False]), ("no-oak", "mutant", [2], [True, False]),
+              ("unread", "mutant", [1], None)]
+    for name, kind, fails, passed in graded:
+        _record(folder / "street-trees" / "truth" / "eval-1" / name / "run-1",
+                _grade("street-trees", 1, name, kind, fails, passed))
+    found = benchmark.agreement(folder, evals)
+    assert (found["answers"], found["errors"], found["input_tokens"], found["output_tokens"]) == (5, 1, 50, 5)
+    assert found["unchecked"] == {"agreement": {"value": 0.5, "count": 2, "of": 4},
+                                  "false_passes": {"value": 1.0, "count": 1, "of": 1},
+                                  "false_fails": {"value": round(1 / 3, 4), "count": 1, "of": 3}}
+    assert found["checked"] == {"agreement": {"value": 0.75, "count": 3, "of": 4},
+                                "false_passes": {"value": 0.0, "count": 0, "of": 1},
+                                "false_fails": {"value": round(1 / 3, 4), "count": 1, "of": 3}}
+    assert found["floor"] == benchmark.GRADER_FLOOR and found["usable"] is False
+    scored = benchmark.score(folder, evals)
+    assert scored["as_grader"] == found
+    assert scored["cases"] == {} and scored["overall"]["cost"]["runs"] == 0
+    assert scored["overall"]["errors"] == {"value": None, "count": 0, "of": 0}
+    # A folder with no grade run says nothing of its model as a grader.
+    assert benchmark.agreement(tmp_path / "missing", evals) is None
+
+
 def test_a_run_folder_is_scored_per_skill_and_over_every_case(tmp_path):
     benchmark = _benchmark()
     folder, evals = _scored_folder(tmp_path)

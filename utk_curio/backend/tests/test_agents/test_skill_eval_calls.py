@@ -53,16 +53,16 @@ FORMS = ("native call", "fenced toolRequest", "fenced plan block")
 
 
 @pytest.fixture()
-def scripted(client, user_and_token, tmp_curio):
-    """The account's default model is the scripted one, with nothing queued
-    before or after the test."""
+def scripted(client, user_and_token, tmp_curio, monkeypatch):
+    """The scripted model is the Deployment default, as a worker makes its
+    endpoint one, so every account a run signs in to answers with it; nothing
+    is queued before or after the test."""
+    from utk_curio.backend import config
+
     testing_provider.reset()
-    _, token = user_and_token
-    headers = _auth(token)
-    created = client.post("/api/agents/llm/configs", headers=headers,
-                          json={"label": "Scripted", "apiType": "testing", "model": "scripted"})
-    assert created.status_code == 201, created.get_json()
-    client.put("/api/agents/llm/default", headers=headers, json={"configId": created.get_json()["config"]["id"]})
+    for name, value in (("DEFAULT_LLM_API_TYPE", "testing"), ("DEFAULT_LLM_BASE_URL", "http://scripted.invalid"),
+                        ("DEFAULT_LLM_API_KEY", ""), ("DEFAULT_LLM_MODEL", "scripted")):
+        monkeypatch.setattr(config, name, value)
     yield
     testing_provider.reset()
 
@@ -84,16 +84,23 @@ def _taken_off_after(monkeypatch) -> None:
 
 def _worker(client, user_and_token, tmp_path, monkeypatch, secrets=None):
     """A worker of ``agent_eval.py skills`` on this test's app and account,
-    its seams installed, and the plan's templates in the account's store."""
+    its seams installed, and the plan's templates in the store of each account
+    a run signs in to."""
     from utk_curio.backend.app.projects.services import _user_dir_key
     from utk_curio.tools import skill_eval_worker
 
     user, token = user_and_token
-    routes_proposals.TestNodeCreate()._write_builtin_package(_user_dir_key(user), templates=scenario_routes.TEMPLATES)
     worker = skill_eval_worker.Worker.__new__(skill_eval_worker.Worker)
     worker.client, worker.headers, worker.secrets = client, _auth(token), dict(secrets or {})
     worker.results, worker.folders, worker.stop_early = tmp_path / "results", {}, True
     worker.user_key, worker.endpoint = _user_dir_key(user), types.SimpleNamespace(model="scripted")
+    signed_in = worker._sign_in
+
+    def _sign_in() -> None:
+        signed_in()
+        routes_proposals.TestNodeCreate()._write_builtin_package(worker.user_key, templates=scenario_routes.TEMPLATES)
+
+    monkeypatch.setattr(worker, "_sign_in", _sign_in)
     _taken_off_after(monkeypatch)
     worker.seams = skill_eval_worker._Seams()
     worker.seams.install()

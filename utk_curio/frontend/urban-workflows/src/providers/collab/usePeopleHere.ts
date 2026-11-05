@@ -3,8 +3,15 @@
  * the list changes only when what the dock draws of someone does, so a pointer
  * that moves draws nothing again. Where someone points is read when it is
  * asked for. Empty while the canvas is bound to no doc.
+ *
+ * The list is read from the doc's awareness as a store, at each change of a
+ * state, and drawn in the task of that change, as the nodes agents write are
+ * (`agentHolds`). Left to React's next render, an agent's state naming the
+ * node it writes and its state naming none a second later could both be
+ * handled before React rendered again on a busy page, and the dock never said
+ * what the agent was editing.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
 
 import { useCollab } from "../CollaborationProvider";
 import { useDocBinding } from "./docContext";
@@ -32,21 +39,22 @@ export function usePeopleHere(): PeopleHere {
         [users],
     );
     const own: OwnParticipant = useMemo(() => ({ participantId, userId }), [participantId, userId]);
-    const [people, setPeople] = useState<Person[]>(NONE);
-
-    useEffect(() => {
-        if (!awareness) {
-            setPeople(NONE);
-            return;
-        }
-        const read = () => {
-            const next = peopleOf(awareness, own, roles);
-            setPeople((prev) => (samePeople(prev, next) ? prev : next.length ? next : NONE));
-        };
-        read();
-        awareness.on("change", read);
-        return () => awareness.off("change", read);
+    // The list last read, kept while what the dock draws of everyone is the same.
+    const shown = useRef<Person[]>(NONE);
+    const subscribe = useCallback(
+        (changed: () => void) => {
+            if (!awareness) return () => undefined;
+            awareness.on("change", changed);
+            return () => awareness.off("change", changed);
+        },
+        [awareness],
+    );
+    const read = useCallback(() => {
+        const next = awareness ? peopleOf(awareness, own, roles) : NONE;
+        if (!samePeople(shown.current, next)) shown.current = next.length ? next : NONE;
+        return shown.current;
     }, [awareness, own, roles]);
+    const people = useSyncExternalStore(subscribe, read, read);
 
     const pointerOf = useCallback((person: Person) => pointerOfPerson(awareness, own, person), [awareness, own]);
     return { people, pointerOf };

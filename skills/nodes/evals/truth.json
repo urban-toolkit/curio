@@ -1,0 +1,269 @@
+{
+  "skill_name": "nodes",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer says the view leaves image_url out because thumbnail holds images too, the thumbnail being the small view of the same file.",
+        "The answer makes or describes a change in the Lincoln Park photos node, not in the Simple View, that makes the full photos show: for example renaming image_url to image, so both columns show side by side, or leaving the thumbnail column out.",
+        "The answer does not claim that the Simple View's Image column select alone can show image_url while thumbnail holds images."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer says the photo column holds local file paths, which the view does not count as images.",
+        "The answer says what the view does show as an image in such a column: a data:image/ URI, an /api/ path, or an http(s) URL ending in an image extension such as .jpg.",
+        "The answer's fix is in the Survey photos node (survey-photos): it returns such values, for example data: URIs, or Base64 in an image_content column, and nothing changes in the Simple View."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer creates one new node (node.create) of type curio.builtin/data-loading.",
+        "The code it writes loads the dataset through the data widget's reference, curio_load_data([!! data !!]), and returns it; no dataset id is typed into the code.",
+        "The node's data widget, of type dataset, holds data.cityofchicago.neighborhoods as its default or value."
+      ]
+    }
+  ],
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/frontend/urban-workflows/src/tests/utils/imageColumns.test.ts: 'draws a collection row once, from its thumbnail' (thumbnail stands in for image_url when both hold images), with image among the recognized columns (utk_curio/frontend/urban-workflows/src/contracts/visDefaults.json imageColumns); skills/nodes/evals/files/photo-cards.json node lincoln-photos, its content, its image_url renamed image",
+      "fails": [],
+      "reply": "A Simple View leaves image_url out when thumbnail holds images too: the thumbnail is the small view of the same file, so it draws each photo once, from its thumbnail, and choosing the Image column in the view does not change that.\n\nSo I changed the Lincoln Park photos node, not the view: it now returns the full photo as image instead of image_url, so both columns show side by side, the thumbnail and the full photo.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "lincoln-photos",
+                "type": "curio.builtin/data-loading",
+                "title": "Lincoln Park photos",
+                "changes": {
+                  "content": {
+                    "before": "# One row per photo of the collection, with the links a Simple View shows.\nreturn curio_load_collection(\"data.curio.mapillary-sample\")",
+                    "after": "# One row per photo of the collection, with the links a Simple View shows: the\n# full photo as image, beside its thumbnail.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nreturn photos.rename(columns={\"image_url\": \"image\"})"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Data Loading node · Lincoln Park photos",
+            "lines": [
+              "Data Loading node · Lincoln Park photos"
+            ],
+            "nodeId": "lincoln-photos",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "lincoln-photos",
+            "content": "# One row per photo of the collection, with the links a Simple View shows: the\n# full photo as image, beside its thumbnail.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nreturn photos.rename(columns={\"image_url\": \"image\"})\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/frontend/urban-workflows/src/tests/utils/imageColumns.test.ts: 'takes a data: URI straight to the DOM', 'routes a same-origin /api path through an authenticated fetch', 'sniffs an unrecognised column only when it carries real image URLs' and 'does not sniff an extensionless URL column'; skills/nodes/evals/files/photo-cards.json node survey-photos returns local paths such as photos/2019/0001.jpg in its photo column",
+      "fails": [],
+      "reply": "The photo column holds local file paths, such as photos/2019/0001.jpg, and a Simple View does not count them as images, so it shows a table. In a column with another name than the image names, an image is a data:image/ URI, an /api/ path, or an http(s) URL that ends in an image extension, such as .jpg.\n\nThe fix is in the Survey photos node (survey-photos): have it return such values, for example the photos as data: URIs, or their Base64 in an image_content column. Nothing changes in the Simple View.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": []
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "packages/curio.builtin@1/sources/data-loading.py, the Data Loading template's own code, which loads through its data widget, curio_load_data([!! data !!]), and the template's dataset widget (packages/curio.builtin@1/manifest.json), its default the Chicago Neighborhoods dataset catalog.search lists, data.cityofchicago.neighborhoods",
+      "fails": [],
+      "reply": "I added a Data Loading node, Chicago Neighborhoods. Its code loads through its data widget, curio_load_data([!! data !!]), and returns it, with no dataset id typed into the code; its data widget, a dataset widget, holds data.cityofchicago.neighborhoods. Drop another dataset on the node later and it replaces this one.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "data = curio_load_data([!! data !!])\nreturn data",
+                "goal": "Load the Chicago Neighborhoods boundaries through the node's data widget.",
+                "id": "2b339ca3-3a03-4b8b-a4d2-d71ad715861c",
+                "metadata": {
+                  "widgets": [
+                    {
+                      "default": "data.cityofchicago.neighborhoods",
+                      "label": "Data",
+                      "name": "data",
+                      "type": "dataset"
+                    }
+                  ]
+                },
+                "title": "Chicago Neighborhoods",
+                "type": "curio.builtin/data-loading"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Data Loading node · Chicago Neighborhoods · widgets data",
+            "lines": [
+              "Data Loading · curio.builtin/data-loading",
+              "node 2b339ca3-3a03-4b8b-a4d2-d71ad715861c"
+            ],
+            "nodeId": "2b339ca3-3a03-4b8b-a4d2-d71ad715861c",
+            "nodeType": "curio.builtin/data-loading",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/data-loading",
+            "title": "Chicago Neighborhoods",
+            "goal": "Load the Chicago Neighborhoods boundaries through the node's data widget.",
+            "content": "data = curio_load_data([!! data !!])\nreturn data\n",
+            "widgets": [
+              {
+                "name": "data",
+                "type": "dataset",
+                "label": "Data",
+                "default": "data.cityofchicago.neighborhoods"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3
+      ],
+      "reply": "Here is a Data Loading node for the Chicago Neighborhoods boundaries. Its code:\n\n```python\ndata = curio_load_data([!! data !!])\nreturn data\n```\n\nIts data widget:\n\n```json\n{\n  \"name\": \"data\",\n  \"type\": \"dataset\",\n  \"label\": \"Data\",\n  \"default\": \"data.cityofchicago.neighborhoods\"\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "refused-code",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_source_grounding.py::TestCatalogIdForm::test_known_id_is_grounded_and_unknown_refused: a dataset id the Data Catalog does not hold is refused by the grounding gate: data.cityofchicago.neighbourhoods typed into the code",
+      "fails": [
+        2
+      ],
+      "reply": "I added a Data Loading node, Chicago Neighborhoods. Its code loads through its data widget, curio_load_data([!! data !!]), and returns it, with no dataset id typed into the code; its data widget, a dataset widget, holds data.cityofchicago.neighborhoods. Drop another dataset on the node later and it replaces this one.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "data = curio_load_data(\"data.cityofchicago.neighbourhoods\")\nreturn data",
+                "goal": "Load the Chicago Neighborhoods boundaries through the node's data widget.",
+                "id": "2b339ca3-3a03-4b8b-a4d2-d71ad715861c",
+                "metadata": {
+                  "widgets": [
+                    {
+                      "default": "data.cityofchicago.neighborhoods",
+                      "label": "Data",
+                      "name": "data",
+                      "type": "dataset"
+                    }
+                  ]
+                },
+                "title": "Chicago Neighborhoods",
+                "type": "curio.builtin/data-loading"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Data Loading node · Chicago Neighborhoods · widgets data",
+            "lines": [
+              "Data Loading · curio.builtin/data-loading",
+              "node 2b339ca3-3a03-4b8b-a4d2-d71ad715861c"
+            ],
+            "nodeId": "2b339ca3-3a03-4b8b-a4d2-d71ad715861c",
+            "nodeType": "curio.builtin/data-loading",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "catalog.search",
+          "status": "ok"
+        },
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/data-loading",
+            "title": "Chicago Neighborhoods",
+            "goal": "Load the Chicago Neighborhoods boundaries through the node's data widget.",
+            "content": "data = curio_load_data(\"data.cityofchicago.neighbourhoods\")\nreturn data\n",
+            "widgets": [
+              {
+                "name": "data",
+                "type": "dataset",
+                "label": "Data",
+                "default": "data.cityofchicago.neighborhoods"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "gaps": []
+}

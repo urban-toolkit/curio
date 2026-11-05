@@ -41,6 +41,7 @@
     {
       "id": 3,
       "dataflow": "docs/examples/dataflows/default-workflow.json",
+      "models": ["model.curio.ddrnet23-slim@1"],
       "prompt": "In a Python node, label the Lincoln Park street photos with the street-scene segmentation model in my Model Catalog, and give me each photo's share of vegetation and of sky, with a link to its overlay.",
       "expected_output": "One new Python node whose code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), loads the model with curio_load_model(\"model.curio.ddrnet23-slim\"), and labels the photos with curio_segment(photos, model, classes=[\"vegetation\", \"sky\"]), returning its rows with vegetation_pct, sky_pct and overlay_url.",
       "assertions": [

@@ -768,6 +768,7 @@ Each skill Curio ships holds its evaluations in `evals/evals.json`, as agentskil
 - `skill_name`, and `evals`: test cases, each an `id`, a `prompt` a user would type, an `expected_output` and its `assertions`, which a grader checks each answer against.
 - `trigger_queries`, for a skill a chat loads: about twenty, each a `query` and whether it `should_trigger` the skill, eight to ten of each ([optimizing descriptions](https://agentskills.io/skill-creation/optimizing-descriptions)). A skill the preamble holds, or one an instruction hands to every chat, has none.
 - Curio's fields, at the top level or on a test case: `agent`, whose chat runs it; `dataflow`, the dataflow its project starts as (a shipped example, or a file under the skill's `evals/`); `target`, the canvas (the default, and where trigger queries run) or `{"kind": "node", "node": "<id>"}`.
+- `models`, at the top level or on a test case: the Model Catalog's model packages its evaluation account holds, such as `["model.curio.ddrnet23-slim@1"]`; each run adds them to its account first, as the Model Catalog's Add does, so `models.search` lists them and node code may load them.
 - `checks`, on a test case: assertions its run's own record decides, with no model ([`checks.py`](../utk_curio/backend/app/agents/evaluation/checks.py)).
   - Each check names its assertion by its place, from 1, and one kind:
     - `tool`, a call that landed, on a `node`, with `args`;
@@ -780,7 +781,7 @@ Each skill Curio ships holds its evaluations in `evals/evals.json`, as agentskil
   - `"absent": true` turns any of them into "the run did not". For example, `{"assertion": 2, "kind": "tool", "tool": "node.create", "absent": true}` decides "The answer creates no node".
   - Check only an assertion that is exactly what its check reads. A judgment, such as "explains why", stays with the grader.
 
-`agent_eval.py skills` runs them against an OpenAI-compatible endpoint you name in three variables, from a Python environment with Curio's requirements (`pip install -r requirements.txt`). It needs no running Curio: each worker is a backend of its own, and no node runs. Each run sends its message with the context a browser's chat sends beside it: the node its agent is attached to, or the whole dataflow, as the agent's reads say.
+`agent_eval.py skills` runs them against an OpenAI-compatible endpoint you name in three variables, from a Python environment with Curio's requirements (`pip install -r requirements.txt`). It needs no running Curio: each worker is a backend of its own, and no node runs. Each run, and each try of it, starts in a new account, which holds no model or package another run's case added. Each run sends its message with the context a browser's chat sends beside it: the node its agent is attached to, or the whole dataflow, as the agent's reads say.
 
 ```bash
 CURIO_EVAL_BASE_URL='<base URL>' CURIO_EVAL_API_KEY='<key>' CURIO_EVAL_MODEL='<model>' \
@@ -790,7 +791,7 @@ CURIO_EVAL_BASE_URL='<base URL>' CURIO_EVAL_API_KEY='<key>' CURIO_EVAL_MODEL='<m
 - Each trigger query runs three times (`--runs`). Its trigger rate is the share of its runs that loaded the skill with skill.read, and it passes above one half when it should trigger, below it when it should not. A trigger run stops once its chat loads the skill, or once it delegates its work, before loading it, to a run Curio hands the skill, such as a node's content writer: that run did not load it, and `triggers.json` counts it as handed off. Any other delegation runs on. `--full-trigger-runs` lets every run finish. A query or a test case's prompt that holds a word the skill's `curio-asks` names hands the chat the skill: a trigger run of it is an error, which no rate counts, its `run.json` saying the chat was handed the skill, and a test case's runs with the skill hold it without `--hand`.
 - A run whose model call the server failed (a 5xx or a lost connection) runs again, up to twice, after 15 and 45 seconds; its `run.json` counts the attempts. A run that still fails is an error, which no rate counts.
 - Each test case runs three times with the skill, as Curio ships it, and three times without it: the same agent, with the skill taken out of the skills its run lists, of what it is handed and of its preamble. The same model grades each answer, with the words of [`skill-evals.md`](../agents/agent.curio.builtin@1/skill-evals.md). A grade cut off at the grader's output limit (8,192 tokens, the model's thinking included) is asked for again, and one that never comes whole is an error that says so, and whether the grader spent the limit thinking. Each `grading.json` records the grader's input and output tokens. `--hand` hands the skill over as `/<name>` in the runs with it.
-- `--pilot` runs one skill (the first, or the one it names) and says how long the whole run would take. `--skills a,b` picks skills, `--only trigger` or `--only task` one kind of run, `--jobs` the workers that run at once (4), and `--resume <folder>` goes on with an interrupted run.
+- `--pilot` runs one skill (the first, or the one it names) and says how long the whole run would take. `--skills a,b` picks skills, `--only trigger`, `--only task` or `--only grade` one kind of run, `--jobs` the workers that run at once (4), and `--resume <folder>` goes on with an interrupted run.
 - Under `--out`, a run writes one folder: for each skill, `triggers.json`, `benchmark.json` and a folder per run with its reply, what it changed in its dataflow and the installs it asked for, the tools it called as the grader reads them (`calls.json`: each call's tool and status, and the arguments of each call whose change landed; each task it delegated is a call of `delegate` in its place, with the capability it asked for, the agent that took it, its status and the inputs it wrote for that agent), its transcript, `timing.json` and `grading.json`; then `summary.md`. A run's `run.json` lists each of its model calls (`modelCalls`): its output tokens, the limit it was asked with, whether the model's thinking came apart from its reply, whether the limit cut it, and whether the server refused the room for thinking. The endpoint's key and base URL come from the variables alone: nothing written holds them or its host, and the tool reads every file again at the end and fails if one does.
 - `--scope <file>` runs each skill a scope names as its measure says: its trigger queries, its test cases, how many runs and which conditions.
 - **The benchmark** ([`benchmark.py`](../utk_curio/backend/app/agents/evaluation/benchmark.py)) scores each run into its folder's `benchmark.json`.
@@ -804,9 +805,15 @@ CURIO_EVAL_BASE_URL='<base URL>' CURIO_EVAL_API_KEY='<key>' CURIO_EVAL_MODEL='<m
   - **Each rate** carries a 95% interval, bootstrapped over cases and runs. A checked assertion's result comes from its checks; every other one comes from the grader.
   - **The commands:**
     - `agent_eval.py benchmark score <folder>` scores a run again.
-    - `benchmark compare <a> <b>` pairs two runs of one version and one model case by case, and says per skill whether `b` is better, worse or not shown different.
+    - `benchmark compare <a> <b>` pairs two runs of one version, one model and one grader case by case, and says per skill whether `b` is better, worse or not shown different.
     - `benchmark run` runs every skill whole.
   - **One grader for every model:** `CURIO_EVAL_GRADER_MODEL` names it, on the same endpoint. Without it, each model grades its own answers.
+    - On GitHub, the repository variable `CURIO_EVAL_GRADER` names one grader, or a JSON list of them with the best first.
+    - Each model is graded by the first that is not itself, so the best grader's own answers go to the next one.
+  - **The grader truth:** a skill's `evals/truth.json` holds prepared answers of its test cases, each with the example or the test it was built from. A golden answer meets every assertion of its case, and a mutant fails exactly the ones its `fails` names.
+    - `--only grade` grades each of them with the model measured, with no run of the agent. That model's grades are what is measured, so `CURIO_EVAL_GRADER_MODEL` does not apply.
+    - `benchmark.json`'s `as_grader` counts how often the model's grades agree with the truth, with its false passes and false fails, apart for the assertions checks decide, where no grader's verdict reaches a score.
+    - A model whose grades agree on at least 90% of the other assertions can be the one grader.
 - **On GitHub.** The Skill evaluations workflow ([`skill-evals.yml`](../.github/workflows/skill-evals.yml)) runs only when someone starts it, from the Actions tab or with `gh workflow run skill-evals.yml --ref <branch> -f scope=<scope>`, on the branch whose skills it measures.
   - **What it runs on:** every model the repository variable `CURIO_EVAL_MODELS` lists (a JSON list), or its `models` input, side by side. It reaches them through the endpoint of the secrets `CURIO_EVAL_BASE_URL` and `CURIO_EVAL_API_KEY`, on one runner labelled `skill-evals`, with the branch's own code.
   - **What it measures:** its `scope` input, `auto` by default, which is what the branch changes against main ([`ci_skill_eval_scope.py`](../scripts/ci_skill_eval_scope.py)):
@@ -815,8 +822,8 @@ CURIO_EVAL_BASE_URL='<base URL>' CURIO_EVAL_API_KEY='<key>' CURIO_EVAL_MODEL='<m
     - agent text or code: every other skill's first test case, once, with the skill;
     - anything else: nothing.
 
-    The other values are `smoke`, `core`, `full` and skill names.
-  - **Its report:** its page, `curio-skill-evals-report.html`, is the run's artifact, and its tables are in the run's summary. It holds the benchmark's leaderboard, each skill's success per model, and each model compared with main's last run, which is what later runs compare with. The repository variable `CURIO_EVAL_GRADER` names the one grader.
+    The other values are `smoke`, `core`, `full`, `graders` (each model grades every skill's grader truth, once) and skill names.
+  - **Its report:** its page, `curio-skill-evals-report.html`, is the run's artifact, and its tables are in the run's summary. It holds the benchmark's leaderboard, each skill's success per model, and each model compared with main's last run, which is what later runs compare with. A `graders` run holds each model's agreement with the grader truth and names the best usable grader; later runs do not compare with it. The repository variable `CURIO_EVAL_GRADER` names the graders.
   - **What fails it:**
     - a model that does not answer its probe;
     - a run left in an error after the retries;
