@@ -360,7 +360,11 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
     /** Nodes another tab drags now, and those it dropped whose place is due. */
     const remoteDragRef = useRef(new Set<string>());
     const droppedRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+    /** This tab's drag: when it was last told the others, its newest place,
+     *  and the timer that tells that place once `DRAG_EVERY_MS` has passed. */
     const dragSentRef = useRef(0);
+    const dragNextRef = useRef<DragState | null>(null);
+    const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const runtime = (): CodeNodeRuntime => ({
         pythonInterpreter,
@@ -807,6 +811,8 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         remoteDragRef.current.clear();
         droppedRef.current.forEach((timer) => clearTimeout(timer));
         droppedRef.current.clear();
+        if (dragTimerRef.current) clearTimeout(dragTimerRef.current);
+        dragTimerRef.current = null;
     }, []);
 
     /** Bind the canvas to *held*'s doc, now synced, on the load *epoch*. */
@@ -927,11 +933,22 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
                 }
             }
             if (dragging) {
-                const at = Date.now();
-                if (at - dragSentRef.current < DRAG_EVERY_MS) return;
-                dragSentRef.current = at;
-                setDrag(held.awareness, dragging);
+                // At most one message every DRAG_EVERY_MS, and the newest
+                // place goes when the wait ends: the place a drag stops on
+                // reaches the others before its drop.
+                dragNextRef.current = dragging;
+                if (dragTimerRef.current) return;
+                const send = () => {
+                    dragTimerRef.current = null;
+                    dragSentRef.current = Date.now();
+                    setDrag(held.awareness, dragNextRef.current);
+                };
+                const wait = dragSentRef.current + DRAG_EVERY_MS - Date.now();
+                if (wait <= 0) send();
+                else dragTimerRef.current = setTimeout(send, wait);
             } else if (dropped) {
+                if (dragTimerRef.current) clearTimeout(dragTimerRef.current);
+                dragTimerRef.current = null;
                 dragSentRef.current = 0;
                 setDrag(held.awareness, null);
             }

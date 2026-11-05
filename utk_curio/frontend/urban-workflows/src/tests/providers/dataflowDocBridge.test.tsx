@@ -45,6 +45,7 @@ import { useCode } from "../../hook/useCode";
 import { DataflowDocContext, type DocBinding } from "../../providers/collab/docContext";
 import { DataflowDocProvider } from "../../providers/collab/docProvider";
 import { applyDataflow, dataflowToDoc, docToDataflow } from "../../providers/collab/docMapping";
+import { remoteDrags } from "../../providers/collab/presence";
 import { buildCodeNode, nodeMetaFromTrill } from "../../hook/codeNodes";
 import { METADATA_FIELD_DATA, NODE_FIELD_DATA, trillNodeOf } from "../../providers/flow/useDataflowDoc";
 import { setCurrentProject } from "../../registry/projectPackagesStore";
@@ -859,6 +860,56 @@ describe("binding", () => {
         expect(canvasNode().position).toEqual({ x: 80, y: 95 });
         expect(docNode().x).toBe(80);
         other.destroy();
+    });
+
+    test("this tab's fast drag shows the others where it stops before the drop, and the drop is the last they hear", async () => {
+        await open(serverDoc(spec().dataflow));
+        const { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } = require("y-protocols/awareness");
+        const other = new Awareness(new Y.Doc());
+        // The other tab gets this tab's state each time its provider sends it.
+        const relay = () => {
+            applyAwarenessUpdate(other, encodeAwarenessUpdate(provider.awareness, [provider.awareness.clientID]), "server");
+        };
+        provider.awareness.on("update", relay);
+        // React Flow's changes as MainCanvas hands them on: to the doc's
+        // bridge, then to the canvas.
+        const handOn: FlowApi["onNodesChange"] = (changes) => {
+            act(() => {
+                api.dataflowDoc!.noteDrag(changes);
+                api.onNodesChange(changes);
+            });
+        };
+        const moveTo = (x: number, y: number) => handOn([{ type: "position", id: "n", position: { x, y }, dragging: true }]);
+        // Where the other tab shows the node this tab drags.
+        const seen = () => remoteDrags(other).get("n");
+        jest.useFakeTimers();
+        try {
+            // A fast drag: its second and third moves come within 50 ms of
+            // the first, which the others see at once.
+            moveTo(10, 10);
+            act(() => jest.advanceTimersByTime(10));
+            moveTo(20, 20);
+            act(() => jest.advanceTimersByTime(10));
+            moveTo(30, 30);
+            expect(seen()).toEqual({ x: 10, y: 10 });
+
+            // The pointer holds still: the place it stopped on reaches the
+            // others once the 50 ms have passed, before any drop.
+            act(() => jest.advanceTimersByTime(60));
+            expect(seen()).toEqual({ x: 30, y: 30 });
+
+            // One more move, held back, then the drop at once: the others
+            // hear the drop last, and the doc gets the place it ends on.
+            moveTo(40, 40);
+            handOn([{ type: "position", id: "n", dragging: false }]);
+            act(() => jest.advanceTimersByTime(100));
+            expect(seen()).toBeUndefined();
+            expect(docNode()).toMatchObject({ x: 40, y: 40 });
+        } finally {
+            jest.useRealTimers();
+            provider.awareness.off("update", relay);
+            other.destroy();
+        }
     });
 
     test("a node another tab removes while this tab edits its code says who, and Put it back adds it again", async () => {
