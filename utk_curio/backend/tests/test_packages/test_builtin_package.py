@@ -1,6 +1,6 @@
 """Smoke tests for the committed ``packages/curio.builtin@1`` catalog entry.
 
-The built-in package is auto-installed for every user and provides the 14
+The built-in package is auto-installed for every user and provides the 12
 default node templates. A regression in its manifest would silently strand
 users with an empty palette, so we exercise the load + payload-serialize
 paths against the on-disk artefact. The Raster Calculator is not one of them:
@@ -26,7 +26,6 @@ REAL_CATALOG = Path(__file__).resolve().parents[4] / "packages"
 EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "data-loading",
     "data-export",
-    "data-transformation",
     "data-pool",
     "computation-analysis",
     "data-summary",
@@ -142,6 +141,52 @@ def test_no_shipped_package_names_compare_scenarios():
         if found:
             named[path.parent.name] = found
     assert named == {}, f"packages that still name Compare Scenarios: {named}"
+
+
+def _node_types(value):
+    """Every node type a JSON document names, as a dataflow, a plan, a fixture's
+    expected graph or a recorded change writes one."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in ("type", "nodeType") and isinstance(item, str):
+                yield item
+            else:
+                yield from _node_types(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _node_types(item)
+
+
+def test_nothing_shipped_names_data_transformation():
+    """Data Transformation is gone (komar41's #1327): a Python Computation node
+    runs the same code. No shipped dataflow, prompt fixture, skill evaluation
+    file or test dataflow holds a node of its type, and no package, agent page
+    or skill page names it, so no palette, example or agent offers it."""
+    import json
+
+    root = REAL_CATALOG.parent
+    gone = "curio.builtin/data-transformation"
+    documents = [
+        *root.glob("docs/examples/**/*.json"),
+        *root.glob("skills/*/evals/**/*.json"),
+        *root.glob("utk_curio/backend/tests/test_frontend/dataflows/*.json"),
+    ]
+    assert documents
+    holding = sorted(
+        str(path.relative_to(root)) for path in documents
+        if any(t.split("@")[0] == gone for t in _node_types(json.loads(path.read_text(encoding="utf-8"))))
+    )
+    assert holding == [], f"files holding a Data Transformation node: {holding}"
+    pages = [
+        *(path for path in root.glob("packages/**/*") if path.suffix in (".json", ".md", ".py", ".js", ".tsx")),
+        *root.glob("agents/**/*.md"),
+        *root.glob("skills/**/*.md"),
+    ]
+    naming = sorted(
+        str(path.relative_to(root)) for path in pages
+        if "data-transformation" in (text := path.read_text(encoding="utf-8")) or "Data Transformation" in text
+    )
+    assert naming == [], f"files naming Data Transformation: {naming}"
 
 
 def test_map_edits_names_no_what_differs(builtin_package_dir: Path):
