@@ -57,7 +57,7 @@ jest.mock("../../api/historyApi", () => {
 
 import FlowProvider, { useFlowContext } from "../../providers/FlowProvider";
 import { useCode } from "../../hook/useCode";
-import { DataflowDocContext, type DocBinding } from "../../providers/collab/docContext";
+import { CANVAS_ORIGIN, DataflowDocContext, type DocBinding } from "../../providers/collab/docContext";
 import { DataflowDocProvider } from "../../providers/collab/docProvider";
 import { applyDataflow, dataflowToDoc, docToDataflow } from "../../providers/collab/docMapping";
 import { buildCodeNode, nodeMetaFromTrill } from "../../hook/codeNodes";
@@ -67,6 +67,7 @@ import { TrillGenerator } from "../../TrillGenerator";
 import { ConnectionValidator } from "../../ConnectionValidator";
 import { serverHistory } from "../../providers/history/serverHistory";
 import { DataflowProvenance } from "../../components/provenance/DataflowProvenance";
+import { AGENT_DOCK_REFRESH_EVENT } from "../../services/agents/agentEvents";
 
 const PROJECT = "7c3e0f42-5b9a-4d0e-9c1f-2a8b6d4e1f30";
 const TYPE = "curio.builtin/python-computation@1";
@@ -1122,5 +1123,94 @@ describe("three people on one dataflow", () => {
             [ana, ben, cleo].forEach((tab) => tab.held.destroy());
             room.destroy();
         }
+    });
+});
+
+/** A removal takes the agents attached to what it removes along, and the dock
+ *  lists the agents again once the server has it (`agentDockAfterRemovals.ts`). */
+describe("a removal and the agents' dock", () => {
+    /** Each time the dock asks for the agents again. */
+    let asked: jest.Mock;
+
+    beforeEach(() => {
+        asked = jest.fn();
+    });
+
+    afterEach(() => {
+        window.removeEventListener(AGENT_DOCK_REFRESH_EVENT, asked);
+    });
+
+    /** Open the dataflow on a doc whose socket the server has answered every
+     *  message of, so the tab holds no change the server lacks. */
+    async function openOnItsSocket(): Promise<{ held: DataflowDocProvider; socket: RoomSocket }> {
+        const held = serverDoc(spec().dataflow);
+        await open(held);
+        const socket = new RoomSocket();
+        act(() => held.attach(socket));
+        await act(async () => socket.sent[0].ack?.({ ok: true, docId: "doc-1" }));
+        await act(async () => socket.sent.slice(1).forEach(({ ack }) => ack?.({ ok: true })));
+        await flush();
+        expect(held.isKept()).toBe(true);
+        window.addEventListener(AGENT_DOCK_REFRESH_EVENT, asked);
+        return { held, socket };
+    }
+
+    test("this canvas's removal: the dock asks for the agents again once the server has it, not before", async () => {
+        const { held, socket } = await openOnItsSocket();
+        const before = socket.sent.length;
+
+        act(() => api.applyReviewedRemovals(["m"], ["n-m"]));
+        await flush();
+        await flush();
+
+        // The removal went to the server, which has not answered it yet: the
+        // listing would still hold the agents of m and of its connection.
+        expect(held.doc.getMap("nodes").has("m")).toBe(false);
+        const removal = socket.sent.slice(before).filter(({ ack }) => ack);
+        expect(removal.length).toBeGreaterThan(0);
+        expect(asked).not.toHaveBeenCalled();
+
+        await act(async () => removal.forEach(({ ack }) => ack?.({ ok: true })));
+        await waitFor(() => expect(asked).toHaveBeenCalled());
+        await flush();
+        expect(asked).toHaveBeenCalledTimes(1);
+    });
+
+    test("another tab's removal of a node and its connection: this tab writes neither back", async () => {
+        const { held } = await openOnItsSocket();
+        const written: Uint8Array[] = [];
+        const watch = (update: Uint8Array, origin: unknown) => {
+            if (origin === CANVAS_ORIGIN) written.push(update);
+        };
+        held.doc.on("update", watch);
+        try {
+            await fromAnotherTab((df) => {
+                df.nodes = df.nodes.filter((n: any) => n.id !== "m");
+                df.edges = [];
+            });
+            await flush();
+        } finally {
+            held.doc.off("update", watch);
+        }
+
+        expect(canvasNode("m")).toBeUndefined();
+        expect(api.edges).toEqual([]);
+        // Written back, the server would take the connection out again and
+        // tell this tab, which never drew it, that it was not kept.
+        expect(held.doc.getMap("edges").has("n-m")).toBe(false);
+        expect(written).toEqual([]);
+        await waitFor(() => expect(asked).toHaveBeenCalled());
+    });
+
+    test("a node change that removes nothing asks the dock nothing", async () => {
+        await openOnItsSocket();
+
+        // The canvas hands every node change to onNodesDelete (MainCanvas):
+        // here one move of a drag.
+        act(() => api.onNodesDelete([{ id: "n", type: "position", position: { x: 40, y: 40 }, dragging: true }]));
+        await flush();
+        await flush();
+
+        expect(asked).not.toHaveBeenCalled();
     });
 });
