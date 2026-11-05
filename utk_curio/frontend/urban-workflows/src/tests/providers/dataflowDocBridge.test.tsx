@@ -12,7 +12,7 @@
  * until it goes both ways.
  */
 import React from "react";
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { ReactFlow, ReactFlowProvider } from "reactflow";
 import * as Y from "yjs";
 
@@ -36,6 +36,21 @@ jest.mock("../../hook/useVega", () => ({
 }));
 jest.mock("vega", () => ({}), { virtual: true });
 jest.mock("vega-lite", () => ({}), { virtual: true });
+// The history routes a tab's drawer calls: the versions it lists, and what
+// putting one back answers.
+const mockVersions = jest.fn();
+const mockPutBack = jest.fn();
+jest.mock("../../api/historyApi", () => {
+    const actual = jest.requireActual("../../api/historyApi");
+    return {
+        ...actual,
+        historyApi: {
+            ...actual.historyApi,
+            versions: (...args: unknown[]) => mockVersions(...args),
+            putBack: (...args: unknown[]) => mockPutBack(...args),
+        },
+    };
+});
 
 import FlowProvider, { useFlowContext } from "../../providers/FlowProvider";
 import { useCode } from "../../hook/useCode";
@@ -47,6 +62,7 @@ import { METADATA_FIELD_DATA, NODE_FIELD_DATA, trillNodeOf } from "../../provide
 import { setCurrentProject } from "../../registry/projectPackagesStore";
 import { TrillGenerator } from "../../TrillGenerator";
 import { serverHistory } from "../../providers/history/serverHistory";
+import { DataflowProvenance } from "../../components/provenance/DataflowProvenance";
 
 const PROJECT = "7c3e0f42-5b9a-4d0e-9c1f-2a8b6d4e1f30";
 const TYPE = "curio.builtin/python-computation@1";
@@ -839,8 +855,9 @@ const TabBridge: React.FC<{ tab: Tab }> = ({ tab }) => {
 
 /** *name*'s tab, opened on the doc the server holds (*room*): its first sync
  *  leaves the tab the same doc, item for item, so what one tab changes
- *  applies to the others. */
-async function openTab(room: Y.Doc, name: string): Promise<Tab> {
+ *  applies to the others. *extra*, given, is shown in the tab beside its
+ *  canvas, as a drawer is. */
+async function openTab(room: Y.Doc, name: string, extra?: React.ReactNode): Promise<Tab> {
     const held = new DataflowDocProvider(PROJECT, { canWrite: true });
     Y.applyUpdate(held.doc, Y.encodeStateAsUpdate(room), held);
     held.synced = true;
@@ -853,6 +870,7 @@ async function openTab(room: Y.Doc, name: string): Promise<Tab> {
             <ReactFlowProvider>
                 <FlowProvider>
                     <TabBridge tab={tab} />
+                    {extra}
                 </FlowProvider>
             </ReactFlowProvider>
         </DataflowDocContext.Provider>,
@@ -866,10 +884,10 @@ async function openTab(room: Y.Doc, name: string): Promise<Tab> {
     return tab;
 }
 
-/** What *from*'s doc holds and *to*'s lacks, as the server relays it. */
-async function relayDoc(from: Tab, to: Tab) {
+/** What *from* holds and *to*'s doc lacks, as the server relays it. */
+async function relayDoc(from: Y.Doc, to: Tab) {
     await act(async () => {
-        Y.applyUpdate(to.held.doc, Y.encodeStateAsUpdate(from.held.doc, Y.encodeStateVector(to.held.doc)), to.held);
+        Y.applyUpdate(to.held.doc, Y.encodeStateAsUpdate(from, Y.encodeStateVector(to.held.doc)), to.held);
     });
     await flush();
 }
@@ -904,14 +922,70 @@ describe("three people on one dataflow", () => {
 
             // The server relays her change: Cleo's tab takes it, then Ben's,
             // which waits for the note that says who removed the node.
-            await relayDoc(ana, cleo);
-            await relayDoc(ana, ben);
+            await relayDoc(ana.held.doc, cleo);
+            await relayDoc(ana.held.doc, ben);
             expect(cleo.api.nodes.map((n) => n.id)).toEqual(["m"]);
             expect(ben.api.nodes.map((n) => n.id)).toEqual(["m"]);
             expect(removals()).toEqual([]);
 
             // The notes travel apart from the doc's change: Cleo's presence
             // reaches Ben first, then Ana's.
+            await relayPresence(cleo, ben);
+            await relayPresence(ana, ben);
+            expect(removals()).toEqual(["Ana removed this node while you were editing it."]);
+        } finally {
+            [ana, ben, cleo].forEach((tab) => tab.held.destroy());
+            room.destroy();
+        }
+    });
+
+    test("a version put back names who put it back, never a tab that only took it", async () => {
+        const room = new Y.Doc();
+        dataflowToDoc(spec().dataflow, room, "doc-1");
+        const preview = { nodes: [], edges: [] };
+        mockVersions.mockResolvedValue({
+            versions: [
+                { id: "p1", parent: null, at: 1_700_000_000_000, kind: "load", what: "", by: null, preview },
+                { id: "p2", parent: "p1", at: 1_700_000_060_000, kind: "load", what: "Node added", by: null, preview },
+            ],
+            head: "p2", kept: true, canClear: false,
+        });
+        let answer: (value: { refused: string[]; removed: string[] }) => void = () => undefined;
+        mockPutBack.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+        const ben = await openTab(room, "Ben");
+        const cleo = await openTab(room, "Cleo");
+        // Ana's tab, with its Provenance drawer open, binds last: the history
+        // the drawer reads is hers.
+        const ana = await openTab(room, "Ana", <DataflowProvenance />);
+        const removals = () => mockShowToast.mock.calls.map(([text]) => text)
+            .filter((text) => /removed this node/.test(text));
+        try {
+            act(() => ben.held.awareness.setLocalStateField("editing", "n"));
+
+            // Ana puts back the empty version from her drawer.
+            const version = await waitFor(() => {
+                const shown = document.querySelector<HTMLElement>('[data-provenance-item="p1"]');
+                expect(shown).not.toBeNull();
+                return shown!;
+            });
+            fireEvent.click(version.querySelector("button")!);
+            fireEvent.click(within(version).getByRole("button", { name: "Put this version on the canvas" }));
+            await waitFor(() => expect(mockPutBack).toHaveBeenCalledWith(PROJECT, "p1"));
+
+            // The server writes it: its change, which takes n out, reaches
+            // every tab, and then it answers Ana's.
+            const before = docToDataflow(room);
+            const after = JSON.parse(JSON.stringify(before));
+            after.nodes = after.nodes.filter((n: any) => n.id !== "n");
+            after.edges = [];
+            room.transact(() => applyDataflow(room, before, after));
+            for (const tab of [ana, cleo, ben]) await relayDoc(room, tab);
+            await act(async () => answer({ refused: [], removed: ["n"] }));
+            await flush();
+            expect(ben.api.nodes.map((n) => n.id)).toEqual(["m"]);
+            expect(removals()).toEqual([]);
+
+            // Cleo's presence reaches Ben first, then Ana's.
             await relayPresence(cleo, ben);
             await relayPresence(ana, ben);
             expect(removals()).toEqual(["Ana removed this node while you were editing it."]);
