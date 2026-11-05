@@ -41,6 +41,9 @@ export function useConnect({
     // node that load added. Any output that node holds is one the load
     // restored, and `hydrateRestoredOutputs` passes it down, so the edge does
     // not hand it over too.
+    //
+    // It returns whether it took the edge: false for one it refused (an end
+    // it cannot find, a pair of handles it never joins, a cycle).
     const onConnect = useCallback(
         (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean, sourceAddedByLoad?: boolean) => {
             console.log(
@@ -76,7 +79,7 @@ export function useConnect({
                     `[FlowProvider] onConnect: dropping edge ${connection.source} -> ` +
                     `${connection.target}; endpoint not on the canvas`,
                 );
-                return;
+                return false;
             }
             // A cycle is one of data edges: an interaction edge carries
             // selections, never data, so it closes none.
@@ -304,8 +307,10 @@ export function useConnect({
 
                         return addEdge(customConnection, eds);
                     });
+                    return true;
                 }
             }
+            return false;
         },
         [setEdges]
     );

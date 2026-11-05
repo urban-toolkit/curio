@@ -522,6 +522,49 @@ describe("the dataflow's own fields, connections and scenarios", () => {
         expect(canvasNode("k")).toBeUndefined();
     });
 
+    test("a connection another tab makes and removes before this canvas draws it stays out of the doc", async () => {
+        const dataflow = spec().dataflow;
+        dataflow.edges = [];
+        await open(serverDoc(dataflow), { dataflow } as any);
+        act(() => api.applyNewOutput({ nodeId: "n", output: { path: "points", dataType: "outputs" } }));
+        await flush();
+        // The connection's change and its removal, with no render between them.
+        const before = docToDataflow(provider.doc);
+        const withEdge = JSON.parse(JSON.stringify(before));
+        withEdge.edges.push({ id: "n-m", source: "n", target: "m", sourceHandle: "out", targetHandle: "in" });
+        const without = JSON.parse(JSON.stringify(before));
+        await act(async () => {
+            provider.doc.transact(() => applyDataflow(provider.doc, before, withEdge), provider);
+            provider.doc.transact(() => applyDataflow(provider.doc, withEdge, without), provider);
+        });
+        await flush();
+        await flush();
+        // This canvas's writes, after it drew what came, never put it back.
+        expect(provider.doc.getMap("edges").has("n-m")).toBe(false);
+        expect(api.edges).toEqual([]);
+        // What it handed its target went with it.
+        expect(canvasNode("m").data.input).toBe("");
+    });
+
+    test("a node another tab adds and moves before this canvas draws it keeps the move", async () => {
+        await open(serverDoc(spec().dataflow));
+        // The node's change and its move, with no render between them.
+        const before = docToDataflow(provider.doc);
+        const withNode = JSON.parse(JSON.stringify(before));
+        withNode.nodes.push({ id: "k", type: TYPE, x: 50, y: 60, content: "z = 1\n" });
+        const moved = JSON.parse(JSON.stringify(withNode));
+        moved.nodes.find((n: any) => n.id === "k").x = 70;
+        await act(async () => {
+            provider.doc.transact(() => applyDataflow(provider.doc, before, withNode), provider);
+            provider.doc.transact(() => applyDataflow(provider.doc, withNode, moved), provider);
+        });
+        await flush();
+        await flush();
+        // This canvas's writes never put the first place back.
+        expect(docNode("k").x).toBe(70);
+        expect(canvasNode("k").position).toEqual({ x: 70, y: 60 });
+    });
+
     test("this canvas's removal of a node takes it and its connections out of the doc", async () => {
         await open(serverDoc(spec().dataflow));
         act(() => api.applyReviewedRemovals(["m"], ["n-m"]));
@@ -773,6 +816,47 @@ describe("binding", () => {
         live.nodes[0].content = "x = 1\n# typed meanwhile\n";
         await open(serverDoc(live), spec());
         expect(canvasNode().data.code).toBe("x = 1\n# typed meanwhile\n");
+    });
+
+    test("a node this canvas removed before its doc was there stays out of the doc at the bind", async () => {
+        // The room joins the tab a moment after the dataflow opens, and a node
+        // went from the canvas meanwhile. The doc still holds it as the file
+        // did: the bind must not put it back, and its write takes it out.
+        const held = serverDoc(spec().dataflow);
+        provider = held;
+        setCurrentProject(PROJECT, []);
+        let joined!: (binding: DocBinding) => void;
+        const Room: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+            const [binding, setBinding] = React.useState<DocBinding | null>(null);
+            joined = setBinding;
+            return <DataflowDocContext.Provider value={binding}>{children}</DataflowDocContext.Provider>;
+        };
+        render(
+            <Room>
+                <ReactFlowProvider>
+                    <FlowProvider>
+                        <Bridge />
+                    </FlowProvider>
+                </ReactFlowProvider>
+            </Room>,
+        );
+        await flush();
+        act(() => {
+            code.loadTrill(spec());
+        });
+        await flush();
+        await flush();
+        act(() => api.applyReviewedRemovals(["m"], ["n-m"]));
+        await flush();
+        expect(canvasNode("m")).toBeUndefined();
+
+        act(() => joined({ provider: held, synced: true }));
+        await flush();
+        await flush();
+
+        expect(docToDataflow(held.doc).nodes.map((n: any) => n.id)).toEqual(["n"]);
+        expect(docToDataflow(held.doc).edges).toEqual([]);
+        expect(canvasNode("m")).toBeUndefined();
     });
 
     test("what this canvas changed before its doc was there reaches the doc at the bind", async () => {
