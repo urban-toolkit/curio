@@ -1348,9 +1348,10 @@ edges (see [Linking charts](#linking-charts)).
   the first's outline when it holds polygons. So a map of OpenStreetMap layers
   is cut to its load's area, and the tables one document draws lie in one
   area. Draw another area in its own node.
-- A map draws only tables with geometry. A `DataFrame` is read through the one
-  column that holds geometries; with none, or with several, the node draws
-  nothing and says which. Return a `GeoDataFrame` with its active geometry set.
+- A map draws tables with geometry, and a raster by one of its bands. A
+  `DataFrame` is read through the one column that holds geometries; with none,
+  or with several, the node draws nothing and says which. Return a
+  `GeoDataFrame` with its active geometry set.
 - A `GeoDataFrame` whose `metadata` names one of Autark's layer types loads as
   that layer: `gdf.metadata = {"layerType": "buildings"}` draws its rows as
   buildings, raised to their height. A building's height comes from `height`,

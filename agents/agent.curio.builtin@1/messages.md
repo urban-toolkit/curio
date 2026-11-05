@@ -926,7 +926,7 @@ an Autark grammar JSON document
 
 ## document.vega-shape
 
-a Vega-Lite JSON document: {"$schema": "{schema_url}", "mark": …, "encoding": …}. Do NOT include a "data" block: Curio injects this node's input as the data at render time
+a Vega-Lite JSON document: {"$schema": "{schema_url}", "mark": …, "encoding": …}. Do NOT include a "data" block: Curio injects this node's input as the data at render time; with several inputs, "data" names an input's dataset as the vega-lite-starter skill says
 
 ## document.json-shape
 

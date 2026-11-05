@@ -266,8 +266,8 @@ def render_autk_shape(schema: dict) -> str:
     )
 
 
-#: The page of the base entry that holds the words of the preamble's section
-#: on Autark documents, one section per line (``render_autk_region``).
+#: The page of the base entry that holds the words of the ``autark`` skill's
+#: section on Autark documents, one section per line (``render_autk_region``).
 AUTK_GRAMMAR_PAGE = "autark-grammar.md"
 
 
@@ -280,9 +280,9 @@ def _autk_words(name: str, **values: str) -> str:
 
 
 def render_autk_region(schema: dict, label: str) -> str:
-    """The preamble's section on Autark documents: the words of the base
-    entry's ``autark-grammar.md``, filled from the schema, with the lines of
-    the schema's own choices between them."""
+    """The ``autark`` skill's section on Autark documents: the words of the
+    base entry's ``autark-grammar.md``, filled from the schema, with the lines
+    of the schema's own choices between them."""
     root = _definition(schema, schema.get("$ref", "UrbanSpec"))
     props = root.get("properties", {})
     layers, layer_required = map_layers(schema)

@@ -472,7 +472,7 @@ class TestTheSources:
         assert len(marked) == 11, sorted(marked)
         # The shared preamble, the plan rules the tools include, the text the
         # runtime composes a run's turns from, the words of the dataflow
-        # block, the words of the preamble's Autark section, the messages
+        # block, the words of the autark skill's Autark section, the messages
         # the checks send and the words of a skill evaluation's grader are the
         # pages of the base entry, each listed once and each a file there: a
         # page added or forgotten fails here. The procedures the prompts
