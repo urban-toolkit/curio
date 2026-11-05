@@ -23,9 +23,11 @@ import * as Y from "yjs";
 jest.mock("@monaco-editor/react", () => {
     const React: typeof import("react") = require("react");
     const editors: any[] = [];
+    // Loosely typed: a jest.mock factory may name nothing outside itself, and
+    // babel takes a parameter's name in a type annotation for such a name.
     function makeEditor(initial: string) {
         let value = initial;
-        const listeners = new Set<(event: unknown) => void>();
+        const listeners = new Set<any>();
         const editor: any = {};
         const changed = () => {
             listeners.forEach((listener) => listener({ changes: [] }));
@@ -38,8 +40,8 @@ jest.mock("@monaco-editor/react", () => {
                 changed();
             },
             getFullModelRange: () => ({ range: "full" }),
-            validatePosition: (position: unknown) => position,
-            onDidChangeContent: (listener: (event: unknown) => void) => {
+            validatePosition: (position: any) => position,
+            onDidChangeContent: (listener: any) => {
                 listeners.add(listener);
                 return { dispose: () => listeners.delete(listener) };
             },
@@ -50,7 +52,7 @@ jest.mock("@monaco-editor/react", () => {
             setValue: (next: string) => model.setValue(next),
             getPosition: () => ({ lineNumber: 1, column: 1 }),
             setPosition: () => undefined,
-            executeEdits: (_source: string, edits: Array<{ text: string }>) => {
+            executeEdits: (_source: string, edits: any[]) => {
                 value = edits[0].text;
                 changed();
                 return true;
@@ -88,8 +90,8 @@ jest.mock("y-monaco", () => ({
         destroyed = false;
         private busy = false;
         private readonly ytext: any;
-        private readonly observer: () => void;
-        private readonly listener: { dispose(): void };
+        private readonly observer: any;
+        private readonly listener: any;
         constructor(ytext: any, model: any) {
             this.ytext = ytext;
             const shown = ytext.toString();
