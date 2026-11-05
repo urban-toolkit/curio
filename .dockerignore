@@ -11,3 +11,5 @@ __pycache__/
 
 # Only exclude root .env, not nested ones (frontend needs its .env for build)
 /.env
+# The LLM endpoint file a deployment mounts at run time, never built in.
+/.secrets/
