@@ -44,6 +44,14 @@ def test_the_url_s_host_and_its_host_and_port_are_masked_and_nothing_else_is_pri
     assert node.cmd_mask(None) == 0 and capsys.readouterr().out == ""
 
 
+def test_the_deploy_masks_the_url_of_the_variable_it_names(monkeypatch, capsys):
+    monkeypatch.delenv(node.ENV_BASE_URL, raising=False)
+    monkeypatch.setenv("CURIO_DEPLOY_BASE_URL", BASE_URL)
+    assert node.main(["mask", "--env", "CURIO_DEPLOY_BASE_URL"]) == 0
+    assert capsys.readouterr().out.splitlines() == [f"::add-mask::{value}" for value in node.masks(BASE_URL)]
+    assert node.main(["mask"]) == 0 and capsys.readouterr().out == ""
+
+
 def test_the_models_and_each_one_s_workers_come_from_the_repository_s_variables():
     assert node.models_from('["gemma4", "openai/Qwen/Qwen3.8-27B", "gemma4"]') == ["gemma4", "openai/Qwen/Qwen3.8-27B"]
     assert node.models_from("") == []
