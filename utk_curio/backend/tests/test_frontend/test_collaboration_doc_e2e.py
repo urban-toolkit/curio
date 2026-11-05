@@ -220,8 +220,12 @@ _PRESS_POINT_JS = """([x, y, id]) => {
     const node = hit && hit.closest(`.react-flow__node[data-id="${id}"]`);
     const header = hit && hit.closest(".curio-node-header");
     let drags = !!node;
+    let blocker = null;
     for (let at = hit; node && at && at !== node; at = at.parentElement) {
-        if (at.classList.contains("nodrag")) drags = false;
+        if (at.classList.contains("nodrag")) {
+            drags = false;
+            blocker = blocker || at;
+        }
     }
     const name = (el) => !el ? "nothing" : el.tagName.toLowerCase() + (typeof el.className === "string"
         ? el.className.split(" ").filter(Boolean).map((c) => "." + c).join("") : "");
@@ -230,6 +234,7 @@ _PRESS_POINT_JS = """([x, y, id]) => {
         header: !!node && !!header && node.contains(header),
         drags,
         hit: name(hit) + (inNode ? ` in node ${inNode.getAttribute("data-id")}` : ""),
+        blocker: blocker ? name(blocker) : null,
         viewport: window.__curio_reactFlow.getViewport(),
     };
 }"""
@@ -353,7 +358,9 @@ def test_a_widget_a_scenario_and_a_drag_show_in_the_other_tab(room, frames):
     pressed = owner.evaluate(_PRESS_POINT_JS, [x, y, CODE_NODE])
     assert pressed["header"] and pressed["drags"], (
         f"the owner's press at {x:.0f}, {y:.0f} is on {pressed['hit']}, not on a part of her node's header "
-        f"it drags from: the canvas shows {pressed['viewport']}, and the node's box was read as {box}"
+        f"it drags from (in its header: {pressed['header']}; the node drags from there: {pressed['drags']}"
+        f"{', under ' + pressed['blocker'] if pressed['blocker'] else ''}): the canvas shows "
+        f"{pressed['viewport']}, and the node's box was read as {box}"
     )
     owner.mouse.down()
     for i in range(1, 21):
