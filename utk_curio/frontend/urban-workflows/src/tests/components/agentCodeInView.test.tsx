@@ -7,7 +7,9 @@
  * while the agent wrote, stays. The notebook view's cells turn the same way.
  * The node's lock chip shows the agent's glyph in its tint, and says on hover
  * who is editing and who asked; a tab of the shared guest account's names it
- * by its number.
+ * by its number. Each of the agent's messages shows as the page handles it:
+ * the chip shows while the node shows the agent's code even when a busy page
+ * handles the agent's lock, its states and its unlock back to back.
  *
  * The room is the real CollaborationProvider on a fake socket, as
  * collabRoles.test.tsx has it, and the agent reaches this tab as the server
@@ -211,6 +213,30 @@ function fire(socket: FakeSocket, event: string, payload?: any) {
   });
 }
 
+/** *messages* reach this tab one after another, as a busy page handles the
+ *  server's messages: each in a task of its own, back to back, with only
+ *  microtasks between, never the task React draws a change of default
+ *  priority in (CI run 41954734007). Outside act(), as the page has it; what
+ *  React put off is drawn at the end. */
+async function handledBackToBack(socket: FakeSocket, messages: Array<[string, any]>) {
+  const scope = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+  const actEnvironment = scope.IS_REACT_ACT_ENVIRONMENT;
+  scope.IS_REACT_ACT_ENVIRONMENT = false;
+  try {
+    for (const [event, payload] of messages) {
+      for (const handler of socket.handlers[event] ?? []) handler(payload);
+      // The microtasks the message leaves: React's sync renders, and the
+      // records of what changed on the page.
+      for (let turn = 0; turn < 5; turn += 1) await Promise.resolve();
+    }
+  } finally {
+    scope.IS_REACT_ACT_ENVIRONMENT = actEnvironment;
+  }
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
 // This tab is Ben's, an editor. Ana owns the dataflow and asked the agent.
 const ANA = { user_id: 7, username: "ana", name: "Ana", participant_id: "p-ana", role: "owner" };
 const BEN = { user_id: 9, username: "ben", name: "Ben", participant_id: "p-ben", role: "editor" };
@@ -242,16 +268,21 @@ function agentLock(writes: Writes) {
 /** The Node Builder's peer in the dataflow's doc, as the server runs it. */
 let agentPeer: awarenessProtocol.Awareness | null = null;
 
-/** The server sends the Node Builder's awareness state: it is writing
- *  *editing*, a node or the nodes one action writes at once, *writes* there,
- *  or nothing (null). */
-function agentWrites(socket: FakeSocket, editing: string | string[] | null, writes: Writes | null = null) {
+/** The doc's message that carries the Node Builder's awareness state: it is
+ *  writing *editing*, a node or the nodes one action writes at once, *writes*
+ *  there, or nothing (null). */
+function agentState(editing: string | string[] | null, writes: Writes | null = null) {
   agentPeer = agentPeer ?? new awarenessProtocol.Awareness(new Y.Doc());
   agentPeer.setLocalState({ user: NODE_BUILDER, skills: ["node-functions"], editing, writes });
   const encoder = encoding.createEncoder();
   encoding.writeVarUint(encoder, 1);
   encoding.writeVarUint8Array(encoder, awarenessProtocol.encodeAwarenessUpdate(agentPeer, [agentPeer.clientID]));
-  fire(socket, DOC_EVENT, { projectId: "project-1", message: encoding.toUint8Array(encoder) });
+  return { projectId: "project-1", message: encoding.toUint8Array(encoder) };
+}
+
+/** The server sends the Node Builder's awareness state (`agentState`). */
+function agentWrites(socket: FakeSocket, editing: string | string[] | null, writes: Writes | null = null) {
+  fire(socket, DOC_EVENT, agentState(editing, writes));
 }
 
 const DATA: WidgetDef = { name: "data", type: "dataset", label: "Data", default: "" };
@@ -666,6 +697,41 @@ describe("the node's lock chip", () => {
     } finally {
       restore();
     }
+  });
+
+  test("an agent's shows while the node shows its code, though a busy page handles its lock, states and unlock before it draws again", async () => {
+    // Ana's tab in CI run 41954734007: the node turned to the agent's code
+    // and back, and its chip never showed.
+    const { socket } = await inTheRoom(<Node data={LOADER} />);
+    // What the node shows, each time it changes: its tab and its chip's words.
+    const shown: Array<[string | null, string | null]> = [];
+    const record = () => {
+      const now: [string | null, string | null] = [
+        tabShown("loader"), lockChip("loader")?.getAttribute("data-tooltip") ?? null,
+      ];
+      const last = shown[shown.length - 1];
+      if (!last || last[0] !== now[0] || last[1] !== now[1]) shown.push(now);
+    };
+    record();
+    const observer = new MutationObserver(record);
+    observer.observe(nodeBox("loader"), { subtree: true, childList: true, attributes: true, characterData: true });
+    try {
+      // One write, in the order the server sends it (`agent_peers._hold`):
+      // the agent's lock, its state naming the node, its state naming none a
+      // second after the write, then its unlock.
+      await handledBackToBack(socket, [
+        ["node_locked", { nodeId: "loader", lock: agentLock("code") }],
+        [DOC_EVENT, agentState("loader", "code")],
+        [DOC_EVENT, agentState(null)],
+        ["node_unlocked", { nodeId: "loader" }],
+      ]);
+    } finally {
+      observer.disconnect();
+    }
+
+    // Each message shows as it is handled, in the server's order.
+    const lock = "Editing: Node Builder (asked by Ana)";
+    expect(shown).toEqual([["widgets", null], ["widgets", lock], ["code", lock], ["widgets", lock], ["widgets", null]]);
   });
 
   test("a person's goes when they leave the room, with the locks the server released", async () => {

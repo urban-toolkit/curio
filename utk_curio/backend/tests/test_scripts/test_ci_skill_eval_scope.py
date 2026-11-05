@@ -1,12 +1,12 @@
-"""What a CI run's skill-evals node measures, from what the run changes.
+"""What a run of the Skill evaluations workflow measures: what its scope asks, or what the branch changes.
 
-``scripts/ci_skill_eval_scope.py`` runs in build-image and decides whether the
-skill-evals job calls a model at all, and on which skills: a changed skill
-measured whole, every skill's test cases for a core skill, one smoke case per
-skill for agent text or code, nothing for anything else. A wrong answer either
-spends the owner's model server on nothing or lets a skill change land
-unmeasured, so these feed it changes shaped like a diff, on a small tree of
-skills, and check the real tree's core skills too.
+``scripts/ci_skill_eval_scope.py`` runs first in that workflow and decides
+whether it calls a model at all, and on which skills. For ``auto``, a changed
+skill is measured whole, every skill's test cases for a core skill, one smoke
+case per skill for agent text or code, and nothing for anything else. A wrong
+answer either spends the owner's model server on nothing or lets a skill
+change go unmeasured, so these feed it changes shaped like a diff, on a small
+tree of skills, and check the real tree's core skills too.
 """
 from __future__ import annotations
 
@@ -86,6 +86,7 @@ def _measures(found: dict) -> dict:
 WHOLE = (["trigger", "task"], 3, ("with_skill", "without_skill"), None)
 CASES = (["task"], 3, ("with_skill", "without_skill"), None)
 SMOKE = (["task"], 1, ("with_skill",), 1)
+GRADERS = (["grade"], 1, ("with_skill",), None)
 
 
 def test_the_core_skills_are_those_the_base_entry_s_pages_place(tree):
@@ -165,26 +166,26 @@ def test_anything_else_measures_nothing(tree):
     assert unevaluated["measures"] == {} and any("no evals/evals.json" in line for line in unevaluated["why"])
 
 
-def _event(tree, event, *, value="auto", remint=False, repeat=1, ref="feat/x"):
+def _event(tree, event, *, value="auto", ref="feat/x"):
     called = []
 
     def changes():
         called.append(True)
         return [Change("M", "skills/trees/SKILL.md")], _old(tree)
 
-    found = scope.for_event(event=event, ref=ref, value=value, remint=remint, repeat=repeat, root=tree,
-                            changes=changes)
+    found = scope.for_event(event=event, ref=ref, value=value, root=tree, changes=changes)
     return found, bool(called)
 
 
-def test_pushes_schedules_re_mints_repeats_and_before_runs_measure_nothing(tree):
-    for kwargs in ({"event": "push"}, {"event": "schedule"},
-                   {"event": "workflow_dispatch", "remint": True, "value": "full"},
-                   {"event": "workflow_dispatch", "repeat": 10, "value": "full"},
-                   {"event": "pull_request", "ref": "tmp/skill-evals-before"}):
+def test_only_a_run_started_by_hand_measures_and_a_before_run_s_auto_measures_nothing(tree):
+    for kwargs in ({"event": "push"}, {"event": "schedule"}, {"event": "pull_request", "value": "full"},
+                   {"event": "workflow_dispatch", "ref": "tmp/skill-evals-before"}):
         found, read = _event(tree, **kwargs)
         assert found["measures"] == {} and not read, kwargs
-    found, read = _event(tree, "pull_request")
+    # A before-run asked for a measure gets it.
+    found, read = _event(tree, "workflow_dispatch", value="smoke", ref="tmp/skill-evals-before")
+    assert found["measure"] == "smoke" and not read
+    found, read = _event(tree, "workflow_dispatch")
     assert _measures(found) == {"trees": CASES} and read
 
 
@@ -201,6 +202,17 @@ def test_a_dispatch_measures_what_its_input_says(tree):
         _event(tree, "workflow_dispatch", value="trees,nowhere")
 
 
+def test_a_dispatch_of_the_graders_grades_the_grader_truth_of_each_skill_that_holds_one(tree):
+    """``graders`` has each model grade the prepared answers of every skill
+    that holds an ``evals/truth.json``, once, and runs nothing else."""
+    for folder in ("skills/trees", "packages/curio.parks@1/skills/parks"):
+        (tree / folder / "evals" / scope.TRUTH_FILE).write_text('{"answers": []}', encoding="utf-8")
+    found, read = _event(tree, "workflow_dispatch", value="graders")
+    assert found["measure"] == "graders" and not read
+    assert _measures(found) == {"trees": GRADERS, "parks": GRADERS}
+    assert found["measures"]["trees"] == scope.GRADERS and scope.GRADERS["kinds"] == [scope.GRADE]
+
+
 def test_each_measure_is_one_the_evaluations_read(tree):
     from utk_curio.backend.app.agents.evaluation import skill_evals
 
@@ -210,17 +222,25 @@ def test_each_measure_is_one_the_evaluations_read(tree):
     assert all(measure.whole for measure in read.values())
     assert skill_evals.Measure.from_dict(scope.WHOLE).whole and skill_evals.Measure.from_dict(scope.CASES).whole
     assert not skill_evals.Measure.from_dict(scope.SMOKE).whole
+    assert skill_evals.Measure.from_dict(scope.GRADERS).kinds == (skill_evals.GRADE,)
     assert scope.RUNS == skill_evals.RUNS
 
 
-def test_on_github_a_scope_goes_to_the_step_s_output_or_nothing_and_never_fails_the_build(tmp_path, monkeypatch):
+def test_the_scope_finds_the_grader_truth_where_its_reader_reads_it():
+    from utk_curio.backend.app.agents.evaluation import grader_truth
+
+    assert scope.TRUTH_FILE == grader_truth.TRUTH_FILE
+
+
+def test_on_github_a_scope_goes_to_the_step_s_output_or_nothing_and_a_failure_is_written_down(tmp_path, monkeypatch):
     output, summary = tmp_path / "output", tmp_path / "summary"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
     monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
     assert scope.main(["--github"]) == 0
     assert output.read_text(encoding="utf-8") == "skill_evals=\n"
-    assert "- a push: its pull request measured it" in summary.read_text(encoding="utf-8")
+    assert "- a push event measures nothing: the workflow measures when it is started" in summary.read_text(
+        encoding="utf-8")
 
     output.write_text("", encoding="utf-8")
     monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
@@ -230,18 +250,13 @@ def test_on_github_a_scope_goes_to_the_step_s_output_or_nothing_and_never_fails_
     assert written.startswith("skill_evals={") and "\n" not in written.rstrip("\n")
     assert json.loads(written.split("=", 1)[1])["measure"] == "smoke"
 
-    # A failure while reading the run is written down for the node to fail on.
+    # A failure while reading the run is written down for the run to fail on.
     output.write_text("", encoding="utf-8")
     monkeypatch.setenv("SKILL_EVALS", "auto")
+    monkeypatch.setenv("HEAD_REF", "feat/x")
     monkeypatch.delenv("GITHUB_SHA", raising=False)
     assert scope.main(["--github"]) == 0
     assert "error" in json.loads(output.read_text(encoding="utf-8").split("=", 1)[1])
-
-    # The weekly run's words hold whatever the event.
-    output.write_text("", encoding="utf-8")
-    monkeypatch.setenv("GITHUB_EVENT_NAME", "schedule")
-    assert scope.main(["--github", "--asked", "full"]) == 0
-    assert json.loads(output.read_text(encoding="utf-8").split("=", 1)[1])["measure"] == "full"
 
 
 def test_main_s_core_skills_are_the_preamble_s():

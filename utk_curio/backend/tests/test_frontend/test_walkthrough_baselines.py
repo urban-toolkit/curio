@@ -32,7 +32,7 @@ from .utils import (
     save_workflow_test_screenshot,
     stub_login_and_enter_workflow,
 )
-from .walkthroughs import TOAST_REGION, load_example_spec
+from .walkthroughs import TOAST_REGION, opening_spec, opens_on_nodes
 
 
 def _walkthrough_params():
@@ -58,23 +58,24 @@ def test_walkthrough_baseline(walk, app_frontend, current_server, page):
     require_user_auth()
 
     page.emulate_media(reduced_motion="reduce")
+    spec = opening_spec(walk)
     stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
         name="Walkthrough",
         username=f"walk_{walk.slug.replace(chr(45), chr(95))[:24]}",
-        project_name=walk.title,
-        project_spec=load_example_spec(walk.example) if walk.example else None,
+        project_name=walk.dataflow_name or walk.title,
+        project_spec=spec,
     )
     require_owner_view(page)
-    # An empty dataflow has no nodes; only wait for one when the scene asked for
+    # An empty dataflow has no nodes; only wait for one when the scene opens on
     # a spec that puts them there. The seven catalog/agent scenes deliberately
     # start on a never-saved dataflow or a catalog page, and waiting on a node
     # they will never have killed every one of them in setup — 45 s before the
     # first assertion ran. ``test_walkthrough_videos.py`` already guards this;
     # this file was the half that was missed.
-    if walk.example:
+    if opens_on_nodes(spec):
         page.wait_for_selector(".react-flow__node", timeout=45000)
     else:
         page.wait_for_selector("#tools-menu", timeout=45000)

@@ -13,6 +13,12 @@
         "That widget's default is a list holding all three zip codes.",
         "The code places the widget's reference on its own where a list of values is used, such as .isin([!! zips !!]) with the widget's own name.",
         "The code neither splits, parses nor quotes the reference to make a list of it: no .split(, no json.loads or eval, and no quotes around the reference."
+      ],
+      "checks": [
+        {"assertion": 4, "kind": "code", "pattern": "\\.split\\(", "absent": true},
+        {"assertion": 4, "kind": "code", "pattern": "json\\.loads\\(", "absent": true},
+        {"assertion": 4, "kind": "code", "pattern": "\\beval\\(", "absent": true},
+        {"assertion": 4, "kind": "code", "pattern": "[\"']\\s*\\[!![^\\]]*!!\\]\\s*[\"']", "absent": true}
       ]
     },
     {
@@ -38,6 +44,10 @@
         "The reply tells the user the factor is now set in the multiplier node's Number Multiplier widget, where they can change it later.",
         "No code the answer writes holds the number 25: it changes no node's code to type the factor in place of the widget.",
         "The answer creates no new node."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "node.settings.write", "node": "f325441e-55be-4415-aa1b-b2055f590de2", "args": {"widgets.number_multiplier": 25}},
+        {"assertion": 4, "kind": "tool", "tool": "node.create", "absent": true}
       ]
     },
     {
@@ -50,6 +60,13 @@
         "The answer uses node.settings.write on node c7246f52-d977-5353-9951-bcb855d2ebda to set its widget timeline to \"2050 - 2080\".",
         "The reply says both depth layers follow the one Projection period setting, which is where the period was changed.",
         "The answer changes neither loader's code: no node.content.write on f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4 or a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "node.settings.write", "node": "c7246f52-d977-5353-9951-bcb855d2ebda", "args": {"widgets.timeline": "2050 - 2080"}},
+        {"assertion": 3, "kind": "tool", "tool": "node.content.write", "node": "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4", "absent": true},
+        {"assertion": 3, "kind": "tool", "tool": "node.content.write", "node": "a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5", "absent": true},
+        {"assertion": 3, "kind": "delegate", "capability": "node.content.generate", "node": "f4a5b6c7-3d4e-4f5a-9b6c-7d8e9fa0b1c4", "absent": true},
+        {"assertion": 3, "kind": "delegate", "capability": "node.content.generate", "node": "a5b6c7d8-4e5f-4a6b-8c7d-8e9fa0b1c2d5", "absent": true}
       ]
     }
   ],

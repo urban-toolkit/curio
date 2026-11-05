@@ -12,8 +12,8 @@ when utk-gpu is busy too, where it runs as many workers as the desktop holds
 runs one job of either kind, so the desktops' room counts the jobs of both. A
 self-hosted runner's labels are its machine (arcade, utk, utk-desktop-01,
 utk-desktop-02; both desktops also carry utk-desktop) and its kind (cpu or
-gpu). arcade-cpu-40 also carries ``skill-evals``, the one runner of the
-skill-evals job, which picks no runner: while it runs there it holds that
+gpu). arcade-cpu-40 also carries ``skill-evals``, the one runner of the Skill
+evaluations workflow (skill-evals.yml): while its job runs there it holds that
 runner of the CPU pool, as any job does.
 GitHub cannot express "this runner, or that one if busy": ``runs-on`` has no
 "or", and it sends ``ubuntu-latest`` jobs only to its own runners. So a run

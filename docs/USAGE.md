@@ -1246,6 +1246,8 @@ only while the spec buffer is still empty, the editor fills with a complete
 starter spec chosen from the input's column types. It never overwrites anything
 you have typed or anything written into the node for you (by an agent, or by
 dropping a dataset on it), and it never runs the node: you still press play.
+Until you edit it, the starter is not the node's saved spec: an agent that
+writes the node, Solve included, replaces it.
 
 Connecting an edge is not enough on its own. An edge carries no column types
 until the upstream node has actually produced output, so a connected-but-unrun

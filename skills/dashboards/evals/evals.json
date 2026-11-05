@@ -18,7 +18,7 @@
       "id": 2,
       "agent": "agent.curio.researcher@1",
       "prompt": "I'm sending the dashboard link to our parks team. Which of its controls can they change, and could anything they do there mess up my dataflow?",
-      "expected_output": "The parks team can move the Top zip codes node's top_n slider but cannot change its zip_prefix text widget, since viewers cannot change text, text list or file widgets; a viewer's change runs on the server with the owner's datasets and never changes the dataflow, its saved outputs or the Data Catalog, and what it makes is kept for 7 days.",
+      "expected_output": "The parks team can move the Top zip codes node's top_n slider but cannot change its zip_prefix text widget, since viewers cannot change text, text list, file or dataset widgets; a viewer's change runs on the server with the owner's datasets and never changes the dataflow, its saved outputs or the Data Catalog, and what it makes is kept for 7 days.",
       "assertions": [
         "The answer says viewers can change the top_n slider (How many zip codes) of the Top zip codes node.",
         "The answer says viewers cannot change the zip_prefix text widget (Zip code prefix).",
@@ -35,6 +35,13 @@
         "The answer tells the user to pin the Roofs table themselves, with the pin in the node's header.",
         "The answer makes no change: no node.create, node.settings.write, node.content.write or dataflow plan.",
         "The answer does not claim the table is now pinned or on the dashboard."
+      ],
+      "checks": [
+        {"assertion": 2, "kind": "unchanged"},
+        {"assertion": 2, "kind": "tool", "tool": "node.create", "absent": true},
+        {"assertion": 2, "kind": "tool", "tool": "node.settings.write", "absent": true},
+        {"assertion": 2, "kind": "tool", "tool": "node.content.write", "absent": true},
+        {"assertion": 2, "kind": "tool", "tool": "dataflow.plan.write", "absent": true}
       ]
     },
     {

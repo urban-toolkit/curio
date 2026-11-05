@@ -10,6 +10,7 @@
     python -m utk_curio.tools.agent_eval export --split validation --out eval.jsonl
 
     python utk_curio/tools/agent_eval.py skills --pilot --out ../skill-evals
+    python utk_curio/tools/agent_eval.py benchmark compare <a> <b>
 
 ``skills`` evaluates the skills Curio ships as agentskills.io describes, each
 from its ``evals/evals.json``, against the endpoint the variables
@@ -59,7 +60,7 @@ from utk_curio.backend.app.agents.evaluation.report import (
     new_run_id,
 )
 from utk_curio.backend.app.common.user_storage import curio_root
-from utk_curio.tools import skill_eval_runner
+from utk_curio.tools import skill_benchmark, skill_eval_runner
 
 #: The folder of Curio's state directory ``run`` writes its reports to when no
 #: ``--out`` is given.
@@ -303,6 +304,7 @@ def build_parser() -> argparse.ArgumentParser:
     exporter.set_defaults(func=cmd_export)
 
     skill_eval_runner.add_parser(sub)
+    skill_benchmark.add_parser(sub)
     return parser
 
 

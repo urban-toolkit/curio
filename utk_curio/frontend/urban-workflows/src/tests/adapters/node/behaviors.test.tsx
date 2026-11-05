@@ -282,6 +282,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const spec = JSON.parse(result.current.defaultValueOverride as string);
       expect(spec.mark).toBe('geoshape');
       expect(spec.encoding.shape).toEqual({ field: 'geometry', type: 'geojson' });
+      // A starter, which the dataflow's doc does not take as the chart's spec.
+      expect(result.current.defaultValueIsStarter).toBe(true);
     });
 
     test('an artifact input is classified from the preview envelope, geometry included', async () => {
@@ -425,6 +427,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       );
 
       expect(result.current.defaultValueOverride).toBeUndefined();
+      expect(result.current.defaultValueIsStarter).toBeUndefined();
     });
 
     test('no input leaves the buffer empty', async () => {
@@ -876,6 +879,8 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       await waitFor(() => expect(rendered.result.current.defaultValueOverride).toBeDefined());
       const starter = rendered.result.current.defaultValueOverride;
       expect(JSON.parse(starter).map.layerRefs[0].dataRef).toBe('input_0');
+      // A starter, which the dataflow's doc does not take as the map's document.
+      expect(rendered.result.current.defaultValueIsStarter).toBe(true);
 
       // Editor floats a keystroke back into the mutable node data.
       (stableData as any).code = '{"user":"typed"}';
@@ -892,6 +897,7 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       (stableData as any).defaultCode = '{"map":{}}';
       await act(async () => { rendered.rerender(); });
       expect(rendered.result.current.defaultValueOverride).toBeUndefined();
+      expect(rendered.result.current.defaultValueIsStarter).toBeUndefined();
     });
 
     test('a package template that ships its own document is never filled from its input', async () => {
@@ -926,6 +932,9 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         await waitFor(() => expect(plain.current.defaultValueOverride).toBeDefined());
         await act(async () => {});
         expect(template.current.defaultValueOverride).toBeUndefined();
+        // Only the starter a node chose from its input is not its document.
+        expect(plain.current.defaultValueIsStarter).toBe(true);
+        expect(template.current.defaultValueIsStarter).toBeUndefined();
       } finally {
         clearPackageNodes();
       }

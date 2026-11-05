@@ -290,6 +290,10 @@ your dataflowPlan was invalid: fix exactly these problems and resend the complet
 
 params.content must be a non-empty string
 
+## mint.content-object-for-code
+
+params.content is a JSON {json_type}, but a {label} node holds {engine} code: send the code itself in params.content, as one string. Only a chart's or a map's node takes a JSON document as its content.
+
 ## mint.content-too-large
 
 params.content exceeds the content size bound

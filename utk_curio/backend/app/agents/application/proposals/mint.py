@@ -29,6 +29,7 @@ from utk_curio.backend.app.agents.application.turns import grounding as agents_g
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.execution.code_references import REFERENCE_RE, normalize_widgets, parse_reference
 from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.execution.workflow_spec import CONTENT_KIND_NONE
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.agents.domain import agent_text
@@ -593,6 +594,33 @@ def _node_display_name(node: dict, entry: dict | None) -> str:
     return name + (f" · {title}" if title and title != (label or "").strip() else "")
 
 
+def _holds_document(entry: dict | None, node_type: object) -> bool:
+    """Whether a node of *entry*'s template holds a JSON document, as a chart
+    or a map does: its content kind is ``grammar``, as the roster derives it
+    from the template's manifest (``packages.template_content_kind``), else as
+    the offline tables answer for *node_type* (``workflow_spec.content_kind``)."""
+    kind = (entry or {}).get("contentKind") or workflow_spec.content_kind(str(node_type or ""))
+    return kind == workflow_spec.CONTENT_KIND_GRAMMAR
+
+
+def _content_refusal(raw: object, proposed: str, entry: dict | None) -> str | None:
+    """Why *proposed*, the content a request gave as *raw*
+    (``content.extract_node_content``), cannot be a node's, or None when it
+    can: none given, or too long. A JSON object or array given to a node that
+    holds code is told what to send in its place."""
+    if not proposed:
+        engine = source_grounding.code_engine(entry)
+        if engine is not None and isinstance(raw, (dict, list)):
+            return agent_text.message(
+                "mint.content-object-for-code", json_type="object" if isinstance(raw, dict) else "array",
+                label=entry.get("label") or entry.get("id"), engine=engine,
+            )
+        return agent_text.message("mint.content-required")
+    if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
+        return agent_text.message("mint.content-too-large")
+    return None
+
+
 def _target_node_id(loop_ctx: dict, params: dict) -> str | None:
     """The node a request names in ``nodeId``, else the node the agent is
     attached to, else None."""
@@ -612,11 +640,14 @@ def _mint_node_content_write(
     node_id = _target_node_id(loop_ctx, params)
     if not node_id:
         return "refused", agent_text.message("tools.no-node-id"), None
-    proposed = content.extract_node_content(params.get("content"))
-    if not proposed:
-        return "refused", agent_text.message("mint.content-required"), None
-    if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
-        return "refused", agent_text.message("mint.content-too-large"), None
+    raw_content = params.get("content")
+    if not isinstance(raw_content, (dict, list)):
+        # A text is judged now, before any read, as it always was; a JSON
+        # object or array once the node's template says whether the node
+        # holds a document, below.
+        refusal = _content_refusal(raw_content, content.extract_node_content(raw_content), None)
+        if refusal:
+            return "refused", refusal, None
     spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
@@ -631,6 +662,12 @@ def _mint_node_content_write(
     from utk_curio.backend.app.packages import service as packages_services
 
     entry, _err = packages_services.resolve_template(user_key, project_id, node.get("type"))
+    # A chart's or a map's node takes its document as an object too, as its
+    # text, as node.create does.
+    proposed = content.extract_node_content(raw_content, document=_holds_document(entry, node.get("type")))
+    refusal = _content_refusal(raw_content, proposed, entry)
+    if refusal:
+        return "refused", refusal, None
     engine = source_grounding.code_engine(entry)
     chips = agents_grounding._chip_context(spec, node_id)
     current = str(node.get("content") or "")
@@ -824,7 +861,10 @@ def _mint_node_create(
     entry, err = agents_roster._available_template(user_key, project_id, params.get("nodeType"))
     if entry is None:
         return agents_tool_rounds._refuse_params(err)
-    proposed = content.extract_node_content(params.get("content"))
+    # A chart's or a map's node takes its document as an object too, as its
+    # text: the document check below judges it as it judges the text.
+    raw_content = params.get("content")
+    proposed = content.extract_node_content(raw_content, document=_holds_document(entry, entry["id"]))
     # A template whose starter is its whole content, such as each chart of
     # the Vega-Lite package, gives the node that starter, as a plan does:
     # the request gives no content, and sets the template's widgets by name.
@@ -837,10 +877,10 @@ def _mint_node_create(
     if starter is not None:
         proposed = starter["content"]
     # A node that holds no content, such as a Spatial Join, is added without it.
-    if not proposed and entry.get("contentKind") != CONTENT_KIND_NONE:
-        return agents_tool_rounds._refuse_params(agent_text.message("mint.content-required"))
-    if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
-        return agents_tool_rounds._refuse_params(agent_text.message("mint.content-too-large"))
+    holds_none = not proposed and entry.get("contentKind") == CONTENT_KIND_NONE
+    refusal = None if holds_none else _content_refusal(raw_content, proposed, entry)
+    if refusal:
+        return agents_tool_rounds._refuse_params(refusal)
     settings, setting_errors = _node_create_settings(user_key, project_id, entry, params)
     if setting_errors:
         return agents_tool_rounds._refuse_params("; ".join(setting_errors))
