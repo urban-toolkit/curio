@@ -12,8 +12,8 @@ its own spec without a word.
 1. **A planned chart and map.** On a saved dataflow whose loader has run, the
    scripted Dataflow Builder plans a ``curio.builtin/vis-vega`` chart and a
    ``curio.builtin/autk-grammar`` map wired to the loader. They land with no
-   spec, the loader's result reaches them (it runs again once they are
-   wired), and each editor shows its starter. Solve then writes each node's
+   spec, the loader's result reaches them over the plan's connections, and
+   each editor shows its starter. Solve then writes each node's
    scripted spec into the server's copy, its outcome is solved, not skipped,
    and each editor shows that spec whole.
 2. **A chart and a map dropped from the Built-in palette** and wired to the
@@ -250,13 +250,11 @@ def test_solve_writes_a_planned_chart_and_map_whose_inputs_have_run(
     expect(card).to_be_visible(timeout=90000)
     page.wait_for_function("() => window.__curio_reactFlow.getNodes().length === 3", timeout=90000)
 
-    # The loader runs again, so its result reaches both planned nodes over
-    # the plan's connections, whenever those landed: each editor shows a
-    # starter chosen from it, and the server has every change the tab made by
-    # then.
+    # The loader's result reaches both planned nodes over the plan's
+    # connections: each editor shows a starter chosen from it, and the server
+    # has every change the tab made by then.
     planned = _nodes(current_server, token, project_id)
     chart, mapped = _by_title(planned, CHART_TITLE), _by_title(planned, MAP_TITLE)
-    run_node_and_wait(page, LOADER_ID, node_type="DATA_LOADING", timeout_ms=120000)
     _shows_starter(page, chart, '"mark"')
     _shows_starter(page, mapped, "layerRefs")
     wait_for_changes_kept(page)
