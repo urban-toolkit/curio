@@ -206,18 +206,23 @@ export function normalizedDataflow(dataflow: Fields): Fields {
     }
 }
 
-/** The writer's *base* without its connections to a node *doc* no longer
- *  holds. Such a connection points nowhere: the canvas stops drawing it, and
- *  the server takes it out and tells whoever drew it
+/** The writer's *base* without the connections *doc* holds to a node it no
+ *  longer holds. Such a connection points nowhere: the canvas stops drawing
+ *  it, and the server takes it out and tells whoever drew it
  *  (`dataflow_docs._drop_dangling_connections`). So the writer never writes
  *  its take-out, which, sent in one update with the connection, as a tab that
- *  reconnects sends its changes, would hide it from the server. A node this
+ *  reconnects sends its changes, would hide it from the server. One the doc
+ *  took out already stays in *base*, so it stays out (`applyDataflow`): a
+ *  bind's first write still finds it on the canvas when the load was read
+ *  before someone removed its node, and this tab never drew it. A node this
  *  tab removes is still in the doc when its write starts, so its connections
  *  go with it. */
 function withoutDangling(base: Fields, doc: Y.Doc): Fields {
     if (!Array.isArray(base.edges)) return base;
     const nodes = doc.getMap("nodes");
-    const edges = (base.edges as Fields[]).filter((e) => nodes.has(e.source as string) && nodes.has(e.target as string));
+    const docEdges = doc.getMap("edges");
+    const edges = (base.edges as Fields[]).filter((e) => !docEdges.has(e[EDGE_ID] as string)
+        || (nodes.has(e.source as string) && nodes.has(e.target as string)));
     return edges.length === base.edges.length ? base : { ...base, edges };
 }
 
