@@ -165,10 +165,25 @@ def test_every_mutant_fails_exactly_its_checked_fails_and_passes_its_case_s_othe
 # --- Curio's own checks ---------------------------------------------------------------
 
 
+def _widgets(answer, case, node_id: str) -> list:
+    """The widgets of *node_id* once the answer landed: an added node's own, else
+    the ones the node holds in its case's dataflow."""
+    for node in answer.changes["changed"].get("nodes", {}).get("added", []):
+        if node.get("id") == node_id:
+            return (node.get("metadata") or {}).get("widgets") or []
+    if case.context.dataflow is None:
+        return []
+    nodes = json.loads(case.context.dataflow.read_text(encoding="utf-8"))["dataflow"]["nodes"]
+    node = next((n for n in nodes if n.get("id") == node_id), {})
+    return (node.get("metadata") or {}).get("widgets") or []
+
+
 def test_a_document_a_golden_answer_writes_passes_curio_s_own_check_of_it():
-    """The document check of a Vega-Lite or Autark node, the Map Editor
-    node's reader, and the plan grammar a plan call is read with."""
+    """The document check of a Vega-Lite or Autark node, its widgets' references
+    resolved first as a run resolves them, the Map Editor node's reader, and the
+    plan grammar a plan call is read with."""
     from utk_curio.backend.app.agents.domain import content, map_edits
+    from utk_curio.backend.app.execution.code_references import resolve_references
 
     dv, grammars = _dv(), _grammars()
     held = 0
@@ -176,7 +191,8 @@ def test_a_document_a_golden_answer_writes_passes_curio_s_own_check_of_it():
         for node_id, node_type, text in _written(answer):
             grammar = grammars.get(str(node_type).split("@", 1)[0])
             if grammar is not None:
-                assert dv.validate(node_type, text, grammar_id=grammar) == {"status": dv.STATUS_VALID}, (
+                resolved, _ = resolve_references(text, _widgets(answer, case, node_id), "json", grammar=grammar)
+                assert dv.validate(node_type, resolved, grammar_id=grammar) == {"status": dv.STATUS_VALID}, (
                     answer.skill, answer.key, node_id)
                 held += 1
             elif node_type == EDIT:
@@ -307,6 +323,9 @@ def _refusals() -> dict:
         ("map-edits", 2, "refused-map-edit"): _map_edits_refuses(LAYERS_EDITOR),
         ("map-edits", 3, "refused-edge"): _plan_refuses(LAYERS),
         ("map-edits", 4, "refused-map-edit"): _map_edits_refuses(LAYERS_EDITOR),
+        ("vega-lite-maps", 1, "refused-field"): _vega_refuses(columns=["geometry", "accessibility", "neighborhood_name"]),
+        ("vega-lite-maps", 3, "refused-field"): _vega_refuses("zip-map", ["zip", "roofs", "geometry", "centroid"]),
+        ("vega-lite-charts", 2, "refused-edge"): _plan_refuses("docs/examples/dataflows/chicago-rain-wind-routing.json"),
         ("scenarios", 1, "refused-spec"): _vega_refuses(),
         ("scenarios", 4, "refused-code"): _reference_refuses(
             "docs/examples/dataflows/scenarios.json", "f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5"),
