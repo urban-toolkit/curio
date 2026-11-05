@@ -208,6 +208,13 @@ def test_the_benchmark_s_leaderboard_and_main_s_last_run(tmp_path):
                  floors=floors, prices=prices)
     assert ("No comparison with main's last run: the two runs measured different sets"
             in (tmp_path / report.SUMMARY).read_text(encoding="utf-8"))
+    # Nor one another model graded, such as a run of main that graded itself
+    # against a run the benchmark's fixed grader graded.
+    _write(previous / f"{report.slug(HAIKU)}.json", {"skills": {}, "benchmark": {**lower, "grader": "grader-model"}})
+    report.build(tmp_path, [HAIKU], scope={}, probes={HAIKU: {"ok": True, "seconds": 1.0}}, previous=previous,
+                 floors=floors, prices=prices)
+    assert ("No comparison with main's last run: the two runs were graded by different models"
+            in (tmp_path / report.SUMMARY).read_text(encoding="utf-8"))
 
 
 def test_the_floors_and_the_prices_files_hold_what_the_report_reads():

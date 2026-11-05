@@ -23,7 +23,9 @@ The kinds, each with what it holds (``absent: true`` turns any of them into
   ``applied``, or the ``status`` named); on ``node`` when named, and with
   ``args``, each a dotted path into the call's arguments and the value there.
   A call whose arguments name no node is on the node the agent is attached
-  to, as the tools resolve it (``tools.py``'s ``_resolve_node_id``).
+  to, as the tools resolve it (``tools.py``'s ``_resolve_node_id``); so a
+  check names ``node`` only on a tool that works on one node, never on
+  ``node.create`` or ``dataflow.plan.write``.
 - ``delegate``: the run delegated ``capability``, on ``node`` when named, and
   the delegation ended ``ok`` (or the ``status`` named). A delegation whose
   inputs name no node and no ``nodeType`` is on the node the agent is

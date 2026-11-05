@@ -26,9 +26,10 @@ interval bootstrapped over the cases and, within each, over its runs
 (``checks.py``), which are exact; every other one is its grader's, and where a
 check and the grader differ the run is listed in ``disagreements``.
 
-:func:`compare` pairs the cases of two runs of one version and one model and
-says, per skill and overall, whether the second is better, worse or not shown
-different: the verdict rests on the interval of the paired difference.
+:func:`compare` pairs the cases of two runs of one version, one model and one
+grader and says, per skill and overall, whether the second is better, worse or
+not shown different: the verdict rests on the interval of the paired
+difference.
 """
 
 from __future__ import annotations
@@ -312,12 +313,16 @@ def compare(a: Mapping, b: Mapping, *, seed: int = SEED) -> dict:
     """Whether *b* is better than *a*, worse or not shown different, per skill
     and over every case both measured, on the success of each case with the
     skill and on the trigger rates of each query, paired. Both must be of
-    one version and one model; raises :class:`CompareRefused` otherwise."""
+    one version, one model and one grader; raises :class:`CompareRefused`
+    otherwise."""
     if a.get("version") != b.get("version"):
         raise CompareRefused(f"the two runs measured different sets: version {a.get('version')} "
                              f"and {b.get('version')}")
     if a.get("model") != b.get("model"):
         raise CompareRefused(f"the two runs measured different models: {a.get('model')} and {b.get('model')}")
+    if a.get("grader") != b.get("grader"):
+        raise CompareRefused(f"the two runs were graded by different models: {a.get('grader')} "
+                             f"and {b.get('grader')}")
 
     def paired_success(keys) -> dict:
         found = _paired({key: a["cases"][key].get(skill_evals.WITH_SKILL) or [] for key in keys},

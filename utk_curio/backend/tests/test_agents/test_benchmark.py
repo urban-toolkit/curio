@@ -390,8 +390,10 @@ def test_intervals_resample_cases_and_their_runs():
 # --- Comparing two runs ---------------------------------------------------------------
 
 
-def _scored(cases: dict, queries: dict | None = None, *, version: str = "v1", model: str = "measured-model") -> dict:
-    return {"version": version, "model": model, "run": "skills-x", "cases": cases, "queries": queries or {}}
+def _scored(cases: dict, queries: dict | None = None, *, version: str = "v1", model: str = "measured-model",
+            grader: str = "measured-model") -> dict:
+    return {"version": version, "model": model, "grader": grader, "run": "skills-x", "cases": cases,
+            "queries": queries or {}}
 
 
 def test_a_compare_finds_a_difference_planted_in_its_samples():
@@ -430,10 +432,13 @@ def test_two_halves_of_one_run_are_not_shown_different():
     assert found["skills"]["street-trees"]["success"]["verdict"] == benchmark.SAME
 
 
-def test_only_two_runs_of_one_set_and_one_model_compare():
+def test_only_two_runs_of_one_set_one_model_and_one_grader_compare():
     benchmark = _benchmark()
     cases = {"street-trees/1": {"skill": "street-trees", "case": 1, "with_skill": [1.0]}}
     with pytest.raises(benchmark.CompareRefused, match="different sets"):
         benchmark.compare(_scored(cases), _scored(cases, version="v2"))
     with pytest.raises(benchmark.CompareRefused, match="different models"):
         benchmark.compare(_scored(cases), _scored(cases, model="another-model"))
+    # A run its model graded and one the benchmark's fixed grader graded.
+    with pytest.raises(benchmark.CompareRefused, match="graded by different models"):
+        benchmark.compare(_scored(cases), _scored(cases, grader="grader-model"))
