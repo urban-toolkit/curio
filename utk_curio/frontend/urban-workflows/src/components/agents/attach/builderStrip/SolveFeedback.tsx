@@ -18,7 +18,9 @@ export const SolveFeedback: React.FC<{
   onOpenChat?: (attachmentId: string) => void;
   /** The name of the agent an attachment of this dataflow binds, from the live list. */
   agentNameOf?: (attachmentId: string) => string | null;
-}> = ({ reasons, notices, remedies, selectionRemedies, onOpenChat, agentNameOf }) => {
+  /** The name a node's header shows, as its pill says it. */
+  nodeNameOf?: (nodeId: string) => string;
+}> = ({ reasons, notices, remedies, selectionRemedies, onOpenChat, agentNameOf, nodeNameOf }) => {
   const hostedGuest = useHostedGuest();
   return (
     <>
@@ -51,8 +53,9 @@ export const SolveFeedback: React.FC<{
               remedy={r}
               onOpenChat={onOpenChat}
               agentName={r.attachmentId ? agentNameOf?.(r.attachmentId) ?? null : null}
-              // One awaiting node needs no disambiguation; several do.
-              nodeLabel={selectionRemedies.length > 1 ? nodeId.slice(0, 8) : undefined}
+              // One awaiting node needs no disambiguation; several are named
+              // as their pills name them.
+              nodeLabel={selectionRemedies.length > 1 ? (nodeNameOf?.(nodeId) ?? nodeId.slice(0, 8)) : undefined}
             />
           ))}
         </div>

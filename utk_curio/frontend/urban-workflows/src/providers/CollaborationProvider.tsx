@@ -42,6 +42,7 @@ import React, {
     useRef,
     useState,
 } from "react";
+import { flushSync } from "react-dom";
 import { io, Socket } from "socket.io-client";
 
 import { authApi, getToken } from "../utils/authApi";
@@ -423,22 +424,27 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                 }
             });
 
-            // Locks
+            // Locks. Each change is drawn as its message is handled
+            // (``flushSync``), as the node an agent's state names turns at
+            // once (``collab/agentHolds``). Left to React's next render, an
+            // agent's lock could show after the state the agent sent after
+            // it, or not at all when a busy page handled the lock, the states
+            // and the unlock before React rendered again.
             socket.on(
                 "node_locked",
                 (payload: { nodeId: string; lock: NodeLock }) => {
-                    setLockedNodes((prev) => ({
+                    flushSync(() => setLockedNodes((prev) => ({
                         ...prev,
                         [payload.nodeId]: payload.lock,
-                    }));
+                    })));
                 },
             );
             socket.on("node_unlocked", (payload: { nodeId: string }) => {
-                setLockedNodes((prev) => {
+                flushSync(() => setLockedNodes((prev) => {
                     const next = { ...prev };
                     delete next[payload.nodeId];
                     return next;
-                });
+                }));
             });
             // A participant that leaves lets go of its locks: the server
             // released them (``room_state.remove_user``) and names them. A
@@ -446,7 +452,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             socket.on("user_left", (payload: { participant_id?: string; released_locks?: unknown }) => {
                 const released = Array.isArray(payload?.released_locks) ? payload.released_locks : [];
                 if (released.length === 0 || !payload.participant_id) return;
-                setLockedNodes((prev) => {
+                flushSync(() => setLockedNodes((prev) => {
                     const next = { ...prev };
                     let dropped = false;
                     for (const nodeId of released) {
@@ -455,7 +461,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                         dropped = true;
                     }
                     return dropped ? next : prev;
-                });
+                }));
             });
 
             // Fan-out to consumer-registered handlers.

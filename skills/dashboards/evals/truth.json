@@ -1,0 +1,242 @@
+{
+  "skill_name": "dashboards",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer writes a dataflow plan that adds a node upstream of the map to load the Chicago Loop buildings the map's data section loads now, such as an Autark node (curio.builtin/autk-grammar) whose spec holds only that section.",
+        "The plan connects that new node into the Loop buildings map (loop-map) with a data edge.",
+        "The answer says the map's own spec must then drop its \"data\" section and draw the new node's output instead.",
+        "The answer neither unpins nor removes the map, and does not give unpinning it as the fix."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer says viewers can change the top_n slider (How many zip codes) of the Top zip codes node.",
+        "The answer says viewers cannot change the zip_prefix text widget (Zip code prefix).",
+        "The answer says a viewer's change never changes the saved dataflow or its saved outputs.",
+        "The answer says what a viewer's run makes is kept for 7 days."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer tells the user to pin the Roofs table themselves, with the pin in the node's header.",
+        "The answer makes no change: no node.create, node.settings.write, node.content.write or dataflow plan.",
+        "The answer does not claim the table is now pinned or on the dashboard."
+      ]
+    },
+    {
+      "case": 4,
+      "assertions": [
+        "The answer writes a dataflow plan whose removeNodes holds roofs-chart.",
+        "The plan removes no other node.",
+        "The answer says removing the chart also takes its tile off the dashboard."
+      ]
+    }
+  ],
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "The dashboard's refusal, utk_curio/backend/tests/test_projects/test_dashboard_payload.py::TestATileThatFetchesItsOwnData::test_a_map_that_loads_its_own_data_is_refused and test_a_map_fed_from_upstream_is_fine, in its own words (agents/agent.curio.builtin@1/messages.md dashboards.tile-loads-own-data, pinned by utk_curio/backend/tests/test_agents/test_dashboards_grounding.py::TestTheCheck); the map's data section, skills/dashboards/evals/files/green-roofs-dashboard.json node loop-map's content, moved upstream",
+      "fails": [],
+      "reply": "The Loop buildings map is pinned to the dashboard, and the dashboard carries only saved outputs, so a pinned map cannot load its own data: that is why the page will not open. The plan adds an Autark node upstream of the map, Loop buildings, whose spec holds only the Chicago Loop OSM load the map's data section holds now, and connects it into the Loop buildings map with a data edge.\n\nThe map's own spec must then drop its \"data\" section and draw the new node's output, its buildings on its input. The map stays pinned.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "",
+                "goal": "Loop buildings \u2014 Load the Chicago Loop's OpenStreetMap buildings with a spec that holds only the data section the Loop buildings map loads now: its osm load of docs/examples/data/chicago_loop.osm.pbf, its buildings layer, as table_osm.",
+                "id": "64000d67-03de-432c-9a23-5fd946a10e63",
+                "title": "Loop buildings",
+                "type": "curio.builtin/autk-grammar"
+              }
+            ]
+          },
+          "edges": {
+            "added": [
+              {
+                "id": "42da6e5d-88ed-4ab6-b9cc-b20e8f671e0c",
+                "source": "64000d67-03de-432c-9a23-5fd946a10e63",
+                "sourceHandle": "out",
+                "target": "loop-map",
+                "targetHandle": "in"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "dataflow.plan.write",
+            "kind": "plan",
+            "summary": "Plan · 1 node, 1 edge",
+            "lines": [
+              "+1 node · +1 connection",
+              "1 pending for Build & validate or Solve",
+              "agents attached: Node Builder",
+              "no Dataset Finder: does not attach to autk-grammar nodes",
+              "Topology: acyclic."
+            ],
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "applied",
+          "arguments": {
+            "goal": "Let the dashboard open: load the Loop buildings in a node of their own upstream of the pinned map.",
+            "nodes": [
+              {
+                "ref": "loop-buildings",
+                "nodeType": "curio.builtin/autk-grammar",
+                "title": "Loop buildings",
+                "intent": "Load the Chicago Loop's OpenStreetMap buildings with a spec that holds only the data section the Loop buildings map loads now: its osm load of docs/examples/data/chicago_loop.osm.pbf, its buildings layer, as table_osm."
+              }
+            ],
+            "edges": [
+              {
+                "from": "loop-buildings",
+                "to": "loop-map"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2
+      ],
+      "reply": "The pinned map cannot load its own data. Here is the plan that loads the buildings upstream; then drop the map's \"data\" section so it draws the new node's output:\n\n```json\n{\n  \"goal\": \"Let the dashboard open: load the Loop buildings in a node of their own upstream of the pinned map.\",\n  \"nodes\": [\n    {\n      \"ref\": \"loop-buildings\",\n      \"nodeType\": \"curio.builtin/autk-grammar\",\n      \"title\": \"Loop buildings\",\n      \"intent\": \"Load the Chicago Loop's OpenStreetMap buildings with a spec that holds only the data section the Loop buildings map loads now: its osm load of docs/examples/data/chicago_loop.osm.pbf, its buildings layer, as table_osm.\"\n    }\n  ],\n  \"edges\": [\n    {\n      \"from\": \"loop-buildings\",\n      \"to\": \"loop-map\"\n    }\n  ]\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "golden",
+      "kind": "golden",
+      "source": "skills/dashboards/evals/files/green-roofs-dashboard.json node roofs-top-zips, pinned, with its slider top_n (How many zip codes) and its text widget zip_prefix (Zip code prefix); utk_curio/backend/tests/test_runs/test_dashboard_viewer_runs.py::TestRefusedValues::test_text_text_lists_files_and_datasets_are_read_only_as_the_contract_says; utk_curio/backend/tests/test_runs/test_dashboard_viewer_runs.py::TestNothingIsSaved::test_the_spec_manifest_catalog_runs_and_journal_are_untouched; utk_curio/backend/tests/test_runs/test_dashboard_viewer_runs.py::TestKeptOutputsGo::test_an_output_goes_seven_days_after_it_was_made_and_a_tabs_own_after_an_hour (kept.KEPT_DAYS, 7)",
+      "fails": [],
+      "reply": "On the dashboard the parks team can move the Top zip codes node's top_n slider, How many zip codes. They cannot change its zip_prefix text widget, Zip code prefix: viewers cannot change text, text list, file or dataset widgets.\n\nNothing they do there can change your dataflow. A viewer's change runs on the server, and it never changes the saved dataflow, its saved outputs or your Data Catalog. What a viewer's run makes is kept for 7 days.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": []
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/backend/app/agents/application/tools.py: no agent tool pins a node (node.create and node.settings.write take no pin); a node pinned with the Pin to dashboard icon of its header, as utk_curio/backend/tests/test_frontend/test_dashboard_page_e2e.py's _pin pins one; skills/dashboards/evals/files/green-roofs-dashboard.json's Roofs table, roofs-table, not pinned",
+      "fails": [],
+      "reply": "Only you can put a node on the dashboard: I cannot pin one. To put the Roofs table next to the chart, pin it yourself with the pin in its header, Pin to dashboard. I made no change, so it is not on the dashboard yet.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": []
+    },
+    {
+      "case": 4,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/backend/tests/test_agents/test_dashboards_grounding.py::TestAPlanNamesTheTilesItRemoves::test_a_pinned_victim_is_flagged_and_its_preview_line_says_it_leaves_the_dashboard (a pinned node a plan removes is a dashboard tile, which leaves the dashboard); skills/dashboards/evals/files/green-roofs-dashboard.json node roofs-chart, pinned",
+      "fails": [],
+      "reply": "The plan removes the zip code bar chart, Green roof area by zip code, and nothing else. The chart is pinned, so removing it also takes its tile off the dashboard.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "removed": [
+              {
+                "id": "roofs-chart",
+                "type": "curio.builtin/vis-vega",
+                "title": "Green roof area by zip code"
+              }
+            ]
+          },
+          "edges": {
+            "removed": [
+              {
+                "id": "reactflow__edge-roofs-top-zipsout-roofs-chartin",
+                "source": "roofs-top-zips",
+                "target": "roofs-chart"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "dataflow.plan.write",
+            "kind": "plan",
+            "summary": "Plan · 0 nodes, 0 edges, removes 1 node",
+            "lines": [
+              "+0 nodes · +0 connections · −1 node · −1 connection",
+              "0 pending for Build & validate or Solve",
+              "Topology: acyclic."
+            ],
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "applied",
+          "arguments": {
+            "goal": "Delete the zip code bar chart.",
+            "removeNodes": [
+              "roofs-chart"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": 4,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1
+      ],
+      "reply": "Here is the plan that removes the chart; its tile leaves the dashboard with it:\n\n```json\n{\n  \"goal\": \"Delete the zip code bar chart.\",\n  \"removeNodes\": [\n    \"roofs-chart\"\n  ]\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "refused"
+        }
+      ]
+    }
+  ],
+  "gaps": []
+}

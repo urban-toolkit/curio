@@ -155,6 +155,38 @@ def start_job(
     )
 
 
+def register_job(
+    *,
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    kind: str,
+    job_id: str,
+    redact_values: dict | None = None,
+) -> Job:
+    """Register *job_id* as the attachment's live job before the caller writes
+    the builder session that names it, so a read in between finds it live
+    (:func:`reconcile_builder_session`) and no other job starts for the
+    attachment. :func:`run_job` then drives its events, and :func:`fail_job`
+    ends it when the caller fails first."""
+    return _REGISTRY.register(
+        user_key=user_key, project_id=project_id, key=attachment_id, kind=kind,
+        job_id=job_id, redact_values=redact_values,
+    )
+
+
+def run_job(job: Job, events: Iterator[tuple[str, Any]], app_context=None) -> Job:
+    """Drive a registered *job*'s *events* in a daemon thread, as
+    :func:`start_job` does."""
+    return _REGISTRY.run(job, events, app_context=app_context)
+
+
+def fail_job(job: Job, message: str) -> None:
+    """End a registered *job* that never ran with a terminal ``error`` event,
+    so its attachment may start a job again."""
+    _REGISTRY.fail(job, message)
+
+
 def heartbeat(job: Job) -> None:
     """Touch the job's liveness clock without an event (a long sandbox run)."""
     JobRegistry.heartbeat(job)

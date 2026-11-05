@@ -13,24 +13,35 @@ metadata:
   curio-behaviors: vega
   curio-refusals: document-invalid
 ---
-## The starter spec a Vega-Lite node writes for itself
+## The starter spec a Vega-Lite node suggests
 
 When a Vega-Lite node is connected to a node that has already run, and its editor
 is still empty, Curio fills it with a starter spec chosen from the input's
-column types. Generate specs that agree with this ladder unless the user asks
-for something else. Otherwise the AI and the node produce different charts for
-the same input, which is worse than either alone. Each rule names the column
-roles it needs (at least one column of each, unless it gives a count), then
-the mark it writes and what it shows. First match wins:
+column types. Until someone edits it, the starter is not the node's saved spec:
+a spec you write replaces it. Generate specs that agree with this ladder unless
+the user asks for something else. Otherwise the AI and the node produce
+different charts for the same input, which is worse than either alone. Each
+rule names the column roles it needs (at least one column of each, unless it
+gives a count), then the mark it writes and what it shows. First match wins:
 
 {{vega.starter_ladder}}
 - nothing usable -> no spec at all
 
 Column roles come from pandas dtypes, checked in this order:
-{{starter.dtype_roles}}. A column of any other dtype has no role.
-Never chart `__row_index__`. A nominal column with a different value on every
-row is an identifier: it takes no role, so it is left out before the ladder is
+{{starter.dtype_roles}}. A column of any other dtype has no role, nor do
+`__row_index__` and `interacted`. Never chart `__row_index__`. In an input of 10
+rows or more, a nominal column with a different value on each of its first 100
+rows is an identifier: it takes no role, so it is left out before the ladder is
 matched, since charting it draws one bar per row.
 
 Always state an aggregate on a bar chart. Without one, Vega-Lite silently draws
 one bar per row.
+
+### Several inputs
+
+Each input is the dataset named after its circle, input_0, input_1, and so on.
+A spec that names none draws input_0, so with one input it writes no data field,
+and the spec or a layer draws another input by naming it, as
+`"data": {"name": "{{inputs.chip:1}}"}`. Every input's rows stacked,
+`{{inputs.stacked}}`, carry no geometry. The ladder reads only the first frame
+of the first input.

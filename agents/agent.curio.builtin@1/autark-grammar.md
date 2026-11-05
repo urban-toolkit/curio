@@ -1,7 +1,7 @@
 # Autark grammar
 
-The words of the preamble's section on Autark documents, which the prompt
-field `autk.grammar` puts in place. The runtime fills each `{name}` from the
+The words of the `autark` skill's section on Autark documents, which the
+prompt field `autk.grammar` puts in place. The runtime fills each `{name}` from the
 vendored Autark schema
 when it renders the section: the template's label and id, the schema's id, the
 families a document names, what each part requires, and the schema's own
@@ -15,7 +15,7 @@ the schema's own choices between them.
 
 ## inputs
 
-In the document, the node's inputs are the layers named "{first}", "{second}", ... in the order of its input circles; the layers an upstream {label} node produces keep their table names, such as "table_osm_buildings". The document writes no "data" entry for its inputs.
+In the document, the node's inputs are the layers named "{first}", "{second}", ... in the order of its input circles; the layers an upstream {label} node produces keep their table names, such as "table_osm_buildings". The document writes no "data" entry for its inputs. An input of several layers is named one layer at a time, by a layer chip such as "{{inputs.chip:0:table_osm_buildings}}": its input chip is refused. A raster input is drawn on a map by one band, "getFnv": "band_1", "band_2" and so on. "selectFields" reads a table from the node's input and names columns some feature of it holds, or the run fails.
 
 ## data
 

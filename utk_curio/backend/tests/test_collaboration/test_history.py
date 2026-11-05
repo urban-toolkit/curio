@@ -801,6 +801,21 @@ def test_putting_a_version_back_makes_every_tab_hold_it(kept):
     assert history.versions(kept.owner_key, kept.project_id)["head"] == newest["id"]
 
 
+def test_a_version_put_back_answers_with_the_nodes_it_took_out(kept):
+    """The answer lists the nodes the version put back took out, so the tab
+    that asked for it tells the others it removed them, and a tab that was
+    editing one says who did."""
+    from utk_curio.backend.app.collaboration import history
+
+    alice, bob = _synced(kept, "alice"), _synced(kept, "bob")
+    first = history.versions(kept.owner_key, kept.project_id)["head"]
+    alice.edit(_add_node("extra"))
+    bob.pump()
+    answer = _http(kept).post(f"/api/projects/{kept.project_id}/history/{first}/put-back", headers=_auth(kept, "bob"))
+    assert answer.status_code == 200, answer.get_json()
+    assert answer.get_json() == {"refused": [], "removed": ["extra"]}
+
+
 def test_a_version_put_back_keeps_the_dataflows_name_settings_and_installs(kept):
     """A version put back brings back its nodes, connections and goal, and
     leaves the dataflow its name, hand-set categories, auto-run, packages and

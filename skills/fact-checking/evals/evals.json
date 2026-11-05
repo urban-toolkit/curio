@@ -13,6 +13,11 @@
         "Each finding names the URL that was probed for it.",
         "The answer says the checks were made now, in this session.",
         "The answer creates no notes (no node.create)."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "web.fetch"},
+        {"assertion": 5, "kind": "tool", "tool": "node.create", "absent": true},
+        {"assertion": 5, "kind": "node-added", "type": "curio.builtin/note", "absent": true}
       ]
     },
     {

@@ -31,6 +31,7 @@ from utk_curio.backend.app.agents.infrastructure.providers import (
 )
 from utk_curio.backend.tests._support import gemma4_vllm
 from utk_curio.backend.tests._support.agent_routes import READER, _auth, _write_reader
+from utk_curio.backend.tests.test_agents import test_document_proposals as document_proposals
 from utk_curio.backend.tests.test_agents import test_plan_scenario_routes as scenario_routes
 from utk_curio.backend.tests.test_agents import test_routes_proposals as routes_proposals
 
@@ -46,6 +47,7 @@ NB = "agent.curio.node-builder@1"
 DFB = "agent.curio.dataflow-builder@1"
 DF = "agent.curio.dataset-finder@1"
 CA = "curio.builtin/computation-analysis"
+AUTK = "curio.builtin/autk-grammar"
 
 TEMPLATES = [
     {
@@ -1162,3 +1164,118 @@ class TestOpenObjectsInANativeCall:
         plan["scenarios"][1]["copies"] = {"shadows": 7}
         assert content.parse_dataflow_plan_verbose(plan)[1] == [
             agent_text.message("plan.field-not-string", where="scenarios[1].copies.shadows")]
+
+
+#: The Autark document muse-glimmer sent as a JSON object in the Skill
+#: evaluations pilot of 11-05 (CI run 41953187658): a histogram of the
+#: buildings' heights that a person can brush.
+HISTOGRAM = {"plot": {
+    "dataRef": "table_osm_buildings", "mark": "bar", "axis": ["height", "@transform"],
+    "title": "Building heights histogram",
+    "transform": {"preset": "binning-1d", "options": {"bins": 20}}, "events": ["brushX"],
+}}
+#: What a call that gives a code node a JSON object as its content is told.
+CODE_GIVEN_AN_OBJECT = (
+    "refused: params.content is a JSON object, but a Computation Analysis node holds python code: "
+    "send the code itself in params.content, as one string. Only a chart's or a map's node takes "
+    "a JSON document as its content."
+)
+
+
+class TestADocumentGivenAsAnObject:
+    """muse-glimmer's native calls in the Skill evaluations pilot of 11-05 (CI
+    run 41953187658): node.create of an Autark node with its content written
+    as a JSON object, not as that object's text. Curio refused the call as no
+    string, the model sent the same object again and was refused again, then
+    wrote the call's markup as its reply: 24 of its 57 calls were refused so.
+
+    A node that holds a JSON document, a chart's or a map's, takes its
+    document as the object it is: it lands as the document's JSON text, which
+    the document check judges as it judges that text. A code node still
+    refuses one, and says what to send. node.create, node.content.write and a
+    plan read the same object the same way."""
+
+    def _dataflow(self, client, user, headers, nodes=None) -> str:
+        """A dataflow of the user's whose templates are a code node, a chart
+        and a map (``test_document_proposals``)."""
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        routes_proposals.TestNodeCreate()._write_builtin_package(
+            _user_dir_key(user), templates=document_proposals.TEMPLATES)
+        return _new_dataflow(client, headers, nodes)
+
+    def test_a_map_given_as_an_object_lands_as_its_json_text(self, client, user_and_token, headers):
+        user, _ = user_and_token
+        pid = self._dataflow(client, user, headers)
+        testing_provider.push_replies(
+            {"toolCalls": [_call("node.create", {
+                "nodeType": AUTK, "content": HISTOGRAM, "title": "Building heights histogram",
+                "goal": "A histogram of the buildings' heights that a person can brush."})]},
+            "Added the histogram.",
+        )
+        body = _run(client, headers, pid, _attach(client, headers, pid, NB))
+        (result,) = _native_results()
+        assert "must be a non-empty string" not in result, result
+        assert "is on the canvas" in result, result
+        assert [p["tool"] for p in body["content"] if p["type"] == "change"] == ["node.create"]
+        (created,) = [n for n in _saved_nodes(user, pid).values() if n["id"] != "n1"]
+        assert created["type"] == AUTK
+        assert created["content"] == json.dumps(HISTOGRAM, indent=2, ensure_ascii=False)
+        assert json.loads(created["content"]) == HISTOGRAM
+
+    def test_a_code_node_given_an_object_is_refused_with_what_to_send(self, client, user_and_token, headers):
+        user, _ = user_and_token
+        pid = self._dataflow(client, user, headers)
+        testing_provider.push_replies(
+            {"toolCalls": [_call("node.create", {"nodeType": CA, "content": {"rows": 3}, "title": "Rows"})]},
+            "I could not add it.",
+        )
+        body = _run(client, headers, pid, _attach(client, headers, pid, NB))
+        (refused,) = [m for m in _run_calls()[-1] if m.get("role") == "tool"]
+        assert refused["is_error"] is True
+        assert "must be a non-empty string" not in refused["content"], refused["content"]
+        assert refused["content"] == CODE_GIVEN_AN_OBJECT
+        # No dict literal became the node's code: no node landed at all.
+        assert not [p for p in body["content"] if p["type"] == "change"]
+        assert list(_saved_nodes(user, pid)) == ["n1"]
+
+    def test_a_content_write_reads_the_object_as_a_create_does(self, client, user_and_token, headers):
+        user, _ = user_and_token
+        heights = {"id": "heights", "type": AUTK, "goal": "the buildings' heights", "content": "",
+                   "x": 400, "y": 0}
+        pid = self._dataflow(client, user, headers, [heights])
+        testing_provider.push_replies(
+            {"toolCalls": [_call("node.content.write", {"nodeId": "n1", "content": {"rows": 3}})]},
+            {"toolCalls": [_call("node.content.write", {"nodeId": "heights", "content": HISTOGRAM})]},
+            "Wrote the histogram.",
+        )
+        body = _run(client, headers, pid, _attach(client, headers, pid, NB))
+        refused, written = _native_results()
+        assert "must be a non-empty string" not in refused, refused
+        assert refused == CODE_GIVEN_AN_OBJECT
+        assert not written.startswith("refused"), written
+        assert [p["tool"] for p in body["content"] if p["type"] == "change"] == ["node.content.write"]
+        saved = _saved_nodes(user, pid)
+        assert saved["heights"]["content"] == json.dumps(HISTOGRAM, indent=2, ensure_ascii=False)
+        assert saved["n1"]["content"] == "return 1"
+
+    def test_a_plan_carrying_the_object_is_refused_as_one_carrying_its_text_is(
+        self, client, user_and_token, headers,
+    ):
+        """A plan carries no content (``plan.nodes-carry-content``), the same
+        document given as its text or as the object it is."""
+        user, _ = user_and_token
+        pid = self._dataflow(client, user, headers)
+        node = {"ref": "h", "nodeType": AUTK, "title": "Heights", "intent": "a histogram of the heights"}
+        plan = {"goal": "chart the heights", "edges": []}
+        testing_provider.push_replies(
+            {"toolCalls": [_call("dataflow.plan.write", {**plan, "nodes": [{**node, "content": json.dumps(HISTOGRAM)}]})]},
+            {"toolCalls": [_call("dataflow.plan.write", {**plan, "nodes": [{**node, "content": HISTOGRAM}]})]},
+            "I could not plan it.",
+        )
+        body = _run(client, headers, pid, _attach(client, headers, pid, DFB))
+        as_text, as_object = _native_results()
+        assert "must be a string" not in as_object, as_object
+        assert as_object == as_text
+        assert as_object.startswith("refused: plan nodes must not carry content"), as_object
+        assert not [p for p in body["content"] if p["type"] == "change"]

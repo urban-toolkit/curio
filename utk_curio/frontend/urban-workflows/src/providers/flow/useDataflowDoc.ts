@@ -206,6 +206,34 @@ export function normalizedDataflow(dataflow: Fields): Fields {
     }
 }
 
+/** The writer's *base* without the connections *doc* holds to a node it no
+ *  longer holds. Such a connection points nowhere: the canvas stops drawing
+ *  it, and the server takes it out and tells whoever drew it
+ *  (`dataflow_docs._drop_dangling_connections`). So the writer never writes
+ *  its take-out, which, sent in one update with the connection, as a tab that
+ *  reconnects sends its changes, would hide it from the server. One the doc
+ *  took out already stays in *base*, so it stays out (`applyDataflow`): a
+ *  bind's first write still finds it on the canvas when the load was read
+ *  before someone removed its node, and this tab never drew it. A node this
+ *  tab removes is still in the doc when its write starts, so its connections
+ *  go with it. */
+function withoutDangling(base: Fields, doc: Y.Doc): Fields {
+    if (!Array.isArray(base.edges)) return base;
+    const nodes = doc.getMap("nodes");
+    const docEdges = doc.getMap("edges");
+    const edges = (base.edges as Fields[]).filter((e) => !docEdges.has(e[EDGE_ID] as string)
+        || (nodes.has(e.source as string) && nodes.has(e.target as string)));
+    return edges.length === base.edges.length ? base : { ...base, edges };
+}
+
+/** Whether *a* and *b* join the same two handles, which React Flow's
+ *  `addEdge` holds one connection between. */
+function sameHandles(a: Edge, b: Edge): boolean {
+    return a.source === b.source && a.target === b.target
+        && (a.sourceHandle === b.sourceHandle || (!a.sourceHandle && !b.sourceHandle))
+        && (a.targetHandle === b.targetHandle || (!a.targetHandle && !b.targetHandle));
+}
+
 /** The doc's Trill, its nodes and edges by id. */
 interface DocState {
     nodes: Map<string, Fields>;
@@ -305,8 +333,9 @@ export interface DataflowDocDeps {
     quietly: <T>(apply: () => T) => T;
     markNodeStale: (nodeId: string) => void;
     addNode: (node: Node, customWorkflowName?: string, provenance?: boolean) => void;
-    onConnect: (connection: any, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean) => void;
-    onEdgesDelete: (edges: Edge[], options?: { remote?: boolean }) => void;
+    /** Whether it took the edge: false for one it refused. */
+    onConnect: (connection: any, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean) => boolean | void;
+    onEdgesDelete: (edges: Edge[], options?: { remote?: boolean; remaining?: Edge[] }) => void;
     onNodesDelete: (changes: NodeChange[]) => void;
     onNodesChange: (changes: NodeChange[]) => void;
     applyNewOutput: (output: IOutput) => void;
@@ -334,6 +363,10 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
     const loadedCanvasRef = useRef<{ epoch: number; trill: Fields } | null>(null);
     /** The doc's Trill as the canvas last took it. */
     const docStateRef = useRef<DocState | null>(null);
+    /** The doc's connections the canvas does not hold, for the load's epoch:
+     *  those its load or `onConnect` did not take, and those that left the
+     *  canvas with their node while the doc keeps them for the server. */
+    const notHeldRef = useRef<{ epoch: number; ids: Set<string> }>({ epoch: -1, ids: new Set() });
     /** Each canvas node's last Trill, and what it was taken from. */
     const cacheRef = useRef(new Map<string, CachedTrill>());
     /** The dataflow's history while the canvas is bound to this load's doc. */
@@ -345,7 +378,11 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
     /** Nodes another tab drags now, and those it dropped whose place is due. */
     const remoteDragRef = useRef(new Set<string>());
     const droppedRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+    /** This tab's drag: when it was last told the others, its newest place,
+     *  and the timer that tells that place once `DRAG_EVERY_MS` has passed. */
     const dragSentRef = useRef(0);
+    const dragNextRef = useRef<DragState | null>(null);
+    const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const runtime = (): CodeNodeRuntime => ({
         pythonInterpreter,
@@ -417,9 +454,14 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         writerBaseRef.current = target;
         if (!base) return;
         const kept = new Set((target.nodes as Fields[]).map((n) => n.id as string));
-        const removed = (base.nodes as Fields[]).map((n) => n.id as string).filter((id) => !kept.has(id));
+        // Only this tab's own removals are noted: a node the doc no longer
+        // holds went with someone else's change, which this canvas only took.
+        const inDoc = bound.provider.doc.getMap("nodes");
+        const removed = (base.nodes as Fields[]).map((n) => n.id as string)
+            .filter((id) => !kept.has(id) && inDoc.has(id));
         if (removed.length) noteRemoval(bound.provider.awareness, removed);
-        bound.provider.doc.transact(() => applyDataflow(bound.provider.doc, base, target), CANVAS_ORIGIN);
+        const doc = bound.provider.doc;
+        doc.transact(() => applyDataflow(doc, withoutDangling(base, doc), target), CANVAS_ORIGIN);
     }, [canvasTrill]);
 
     // ------------------------------------------------------------------
@@ -442,16 +484,20 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             return current.nodes.some((n) => n.id === other);
         });
         if (survivors.length === 0) return;
-        setNodes((prev) => {
-            const all = prev.some((n) => n.id === fresh.id) ? prev : [...prev, fresh];
-            const connected = [...reactFlow.getEdges()];
-            for (const edge of survivors) {
-                current.onConnect({ ...edge }, all, connected, current.workflowNameRef.current, true, true);
-                connected.push(edge);
+        // Connected outside a setNodes updater: onConnect hands the source's
+        // output over with a setNodes of its own, which an updater React runs
+        // at once would replace with the nodes it returns. Each survivor's
+        // other end is on the canvas, and the node comes back as *fresh*.
+        const all = [...current.nodes, fresh];
+        const connected = [...reactFlow.getEdges()];
+        for (const edge of survivors) {
+            // One the doc kept for the server is the canvas's again.
+            if (current.onConnect({ ...edge }, all, connected, current.workflowNameRef.current, true, true) !== false) {
+                notHeldRef.current.ids.delete(edge.id);
             }
-            return prev;
-        });
-    }, [setNodes, reactFlow]);
+            connected.push(edge);
+        }
+    }, [reactFlow]);
 
     /** Someone else removed *node* while this tab was editing its code. */
     const removedWhileEditing = useCallback((node: Node, attached: Edge[]) => {
@@ -487,7 +533,10 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
     }, [putBack]);
 
     /** Carry what the doc changed (*prev* to *next*) onto the canvas: every
-     *  entry, or those *touched* names. */
+     *  entry, or those *touched* names. What changes comes from the doc's
+     *  change alone, never from the canvas as React last drew it, and each
+     *  change is a keyed update: it finds a node or a connection an earlier
+     *  change gave the canvas whether or not the canvas has drawn it yet. */
     const applyToCanvas = useCallback((
         prev: DocState,
         next: DocState,
@@ -497,8 +546,7 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         const held = boundRef.current?.provider;
         const doc = held?.doc;
         const awareness = held?.awareness;
-        const canvasNodes = new Map(current.nodes.map((n) => [n.id, n]));
-        const canvasEdges = new Map(current.edges.map((e) => [e.id, e]));
+        const notHeld = notHeldRef.current.ids;
         const nodeIds = touched?.nodes ?? new Set([...prev.nodes.keys(), ...next.nodes.keys()]);
         const edgeIds = touched?.edges ?? new Set([...prev.edges.keys(), ...next.edges.keys()]);
         const fieldNames = touched?.fields ?? new Set([...Object.keys(prev.fields), ...Object.keys(next.fields)]);
@@ -510,49 +558,58 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         }
         if (Object.keys(fields).length > 0) current.takeDataflowFields(fields, Array.from(next.nodes.keys()));
 
-        // Connections that went or changed, before the nodes.
+        // Connections that went or changed, before the nodes. Only one the
+        // canvas holds has what it handed its target to take back.
         const goneEdges: Edge[] = [];
+        const offCanvas = new Set<string>();
         const newEdges: Fields[] = [];
         for (const id of edgeIds) {
             const was = prev.edges.get(id);
             const now = next.edges.get(id);
             if (was && now && same(was, now)) continue;
-            const onCanvas = canvasEdges.get(id);
-            const changed = !!was && !!now && !same(was, now);
-            if (onCanvas && (!now || changed)) goneEdges.push(onCanvas);
-            if (now && (!onCanvas || changed)) newEdges.push(now);
+            if (was) {
+                offCanvas.add(id);
+                if (!notHeld.has(id)) goneEdges.push(canvasEdgeFromTrill(was));
+                notHeld.delete(id);
+            }
+            if (now) newEdges.push(now);
         }
 
         const removedNodes: string[] = [];
         const addedNodes: Node[] = [];
-        const patches = new Map<string, { data: Fields; position?: { x: number; y: number } }>();
+        const patches = new Map<string, { data: Fields; position?: { x: number; y: number }; restamp: boolean }>();
         for (const id of nodeIds) {
             const was = prev.nodes.get(id);
             const now = next.nodes.get(id);
-            const onCanvas = canvasNodes.get(id);
             if (!now) {
-                if (!onCanvas) continue;
+                if (!was) continue;
                 removedNodes.push(id);
+                // Only a drawn node has an editor: the warning, and Put it
+                // back, take it and its connections as this tab shows them.
+                const onCanvas = current.nodes.find((n) => n.id === id);
                 const editing = (awareness?.getLocalState() as { editing?: string | null } | null)?.editing;
-                if (editing === id) {
+                if (onCanvas && editing === id) {
                     removedWhileEditing(onCanvas, current.edges.filter((e) => e.source === id || e.target === id));
                 }
                 continue;
             }
-            if (!onCanvas || (was && was.type !== now.type)) {
-                if (onCanvas) removedNodes.push(id);
+            if (!was || was.type !== now.type) {
+                if (was) removedNodes.push(id);
                 addedNodes.push(buildCodeNode(now.type, nodeMetaFromTrill(now, () => ({ x: 0, y: 0 })), runtime()));
                 continue;
             }
-            if (!was || same(was, now)) continue;
+            if (same(was, now)) continue;
             const { keys, trill } = changedNodeData(was, now);
             if (keys.size === 0) continue;
-            const built = buildCodeNode(now.type, nodeMetaFromTrill(now, () => onCanvas.position), runtime());
+            const built = buildCodeNode(now.type, nodeMetaFromTrill(now, () => ({ x: 0, y: 0 })), runtime());
             const data: Fields = {};
             let position: { x: number; y: number } | undefined;
             const editorHasIt = !!doc && isBound(doc, id);
             for (const key of keys) {
-                if (key === "position") position = built.position;
+                // A place the doc no longer gives leaves the node where it is.
+                if (key === "position") {
+                    if (typeof now.x === "number" && typeof now.y === "number") position = built.position;
+                }
                 // Its editor took the code already, and the node takes it from there.
                 else if ((key === "code" || key === "defaultCode") && editorHasIt) continue;
                 else data[key] = (built.data as Fields)[key];
@@ -565,14 +622,12 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
                 const due = droppedRef.current.get(id);
                 if (due) clearTimeout(due);
                 droppedRef.current.delete(id);
-                if ((onCanvas as any).dragging) {
-                    position = undefined;
-                } else if (current.takeCanvasPosition?.(id, position) === true) {
+                if (current.takeCanvasPosition?.(id, position) === true) {
                     position = undefined;
                     restamp = true;
                 }
             }
-            if (Object.keys(data).length > 0 || position || restamp) patches.set(id, { data, position });
+            if (Object.keys(data).length > 0 || position || restamp) patches.set(id, { data, position, restamp });
             const stale = [...trill].filter((name) => STALE_WHEN_CHANGED.has(name));
             if (stale.length > 0 && !(stale.length === 1 && stale[0] === CONTENT && editorHasIt)) {
                 current.markNodeStale(id);
@@ -585,27 +640,40 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
 
         // What the doc changed on this canvas, in the page's log: what a
         // collaborator, an agent or the server did shows there by node.
-        if (patches.size || addedNodes.length || removedNodes.length || newEdges.length || goneEdges.length
+        if (patches.size || addedNodes.length || removedNodes.length || newEdges.length || offCanvas.size
             || Object.keys(fields).length) {
             console.log("[curio-doc] the dataflow's doc changed this canvas: " + JSON.stringify({
                 nodes: Array.from(patches.entries()).map(([id, patch]) =>
                     `${id}: ${[...Object.keys(patch.data), ...(patch.position ? ["position"] : [])].join(", ") || "its place"}`),
                 added: addedNodes.map((node) => node.id),
                 removed: removedNodes,
-                connections: { added: newEdges.map((edge) => edge.id), removed: goneEdges.map((edge) => edge.id) },
+                connections: { added: newEdges.map((edge) => edge.id), removed: Array.from(offCanvas) },
                 fields: Object.keys(fields),
             }));
         }
 
-        // What the canvas loses: connections first, as the Delete key sends them.
+        // What the canvas loses: connections first, as the Delete key sends
+        // them. A removed node's connections the doc keeps, for the server to
+        // take out, leave the canvas too, which then no longer holds them.
         const gone = new Set(removedNodes);
-        for (const edge of current.edges) {
-            if ((gone.has(edge.source) || gone.has(edge.target)) && !goneEdges.includes(edge)) goneEdges.push(edge);
+        if (gone.size > 0) {
+            for (const [id, edge] of next.edges) {
+                if (offCanvas.has(id) || !(gone.has(edge.source as string) || gone.has(edge.target as string))) continue;
+                offCanvas.add(id);
+                if (!notHeld.has(id)) goneEdges.push(canvasEdgeFromTrill(edge));
+                notHeld.add(id);
+            }
         }
-        if (goneEdges.length) {
-            const ids = new Set(goneEdges.map((e) => e.id));
-            current.quietly(() => current.onEdgesDelete(goneEdges, { remote: true }));
-            setEdges((eds) => eds.filter((e) => !ids.has(e.id)));
+        // The connections the canvas holds once this change lands, its new ones aside.
+        const newIds = new Set(newEdges.map((edge) => edge[EDGE_ID] as string));
+        const kept: Edge[] = goneEdges.length > 0 || newEdges.length > 0
+            ? Array.from(next.edges.values())
+                .filter((edge) => !notHeld.has(edge[EDGE_ID] as string) && !newIds.has(edge[EDGE_ID] as string))
+                .map((edge) => canvasEdgeFromTrill(edge))
+            : [];
+        if (goneEdges.length) current.quietly(() => current.onEdgesDelete(goneEdges, { remote: true, remaining: kept }));
+        if (offCanvas.size || gone.size) {
+            setEdges((eds) => eds.filter((e) => !offCanvas.has(e.id) && !gone.has(e.source) && !gone.has(e.target)));
         }
         if (removedNodes.length) {
             const changes = removedNodes.map((id) => ({ id, type: "remove" as const }));
@@ -616,26 +684,40 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             setNodes((nds) => nds.map((n) => {
                 const patch = patches.get(n.id);
                 if (!patch) return n;
-                return { ...n, ...(patch.position ? { position: patch.position } : {}), data: { ...n.data, ...patch.data } };
+                // A node this tab drags keeps its place.
+                const position = (n as any).dragging ? undefined : patch.position;
+                if (!position && !patch.restamp && Object.keys(patch.data).length === 0) return n;
+                return { ...n, ...(position ? { position } : {}), data: { ...n.data, ...patch.data } };
             }));
         }
         for (const node of addedNodes) current.quietly(() => current.addNode(node, current.workflowNameRef.current, true));
+        // Connected outside a setNodes updater. onConnect hands the source's
+        // output over with a setNodes of its own, and React runs an updater at
+        // once when the canvas has nothing left to render: the hand-over then
+        // comes first, and the nodes the updater returns replace it. The nodes
+        // and connections it checks the new ones against are the doc's, each
+        // node built as a load builds it.
         if (newEdges.length) {
-            const added = addedNodes;
-            setNodes((prevNodes) => {
-                current.quietly(() => {
-                    const all = [...prevNodes.filter((n) => !added.some((a) => a.id === n.id)), ...added];
-                    const connected = [...reactFlow.getEdges()].filter((e) => !newEdges.some((n) => n.id === e.id));
-                    for (const edge of newEdges) {
-                        const canvasEdge = canvasEdgeFromTrill(edge);
-                        current.onConnect(canvasEdge, all, connected, current.workflowNameRef.current, true, true);
+            const added = new Map(addedNodes.map((node) => [node.id, node]));
+            const all = Array.from(next.nodes, ([id, now]) => added.get(id)
+                ?? buildCodeNode(now.type, nodeMetaFromTrill(now, () => ({ x: 0, y: 0 })), runtime()));
+            current.quietly(() => {
+                const connected = [...kept];
+                for (const edge of newEdges) {
+                    const canvasEdge: Edge = canvasEdgeFromTrill(edge);
+                    // React Flow holds one connection between two handles.
+                    const twin = connected.some((e) => sameHandles(e, canvasEdge));
+                    const taken = current.onConnect(canvasEdge, all, connected, current.workflowNameRef.current, true, true) !== false;
+                    if (taken && !twin) {
                         connected.push(canvasEdge);
+                        notHeld.delete(canvasEdge.id);
+                    } else {
+                        notHeld.add(canvasEdge.id);
                     }
-                });
-                return prevNodes;
+                }
             });
         }
-    }, [removedWhileEditing, setNodes, setEdges, reactFlow]);
+    }, [removedWhileEditing, setNodes, setEdges]);
 
     // ------------------------------------------------------------------
     // Binding
@@ -786,15 +868,28 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         remoteDragRef.current.clear();
         droppedRef.current.forEach((timer) => clearTimeout(timer));
         droppedRef.current.clear();
+        if (dragTimerRef.current) clearTimeout(dragTimerRef.current);
+        dragTimerRef.current = null;
     }, []);
 
     /** Bind the canvas to *held*'s doc, now synced, on the load *epoch*. */
     const bind = useCallback((held: DataflowDocProvider, epoch: number, loaded: Fields | null) => {
         const now = docStateOf(docToDataflow(held.doc));
         // What the canvas reflects: the doc it was bound to on this load (one
-        // the server built anew since), else the dataflow it loaded.
+        // the server built anew since), else the dataflow it loaded, else
+        // nothing, so it takes every entry of the doc. A node the canvas
+        // removed since its load is not put back: its write takes it out.
         const reflected = boundRef.current?.epoch === epoch ? docStateRef.current : null;
-        const previous = reflected ?? (loaded ? docStateOf(normalizedDataflow(loaded)) : now);
+        const previous: DocState = reflected
+            ?? (loaded ? docStateOf(normalizedDataflow(loaded)) : { nodes: new Map(), edges: new Map(), fields: {} });
+        // On a new load, the doc's connections the canvas does not hold are
+        // those of the load that it did not draw.
+        if (!reflected || notHeldRef.current.epoch !== epoch) {
+            const loadedCanvas = loadedCanvasRef.current;
+            const drawn = new Set(((loadedCanvas?.epoch === epoch && Array.isArray(loadedCanvas.trill.edges)
+                ? loadedCanvas.trill.edges : []) as Fields[]).map((edge) => edge[EDGE_ID]));
+            notHeldRef.current = { epoch, ids: new Set(Array.from(previous.edges.keys()).filter((id) => !drawn.has(id))) };
+        }
         unbind();
         boundRef.current = { provider: held, epoch, detach: attach(held) };
         docStateRef.current = now;
@@ -906,11 +1001,22 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
                 }
             }
             if (dragging) {
-                const at = Date.now();
-                if (at - dragSentRef.current < DRAG_EVERY_MS) return;
-                dragSentRef.current = at;
-                setDrag(held.awareness, dragging);
+                // At most one message every DRAG_EVERY_MS, and the newest
+                // place goes when the wait ends: the place a drag stops on
+                // reaches the others before its drop.
+                dragNextRef.current = dragging;
+                if (dragTimerRef.current) return;
+                const send = () => {
+                    dragTimerRef.current = null;
+                    dragSentRef.current = Date.now();
+                    setDrag(held.awareness, dragNextRef.current);
+                };
+                const wait = dragSentRef.current + DRAG_EVERY_MS - Date.now();
+                if (wait <= 0) send();
+                else dragTimerRef.current = setTimeout(send, wait);
             } else if (dropped) {
+                if (dragTimerRef.current) clearTimeout(dragTimerRef.current);
+                dragTimerRef.current = null;
                 dragSentRef.current = 0;
                 setDrag(held.awareness, null);
             }

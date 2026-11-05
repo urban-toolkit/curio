@@ -14,6 +14,11 @@
         "The code loads the stations the same way, with part=\"cta_stations.geojson\".",
         "The code opens no file by a path of its own: no gpd.read_file, pd.read_parquet or curio_data_path for either file.",
         "The code returns the trees that lie within 50 m of a station."
+      ],
+      "checks": [
+        {"assertion": 2, "kind": "code", "pattern": "curio_load_data\\(\\s*[\"']data\\.curio\\.chicago-loop-layers[\"']\\s*,\\s*part\\s*=\\s*[\"']trees\\.parquet[\"']"},
+        {"assertion": 3, "kind": "code", "pattern": "curio_load_data\\(\\s*[\"']data\\.curio\\.chicago-loop-layers[\"']\\s*,\\s*part\\s*=\\s*[\"']cta_stations\\.geojson[\"']"},
+        {"assertion": 4, "kind": "code", "pattern": "^[^#\\n]*\\b(?:read_file|read_parquet|curio_data_path)\\s*\\(", "absent": true}
       ]
     },
     {
@@ -27,11 +32,16 @@
         "The bounds are ordered west, south, east, north: (-90.60, 41.50, -90.55, 41.53), not in the order the prompt named them.",
         "The code makes no window of its own: it opens no raster by a path (no rasterio.open on curio_data_path or a file name) and builds no rasterio window from the box.",
         "The code reads the cells from the dataset curio_load_data returns, leaves out the cells with no value (masked or nodata), and returns their mean."
+      ],
+      "checks": [
+        {"assertion": 2, "kind": "code", "pattern": "curio_load_data\\(\\s*[\"']data\\.scout\\.flood-depth-2050-2080-no-nbs[\"'][^)]*\\bbounds\\s*="},
+        {"assertion": 3, "kind": "code", "pattern": "[(\\[]\\s*-90\\.60?\\s*,\\s*41\\.50?\\s*,\\s*-90\\.55\\s*,\\s*41\\.53\\s*[)\\]]"}
       ]
     },
     {
       "id": 3,
       "dataflow": "docs/examples/dataflows/default-workflow.json",
+      "models": ["model.curio.ddrnet23-slim@1"],
       "prompt": "In a Python node, label the Lincoln Park street photos with the street-scene segmentation model in my Model Catalog, and give me each photo's share of vegetation and of sky, with a link to its overlay.",
       "expected_output": "One new Python node whose code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), loads the model with curio_load_model(\"model.curio.ddrnet23-slim\"), and labels the photos with curio_segment(photos, model, classes=[\"vegetation\", \"sky\"]), returning its rows with vegetation_pct, sky_pct and overlay_url.",
       "assertions": [
@@ -40,6 +50,10 @@
         "The code loads the model with curio_load_model and the model's id written as a string, model.curio.ddrnet23-slim (with or without @1).",
         "The code labels the photos by calling curio_segment with the collection's rows and the loaded model, with classes naming vegetation and sky; it runs no model session and counts no pixels itself.",
         "The code returns the rows curio_segment gives, or a part of them that keeps vegetation_pct, sky_pct and overlay_url."
+      ],
+      "checks": [
+        {"assertion": 2, "kind": "code", "pattern": "curio_load_collection\\(\\s*[\"']data\\.curio\\.mapillary-sample[\"']"},
+        {"assertion": 3, "kind": "code", "pattern": "curio_load_model\\(\\s*[\"']model\\.curio\\.ddrnet23-slim(?:@1)?[\"']"}
       ]
     },
     {

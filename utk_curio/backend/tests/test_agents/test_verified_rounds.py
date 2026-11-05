@@ -1755,6 +1755,48 @@ class TestSolveNode:
         assert ctx["payloads"] == []  # never the sandbox: it is a document
         assert done["verdict"] == "not-executable"  # validated, not executed
 
+    def test_an_empty_charts_document_that_validates_is_written_to_the_node(self, client, user_and_token, tmp_curio,
+                                                                             monkeypatch):
+        """A chart a person dropped, Solved from its own agent while it holds
+        no spec: the document the builder writes validates, and is written
+        into the node as code that passed is. Its card said "written" while
+        nothing was, and the chart kept no spec at all."""
+        user, token = user_and_token
+        chart = '{"mark": "bar", "encoding": {"x": {"field": "x", "type": "nominal"}}}'
+        ctx = self._setup(client, user, token, monkeypatch, content="", node_type=VEGA, child_replies=[chart])
+        done = self._solve_node(client, token, ctx)[-1][1]
+        assert done["verdict"] == "not-executable", done  # validated, not executed
+        assert ctx["calls"], "the builder was asked for the document"
+        assert ctx["payloads"] == []  # never the sandbox: it is a document
+        assert json.loads(self._content(ctx) or "null") == json.loads(chart), self._content(ctx)
+        assert done.get("written") is True, done
+        turns = client.get(f"/api/agents/projects/{ctx['pid']}/attachments/{ctx['att']}/session",
+                           headers=_auth(token)).get_json()["turns"]
+        assert "was written to the node" in turns[-1]["text"], turns[-1]["text"]
+
+    def test_a_corrected_document_lands_as_the_agents_change_with_its_undo(self, client, user_and_token, tmp_curio,
+                                                                            monkeypatch):
+        """A document on the node that does not validate, corrected by the
+        per-node Solve: the corrected one lands over it as the agent's change,
+        as corrected code does, and its Undo puts the invalid one back."""
+        user, token = user_and_token
+        invalid = ('{"mark": "bar", "encoding": {"color": {"field": "x", '
+                   '"type": "nominal", "condition": {"test": "true", '
+                   '"value": "red", "else": "blue"}}}}')
+        fixed = '{"mark": "bar", "encoding": {"x": {"field": "x", "type": "nominal"}}}'
+        ctx = self._setup(client, user, token, monkeypatch, content=invalid, node_type=VEGA, child_replies=[fixed])
+        done = self._solve_node(client, token, ctx)[-1][1]
+        assert done["verdict"] == "not-executable", done
+        assert [a.get("kind") for a in done["attempts"]][0] == "document-invalid"
+        assert json.loads(self._content(ctx)) == json.loads(fixed), self._content(ctx)
+        assert done.get("changeId") and "proposalId" not in done, done
+        r = client.post(
+            f"/api/agents/projects/{ctx['pid']}/attachments/{done['changeAttachmentId']}/changes/{done['changeId']}/undo",
+            headers=_auth(token),
+        )
+        assert r.status_code == 200, r.get_json()
+        assert self._content(ctx) == invalid
+
     def test_preflight(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         ctx = self._setup(client, user, token, monkeypatch, content=self.LOADER)

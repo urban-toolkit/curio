@@ -1246,6 +1246,8 @@ only while the spec buffer is still empty, the editor fills with a complete
 starter spec chosen from the input's column types. It never overwrites anything
 you have typed or anything written into the node for you (by an agent, or by
 dropping a dataset on it), and it never runs the node: you still press play.
+Until you edit it, the starter is not the node's saved spec: an agent that
+writes the node, Solve included, replaces it.
 
 Connecting an edge is not enough on its own. An edge carries no column types
 until the upstream node has actually produced output, so a connected-but-unrun
@@ -1346,9 +1348,10 @@ edges (see [Linking charts](#linking-charts)).
   the first's outline when it holds polygons. So a map of OpenStreetMap layers
   is cut to its load's area, and the tables one document draws lie in one
   area. Draw another area in its own node.
-- A map draws only tables with geometry. A `DataFrame` is read through the one
-  column that holds geometries; with none, or with several, the node draws
-  nothing and says which. Return a `GeoDataFrame` with its active geometry set.
+- A map draws tables with geometry, and a raster by one of its bands. A
+  `DataFrame` is read through the one column that holds geometries; with none,
+  or with several, the node draws nothing and says which. Return a
+  `GeoDataFrame` with its active geometry set.
 - A `GeoDataFrame` whose `metadata` names one of Autark's layer types loads as
   that layer: `gdf.metadata = {"layerType": "buildings"}` draws its rows as
   buildings, raised to their height. A building's height comes from `height`,
@@ -1615,8 +1618,8 @@ the page opens.
   Any other change runs the nodes it reaches on the server, with your datasets, models and
   packages and none of your keys, and the tiles below show the result. A viewer never
   changes the dataflow, its saved outputs or your Data Catalog, and putting the value back
-  shows the saved outputs. Text, text list and file widgets keep their saved value, and a
-  node that reads a connection key stops with a message. A code node without widgets shows
+  shows the saved outputs. Text, text list, file and dataset widgets keep their saved
+  value, and a node that reads a connection key stops with a message. A code node without widgets shows
   its code, read-only.
 - **What a run makes**, on opening the page or after a change, is kept for 7 days and
   shown to every later viewer with the same values, without running again. After 7 days

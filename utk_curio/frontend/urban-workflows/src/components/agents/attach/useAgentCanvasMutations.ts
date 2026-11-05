@@ -85,8 +85,10 @@ function appliedEdgeToCanvasEdge(edge: {
 
 export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
-  const { applyNodeContent, applyNodeSettings, onEdgesChange, applyReviewedRemovals, scenarios, setScenarios, dataflowDoc } =
-    useFlowContext();
+  const {
+    applyNodeContent, applyNodeSettings, onEdgesChange, handOverAlongEdges, applyReviewedRemovals, scenarios,
+    setScenarios, dataflowDoc,
+  } = useFlowContext();
   const { agentEditProv } = useProvenanceContext();
   const { reveal } = useNotebookViewContext();
   const reactFlow = useReactFlow();
@@ -214,14 +216,15 @@ export function useAgentCanvasMutations(): void {
       for (const node of mutation.nodes) {
         if (!live.has(node.id)) insertNode(node);
       }
-      onEdgesChange(
-        notOnCanvas(mutation.edges).map((edge) => ({
-          type: "add" as const,
-          // dev/67-3: the apply assigns real handles (input circles in_N),
-          // passed through; dev/112: interaction edges become bidirectional.
-          item: appliedEdgeToCanvasEdge(edge) as never,
-        })),
-      );
+      // dev/67-3: the apply assigns real handles (input circles in_N),
+      // passed through; dev/112: interaction edges become bidirectional.
+      const added = notOnCanvas(mutation.edges).map(appliedEdgeToCanvasEdge);
+      onEdgesChange(added.map((edge) => ({ type: "add" as const, item: edge as never })));
+      // A planned node wired to a node that already ran gets its result, as
+      // along a drawn connection: a plot added to a run dataflow draws. (A
+      // canvas the doc binds connects the doc's new edges through onConnect,
+      // which hands it over there.)
+      handOverAlongEdges(added as never);
       joinSaved(mutation.scenarios);
       window.setTimeout(
         () => fitViewWithMenuOffset(reactFlow, { duration: 400 }),

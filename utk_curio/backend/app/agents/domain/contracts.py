@@ -266,8 +266,8 @@ def render_autk_shape(schema: dict) -> str:
     )
 
 
-#: The page of the base entry that holds the words of the preamble's section
-#: on Autark documents, one section per line (``render_autk_region``).
+#: The page of the base entry that holds the words of the ``autark`` skill's
+#: section on Autark documents, one section per line (``render_autk_region``).
 AUTK_GRAMMAR_PAGE = "autark-grammar.md"
 
 
@@ -280,9 +280,9 @@ def _autk_words(name: str, **values: str) -> str:
 
 
 def render_autk_region(schema: dict, label: str) -> str:
-    """The preamble's section on Autark documents: the words of the base
-    entry's ``autark-grammar.md``, filled from the schema, with the lines of
-    the schema's own choices between them."""
+    """The ``autark`` skill's section on Autark documents: the words of the
+    base entry's ``autark-grammar.md``, filled from the schema, with the lines
+    of the schema's own choices between them."""
     root = _definition(schema, schema.get("$ref", "UrbanSpec"))
     props = root.get("properties", {})
     layers, layer_required = map_layers(schema)
@@ -822,6 +822,51 @@ def _widget_reference(_src: _Sources, name: str) -> str:
     return reference_text(_widget_name(name))
 
 
+def _widget_name_pattern(_src: _Sources) -> str:
+    """The pattern a widget's name matches whole (``WIDGET_NAME_RE``)."""
+    from utk_curio.backend.app.execution.code_references import WIDGET_NAME_RE
+
+    return WIDGET_NAME_RE.pattern
+
+
+def _widgets_max(_src: _Sources) -> str:
+    """The most widgets an agent declares on a node (``MAX_WIDGETS``)."""
+    from utk_curio.backend.app.agents.domain.widget_grammar import MAX_WIDGETS
+
+    return f"{MAX_WIDGETS:,}"
+
+
+def _widget_label_chars(_src: _Sources) -> str:
+    """The most characters a widget's label holds (``widget_grammar._TEXT_MAX_CHARS``)."""
+    from utk_curio.backend.app.agents.domain.widget_grammar import _TEXT_MAX_CHARS
+
+    return f"{_TEXT_MAX_CHARS:,}"
+
+
+def _widget_value_chars(_src: _Sources) -> str:
+    """The most characters a widget's default or value holds as JSON
+    (``widget_grammar._VALUE_MAX_CHARS``), as ``2,000``."""
+    from utk_curio.backend.app.agents.domain.widget_grammar import _VALUE_MAX_CHARS
+
+    return f"{_VALUE_MAX_CHARS:,}"
+
+
+def _dashboard_data_mb(_src: _Sources) -> str:
+    """The most data a dashboard's page carries, in whole MB as its refusal
+    counts them (``DEFAULT_PAYLOAD_LIMIT_BYTES``)."""
+    from utk_curio.backend.app.projects.dashboard_payload import DEFAULT_PAYLOAD_LIMIT_BYTES
+
+    return f"{DEFAULT_PAYLOAD_LIMIT_BYTES // (1024 * 1024):,}"
+
+
+def _dashboard_kept_days(_src: _Sources) -> str:
+    """How many days a kept output serves the runs that need it, a dashboard
+    viewer's among them (``KEPT_DAYS``)."""
+    from utk_curio.backend.app.runs.kept import KEPT_DAYS
+
+    return f"{KEPT_DAYS:,}"
+
+
 def _not_code(src: _Sources) -> str:
     """The built-in templates whose nodes hold no Python or JavaScript code
     (``_control`` calls them uncontrollable or grammar), one ``- <label>`` line
@@ -925,6 +970,35 @@ def _data_dir_env(_src: _Sources) -> str:
     from utk_curio.backend.app.packages.domain.backend_contract import DATA_DIR_ENV
 
     return DATA_DIR_ENV
+
+
+def _default_timeout_class(_src: _Sources) -> str:
+    """The timeout class a handler that declares none gets, quoted."""
+    from utk_curio.backend.app.packages.domain.backend_contract import DEFAULT_TIMEOUT_CLASS
+
+    return json.dumps(DEFAULT_TIMEOUT_CLASS)
+
+
+def _payload_mib(_src: _Sources) -> str:
+    """The most a handler's request carries, in MiB (``PAYLOAD_MAX_BYTES``)."""
+    from utk_curio.backend.app.packages.domain.backend_contract import PAYLOAD_MAX_BYTES
+
+    return f"{PAYLOAD_MAX_BYTES // (1024 * 1024):,}"
+
+
+def _result_mib(_src: _Sources) -> str:
+    """The most a handler's reply carries, in MiB (``RESULT_MAX_BYTES``)."""
+    from utk_curio.backend.app.packages.domain.backend_contract import RESULT_MAX_BYTES
+
+    return f"{RESULT_MAX_BYTES // (1024 * 1024):,}"
+
+
+def _data_dir_mib(_src: _Sources) -> str:
+    """The most a handler's persistent directory holds, in MiB
+    (``backend_runtime.DATA_DIR_MAX_BYTES``)."""
+    from utk_curio.backend.app.packages.infrastructure.backend_runtime import DATA_DIR_MAX_BYTES
+
+    return f"{DATA_DIR_MAX_BYTES // (1024 * 1024):,}"
 
 
 def _timeout_class_choices(_src: _Sources) -> str:
@@ -1101,6 +1175,12 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "scenarios.chip": PromptField(_scenario_chip, takes_arg=True),
     "widgets.kinds": PromptField(_widget_kinds),
     "widgets.reference": PromptField(_widget_reference, takes_arg=True),
+    "widgets.name_pattern": PromptField(_widget_name_pattern),
+    "widgets.max": PromptField(_widgets_max),
+    "widgets.label_chars": PromptField(_widget_label_chars),
+    "widgets.value_chars": PromptField(_widget_value_chars),
+    "dashboards.data_mb": PromptField(_dashboard_data_mb),
+    "dashboards.kept_days": PromptField(_dashboard_kept_days),
     "builtin.not_code": PromptField(_not_code),
     "autk.grammar": PromptField(
         lambda src: render_autk_region(src.autk, _template_label(src, AUTK_TEMPLATE))
@@ -1120,6 +1200,10 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "backend.server_code_permission": PromptField(_server_code_permission),
     "backend.server_network_permission": PromptField(_server_network_permission),
     "backend.data_dir_env": PromptField(_data_dir_env),
+    "backend.default_timeout_class": PromptField(_default_timeout_class),
+    "backend.payload_mib": PromptField(_payload_mib),
+    "backend.result_mib": PromptField(_result_mib),
+    "backend.data_dir_mib": PromptField(_data_dir_mib),
     "backend.timeout_class_choices": PromptField(_timeout_class_choices),
     "note.palette_choices": PromptField(_note_palette_choices),
     "suggested_prompts.max_chars": PromptField(_suggested_prompt_chars),

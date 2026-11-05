@@ -41,6 +41,9 @@ export function useConnect({
     // node that load added. Any output that node holds is one the load
     // restored, and `hydrateRestoredOutputs` passes it down, so the edge does
     // not hand it over too.
+    //
+    // It returns whether it took the edge: false for one it refused (an end
+    // it cannot find, a pair of handles it never joins, a cycle).
     const onConnect = useCallback(
         (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean, sourceAddedByLoad?: boolean) => {
             console.log(
@@ -76,7 +79,7 @@ export function useConnect({
                     `[FlowProvider] onConnect: dropping edge ${connection.source} -> ` +
                     `${connection.target}; endpoint not on the canvas`,
                 );
-                return;
+                return false;
             }
             // A cycle is one of data edges: an interaction edge carries
             // selections, never data, so it closes none.
@@ -304,8 +307,10 @@ export function useConnect({
 
                         return addEdge(customConnection, eds);
                     });
+                    return true;
                 }
             }
+            return false;
         },
         [setEdges]
     );
@@ -318,5 +323,31 @@ export function useConnect({
         [reactFlow.getNodes, reactFlow.getEdges]
     );
 
-    return { onConnect, isValidConnection };
+    // Edges an agent's apply adds reach the canvas as they are, not through
+    // onConnect. Each still hands what its source holds to its own target and
+    // leaves the target stale, as a drawn connection does above, so a node a
+    // plan wires to results the canvas already holds gets them. Each edge
+    // joins the graph as it stands plus the added edges before it.
+    const handOverAlongEdges = useCallback(
+        (added: Edge[]) => {
+            const addedIds = new Set(added.map((edge) => edge.id));
+            const joined: Edge[] = reactFlow.getEdges().filter((edge) => !addedIds.has(edge.id));
+            for (const edge of added) {
+                const target = reactFlow.getNodes().find((node) => node.id === edge.target);
+                markNodeStaleRef.current(edge.target);
+                applyOutput(
+                    (target ? getUnversionedFlowNodeType(target) : undefined) as NodeType,
+                    edge.target,
+                    edge.source,
+                    edge.sourceHandle ?? "out",
+                    edge.targetHandle ?? "in",
+                    joined,
+                );
+                joined.push(edge);
+            }
+        },
+        [reactFlow, applyOutput, markNodeStaleRef],
+    );
+
+    return { onConnect, isValidConnection, handOverAlongEdges };
 }

@@ -1,9 +1,10 @@
-"""Say what a CI run's skill-evals node measures, from what the run changes against main.
+"""Say what a run of the Skill evaluations workflow measures: what its scope asks, or what the branch changes against main.
 
-The skill-evals node (``.github/workflows/skill-evals.yml``) runs each skill's
-``evals/evals.json`` on the models of the repository variable
-``CURIO_EVAL_MODELS`` (``agent_eval.py skills --scope``). What it runs is
-this script's answer, a scope:
+The Skill evaluations workflow (``.github/workflows/skill-evals.yml``), started
+by hand, runs each skill's ``evals/evals.json`` on the models of the
+repository variable ``CURIO_EVAL_MODELS`` (``agent_eval.py skills --scope``).
+What it runs is this script's answer, a scope. With its ``scope`` input
+``auto``, that is what the branch changes against main:
 
 - **A changed skill** (any file of its folder, ``skills/<name>/`` or
   ``packages/<package>/skills/<name>/``): its test cases, 3 runs with the
@@ -18,30 +19,28 @@ this script's answer, a scope:
   tools, the package manifests whose descriptions prompts list, the Trill
   schema, this node's own files): every other skill's first test case, once,
   with the skill.
-- **Anything else:** nothing, and the node does not run.
+- **Anything else:** nothing, and the run measures nothing.
 
-A push to main measures nothing (its pull request measured it), and nor do
-the Full stack build's schedule, a re-mint, a repeat run or a ``tmp/``
-before-run. A dispatch measures what its ``skill_evals`` input says: ``auto``
-(what the branch changes against main), ``none``, ``smoke`` (every skill's
-first test case, once), ``core`` (every skill's test cases), ``full`` (every
-skill's trigger queries and test cases) or skill names, comma-separated.
-``--asked`` measures what its words say whatever the event: the weekly run
-of ``skill-evals.yml`` asks for ``full``.
+The other values of the input ask for a measure outright: ``none``, ``smoke``
+(every skill's first test case, once), ``core`` (every skill's test cases),
+``full`` (every skill's trigger queries and test cases), ``graders`` (each
+model grades the prepared answers of every skill's ``evals/truth.json``, the
+grader truth, once) or skill names, comma-separated. A ``tmp/`` branch's
+``auto`` measures nothing, and so does any event but a dispatch.
 
 The scope is JSON: ``measure`` (the widest of the above it holds), ``why``
 (one line per reason) and ``measures``, each skill's measure as
 ``skill_evals.Measure`` reads it. With ``--github`` it goes to the step's
 ``skill_evals`` output, compact, or empty when it measures nothing, and its
-reasons to the job summary. A failure here never fails the build: the scope
-then holds ``error``, and the node fails saying it.
+reasons to the job summary. A scope that cannot be read holds ``error``, and
+the run fails saying it.
 
     python3 scripts/ci_skill_eval_scope.py --github
     python3 scripts/ci_skill_eval_scope.py --base 5f7e14ba09 --head HEAD
 
-It needs only the standard library: build-image runs it on the runner's
-Python, on its checkout of the run's commit and its first parent. A dispatch
-reads what the branch changes from the GitHub compare API instead.
+It needs only the standard library, so it runs on the runner's Python. On
+GitHub it reads what the branch changes from the compare API, as a dispatch
+checks out only its branch's commit.
 """
 
 from __future__ import annotations
@@ -59,8 +58,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-#: The two kinds of run and the two conditions, as ``skill_evals`` names them.
-TRIGGER, TASK = "trigger", "task"
+#: The kinds of run and the two conditions, as ``skill_evals`` names them.
+TRIGGER, TASK, GRADE = "trigger", "task", "grade"
 WITH_SKILL, WITHOUT_SKILL = "with_skill", "without_skill"
 #: Runs of each query and test case a whole measure makes (``skill_evals.RUNS``).
 RUNS = 3
@@ -71,6 +70,10 @@ WHOLE = {"kinds": [TRIGGER, TASK], "runs": RUNS, "conditions": [WITH_SKILL, WITH
 CASES = {"kinds": [TASK], "runs": RUNS, "conditions": [WITH_SKILL, WITHOUT_SKILL], "cases": None}
 #: Its first test case, once, with the skill.
 SMOKE = {"kinds": [TASK], "runs": 1, "conditions": [WITH_SKILL], "cases": 1}
+#: Each prepared answer of its grader truth, graded once by the model measured.
+GRADERS = {"kinds": [GRADE], "runs": 1, "conditions": [WITH_SKILL], "cases": None}
+#: The file of a skill's ``evals/`` folder that holds its grader truth (``grader_truth.TRUTH_FILE``).
+TRUTH_FILE = "truth.json"
 
 #: The measures from the narrowest, so the widest a scope holds names it.
 ORDER = ("none", "smoke", "changed", "core", "full")
@@ -80,7 +83,7 @@ AGENT_PATHS = (
     re.compile(r"^agents/"),
     re.compile(r"^skills/[^/]+$"),
     re.compile(r"^utk_curio/backend/app/agents/"),
-    re.compile(r"^utk_curio/tools/(agent_eval|skill_eval_[a-z_]+)\.py$"),
+    re.compile(r"^utk_curio/tools/(agent_eval|skill_eval_[a-z_]+|skill_benchmark)\.py$"),
     re.compile(r"^packages/[^/]+/manifest\.json$"),
     re.compile(r"^docs/schemas/trill\.v1\.json$"),
     re.compile(r"^scripts/(ci_skill_eval[a-z_]*|skill_eval[a-z_]*)\.(py|json)$"),
@@ -269,6 +272,12 @@ def from_input(value: str, *, root: Path) -> dict | None:
         return None
     if value == "none":
         return {"version": 1, "measure": "none", "why": ["the dispatch asked for none"], "measures": {}}
+    if value == "graders":
+        truth = [name for name, folder in evals.items() if (root / folder / "evals" / TRUTH_FILE).is_file()]
+        return {"version": 1, "measure": "graders",
+                "why": ["the dispatch asked for the graders: each model grades the grader truth's answers",
+                        f"{len(truth)} skill(s) hold a grader truth"],
+                "measures": _all(truth, GRADERS)}
     asked = {"smoke": SMOKE, "core": CASES, "full": WHOLE}
     if value in asked:
         return {"version": 1, "measure": value, "why": [f"the dispatch asked for {value}"],
@@ -285,22 +294,16 @@ def nothing(reason: str) -> dict:
     return {"version": 1, "measure": "none", "why": [reason], "measures": {}}
 
 
-def for_event(*, event: str, ref: str, value: str, remint: bool, repeat: int, root: Path,
+def for_event(*, event: str, ref: str, value: str, root: Path,
               changes: Callable[[], tuple[list[Change], Callable[[str], str | None]]]) -> dict:
-    """The scope of a run of *event* on *ref*: what its dispatch input asks,
-    or what *changes* (the changes and the reader of main's text) come to."""
-    if event == "push":
-        return nothing("a push: its pull request measured it")
-    if event not in ("pull_request", "workflow_dispatch"):
-        return nothing(f"a {event} run measures nothing")
-    if event == "workflow_dispatch":
-        if remint:
-            return nothing("a re-mint measures nothing")
-        if repeat > 1:
-            return nothing("a repeat run measures nothing")
-        asked = from_input(value, root=root)
-        if asked is not None:
-            return asked
+    """The scope of a run of *event* on *ref*: what its dispatch's scope input
+    asks, or for ``auto``, what *changes* (the changes and the reader of
+    main's text) come to."""
+    if event != "workflow_dispatch":
+        return nothing(f"a {event or 'run'} event measures nothing: the workflow measures when it is started")
+    asked = from_input(value, root=root)
+    if asked is not None:
+        return asked
     if ref.startswith("tmp/"):
         return nothing("a tmp/ before-run measures nothing")
     found, old_text = changes()
@@ -399,10 +402,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="read the run from GitHub's variables and write the step's output and summary")
     parser.add_argument("--base", help="without --github: the commit to compare with (main's)")
     parser.add_argument("--head", default="HEAD", help="without --github: the commit measured")
-    parser.add_argument("--input", default="auto", help="without --github: a dispatch's skill_evals input")
-    parser.add_argument("--asked", default=None,
-                        help="with --github: measure what this says (an input's words), whatever the event: "
-                             "the weekly run's and a dispatch's of skill-evals.yml")
+    parser.add_argument("--input", default="auto", help="without --github: a dispatch's scope input")
     args = parser.parse_args(argv)
     if not args.github:
         asked = from_input(args.input, root=REPO_ROOT)
@@ -413,22 +413,18 @@ def main(argv: list[str] | None = None) -> int:
             asked = from_changes(found, root=REPO_ROOT, old_text=old_text, new_text=_shown(args.head))
         print(json.dumps(asked, indent=2))
         return 0
-    event = os.environ.get("GITHUB_EVENT_NAME", "")
     try:
         try:
-            scope = from_input(args.asked, root=REPO_ROOT) if args.asked else None
-            scope = scope or for_event(
-                event=event, ref=os.environ.get("HEAD_REF", ""), value=os.environ.get("SKILL_EVALS", "auto"),
-                remint=os.environ.get("REMINT", "") == "true", repeat=int(os.environ.get("REPEAT") or 1),
-                root=REPO_ROOT,
-                changes=lambda: (git_changes("HEAD^1", "HEAD") if event == "pull_request"
-                                 else compare_changes(os.environ["GITHUB_SHA"])),
+            scope = for_event(
+                event=os.environ.get("GITHUB_EVENT_NAME", ""), ref=os.environ.get("HEAD_REF", ""),
+                value=os.environ.get("SKILL_EVALS", "auto"), root=REPO_ROOT,
+                changes=lambda: compare_changes(os.environ["GITHUB_SHA"]),
             )
         except _TooMany as many:
             scope = from_input("core", root=REPO_ROOT)
             scope["why"] = [f"the branch changes {many.args[0]} files or more, more than the compare API lists, "
                             "so every skill's test cases are measured"]
-    except Exception as exc:  # noqa: BLE001 - a scope that cannot be read fails the node, not the build
+    except Exception as exc:  # noqa: BLE001 - a scope that cannot be read is written down for the run to fail on
         scope = {"version": 1, "error": f"{type(exc).__name__}: {exc}"}
     print(json.dumps(scope, indent=2))
     _github(scope)

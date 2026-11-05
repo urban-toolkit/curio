@@ -20,6 +20,11 @@ import { isEmptySpecBuffer } from "../utils/starterSpec";
  *
  * It never runs the node. `useMonacoExternalValue` no-ops when the value is
  * unchanged, so offering it again is safe for the cursor and undo stack.
+ *
+ * Nor is it the node's code: the behavior hands it on as a starter
+ * (`defaultValueIsStarter`), which the dataflow's doc does not take until
+ * someone edits it (`components/editing/useYMonacoBinding`). So an agent's
+ * write, Solve's among them, still lands in the node, and this steps aside.
  */
 export function useStarterSpec(opts: {
   input: unknown;

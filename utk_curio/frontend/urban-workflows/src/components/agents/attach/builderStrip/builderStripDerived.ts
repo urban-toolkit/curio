@@ -2,8 +2,9 @@
  * The builder strip's pure vocabulary and derivations (memo dev/142, F4 —
  * split out of `AgentBuilderStrip.tsx`): the phase chips and their rank, what
  * a live pill state means in words, how a session's ending reads, whether a
- * landed plan has nodes left to build, why Solve is disabled, and the two
- * remedy de-duplications.
+ * landed plan has nodes left to build, the order its pills and its Open Dataset
+ * Finder buttons read in, why Solve is disabled, and the two remedy
+ * de-duplications.
  */
 import type { AgentBuilderSession, AgentProposalSummary, AgentRemedy, AgentSolveWave } from "../../../../services/agents";
 
@@ -30,6 +31,24 @@ export function planLeftToBuild(
   if (!plan || plan.tool !== "dataflow.plan.write" || plan.status !== "applied") return false;
   const states = session.nodeStates ?? {};
   return (plan.appliedRefs ?? []).some((ref) => (states[ref] ?? "created") !== "approved");
+}
+
+/** The order of the pills, and of the Open Dataset Finder buttons with them:
+ * the plan's own, as its card lists its nodes; then each node it does not
+ * list, an earlier plan's, in the canvas's order; then any other by id. Both
+ * come keyed by node id, in an order that says nothing of the plan: the
+ * server's answer sorts the session's nodeRuns by their keys. */
+export function inPlanOrder<T>(
+  entries: Array<[string, T]>,
+  plan: AgentProposalSummary | null | undefined,
+  canvasIds: string[],
+): Array<[string, T]> {
+  const order = [...(plan?.appliedRefs ?? []).map((ref) => plan?.nodeIds?.[ref]), ...canvasIds];
+  const rank = (nodeId: string) => {
+    const at = order.indexOf(nodeId);
+    return at < 0 ? order.length : at;
+  };
+  return [...entries].sort(([a], [b]) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
 }
 
 /** dev/115: what a live pill state means, in words (never colour alone). */

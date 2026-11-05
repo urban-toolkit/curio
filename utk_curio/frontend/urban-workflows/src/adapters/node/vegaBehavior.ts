@@ -195,6 +195,8 @@ export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
     outputIdOverride: 'vega' + data.nodeId,
     // Only ever offered for an empty buffer, so it cannot displace real work.
     defaultValueOverride: generatedSpec,
+    // And it is a starter, not the chart's spec, until someone edits it.
+    ...(generatedSpec !== undefined ? { defaultValueIsStarter: true } : {}),
     setOutputCallbackOverride: setOutputFromOutside,
   };
 };

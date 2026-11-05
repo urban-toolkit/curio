@@ -290,6 +290,10 @@ your dataflowPlan was invalid: fix exactly these problems and resend the complet
 
 params.content must be a non-empty string
 
+## mint.content-object-for-code
+
+params.content is a JSON {json_type}, but a {label} node holds {engine} code: send the code itself in params.content, as one string. Only a chart's or a map's node takes a JSON document as its content.
+
 ## mint.content-too-large
 
 params.content exceeds the content size bound
@@ -922,7 +926,7 @@ an Autark grammar JSON document
 
 ## document.vega-shape
 
-a Vega-Lite JSON document: {"$schema": "{schema_url}", "mark": …, "encoding": …}. Do NOT include a "data" block: Curio injects this node's input as the data at render time
+a Vega-Lite JSON document: {"$schema": "{schema_url}", "mark": …, "encoding": …}. Do NOT include a "data" block: Curio injects this node's input as the data at render time; with several inputs, "data" names an input's dataset as the vega-lite-starter skill says
 
 ## document.json-shape
 
@@ -1490,7 +1494,7 @@ Name features the input holds, by their ids or by a where condition.
 
 Map Editor: the run skips these edits, since the map cannot draw the areas they give:
 {lines}{more}
-Give each area an outline that encloses some area and does not cross or touch itself, holes that lie inside their outline apart from each other, and parts that do not overlap.
+Give each area an outline that encloses some area and does not cross or touch itself, holes inside their outline that do not overlap, touching it or each other only at single points that keep the area in one piece, and parts that do not overlap.
 
 ## map-edits.and-more
 

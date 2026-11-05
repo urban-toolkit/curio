@@ -1,4 +1,4 @@
 {
-  "about": "The skill-evals node's floors (scripts/skill_evals_report.py): per model, as CURIO_EVAL_MODELS names it, and per skill, the lowest share of a skill's assertions its test cases may pass with the skill in a run that measured them whole, 3 runs with the skill and 3 without. Each is 15 points under the model's baseline run of that skill. A floor is lowered only in a pull request that says why. Empty, no floor holds.",
+  "about": "The floors of the Skill evaluations workflow (scripts/skill_evals_report.py): per model, as CURIO_EVAL_MODELS names it, and per skill, the lowest share of a skill's assertions its test cases may pass with the skill in a run that measured them whole, 3 runs with the skill and 3 without. Each is 15 points under the model's baseline run of that skill. A floor is lowered only in a pull request that says why. Empty, no floor holds.",
   "floors": {}
 }

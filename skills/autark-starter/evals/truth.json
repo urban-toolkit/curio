@@ -1,0 +1,300 @@
+{
+  "skill_name": "autark-starter",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer makes a content change of node blocks-map (node.content.write) whose document has a \"map\" with exactly one layerRef.",
+        "That layer reads the node's input: its \"dataRef\" is input_0, or the chip [!! input_0 !!].",
+        "The layer is colored by population, the first quantitative column: \"getFnv\": \"population\" with \"getFnvType\": \"quantitative\".",
+        "The layer sets \"colorMapInterpolator\": \"interpolateViridis\" and a \"title\" that names population.",
+        "The document has no \"data\" section."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer makes a content change of node blocks-parks-map (node.content.write) whose document has a \"map\".",
+        "The map has exactly two layerRefs, one per input table: \"dataRef\" input_0 (or [!! input_0 !!]) and input_1 (or [!! input_1 !!]).",
+        "The document has no \"data\" section: both tables come from the node's inputs."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer writes no Autark document for node sensors-map.",
+        "The answer says the map cannot draw the sensors table because the table has no geometry column.",
+        "The answer says the Air sensors node should return a GeoDataFrame with its active geometry set, points built from LONGITUDE and LATITUDE; a change to that node may do so."
+      ]
+    }
+  ],
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/frontend/urban-workflows/src/utils/autkDefaultSpec.ts (autkStarterText, rule geometry+quantitative, over the tables skills/autark-starter/evals/files/blocks-sensors-parks.json's city-blocks return; utk_curio/frontend/urban-workflows/src/tests/utils/autkDefaultSpec.test.ts: 'a layer with a number is coloured by it, explicitly, and its legend titled by it')",
+      "fails": [],
+      "reply": "I wrote the Blocks map's document, the starter Curio writes for one table with geometry and a number: a map with one layer that reads input_0, colored by population, the first quantitative column, with \"getFnvType\": \"quantitative\", \"colorMapInterpolator\": \"interpolateViridis\" and population as its title, so its legend reads the column. It has no data section: the blocks reach the node on its input.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "blocks-map",
+                "type": "curio.builtin/autk-grammar",
+                "title": "Blocks map",
+                "changes": {
+                  "content": {
+                    "before": "",
+                    "after": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"input_0\",\n        \"title\": \"population\",\n        \"getFnv\": \"population\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\"\n      }\n    ]\n  }\n}"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Autark node · Blocks map",
+            "lines": [
+              "Autark node · Blocks map"
+            ],
+            "nodeId": "blocks-map",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "blocks-map",
+            "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"input_0\",\n        \"title\": \"population\",\n        \"getFnv\": \"population\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\"\n      }\n    ]\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "reply": "Here is the Blocks map's document: one layer colored by population. Paste it into the node's editor:\n\n```json\n{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"input_0\",\n        \"title\": \"population\",\n        \"getFnv\": \"population\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\"\n      }\n    ]\n  }\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "refused-layer",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_document_validation.py::TestAutkGrammar::test_a_layer_without_a_dataref_is_invalid: a layer with no dataRef is refused by the document check",
+      "fails": [
+        2
+      ],
+      "reply": "I wrote the Blocks map's document, the starter Curio writes for one table with geometry and a number: a map with one layer that reads input_0, colored by population, the first quantitative column, with \"getFnvType\": \"quantitative\", \"colorMapInterpolator\": \"interpolateViridis\" and population as its title, so its legend reads the column. It has no data section: the blocks reach the node on its input.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "blocks-map",
+                "type": "curio.builtin/autk-grammar",
+                "title": "Blocks map",
+                "changes": {
+                  "content": {
+                    "before": "",
+                    "after": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"title\": \"population\",\n        \"getFnv\": \"population\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\"\n      }\n    ]\n  }\n}"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Autark node · Blocks map",
+            "lines": [
+              "Autark node · Blocks map"
+            ],
+            "nodeId": "blocks-map",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "blocks-map",
+            "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"title\": \"population\",\n        \"getFnv\": \"population\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\"\n      }\n    ]\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/frontend/urban-workflows/src/utils/autkDefaultSpec.ts (autkStarterText, rule layers, over the tables skills/autark-starter/evals/files/blocks-sensors-parks.json's city-blocks and parks return; utk_curio/frontend/urban-workflows/src/tests/utils/autkDefaultSpec.test.ts: 'several layers are drawn together, each under its own name')",
+      "fails": [],
+      "reply": "I wrote the Blocks and parks map's document, the starter Curio writes for two tables: a map with one layerRef per table, input_0 for City blocks on the first circle and input_1 for Parks on the second. It has no data section: both tables reach the node on its inputs.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "blocks-parks-map",
+                "type": "curio.builtin/autk-grammar",
+                "title": "Blocks and parks map",
+                "changes": {
+                  "content": {
+                    "before": "",
+                    "after": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"input_0\"\n      },\n      {\n        \"dataRef\": \"input_1\"\n      }\n    ]\n  }\n}"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Autark node · Blocks and parks map",
+            "lines": [
+              "Autark node · Blocks and parks map"
+            ],
+            "nodeId": "blocks-parks-map",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "blocks-parks-map",
+            "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"input_0\"\n      },\n      {\n        \"dataRef\": \"input_1\"\n      }\n    ]\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3
+      ],
+      "reply": "Here is the Blocks and parks map's document: one layer per table. Paste it into the node's editor:\n\n```json\n{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"input_0\"\n      },\n      {\n        \"dataRef\": \"input_1\"\n      }\n    ]\n  }\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "refused-layer",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_document_validation.py::TestAutkGrammar::test_a_layer_without_a_dataref_is_invalid: a layer with no dataRef is refused by the document check",
+      "fails": [
+        2
+      ],
+      "reply": "I wrote the Blocks and parks map's document, the starter Curio writes for two tables: a map with one layerRef per table, input_0 for City blocks on the first circle and input_1 for Parks on the second. It has no data section: both tables reach the node on its inputs.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "blocks-parks-map",
+                "type": "curio.builtin/autk-grammar",
+                "title": "Blocks and parks map",
+                "changes": {
+                  "content": {
+                    "before": "",
+                    "after": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"input_0\"\n      },\n      {}\n    ]\n  }\n}"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Autark node · Blocks and parks map",
+            "lines": [
+              "Autark node · Blocks and parks map"
+            ],
+            "nodeId": "blocks-parks-map",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "blocks-parks-map",
+            "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"input_0\"\n      },\n      {}\n    ]\n  }\n}"
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "utk_curio/frontend/urban-workflows/src/tests/utils/autkDefaultSpec.test.ts: 'a DataFrame with a geometry column is a layer; one without is nothing' (the starter writes nothing for Air sensors' plain DataFrame, skills/autark-starter/evals/files/blocks-sensors-parks.json); the node's own words, utk_curio/frontend/urban-workflows/src/utils/autkInput.ts featuresOf, pinned by utk_curio/frontend/urban-workflows/src/tests/adapters/node/behaviors.test.tsx and utk_curio/backend/tests/test_frontend/test_autark_input_e2e.py ('input_0 has no geometry column'); the fix as docs/examples/dataflows/data-pool-vega-2.json node a1abfa78-6517-4606-9660-c7eeeeb49851's content builds its points from LONGITUDE and LATITUDE",
+      "fails": [],
+      "reply": "I wrote no document for the Sensors map. An Autark map draws only tables with geometry, and Air sensors returns a plain DataFrame with no geometry column, so there is nothing to draw: the node says \"input_0 has no geometry column, so there is nothing to draw. Return a GeoDataFrame.\"\n\nThe fix is in the Air sensors node: it should return a GeoDataFrame with its active geometry set, points built from LONGITUDE and LATITUDE, such as gpd.GeoDataFrame(frame, geometry=[Point(xy) for xy in zip(frame['LONGITUDE'], frame['LATITUDE'])], crs=4326). A change to the Air sensors node can do that; the Sensors map then has a layer to draw.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": []
+    }
+  ],
+  "gaps": []
+}

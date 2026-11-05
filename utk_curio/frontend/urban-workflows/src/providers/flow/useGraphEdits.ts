@@ -36,6 +36,35 @@ function withSlotValues(node: Node, slots: number[], value: unknown, sourceId: s
     };
 }
 
+/** A growing node's circles that *deleted* emptied, taken out of the values
+ *  *node* holds, as another tab's removal leaves them: that tab moved the
+ *  edges below and rewrote the code, which the doc brings. *remaining* are
+ *  the connections the canvas holds without them. */
+function withoutCircles(node: Node, deleted: Edge[], remaining: Edge[]): Node {
+    const removed = deleted
+        .map((e) => inputSlotOf(e.targetHandle))
+        .filter((s) => s >= 0)
+        .sort((a, b) => b - a);
+    if (removed.length === 0) return node;
+    let inputSlots: unknown[] = node.data?.inputSlots ?? [];
+    let sourceSlots: unknown[] = node.data?.sourceSlots ?? [];
+    for (const slot of removed) {
+        inputSlots = withoutSlot(inputSlots, slot);
+        sourceSlots = withoutSlot(sourceSlots, slot);
+    }
+    const wired = wiredInputSlots(remaining, node.id);
+    return { ...node, data: { ...node.data, inputSlots, sourceSlots, input: nodeInputFromSlots(inputSlots, wired) } };
+}
+
+/** *node* without the inputs the *deleted* connections into it handed it. */
+function withoutInputs(node: Node, deleted: Edge[]): Node {
+    const data = { ...node.data, input: "", source: "" };
+    if (nodeHasSeveralPorts(node)) {
+        data.portInputs = withPortValues(node.data.portInputs, deleted.map((e) => e.targetHandle ?? "in"), "");
+    }
+    return { ...node, data };
+}
+
 /** What an agent's applied code asks of the dataflow's doc the canvas is
  *  bound to (`useDataflowDoc`). */
 export interface AppliedCodeDoc {
@@ -304,40 +333,18 @@ export function useGraphEdits({
         );
     };
 
-    /** A growing node's circles that *deleted* emptied, taken out of the
-     *  values it holds, as another tab's removal leaves them: that tab moved
-     *  the edges below and rewrote the code, which the doc brings. */
-    const dropCircles = (target: Node, deleted: Edge[]) => {
-        const removed = deleted
-            .map((e) => inputSlotOf(e.targetHandle))
-            .filter((s) => s >= 0)
-            .sort((a, b) => b - a);
-        if (removed.length === 0) return;
-        setNodes((nds) =>
-            nds.map((node) => {
-                if (node.id !== target.id) return node;
-                let inputSlots: unknown[] = node.data?.inputSlots ?? [];
-                let sourceSlots: unknown[] = node.data?.sourceSlots ?? [];
-                for (const slot of removed) {
-                    inputSlots = withoutSlot(inputSlots, slot);
-                    sourceSlots = withoutSlot(sourceSlots, slot);
-                }
-                const wired = wiredInputSlots(
-                    reactFlow.getEdges().filter((e) => !deleted.some((d) => d.id === e.id)),
-                    node.id,
-                );
-                return { ...node, data: { ...node.data, inputSlots, sourceSlots, input: nodeInputFromSlots(inputSlots, wired) } };
-            }),
-        );
-    };
-
+    /** Remove connections. Another tab's removals (*remote*) reach each
+     *  target in one keyed update, which reads the target as the canvas will
+     *  hold it, so one an earlier change added that the canvas has not drawn
+     *  yet loses them too. *remaining* are the connections the canvas holds
+     *  without them (by default React Flow's). */
     const onEdgesDelete = useCallback(
-        (connections: Edge[], options?: { remote?: boolean }) => {
+        (connections: Edge[], options?: { remote?: boolean; remaining?: Edge[] }) => {
             const deletedIds = new Set(connections.map((c) => c.id));
             const growing = new Map<string, Edge[]>();
+            const remote = new Map<string, Edge[]>();
             for (const connection of connections) {
                 const resetInput = connection.target;
-                const targetNode = reactFlow.getNode(connection.target) as Node;
                 markNodeStaleRef.current(connection.target);
 
                 // skiping syncronized connections
@@ -357,6 +364,11 @@ export function useGraphEdits({
                     connection.sourceHandle != "in/out" ||
                     connection.targetHandle != "in/out"
                 ) {
+                    if (options?.remote) {
+                        remote.set(connection.target, [...(remote.get(connection.target) ?? []), connection]);
+                        continue;
+                    }
+                    const targetNode = reactFlow.getNode(connection.target) as Node;
                     if (nodeGrowsInputs(targetNode)) {
                         growing.set(connection.target, [...(growing.get(connection.target) ?? []), connection]);
                         continue;
@@ -373,11 +385,20 @@ export function useGraphEdits({
                     );
                 }
             }
+            if (remote.size > 0) {
+                const remaining = options?.remaining ?? reactFlow.getEdges().filter((e) => !deletedIds.has(e.id));
+                setNodes((nds: any) =>
+                    nds.map((node: any) => {
+                        const deleted = remote.get(node.id);
+                        if (!deleted) return node;
+                        return nodeGrowsInputs(node) ? withoutCircles(node, deleted, remaining) : withoutInputs(node, deleted);
+                    })
+                );
+            }
             growing.forEach((deleted, targetId) => {
                 const target = reactFlow.getNode(targetId);
                 if (!target) return;
-                if (options?.remote) dropCircles(target, deleted);
-                else closeUpCircles(target, deleted, deletedIds);
+                closeUpCircles(target, deleted, deletedIds);
             });
         },
         [setNodes, setEdges]

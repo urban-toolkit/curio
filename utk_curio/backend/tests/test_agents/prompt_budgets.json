@@ -10,7 +10,7 @@
   "agent.curio.dataflow-planner@1 workflow.coherence.validate": 28500,
   "agent.curio.dataflow-planner@1 workflow.keyword.bind": 28900,
   "agent.curio.dataflow-planner@1 workflow.keywords.extract": 24100,
-  "agent.curio.dataflow-reader@1 dataflow.explain": 49400,
+  "agent.curio.dataflow-reader@1 dataflow.explain": 52100,
   "agent.curio.dataflow-reader@1 workflow.suggest": 62600,
   "agent.curio.node-builder@1 chat": 67400,
   "agent.curio.node-builder@1 chat, native tools": 58200,

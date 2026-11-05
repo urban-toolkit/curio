@@ -1,7 +1,7 @@
 """The skill on Map Editor, ``skills/map-edits/SKILL.md``, states the call,
-the edits and their fields as the node's reader takes them, and the words a
-goal names edits by, and every run that writes or checks a Map Editor node's
-code holds it.
+the edits and their fields and a new layer's as the node's reader takes them,
+and the words a goal names edits by, and every run that writes or checks a
+Map Editor node's code holds it.
 
 The skill's body is read as agents read it, by fixed line shapes, and
 compared with the reader's tables
@@ -21,6 +21,11 @@ _WORDS_LINE = re.compile(
     r"starts with one of these words: (?P<words>[a-z ,]+)\."
 )
 _CALL_BLOCK = re.compile(r"^```python\n(.*?)^```$", re.MULTILINE | re.DOTALL)
+_NEW_LAYERS_LINE = re.compile(
+    r"- `new_layers` lists the layers the node makes, each \{(?P<layer>[^{}]*)\}: "
+    r"its geometry (?P<geometries>[^,]+(?:, [^,]+)*?), and each property \{(?P<property>[^{}]*)\}, "
+    r"its type (?P<types>[^.]+)\. .+"
+)
 
 
 def _page() -> str:
@@ -86,6 +91,21 @@ def test_the_page_lists_every_edit_with_the_fields_the_reader_takes():
         op: sorted(fields) for op, fields in EDIT_FIELDS.items()
     }
     assert [field for field in COMMON_FIELDS if field != "op" and f"`{field}`" not in text] == []
+
+
+def test_the_page_gives_a_new_layer_the_fields_and_the_kinds_the_reader_takes():
+    from utk_curio.sandbox.util.feature_edits_code import (
+        NEW_LAYER_FIELDS,
+        NEW_LAYER_GEOMETRIES,
+        PROPERTY_FIELDS,
+        PROPERTY_TYPES,
+    )
+
+    [match] = [m for m in map(_NEW_LAYERS_LINE.fullmatch, _page().splitlines()) if m]
+    assert tuple(re.findall(r'"(\w+)": ', match["layer"])) == NEW_LAYER_FIELDS
+    assert tuple(re.findall(r'"(\w+)": ', match["property"])) == PROPERTY_FIELDS
+    assert tuple(re.findall(r'"(\w+)"', match["geometries"])) == NEW_LAYER_GEOMETRIES
+    assert tuple(re.findall(r'"(\w+)"', match["types"])) == PROPERTY_TYPES
 
 
 def test_the_page_names_the_calls_keywords():
