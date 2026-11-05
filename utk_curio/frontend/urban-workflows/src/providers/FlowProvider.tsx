@@ -97,6 +97,7 @@ export const FlowContext = createContext<FlowContextProps>({
     onNodesChange: () => { },
     onEdgesChange: () => { },
     onConnect: () => { },
+    handOverAlongEdges: () => { },
     isValidConnection: () => true,
     onEdgesDelete: () => { },
     onNodesDelete: () => { },
@@ -390,7 +391,7 @@ const FlowProvider = ({
         void refreshAgentsWhenKept(docBridgeRef.current?.whenKept);
     }, [dropEdges]);
 
-    const { onConnect, isValidConnection } = useConnect({
+    const { onConnect, isValidConnection, handOverAlongEdges } = useConnect({
         markDirtyRef, reactFlow, showToast, markNodeStaleRef, applyOutput, setEdges,
         workflowNameRef, outputsRef,
     });
@@ -658,6 +659,7 @@ const FlowProvider = ({
                 onNodesChange,
                 onEdgesChange,
                 onConnect,
+                handOverAlongEdges,
                 isValidConnection,
                 onEdgesDelete,
                 onNodesDelete,

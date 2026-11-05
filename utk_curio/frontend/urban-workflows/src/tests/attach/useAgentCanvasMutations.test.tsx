@@ -9,6 +9,7 @@ jest.mock("../../hook/useCode", () => ({
 const mockApplyNodeContent = jest.fn();
 const mockApplyNodeSettings = jest.fn();
 const mockOnEdgesChange = jest.fn();
+const mockHandOverAlongEdges = jest.fn();
 const mockApplyReviewedRemovals = jest.fn();
 // #662: the canvas's scenarios, which an applied plan's join.
 const mockSetScenarios = jest.fn();
@@ -20,6 +21,7 @@ jest.mock("../../providers/FlowProvider", () => ({
     applyNodeContent: mockApplyNodeContent,
     applyNodeSettings: mockApplyNodeSettings,
     onEdgesChange: mockOnEdgesChange,
+    handOverAlongEdges: mockHandOverAlongEdges,
     applyReviewedRemovals: mockApplyReviewedRemovals,
     scenarios: mockScenarios.current,
     setScenarios: mockSetScenarios,
@@ -140,6 +142,9 @@ describe("a landed change: the doc brings it to a canvas it binds; a canvas no d
     expect(mockApplyNodeSettings).not.toHaveBeenCalled();
     expect(mockApplyReviewedRemovals).not.toHaveBeenCalled();
     expect(mockOnEdgesChange).not.toHaveBeenCalled();
+    // The doc's new connections reach the canvas through onConnect, which
+    // hands over what their sources hold: nothing is handed over here too.
+    expect(mockHandOverAlongEdges).not.toHaveBeenCalled();
     expect(mockSetScenarios).not.toHaveBeenCalled();
   });
 
@@ -180,6 +185,10 @@ describe("a landed change: the doc brings it to a canvas it binds; a canvas no d
     expect(mockApplyNodeSettings).toHaveBeenCalledWith("pool", { widgets: { k: 1 } });
     expect(mockApplyReviewedRemovals).toHaveBeenCalledWith(["victim"], ["e0"]);
     expect(mockOnEdgesChange.mock.calls[0][0][0].item).toMatchObject({ id: "e1", source: "ga", target: "old" });
+    // Its connection hands over what its source holds, as a drawn one does.
+    expect(mockHandOverAlongEdges.mock.calls[0][0]).toEqual(
+      mockOnEdgesChange.mock.calls[0][0].map((change: any) => change.item),
+    );
   });
 
   it("a bridge event that is no landed change is taken even on a canvas the doc binds (an applied install)", () => {
@@ -309,6 +318,10 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
       // bridge must always provide it (loadTrill parity), or the first
       // render of the inserted edge crashes the canvas.
       expect(changes[0].item.data).toEqual({});
+      // The edges inserted are the ones whose sources hand over what they
+      // hold, as along a drawn connection.
+      expect(mockHandOverAlongEdges).toHaveBeenCalledTimes(1);
+      expect(mockHandOverAlongEdges.mock.calls[0][0]).toEqual(changes.map((change: any) => change.item));
       act(() => {
         jest.runAllTimers();
       });
@@ -340,6 +353,8 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
     expect(mockCreateCodeNode).not.toHaveBeenCalled();
     const changes = mockOnEdgesChange.mock.calls[0][0];
     expect(changes.map((change: any) => change.item.id)).toEqual(["e2"]);
+    // Only the connection added hands over; the one held already did.
+    expect(mockHandOverAlongEdges.mock.calls[0][0]).toEqual(changes.map((change: any) => change.item));
   });
 
   it("passes the apply's explicit handles through (input circles, dev/67-3)", () => {

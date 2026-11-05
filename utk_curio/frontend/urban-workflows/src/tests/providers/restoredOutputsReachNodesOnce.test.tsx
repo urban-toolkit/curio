@@ -530,4 +530,31 @@ describe("a new edge hands its source's output to its own target alone", () => {
     expect(data.sourceSlots.slice(0, 2)).toEqual([PRODUCER, IDLE]);
     expect(data.input).toBe('');
   });
+
+  test('a merge that adds a connection and no node hands the output to its target', async () => {
+    // A merge (`loadParsedTrill` with `merge`, as a scenario copy or drop
+    // makes one) whose nodes are on the canvas already.
+    open('dataflow');
+    await settle();
+    await addPythonNode(ADDED);
+    const nodes = api.nodes.filter((n) => n.id === PRODUCER || n.id === ADDED);
+    const edge = { id: 'producer-added', source: PRODUCER, sourceHandle: 'out', target: ADDED, targetHandle: 'in' };
+
+    const before = mark();
+    // No work is left for the canvas, as between two changes (after each
+    // change the canvas sets its suggestion count again, which renders once
+    // with nothing new). Two updates that change nothing leave it so even
+    // when a render was still due, and nothing runs between them and the
+    // merge, which then queues nothing before its connection.
+    act(() => api.setOutputs((outputs) => outputs));
+    act(() => api.setOutputs((outputs) => outputs));
+    act(() => {
+      api.loadParsedTrill('Restored once', '', nodes, [edge], false, true);
+    });
+    await wait(50);
+
+    expect(api.edges.some((e) => e.id === edge.id)).toBe(true);
+    expect(handedToTheFedNodes(before)).toEqual(NOTHING_MORE);
+    expect(handedSince(before, ADDED)).toEqual([FRAME]);
+  });
 });
