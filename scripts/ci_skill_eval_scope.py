@@ -23,9 +23,10 @@ What it runs is this script's answer, a scope. With its ``scope`` input
 
 The other values of the input ask for a measure outright: ``none``, ``smoke``
 (every skill's first test case, once), ``core`` (every skill's test cases),
-``full`` (every skill's trigger queries and test cases) or skill names,
-comma-separated. A ``tmp/`` branch's ``auto`` measures nothing, and so does
-any event but a dispatch.
+``full`` (every skill's trigger queries and test cases), ``graders`` (each
+model grades the prepared answers of every skill's ``evals/truth.json``, the
+grader truth, once) or skill names, comma-separated. A ``tmp/`` branch's
+``auto`` measures nothing, and so does any event but a dispatch.
 
 The scope is JSON: ``measure`` (the widest of the above it holds), ``why``
 (one line per reason) and ``measures``, each skill's measure as
@@ -57,8 +58,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-#: The two kinds of run and the two conditions, as ``skill_evals`` names them.
-TRIGGER, TASK = "trigger", "task"
+#: The kinds of run and the two conditions, as ``skill_evals`` names them.
+TRIGGER, TASK, GRADE = "trigger", "task", "grade"
 WITH_SKILL, WITHOUT_SKILL = "with_skill", "without_skill"
 #: Runs of each query and test case a whole measure makes (``skill_evals.RUNS``).
 RUNS = 3
@@ -69,6 +70,10 @@ WHOLE = {"kinds": [TRIGGER, TASK], "runs": RUNS, "conditions": [WITH_SKILL, WITH
 CASES = {"kinds": [TASK], "runs": RUNS, "conditions": [WITH_SKILL, WITHOUT_SKILL], "cases": None}
 #: Its first test case, once, with the skill.
 SMOKE = {"kinds": [TASK], "runs": 1, "conditions": [WITH_SKILL], "cases": 1}
+#: Each prepared answer of its grader truth, graded once by the model measured.
+GRADERS = {"kinds": [GRADE], "runs": 1, "conditions": [WITH_SKILL], "cases": None}
+#: The file of a skill's ``evals/`` folder that holds its grader truth (``grader_truth.TRUTH_FILE``).
+TRUTH_FILE = "truth.json"
 
 #: The measures from the narrowest, so the widest a scope holds names it.
 ORDER = ("none", "smoke", "changed", "core", "full")
@@ -78,7 +83,7 @@ AGENT_PATHS = (
     re.compile(r"^agents/"),
     re.compile(r"^skills/[^/]+$"),
     re.compile(r"^utk_curio/backend/app/agents/"),
-    re.compile(r"^utk_curio/tools/(agent_eval|skill_eval_[a-z_]+)\.py$"),
+    re.compile(r"^utk_curio/tools/(agent_eval|skill_eval_[a-z_]+|skill_benchmark)\.py$"),
     re.compile(r"^packages/[^/]+/manifest\.json$"),
     re.compile(r"^docs/schemas/trill\.v1\.json$"),
     re.compile(r"^scripts/(ci_skill_eval[a-z_]*|skill_eval[a-z_]*)\.(py|json)$"),
@@ -267,6 +272,12 @@ def from_input(value: str, *, root: Path) -> dict | None:
         return None
     if value == "none":
         return {"version": 1, "measure": "none", "why": ["the dispatch asked for none"], "measures": {}}
+    if value == "graders":
+        truth = [name for name, folder in evals.items() if (root / folder / "evals" / TRUTH_FILE).is_file()]
+        return {"version": 1, "measure": "graders",
+                "why": ["the dispatch asked for the graders: each model grades the grader truth's answers",
+                        f"{len(truth)} skill(s) hold a grader truth"],
+                "measures": _all(truth, GRADERS)}
     asked = {"smoke": SMOKE, "core": CASES, "full": WHOLE}
     if value in asked:
         return {"version": 1, "measure": value, "why": [f"the dispatch asked for {value}"],

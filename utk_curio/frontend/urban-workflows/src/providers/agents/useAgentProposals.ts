@@ -8,8 +8,9 @@
  * the truth.
  */
 import type { DatasetDiscoverySourceInput } from "../../services/datasetCatalog/datasetCatalogTypes";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
+import { useFlowContext } from "../FlowProvider";
 import { useOptionalToastContext } from "../ToastProvider";
 import { useDatasetCatalog } from "../../services/datasetCatalog/datasetCatalogHooks";
 import { useDatasetImport } from "../../services/datasetCatalog/useDatasetImport";
@@ -43,6 +44,11 @@ export function useAgentProposals(opts: {
   refreshAfterMutation: (attachmentId: string) => Promise<void>;
 }): AgentProposalsSlice {
   const { effectiveProjectId, projectRef, refreshAfterMutation } = opts;
+  // The canvas's doc as an Undo answers, which tells the others what the
+  // Undo took out.
+  const { dataflowDoc } = useFlowContext();
+  const dataflowDocRef = useRef(dataflowDoc);
+  dataflowDocRef.current = dataflowDoc;
   // dev/132: the toast is how the shared import reports itself; the provider
   // must still render where none is mounted (a test, an embedded surface).
   const toast = useOptionalToastContext();
@@ -107,6 +113,12 @@ export function useAgentProposals(opts: {
       if (!pid) throw new Error("no project");
       try {
         const result = await agentsApi.undoChange(pid, attachmentId, changeId);
+        // The nodes the Undo took out are this tab's removal: a tab that was
+        // editing one says who removed it.
+        const removed = (Array.isArray(result.canvas) ? result.canvas : []).flatMap((mutation) =>
+          "removedNodeIds" in mutation && Array.isArray(mutation.removedNodeIds) ? mutation.removedNodeIds : [],
+        );
+        if (removed.length > 0) dataflowDocRef.current?.noteRemoval(removed);
         // The server put it back in the dataflow's doc; a canvas no doc
         // binds takes the same mutations here.
         notifyAgentChangesLanded(result.canvas);

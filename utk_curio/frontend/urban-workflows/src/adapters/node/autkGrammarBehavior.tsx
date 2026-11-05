@@ -1811,6 +1811,8 @@ export const useAutkGrammarBehavior = (
         // Only ever offered for an empty editor, so it cannot displace real
         // work, and it steps aside for a document written in from outside.
         defaultValueOverride: starterSpec,
+        // And it is a starter, not the map's document, until someone edits it.
+        ...(starterSpec !== undefined ? { defaultValueIsStarter: true } : {}),
         setOutputCallbackOverride: setOutputFromOutside,
     };
 };

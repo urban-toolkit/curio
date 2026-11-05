@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: 'auto (what the branch changes against main), smoke (every skill''s first test case once), core (every skill''s test cases), full (every skill''s trigger queries and test cases), or skill names, comma-separated'
+        description: 'auto (what the branch changes against main), smoke (every skill''s first test case once), core (every skill''s test cases), full (every skill''s trigger queries and test cases), graders (each model grades the grader truth''s prepared answers), or skill names, comma-separated'
         type: string
         default: auto
       models:
@@ -141,6 +141,9 @@ jobs:
           CURIO_EVAL_API_KEY: ${{ secrets.CURIO_EVAL_API_KEY }}
           CURIO_EVAL_MODELS: ${{ inputs.models || vars.CURIO_EVAL_MODELS }}
           CURIO_EVAL_JOBS: ${{ vars.CURIO_EVAL_JOBS }}
+          # The benchmark's graders, one model or a JSON list, the best first: each model is graded by
+          # the first that is not itself. Unset, each model grades its own answers.
+          CURIO_EVAL_GRADER_MODEL: ${{ vars.CURIO_EVAL_GRADER }}
           CURIO_EVAL_COMMIT: ${{ github.sha }}
           CURIO_EVAL_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: bash
@@ -148,7 +151,7 @@ jobs:
           docker run --rm --init --label "com.docker.compose.project=$PROJECT" \
             -v "$PWD:/app" -w /app \
             -e CURIO_EVAL_BASE_URL -e CURIO_EVAL_API_KEY -e CURIO_EVAL_MODELS -e CURIO_EVAL_JOBS \
-            -e CURIO_EVAL_COMMIT -e CURIO_EVAL_RUN_URL \
+            -e CURIO_EVAL_GRADER_MODEL -e CURIO_EVAL_COMMIT -e CURIO_EVAL_RUN_URL \
             "$PROJECT-curio" \
             python scripts/ci_skill_evals.py run --scope skill-evals/scope.json --out skill-evals \
               --previous skill-evals/previous

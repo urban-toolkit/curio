@@ -327,3 +327,37 @@ def test_a_run_on_the_canvas_tells_the_model_the_whole_dataflow_as_a_browser_doe
     trill = json.loads(contexts[0].split("Current Trill: ", 1)[1].split("\n")[0])
     assert [node["id"] for node in trill["dataflow"]["nodes"]] == ["scores", "scores-chart"]
     assert trill["dataflow"]["edges"][0]["source"] == "scores"
+
+
+def test_a_case_s_models_reach_its_account_so_models_search_lists_them(
+        client, user_and_token, tmp_curio, tmp_path, monkeypatch):
+    """A test case's ``models`` are model packages its evaluation account
+    holds: the worker adds each to the account before the run, through the
+    Model Catalog's own Add (``POST /api/packages/catalog/install``), so the
+    run's ``models.search`` lists it and its node code may load it. A run
+    whose account holds it already adds nothing and fails nothing."""
+    import dataclasses
+
+    from utk_curio.backend.app.agents.application import tools
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    # The package catalog Curio ships, as the worker's runner copies it.
+    monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(REPO_ROOT / "packages"))
+    _sent_to_the_model(monkeypatch)
+    user, token = user_and_token
+    key = _user_dir_key(user)
+
+    def listed() -> list[str]:
+        status, text = tools.execute_read_tool("models.search", user_key=key, project_id="", target=None, params={})
+        assert status == "ok", text
+        return [row["id"] for row in json.loads(text)["models"]]
+
+    assert listed() == [], "the account held a model before the run added one"
+    task = _task(tmp_path, "canvas", None)
+    task = dataclasses.replace(task, context=dataclasses.replace(task.context, models=("model.curio.ddrnet23-slim@1",)))
+    worker = _worker(client, token)
+    for attempt in (1, 2):
+        record: dict = {}
+        status, _body, _project, _before = worker._attempt(task, task.message, tmp_path, record)
+        assert status == 200 and "error" not in record, (attempt, record)
+        assert listed() == ["model.curio.ddrnet23-slim"], attempt

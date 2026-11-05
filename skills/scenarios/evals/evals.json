@@ -13,6 +13,11 @@
         "The spec it writes reads its data as the stacked inputs: \"data\": {\"name\": \"[!! inputs !!]\"}.",
         "The spec colors by the scenario_name field with \"scale\": [!! scenario colors !!].",
         "The spec writes neither box's color (#3567c7 or #e86a3c) nor any other list of colors for the scenarios."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "node-added", "type": "curio.builtin/vis-vega", "count": 1},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"data\"\\s*:\\s*\\{[^{}]*\"name\"\\s*:\\s*\"\\[!!\\s*inputs\\s*!!\\]\""},
+        {"assertion": 3, "kind": "code", "type": "curio.builtin/vis-vega", "pattern": "\"color\"\\s*:\\s*\\{(?=(?:[^{}]|\\{[^{}]*\\})*\"field\"\\s*:\\s*(?:\"scenario_name\"|\"?\\[!!\\s*inputs\\.scenario_name\\s*!!\\]\"?))(?=(?:[^{}]|\\{[^{}]*\\})*\"scale\"\\s*:\\s*\\[!!\\s*scenario colors\\s*!!\\])"}
       ]
     },
     {

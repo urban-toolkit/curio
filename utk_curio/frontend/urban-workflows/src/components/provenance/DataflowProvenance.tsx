@@ -12,6 +12,8 @@ import {
   versionItems,
 } from "../../utils/dataflowVersions";
 import { historyApi, type ServerVersion } from "../../api/historyApi";
+import { useDocBinding } from "../../providers/collab/docContext";
+import { noteRemoval } from "../../providers/collab/presence";
 import { type ServerHistory, useServerHistory } from "../../providers/history/serverHistory";
 import { useServerVersions } from "../../providers/history/useHistoryReads";
 import { useOptionalToastContext } from "../../providers/ToastProvider";
@@ -104,6 +106,9 @@ function madeBy(version: ServerVersion | undefined): string | null {
 
 function ServerVersions({ server }: { server: ServerHistory }) {
   const { data, error, reload } = useServerVersions(server);
+  // The dataflow's doc this tab is bound to, whose presence says who removed
+  // what: read from its context, as the editors do, not through the canvas's.
+  const binding = useDocBinding();
   const toast = useOptionalToastContext();
   const [clearing, setClearing] = useState<string | null>(null);
   const versions = data?.versions ?? NO_VERSIONS;
@@ -117,7 +122,10 @@ function ServerVersions({ server }: { server: ServerHistory }) {
   const putBack = async (id: string) => {
     try {
       await server.whenKept();
-      const { refused } = await historyApi.putBack(server.projectId, id);
+      const { refused, removed = [] } = await historyApi.putBack(server.projectId, id);
+      // The nodes it took out are this tab's removal: a tab that was editing
+      // one says who removed it.
+      if (removed.length > 0) noteRemoval(binding?.provider.awareness, removed);
       if (refused.length > 0) {
         toast?.showToast(
           `${refused.length === 1 ? "One node keeps" : `${refused.length} nodes keep`} the code someone wrote while this version was put back.`,

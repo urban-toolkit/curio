@@ -1,8 +1,10 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 
+// What this tab tells the others it removed (`presence.noteRemoval`).
+const mockNoteRemoval = jest.fn();
 jest.mock("../../providers/FlowProvider", () => ({
-  useFlowContext: () => ({ projectId: "p1" }),
+  useFlowContext: () => ({ projectId: "p1", dataflowDoc: { noteRemoval: (ids: string[]) => mockNoteRemoval(ids) } }),
 }));
 
 const mockPaletteRefresh = jest.fn();
@@ -603,6 +605,20 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
     // The card says undone, from the transcript and the listing.
     expect(api.getSession).toHaveBeenCalledWith("p1", "a1");
     expect(api.listAttachments).toHaveBeenCalled();
+  });
+
+  it("an Undo that takes a node out tells the others this tab removed it", async () => {
+    const gone = { kind: "plan-removals" as const, planId: "undo:c1", removedNodeIds: ["n2"], removedEdgeIds: ["e1"] };
+    api.undoChange.mockResolvedValue({ attachmentId: "a1", changeId: "c1", status: "undone", canvas: [gone] });
+    mockNoteRemoval.mockClear();
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("undo-change"));
+    });
+    expect(mockNoteRemoval).toHaveBeenCalledWith(["n2"]);
+    expect(events).toEqual([{ ...gone, landed: true }]);
   });
 
   it("an Undo someone refused (they changed it after) changes nothing on the canvas and still refreshes", async () => {

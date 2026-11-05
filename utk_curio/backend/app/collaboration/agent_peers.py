@@ -18,6 +18,11 @@ everyone's. Its fields:
 * ``writes``: with ``editing``, what it writes there (:data:`WRITES`);
   ``None`` otherwise. A tab's code view follows these two, its lock chip the
   lock.
+* ``removed``: while a write of its removes nodes, ``{nodes, at}``: those
+  nodes, and when it named them in milliseconds since the epoch, as a tab's
+  own note says them (``presence.noteRemoval``). It is set just before the
+  write and goes once the write is relayed, so a tab that was editing one of
+  them holds it as it takes the removal and says who removed it.
 * ``pointer``: ``{x, y, t}`` in flow coordinates, during a drag only: its drop
   point, set as the drag starts, ``None`` as it ends.
 * ``carrying``: during a drag only, what it drags: ``{id, kind, from, onto,
@@ -35,9 +40,10 @@ waits while someone else holds a node it changes (:func:`wait_for_people`:
 anyone but the person who asked, whose own locks are told by their account, or
 on the guest account, which every guest signs in to, by their sign-in),
 takes their locks, plays its drag, checks its targets again, names the node in
-``editing`` and ``writes``, writes, keeps the locks and those two a second and
-lets go. :func:`holding` is the same hold around a write its caller makes, with
-no drag. A lock is ``room_state``'s soft lock, named after the agent, with
+``editing`` and ``writes`` and the nodes it removes in ``removed``, writes,
+keeps the locks, ``editing`` and ``writes`` a second and lets go.
+:func:`holding` is the same hold around a write its caller makes, with no
+drag. A lock is ``room_state``'s soft lock, named after the agent, with
 ``agent``, as its state's ``user.agent``, and ``writes`` (:data:`WRITES`).
 
 **Pace.** A drag (:data:`DRAG_MS`) and the second a lock is kept after its
@@ -469,6 +475,9 @@ class Action:
     #: What it did once it lands, each ``(verb, thing, id)``: ``("added",
     #: "node", "n1")``. :data:`LEFT_EVENT` counts them by verb and thing.
     did: tuple = ()
+    #: The nodes its write removes, which the peer's ``removed`` names from
+    #: just before the write until it lands.
+    removes: tuple = ()
 
 
 class Acted(NamedTuple):
@@ -603,8 +612,10 @@ def act(peer: Peer, action: Action) -> Acted:
     turn: wait while someone else holds one of its nodes, take their locks,
     play its drag (``pointer`` and ``carrying`` in the peer's state for
     :data:`DRAG_MS` while a tab is bound), check that the dataflow still holds
-    its targets, name its nodes in the peer's ``editing`` and ``writes``,
-    write, keep those and the locks a second while a tab is bound, and let go.
+    its targets, name its nodes in the peer's ``editing`` and ``writes`` and
+    the nodes it removes in ``removed``, write, keep ``editing``, ``writes``
+    and the locks a second while a tab is bound (``removed`` goes once the
+    write lands), and let go.
     An action whose nodes someone still holds, or whose targets went, writes
     nothing and says what it left undone. Started under the dataflow's spec
     lock, it raises ``RuntimeError``."""
@@ -612,7 +623,7 @@ def act(peer: Peer, action: Action) -> Acted:
     with _hold(peer, action.holds, action.writes, None) as hold:
         if hold.held_by is not None:
             return Acted(False, left=action.what, held_by=hold.held_by)
-        dragging = False
+        dragging = removing = False
         try:
             if drag is not None:
                 drag["pointer"]["t"] = int(time.time() * 1000)  # when it is sent, as a tab's
@@ -626,11 +637,19 @@ def act(peer: Peer, action: Action) -> Acted:
                 hold.keep = False
                 return Acted(False, left=action.what, gone=gone)
             hold.writing()
+            if action.removes:
+                removed = {"nodes": list(action.removes), "at": int(time.time() * 1000)}  # as a tab's note
+                with peer._lock:
+                    peer._send({"removed": removed})
+                removing = True
             result = action.write()
         finally:
             if dragging:
                 with peer._lock:
                     peer._send({"pointer": None, "carrying": None})
+            if removing:
+                with peer._lock:
+                    peer._send({"removed": None})
         peer._note(action.did)
         return Acted(True, result=result, dragged=copy.deepcopy(drag) if drag is not None else None)
 

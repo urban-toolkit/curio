@@ -5,11 +5,16 @@
  * dead session (no token, an unknown or expired one, a deleted account) with
  * 401 and nothing else. A check that was aborted because the page navigated
  * away, that could not connect, or that met a server error says nothing about
- * the session, so the token must survive it for the next load. A check whose
+ * the session, so the token must survive it for the next load. With sign-in
+ * on, the load asks again after each of `SESSION_CHECK_WAITS_MS` before it
+ * shows the sign-in form: a browser drops every request in flight when the
+ * machine's network changes (`net::ERR_NETWORK_CHANGED`), and one dropped
+ * check showed a signed-in owner the sign-in form on CI. A check whose
  * provider unmounted before it answered must not touch the token either.
  *
  * Drives the real `apiFetch` and the real session cookie; only `fetch` is
- * scripted.
+ * scripted. With sign-in on the timers are fake, so the waits between checks
+ * pass at once.
  */
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -19,12 +24,14 @@ jest.mock("../../registry/packageRegistryBootstrap", () => ({
   refreshPackageRegistry: jest.fn(() => Promise.resolve()),
 }));
 
-import UserProvider, { useUserContext } from "../../providers/UserProvider";
+import UserProvider, { SESSION_CHECK_WAITS_MS, useUserContext } from "../../providers/UserProvider";
 
 const COOKIE = "session_token";
 const SHARED = "guest_shared";
 const ALICE = { id: 7, username: "alice", name: "Alice", email: null, profile_image: null, type: null, is_guest: false };
 const GUEST = { id: 1, username: SHARED, name: "Guest", email: null, profile_image: null, type: null, is_guest: true };
+/** Every wait of one load's checks, end to end. */
+const ALL_WAITS_MS = SESSION_CHECK_WAITS_MS.reduce((sum, ms) => sum + ms, 0);
 
 const answer = (status: number, body: unknown = {}) =>
   Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) });
@@ -47,8 +54,13 @@ const mount = () =>
     </UserProvider>,
   );
 
-const who = async () => (await screen.findByTestId("who")).textContent;
+/** Who the page shows once it has loaded, within *timeout* ms (fake ones while
+ * the timers are fake). */
+const who = async (timeout = 1000) =>
+  (await screen.findByTestId("who", undefined, { timeout })).textContent;
 const called = (path: string) => mockFetch.mock.calls.some(([url]) => String(url).endsWith(path));
+/** How many times the page asked who is signed in. */
+const checks = () => mockFetch.mock.calls.filter(([url]) => String(url).endsWith("/api/auth/me")).length;
 
 beforeEach(() => {
   (global as any).fetch = mockFetch;
@@ -59,10 +71,20 @@ beforeEach(() => {
 afterEach(() => Cookies.remove(COOKIE));
 
 describe("with sign-in on", () => {
+  let warn: jest.SpyInstance;
+
   beforeEach(() => {
+    jest.useFakeTimers();
+    // Each check asked again says so in the console.
+    warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
     mockRoutes = {
       "/api/config/public": () => answer(200, { curio_no_auth: false, allow_guest_login: true, shared_guest_username: SHARED }),
     };
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+    jest.useRealTimers();
   });
 
   it("keeps a session the server confirms", async () => {
@@ -77,6 +99,8 @@ describe("with sign-in on", () => {
     mount();
     expect(await who()).toBe("signed out");
     expect(Cookies.get(COOKIE)).toBeUndefined();
+    // A refused session is not asked again.
+    expect(checks()).toBe(1);
   });
 
   it.each([
@@ -87,7 +111,34 @@ describe("with sign-in on", () => {
   ])("keeps the token after %s", async (_what, me) => {
     mockRoutes["/api/auth/me"] = me;
     mount();
-    expect(await who()).toBe("signed out");
+    expect(await who(2 * ALL_WAITS_MS)).toBe("signed out");
+    expect(Cookies.get(COOKIE)).toBe("live-token");
+    // Asked again after each wait, and only the last failure stands.
+    expect(checks()).toBe(SESSION_CHECK_WAITS_MS.length + 1);
+  });
+
+  // The CI flake: the browser dropped the page's one check when the machine's
+  // network changed, and the owner's dataflow opened on the sign-in form.
+  it.each([
+    ["could not connect (the browser dropped it when the network changed)",
+      () => Promise.reject(new TypeError("Failed to fetch"))],
+    ["met a server error", () => answer(502, { error: "Bad gateway" })],
+  ])("asks again when a check %s, and keeps the session the next one confirms", async (_what, first) => {
+    let asked = 0;
+    mockRoutes["/api/auth/me"] = () => (asked++ === 0 ? first() : answer(200, ALICE));
+    mount();
+    expect(await who(2 * ALL_WAITS_MS)).toBe("alice");
+    expect(checks()).toBe(2);
+    expect(Cookies.get(COOKIE)).toBe("live-token");
+  });
+
+  it("asks no more once the provider unmounted, and leaves the token alone", async () => {
+    mockRoutes["/api/auth/me"] = () => Promise.reject(new TypeError("Failed to fetch"));
+    const view = mount();
+    await waitFor(() => expect(checks()).toBe(1));
+    view.unmount();
+    await jest.advanceTimersByTimeAsync(2 * ALL_WAITS_MS);
+    expect(checks()).toBe(1);
     expect(Cookies.get(COOKIE)).toBe("live-token");
   });
 });

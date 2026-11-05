@@ -117,9 +117,12 @@ export const historyApi = {
   },
 
   /** Put the version back on the canvas, for every tab. `refused`: the nodes
-   *  whose code someone changed meanwhile, which keep theirs. */
-  putBack(projectId: string, versionId: string): Promise<{ refused: string[] }> {
-    return apiFetch<{ refused: string[] }>(`${base(projectId)}/${encodeURIComponent(versionId)}/put-back`, post());
+   *  whose code someone changed meanwhile, which keep theirs. `removed`: the
+   *  nodes it took out, which this tab tells the others it removed. */
+  putBack(projectId: string, versionId: string): Promise<{ refused: string[]; removed?: string[] }> {
+    return apiFetch<{ refused: string[]; removed?: string[] }>(
+      `${base(projectId)}/${encodeURIComponent(versionId)}/put-back`, post(),
+    );
   },
 
   /** The owner clears the history before the version *versionId*. */

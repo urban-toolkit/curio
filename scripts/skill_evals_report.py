@@ -19,14 +19,24 @@ transcript, and shows, per model and skill:
   list price.
 
 Each failed assertion is listed with the path of its run in the results
-artifact. The same tables, shorter, go to ``summary.md`` for the job summary,
-and each model's numbers to ``summaries/<model>.json``, which the next runs
-compare with. :func:`gate` says what fails the run: a probe that failed, a
-run left in an error, a runner that failed, a skill under its floor.
+artifact.
+
+The benchmark (``agents/evaluation/benchmark.py``) scores each model's run, its
+checked assertions decided by their checks. The page shows its leaderboard,
+one row a model with each rate's 95% interval, then each skill's success per
+model and the models it fails on. Where main's last run of a model
+measured the same set, it also shows that run against this one, case by case,
+and each skill shown better or worse.
+
+The same tables, shorter, go to ``summary.md`` for the job summary, and each
+model's numbers, its benchmark among them, to ``summaries/<model>.json``, which
+the next runs compare with. :func:`gate` says what fails the run: a probe that
+failed, a run left in an error, a runner that failed, a skill under its floor.
 
     python3 scripts/skill_evals_report.py <out folder>
 
-It reads files only.
+It reads files only, and needs Curio's code for the benchmark, as the CI image
+holds it.
 """
 
 from __future__ import annotations
@@ -52,6 +62,10 @@ SUMMARY = "summary.md"
 SUMMARIES = "summaries"
 #: The record each run writes last (``skill_eval_runner.RECORD``).
 RECORD = "run.json"
+#: A grade run's kind (``skill_evals.GRADE``), and the scope of a run of the
+#: graders alone (``ci_skill_eval_scope.py``'s ``graders``).
+GRADE = "grade"
+GRADERS_SCOPE = "graders"
 #: How many failed assertions the job summary lists; the page lists all.
 SUMMARY_FAILURES = 15
 
@@ -128,10 +142,20 @@ class ModelRun:
     probe: dict | None = None
     exit_code: int | None = None
     price: dict | None = None
+    #: Its run scored as the skills benchmark scores it (``benchmark.json``), and
+    #: its comparison with main's last run of the same model.
+    scored: dict | None = None
+    compared: dict | None = None
+
+    @property
+    def as_grader(self) -> dict:
+        """How it graded the grader truth's answers, from its grade runs (``benchmark.agreement``)."""
+        found = (self.scored or {}).get("as_grader")
+        return found if isinstance(found, dict) else {}
 
     @property
     def runs(self) -> int:
-        return sum(row.runs for row in self.rows)
+        return sum(row.runs for row in self.rows) + int(self.as_grader.get("answers") or 0)
 
     @property
     def errors(self) -> int:
@@ -139,11 +163,11 @@ class ModelRun:
 
     @property
     def input_tokens(self) -> int:
-        return sum(row.input_tokens for row in self.rows)
+        return sum(row.input_tokens for row in self.rows) + int(self.as_grader.get("input_tokens") or 0)
 
     @property
     def output_tokens(self) -> int:
-        return sum(row.output_tokens for row in self.rows)
+        return sum(row.output_tokens for row in self.rows) + int(self.as_grader.get("output_tokens") or 0)
 
     @property
     def dollars(self) -> float | None:
@@ -215,6 +239,10 @@ def read_model(model: str, folder: Path | None, *, floors: dict, previous: dict 
         default = {"kinds": found.meta.get("kinds") or [], "runs": found.meta.get("runs"),
                    "conditions": ["with_skill", "without_skill"], "cases": None}
         row = SkillRow(skill=name, measure=measures.get(name) or default)
+        kinds = set(row.measure.get("kinds") or [])
+        if kinds and not {"trigger", "task"} & kinds:
+            # Only its grader truth was graded: the graders' table holds that.
+            continue
         bench = entry.get("benchmark") or {}
         with_skill, without = bench.get("with_skill") or {}, bench.get("without_skill") or {}
         row.with_rate = (with_skill.get("pass_rate") or {}).get("mean")
@@ -230,6 +258,9 @@ def read_model(model: str, folder: Path | None, *, floors: dict, previous: dict 
     for path in sorted(folder.glob(f"*/**/{RECORD}")):
         record = _json(path)
         if not isinstance(record, dict) or not record.get("kind") or record.get("skill") not in rows:
+            continue
+        if record.get("kind") == GRADE:
+            # A grade of a prepared answer, no run of the skill: the graders' table counts it.
             continue
         relative = path.parent.relative_to(folder.parent.parent).as_posix()
         _add_record(rows[record["skill"]], record, relative, _json(path.with_name("transcript.json")))
@@ -273,7 +304,163 @@ def summary_of(run: ModelRun) -> dict:
             "should_trigger": (row.triggers or {}).get("should_trigger_rate"),
             "should_not_trigger": (row.triggers or {}).get("should_not_trigger_rate"),
         } for row in run.rows},
+        "benchmark": run.scored,
     }
+
+
+# --- The benchmark --------------------------------------------------------------------
+
+
+def scored_of(run: ModelRun) -> dict | None:
+    """*run*'s benchmark: the ``benchmark.json`` its runner wrote, or its
+    records scored now (``agents/evaluation/benchmark.py``)."""
+    if run.folder is None:
+        return None
+    found = _json(run.folder / "benchmark.json")
+    if isinstance(found, dict) and found.get("cases") is not None:
+        return found
+    from utk_curio.backend.app.agents.evaluation import benchmark
+
+    return benchmark.score(run.folder)
+
+
+def compared_of(run: ModelRun, before: dict | None) -> dict | None:
+    """*run*'s benchmark against main's last one of its model, case by
+    case; ``refused`` says why they do not compare (another set, another model)."""
+    if not run.scored or not isinstance(before, dict) or not isinstance(before.get("benchmark"), dict):
+        return None
+    from utk_curio.backend.app.agents.evaluation import benchmark
+
+    try:
+        return benchmark.compare(before["benchmark"], run.scored)
+    except benchmark.CompareRefused as exc:
+        return {"refused": str(exc)}
+
+
+#: Below this share of a skill's assertions passed with it, a model fails the skill.
+FAILS_UNDER = 0.5
+
+
+def _with_interval(found: dict | None) -> str:
+    if not found or found.get("value") is None:
+        return ""
+    low_high = found.get("interval")
+    span = f" [{low_high[0] * 100:.0f}, {low_high[1] * 100:.0f}]" if low_high else ""
+    return f"{found['value'] * 100:.0f}%{span}"
+
+
+def _signed(found: dict | None) -> str:
+    if not found or found.get("value") is None:
+        return ""
+    low_high = found.get("interval")
+    span = f" [{low_high[0] * 100:+.0f}, {low_high[1] * 100:+.0f}]" if low_high else ""
+    return f"{found['value'] * 100:+.0f}{span}"
+
+
+def _per_run_cost(run: ModelRun) -> str:
+    if run.dollars is None or not run.runs:
+        return ""
+    return f"${run.dollars / run.runs:.4f}"
+
+
+#: The leaderboard's columns: heading, value.
+LEADERBOARD = (
+    ("Model", lambda run: run.model),
+    ("Success", lambda run: _with_interval(run.scored["overall"]["success"])),
+    ("All pass", lambda run: _with_interval(run.scored["overall"]["all_pass"])),
+    ("Lift", lambda run: _signed(run.scored["overall"]["lift"])),
+    ("Reach", lambda run: _with_interval(run.scored["overall"]["reach"])),
+    ("Should trigger", lambda run: _with_interval(run.scored["overall"]["trigger_recall"])),
+    ("Should not", lambda run: _with_interval(run.scored["overall"]["false_triggers"])),
+    ("Errors", lambda run: _with_interval(run.scored["overall"]["errors"])),
+    ("Cut calls", lambda run: _with_interval(run.scored["overall"]["cut_calls"])),
+    ("Refused calls", lambda run: _with_interval(run.scored["overall"]["refused_calls"])),
+    ("Native turns", lambda run: _with_interval(run.scored["overall"]["native_turns"])),
+    ("Cost a run", _per_run_cost),
+    ("Grader vs checks", lambda run: str(len(run.scored.get("disagreements") or []))),
+)
+
+
+def leaderboard(models: list[ModelRun]) -> list[ModelRun]:
+    """The models a benchmark scored a case or a query of, the best success with the skill first."""
+    scored = [run for run in models if run.scored and (run.scored.get("cases") or run.scored.get("queries"))]
+    return sorted(scored, key=lambda run: -(run.scored["overall"]["success"].get("value") or 0))
+
+
+#: The graders' table's columns: heading, value. A grader's agreement is
+#: counted apart on the assertions checks decide, where no grade reaches a score.
+GRADERS = (
+    ("Grader", lambda run: run.model),
+    ("Answers", lambda run: str(run.as_grader.get("answers") or 0)),
+    ("Errors", lambda run: str(run.as_grader.get("errors") or 0)),
+    ("Agreement, unchecked", lambda run: _share_of(run.as_grader["unchecked"]["agreement"])),
+    ("False passes, unchecked", lambda run: _share_of(run.as_grader["unchecked"]["false_passes"])),
+    ("False fails, unchecked", lambda run: _share_of(run.as_grader["unchecked"]["false_fails"])),
+    ("Agreement, checked", lambda run: _share_of(run.as_grader["checked"]["agreement"])),
+    ("Usable", lambda run: "yes" if run.as_grader.get("usable") else f"no, under {run.as_grader['floor']:.0%}"),
+)
+
+
+def _share_of(found: dict | None) -> str:
+    if not found or found.get("value") is None:
+        return ""
+    return f"{found['value']:.0%} ({found.get('count', 0)} of {found.get('of', 0)})"
+
+
+def graders(models: list[ModelRun]) -> list[ModelRun]:
+    """The models that graded the grader truth, the best agreement on unchecked assertions first."""
+    found = [run for run in models if run.as_grader.get("answers")]
+    return sorted(found, key=lambda run: -((run.as_grader.get("unchecked") or {}).get("agreement") or {}).get(
+        "value", 0) or 0)
+
+
+def _graders_lines(models: list[ModelRun]) -> list[str]:
+    """The graders' table in the job summary, and the grader the benchmark would use."""
+    board = graders(models)
+    if not board:
+        return []
+    lines = ["", "### Graders", "",
+             f"Each model graded the grader truth's prepared answers. One whose verdicts on the assertions no "
+             f"check decides agree with the truth at least {board[0].as_grader['floor']:.0%} of the time can be "
+             "the benchmark's grader.", "",
+             "| " + " | ".join(name for name, _ in GRADERS) + " |", "|" + "---|" * len(GRADERS)]
+    lines += ["| " + " | ".join(value(run) for _, value in GRADERS) + " |" for run in board]
+    usable = [run.model for run in board if run.as_grader.get("usable")]
+    lines += ["", f"Best usable grader: `{usable[0]}`." if usable else "No model is a usable grader."]
+    return lines
+
+
+def per_skill(models: list[ModelRun]) -> list[tuple[str, dict[str, dict], list[str]]]:
+    """Each skill any model measured: its success per model, and the models it fails on."""
+    names = sorted({name for run in models if run.scored for name in run.scored["skills"]})
+    rows = []
+    for name in names:
+        found = {run.model: run.scored["skills"][name] for run in models if run.scored and name in run.scored["skills"]}
+        fails = [model for model, metrics in found.items()
+                 if metrics["success"].get("value") is not None and metrics["success"]["value"] < FAILS_UNDER]
+        rows.append((name, found, fails))
+    return rows
+
+
+def _compare_lines(run: ModelRun) -> list[str]:
+    """What *run*'s comparison with main's last run says, a line each."""
+    found = run.compared
+    if not found:
+        return []
+    if found.get("refused"):
+        return [f"No comparison with main's last run: {found['refused']}."]
+    lines = [f"Against main's last run ({found.get('a')}), every case both measured: "
+             f"{found['overall']['success']['verdict']}, {_signed(found['overall']['success'])} points."]
+    for name, items in sorted((found.get("skills") or {}).items()):
+        moved = [f"{label} {items[key]['verdict']} ({_signed(items[key])})"
+                 for key, label in (("success", "success"), ("trigger_recall", "should trigger"),
+                                    ("false_triggers", "should not"))
+                 if items.get(key) and items[key]["verdict"] != "not shown different"]
+        if moved:
+            lines.append(f"{name}: " + "; ".join(moved) + ".")
+    if len(lines) == 1:
+        lines.append("No skill is shown different.")
+    return lines
 
 
 # --- Writing --------------------------------------------------------------------------
@@ -364,6 +551,17 @@ def markdown(models: list[ModelRun], problems: list[str], *, scope: dict, page_u
     for run in models:
         lines.append(f"| `{run.model}` | {_probe(run)} | {run.runs} | {run.errors} | "
                      f"{(run.input_tokens + run.output_tokens) / 1e6:.2f}M | {_cost(run)} |")
+    board = leaderboard(models)
+    if board:
+        version = board[0].scored.get("version")
+        lines += ["", f"### Benchmark, version {version}", "",
+                  "| " + " | ".join(name for name, _ in LEADERBOARD) + " |", "|" + "---|" * len(LEADERBOARD)]
+        lines += ["| " + " | ".join(value(run) for _, value in LEADERBOARD) + " |" for run in board]
+        for run in board:
+            said = _compare_lines(run)
+            if said:
+                lines += ["", f"`{run.model}`: " + " ".join(said)]
+    lines += _graders_lines(models)
     for run in models:
         if not run.rows:
             continue
@@ -408,6 +606,45 @@ def _cell(text: str, numeric: bool) -> str:
     return f'<td class="num">{html.escape(text)}</td>' if numeric else f"<td>{html.escape(text)}</td>"
 
 
+def _benchmark_html(models: list[ModelRun]) -> list[str]:
+    """The benchmark's part of the page: the leaderboard, the comparisons with
+    main's last run, and each skill's success per model."""
+    escape = html.escape
+    board = leaderboard(models)
+    if not board:
+        return []
+    parts = [f"<h2>Benchmark, version {escape(str(board[0].scored.get('version')))}</h2>",
+             '<p class="muted">Success: the share of a case\'s assertions passed with the skill, averaged over its '
+             "runs, then over the cases; a checked assertion's result comes from its checks, every other one from "
+             "its grader. Each rate shows its 95% interval, bootstrapped over cases and runs.</p>",
+             '<div class="wrap"><table><tr>' + "".join(f"<th>{escape(name)}</th>" for name, _ in LEADERBOARD)
+             + "</tr>"]
+    parts += ["<tr>" + "".join(_cell(value(run), name != "Model") for name, value in LEADERBOARD) + "</tr>"
+              for run in board]
+    parts.append("</table></div>")
+    for run in board:
+        said = _compare_lines(run)
+        if said:
+            parts.append(f"<p><code>{escape(run.model)}</code>: " + " ".join(escape(line) for line in said) + "</p>")
+    rows = per_skill(models)
+    if rows:
+        heads = [run.model for run in board]
+        parts.append("<h3>Each skill's success per model</h3>"
+                     '<div class="wrap"><table><tr><th>Skill</th>' + "".join(f"<th>{escape(model)}</th>" for model in heads)
+                     + f"<th>Fails on (under {FAILS_UNDER:.0%})</th></tr>")
+        for name, found, fails in rows:
+            cells = [_cell(name, False)]
+            for model in heads:
+                metrics = found.get(model)
+                text = "" if metrics is None else _with_interval(metrics["success"])
+                lift = _signed((metrics or {}).get("lift"))
+                cells.append(_cell(f"{text} (lift {lift})" if lift else text, True))
+            cells.append(_cell(", ".join(fails), False))
+            parts.append("<tr>" + "".join(cells) + "</tr>")
+        parts.append("</table></div>")
+    return parts
+
+
 def page(models: list[ModelRun], problems: list[str], *, scope: dict, run_url: str | None,
          results_name: str) -> str:
     """The report page, self-contained."""
@@ -441,11 +678,26 @@ def page(models: list[ModelRun], problems: list[str], *, scope: dict, run_url: s
             _cell(f"{run.output_tokens:,}", True), _cell(_cost(run) or "not priced", True),
         ]) + "</tr>")
     parts.append("</table></div>")
+    parts += _benchmark_html(models)
+    board = graders(models)
+    if board:
+        parts.append("<h2>Graders</h2>"
+                     f'<p class="muted">Each model graded the grader truth\'s prepared answers: a golden answer '
+                     "meets every assertion of its case, and a mutant fails exactly the ones it names. One whose "
+                     "verdicts on the assertions no check decides agree with the truth at least "
+                     f"{board[0].as_grader['floor']:.0%} of the time can be the benchmark's grader.</p>"
+                     '<div class="wrap"><table><tr>' + "".join(f"<th>{escape(name)}</th>" for name, _ in GRADERS)
+                     + "</tr>")
+        parts += ["<tr>" + "".join(_cell(value(run), name != "Grader") for name, value in GRADERS) + "</tr>"
+                  for run in board]
+        parts.append("</table></div>")
     numeric = {name for name, _ in COLUMNS} - {"Skill", "Measured", "Floor", "Reached", "Native turns", "Cut calls"}
     for run in models:
         parts.append(f"<h2><code>{escape(run.model)}</code></h2>")
         if not run.rows:
-            parts.append(f'<p class="muted">Nothing measured: {escape(_probe(run) or "no run folder")}.</p>')
+            said = ("It graded the grader truth's answers, in Graders above" if run.as_grader.get("answers")
+                    else f"Nothing measured: {_probe(run) or 'no run folder'}")
+            parts.append(f'<p class="muted">{escape(said)}.</p>')
             continue
         parts.append('<div class="wrap"><table><tr>' + "".join(f"<th>{escape(name)}</th>" for name, _ in COLUMNS)
                      + "</tr>")
@@ -493,6 +745,8 @@ def build(out: Path, models: list[str], *, scope: dict, probes: dict | None = No
                          previous=before if isinstance(before, dict) else None, price=price_table.get(model))
         run.probe = (probes or {}).get(model)
         run.exit_code = (exits or {}).get(model)
+        run.scored = scored_of(run)
+        run.compared = compared_of(run, before if isinstance(before, dict) else None)
         runs.append(run)
     problems = gate(runs)
     (out / PAGE).write_text(page(runs, problems, scope=scope, run_url=run_url, results_name=results_name),
@@ -500,7 +754,8 @@ def build(out: Path, models: list[str], *, scope: dict, probes: dict | None = No
     (out / SUMMARY).write_text(markdown(runs, problems, scope=scope, page_url=page_url), encoding="utf-8")
     (out / SUMMARIES).mkdir(parents=True, exist_ok=True)
     for run in runs:
-        if run.folder is not None:
+        # A run of the graders measured no skill, so later runs do not compare with it.
+        if run.folder is not None and scope.get("measure") != GRADERS_SCOPE:
             (out / SUMMARIES / f"{slug(run.model)}.json").write_text(
                 json.dumps(summary_of(run), indent=2) + "\n", encoding="utf-8")
     return runs, problems

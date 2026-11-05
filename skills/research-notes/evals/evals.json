@@ -24,6 +24,9 @@
         "The first note it creates is a node.create of curio.builtin/note titled \"Question\" whose content is the question: Which US cities publish their street trees as open data?",
         "Each other note it creates is a curio.builtin/note that holds one finding, with a [source](https://...) link to where it was found.",
         "The reply states the answer in prose as well."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "tool", "tool": "web.search"}
       ]
     },
     {

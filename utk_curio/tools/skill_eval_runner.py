@@ -16,7 +16,9 @@ writes, under ``--out``, one folder per run of the tool:
   dataflow and the installs it asked for), ``transcript.json``,
   ``timing.json``, ``grading.json`` and ``run.json``, and
   ``<skill>/benchmark.json``;
-- ``summary.json`` and ``summary.md``; ``logs/``, each worker's warnings.
+- ``summary.json`` and ``summary.md``; ``benchmark.json``, the run scored as
+  the skills benchmark scores it (``agents/evaluation/benchmark.py``);
+  ``logs/``, each worker's warnings.
 
 The endpoint is read from ``CURIO_EVAL_BASE_URL``, ``CURIO_EVAL_API_KEY`` and
 ``CURIO_EVAL_MODEL``, and handed to the workers in their environment, never
@@ -48,7 +50,8 @@ from pathlib import Path
 
 from utk_curio import shipped
 from utk_curio.backend.app.agents.domain import skills as skill_format
-from utk_curio.backend.app.agents.evaluation import skill_evals
+from utk_curio.backend.app.agents.evaluation import benchmark, skill_evals
+from utk_curio.tools import skill_benchmark as benchmark_command
 from utk_curio.backend.app.agents.evaluation.report import scrub
 
 #: The worker each job runs.
@@ -58,6 +61,8 @@ _NOT_INHERITED = ("CURIO_TESTING", "CURIO_DEV", "CURIO_NO_AUTH", "CURIO_STATE_DI
                   "CURIO_PACKAGES_ROOT", "CURIO_SHARED_DATA")
 #: The record each run writes last, which marks it done.
 RECORD = "run.json"
+#: The variable naming one grader for every model (``skill_eval_worker.ENV_GRADER``).
+GRADER_VARIABLE = "CURIO_EVAL_GRADER_MODEL"
 
 
 def add_parser(sub) -> None:
@@ -74,8 +79,9 @@ def add_parser(sub) -> None:
                         help="run one skill only (the first, or SKILL) and project the whole run's time")
     parser.add_argument("--runs", type=int, default=skill_evals.RUNS, help="runs of each query and test case")
     parser.add_argument("--jobs", type=int, default=4, help="workers running at once")
-    parser.add_argument("--only", choices=(skill_evals.TRIGGER, skill_evals.TASK), default=None,
-                        help="run only the trigger queries, or only the test cases")
+    parser.add_argument("--only", choices=skill_evals.KINDS, default=None,
+                        help="run only the trigger queries, only the test cases, or only the grade runs, which "
+                             "grade the grader truth's prepared answers with the model measured")
     parser.add_argument("--out", type=Path, default=None, help="where the run's folder goes (default: eval/ "
                                                                     "in Curio's state folder)")
     parser.add_argument("--resume", type=Path, default=None,
@@ -118,6 +124,16 @@ def _write(path: Path, data) -> None:
     temporary = path.with_name(f".{path.name}.tmp")
     temporary.write_text(text, encoding="utf-8")
     os.replace(temporary, path)
+
+
+def _answers() -> dict[str, list[dict]]:
+    """Each skill's prepared answers in the grader truth, as a grade run's task holds them."""
+    from utk_curio.backend.app.agents.evaluation import grader_truth
+
+    return {name: [{"case": answer.case, "name": answer.name, "kind": answer.kind, "fails": list(answer.fails),
+                    "reply": answer.reply, "changes": answer.changes, "calls": answer.calls}
+                   for answer in truth.answers]
+            for name, truth in grader_truth.shipped().items()}
 
 
 def _selected(args, evals) -> list:
@@ -331,10 +347,19 @@ def run(args) -> int:
         unmeasurable = sorted(set(measured) - {skill.name for skill in chosen})
         if unmeasurable:
             _say(f"no evals/evals.json, so not measured: {', '.join(unmeasurable)}")
-        planned = skill_evals.plan_measured(chosen, measured)
     else:
         chosen = _selected(args, evals)
-        planned = skill_evals.plan(chosen, runs=max(1, args.runs), kinds=kinds)
+    answers = None
+    if skill_evals.GRADE in {*kinds, *(kind for measure in measured.values() for kind in measure.kinds)}:
+        try:
+            answers = _answers()
+        except ValueError as exc:
+            print(f"refused: the grader truth cannot be read: {exc}", file=sys.stderr)
+            return 2
+    if measured:
+        planned = skill_evals.plan_measured(chosen, measured, answers)
+    else:
+        planned = skill_evals.plan(chosen, runs=max(1, args.runs), kinds=kinds, answers=answers)
     if args.resume:
         folder = args.resume.resolve()
         if not (folder / RECORD).is_file():
@@ -353,6 +378,9 @@ def run(args) -> int:
             "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "skills": {s.name: _digest(s.folder / skill_format.SKILL_FILE) for s in chosen},
             "isReleaseGate": False,
+            # The benchmark's set this run measured, and who graded it (benchmark.py).
+            "benchmarkVersion": benchmark.version(evals),
+            "grader": os.environ.get(GRADER_VARIABLE, "").strip() or endpoint.model,
         }
         if measured:
             meta["measures"] = {s.name: measured[s.name].as_dict() for s in chosen}
@@ -370,6 +398,7 @@ def run(args) -> int:
         workers.close()
     hours = (time.monotonic() - started) / 3600
     _report(folder, chosen, meta)
+    _write(folder / benchmark_command.BENCHMARK_FILE, benchmark.score(folder, {s.name: s for s in evals}))
     _say(f"wrote {folder / 'summary.md'} after {hours * 60:.1f} minutes")
     if args.pilot is not None:
         whole = skill_evals.plan(_selected(argparse.Namespace(**{**vars(args), "pilot": None}), evals),

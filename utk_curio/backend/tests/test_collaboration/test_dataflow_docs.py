@@ -10,6 +10,7 @@ written when a test calls for it, at the times a test sets.
 from __future__ import annotations
 
 import json
+import threading
 
 import pytest
 
@@ -730,3 +731,108 @@ def test_a_node_removed_after_a_connection_to_it_was_drawn_drops_it_too(room):
     [notice] = _dropped(alice)
     assert notice["edgeIds"] == ["e2"] and notice["by"]["username"] == "bob"
     assert _dropped(bob) == []
+
+
+def _take_out_new_edge(doc):
+    """bob's canvas, which cannot draw a connection to a node that is gone,
+    takes his new one out of his doc: its entry and its place in the order."""
+    from pycrdt import Array, Map
+
+    del doc.get("edges", type=Map)["e2"]
+    order = doc.get("edgeOrder", type=Array)
+    for index in reversed(range(len(order))):
+        if order[index] == "e2":
+            del order[index]
+
+
+def _remove_chart_and_new_edge(doc):
+    _remove_chart(doc)
+    _take_out_new_edge(doc)
+
+
+def _sent_with_a_change_in_one_batch(room, monkeypatch, tab, change) -> list:
+    """Make *change* in *tab* and send it with what the tab holds unsent,
+    each change its own update, while a change of ana's, a second tab of
+    alice's, holds the doc's turn: they wait for its thread and land in one
+    batch, one transaction. Their acks."""
+    from .test_doc_batches import QUEUED_S, _Burst, _sender
+
+    ana = room.tab("alice")
+    ana.sync()
+    burst = _Burst(room, monkeypatch)
+    answers: dict = {}
+    held = burst.hold(_sender(ana, _type("# ana\n"), answers, "ana"))
+    try:
+        sender = threading.Thread(target=_sender(tab, change, answers, "tab"))
+        sender.start()
+        sender.join(QUEUED_S)
+        assert not sender.is_alive(), "the tab's changes waited for the change that held the doc"
+    finally:
+        burst.let_go(held)
+    assert _dropped(ana) == [], "a tab that drew no connection was told of one"
+    return answers["tab"]
+
+
+def _drawn_unsent(tab) -> None:
+    """*tab* connects the loader to the chart, and has not sent it yet."""
+    with tab.doc.transaction():
+        _connect_to_chart(tab.doc)
+
+
+def test_a_connection_its_drawer_took_out_again_in_the_same_batch_still_tells_the_drawer(room, monkeypatch):
+    """alice removes the chart while bob, who has not seen that yet, connects
+    the loader to it. Then bob's tab takes alice's change, and his canvas takes
+    his connection out again, as it cannot draw one to a node that is gone.
+    Both of bob's changes reach the server while a change of another tab holds
+    the doc's turn, so they land in one batch: one transaction that draws the
+    connection and takes it out, which leaves the doc as it was. bob is told
+    who removed the node all the same (CI run 41957489769, whose e2e of this
+    held bob's changes on their way and released them at once)."""
+    from pycrdt import Map
+
+    from .test_doc_batches import QUEUED
+
+    alice, bob = room.tab("alice"), room.tab("bob")
+    alice.sync()
+    bob.sync()
+    assert alice.edit(_remove_chart)[0]["ok"] is True
+    _drawn_unsent(bob)
+    bob.pump()
+    assert "e2" in frozenset(bob.doc.get("edges", type=Map).keys()), "bob's tab lost his connection on its own"
+
+    acks = _sent_with_a_change_in_one_batch(room, monkeypatch, bob, _take_out_new_edge)
+
+    assert acks == [QUEUED, QUEUED], f"bob's two changes did not both wait for one batch: {acks}"
+    for tab in (alice, bob):
+        assert tab.dataflow()["edges"] == []
+    assert room.live()["dataflow"]["edges"] == []
+    notices = _dropped(bob)
+    assert len(notices) == 1, (
+        "the connection bob drew to the chart alice removed was not kept, and bob was never told why: "
+        f"{notices}"
+    )
+    assert notices[0]["edgeIds"] == ["e2"] and notices[0]["projectId"] == room.project_id
+    assert notices[0]["by"]["username"] == "alice" and notices[0]["by"]["name"] == "Alice"
+    assert _dropped(alice) == [], "the tab that removed the node was told of a connection it never drew"
+
+
+def test_a_connection_its_drawer_took_out_with_the_node_he_removed_in_the_same_batch_tells_no_one(room, monkeypatch):
+    """bob connects the loader to the chart, then removes the chart himself,
+    with its connections, and both changes land in one batch: the connection
+    was his to take out, so no one is told anything."""
+    from .test_doc_batches import QUEUED
+
+    alice, bob = room.tab("alice"), room.tab("bob")
+    alice.sync()
+    bob.sync()
+    _drawn_unsent(bob)
+
+    acks = _sent_with_a_change_in_one_batch(room, monkeypatch, bob, _remove_chart_and_new_edge)
+
+    assert acks == [QUEUED, QUEUED], f"bob's two changes did not both wait for one batch: {acks}"
+    for tab in (alice, bob):
+        seen = tab.dataflow()
+        assert [node["id"] for node in seen["nodes"]] == ["loader"]
+        assert seen["edges"] == []
+    assert _dropped(bob) == [], "bob was told of a connection he took out with the node he removed"
+    assert _dropped(alice) == []

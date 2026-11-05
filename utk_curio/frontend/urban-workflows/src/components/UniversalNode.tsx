@@ -480,6 +480,8 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     behavior.defaultValueOverride ??
     data.defaultCode ??
     nodeState.templateData.code;
+  // A starter the node chose here is shown, and is not its code until edited.
+  const starter = behavior.defaultValueIsStarter ? behavior.defaultValueOverride : undefined;
   const readOnly =
     nodeState.templateData.custom != undefined && nodeState.templateData.custom === false;
 
@@ -621,6 +623,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             applyGrammar={behavior.applyGrammar}
             customWidgetsCallback={behavior.customWidgetsCallback}
             defaultValue={defaultValue}
+            starter={starter}
             readOnly={readOnly}
             floatCode={nodeState.setCode}
             contentComponent={behavior.contentComponent}

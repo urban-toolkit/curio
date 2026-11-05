@@ -11,7 +11,9 @@
   code. It reads the models from ``CURIO_EVAL_MODELS`` (a JSON list) and the
   endpoint from ``CURIO_EVAL_BASE_URL`` and ``CURIO_EVAL_API_KEY``.
   1. Each model is probed with one short request, and one that does not
-     answer is not run.
+     answer is not run. So is ``CURIO_EVAL_GRADER_MODEL``, the benchmark's
+     one grader for every model, when it names one: if it does not answer,
+     no model runs.
   2. Each model that answered runs ``agent_eval.py skills --scope``, side by
      side, into ``results/<model>/``. Each runs ``CURIO_EVAL_JOBS`` workers,
      a number or a JSON object of a number per model, 4 when unset.
@@ -59,6 +61,9 @@ ENV_MODELS = "CURIO_EVAL_MODELS"
 ENV_JOBS = "CURIO_EVAL_JOBS"
 ENV_BASE_URL = "CURIO_EVAL_BASE_URL"
 ENV_API_KEY = "CURIO_EVAL_API_KEY"
+#: The benchmark's graders, which the workers read (``skill_eval_worker.ENV_GRADER``): one model, or a
+#: JSON list of them in order, the best first. Each model is graded by the first that is not itself.
+ENV_GRADER = "CURIO_EVAL_GRADER_MODEL"
 
 
 def _say(text: str) -> None:
@@ -137,6 +142,28 @@ def models_from(value: str) -> list[str]:
     return list(dict.fromkeys(name.strip() for name in found))
 
 
+def graders_from(value: str) -> list[str]:
+    """The graders a ``CURIO_EVAL_GRADER`` value names, the best first: one
+    model's name, or a JSON list of them."""
+    value = (value or "").strip()
+    if not value.startswith(("[", "{")):
+        return [value] if value else []
+    try:
+        found = json.loads(value)
+    except ValueError:
+        raise ValueError(f"{ENV_GRADER} must be a model's name or a JSON list of them") from None
+    if not isinstance(found, list) or not all(isinstance(name, str) and name.strip() for name in found):
+        raise ValueError(f"{ENV_GRADER} must be a model's name or a JSON list of them")
+    return list(dict.fromkeys(name.strip() for name in found))
+
+
+def grader_for(model: str, graders: list[str]) -> str | None:
+    """Who grades *model*'s answers: the first of *graders* that is not
+    *model*, since no model grades its own when another is named; None,
+    when no other is named, for the model itself."""
+    return next((grader for grader in graders if grader != model), None) if graders else None
+
+
 def jobs_for(value: str, model: str) -> int:
     """How many workers *model* runs, from a ``CURIO_EVAL_JOBS`` value: a
     number for every model, or an object of a number per model (``default``
@@ -212,6 +239,7 @@ def cmd_run(args) -> int:
     try:
         models = models_from(os.environ.get(ENV_MODELS, ""))
         jobs = {model: jobs_for(os.environ.get(ENV_JOBS, ""), model) for model in models}
+        graders = graders_from(os.environ.get(ENV_GRADER, ""))
     except ValueError as exc:
         print(f"FAILED: {exc}", file=sys.stderr)
         return 1
@@ -223,13 +251,20 @@ def cmd_run(args) -> int:
     def scrub(text: str) -> str:
         return scrub_text(text, values=secrets)
 
-    _say(f"{len(models)} model(s): {', '.join(models)}; {len(scope.get('measures') or {})} skill(s) measured; "
-         f"{_limits()}")
-    with ThreadPoolExecutor(max_workers=len(models)) as pool:
-        probes = dict(zip(models, pool.map(lambda model: probe(model, base_url, api_key, scrub), models)))
+    grader_of = {model: grader_for(model, graders) for model in models}
+    asked = list(dict.fromkeys([*models, *(grader for grader in grader_of.values() if grader)]))
+    said = "; ".join(f"{model} by {grader_of[model] or 'itself'}" for model in models)
+    _say(f"{len(models)} model(s), each graded: {said}; "
+         f"{len(scope.get('measures') or {})} skill(s) measured; {_limits()}")
+    with ThreadPoolExecutor(max_workers=len(asked)) as pool:
+        probes = dict(zip(asked, pool.map(lambda model: probe(model, base_url, api_key, scrub), asked)))
     for model, answer in probes.items():
         _say(f"probe {model}: " + (f"answered in {answer['seconds']} s" if answer["ok"]
                                    else f"FAILED, {answer['error']}"))
+    for model, grader in grader_of.items():
+        if grader and not probes[grader]["ok"] and probes[model]["ok"]:
+            # Every grade of its answers would fail: it does not run.
+            probes[model] = {"ok": False, "error": f"its grader, {grader}, did not answer its probe"}
 
     env = {key: value for key, value in os.environ.items() if key not in (ENV_MODELS, ENV_JOBS)}
     processes: dict[str, subprocess.Popen] = {}
@@ -241,8 +276,9 @@ def cmd_run(args) -> int:
         folder.mkdir(parents=True, exist_ok=True)
         command = [sys.executable, str(REPO_ROOT / "utk_curio" / "tools" / "agent_eval.py"), "skills",
                    "--scope", str(out / "scope.json"), "--jobs", str(jobs[model]), "--out", str(folder)]
+        own = {"CURIO_EVAL_MODEL": model, ENV_GRADER: grader_of[model] or ""}
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                   encoding="utf-8", cwd=REPO_ROOT, env={**env, "CURIO_EVAL_MODEL": model})
+                                   encoding="utf-8", cwd=REPO_ROOT, env={**env, **own})
         processes[model] = process
         thread = threading.Thread(target=_stream, args=(process, report.slug(model), scrub), daemon=True)
         thread.start()

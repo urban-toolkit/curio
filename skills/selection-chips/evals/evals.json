@@ -13,6 +13,12 @@
         "The code it writes places the selection reference [!! selection picked_zips !!] where it uses the clicked zip codes.",
         "The code keeps the rows of its input whose zip value is in that list, such as input_0[input_0[\"zip\"].isin(picked)], and returns them.",
         "No zip code value, such as 60607 or 60614, is typed into the code."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "code", "node": "c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70", "pattern": "\\S"},
+        {"assertion": 1, "kind": "tool", "tool": "node.create", "absent": true},
+        {"assertion": 2, "kind": "code", "pattern": "\\[!!\\s*selection picked_zips\\s*!!\\]"},
+        {"assertion": 4, "kind": "code", "pattern": "\\b60[67]\\d\\d\\b", "absent": true}
       ]
     },
     {
@@ -36,6 +42,10 @@
         "The code it writes places the selection reference [!! selection picked_zips !!].",
         "When that list is empty, the code returns its input's rows unchanged, testing for an empty list (such as `if not picked` or `len(picked) == 0`), not only for None.",
         "Otherwise the code keeps the rows whose zip value is in the list, and no zip code is typed into the code."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "code", "node": "c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70", "pattern": "\\S"},
+        {"assertion": 2, "kind": "code", "pattern": "\\[!!\\s*selection picked_zips\\s*!!\\]"}
       ]
     }
   ],

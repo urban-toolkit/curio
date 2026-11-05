@@ -206,6 +206,26 @@ export function normalizedDataflow(dataflow: Fields): Fields {
     }
 }
 
+/** The writer's *base* without the connections *doc* holds to a node it no
+ *  longer holds. Such a connection points nowhere: the canvas stops drawing
+ *  it, and the server takes it out and tells whoever drew it
+ *  (`dataflow_docs._drop_dangling_connections`). So the writer never writes
+ *  its take-out, which, sent in one update with the connection, as a tab that
+ *  reconnects sends its changes, would hide it from the server. One the doc
+ *  took out already stays in *base*, so it stays out (`applyDataflow`): a
+ *  bind's first write still finds it on the canvas when the load was read
+ *  before someone removed its node, and this tab never drew it. A node this
+ *  tab removes is still in the doc when its write starts, so its connections
+ *  go with it. */
+function withoutDangling(base: Fields, doc: Y.Doc): Fields {
+    if (!Array.isArray(base.edges)) return base;
+    const nodes = doc.getMap("nodes");
+    const docEdges = doc.getMap("edges");
+    const edges = (base.edges as Fields[]).filter((e) => !docEdges.has(e[EDGE_ID] as string)
+        || (nodes.has(e.source as string) && nodes.has(e.target as string)));
+    return edges.length === base.edges.length ? base : { ...base, edges };
+}
+
 /** The doc's Trill, its nodes and edges by id. */
 interface DocState {
     nodes: Map<string, Fields>;
@@ -345,7 +365,11 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
     /** Nodes another tab drags now, and those it dropped whose place is due. */
     const remoteDragRef = useRef(new Set<string>());
     const droppedRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+    /** This tab's drag: when it was last told the others, its newest place,
+     *  and the timer that tells that place once `DRAG_EVERY_MS` has passed. */
     const dragSentRef = useRef(0);
+    const dragNextRef = useRef<DragState | null>(null);
+    const dragTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const runtime = (): CodeNodeRuntime => ({
         pythonInterpreter,
@@ -417,9 +441,14 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         writerBaseRef.current = target;
         if (!base) return;
         const kept = new Set((target.nodes as Fields[]).map((n) => n.id as string));
-        const removed = (base.nodes as Fields[]).map((n) => n.id as string).filter((id) => !kept.has(id));
+        // Only this tab's own removals are noted: a node the doc no longer
+        // holds went with someone else's change, which this canvas only took.
+        const inDoc = bound.provider.doc.getMap("nodes");
+        const removed = (base.nodes as Fields[]).map((n) => n.id as string)
+            .filter((id) => !kept.has(id) && inDoc.has(id));
         if (removed.length) noteRemoval(bound.provider.awareness, removed);
-        bound.provider.doc.transact(() => applyDataflow(bound.provider.doc, base, target), CANVAS_ORIGIN);
+        const doc = bound.provider.doc;
+        doc.transact(() => applyDataflow(doc, withoutDangling(base, doc), target), CANVAS_ORIGIN);
     }, [canvasTrill]);
 
     // ------------------------------------------------------------------
@@ -442,16 +471,17 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             return current.nodes.some((n) => n.id === other);
         });
         if (survivors.length === 0) return;
-        setNodes((prev) => {
-            const all = prev.some((n) => n.id === fresh.id) ? prev : [...prev, fresh];
-            const connected = [...reactFlow.getEdges()];
-            for (const edge of survivors) {
-                current.onConnect({ ...edge }, all, connected, current.workflowNameRef.current, true, true);
-                connected.push(edge);
-            }
-            return prev;
-        });
-    }, [setNodes, reactFlow]);
+        // Connected outside a setNodes updater: onConnect hands the source's
+        // output over with a setNodes of its own, which an updater React runs
+        // at once would replace with the nodes it returns. Each survivor's
+        // other end is on the canvas, and the node comes back as *fresh*.
+        const all = [...current.nodes, fresh];
+        const connected = [...reactFlow.getEdges()];
+        for (const edge of survivors) {
+            current.onConnect({ ...edge }, all, connected, current.workflowNameRef.current, true, true);
+            connected.push(edge);
+        }
+    }, [reactFlow]);
 
     /** Someone else removed *node* while this tab was editing its code. */
     const removedWhileEditing = useCallback((node: Node, attached: Edge[]) => {
@@ -620,19 +650,23 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
             }));
         }
         for (const node of addedNodes) current.quietly(() => current.addNode(node, current.workflowNameRef.current, true));
+        // Connected outside a setNodes updater. onConnect hands the source's
+        // output over with a setNodes of its own, and React runs an updater at
+        // once when the canvas has nothing left to render: the hand-over then
+        // comes first, and the nodes the updater returns replace it. A node an
+        // earlier change added that the canvas has not drawn yet is taken from
+        // the doc, as that change built it.
         if (newEdges.length) {
-            const added = addedNodes;
-            setNodes((prevNodes) => {
-                current.quietly(() => {
-                    const all = [...prevNodes.filter((n) => !added.some((a) => a.id === n.id)), ...added];
-                    const connected = [...reactFlow.getEdges()].filter((e) => !newEdges.some((n) => n.id === e.id));
-                    for (const edge of newEdges) {
-                        const canvasEdge = canvasEdgeFromTrill(edge);
-                        current.onConnect(canvasEdge, all, connected, current.workflowNameRef.current, true, true);
-                        connected.push(canvasEdge);
-                    }
-                });
-                return prevNodes;
+            const added = new Map(addedNodes.map((node) => [node.id, node]));
+            const all = Array.from(next.nodes, ([id, now]) => added.get(id) ?? canvasNodes.get(id)
+                ?? buildCodeNode(now.type, nodeMetaFromTrill(now, () => ({ x: 0, y: 0 })), runtime()));
+            current.quietly(() => {
+                const connected = [...reactFlow.getEdges()].filter((e) => !newEdges.some((n) => n.id === e.id));
+                for (const edge of newEdges) {
+                    const canvasEdge = canvasEdgeFromTrill(edge);
+                    current.onConnect(canvasEdge, all, connected, current.workflowNameRef.current, true, true);
+                    connected.push(canvasEdge);
+                }
             });
         }
     }, [removedWhileEditing, setNodes, setEdges, reactFlow]);
@@ -786,6 +820,8 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         remoteDragRef.current.clear();
         droppedRef.current.forEach((timer) => clearTimeout(timer));
         droppedRef.current.clear();
+        if (dragTimerRef.current) clearTimeout(dragTimerRef.current);
+        dragTimerRef.current = null;
     }, []);
 
     /** Bind the canvas to *held*'s doc, now synced, on the load *epoch*. */
@@ -906,11 +942,22 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
                 }
             }
             if (dragging) {
-                const at = Date.now();
-                if (at - dragSentRef.current < DRAG_EVERY_MS) return;
-                dragSentRef.current = at;
-                setDrag(held.awareness, dragging);
+                // At most one message every DRAG_EVERY_MS, and the newest
+                // place goes when the wait ends: the place a drag stops on
+                // reaches the others before its drop.
+                dragNextRef.current = dragging;
+                if (dragTimerRef.current) return;
+                const send = () => {
+                    dragTimerRef.current = null;
+                    dragSentRef.current = Date.now();
+                    setDrag(held.awareness, dragNextRef.current);
+                };
+                const wait = dragSentRef.current + DRAG_EVERY_MS - Date.now();
+                if (wait <= 0) send();
+                else dragTimerRef.current = setTimeout(send, wait);
             } else if (dropped) {
+                if (dragTimerRef.current) clearTimeout(dragTimerRef.current);
+                dragTimerRef.current = null;
                 dragSentRef.current = 0;
                 setDrag(held.awareness, null);
             }

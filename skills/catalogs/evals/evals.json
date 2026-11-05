@@ -12,6 +12,10 @@
         "The answer names the scenario and its project: Cool roofs and Heat 2026.",
         "The answer makes no node, plan or code that rebuilds the scenario.",
         "The answer does not claim that the scenario is already in this dataflow."
+      ],
+      "checks": [
+        {"assertion": 2, "kind": "reply", "pattern": "Cool roofs"},
+        {"assertion": 2, "kind": "reply", "pattern": "Heat 2026"}
       ]
     },
     {
