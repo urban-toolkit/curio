@@ -256,8 +256,7 @@
       "fails": [
         1,
         2,
-        3,
-        4
+        3
       ],
       "reply": "Here is the plan. Write it into the dataflow to add the ratio step:\n\n```json\n{\n  \"goal\": \"Divide the NbS scenario's flood depth by the No NbS scenario's, cell by cell, for a map.\",\n  \"nodes\": [\n    {\n      \"ref\": \"ratio\",\n      \"nodeType\": \"curio.rasterization/raster-calculator\",\n      \"title\": \"Depth ratio\",\n      \"intent\": \"Divide the NbS scenario's flood depth, on input_1, by the No NbS scenario's, on input_0, cell by cell, with raster_calculate(\\\"divide\\\", [input_1, input_0], output_file=curio_output_file), so a map can show the ratio.\"\n    }\n  ],\n  \"edges\": [\n    {\n      \"from\": \"1b7e4c2d-9f30-4a85-b6d1-7c2e9a0f4b58\",\n      \"to\": \"ratio\",\n      \"toHandle\": \"in\"\n    },\n    {\n      \"from\": \"2a8f5d3e-0c41-4b96-a7e2-8d3f0b1a5c69\",\n      \"to\": \"ratio\",\n      \"toHandle\": \"in_1\"\n    }\n  ]\n}\n```",
       "changes": {

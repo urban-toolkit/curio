@@ -1,0 +1,458 @@
+{
+  "skill_name": "interaction-edges",
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/dataflows/data-pool-vega-2.json: the roofs node a1abfa78-6517-4606-9660-c7eeeeb49851 (a GeoDataFrame of points) feeding a new Autark map, linked to the bar chart b601d363-50fd-4209-bee2-9997dcb050f3 by one interaction edge with no Data Pool between, as docs/examples/dataflows/chicago-loop-shadow-towers.json links its Map Editor and node 549969fc-8e6a-574d-b9dc-aa38487f51c8's map, whose layer selects by a column (selectFields)",
+      "fails": [],
+      "reply": "The plan adds an Autark map of the green roofs, Green roofs map, fed by the roofs, and one interaction edge between the zip code bar chart and the map, with no Data Pool between them. The chart's bars are zip code totals and the map's features are single roofs, so the two views match selections by the zip column: the map's layer selects by zip, through selectFields. Clicking a zip code's bar then lights up that zip code's roofs on the map.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "",
+                "goal": "Green roofs map \u2014 Map the green roofs, one point a roof, its layer selecting by zip through selectFields: the chart's bars are zip code totals and the map's features single roofs, so a zip clicked in the chart lights up that zip code's roofs.",
+                "id": "dad61f57-a00a-448f-89ca-ffd9650677b9",
+                "title": "Green roofs map",
+                "type": "curio.builtin/autk-grammar"
+              }
+            ]
+          },
+          "edges": {
+            "added": [
+              {
+                "id": "3df2a5cd-da71-41e1-acbf-adc99cbf79a3",
+                "source": "a1abfa78-6517-4606-9660-c7eeeeb49851",
+                "sourceHandle": "out",
+                "target": "dad61f57-a00a-448f-89ca-ffd9650677b9",
+                "targetHandle": "in"
+              },
+              {
+                "id": "d89542cb-3dad-4103-aff9-d08db70f7a66",
+                "source": "b601d363-50fd-4209-bee2-9997dcb050f3",
+                "sourceHandle": "in/out",
+                "target": "dad61f57-a00a-448f-89ca-ffd9650677b9",
+                "targetHandle": "in/out",
+                "type": "Interaction"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "dataflow.plan.write",
+            "kind": "plan",
+            "summary": "Plan · 1 node, 2 edges",
+            "lines": [
+              "+1 node · +2 connections",
+              "1 pending for Build & validate or Solve",
+              "agents attached: Node Builder",
+              "no Dataset Finder: does not attach to autk-grammar nodes",
+              "Topology: acyclic."
+            ],
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "applied",
+          "arguments": {
+            "goal": "Map the green roofs beside the zip code bar chart, linked so a clicked zip lights up its roofs.",
+            "nodes": [
+              {
+                "ref": "roofs-map",
+                "nodeType": "curio.builtin/autk-grammar",
+                "title": "Green roofs map",
+                "intent": "Map the green roofs, one point a roof, its layer selecting by zip through selectFields: the chart's bars are zip code totals and the map's features single roofs, so a zip clicked in the chart lights up that zip code's roofs."
+              }
+            ],
+            "edges": [
+              {
+                "from": "a1abfa78-6517-4606-9660-c7eeeeb49851",
+                "to": "roofs-map"
+              },
+              {
+                "from": "b601d363-50fd-4209-bee2-9997dcb050f3",
+                "to": "roofs-map",
+                "kind": "interaction"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2
+      ],
+      "reply": "Here is the plan for the map and its link to the chart:\n\n```json\n{\n  \"goal\": \"Map the green roofs beside the zip code bar chart, linked so a clicked zip lights up its roofs.\",\n  \"nodes\": [\n    {\n      \"ref\": \"roofs-map\",\n      \"nodeType\": \"curio.builtin/autk-grammar\",\n      \"title\": \"Green roofs map\",\n      \"intent\": \"Map the green roofs, one point a roof, its layer selecting by zip through selectFields: the chart's bars are zip code totals and the map's features single roofs, so a zip clicked in the chart lights up that zip code's roofs.\"\n    }\n  ],\n  \"edges\": [\n    {\n      \"from\": \"a1abfa78-6517-4606-9660-c7eeeeb49851\",\n      \"to\": \"roofs-map\"\n    },\n    {\n      \"from\": \"b601d363-50fd-4209-bee2-9997dcb050f3\",\n      \"to\": \"roofs-map\",\n      \"kind\": \"interaction\"\n    }\n  ]\n}\n```\n\nThe chart's bars are zip code totals and the map's features are single roofs, so the two views match selections by the zip column: the map's layer selects by zip, through selectFields.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "refused-edge",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_routes_proposals.py::test_interaction_edge_into_a_code_step_is_refused_naming_the_fix: the plan check refuses an interaction edge whose end shows no selection, here the Data Loading node",
+      "fails": [
+        2
+      ],
+      "reply": "The plan adds an Autark map of the green roofs, Green roofs map, fed by the roofs, and one interaction edge between the zip code bar chart and the map, with no Data Pool between them. The chart's bars are zip code totals and the map's features are single roofs, so the two views match selections by the zip column: the map's layer selects by zip, through selectFields. Clicking a zip code's bar then lights up that zip code's roofs on the map.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "",
+                "goal": "Green roofs map \u2014 Map the green roofs, one point a roof, its layer selecting by zip through selectFields: the chart's bars are zip code totals and the map's features single roofs, so a zip clicked in the chart lights up that zip code's roofs.",
+                "id": "dad61f57-a00a-448f-89ca-ffd9650677b9",
+                "title": "Green roofs map",
+                "type": "curio.builtin/autk-grammar"
+              }
+            ]
+          },
+          "edges": {
+            "added": [
+              {
+                "id": "3df2a5cd-da71-41e1-acbf-adc99cbf79a3",
+                "source": "a1abfa78-6517-4606-9660-c7eeeeb49851",
+                "sourceHandle": "out",
+                "target": "dad61f57-a00a-448f-89ca-ffd9650677b9",
+                "targetHandle": "in"
+              },
+              {
+                "id": "d89542cb-3dad-4103-aff9-d08db70f7a66",
+                "source": "b601d363-50fd-4209-bee2-9997dcb050f3",
+                "sourceHandle": "in/out",
+                "target": "a1abfa78-6517-4606-9660-c7eeeeb49851",
+                "targetHandle": "in/out",
+                "type": "Interaction"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "dataflow.plan.write",
+            "kind": "plan",
+            "summary": "Plan · 1 node, 2 edges",
+            "lines": [
+              "+1 node · +2 connections",
+              "1 pending for Build & validate or Solve",
+              "agents attached: Node Builder",
+              "no Dataset Finder: does not attach to autk-grammar nodes",
+              "Topology: acyclic."
+            ],
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "applied",
+          "arguments": {
+            "goal": "Map the green roofs beside the zip code bar chart, linked so a clicked zip lights up its roofs.",
+            "nodes": [
+              {
+                "ref": "roofs-map",
+                "nodeType": "curio.builtin/autk-grammar",
+                "title": "Green roofs map",
+                "intent": "Map the green roofs, one point a roof, its layer selecting by zip through selectFields: the chart's bars are zip code totals and the map's features single roofs, so a zip clicked in the chart lights up that zip code's roofs."
+              }
+            ],
+            "edges": [
+              {
+                "from": "a1abfa78-6517-4606-9660-c7eeeeb49851",
+                "to": "roofs-map"
+              },
+              {
+                "from": "b601d363-50fd-4209-bee2-9997dcb050f3",
+                "to": "a1abfa78-6517-4606-9660-c7eeeeb49851",
+                "kind": "interaction"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/dataflows/data-pool-vega-2.json: its Data Pool 5f658c2a-5124-4421-807f-9ce343d160ce, fed by the roofs, feeding a new Simple View, and the bar chart b601d363-50fd-4209-bee2-9997dcb050f3 linked to the pool by an interaction edge, as docs/examples/dataflows/interaction-vega-simple.json links its chart and pool; the pool's interacted column, \"1\" on a selected row, as utk_curio/frontend/urban-workflows/src/tests/adapters/node/components/ImageCardGrid.test.tsx and behaviors.test.tsx read it",
+      "fails": [],
+      "reply": "The plan adds a Simple View, Clicked roofs, under the chart, fed by the Data Pool already on the canvas, and links the bar chart to that pool with an interaction edge. A Simple View shows a selection only through a Data Pool: the pool marks the clicked roofs, the rows whose \"interacted\" column is \"1\".",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "",
+                "goal": "Clicked roofs \u2014 List the roofs of the zip codes clicked in the bar chart: the Data Pool marks them, the rows whose \"interacted\" column is \"1\".",
+                "id": "4608cf8c-ea15-42ec-9f3a-a4b6d2076cf2",
+                "title": "Clicked roofs",
+                "type": "curio.builtin/vis-simple"
+              }
+            ]
+          },
+          "edges": {
+            "added": [
+              {
+                "id": "acb86174-748d-4d04-8ba0-2af62abc10cf",
+                "source": "5f658c2a-5124-4421-807f-9ce343d160ce",
+                "sourceHandle": "out",
+                "target": "4608cf8c-ea15-42ec-9f3a-a4b6d2076cf2",
+                "targetHandle": "in"
+              },
+              {
+                "id": "ab7623d5-3f58-47dd-97b8-7d42e2e1bdc4",
+                "source": "b601d363-50fd-4209-bee2-9997dcb050f3",
+                "sourceHandle": "in/out",
+                "target": "5f658c2a-5124-4421-807f-9ce343d160ce",
+                "targetHandle": "in/out",
+                "type": "Interaction"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "dataflow.plan.write",
+            "kind": "plan",
+            "summary": "Plan · 1 node, 2 edges",
+            "lines": [
+              "+1 node · +2 connections",
+              "1 pending for Build & validate or Solve",
+              "agents attached: Node Builder",
+              "no Dataset Finder: does not attach to vis-simple nodes",
+              "Topology: acyclic."
+            ],
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "applied",
+          "arguments": {
+            "goal": "List the roofs of the zip codes clicked in the bar chart under it.",
+            "nodes": [
+              {
+                "ref": "clicked-roofs",
+                "nodeType": "curio.builtin/vis-simple",
+                "title": "Clicked roofs",
+                "intent": "List the roofs of the zip codes clicked in the bar chart: the Data Pool marks them, the rows whose \"interacted\" column is \"1\"."
+              }
+            ],
+            "edges": [
+              {
+                "from": "5f658c2a-5124-4421-807f-9ce343d160ce",
+                "to": "clicked-roofs"
+              },
+              {
+                "from": "b601d363-50fd-4209-bee2-9997dcb050f3",
+                "to": "5f658c2a-5124-4421-807f-9ce343d160ce",
+                "kind": "interaction"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3
+      ],
+      "reply": "Here is the plan for the table and its link through the pool:\n\n```json\n{\n  \"goal\": \"List the roofs of the zip codes clicked in the bar chart under it.\",\n  \"nodes\": [\n    {\n      \"ref\": \"clicked-roofs\",\n      \"nodeType\": \"curio.builtin/vis-simple\",\n      \"title\": \"Clicked roofs\",\n      \"intent\": \"List the roofs of the zip codes clicked in the bar chart: the Data Pool marks them, the rows whose \\\"interacted\\\" column is \\\"1\\\".\"\n    }\n  ],\n  \"edges\": [\n    {\n      \"from\": \"5f658c2a-5124-4421-807f-9ce343d160ce\",\n      \"to\": \"clicked-roofs\"\n    },\n    {\n      \"from\": \"b601d363-50fd-4209-bee2-9997dcb050f3\",\n      \"to\": \"5f658c2a-5124-4421-807f-9ce343d160ce\",\n      \"kind\": \"interaction\"\n    }\n  ]\n}\n```\n\nA Simple View shows a selection only through a Data Pool: the pool marks the clicked roofs, the rows whose \"interacted\" column is \"1\".",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/dataflows/interaction-autark.json node ia-pool, the Data Pool between the height histogram and the 3D map; its dataPool betweenCharts set to MERGE_AND as utk_curio/backend/tests/test_agents/test_node_settings_write.py sets a pool's modes",
+      "fails": [],
+      "reply": "I changed the pool's settings: its dataPool betweenCharts is now MERGE_AND, so it keeps only the buildings that are both brushed in the height histogram and picked on the 3D map, rather than the newest selection. No node or content was added.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "ia-pool",
+                "type": "curio.builtin/data-pool",
+                "changes": {
+                  "metadata.dataPool": {
+                    "before": null,
+                    "after": {
+                      "betweenCharts": "MERGE_AND"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.settings.write",
+            "kind": "settings",
+            "summary": "Changed the settings of the Data Pool node",
+            "lines": [
+              "Data Pool node",
+              "Conflict between visualizations: Merge (AND)"
+            ],
+            "nodeId": "ia-pool",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.settings.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "ia-pool",
+            "dataPool": {
+              "betweenCharts": "MERGE_AND"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2
+      ],
+      "reply": "Set the pool's selections between charts to MERGE_AND, so it keeps only the buildings both views select:\n\n```json\n{\n  \"nodeId\": \"ia-pool\",\n  \"dataPool\": {\n    \"betweenCharts\": \"MERGE_AND\"\n  }\n}\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.settings.write",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 4,
+      "name": "golden",
+      "kind": "golden",
+      "source": "agents/agent.curio.builtin@1/messages.md topology.interaction-edge-refused, the plan check's words, pinned by utk_curio/backend/tests/test_agents/test_routes_proposals.py::test_interaction_edge_into_a_code_step_is_refused_naming_the_fix; the Data Pool 5f658c2a-5124-4421-807f-9ce343d160ce of docs/examples/dataflows/data-pool-vega-2.json, fed by the loader, as the way the plan check names",
+      "fails": [],
+      "reply": "I added no interaction edge into the Data Loading node. An interaction edge carries selections between views: it links two views when one of them highlights what it receives, a view and a Data Pool, two Data Pools, or a Map Editor and the Autark map it feeds. A Data Loading node shows no selection, so an interaction edge cannot go into it, and the plan check refuses one.\n\nInstead, link the bar chart to the Data Pool with an interaction edge: the pool marks the roofs of the clicked zip code, the rows whose \"interacted\" column is \"1\", and a node after the pool can keep only those rows for the nodes it feeds.",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": []
+    },
+    {
+      "case": 4,
+      "name": "refused-edge",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_routes_proposals.py::test_interaction_edge_into_a_code_step_is_refused_naming_the_fix: the plan check refuses an interaction edge whose end shows no selection, here the Data Loading node",
+      "fails": [
+        1
+      ],
+      "reply": "I added no interaction edge into the Data Loading node. An interaction edge carries selections between views: it links two views when one of them highlights what it receives, a view and a Data Pool, two Data Pools, or a Map Editor and the Autark map it feeds. A Data Loading node shows no selection, so an interaction edge cannot go into it, and the plan check refuses one.\n\nInstead, link the bar chart to the Data Pool with an interaction edge: the pool marks the roofs of the clicked zip code, the rows whose \"interacted\" column is \"1\", and a node after the pool can keep only those rows for the nodes it feeds.",
+      "changes": {
+        "changed": {
+          "edges": {
+            "added": [
+              {
+                "id": "6f1d5a52-7a0e-4d0b-9f51-3c2b8e0d4a17",
+                "source": "b601d363-50fd-4209-bee2-9997dcb050f3",
+                "sourceHandle": "in/out",
+                "target": "a1abfa78-6517-4606-9660-c7eeeeb49851",
+                "targetHandle": "in/out",
+                "type": "Interaction"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "dataflow.plan.write",
+            "kind": "plan",
+            "summary": "Plan · 0 nodes, 1 edge",
+            "lines": [
+              "+0 nodes · +1 connection",
+              "0 pending for Build & validate or Solve",
+              "Topology: acyclic."
+            ],
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "dataflow.plan.write",
+          "status": "applied",
+          "arguments": {
+            "goal": "Load only the clicked zip code's roofs.",
+            "nodes": [],
+            "edges": [
+              {
+                "from": "b601d363-50fd-4209-bee2-9997dcb050f3",
+                "to": "a1abfa78-6517-4606-9660-c7eeeeb49851",
+                "kind": "interaction"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "gaps": []
+}

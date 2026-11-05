@@ -227,10 +227,12 @@ def _plan_refuses(dataflow: str):
 
         nodes = json.loads((REPO_ROOT / dataflow).read_text(encoding="utf-8"))["dataflow"]["nodes"]
         types = {node["id"]: node.get("type") for node in nodes}
-        [plan] = [c["arguments"] for c in answer.calls if c["tool"] == "dataflow.plan.write" and c["status"] == "applied"]
-        planned = {node["ref"]: node["nodeType"] for node in plan.get("nodes") or []}
-        return bool(plan_topology.interaction_edge_errors(
-            plan, lambda end: planned.get(end) or types.get(end), _templates()))
+        plans = [c["arguments"] for c in answer.calls if c["tool"] == "dataflow.plan.write" and c["status"] == "applied"]
+        for plan in plans:
+            planned = {node["ref"]: node["nodeType"] for node in plan.get("nodes") or []}
+            if plan_topology.interaction_edge_errors(plan, lambda end: planned.get(end) or types.get(end), _templates()):
+                return True
+        return False
     return refused
 
 
@@ -247,8 +249,24 @@ def _grounding_refuses(*, datasets=(), models=None, data_loading: bool = False):
     return refused
 
 
+def _reference_refuses(dataflow: str, node_id: str):
+    """The reference check a content write holds code to (``turns/grounding._reference_problems``,
+    through ``code_references.resolve_references``) refuses what the answer wrote into *node_id*,
+    over that node's widgets and selection tags in the case's *dataflow*."""
+    def refused(answer) -> bool:
+        from utk_curio.backend.app.execution.code_references import resolve_references
+
+        nodes = json.loads((REPO_ROOT / dataflow).read_text(encoding="utf-8"))["dataflow"]["nodes"]
+        metadata = next(node for node in nodes if node["id"] == node_id).get("metadata") or {}
+        return any(resolve_references(text, metadata.get("widgets") or [], "python", (),
+                                      selections=metadata.get("selections") or [])[1]
+                   for _, _, text in _written(answer, node_id))
+    return refused
+
+
 LAYERS = "docs/examples/dataflows/chicago-loop-layers.json"
 QUAD = "docs/examples/dataflows/quad-cities-flood-vulnerability.json"
+POOL_VEGA = "docs/examples/dataflows/data-pool-vega-2.json"
 
 
 def _refusals() -> dict:
@@ -268,6 +286,10 @@ def _refusals() -> dict:
             datasets=["data.curio.chicago-loop-layers"], data_loading=True),
         ("node-functions", 3, "refused-code"): _grounding_refuses(
             datasets=["data.curio.mapillary-sample"], models=["model.curio.ddrnet23-slim"]),
+        ("interaction-edges", 1, "refused-edge"): _plan_refuses(POOL_VEGA),
+        ("interaction-edges", 4, "refused-edge"): _plan_refuses(POOL_VEGA),
+        ("selection-chips", 2, "refused-code"): _reference_refuses(
+            "skills/selection-chips/evals/files/roofs-picked-zips.json", "e8d24b91-3f05-4c7a-b6d1-0a9c27e5f413"),
     }
 
 

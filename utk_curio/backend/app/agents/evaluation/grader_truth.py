@@ -23,9 +23,12 @@ beside its ``evals/evals.json``:
     write call is refused, as a refused write leaves it. It fails each
     assertion whose evidence in the golden answer was that change: the node
     it made, what the written content holds or lacks, what the plan adds,
-    the setting. That is how a ``code`` or ``spec`` check decides it: one that
-    says a written node lacks something needs a node written at all. It passes
-    each assertion that rests on the reply, or on a change no answer makes.
+    the setting, and a reply's claim that it landed. That is how a ``code``
+    or ``spec`` check decides it: one that says a written node lacks
+    something needs a node written at all. It passes each assertion that
+    rests on the reply's explanation, or that says a change or a call did not
+    happen (creates no node, adds no Data Pool), as a ``tool``,
+    ``node-added`` or ``unchanged`` check decides it.
 - A **gap** is a case with no such source, and why, as ``oracle.py``'s
   ``Unrepresentable`` names what the contract cannot express.
 
