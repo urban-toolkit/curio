@@ -58,7 +58,7 @@ import { isHostedGuest } from "../components/apiSettings/useHostedGuest";
 import { DEFAULT_SAVE_OUTPUT_DATASET } from "../utils/saveOutputDataset";
 import { writeNodeSettings, type NodeSettings } from "../utils/nodeSettingsWriters";
 import { authApi } from "../utils/authApi";
-import { refreshAgentsWhenKept } from "./flow/agentDockAfterRemovals";
+import { refreshAgentsWhenKept, useOnceDrawn } from "./flow/agentDockAfterRemovals";
 
 /** How long leaving a dataflow bound to its doc waits for the server to keep
  *  this tab's last change before it asks whether to leave without it. */
@@ -381,15 +381,20 @@ const FlowProvider = ({
         agentEditProv, markDirtyRef, codeDocRef,
     });
     // A node or a connection removed takes the agents attached to it along,
-    // once the server has the removal (agentDockAfterRemovals.ts).
+    // once the server has the removal (agentDockAfterRemovals.ts). The dock
+    // asks once the canvas has drawn the removal, whose write sends it, and
+    // only for a removal: the canvas hands every node change to onNodesDelete.
+    const onceDrawn = useOnceDrawn();
     const onNodesDelete = useCallback((...removed: Parameters<typeof dropNodes>) => {
         dropNodes(...removed);
-        void refreshAgentsWhenKept(docBridgeRef.current?.whenKept);
-    }, [dropNodes]);
+        if (removed[0].some((change) => change.type === "remove")) {
+            onceDrawn(() => void refreshAgentsWhenKept(docBridgeRef.current?.whenKept));
+        }
+    }, [dropNodes, onceDrawn]);
     const onEdgesDelete = useCallback((...removed: Parameters<typeof dropEdges>) => {
         dropEdges(...removed);
-        void refreshAgentsWhenKept(docBridgeRef.current?.whenKept);
-    }, [dropEdges]);
+        if (removed[0].length > 0) onceDrawn(() => void refreshAgentsWhenKept(docBridgeRef.current?.whenKept));
+    }, [dropEdges, onceDrawn]);
 
     const { onConnect, isValidConnection, handOverAlongEdges } = useConnect({
         markDirtyRef, reactFlow, showToast, markNodeStaleRef, applyOutput, setEdges,

@@ -2699,7 +2699,7 @@ The server keeps one Yjs doc per open dataflow: a pycrdt `Doc` and an `Awareness
 - **Actions on the server's copy** (a run, an agent drop, a dataset or package added) get the dataflow's id through `ensureProjectId`, which waits for `whenKept`, and first for the bind when the canvas changed before it bound. A run sends no revision: the server runs the dataflow as its doc holds it.
 - **Save layout** on the dashboard sends each pinned tile's place and size (`saveDashboardLayout`, `PUT /api/projects/<id>/dashboard/layout`), which the server writes into the doc.
 - **A rename** sends the project row its name alone (`PUT /api/projects/<id>` with `{name}`), the doc taking the dataflow's name; a rename while a create is out goes to the row once the create has made it. An invited editor's goes through `PUT /api/projects/<id>/name`, which renames the row and the dataflow as the owner's PUT does.
-- **Agents on removed nodes.** The attachments' listing prunes those whose node or connection the dataflow no longer holds, with their transcripts, and the canvas lists them again after a removal once the server has it (`agentDockAfterRemovals.ts`).
+- **Agents on removed nodes.** The attachments' listing prunes those whose node or connection the dataflow no longer holds, with their transcripts, and the canvas lists them again after a removal once it has drawn the removal and the server has it (`agentDockAfterRemovals.ts`).
 - **A canvas never saved** is made into a dataflow by one create (`createDataflow`), which every caller while it is out shares, and then binds to it.
 
 ---
