@@ -1,8 +1,10 @@
 """The steps of the Skill evaluations workflow (``.github/workflows/skill-evals.yml``).
 
-- ``mask``: on the runner, before anything prints, has GitHub mask the base
-  URL's host and its host and port in the job's log, as it masks the secrets
-  themselves. It prints only the ``::add-mask::`` commands GitHub reads.
+- ``mask [--env NAME]``: on the runner, before anything prints, has GitHub mask
+  the base URL's host and its host and port in the job's log, as it masks the
+  secrets themselves. It prints only the ``::add-mask::`` commands GitHub reads.
+  The URL is ``CURIO_EVAL_BASE_URL``'s, or the variable ``--env`` names: the
+  Deploy workflow masks ``CURIO_DEPLOY_BASE_URL`` with it.
 - ``previous --out <folder>``: on the runner, the per-model summaries of the
   newest finished run of this workflow on main, from its
   ``skill-evals-summary`` artifact. The report compares with them. Nothing
@@ -82,8 +84,8 @@ def masks(base_url: str) -> list[str]:
                   key=len, reverse=True)
 
 
-def cmd_mask(_args) -> int:
-    for value in masks(os.environ.get(ENV_BASE_URL, "")):
+def cmd_mask(args) -> int:
+    for value in masks(os.environ.get(getattr(args, "env", None) or ENV_BASE_URL, "")):
         print(f"::add-mask::{value}", flush=True)
     return 0
 
@@ -307,7 +309,9 @@ def cmd_run(args) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("mask", help="mask the base URL's host in the job's log").set_defaults(func=cmd_mask)
+    mask = sub.add_parser("mask", help="mask the base URL's host in the job's log")
+    mask.add_argument("--env", default=ENV_BASE_URL, help=f"the variable holding the base URL (default {ENV_BASE_URL})")
+    mask.set_defaults(func=cmd_mask)
     previous = sub.add_parser("previous", help="fetch main's last per-model summaries")
     previous.add_argument("--out", required=True)
     previous.set_defaults(func=cmd_previous)

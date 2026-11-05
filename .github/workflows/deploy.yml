@@ -45,6 +45,13 @@ name: Deploy
 #           job from running on fork PRs, so untrusted code never executes here.
 #      The CI stack runs as `docker compose -p curio-ci` on remapped ports
 #      (2020/5022/8100), fully isolated from the prod curio/curio-dev stacks.
+#
+#   7. The stacks' own LLM endpoint (optional): secrets CURIO_DEPLOY_API_KEY
+#      and CURIO_DEPLOY_BASE_URL on the dev and stable environments, and the
+#      repository variable CURIO_DEPLOY_MODELS, a JSON list of model names
+#      whose first is the Deployment default. Each deploy writes them as one
+#      endpoint, [This Curio], to the checkout's .secrets/llm-endpoint
+#      (owner-only) and starts the stack with --llm-endpoint-file.
 
 on:
   push:
@@ -115,6 +122,36 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H utk >> ~/.ssh/known_hosts
 
+      # The stack's own LLM endpoint, from this environment's secrets. It
+      # reaches the server as one owner-only file over ssh's stdin, never on a
+      # command line; without both secrets the server's file is removed.
+      - name: Send the LLM endpoint
+        env:
+          CURIO_DEPLOY_API_KEY: ${{ secrets.CURIO_DEPLOY_API_KEY }}
+          CURIO_DEPLOY_BASE_URL: ${{ secrets.CURIO_DEPLOY_BASE_URL }}
+          CURIO_DEPLOY_MODELS: ${{ vars.CURIO_DEPLOY_MODELS }}
+        run: |
+          python3 scripts/ci_skill_evals.py mask --env CURIO_DEPLOY_BASE_URL
+          if [ -n "$CURIO_DEPLOY_API_KEY" ] && [ -n "$CURIO_DEPLOY_BASE_URL" ]; then
+            # One endpoint, under the name users see in API Settings, with the
+            # variable's models as a comma list (the first is the default).
+            models="$(printf '%s' "${CURIO_DEPLOY_MODELS:-[]}" | jq -r 'join(",")')"
+            case "$models" in
+              ''|*[!A-Za-z0-9._/:,-]*)
+                echo "::error::CURIO_DEPLOY_MODELS must be a JSON list of model names"
+                exit 1
+                ;;
+            esac
+            printf '[This Curio]\nbase_url=%s\napi_key=%s\nmodels=%s\n' \
+              "$CURIO_DEPLOY_BASE_URL" "$CURIO_DEPLOY_API_KEY" "$models" \
+              | ssh -i ~/.ssh/id_ed25519 deploy@utk \
+                  'umask 077 && mkdir -p /srv/curio-dev/.secrets && cat > /srv/curio-dev/.secrets/llm-endpoint.new && mv /srv/curio-dev/.secrets/llm-endpoint.new /srv/curio-dev/.secrets/llm-endpoint'
+            echo "Sent the LLM endpoint"
+          else
+            ssh -i ~/.ssh/id_ed25519 deploy@utk 'rm -f /srv/curio-dev/.secrets/llm-endpoint'
+            echo "No CURIO_DEPLOY_API_KEY and CURIO_DEPLOY_BASE_URL: the stack offers no LLM endpoint of its own"
+          fi
+
       - name: Deploy to curio-dev stack
         env:
           REF_INPUT: ${{ inputs.ref || '' }}
@@ -150,6 +187,13 @@ jobs:
             echo "::error::Docker Compose $compose_version is older than 2.24.4, which docker-compose.site.yml needs"
             exit 1
           fi
+          # The LLM endpoints the job sent, when this release reads them:
+          # Compose mounts the file read-only, so only its path is on the
+          # command line.
+          llm_args=""
+          if [ -s .secrets/llm-endpoint ] && grep -q -e '"--llm-endpoint-file"' utk_curio/main.py; then
+            llm_args=', "--llm-endpoint-file", "/run/secrets/curio_llm_endpoint"'
+          fi
           # This stack's container name, host ports and curio.py arguments
           # (docker-compose.deploy.yml). The backend is /api on whichever host
           # serves the page, so the stack needs no hostname of its own.
@@ -158,8 +202,11 @@ jobs:
             curio:
               container_name: curio-dev
               ports: !override ["5012:5002", "8090:8080"]
-              command: ["--backend-url", "/api"]
           SITE
+          printf '    command: ["--backend-url", "/api"%s]\n' "$llm_args" >> docker-compose.site.yml
+          if [ -n "$llm_args" ]; then
+            printf '    secrets: [curio_llm_endpoint]\nsecrets:\n  curio_llm_endpoint:\n    file: ./.secrets/llm-endpoint\n' >> docker-compose.site.yml
+          fi
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.site.yml
           # Build while the old stack still serves: the site is offline only
           # from `down` until the new container boots, and a failed build
@@ -290,6 +337,34 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H utk >> ~/.ssh/known_hosts
 
+      # The stack's own LLM endpoint, as for curio-dev.
+      - name: Send the LLM endpoint
+        env:
+          CURIO_DEPLOY_API_KEY: ${{ secrets.CURIO_DEPLOY_API_KEY }}
+          CURIO_DEPLOY_BASE_URL: ${{ secrets.CURIO_DEPLOY_BASE_URL }}
+          CURIO_DEPLOY_MODELS: ${{ vars.CURIO_DEPLOY_MODELS }}
+        run: |
+          python3 scripts/ci_skill_evals.py mask --env CURIO_DEPLOY_BASE_URL
+          if [ -n "$CURIO_DEPLOY_API_KEY" ] && [ -n "$CURIO_DEPLOY_BASE_URL" ]; then
+            # One endpoint, under the name users see in API Settings, with the
+            # variable's models as a comma list (the first is the default).
+            models="$(printf '%s' "${CURIO_DEPLOY_MODELS:-[]}" | jq -r 'join(",")')"
+            case "$models" in
+              ''|*[!A-Za-z0-9._/:,-]*)
+                echo "::error::CURIO_DEPLOY_MODELS must be a JSON list of model names"
+                exit 1
+                ;;
+            esac
+            printf '[This Curio]\nbase_url=%s\napi_key=%s\nmodels=%s\n' \
+              "$CURIO_DEPLOY_BASE_URL" "$CURIO_DEPLOY_API_KEY" "$models" \
+              | ssh -i ~/.ssh/id_ed25519 deploy@utk \
+                  'umask 077 && mkdir -p /srv/curio/.secrets && cat > /srv/curio/.secrets/llm-endpoint.new && mv /srv/curio/.secrets/llm-endpoint.new /srv/curio/.secrets/llm-endpoint'
+            echo "Sent the LLM endpoint"
+          else
+            ssh -i ~/.ssh/id_ed25519 deploy@utk 'rm -f /srv/curio/.secrets/llm-endpoint'
+            echo "No CURIO_DEPLOY_API_KEY and CURIO_DEPLOY_BASE_URL: the stack offers no LLM endpoint of its own"
+          fi
+
       - name: Deploy to stable stack
         env:
           REF_INPUT: ${{ inputs.ref || '' }}
@@ -330,13 +405,22 @@ jobs:
               echo "::error::Docker Compose $compose_version is older than 2.24.4, which docker-compose.site.yml needs"
               exit 1
             fi
+            # The LLM endpoints the job sent, when this release reads them, as
+            # curio-dev mounts them.
+            llm_args=""
+            if [ -s .secrets/llm-endpoint ] && grep -q -e '"--llm-endpoint-file"' utk_curio/main.py; then
+              llm_args=', "--llm-endpoint-file", "/run/secrets/curio_llm_endpoint"'
+            fi
             cat > docker-compose.site.yml <<'SITE'
           services:
             curio:
               container_name: ${CURIO_CONTAINER_NAME:-curio}
               ports: !override ["${CURIO_PORT_5002:-5002}:5002", "${CURIO_PORT_8080:-8080}:8080"]
-              command: ["--backend-url", "/api"]
           SITE
+            printf '    command: ["--backend-url", "/api"%s]\n' "$llm_args" >> docker-compose.site.yml
+            if [ -n "$llm_args" ]; then
+              printf '    secrets: [curio_llm_endpoint]\nsecrets:\n  curio_llm_endpoint:\n    file: ./.secrets/llm-endpoint\n' >> docker-compose.site.yml
+            fi
             export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.site.yml
           else
             # v0.16.0 bakes its backend address into the bundle. Set after .env
