@@ -1,0 +1,255 @@
+{
+  "skill_name": "node-control",
+  "answers": [
+    {
+      "case": 1,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/dataflows/multi-input.json node 3d6376b4-782b-4c98-89f6-8eff022beb87, the node after 9c3f8293-8cc9-4ed8-8840-ca60655e21d7 (return input_0, input_1), the same node skills/node-control/evals/files/two-tables.json holds: its content reads the two tables as input_0[0] and input_0[1]; here it returns their row counts",
+      "fails": [],
+      "reply": "I added a Python Computation node, Row counts. The node before it returns both tables together, as one tuple, so they reach the new node on its one input circle: its code reads them as input_0[0] and input_0[1], reads no input_1, and returns a DataFrame of the two row counts. Connect the node whose code is return input_0, input_1 to its input.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "import pandas as pd\n\n# The two loaded tables arrive together, as one tuple, on this node's one input.\ndf1 = input_0[0]\ndf2 = input_0[1]\n\nreturn pd.DataFrame({\"table\": [\"first\", \"second\"], \"rows\": [len(df1), len(df2)]})",
+                "goal": "Return a small table with the row count of each of the two loaded tables.",
+                "id": "72daaf2f-a0a1-458f-836d-c42c8ccc32a1",
+                "title": "Row counts",
+                "type": "curio.builtin/computation-analysis"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Python Computation node · Row counts",
+            "lines": [
+              "Python Computation · curio.builtin/computation-analysis",
+              "node 72daaf2f-a0a1-458f-836d-c42c8ccc32a1"
+            ],
+            "nodeId": "72daaf2f-a0a1-458f-836d-c42c8ccc32a1",
+            "nodeType": "curio.builtin/computation-analysis",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/computation-analysis",
+            "title": "Row counts",
+            "goal": "Return a small table with the row count of each of the two loaded tables.",
+            "content": "import pandas as pd\n\n# The two loaded tables arrive together, as one tuple, on this node's one input.\ndf1 = input_0[0]\ndf2 = input_0[1]\n\nreturn pd.DataFrame({\"table\": [\"first\", \"second\"], \"rows\": [len(df1), len(df2)]})\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 1,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reply": "Here is the code for the node after it:\n\n```python\nimport pandas as pd\n\n# The two loaded tables arrive together, as one tuple, on this node's one input.\ndf1 = input_0[0]\ndf2 = input_0[1]\n\nreturn pd.DataFrame({\"table\": [\"first\", \"second\"], \"rows\": [len(df1), len(df2)]})\n\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/dataflows/lower-manhattan-park-shade.json node park-shade-parks, its content: a layer of an Autark OSM node's output read in Python through its layer chip ([!! input_0:table_osm_parks !!]), here the buildings layer table_osm_buildings that skills/node-control/evals/files/osm-layers.json's OpenStreetMap layers node loads",
+      "fails": [],
+      "reply": "I added a Python Computation node, Building count. The OpenStreetMap layers node hands on every layer it loads, so the new node reads the buildings from its input through the layer chip [!! input_0:table_osm_buildings !!], which runs as curio_layer(input_0, \"table_osm_buildings\", 0), and returns how many rows that layer holds in a one-row table. It loads no data of its own. Connect the OpenStreetMap layers node to its input.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "import pandas as pd\n\n# The buildings layer of the OpenStreetMap layers node's output, through its\n# layer chip: how many buildings it holds, as a one-row table.\nbuildings = [!! input_0:table_osm_buildings !!]\nreturn pd.DataFrame({\"buildings\": [len(buildings)]})",
+                "goal": "Return a one-row table with how many buildings the table_osm_buildings layer holds.",
+                "id": "aa862bea-d1b6-419b-a291-7b09d83d4d01",
+                "title": "Building count",
+                "type": "curio.builtin/computation-analysis"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Python Computation node · Building count",
+            "lines": [
+              "Python Computation · curio.builtin/computation-analysis",
+              "node aa862bea-d1b6-419b-a291-7b09d83d4d01"
+            ],
+            "nodeId": "aa862bea-d1b6-419b-a291-7b09d83d4d01",
+            "nodeType": "curio.builtin/computation-analysis",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/computation-analysis",
+            "title": "Building count",
+            "goal": "Return a one-row table with how many buildings the table_osm_buildings layer holds.",
+            "content": "import pandas as pd\n\n# The buildings layer of the OpenStreetMap layers node's output, through its\n# layer chip: how many buildings it holds, as a one-row table.\nbuildings = [!! input_0:table_osm_buildings !!]\nreturn pd.DataFrame({\"buildings\": [len(buildings)]})\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "fenced",
+      "kind": "mutant",
+      "source": "The golden answer, its content moved into a fenced block of the reply, its change removed and its write call refused, as a refused write leaves it (utk_curio/tools/skill_eval_worker.py Worker._calls; utk_curio/backend/tests/test_agents/test_skill_eval_calls.py::test_a_refused_call_shows_its_tool_and_status_alone_and_skill_read_shows_nowhere)",
+      "fails": [
+        1,
+        2,
+        3
+      ],
+      "reply": "Here is the code for the Python node after the OpenStreetMap layers node:\n\n```python\nimport pandas as pd\n\n# The buildings layer of the OpenStreetMap layers node's output, through its\n# layer chip: how many buildings it holds, as a one-row table.\nbuildings = [!! input_0:table_osm_buildings !!]\nreturn pd.DataFrame({\"buildings\": [len(buildings)]})\n\n```",
+      "changes": {
+        "changed": {},
+        "cards": [],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "refused"
+        }
+      ]
+    },
+    {
+      "case": 2,
+      "name": "refused-code",
+      "kind": "mutant",
+      "source": "utk_curio/backend/tests/test_agents/test_source_grounding.py::TestVerdicts::test_issue_298_shape_is_refused_with_the_literal_named: a file path no catalog or user names is refused by the grounding gate: the OpenStreetMap extract opened again by a path of the code's own",
+      "fails": [
+        2,
+        3
+      ],
+      "reply": "I added a Python Computation node, Building count. The OpenStreetMap layers node hands on every layer it loads, so the new node reads the buildings from its input through the layer chip [!! input_0:table_osm_buildings !!], which runs as curio_layer(input_0, \"table_osm_buildings\", 0), and returns how many rows that layer holds in a one-row table. It loads no data of its own. Connect the OpenStreetMap layers node to its input.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "added": [
+              {
+                "content": "import geopandas as gpd\nimport pandas as pd\n\n# The buildings layer of the OpenStreetMap layers node's output, through its\n# layer chip: how many buildings it holds, as a one-row table.\nbuildings = gpd.read_file(\"docs/examples/data/chicago_downtown.osm.pbf\", layer=\"multipolygons\")\nreturn pd.DataFrame({\"buildings\": [len(buildings)]})\n",
+                "goal": "Return a one-row table with how many buildings the table_osm_buildings layer holds.",
+                "id": "aa862bea-d1b6-419b-a291-7b09d83d4d01",
+                "title": "Building count",
+                "type": "curio.builtin/computation-analysis"
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.create",
+            "kind": "node",
+            "summary": "Created a new Python Computation node · Building count",
+            "lines": [
+              "Python Computation · curio.builtin/computation-analysis",
+              "node aa862bea-d1b6-419b-a291-7b09d83d4d01"
+            ],
+            "nodeId": "aa862bea-d1b6-419b-a291-7b09d83d4d01",
+            "nodeType": "curio.builtin/computation-analysis",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.create",
+          "status": "applied",
+          "arguments": {
+            "nodeType": "curio.builtin/computation-analysis",
+            "title": "Building count",
+            "goal": "Return a one-row table with how many buildings the table_osm_buildings layer holds.",
+            "content": "import pandas as pd\n\n# The buildings layer of the OpenStreetMap layers node's output, through its\n# layer chip: how many buildings it holds, as a one-row table.\nbuildings = [!! input_0:table_osm_buildings !!]\nreturn pd.DataFrame({\"buildings\": [len(buildings)]})\n"
+          }
+        }
+      ]
+    },
+    {
+      "case": 3,
+      "name": "golden",
+      "kind": "golden",
+      "source": "docs/examples/dataflows/vega.json node 8d428948-f5e4-485b-9812-51a4212678a7, its content, its DataFrame given the two rows the prompt types, J with 60 and K with 33; the rows a user types grounded beside the node's own (utk_curio/backend/tests/test_agents/test_source_grounding.py::test_the_rows_the_user_typed_are_grounded_beside_the_nodes_own)",
+      "fails": [],
+      "reply": "The chart draws the table the node before it returns, so the new bars come from rows of that node, not from data in the spec. I added J with 60 and K with 33 to the loading node's DataFrame, in its columns a and b, and it still returns it. The chart's spec is unchanged, with no data of its own, and no node was added.",
+      "changes": {
+        "changed": {
+          "nodes": {
+            "changed": [
+              {
+                "id": "8d428948-f5e4-485b-9812-51a4212678a7",
+                "type": "curio.builtin/data-loading",
+                "changes": {
+                  "content": {
+                    "before": "import pandas as pd\r\n\r\nd = {'a': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'b': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=d)\r\n\r\nreturn df",
+                    "after": "import pandas as pd\r\n\r\nd = {'a': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\", \"J\", \"K\"], 'b': [28, 55, 43, 91, 81, 53, 19, 87, 52, 60, 33]}\r\ndf = pd.DataFrame(data=d)\r\n\r\nreturn df"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "cards": [
+          {
+            "tool": "node.content.write",
+            "kind": "content",
+            "summary": "Replaced the content of the Data Loading node",
+            "lines": [
+              "Data Loading node"
+            ],
+            "nodeId": "8d428948-f5e4-485b-9812-51a4212678a7",
+            "undo": true
+          }
+        ],
+        "awaiting_review": []
+      },
+      "calls": [
+        {
+          "tool": "node.content.write",
+          "status": "applied",
+          "arguments": {
+            "nodeId": "8d428948-f5e4-485b-9812-51a4212678a7",
+            "content": "import pandas as pd\r\n\r\nd = {'a': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\", \"J\", \"K\"], 'b': [28, 55, 43, 91, 81, 53, 19, 87, 52, 60, 33]}\r\ndf = pd.DataFrame(data=d)\r\n\r\nreturn df"
+          }
+        }
+      ]
+    }
+  ],
+  "gaps": []
+}
