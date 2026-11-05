@@ -14,6 +14,7 @@ import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/refer
 import { NOTEBOOK_SPEC_EDITOR_MAX, useNotebookEditorHeight } from "./useNotebookEditorHeight";
 import { nodeEditorLook } from "./nodeEditorLook";
 import { NODE_EDITOR_SCROLLING } from "./nodeEditorScrolling";
+import { isEmptySpecBuffer } from "../../utils/starterSpec";
 
 const NO_REFERENCES: ReferenceScope = { widgets: [], inputs: [] };
 const NO_INPUTS: InputScope[] = [];
@@ -45,6 +46,10 @@ type GrammarEditorProps = {
     /** A run's spec put back from the provenance drawer; each new one is
      *  written in, even when it is the spec the editor loaded with. */
     restoredCode?: { code: string; nonce: number } | null;
+    /** A starter the node chose in this tab from its input
+     *  (hook/useStarterSpec), handed in as `defaultValue`: the editor shows
+     *  it, and it is not the node's spec until someone edits it. */
+    starter?: string;
 };
 
 export default function GrammarEditor({
@@ -65,6 +70,7 @@ export default function GrammarEditor({
     referenceGrammar,
     chipPreviews = null,
     restoredCode = null,
+    starter,
 }: GrammarEditorProps) {
     // The spec the node holds from the first render: what this floats into the
     // node's code at mount. Floated as the editor's empty "{}", the node's code
@@ -122,10 +128,16 @@ export default function GrammarEditor({
     }, [restoredCode]);
 
     // The node's spec in the dataflow's doc, typed together, as in the code
-    // editor.
+    // editor. Neither the editor's empty `{}` nor a starter is the node's
+    // spec: the doc takes neither. The starter counts from the render that
+    // hands it in as the editor's content, so the binding lets go of an empty
+    // spec before the starter lands in the editor.
+    const shownStarter = typeof starter === "string" && starter === defaultValue ? starter : null;
     useYMonacoBinding(widgetEditor?.editor, widgetEditor?.monaco, nodeId, {
         canWrite: !readOnly,
         baselineRef,
+        isEmpty: isEmptySpecBuffer,
+        starter: shownStarter,
     });
 
     // onMount fires once, so the action reads the CURRENT play function through

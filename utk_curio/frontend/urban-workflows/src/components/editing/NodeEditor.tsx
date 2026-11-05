@@ -112,6 +112,10 @@ type NodeEditorProps = {
     applyGrammar?: any;
     readOnly: boolean;
     defaultValue: any;
+    /** The starter the node chose in this tab from its input, when
+     *  `defaultValue` hands its spec editor one (registry/types,
+     *  NodeBehaviorResult.defaultValueIsStarter). */
+    starter?: string;
     floatCode?: any;
     provenance?: boolean;
     customWidgetsCallback?: any;
@@ -136,6 +140,7 @@ function NodeEditor({
     applyGrammar,
     readOnly,
     defaultValue,
+    starter,
     floatCode,
     provenance,
     customWidgetsCallback,
@@ -883,6 +888,7 @@ function NodeEditor({
                                             referenceGrammar={referenceGrammar}
                                             chipPreviews={chipPreviews}
                                             restoredCode={restoredCode}
+                                            starter={starter}
                                         />
                                     </Tab.Pane>
                                 ) : null}

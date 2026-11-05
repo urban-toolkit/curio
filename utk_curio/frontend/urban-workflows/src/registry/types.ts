@@ -168,6 +168,14 @@ export interface NodeBehaviorResult {
   customWidgetsCallback?: (div: HTMLElement) => void;
   /** Override the initial code/grammar editor value. */
   defaultValueOverride?: string;
+  /**
+   * `defaultValueOverride` is a starter the node chose in this tab from its
+   * input (hook/useStarterSpec): its editor shows it, and it is not the
+   * node's code until someone edits it, so the dataflow's doc does not take
+   * it (useYMonacoBinding) and an agent's write still lands. Not set for a
+   * template's own starter, which is the node's code.
+   */
+  defaultValueIsStarter?: boolean;
   /** Replace the default "play" action with a custom send-code routine. */
   sendCodeOverride?: any;
   /** Replace the `setSendCodeCallback` wiring between NodeEditor and the play button. */
