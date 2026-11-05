@@ -14,6 +14,7 @@ import { SolveFeedback } from "./builderStrip/SolveFeedback";
 import {
   batchDetailFor,
   distinctLines,
+  inPlanOrder,
   passLineText,
   planLeftToBuild,
   remediesByHost,
@@ -127,8 +128,13 @@ export const AgentBuilderStrip: React.FC<{
   const phase = session.phase ?? "idle";
   const nodeRuns = session.nodeRuns ?? {};
   // The live overlay wins per node while the batch streams (dev/63); the
-  // persisted session takes back over on the terminal refetch.
-  const entries = Object.entries({ ...nodeRuns, ...(solveProgress ?? {}) });
+  // persisted session takes back over on the terminal refetch. The pills
+  // read in the plan's order, as its card lists its nodes.
+  const entries = inPlanOrder(
+    Object.entries({ ...nodeRuns, ...(solveProgress ?? {}) }),
+    attachment.planProposal,
+    flowNodes.map((node) => node.id),
+  );
   const pending = entries.filter(([, s]) => s === "pending").map(([id]) => id);
   const failed = entries.filter(([, s]) => s === "failed").map(([id]) => id);
   const unresolved = pending.length + failed.length;
