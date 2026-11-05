@@ -332,6 +332,38 @@ def test_each_query_and_test_case_runs_three_times_in_each_of_its_conditions(tmp
     assert all(skill_evals.Task.from_dict(task.as_dict()) == task for task in tasks)
 
 
+def test_a_grade_run_grades_each_prepared_answer_of_a_case_and_runs_no_agent(tmp_path):
+    """A grade run takes a prepared answer of the grader truth to its case's
+    grader: one run per answer and run, keyed under ``truth/``, holding the
+    answer whole. An answer of a case the skill does not have is left out,
+    and a measure of grade runs reads in the format."""
+    skill_evals = _skill_evals()
+    folder = tmp_path / "street-trees"
+    _write_skill(folder, _evals())
+    golden = {"case": 1, "name": "golden", "kind": "golden", "fails": [], "reply": "Twelve oaks, from the census.",
+              "changes": {"changed": {}, "cards": [], "awaiting_review": []}, "calls": []}
+    mutant = {**golden, "name": "no-source", "kind": "mutant", "fails": [2], "reply": "Twelve oaks."}
+    stray = {**golden, "case": 9, "name": "golden"}
+    tasks = skill_evals.plan([skill_evals.read(folder)], runs=2, kinds=(skill_evals.GRADE,),
+                             answers={"street-trees": [golden, mutant, stray]})
+    assert [task.key for task in tasks] == [
+        "truth/eval-1/golden/run-1", "truth/eval-1/golden/run-2",
+        "truth/eval-1/no-source/run-1", "truth/eval-1/no-source/run-2"]
+    assert {task.kind for task in tasks} == {skill_evals.GRADE}
+    assert tasks[2].answer == mutant and tasks[2].assertions == (
+        "The answer counts oaks.", "The answer names its source.")
+    assert all(skill_evals.Task.from_dict(task.as_dict()) == task for task in tasks)
+    # No answers, no grade runs; and a plan without the kind makes none.
+    assert skill_evals.plan([skill_evals.read(folder)], kinds=(skill_evals.GRADE,)) == []
+    assert all(task.kind != skill_evals.GRADE for task in skill_evals.plan(
+        [skill_evals.read(folder)], answers={"street-trees": [golden]}))
+    measure = skill_evals.Measure.from_dict({"kinds": ["grade"], "runs": 1})
+    assert measure.kinds == ("grade",) and not measure.whole
+    assert [task.key for task in skill_evals.plan_measured(
+        [skill_evals.read(folder)], {"street-trees": measure}, {"street-trees": [golden]})] == [
+        "truth/eval-1/golden/run-1"]
+
+
 def test_a_scope_measures_each_skill_as_its_measure_says(tmp_path):
     """A scope (``scripts/ci_skill_eval_scope.py``) names each skill's
     measure: a whole one runs everything three times both ways and is what a

@@ -704,6 +704,8 @@ class Worker:
         """Run *task* and write its files; returns its record. A run the model's
         server failed (a 5xx, a lost connection) is run again, on a fresh
         dataflow, after each wait of :data:`RETRY_WAITS_S`."""
+        if task.kind == skill_evals.GRADE:
+            return self._grade_answer(task)
         folder = self.results / task.path
         record: dict = {key: value for key, value in task.as_dict().items()
                         if key in ("kind", "skill", "key", "condition", "run", "query", "should_trigger", "case")}
@@ -756,6 +758,31 @@ class Worker:
                 if grading.get("error"):
                     record["error"] = f"the grader failed: {grading['error']}"
                 _write(folder / "grading.json", scrub(grading, values=self.secrets))
+        record = scrub(record, values=self.secrets)
+        _write(folder / "run.json", record)
+        return record
+
+    def _grade_answer(self, task: skill_evals.Task) -> dict:
+        """Grade *task*'s prepared answer, a grade run: no run of the agent,
+        and the grade every task run gets, by the model measured, whatever
+        CURIO_EVAL_GRADER_MODEL names, since that model is the grader measured."""
+        folder = self.results / task.path
+        answer = task.answer or {}
+        record: dict = {key: value for key, value in task.as_dict().items()
+                        if key in ("kind", "skill", "key", "condition", "run", "case")}
+        record.update({"answer": answer.get("name"), "answerKind": answer.get("kind"),
+                       "fails": list(answer.get("fails") or [])})
+        started = time.monotonic()
+        body = {"reply": str(answer.get("reply") or "")}
+        changes = answer.get("changes") if isinstance(answer.get("changes"), dict) else {}
+        calls = list(answer.get("calls") or [])
+        self._outputs(folder, body, changes, calls)
+        grading = self._grade(task, body, changes, calls, own=True)
+        record["grading"] = grading
+        if grading.get("error"):
+            record["error"] = f"the grader failed: {grading['error']}"
+        _write(folder / "grading.json", scrub(grading, values=self.secrets))
+        record["seconds"] = round(time.monotonic() - started, 3)
         record = scrub(record, values=self.secrets)
         _write(folder / "run.json", record)
         return record
@@ -821,9 +848,11 @@ class Worker:
             shown.append(entry)
         return scrub(shown, values=self.secrets)
 
-    def _grade(self, task: skill_evals.Task, body: dict, changes: dict, calls: list | None = None) -> dict:
+    def _grade(self, task: skill_evals.Task, body: dict, changes: dict, calls: list | None = None, *,
+               own: bool = False) -> dict:
         """The grade of *task*'s answer: its reply, *changes*, what it changed,
-        and *calls*, the tools it called (:meth:`_calls`)."""
+        and *calls*, the tools it called (:meth:`_calls`). *own* grades with
+        the model measured, never the benchmark's one grader."""
         values = {
             "prompt": task.message,
             "expected_output": task.expected_output or "",
@@ -837,10 +866,11 @@ class Worker:
         message = agent_text.fill(agent_text.section(GRADER_PAGE, GRADER_TASK_SECTION), values, where)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": message}]
         config = provider_config.resolve_llm(self.user_key)
-        named = os.environ.get(ENV_GRADER, "").strip()
+        named = "" if own else os.environ.get(ENV_GRADER, "").strip()
         if named and named != config.model:
             # One grader for every model a benchmark measures: the same endpoint, its model.
             config = dataclasses.replace(config, model=named)
+        grader = self.endpoint.model if own else self.grader
         problem = "no reply"
         spent: dict = {}
         waits = list(RETRY_WAITS_S)
@@ -851,7 +881,7 @@ class Worker:
             except providers.ServerStoppedSending as exc:
                 # Not asked again: a new try would only wait out the silence again.
                 problem = provider_config.redact_error(exc, config)
-                return {"error": problem, "grader": {"model": self.grader, "attempts": attempt, **spent}}
+                return {"error": problem, "grader": {"model": grader,"attempts": attempt, **spent}}
             except Exception as exc:  # noqa: BLE001 - a grader that fails is an error of the run
                 problem = provider_config.redact_error(exc, config)
                 if attempt < GRADER_ATTEMPTS and waits:
@@ -871,9 +901,9 @@ class Worker:
                           for text, item in zip(task.assertions, results) if isinstance(item, dict)]
                 if len(graded) == len(task.assertions):
                     return {"assertion_results": graded, "summary": skill_evals.grading_summary(graded),
-                            "grader": {"model": self.grader, "attempts": attempt, **spent}}
+                            "grader": {"model": grader,"attempts": attempt, **spent}}
             problem = "its reply was no list of one result per assertion"
-        return {"error": problem, "grader": {"model": self.grader, "attempts": GRADER_ATTEMPTS, **spent}}
+        return {"error": problem, "grader": {"model": grader,"attempts": GRADER_ATTEMPTS, **spent}}
 
 
 def _protocol() -> "object":

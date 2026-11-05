@@ -34,6 +34,10 @@ times (:data:`RUNS`):
   the skill taken out of every run's skills: its catalog, what it is handed
   and its preamble). A grader checks each answer against the assertions, and
   ``benchmark.json`` sets the two side by side.
+- **Grade runs:** each prepared answer of the grader truth
+  (``grader_truth.py``), graded by the model measured with no run of the
+  agent. The benchmark counts how often those grades agree with the truth
+  (``benchmark.agreement``).
 
 A run that failed (an error) is counted apart: it is left out of every rate.
 
@@ -71,6 +75,10 @@ CONDITIONS = (WITH_SKILL, WITHOUT_SKILL)
 #: The two kinds of run.
 TRIGGER = "trigger"
 TASK = "task"
+#: The run that grades a prepared answer of a test case, with no run of the
+#: agent: the grader truth's (``grader_truth.py``), graded by the model measured.
+GRADE = "grade"
+KINDS = (TRIGGER, TASK, GRADE)
 #: The variables the endpoint is read from.
 ENV_BASE_URL = "CURIO_EVAL_BASE_URL"
 ENV_API_KEY = "CURIO_EVAL_API_KEY"
@@ -330,6 +338,9 @@ class Task:
     case: int | None = None
     expected_output: str | None = None
     assertions: tuple[str, ...] = ()
+    #: The prepared answer a grade run grades: its ``name``, ``kind``,
+    #: ``fails``, ``reply``, ``changes`` and ``calls``.
+    answer: Mapping | None = None
 
     @property
     def path(self) -> str:
@@ -341,6 +352,7 @@ class Task:
             "run": self.run, "message": self.message, "context": self.context.as_dict(),
             "query": self.query, "should_trigger": self.should_trigger, "case": self.case,
             "expected_output": self.expected_output, "assertions": list(self.assertions),
+            "answer": dict(self.answer) if self.answer is not None else None,
         }
 
     @classmethod
@@ -352,11 +364,14 @@ class Task:
 
 
 def plan(evals: Iterable[SkillEvals], *, runs: int = RUNS, kinds: Iterable[str] = (TRIGGER, TASK),
-         conditions: Iterable[str] = CONDITIONS, cases: int | None = None) -> list[Task]:
+         conditions: Iterable[str] = CONDITIONS, cases: int | None = None,
+         answers: Mapping[str, Iterable[Mapping]] | None = None) -> list[Task]:
     """Every run of *evals*, *runs* times each: each trigger query (with the
     skill, as it ships), then each test case in each of *conditions*, with
     the skill and without it; only the first *cases* test cases when it is
-    given."""
+    given. A grade run grades each of a skill's prepared *answers*, by skill:
+    each a ``case``, ``name``, ``kind``, ``fails``, ``reply``, ``changes``
+    and ``calls`` (the runner reads them from ``grader_truth.py``)."""
     kinds = set(kinds)
     conditions = [condition for condition in CONDITIONS if condition in set(conditions)]
     tasks: list[Task] = []
@@ -378,6 +393,19 @@ def plan(evals: Iterable[SkillEvals], *, runs: int = RUNS, kinds: Iterable[str] 
                             condition=condition, run=run, message=case.prompt, context=case.context,
                             case=case.id, expected_output=case.expected_output, assertions=case.assertions,
                         ))
+        if GRADE in kinds:
+            by_id = {case.id: case for case in skill.cases}
+            for answer in (answers or {}).get(skill.name) or ():
+                case = by_id.get(answer.get("case"))
+                if case is None:
+                    continue
+                for run in range(1, runs + 1):
+                    tasks.append(Task(
+                        kind=GRADE, skill=skill.name, key=f"truth/eval-{case.id}/{answer['name']}/run-{run}",
+                        condition=WITH_SKILL, run=run, message=case.prompt, context=case.context,
+                        case=case.id, expected_output=case.expected_output, assertions=case.assertions,
+                        answer=answer,
+                    ))
     return tasks
 
 
@@ -414,8 +442,8 @@ class Measure:
         conditions = tuple(data.get("conditions") or CONDITIONS)
         runs, cases = data.get("runs", RUNS), data.get("cases")
         problems = []
-        if not kinds or not set(kinds) <= {TRIGGER, TASK}:
-            problems.append(f"kinds must name {TRIGGER} or {TASK}, not {list(kinds)}")
+        if not kinds or not set(kinds) <= set(KINDS):
+            problems.append(f"kinds must name {', '.join(KINDS[:-1])} or {KINDS[-1]}, not {list(kinds)}")
         if not conditions or not set(conditions) <= set(CONDITIONS):
             problems.append(f"conditions must name {' or '.join(CONDITIONS)}, not {list(conditions)}")
         for key, value in (("runs", runs), ("cases", cases)):
@@ -438,14 +466,16 @@ def measures(data) -> dict[str, Measure]:
     return {str(name): Measure.from_dict(value, f"the measure of {name}") for name, value in found.items()}
 
 
-def plan_measured(evals: Iterable[SkillEvals], chosen: Mapping[str, Measure]) -> list[Task]:
-    """Every run of each skill of *evals* that *chosen* measures, as its measure says."""
+def plan_measured(evals: Iterable[SkillEvals], chosen: Mapping[str, Measure],
+                  answers: Mapping[str, Iterable[Mapping]] | None = None) -> list[Task]:
+    """Every run of each skill of *evals* that *chosen* measures, as its
+    measure says; a grade run grades each of the skill's *answers*."""
     tasks: list[Task] = []
     for skill in evals:
         measure = chosen.get(skill.name)
         if measure is not None:
             tasks.extend(plan([skill], runs=measure.runs, kinds=measure.kinds, conditions=measure.conditions,
-                              cases=measure.cases))
+                              cases=measure.cases, answers=answers))
     return tasks
 
 

@@ -62,6 +62,10 @@ SUMMARY = "summary.md"
 SUMMARIES = "summaries"
 #: The record each run writes last (``skill_eval_runner.RECORD``).
 RECORD = "run.json"
+#: A grade run's kind (``skill_evals.GRADE``), and the scope of a run of the
+#: graders alone (``ci_skill_eval_scope.py``'s ``graders``).
+GRADE = "grade"
+GRADERS_SCOPE = "graders"
 #: How many failed assertions the job summary lists; the page lists all.
 SUMMARY_FAILURES = 15
 
@@ -144,8 +148,14 @@ class ModelRun:
     compared: dict | None = None
 
     @property
+    def as_grader(self) -> dict:
+        """How it graded the grader truth's answers, from its grade runs (``benchmark.agreement``)."""
+        found = (self.scored or {}).get("as_grader")
+        return found if isinstance(found, dict) else {}
+
+    @property
     def runs(self) -> int:
-        return sum(row.runs for row in self.rows)
+        return sum(row.runs for row in self.rows) + int(self.as_grader.get("answers") or 0)
 
     @property
     def errors(self) -> int:
@@ -153,11 +163,11 @@ class ModelRun:
 
     @property
     def input_tokens(self) -> int:
-        return sum(row.input_tokens for row in self.rows)
+        return sum(row.input_tokens for row in self.rows) + int(self.as_grader.get("input_tokens") or 0)
 
     @property
     def output_tokens(self) -> int:
-        return sum(row.output_tokens for row in self.rows)
+        return sum(row.output_tokens for row in self.rows) + int(self.as_grader.get("output_tokens") or 0)
 
     @property
     def dollars(self) -> float | None:
@@ -229,6 +239,10 @@ def read_model(model: str, folder: Path | None, *, floors: dict, previous: dict 
         default = {"kinds": found.meta.get("kinds") or [], "runs": found.meta.get("runs"),
                    "conditions": ["with_skill", "without_skill"], "cases": None}
         row = SkillRow(skill=name, measure=measures.get(name) or default)
+        kinds = set(row.measure.get("kinds") or [])
+        if kinds and not {"trigger", "task"} & kinds:
+            # Only its grader truth was graded: the graders' table holds that.
+            continue
         bench = entry.get("benchmark") or {}
         with_skill, without = bench.get("with_skill") or {}, bench.get("without_skill") or {}
         row.with_rate = (with_skill.get("pass_rate") or {}).get("mean")
@@ -244,6 +258,9 @@ def read_model(model: str, folder: Path | None, *, floors: dict, previous: dict 
     for path in sorted(folder.glob(f"*/**/{RECORD}")):
         record = _json(path)
         if not isinstance(record, dict) or not record.get("kind") or record.get("skill") not in rows:
+            continue
+        if record.get("kind") == GRADE:
+            # A grade of a prepared answer, no run of the skill: the graders' table counts it.
             continue
         relative = path.parent.relative_to(folder.parent.parent).as_posix()
         _add_record(rows[record["skill"]], record, relative, _json(path.with_name("transcript.json")))
@@ -365,9 +382,52 @@ LEADERBOARD = (
 
 
 def leaderboard(models: list[ModelRun]) -> list[ModelRun]:
-    """The models a benchmark scored, the best success with the skill first."""
-    scored = [run for run in models if run.scored]
+    """The models a benchmark scored a case or a query of, the best success with the skill first."""
+    scored = [run for run in models if run.scored and (run.scored.get("cases") or run.scored.get("queries"))]
     return sorted(scored, key=lambda run: -(run.scored["overall"]["success"].get("value") or 0))
+
+
+#: The graders' table's columns: heading, value. A grader's agreement is
+#: counted apart on the assertions checks decide, where no grade reaches a score.
+GRADERS = (
+    ("Grader", lambda run: run.model),
+    ("Answers", lambda run: str(run.as_grader.get("answers") or 0)),
+    ("Errors", lambda run: str(run.as_grader.get("errors") or 0)),
+    ("Agreement, unchecked", lambda run: _share_of(run.as_grader["unchecked"]["agreement"])),
+    ("False passes, unchecked", lambda run: _share_of(run.as_grader["unchecked"]["false_passes"])),
+    ("False fails, unchecked", lambda run: _share_of(run.as_grader["unchecked"]["false_fails"])),
+    ("Agreement, checked", lambda run: _share_of(run.as_grader["checked"]["agreement"])),
+    ("Usable", lambda run: "yes" if run.as_grader.get("usable") else f"no, under {run.as_grader['floor']:.0%}"),
+)
+
+
+def _share_of(found: dict | None) -> str:
+    if not found or found.get("value") is None:
+        return ""
+    return f"{found['value']:.0%} ({found.get('count', 0)} of {found.get('of', 0)})"
+
+
+def graders(models: list[ModelRun]) -> list[ModelRun]:
+    """The models that graded the grader truth, the best agreement on unchecked assertions first."""
+    found = [run for run in models if run.as_grader.get("answers")]
+    return sorted(found, key=lambda run: -((run.as_grader.get("unchecked") or {}).get("agreement") or {}).get(
+        "value", 0) or 0)
+
+
+def _graders_lines(models: list[ModelRun]) -> list[str]:
+    """The graders' table in the job summary, and the grader the benchmark would use."""
+    board = graders(models)
+    if not board:
+        return []
+    lines = ["", "### Graders", "",
+             f"Each model graded the grader truth's prepared answers. One whose verdicts on the assertions no "
+             f"check decides agree with the truth at least {board[0].as_grader['floor']:.0%} of the time can be "
+             "the benchmark's grader.", "",
+             "| " + " | ".join(name for name, _ in GRADERS) + " |", "|" + "---|" * len(GRADERS)]
+    lines += ["| " + " | ".join(value(run) for _, value in GRADERS) + " |" for run in board]
+    usable = [run.model for run in board if run.as_grader.get("usable")]
+    lines += ["", f"Best usable grader: `{usable[0]}`." if usable else "No model is a usable grader."]
+    return lines
 
 
 def per_skill(models: list[ModelRun]) -> list[tuple[str, dict[str, dict], list[str]]]:
@@ -501,6 +561,7 @@ def markdown(models: list[ModelRun], problems: list[str], *, scope: dict, page_u
             said = _compare_lines(run)
             if said:
                 lines += ["", f"`{run.model}`: " + " ".join(said)]
+    lines += _graders_lines(models)
     for run in models:
         if not run.rows:
             continue
@@ -618,11 +679,25 @@ def page(models: list[ModelRun], problems: list[str], *, scope: dict, run_url: s
         ]) + "</tr>")
     parts.append("</table></div>")
     parts += _benchmark_html(models)
+    board = graders(models)
+    if board:
+        parts.append("<h2>Graders</h2>"
+                     f'<p class="muted">Each model graded the grader truth\'s prepared answers: a golden answer '
+                     "meets every assertion of its case, and a mutant fails exactly the ones it names. One whose "
+                     "verdicts on the assertions no check decides agree with the truth at least "
+                     f"{board[0].as_grader['floor']:.0%} of the time can be the benchmark's grader.</p>"
+                     '<div class="wrap"><table><tr>' + "".join(f"<th>{escape(name)}</th>" for name, _ in GRADERS)
+                     + "</tr>")
+        parts += ["<tr>" + "".join(_cell(value(run), name != "Grader") for name, value in GRADERS) + "</tr>"
+                  for run in board]
+        parts.append("</table></div>")
     numeric = {name for name, _ in COLUMNS} - {"Skill", "Measured", "Floor", "Reached", "Native turns", "Cut calls"}
     for run in models:
         parts.append(f"<h2><code>{escape(run.model)}</code></h2>")
         if not run.rows:
-            parts.append(f'<p class="muted">Nothing measured: {escape(_probe(run) or "no run folder")}.</p>')
+            said = ("It graded the grader truth's answers, in Graders above" if run.as_grader.get("answers")
+                    else f"Nothing measured: {_probe(run) or 'no run folder'}")
+            parts.append(f'<p class="muted">{escape(said)}.</p>')
             continue
         parts.append('<div class="wrap"><table><tr>' + "".join(f"<th>{escape(name)}</th>" for name, _ in COLUMNS)
                      + "</tr>")
@@ -679,7 +754,8 @@ def build(out: Path, models: list[str], *, scope: dict, probes: dict | None = No
     (out / SUMMARY).write_text(markdown(runs, problems, scope=scope, page_url=page_url), encoding="utf-8")
     (out / SUMMARIES).mkdir(parents=True, exist_ok=True)
     for run in runs:
-        if run.folder is not None:
+        # A run of the graders measured no skill, so later runs do not compare with it.
+        if run.folder is not None and scope.get("measure") != GRADERS_SCOPE:
             (out / SUMMARIES / f"{slug(run.model)}.json").write_text(
                 json.dumps(summary_of(run), indent=2) + "\n", encoding="utf-8")
     return runs, problems

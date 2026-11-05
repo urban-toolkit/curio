@@ -201,6 +201,17 @@ def test_a_dispatch_measures_what_its_input_says(tree):
         _event(tree, "workflow_dispatch", value="trees,nowhere")
 
 
+def test_a_dispatch_of_the_graders_grades_the_grader_truth_of_each_skill_that_holds_one(tree):
+    """``graders`` has each model grade the prepared answers of every skill
+    that holds an ``evals/truth.json``, once, and runs nothing else."""
+    for folder in ("skills/trees", "packages/curio.parks@1/skills/parks"):
+        (tree / folder / "evals" / scope.TRUTH_FILE).write_text('{"answers": []}', encoding="utf-8")
+    found, read = _event(tree, "workflow_dispatch", value="graders")
+    assert found["measure"] == "graders" and not read
+    assert _measures(found) == {"trees": scope.GRADERS, "parks": scope.GRADERS}
+    assert scope.GRADERS["kinds"] == [scope.GRADE] and scope.GRADERS["runs"] == 1
+
+
 def test_each_measure_is_one_the_evaluations_read(tree):
     from utk_curio.backend.app.agents.evaluation import skill_evals
 
@@ -210,6 +221,7 @@ def test_each_measure_is_one_the_evaluations_read(tree):
     assert all(measure.whole for measure in read.values())
     assert skill_evals.Measure.from_dict(scope.WHOLE).whole and skill_evals.Measure.from_dict(scope.CASES).whole
     assert not skill_evals.Measure.from_dict(scope.SMOKE).whole
+    assert skill_evals.Measure.from_dict(scope.GRADERS).kinds == (skill_evals.GRADE,)
     assert scope.RUNS == skill_evals.RUNS
 
 

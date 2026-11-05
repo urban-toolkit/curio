@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: 'auto (what the branch changes against main), smoke (every skill''s first test case once), core (every skill''s test cases), full (every skill''s trigger queries and test cases), or skill names, comma-separated'
+        description: 'auto (what the branch changes against main), smoke (every skill''s first test case once), core (every skill''s test cases), full (every skill''s trigger queries and test cases), graders (each model grades the grader truth''s prepared answers), or skill names, comma-separated'
         type: string
         default: auto
       models:
