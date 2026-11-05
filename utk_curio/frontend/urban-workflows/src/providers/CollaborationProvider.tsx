@@ -426,10 +426,10 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
 
             // Locks. Each change is drawn as its message is handled
             // (``flushSync``), as the node an agent's state names turns at
-            // once (``collab/agentHolds``). Left to React's next render, a
-            // lock showed after the state its agent sent after it, and never
-            // when a busy page handled the agent's lock, its states and its
-            // unlock before React rendered again.
+            // once (``collab/agentHolds``). Left to React's next render, an
+            // agent's lock could show after the state the agent sent after
+            // it, or not at all when a busy page handled the lock, the states
+            // and the unlock before React rendered again.
             socket.on(
                 "node_locked",
                 (payload: { nodeId: string; lock: NodeLock }) => {
