@@ -86,6 +86,7 @@ def _measures(found: dict) -> dict:
 WHOLE = (["trigger", "task"], 3, ("with_skill", "without_skill"), None)
 CASES = (["task"], 3, ("with_skill", "without_skill"), None)
 SMOKE = (["task"], 1, ("with_skill",), 1)
+GRADERS = (["grade"], 1, ("with_skill",), None)
 
 
 def test_the_core_skills_are_those_the_base_entry_s_pages_place(tree):
@@ -208,8 +209,8 @@ def test_a_dispatch_of_the_graders_grades_the_grader_truth_of_each_skill_that_ho
         (tree / folder / "evals" / scope.TRUTH_FILE).write_text('{"answers": []}', encoding="utf-8")
     found, read = _event(tree, "workflow_dispatch", value="graders")
     assert found["measure"] == "graders" and not read
-    assert _measures(found) == {"trees": scope.GRADERS, "parks": scope.GRADERS}
-    assert scope.GRADERS["kinds"] == [scope.GRADE] and scope.GRADERS["runs"] == 1
+    assert _measures(found) == {"trees": GRADERS, "parks": GRADERS}
+    assert found["measures"]["trees"] == scope.GRADERS and scope.GRADERS["kinds"] == [scope.GRADE]
 
 
 def test_each_measure_is_one_the_evaluations_read(tree):
