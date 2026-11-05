@@ -643,6 +643,83 @@ class TestStreamedSolve:
             job.thread.join(timeout=5)
 
 
+class TestASolveThatIsStarting:
+    """The tabs list the agents as soon as a Solve's session says solving,
+    while the request that started it still resolves what its batch needs.
+    From that write on, the Solve is this process's."""
+
+    def test_a_listing_while_the_solve_starts_finds_it_solving_and_it_runs_to_ready(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        import threading
+
+        from utk_curio.backend.app.agents.application.proposals import acquire
+
+        user, token = user_and_token
+        helper = TestSolve()
+        att_id, _, _ = helper._applied_plan(client, user, token, alice_project, monkeypatch)
+        settle = acquire._settle_discovery_acquisitions
+        listings: list = []
+
+        def _listed_meanwhile(user_key, project_id):
+            # Another tab lists the agents, on a thread of its own as the
+            # server serves it, after the session's write and before the
+            # batch's job runs.
+            if not listings:
+                def _list():
+                    listings.append(client.application.test_client().get(
+                        f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token),
+                    ))
+
+                other = threading.Thread(target=_list, daemon=True)
+                other.start()
+                other.join(timeout=30)
+            return settle(user_key, project_id)
+
+        monkeypatch.setattr(acquire, "_settle_discovery_acquisitions", _listed_meanwhile)
+        resp = helper._solve(client, token, alice_project, att_id)
+
+        [listing] = listings
+        assert listing.status_code == 200, listing.get_json()
+        [card] = [a for a in listing.get_json()["attachments"] if a["attachmentId"] == att_id]
+        session = card["builderSession"]
+        assert session["phase"] == "solving", session
+        # The dock's running dot names the execution the session does.
+        assert (card["liveJob"] or {}).get("executionId") == session["solveExecutionId"], card["liveJob"]
+        assert resp.status_code == 200, resp.get_json()
+        body = resp.get_json()
+        assert {r["status"] for r in body["results"].values()} == {"solved"}
+        assert body["builderSession"]["phase"] == "ready"
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        assert not [t for t in turns if (t.get("text") or "").startswith("Solve was interrupted")]
+
+    def test_a_solve_that_fails_to_start_leaves_its_attachment_free_to_solve(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        from utk_curio.backend.app.agents.application.turns import grounding
+
+        user, token = user_and_token
+        helper = TestSolve()
+        att_id, _, _ = helper._applied_plan(client, user, token, alice_project, monkeypatch)
+        ground = grounding._solve_grounding_base
+
+        def _broken(*args, **kwargs):
+            raise RuntimeError("the grounding broke")
+
+        monkeypatch.setattr(grounding, "_solve_grounding_base", _broken)
+        with pytest.raises(RuntimeError, match="the grounding broke"):
+            TestStreamedSolve()._solve_gen(user, alice_project, att_id)
+        monkeypatch.setattr(grounding, "_solve_grounding_base", ground)
+        resp = helper._solve(client, token, alice_project, att_id)
+        assert resp.status_code == 200, resp.get_json()
+        body = resp.get_json()
+        assert {r["status"] for r in body["results"].values()} == {"solved"}
+        assert body["builderSession"]["phase"] == "ready"
+
+
 class TestGeneratedContentExtraction:
     """dev/57 — Solve and the node mints write only executable content."""
 
