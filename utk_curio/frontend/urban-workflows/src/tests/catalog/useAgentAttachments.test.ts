@@ -95,3 +95,55 @@ describe("useAgentAttachments", () => {
     await waitFor(() => expect(api.listAttachments).toHaveBeenCalledTimes(1));
   });
 });
+
+/** Two reads can overlap, as the room's word at once and its word when a wait
+ *  ends do. The newest read's answer is what the list shows, whichever lands
+ *  last: an older answer, or an older read's failure, changes nothing. */
+describe("useAgentAttachments with two reads out at once", () => {
+  type Listing = Awaited<ReturnType<typeof api.listAttachments>>;
+
+  /** Two dock refreshes whose reads the test answers: the older first held. */
+  async function twoReadsOut() {
+    const hook = renderHook(() => useAgentAttachments("p1"));
+    await waitFor(() => expect(hook.result.current.attachments).toHaveLength(1));
+    const older: { answer?: (listing: Listing) => void; fail?: (error: Error) => void } = {};
+    let answerNewer!: (listing: Listing) => void;
+    api.listAttachments
+      .mockImplementationOnce(() => new Promise<Listing>((resolve, reject) => {
+        older.answer = resolve;
+        older.fail = reject;
+      }))
+      .mockImplementationOnce(() => new Promise<Listing>((resolve) => {
+        answerNewer = resolve;
+      }));
+    act(() => {
+      window.dispatchEvent(new Event(AGENT_DOCK_REFRESH_EVENT));
+    });
+    act(() => {
+      window.dispatchEvent(new Event(AGENT_DOCK_REFRESH_EVENT));
+    });
+    await waitFor(() => expect(api.listAttachments).toHaveBeenCalledTimes(3));
+    await act(async () => {
+      answerNewer({ attachments: [att("a1"), att("a2")] });
+    });
+    expect(hook.result.current.attachments.map((a) => a.attachmentId)).toEqual(["a1", "a2"]);
+    return { hook, older };
+  }
+
+  it("keeps the newer read's answer when the older one lands last", async () => {
+    const { hook, older } = await twoReadsOut();
+    await act(async () => {
+      older.answer?.({ attachments: [att("a1")] });
+    });
+    expect(hook.result.current.attachments.map((a) => a.attachmentId)).toEqual(["a1", "a2"]);
+  });
+
+  it("keeps the newer read's answer when the older read fails last", async () => {
+    const { hook, older } = await twoReadsOut();
+    await act(async () => {
+      older.fail?.(new Error("the older read broke"));
+    });
+    expect(hook.result.current.attachments.map((a) => a.attachmentId)).toEqual(["a1", "a2"]);
+    expect(hook.result.current.error).toBeNull();
+  });
+});
