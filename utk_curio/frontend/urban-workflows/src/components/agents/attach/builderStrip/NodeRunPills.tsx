@@ -27,7 +27,7 @@ export const NodeRunPills: React.FC<{
       const finder = waiting?.attachmentId ? agentNameOf?.(waiting.attachmentId) ?? null : null;
       return (
         <li key={nodeId} className={`${styles.nodeRun}${needsUser ? ` ${styles.nodeNeedsUser}` : ""}`}>
-          <span className={styles.nodeName}>{name}</span>
+          <span className={styles.nodeName} data-tooltip={name}>{name}</span>
           <span className={styles[`status_${status}` as keyof typeof styles] ?? ""}>{STATUS_LABEL[status] ?? status}</span>
           {needsUser ? (
             <span className={styles.needsYou} data-tooltip={waiting?.reason ?? undefined}>

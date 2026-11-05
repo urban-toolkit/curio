@@ -70,10 +70,17 @@
   border-radius: 6px;
   padding: 2px 8px;
   background: var(--curio-card-bg);
+  max-width: 100%;
 }
 
+/* A long name is cut with "…", as a node's header cuts it; its tooltip says
+   it whole. */
 .nodeName {
   color: var(--curio-text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status_pending { color: var(--curio-text-secondary); }

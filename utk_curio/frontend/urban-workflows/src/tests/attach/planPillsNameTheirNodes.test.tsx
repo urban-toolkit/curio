@@ -92,6 +92,8 @@ test("a pill and its Solve button name the planned node by its title", () => {
   expect(within(pills).getByText("Load roads")).toBeInTheDocument();
   expect(pills).not.toHaveTextContent(LOAD.slice(0, 8));
   expect(screen.getByRole("button", { name: "Solve node Load roads on its own" })).toBeEnabled();
+  // A name too long for the pill is cut; its tooltip says it whole.
+  expect(within(pills).getByText("Load roads")).toHaveAttribute("data-tooltip", "Load roads");
 });
 
 test("a node without a title is named by its template's label, as its header is", () => {
