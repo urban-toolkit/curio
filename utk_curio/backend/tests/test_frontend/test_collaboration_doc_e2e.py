@@ -331,9 +331,13 @@ def test_a_widget_a_scenario_and_a_drag_show_in_the_other_tab(room, frames):
         assert not owner.evaluate("() => window.__curioTestFrameRan"), (
             "an animation frame ran while the owner's frames were held back, so this test proves nothing"
         )
+    # Each tab frames the node at zoom 1 through the app's fit, which sets the
+    # view at once and is read back until the page draws it: React Flow's
+    # setViewport moves through a d3 transition, which lands only on an
+    # animation frame, so a box read before one came was the old view's, and
+    # the press then missed the header (run 41966029009).
     for page in (owner, editor):
-        _wait_for_reactflow_ready(page)
-        page.evaluate("() => window.__curio_reactFlow.setViewport({x: 100, y: 200, zoom: 1})")
+        _wait_for_reactflow_ready(page, node_ids=[CODE_NODE], max_zoom=1.0)
     start = _position(editor, CODE_NODE)
     owner_start = _position(owner, CODE_NODE)
     box = node_locator(owner, CODE_NODE).bounding_box()
