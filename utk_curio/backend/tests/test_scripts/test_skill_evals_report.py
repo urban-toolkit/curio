@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -86,6 +87,13 @@ def _results(out: Path) -> Path:
     return folder
 
 
+def _twice(folder: Path) -> None:
+    """Each test case's run with the skill, run a second time: a compare
+    pairs only the cases both runs measured more than once."""
+    for run in sorted(folder.glob("*/eval-*/with_skill/run-1")):
+        shutil.copytree(run, run.with_name("run-2"))
+
+
 def _config(tmp_path: Path) -> tuple[Path, Path, Path]:
     floors, prices, previous = tmp_path / "floors.json", tmp_path / "prices.json", tmp_path / "previous"
     _write(floors, {"floors": {HAIKU: {"trees": 0.6, "birds": 0.9}}})
@@ -147,6 +155,7 @@ def test_a_skill_shown_worse_than_main_s_last_run_fails_the_run(tmp_path):
     floors, prices, previous = _config(tmp_path)
     folder = _results(tmp_path)
     (folder / "trees" / "triggers").joinpath("q01", "run-1", "run.json").unlink()
+    _twice(folder)
     scored = benchmark.score(folder)
     higher = json.loads(json.dumps(scored))
     for entry in higher["cases"].values():
@@ -161,6 +170,13 @@ def test_a_skill_shown_worse_than_main_s_last_run_fails_the_run(tmp_path):
     assert "**Failed:**" in (tmp_path / report.SUMMARY).read_text(encoding="utf-8")
     # The same run against main's own numbers shows nothing different, and passes.
     _write(previous / f"{report.slug(HAIKU)}.json", {"skills": {}, "benchmark": scored})
+    _, problems = report.build(tmp_path, [HAIKU], scope={}, probes=probes, exits={HAIKU: 0},
+                               previous=previous, floors=floors, prices=prices)
+    assert problems == []
+    # A smoke run, each case once, is paired with nothing: one failed run shows no skill worse.
+    for second in folder.glob("*/eval-*/with_skill/run-2"):
+        shutil.rmtree(second)
+    _write(previous / f"{report.slug(HAIKU)}.json", {"skills": {}, "benchmark": higher})
     _, problems = report.build(tmp_path, [HAIKU], scope={}, probes=probes, exits={HAIKU: 0},
                                previous=previous, floors=floors, prices=prices)
     assert problems == []
@@ -211,6 +227,7 @@ def test_the_benchmark_s_leaderboard_and_main_s_last_run(tmp_path):
 
     floors, prices, previous = _config(tmp_path)
     folder = _results(tmp_path)
+    _twice(folder)
     scored = benchmark.score(folder)
     # trees passed half its assertions, birds all of its one: 75% over both cases.
     assert scored["overall"]["success"]["value"] == 0.75
