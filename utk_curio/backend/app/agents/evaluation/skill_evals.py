@@ -20,9 +20,9 @@ folders, or in the skill's folder when it starts with ``evals/``); and
 default, or ``{"kind": "node", "node": <id>}``); and ``models``, the model
 packages Curio ships that the run's evaluation account holds, each
 ``<id>@<major>``, which its worker adds to the account before the run, as the
-Model Catalog's Add adds one (none by default, so ``models.search`` lists
-none). A test case may also hold ``checks``: assertions decided from a run's
-own record, with no model (``checks.py``).
+Model Catalog's Add adds one, so ``models.search`` lists them (none by
+default). A test case may also hold ``checks``: assertions decided from a
+run's own record, with no model (``checks.py``).
 
 ``agent_eval.py skills`` runs each trigger query and each test case three
 times (:data:`RUNS`):
