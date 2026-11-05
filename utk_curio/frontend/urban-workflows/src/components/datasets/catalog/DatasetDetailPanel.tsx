@@ -10,7 +10,8 @@ import {
   isDatasetPublishedToCatalog,
   isLayerGroupId,
 } from "../../../services/datasetCatalog";
-import { DatasetDataflowUsageSection, nodeKindLabel, useDatasetDataflowUsage } from "./DatasetDataflowUsage";
+import { DatasetDataflowUsageSection, useDatasetDataflowUsage } from "./DatasetDataflowUsage";
+import { nodeKindLabel } from "./nodeKindLabel";
 import {
   CollectionInfoSection,
   CollectionStrip,
