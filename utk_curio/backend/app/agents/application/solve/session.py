@@ -302,7 +302,7 @@ def solve_attachment_stream(
         _SOLVE_CANCEL_EVENTS[solve_execution_id] = stop
         coord = record.get("coord", "")
         session_id = record.get("sessionId")
-        # dev/115: everything that needs the REQUEST context is resolved here —
+        # dev/115: everything that needs the REQUEST context is resolved here, as
         # the job thread holds no ``g``: the batch's grounding base (catalog refs,
         # mission + plan texts) and the sandbox's dataset-path mapping.
         solve_ground = agents_grounding._solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
