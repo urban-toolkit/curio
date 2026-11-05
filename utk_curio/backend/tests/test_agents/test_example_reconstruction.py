@@ -331,11 +331,15 @@ class TestMutationsFailForTheRightReason:
     def test_a_wrong_template_fails_as_both_missing_and_extra(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
+        # Data Loading takes any input and hands on any output, as Python
+        # Computation does, so the plan still mints with one in its place.
         def mutate(payload, contents):
             for node in payload["nodes"]:
-                if node["nodeType"].endswith("data-transformation"):
-                    node["nodeType"] = "curio.builtin/computation-analysis"
+                if node["nodeType"].endswith("computation-analysis"):
+                    node["nodeType"] = "curio.builtin/data-loading"
                     break
+            else:
+                raise AssertionError("example 01's plan holds no Python Computation node")
 
         result = self._mutated_attempt(client, user_and_token, monkeypatch, mutate)
         assert "missing-node" in result.score.categories

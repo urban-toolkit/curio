@@ -73,8 +73,8 @@ CARD = 'article:not([role="status"])'
 
 LOADER_TYPE = "curio.builtin/data-loading"
 LOADER_STARTER = "data = curio_load_data([!! data !!])\nreturn data\n"
-TRANSFORM_TYPE = "curio.builtin/data-transformation"
-TRANSFORM_TILE = "#tile-data-transformation"
+TRANSFORM_TYPE = "curio.builtin/computation-analysis"
+TRANSFORM_TILE = "#tile-computation-analysis"
 
 # Node geometry: 525x350 at zoom 1 in a 1280x720 viewport. Anything closer than
 # ~600px apart horizontally overlaps, and the later node's body then covers the

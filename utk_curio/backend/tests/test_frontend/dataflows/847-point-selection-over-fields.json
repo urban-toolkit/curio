@@ -27,7 +27,7 @@
       },
       {
         "id": "selected",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 520,
         "y": 420,
         "in": "DATAFRAME",

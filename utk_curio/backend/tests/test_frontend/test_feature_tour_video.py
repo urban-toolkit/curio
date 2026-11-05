@@ -183,9 +183,9 @@ DATAFLOW_GOAL = (
     "Compare income per capita across neighborhoods and flag the outliers."
 )
 
-TRANSFORM_TILE = "#tile-data-transformation"
+TRANSFORM_TILE = "#tile-computation-analysis"
 LOADER_TYPE = "curio.builtin/data-loading"
-TRANSFORM_TYPE = "curio.builtin/data-transformation"
+TRANSFORM_TYPE = "curio.builtin/computation-analysis"
 
 # The quickstart scene is docs/QUICK-START.md on camera, with its code and spec.
 LOADING_TILE = "#tile-data-loading"
@@ -982,7 +982,7 @@ def scene_canvas(ctx: Ctx) -> None:
     tour.focus(page.locator("#tools-menu"), hold=1600)
     tour.say(
         "The built-in nodes, under Built-in on the rail",
-        "Loading, transformation, computation, pooling, maps, charts.",
+        "Loading, computation, pooling, maps, charts.",
         hold=2600,
     )
     # The tiles are drawn only while the Built-in palette is open.
@@ -990,7 +990,6 @@ def scene_canvas(ctx: Ctx) -> None:
     for tile, label in (
         ("#tile-data-loading", "Data Loading"),
         ("#tile-computation-analysis", "Python Computation"),
-        ("#tile-data-transformation", "Data Transformation"),
         ("#tile-data-pool", "Data Pool"),
         ("#tile-autk-grammar", "Autark: 2D and 3D maps, GPU compute"),
         ("#tile-vis-vega", "Vega-Lite charts"),
@@ -1906,7 +1905,7 @@ def scene_heat(ctx: Ctx) -> None:
     at = _node_positions(page)
     scatter, boxplot = sorted(charts, key=lambda i: at[i][0])
     projection = next(
-        i for i in _node_ids_by_type(page, "data-transformation")
+        i for i in _node_ids_by_type(page, "computation-analysis")
         if abs(at[i][0] - at[maps[0]][0]) < 1
     )
     block = [projection, boxplot] + maps + [scatter]

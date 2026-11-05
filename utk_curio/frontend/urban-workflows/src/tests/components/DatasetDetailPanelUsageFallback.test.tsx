@@ -120,7 +120,7 @@ function lineageFixture(overrides: Partial<DatasetLineage> = {}): DatasetLineage
  *
  * The node type is the legacy uppercase form, as the sibling test file's
  * fixtures use, because `formatNodeTypeLabel` is what turns a raw type into the
- * label the UI shows ("DATA_TRANSFORMATION" -> "Data Transformation") and this
+ * label the UI shows ("COMPUTATION_ANALYSIS" -> "Computation Analysis") and this
  * keeps the expected strings readable. A backend row carries no node *name*,
  * which is why the card below falls back to "Node <first 8 of the id>".
  */
@@ -131,7 +131,7 @@ function backendUsage(
     dataflowId: "flow-9",
     dataflowName: "Saved Accessibility Flow",
     nodeCount: 1,
-    nodes: [{ nodeId: "node-9", nodeType: "DATA_TRANSFORMATION" }],
+    nodes: [{ nodeId: "node-9", nodeType: "COMPUTATION_ANALYSIS" }],
     ...overrides,
   };
 }
@@ -178,7 +178,7 @@ describe("DatasetDetailPanel backend usage fallback", () => {
     // No node name on a backend row, so the card falls back to the sliced id
     // and carries the type as its badge.
     expect(within(downstream).getByText("Node node-9")).toBeInTheDocument();
-    expect(within(downstream).getByText("Data Transformation")).toBeInTheDocument();
+    expect(within(downstream).getByText("Computation Analysis")).toBeInTheDocument();
     expect(
       within(downstream).queryByText(
         "No nodes or dataflows are currently using this dataset.",
@@ -194,7 +194,7 @@ describe("DatasetDetailPanel backend usage fallback", () => {
       within(usage).getByRole("link", { name: "Saved Accessibility Flow" }),
     ).toHaveAttribute("href", "/dataflow/flow-9");
     expect(
-      within(usage).getByText("Consumed by Data Transformation"),
+      within(usage).getByText("Consumed by Computation Analysis"),
     ).toBeInTheDocument();
   });
 
@@ -231,7 +231,7 @@ describe("DatasetDetailPanel backend usage fallback", () => {
     expect(within(downstream).getByText("Spatial Join")).toBeInTheDocument();
     // The backend row must NOT be merged in alongside the live one: the fallback
     // is all-or-nothing, so a live consumer suppresses it entirely.
-    expect(within(downstream).queryByText("Data Transformation")).not.toBeInTheDocument();
+    expect(within(downstream).queryByText("Computation Analysis")).not.toBeInTheDocument();
     expect(within(sidebar()).getByText("Used by 1 node in 1 dataflow")).toBeInTheDocument();
   });
 

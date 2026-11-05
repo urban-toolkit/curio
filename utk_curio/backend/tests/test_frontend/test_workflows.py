@@ -1049,8 +1049,8 @@ class TestWorkflowCanvas:
                 # Since commit d8050b0 code nodes no longer have a separate output
                 # tab – the execution result is shown inline inside CodeEditor as
                 # the "[data-curio-node-output]" div with a Jupyter-style "[N]:" counter.
-                # This covers every code node (DATA_LOADING, DATA_TRANSFORMATION,
-                # COMPUTATION_ANALYSIS, JS_COMPUTATION, …); autk nodes are
+                # This covers every code node (DATA_LOADING, COMPUTATION_ANALYSIS,
+                # JS_COMPUTATION, …); autk nodes are
                 # category "grammar" and handled in the branch below.
                 output_area = node_el.locator("[data-curio-node-output]").filter(
                     has_text=re.compile(r"\[\d+\]:")

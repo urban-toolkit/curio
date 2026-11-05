@@ -15,13 +15,13 @@
     },
     {
       "name": "toggle on beats default off",
-      "node": {"nodeType": "curio.builtin/data-transformation", "saveOutputDataset": true},
+      "node": {"nodeType": "curio.builtin/computation-analysis", "saveOutputDataset": true},
       "defaultSave": false, "dashboardSource": false,
       "onRun": true, "recorded": true
     },
     {
       "name": "toggle off beats default on",
-      "node": {"nodeType": "curio.builtin/data-transformation", "saveOutputDataset": false},
+      "node": {"nodeType": "curio.builtin/computation-analysis", "saveOutputDataset": false},
       "defaultSave": true, "dashboardSource": false,
       "onRun": false, "recorded": false
     },

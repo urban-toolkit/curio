@@ -20,7 +20,7 @@ EXISTING = [
 ]
 TYPES = {
     "load": "curio.builtin/data-loading@1",
-    "xform": "curio.builtin/data-transformation@1",
+    "xform": "curio.builtin/computation-analysis@1",
     "combine": "curio.builtin/computation-analysis@1",
     "pool": "curio.builtin/data-pool@1",
     "vis": "curio.builtin/vis-vega@1",
@@ -88,7 +88,6 @@ class TestNetDataEdges:
 #: The roster rows the interaction rule reads, as available_templates gives them.
 ROSTER = {
     "curio.builtin/data-loading": {"category": "data"},
-    "curio.builtin/data-transformation": {"category": "data"},
     "curio.builtin/computation-analysis": {"category": "computation"},
     "curio.builtin/data-pool": {"category": "data", "bidirectional": True},
     "curio.builtin/vis-vega": {"category": "vis_grammar", "bidirectional": True},

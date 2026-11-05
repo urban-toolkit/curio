@@ -119,7 +119,7 @@ const ARTIFACTS: Record<string, unknown> = {
 
 /** What a Simple View hands on: the Image Segmentation's artifact, as it received it. */
 const POINTS_OUT = { path: 'photos-artifact', dataType: 'geodataframe' };
-/** What the Data Transformation's finished step hands on. */
+/** What the Python Computation's finished step hands on. */
 const POLYGONS_OUT = { path: 'neighborhoods-artifact', dataType: 'geodataframe' };
 
 beforeAll(() => {
@@ -261,10 +261,10 @@ async function openJoin(points: { id: string; type: string }, polygons: { id: st
   expect(joins.has('join')).toBe(true);
 }
 
-/** Example 10's route: a Simple View's points and the Data Transformation's polygons. */
+/** Example 10's route: a Simple View's points and the Python Computation's polygons. */
 const ROUTE = {
   points: { id: 'view', type: 'curio.builtin/vis-simple' },
-  polygons: { id: 'transform', type: 'curio.builtin/data-transformation' },
+  polygons: { id: 'transform', type: 'curio.builtin/computation-analysis' },
 };
 
 /** What the join answers when a run asks it, as Run All asks it. */
@@ -334,7 +334,7 @@ describe('a Spatial Join whose two inputs land in one render', () => {
   });
 
   test('the two inputs in two renders: the join gets both and joins them', async () => {
-    // The order every passing run had: the Data Transformation seconds apart.
+    // The order every passing run had: the Python Computation seconds apart.
     await openJoin(ROUTE.points, ROUTE.polygons);
 
     await act(async () => {

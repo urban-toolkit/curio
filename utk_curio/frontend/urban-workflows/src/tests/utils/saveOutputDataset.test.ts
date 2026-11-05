@@ -79,7 +79,7 @@ describe('buildSaveableLiveOutputs sink-node exclusion', () => {
       { nodeId: 'visnode', output: '1782_3d8f71d7_output.parquet' }, // passthrough of input
     ];
     const nodes = [
-      { id: 'transform', type: 'curio.builtin/data-transformation', data: { nodeId: 'transform' } },
+      { id: 'transform', type: 'curio.builtin/computation-analysis', data: { nodeId: 'transform' } },
       { id: 'visnode', type: 'curio.builtin/vis-vega', data: { nodeId: 'visnode' } },
     ];
     const refs = buildSaveableLiveOutputs(outputs, nodes, true) ?? [];
@@ -112,7 +112,7 @@ describe('buildSaveableLiveOutputs sink-node exclusion', () => {
 
   test('a versioned NON-sink type still saves', () => {
     const outputs = [{ nodeId: 't', output: 'y.parquet' }];
-    const nodes = [{ id: 't', type: 'curio.builtin/data-transformation@1', data: { nodeId: 't' } }];
+    const nodes = [{ id: 't', type: 'curio.builtin/computation-analysis@1', data: { nodeId: 't' } }];
     const refs = buildSaveableLiveOutputs(outputs, nodes, true) ?? [];
     expect(refs.map((r) => r.node_id)).toContain('t');
   });
@@ -128,8 +128,8 @@ describe('isNonProducingNodeType', () => {
   });
 
   test('rejects non-sink types in either form', () => {
-    expect(isNonProducingNodeType('curio.builtin/data-transformation')).toBe(false);
-    expect(isNonProducingNodeType('curio.builtin/data-transformation@1')).toBe(false);
+    expect(isNonProducingNodeType('curio.builtin/computation-analysis')).toBe(false);
+    expect(isNonProducingNodeType('curio.builtin/computation-analysis@1')).toBe(false);
     expect(isNonProducingNodeType('')).toBe(false);
   });
 });

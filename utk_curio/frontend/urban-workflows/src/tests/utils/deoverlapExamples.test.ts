@@ -14,7 +14,7 @@
  *
  * The second test is the other direction: fed a genuinely overlapping spec, the
  * pass has to fix it. Coordinates there are the real ones example 04 shipped
- * with before the relayout, whose two Data Transformation nodes overlapped by
+ * with before the relayout, whose two Python Computation nodes overlapped by
  * 521x32.
  */
 import * as fs from "fs";
@@ -96,8 +96,8 @@ describe("the shipped examples need no de-overlapping", () => {
 describe("a genuinely overlapping spec is repaired", () => {
     test("separates the pair example 04 used to ship with", () => {
         const nodes = [
-            { id: "2704287e", position: { x: 1200, y: 1518 }, data: { nodeType: "curio.builtin/data-transformation" } },
-            { id: "f4cb8452", position: { x: 1204, y: 1836 }, data: { nodeType: "curio.builtin/data-transformation" } },
+            { id: "2704287e", position: { x: 1200, y: 1518 }, data: { nodeType: "curio.builtin/computation-analysis" } },
+            { id: "f4cb8452", position: { x: 1204, y: 1836 }, data: { nodeType: "curio.builtin/computation-analysis" } },
         ];
 
         const result = deoverlapNodes(nodes, { measure });

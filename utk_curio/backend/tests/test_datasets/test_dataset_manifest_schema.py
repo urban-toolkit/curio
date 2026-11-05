@@ -85,7 +85,7 @@ EVERY_FIELD = {
     "groupId": "netcdf.rain",
     "layerName": "rain",
     "producerNodeId": "node-2",
-    "producerNodeType": "curio.builtin/data-transformation",
+    "producerNodeType": "curio.builtin/computation-analysis",
     "producerDataflowId": "flow-1",
     "producerDataflowName": "Rain",
     "upstreamInputs": [
@@ -445,7 +445,7 @@ def test_a_node_output(app):
 
     result = install_computed_file_for_node(
         "1", b"gauge,mm\nA,3\n", "rain.csv", "csv",
-        node_id="node-2", dataflow_id="flow-1", node_type="curio.builtin/data-transformation",
+        node_id="node-2", dataflow_id="flow-1", node_type="curio.builtin/computation-analysis",
         dataflow_name="Rain", upstream_inputs=EVERY_FIELD["upstreamInputs"],
     )
     raw = _written(result.dest)
