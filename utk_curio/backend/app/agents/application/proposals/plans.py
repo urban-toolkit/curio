@@ -562,7 +562,8 @@ class _PlanSteps:
         landed."""
         steps = []
         if self.remove_node_set or self.plan.get("removeEdges"):
-            steps.append(agent_peers.Action(what=f"plan {self.plan_id}: removals", write=self._removals))
+            steps.append(agent_peers.Action(what=f"plan {self.plan_id}: removals", write=self._removals,
+                                            removes=tuple(sorted(self.remove_node_set))))
         for ref, created in self.planned:
             title = next((n.get("title") for n in self.plan.get("nodes", []) if n["ref"] == ref), None)
             steps.append(agent_peers.Action(

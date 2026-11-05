@@ -9,8 +9,9 @@
  *   editors in this tab's color;
  * - `drag`: the places of the nodes this tab is dragging, which the others
  *   show live; the place itself is written into the doc at the drop;
- * - `removed`: the nodes this tab just removed, so a tab that was editing one
- *   says who removed it;
+ * - `removed`: the nodes this tab just removed (an agent at work's: the nodes
+ *   its write removes, `agent_peers.py`), so a tab that was editing one says
+ *   who removed it;
  * - `pointer`: where this tab's pointer is on the canvas, in flow coordinates,
  *   or null while it is off the canvas (`cursors.ts`); the others draw it as a
  *   cursor in this tab's color with its name.
@@ -20,6 +21,7 @@
  * state keeps only `pointer` and `selection`.
  */
 import type { Awareness } from "y-protocols/awareness";
+import { agentHolding, agentWithAsker } from "./participants";
 
 export interface PresenceUser {
     participant_id?: string | null;
@@ -146,10 +148,13 @@ export function noteRemoval(awareness: Awareness | null | undefined, nodeIds: st
     }, REMOVAL_NOTE_MS));
 }
 
-/** The name of whoever else just removed *nodeId*, if a note says so. */
+/** The name of whoever else just removed *nodeId*, if a note says so: an
+ *  agent as the room names it, "Node Builder (asked by Ana)". */
 export function removerOf(awareness: Awareness | null | undefined, nodeId: string): string | null {
     for (const [, state] of othersOf(awareness)) {
-        if (Array.isArray(state.removed?.nodes) && state.removed!.nodes.includes(nodeId)) return nameOf(state);
+        if (!Array.isArray(state.removed?.nodes) || !state.removed!.nodes.includes(nodeId)) continue;
+        const agent = agentHolding(state.user);
+        return agent ? agentWithAsker(agent) : nameOf(state);
     }
     return null;
 }

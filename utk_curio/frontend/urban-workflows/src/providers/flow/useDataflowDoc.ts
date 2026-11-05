@@ -436,7 +436,11 @@ export function useDataflowDoc(deps: DataflowDocDeps): DataflowDocBridge {
         writerBaseRef.current = target;
         if (!base) return;
         const kept = new Set((target.nodes as Fields[]).map((n) => n.id as string));
-        const removed = (base.nodes as Fields[]).map((n) => n.id as string).filter((id) => !kept.has(id));
+        // Only this tab's own removals are noted: a node the doc no longer
+        // holds went with someone else's change, which this canvas only took.
+        const inDoc = bound.provider.doc.getMap("nodes");
+        const removed = (base.nodes as Fields[]).map((n) => n.id as string)
+            .filter((id) => !kept.has(id) && inDoc.has(id));
         if (removed.length) noteRemoval(bound.provider.awareness, removed);
         const doc = bound.provider.doc;
         doc.transact(() => applyDataflow(doc, withoutDangling(base, doc), target), CANVAS_ORIGIN);

@@ -2685,8 +2685,8 @@ The server keeps one Yjs doc per open dataflow: a pycrdt `Doc` and an `Awareness
 
 | Case | Rule |
 |------|------|
-| Removing a node someone else is editing | The node is not deletable on the canvas while another state's `editing` names it (`useEditedByOthers`); the Delete key and the node's delete ask through `useRemovalAsk`. A removal says so first in the remover's awareness (`removed`, `presence.noteRemoval`). |
-| A node removed while this tab edits it | The observer takes it off and says who removed it, read from the remover's note (waiting up to `REMOVER_WAIT_MS` for it), with **Put it back**, which adds the node with this tab's code and its connections whose other end remains. |
+| Removing a node someone else is editing | The node is not deletable on the canvas while another state's `editing` names it (`useEditedByOthers`); the Delete key and the node's delete ask through `useRemovalAsk`. A removal says so first in the remover's awareness (`removed`, `presence.noteRemoval`): a tab notes only what its own write takes out of the doc, and what the answer to its own version put back or Undo says it took out (`history.put_back`'s `removed`, an Undo's `removedNodeIds`); an agent at work names what its write removes in its state (`agent_peers.act`). |
+| A node removed while this tab edits it | The observer takes it off and says who removed it, read from the remover's note (waiting up to `REMOVER_WAIT_MS` for it), an agent as its chip names it, with **Put it back**, which adds the node with this tab's code and its connections whose other end remains. |
 | A connection to a node removed at the same moment | Dropped on the server (above); the drawer's tab says who removed the node. |
 | A widget, a node's place, size, chip size or pin | Each is one value, so the last write wins in every tab. |
 
