@@ -97,7 +97,7 @@ An agent's manifest names its skills ([`skills`](#6-the-manifest)). An agent of 
 - A message you type goes to the agent's chat instruction, and the model follows its rules: in the same call that answers you, it decides what you asked for and which tools to use.
 - A mode runs only when another agent, Solve or the agent itself asks for it, as a separate call with no tools.
 - Curio picks the file from what the call is for; the model does not.
-- Curio finds the agent for a task by the capability its manifest declares, never by its name or id (see [Capabilities](#capabilities)). An agent of your own that declares what a shipped one does is picked where the shipped one would be.
+- Curio finds the agent for a task by the capability its manifest declares, never by its name or id (see [Capabilities](#capabilities)). An agent of your own that declares what a shipped one does is picked where the shipped one would be, though an agent that asks for one of its own modes runs it itself.
 
 Each agent's prompts, by the key its manifest gives them:
 
@@ -316,7 +316,7 @@ A reply of Node Builder or Dataflow Builder that carries no change and no review
 
 An agent may require others: the agents a task of its own runs without asking the model, such as the Node Builder and the Dataset Finder that the Dataflow Builder's Solve runs. The drawer says so before you click: the button reads **Add to project (+2 required)**, and its tooltip names what else will be added. Adding brings in all of them at once. A required agent that ships with Curio is added at its shipped version; one of your own at the highest version in your imports or the catalog.
 
-The task itself goes to the agent in the dataflow that declares its capability: the one the requiring agent's `delegatesTo` names first, else any other that declares it and that `delegatesTo` does not name. So an agent of your own that requires your own copies of the Node Builder and the Dataset Finder runs them.
+The task itself goes to the agent in the dataflow that declares its capability: the one the requiring agent's `delegatesTo` names first, unless that one ships with Curio and an agent of your own in the dataflow declares the capability too, which then takes it; else any other that declares it and that `delegatesTo` does not name. So an agent of your own that requires your own copies of the Node Builder and the Dataset Finder runs them, and so does an agent Curio ships while the dataflow holds your copies beside its own.
 
 The reverse holds too. Removing an agent that another added agent requires is refused, with a message naming the agent that needs it, so a dataflow never holds a broken reference.
 
@@ -375,7 +375,7 @@ An agent knows which nodes are tiles of the dataflow's [dashboard](USAGE.md#dash
 
 ### Finding data in portals
 
-The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVERY-CATALOG.md) as well as your own datasets, and propose downloading one. Nothing is downloaded until you apply the proposal. See [DISCOVERY-CATALOG.md part 6](DISCOVERY-CATALOG.md#6-the-dataset-finder). In any agent's chat, the **From your Data Catalog** lane of a candidates card lists only datasets your Data Catalog holds, installed or not as the Data Catalog shows them, and a card left with no dataset says so. Confirming a row reads it from your Data Catalog again. Solve and the other agents ask whichever agent in the dataflow declares `dataset.discover`, so an agent of your own that declares it, with the same tools, searches in its place.
+The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVERY-CATALOG.md) as well as your own datasets, and propose downloading one. Nothing is downloaded until you apply the proposal. See [DISCOVERY-CATALOG.md part 6](DISCOVERY-CATALOG.md#6-the-dataset-finder). In any agent's chat, the **From your Data Catalog** lane of a candidates card lists only datasets your Data Catalog holds, installed or not as the Data Catalog shows them, and a card left with no dataset says so. Confirming a row reads it from your Data Catalog again. Solve and the other agents ask the agent in the dataflow that declares `dataset.discover`, yours before Curio's, so an agent of your own that declares it, with the same tools, searches in its place.
 
 ---
 
@@ -546,7 +546,7 @@ Curio finds the agent for each of its own tasks by the capability it declares:
 | `dataflow.orchestrate` | plan a dataflow; its chat has the **Solve** strip, and API Settings lists the agents its Solve runs |
 | `node.build` | build nodes on the canvas; its chat says when a reply changed nothing on it |
 
-When several agents in the dataflow declare a capability, the one the asking agent's `delegatesTo` names first is picked. When none of those is in the dataflow, an agent in it that `delegatesTo` does not name at all takes the capability, so adding an agent of your own lets the others hand it that work. When several agents in the dataflow do the same job and no `delegatesTo` entry names one of them, one you imported or published answers before one Curio ships. An agent `delegatesTo` names takes only the capabilities its entry names.
+When several agents in the dataflow declare a capability, one you imported or published answers before one Curio ships, and of yours, the first by id. The asking agent's `delegatesTo` says whom it asks first: an agent of yours that an entry names answers as named, and an agent Curio ships that an entry names answers unless one of yours in the dataflow declares the capability. When none of those is in the dataflow, an agent in it that `delegatesTo` does not name at all takes the capability, so adding an agent of your own lets the others hand it that work. An agent `delegatesTo` names takes only the capabilities its entry names, and an agent that asks for one of its own modes runs it itself.
 
 ### Modes
 
