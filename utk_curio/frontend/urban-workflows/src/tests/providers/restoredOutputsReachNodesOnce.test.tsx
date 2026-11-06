@@ -348,7 +348,7 @@ describe('a load hands each restored output to each node below it once', () => {
     await settle();
 
     // A canvas asks for the results an invited editor's runs left it with.
-    expect(mockGetShared).toHaveBeenCalledWith(PROJECT_ID, { lastResults: true });
+    expect(mockGetShared).toHaveBeenCalledWith(PROJECT_ID, { lastResults: true, signal: expect.any(AbortSignal) });
     expectEachRestoredOutputOnce();
   });
 

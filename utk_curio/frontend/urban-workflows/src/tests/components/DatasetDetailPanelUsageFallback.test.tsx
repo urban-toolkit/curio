@@ -201,14 +201,14 @@ describe("DatasetDetailPanel backend usage fallback", () => {
   });
 
   it("names a consumer by its template's label when the registry holds the template", async () => {
-    // A template id is not always its label: python-computation is Python
-    // Computation, as the palette and the node's header call it.
+    // A template id is not always its label: edit-features is Map Editor, as
+    // the palette and the node's header call it.
     registerNode({
-      id: "curio.builtin/python-computation@1",
-      label: "Python Computation",
+      id: "curio.builtin/edit-features@1",
+      label: "Map Editor",
     } as unknown as NodeDescriptor);
     usageSpy.mockResolvedValue([
-      backendUsage({ nodes: [{ nodeId: "node-9", nodeType: "curio.builtin/python-computation@1" }] }),
+      backendUsage({ nodes: [{ nodeId: "node-9", nodeType: "curio.builtin/edit-features@1" }] }),
     ]);
     renderPanel(lineageFixture());
 
@@ -218,11 +218,11 @@ describe("DatasetDetailPanel backend usage fallback", () => {
     const usage = within(sidebar()).getByRole("region", {
       name: "Projects using this dataset",
     });
-    expect(within(usage).getByText("Consumed by Python Computation")).toBeInTheDocument();
+    expect(within(usage).getByText("Consumed by Map Editor")).toBeInTheDocument();
     const downstream = within(sidebar()).getByText("Downstream usage (1)")
       .parentElement as HTMLElement;
-    expect(within(downstream).getByText("Python Computation")).toBeInTheDocument();
-    expect(within(downstream).queryByText("Python Computation")).not.toBeInTheDocument();
+    expect(within(downstream).getByText("Map Editor")).toBeInTheDocument();
+    expect(within(downstream).queryByText("Edit Features")).not.toBeInTheDocument();
   });
 
   it("prefers live-canvas consumers over backend usage", async () => {
