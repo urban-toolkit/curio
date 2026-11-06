@@ -9,6 +9,8 @@ Catalog drawer drags as the Node Catalog drawer's cards do:
   DDRNet23-Slim, Deep Umbra, the SCOUT weather GNN and a model added from
   Hugging Face, and DDRNet's node runs. Cancel on that review makes no node
   and installs nothing;
+* a card dropped while the dataflow is still opening (its read held) opens
+  the same Add review once the dataflow is in, and becomes its node;
 * the Tools panel's Models dropdown lists the dataflow's models only, as the
   Data Catalog dropdown lists its datasets: none in a dataflow that has added
   none, then the one added in the drawer. Its row drops as the card does, and
@@ -42,6 +44,7 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import expect
 
+from .test_computed_json_output_e2e import _record_toasts
 from .test_discovery_catalog import _goto_discovery, _require_recorded_corpus
 from .test_model_catalog_e2e import (
     LOCAL_RELIEF,
@@ -66,6 +69,7 @@ from .utils import (
     close_tools_palette,
     connect_nodes,
     drag_with_the_mouse_onto_canvas,
+    end_routes,
     frame_nodes,
     node_locator,
     open_tools_palette,
@@ -317,6 +321,113 @@ def test_a_model_card_dropped_on_the_canvas_adds_its_package_and_becomes_its_nod
     run_node_and_wait(page, PHOTOS, node_type="data-loading", timeout_ms=180000)
     text = run_node_and_wait(page, node, node_type=template, timeout_ms=180000)
     assert "Saved to file" in text, f"DDRNet's node did not run: {text!r}"
+
+
+#: The read of the dataflow its canvas opens with (ProjectLoader).
+_DATAFLOW_READ = re.compile(r".*/api/projects/[0-9a-f-]{36}\?results=last$")
+#: The canvas title, and what it says while the dataflow is opening.
+TITLE = "[data-curio-canvas-title] h1"
+OPENING = "Opening dataflow…"
+
+
+def _held_dataflow_read(page) -> list:
+    """Hold the read of the dataflow the canvas opens with until the test lets
+    it go; anything else goes on."""
+    held: list = []
+
+    def hold(route) -> None:
+        if route.request.method == "GET":
+            held.append(route)
+        else:
+            route.continue_()
+
+    page.route(_DATAFLOW_READ, hold)
+    return held
+
+
+def _record_package_requests(page) -> list[str]:
+    """Every request that could review, add or install a package, as it is sent."""
+    sent: list[str] = []
+    page.on(
+        "request",
+        lambda r: sent.append(f"{r.method} {r.url}")
+        if r.method != "GET" and "/api/packages" in r.url else None,
+    )
+    return sent
+
+
+def test_a_model_card_dropped_while_the_dataflow_opens_opens_the_add_review_once_it_is_in_and_becomes_its_node(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    """A card dropped on a canvas whose dataflow is still opening waits for it
+    (useDropsWhileOpening). The commit the dataflow opens in gave the open
+    drawer a new Add, and the drawer took its listener off to put that on just
+    as the canvas sent the drop's request to it: no drawer took it, and the
+    drop said "Add ... from the Model Catalog first." instead of opening the
+    Add review (test_package_libraries_offline_e2e's model card test met it
+    once, when the dataflow's read was slow). The read is held here until the
+    card is dropped, so the drop comes while the dataflow opens on every run."""
+    dir_name, template = SHIPPED_CARDS["deep-umbra"]
+    name = _manifest(dir_name)["name"]
+    model_id = dir_name.split("@")[0]
+    first_add = f"Add {name} to this dataflow from the Model Catalog first."
+    held = _held_dataflow_read(page)
+    try:
+        _enter(page, app_frontend, current_server, spec=_empty())
+        expect(page.locator(TITLE)).to_have_text(OPENING, timeout=15000)
+        _record_toasts(page)
+        drawer = _open_drawer(page, "Model Catalog", MODEL_DRAWER)
+        card = _card(drawer, dir_name)
+        expect(card).to_have_count(1, timeout=30000)
+        expect(card).to_have_attribute("draggable", "true")
+        sent = _record_package_requests(page)
+        before = _node_ids(page)
+
+        drop = drag_with_the_mouse_onto_canvas(page, card.locator("h3"), at=_free_point(page))
+
+        assert drop["onCanvas"], f"the card's drop landed on {drop['droppedOn']}, not on the canvas"
+        # The drop came while the dataflow opened: its read is still held, and
+        # the drop waits for it, asking nothing of the server yet.
+        while_opening = {
+            "reads held": len(held),
+            "title": page.locator(TITLE).inner_text(),
+            "package requests": list(sent),
+        }
+        assert while_opening == {"reads held": 1, "title": OPENING, "package requests": []}, while_opening
+
+        # The dataflow comes in, and the drop is made by the canvas it opened as.
+        held.pop(0).continue_()
+        expect(page.locator(TITLE)).to_have_text("Model drops", timeout=60000)
+        review = _add_review(page, name)
+        told_first = page.locator(NOTIFICATIONS).get_by_text(first_add)
+        expect(review.or_(told_first).first).to_be_visible(timeout=30000)
+        told = page.evaluate("() => window.__curioToastLog || []")
+        assert [toast for toast in told if first_add in toast] == [], (
+            f"the drop made while the dataflow opened reached no drawer: {told}"
+        )
+        expect(review).to_be_visible()
+        assert _node_ids(page) == before, "the drop made a node before the Add review was confirmed"
+
+        with page.expect_response(
+            lambda r: "/api/packages/projects/" in r.url and r.url.endswith("/install")
+            and r.request.method == "POST",
+            timeout=180000,
+        ) as added:
+            review.get_by_role("button", name="Add to project", exact=True).click()
+        assert added.value.status == 201, f"{added.value.status}: {added.value.text()[:600]}"
+        expect(review).to_have_count(0, timeout=30000)
+        node = _new_node(page, before)
+        assert (canvas_node_type(page, node) or "").startswith(f"{model_id}/{template}"), canvas_node_type(page, node)
+        _wait_for_code_naming(page, node, model_id)
+    finally:
+        # A read still held (the test failed before letting it go) goes on, so
+        # taking the routes off waits for nothing.
+        for route in held:
+            try:
+                route.continue_()
+            except Exception:  # noqa: BLE001 - already let go
+                pass
+        end_routes(page)
 
 
 def _right_of_the_palette(page) -> tuple[float, float]:

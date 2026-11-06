@@ -3,8 +3,11 @@
  * catalog drawer that runs the Add. A hosted guest's drop is refused before
  * anything is asked of a drawer: guests never install.
  */
-import { renderHook } from "@testing-library/react";
+import React, { useCallback } from "react";
+import { render, renderHook } from "@testing-library/react";
 
+import type { ProjectLoadState } from "../../components/projectLoadState";
+import { useDropsWhileOpening } from "../../hook/useDropsWhileOpening";
 import {
   guestAddRefusal,
   packageDropAction,
@@ -67,5 +70,58 @@ describe("the request to the open drawer", () => {
     renderHook(() => usePackageAddRequests(second));
     expect(requestPackageAdd(request())).toBe(true);
     expect(first.mock.calls.length + second.mock.calls.length).toBe(1);
+  });
+});
+
+/**
+ * A card dropped while the dataflow its link names is still opening waits for
+ * it (`useDropsWhileOpening`), and the canvas sends its request from an effect
+ * of the commit the dataflow opens in. That commit gives the open drawer a new
+ * *take* too, since the drawer's Add reads the dataflow's id. The canvas comes
+ * first in the tree, as MainCanvas comes before the drawer that
+ * ModelCatalogDrawerProvider portals after its children, and React runs every
+ * cleanup of a commit's effects before any of its effects: a drawer that took
+ * its listener off to put the new *take* on was not listening when the
+ * request came, so the drop said "Add ... from the Model Catalog first."
+ * instead of opening the Add review.
+ */
+describe("a card dropped while the dataflow opens", () => {
+  it("reaches the open drawer in the commit the dataflow opens in, and the drawer's newest take answers it", () => {
+    const answered: boolean[] = [];
+    const takenFor: Array<string | null> = [];
+    let keep: (drop: PackageAddRequest) => boolean = () => false;
+
+    function Canvas({ load }: { load: ProjectLoadState }) {
+      keep = useDropsWhileOpening<PackageAddRequest>(
+        { load, viewerMode: load === "loaded" ? "owner" : undefined, roomRole: null },
+        (drop) => {
+          answered.push(requestPackageAdd(drop));
+        },
+      );
+      return null;
+    }
+    function Drawer({ projectId }: { projectId: string | null }) {
+      const take = useCallback(() => {
+        takenFor.push(projectId);
+        return true;
+      }, [projectId]);
+      usePackageAddRequests(take);
+      return null;
+    }
+    const Page = ({ load, projectId }: { load: ProjectLoadState; projectId: string | null }) => (
+      <>
+        <Canvas load={load} />
+        <Drawer projectId={projectId} />
+      </>
+    );
+
+    const { rerender } = render(<Page load="loading" projectId={null} />);
+    expect(keep(request({ kind: "model" }))).toBe(true);
+    expect(answered).toEqual([]);
+
+    // The dataflow is in, and its id reaches the drawer in the same commit.
+    rerender(<Page load="loaded" projectId="dataflow-1" />);
+
+    expect({ answered, takenFor }).toEqual({ answered: [true], takenFor: ["dataflow-1"] });
   });
 });
