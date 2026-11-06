@@ -346,7 +346,7 @@ To give both stacks an LLM endpoint of their own (the Deployment default and **T
 
 Without both secrets, the deploy removes `.secrets/llm-endpoint` and the stack has no endpoint of its own.
 
-Pushing to `main` triggers the dev deploy. Stable runs manually via Actions → Deploy → Run workflow.
+A merge to `main` deploys the dev stack once: Bump version bumps the patch version and dispatches the dev deploy of that commit. Stable runs manually via Actions → Deploy → Run workflow.
 
 `deploy.yml` takes two inputs: `ref` (branch, tag, or SHA; empty deploys the latest `v*` tag) and `target` (`both` / `dev` / `stable`). Both jobs check out the requested ref and rebuild with `--no-cache --force-recreate`.
 
@@ -356,7 +356,7 @@ Version bumps are automated by [`.github/workflows/bump-version.yml`](../.github
 
 | You do | Bump | Tag | Deploys |
 |---|---|---|---|
-| Push to `main` (touching `utk_curio/**` or `docs/examples/**`) | patch | none | dev only |
+| Push to `main` (touching anything the deployed image holds) | patch | none | dev only |
 | Actions → Bump version → Run workflow, `bump: minor` | minor | `vX.Y.0` | dev **and** stable |
 | Actions → Bump version → Run workflow, `bump: major` | major | `vX.0.0` | dev **and** stable |
 
