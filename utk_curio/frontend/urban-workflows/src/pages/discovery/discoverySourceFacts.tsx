@@ -1,7 +1,6 @@
 import React from "react";
 
 import { requestSourceKey } from "../../components/apiSettings/apiSettingsRequest";
-import { HOSTED_GUEST_KEYS_NOTE } from "../../components/apiSettings/useHostedGuest";
 import browseStyles from "../catalog/CatalogBrowseLayout.module.css";
 import { DISCOVERY_PROVIDER_LABEL, type DiscoverySourceRow } from "../../services/discoveryCatalog";
 
@@ -57,7 +56,7 @@ export function discoverySourceInfoRows(source: DiscoverySourceRow): DiscoverySo
 
 /** The Access list, or an empty one for a source that takes no token.
  *  `hostedGuest` is the caller's `useHostedGuest()`: such a guest saves no key,
- *  so its list says so instead of offering API Settings.
+ *  so its list offers no API Settings button.
  *  `beforeKeyRequest` runs before API Settings is asked for the key: a modal
  *  closes itself there, since it would sit above the API Settings drawer. */
 export function discoverySourceAccessItems(
@@ -76,9 +75,7 @@ export function discoverySourceAccessItems(
     <li key="slot">
       Credential: <code>{auth.secretId}</code>
       {auth.present ? " (set on your account)" : " (not set)"}{" "}
-      {hostedGuest ? (
-        HOSTED_GUEST_KEYS_NOTE
-      ) : auth.secretId ? (
+      {!hostedGuest && auth.secretId ? (
         <button
           type="button"
           className={browseStyles.linkButton}

@@ -263,7 +263,8 @@ describe("a data source key: the Hugging Face token", () => {
     mockSharedGuest = true;
     mockLlmEditable = false;
     open();
-    expect(await screen.findByText("Personal keys cannot be saved on a shared guest account.")).toBeInTheDocument();
+    expect(await screen.findByText(/not available to guests/)).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("Personal keys cannot be saved");
     await listsSettled();
     expect(mockListKeys).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Add configuration" })).toBeNull();
@@ -385,7 +386,8 @@ describe("a key for node code (dev/116)", () => {
     // sends its keys.
     mockSharedGuest = true;
     open();
-    expect(await screen.findByText("Personal keys cannot be saved on a shared guest account.")).toBeInTheDocument();
+    expect(await screen.findByText(/not available to guests/)).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("Personal keys cannot be saved");
     expect(screen.queryByRole("button", { name: "Add configuration" })).toBeNull();
   });
 

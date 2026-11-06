@@ -515,11 +515,12 @@ describe("guests", () => {
     });
     render(<Panel />);
     expect(await screen.findByText(/not available to guests/)).toBeInTheDocument();
-    expect(screen.getByText("small")).toBeInTheDocument();
+    // The reason is the only text above the list: no guest model line, no keys note.
+    expect(screen.queryByText("small")).toBeNull();
+    expect(document.body).not.toHaveTextContent("Guests use");
+    expect(document.body).not.toHaveTextContent("Personal keys cannot be saved");
     // This Curio's endpoint is never named by its host, even one a listing carries.
-    expect(screen.getByText("small").closest("p")).toHaveTextContent("Guests use small on this Curio's endpoint.");
     expect(document.body).not.toHaveTextContent("guest.example.edu");
-    expect(screen.getByText("Personal keys cannot be saved on a shared guest account.")).toBeInTheDocument();
     // The list holds only Curio's rows, and no button at all.
     const list = await table();
     expect(curioRows()).toHaveLength(2);
@@ -529,6 +530,7 @@ describe("guests", () => {
     expect(screen.queryByRole("button", { name: /Agent configuration|Configure agents/ })).toBeNull();
     showTab("Agent configuration");
     expect(await screen.findByText(/not available to guests/)).toBeInTheDocument();
+    expect(screen.getByTestId("agent-config-tab")).not.toHaveTextContent("Guests use");
     expect(screen.queryByLabelText("Default for my agents")).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
   });
