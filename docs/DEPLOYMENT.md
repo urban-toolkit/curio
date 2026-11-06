@@ -460,6 +460,11 @@ It shows:
 - **Execution** - node runs since launch, failures, a duration histogram, how
   many isolated slots are busy, and a tally of how child processes died
   (timeout, OOM, CPU limit, refused confinement).
+- **LLM tokens** - each model's input and output tokens per hour over the last
+  7 days, as two charts, and a table of each model's tokens over the last 24
+  hours, the last 7 days and everything kept, with its requests. Each model is
+  marked as running on Curio's own endpoint or on a key a user set for their
+  own.
 - **Accounts and content** - account, session, sign-in, project and dataset
   counts.
 - **Storage** - disk usage across the `.curio` tree, as a distribution over
@@ -471,16 +476,21 @@ It shows:
 "Copy diagnostics" puts the whole picture on the clipboard as markdown, ready
 to paste into an issue; "Download" saves the same thing as JSON.
 
-Nothing is persisted. Every figure is since the process started, which is why
-uptime is on the page, and a restart resets them.
+Every figure is since the process started, which is why uptime is on the page,
+and a restart resets them. The LLM tokens are also written to
+`.curio/monitor/llm-tokens.json` as they are counted. That file holds at most
+the last 90 days, and a restart starts it over.
 
 ### What the page exposes, and who can read it
 
-**`/monitor` and its four routes are public and unauthenticated**, like
+**`/monitor` and its five routes are public and unauthenticated**, like
 `/version`. On a deployment, anyone who can reach the URL can read them.
 
 The statistics are aggregates: no route reports a username, an email address,
-an IP address, or a per-user row.
+an IP address, or a per-user row. The LLM tokens section names the models that
+answered: Curio's own, and the ones users set for their own keys. A model name
+that looks like a URL, a host, an email address, an IP address or a key, or
+that has spaces, shows as `other`.
 
 **The error log is the exception.** `GET /api/monitor/errors` returns raw,
 unredacted failures. Those

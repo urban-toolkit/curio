@@ -1,15 +1,16 @@
 /**
  * The monitor page's backend calls.
  *
- * Three read routes plus one write. All are public and unauthenticated, but
+ * Four read routes plus one write. All are public and unauthenticated, but
  * they go through `apiFetch` anyway: it resolves the backend origin through
  * `backendUrl()` (which the e2e harness injects per browser context) and
  * throws an Error carrying `.status`, which is the convention every other
  * `src/api/*Api.ts` module follows. The Bearer token it attaches when a
  * session cookie happens to exist is harmless on a public route.
  *
- * The two aggregate payloads carry no identifiers by design; the error log
- * deliberately does. See `utk_curio/backend/app/monitor/errors.py`.
+ * The three aggregate payloads carry no identifiers by design, the LLM one
+ * naming only models; the error log deliberately does. See
+ * `utk_curio/backend/app/monitor/errors.py` and `llm_tokens.py`.
  */
 import { apiFetch } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
@@ -164,6 +165,47 @@ export interface MonitorStoragePayload {
   disk: { totalBytes: number | null; freeBytes: number | null };
 }
 
+/** Tokens and requests in one window, or in one hour. */
+export interface MonitorLlmCounts {
+  inputTokens: number;
+  outputTokens: number;
+  requests: number;
+}
+
+/** One model's tokens in one UTC hour (`hour`, `YYYY-MM-DDTHH:00:00Z`). */
+export interface MonitorLlmHour extends MonitorLlmCounts {
+  hour: string;
+  model: string;
+  /** On this Curio's own endpoint, rather than on a key a user set for their own. */
+  curio: boolean;
+}
+
+/** One model's totals: the last 24 hours, the last 7 days, every hour kept. */
+export interface MonitorLlmModel {
+  model: string;
+  curio: boolean;
+  last24h: MonitorLlmCounts;
+  last7d: MonitorLlmCounts;
+  kept: MonitorLlmCounts;
+}
+
+/**
+ * `GET /api/monitor/llm`: each model's tokens since the backend started
+ * (`startedAt`), at most `maxDays` days, as hourly rows from `hourlyFrom` to
+ * `hourlyTo` (the last 7 days, hours with no request left out) and totals.
+ */
+export interface MonitorLlmPayload {
+  computedAt: string;
+  startedAt: string;
+  maxDays: number;
+  ageSeconds: number;
+  ttlSeconds: number;
+  hourlyFrom: string;
+  hourlyTo: string;
+  hourly: MonitorLlmHour[];
+  models: MonitorLlmModel[];
+}
+
 export type MonitorErrorSource = "node" | "sandbox" | "backend" | "client";
 
 export interface MonitorError {
@@ -198,6 +240,10 @@ export function fetchMonitorErrors(
   signal?: AbortSignal
 ): Promise<MonitorErrorsPayload> {
   return apiFetch<MonitorErrorsPayload>("/api/monitor/errors", { signal });
+}
+
+export function fetchMonitorLlm(signal?: AbortSignal): Promise<MonitorLlmPayload> {
+  return apiFetch<MonitorLlmPayload>("/api/monitor/llm", { signal });
 }
 
 /**

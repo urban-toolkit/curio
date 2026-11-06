@@ -69,6 +69,7 @@ from utk_curio.backend.app.agents.domain import upstream_schema as agents_upstre
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.packages import service as _pkg_services
 from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.projects import visitor_copies
 from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
@@ -1148,10 +1149,12 @@ class SolveBatch:
         }
 
         pool = ThreadPoolExecutor(max_workers=agents_budgets._SOLVE_MAX_WORKERS)
-        # A pool's thread starts with no app context: each node is solved in
-        # one of the job's app, so what its run looks up in the database (the
-        # Data Catalog datasets its code names) answers as on the job's thread.
-        solve_one = job_registry.in_app_context(self.solve_one)
+        # A pool's thread starts with no app context and serves no visitor:
+        # each node is solved in a context of the job's app, for the visitor
+        # the job serves, both taken here on the job's thread, so what its run
+        # looks up in the database (the Data Catalog datasets its code names)
+        # answers as on the job's thread.
+        solve_one = job_registry.in_app_context(visitor_copies.carrying(self.solve_one))
         # dev/131 (owner correction): the waves are this PASS's targets
         # — a node parked on the user (or already solved) is not
         # re-dispatched, so its trail and its reason survive the pass

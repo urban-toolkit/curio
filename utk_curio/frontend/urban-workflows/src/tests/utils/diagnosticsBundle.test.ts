@@ -6,12 +6,15 @@ import {
   MAX_BUNDLED_ERRORS,
   bundleFilename,
   formatBytes,
+  formatCount,
   formatDuration,
+  formatExactCount,
   toJson,
   toMarkdown,
 } from "../../utils/diagnosticsBundle";
 import type {
   MonitorErrorsPayload,
+  MonitorLlmPayload,
   MonitorPayload,
   MonitorStoragePayload,
 } from "../../api/monitorApi";
@@ -155,6 +158,50 @@ const storage: MonitorStoragePayload = {
   disk: { totalBytes: 494384795648, freeBytes: 120034512896 },
 };
 
+function llm(): MonitorLlmPayload {
+  return {
+    computedAt: "2026-09-22T14:03:11Z",
+    startedAt: "2026-09-21T08:40:00Z",
+    maxDays: 90,
+    ageSeconds: 4,
+    ttlSeconds: 60,
+    hourlyFrom: "2026-09-15T15:00:00Z",
+    hourlyTo: "2026-09-22T14:00:00Z",
+    hourly: [],
+    models: [
+      {
+        model: "gemma4",
+        curio: true,
+        last24h: { inputTokens: 18200, outputTokens: 2100, requests: 9 },
+        last7d: { inputTokens: 1234567, outputTokens: 98000, requests: 410 },
+        kept: { inputTokens: 2469606, outputTokens: 120000, requests: 530 },
+      },
+      {
+        model: "gpt`5",
+        curio: false,
+        last24h: { inputTokens: 640, outputTokens: 210, requests: 2 },
+        last7d: { inputTokens: 640, outputTokens: 210, requests: 2 },
+        kept: { inputTokens: 640, outputTokens: 210, requests: 2 },
+      },
+    ],
+  };
+}
+
+describe("formatCount and formatExactCount", () => {
+  test.each([
+    [950, "950", "950"],
+    [18200, "18.2K", "18,200"],
+    [98000, "98K", "98,000"],
+    [1234567, "1.2M", "1,234,567"],
+  ])("format %s", (count, compact, exact) => {
+    expect([formatCount(count), formatExactCount(count)]).toEqual([compact, exact]);
+  });
+
+  test("a missing count is stated, not rendered as zero", () => {
+    expect([formatCount(null), formatExactCount(undefined)]).toEqual(["n/a", "n/a"]);
+  });
+});
+
 describe("formatBytes", () => {
   test.each([
     [0, "0 B"],
@@ -235,6 +282,28 @@ describe("toMarkdown", () => {
     const md = toMarkdown({ ...bundle, monitor: m });
     expect(md).toContain("sandbox: **unreachable**");
   });
+
+  test("lists each model's tokens, where it ran, in full", () => {
+    const md = toMarkdown({ ...bundle, llm: llm() });
+    expect(md).toContain("### LLM tokens");
+    expect(md).toContain("_Since 2026-09-21T08:40:00Z, at most 90 days._");
+    expect(md).toContain(
+      "- `gemma4` (Curio's endpoint): 24 hours 18,200 in · 2,100 out, 9 requests; " +
+        "7 days 1,234,567 in · 98,000 out, 410 requests; all kept 2,469,606 in · 120,000 out, 530 requests"
+    );
+    // A backtick in a typed name cannot end its code span.
+    expect(md).toContain("- `gpt'5` (own key): 24 hours 640 in · 210 out, 2 requests");
+    // Before the errors, as on the page.
+    expect(md.indexOf("### LLM tokens")).toBeLessThan(md.indexOf("### Recent errors"));
+  });
+
+  test("says when no model answered, and leaves the section out with no payload", () => {
+    expect(toMarkdown({ ...bundle, llm: { ...llm(), models: [] } })).toContain(
+      "_No LLM requests since the backend started._"
+    );
+    expect(toMarkdown(bundle)).not.toContain("LLM tokens");
+    expect(toMarkdown({ ...bundle, llm: null })).not.toContain("LLM tokens");
+  });
 });
 
 describe("toJson", () => {
@@ -246,6 +315,12 @@ describe("toJson", () => {
     expect(parsed.storage.userStores.count).toBe(14);
     expect(parsed.errors.errors).toHaveLength(2);
     expect(typeof parsed.capturedAt).toBe("string");
+  });
+
+  test("keeps the LLM tokens' payload too, and says null without one", () => {
+    const parsed = JSON.parse(toJson({ monitor: null, storage: null, errors: null, llm: llm() }));
+    expect(parsed.llm.models.map((entry: { model: string }) => entry.model)).toEqual(["gemma4", "gpt`5"]);
+    expect(JSON.parse(toJson({ monitor: null, storage: null, errors: null })).llm).toBeNull();
   });
 
   test("the JSON bundle is NOT capped the way the markdown is", () => {

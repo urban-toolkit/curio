@@ -181,6 +181,51 @@
   border-bottom: none;
 }
 
+.table th {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--curio-border);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--curio-text-secondary);
+  white-space: nowrap;
+}
+
+.table th.num {
+  text-align: right;
+}
+
+/* A table of several number columns: room between them, and a scroll of its
+   own when the drawer is narrower than the table. */
+.tableScroll {
+  overflow-x: auto;
+}
+
+.tokenTable th,
+.tokenTable td {
+  padding-right: 14px;
+  white-space: nowrap;
+}
+
+.tokenTable th:last-child,
+.tokenTable td:last-child {
+  padding-right: 0;
+}
+
+/* A model's line key: the colour of its line in the charts above. */
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 3px;
+  margin-right: 8px;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+.spaced {
+  margin-top: 12px;
+}
+
 .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
