@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "id": "test.ui-node",
+  "name": "UI Node",
+  "publisher": "Curio",
+  "description": "A test package: one node that draws its own interface in place of a code editor, made with scripts/new_package.py --with-ui. No Python libraries.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-11-06T00:18:52Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {}
+  },
+  "permissions": [],
+  "templates": [
+    {
+      "id": "ui-node",
+      "label": "UI Node",
+      "description": "Lists the columns of the DataFrame on its input; Send this column downstream keeps the chosen column as its output.",
+      "category": "computation",
+      "engine": "python",
+      "editor": "none",
+      "behavior": "ui-node",
+      "iconRef": "fa-solid:cube",
+      "hasCode": false,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "DATAFRAME"
+          ]
+        }
+      ],
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": [
+            "DATAFRAME"
+          ]
+        }
+      ]
+    }
+  ],
+  "behaviorScript": "scripts/behaviors.js"
+}

@@ -1,10 +1,10 @@
 /**
- * `npm run build:packages` bundles the packages under `packages/` that bring
- * their own interface: each whose manifest declares a `behaviorScript` and that
- * holds the bundle's entry point, `sources/index.tsx`. The bundle is written
- * where `behaviorScript` says. So a package of your own needs no edit in the
- * build config, and a package built outside this repository, which ships its
- * bundle built, is left alone.
+ * `npm run build:packages` bundles the packages under `packages/` and the e2e
+ * suite's test packages that bring their own interface: each whose manifest
+ * declares a `behaviorScript` and that holds the bundle's entry point,
+ * `sources/index.tsx`. The bundle is written where `behaviorScript` says. So a
+ * package of your own needs no edit in the build config, and a package built
+ * outside this repository, which ships its bundle built, is left alone.
  *
  * The helper is required inside each test, so a checkout without it fails
  * each test on its own.
@@ -16,11 +16,24 @@ import * as path from "path";
 const HELPER = path.resolve(__dirname, "../../../webpack/packageEntries.js");
 const CONFIG = path.resolve(__dirname, "../../../webpack.packages.config.js");
 const PACKAGES = path.resolve(__dirname, "../../../../../../packages");
+const TEST_PACKAGES = path.resolve(__dirname, "../../../../../backend/tests/test_frontend/packages");
+/** The test package made with `scripts/new_package.py --with-ui`. */
+const UI_TEST_PACKAGE = "test.ui-node@1";
 
 type Entry = { id: string; entry: string; outputDir: string; filename: string };
 
-function packageEntries(root: string): Entry[] {
-    return require(HELPER).packageEntries(root);
+function packageEntries(...roots: string[]): Entry[] {
+    return require(HELPER).packageEntries(...roots);
+}
+
+/** The package folders under *root* that declare a bundle and hold its entry point. */
+function declaringBundles(root: string): string[] {
+    return fs.readdirSync(root).sort().filter((folder) => {
+        const manifest = path.join(root, folder, "manifest.json");
+        return fs.existsSync(manifest)
+            && Boolean(JSON.parse(fs.readFileSync(manifest, "utf8")).behaviorScript)
+            && fs.existsSync(path.join(root, folder, "sources", "index.tsx"));
+    });
 }
 
 /** A package folder under *root*: its manifest, if any, and empty *files*. */
@@ -43,21 +56,22 @@ describe("the packages npm run build:packages bundles", () => {
         fs.rmSync(root, { recursive: true, force: true });
     });
 
-    it("are the shipped packages that declare a bundle and hold its entry point", () => {
-        const declaring = fs.readdirSync(PACKAGES).sort().filter((folder) => {
-            const manifest = path.join(PACKAGES, folder, "manifest.json");
-            return fs.existsSync(manifest)
-                && Boolean(JSON.parse(fs.readFileSync(manifest, "utf8")).behaviorScript)
-                && fs.existsSync(path.join(PACKAGES, folder, "sources", "index.tsx"));
-        });
-        expect(declaring).toContain("curio.example-ui@1");
-        expect(packageEntries(PACKAGES).map((entry) => entry.id)).toEqual(declaring);
+    it("are the shipped and the test packages that declare a bundle and hold its entry point", () => {
+        const shipped = declaringBundles(PACKAGES);
+        const tests = declaringBundles(TEST_PACKAGES);
+        expect(tests).toContain(UI_TEST_PACKAGE);
+        expect(packageEntries(PACKAGES).map((entry) => entry.id)).toEqual(shipped);
+        expect(packageEntries(TEST_PACKAGES).map((entry) => entry.id)).toEqual(tests);
+        // The build's folders: the shipped catalog, then the test packages.
+        const { PACKAGE_ROOTS } = require(HELPER);
+        expect(PACKAGE_ROOTS).toEqual([PACKAGES, TEST_PACKAGES]);
+        expect(packageEntries(...PACKAGE_ROOTS).map((entry) => entry.id)).toEqual([...shipped, ...tests]);
     });
 
-    it("write Example UI's bundle where it was always written", () => {
-        const folder = path.join(PACKAGES, "curio.example-ui@1");
-        expect(packageEntries(PACKAGES).find((entry) => entry.id === "curio.example-ui@1")).toEqual({
-            id: "curio.example-ui@1",
+    it("write the test UI package's bundle inside it, where its manifest says", () => {
+        const folder = path.join(TEST_PACKAGES, UI_TEST_PACKAGE);
+        expect(packageEntries(TEST_PACKAGES).find((entry) => entry.id === UI_TEST_PACKAGE)).toEqual({
+            id: UI_TEST_PACKAGE,
             entry: path.join(folder, "sources", "index.tsx"),
             outputDir: path.join(folder, "scripts"),
             filename: "behaviors.js",
@@ -118,7 +132,7 @@ describe("the packages npm run build:packages bundles", () => {
                 library: config.output.library.name,
             })),
         ).toEqual(
-            packageEntries(PACKAGES).map((entry) => ({
+            packageEntries(PACKAGES, TEST_PACKAGES).map((entry) => ({
                 name: entry.id,
                 entry: entry.entry,
                 path: entry.outputDir,

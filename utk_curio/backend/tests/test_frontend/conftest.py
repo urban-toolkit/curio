@@ -5,9 +5,10 @@ import pytest
 from playwright.sync_api import Browser, BrowserType
 
 from utk_curio.backend.tests import parts
+from utk_curio.backend.tests._support.ui_test_package import UI_TEST_PACKAGE
 
 from . import comparisons, diagnostics, early_guards, runner_split
-from .utils import REPO_ROOT, start_catalog_calendar, stop_catalog_calendar
+from .utils import REPO_ROOT, catalog_test_package, start_catalog_calendar, stop_catalog_calendar
 from .fixtures import _clean_db
 
 
@@ -222,6 +223,15 @@ def catalog_calendar(request, e2e_clean_db):
     start_catalog_calendar(context, backend)
     yield
     stop_catalog_calendar(backend)
+
+
+@pytest.fixture()
+def ui_node_in_catalog(current_server):
+    """``test.ui-node@1`` in the backend's Node Catalog for this test, and out
+    of it after: the package a test adds when any package will do, since it
+    declares no Python libraries (``tests/_support/ui_test_package.py``)."""
+    with catalog_test_package(current_server, UI_TEST_PACKAGE):
+        yield UI_TEST_PACKAGE
 
 
 def pytest_generate_tests(metafunc):

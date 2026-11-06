@@ -18,6 +18,9 @@ helpers let a test run those installs with the real pip and no network:
 Each test of an install path has a test package and a library of its own
 (``offline_package``), so each proves its own install from scratch, even after
 an earlier test on the same backend imported another test library.
+
+``catalog_test_package`` plants a test package that declares no library, such
+as ``test.ui-node@1`` (``tests/_support/ui_test_package.py``), and takes it out.
 """
 
 from __future__ import annotations
@@ -128,9 +131,14 @@ def restore_wheelhouse(backend_url: str) -> dict:
 WEIGHTS_DIR = "models"
 
 
+#: The file the route writes itself for what it planted, so none is sent.
+INTEGRITY_FILE = "integrity.json"
+
+
 def planted_package_files(dir_name: str) -> dict:
     """The body ``/api/testing/catalog-package`` plants ``packages/<dir_name>``
-    from: its text files, and a model package's weights in base64."""
+    from: its text files, and a model package's weights in base64. A package's
+    ``integrity.json`` stays home: the route hashes what it planted."""
     root = TEST_PACKAGES_DIR / dir_name
     files: dict[str, str] = {}
     weights: dict[str, str] = {}
@@ -138,6 +146,8 @@ def planted_package_files(dir_name: str) -> dict:
         if not path.is_file() or "__pycache__" in path.parts:
             continue
         rel = path.relative_to(root).as_posix()
+        if rel == INTEGRITY_FILE:
+            continue
         if rel.split("/", 1)[0] == WEIGHTS_DIR:
             weights[rel] = base64.b64encode(path.read_bytes()).decode("ascii")
         else:
@@ -154,6 +164,19 @@ def plant_catalog_package(backend_url: str, dir_name: str) -> None:
 
 def remove_catalog_package(backend_url: str, dir_name: str) -> None:
     _testing_post(backend_url, "catalog-package", {"action": "remove", "dirName": dir_name})
+
+
+@contextmanager
+def catalog_test_package(backend_url: str, dir_name: str) -> Iterator[None]:
+    """*dir_name*, a test package that declares no library, in the shared
+    catalog, and taken out afterwards whatever happened: a test package left
+    in the catalog moves the Node Catalog's frames and counts for the tests
+    that follow on this backend."""
+    plant_catalog_package(backend_url, dir_name)
+    try:
+        yield
+    finally:
+        remove_catalog_package(backend_url, dir_name)
 
 
 @contextmanager
