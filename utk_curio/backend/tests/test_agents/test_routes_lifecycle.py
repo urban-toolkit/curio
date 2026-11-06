@@ -476,14 +476,16 @@ class TestBuiltinPromptPropagation:
         return {str(path.relative_to(base)): path.read_bytes() for path in sorted(base.rglob("*")) if path.is_file()}
 
     def test_an_upload_under_a_shipped_coordinate_is_refused_for_every_account(
-        self, client, user_and_token, tmp_curio
+        self, client, new_account_and_token, tmp_curio
     ):
         # The id and major of an agent Curio ships stay Curio's: an upload
         # under them is refused, and the account's copy keeps Curio's bytes.
         # Every account holds that copy once it has had the agents Curio adds
-        # by default; a store that holds none is refused the same way.
-        user, token = user_and_token
+        # by default, at its first listing; a store that holds none is refused
+        # the same way.
+        user, token = new_account_and_token
         key = _user_dir_key(user)
+        client.get("/api/agents/imports", headers=_auth(token))
         held = storage.load_installed_agent_definition(key, self.COORD)
         assert held is not None and held.provenance.trust == "built-in"
         curios = self._store_files(key)
