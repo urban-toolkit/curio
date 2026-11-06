@@ -3,7 +3,8 @@
 CPU jobs run on GitHub-hosted ``ubuntu-latest`` while the organization's
 hosted runners have room, on the self-hosted arcade pool (``[self-hosted,
 arcade, cpu]``) after that, and on the utk-desktop runners (utk-desktop-01 and
--02, ``[self-hosted, utk-desktop]``) when arcade is full too. The GPU job
+-02, ``[self-hosted, utk-desktop]``) when arcade is full too, all but
+build-image (``NOT_ON_DESKTOPS``), which waits on arcade then. The GPU job
 (test-gpu) runs on the arcade GPU pool (arcade-gpu-01..04, ``[self-hosted,
 arcade, gpu]``) while it has a free runner, then on utk-gpu (``[self-hosted,
 utk, gpu]``), and on utk-desktop-01 (``[self-hosted, utk-desktop-01, gpu]``)
@@ -87,6 +88,13 @@ DESKTOP_RUNNERS = 2
 #: (owner, 11-04).
 GPU_DESKTOPS = ("utk-desktop-01",)
 DESKTOP_GPU_RUNNERS = len(GPU_DESKTOPS)
+#: CPU jobs that never take a desktop: past hosted and arcade they wait on
+#: arcade. build-image's buildx reads the image's layer cache from GitHub's
+#: Actions cache on every build, and utk-desktop-02 fetched its 4.28 GB layer
+#: at about 1.4 MB/s, so build-image ran into its 45 minute limit there twice
+#: on 11-06 (hosted and arcade build in about 4 minutes). The jobs that run on
+#: the image pull it from GHCR into the Docker a desktop keeps, so they go on.
+NOT_ON_DESKTOPS = frozenset({"build-image"})
 #: Concurrent GitHub-hosted jobs the organization's plan allows.
 HOSTED_SLOTS = 20
 
@@ -191,7 +199,8 @@ def desktop_room(counts: dict) -> tuple[int, int]:
 def assign_cpu(keys: list[str], free_hosted: int, pool: str = "auto",
                free_arcade: int = CPU_RUNNERS, free_desktop: int = 0) -> dict:
     """GitHub-hosted for each job while it has room, arcade after that, then a
-    free desktop. With every pool full, a job waits on arcade, the largest."""
+    free desktop for a job not in NOT_ON_DESKTOPS. With every pool full, a job
+    waits on arcade, the largest."""
     if pool in CPU_POOLS:
         return {key: pool for key in keys}
     chosen = {}
@@ -199,7 +208,7 @@ def assign_cpu(keys: list[str], free_hosted: int, pool: str = "auto",
         if free_hosted > 0:
             chosen[key] = "hosted"
             free_hosted -= 1
-        elif free_arcade > 0 or free_desktop <= 0:
+        elif free_arcade > 0 or free_desktop <= 0 or key in NOT_ON_DESKTOPS:
             chosen[key] = "arcade"
             free_arcade -= 1
         else:
