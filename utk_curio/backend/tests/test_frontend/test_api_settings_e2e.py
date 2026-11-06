@@ -420,7 +420,9 @@ def _a_configuration_is_saved_and_its_key_never_reaches_the_page(api_settings):
         timeout=30000,
     ) as picked:
         default.select_option(SECOND_MODEL_B)
-    assert picked.value.ok, picked.value.text()
+    # Read each body now: the browser drops it once the page navigates (the reload below).
+    picked_body = picked.value.text()
+    assert picked.value.ok, picked_body
     assert json.loads(picked.value.request.post_data or "{}") == {"configId": SECOND_MODEL_B}
     expect(page.get_by_test_id("llm-active")).to_contain_text("Curio · Second", timeout=15000)
     expect(page.get_by_test_id("llm-active")).to_contain_text("model-b")
@@ -432,7 +434,8 @@ def _a_configuration_is_saved_and_its_key_never_reaches_the_page(api_settings):
         timeout=30000,
     ) as assigned:
         researcher.select_option(GATEWAY_MODEL_A)
-    assert assigned.value.ok, assigned.value.text()
+    assigned_body = assigned.value.text()
+    assert assigned.value.ok, assigned_body
     expect(researcher).to_be_enabled(timeout=15000)
     expect(models).to_contain_text("Runs on Curio · Gateway · model-a")
 
@@ -451,7 +454,7 @@ def _a_configuration_is_saved_and_its_key_never_reaches_the_page(api_settings):
     expect(
         page.get_by_test_id("agent-models-section").get_by_label("Researcher", exact=True)
     ).to_have_value(GATEWAY_MODEL_A)
-    for text in (json.dumps(listing), picked.value.text(), assigned.value.text(), page.content()):
+    for text in (json.dumps(listing), picked_body, assigned_body, page.content()):
         assert DEPLOYMENT_HOST not in text and DEPLOYMENT_KEY not in text and SECOND_KEY not in text
     values = page.evaluate(
         "() => Array.from(document.querySelectorAll('input, select')).map(i => i.value)"
