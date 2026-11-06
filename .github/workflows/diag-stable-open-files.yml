@@ -1,0 +1,362 @@
+name: Diag stable open files
+
+# One-off read of the hosted stacks' open files (stable, and dev as a
+# baseline), then a restart of stable while it is still the container started
+# on 10-26. The repository is public, so every line printed here is a count, a
+# port, a state or a class: no addresses, file names, user folders or
+# environment.
+
+on:
+  push:
+    branches: [diag/stable-open-files]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diag-stable-open-files
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: [self-hosted, utk, gpu]
+    timeout-minutes: 25
+    steps:
+      - name: Write the probe
+        run: |
+          cat > "$RUNNER_TEMP/probe.py" <<'PY'
+          import collections
+          import os
+          import re
+          import socket
+          import struct
+          import time
+
+          STATES = {"01": "ESTABLISHED", "02": "SYN_SENT", "03": "SYN_RECV",
+                    "04": "FIN_WAIT1", "05": "FIN_WAIT2", "06": "TIME_WAIT",
+                    "07": "CLOSE", "08": "CLOSE_WAIT", "09": "LAST_ACK",
+                    "0A": "LISTEN", "0B": "CLOSING"}
+          MARKERS = (("isolation.zygote", "zygote"), ("sandbox.server", "sandbox"),
+                     ("backend.server", "backend"),
+                     ("run_spa_static_server", "frontend-8080"),
+                     ("curio.py", "launcher"))
+
+
+          def read(path, mode="r"):
+              try:
+                  with open(path, mode) as handle:
+                      return handle.read()
+              except OSError:
+                  return None
+
+
+          def name_of(pid):
+              raw = read(f"/proc/{pid}/cmdline", "rb")
+              if not raw:
+                  return "?"
+              joined = raw.replace(b"\0", b" ").decode("utf-8", "replace")
+              for marker, name in MARKERS:
+                  if marker in joined:
+                      return name
+              first = raw.split(b"\0", 1)[0].decode("utf-8", "replace")
+              return re.sub(r"[^A-Za-z0-9._-]", "", os.path.basename(first)) or "?"
+
+
+          def stat_of(pid):
+              text = read(f"/proc/{pid}/stat")
+              if not text:
+                  return None, None
+              rest = text[text.rfind(")") + 2:].split()
+              return rest[0], int(rest[1])
+
+
+          def threads_of(pid):
+              found = re.search(r"^Threads:\s+(\d+)", read(f"/proc/{pid}/status") or "", re.M)
+              return found.group(1) if found else "?"
+
+
+          def nofile_of(pid):
+              found = re.search(r"^Max open files\s+(\S+)\s+(\S+)",
+                                read(f"/proc/{pid}/limits") or "", re.M)
+              return f"{found.group(1)}/{found.group(2)}" if found else "?"
+
+
+          def gateway():
+              for line in (read("/proc/net/route") or "").splitlines()[1:]:
+                  fields = line.split()
+                  if len(fields) > 2 and fields[1] == "00000000":
+                      return socket.inet_ntoa(struct.pack("<I", int(fields[2], 16)))
+              return None
+
+
+          GATEWAY = gateway()
+
+
+          def ip4(word):
+              return socket.inet_ntoa(struct.pack("<I", int(word, 16)))
+
+
+          def ip6(words):
+              packed = b"".join(struct.pack("<I", int(words[i:i + 8], 16)) for i in range(0, 32, 8))
+              return socket.inet_ntop(socket.AF_INET6, packed)
+
+
+          def peer_class(ip):
+              ip = ip.lower()
+              if ip.startswith("::ffff:"):
+                  ip = ip[7:]
+              if ip in ("0.0.0.0", "::"):
+                  return "none"
+              if GATEWAY and ip == GATEWAY:
+                  return "docker-gateway"
+              if ip.startswith("127.") or ip == "::1":
+                  return "loopback"
+              if ":" in ip:
+                  if ip.startswith("fd7a:115c:a1e0"):
+                      return "tailnet"
+                  if ip.startswith(("fc", "fd")):
+                      return "private"
+                  if ip.startswith("fe80"):
+                      return "link-local"
+                  return "public"
+              first, second = (int(part) for part in ip.split(".")[:2])
+              if first == 10 or (first == 172 and 16 <= second <= 31) or (first == 192 and second == 168):
+                  return "private"
+              if first == 100 and 64 <= second <= 127:
+                  return "tailnet"
+              if first == 169 and second == 254:
+                  return "link-local"
+              return "public"
+
+
+          rows = []
+          listening = set()
+          for path, convert in (("/proc/net/tcp", ip4), ("/proc/net/tcp6", ip6)):
+              for line in (read(path) or "").splitlines()[1:]:
+                  fields = line.split()
+                  if len(fields) < 10:
+                      continue
+                  local_ip, local_port = fields[1].split(":")
+                  remote_ip, remote_port = fields[2].split(":")
+                  state = STATES.get(fields[3], fields[3])
+                  local_port, remote_port = int(local_port, 16), int(remote_port, 16)
+                  if state == "LISTEN":
+                      listening.add(local_port)
+                  rows.append((fields[9], local_port, remote_port, state, convert(remote_ip)))
+
+          tcp_keys = {}
+          netns = collections.Counter()
+          for inode, local_port, remote_port, state, remote_ip in rows:
+              if state == "LISTEN":
+                  key = f"tcp listen :{local_port}"
+              elif local_port in listening:
+                  key = f"tcp in :{local_port} {state} from {peer_class(remote_ip)}"
+              else:
+                  key = f"tcp out to :{remote_port} {state} {peer_class(remote_ip)}"
+              netns[key] += 1
+              if inode != "0":
+                  tcp_keys[inode] = key
+
+          unix_inodes = set()
+          for line in (read("/proc/net/unix") or "").splitlines()[1:]:
+              fields = line.split()
+              if len(fields) >= 7:
+                  unix_inodes.add(fields[6])
+
+
+          def fd_kind(target):
+              if target.startswith("socket:["):
+                  inode = target[8:-1]
+                  if inode in tcp_keys:
+                      return tcp_keys[inode]
+                  return "unix socket" if inode in unix_inodes else "other socket"
+              if target.startswith("pipe:"):
+                  return "pipe"
+              if target.startswith("anon_inode:"):
+                  return "anon " + target[len("anon_inode:"):].strip("[]")
+              deleted = target.endswith(" (deleted)")
+              if deleted:
+                  target = target[: -len(" (deleted)")]
+              suffix = " (deleted)" if deleted else ""
+              for ending, label in ((".db", "file .db"), ("-wal", "file -wal"),
+                                    ("-shm", "file -shm"), (".duckdb", "file .duckdb"),
+                                    (".duckdb.wal", "file .duckdb.wal")):
+                  if target.endswith(ending):
+                      return label + suffix
+              folders = [part for part in os.path.dirname(target).split("/") if part]
+              depth = 3 if folders[:2] == ["app", ".curio"] else 2
+              folder = "/" + "/".join(folders[:depth])
+              folder = re.sub(r"[0-9a-fA-F]{8,}|\d{4,}", "*", folder)
+              extension = os.path.splitext(target)[1].lower()
+              if not re.fullmatch(r"\.[a-z0-9]{1,8}", extension):
+                  extension = ""
+              return f"file {folder} {extension}".rstrip() + suffix
+
+
+          me = os.getpid()
+          processes = {}
+          for entry in os.listdir("/proc"):
+              if not entry.isdigit() or int(entry) == me:
+                  continue
+              pid = int(entry)
+              state, parent = stat_of(pid)
+              if state is None:
+                  continue
+              processes[pid] = {"name": name_of(pid), "state": state, "parent": parent}
+
+          for pid, info in processes.items():
+              parent = processes.get(info["parent"])
+              if info["name"] == "zygote" and parent and parent["name"] == "zygote":
+                  info["name"] = "zygote-child"
+
+          total = 0
+          zombies = collections.Counter()
+          for pid in sorted(processes):
+              info = processes[pid]
+              if info["state"] == "Z":
+                  parent = processes.get(info["parent"])
+                  zombies[parent["name"] if parent else "outside"] += 1
+                  continue
+              try:
+                  descriptors = os.listdir(f"/proc/{pid}/fd")
+              except OSError:
+                  continue
+              kinds = collections.Counter()
+              for descriptor in descriptors:
+                  try:
+                      kinds[fd_kind(os.readlink(f"/proc/{pid}/fd/{descriptor}"))] += 1
+                  except OSError:
+                      pass
+              total += len(descriptors)
+              print(f"{info['name']}: fds={len(descriptors)} limit={nofile_of(pid)} "
+                    f"threads={threads_of(pid)} state={info['state']}")
+              for kind, count in kinds.most_common(15):
+                  print(f"    {count:6d}  {kind}")
+              if len(kinds) > 15:
+                  print(f"    {sum(count for _, count in kinds.most_common()[15:]):6d}  (other kinds)")
+          print(f"all processes: fds={total}")
+          print(f"zombies by parent: {dict(zombies) or 'none'}")
+
+          print("tcp in the container's network namespace:")
+          for key, count in netns.most_common(25):
+              print(f"    {count:6d}  {key}")
+
+          scratch = "/app/.curio/exec-scratch"
+          old = old_bytes = every = 0
+          if os.path.isdir(scratch):
+              cutoff = time.time() - 86400
+              deadline = time.monotonic() + 60
+              for entry in os.listdir(scratch):
+                  if not entry.startswith("exec-"):
+                      continue
+                  every += 1
+                  path = os.path.join(scratch, entry)
+                  try:
+                      if os.stat(path).st_mtime >= cutoff:
+                          continue
+                  except OSError:
+                      continue
+                  old += 1
+                  if time.monotonic() < deadline:
+                      for root, _dirs, files in os.walk(path):
+                          for name in files:
+                              try:
+                                  old_bytes += os.lstat(os.path.join(root, name)).st_size
+                              except OSError:
+                                  pass
+              print(f"exec-scratch run folders: {every}, older than a day: {old} "
+                    f"({old_bytes / 1e6:.1f} MB)")
+          else:
+              print("exec-scratch: none")
+
+          log = "/app/.curio/messages.log"
+          patterns = (b"Too many open files", b"could not reach the execution zygote")
+          stamp = re.compile(rb"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}")
+          if os.path.isfile(log):
+              seen = {pattern: [0, None, None] for pattern in patterns}
+              lines = 0
+              with open(log, "rb") as handle:
+                  for lines, line in enumerate(handle, 1):
+                      for pattern in patterns:
+                          if pattern in line:
+                              found = stamp.search(line)
+                              where = found.group(0).decode() if found else f"line {lines}"
+                              record = seen[pattern]
+                              record[0] += 1
+                              record[1] = record[1] or where
+                              record[2] = where
+              print(f"messages.log: {lines} lines, {os.path.getsize(log) / 1e6:.1f} MB")
+              for pattern, (count, first, last) in seen.items():
+                  print(f"    {pattern.decode()}: {count} (first {first}, last {last})")
+          else:
+              print("messages.log: none")
+          PY
+
+      - name: Host facts
+        run: |
+          echo "docker server: $(docker version --format '{{.Server.Version}}')"
+          for project in curio curio-dev; do
+            c="$(docker ps --filter "label=com.docker.compose.project=$project" --format '{{.Names}}' | head -n1)"
+            if [ -z "$c" ]; then echo "$project: no running container"; continue; fi
+            docker inspect -f "$project: started={{.State.StartedAt}} restarts={{.RestartCount}} init={{.HostConfig.Init}} ulimits={{json .HostConfig.Ulimits}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" "$c"
+          done
+          if pgrep -x caddy >/dev/null; then echo "caddy on the host: yes"; else echo "caddy on the host: no"; fi
+          echo "caddy containers: $(docker ps --format '{{.Image}}' | grep -ci caddy || true)"
+          f=/etc/caddy/Caddyfile
+          if [ -r "$f" ]; then
+            ups="$(grep -oE 'reverse_proxy[[:space:]]+[^[:space:]{]+' "$f" | awk '{print $2}')"
+            total="$(printf '%s\n' "$ups" | grep -c . || true)"
+            local_n="$(printf '%s\n' "$ups" | grep -cE '^(localhost|127\.0\.0\.1)(:|$)' || true)"
+            echo "caddy upstreams: $total, on localhost or 127.0.0.1: $local_n"
+          else
+            echo "caddy upstreams: Caddyfile unreadable"
+          fi
+
+      - name: Open files, before
+        run: |
+          for project in curio curio-dev; do
+            c="$(docker ps --filter "label=com.docker.compose.project=$project" --format '{{.Names}}' | head -n1)"
+            [ -n "$c" ] || continue
+            echo "=== $project ==="
+            docker exec -i "$c" python3 -I - < "$RUNNER_TEMP/probe.py" || echo "probe failed in $project"
+            docker logs -t "$c" > "$RUNNER_TEMP/container.log" 2>&1 || true
+            for pattern in "Too many open files" "could not reach the execution zygote"; do
+              n="$(grep -c -F "$pattern" "$RUNNER_TEMP/container.log" || true)"
+              first="$(grep -F "$pattern" "$RUNNER_TEMP/container.log" | head -n1 | cut -c1-30)"
+              last="$(grep -F "$pattern" "$RUNNER_TEMP/container.log" | tail -n1 | cut -c1-30)"
+              echo "docker logs, $pattern: $n (first ${first:-none}, last ${last:-none})"
+            done
+            rm -f "$RUNNER_TEMP/container.log"
+          done
+
+      - name: Restart stable while it is still the 10-26 container
+        run: |
+          c="$(docker ps --filter label=com.docker.compose.project=curio --format '{{.Names}}' | head -n1)"
+          if [ -z "$c" ]; then echo "no stable container"; exit 1; fi
+          started="$(docker inspect -f '{{.State.StartedAt}}' "$c")"
+          if [[ "$started" > "2026-11-01" ]]; then
+            echo "stable started $started: no restart"
+            exit 0
+          fi
+          echo "restarting stable, started $started"
+          docker restart -t 30 "$c" > /dev/null
+          health=unknown
+          for i in $(seq 1 72); do
+            health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c")"
+            [ "$health" = healthy ] && break
+            sleep 5
+          done
+          echo "health after the restart: $health"
+          [ "$health" = healthy ] || exit 1
+          version_json="$(docker exec "$c" curl -sf http://127.0.0.1:2000/version < /dev/null | tr -d ' \r\n' || true)"
+          case "$version_json" in
+            *'"isolation":"fork"'*) echo "isolation: fork" ;;
+            *) echo "::error::the restarted stack is not isolated"; exit 1 ;;
+          esac
+
+      - name: Open files, after
+        run: |
+          c="$(docker ps --filter label=com.docker.compose.project=curio --format '{{.Names}}' | head -n1)"
+          [ -n "$c" ] || exit 0
+          docker inspect -f "stable: started={{.State.StartedAt}}" "$c"
+          docker exec -i "$c" python3 -I - < "$RUNNER_TEMP/probe.py" || echo "probe failed"
