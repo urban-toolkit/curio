@@ -276,14 +276,11 @@ def _write_part(archive: zipfile.ZipFile, work: str, part: Part, stem: str) -> d
             _add_file(archive, written, name)
             os.remove(written)
             entry.update(kind=kind, file=name)
-        elif kind in VALUE_KINDS or kind == "outputs":
-            # A tuple inside a part is the list JSON holds.
-            entry.update(kind="list" if kind == "outputs" else kind, value=json_value(value, part=part.label))
         else:
-            raise PartRefused(
-                "a zip of several parts holds each as a file or a JSON value, and the part "
-                f"{part.label!r} is {_named(value)}, which is neither."
-            )
+            # A JSON value, of the kind it is once JSON holds it: a numpy
+            # number is a number, a tuple a list. Anything else is refused.
+            held = json_value(value, part=part.label)
+            entry.update(kind=detect_kind(held), value=held)
         return entry
     finally:
         if part.read is not None and kind == "raster":
