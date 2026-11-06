@@ -115,7 +115,7 @@ A storage source is read when it is first opened, and again when its listing is 
 | **View model** | A row marked **In your Model Catalog** | Nothing | The `/catalog/models` page, with the model's details open; on the canvas, the Model Catalog drawer. |
 | **Set a token** | **API Settings**, **API keys** tab | Your account | The source's card reads **Token set**. |
 
-A guest on a Curio started with `--deploy` downloads into a Data Catalog of its own: what it downloads or adds shows for that guest alone, and goes when the server restarts.
+On a Curio started with `--deploy`, a dataset a guest downloads or adds from here shows in that guest's Data Catalog alone, and goes when the server restarts.
 
 ### Workflows
 
