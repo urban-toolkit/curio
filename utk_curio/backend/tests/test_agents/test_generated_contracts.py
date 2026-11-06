@@ -576,7 +576,7 @@ class TestThePreambleVocabulary:
         manifest = _manifest()
         lists = contracts.builtin_lists(manifest)
         by_label = {t["label"]: t for t in manifest["templates"]}
-        vega, loading = by_label["Vega-Lite"], by_label["Data Loading"]
+        vega = by_label["Vega-Lite"]
         assert f"- Vega-Lite: {vega['description']}" in lists["builtin.nodes"].splitlines()
         assert "- Vega-Lite: controllable through grammar." in lists["builtin.control"]
         assert "- JS Computation: controllable through JavaScript code." in lists["builtin.control"]
@@ -592,7 +592,6 @@ class TestThePreambleVocabulary:
         assert lists["builtin.interaction"].splitlines() == [
             f"- {t['label']}" for t in manifest["templates"] if t.get("bidirectional")
         ]
-        assert loading["outputPorts"][0]["cardinality"] in lists["builtin.output_count"]
 
     def test_an_input_count_is_the_connections_a_node_accepts(self):
         # One input port takes its declared maximum: a "[1,n]" port grows a

@@ -418,8 +418,8 @@ to pick a file, and its code, on the **Code** tab, loads it ([Data Catalog](#dat
 A Data Export node opens on its **Widgets** tab, which holds only its
 **File name** and its **Download** button. Its code, on the **Code** tab,
 `return curio_export(input_0, [!! file_name !!])`, writes the data wired into
-it to a file: a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF
-and anything else as JSON. Once the node has run, the button names the file,
+it to a file: a table as CSV, a GeoDataFrame as GeoJSON or a raster as GeoTIFF.
+Once the node has run, the button names the file,
 and **Download** saves it. When the node's result is out of date,
 **Download** first runs the node and the nodes above it.
 
