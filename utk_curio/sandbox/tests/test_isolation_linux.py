@@ -534,6 +534,52 @@ def test_outbound_network_is_denied(isolated):
 
 
 @needs_seccomp
+@pytest.mark.parametrize("family", ["AF_INET", "AF_INET6", "AF_NETLINK", "AF_PACKET"])
+def test_a_socket_of_every_other_family_is_denied(isolated, family):
+    """Only the local family, AF_UNIX, is open: every other reaches a network."""
+    result = run_isolated(
+        isolated,
+        f"    import socket\n    return str(socket.socket(socket.{family}, socket.SOCK_DGRAM))\n",
+    )
+    assert result["output"]["path"] == "", f"an isolated node created an {family} socket"
+
+
+@needs_seccomp
+def test_a_local_socket_cannot_listen(isolated):
+    """A child may connect a local socket, as CUDA's driver does when it starts,
+    but not bind one, so it cannot listen for another node."""
+    result = run_isolated(
+        isolated,
+        "    import socket\n"
+        "    local = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\n"
+        "    local.bind('\\0curio-isolation-probe')\n"
+        "    return 'bound'\n",
+    )
+    assert result["output"]["path"] == "", "an isolated node bound a local socket"
+
+
+@needs_seccomp
+def test_a_local_socket_does_not_reach_the_zygote(isolated_dropped):
+    """The execution account makes a local socket, and the zygote's, root's
+    and mode 0600, refuses it."""
+    result = run_isolated(
+        isolated_dropped,
+        "    import socket\n"
+        "    local = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\n"
+        "    try:\n"
+        f"        local.connect({os.environ['CURIO_EXEC_SOCKET']!r})\n"
+        "    except PermissionError:\n"
+        "        return 'refused'\n"
+        "    return 'connected'\n",
+    )
+    assert result["stderr"] == "", result["stderr"]
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    assert load_from_duckdb(result["output"]["path"]) == "refused", "a node reached the zygote"
+
+
+@needs_seccomp
 def test_ptrace_is_denied(isolated):
     result = run_isolated(
         isolated,

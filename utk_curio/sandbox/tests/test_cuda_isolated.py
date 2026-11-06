@@ -17,6 +17,7 @@ Run:  python -m pytest utk_curio/sandbox/tests/test_cuda_isolated.py -m cuda -v 
 
 import os
 import pwd
+import re
 
 import pytest
 
@@ -70,11 +71,14 @@ NODE = '''\
             seen["cuInit"] = ctypes.CDLL("libcuda.so.1").cuInit(0)
         except OSError as error:
             seen["cuInit"] = str(error)[:200]
-        seen["devices"] = {
-            path: [oct(os.stat(path).st_mode & 0o777), os.stat(path).st_uid, os.stat(path).st_gid,
-                   os.access(path, os.R_OK | os.W_OK)]
-            for path in sorted(glob.glob("/dev/nvidia*"))
-        }
+        import stat
+
+        seen["devices"] = {}
+        for path in sorted(glob.glob("/dev/nvidia*")):
+            info = os.stat(path)
+            if stat.S_ISCHR(info.st_mode):
+                seen["devices"][path] = [oct(info.st_mode & 0o777), info.st_uid, info.st_gid,
+                                         os.access(path, os.R_OK | os.W_OK)]
         seen["groups"] = os.getgroups()
         with open("/proc/self/statm") as statm:
             seen["mapped"] = int(statm.read().split()[0]) * os.sysconf("SC_PAGE_SIZE")
@@ -85,7 +89,8 @@ NODE = '''\
 CUINIT_CAUSES = {
     2: "the driver ran out of memory: CUDA's start needs more address space than the cap leaves",
     100: "the child sees no device",
-    304: "the operating system refused a call the driver makes (the seccomp filter, or a limit)",
+    304: ("the operating system refused a call the driver makes: the seccomp filter, which must "
+          "let it make and connect a local socket (child._install_seccomp_filter), or a limit"),
     999: "an unknown error, often a device file the child cannot open",
 }
 
@@ -170,11 +175,12 @@ def test_a_node_in_an_isolated_child_reaches_the_gpu_through_torch(isolated_as_d
         f"the child may map {headroom >> 20} MiB beyond the {zygote_mapped >> 20} MiB its zygote "
         f"maps, not about its budget of {BUDGET_MB} MB")
     if not seen["cuda"]:
-        closed = sorted(path for path, (_, _, _, opens) in seen["devices"].items() if not opens)
+        opens = {path for path, (*_, may_open) in seen["devices"].items() if may_open}
+        gpus = [path for path in seen["devices"] if re.fullmatch(r"/dev/nvidia\d+", path)]
         if not seen["devices"]:
             cause = NO_GPU
-        elif closed:
-            cause = f"{EXEC_USER} cannot open {closed}"
+        elif not {"/dev/nvidiactl", "/dev/nvidia-uvm"} <= opens or not opens.intersection(gpus):
+            cause = f"{EXEC_USER} cannot open the GPU's device files"
         else:
             cause = CUINIT_CAUSES.get(seen["cuInit"], "see the driver's code")
         pytest.fail(
