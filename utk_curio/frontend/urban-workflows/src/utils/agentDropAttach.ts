@@ -20,7 +20,8 @@ export interface AgentDropAttachDeps {
    *  dataflow not saved yet made first (`ensureProjectId`). */
   keepDataflow: () => Promise<string | null | undefined>;
   attach: (projectId: string, coord: string, target: AgentDropTarget) => Promise<unknown>;
-  /** A hosted guest (`isHostedGuest`), who cannot save the dataflow. */
+  /** A hosted guest (`isHostedGuest`), who cannot save a dataflow: it works
+   *  on its own copy of one it has, and makes none it does not. */
   hostedGuest?: boolean;
   /** Whether this is the owner's tab, whose drop waits for `keepDataflow`.
    * An editor the owner invited makes no dataflow and records nothing: the
@@ -43,10 +44,12 @@ export async function attachAgentOnDrop(deps: AgentDropAttachDeps): Promise<{ ta
   // way a node target is validated against its nodes, so a drop onto a freshly
   // drawn edge needs the same wait first.
   const keepsFirst = deps.target.kind === "node" || deps.target.kind === "connection";
-  // A hosted guest cannot make the dataflow, nor attach to one it never
-  // saved: it is told to sign in, before anything is sent. A note, shown as a
-  // warning like the other sign-in notes, not as a failure.
-  if (deps.hostedGuest && (keepsFirst || !projectId)) {
+  // A hosted guest cannot make a dataflow: on a canvas with none it is told
+  // to sign in, before anything is sent. A note, shown as a warning like the
+  // other sign-in notes, not as a failure. On a dataflow it has, its canvas is
+  // bound to its own copy's doc, and its drop waits for the server to hold
+  // what it changed, as an account's does.
+  if (deps.hostedGuest && !projectId) {
     throw Object.assign(new Error(hostedGuestSignInNote("attach agents")), { toastVariant: "warning" as const });
   }
   if (keepsFirst && deps.savesHere !== false) {

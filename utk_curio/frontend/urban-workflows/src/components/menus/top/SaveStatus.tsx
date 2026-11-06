@@ -6,6 +6,7 @@ import { faCircleCheck, faFloppyDisk } from "@fortawesome/free-solid-svg-icons";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useCollab } from "../../../providers/CollaborationProvider";
 import { useSaveState, type SaveState } from "../../../providers/flow/useSaveState";
+import { useHostedGuest } from "../../apiSettings/useHostedGuest";
 import headerStyles from "../../layout/GlobalPageHeader.module.css";
 import styles from "./UpMenu.module.css";
 
@@ -15,6 +16,11 @@ const LABEL: Record<SaveState, string> = {
     offline: "Offline",
     unsaved: "Unsaved",
 };
+
+/** What a hosted guest's bar reads once the server has its every change. */
+export const GUEST_KEPT_LABEL = "Kept for this visit";
+/** And its tooltip: only an account saves a dataflow. */
+export const GUEST_KEPT_TOOLTIP = "Sign in to save dataflows.";
 
 /**
  * The top bar's save status, always present on a dataflow you own, so its
@@ -27,12 +33,17 @@ const LABEL: Record<SaveState, string> = {
  * it as well as the colour, so the state does not rest on telling two hues
  * apart. A click is File > Save.
  *
+ * A hosted guest's canvas is bound to its own copy's doc, which keeps its
+ * changes until the server starts again: Saved reads Kept for this visit,
+ * and each state's tooltip says to sign in to save dataflows.
+ *
  * ``data-curio-changes-pending`` says whether changes wait for the server
  * right now, before the bar shows it.
  */
 export function SaveStatus({ saving, onSave }: { saving: boolean; onSave: () => void }) {
     const { boundDoc, projectDirty, projectSavedAt } = useFlowContext();
     const collab = useCollab();
+    const hostedGuest = useHostedGuest();
     const { state, savedAt, pending } = useSaveState({
         provider: boundDoc ?? null,
         connected: collab.connected !== false,
@@ -41,13 +52,15 @@ export function SaveStatus({ saving, onSave }: { saving: boolean; onSave: () => 
     });
     const shown: SaveState = saving ? "saving" : state;
     const tooltip =
-        saving ? "Saving…"
+        hostedGuest ? GUEST_KEPT_TOOLTIP
+        : saving ? "Saving…"
         : state === "saving" ? "Saving your changes…"
         : state === "offline" ? "Offline: your changes are sent when Curio reaches the server - click to save"
         : state === "unsaved" ? (projectDirty ? "Unsaved changes - click to save" : "Not saved yet - click to save")
         : savedAt ? `Saved at ${savedAt.toLocaleTimeString()} - click to save`
         : "Saved - click to save";
     const done = shown === "saved";
+    const keptForTheVisit = hostedGuest && done;
     return (
         <button
             type="button"
@@ -62,7 +75,7 @@ export function SaveStatus({ saving, onSave }: { saving: boolean; onSave: () => 
                 icon={done ? faCircleCheck : faFloppyDisk}
                 className={clsx(done ? styles.savedIcon : styles.unsavedIcon, shown === "saving" && styles.savingPulse)}
             />
-            <span>{LABEL[shown]}</span>
+            {keptForTheVisit ? <span>{GUEST_KEPT_LABEL}</span> : <span>{LABEL[shown]}</span>}
         </button>
     );
 }
