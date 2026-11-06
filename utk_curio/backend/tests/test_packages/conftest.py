@@ -208,16 +208,14 @@ def default_llm_provider(monkeypatch):
     ``400 No AI provider is configured`` instead of exercising the package
     build they are about.
 
-    Curio ships no built-in endpoint (``config.DEFAULT_LLM_*`` are empty),
-    which is deliberate: an instance whose operator configured nothing must not
-    send prompts to a third party. So the test supplies one rather than leaning
-    on a shipped default, exactly as ``test_agents/conftest.py`` does. The URL
-    is unroutable on purpose - every provider call in these tests is stubbed,
-    and one that forgot should fail loudly rather than reach the network.
+    Curio ships no built-in endpoint (``config.DEFAULT_LLM_ENDPOINTS`` is
+    empty), which is deliberate: an instance whose operator configured nothing
+    must not send prompts to a third party. So the test supplies one rather
+    than leaning on a shipped default, exactly as ``test_agents/conftest.py``
+    does. The URL is unroutable on purpose - every provider call in these tests
+    is stubbed, and one that forgot should fail loudly rather than reach the
+    network.
     """
-    from utk_curio.backend import config
+    from utk_curio.backend.tests._support import llm_deployment
 
-    monkeypatch.setattr(config, "DEFAULT_LLM_API_TYPE", "openai_compatible")
-    monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", "http://127.0.0.1:9/v1")
-    monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "test-model")
-    monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "test-key")
+    llm_deployment.offer(monkeypatch, llm_deployment.TEST_ENDPOINT)

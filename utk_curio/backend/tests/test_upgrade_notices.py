@@ -13,6 +13,7 @@ import logging
 import pytest
 
 from utk_curio.backend.app import upgrade_notices
+from utk_curio.common.llm_endpoint import RETIRED_VARIABLES
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +25,7 @@ def _clean(monkeypatch, tmp_path):
         "STREETVISION_MODEL_CACHE_DIR",
         "CURIO_DATALAKE_ROOT",
         "CURIO_STATE_DIR",
+        *RETIRED_VARIABLES,
     ):
         monkeypatch.delenv(name, raising=False)
     # A .curio of the test's own, so no leftover folder speaks for it.
@@ -55,9 +57,6 @@ class TestLegacyEnvVars:
 
     def test_a_clean_deployment_says_nothing(self, caplog, monkeypatch):
         """No stale settings, no noise: the warnings have to stay meaningful."""
-        import utk_curio.backend.config as cfg
-
-        monkeypatch.setattr(cfg, "GUEST_LLM_API_KEY", "")
         assert _run(caplog) == []
         assert caplog.text == ""
 
@@ -83,18 +82,21 @@ class TestTheOldDataLake:
         assert "source." in caplog.text
 
 
-class TestGuestModel:
-    def test_a_guest_key_with_no_model_is_called_out(self, caplog, monkeypatch):
-        import utk_curio.backend.config as cfg
+class TestTheOldLlmSettings:
+    """The LLM endpoints are read only from the file --llm-endpoint-file names.
+    A variable that used to set one, left in ``utk_curio/backend/.env``,
+    reaches only the backend, which reads none of them: it says so."""
 
-        monkeypatch.setattr(cfg, "GUEST_LLM_API_KEY", "gk")
-        monkeypatch.setattr(cfg, "GUEST_LLM_MODEL", "")
-        assert "GUEST_LLM_MODEL" in _run(caplog)
-        assert "guest AI will fail at run time" in caplog.text
+    @pytest.mark.parametrize("name", RETIRED_VARIABLES)
+    def test_each_old_variable_is_called_out(self, caplog, monkeypatch, name):
+        monkeypatch.setenv(name, "left-over-value")
+        assert name in _run(caplog)
+        assert "--llm-endpoint-file" in caplog.text
+        assert "left-over-value" not in caplog.text
 
-    def test_a_configured_guest_provider_is_quiet(self, caplog, monkeypatch):
-        import utk_curio.backend.config as cfg
-
-        monkeypatch.setattr(cfg, "GUEST_LLM_API_KEY", "gk")
-        monkeypatch.setattr(cfg, "GUEST_LLM_MODEL", "gpt-4o-mini")
-        assert "GUEST_LLM_MODEL" not in _run(caplog)
+    def test_the_list_holds_every_old_setting(self):
+        assert set(RETIRED_VARIABLES) == {
+            "CURIO_DEFAULT_LLM_API_TYPE", "CURIO_DEFAULT_LLM_BASE_URL", "CURIO_DEFAULT_LLM_API_KEY",
+            "CURIO_DEFAULT_LLM_MODEL", "CURIO_DEFAULT_LLM_MODELS", "GUEST_LLM_API_TYPE",
+            "GUEST_LLM_BASE_URL", "GUEST_LLM_API_KEY", "GUEST_LLM_MODEL",
+        }

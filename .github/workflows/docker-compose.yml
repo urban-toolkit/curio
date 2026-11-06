@@ -249,12 +249,52 @@ jobs:
       actions: read
     outputs:
       runners: ${{ steps.pick.outputs.runners }}
+      # A green run of this commit's tree, on a push to main only: every test
+      # job skips when it is set (scripts/ci_tested_tree.py).
+      tested_by: ${{ steps.tested.outputs.run }}
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
         with:
-          sparse-checkout: scripts/ci_pick_runners.py
+          sparse-checkout: |
+            scripts/ci_pick_runners.py
+            scripts/ci_tested_tree.py
           sparse-checkout-cone-mode: false
+
+      # A PR run whose every job passed names an artifact after the tree it
+      # tested, its merge ref's (ci-report). A PR merged with nothing landed on
+      # main in between gives main that same tree, so its run would repeat the
+      # PR's to the file. Only a push to main asks: the Weekly flake hunt's
+      # repeat-10 run, the other dispatches and the schedule always test.
+      - name: 🌳 Look for a green run of this commit's tree
+        id: tested
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/ci_tested_tree.py lookup "$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+
+      - name: 🔗 Same tree as a green run
+        if: steps.tested.outputs.run != ''
+        env:
+          TESTED_RUN: ${{ steps.tested.outputs.run }}
+          TESTED_URL: ${{ steps.tested.outputs.url }}
+        run: |
+          tree=$(git rev-parse 'HEAD^{tree}')
+          printf '{"run": %s, "url": "%s", "tree": "%s"}\n' "$TESTED_RUN" "$TESTED_URL" "$tree" > tested-by.json
+          {
+            echo "## Same tree as run $TESTED_RUN, which passed"
+            echo
+            echo "This commit's tree, \`$tree\`, is the tree [run $TESTED_RUN]($TESTED_URL) tested with every job green, so no test job runs again. Its CI report and artifacts are that run's."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📤 Upload which run tested this tree
+        if: steps.tested.outputs.run != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: tested-by
+          path: tested-by.json
+          retention-days: 30
 
       # The jobs that start at once, and ci-report, so that a run whose image
       # fails to build still gets its report. The jobs that wait on the image
@@ -458,8 +498,9 @@ jobs:
     # are there to run test-gpu-stress by itself, so this job and the two
     # after it sit out those runs: the code they cover was already tested on
     # the push or PR that produced the ref, and repeating them would hold the
-    # GPU for another 20 minutes.
-    if: ${{ needs.pick-runners.result == 'success' }}
+    # GPU for another 20 minutes. A push to main whose tree a run already
+    # tested green (pick-runners' tested_by) runs none of them either.
+    if: ${{ needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' }}
 
     env:
       # Boot the CI stack with auth + projects enabled. Without the overlay the
@@ -956,7 +997,7 @@ jobs:
   unit:
     name: unit (${{ matrix.name }})
     needs: [pick-runners, build-image]
-    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.build-image.result == 'success' && !inputs.remint }}
+    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' && needs.build-image.result == 'success' && !inputs.remint }}
     # The sandbox suite holds #408's re-run memory test, which measures a 4-core,
     # 16 GB laptop, so like test-desktop-stress it runs on ubuntu-latest.
     runs-on: ${{ matrix.suite == 'sandbox' && 'ubuntu-latest' || fromJSON(needs.build-image.outputs.runners)[format('unit-{0}', matrix.name)] }}
@@ -1030,7 +1071,7 @@ jobs:
   # they run on the checkout rather than inside an image.
   jest:
     needs: pick-runners
-    if: ${{ needs.pick-runners.result == 'success' && !inputs.remint }}
+    if: ${{ needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' && !inputs.remint }}
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['jest'] }}
     timeout-minutes: ${{ inputs.repeat > 1 && 350 || 30 }}
     defaults:
@@ -1097,7 +1138,7 @@ jobs:
   # that compares it.
   e2e-desktop:
     needs: [pick-runners, build-image]
-    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.build-image.result == 'success' }}
+    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' && needs.build-image.result == 'success' }}
     runs-on: ${{ fromJSON(needs.build-image.outputs.runners)[format('e2e-desktop-{0}', matrix.part)] }}
     timeout-minutes: ${{ inputs.repeat > 1 && 350 || 45 }}
     permissions:
@@ -1228,7 +1269,7 @@ jobs:
   # /exec only -- /execJs spawns Node either way (sandbox/app/api.py).
   test-isolated:
     needs: [pick-runners, build-image]
-    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.build-image.result == 'success' && !inputs.remint }}
+    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' && needs.build-image.result == 'success' && !inputs.remint }}
     runs-on: ${{ fromJSON(needs.build-image.outputs.runners)['test-isolated'] }}
     timeout-minutes: ${{ inputs.repeat > 1 && 350 || 45 }}
     permissions:
@@ -1370,7 +1411,7 @@ jobs:
   # HTTP API instead, which touches none of the hardened paths from the host.
   test-exec-user:
     needs: [pick-runners, build-image]
-    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.build-image.result == 'success' && !inputs.remint }}
+    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' && needs.build-image.result == 'success' && !inputs.remint }}
     runs-on: ${{ fromJSON(needs.build-image.outputs.runners)['test-exec-user'] }}
     timeout-minutes: 30
     permissions:
@@ -1489,7 +1530,12 @@ jobs:
   # and no GPU or stack: the unit container has no browser, so there they skip.
   # CURIO_REQUIRE_PREVIEW_RUNNER=1 fails them instead.
   preview-runner:
+    # pick-runners only for its tested_by: on a fork PR, where pick-runners
+    # skips, this job still runs (!cancelled(), and the output reads empty).
+    needs: pick-runners
     if: >-
+      !cancelled() &&
+      needs.pick-runners.outputs.tested_by == '' &&
       !inputs.remint &&
       github.event_name != 'schedule' &&
       github.event.action != 'labeled'
@@ -1585,8 +1631,8 @@ jobs:
   #   the backend's threads, memory and doc files the probe reads in the stack's
   #   container (--probe).
   test-desktop-stress:
-    needs: build-image
-    if: ${{ !cancelled() && needs.build-image.result == 'success' && !inputs.remint }}
+    needs: [pick-runners, build-image]
+    if: ${{ !cancelled() && needs.pick-runners.outputs.tested_by == '' && needs.build-image.result == 'success' && !inputs.remint }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -1950,7 +1996,7 @@ jobs:
   # a CPU runner and then skipped because it wanted WebGPU after all.
   ci-report:
     needs: [pick-runners, test-gpu, unit, jest, e2e-desktop, test-isolated, test-exec-user, preview-runner, test-desktop-stress]
-    if: ${{ !cancelled() && needs.pick-runners.result == 'success' }}
+    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' }}
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['ci-report'] }}
     timeout-minutes: 30
     # actions: read lets the page list every job of the run through the jobs API.
@@ -2005,6 +2051,33 @@ jobs:
         run: |
           python3 scripts/ci_never_run.py inputs unit-backend-{1..4} unit-sandbox \
             test-gpu test-isolated test-exec-user preview-runner e2e-desktop-{1..14}
+
+      # A run that tested its whole tree green, not a re-mint and with no job
+      # skipped, names an artifact after that tree: a push to main with the
+      # same tree then passes by a link to this run (pick-runners,
+      # scripts/ci_tested_tree.py). A PR run's tree is its merge ref's.
+      - name: 🌳 Name the tree this run tested green
+        id: tree
+        if: >-
+          success() && !inputs.remint &&
+          !contains(needs.*.result, 'failure') &&
+          !contains(needs.*.result, 'cancelled') &&
+          !contains(needs.*.result, 'skipped')
+        run: |
+          tree=$(git rev-parse 'HEAD^{tree}')
+          printf '{"run": %s, "attempt": %s, "event": "%s", "sha": "%s", "tree": "%s"}\n' \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_EVENT_NAME" "$(git rev-parse HEAD)" "$tree" \
+            > tested-tree.json
+          echo "name=tested-tree-$tree" >> "$GITHUB_OUTPUT"
+
+      - name: 📤 Upload the tested tree's name
+        if: steps.tree.outputs.name != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.tree.outputs.name }}
+          path: tested-tree.json
+          retention-days: 30
+          overwrite: true
 
       - name: 📤 Upload the re-minted baselines
         if: always() && inputs.remint

@@ -31,6 +31,7 @@ from utk_curio.backend import config
 from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.app.agents.infrastructure.providers import ChatTurn, ProviderConfig
 from utk_curio.backend.app.projects.services import _user_dir_key
+from utk_curio.backend.tests._support import llm_deployment
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents.test_output_cap import (
     CAP,
@@ -126,7 +127,7 @@ def thinker(monkeypatch):
     def _start(*rounds, **options) -> _Thinker:
         server = _Thinker(rounds, **options)
         started.append(server)
-        monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", server.base_url)
+        llm_deployment.change_first(monkeypatch, base_url=server.base_url)
         return server
 
     yield _start

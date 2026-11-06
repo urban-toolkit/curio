@@ -34,12 +34,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from utk_curio.backend import config
 from utk_curio.backend.app.agents.infrastructure import chat_capabilities as cc
 from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.app.agents.infrastructure.providers import ProviderConfig
 from utk_curio.backend.app.agents.repositories import ledger, model_catalog
 from utk_curio.backend.tests.test_agents.test_output_cap import CAP, ROOM, _attach, _ended, _last_turn
+from utk_curio.backend.tests._support import llm_deployment
 
 USER = "7"
 #: The deployment default's model and key in the agents' suite (conftest.py).
@@ -265,7 +265,7 @@ def model_server(monkeypatch):
     def _start(**options) -> _Server:
         server = _Server(**options)
         started.append(server)
-        monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", server.base_url)
+        llm_deployment.change_first(monkeypatch, base_url=server.base_url)
         return server
 
     yield _start

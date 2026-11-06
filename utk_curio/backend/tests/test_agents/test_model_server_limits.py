@@ -25,10 +25,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from utk_curio.backend import config
 from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.app.agents.infrastructure.providers import ChatTurn, ProviderConfig
 from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests._support import llm_deployment
 
 #: The model writes one piece every PACE_S.
 PACE_S = 0.1
@@ -184,7 +184,7 @@ def test_a_turn_whose_reply_outlasts_the_proxys_silence_limit_answers_it(
     answers its reply, where it answered 502 "agent run failed: Connection
     error." once the proxy had cut each try."""
     server = model_server(limit="silence")
-    monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", server.base_url)
+    llm_deployment.change_first(monkeypatch, base_url=server.base_url)
     _, token = user_and_token
     coord = "agent.curio.researcher@1"
     client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))

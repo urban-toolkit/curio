@@ -10,6 +10,7 @@ import sys
 from utk_curio.cli.lifecycle import clean_shutdown, shell_required
 from utk_curio.cli.logs import COLOR_FRONTEND, log_error, log_info, log_warning
 from utk_curio.common.autk_data_compiler import compiler_path
+from utk_curio.common.llm_endpoint import without_backend_only
 
 
 # The Node.js major the project targets: the frontend build, Jest, and the
@@ -175,7 +176,8 @@ def check_install_build(dir, force_rebuild=False):
     # missing, failing the webpack build with "Module not found".
     log_info(f"[Frontend] Ensuring npm deps are installed...", COLOR_FRONTEND, 0)
     try:
-        subprocess.run(["npm", "install"], check=True, shell=shell_required)
+        subprocess.run(["npm", "install"], check=True, shell=shell_required,
+                       env=without_backend_only(os.environ))
     except subprocess.CalledProcessError as e:
         log_error(f"[Frontend] 'npm install' failed (exit code {e.returncode}). Check the output above for details.")
         clean_shutdown()
@@ -196,7 +198,10 @@ def check_install_build(dir, force_rebuild=False):
     if reason is not None:
         log_info(f"[Frontend] Running npm run build ({reason})...", COLOR_FRONTEND, 0)
         try:
-            subprocess.run(["npm", "run", "build"], check=True, shell=shell_required)
+            # The build compiles environment variables into the page, so it
+            # never sees the deployment's LLM key and URL.
+            subprocess.run(["npm", "run", "build"], check=True, shell=shell_required,
+                           env=without_backend_only(os.environ))
         except subprocess.CalledProcessError as e:
             log_error(f"[Frontend] 'npm run build' failed (exit code {e.returncode}). Check the output above for details.")
             clean_shutdown()

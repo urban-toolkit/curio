@@ -52,19 +52,19 @@ def _default_provider(monkeypatch):
     validates anything else, so with no default configured they all fail at
     that first step with a 400 instead of exercising what they are about.
 
-    Curio ships no built-in endpoint (see ``config.DEFAULT_LLM_*``), which is
-    deliberate: an instance whose operator configured nothing must not send
-    prompts to a third party. The tests therefore stand in for the operator
-    rather than leaning on a shipped default. The URL is unroutable on purpose
-    - anything that actually reaches out is stubbed, and a test that forgot to
-    stub should fail loudly rather than make a real call.
+    Curio ships no built-in endpoint (see ``config.DEFAULT_LLM_ENDPOINTS``),
+    which is deliberate: an instance whose operator configured nothing must not
+    send prompts to a third party. The tests therefore stand in for the
+    operator's endpoint file rather than leaning on a shipped default. The URL
+    is unroutable on purpose - anything that actually reaches out is stubbed,
+    and a test that forgot to stub should fail loudly rather than make a real
+    call.
     """
-    # provider_config reads these at call time, so patching the config module
-    # is what every resolution sees.
-    monkeypatch.setattr(config, "DEFAULT_LLM_API_TYPE", "openai_compatible")
-    monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", "http://127.0.0.1:9/v1")
-    monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "test-model")
-    monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "test-key")
+    # provider_config reads the endpoints at call time, so patching the config
+    # module is what every resolution sees.
+    from utk_curio.backend.tests._support import llm_deployment
+
+    llm_deployment.offer(monkeypatch, llm_deployment.TEST_ENDPOINT)
 
 
 @pytest.fixture(autouse=True)
