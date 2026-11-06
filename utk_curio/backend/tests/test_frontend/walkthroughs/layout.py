@@ -87,7 +87,7 @@ def catalog_tag_chips_are_plain(ctx: Ctx) -> None:
     # card every time.
     pinned = {
         "Data": ("Search catalog datasets…", "Quad Cities SVI Census Tracts"),
-        "Node": ("Search packages…", "Custom UI"),
+        "Node": ("Search packages…", "Urban Heat Vulnerability Index"),
     }
 
     for kind, route, card_sel in (
