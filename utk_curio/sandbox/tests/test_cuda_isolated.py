@@ -56,8 +56,38 @@ NODE = '''\
         seen["difference"] = ((a.cuda() @ b.cuda()).cpu() - a @ b).abs().max().item()
         major, minor = torch.cuda.get_device_capability(0)
         seen["device"] = f"{torch.cuda.get_device_name(0)}, sm_{major}{minor}"
+    else:
+        # Why not: torch's error, the driver's own code, and what this child
+        # may open of the GPU's device files.
+        import ctypes
+        import glob
+
+        try:
+            torch.cuda.init()
+        except Exception as error:
+            seen["error"] = str(error)[:500]
+        try:
+            seen["cuInit"] = ctypes.CDLL("libcuda.so.1").cuInit(0)
+        except OSError as error:
+            seen["cuInit"] = str(error)[:200]
+        seen["devices"] = {
+            path: [oct(os.stat(path).st_mode & 0o777), os.stat(path).st_uid, os.stat(path).st_gid,
+                   os.access(path, os.R_OK | os.W_OK)]
+            for path in sorted(glob.glob("/dev/nvidia*"))
+        }
+        seen["groups"] = os.getgroups()
+        with open("/proc/self/statm") as statm:
+            seen["mapped"] = int(statm.read().split()[0]) * os.sysconf("SC_PAGE_SIZE")
     return seen
 '''
+
+#: What a driver code from cuInit says about a child that reaches no GPU.
+CUINIT_CAUSES = {
+    2: "the driver ran out of memory: CUDA's start needs more address space than the cap leaves",
+    100: "the child sees no device",
+    304: "the operating system refused a call the driver makes (the seccomp filter, or a limit)",
+    999: "an unknown error, often a device file the child cannot open",
+}
 
 
 @pytest.fixture
@@ -140,7 +170,18 @@ def test_a_node_in_an_isolated_child_reaches_the_gpu_through_torch(isolated_as_d
         f"the child may map {headroom >> 20} MiB beyond the {zygote_mapped >> 20} MiB its zygote "
         f"maps, not about its budget of {BUDGET_MB} MB")
     if not seen["cuda"]:
-        pytest.fail(f"torch {seen['torch']} sees no GPU in the isolated child: {NO_GPU}")
+        closed = sorted(path for path, (_, _, _, opens) in seen["devices"].items() if not opens)
+        if not seen["devices"]:
+            cause = NO_GPU
+        elif closed:
+            cause = f"{EXEC_USER} cannot open {closed}"
+        else:
+            cause = CUINIT_CAUSES.get(seen["cuInit"], "see the driver's code")
+        pytest.fail(
+            f"torch {seen['torch']} sees no GPU in the isolated child: {cause}. cuInit gave "
+            f"{seen['cuInit']}, torch said {seen.get('error')!r}; its devices (mode, uid, gid, opens): "
+            f"{seen['devices']}; its groups {seen['groups']}; it maps {seen['mapped'] >> 20} MiB "
+            f"of a cap of {seen['address_space'] >> 20} MiB")
 
     print(f"Isolated child: uid {seen['uid']}, seccomp {seen['seccomp']}, torch {seen['torch']}, "
           f"capped at {seen['address_space'] >> 20} MiB, its zygote mapping {zygote_mapped >> 20} MiB")
