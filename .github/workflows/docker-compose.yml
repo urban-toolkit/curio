@@ -2346,7 +2346,8 @@ jobs:
           if [ ${#folders[@]} -gt 0 ] || [ ${#files[@]} -eq 0 ]; then exit 0; fi
           curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" \
-            -o "$RUNNER_TEMP/artifacts.json"
+            -o "$RUNNER_TEMP/artifacts.json" \
+            || { echo "::warning::the artifacts API did not answer, so the lone job's results stay in inputs/"; exit 0; }
           name=$(python3 -c 'import json, sys; names = sorted({a["name"] for a in json.load(open(sys.argv[1]))["artifacts"] if a["name"].startswith("ci-inputs-")}); print(names[0] if len(names) == 1 else "")' "$RUNNER_TEMP/artifacts.json")
           if [ -z "$name" ]; then
             echo "::warning::results lie in inputs/ with no job's folder, and no single ci-inputs artifact names them"
