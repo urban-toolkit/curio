@@ -116,7 +116,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 
 `.github/workflows/docker-compose.yml` jobs:
 
-- `pick-runners`: picks the runners of the jobs that start at once (`scripts/ci_pick_runners.py`).
+- `pick-runners`: picks the runners of the jobs that start at once (`scripts/ci_pick_runners.py`). On a push to main it also looks for a green run of the commit's tree (`scripts/ci_tested_tree.py`); when one exists, every test job skips and the run's summary and `tested-by` artifact link to that run.
 - `build-image`: builds the CI image once per commit, pushes it to GHCR, then picks the runners of the jobs that wait on it. Built with the Dockerfile's `CURIO_CI_SETUP=1`, it also holds what `curio.py setup --with-examples` installs, so CI stacks boot with `CURIO_SKIP_DEP_INSTALL=1` and the jobs run `scripts/test.sh --skip-setup`.
 - `test-gpu`: e2e tests that need WebGPU, on a GPU runner.
 - `unit`: backend pytest in four parts, plus the sandbox suite.
@@ -127,7 +127,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 - `preview-runner`: preview runner tests (`utk_curio/tools/preview_runner.py`) in headless Chromium.
 - `test-desktop-stress`: memory replay and 1, 5 and 10 user stress on `ubuntu-latest`.
 - `test-gpu-stress`: 5 to 100 user stress tiers; on the schedule, a `stress` PR label, or dispatch.
-- `ci-report`: one HTML report for the run (`scripts/ci_report.py`); checks that every test ran.
+- `ci-report`: one HTML report for the run (`scripts/ci_report.py`); checks that every test ran. A run with every job green and nothing re-minted uploads `tested-tree-<git tree>`, the artifact pick-runners looks up.
 - Dispatch inputs: `stress`, `remint` with `remint_filter`, `remint_force` and `remint_gpu_kind` (re-mints screenshot baselines into the `reminted-baselines` artifact; `remint_gpu_kind` writes named frames as baselines of one GPU kind, `<name>.<kind>.png`, see the test_frontend README), and `repeat` (unit, jest, e2e-desktop, test-gpu and test-isolated run their suite that many times through `scripts/ci_repeat.sh`, and test-gpu-stress runs with its stages repeated; the CI report lists the tests that passed in one run and failed in another).
 
 Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema), `weekly-flake-hunt.yml` (Saturdays: the Full stack build on main with `repeat` 10), `skill-evals.yml` (started by hand: the skills' evaluations live, on the models of `CURIO_EVAL_MODELS`, on the runner labelled `skill-evals`, with its report `curio-skill-evals-report.html` as the run's artifact; `scripts/ci_skill_eval_scope.py`, `scripts/ci_skill_evals.py`, `scripts/skill_evals_report.py`, floors in `scripts/skill_eval_floors.json`), `bump-version.yml` (version bump on main), `deploy.yml` (deploys main), `publish-pip-to-pypi.yml` (PyPI on release).

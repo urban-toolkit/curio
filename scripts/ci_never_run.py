@@ -25,7 +25,9 @@ scheduled run, or a job that died before uploading).
 
 --compare reads two runs' downloaded ci-inputs-* folders (main's run and a
 PR's run, say; issue-audit/backlog-triage-v15/fetch_run.sh downloads one) and
-lists, test by test, what differs between them:
+lists, test by test, what differs between them. A main run that passed by a
+link (its `tested-by` artifact) has no ci-inputs of its own: download those of
+the run it names, which tested the same tree.
 
 1. tests that ran in one run and not the other;
 2. tests whose outcome changed (passed, failed, error, skipped, xfail);
