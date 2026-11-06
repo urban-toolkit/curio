@@ -111,9 +111,10 @@ Each `Simple View` card shows the photo and its overlay, with the photo's id, it
       "field": "image_id",
       "type": "nominal",
       "sort": "-x",
-      "title": null,
+      "title": "Photos, greenest first",
       "axis": {
-        "labelFontSize": 8
+        "labels": false,
+        "ticks": false
       }
     },
     "x": {
@@ -126,12 +127,15 @@ Each `Simple View` card shows the photo and its overlay, with the photo's id, it
       "type": "quantitative",
       "title": "Edges (%)",
       "scale": {
-        "scheme": "greys"
+        "scheme": "viridis"
       }
     },
     "tooltip": [
       {
         "field": "image_id"
+      },
+      {
+        "field": "creator"
       },
       {
         "field": "green_pct"

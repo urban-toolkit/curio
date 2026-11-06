@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/30-pytorch-sidewalk-clusters.json",
-    "sha256": "f5bf7f00813c6fa4085644415315a390618368f76bf583fba66a34c5de703dcf",
+    "sha256": "823453709c1e5e6996daaa39b27916a53333048c40c0ecb3c566fde47755a428",
     "walkthrough": "docs/examples/30-pytorch-sidewalk-clusters.md"
   },
-  "prompt": "Load all of Project Sidewalk's Chicago sidewalk labels from the Data Catalog and group them by place into eight clusters with k-means in PyTorch, on the GPU when there is one: positions in metres, k-means++ starts drawn from a seeded generator, steps until no label changes cluster, clusters numbered from the largest, and the device it ran on. Chart how many labels of each type each cluster holds, and map every tenth label coloured by its cluster on an Autark map.",
+  "prompt": "Load all of Project Sidewalk's Chicago sidewalk labels from the Data Catalog and group them by place into eight clusters with k-means in PyTorch, on the GPU when there is one: positions in metres, k-means++ starts drawn from a seeded generator, steps until no label changes cluster, clusters numbered from the largest, and the device it ran on. Chart how many labels of each type each cluster holds. Gather the labels into squares of a kilometre, each in the cluster most of its labels are in, and map the squares coloured by that cluster on an Autark map.",
   "context": null,
   "required": {
     "datasets": [
@@ -102,10 +102,6 @@
         "cluster"
       ],
       "outputKind": "geodataframe"
-    },
-    {
-      "ref": "analysis2",
-      "outputKind": "dataframe"
     }
   ],
   "execution": {
@@ -153,5 +149,5 @@
       }
     ]
   },
-  "notes": "k-means in PyTorch over 145,880 points from the Data Catalog, with an Autark map of a tenth of them by cluster."
+  "notes": "k-means in PyTorch over 145,880 points from the Data Catalog, with an Autark map of the clusters in squares of a kilometre."
 }

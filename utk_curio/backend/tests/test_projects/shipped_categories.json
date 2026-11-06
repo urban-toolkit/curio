@@ -308,6 +308,8 @@
     "tags": [
       "Autark",
       "Vega-Lite",
+      "GeoPandas",
+      "Pandas",
       "PyTorch"
     ],
     "data_type": [

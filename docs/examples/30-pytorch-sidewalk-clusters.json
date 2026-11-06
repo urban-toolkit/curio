@@ -20,7 +20,7 @@
         "content": "labels = curio_load_data(\"data.projectsidewalk.chicago-labels\")\n\nreturn labels[[\"label_type\", \"severity\", \"neighborhood\", \"geometry\"]]\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Load all 145,880 Project Sidewalk labels for Chicago.",
+        "goal": "Load all 145,880 Project Sidewalk labels of Chicago and its suburbs.",
         "metadata": {
           "keywords": []
         }
@@ -65,14 +65,14 @@
         }
       },
       {
-        "id": "labels-to-draw",
+        "id": "label-squares",
         "type": "curio.builtin/computation-analysis",
         "x": 1290,
         "y": 430,
-        "content": "# Every tenth label, enough to show the clusters on a map.\nreturn input_0.iloc[::10][[\"cluster\", \"label_type\", \"geometry\"]]\n",
+        "content": "# The labels gathered into squares of a kilometre, each in the cluster most of\n# its labels are in: on a map of the whole region a square shows, where a\n# label's own point would be too small to see.\nimport geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import box\n\nSIDE = 1000  # metres\n\nmetres = input_0.geometry.to_crs(26971)\nlabels = pd.DataFrame({\n    \"column\": (metres.x // SIDE).astype(int),\n    \"row\": (metres.y // SIDE).astype(int),\n    \"cluster\": input_0[\"cluster\"].to_numpy(),\n})\ncounts = labels.groupby([\"column\", \"row\", \"cluster\"]).size().reset_index(name=\"labels\")\ntotals = counts.groupby([\"column\", \"row\"])[\"labels\"].sum().rename(\"labels_in_square\")\n# Each square's cluster with the most labels, the smaller number on a tie.\nsquares = counts.sort_values([\"labels\", \"cluster\"], ascending=[False, True], kind=\"stable\")\nsquares = squares.drop_duplicates([\"column\", \"row\"]).join(totals, on=[\"column\", \"row\"])\nsquares = squares.sort_values([\"row\", \"column\"], kind=\"stable\")\n\nreturn gpd.GeoDataFrame(\n    {\"cluster\": squares[\"cluster\"].to_numpy(), \"labels\": squares[\"labels_in_square\"].to_numpy()},\n    geometry=[box(c * SIDE, r * SIDE, (c + 1) * SIDE, (r + 1) * SIDE)\n              for c, r in zip(squares[\"column\"], squares[\"row\"])],\n    crs=26971,\n).to_crs(4326)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Keep every tenth label for the map.",
+        "goal": "Gather the labels into squares of a kilometre, each in the cluster most of its labels are in.",
         "metadata": {
           "keywords": []
         }
@@ -82,10 +82,10 @@
         "type": "curio.builtin/autk-grammar",
         "x": 1935,
         "y": 430,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"cluster\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"Cluster\"\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"cluster\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"stroke\": false,\n        \"title\": \"Cluster\"\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Map the labels colored by cluster.",
+        "goal": "Map the squares colored by cluster.",
         "metadata": {
           "keywords": []
         }
@@ -114,22 +114,22 @@
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-label-clustersout-labels-to-drawin",
+        "id": "reactflow__edge-label-clustersout-label-squaresin",
         "source": "label-clusters",
         "sourceHandle": "out",
-        "target": "labels-to-draw",
+        "target": "label-squares",
         "targetHandle": "in"
       },
       {
-        "id": "reactflow__edge-labels-to-drawout-cluster-mapin",
-        "source": "labels-to-draw",
+        "id": "reactflow__edge-label-squaresout-cluster-mapin",
+        "source": "label-squares",
         "sourceHandle": "out",
         "target": "cluster-map",
         "targetHandle": "in"
       }
     ],
     "name": "PyTorch: sidewalk clusters",
-    "description": "Project Sidewalk's 145,880 Chicago labels clustered by place with k-means in PyTorch, on the GPU when there is one: an Autark map of the labels by cluster, and each cluster's labels by type.",
+    "description": "Project Sidewalk's 145,880 labels around Chicago clustered by place with k-means in PyTorch, on the GPU when there is one: an Autark map of the clusters, a square of a kilometre at a time, and each cluster's labels by type.",
     "task": "Cluster sidewalk accessibility labels by place on the GPU and map the clusters.",
     "timestamp": 0,
     "provenance_id": "pytorch-sidewalk-clusters",

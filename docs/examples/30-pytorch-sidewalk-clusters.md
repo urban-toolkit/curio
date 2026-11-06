@@ -1,6 +1,6 @@
 # Example: PyTorch: sidewalk clusters
 
-Project Sidewalk's volunteers have labeled 145,880 places on Chicago's sidewalks: curb ramps, missing ramps, obstacles, surface problems and more. This example groups the labels by place with k-means, in PyTorch on the GPU when the machine has one, maps them by cluster with Autark, and charts the types of label in each cluster.
+Project Sidewalk's volunteers have labeled 145,880 places on the sidewalks of Chicago and its suburbs: curb ramps, missing ramps, obstacles, surface problems and more. This example groups the labels by place with k-means, in PyTorch on the GPU when the machine has one, maps the clusters with Autark, and charts the types of label in each cluster.
 
 PyTorch comes with Curio's Docker image, built for CUDA 12.9, and a node there reaches the GPU when the host hands one to the container ([The GPU](../DEPLOYMENT.md#the-gpu)). Elsewhere, install `torch` into Curio's Python first.
 
@@ -11,8 +11,8 @@ flowchart LR
   L[`Data Loading`<br/>145,880 labels] --> K[`Python Computation`<br/>k-means on the GPU]
   K --> N[`Python Computation`<br/>labels by cluster and type]
   N --> C[`Vega-Lite`<br/>each cluster's label types]
-  K --> T[`Python Computation`<br/>every tenth label]
-  T --> M[`Autark`<br/>the labels by cluster]
+  K --> Q[`Python Computation`<br/>squares of a kilometre]
+  Q --> M[`Autark`<br/>the clusters on a map]
 ```
 
 ## Load the labels
@@ -99,7 +99,7 @@ clustered["device"] = device
 return clustered
 ```
 
-## Count and thin
+## Count and gather
 
 One node counts each cluster's labels by type, for the chart:
 
@@ -110,16 +110,42 @@ counts = input_0.groupby(["cluster", "label_type"]).size()
 return counts.reset_index(name="labels")
 ```
 
-Another keeps every tenth label for the map:
+The labels span about 80 by 100 kilometres, so on a map of them all a label's own point would be smaller than a pixel. Another node gathers them into squares of a kilometre, each in the cluster most of its labels are in, with how many labels it holds:
 
 ```python
-# Every tenth label, enough to show the clusters on a map.
-return input_0.iloc[::10][["cluster", "label_type", "geometry"]]
+# The labels gathered into squares of a kilometre, each in the cluster most of
+# its labels are in: on a map of the whole region a square shows, where a
+# label's own point would be too small to see.
+import geopandas as gpd
+import pandas as pd
+from shapely.geometry import box
+
+SIDE = 1000  # metres
+
+metres = input_0.geometry.to_crs(26971)
+labels = pd.DataFrame({
+    "column": (metres.x // SIDE).astype(int),
+    "row": (metres.y // SIDE).astype(int),
+    "cluster": input_0["cluster"].to_numpy(),
+})
+counts = labels.groupby(["column", "row", "cluster"]).size().reset_index(name="labels")
+totals = counts.groupby(["column", "row"])["labels"].sum().rename("labels_in_square")
+# Each square's cluster with the most labels, the smaller number on a tie.
+squares = counts.sort_values(["labels", "cluster"], ascending=[False, True], kind="stable")
+squares = squares.drop_duplicates(["column", "row"]).join(totals, on=["column", "row"])
+squares = squares.sort_values(["row", "column"], kind="stable")
+
+return gpd.GeoDataFrame(
+    {"cluster": squares["cluster"].to_numpy(), "labels": squares["labels_in_square"].to_numpy()},
+    geometry=[box(c * SIDE, r * SIDE, (c + 1) * SIDE, (r + 1) * SIDE)
+              for c, r in zip(squares["column"], squares["row"])],
+    crs=26971,
+).to_crs(4326)
 ```
 
 ## The views
 
-The Autark map draws the labels it gets in their cluster's color:
+The Autark map draws the squares in their cluster's color, with no outlines:
 
 ```json
 {
@@ -130,6 +156,7 @@ The Autark map draws the labels it gets in their cluster's color:
         "getFnv": "cluster",
         "getFnvType": "categorical",
         "colorMapInterpolator": "schemeTableau10",
+        "stroke": false,
         "title": "Cluster"
       }
     ]

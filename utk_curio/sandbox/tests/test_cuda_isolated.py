@@ -37,9 +37,6 @@ NODE = '''\
     import os
     import resource
 
-    # What the child maps before torch, which its cap adds the budget to.
-    with open("/proc/self/statm") as statm:
-        mapped = int(statm.read().split()[0]) * os.sysconf("SC_PAGE_SIZE")
     os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     import torch
 
@@ -48,7 +45,6 @@ NODE = '''\
     seen = {
         "uid": os.getuid(),
         "seccomp": seccomp,
-        "mapped": mapped,
         "address_space": resource.getrlimit(resource.RLIMIT_AS)[0],
         "torch": torch.__version__,
         "cuda": torch.cuda.is_available(),
@@ -116,8 +112,15 @@ def isolated_as_deployed(tmp_path_factory, monkeypatch):
 def test_a_node_in_an_isolated_child_reaches_the_gpu_through_torch(isolated_as_deployed, record_property):
     """As ``curio-exec``, under seccomp and the deploy's cap, torch imports, sees the
     GPU and multiplies on it as the CPU does."""
-    from utk_curio.sandbox.isolation import runner
+    from utk_curio.sandbox.isolation import lifecycle, runner
     from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    # What the zygote maps, which a child it forks starts from: the child's cap
+    # is that, plus what it maps until it is confined, plus the budget. (The
+    # node cannot measure it: its top-level imports, torch's among them, run
+    # before its first line.)
+    with open(f"/proc/{lifecycle._process.pid}/statm") as statm:
+        zygote_mapped = int(statm.read().split()[0]) * os.sysconf("SC_PAGE_SIZE")
 
     result = runner.execute_isolated(
         NODE, "", "curio.builtin/computation-analysis", "",
@@ -132,17 +135,15 @@ def test_a_node_in_an_isolated_child_reaches_the_gpu_through_torch(isolated_as_d
     exec_uid = pwd.getpwnam(EXEC_USER).pw_uid
     assert seen["uid"] == exec_uid, f"the child ran as uid {seen['uid']}, not {EXEC_USER} ({exec_uid})"
     assert seen["seccomp"] == "2", f"the child's seccomp mode is {seen['seccomp']}, not the filter's 2"
-    # The cap is what the child mapped when it was confined plus the budget, so
-    # the node starts with about the budget to map beyond what it maps already.
-    headroom = seen["address_space"] - seen["mapped"]
+    headroom = seen["address_space"] - zygote_mapped
     assert abs(headroom - (BUDGET_MB << 20)) < (1 << 30), (
-        f"the child may map {headroom >> 20} MiB beyond the {seen['mapped'] >> 20} MiB it maps "
-        f"at its start, not about its budget of {BUDGET_MB} MB")
+        f"the child may map {headroom >> 20} MiB beyond the {zygote_mapped >> 20} MiB its zygote "
+        f"maps, not about its budget of {BUDGET_MB} MB")
     if not seen["cuda"]:
         pytest.fail(f"torch {seen['torch']} sees no GPU in the isolated child: {NO_GPU}")
 
     print(f"Isolated child: uid {seen['uid']}, seccomp {seen['seccomp']}, torch {seen['torch']}, "
-          f"{seen['mapped'] >> 20} MiB mapped at its start, capped at {seen['address_space'] >> 20} MiB")
+          f"capped at {seen['address_space'] >> 20} MiB, its zygote mapping {zygote_mapped >> 20} MiB")
     print(f"Isolated child's device: {seen['device']}")
     print(f"Largest difference from the CPU's matmul: {seen['difference']:.3g}")
     record_property("isolated_child_address_space_mib", str(seen["address_space"] >> 20))
