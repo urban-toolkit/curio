@@ -11,7 +11,8 @@ projects. These tests sign two visitors, A and B, in to that account, as
   guest's import or removal of an agent is;
 - a node's output A adds to an example is saved under A's own copy of it
   (``projects/visitor_copies.py``), listed for A alone, and dropped with the
-  copy when the server starts.
+  copy when the server starts; one that names no node is refused, as it
+  would be saved under no dataflow.
 
 Each ends with the example's spec and manifest, and every file of the guest
 dataset store, byte for byte as they were. Without ``--deploy`` the shared
@@ -210,6 +211,31 @@ def test_a_hosted_guests_added_output_is_theirs_alone(client, example, sandbox):
     # It goes with A's copy when the server starts.
     assert visitor_copies.drop_all() == 1
     assert _computed_in_the_store() == []
+    assert _digests(example) == before
+
+
+def test_a_hosted_guests_output_that_names_no_node_is_refused(client, example, sandbox):
+    """An output added with no producing node would be saved under no
+    dataflow, so no copy could keep it A's."""
+    for token in (VISITOR_A, VISITOR_B):
+        _listing(client, token, dataflowId=example)
+    before = _digests(example)
+    made = sandbox["artifacts"]["a"]
+    _play(client, VISITOR_A, example, "a")
+    live = next(item for item in _listing(client, VISITOR_A, dataflowId=example, liveOutputs=_live("a", made))
+                if item.get("producerNodeId") == "a")
+    unnamed = {key: value for key, value in live.items() if key != "producerNodeId"}
+
+    resp = client.post(f"/api/dataflows/{example}/datasets/install",
+                       data=json.dumps({"datasetId": live["id"], "sourceItem": unnamed}),
+                       headers=auth_headers(VISITOR_A))
+
+    assert resp.status_code == 403, resp.get_data(as_text=True)
+    assert resp.get_json()["error"] == REFUSAL.format(action="add outputs that name no node")
+    assert _computed_in_the_store() == []
+    for query in _listings_of(example):
+        outputs = [item["id"] for item in _listing(client, VISITOR_B, **query) if item["id"].startswith("computed.")]
+        assert outputs == [], query
     assert _digests(example) == before
 
 
