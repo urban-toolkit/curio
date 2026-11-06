@@ -18,8 +18,8 @@ from utk_curio.backend.app.projects.schemas import VALID_ACCENTS, _slugify
 from utk_curio.backend.app.projects.services import (
     _is_shared_guest,
     _user_dir_key,
-    seed_default_agents,
-    seed_new_dataflow_agents,
+    agents_for_new_dataflows,
+    seed_spec_with_agents,
 )
 from utk_curio.backend.app.projects.shipped import (  # noqa: F401 - re-exported
     SOURCE_EXAMPLE,
@@ -170,9 +170,9 @@ def seed_example_projects(
     uuid4s). *only_keys* limits the walk to those keys; prune still keeps the
     whole shipped set.
 
-    Each dataflow it writes gets the account's agents, the ones Curio adds by
-    default among them, as a new dataflow does
-    (``services.seed_new_dataflow_agents``), once the walk has committed.
+    Each dataflow it writes is made with the account's agents in its lockfile,
+    the ones Curio adds by default among them, in its one write, as a new
+    dataflow is (``services.agents_for_new_dataflows``).
     """
     # Registered accounts get their own copies (#200). Under ``--deploy`` the
     # signed-in user is not the guest that owned the seeded rows, so the
@@ -206,14 +206,13 @@ def seed_example_projects(
     seeded = 0
     keep_ids = {_example_id(s.key, user) for s in shipped}
     wanted = set(only_keys) if only_keys is not None else None
-    # The dataflows the walk writes, which get the account's agents after it.
-    written: list[str] = []
 
-    # The account's default agents first, before the walk asks for SQLite's
-    # write lock: adding them installs into every dataflow the account has,
-    # under each one's spec lock, which no thread may wait for holding an
-    # uncommitted write (#909).
-    seed_default_agents(user)
+    # The agents each dataflow the walk writes is made with: the account's,
+    # the ones every account has by default among them. Asked before the walk
+    # asks for SQLite's write lock: adding those defaults installs them into
+    # every dataflow the account has, under each one's spec lock, which no
+    # thread may wait for holding an uncommitted write (#909).
+    agents = agents_for_new_dataflows(user)
 
     # Tests first: "Recent activity" puts the newest row on top, so what is
     # seeded last leads a fresh gallery, and that should be the examples. The
@@ -247,6 +246,8 @@ def seed_example_projects(
             # curated example and only fills in a name for a spec that lacks one.
             if isinstance(spec.get("dataflow"), dict):
                 spec["dataflow"]["name"] = name
+            # Whichever branch below writes it, it is made with its agents.
+            spec = seed_spec_with_agents(spec, agents)
 
             try:
                 with db.session.begin_nested():
@@ -259,7 +260,6 @@ def seed_example_projects(
                             storage.drop_history(ukey, project_id)
                             history.drop(ukey, project_id)
                             dataflow_docs.create(ukey, project_id, spec, dataflow_docs.by_curio(ukey, "seed"))
-                            written.append(project_id)
                         continue
                     if existing is not None and existing.user_id == user.id:
                         existing.name = name
@@ -299,7 +299,6 @@ def seed_example_projects(
                         thumbnail_accent=accent,
                     )
                     seeded += 1
-                written.append(project_id)
             except Exception:
                 logger.exception("Failed to seed example %s", stem)
     except BaseException:
@@ -314,11 +313,6 @@ def seed_example_projects(
         pruned = _prune_non_example_projects(user, ukey, keep_ids)
         if pruned:
             logger.info("Pruned %d non-example guest project(s)", pruned)
-
-    # Once the walk has committed: the installs take each dataflow's spec lock
-    # (#909).
-    for project_id in written:
-        seed_new_dataflow_agents(user, project_id)
 
     return seeded
 

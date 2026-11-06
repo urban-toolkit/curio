@@ -172,37 +172,13 @@ def _seed_errors(caplog) -> list:
     ]
 
 
-@pytest.fixture()
-def agent_writes(monkeypatch) -> Counter:
-    """How many times each dataflow's spec was written for its agents: the
-    installs of the agents every account has by default, which each example
-    gets once the seeding has committed."""
-    from utk_curio.backend.app.collaboration import dataflow_docs
-
-    counts: Counter = Counter()
-    real = dataflow_docs.write
-
-    def counted(user_key, project_id, spec, actor, **kwargs):
-        written = real(user_key, project_id, spec, actor, **kwargs)
-        if written.wrote:
-            counts[project_id] += 1
-        return written
-
-    monkeypatch.setattr(dataflow_docs, "write", counted)
-    return counts
-
-
-def _not_seeded_once(user_id: int, example_ids: list, agent_writes: Counter) -> dict:
-    """Each example whose row count, or count of spec writes other than its
-    agents', is not 1, with both."""
+def _not_seeded_once(user_id: int, example_ids: list) -> dict:
+    """Each example whose row count or spec write count is not 1, with both."""
     from utk_curio.backend.app.projects.models import Project
 
     rows = Counter(row.id for row in Project.query.filter_by(user_id=user_id).all())
     counts = {
-        project_id: (
-            rows[project_id],
-            storage.spec_revision(str(user_id), project_id) - agent_writes[project_id],
-        )
+        project_id: (rows[project_id], storage.spec_revision(str(user_id), project_id))
         for project_id in example_ids
     }
     return {project_id: count for project_id, count in counts.items() if count != (1, 1)}
@@ -223,7 +199,7 @@ def _without_the_default_agents(user_id: int, example_ids: list) -> dict:
 
 
 def test_two_first_listings_seed_the_examples_once(
-    file_db_app, user_id, squeezed_busy_timeout, monkeypatch, caplog, agent_writes,
+    file_db_app, user_id, squeezed_busy_timeout, monkeypatch, caplog,
 ):
     """Two requests list a new account's projects at once, as the Scenario
     Catalog's two requests do when it opens. The first is held while it writes
@@ -256,12 +232,12 @@ def test_two_first_listings_seed_the_examples_once(
         assert listed == examples, f"the {name} listed {len(listed)} of {len(examples)} examples"
     assert sorted([first["value"][0], second["value"][0]]) == [0, len(examples)]
     assert second["done_at"] > released_at, "the second listing did not wait for the first"
-    assert _not_seeded_once(user_id, examples, agent_writes) == {}
+    assert _not_seeded_once(user_id, examples) == {}
     assert _without_the_default_agents(user_id, examples) == {}
 
 
 def test_a_first_listing_during_a_save_waits_for_the_database(
-    file_db_app, user_id, squeezed_busy_timeout, monkeypatch, caplog, agent_writes,
+    file_db_app, user_id, squeezed_busy_timeout, monkeypatch, caplog,
 ):
     """A new account's first listing seeds its examples while a save of one of
     its projects holds SQLite's write lock. The seeding must wait for the save
@@ -291,5 +267,5 @@ def test_a_first_listing_during_a_save_waits_for_the_database(
     assert listing["value"] == (len(examples), examples)
     # A later listing seeds nothing more and still shows every example.
     assert _seed_and_list(file_db_app, user_id) == (0, examples)
-    assert _not_seeded_once(user_id, examples, agent_writes) == {}
+    assert _not_seeded_once(user_id, examples) == {}
     assert _without_the_default_agents(user_id, examples) == {}

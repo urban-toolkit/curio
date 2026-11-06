@@ -8,7 +8,8 @@ unpublication share is here too: a hosted guest's refusal
 
 So are the agents every account has by default: each catalog card Curio
 ships, added to an account as **Add to all projects** adds an agent
-(:func:`seed_default_agents`).
+(:func:`seed_default_agents`), and the agents a dataflow the account makes
+starts with (:func:`agents_for_new_dataflows`).
 
 Application layer of the agents package (memo dev/142, B2; re-derived on enh/agent-catalog): cut from
 ``services.py`` by responsibility; every function keeps its name and body. Sibling modules are reached
@@ -249,37 +250,67 @@ def remove_import(user_key: str, coord: str, *, user=None) -> dict:
     return {"coord": coord, "imported": False, "projects": projects}
 
 
-def seed_project_with_imported_agents(user_key: str, project_id: str, *, user=None) -> None:
-    """Install the account's imported agents into a brand-new project, after
-    adding the default agents Curio has not added to *user*'s account yet
-    (:func:`seed_default_agents`).
+def agents_for_new_dataflows(user_key: str, *, user=None) -> list[str]:
+    """The agents a dataflow the account makes starts with, sorted: each of
+    its imports with that import's ``requiresAgents`` closure
+    (``delegation.required_closure``), every one materialized into the
+    account's store as an install materializes it, and no internal one. With
+    *user*, the default agents Curio has not added to the account yet are
+    added first (:func:`seed_default_agents`).
 
-    The "future" half of "all your projects, present and future"; the walk above
-    is the "present" half. Best-effort: a stale import must degrade to "that
-    agent is missing here", never to "the project could not be created".
+    The "future" half of "all your projects, present and future"; the walk of
+    :func:`_fan_out_imports` is the "present" half. Adding the defaults takes
+    the spec lock of every dataflow the account has, so a caller asks for
+    these before it holds any lock or uncommitted write (#909); the rest
+    takes no lock. Its dataflows are then made with them in their first
+    write (:func:`seed_spec_with_imported_agents`).
 
-    An import an earlier one brought in as part of its ``requiresAgents``
-    closure is not installed again: that install materialized and wrote the
-    whole closure, the import's own closure among it.
-    """
+    Best-effort, as an install of each was: an import whose definition, or a
+    member of whose closure, no catalog or import holds is left out and
+    logged, and a new dataflow is never refused for its agents. Never raises.
+    An import an earlier one's closure brought in is not resolved again: that
+    closure holds its own."""
     seed_default_agents(user_key, user)
     try:
         coords = imports.load_imported_agents(user_key)
-    except Exception:  # noqa: BLE001
-        return
-    brought_in: set[str] = set()
+    except Exception:  # noqa: BLE001 - a dataflow is never refused for its agents
+        log.warning("Could not read the imported agents of account %s", user_key, exc_info=True)
+        return []
+    agents: list[str] = []
     for coord in sorted(coords):
-        if coord in brought_in:
+        if coord in agents or builtin.is_internal(coord):
             continue
         try:
-            installed = install_in_project(user_key, project_id, coord)
-        except Exception as exc:  # noqa: BLE001
-            log.warning(
-                "seed imported agent %s into project %s failed: %s",
-                coord, project_id, exc,
+            required, missing = delegation.required_closure(
+                user_key, agents_catalog._require_definition(user_key, coord),
             )
+            if missing:
+                log.warning(
+                    "The imported agent %s requires %s, which no catalog or import holds: "
+                    "new dataflows of account %s start without it", coord, ", ".join(missing), user_key,
+                )
+                continue
+            closure = [c for c in (coord, *required) if not builtin.is_internal(c)]
+            for c in closure:
+                agents_catalog._materialize_definition(user_key, c)
+        except Exception:  # noqa: BLE001 - one import never stops the others
+            log.warning("Could not add the imported agent %s to new dataflows of account %s",
+                        coord, user_key, exc_info=True)
             continue
-        brought_in.update((installed or {}).get("required") or ())
+        agents.extend(c for c in closure if c not in agents)
+    return sorted(agents)
+
+
+def seed_spec_with_imported_agents(spec: dict | None, coords) -> dict | None:
+    """*spec*, a dataflow not written yet, with *coords* in its lockfile
+    (``dataflow.agents``) beside the agents it lists already, which it keeps:
+    the agents' twin of ``packages.seed_spec_with_defaults``, so a dataflow
+    is made with the account's agents (:func:`agents_for_new_dataflows`) in
+    its first write. Mutates and returns *spec*; a spec whose ``dataflow`` is
+    not an object is returned as it is."""
+    if not coords or not isinstance(spec, dict) or not isinstance(spec.get("dataflow", {}), dict):
+        return spec
+    return project_agents.set_project_agents(spec, [*project_agents.project_agents(spec), *coords])
 
 
 def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
