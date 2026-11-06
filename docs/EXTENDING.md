@@ -821,6 +821,7 @@ CURIO_EVAL_BASE_URL='<base URL>' CURIO_EVAL_API_KEY='<key>' CURIO_EVAL_MODEL='<m
   - **What it measures:** its `scope` input, `auto` by default, which is what the branch changes against main ([`ci_skill_eval_scope.py`](../scripts/ci_skill_eval_scope.py)):
     - a changed skill: its test cases, three runs both ways, and its trigger queries too when the skill is new or its description or its queries changed;
     - a core skill, or the preamble that places it: every skill's test cases, three runs both ways;
+    - a page of the base entry a skill's body renders, by its `{{include:<page>}}` or a marker whose field reads it (autark's `{{autk.grammar}}` reads `autark-grammar.md`): that skill's test cases, three runs both ways;
     - agent text or code: every other skill's first test case, once, with the skill;
     - anything else: nothing.
 
