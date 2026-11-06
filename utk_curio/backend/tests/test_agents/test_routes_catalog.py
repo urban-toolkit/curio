@@ -423,6 +423,37 @@ class TestMyImportsInstalledState:
         assert card["installedInProject"] is False  # no project context given
 
 
+class TestRequiredAgentsOfADataflowNotSaved:
+    """A dataflow not saved yet has no lockfile. The agents it is made with are
+    the account's imports, which its drawer and palette list, so a card's
+    required agent is there when the account holds it, and only then."""
+
+    BUILDER = "agent.curio.dataflow-builder@1"
+    REMOVED = "agent.curio.node-builder@1"
+
+    def _required(self, client, token, path: str) -> dict:
+        cards = client.get(path, headers=_auth(token)).get_json()["agents"]
+        card = next(c for c in cards if c["dirName"] == self.BUILDER)
+        return {row["coord"]: row["installedInProject"] for row in card["requiresAgents"]}
+
+    def test_a_required_agent_the_account_holds_is_there(self, client, new_account_and_token, tmp_curio):
+        _, token = new_account_and_token
+        for path in ("/api/agents/imports", "/api/agents/catalog"):
+            required = self._required(client, token, path)
+            assert required, path
+            assert all(required.values()), (path, required)
+
+    def test_a_required_agent_the_account_removed_is_missing(self, client, new_account_and_token, tmp_curio):
+        _, token = new_account_and_token
+        client.get("/api/agents/imports", headers=_auth(token))
+        removed = client.delete(f"/api/agents/imports/{self.REMOVED}", headers=_auth(token))
+        assert removed.status_code == 200, removed.get_data(as_text=True)
+        for path in ("/api/agents/imports", "/api/agents/catalog"):
+            required = self._required(client, token, path)
+            assert required[self.REMOVED] is False, (path, required)
+            assert all(there for coord, there in required.items() if coord != self.REMOVED), (path, required)
+
+
 class TestProviderModels:
     """The model list API Settings offers instead of a free-text box.
 
