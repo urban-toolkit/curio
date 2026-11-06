@@ -29,8 +29,11 @@ Run::
 """
 from __future__ import annotations
 
+import inspect
 import json
 import re
+import threading
+import time
 
 import pytest
 
@@ -42,6 +45,8 @@ from .utils import (
     captured_agent_offers,
     captured_agent_prompts,
     captured_system_prompt,
+    held_agent_calls,
+    release_agent_hold,
     require_project_page,
     require_user_auth,
     script_agent_replies,
@@ -102,6 +107,25 @@ PLAN_NODE_TITLES = ("Load", "Analyze")
 BUILTIN_NODE_TYPE = "curio.builtin/python-computation"
 
 VISIBLE_PROSE = "Here is what I found."
+
+#: How long ``api_json`` waits for a quick call by default.
+QUICK_CALL_S = inspect.signature(api_json).parameters["timeout"].default
+#: The hold the slow turn's model call waits on.
+SLOW_HOLD = "slow-turn"
+#: How long a turn's answer is waited for. The run route answers once the
+#: turn ended, so its answer is the turn's end, however long the turn's steps
+#: take, and this bounds only a turn that never ends. A quick call's wait is
+#: no turn's: each step of a plan is a synced write of the dataflow, which a
+#: busy disk slows past it. Longer than the scripted model holds a call
+#: (``testing_provider.HOLD_MAX_S``).
+TURN_S = 180.0
+
+
+def _run(base: str, attachment_id: str, token: str, message: str) -> dict:
+    """Ask the attachment's agent *message* through the route that answers
+    once its turn ended, and return that answer."""
+    return api_json(f"{base}/attachments/{attachment_id}/run", token, method="POST",
+                    payload={"message": message}, timeout=TURN_S)
 
 
 def _spec_id(spec: AgentManifest) -> str:
@@ -310,10 +334,7 @@ def test_agent_installs_attaches_and_runs(spec, current_server: str):
     # 3. Script the turn and run it.
     leg, tool, replies = _scripted_replies(spec)
     script_agent_replies(current_server, *replies)
-    run = api_json(
-        f"{base}/attachments/{attachment_id}/run", token, method="POST",
-        payload={"message": f"Hello {spec.name}, do your job."},
-    )
+    run = _run(base, attachment_id, token, f"Hello {spec.name}, do your job.")
 
     # 4. The scripted reply came back through the real route.
     assert run["coord"] == coord
@@ -491,10 +512,7 @@ def test_agent_runs_on_native_tools(spec, current_server: str):
     token, base, attachment_id = _attached(spec, current_server, "native")
     leg, tool, replies = _native_replies(spec)
     script_agent_replies(current_server, *replies, native_tools=True)
-    run = api_json(
-        f"{base}/attachments/{attachment_id}/run", token, method="POST",
-        payload={"message": f"Hello {spec.name}, do your job."},
-    )
+    run = _run(base, attachment_id, token, f"Hello {spec.name}, do your job.")
     assert VISIBLE_PROSE in run["reply"], run["reply"]
 
     system = captured_system_prompt(current_server)
@@ -521,6 +539,48 @@ def test_agent_runs_on_native_tools(spec, current_server: str):
         assert result["name"] == tools.wire_name(tool)
 
 
+def test_a_turn_that_outlasts_a_quick_call_is_waited_for_to_its_end(current_server: str):
+    """A turn is waited for until it ends, however long that takes. The
+    Dataflow Builder's plan, on native tools, has its model call held past a
+    quick call's wait (``api_json``'s default), as a burst of synced disk
+    writes on a busy CI host once held its writes: the run still answers with
+    the plan landed."""
+    require_project_page()
+    require_user_auth()
+    spec = next(s for s in _CARDS if s.agent_id == "agent.curio.dataflow-builder")
+    token, base, attachment_id = _attached(spec, current_server, "slow")
+    _leg, tool, (call, follow_up) = _native_replies(spec)
+    script_agent_replies(current_server, {**call, "hold": SLOW_HOLD}, follow_up, native_tools=True)
+    asked = time.monotonic()
+    over = threading.Event()
+
+    def release_after_a_quick_call():
+        # Once the turn waits at the model, and a quick call's wait has passed.
+        try:
+            while not over.is_set() and not held_agent_calls(current_server).get(SLOW_HOLD):
+                over.wait(0.1)
+            over.wait(max(0.0, asked + QUICK_CALL_S + 2.0 - time.monotonic()))
+        finally:
+            release_agent_hold(current_server, SLOW_HOLD)
+
+    releaser = threading.Thread(target=release_after_a_quick_call, daemon=True)
+    releaser.start()
+    try:
+        run = _run(base, attachment_id, token, f"Hello {spec.name}, do your job.")
+    finally:
+        over.set()
+        releaser.join(30)
+    took = time.monotonic() - asked
+    assert took > QUICK_CALL_S, f"the turn took {took:.1f} s: its model call was never held"
+    assert VISIBLE_PROSE in run["reply"], run["reply"]
+    changes = [p for p in run["content"] if p.get("type") == "change"]
+    assert changes and changes[0]["tool"] == tool, run["content"]
+    project_id = base.rstrip("/").rsplit("/", 1)[-1]
+    nodes = api_json(f"{current_server}/api/projects/{project_id}", token)["spec"]["dataflow"]["nodes"]
+    goals = [n.get("goal") or "" for n in nodes]
+    assert all(any(goal.startswith(title) for goal in goals) for title in PLAN_NODE_TITLES), goals
+
+
 @pytest.mark.parametrize("native", [False, True], ids=["fenced", "native"])
 def test_a_chat_loads_a_skill_and_holds_it_for_its_next_turn(native: bool, current_server: str):
     """The Node Builder's chat loads ``widgets`` with skill.read, fenced and
@@ -538,8 +598,7 @@ def test_a_chat_loads_a_skill_and_holds_it_for_its_next_turn(native: bool, curre
         ask = _tail({"toolRequest": {"tool": "skill.read", "params": {"name": "widgets"}}})
 
     script_agent_replies(current_server, ask, "Loaded.", native_tools=native)
-    api_json(f"{base}/attachments/{attachment_id}/run", token, method="POST",
-             payload={"message": "Which widgets can a chart have?"})
+    _run(base, attachment_id, token, "Which widgets can a chart have?")
     first = captured_agent_prompts(current_server)
     assert '<available_skills>' in first[0][0]["content"] and "<name>widgets</name>" in first[0][0]["content"]
     result = first[1][-1]
@@ -549,8 +608,7 @@ def test_a_chat_loads_a_skill_and_holds_it_for_its_next_turn(native: bool, curre
     assert turns[-1]["execution"]["skillsLoaded"] == ["widgets"], turns[-1]["execution"]
 
     script_agent_replies(current_server, ask, "Still loaded.", native_tools=native)
-    api_json(f"{base}/attachments/{attachment_id}/run", token, method="POST",
-             payload={"message": "And for a map?"})
+    _run(base, attachment_id, token, "And for a map?")
     second = captured_agent_prompts(current_server)
     assert second[0][0]["content"].count('<skill_content name="widgets">') == 1
     again = second[1][-1]["content"]
@@ -574,10 +632,7 @@ def test_a_refusal_of_native_tools_falls_back_to_the_fenced_protocol(current_ser
         "That is what the project currently contains.",
         native_tools=True,
     )
-    run = api_json(
-        f"{base}/attachments/{attachment_id}/run", token, method="POST",
-        payload={"message": "What is in this project?"},
-    )
+    run = _run(base, attachment_id, token, "What is in this project?")
     assert run["reply"].endswith("That is what the project currently contains.")
     offers = captured_agent_offers(current_server)
     assert offers[0]["tools"] and offers[1] == {"tools": [], "toolChoice": None, "replySchema": None}, offers
@@ -627,10 +682,7 @@ def test_an_autark_document_is_written_under_its_schema(current_server: str):
         "The map is in the node.",
         structured_output=True,
     )
-    run = api_json(
-        f"{base}/attachments/{attachment_id}/run", token, method="POST",
-        payload={"message": "Write the map for the Autark node."},
-    )
+    run = _run(base, attachment_id, token, "Write the map for the Autark node.")
     offers = captured_agent_offers(current_server)
     assert [o["replySchema"] for o in offers[:3]] == [None, "autk_grammar_document", None], offers
     assert "held to the Autark document's schema" in captured_system_prompt(current_server, call=1)
