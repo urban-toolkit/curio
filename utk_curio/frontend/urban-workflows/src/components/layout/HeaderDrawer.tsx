@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { DrawerHeader } from "../packages/publishing/DrawerHeader";
 import shell from "../packages/publishing/CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "../packages/publishing/useDrawerDragThrough";
+import { pinnedDrawer } from "../packages/publishing/pinnedDrawer";
 import { answerEscape, escapeAnswered, holdDrawerLayer, isTopDrawer, typedIntoAnotherPanel } from "../ModalShell";
 import styles from "./HeaderDrawer.module.css";
 
@@ -16,8 +17,9 @@ export interface HeaderDrawerProps {
   name: string;
   /** One line under the heading; none when left out. */
   subtitle?: string | null;
-  /** The catalog drawers' pin: pinned, a scrim click or Escape leaves the
-   *  drawer open, and only its close button closes it. */
+  /** The catalog drawers' pin: pinned, the drawer stays open while the canvas
+   *  and the top bar keep working (`pinnedDrawer`), Escape leaves it open, and
+   *  only its close button closes it. */
   pinnable?: boolean;
   /** The 720 px of API Settings and Monitor; false gives the catalog
    *  drawers' 520 px. */
@@ -46,7 +48,8 @@ export interface HeaderDrawerProps {
  * The catalog drawers' shell and header, one tier above them: a catalog card
  * can open API Settings over its own drawer. Over the canvas, while mounted it
  * holds a drawer's layer of the modal stack, so every Escape listener under the
- * drawers stands down; beside it, it holds none. Either way it answers Escape
+ * drawers stands down; beside it or pinned, it holds none, as the catalog
+ * drawers never do, so the canvas keeps its keys. Either way it answers Escape
  * only while it is the top layer (`isTopDrawer`), and never one a layer over
  * it answered (`escapeAnswered`): one Escape closes the drawer on top alone.
  */
@@ -68,9 +71,11 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
   const drawerRef = useRef<HTMLElement>(null);
   const dragThrough = useDrawerDragThrough();
   const [pinned, setPinned] = useState(false);
+  const pin = pinnedDrawer(pinned, { modal: !beside });
 
-  // Beside the canvas it holds no layer: the canvas stays usable beside it.
-  useEffect(() => (beside ? undefined : holdDrawerLayer()), [beside]);
+  // Beside the canvas or pinned it holds no layer: the canvas stays usable
+  // beside it.
+  useEffect(() => (beside || pinned ? undefined : holdDrawerLayer()), [beside, pinned]);
 
   useEffect(() => {
     if (!presented) return;
@@ -120,6 +125,7 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
       {...{ [`data-curio-${name}-drawer`]: "true" }}
       aria-hidden={!presented}
       {...dragThrough}
+      {...pin.root}
     >
       {beside ? null : (
         <button
@@ -135,7 +141,7 @@ export const HeaderDrawer: React.FC<HeaderDrawerProps> = ({
         ref={drawerRef}
         className={wide ? `${shell.drawer} ${shell.drawerWide}` : shell.drawer}
         role="dialog"
-        aria-modal={beside ? undefined : "true"}
+        {...pin.panel}
         aria-labelledby={titleId}
         tabIndex={-1}
         data-curio-open-drawer={presented || undefined}

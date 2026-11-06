@@ -160,6 +160,33 @@ describe("a header drawer with the catalog drawers' pin", () => {
     expect(close).toHaveBeenCalledTimes(2);
   });
 
+  // #1352: pinned, the drawer stays open while the canvas and the top bar keep
+  // working. Its root carries data-pinned, on which the shell's stylesheet
+  // takes the pointer off the root and the scrim; its panel is not modal; and
+  // it holds no layer of the modal stack, as the catalog drawers never do, so
+  // the canvas's shortcuts keep working beside it.
+  it("pinned, lets the page work: not modal, and no layer of the modal stack", () => {
+    const { unmount } = render(pinnable(jest.fn()));
+    const root = drawerRoot("provenance");
+    const dialog = screen.getByRole("dialog", { name: "Dataflow provenance" });
+    expect(root).not.toHaveAttribute("data-pinned");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(modalStackDepth()).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Pin drawer open" }));
+    expect(root).toHaveAttribute("data-pinned", "true");
+    expect(dialog).not.toHaveAttribute("aria-modal");
+    expect(modalStackDepth()).toBe(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unpin drawer" }));
+    expect(root).not.toHaveAttribute("data-pinned");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(modalStackDepth()).toBe(1);
+
+    unmount();
+    expect(modalStackDepth()).toBe(0);
+  });
+
   it("is the catalog drawers' width unless wide, and shows its subtitle", () => {
     render(pinnable(jest.fn(), { wide: false, subtitle: "Versions of Heat study" }));
     const dialog = screen.getByRole("dialog", { name: "Dataflow provenance" });
@@ -238,5 +265,26 @@ describe("Escape with a header drawer over another surface", () => {
     expect(closeModal).toHaveBeenCalledTimes(1);
     expect(close).not.toHaveBeenCalled();
     expect(lowerClose).not.toHaveBeenCalled();
+  });
+
+  it("pinned, it stays open and leaves Escape to the surface under it", () => {
+    const close = jest.fn();
+    render(
+      <HeaderDrawer
+        presented
+        onRequestClose={close}
+        onExitComplete={() => undefined}
+        title="Dataflow provenance"
+        titleId="t"
+        name="provenance"
+        pinnable
+      >
+        Versions
+      </HeaderDrawer>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Pin drawer open" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(close).not.toHaveBeenCalled();
+    expect(lowerClose).toHaveBeenCalledTimes(1);
   });
 });
