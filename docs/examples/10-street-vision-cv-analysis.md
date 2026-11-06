@@ -241,10 +241,10 @@ The sample is a fixed set of photos. To take photos of another place from Mapill
 
 1. Get a Mapillary access token: sign in at [mapillary.com/dashboard/developers](https://www.mapillary.com/dashboard/developers), register an application, and copy its **Client Token** (it starts with `MLY|`).
 2. Open **API Settings** from the top bar (on the canvas it opens on the right).
-3. On the **API keys** tab, click **Add configuration**.
+3. On the **API keys** tab, click **+** (**Add configuration**) at the end of the table's header.
 4. In **Kind**, choose **Mapillary access token**.
 5. Paste the token and click **Save**.
-6. The key's row shows **saved** in the list, and the Mapillary card in the Discovery Catalog reads **Token set**.
+6. The key's row shows **Key saved** under its name, and the Mapillary card in the Discovery Catalog reads **Token set**.
 7. Open the **Discovery Catalog**, choose **Mapillary**, and click **Download** on **Street-level images**.
 8. Set the **Area**: a place, coordinates or a dataset's extent give the box to take photos from, of at most 25 km². Choose how many photos with **Most images**, and how large with **Size**. Photos are taken from across the box, newest first.
 9. Click **Download**. The photos land in the Data Catalog as a collection of their own, each with its creator.
