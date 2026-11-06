@@ -33,13 +33,13 @@ cd /srv/curio
 mkdir -p instance .curio datasets
 ```
 
-Create `/srv/curio/docker-compose.site.yml` with Curio's arguments for this site: the address the browser reaches the backend at, and the path the app is served under. Both must match the Caddy paths in step 2. The `ports` line publishes the backend and the frontend on loopback only, so they are reached through Caddy (`!override` needs Docker Compose 2.24.4 or newer).
+Create `/srv/curio/docker-compose.site.yml` with Curio's arguments for this site: the address the browser reaches the backend at, the path the app is served under, and the memory each node may allocate. The address and the path must match the Caddy paths in step 2. `--exec-memory-mb 24576` gives a node room to run PyTorch on the GPU: under the default 4096, `import torch` fails in a node. The `ports` line publishes the backend and the frontend on loopback only, so they are reached through Caddy (`!override` needs Docker Compose 2.24.4 or newer).
 
 ```yaml
 services:
   curio:
     ports: !override ["127.0.0.1:5002:5002", "127.0.0.1:8080:8080"]
-    command: ["--backend-url", "https://lab-name.your-uni.edu/curio/api", "--base-path", "/curio"]
+    command: ["--backend-url", "https://lab-name.your-uni.edu/curio/api", "--base-path", "/curio", "--exec-memory-mb", "24576"]
 ```
 
 The three directories you created, `instance/`, `datasets/` and `.curio/`, are bind-mounted into the container and persist across recreates:
@@ -340,7 +340,11 @@ This lists the GPU when a container can get it:
 docker run --rm --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,utility python:3.12-slim nvidia-smi -L
 ```
 
-A container gets the GPU only when its compose file asks for one; `docker-compose.deploy.yml` asks for none.
+`docker-compose.deploy.yml` asks Docker for the host's GPUs, and Docker refuses to start the stack on a host that cannot hand them over. On a host with no NVIDIA GPU, add this line to the `curio` service in `docker-compose.site.yml`, which takes the request back:
+
+```yaml
+    deploy: !reset {}
+```
 
 ## Updating
 
@@ -384,7 +388,7 @@ Clone into `/srv/curio-dev` and write its `docker-compose.site.yml`, which also 
 services:
   curio:
     ports: !override ["127.0.0.1:5012:5002", "127.0.0.1:8090:8080"]
-    command: ["--backend-url", "https://lab-name.your-uni.edu/curio-dev/api", "--base-path", "/curio-dev"]
+    command: ["--backend-url", "https://lab-name.your-uni.edu/curio-dev/api", "--base-path", "/curio-dev", "--exec-memory-mb", "24576"]
 ```
 
 Add two more `handle_path` blocks to the same Caddy site (`/curio-dev/api/*` → 5012, `/curio-dev/*` → 8090). Then:
@@ -507,6 +511,8 @@ flooding it cannot push real errors out of the log.
 | `SSL_ERROR_INTERNAL_ERROR_ALERT` | Caddy has no cert for that hostname. Check the Caddyfile block exists, DNS resolves, and (Path A) port 80 is reachable from the public internet. |
 | `systemctl reload caddy` hangs | Caddy stuck in cert-fetch retry. Use `restart` instead, then check `journalctl -u caddy`. |
 | Mixed-content errors in browser console | `--backend-url` in `docker-compose.site.yml` is an `http://` address. Use the `https://` one and run `docker compose up -d --force-recreate`. |
+| `could not select device driver "nvidia"` when the stack starts | The host has no NVIDIA Container Toolkit, or no NVIDIA GPU. Set up the toolkit ([The GPU](#the-gpu)), or add `deploy: !reset {}` to the `curio` service in `docker-compose.site.yml`. |
+| A node that imports torch fails with `failed to map segment from shared object` | Its memory budget is too small for PyTorch's CUDA libraries. Pass `--exec-memory-mb 24576` in `docker-compose.site.yml`. |
 | Nodes fail and you cannot see why | Open `/monitor`. The error log there holds the last failures with their tracebacks, and survives longer than `.curio/messages.log`, which is truncated on every launch. |
 | `/monitor` says the sandbox is unreachable | The sandbox process is down or not answering within 3s. The rest of the page stays current; check `docker compose logs curio`. |
 

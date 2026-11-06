@@ -972,8 +972,9 @@ jobs:
 
       # The image's CUDA (NVRTC and the driver API) runs a tiny MLP on this
       # runner's GPU inside the curio container, and its torch multiplies on it, as plain
-      # Python rather than node code (utk_curio/sandbox/tests/test_cuda_mlp.py
-      # and test_cuda_torch.py, which only -m cuda selects). After the e2e
+      # Python (utk_curio/sandbox/tests/test_cuda_mlp.py and test_cuda_torch.py)
+      # and as a node in an isolated child that runs as curio-exec under seccomp
+      # at the deploy's budget (test_cuda_isolated.py); only -m cuda selects them. After the e2e
       # tests, so a failure here never hides theirs, and their browsers have
       # let go of the GPU's memory by then. Its JUnit joins this job's results,
       # which ci-report's every-test-ran check reads.
@@ -986,6 +987,7 @@ jobs:
           status=0
           docker compose -p curio-ci exec -T curio python -m pytest \
             utk_curio/sandbox/tests/test_cuda_mlp.py utk_curio/sandbox/tests/test_cuda_torch.py \
+            utk_curio/sandbox/tests/test_cuda_isolated.py \
             -m cuda -v -s --junitxml=/app/.curio/ci-report/cuda.xml || status=$?
           cp .curio/ci-report/cuda.xml ci-report/cuda.xml || status=1
           # Every CUDA test passed, both GPU runs among them: an -m expression
@@ -995,7 +997,8 @@ jobs:
           cases = list(ET.parse(sys.argv[1]).getroot().iter("testcase"))
           passed = [c.get("name") for c in cases if not any(c.find(k) is not None for k in ("failure", "error", "skipped"))]
           needed = {"test_a_tiny_mlp_runs_on_the_gpu_and_matches_numpy",
-                    "test_torch_is_the_cuda_12_9_build_and_multiplies_on_the_gpu"}
+                    "test_torch_is_the_cuda_12_9_build_and_multiplies_on_the_gpu",
+                    "test_a_node_in_an_isolated_child_reaches_the_gpu_through_torch"}
           if len(passed) != len(cases) or not needed <= set(passed):
               sys.exit(f"::error::the CUDA tests did not all pass: {len(passed)} of {len(cases)}")
           print(f"OK: {len(passed)} CUDA tests passed")
