@@ -6,6 +6,7 @@ import { DrawerTabs } from "../../packages/publishing/DrawerTabs";
 import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "../../packages/publishing/useDrawerDragThrough";
+import { pinnedDrawer } from "../../packages/publishing/pinnedDrawer";
 import { answerEscape, escapeAnswered, isTopDrawer } from "../../ModalShell";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import { useFlowContext } from "../../../providers/FlowProvider";
@@ -92,6 +93,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
     closeScenarioDetails,
   } = useScenarioCatalogDrawer(presented);
   const dragThrough = useDrawerDragThrough();
+  const pin = pinnedDrawer(pinned);
 
   // Escape dismisses this drawer, as it does its peers: a modal on top (a
   // scenario's details, the leave question) or a drawer opened over it owns
@@ -142,6 +144,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
         data-curio-scenario-catalog-drawer="true"
         aria-hidden={!presented}
         {...dragThrough}
+        {...pin.root}
       >
         <button
           type="button"
@@ -155,7 +158,7 @@ export const ScenarioCatalogDrawer: React.FC<ScenarioCatalogDrawerProps> = ({
           ref={drawerRef}
           className={shell.drawer}
           role="dialog"
-          aria-modal="true"
+          {...pin.panel}
           aria-labelledby="scenario-catalog-title"
           tabIndex={-1}
           data-curio-open-drawer={presented || undefined}

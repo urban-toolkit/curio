@@ -14,6 +14,7 @@ import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
 import { PackageSearchRow } from "components/packages/publishing/PackageSearchRow";
 import shell from "components/packages/publishing/CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "components/packages/publishing/useDrawerDragThrough";
+import { pinnedDrawer } from "components/packages/publishing/pinnedDrawer";
 import styles from "./DatasetCatalogDrawer.module.css";
 import ConfirmDialog from "../../ConfirmDialog";
 import { answerEscape, escapeAnswered, isTopDrawer } from "../../ModalShell";
@@ -61,6 +62,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     dismissConfirm,
   } = useDatasetCatalogDrawer(presented);
   const dragThrough = useDrawerDragThrough();
+  const pin = pinnedDrawer(pinned);
 
   // Escape dismisses this drawer, as it does the Node and Agent ones. It was
   // the only one of the three without a handler, so a user who had learned the
@@ -107,6 +109,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
         data-curio-dataset-catalog-drawer="true"
         aria-hidden={!presented}
         {...dragThrough}
+        {...pin.root}
       >
         <button
           type="button"
@@ -120,7 +123,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           ref={drawerRef}
           className={shell.drawer}
           role="dialog"
-          aria-modal="true"
+          {...pin.panel}
           aria-labelledby="dataset-catalog-title"
           tabIndex={-1}
           data-curio-open-drawer={presented || undefined}
