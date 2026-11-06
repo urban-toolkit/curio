@@ -896,9 +896,11 @@ class CatalogMutations:
                             path_ref=str(item.get("uri") or "")[len("curio://outputs/"):],
                             data_type=item.get("dataType"),
                             node_name=resolved_title,
-                            # Namespace by the installing dataflow so the promoted
-                            # id matches the account-level dataset's id.
-                            dataflow_id=dataflow_id,
+                            # Namespace by the dataflow it lands on so the
+                            # promoted id matches the account-level dataset's
+                            # id: a hosted guest's own copy of the installing
+                            # dataflow, whose outputs list for that guest alone.
+                            dataflow_id=self.installed.lands_on(dataflow_id),
                             node_type=item.get("producerNodeType"),
                         )
                     except InstallerError as exc:
@@ -917,6 +919,9 @@ class CatalogMutations:
                         resolve_installed_data_path,
                     )
 
+                    # An output that names no node is saved under no
+                    # dataflow, so a hosted guest's would list for every guest.
+                    self._refuse_hosted_guest("add outputs that name no node")
                     file_bytes = data_path.read_bytes()
                     try:
                         result = install_computed_file(

@@ -26,12 +26,13 @@ class DatasetCatalogService:
     def __init__(self, user: Any | None = None, *, sign_in: str | None = None):
         """*sign_in*, for a catalog serving a request: the caller's, so the
         outputs the request names are read only if the caller may
-        (``PathResolver.readable_outputs``)."""
+        (``PathResolver.readable_outputs``), and a hosted guest's own outputs
+        list for that guest alone (``UserDatasetRepository._lists``)."""
         self.user = user
         self.registry = DatasetRegistryRepository()
         self.local = LocalDatasetRepository()
         self.installed = InstalledDatasetRepository(user)
-        self.user_store = UserDatasetRepository(user)
+        self.user_store = UserDatasetRepository(user, sign_in=sign_in)
         self.computed = ComputedDatasetIndexer()
         self.preview_service = DatasetPreviewService()
 
