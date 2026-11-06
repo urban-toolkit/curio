@@ -167,6 +167,12 @@ describe("DatasetDetailPanel header actions", () => {
       expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
       unmount();
     }
+    // A group of NetCDF variables has no tables or rasters for a zip to hold.
+    renderPanel(
+      lineageFixture(),
+      catalogItem({ id: "netcdf.xwrf1", format: "netcdf", groupLayerIds: ["imported.xrain", "imported.xt2"] }),
+    );
+    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
   });
 });
 

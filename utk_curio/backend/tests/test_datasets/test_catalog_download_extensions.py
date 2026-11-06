@@ -83,8 +83,10 @@ def test_a_hub_dataset_downloads_with_the_right_filename(
     disposition = resp.headers.get("Content-Disposition", "")
     assert "attachment" in disposition.lower(), disposition
     if dataset.manifest.format in ZIPPED:
+        from utk_curio.backend.app.datasets.application.export import _download_name
+
         # One file per part its bundle.json lists, then that bundle.json.
-        assert f"{dataset.manifest.name}.zip" in disposition, disposition
+        assert _download_name(dataset.manifest.name, ".zip") in disposition, disposition
         assert resp.mimetype == "application/zip", resp.mimetype
         listed = json.loads(dataset.root.joinpath(dataset.manifest.data_file).read_text(encoding="utf-8"))
         with zipfile.ZipFile(io.BytesIO(resp.data)) as archive:

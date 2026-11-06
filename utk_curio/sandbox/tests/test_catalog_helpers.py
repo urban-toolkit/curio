@@ -700,6 +700,22 @@ class TestPartLabels:
         # One part read on its own is that part, with no label.
         assert "metadata" not in load("d", part="Trees").__dict__
 
+    def test_a_saved_tables_column_named_metadata_stays_when_its_metadata_is_restored(self, tmp_path):
+        """A saved table's sidecar can now hold its label, and its metadata
+        goes in the frame's ``__dict__``: set as an attribute, it took the
+        place of a column called ``metadata``."""
+        from utk_curio.sandbox.util.catalog_helpers import read_dataset
+        from utk_curio.sandbox.util.parsers import load_dataset_parquet
+
+        path = tmp_path / "notes.parquet"
+        pd.DataFrame({"metadata": ["kept", "too"], "n": [1, 2]}).to_parquet(path)
+        (tmp_path / "notes.parquet.decode.json").write_text(
+            json.dumps({"frame_metadata": {"partLabel": "Notes"}}), encoding="utf-8",
+        )
+        for frame in (read_dataset(str(path), "parquet"), load_dataset_parquet(path)):
+            assert list(frame["metadata"]) == ["kept", "too"]
+            assert frame.__dict__["metadata"] == {"partLabel": "Notes"}
+
     def test_the_labels_reach_the_next_node_through_the_store_in_process(self, store):
         from utk_curio.sandbox.app.worker import _worker_init, execute_code
         from utk_curio.sandbox.util.parsers import load_from_duckdb
