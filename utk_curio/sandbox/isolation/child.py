@@ -108,12 +108,12 @@ def _install_seccomp_filter(*, required):
     to an unprivileged process and is enough: the child's result travels
     through a file, and a local socket reaches no network.
 
-    The local family stays open for CUDA: its driver connects a local socket
-    when it starts, and gives up with error 304 when ``socket`` or ``connect``
-    is refused, so torch in a child would see no GPU. A child may connect such
-    a socket but not listen on one (``bind``, ``listen`` and ``accept`` stay
-    denied), so it reaches only the local sockets that already exist and its
-    account may open; the zygote's is root's, mode 0600.
+    The local family stays open for CUDA: when its driver starts, it binds and
+    listens on an abstract local socket (``cuda-uvmfd-<namespace>-<pid>``), and
+    it gives up with error 304 when ``socket``, ``bind`` or ``listen`` is
+    refused, so torch in a child would see no GPU. ``connect`` and ``accept``
+    stay denied, and so do the send and receive calls: a child may make and
+    bind a local socket, but no socket carries anything into or out of it.
     """
     try:
         import pyseccomp as seccomp
@@ -129,7 +129,7 @@ def _install_seccomp_filter(*, required):
     DENIED = (
         # Network. Without these the child can exfiltrate anything it reads.
         # ``socket`` itself is denied below for every family but AF_UNIX.
-        "socketcall", "bind", "listen", "accept", "accept4",
+        "socketcall", "connect", "accept", "accept4",
         "sendto", "sendmsg", "recvfrom", "recvmsg",
         # Debugger attachment: ptrace on a sibling would sidestep everything.
         "ptrace", "process_vm_readv", "process_vm_writev",

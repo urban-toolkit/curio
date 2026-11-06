@@ -1414,23 +1414,23 @@ unprivileged execution account the child shares the sandbox's own filesystem
 access, and only the resource limits and syscall filter apply.
 
 Network denial uses a seccomp **denylist** (`socket` for every family but the
-local `AF_UNIX`, `bind`, `listen`, `accept`, the send and receive calls, `ptrace`,
+local `AF_UNIX`, `connect`, `accept`, the send and receive calls, `ptrace`,
 `mount`, and friends), not an allowlist. An allowlist for arbitrary Python with
 arbitrary C extensions would break constantly and get widened until it meant
 nothing. The denylist promises less and is honest about it. `unshare(CLONE_NEWNET)`
 would be stronger but needs `CAP_SYS_ADMIN`, which Docker does not grant by
-default. The local family stays open for CUDA: its driver connects a local socket
-when it starts and fails with error 304 when it cannot. A child can connect such a
-socket but not listen on one, so it reaches only the local sockets that already
-exist and its account may open; the zygote's is root's, mode 0600.
+default. The local family stays open, with `bind` and `listen`, for CUDA: when its
+driver starts, it binds and listens on an abstract local socket
+(`cuda-uvmfd-<namespace>-<pid>`) and fails with error 304 when it cannot. With
+`connect` and `accept` denied, no socket carries anything into or out of a child.
 
 > [!IMPORTANT]
 > **Implementation status.** The confinement code runs in CI. Three jobs cover
 > it, and each covers a different half:
 >
 > - `unit` runs `tests/test_isolation_linux.py` in the sandbox suite on Linux: the
->   fork, the seccomp filter (sockets of every family but `AF_UNIX`, listening
->   and ptrace denied), the rlimits,
+>   fork, the seccomp filter (sockets of every family but `AF_UNIX`, connecting,
+>   accepting and ptrace denied), the rlimits,
 >   the deadline kill, session scoping across the boundary, and the zygote
 >   holding no DuckDB handle. This is where the *boundary* is demonstrated.
 > - `test-isolated` boots a second stack with `CURIO_ISOLATION=fork` and runs

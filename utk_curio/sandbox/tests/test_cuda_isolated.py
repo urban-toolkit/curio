@@ -90,7 +90,7 @@ CUINIT_CAUSES = {
     2: "the driver ran out of memory: CUDA's start needs more address space than the cap leaves",
     100: "the child sees no device",
     304: ("the operating system refused a call the driver makes: the seccomp filter, which must "
-          "let it make and connect a local socket (child._install_seccomp_filter), or a limit"),
+          "let it make, bind and listen on a local socket (child._install_seccomp_filter), or a limit"),
     999: "an unknown error, often a device file the child cannot open",
 }
 
