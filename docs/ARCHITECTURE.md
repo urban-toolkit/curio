@@ -175,6 +175,16 @@ are links to `/monitor` and `/settings`. The monitor's content is
 `MonitorContent` (`src/pages/monitor/`), which the `/monitor` page and
 `MonitorDrawer` both render.
 
+Its LLM tokens section (`LlmTokensSection`, with its lines in `llmSeries.ts`)
+reads `GET /api/monitor/llm`: the hourly rows `monitor/llm_tokens.py` keeps of
+each model's tokens, which `agents/infrastructure/providers.py` records once
+per request, right after it (`_counted`). Those rows are a monitor history
+(`monitor/history.py`): the process holds them, every change writes them
+whole to `.curio/monitor/<name>.json` through a temporary file, every backend
+start (`create_app`) writes the file anew, and a history holds at most 90 days
+of hours. Its charts are `LinesOverTime` (`MonitorCharts.tsx`), a line per
+series over time, with a log y axis and dashed series as options.
+
 API Settings is `ApiSettingsPanel` (`src/components/apiSettings/`), which the
 settings page (`src/pages/settings/SettingsPage.tsx`, at `/settings/keys` and
 `/settings/agents`) and `ApiSettingsDrawer` both render. The page keeps the tab
@@ -1900,7 +1910,7 @@ A server can also stop feeding a stream without closing it, and the SDK alone wo
 
 `ChatTurn.output_limit` and `thinking_room_refused` say how a turn was asked, not what it holds, so two turns that hold the same are equal.
 
-Usage counts every input token as `inputTokens`, cached or not (Anthropic reports cache reads and writes apart from its input count), plus `cacheReadTokens` and `cacheWriteTokens` when the provider reports them. The ledger, a run's execution record and the evaluation report keep them.
+Usage counts every input token as `inputTokens`, cached or not (Anthropic reports cache reads and writes apart from its input count), plus `cacheReadTokens` and `cacheWriteTokens` when the provider reports them. The ledger, a run's execution record and the evaluation report keep them. The monitor counts each request's input and output tokens once, by model and by endpoint (this Curio's or a user's own key), as soon as the request ends (`providers._counted`, `monitor/llm_tokens.py`): a request asked again counts each time, and a stream its caller stopped counts what its provider had reported, which reaches the turn's usage too.
 
 What an endpoint can do beyond text is [`chat_capabilities.py`](../utk_curio/backend/app/agents/infrastructure/chat_capabilities.py)'s answer: native tools and a reply schema. Anthropic, Gemini and OpenAI's own endpoint are known from their APIs; any other OpenAI-compatible server is asked once per model with a charged one-tool trial (`providers.probe_native_tools`), recorded per account in `.curio/users/<u>/chat-capabilities.json`, its tokens on the ledger with the configuration's id. The scripted provider answers what a test scripted, fenced by default.
 
@@ -3259,7 +3269,7 @@ blocker signature, so a dataset dropped on an upstream loader is progress.
 | `src/components/provenance/` | The provenance drawer: `ProvenanceDrawer`, `ProvenanceHistory` (the list), `DataflowProvenance`, `NodeRunsProvenance`; layout in `src/utils/provenanceTree.ts`, versions in `src/utils/dataflowVersions.ts`, runs in `src/utils/nodeRuns.ts` |
 | `src/components/apiSettings/` | API Settings: `ApiSettingsPanel` (the two tabs), `ApiKeysTab`, `AgentConfigTab`, `SourceKeyForm`, `NodeKeyForm`, `ApiSettingsDrawer`, `ApiSettingsRequestHost` and `apiSettingsRequest.ts` (the `curio:api-settings` request event) |
 | `src/pages/settings/SettingsPage.tsx` | The settings page, `/settings/keys` and `/settings/agents` |
-| `src/pages/monitor/MonitorContent.tsx`, `MonitorDrawer.tsx` | The monitor's content, rendered by the `/monitor` page and by its drawer |
+| `src/pages/monitor/MonitorContent.tsx`, `MonitorDrawer.tsx` | The monitor's content, rendered by the `/monitor` page and by its drawer; its LLM tokens section is `LlmTokensSection.tsx` with `llmSeries.ts`, and its charts are `MonitorCharts.tsx` (the histograms and `LinesOverTime`) in the palette of `chartColors.ts` |
 | `src/components/llmConfigs/` | The LLM configuration editor, the choices of the default and of each agent (with Curio's own models, `curioModels.ts`) and the `llm-config` remedy button, over `src/api/llmConfigsApi.ts` |
 | `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
