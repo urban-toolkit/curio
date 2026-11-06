@@ -6,7 +6,7 @@ import pytest
 
 from utk_curio.backend import config
 from utk_curio.backend.app.agents.infrastructure import agent_jobs
-from utk_curio.backend.tests._support.agent_routes import _auth, _remove_default_agents
+from utk_curio.backend.tests._support.agent_routes import _auth, _record_defaults_removed
 from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
     app,
     client,
@@ -32,13 +32,13 @@ def new_account_and_token(app, db):
 
 
 @pytest.fixture()
-def user_and_token(new_account_and_token, client):
-    """Alice, once she has taken every agent Curio adds by default out of all
-    her projects (Remove from all projects), before she makes any. Each
-    dataflow a test makes holds only the agents the test adds, so a test is
-    about those agents; ``new_account_and_token`` is Alice with the defaults."""
-    _user, token = new_account_and_token
-    _remove_default_agents(client, token)
+def user_and_token(new_account_and_token):
+    """Alice, as Remove from all projects leaves her for every agent Curio
+    adds by default, before she makes any dataflow. Each dataflow a test
+    makes holds only the agents the test adds, so a test is about those
+    agents; ``new_account_and_token`` is Alice with the defaults."""
+    user, _token = new_account_and_token
+    _record_defaults_removed(user)
     return new_account_and_token
 
 
