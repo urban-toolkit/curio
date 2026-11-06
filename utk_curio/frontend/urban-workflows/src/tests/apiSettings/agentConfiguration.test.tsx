@@ -166,9 +166,9 @@ describe("Agent configuration", () => {
   it("saves a pick of one of Curio's models for one agent", async () => {
     render(<Panel />);
     await models();
-    fireEvent.change(select("Dataset Finder"), { target: { value: pick("Gateway", "org/coder-7b") } });
+    fireEvent.change(select("Researcher"), { target: { value: pick("Gateway", "org/coder-7b") } });
     await waitFor(() =>
-      expect(mockApi.setAssignments).toHaveBeenCalledWith({ "agent.curio.dataset-finder": pick("Gateway", "org/coder-7b") }),
+      expect(mockApi.setAssignments).toHaveBeenCalledWith({ "agent.curio.researcher": pick("Gateway", "org/coder-7b") }),
     );
   });
 

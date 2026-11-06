@@ -112,11 +112,11 @@
 }
 
 /* The last column: Add configuration in the header, Remove and Edit on a row
-   the user owns. */
+   the user owns. The cell may wrap (#510): the icons stay on one line because
+   their row does not wrap. */
 .actionsHead,
 .actions {
   width: 1%;
-  white-space: nowrap;
   text-align: right;
 }
 
@@ -129,11 +129,11 @@
 .table td.confirming {
   width: auto;
   min-width: 14rem;
-  white-space: normal;
 }
 
 .rowIcons {
   display: inline-flex;
+  flex-wrap: nowrap;
   gap: 6px;
   justify-content: flex-end;
 }
