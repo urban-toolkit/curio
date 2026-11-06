@@ -15,7 +15,7 @@ type Removal = { id: string; label: string; nodeType: string; contentChars: numb
 const loader: Removal = {
   id: "old-loader",
   label: "Load CSV",
-  nodeType: "curio.builtin/computation-analysis",
+  nodeType: "curio.builtin/python-computation",
   contentChars: 10,
 };
 const parksMap = {
@@ -66,7 +66,7 @@ describe("AgentChangeCard: a plan that removed dashboard tiles", () => {
     expect(tile).toHaveTextContent(
       "Parks map · curio.builtin/autk-grammar · dashboard tile (contained 40 chars of content)",
     );
-    expect(other).toHaveTextContent("Load CSV · curio.builtin/computation-analysis (contained 10 chars of content)");
+    expect(other).toHaveTextContent("Load CSV · curio.builtin/python-computation (contained 10 chars of content)");
     expect(other).not.toHaveTextContent("dashboard");
   });
 });

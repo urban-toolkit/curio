@@ -45,7 +45,7 @@ const target: PackagePayload = {
 
 test("a template with no source of its own is sent without one", () => {
   mockDesc = {
-    id: "curio.builtin/computation-analysis" as NodeDescriptor["id"],
+    id: "curio.builtin/python-computation" as NodeDescriptor["id"],
     label: "Station reader", category: "computation", editor: "code", hasCode: true,
     inputPorts: [], outputPorts: [], source: "package",
     package: { packageId: "curio.builtin", major: 1, version: "1.0.0" },

@@ -152,7 +152,7 @@ def test_python_in_process_has_the_functions_the_page_gives_it(_worker):
     session = "node-functions-" + uuid.uuid4().hex
     try:
         result = _worker.execute_code(
-            _indented(PROBE), "", "curio.builtin/computation-analysis", "str",
+            _indented(PROBE), "", "curio.builtin/python-computation", "str",
             session_id=session, save_dataset=False,
         )
     finally:
@@ -169,7 +169,7 @@ def test_python_isolated_has_the_functions_the_page_gives_it(tmp_path):
     scratch = tmp_path / "scratch"
     scratch.mkdir()
     request = {
-        "code": _indented(PROBE), "node_type": "curio.builtin/computation-analysis", "data_type": "",
+        "code": _indented(PROBE), "node_type": "curio.builtin/python-computation", "data_type": "",
         "scratch_dir": str(scratch), "input": {"kind": "none"}, "input_slots": [],
         "session_imports": [], "limits": {},
     }

@@ -25,7 +25,7 @@ function node(id: string, extra: Record<string, unknown> = {}) {
     id,
     type: "__curioUniversalNode",
     position: { x: 0, y: 0 },
-    data: { nodeId: id, nodeType: NodeType.COMPUTATION_ANALYSIS, code: "return input_0", ...extra },
+    data: { nodeId: id, nodeType: NodeType.PYTHON_COMPUTATION, code: "return input_0", ...extra },
   } as any;
 }
 

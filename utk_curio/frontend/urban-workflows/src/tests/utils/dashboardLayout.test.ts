@@ -53,7 +53,7 @@ describe("the automatic layout leaves room for the tiles it places", () => {
   // before the dashboard could be read at all.
   test("two columns are at least a tile apart", () => {
     const nodes = [
-      node("src", NodeType.COMPUTATION_ANALYSIS, { dashboardPinned: true }),
+      node("src", NodeType.PYTHON_COMPUTATION, { dashboardPinned: true }),
       node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
     ];
     const edges = [edge("src", "chart")];
@@ -70,7 +70,7 @@ describe("the automatic layout leaves room for the tiles it places", () => {
   test("a column is as wide as its widest tile, not as the default", () => {
     const wide = 1400;
     const nodes = [
-      node("src", NodeType.COMPUTATION_ANALYSIS, { dashboardPinned: true, dashboardWidth: wide }),
+      node("src", NodeType.PYTHON_COMPUTATION, { dashboardPinned: true, dashboardWidth: wide }),
       node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
     ];
     const edges = [edge("src", "chart")];
@@ -154,7 +154,7 @@ describe("prepareDashboardNodes", () => {
 
   test("a pinned tile with no saved slot is laid out automatically", () => {
     const nodes = [
-      node("a", NodeType.COMPUTATION_ANALYSIS, { dashboardPinned: true }),
+      node("a", NodeType.PYTHON_COMPUTATION, { dashboardPinned: true }),
       node("b", NodeType.VIS_VEGA, { dashboardPinned: true }),
     ];
     nodes[1].position = { x: 10, y: 400 };
@@ -189,7 +189,7 @@ describe("prepareDashboardNodes", () => {
 
   test("every edge is hidden", () => {
     const prepared = prepareDashboardNodes(
-      [node("a", NodeType.COMPUTATION_ANALYSIS), node("b", NodeType.VIS_VEGA, { dashboardPinned: true })],
+      [node("a", NodeType.PYTHON_COMPUTATION), node("b", NodeType.VIS_VEGA, { dashboardPinned: true })],
       [edge("a", "b")],
       { b: true },
     );
@@ -217,7 +217,7 @@ describe("prepareDashboardNodes", () => {
 
   test("running it twice changes nothing more", () => {
     const nodes = [
-      node("a", NodeType.COMPUTATION_ANALYSIS),
+      node("a", NodeType.PYTHON_COMPUTATION),
       node("b", NodeType.VIS_VEGA, { dashboardPinned: true, dashboardX: 5, dashboardY: 6 }),
     ];
     const edges = [edge("a", "b")];
@@ -234,7 +234,7 @@ describe("prepareDashboardNodes", () => {
 describe("dashboardSourceNodeIds", () => {
   test("the producer behind a pinned chart", () => {
     const nodes = [
-      node("py", NodeType.COMPUTATION_ANALYSIS),
+      node("py", NodeType.PYTHON_COMPUTATION),
       node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
     ];
 
@@ -245,7 +245,7 @@ describe("dashboardSourceNodeIds", () => {
     // The pool re-derives its table from its input on every load, so saving its
     // passthrough would duplicate the producer's dataset under another name.
     const nodes = [
-      node("py", NodeType.COMPUTATION_ANALYSIS),
+      node("py", NodeType.PYTHON_COMPUTATION),
       node("pool", NodeType.DATA_POOL),
       node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
     ];
@@ -275,8 +275,8 @@ describe("dashboardSourceNodeIds", () => {
     // `b` is what the chart reads; `a` is already consumed and saving it would
     // record a dataset nothing on the dashboard asks for.
     const nodes = [
-      node("a", NodeType.COMPUTATION_ANALYSIS),
-      node("b", NodeType.COMPUTATION_ANALYSIS),
+      node("a", NodeType.PYTHON_COMPUTATION),
+      node("b", NodeType.PYTHON_COMPUTATION),
       node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
     ];
 
@@ -333,7 +333,7 @@ describe("dashboardSourceNodeIds", () => {
     // Palette-dragged nodes carry `@1`; comparing the raw string silently
     // matches nothing (#169).
     const nodes = [
-      node("py", "curio.builtin/computation-analysis@1"),
+      node("py", "curio.builtin/python-computation@1"),
       node("pool", "curio.builtin/data-pool@1"),
       node("chart", "curio.builtin/vis-vega@1", { dashboardPinned: true }),
     ];
@@ -346,13 +346,13 @@ describe("dashboardSourceNodeIds", () => {
   test("a pinned node's own output is not in the set", () => {
     // What a tile draws comes from its input. A node rendering its own run
     // output (a code node's stdout) has nothing a dataset could restore.
-    const nodes = [node("py", NodeType.COMPUTATION_ANALYSIS, { dashboardPinned: true })];
+    const nodes = [node("py", NodeType.PYTHON_COMPUTATION, { dashboardPinned: true })];
 
     expect([...dashboardSourceNodeIds(nodes, [])]).toEqual([]);
   });
 
   test("nothing pinned means nothing to save", () => {
-    const nodes = [node("py", NodeType.COMPUTATION_ANALYSIS), node("chart", NodeType.VIS_VEGA)];
+    const nodes = [node("py", NodeType.PYTHON_COMPUTATION), node("chart", NodeType.VIS_VEGA)];
 
     expect(dashboardSourceNodeIds(nodes, [edge("py", "chart")]).size).toBe(0);
   });
@@ -386,7 +386,7 @@ describe("dashboardSourceNodeIds", () => {
     test("is walked through as the Vega-Lite node is, versioned or not", () => {
       for (const type of [VEGA_LITE_TEMPLATE, "curio.vega-lite/donuts"]) {
         const nodes = [
-          node("py", NodeType.COMPUTATION_ANALYSIS),
+          node("py", NodeType.PYTHON_COMPUTATION),
           node("donuts", type),
           node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
         ];
@@ -399,7 +399,7 @@ describe("dashboardSourceNodeIds", () => {
 
     test("a package node that draws with no grammar is a producer", () => {
       const nodes = [
-        node("py", NodeType.COMPUTATION_ANALYSIS),
+        node("py", NodeType.PYTHON_COMPUTATION),
         node("heatmap", "acme.tools/heatmap@1"),
         node("chart", NodeType.VIS_VEGA, { dashboardPinned: true }),
       ];

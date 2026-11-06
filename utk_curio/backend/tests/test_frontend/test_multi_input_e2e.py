@@ -51,8 +51,8 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-TILE = "#tile-computation-analysis"
-NODE_TYPE = "curio.builtin/computation-analysis"
+TILE = "#tile-python-computation"
+NODE_TYPE = "curio.builtin/python-computation"
 
 # A node is 525x350 at zoom 1 in a 1280x720 viewport: the producers stack in
 # the left column so the consumer's circles stay clear of them.

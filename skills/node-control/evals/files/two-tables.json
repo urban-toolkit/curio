@@ -34,7 +34,7 @@
       },
       {
         "id": "9c3f8293-8cc9-4ed8-8840-ca60655e21d7",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1423.551666086507,
         "y": 260.04505115875406,
         "content": "return input_0, input_1",

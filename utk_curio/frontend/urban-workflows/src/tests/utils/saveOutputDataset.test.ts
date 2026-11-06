@@ -79,7 +79,7 @@ describe('buildSaveableLiveOutputs sink-node exclusion', () => {
       { nodeId: 'visnode', output: '1782_3d8f71d7_output.parquet' }, // passthrough of input
     ];
     const nodes = [
-      { id: 'transform', type: 'curio.builtin/computation-analysis', data: { nodeId: 'transform' } },
+      { id: 'transform', type: 'curio.builtin/python-computation', data: { nodeId: 'transform' } },
       { id: 'visnode', type: 'curio.builtin/vis-vega', data: { nodeId: 'visnode' } },
     ];
     const refs = buildSaveableLiveOutputs(outputs, nodes, true) ?? [];
@@ -112,7 +112,7 @@ describe('buildSaveableLiveOutputs sink-node exclusion', () => {
 
   test('a versioned NON-sink type still saves', () => {
     const outputs = [{ nodeId: 't', output: 'y.parquet' }];
-    const nodes = [{ id: 't', type: 'curio.builtin/computation-analysis@1', data: { nodeId: 't' } }];
+    const nodes = [{ id: 't', type: 'curio.builtin/python-computation@1', data: { nodeId: 't' } }];
     const refs = buildSaveableLiveOutputs(outputs, nodes, true) ?? [];
     expect(refs.map((r) => r.node_id)).toContain('t');
   });
@@ -128,8 +128,8 @@ describe('isNonProducingNodeType', () => {
   });
 
   test('rejects non-sink types in either form', () => {
-    expect(isNonProducingNodeType('curio.builtin/computation-analysis')).toBe(false);
-    expect(isNonProducingNodeType('curio.builtin/computation-analysis@1')).toBe(false);
+    expect(isNonProducingNodeType('curio.builtin/python-computation')).toBe(false);
+    expect(isNonProducingNodeType('curio.builtin/python-computation@1')).toBe(false);
     expect(isNonProducingNodeType('')).toBe(false);
   });
 });
@@ -169,7 +169,7 @@ describe('showsSaveOutputToggle (#445)', () => {
   });
 
   test('a node that computes a dataset keeps its toggle', () => {
-    expect(showsSaveOutputToggle({ nodeType: 'curio.builtin/computation-analysis@1' }, false)).toBe(true);
+    expect(showsSaveOutputToggle({ nodeType: 'curio.builtin/python-computation@1' }, false)).toBe(true);
     expect(showsSaveOutputToggle({ nodeType: 'curio.builtin/data-pool@1' }, false)).toBe(true);
   });
 
@@ -179,7 +179,7 @@ describe('showsSaveOutputToggle (#445)', () => {
       datasetSource: { datasetId: 'd1' },
     };
     expect(showsSaveOutputToggle(paletteNode, false)).toBe(false);
-    expect(showsSaveOutputToggle({ nodeType: 'curio.builtin/computation-analysis@1' }, true)).toBe(false);
+    expect(showsSaveOutputToggle({ nodeType: 'curio.builtin/python-computation@1' }, true)).toBe(false);
   });
 });
 
@@ -230,7 +230,7 @@ describe('a Data Export saves no dataset of its own', () => {
       { nodeId: 'export', output: { path: 'art_export', dataType: 'str' } },
     ];
     const nodes = [
-      { id: 'py', type: '__curioUniversalNode', data: { nodeId: 'py', nodeType: 'curio.builtin/computation-analysis@1' } },
+      { id: 'py', type: '__curioUniversalNode', data: { nodeId: 'py', nodeType: 'curio.builtin/python-computation@1' } },
       {
         id: 'export',
         type: '__curioUniversalNode',
@@ -260,7 +260,7 @@ describe('outputs a dashboard tile depends on', () => {
   const producer = {
     id: 'py',
     type: '__curioUniversalNode',
-    data: { nodeId: 'py', nodeType: 'curio.builtin/computation-analysis' },
+    data: { nodeId: 'py', nodeType: 'curio.builtin/python-computation' },
   };
   const chart = {
     id: 'chart',

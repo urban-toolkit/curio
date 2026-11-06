@@ -61,8 +61,8 @@ test("Ctrl+Z in one node's editor undoes that node's typing, never another's", a
   dataflowToDoc({
     name: "",
     nodes: [
-      { id: "a", type: "curio.builtin/computation-analysis", x: 0, y: 0, content: CODE },
-      { id: "b", type: "curio.builtin/computation-analysis", x: 600, y: 0, content: CODE },
+      { id: "a", type: "curio.builtin/python-computation", x: 0, y: 0, content: CODE },
+      { id: "b", type: "curio.builtin/python-computation", x: 600, y: 0, content: CODE },
     ],
     edges: [],
   }, provider.doc, "doc-1");

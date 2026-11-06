@@ -6,7 +6,7 @@ import { TrillGenerator } from "../TrillGenerator";
 import { nodeRunKey, normalizeWidgets } from "../utils/widgets/widgetModel";
 
 const node = (data: Record<string, unknown>) => ({
-  type: "curio.builtin/computation-analysis",
+  type: "curio.builtin/python-computation",
   position: { x: 0, y: 0 },
   data: { nodeId: "n1", code: "return [!! factor !!]", ...data },
 });

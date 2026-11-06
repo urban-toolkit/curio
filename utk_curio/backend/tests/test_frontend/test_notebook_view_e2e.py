@@ -168,9 +168,9 @@ def _spec() -> dict:
             "datasets": [],
             "nodes": [
                 _node(PRODUCER, "curio.builtin/data-loading", PRODUCER_CODE),
-                _node(TRANSFORM, "curio.builtin/computation-analysis", TRANSFORM_CODE),
+                _node(TRANSFORM, "curio.builtin/python-computation", TRANSFORM_CODE),
                 _node(CHART, "curio.builtin/vis-vega", CHART_SPEC),
-                _node(EXTRA, "curio.builtin/computation-analysis", EXTRA_CODE),
+                _node(EXTRA, "curio.builtin/python-computation", EXTRA_CODE),
             ],
             "edges": [
                 {"id": f"reactflow__edge-{PRODUCER}out-{TRANSFORM}in", "source": PRODUCER, "target": TRANSFORM},
@@ -193,7 +193,7 @@ def _missing_package_spec() -> dict:
             "nodes": [
                 _node(PRODUCER, "curio.builtin/data-loading", PRODUCER_CODE),
                 _node(MISSING, MISSING_TYPE, "", at=(700, 0)),
-                _node(TRANSFORM, "curio.builtin/computation-analysis", TRANSFORM_CODE, at=(1400, 0)),
+                _node(TRANSFORM, "curio.builtin/python-computation", TRANSFORM_CODE, at=(1400, 0)),
             ],
             "edges": [
                 {"id": f"reactflow__edge-{PRODUCER}out-{MISSING}in", "source": PRODUCER, "target": MISSING},
@@ -1016,7 +1016,7 @@ def test_nodes_are_added_on_the_canvas_only(
     expect(page.locator("[data-curio-add-after]")).to_have_count(0)
 
     # A node dropped on the page is not added.
-    assert page.evaluate(_DROP_TILE_JS, "curio.builtin/computation-analysis@1"), "no drop target on the page"
+    assert page.evaluate(_DROP_TILE_JS, "curio.builtin/python-computation@1"), "no drop target on the page"
     page.wait_for_timeout(1500)
     assert len(_positions(page)) == count, f"a drop on the notebook page added a node: {_positions(page)}"
 
@@ -1027,7 +1027,7 @@ def test_nodes_are_added_on_the_canvas_only(
 
     # On the canvas the rail adds one.
     _show(page, "canvas")
-    new_id = drag_builtin_to_canvas(page, "#tile-computation-analysis")
+    new_id = drag_builtin_to_canvas(page, "#tile-python-computation")
     page.wait_for_function(
         "(id) => !!window.__curio_reactFlow.getNodes().find((n) => n.id === id)", arg=new_id, timeout=10000,
     )
@@ -1260,7 +1260,7 @@ def test_the_first_save_keeps_the_view_in_the_address(
 
     # A dataflow nothing has saved yet, with a node added on the canvas, shown
     # in the notebook view.
-    node_id = drag_builtin_to_canvas(page, "#tile-computation-analysis")
+    node_id = drag_builtin_to_canvas(page, "#tile-python-computation")
     page.wait_for_function(
         "(id) => !!window.__curio_reactFlow.getNodes().find((n) => n.id === id)", arg=node_id, timeout=10000,
     )

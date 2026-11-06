@@ -813,7 +813,7 @@ Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 | Category | Templates |
 |---|---|
 | Data | `data-loading`, `data-export`, `data-summary`, `data-pool`, `spatial-join` |
-| Computation | `computation-analysis`, `js-computation` |
+| Computation | `python-computation`, `js-computation` |
 | Grammar (Autark) | `autk-grammar`, one node whose UrbanSpec unifies OSM/PBF loading, GPU `compute`, and `map` + `plot` rendering |
 | Chart/table visualization | `vis-vega`, `vis-simple` (a table, or a card per row when the frame carries images) |
 

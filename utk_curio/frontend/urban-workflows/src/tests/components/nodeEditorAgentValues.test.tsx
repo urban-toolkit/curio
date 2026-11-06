@@ -61,7 +61,7 @@ function renderEditor(widgetsTab: boolean) {
       setOutputCallback={jest.fn()}
       data={data}
       output={{ code: '', content: '' }}
-      nodeType={'curio.builtin/computation-analysis'}
+      nodeType={'curio.builtin/python-computation'}
       readOnly={false}
       applyGrammar={jest.fn()}
       code={true}

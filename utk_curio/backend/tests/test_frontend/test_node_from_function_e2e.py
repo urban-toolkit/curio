@@ -57,8 +57,8 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-TILE = "#tile-computation-analysis"
-NODE_TYPE = "curio.builtin/computation-analysis"
+TILE = "#tile-python-computation"
+NODE_TYPE = "curio.builtin/python-computation"
 READER_CODE = "print(f'<<{input_0}>>')\nreturn input_0\n"
 
 SHADOW_DIR = "model.scout.deep-umbra@1"

@@ -86,7 +86,7 @@ jest.mock("../../registry/nodeRegistry", () => {
   const byType: Record<string, any> = {
     "curio.builtin/vis-vega": descriptor("curio.builtin/vis-vega", true),
     "curio.builtin/autk-grammar": descriptor("curio.builtin/autk-grammar", true),
-    "curio.builtin/computation-analysis": descriptor("curio.builtin/computation-analysis", false),
+    "curio.builtin/python-computation": descriptor("curio.builtin/python-computation", false),
     // A package template that draws with the Vega-Lite grammar, as SCOUT
     // Comparison's charts do.
     "curio.vega-lite/lines-with-band": descriptor("curio.vega-lite/lines-with-band", true, "vega-lite"),
@@ -143,7 +143,7 @@ import { markSelectionEcho } from "../../utils/selectionEcho";
 
 const VEGA = "curio.builtin/vis-vega";
 const AUTARK = "curio.builtin/autk-grammar";
-const PYTHON = "curio.builtin/computation-analysis";
+const PYTHON = "curio.builtin/python-computation";
 /** A chart that draws with the Vega-Lite node's behavior from a package. */
 const VEGA_TEMPLATE = "curio.vega-lite/lines-with-band";
 const VEGA_SPEC = JSON.stringify({ mark: "bar" });

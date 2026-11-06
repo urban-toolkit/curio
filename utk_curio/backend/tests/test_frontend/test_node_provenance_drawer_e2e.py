@@ -67,7 +67,7 @@ TEST_NAME = "test_a_nodes_runs_open_in_the_provenance_drawer"
 #: Who runs and types, as the drawer names the typing.
 OWNER = "Runs Owner"
 NODE = "runs-node"
-NODE_TYPE = "curio.builtin/computation-analysis"
+NODE_TYPE = "curio.builtin/python-computation"
 FIRST = "return 1\n"
 SECOND = "return 2\n"
 THIRD = "return 3\n"
@@ -138,7 +138,7 @@ def _spec() -> dict:
 
 def _run(page, code: str) -> None:
     set_node_code(page, NODE, code)
-    run_node_and_wait(page, NODE, node_type="computation-analysis", timeout_ms=120000)
+    run_node_and_wait(page, NODE, node_type="python-computation", timeout_ms=120000)
 
 
 def _open_runs(page):
@@ -366,7 +366,7 @@ def test_a_run_comes_before_the_typing_that_reaches_the_server_ahead_of_its_entr
     ) as noted:
         page.evaluate("() => { window.__curio_heldRunEntry.release(); }")
     assert noted.value.status == 201, f"the first run's entry was answered {noted.value.status}"
-    run_node_and_wait(page, NODE, node_type="computation-analysis", timeout_ms=120000)
+    run_node_and_wait(page, NODE, node_type="python-computation", timeout_ms=120000)
 
     panel = _open_runs(page)
     expect(panel.locator("[data-provenance-item]")).to_have_count(3, timeout=20000)
@@ -396,7 +396,7 @@ def test_a_run_comes_before_the_typing_that_became_an_entry_before_the_runs_entr
     _until(page, lambda: _kinds_on_the_server(current_server, token, project_id), ["edit"],
            "the typing after the first run never became an entry", seconds=60)
     _release_the_held_run_entry(page)
-    run_node_and_wait(page, NODE, node_type="computation-analysis", timeout_ms=120000)
+    run_node_and_wait(page, NODE, node_type="python-computation", timeout_ms=120000)
 
     panel = _open_runs(page)
     expect(panel.locator("[data-provenance-item]")).to_have_count(3, timeout=20000)
@@ -460,7 +460,7 @@ def test_typing_that_goes_on_past_a_runs_start_is_an_entry_each_side_of_the_run(
         lambda request: request.method == "POST" and request.url.endswith(f"/history/nodes/{NODE}/runs"),
         timeout=150000,
     ) as third_entry:
-        run_node_and_wait(page, NODE, node_type="computation-analysis", timeout_ms=120000)
+        run_node_and_wait(page, NODE, node_type="python-computation", timeout_ms=120000)
     # A run's entry names the code the node held when it started, which the
     # typing that went on past the second run's start had left.
     named = (third_entry.value.post_data_json or {}).get("code")

@@ -64,7 +64,7 @@ function setFlow(targets: string[]) {
     { id: "shadow-b", type: "curio.rasterization/raster-calculator", data: { title: "Shadow over the ground" } },
     {
       id: "season",
-      type: "curio.builtin/computation-analysis",
+      type: "curio.builtin/python-computation",
       data: { code: "return [!! season !!]", widgets: [{ name: "season", type: "text", label: "Season", default: "summer" }] },
     },
     ...targets.map((id) => ({ id, type: "x", data: { title: "Mean accumulated shadow" } })),
@@ -146,7 +146,7 @@ function codeEditor(nodeId: string) {
         setOutputCallback: jest.fn(),
         data: { nodeId, widgets: WIDGETS, outputCallback: jest.fn() },
         output: { code: "", content: "" },
-        nodeType: "curio.builtin/computation-analysis",
+        nodeType: "curio.builtin/python-computation",
         readOnly: false,
         code: true,
         grammar: false,

@@ -71,7 +71,7 @@ import { useWorkflowOperations } from "../../hook/useWorkflowOperations";
 (global as any).cancelAnimationFrame = () => {};
 
 const CHART = "curio.builtin/vis-vega@1";
-const PRODUCER = "curio.builtin/computation-analysis@1";
+const PRODUCER = "curio.builtin/python-computation@1";
 
 const makeNode = (id: string, nodeType: string, data: Record<string, unknown> = {}) => ({
   id,

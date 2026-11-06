@@ -158,7 +158,7 @@ def test_a_node_in_an_isolated_child_reaches_the_gpu_through_torch(isolated_as_d
         zygote_mapped = int(statm.read().split()[0]) * os.sysconf("SC_PAGE_SIZE")
 
     result = runner.execute_isolated(
-        NODE, "", "curio.builtin/computation-analysis", "",
+        NODE, "", "curio.builtin/python-computation", "",
         save_dataset=False, config=isolated_as_deployed,
     )
     if not result["output"]["path"]:

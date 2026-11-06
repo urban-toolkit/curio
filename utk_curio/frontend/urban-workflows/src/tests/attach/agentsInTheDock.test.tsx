@@ -69,7 +69,7 @@ const DATAFLOW_BUILDER = agentUser("Dataflow Builder", "agent-db", "att-db", "ag
 function canvasNode(id: string, label: string, x: number, y: number, width: number, height: number) {
   return [id, {
     id,
-    data: { nodeType: "curio.builtin/computation-analysis", title: label },
+    data: { nodeType: "curio.builtin/python-computation", title: label },
     position: { x, y },
     positionAbsolute: { x, y },
     width,
@@ -287,9 +287,9 @@ describe("an agent at work in the canvas's dock", () => {
       carrying: {
         id: "drag-1",
         kind: "add",
-        from: { palette: "builtin", item: "curio.builtin/computation-analysis" },
+        from: { palette: "builtin", item: "curio.builtin/python-computation" },
         onto: null,
-        node: { type: "curio.builtin/computation-analysis", label: "Filter" },
+        node: { type: "curio.builtin/python-computation", label: "Filter" },
         ms: 500,
       },
     });

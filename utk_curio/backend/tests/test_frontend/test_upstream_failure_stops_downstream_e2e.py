@@ -60,7 +60,7 @@ def _spec() -> dict:
         "provenance_id": "Upstream failure",
         "nodes": [
             _node(LOADER_ID, "curio.builtin/data-loading", 0, LOADER_CODE),
-            _node(COMPUTE_ID, "curio.builtin/computation-analysis", 645, COMPUTE_CODE),
+            _node(COMPUTE_ID, "curio.builtin/python-computation", 645, COMPUTE_CODE),
         ],
         "edges": [{
             "id": f"reactflow__edge-{LOADER_ID}out-{COMPUTE_ID}in",
@@ -102,7 +102,7 @@ def test_a_failed_node_stops_the_node_it_feeds(
 
     assert wait_for_node_settled(page, LOADER_ID, node_type="DATA_LOADING") == "error"
     assert wait_for_node_settled(
-        page, COMPUTE_ID, node_type="COMPUTATION_ANALYSIS"
+        page, COMPUTE_ID, node_type="PYTHON_COMPUTATION"
     ) == "error"
     reason = read_node_error_text(node_locator(page, COMPUTE_ID)) or ""
     executed = sent.stop()

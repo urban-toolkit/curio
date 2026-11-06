@@ -38,7 +38,7 @@ CODE_SIGNALS = {"imports", "fileExtensions", "dataUris"}
 #: What a row gives.
 GIVES = ("tags", "dataTypes")
 #: A node type no rule reads.
-PLAIN = "curio.builtin/computation-analysis"
+PLAIN = "curio.builtin/python-computation"
 #: The prefixes of the ids Curio's packages, models and datasets have.
 PREFIXES = ("curio.", "scout.", "model.", "data.", "ai.")
 

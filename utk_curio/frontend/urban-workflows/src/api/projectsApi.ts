@@ -146,6 +146,13 @@ async function sendSave<T>(send: (signal: AbortSignal) => Promise<T>): Promise<T
   }
 }
 
+/** How a dataflow is read: `lastResults` (see `get`), and the `signal` of the
+ *  page that asked, which aborts the read once the page has left the dataflow. */
+export interface LoadOptions {
+  lastResults?: boolean;
+  signal?: AbortSignal;
+}
+
 export interface LoadResponse {
   project: ProjectDetail;
   spec: Record<string, unknown>;
@@ -171,8 +178,10 @@ export const projectsApi = {
    * `lastResults` the results its canvas was left with, each node its
    * owner's runs ran showing its newest kept result where one matches.
    */
-  get(id: string, options?: { lastResults?: boolean }): Promise<LoadResponse> {
-    return apiFetch<LoadResponse>(`/api/projects/${id}${options?.lastResults ? "?results=last" : ""}`);
+  get(id: string, options?: LoadOptions): Promise<LoadResponse> {
+    return apiFetch<LoadResponse>(`/api/projects/${id}${options?.lastResults ? "?results=last" : ""}`, {
+      signal: options?.signal,
+    });
   },
 
   /**
@@ -181,8 +190,10 @@ export const projectsApi = {
    * runs ran showing his newest kept result; anyone else gets its saved
    * outputs.
    */
-  getShared(id: string, options?: { lastResults?: boolean }): Promise<LoadResponse> {
-    return apiFetch<LoadResponse>(`/api/projects/${id}/shared${options?.lastResults ? "?results=last" : ""}`);
+  getShared(id: string, options?: LoadOptions): Promise<LoadResponse> {
+    return apiFetch<LoadResponse>(`/api/projects/${id}/shared${options?.lastResults ? "?results=last" : ""}`, {
+      signal: options?.signal,
+    });
   },
 
   /** The dataflow's categories as it is now, which the canvas title shows:

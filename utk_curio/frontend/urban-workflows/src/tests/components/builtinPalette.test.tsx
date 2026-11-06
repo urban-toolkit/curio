@@ -48,7 +48,7 @@ jest.mock("../../components/menus/nodes/toolsMenuPackagePalette", () => ({
 const mockBuiltin = [
     { id: "curio.builtin/data-loading@1", label: "Data Loading", category: "data" },
     { id: "curio.builtin/data-export@1", label: "Data Export", category: "data" },
-    { id: "curio.builtin/computation-analysis@1", label: "Python Computation", category: "computation" },
+    { id: "curio.builtin/python-computation@1", label: "Python Computation", category: "computation" },
     { id: "curio.builtin/data-summary@1", label: "Data Summary", category: "data" },
     { id: "curio.builtin/spatial-join@1", label: "Spatial Join", category: "data" },
     { id: "curio.builtin/autk-grammar@1", label: "Autark", category: "vis_grammar", badge: "AUTK" },
@@ -86,7 +86,7 @@ import ToolsMenu from "../../components/menus/nodes/ToolsMenu";
  *  computation, then the views. */
 const GROUPS = [
     ["data-loading", "data-export", "data-summary", "spatial-join", "data-pool", "edit-features", "note"],
-    ["computation-analysis", "js-computation"],
+    ["python-computation", "js-computation"],
     ["autk-grammar", "vis-vega", "vis-simple"],
 ];
 

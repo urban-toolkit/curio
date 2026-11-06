@@ -70,7 +70,7 @@ function madeDataflow(): DataflowDocProvider {
   const provider = new DataflowDocProvider("project-made", { canWrite: true });
   dataflowToDoc({
     name: "",
-    nodes: [{ id: "a", type: "curio.builtin/computation-analysis", x: 0, y: 0, content: SENT }],
+    nodes: [{ id: "a", type: "curio.builtin/python-computation", x: 0, y: 0, content: SENT }],
     edges: [],
   }, provider.doc, "doc-1");
   provider.synced = true;

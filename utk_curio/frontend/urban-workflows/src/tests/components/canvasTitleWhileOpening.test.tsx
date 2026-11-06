@@ -4,6 +4,13 @@
  * name of no dataflow, until the load landed. The name and the categories
  * cannot be changed meanwhile: the load puts the dataflow's own over them.
  *
+ * A dataflow the canvas leaves while it opens (File > New, or File > Load with
+ * its file) is opening no more: the title names the dataflow the canvas is on,
+ * and the left one's answer, when it comes, puts nothing on the canvas. Before,
+ * the title said "Opening dataflow…" until that answer came, and the answer
+ * then put the left dataflow on the canvas under another route, whose runs
+ * went to it (run 42191681614).
+ *
  * UpMenu is drawn under the real ProjectLoader, whose load the test holds
  * until it lets it land; the bar's children that need providers of their own
  * are stubbed as in upMenuSave, and the categories say whether they take
@@ -85,6 +92,7 @@ jest.mock("../../registry/projectPackagesStore", () => ({
 
 import UpMenu from "../../components/menus/top/UpMenu";
 import { ProjectLoader, useProjectLoadState } from "../../components/ProjectLoader";
+import { setUnsavedDataflow } from "../../registry/projectPackagesStore";
 
 const ROUTED = "36363636-2222-4333-8444-000000000036";
 const NAME = "Bus plan";
@@ -208,5 +216,41 @@ test("the name and the categories wait for the dataflow, whose own the load puts
   expect({ whileOpening, opened: { renaming: renaming(), categories: categoriesTakeChanges() } }).toEqual({
     whileOpening: { renaming: false, categories: "no" },
     opened: { renaming: true, categories: "yes" },
+  });
+});
+
+test("a dataflow left while it opens is opening no more, and its late answer puts nothing on the canvas", async () => {
+  renderCanvasBar();
+  await waitFor(() => expect(mockFlow.loadProject).toHaveBeenCalled());
+  const whileOpening = title();
+
+  // File > New while it opens, the way File > Load leaves it with its file.
+  fireEvent.click(screen.getByTestId("file-menu-btn"));
+  fireEvent.click(screen.getByRole("button", { name: "New dataflow" }));
+  await waitFor(() => expect(setUnsavedDataflow).toHaveBeenCalled());
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  const leftIt = title();
+
+  // The left dataflow's answer comes after that.
+  await act(async () => {
+    load.land(LOADED);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  expect({
+    whileOpening,
+    leftIt,
+    answered: {
+      title: title(),
+      loadState: states[states.length - 1],
+      putOnTheCanvas: mockLoadTrill.mock.calls.length,
+      runsFollowed: mockFlow.attachLatestRun.mock.calls.length,
+    },
+  }).toEqual({
+    whileOpening: "Opening dataflow…",
+    leftIt: "DefaultDataflow",
+    answered: { title: "DefaultDataflow", loadState: "idle", putOnTheCanvas: 0, runsFollowed: 0 },
   });
 });

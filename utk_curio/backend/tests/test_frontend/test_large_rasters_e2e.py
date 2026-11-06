@@ -64,7 +64,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-PYTHON_TYPE = "curio.builtin/computation-analysis"
+PYTHON_TYPE = "curio.builtin/python-computation"
 MAP_TYPE = "curio.builtin/autk-grammar"
 CALCULATOR_TYPE = "curio.rasterization/raster-calculator"
 #: The package the Raster Calculator is a node of, which the dataflow declares.

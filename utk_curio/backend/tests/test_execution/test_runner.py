@@ -11,7 +11,7 @@ KEY = "4242"
 PID = "p-runner"
 
 
-def _node(node_id, node_type="curio.builtin/computation-analysis", content=None):
+def _node(node_id, node_type="curio.builtin/python-computation", content=None):
     return {"id": node_id, "type": node_type,
             "content": content if content is not None else f"{node_id}_code()",
             "goal": f"goal {node_id}"}
@@ -245,7 +245,7 @@ class TestRunThroughNode:
         path = Path(__file__).resolve().parents[4] / "docs" / "examples" / "dataflows" / "multi-input.json"
         spec = json.loads(path.read_text(encoding="utf-8"))
         assert [n["type"] for n in spec["dataflow"]["nodes"]] == (
-            ["curio.builtin/data-loading"] * 2 + ["curio.builtin/computation-analysis"] * 2
+            ["curio.builtin/data-loading"] * 2 + ["curio.builtin/python-computation"] * 2
         )
         first, second, both, last = (n["id"] for n in spec["dataflow"]["nodes"])
         parsed = parse_workflow_dict(spec)
@@ -448,7 +448,7 @@ class TestDev118NotExecutableTarget:
         from utk_curio.backend.app.execution.workflow_spec import is_executable_kind
 
         # A Data Export's code writes the file its Download saves: it runs.
-        for kind in ("curio.builtin/data-loading", "curio.builtin/computation-analysis@1",
+        for kind in ("curio.builtin/data-loading", "curio.builtin/python-computation@1",
                      "curio.builtin/js-computation", "DATA_LOADING",
                      "curio.builtin/data-export@1", "curio.builtin/data-export", "DATA_EXPORT"):
             assert is_executable_kind(kind) is True, kind
@@ -483,7 +483,7 @@ class TestDev118NotExecutableTarget:
         report = runner.run_through_node(KEY, PID, spec, "c", exec_fn=rec)
         assert report["ok"] is True and report["notExecutable"] is False
         assert report["nodes"]["v"]["status"] == "pass-through"
-        assert [c[1]["nodeType"] for c in rec.calls] == ["curio.builtin/computation-analysis"] * 2
+        assert [c[1]["nodeType"] for c in rec.calls] == ["curio.builtin/python-computation"] * 2
         # What reaches c is a's own output, forwarded unchanged.
         assert rec.calls[-1][1]["file_path"] == report["nodes"]["a"]["output"]["path"]
         assert rec.calls[-1][1]["dataType"] == report["nodes"]["a"]["output"]["dataType"]
@@ -505,7 +505,7 @@ class TestDev118PriorOutputs:
         assert report["ok"] is True
         assert report["nodes"]["a"] == {"status": "reused", "executed": False, "output": {"path": "art-a", "dataType": "dataframe"}}
         assert report["nodes"]["b"]["status"] == "reused"
-        assert [c[1]["nodeType"] for c in rec.calls] == ["curio.builtin/computation-analysis"]  # only c ran
+        assert [c[1]["nodeType"] for c in rec.calls] == ["curio.builtin/python-computation"]  # only c ran
         assert rec.calls[0][1]["file_path"] == "art-b" and rec.calls[0][1]["dataType"] == "dataframe"
         assert report["nodes"]["c"]["executed"] is True
 
@@ -584,7 +584,7 @@ class TestDev119RosterClassification:
 
     ROSTER = {
         "curio.builtin/data-loading": {"executable": True, "engine": "python"},
-        "curio.builtin/computation-analysis": {"executable": True, "engine": "python"},
+        "curio.builtin/python-computation": {"executable": True, "engine": "python"},
         "curio.builtin/spatial-join": {"executable": False, "engine": "python"},
         "some.pkg/custom-python": {"executable": True, "engine": "python"},
         "some.pkg/custom-js": {"executable": True, "engine": "javascript"},
@@ -752,7 +752,7 @@ class TestInputSlotOrderIsTheHandle:
             "nodes": [
                 {"id": "b", "type": "curio.builtin/data-loading", "content": "return 1"},
                 {"id": "p", "type": "curio.builtin/data-loading", "content": "return 2"},
-                {"id": "t", "type": "curio.builtin/computation-analysis", "content": "return input_0"},
+                {"id": "t", "type": "curio.builtin/python-computation", "content": "return input_0"},
             ],
             "edges": [
                 {"id": "b396ed2d-3679-4b38-bbf7-5829d1db082c", "source": "b",

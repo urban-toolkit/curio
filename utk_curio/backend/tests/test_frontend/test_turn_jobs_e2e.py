@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 OWNER, EDITOR = "turns_owner_e2e", "turns_editor_e2e"
 OWNER_NAME, EDITOR_NAME = "Turns Owner", "Turns Editor"
 RESEARCHER = "agent.curio.researcher@1"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 NODE = "turns-node"
 CHAT = '[role="dialog"][aria-label^="Chat with Researcher"]'
 #: The hold Ben's second reply waits on at the model.

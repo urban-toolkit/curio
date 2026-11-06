@@ -145,7 +145,7 @@ class TestRenderPrompt:
         charts = json.loads((REPO_ROOT / "packages" / "curio.vega-lite@1" / "manifest.json").read_text(
             encoding="utf-8"))["templates"]
         assert "compare-scenarios" not in section and "Compare Scenarios" not in section
-        for named in ("curio.builtin/vis-vega", "curio.builtin/computation-analysis"):
+        for named in ("curio.builtin/vis-vega", "curio.builtin/python-computation"):
             assert "{{template.label:" + named + "}}" in section, named
         assert set(re.findall(r"\{\{template\.label:([^/{}]+)/", section)) == {"curio.builtin"}
         assert "curio.vega-lite" not in section and "curio.rasterization" not in section
@@ -275,7 +275,7 @@ class TestThePromptFacts:
         assert factor == reference_text("factor") == "[!! factor !!]"
         with pytest.raises(contracts.PromptTemplateError, match="not a widget name"):
             contracts.render_template("{{widgets.reference:2x}}")
-        python = contracts.render_template("{{template.label:curio.builtin/computation-analysis}}")
+        python = contracts.render_template("{{template.label:curio.builtin/python-computation}}")
         widgets = prompt_text("widgets/SKILL.md")
         assert f'a "type" ({kinds})' in widgets
         assert "`[!! threshold !!]` for the widget named threshold" in widgets
@@ -556,11 +556,12 @@ def _trill() -> dict:
     return json.loads((REPO_ROOT / contracts.TRILL_SCHEMA).read_text(encoding="utf-8"))
 
 
-#: The node vocabulary the preamble used before its lists were generated. No
-#: prompt names a node by it any more.
+#: The node vocabulary the preamble used before its lists were generated, and
+#: the Python node's enum name since its id became python-computation. No
+#: prompt names a node by them any more.
 _LEGACY_NAMES = (
     "DATA_LOADING", "DATA_EXPORT", "DATA_TRANSFORMATION", "COMPUTATION_ANALYSIS",
-    "VIS_VEGA", "VIS_SIMPLE", "DATA_POOL", "MERGE_FLOW", "AUTK_GRAMMAR",
+    "PYTHON_COMPUTATION", "VIS_VEGA", "VIS_SIMPLE", "DATA_POOL", "MERGE_FLOW", "AUTK_GRAMMAR",
 )
 
 

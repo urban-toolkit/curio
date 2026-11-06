@@ -46,7 +46,7 @@
                 "goal": "Return a small table with the row count of each of the two loaded tables.",
                 "id": "72daaf2f-a0a1-458f-836d-c42c8ccc32a1",
                 "title": "Row counts",
-                "type": "curio.builtin/computation-analysis"
+                "type": "curio.builtin/python-computation"
               }
             ]
           }
@@ -57,11 +57,11 @@
             "kind": "node",
             "summary": "Created a new Python Computation node · Row counts",
             "lines": [
-              "Python Computation · curio.builtin/computation-analysis",
+              "Python Computation · curio.builtin/python-computation",
               "node 72daaf2f-a0a1-458f-836d-c42c8ccc32a1"
             ],
             "nodeId": "72daaf2f-a0a1-458f-836d-c42c8ccc32a1",
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "undo": true
           }
         ],
@@ -72,7 +72,7 @@
           "tool": "node.create",
           "status": "applied",
           "arguments": {
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "title": "Row counts",
             "goal": "Return a small table with the row count of each of the two loaded tables.",
             "content": "import pandas as pd\n\n# The two loaded tables arrive together, as one tuple, on this node's one input.\ndf1 = input_0[0]\ndf2 = input_0[1]\n\nreturn pd.DataFrame({\"table\": [\"first\", \"second\"], \"rows\": [len(df1), len(df2)]})\n"
@@ -120,7 +120,7 @@
                 "goal": "Return a one-row table with how many buildings the table_osm_buildings layer holds.",
                 "id": "aa862bea-d1b6-419b-a291-7b09d83d4d01",
                 "title": "Building count",
-                "type": "curio.builtin/computation-analysis"
+                "type": "curio.builtin/python-computation"
               }
             ]
           }
@@ -131,11 +131,11 @@
             "kind": "node",
             "summary": "Created a new Python Computation node · Building count",
             "lines": [
-              "Python Computation · curio.builtin/computation-analysis",
+              "Python Computation · curio.builtin/python-computation",
               "node aa862bea-d1b6-419b-a291-7b09d83d4d01"
             ],
             "nodeId": "aa862bea-d1b6-419b-a291-7b09d83d4d01",
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "undo": true
           }
         ],
@@ -146,7 +146,7 @@
           "tool": "node.create",
           "status": "applied",
           "arguments": {
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "title": "Building count",
             "goal": "Return a one-row table with how many buildings the table_osm_buildings layer holds.",
             "content": "import pandas as pd\n\n# The buildings layer of the OpenStreetMap layers node's output, through its\n# layer chip: how many buildings it holds, as a one-row table.\nbuildings = [!! input_0:table_osm_buildings !!]\nreturn pd.DataFrame({\"buildings\": [len(buildings)]})\n"
@@ -196,7 +196,7 @@
                 "goal": "Return a one-row table with how many buildings the table_osm_buildings layer holds.",
                 "id": "aa862bea-d1b6-419b-a291-7b09d83d4d01",
                 "title": "Building count",
-                "type": "curio.builtin/computation-analysis"
+                "type": "curio.builtin/python-computation"
               }
             ]
           }
@@ -207,11 +207,11 @@
             "kind": "node",
             "summary": "Created a new Python Computation node · Building count",
             "lines": [
-              "Python Computation · curio.builtin/computation-analysis",
+              "Python Computation · curio.builtin/python-computation",
               "node aa862bea-d1b6-419b-a291-7b09d83d4d01"
             ],
             "nodeId": "aa862bea-d1b6-419b-a291-7b09d83d4d01",
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "undo": true
           }
         ],
@@ -222,7 +222,7 @@
           "tool": "node.create",
           "status": "applied",
           "arguments": {
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "title": "Building count",
             "goal": "Return a one-row table with how many buildings the table_osm_buildings layer holds.",
             "content": "import geopandas as gpd\nimport pandas as pd\n\n# The buildings layer of the OpenStreetMap layers node's output, through its\n# layer chip: how many buildings it holds, as a one-row table.\nbuildings = gpd.read_file(\"docs/examples/data/chicago_downtown.osm.pbf\", layer=\"multipolygons\")\nreturn pd.DataFrame({\"buildings\": [len(buildings)]})\n"

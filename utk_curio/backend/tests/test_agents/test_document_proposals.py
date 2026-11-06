@@ -26,13 +26,13 @@ from utk_curio.backend.tests.test_agents.test_document_validation import OWNERS_
 
 NB = "agent.curio.node-builder@1"
 DFB = "agent.curio.dataflow-builder@1"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 VEGA = "curio.builtin/vis-vega"
 AUTK = "curio.builtin/autk-grammar"
 
 #: A code node, and the chart and the map as curio.builtin@1 declares them.
 TEMPLATES = [
-    {"id": "computation-analysis", "label": "Computation Analysis", "category": "computation",
+    {"id": "python-computation", "label": "Python Computation", "category": "computation",
      "engine": "python", "editor": "code", "description": "Run python analysis code.",
      "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
      "outputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}]},

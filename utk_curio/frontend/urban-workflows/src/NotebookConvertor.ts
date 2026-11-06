@@ -99,7 +99,7 @@ function isVegaLiteJson(text: string): boolean {
 function inferNodeType(code: string): NodeType {
   if (DATA_LOADING_PATTERN.test(code)) return NodeType.DATA_LOADING;
   if (isVegaLiteJson(code)) return NodeType.VIS_VEGA;
-  return NodeType.COMPUTATION_ANALYSIS;
+  return NodeType.PYTHON_COMPUTATION;
 }
 
 // ── Import: Notebook → Trill ─────────────────────────────────────────────────
@@ -354,7 +354,7 @@ export async function notebookToTrill(
     // genuinely serves the rest of the dataflow - this is not just grouping.
     nodes.unshift({
       id: uuid(),
-      type: NodeType.COMPUTATION_ANALYSIS,
+      type: NodeType.PYTHON_COMPUTATION,
       x: -COLUMN_STRIDE / 2,
       y: -ROW_STRIDE / 2,
       title: SETUP_NODE_TITLE,
@@ -401,7 +401,7 @@ function outputVarName(node: TrillNode): string {
 /** Templates whose ``content`` is a Python function body, run as ``userCode(input_0, ...)``. */
 const PYTHON_BODY_TYPES = new Set<string>([
   NodeType.DATA_LOADING,
-  NodeType.COMPUTATION_ANALYSIS,
+  NodeType.PYTHON_COMPUTATION,
   NodeType.DATA_SUMMARY,
   NodeType.DATA_EXPORT,
 ]);

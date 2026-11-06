@@ -19,7 +19,7 @@ afterEach(() => clearVegaLiteTemplate());
 
 test("a package chart that draws with Vega-Lite is a view, as the Vega-Lite node is", () => {
   const nodes = [
-    node("tags", NodeType.COMPUTATION_ANALYSIS),
+    node("tags", NodeType.PYTHON_COMPUTATION),
     node("chart", NodeType.VIS_VEGA),
     node("donuts", VEGA_LITE_TEMPLATE),
     node("plain", "curio.vega-lite/donuts"),

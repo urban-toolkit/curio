@@ -263,7 +263,7 @@ beforeEach(() => {
   // A node upstream wired into the chart, nothing running.
   mockFlow = {
     nodes: [
-      { id: "up", type: "__curioUniversalNode", data: { nodeId: "up", nodeType: "curio.builtin/computation-analysis" } },
+      { id: "up", type: "__curioUniversalNode", data: { nodeId: "up", nodeType: "curio.builtin/python-computation" } },
       { id: CHART, type: "__curioUniversalNode", data: { nodeId: CHART, nodeType: VEGA } },
     ],
     edges: [{ id: "up->chart", source: "up", target: CHART, sourceHandle: "out", targetHandle: "in" }],

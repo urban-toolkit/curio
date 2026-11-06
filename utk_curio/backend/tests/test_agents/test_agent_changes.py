@@ -32,7 +32,7 @@ from utk_curio.backend.tests.test_agents.test_source_grounding_routes import (
 
 NB = "agent.curio.node-builder@1"
 DFB = "agent.curio.dataflow-builder@1"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 
 
 def _nodes() -> list[dict]:

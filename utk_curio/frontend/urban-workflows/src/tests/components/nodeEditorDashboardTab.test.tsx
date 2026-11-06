@@ -53,7 +53,7 @@ const baseProps = {
   setOutputCallback: jest.fn(),
   data: { nodeId: "n1", outputCallback: jest.fn() },
   output: { code: "", content: "" },
-  nodeType: "curio.builtin/computation-analysis",
+  nodeType: "curio.builtin/python-computation",
   readOnly: false,
   applyGrammar: jest.fn(),
   code: true,

@@ -23,7 +23,7 @@ from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turn
 NB = "agent.curio.node-builder@1"
 DF = "agent.curio.dataset-finder@1"
 DL = "curio.builtin/data-loading"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 
 NOAA = "https://api.noaa.gov/climate/v1/data"
 GHOST = "https://portal.example.gov/resource/zzzz-0000.json"
@@ -37,7 +37,7 @@ TEMPLATES = [
         "inputPorts": [], "outputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}],
     },
     {
-        "id": "computation-analysis", "label": "Computation Analysis",
+        "id": "python-computation", "label": "Python Computation",
         "category": "computation", "engine": "python", "editor": "code",
         "description": "Run python analysis code.",
         "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],

@@ -52,9 +52,9 @@ TOKENS = {"bob": "bob-token-for-tests", "erin": "erin-token-for-tests", "carol":
 #: first line of each node's code names it in what the sandbox is sent.
 NODES = {
     "helpers": ("ai.test.flood-tools/depth", "from flood_helpers import depth\nreturn depth(2)\n"),
-    "flood": ("curio.builtin/computation-analysis", f'model = curio_load_model("{FLOOD_MODEL}")\nreturn 1\n'),
+    "flood": ("curio.builtin/python-computation", f'model = curio_load_model("{FLOOD_MODEL}")\nreturn 1\n'),
     "calc": ("curio.rasterization/raster-calculator", "return 1\n"),
-    "private": ("curio.builtin/computation-analysis", f'model = curio_load_model("{PRIVATE_MODEL}")\nreturn 1\n'),
+    "private": ("curio.builtin/python-computation", f'model = curio_load_model("{PRIVATE_MODEL}")\nreturn 1\n'),
 }
 
 

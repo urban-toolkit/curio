@@ -531,8 +531,8 @@ class TestTheWriteGateInTheLoop:
 
         node = {"id": "n1", "type": VEGA, "goal": "Trips per scenario", "content": ""}
         plans = [
-            {"id": "today", "type": "curio.builtin/computation-analysis", "content": "return input_0", "title": "Today"},
-            {"id": "bus", "type": "curio.builtin/computation-analysis", "content": "return input_0", "title": "Bus"},
+            {"id": "today", "type": "curio.builtin/python-computation", "content": "return input_0", "title": "Today"},
+            {"id": "bus", "type": "curio.builtin/python-computation", "content": "return input_0", "title": "Bus"},
         ]
         spec = {"dataflow": {
             "nodes": [*plans, node], "name": "wf", "task": "t",
@@ -1243,7 +1243,7 @@ class TestAColumnWhoseNameHoldsADot:
                 "metadata": {"widgets": widgets}}
         # Each scenario's table on a circle of its own, as the chart reads them
         # stacked: the two tables Solve hands on as the node's upstream.
-        feeds = [{"id": f"rain-{circle}", "type": "curio.builtin/computation-analysis", "content": "return 1"}
+        feeds = [{"id": f"rain-{circle}", "type": "curio.builtin/python-computation", "content": "return 1"}
                  for circle in (0, 1)]
         edges = [{"id": f"e-rain-{circle}", "source": f"rain-{circle}", "target": "n1", "sourceHandle": "out",
                   "targetHandle": "in" if circle == 0 else f"in_{circle}"} for circle in (0, 1)]

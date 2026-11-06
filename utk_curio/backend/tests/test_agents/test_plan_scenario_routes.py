@@ -13,12 +13,12 @@ import json
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents import test_routes_proposals as routes
 
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 POOL = "curio.builtin/data-pool"
 
 #: The test builtin package of the plan route tests.
 TEMPLATES = [
-    {"id": "computation-analysis", "label": "Computation Analysis", "category": "computation",
+    {"id": "python-computation", "label": "Python Computation", "category": "computation",
      "engine": "python", "editor": "code", "description": "Run python analysis code.",
      "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
      "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},

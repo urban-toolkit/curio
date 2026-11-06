@@ -43,7 +43,7 @@ const mockBuiltin = [
     { id: "curio.builtin/data-summary@1", label: "Data Summary", category: "data" },
     { id: "curio.builtin/spatial-join@1", label: "Spatial Join", category: "data" },
     { id: "curio.builtin/data-pool@1", label: "Data Pool", category: "data" },
-    { id: "curio.builtin/computation-analysis@1", label: "Python Computation", category: "computation" },
+    { id: "curio.builtin/python-computation@1", label: "Python Computation", category: "computation" },
     { id: "curio.builtin/js-computation@1", label: "JS Computation", category: "computation" },
     { id: "curio.builtin/autk-grammar@1", label: "Autark", category: "vis_grammar", badge: "AUTK" },
     { id: "curio.builtin/vis-vega@1", label: "Vega-Lite", category: "vis_grammar", badge: "VEGA" },

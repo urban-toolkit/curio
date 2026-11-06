@@ -1051,7 +1051,7 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
         assert model_ids_in_code(node["content"]) == [MODEL_ID]
         assert dataset_ids_in_code(node["content"]) == []
     assert "curio.builtin/parameter" not in by_type
-    (season,) = by_type["curio.builtin/computation-analysis"]
+    (season,) = by_type["curio.builtin/python-computation"]
     assert season["title"] == "Season"
     # Its header and the chips it feeds name it Season, not its type's name.
     assert season["title"] == "Season"
@@ -1075,7 +1075,7 @@ def test_the_shipped_dataflow_runs_the_packages_as_the_palette_drops_them():
         assert heights["type"] == RASTERIZE_TYPE
         assert into[(shadow["id"], "in")] == heights["id"]
     # The one Python node is the Season node, which reads no input.
-    assert [node["id"] for node in by_type["curio.builtin/computation-analysis"]] == [season["id"]], (
+    assert [node["id"] for node in by_type["curio.builtin/python-computation"]] == [season["id"]], (
         "a node still picks a part of the rasterizer's output"
     )
 
@@ -1265,7 +1265,7 @@ def test_example_24_feeds_the_rasterizers_one_raster_to_the_node_and_the_mask():
     assert into[(shadow, "in")] == rasterizer
     assert (into[(statistics, "in")], into[(statistics, "in_1")]) == (shadow, rasterizer)
     assert sorted(out_of[shadow]) == sorted([CALCULATOR_TYPE, "curio.builtin/autk-grammar"])
-    assert "curio.builtin/computation-analysis" not in {node["type"] for node in nodes.values()}
+    assert "curio.builtin/python-computation" not in {node["type"] for node in nodes.values()}
 
 
 def test_the_two_scenarios_are_scouts_two_building_sets(tmp_path):

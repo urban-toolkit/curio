@@ -42,8 +42,8 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-ANALYSIS_TILE = "#tile-computation-analysis"
-ANALYSIS_TYPE = "curio.builtin/computation-analysis"
+ANALYSIS_TILE = "#tile-python-computation"
+ANALYSIS_TYPE = "curio.builtin/python-computation"
 POS_FIRST = (150, 150)
 POS_SECOND = (760, 150)
 POS_THIRD = (760, 560)

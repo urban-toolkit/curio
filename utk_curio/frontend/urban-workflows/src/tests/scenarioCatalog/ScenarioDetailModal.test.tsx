@@ -81,7 +81,7 @@ describe("ScenarioDetailModal", () => {
     expect(section("Shared context").getByText("Load parcels")).toBeInTheDocument();
     expect(section("Scenario-specific nodes").getByText("Filter roofs")).toBeInTheDocument();
     // No title of its own, and no registry in a test: the template's name.
-    expect(section("Scenario-specific nodes").getByText("computation-analysis")).toBeInTheDocument();
+    expect(section("Scenario-specific nodes").getByText("python-computation")).toBeInTheDocument();
     expect(section("Shared outcomes").getByText("vis-vega")).toBeInTheDocument();
   });
 

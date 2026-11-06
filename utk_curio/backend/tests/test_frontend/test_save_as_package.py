@@ -173,7 +173,7 @@ def _spec() -> dict:
             "nodes": [
                 {
                     "id": NODE_ID,
-                    "type": "curio.builtin/computation-analysis",
+                    "type": "curio.builtin/python-computation",
                     "x": 420,
                     "y": 300,
                     "content": NODE_CODE,

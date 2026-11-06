@@ -516,7 +516,7 @@ class TestAttachRequiresGating:
             "name": "p",
             "spec": {"dataflow": {"nodes": [
                 {"id": "load1", "type": "curio.builtin/data-loading", "content": ""},
-                {"id": "comp1", "type": "curio.builtin/computation-analysis", "content": ""},
+                {"id": "comp1", "type": "curio.builtin/python-computation", "content": ""},
                 {"id": "legacy1", "type": "DATA_LOADING", "content": ""},
                 {"id": "ver1", "type": "curio.builtin/data-loading@1", "content": ""},
             ], "edges": [], "packages": []}},

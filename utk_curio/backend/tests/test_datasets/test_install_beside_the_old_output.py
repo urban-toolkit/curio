@@ -45,7 +45,7 @@ def _install(art_id: str, data_type: str):
         data_type=data_type,
         node_name="Python Computation",
         dataflow_id=DATAFLOW,
-        node_type="curio.builtin/computation-analysis",
+        node_type="curio.builtin/python-computation",
     )
 
 

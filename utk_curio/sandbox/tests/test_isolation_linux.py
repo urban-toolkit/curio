@@ -212,7 +212,7 @@ def run_isolated(config, code, **kwargs):
     from utk_curio.sandbox.isolation import runner
 
     return runner.execute_isolated(
-        code, "", "curio.builtin/computation-analysis", "",
+        code, "", "curio.builtin/python-computation", "",
         save_dataset=False, config=config, **kwargs
     )
 
@@ -446,7 +446,7 @@ def test_an_editors_run_imports_the_owners_libraries_after_his_own(isolated, wor
                 "    print(' '.join(found))\n"
                 "    return 1\n"
             ),
-            "file_path": "", "nodeType": "curio.builtin/computation-analysis", "dataType": "",
+            "file_path": "", "nodeType": "curio.builtin/python-computation", "dataType": "",
             "session_id": "session-editor-libraries", "save_dataset": False, "user_key": user_key, **body,
         })
         reply = json.loads(resp.get_data(as_text=True))
@@ -1514,7 +1514,7 @@ def test_a_node_cannot_read_another_sessions_artifact(isolated, workspace):
     from utk_curio.sandbox.isolation import runner
 
     result = runner.execute_isolated(
-        "    return 1\n", foreign, "curio.builtin/computation-analysis", "",
+        "    return 1\n", foreign, "curio.builtin/python-computation", "",
         session_id="session-b", save_dataset=False, config=isolated,
     )
     assert result["output"]["path"] == ""

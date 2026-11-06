@@ -108,7 +108,7 @@ TRANSFORM = "ai.utk.uhvi/uhvi-zones"
 VEGA = "curio.builtin/vis-vega"
 POOL = "curio.builtin/data-pool"
 #: A node that takes several inputs, one per circle (what a Merge Flow fed).
-ANALYSIS = "curio.builtin/computation-analysis"
+ANALYSIS = "curio.builtin/python-computation"
 
 
 class TestTheSchemaItself:
@@ -204,7 +204,7 @@ class TestNormalizationKeepsWhatItMust:
 
     def test_a_different_template_changes_the_graph(self):
         one = _spec([_node("a", LOADER), _node("b", TRANSFORM)], [_edge("a", "b")])
-        other = _spec([_node("a", LOADER), _node("b", "curio.builtin/computation-analysis")],
+        other = _spec([_node("a", LOADER), _node("b", "curio.builtin/python-computation")],
                       [_edge("a", "b")])
         assert canonical_graph_from_spec(one, templates=TEMPLATES).type_counts() != (
             canonical_graph_from_spec(other, templates=TEMPLATES).type_counts()
@@ -288,7 +288,7 @@ class TestRoles:
         assert role_for_template(TEMPLATES[VEGA], has_incoming_data_edge=True) == "visualization"
         assert role_for_template(TEMPLATES[POOL], has_incoming_data_edge=True) == "pool"
         assert role_for_template(
-            TEMPLATES["curio.builtin/computation-analysis"], has_incoming_data_edge=True
+            TEMPLATES["curio.builtin/python-computation"], has_incoming_data_edge=True
         ) == "analysis"
         assert role_for_template(
             TEMPLATES["curio.builtin/data-export"], has_incoming_data_edge=True

@@ -121,7 +121,7 @@ EXAMPLE_NAME = "Back Bay road sunlight when buildings change"
 AUTARK = "curio.builtin/autk-grammar"
 COMPARE = "curio.builtin/compare-scenarios"
 BARS = "curio.vega-lite/bars"
-PYTHON = "curio.builtin/computation-analysis"
+PYTHON = "curio.builtin/python-computation"
 VEGA = "curio.builtin/vis-vega"
 #: The chart the second test wires to the two dropped Roads nodes: mean
 #: sunlight per scenario, its rows its inputs stacked under their boxes, in

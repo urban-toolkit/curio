@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/29-pytorch-street-photos.json",
-    "sha256": "57032640df315217d09bc7b99df14131a222aed352a6611dc4d64f073fc76d15",
+    "sha256": "19fcf38d0560082bfe0320eecaf707f68d378a6325dd234cb217e85a0ecbdb78",
     "walkthrough": "docs/examples/29-pytorch-street-photos.md"
   },
   "prompt": "Load the Mapillary street photo sample around Lincoln Park in Chicago from the Data Catalog. For each photo, measure with convolutions in PyTorch, on the GPU when there is one, the share of its pixels that are green (twice the green channel minus red and blue, smoothed) and the share that lie on edges (Sobel gradients of the brightness), and write an overlay of the photo with those pixels marked, linked from the result as a derived image of that photo. Show each photo beside its overlay with the two shares, the device and its photographer, and a bar chart ranking the photos by their green share.",
@@ -18,16 +18,16 @@
   "expected": {
     "nodes": [
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "loader1",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
         "executable": true,
         "hasContent": true
       },
@@ -48,6 +48,11 @@
     ],
     "edges": [
       {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
         "from": "analysis1",
         "to": "visualization1",
         "kind": "data"
@@ -55,11 +60,6 @@
       {
         "from": "analysis1",
         "to": "visualization2",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "analysis1",
         "kind": "data"
       }
     ],

@@ -23,10 +23,10 @@ TOKEN = "test-sandbox-token"
 # anything, so a 401 here proves the decorator ran first.
 GUARDED = (
     ("post", "/exec", {"json": {"code": "    return 1\n", "file_path": "",
-                                "nodeType": "curio.builtin/computation-analysis",
+                                "nodeType": "curio.builtin/python-computation",
                                 "dataType": ""}}),
     ("post", "/execJs", {"json": {"code": "return 1;", "file_path": "",
-                                  "nodeType": "curio.builtin/computation-analysis",
+                                  "nodeType": "curio.builtin/python-computation",
                                   "dataType": ""}}),
     ("get", "/get", {"query_string": {"fileName": "does-not-exist"}}),
     # Reports free capacity and carries raw failure text. Only the backend
@@ -82,7 +82,7 @@ class TestGuardedRoutes(SandboxAuthTestCase):
                 "/exec",
                 headers={auth.TOKEN_HEADER: "x"},
                 json={"code": "    return 1\n", "file_path": "",
-                      "nodeType": "curio.builtin/computation-analysis",
+                      "nodeType": "curio.builtin/python-computation",
                       "dataType": ""},
             )
         self.assertEqual(response.status_code, 401)

@@ -635,7 +635,7 @@ BUILTIN_TILES: tuple[str, ...] = (
     "data-summary",
     "spatial-join",
     "data-pool",
-    "computation-analysis",
+    "python-computation",
     "js-computation",
     "autk-grammar",
     "vis-vega",

@@ -124,7 +124,7 @@ const DATA_LOADING = 'curio.builtin/data-loading';
 const DATA_POOL = 'curio.builtin/data-pool';
 const VEGA = 'curio.builtin/vis-vega';
 /** Python Computation: one input port that grows a circle per edge. */
-const COMPUTATION = 'curio.builtin/computation-analysis';
+const COMPUTATION = 'curio.builtin/python-computation';
 
 // The node a load restores, and the nodes below it.
 /** A frame, saved. */
@@ -348,7 +348,7 @@ describe('a load hands each restored output to each node below it once', () => {
     await settle();
 
     // A canvas asks for the results an invited editor's runs left it with.
-    expect(mockGetShared).toHaveBeenCalledWith(PROJECT_ID, { lastResults: true });
+    expect(mockGetShared).toHaveBeenCalledWith(PROJECT_ID, { lastResults: true, signal: expect.any(AbortSignal) });
     expectEachRestoredOutputOnce();
   });
 

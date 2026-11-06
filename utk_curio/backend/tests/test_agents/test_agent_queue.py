@@ -39,7 +39,7 @@ from utk_curio.backend.tests.test_agents.test_source_grounding_routes import _at
 
 NB = "agent.curio.node-builder@1"
 DFB = "agent.curio.dataflow-builder@1"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 #: How long the test waits for the other agent's queue before it fails.
 WAIT_S = 20.0
 

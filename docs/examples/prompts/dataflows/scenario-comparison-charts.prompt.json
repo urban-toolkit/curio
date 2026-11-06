@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/scenario-comparison-charts.json",
-    "sha256": "de6e2931fee5b8c15f116b95737a3997bde50e0a32596ebc65464c926bd88a7b",
+    "sha256": "435128a025abd685b80003d3fcd1785ecbf19b4e245ee6bcd35fcce47de24aa2",
     "walkthrough": null
   },
   "prompt": "Make a gallery of nine ways to chart a comparison of scenarios, one row per example table from the Data Catalog: pedestrians per hour on four streets, flood damage curves, flooded streets by depth, peak depths of simulated storms, daily trips by mode, building carbon by life-cycle stage, park area in shade, bike route factors and green roof systems. Each table names its scenario in a case column. For every scenario keep its rows in a step of its own, with the case picked by a choice widget, and make that step the scenario; the 10-, 50- and 100-year storms are one scenario each across the two storm tables. Chart each table's scenarios in one Vega-Lite chart that reads each scenario's step directly and draws each scenario in its color: the pedestrians as lines with a band in a panel per street, the damage curves as one curve per damage state, the flooded streets as grouped bars with error bars, the peak depths as a strip of ticks per storm with its median, the daily trips as grouped bars by mode, the building carbon as stacked bars with their totals, the park shade as a donut per design, the bike route factors as a matrix of circles sized by weight and the green roof systems as a table. Those nine charts are not part of the standard node set, so whatever provides them needs installing first.",
@@ -28,174 +28,6 @@
   },
   "expected": {
     "nodes": [
-      {
-        "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis2",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis3",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis4",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis5",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis6",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis7",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis8",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis9",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis10",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis11",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis12",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis13",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis14",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis15",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis16",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis17",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis18",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis19",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis20",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis21",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis22",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis23",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis24",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
       {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
@@ -256,6 +88,174 @@
         "ref": "loader9",
         "type": "curio.builtin/data-loading",
         "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis5",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis6",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis7",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis8",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis9",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis10",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis11",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis12",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis13",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis14",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis15",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis16",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis17",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis18",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis19",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis20",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis21",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis22",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis23",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis24",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
         "executable": true,
         "hasContent": true
       },
@@ -324,6 +324,126 @@
       }
     ],
     "edges": [
+      {
+        "from": "loader1",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis5",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "analysis6",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "analysis7",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
+        "to": "analysis15",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
+        "to": "analysis16",
+        "kind": "data"
+      },
+      {
+        "from": "loader4",
+        "to": "analysis17",
+        "kind": "data"
+      },
+      {
+        "from": "loader4",
+        "to": "analysis18",
+        "kind": "data"
+      },
+      {
+        "from": "loader5",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader5",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "loader5",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "loader6",
+        "to": "analysis8",
+        "kind": "data"
+      },
+      {
+        "from": "loader6",
+        "to": "analysis9",
+        "kind": "data"
+      },
+      {
+        "from": "loader6",
+        "to": "analysis10",
+        "kind": "data"
+      },
+      {
+        "from": "loader7",
+        "to": "analysis19",
+        "kind": "data"
+      },
+      {
+        "from": "loader7",
+        "to": "analysis20",
+        "kind": "data"
+      },
+      {
+        "from": "loader7",
+        "to": "analysis21",
+        "kind": "data"
+      },
+      {
+        "from": "loader8",
+        "to": "analysis22",
+        "kind": "data"
+      },
+      {
+        "from": "loader8",
+        "to": "analysis23",
+        "kind": "data"
+      },
+      {
+        "from": "loader8",
+        "to": "analysis24",
+        "kind": "data"
+      },
+      {
+        "from": "loader9",
+        "to": "analysis11",
+        "kind": "data"
+      },
+      {
+        "from": "loader9",
+        "to": "analysis12",
+        "kind": "data"
+      },
+      {
+        "from": "loader9",
+        "to": "analysis13",
+        "kind": "data"
+      },
+      {
+        "from": "loader9",
+        "to": "analysis14",
+        "kind": "data"
+      },
       {
         "from": "analysis1",
         "to": "visualization1",
@@ -458,126 +578,6 @@
         "to": "visualization9",
         "kind": "data",
         "slot": 2
-      },
-      {
-        "from": "loader1",
-        "to": "analysis4",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "analysis5",
-        "kind": "data"
-      },
-      {
-        "from": "loader2",
-        "to": "analysis6",
-        "kind": "data"
-      },
-      {
-        "from": "loader2",
-        "to": "analysis7",
-        "kind": "data"
-      },
-      {
-        "from": "loader3",
-        "to": "analysis15",
-        "kind": "data"
-      },
-      {
-        "from": "loader3",
-        "to": "analysis16",
-        "kind": "data"
-      },
-      {
-        "from": "loader4",
-        "to": "analysis17",
-        "kind": "data"
-      },
-      {
-        "from": "loader4",
-        "to": "analysis18",
-        "kind": "data"
-      },
-      {
-        "from": "loader5",
-        "to": "analysis1",
-        "kind": "data"
-      },
-      {
-        "from": "loader5",
-        "to": "analysis2",
-        "kind": "data"
-      },
-      {
-        "from": "loader5",
-        "to": "analysis3",
-        "kind": "data"
-      },
-      {
-        "from": "loader6",
-        "to": "analysis8",
-        "kind": "data"
-      },
-      {
-        "from": "loader6",
-        "to": "analysis9",
-        "kind": "data"
-      },
-      {
-        "from": "loader6",
-        "to": "analysis10",
-        "kind": "data"
-      },
-      {
-        "from": "loader7",
-        "to": "analysis19",
-        "kind": "data"
-      },
-      {
-        "from": "loader7",
-        "to": "analysis20",
-        "kind": "data"
-      },
-      {
-        "from": "loader7",
-        "to": "analysis21",
-        "kind": "data"
-      },
-      {
-        "from": "loader8",
-        "to": "analysis22",
-        "kind": "data"
-      },
-      {
-        "from": "loader8",
-        "to": "analysis23",
-        "kind": "data"
-      },
-      {
-        "from": "loader8",
-        "to": "analysis24",
-        "kind": "data"
-      },
-      {
-        "from": "loader9",
-        "to": "analysis11",
-        "kind": "data"
-      },
-      {
-        "from": "loader9",
-        "to": "analysis12",
-        "kind": "data"
-      },
-      {
-        "from": "loader9",
-        "to": "analysis13",
-        "kind": "data"
-      },
-      {
-        "from": "loader9",
-        "to": "analysis14",
-        "kind": "data"
       }
     ],
     "sources": {

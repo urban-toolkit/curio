@@ -125,7 +125,7 @@ def test_normalize_trims_dedupes_and_keeps_one_complexity():
 def test_derive_reads_node_types_imports_and_datasets():
     spec = {"dataflow": {"nodes": [
         {"type": "curio.builtin/autk-grammar@1", "content": '{"compute": [{}]}'},
-        {"type": "curio.builtin/computation-analysis", "content": "import geopandas as gpd"},
+        {"type": "curio.builtin/python-computation", "content": "import geopandas as gpd"},
     ], "edges": [], "datasets": [{"dirName": "data.x@1"}]}}
     derived = derive(spec, lambda _id: ("geotiff", None))
     assert derived == {
@@ -167,7 +167,7 @@ def test_a_node_from_a_scout_model_package_tags_the_dataflow_scout():
 def test_a_scout_model_loaded_in_a_code_node_tags_the_dataflow_scout():
     node = {
         "id": "a",
-        "type": "curio.builtin/computation-analysis@1",
+        "type": "curio.builtin/python-computation@1",
         "content": 'model = curio_load_model("model.scout.weather-gnn")\nreturn model',
     }
     assert _tags([node]) == ["SCOUT"]

@@ -116,7 +116,7 @@ class TestExecutionSeamWrite:
     def _post(self, client, token, body):
         return client.post(
             "/processPythonCode",
-            json={"code": "print(1)", "nodeType": "curio.builtin/computation-analysis",
+            json={"code": "print(1)", "nodeType": "curio.builtin/python-computation",
                   "input": None, "saveOutputDataset": False, **body},
             headers=_auth(token),
         )

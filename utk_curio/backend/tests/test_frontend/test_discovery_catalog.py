@@ -62,7 +62,7 @@ def _one_node_spec() -> dict:
             "nodes": [
                 {
                     "id": "discovery-baseline-node",
-                    "type": "curio.builtin/computation-analysis",
+                    "type": "curio.builtin/python-computation",
                     "x": 420,
                     "y": 300,
                     "content": "return [1]",

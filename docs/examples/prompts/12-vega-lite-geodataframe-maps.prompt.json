@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/12-vega-lite-geodataframe-maps.json",
-    "sha256": "a8bfa1fc243c21baa720122d2a29c86e3c384bc6095dc2e8d5c95b4fb9c56892",
+    "sha256": "385737eea3d0e428e2f8fd339fa2b1ed534d48f9d0de0d9f83aba650d8d9654d",
     "walkthrough": "docs/examples/12-vega-lite-geodataframe-maps.md"
   },
   "prompt": "Load the Chicago ZIP boundary polygons from the Data Catalog and draw them as a map straight from the frame, without converting anything first. Then take the centroid of each polygon and show a second map with the polygons and their centre points together, and add an ordinary non-spatial chart off the same table so I can see the attributes beside the geometry.",
@@ -19,13 +19,6 @@
   "expected": {
     "nodes": [
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
         "role": "loader",
@@ -33,10 +26,10 @@
         "hasContent": true
       },
       {
-        "ref": "visualization1",
-        "type": "curio.builtin/vis-vega",
-        "role": "visualization",
-        "executable": false,
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
         "hasContent": true
       },
       {
@@ -52,14 +45,16 @@
         "role": "visualization",
         "executable": false,
         "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
       }
     ],
     "edges": [
-      {
-        "from": "analysis1",
-        "to": "visualization1",
-        "kind": "data"
-      },
       {
         "from": "loader1",
         "to": "analysis1",
@@ -73,6 +68,11 @@
       {
         "from": "loader1",
         "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization1",
         "kind": "data"
       }
     ],

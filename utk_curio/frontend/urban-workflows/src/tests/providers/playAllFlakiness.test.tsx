@@ -333,7 +333,7 @@ describe('Play All orchestration — flakiness vectors', () => {
       });
       new PythonInterpreter().interpretCode(
         'return 1', 'return 1', '', [], jest.fn(),
-        NodeType.COMPUTATION_ANALYSIS, 'A2', 'workflow-1', jest.fn(),
+        NodeType.PYTHON_COMPUTATION, 'A2', 'workflow-1', jest.fn(),
       );
       await act(async () => {
         api.signalNodeExecDone('A');

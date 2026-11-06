@@ -1137,7 +1137,7 @@ class TestSessionRealData:
         with s.step("Compute something from it",
                     "Income per capita, and the column names my CSV really has.",
                     chapter="Working with it"):
-            transform_id = grid_drop(s, "computation-analysis", 0, 1)
+            transform_id = grid_drop(s, "python-computation", 0, 1)
             connect_nodes(page, loader_id, transform_id)
             set_node_code(
                 page, transform_id,
@@ -1154,7 +1154,7 @@ class TestSessionRealData:
             )
             output = run_and_report(
                 s, transform_id, label="the transformation over my CSV",
-                node_type="curio.builtin/computation-analysis",
+                node_type="curio.builtin/python-computation",
             )
             flat = " ".join(output.split())
             if "Rogers Park, North" not in flat and "Rogers Park" not in flat:
@@ -1195,7 +1195,7 @@ class TestSessionRealData:
             s.tour.beat(800)
             run_and_report(
                 s, transform_id, label="the transformation, saving its output",
-                node_type="curio.builtin/computation-analysis",
+                node_type="curio.builtin/python-computation",
             )
 
         with s.step("Look for the computed dataset in the catalog",
@@ -1546,7 +1546,7 @@ class TestSessionExtending:
             page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
             loader_id = drop_node(s, "data-loading", (150, 150))
             set_node_code(page, loader_id, QUICKSTART_LOADER)
-            transform_id = drop_node(s, "computation-analysis", (760, 150))
+            transform_id = drop_node(s, "python-computation", (760, 150))
             connect_nodes(page, loader_id, transform_id)
             set_node_code(
                 page, transform_id,
@@ -1561,7 +1561,7 @@ class TestSessionExtending:
             )
             run_and_report(
                 s, transform_id, label="my ranking transformation",
-                node_type="curio.builtin/computation-analysis",
+                node_type="curio.builtin/python-computation",
             )
             _fit_view(page)
             s.state.update(loader=loader_id, transform=transform_id)
@@ -2013,15 +2013,15 @@ class TestSessionAbuse:
         with s.step("Build a three-node chain to abuse"):
             set_canvas_zoom(page, 0.6)
             loader = grid_drop(s, "data-loading", 0, 0)
-            middle = grid_drop(s, "computation-analysis", 1, 0)
-            tail = grid_drop(s, "computation-analysis", 2, 0)
+            middle = grid_drop(s, "python-computation", 1, 0)
+            tail = grid_drop(s, "python-computation", 2, 0)
             connect_nodes(page, loader, middle)
             connect_nodes(page, middle, tail)
             set_node_code(page, loader, QUICKSTART_LOADER)
             set_node_code(page, middle, "df = input_0.copy()\ndf['c'] = df['b'] * 2\nreturn df\n")
             set_node_code(page, tail, "df = input_0\nprint('tail sees', list(df.columns))\nreturn df\n")
             run_and_report(s, tail, label="the chain's tail",
-                           node_type="curio.builtin/computation-analysis")
+                           node_type="curio.builtin/python-computation")
             _fit_view(page)
             s.state.update(loader=loader, middle=middle, tail=tail)
 
@@ -2058,7 +2058,7 @@ class TestSessionAbuse:
             play_node(page, s.state["tail"])
             status = wait_for_node_settled(
                 page, s.state["tail"],
-                node_type="curio.builtin/computation-analysis",
+                node_type="curio.builtin/python-computation",
                 timeout_ms=90000,
             )
             s.note(f"running inside a cycle settled as {status!r}")
@@ -2110,7 +2110,7 @@ class TestSessionAbuse:
                 play_node(page, s.state["tail"])
                 status = wait_for_node_settled(
                     page, s.state["tail"],
-                    node_type="curio.builtin/computation-analysis",
+                    node_type="curio.builtin/python-computation",
                     timeout_ms=90000,
                 )
                 s.note(
@@ -2120,7 +2120,7 @@ class TestSessionAbuse:
         with s.step("Import a library nobody installed",
                     "Library install is refused for guests, so this must explain "
                     "itself.", quiet_console=True):
-            probe = grid_drop(s, "computation-analysis", 0, 2)
+            probe = grid_drop(s, "python-computation", 0, 2)
             set_node_code(
                 page, probe,
                 "import curio_definitely_not_a_real_package as nope\n"
@@ -2128,7 +2128,7 @@ class TestSessionAbuse:
             )
             play_node(page, probe)
             status = wait_for_node_settled(
-                page, probe, node_type="curio.builtin/computation-analysis",
+                page, probe, node_type="curio.builtin/python-computation",
                 timeout_ms=120000,
             )
             detail = " ".join(
@@ -2207,7 +2207,7 @@ class TestSessionAbuse:
         with s.step("Navigate away in the middle of a run",
                     "Then come back and see what state the node is in.",
                     expect="either", quiet_console=True):
-            slow = grid_drop(s, "computation-analysis", 1, 2)
+            slow = grid_drop(s, "python-computation", 1, 2)
             set_node_code(
                 page, slow,
                 "import time\n"

@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-CODE = "curio.builtin/computation-analysis"
+CODE = "curio.builtin/python-computation"
 
 
 def _auth(token):

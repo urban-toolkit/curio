@@ -5,8 +5,8 @@
       "name": "a scenario reads a loader outside it, and the node it feeds is its shared outcome",
       "nodes": [
         {"id": "load", "type": "curio.builtin/data-loading@1", "content": "return 1"},
-        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
-        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"}
+        {"id": "a", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
+        {"id": "b", "type": "curio.builtin/python-computation@1", "content": "return input_0"}
       ],
       "edges": [
         {"source": "load", "target": "a"},
@@ -21,9 +21,9 @@
       "name": "a node deeper upstream is shared context, and its output saves nothing",
       "nodes": [
         {"id": "raw", "type": "curio.builtin/data-loading@1", "content": "return 1"},
-        {"id": "clean", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
-        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
-        {"id": "out", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"}
+        {"id": "clean", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
+        {"id": "a", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
+        {"id": "out", "type": "curio.builtin/python-computation@1", "content": "return input_0"}
       ],
       "edges": [
         {"source": "raw", "target": "clean"},
@@ -38,11 +38,11 @@
       "name": "a scenario that keeps no lists gets the ones Curio infers, stopping at every box",
       "nodes": [
         {"id": "raw", "type": "curio.builtin/data-loading@1", "content": "return 1"},
-        {"id": "clean", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
-        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
-        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
-        {"id": "out", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
-        {"id": "after", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"}
+        {"id": "clean", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
+        {"id": "a", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
+        {"id": "b", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
+        {"id": "out", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
+        {"id": "after", "type": "curio.builtin/python-computation@1", "content": "return input_0"}
       ],
       "edges": [
         {"source": "raw", "target": "clean"},
@@ -62,9 +62,9 @@
       "name": "two scenarios of one set read one context and feed one comparison, each saved once",
       "nodes": [
         {"id": "load", "type": "curio.builtin/data-loading@1", "content": "return 1"},
-        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
-        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
-        {"id": "compare", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"}
+        {"id": "a", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
+        {"id": "b", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
+        {"id": "compare", "type": "curio.builtin/python-computation@1", "content": "return input_0"}
       ],
       "edges": [
         {"source": "load", "target": "a"},
@@ -86,9 +86,9 @@
       "name": "a context node a shared outcome reads itself is the boundary too",
       "nodes": [
         {"id": "layers", "type": "curio.builtin/data-loading@1", "content": "return 1"},
-        {"id": "prep", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
-        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
-        {"id": "map", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"}
+        {"id": "prep", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
+        {"id": "a", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
+        {"id": "map", "type": "curio.builtin/python-computation@1", "content": "return input_0"}
       ],
       "edges": [
         {"source": "layers", "target": "prep"},
@@ -103,8 +103,8 @@
     {
       "name": "a shared outcome reading another is no boundary of it",
       "nodes": [
-        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return 1"},
-        {"id": "change", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
+        {"id": "a", "type": "curio.builtin/python-computation@1", "content": "return 1"},
+        {"id": "change", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
         {"id": "chart", "type": "curio.builtin/vis-vega@1", "content": "{}"}
       ],
       "edges": [
@@ -121,7 +121,7 @@
       "nodes": [
         {"id": "load", "type": "curio.builtin/data-loading@1", "content": "return 1"},
         {"id": "pool", "type": "curio.builtin/data-pool@1", "content": ""},
-        {"id": "calc", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
+        {"id": "calc", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
         {"id": "chart", "type": "curio.builtin/vis-vega@1", "content": "{}"}
       ],
       "edges": [
@@ -137,7 +137,7 @@
     {
       "name": "a package chart that draws with Vega-Lite stands for the nodes feeding it, as a Vega-Lite chart does",
       "nodes": [
-        {"id": "calc", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
+        {"id": "calc", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
         {"id": "donuts", "type": "curio.vega-lite/donuts@1", "content": "{}"}
       ],
       "edges": [{"source": "calc", "target": "donuts"}],
@@ -149,9 +149,9 @@
     {
       "name": "a value node wired into a scenario's node is its boundary, and its saved output stands for it",
       "nodes": [
-        {"id": "season", "type": "curio.builtin/computation-analysis@1", "content": "return [!! season !!]", "metadata": {"widgets": [{"name": "season", "type": "text", "default": "winter"}]}},
-        {"id": "other", "type": "curio.builtin/computation-analysis@1", "content": "return [!! unused !!]", "metadata": {"widgets": [{"name": "unused", "type": "number", "default": 1}]}},
-        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"}
+        {"id": "season", "type": "curio.builtin/python-computation@1", "content": "return [!! season !!]", "metadata": {"widgets": [{"name": "season", "type": "text", "default": "winter"}]}},
+        {"id": "other", "type": "curio.builtin/python-computation@1", "content": "return [!! unused !!]", "metadata": {"widgets": [{"name": "unused", "type": "number", "default": 1}]}},
+        {"id": "a", "type": "curio.builtin/python-computation@1", "content": "return input_0"}
       ],
       "edges": [{"source": "season", "target": "a"}],
       "scenarios": [{"id": "s1", "nodes": ["a"], "context": ["season"], "outcomes": []}],
@@ -189,9 +189,9 @@
     {
       "name": "a node that is not on the canvas, or that is in a box, is left out",
       "nodes": [
-        {"id": "a", "type": "curio.builtin/computation-analysis@1", "content": "return 1"},
-        {"id": "b", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"},
-        {"id": "c", "type": "curio.builtin/computation-analysis@1", "content": "return input_0"}
+        {"id": "a", "type": "curio.builtin/python-computation@1", "content": "return 1"},
+        {"id": "b", "type": "curio.builtin/python-computation@1", "content": "return input_0"},
+        {"id": "c", "type": "curio.builtin/python-computation@1", "content": "return input_0"}
       ],
       "edges": [
         {"source": "a", "target": "b"},

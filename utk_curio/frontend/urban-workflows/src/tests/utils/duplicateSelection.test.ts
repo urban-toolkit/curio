@@ -18,7 +18,7 @@ const spec: { nodes: SpecNode[]; edges: SpecEdge[] } = {
     { id: "pool", type: "curio.builtin/data-pool", x: 300, y: 0 },
     {
       id: "a",
-      type: "curio.builtin/computation-analysis",
+      type: "curio.builtin/python-computation",
       x: 600,
       y: 0,
       content: "return input_0 * [!! factor !!]",
@@ -54,7 +54,7 @@ describe("duplicateSelection", () => {
     ]);
     // Everything else is the original's: code, type, widgets and their values.
     expect(copy.nodes[0].content).toBe("return input_0 * [!! factor !!]");
-    expect(copy.nodes[0].type).toBe("curio.builtin/computation-analysis");
+    expect(copy.nodes[0].type).toBe("curio.builtin/python-computation");
     expect(copy.nodes[0].metadata!.widgets).toEqual(spec.nodes[2].metadata!.widgets);
     expect(copy.nodes[0].metadata!.widgets).not.toBe(spec.nodes[2].metadata!.widgets);
   });

@@ -34,7 +34,7 @@ jest.mock("../../providers/ProvenanceProvider", () => ({
 import { useCode } from "../../hook/useCode";
 import { TrillGenerator } from "../../TrillGenerator";
 
-const NODE_TYPE = "curio.builtin/computation-analysis";
+const NODE_TYPE = "curio.builtin/python-computation";
 
 function spec() {
     const node = (id: string, x: number, extra: Record<string, unknown> = {}) => ({

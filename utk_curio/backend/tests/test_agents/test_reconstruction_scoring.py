@@ -49,7 +49,7 @@ TRANSFORM = "ai.utk.uhvi/uhvi-zones"
 VEGA = "curio.builtin/vis-vega"
 POOL = "curio.builtin/data-pool"
 #: A node that takes several inputs, one per circle (what a Merge Flow fed).
-ANALYSIS = "curio.builtin/computation-analysis"
+ANALYSIS = "curio.builtin/python-computation"
 
 UNIVERSE = Universe(
     templates=frozenset(TEMPLATES),
@@ -166,13 +166,13 @@ class TestWrongGraphsFail:
 
     def test_a_wrong_template_is_both_missing_and_extra(self):
         wrong = _spec(
-            [_node("l", LOADER), _node("t", "curio.builtin/computation-analysis"),
+            [_node("l", LOADER), _node("t", "curio.builtin/python-computation"),
              _node("v", VEGA, content="{}")],
             [_edge("l", "t"), _edge("t", "v")],
         )
         comparison = compare_graphs(_graph(CHAIN), _graph(wrong), universe=UNIVERSE)
         assert comparison.templates.missing == ((TRANSFORM, 1),)
-        assert comparison.templates.extra == (("curio.builtin/computation-analysis", 1),)
+        assert comparison.templates.extra == (("curio.builtin/python-computation", 1),)
 
     def test_wrong_topology_with_the_right_nodes_fails_on_topology(self):
         rewired = _spec(

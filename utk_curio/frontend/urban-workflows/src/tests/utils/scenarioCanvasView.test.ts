@@ -31,7 +31,7 @@ function node(id: string, x: number, y: number, extra: Record<string, unknown> =
     position: { x, y },
     width: 300,
     height: 200,
-    data: { nodeId: id, nodeType: NodeType.COMPUTATION_ANALYSIS, code: `return '${id}'`, ...extra },
+    data: { nodeId: id, nodeType: NodeType.PYTHON_COMPUTATION, code: `return '${id}'`, ...extra },
   } as any;
 }
 

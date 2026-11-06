@@ -21,7 +21,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
 
-PYTHON = "curio.builtin/computation-analysis"
+PYTHON = "curio.builtin/python-computation"
 LOADER = "curio.builtin/data-loading"
 RASTERIZE = "curio.rasterization/rasterize-buildings"
 CALCULATOR = "curio.rasterization/raster-calculator"

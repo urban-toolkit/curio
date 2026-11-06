@@ -22,7 +22,7 @@ from utk_curio.backend.tests.test_agents.test_verified_rounds import TEMPLATES
 
 DFB = "agent.curio.dataflow-builder@1"
 DL = "curio.builtin/data-loading"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 
 CANDIDATES = json.dumps({"datasetCandidates": {"lanes": {
     "external": [{

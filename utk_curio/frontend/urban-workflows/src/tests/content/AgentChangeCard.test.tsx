@@ -455,7 +455,7 @@ describe("AgentChangeCard: dev/52 a landed plan", () => {
     goal: "heat analysis",
     nodes: [
       { ref: "a", nodeType: "curio.builtin/data-loading", title: "Load", intent: "load it", expects: "in: none · out: dataframe" },
-      { ref: "b", nodeType: "curio.builtin/computation-analysis", title: "Analyze", intent: "crunch it" },
+      { ref: "b", nodeType: "curio.builtin/python-computation", title: "Analyze", intent: "crunch it" },
     ],
     edgeCount: 1,
     edges: [{ from: "a", to: "b", toHandle: "in_0", fromLabel: "Load", toLabel: "Analyze" }],
@@ -494,10 +494,10 @@ describe("AgentChangeCard: dev/52 a landed plan", () => {
 describe("AgentChangeCard: dev/59 a plan that removed nodes (DEC-049.2)", () => {
   const revision = planChange({
     goal: "replace the loader",
-    nodes: [{ ref: "a", nodeType: "curio.builtin/computation-analysis", title: "API Fetch", intent: "fetch" }],
+    nodes: [{ ref: "a", nodeType: "curio.builtin/python-computation", title: "API Fetch", intent: "fetch" }],
     edgeCount: 1,
     removals: [
-      { id: "old-loader", label: "Load CSV", nodeType: "curio.builtin/computation-analysis", contentChars: 10 },
+      { id: "old-loader", label: "Load CSV", nodeType: "curio.builtin/python-computation", contentChars: 10 },
       { id: "scratch", label: "Scratch", contentChars: 0, pinned: true },
     ],
     cascadeCount: 1,
@@ -507,7 +507,7 @@ describe("AgentChangeCard: dev/59 a plan that removed nodes (DEC-049.2)", () => 
     render(<AgentChangeCard part={revision} onUndo={jest.fn()} />);
     const section = screen.getByRole("group", { name: "Nodes and connections this plan removed" });
     expect(section).toHaveTextContent("Removed 2 nodes (and 1 connected edge)");
-    expect(section).toHaveTextContent("Load CSV · curio.builtin/computation-analysis (contained 10 chars of content");
+    expect(section).toHaveTextContent("Load CSV · curio.builtin/python-computation (contained 10 chars of content");
     expect(section).toHaveTextContent("Scratch · dashboard tile (empty)");
     expect(section).toHaveTextContent("1 of them was a dashboard tile, which left the dashboard.");
   });
@@ -661,13 +661,13 @@ describe("AgentChangeCard: #662 a landed plan's widgets, copies and scenarios", 
     planChange({
       goal: "compare two building heights",
       nodes: [
-        { ref: "buildings", nodeType: "curio.builtin/computation-analysis", title: "Buildings", intent: "heights" },
+        { ref: "buildings", nodeType: "curio.builtin/python-computation", title: "Buildings", intent: "heights" },
         {
-          ref: "shadows", nodeType: "curio.builtin/computation-analysis", title: "Shadows", intent: "shadow lengths",
+          ref: "shadows", nodeType: "curio.builtin/python-computation", title: "Shadows", intent: "shadow lengths",
           widgets: [{ name: "height_factor", type: "number", default: 1 }], scenario: "Real heights",
         },
         {
-          ref: "shadows_tall", nodeType: "curio.builtin/computation-analysis", title: "Shadows", intent: "shadow lengths",
+          ref: "shadows_tall", nodeType: "curio.builtin/python-computation", title: "Shadows", intent: "shadow lengths",
           widgets: [{ name: "height_factor", type: "number", default: 1, value: 2 }],
           scenario: "Twice as tall", copyOf: "shadows",
         },

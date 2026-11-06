@@ -22,7 +22,7 @@
       },
       {
         "id": "44d857bc-c25f-5c9b-8945-c43d60ba6301",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 0,
         "y": 450,
         "content": "# The season both scenarios' shadow runs in, which each Accumulated Shadow\n# node reads on input_1.\nreturn [!! season !!]\n",

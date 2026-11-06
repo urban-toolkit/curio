@@ -99,7 +99,7 @@ def _spec() -> dict:
                 _node(POINTS, "curio.builtin/data-loading", 0, 0, POINTS_CODE),
                 _node(SQUARE, "curio.builtin/data-loading", 0, 450, SQUARE_CODE),
                 _node(JOIN, "curio.builtin/spatial-join", 620, 200),
-                _node(PYTHON, "curio.builtin/computation-analysis", 1240, 0, PYTHON_CODE),
+                _node(PYTHON, "curio.builtin/python-computation", 1240, 0, PYTHON_CODE),
                 _node(JS, "curio.builtin/js-computation", 1240, 450, JS_CODE),
                 _node(VIEW, "curio.builtin/vis-simple", 1240, 900),
             ],
@@ -164,8 +164,8 @@ def test_a_spatial_joins_pairs_reach_python_and_javascript(join_canvas):
     status = node_locator(page, JOIN).locator("[data-curio-spatial-join-status]")
     status.wait_for(state="visible", timeout=30000)
     assert status.inner_text() == "1 pair: 1 of 2 input_0 rows matched.", status.inner_text()
-    _wait_for_output(page, PYTHON, "COMPUTATION_ANALYSIS", "<<P GeoDataFrame 1 ['inside'] ['square']>>")
-    wait_for_node_done(page, PYTHON, node_type="COMPUTATION_ANALYSIS", timeout_ms=120000)
+    _wait_for_output(page, PYTHON, "PYTHON_COMPUTATION", "<<P GeoDataFrame 1 ['inside'] ['square']>>")
+    wait_for_node_done(page, PYTHON, node_type="PYTHON_COMPUTATION", timeout_ms=120000)
 
     play_node(page, JS)
     _wait_for_output(page, JS, "JS_COMPUTATION", "<<J 1 inside/square>>")

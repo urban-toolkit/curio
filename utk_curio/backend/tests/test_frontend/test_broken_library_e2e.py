@@ -779,7 +779,7 @@ def _save_as_spec() -> dict:
             "task": "",
             "nodes": [{
                 "id": SAVE_AS_NODE_ID,
-                "type": "curio.builtin/computation-analysis",
+                "type": "curio.builtin/python-computation",
                 "x": 420,
                 "y": 300,
                 # The wizard DERIVES dependencies.python from this body.

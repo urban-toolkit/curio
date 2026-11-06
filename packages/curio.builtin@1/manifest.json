@@ -162,7 +162,7 @@
       "hasGrammar": false,
       "hasWidgets": true,
       "iconRef": "fa-brands:python",
-      "id": "computation-analysis",
+      "id": "python-computation",
       "inputPorts": [
         {
           "cardinality": "[1,n]",

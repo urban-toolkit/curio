@@ -96,9 +96,9 @@ def test_the_rows_the_widgets_keep_reach_python_and_the_simple_view(filter_canva
     page = filter_canvas
 
     play_node(page, PRINT)
-    wait_for_node_done(page, FILTER, node_type="COMPUTATION_ANALYSIS", timeout_ms=120000)
-    _wait_for_output(page, PRINT, "COMPUTATION_ANALYSIS", KEPT[-1])
-    wait_for_node_done(page, PRINT, node_type="COMPUTATION_ANALYSIS", timeout_ms=120000)
+    wait_for_node_done(page, FILTER, node_type="PYTHON_COMPUTATION", timeout_ms=120000)
+    _wait_for_output(page, PRINT, "PYTHON_COMPUTATION", KEPT[-1])
+    wait_for_node_done(page, PRINT, node_type="PYTHON_COMPUTATION", timeout_ms=120000)
     printed = read_node_output_text(page, PRINT)
     for name in KEPT:
         assert name in printed, f"{name} passes height > 15 but was not printed: {printed!r}"

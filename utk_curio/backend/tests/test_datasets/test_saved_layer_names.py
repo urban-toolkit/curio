@@ -36,7 +36,7 @@ def _install(path_ref: str, data_type: str):
         data_type=data_type,
         node_name="Layers",
         dataflow_id=DATAFLOW,
-        node_type="curio.builtin/computation-analysis",
+        node_type="curio.builtin/python-computation",
     )
 
 

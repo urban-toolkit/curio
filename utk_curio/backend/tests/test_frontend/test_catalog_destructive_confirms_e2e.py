@@ -141,7 +141,7 @@ def _enter(page, frontend, backend, username, *, spec: dict | None = None) -> di
 def _loads_the_areas_in_code(name: str) -> dict:
     """A dataflow whose one node loads the community areas in its code alone."""
     return {"dataflow": {"name": name, "task": "", "edges": [], "nodes": [{
-        "id": "loads-in-code", "type": "curio.builtin/computation-analysis", "x": 0, "y": 0,
+        "id": "loads-in-code", "type": "curio.builtin/python-computation", "x": 0, "y": 0,
         "content": f'gdf = curio_load_data("{COMMUNITY_AREAS}")\nreturn gdf\n',
         "in": "DEFAULT", "out": "DEFAULT", "goal": "",
         "metadata": {"keywords": []},

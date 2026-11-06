@@ -22,7 +22,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[4]
 EXAMPLE_06 = REPO / "docs" / "examples" / "06-back-bay-road-sunlight.json"
-CODE = "curio.builtin/computation-analysis"
+CODE = "curio.builtin/python-computation"
 AUTARK = "curio.builtin/autk-grammar"
 LAYERS = "art-layers"
 BACK_BAY_LAYERS = [

@@ -50,7 +50,7 @@ class ExecReadsKeptInputTestCase(unittest.TestCase):
         response = self.client.post("/exec", json={
             "code": textwrap.indent(code, "    "),
             "file_path": file_path,
-            "nodeType": "COMPUTATION_ANALYSIS",
+            "nodeType": "PYTHON_COMPUTATION",
             "dataType": data_type,
             "session_id": "the-tabs-sign-in",
             "saved_paths": saved_paths or {},

@@ -104,7 +104,7 @@ def test_the_spatial_join_settings_are_live_after_the_load(
 def _python_node(node_id: str, x: int, metadata: dict) -> dict:
     return {
         "id": node_id,
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": x,
         "y": 0,
         "content": "return input_0",

@@ -4,7 +4,7 @@
     "nodes": [
       {
         "id": "bec54c59-0eab-434c-bcdd-0af2b5483110",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 191.1469114284135,
         "y": 234.402739109306,
         "content": "import pandas as pd\r\n\r\nd = {\r\n    'a': [\"A\",\"B\",\"C\",\"D\",\"E\",\"F\",\"G\",\"H\",\"I\"],\r\n    'b': [28,55,43,91,81,53,19,87,52]\r\n}\r\ndf = pd.DataFrame(data=d)\r\ndf.metadata = {'name': 'Original Numbers'}\r\nreturn df\r\n",
@@ -17,7 +17,7 @@
       },
       {
         "id": "f325441e-55be-4415-aa1b-b2055f590de2",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 189.7077321723625,
         "y": 628.6117082974511,
         "content": "# Multiplier widget\r\nnumber_multiplier = [!! number_multiplier !!]\r\nreturn {'multiplier': number_multiplier}\r\n",
@@ -51,7 +51,7 @@
       },
       {
         "id": "c8c48cdb-323d-4f80-ace9-7ac358277f90",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1051.9524879230898,
         "y": 528.1914271723454,
         "content": "import pandas as pd\r\n\r\ndf = None\r\nmult = None\r\n\r\n# The dataframe and the multiplier, on the two input circles\r\nfor item in (input_0, input_1):\r\n    if isinstance(item, pd.DataFrame):\r\n        df = item\r\n    elif isinstance(item, dict) and 'multiplier' in item:\r\n        mult = item['multiplier']\r\n\r\n# Defaults\r\nif df is None:\r\n    df = pd.DataFrame({'a': [], 'b': []})\r\nif mult is None:\r\n    mult = 1\r\n\r\ndf = df.copy()\r\nif 'b' in df.columns:\r\n    df['b'] = pd.to_numeric(df['b'], errors='coerce') * float(mult)\r\n\r\ndf.metadata = {'name': 'Multiplied Numbers'}\r\nreturn df\r\n",

@@ -65,7 +65,7 @@ def _spec(name: str, node_ids: list[str]) -> dict:
             "nodes": [
                 {
                     "id": node_id,
-                    "type": "curio.builtin/computation-analysis",
+                    "type": "curio.builtin/python-computation",
                     "x": 420 * index,
                     "y": 200,
                     "content": f"return {index + 1}",

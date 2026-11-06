@@ -322,7 +322,7 @@ def test_prune_sink_node_dataset_refs(app, tmp_curio):
     spec = {
         "dataflow": {
             "nodes": [
-                {"id": "transform-x", "type": "curio.builtin/computation-analysis"},
+                {"id": "transform-x", "type": "curio.builtin/python-computation"},
                 {"id": "visnode-y", "type": "curio.builtin/vis-vega"},
                 # Palette-dragged sinks carry the versioned form (#169).
                 {"id": "visnode-z", "type": "curio.builtin/vis-simple@1"},
@@ -350,7 +350,7 @@ def test_prune_sink_node_dataset_refs(app, tmp_curio):
 def test_prune_sink_node_dataset_refs_noop_without_sink(app, tmp_curio):
     """No sink nodes → spec returned unchanged (same object)."""
     spec = {"dataflow": {
-        "nodes": [{"id": "t", "type": "curio.builtin/computation-analysis"}],
+        "nodes": [{"id": "t", "type": "curio.builtin/python-computation"}],
         "datasets": [{"datasetId": "computed.t", "producerNodeId": "t", "dirName": "computed.t@1"}],
     }}
     assert services._prune_sink_node_dataset_refs(spec) is spec
@@ -368,7 +368,7 @@ def test_auto_install_skips_sink_node_outputs(app, tmp_curio):
 
     spec = {"dataflow": {
         "nodes": [
-            {"id": "prod-n", "type": "curio.builtin/computation-analysis"},
+            {"id": "prod-n", "type": "curio.builtin/python-computation"},
             {"id": "sink-n", "type": "curio.builtin/vis-vega@1"},
         ],
         "datasets": [],

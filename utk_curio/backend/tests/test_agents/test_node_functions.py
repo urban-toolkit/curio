@@ -164,7 +164,7 @@ def test_the_page_curio_ships_reads_and_every_run_that_writes_node_code_holds_it
     ]
     builder = builtin.get_builtin_manifest("agent.curio.node-builder@1")
     system = builtin.read_prompt_text(builder.dir_name, "system")
-    python = "curio.builtin/computation-analysis"
+    python = "curio.builtin/python-computation"
     written = skill_runs.for_delegated("4242", "p-functions", builder, "node.content.generate",
                                        {"nodeType": python, "nodeContext": {"nodeType": python}},
                                        {"dataflow": {"nodes": []}}, system)

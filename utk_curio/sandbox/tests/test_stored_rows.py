@@ -138,7 +138,7 @@ class StoredRowsTestCase(unittest.TestCase):
         _worker_init()
         output = self._store({"dataType": "dataframe", "data": COLUMNS})
 
-        result = execute_code(READ_CODE, output["path"], "curio.builtin/computation-analysis",
+        result = execute_code(READ_CODE, output["path"], "curio.builtin/python-computation",
                               output["dataType"], session_id=SESSION, save_dataset=False, input_slots=[0])
 
         self.assertEqual(result["stderr"], "")
@@ -156,7 +156,7 @@ class StoredRowsTestCase(unittest.TestCase):
 
         spec = runner._build_input_spec(output["path"], output["dataType"], str(scratch), SESSION)
         result = child.run_node({
-            "code": READ_CODE, "node_type": "curio.builtin/computation-analysis", "data_type": output["dataType"],
+            "code": READ_CODE, "node_type": "curio.builtin/python-computation", "data_type": output["dataType"],
             "scratch_dir": str(scratch), "input": spec, "input_slots": [0], "session_imports": [], "limits": {},
         }, zygote.build_namespace_template)
 

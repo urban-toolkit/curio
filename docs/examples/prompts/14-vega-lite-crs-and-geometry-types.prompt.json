@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/14-vega-lite-crs-and-geometry-types.json",
-    "sha256": "16da3ab7761d6b2a9eed09d372ffb6c330d081baaa87dce42b501ff1c6a39c5c",
+    "sha256": "c3ee797a42435acce2d2968e546c6273ee1b44a3b723fd3058bce612fa41bc6b",
     "walkthrough": "docs/examples/14-vega-lite-crs-and-geometry-types.md"
   },
   "prompt": "Take the Chicago ZIP boundary polygons from the Data Catalog and reproject them into several different coordinate systems, and also derive point and line geometries from them. Draw every one of those frames on a map, with the same map spec for every coordinate system, so I can confirm the coordinate system does not change what I have to write, and make sure the lines show up too.",
@@ -19,58 +19,58 @@
   "expected": {
     "nodes": [
       {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis2",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis3",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis4",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis5",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis6",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis7",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "loader1",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
         "executable": true,
         "hasContent": true
       },
@@ -126,41 +126,6 @@
     ],
     "edges": [
       {
-        "from": "analysis1",
-        "to": "visualization1",
-        "kind": "data"
-      },
-      {
-        "from": "analysis2",
-        "to": "visualization2",
-        "kind": "data"
-      },
-      {
-        "from": "analysis3",
-        "to": "visualization3",
-        "kind": "data"
-      },
-      {
-        "from": "analysis4",
-        "to": "visualization4",
-        "kind": "data"
-      },
-      {
-        "from": "analysis5",
-        "to": "visualization5",
-        "kind": "data"
-      },
-      {
-        "from": "analysis6",
-        "to": "visualization6",
-        "kind": "data"
-      },
-      {
-        "from": "analysis7",
-        "to": "visualization7",
-        "kind": "data"
-      },
-      {
         "from": "loader1",
         "to": "analysis1",
         "kind": "data"
@@ -193,6 +158,41 @@
       {
         "from": "loader1",
         "to": "analysis7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis7",
+        "to": "visualization7",
         "kind": "data"
       }
     ],

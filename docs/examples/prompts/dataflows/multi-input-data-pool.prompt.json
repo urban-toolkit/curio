@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/multi-input-data-pool.json",
-    "sha256": "193bed880773f93772ccdab56962dc9b2d9f55a080a6ec2f2d8073fbe7dba77d",
+    "sha256": "d8b23fce45a2976aeeb6dc2bdf2debd262f40b3f6ca7be69f034118b86f6360d",
     "walkthrough": null
   },
   "prompt": "Make three small tables in three separate Python computation steps, each with its own column names, and route one of them through a fan-out. Combine two of them into one input for a further computation step, and combine another pair for a second one, so the flow ends in two computations that each read a pair.",
@@ -17,46 +17,46 @@
   "expected": {
     "nodes": [
       {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      },
+      {
         "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis2",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis3",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis4",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis5",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
-      },
-      {
-        "ref": "pool1",
-        "type": "curio.builtin/data-pool",
-        "role": "pool",
-        "executable": false,
-        "hasContent": false
       }
     ],
     "edges": [

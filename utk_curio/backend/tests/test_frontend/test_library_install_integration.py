@@ -91,7 +91,7 @@ def _exec_python(sandbox_url: str, code: str, sandbox_headers: dict) -> dict:
         payload={
             "code": code,
             "file_path": "",
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "dataType": "",
             "save_dataset": False,
         },

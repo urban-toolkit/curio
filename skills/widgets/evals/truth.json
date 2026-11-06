@@ -75,7 +75,7 @@
                   ]
                 },
                 "title": "Ticked zip codes",
-                "type": "curio.builtin/computation-analysis"
+                "type": "curio.builtin/python-computation"
               }
             ]
           }
@@ -86,11 +86,11 @@
             "kind": "node",
             "summary": "Created a new Python Computation node · Ticked zip codes · widgets zips",
             "lines": [
-              "Python Computation · curio.builtin/computation-analysis",
+              "Python Computation · curio.builtin/python-computation",
               "node 1eea635d-426c-45bb-aa8a-1f1a1f315565"
             ],
             "nodeId": "1eea635d-426c-45bb-aa8a-1f1a1f315565",
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "undo": true
           }
         ],
@@ -101,7 +101,7 @@
           "tool": "node.create",
           "status": "applied",
           "arguments": {
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "title": "Ticked zip codes",
             "goal": "Keep only the zip codes ticked in a list of checkboxes.",
             "content": "# The top zip codes, only those ticked in the list: the widget's reference\n# becomes the list of the ticked ones.\ntop = input_0\nreturn top[top[\"zip\"].isin([!! zips !!])]\n",
@@ -178,7 +178,7 @@
                   ]
                 },
                 "title": "Drop small roofs",
-                "type": "curio.builtin/computation-analysis"
+                "type": "curio.builtin/python-computation"
               }
             ]
           }
@@ -189,11 +189,11 @@
             "kind": "node",
             "summary": "Created a new Python Computation node · Drop small roofs · widgets drop_small",
             "lines": [
-              "Python Computation · curio.builtin/computation-analysis",
+              "Python Computation · curio.builtin/python-computation",
               "node f5541a8f-8143-4693-8ad2-4ed6bbcb01b8"
             ],
             "nodeId": "f5541a8f-8143-4693-8ad2-4ed6bbcb01b8",
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "undo": true
           }
         ],
@@ -204,7 +204,7 @@
           "tool": "node.create",
           "status": "applied",
           "arguments": {
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "title": "Drop small roofs",
             "goal": "Drop the roofs under 1,000 vegetated square feet while a box is ticked.",
             "content": "# The roofs, the small ones dropped while the box is ticked: those under\n# 1,000 vegetated square feet. Unticked, every roof stays.\nroofs = input_0\nif [!! drop_small !!]:\n    roofs = roofs[roofs[\"VEGETATED_SQFT\"] >= 1000]\nreturn roofs\n",
@@ -257,7 +257,7 @@
             "changed": [
               {
                 "id": "f325441e-55be-4415-aa1b-b2055f590de2",
-                "type": "curio.builtin/computation-analysis",
+                "type": "curio.builtin/python-computation",
                 "changes": {
                   "metadata.widgets": {
                     "before": [
@@ -346,7 +346,7 @@
             "changed": [
               {
                 "id": "c7246f52-d977-5353-9951-bcb855d2ebda",
-                "type": "curio.builtin/computation-analysis",
+                "type": "curio.builtin/python-computation",
                 "title": "Projection period",
                 "changes": {
                   "metadata.widgets": {

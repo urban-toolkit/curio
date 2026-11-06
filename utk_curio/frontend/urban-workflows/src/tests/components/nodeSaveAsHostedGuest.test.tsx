@@ -39,7 +39,7 @@ jest.mock("../../registry", () => ({
 }));
 jest.mock("../../registry/nodeRegistry", () => ({
   tryGetNodeDescriptor: () => ({
-    id: "curio.builtin/computation-analysis",
+    id: "curio.builtin/python-computation",
     label: "Python Computation",
     category: "computation",
     engine: "python",
@@ -50,11 +50,11 @@ jest.mock("../../registry/nodeRegistry", () => ({
     hasGrammar: false,
     inputPorts: [{ types: ["JSON"], cardinality: "1" }],
     outputPorts: [{ types: ["JSON"], cardinality: "1" }],
-    package: { id: "curio.builtin", major: 1, source: "computation_analysis.py" },
+    package: { id: "curio.builtin", major: 1, source: "python_computation.py" },
   }),
 }));
 jest.mock("../../utils/flowNodeCanonicalType", () => ({
-  getFlowNodeCanonicalType: () => "curio.builtin/computation-analysis",
+  getFlowNodeCanonicalType: () => "curio.builtin/python-computation",
 }));
 jest.mock("../../registry/projectPackagesStore", () => ({
   setCurrentProjectPackages: (...args: unknown[]) => mockSetCurrentProjectPackages(...args),
@@ -122,8 +122,8 @@ beforeEach(() => {
   mockStore.nodeInternals = new Map([
     [NODE_ID, {
       id: NODE_ID,
-      type: "curio.builtin/computation-analysis",
-      data: { nodeType: "curio.builtin/computation-analysis", code: "return [1]" },
+      type: "curio.builtin/python-computation",
+      data: { nodeType: "curio.builtin/python-computation", code: "return [1]" },
     }],
   ]);
   mockFactoryInstall.mockResolvedValue({

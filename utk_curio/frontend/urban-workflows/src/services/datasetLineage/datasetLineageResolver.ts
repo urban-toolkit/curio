@@ -86,7 +86,7 @@ function lineageNodeName(
 /**
  * Fallback prettifier for raw node type ids (e.g. "DATA_LOADING" → "Data
  * Loading"). Package-qualified, versioned ids reduce to the type alone
- * ("curio.builtin/computation-analysis@1" → "Computation Analysis"): the package
+ * ("curio.builtin/python-computation@1" → "Python Computation"): the package
  * and version are addressing detail, not something to print in a badge.
  */
 export function formatNodeTypeLabel(nodeType: string | undefined): string {

@@ -50,7 +50,7 @@ TITLE = "[data-curio-canvas-title] h1"
 #: What the title says while the dataflow is opening.
 OPENING = "Opening dataflow…"
 #: alice's node, and the node bob's file makes.
-LOADED = "curio.builtin/computation-analysis"
+LOADED = "curio.builtin/python-computation"
 LOADER = "curio.builtin/data-loading"
 BUS_STOPS = "stop_id,routes\n1,22\n2,29\n3,36\n"
 #: What refused a drop while the dataflow opened.

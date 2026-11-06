@@ -367,7 +367,7 @@ def test_his_own_model_comes_to_her_model_catalog_with_its_weights(client, flow,
     assert resp.status_code == 200, resp.get_data(as_text=True)[:300]
     assert (_folder(flow.alice, MODEL_DIR) / "models" / "w.onnx").read_bytes() == WEIGHTS
     assert MODEL_DIR in _lockfile(flow)
-    body = _play(client, flow, sandbox, "bob", "curio.builtin/computation-analysis",
+    body = _play(client, flow, sandbox, "bob", "curio.builtin/python-computation",
                  f'model = curio_load_model("{MODEL}")\nreturn 1\n')
     assert body.get("models") == {MODEL: str(_folder(flow.alice, MODEL_DIR))}, body.get("models")
 

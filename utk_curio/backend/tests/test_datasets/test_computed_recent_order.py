@@ -31,7 +31,7 @@ START = datetime(2026, 10, 7, 12, 0, tzinfo=timezone.utc)
 # What the canvas sends with each output (``buildOutputRefs``): the node's
 # header and type. One name for every node, so a title never breaks a tie.
 LABEL = "Python Computation"
-NODE_TYPE = "curio.builtin/computation-analysis"
+NODE_TYPE = "curio.builtin/python-computation"
 
 
 @pytest.fixture()

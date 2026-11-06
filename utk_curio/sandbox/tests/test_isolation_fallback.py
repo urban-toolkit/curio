@@ -248,7 +248,7 @@ class TestExecStillWorksWhenIsolationIsUnavailable(unittest.TestCase):
             json={
                 "code": "    return 6 * 7\n",
                 "file_path": "",
-                "nodeType": "curio.builtin/computation-analysis",
+                "nodeType": "curio.builtin/python-computation",
                 "dataType": "",
                 "save_dataset": False,
             },

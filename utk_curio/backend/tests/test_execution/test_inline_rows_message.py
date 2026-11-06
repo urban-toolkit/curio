@@ -18,7 +18,7 @@ ROWS = {"data": {"name": ["Alpha", "Bravo"], "height": [30, 24]}, "dataType": "d
 
 def _run(code: str, input_) -> node_exec.NodeRun:
     return node_exec.NodeRun.from_request_json({
-        "code": code, "nodeType": "curio.builtin/computation-analysis", "nodeId": "reader", "input": input_,
+        "code": code, "nodeType": "curio.builtin/python-computation", "nodeId": "reader", "input": input_,
     })
 
 

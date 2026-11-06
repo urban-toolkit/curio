@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/filter-rows-with-widgets.json",
-    "sha256": "acf0edabd892b8e3f1254f3b75c93162d4f293d462f7e7c85e039de4bd6e9391",
+    "sha256": "b0f9b25849b055c730516e9b3134851f036e4cfaf103176b45ec6bb79054ecb5",
     "walkthrough": null
   },
   "prompt": "Make a six-row table of buildings with their name, height and number of floors in a loading step. In a Python computation step, keep only the rows that pass a rule set with widgets: a choice of the column (height or floors), a choice of the comparison and a number for the threshold, starting at a height above 15. Show the kept rows in the simple table view, and read them in a further Python computation step that prints them.",
@@ -17,23 +17,23 @@
   "expected": {
     "nodes": [
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis2",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "loader1",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
         "executable": true,
         "hasContent": true
       },
@@ -47,6 +47,11 @@
     ],
     "edges": [
       {
+        "from": "loader1",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
         "from": "analysis2",
         "to": "analysis1",
         "kind": "data"
@@ -54,11 +59,6 @@
       {
         "from": "analysis2",
         "to": "visualization1",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "analysis2",
         "kind": "data"
       }
     ],

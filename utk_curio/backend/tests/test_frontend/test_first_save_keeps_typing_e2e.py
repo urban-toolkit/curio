@@ -76,7 +76,7 @@ def test_typing_while_the_first_save_is_out_reaches_the_dataflow(
     require_owner_view(page)
     page.wait_for_selector(".react-flow", timeout=30000)
 
-    node_id = drag_builtin_to_canvas(page, "#tile-computation-analysis", at=(320, 220))
+    node_id = drag_builtin_to_canvas(page, "#tile-python-computation", at=(320, 220))
     set_node_code(page, node_id, SENT)
 
     held = _held_creates(page)

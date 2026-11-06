@@ -401,7 +401,7 @@ def test_the_checks_find_what_the_used_dataflows_name():
     something in the "Used" dataflows, or it passes trivially."""
     corpus = "\n".join(_node_text(entry) for entry in USED)
     # The node that takes several inputs now that the Merge Flow is gone (#662).
-    assert "curio.builtin/computation-analysis" in _TEMPLATE_RE.findall(corpus)
+    assert "curio.builtin/python-computation" in _TEMPLATE_RE.findall(corpus)
     assert "curio_load_data" in _HELPER_RE.findall(corpus)
     assert DATASET_PATH_CALL_RE.findall(corpus)
     assert MODEL_CALL_RE.findall(corpus)

@@ -554,7 +554,7 @@
                 "goal": "Keep the OpenStreetMap parks of at least one hectare, for the map.",
                 "id": "410166e6-2742-44eb-93f4-f0803c9a2ccd",
                 "title": "Parks of a hectare or more",
-                "type": "curio.builtin/computation-analysis"
+                "type": "curio.builtin/python-computation"
               }
             ]
           }
@@ -565,11 +565,11 @@
             "kind": "node",
             "summary": "Created a new Python Computation node · Parks of a hectare or more",
             "lines": [
-              "Python Computation · curio.builtin/computation-analysis",
+              "Python Computation · curio.builtin/python-computation",
               "node 410166e6-2742-44eb-93f4-f0803c9a2ccd"
             ],
             "nodeId": "410166e6-2742-44eb-93f4-f0803c9a2ccd",
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "undo": true
           }
         ],
@@ -580,7 +580,7 @@
           "tool": "node.create",
           "status": "applied",
           "arguments": {
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "title": "Parks of a hectare or more",
             "goal": "Keep the OpenStreetMap parks of at least one hectare, for the map.",
             "content": "# OpenStreetMap's parks of at least one hectare (10,000 square metres), their\n# areas in metres in the parks' UTM zone.\nparks = [!! input_0:table_osm_parks !!]\nutm = parks.estimate_utm_crs()\nreturn parks[parks.to_crs(utm).area >= 10000]\n"
@@ -606,7 +606,7 @@
                 "goal": "Keep the OpenStreetMap parks of at least one hectare, for the map.",
                 "id": "410166e6-2742-44eb-93f4-f0803c9a2ccd",
                 "title": "Parks of a hectare or more",
-                "type": "curio.builtin/computation-analysis"
+                "type": "curio.builtin/python-computation"
               }
             ],
             "changed": [
@@ -630,11 +630,11 @@
             "kind": "node",
             "summary": "Created a new Python Computation node · Parks of a hectare or more",
             "lines": [
-              "Python Computation · curio.builtin/computation-analysis",
+              "Python Computation · curio.builtin/python-computation",
               "node 410166e6-2742-44eb-93f4-f0803c9a2ccd"
             ],
             "nodeId": "410166e6-2742-44eb-93f4-f0803c9a2ccd",
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "undo": true
           },
           {
@@ -655,7 +655,7 @@
           "tool": "node.create",
           "status": "applied",
           "arguments": {
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "title": "Parks of a hectare or more",
             "goal": "Keep the OpenStreetMap parks of at least one hectare, for the map.",
             "content": "# OpenStreetMap's parks of at least one hectare (10,000 square metres), their\n# areas in metres in the parks' UTM zone.\nparks = [!! input_0:table_osm_parks !!]\nutm = parks.estimate_utm_crs()\nreturn parks[parks.to_crs(utm).area >= 10000]\n"

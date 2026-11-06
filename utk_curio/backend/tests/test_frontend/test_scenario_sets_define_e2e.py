@@ -104,7 +104,7 @@ def test_the_shared_nodes_of_a_set_carry_a_circle_per_scenario(
 
 def _spec() -> dict:
     node = lambda node_id, title, x, y: {  # noqa: E731
-        "id": node_id, "type": "curio.builtin/computation-analysis", "x": x, "y": y,
+        "id": node_id, "type": "curio.builtin/python-computation", "x": x, "y": y,
         "content": "return input_0" if node_id != "load" else "return 1",
         "in": "DEFAULT", "out": "DEFAULT", "goal": "", "title": title, "metadata": {"keywords": []},
     }

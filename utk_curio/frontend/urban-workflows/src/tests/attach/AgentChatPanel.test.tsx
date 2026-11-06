@@ -686,7 +686,7 @@ describe("AgentChatPanel says when a canvas agent changed nothing (#243)", () =>
     summary: "Created a new Python node",
     preview: "print(1)",
     status: "applied",
-    lines: ["Load parks · COMPUTATION_ANALYSIS"],
+    lines: ["Load parks · PYTHON_COMPUTATION"],
   };
 
   it("a reloaded Node Builder reply with only a dataflow.read call says so", () => {

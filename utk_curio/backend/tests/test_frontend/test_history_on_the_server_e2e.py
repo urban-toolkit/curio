@@ -173,9 +173,9 @@ def test_two_browsers_list_the_same_versions_and_the_owners_save_reaches_the_edi
         _open_as(editor, base, project_id, "editor")
 
         # Each adds a node, which reaches the other's canvas.
-        by_owner = drag_builtin_to_canvas(owner, "#tile-computation-analysis", at=(300, 450))
+        by_owner = drag_builtin_to_canvas(owner, "#tile-python-computation", at=(300, 450))
         node_locator(editor, by_owner).wait_for(timeout=15000)
-        by_editor = drag_builtin_to_canvas(editor, "#tile-computation-analysis", at=(700, 450))
+        by_editor = drag_builtin_to_canvas(editor, "#tile-python-computation", at=(700, 450))
         node_locator(owner, by_editor).wait_for(timeout=15000)
 
         # The loaded dataflow's four versions (no node, the two nodes, their

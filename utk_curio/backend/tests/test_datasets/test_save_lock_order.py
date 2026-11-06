@@ -33,7 +33,7 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
 )
 
 TOKEN = "lock-order-token"
-NODE_TYPE = "curio.builtin/computation-analysis"
+NODE_TYPE = "curio.builtin/python-computation"
 BUSY_TIMEOUT_MS = 2000
 # Ample for any step here, and well under what a held thread waits for.
 STEP_SECONDS = 10

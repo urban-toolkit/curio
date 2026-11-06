@@ -110,7 +110,7 @@ def test_the_dashboard_walks_through_a_pool_saved_in_the_owners_store(client, db
     alice, alice_token = user_and_token
     bob, bob_token = _second_account(db)
     nodes = [
-        _node("py", "curio.builtin/computation-analysis@1"),
+        _node("py", "curio.builtin/python-computation@1"),
         _node("pool", "acme.mine/pool@1"),
         _node("chart", "curio.builtin/vis-vega@1", "{}", dashboardPinned=True),
     ]
@@ -151,7 +151,7 @@ def test_the_data_catalog_counts_the_nodes_after_a_loader_saved_in_the_accounts_
     bob, bob_token = _second_account(db)
     nodes = [
         _node("loader", "acme.mine/fetch-parcels@1", f'return curio_data_path("{DATASET}")'),
-        _node("after", "curio.builtin/computation-analysis@1", "return input_0"),
+        _node("after", "curio.builtin/python-computation@1", "return input_0"),
     ]
     edges = [_edge("loader", "after")]
     _create(client, alice_token, nodes, edges)
@@ -176,7 +176,7 @@ def test_a_data_template_saved_in_the_store_that_declares_no_loader_reads_the_da
     alice, alice_token = user_and_token
     nodes = [
         _node("loader", "acme.mine/fetch-roads@1", f'return curio_data_path("{DATASET}")'),
-        _node("after", "curio.builtin/computation-analysis@1", "return input_0"),
+        _node("after", "curio.builtin/python-computation@1", "return input_0"),
     ]
     _create(client, alice_token, nodes, [_edge("loader", "after")])
     _hold_the_package(alice)

@@ -98,7 +98,7 @@ def _one_node_spec(name: str, code: str) -> dict:
             "nodes": [
                 {
                     "id": "rename-node",
-                    "type": "curio.builtin/computation-analysis",
+                    "type": "curio.builtin/python-computation",
                     "x": 420,
                     "y": 300,
                     "content": code,
@@ -303,7 +303,7 @@ def test_rename_by_clicking_away_then_the_logo_shows_the_new_name(
     _wait_for_reactflow_ready(page)
 
     # A producing node run schedules the debounced install-sync save.
-    run_node_and_wait(page, node_id, node_type="computation-analysis")
+    run_node_and_wait(page, node_id, node_type="python-computation")
 
     title = page.locator("h1").filter(has_text="Before Blur")
     title.wait_for(state="visible", timeout=30000)

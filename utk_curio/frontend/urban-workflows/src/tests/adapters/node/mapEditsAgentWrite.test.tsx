@@ -41,7 +41,7 @@ const AGENT_CODE = editFeaturesCode({ key: "building_id", edits: [{ op: "remove"
 const MORE = [
   { id: "load", type: "curio.builtin/data-loading", data: {} },
   { id: MAP, type: "curio.builtin/autk-grammar", data: {} },
-  { id: "count", type: "curio.builtin/computation-analysis", data: {} },
+  { id: "count", type: "curio.builtin/python-computation", data: {} },
   { id: "chart", type: "curio.builtin/vis-vega", data: {} },
 ];
 const EDGES = [

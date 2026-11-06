@@ -28,7 +28,7 @@ A {{template.label:curio.builtin/vis-simple}} node renders a table for DataFrame
 
 A {{template.label:curio.builtin/data-loading}} node's python code brings data into the dataflow, such as a Data Catalog dataset through `curio_load_data("<id>")`, and returns it. It needs no input, and it can read values from the nodes wired into it, each input circle its own variable, input_0, input_1 and so on, such as the area or the period that several loaders read from one node. It starts with a dataset widget named data and the code `data = curio_load_data({{widgets.reference:data}})`, which loads the Data Catalog dataset the widget holds: a file or a dataset the user drops on the node sets the widget, and so does setting its value to a dataset's id. Code that loads data some other way leaves the widget empty.
 
-A {{template.label:curio.builtin/computation-analysis}} node's python code reads its inputs and returns them transformed, or what it computes from them.
+A {{template.label:curio.builtin/python-computation}} node's python code reads its inputs and returns them transformed, or what it computes from them.
 
 A {{template.label:curio.builtin/data-summary}} node starts with python code that returns a summary of the table on its input in the keys "shape", "dtypes", "missing" and "describe", and shows only those keys, "missing" only when a column has missing values.
 

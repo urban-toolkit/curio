@@ -54,7 +54,7 @@ const props = {
   setSendCodeCallback: jest.fn(),
   setOutputCallback: jest.fn(),
   output: { code: '', content: '' },
-  nodeType: 'curio.builtin/computation-analysis',
+  nodeType: 'curio.builtin/python-computation',
   readOnly: false,
   applyGrammar: jest.fn(),
   contentComponent: <div />,

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/multi-input.json",
-    "sha256": "49066233fce8b43c0183fc0770475b30c043592a533adfc03244f27f573253b0",
+    "sha256": "b61cd4a5f62dc4c2dcf0a9b9079deefbd6c04337fee72299851695f9f906662d",
     "walkthrough": null
   },
   "prompt": "Load two small nine-row tables of the same letters with different numbers, feed both into one step, and in a Python computation step join them on the letter column and add the average of the two number columns. Also pass one of the combined inputs straight through a second computation step unchanged.",
@@ -16,20 +16,6 @@
   },
   "expected": {
     "nodes": [
-      {
-        "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis2",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
       {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
@@ -43,14 +29,23 @@
         "role": "loader",
         "executable": true,
         "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
       }
     ],
     "edges": [
-      {
-        "from": "analysis2",
-        "to": "analysis1",
-        "kind": "data"
-      },
       {
         "from": "loader1",
         "to": "analysis2",
@@ -61,6 +56,11 @@
         "to": "analysis2",
         "kind": "data",
         "slot": 1
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis1",
+        "kind": "data"
       }
     ],
     "sources": {

@@ -116,7 +116,7 @@ describe("notebookToTrill", () => {
     expect(setup[0].content).toBe(
       "import pandas as pd\nimport numpy as np\nimport altair as alt",
     );
-    expect(setup[0].type).toBe(NodeType.COMPUTATION_ANALYSIS);
+    expect(setup[0].type).toBe(NodeType.PYTHON_COMPUTATION);
   });
 
   it("comments out IPython lines in the Setup node and in other cells (#160)", async () => {

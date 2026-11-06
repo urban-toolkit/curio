@@ -29,9 +29,9 @@ describe('getFlowNodeCanonicalType / getUnversionedFlowNodeType', () => {
   });
 
   test('plain nodes keep their react-flow type', () => {
-    const node = { type: 'curio.builtin/computation-analysis@1' };
-    expect(getFlowNodeCanonicalType(node)).toBe('curio.builtin/computation-analysis@1');
-    expect(getUnversionedFlowNodeType(node)).toBe('curio.builtin/computation-analysis');
+    const node = { type: 'curio.builtin/python-computation@1' };
+    expect(getFlowNodeCanonicalType(node)).toBe('curio.builtin/python-computation@1');
+    expect(getUnversionedFlowNodeType(node)).toBe('curio.builtin/python-computation');
   });
 });
 

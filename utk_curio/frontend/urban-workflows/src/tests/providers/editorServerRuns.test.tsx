@@ -94,7 +94,7 @@ import type { Run, RunEvent } from '../../services/runs/runsApi';
 
 /** The owner's dataflow, which every canvas here opens by its link. */
 const OWNERS_FLOW = 'owners-flow';
-const NODE_TYPE = 'curio.builtin/computation-analysis';
+const NODE_TYPE = 'curio.builtin/python-computation';
 
 function spec() {
   return {

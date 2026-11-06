@@ -285,7 +285,7 @@ describe("arranging by scenario", () => {
   const tile = (id: string, x: number, y: number) => ({
     id,
     position: { x, y },
-    data: { nodeId: id, nodeType: "curio.builtin/computation-analysis", code: "return input_0", title: id },
+    data: { nodeId: id, nodeType: "curio.builtin/python-computation", code: "return input_0", title: id },
   });
   const withScenarios = (over: Record<string, unknown> = {}) =>
     flow({

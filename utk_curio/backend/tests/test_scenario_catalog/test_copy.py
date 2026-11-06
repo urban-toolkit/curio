@@ -59,7 +59,7 @@ def _headers(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
-def _node(node_id, kind="computation-analysis", content="return input_0", x=0, **extra):
+def _node(node_id, kind="python-computation", content="return input_0", x=0, **extra):
     return {"id": node_id, "type": f"curio.builtin/{kind}@1", "content": content, "x": x, "y": 0, **extra}
 
 

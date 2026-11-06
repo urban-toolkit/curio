@@ -24,7 +24,7 @@ from utk_curio.backend.app.runs import kept
 from utk_curio.backend.app.runs.models import KeptStepOutput, naive_utc_now
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import auth_headers
 
-CODE = "curio.builtin/computation-analysis"
+CODE = "curio.builtin/python-computation"
 
 
 class _Reply:

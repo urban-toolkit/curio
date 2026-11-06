@@ -33,7 +33,7 @@ CRS_3395 = {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3395"}
 CRS_3395_NAME = "urn:ogc:def:crs:EPSG::3395"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MAP_EDITOR_CASES = REPO_ROOT / "utk_curio/frontend/urban-workflows/src/utils/editFeatures/editFeaturesCode.cases.json"
-PYTHON_NODE = "curio.builtin/computation-analysis"
+PYTHON_NODE = "curio.builtin/python-computation"
 JS_NODE = "curio.builtin/js-computation"
 AUTARK_NODE = "curio.builtin/autk-grammar"
 

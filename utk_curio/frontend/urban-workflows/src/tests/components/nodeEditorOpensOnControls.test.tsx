@@ -22,7 +22,7 @@ import { WidgetControl } from "../../components/editing/widgets/WidgetControl";
 
 const LOADER = "curio.builtin/data-loading";
 const EXPORT = "curio.builtin/data-export";
-const PYTHON = "curio.builtin/computation-analysis";
+const PYTHON = "curio.builtin/python-computation";
 let mockDashboardOn = false;
 const mockRequestAutoRun = jest.fn();
 const mockViews = [{ id: "chart", label: "Chart" }];

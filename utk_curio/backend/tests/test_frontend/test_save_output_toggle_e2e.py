@@ -26,7 +26,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-ANALYSIS_TILE = "#tile-computation-analysis"
+ANALYSIS_TILE = "#tile-python-computation"
 VEGA_TILE = "#tile-vis-vega"
 SIMPLE_TILE = "#tile-vis-simple"
 

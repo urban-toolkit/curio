@@ -91,7 +91,7 @@ const COMPUTED = {
 };
 
 const computation = (code: string, extra: Record<string, unknown> = {}) => ({
-  nodeType: "curio.builtin/computation-analysis@1",
+  nodeType: "curio.builtin/python-computation@1",
   code,
   ...extra,
 });

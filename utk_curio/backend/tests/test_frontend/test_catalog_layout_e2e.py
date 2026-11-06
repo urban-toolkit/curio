@@ -98,7 +98,7 @@ _MEASURE = """([cardSelector]) => {
 
 def _code_node(node_id: str, x: int) -> dict:
     return {
-        "id": node_id, "type": "curio.builtin/computation-analysis@1",
+        "id": node_id, "type": "curio.builtin/python-computation@1",
         "content": "return 1", "x": x, "y": 0,
     }
 

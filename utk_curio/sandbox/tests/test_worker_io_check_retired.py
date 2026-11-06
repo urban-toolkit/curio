@@ -41,7 +41,7 @@ class TestIOCheckRetired(unittest.TestCase):
             self.assertEqual(result["output"]["dataType"], "int", node_type)
 
     def test_the_name_is_a_no_op_for_every_argument(self):
-        self.assertIsNone(parsers.checkIOType({"dataType": "outputs", "data": [{}] * 9}, "COMPUTATION_ANALYSIS"))
+        self.assertIsNone(parsers.checkIOType({"dataType": "outputs", "data": [{}] * 9}, "PYTHON_COMPUTATION"))
         self.assertIsNone(parsers.checkIOType({"dataType": "str", "data": None}, "DATA_LOADING", False))
         for gone in ("validate_input", "validate_output", "check_valid_output",
                      "check_dataframe_input", "check_transformation_input"):

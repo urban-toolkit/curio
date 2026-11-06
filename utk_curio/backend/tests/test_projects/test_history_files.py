@@ -142,9 +142,9 @@ def _fixture() -> dict:
     name = "History fixture"
     nodes = [
         {"id": "load-1", "type": "curio.builtin/data-loading", "x": 0, "y": 0, "content": "return 1"},
-        {"id": "py-2", "type": "curio.builtin/computation-analysis", "x": 320.5, "y": -40,
+        {"id": "py-2", "type": "curio.builtin/python-computation", "x": 320.5, "y": -40,
          "content": "return input_0 * 2  # métrica ✓"},
-        {"id": "10", "type": "curio.builtin/computation-analysis", "x": 640, "y": 0, "content": ""},
+        {"id": "10", "type": "curio.builtin/python-computation", "x": 640, "y": 0, "content": ""},
     ]
     edges = [{"id": "e-1", "source": "load-1", "target": "py-2"}]
     dataflow = {"nodes": nodes, "edges": edges, "name": name, "task": "", "timestamp": 1790000000000,

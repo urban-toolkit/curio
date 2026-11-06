@@ -199,7 +199,7 @@ async function connect(source: string, target: string) {
 /** A node whose own Save toggle is on, so its run's output is saved. */
 async function addSavedProducer() {
   await act(async () => {
-    api.addNode(makeNode('py', NodeType.COMPUTATION_ANALYSIS, { saveOutputDataset: true }), undefined, false);
+    api.addNode(makeNode('py', NodeType.PYTHON_COMPUTATION, { saveOutputDataset: true }), undefined, false);
   });
   await flush();
 }
@@ -217,7 +217,7 @@ async function outputLands() {
 /** A producer feeding a chart: pinning the chart has the producer's output saved. */
 async function addChartFedByAProducer(pinned = false) {
   await act(async () => {
-    api.addNode(makeNode('py', NodeType.COMPUTATION_ANALYSIS, { templateName: 'Load trips' }), undefined, false);
+    api.addNode(makeNode('py', NodeType.PYTHON_COMPUTATION, { templateName: 'Load trips' }), undefined, false);
     api.addNode(makeNode('chart', NodeType.VIS_VEGA, pinned ? { dashboardPinned: true } : {}), undefined, false);
   });
   await flush();
