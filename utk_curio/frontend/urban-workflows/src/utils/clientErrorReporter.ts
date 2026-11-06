@@ -2,7 +2,8 @@
  * Send browser runtime errors to the monitor's error log.
  *
  * The server sees nothing of what happens after the bundle loads, so a render
- * crash or a rejected promise leaves no trace anywhere. This closes that half.
+ * crash or a rejected promise leaves no trace anywhere. This closes that half,
+ * and a page reports an error it caught through `reportHandledError`.
  *
  * Every guard below exists because a crash reporter is the one piece of code
  * that runs while things are already going wrong:
@@ -60,6 +61,16 @@ function report(message: string, stack: string): void {
   } finally {
     reporting = false;
   }
+}
+
+/**
+ * Report an error a page caught and showed, which no window event carries: the
+ * projects page's list that failed every try (#1274). It spends the same
+ * reports a page load may send, and is sent whether or not the window
+ * reporter is installed.
+ */
+export function reportHandledError(message: string, stack = ""): void {
+  report(message, stack);
 }
 
 export function installClientErrorReporter(): void {

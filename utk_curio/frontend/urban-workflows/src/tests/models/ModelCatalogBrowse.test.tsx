@@ -258,6 +258,60 @@ describe("the Node Catalog page", () => {
     const rail = screen.getByRole("complementary", { name: "Filter packages" });
     expect(within(rail).getByRole("button", { name: /All packages/ })).toHaveTextContent("2");
   });
+
+  // On 11-06 stable's backend was out of open files and every catalog read 0:
+  // a list that had not come, or had failed, said no package matched.
+  test("says it is loading until its list answers, never that no package matches", async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    mockApi.catalog.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+    renderPage("/catalog/nodes");
+
+    expect(screen.getByText("Loading packages…")).toBeInTheDocument();
+    expect(screen.queryByText("No packages match the current filters.")).toBeNull();
+
+    await act(async () => answer({ packages: [builtinPackage(), rasterizationPackage()], families: [], catalogCollisions: [] }));
+    await gridCard("curio.rasterization@1");
+    expect(screen.queryByText("Loading packages…")).toBeNull();
+  });
+
+  test("a failed load says why and offers Retry, never that no package matches, and Retry lists", async () => {
+    mockApi.catalog.mockRejectedValueOnce(new Error("[Errno 24] Too many open files"));
+    renderPage("/catalog/nodes");
+
+    expect(await screen.findByText("Couldn't load catalog: [Errno 24] Too many open files")).toBeInTheDocument();
+    expect(screen.queryByText("No packages match the current filters.")).toBeNull();
+    expect(screen.queryByText("Loading packages…")).toBeNull();
+    // No dismiss: it would leave neither packages nor a word on why.
+    expect(screen.queryByRole("button", { name: "×" })).toBeNull();
+
+    let answer: (value: unknown) => void = () => undefined;
+    mockApi.catalog.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(screen.getByText("Loading packages…")).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't load catalog/)).toBeNull();
+
+    await act(async () => answer({ packages: [builtinPackage(), rasterizationPackage()], families: [], catalogCollisions: [] }));
+    await gridCard("curio.rasterization@1");
+    expect(screen.queryByText(/Couldn't load catalog/)).toBeNull();
+    expect(screen.queryByText("Loading packages…")).toBeNull();
+  });
+
+  test("once its list came, a search that matches nothing says no package matches", async () => {
+    renderPage("/catalog/nodes");
+    await gridCard("curio.rasterization@1");
+    fireEvent.change(screen.getByPlaceholderText("Search packages…"), { target: { value: "nothing is called this" } });
+    expect(screen.getByText("No packages match the current filters.")).toBeInTheDocument();
+    expect(screen.queryByText("Loading packages…")).toBeNull();
+  });
+});
+
+describe("the Model Catalog page, while it loads", () => {
+  test("says it is loading models, never that no model matches", () => {
+    mockApi.catalog.mockImplementation(() => new Promise(() => undefined));
+    renderPage();
+    expect(screen.getByText("Loading models…")).toBeInTheDocument();
+    expect(screen.queryByText("No models match the current filters.")).toBeNull();
+  });
 });
 
 describe("Remove from account, on both catalog pages", () => {
