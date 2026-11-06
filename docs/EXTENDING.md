@@ -820,12 +820,11 @@ CURIO_EVAL_BASE_URL='<base URL>' CURIO_EVAL_API_KEY='<key>' CURIO_EVAL_MODEL='<m
   - **What it runs on:** every model the repository variable `CURIO_EVAL_MODELS` lists (a JSON list), or its `models` input, side by side. It reaches them through the endpoint of the secrets `CURIO_EVAL_BASE_URL` and `CURIO_EVAL_API_KEY`, on one runner labelled `skill-evals`, with the branch's own code.
   - **What it measures:** its `scope` input, `auto` by default, which is what the branch changes against main ([`ci_skill_eval_scope.py`](../scripts/ci_skill_eval_scope.py)):
     - a changed skill: its test cases, three runs both ways, and its trigger queries too when the skill is new or its description or its queries changed;
-    - a core skill, or the preamble that places it: every skill's test cases, three runs both ways;
+    - a core skill, or which core skills the preamble places: every skill's test cases, three runs both ways;
     - a page of the base entry a skill's body renders, by its `{{include:<page>}}` or a marker whose field reads it (autark's `{{autk.grammar}}` reads `autark-grammar.md`): that skill's test cases, three runs both ways;
-    - agent text or code: every other skill's first test case, once, with the skill;
-    - anything else: nothing.
+    - anything else, agent text and code among it: nothing, since no skill changed.
 
-    The other values are `smoke`, `core`, `full`, `graders` (each model grades every skill's grader truth, once) and skill names.
+    The other values are `smoke` (every skill's first test case, once, with the skill, a live check of agent code), `core`, `full`, `graders` (each model grades every skill's grader truth, once) and skill names.
   - **Its report:** its page, `curio-skill-evals-report.html`, is the run's artifact, and its tables are in the run's summary. It holds the benchmark's leaderboard, each skill's success per model, and each model compared with main's last run, which is what later runs compare with. A `graders` run holds each model's agreement with the grader truth and names the best usable grader; later runs do not compare with it. The repository variable `CURIO_EVAL_GRADER` names the graders.
   - **What fails it:**
     - a model that does not answer its probe;
