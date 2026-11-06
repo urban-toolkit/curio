@@ -1,13 +1,13 @@
 """Playwright E2E for #194's delivery half: an upgrade must reach an existing install.
 
-The Column Filter fix shipped inside ``curio.example-ui@1`` at an unchanged
-version. That is the ordinary shape of a Curio upgrade — the catalog under
-``packages/`` moves, the coordinate does not — and installing is copy-once:
-``install_to_store`` returns early when the directory is already there, and
-``_ensure_user_store_install`` copies with ``replace=False``. So a user who had
-the package before the upgrade kept the broken ``behaviors.js`` indefinitely,
-and the node kept saying "Connect a DataFrame upstream" against a frame that
-was right there.
+A fix can ship inside a package at an unchanged version. That is the ordinary
+shape of a Curio upgrade (the catalog under ``packages/`` moves, the coordinate
+does not), and installing is copy-once: ``install_to_store`` returns early when
+the directory is already there, and ``_ensure_user_store_install`` copies with
+``replace=False``. So a user who had the package before the upgrade would keep
+the old ``behaviors.js`` indefinitely. The package here is ``test.ui-node@1``,
+planted in the catalog for the test (``ui_node_in_catalog``), and its
+``behaviors.js`` is the file the upgrade changes.
 
 The recheck found this by hashing the file on a live machine: two accounts held
 ``d20d470728cf`` (pre-fix) while the catalog and a fresh install held
@@ -31,6 +31,8 @@ from urllib.request import Request, urlopen
 
 from playwright.sync_api import expect
 
+from utk_curio.backend.tests._support.ui_test_package import UI_TEST_PACKAGE, UI_TEST_PACKAGE_NAME
+
 from .utils import (
     require_owner_view,
     require_project_page,
@@ -41,9 +43,10 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-PKG_DIR = "curio.example-ui@1"
-#: The file the #194 fix actually changed. Hashing the manifest would compare
-#: something the fix never touched and pass either way.
+PKG_DIR = UI_TEST_PACKAGE
+#: The file the upgrade changes, the package's behavior bundle, as the #194 fix
+#: did. Hashing the manifest would compare something the fix never touched and
+#: pass either way.
 PKG_FILE = "scripts/behaviors.js"
 NODE_DRAWER = '[data-curio-node-catalog-drawer="true"]'
 #: A fresh account per run. Not load-bearing since ``reset-db`` began clearing
@@ -65,7 +68,8 @@ def _package_store(backend: str, **body) -> dict:
 
 
 def _install_from_the_node_catalog(page) -> None:
-    """Add ``curio.example-ui@1`` through the drawer, the way a user would."""
+    """Add ``test.ui-node@1`` through the drawer, the way a user would. The
+    test plants it in the catalog first (``ui_node_in_catalog``)."""
     page.get_by_text("NODE CATALOG").click()
     page.get_by_role("button", name=re.compile("Browse Node Catalog")).click()
     drawer = page.locator(NODE_DRAWER)
@@ -74,7 +78,7 @@ def _install_from_the_node_catalog(page) -> None:
 
     card = page.locator(f'article[data-pkg-dir="{PKG_DIR}"]')
     if card.count() == 0:
-        card = page.locator("article").filter(has_text="Example: Custom UI Node").first
+        card = page.locator("article").filter(has_text=UI_TEST_PACKAGE_NAME).first
     card.first.get_by_role("button", name=re.compile(r"^Add to project")).click()
     page.get_by_role("dialog").last.get_by_role(
         "button", name=re.compile(r"^(Add|Install)")
@@ -89,7 +93,7 @@ def _install_from_the_node_catalog(page) -> None:
 
 
 def test_an_upgrade_reaches_a_package_that_is_already_installed(
-    app_frontend: "FrontendPage", current_server: str, page
+    app_frontend: "FrontendPage", current_server: str, page, ui_node_in_catalog
 ):
     require_project_page()
     require_user_auth()

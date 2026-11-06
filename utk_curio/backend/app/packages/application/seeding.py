@@ -287,9 +287,9 @@ def _store_copy_is_stale(src: Path, dest: Path, fixture_mtime: float) -> bool:
 
     A fix can ship inside a package at an unchanged version - the catalog under
     ``<repo_root>/packages`` moves, the coordinate does not - and installing is
-    copy-once, so the user keeps whatever they first copied. That is how the
-    Column Filter fix failed to reach anyone who already had
-    ``curio.example-ui@1``: same ``@1``, same version, older bytes.
+    copy-once, so the user keeps whatever they first copied, and a fix shipped
+    that way never reaches anyone who already had the package: same ``@1``,
+    same version, older bytes.
 
     Content, not mtime. ``should_seed`` compares fixture mtimes, which is right
     for a dev fixture the author is editing, but git rewrites mtimes on

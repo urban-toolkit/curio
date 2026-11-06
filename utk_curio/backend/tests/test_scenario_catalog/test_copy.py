@@ -36,6 +36,20 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     store_sandbox_artifact,
     stored_artifact_file,
 )
+from utk_curio.backend.tests._support.ui_test_package import (
+    UI_TEST_NODE_TYPE,
+    UI_TEST_PACKAGE,
+    ui_test_package_in,
+)
+
+
+@pytest.fixture()
+def ui_package_in_the_catalog():
+    """``test.ui-node@1`` in the catalog the drop adds packages from, for one test."""
+    from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root
+
+    with ui_test_package_in(catalog_root()):
+        yield UI_TEST_PACKAGE
 
 #: Node ``a``; the chart it feeds is its shared outcome.
 BASELINE = {"id": "s1", "name": "Baseline", "color": "#2a9d8f", "nodes": ["a"]}
@@ -496,24 +510,24 @@ def test_only_the_scenarios_saved_outputs_are_copied_to_fresh_ids(client, user_a
         assert resp.status_code == 400, (outputs, resp.get_data(as_text=True))
 
 
-def test_a_package_the_target_lacks_is_added(client, user_and_token):
+def test_a_package_the_target_lacks_is_added(client, user_and_token, ui_package_in_the_catalog):
     _, token = user_and_token
     nodes = [
         _node("load", "data-loading", "return 1"),
-        {"id": "a", "type": "curio.example-ui/column-filter@1", "content": "return input_0", "x": 300, "y": 0},
+        {"id": "a", "type": f"{UI_TEST_NODE_TYPE}@1", "content": "return input_0", "x": 300, "y": 0},
     ]
     edges = [{"id": "e1", "source": "load", "target": "a", "sourceHandle": "out", "targetHandle": "in"}]
     source, target = _source_and_target(client, token, _spec("Shadows", [{**BASELINE, "nodes": ["a"]}], nodes, edges))
     _save_outputs(client, token, source, {"load": "id\n1\n"})
 
-    assert _plan(client, token, source, target).get_json()["packages"] == ["curio.example-ui@1"]
+    assert _plan(client, token, source, target).get_json()["packages"] == [UI_TEST_PACKAGE]
     resp = _copy(client, token, source, target, [{"source": "load", "node": "loader-1"}])
 
     assert resp.status_code == 200, resp.get_data(as_text=True)
-    assert resp.get_json()["added"] == ["curio.example-ui@1"]
-    assert "curio.example-ui@1" in resp.get_json()["packages"]
+    assert resp.get_json()["added"] == [UI_TEST_PACKAGE]
+    assert UI_TEST_PACKAGE in resp.get_json()["packages"]
     lockfile = client.get(f"/api/packages/projects/{target}", headers=_headers(token)).get_json()
-    assert "curio.example-ui@1" in json.dumps(lockfile)
+    assert UI_TEST_PACKAGE in json.dumps(lockfile)
 
 
 def test_what_the_account_cannot_provide_is_refused_naming_it(client, user_and_token):

@@ -85,7 +85,7 @@ def test_with_ui_emits_a_behavior_bundle_entry(tmp_path):
 
 def test_with_ui_reads_its_input_with_the_canvas_reader(tmp_path):
     """A node made with ``--with-ui`` reads an output with
-    ``window.curio.fetchData``, as the canvas and the example package do, and
+    ``window.curio.fetchData``, as the canvas does, and
     fetches ``/get`` itself only on a host without it: ``/get`` reads under
     the sign-in's session alone, so after a new sign-in a saved input reads
     only on the dataflow's route."""

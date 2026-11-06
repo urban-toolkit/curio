@@ -11,9 +11,9 @@ change, which no unit test observes.
 and is the cheaper place to assert it. What is asserted here is the thing that
 actually broke: navigating from a dataflow that HAS a package to a new one.
 
-``curio.example-ui@1`` is the ONLY package a test may install: it declares no
-python dependencies, so nothing shells out to pip. See the note at the top of
-``test_node_catalog.py``.
+``test.ui-node@1``, planted in the catalog for each test, is the ONLY package a
+test may install: it declares no python dependencies, so nothing shells out to
+pip. See the note at the top of ``test_node_catalog.py``.
 
 Run::
 
@@ -24,6 +24,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
+
+from utk_curio.backend.tests._support.ui_test_package import UI_TEST_PACKAGE, UI_TEST_PACKAGE_NAME
 
 from .utils import (
     api_json,
@@ -38,9 +40,9 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-PKG_DIR = "curio.example-ui@1"
-PKG_COORD = "curio.example-ui@1"
-PKG_NAME = "Example: Custom UI Node"
+PKG_DIR = UI_TEST_PACKAGE
+PKG_COORD = UI_TEST_PACKAGE
+PKG_NAME = UI_TEST_PACKAGE_NAME
 
 DRAWER_ROOT = '[data-curio-node-catalog-drawer="true"]'
 
@@ -94,7 +96,7 @@ def _palette_coords(page) -> list[str]:
 
 
 def test_a_new_dataflow_does_not_inherit_the_previous_palette(
-    app_frontend: "FrontendPage", current_server: str, page
+    app_frontend: "FrontendPage", current_server: str, page, ui_node_in_catalog
 ):
     require_project_page()
     require_user_auth()
@@ -180,7 +182,7 @@ def test_a_new_dataflow_does_not_inherit_the_previous_palette(
 
 
 def test_remove_is_offered_before_the_first_save(
-    app_frontend: "FrontendPage", current_server: str, page, request
+    app_frontend: "FrontendPage", current_server: str, page, request, ui_node_in_catalog
 ):
     """#220's second half: the removal action existed but was unreachable.
 

@@ -774,9 +774,9 @@ packages/
   curio.builtin@1/        # always-on baseline (data, computation, autk, vis, flow nodes)
     manifest.json
     integrity.json        # SHA-256 of every file (written on install, not verified)
-  curio.example-ui@1/     # optional package, install from /catalog
+  me.my-node@1/           # a package with its own node interface (scripts/new_package.py --with-ui)
     manifest.json
-    sources/*.tsx         # custom behavior hook (Column Filter) and its bundle entry
+    sources/*.tsx         # custom behavior hook and its bundle entry
     scripts/behaviors.js  # pre-built bundle that registers that hook at boot
     integrity.json
   model.curio.ddrnet23-slim@1/  # model package: its weights and one Python code template
@@ -811,7 +811,7 @@ Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 | Grammar (Autark) | `autk-grammar`, one node whose UrbanSpec unifies OSM/PBF loading, GPU `compute`, and `map` + `plot` rendering |
 | Chart/table visualization | `vis-vega`, `vis-simple` (a table, or a card per row when the frame carries images) |
 
-Third-party packages (or first-party optional ones, like `curio.example-ui@1`) install via the **catalog drawer** in the canvas, which copies the package directory into the user's store at `.curio/users/<user>/packages/`.
+Third-party packages (or first-party optional ones, like `ai.utk.uhvi@1`) install via the **catalog drawer** in the canvas, which copies the package directory into the user's store at `.curio/users/<user>/packages/`.
 
 ### A dataflow's tags and data types
 
@@ -879,7 +879,7 @@ interface NodeAdapter {
 
 ### Behavior Hooks
 
-Every template in a manifest references a **behavior key** (the `behavior` field, holding values such as `"code"`, `"vega"`, `"data-pool"`, or `"column-filter"`). A behavior is a React custom hook that runs inside `UniversalNode` and controls the node's behaviour:
+Every template in a manifest references a **behavior key** (the `behavior` field, holding values such as `"code"`, `"vega"`, `"data-pool"`, or a package's own `"my-node"`). A behavior is a React custom hook that runs inside `UniversalNode` and controls the node's behaviour:
 
 ```typescript
 type NodeBehaviorHook = (
@@ -903,13 +903,13 @@ Behaviors register against a single global registry, [`behaviorRegistry.ts::regi
 
 **2. Per-package (dynamic, loaded at boot).** A package whose templates need custom UI can declare `"behaviorScript": "scripts/behaviors.js"` in its manifest and ship a pre-built JS bundle alongside the manifest. At boot, [`packagesClient.ts::loadPackageBehaviorScripts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) fetches each installed package's bundle with the user's Bearer token and injects the response body as an inline `<script>` *before* descriptors are built. The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each hook it ships.
 
-**Worked example: `curio.example-ui@1`** ships one custom behavior:
+**Worked example: `python scripts/new_package.py me.my-node --with-ui`** writes a package with one custom behavior:
 
 | Behavior key | Hook | Purpose |
 |---|---|---|
-| `column-filter` | `useColumnFilterBehavior` | Column, comparison and threshold controls in the node body; sends the matching rows downstream as a DATAFRAME |
+| `my-node` | `useMyNodeBehavior` | A column picked from the input frame's columns in the node body; keeps that column as an output with `window.curio.storeOutput` and hands on its reference as a DATAFRAME |
 
-The hook sits in `packages/curio.example-ui@1/sources/columnFilterBehavior.tsx` and `sources/index.tsx` registers it; webpack bundles them into `scripts/behaviors.js` (UMD + React/ReactFlow externalized to share Curio's instances at runtime), and the manifest's `behavior` field maps the template to it. The catalog install copies the package directory; boot loads the bundle; the user gets a custom-rendered node without rebuilding Curio. See [EXTENDING.md §4](EXTENDING.md) for the recipe.
+The hook sits in `packages/me.my-node@1/sources/myNodeBehavior.tsx` and `sources/index.tsx` registers it; `npm run build:packages` bundles them into `scripts/behaviors.js` (UMD + React/ReactFlow externalized to share Curio's instances at runtime), and the manifest's `behavior` field maps the template to it. The catalog install copies the package directory; boot loads the bundle; the user gets a custom-rendered node without rebuilding Curio. See [EXTENDING.md §4](EXTENDING.md) for the recipe.
 
 **Icons.** A template's `iconRef` names any Font Awesome solid or brands icon, `"fa-solid:<name>"` or `"fa-brands:<name>"`, with no change to Curio. [`src/registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts) bundles the icons `curio.builtin@1`'s templates name. `packagesClient.ts::loadInstalledPackages` loads any other one while it loads the behavior scripts, before it builds descriptors, so a palette tile never draws a placeholder first: a dynamic `import()` of `@fortawesome/free-solid-svg-icons/<faName>` (or the brands pack), which webpack splits into one chunk per icon (`webpack.config.js` aliases each pack to its folder, so webpack can list it). The icon chunks ship as webpack writes them, without minifying or a source map ([`webpack/iconChunks.js`](../utk_curio/frontend/urban-workflows/webpack/iconChunks.js)). A ref Font Awesome does not have falls back to `faCube`, so a missing icon is visible but not fatal.
 

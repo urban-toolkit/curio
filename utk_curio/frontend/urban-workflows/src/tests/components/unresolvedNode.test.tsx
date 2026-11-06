@@ -137,7 +137,7 @@ describe("packageDisplayName", () => {
   it("turns a package id into something readable", () => {
     expect(packageDisplayName("model.curio.ddrnet23-slim")).toBe("Ddrnet23 Slim");
     expect(packageDisplayName("ai.utk.uhvi")).toBe("Uhvi");
-    expect(packageDisplayName("curio.example-ui")).toBe("Example Ui");
+    expect(packageDisplayName("test.ui-node")).toBe("Ui Node");
   });
 });
 

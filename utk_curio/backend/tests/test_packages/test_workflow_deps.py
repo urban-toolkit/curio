@@ -14,6 +14,13 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+from utk_curio.backend.tests._support.ui_test_package import (
+    UI_TEST_PACKAGE,
+    UI_TEST_PACKAGE_ID,
+    ui_test_package_in,
+)
 from utk_curio.backend.app.packages.infrastructure import pip_runner as packages_routes_pip
 from utk_curio.backend.app.packages.application import provisioning
 from utk_curio.backend.app.packages import service as packages_services
@@ -44,6 +51,15 @@ def _install(client, token, packages):
         headers=_auth(token),
         data=json.dumps({"packages": packages}),
     )
+
+
+@pytest.fixture()
+def ui_package_in_the_catalog():
+    """``test.ui-node@1`` in the catalog the service reads, for one test."""
+    from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root
+
+    with ui_test_package_in(catalog_root()):
+        yield UI_TEST_PACKAGE
 
 
 # ---------------------------------------------------------------------------
@@ -333,11 +349,11 @@ def test_install_abandons_the_partial_set_on_a_mid_loop_failure(
 
     monkeypatch.setattr(store_install, "install_to_store", _second_fails)
     _, token = user_and_token
-    resp = _install(client, token, ["curio.example-ui@1", "ai.utk.uhvi@1"])
+    resp = _install(client, token, [UI_TEST_PACKAGE, "ai.utk.uhvi@1"])
     assert resp.status_code == 502
     assert "ai.utk.uhvi@1" in resp.get_json()["error"]
     # The first one really was installed, but the response says nothing about it.
-    assert attempted == ["curio.example-ui@1", "ai.utk.uhvi@1"]
+    assert attempted == [UI_TEST_PACKAGE, "ai.utk.uhvi@1"]
     assert "installedPackages" not in resp.get_json()
 
 
@@ -360,9 +376,9 @@ def test_check_is_a_pure_probe_and_installs_nothing(
         lambda uk, dn: installs.append(dn) or packages_services.InstallOutcome(copied=True),
     )
     _, token = user_and_token
-    resp = _check(client, token, ["curio.example-ui@1", "curio.weather@1"])
+    resp = _check(client, token, [UI_TEST_PACKAGE, "curio.weather@1"])
     assert resp.status_code == 200
-    assert resp.get_json()["packages"] == ["curio.example-ui@1", "curio.weather@1"]
+    assert resp.get_json()["packages"] == ["curio.weather@1", UI_TEST_PACKAGE]
     assert installs == []
 
 
@@ -379,17 +395,17 @@ def test_check_accepts_an_empty_declaration(client, user_and_token, tmp_curio):
 
 
 def test_declared_package_is_installed_and_then_probes_clean(
-    client, user_and_token, tmp_curio
+    client, user_and_token, tmp_curio, ui_package_in_the_catalog
 ):
     """The real load-time cycle, unstubbed: needed -> install -> satisfied.
 
     Every other /install test stubs ``install_to_store``, so none of them prove
     that installing actually satisfies the check. This one runs the production
-    service against the committed catalog. ``curio.example-ui@1`` is the target
+    service against the catalog, with ``test.ui-node@1`` in it. It is the target
     because it declares no python deps, so the store copy is the only work done.
     """
     _, token = user_and_token
-    declared = ["curio.example-ui@1"]
+    declared = [ui_package_in_the_catalog]
 
     # 1. A fresh user has only curio.builtin seeded, so it reads as needed.
     assert _check(client, token, declared).get_json()["packages"] == declared
@@ -401,14 +417,14 @@ def test_declared_package_is_installed_and_then_probes_clean(
 
     # 3. It is now in the store and listed by the packages API.
     listing = client.get("/api/packages", headers=_auth(token)).get_json()["packages"]
-    assert "curio.example-ui" in {p["packageId"] for p in listing}
+    assert UI_TEST_PACKAGE_ID in {p["packageId"] for p in listing}
 
     # 4. The same probe now comes back clean - the load-time flow has converged.
     assert _check(client, token, declared).get_json()["packages"] == []
 
 
 def test_installing_a_declared_package_twice_is_idempotent(
-    client, user_and_token, tmp_curio
+    client, user_and_token, tmp_curio, ui_package_in_the_catalog
 ):
     """Re-loading the same dataflow must not fail on the second install.
 
@@ -418,7 +434,7 @@ def test_installing_a_declared_package_twice_is_idempotent(
     "already installed" guard.
     """
     _, token = user_and_token
-    declared = ["curio.example-ui@1"]
+    declared = [ui_package_in_the_catalog]
     assert _install(client, token, declared).status_code == 200
     second = _install(client, token, declared)
     assert second.status_code == 200, second.get_json()

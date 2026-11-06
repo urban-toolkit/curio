@@ -653,7 +653,6 @@
  "tests.test_frontend.test_walkthrough_baselines::test_walkthrough_baseline[chromium-catalog-details-clear-the-version-badge]": 14.1,
  "tests.test_frontend.test_walkthrough_baselines::test_walkthrough_baseline[chromium-catalog-remove-is-an-app-dialog]": 13.4,
  "tests.test_frontend.test_walkthrough_baselines::test_walkthrough_baseline[chromium-catalog-tag-chips-are-plain]": 20.9,
- "tests.test_frontend.test_walkthrough_baselines::test_walkthrough_baseline[chromium-column-filter-reads-a-dataframe]": 17.8,
  "tests.test_frontend.test_walkthrough_baselines::test_walkthrough_baseline[chromium-dashboard-page-renders-pinned-charts]": 37.4,
  "tests.test_frontend.test_walkthrough_baselines::test_walkthrough_baseline[chromium-data-export-is-one-button]": 12.8,
  "tests.test_frontend.test_walkthrough_baselines::test_walkthrough_baseline[chromium-data-pool-scrolls-sideways]": 15.0,

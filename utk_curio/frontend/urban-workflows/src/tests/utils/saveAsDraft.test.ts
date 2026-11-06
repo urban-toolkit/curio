@@ -148,13 +148,13 @@ describe("toApiPayload", () => {
   it("emits the optional per-template keys when set", () => {
     const [entry] = toApiPayload(
       withTemplate({
-        behavior: "column-filter",
+        behavior: "ui-node",
         iconRef: "fa-solid:cube",
         paletteOrder: 3,
         sourceFilename: "default.py",
       }),
     ).manifest.templates as Record<string, unknown>[];
-    expect(entry.behavior).toBe("column-filter");
+    expect(entry.behavior).toBe("ui-node");
     expect(entry.iconRef).toBe("fa-solid:cube");
     expect(entry.paletteOrder).toBe(3);
     // The manifest stores a package-relative path, not the bare filename.
@@ -188,7 +188,7 @@ describe("depsToMap", () => {
 
 describe("label matching", () => {
   it("normalises case and surrounding space", () => {
-    expect(normalizeTemplateLabel("  Column Filter ")).toBe("column filter");
+    expect(normalizeTemplateLabel("  Row Picker ")).toBe("row picker");
   });
 
   const pkg = (labels: string[]): PackagePayload =>
@@ -202,9 +202,9 @@ describe("label matching", () => {
   it("detects that saving would replace an existing template", () => {
     // This drives the modal's "Replace existing node" warning and its
     // Save-vs-Replace button label, so a false negative silently clobbers.
-    expect(saveAsWouldReplaceByLabel(pkg(["Column Filter"]), "column filter")).toBe(true);
-    expect(saveAsWouldReplaceByLabel(pkg(["Column Filter"]), "Something Else")).toBe(false);
-    expect(saveAsWouldReplaceByLabel(pkg([]), "Column Filter")).toBe(false);
+    expect(saveAsWouldReplaceByLabel(pkg(["Row Picker"]), "row picker")).toBe(true);
+    expect(saveAsWouldReplaceByLabel(pkg(["Row Picker"]), "Something Else")).toBe(false);
+    expect(saveAsWouldReplaceByLabel(pkg([]), "Row Picker")).toBe(false);
   });
 });
 

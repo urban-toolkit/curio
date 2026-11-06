@@ -2,8 +2,8 @@
 
 ``test_builtin_package.py`` covers ``curio.builtin@1`` specifically. This walks
 the whole shipped catalog, so a new entry is exercised the moment it is
-committed rather than whenever someone remembers to add a test: both
-``curio.example-ui@1`` and ``curio.weather@1`` landed with no coverage at all.
+committed rather than whenever someone remembers to add a test:
+``curio.weather@1`` landed with no coverage at all.
 
 The catalog is baked into the deploy image, so a manifest that fails to load
 here is a package that silently vanishes from every user's Browse tab.
