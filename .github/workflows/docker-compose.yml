@@ -698,8 +698,19 @@ jobs:
           docker compose -p curio-ci build --parallel
           echo "CURIO_CI_OWN_IMAGE=1" >> "$GITHUB_ENV"
 
+      # docker-compose.ci-shards.yml asks for the runner's GPU, and a Docker
+      # without the NVIDIA Container Toolkit starts no container for it. Its
+      # own message does not name the toolkit, so this one does.
       - name: ▶️ Start containers
-        run: docker compose -p curio-ci up -d
+        shell: bash
+        run: |
+          status=0
+          docker compose -p curio-ci up -d 2> "$RUNNER_TEMP/compose-up.err" || status=$?
+          cat "$RUNNER_TEMP/compose-up.err" >&2
+          if [ "$status" -ne 0 ] && grep -qE 'could not select device driver|failed to discover GPU vendor' "$RUNNER_TEMP/compose-up.err"; then
+            echo "::error::the Docker on ${RUNNER_NAME} cannot give a container the GPU: it has no NVIDIA Container Toolkit, which docker-compose.ci-shards.yml's GPU request needs" >&2
+          fi
+          exit "$status"
 
       # The runner's pytest uses the packages of the image just built, copied
       # while its container boots.
@@ -958,6 +969,38 @@ jobs:
         if: ${{ !cancelled() && steps.stack_healthy.outcome == 'success' }}
         run: |
           curl --fail http://localhost:8100 || (echo "Frontend not reachable" && exit 1)
+
+      # The image's CUDA toolkit runs a tiny MLP on this runner's GPU inside
+      # the curio container, and the image's torch multiplies on it, as plain
+      # Python rather than node code (utk_curio/sandbox/tests/test_cuda_mlp.py
+      # and test_cuda_torch.py, which only -m cuda selects). After the e2e
+      # tests, so a failure here never hides theirs, and their browsers have
+      # let go of the GPU's memory by then. Its JUnit joins this job's results,
+      # which ci-report's every-test-ran check reads.
+      - name: 🧮 Run a model on this runner's GPU through CUDA
+        if: ${{ !cancelled() && steps.stack_healthy.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          docker compose -p curio-ci exec -T curio nvidia-smi
+          status=0
+          docker compose -p curio-ci exec -T curio python -m pytest \
+            utk_curio/sandbox/tests/test_cuda_mlp.py utk_curio/sandbox/tests/test_cuda_torch.py \
+            -m cuda -v -s --junitxml=/app/.curio/ci-report/cuda.xml || status=$?
+          cp .curio/ci-report/cuda.xml ci-report/cuda.xml || status=1
+          # Every CUDA test passed, both GPU runs among them: an -m expression
+          # that selected none would leave nothing to fail.
+          python3 -c '
+          import sys, xml.etree.ElementTree as ET
+          cases = list(ET.parse(sys.argv[1]).getroot().iter("testcase"))
+          passed = [c.get("name") for c in cases if not any(c.find(k) is not None for k in ("failure", "error", "skipped"))]
+          needed = {"test_a_tiny_mlp_runs_on_the_gpu_and_matches_numpy",
+                    "test_torch_is_the_cuda_12_9_build_and_multiplies_on_the_gpu"}
+          if len(passed) != len(cases) or not needed <= set(passed):
+              sys.exit(f"::error::the CUDA tests did not all pass: {len(passed)} of {len(cases)}")
+          print(f"OK: {len(passed)} CUDA tests passed")
+          ' ci-report/cuda.xml || status=1
+          exit "$status"
 
       - name: 📋 Capture sandbox/backend logs (autk-db errors)
         if: always()
@@ -2158,6 +2201,7 @@ jobs:
           args+=(
             --junit "Sandbox unit tests=inputs/ci-inputs-unit-sandbox/sandbox.xml"
             --junit "End-to-end tests, GPU runner=inputs/ci-inputs-test-gpu/e2e.xml"
+            --junit "CUDA on the GPU runner=inputs/ci-inputs-test-gpu/cuda.xml"
           )
           for part in inputs/ci-inputs-e2e-desktop-*/; do
             k="${part%/}"; k="${k##*-}"

@@ -12,6 +12,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker +
   - [LLM configurations](#llm-configurations)
 - [2. Configure Caddy](#2-configure-caddy)
 - [3. Build and run](#3-build-and-run)
+  - [The GPU](#the-gpu)
 - [Updating](#updating)
 - [Optional: dev stack alongside stable](#optional-dev-stack-alongside-stable)
 - [Optional: CI/CD with GitHub Actions + Tailscale](#optional-cicd-with-github-actions--tailscale)
@@ -320,6 +321,26 @@ curl https://lab-name.your-uni.edu/curio/api/live
 Then load `https://lab-name.your-uni.edu/curio/` in a browser. If something looks off, `docker compose logs -f` shows the running container's output.
 
 **Run one backend process.** The backend keeps each open dataflow's live copy, the one everyone editing it shares, in its own memory. So one backend process serves a deployment's data directories: never run a second process, worker or replica on them, where each would keep its own copy of a dataflow and the two would drift apart.
+
+### The GPU
+
+The image carries the CUDA 12.9 toolkit on x86_64, with its runtime libraries, NVRTC and nvcc, and PyTorch and torchvision built for CUDA 12.9, which node code imports with nothing to install. A container gets the GPU from the host, which needs:
+
+- an NVIDIA driver, 525 or newer (`nvidia-smi` prints its version);
+- the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), set up for Docker. Restarting Docker stops every container on the host until it is back:
+
+```bash
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+This lists the GPU when a container can get it:
+
+```bash
+docker run --rm --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,utility python:3.12-slim nvidia-smi -L
+```
+
+A container gets the GPU only when its compose file asks for one; `docker-compose.deploy.yml` asks for none.
 
 ## Updating
 
