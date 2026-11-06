@@ -28,27 +28,6 @@
         "hasContent": true
       },
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis2",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis3",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
         "role": "loader",
@@ -84,6 +63,27 @@
         "hasContent": true
       },
       {
+        "ref": "analysis3",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "visualization2",
         "type": "curio.builtin/vis-vega",
         "role": "visualization",
@@ -93,54 +93,13 @@
     ],
     "edges": [
       {
-        "from": "analysis1",
-        "to": "pool1",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis1",
-        "to": "visualization2",
-        "kind": "data"
-      },
-      {
-        "from": "analysis2",
+        "from": "loader1",
         "to": "visualization1",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis2",
-        "to": "analysis1",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis2",
-        "to": "pool1",
         "kind": "data"
-      },
-      {
-        "from": "analysis2",
-        "to": "analysis4",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis2",
-        "to": "visualization2",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis3",
-        "to": "analysis2",
-        "kind": "data",
-        "slot": 1
       },
       {
         "from": "loader1",
-        "to": "visualization1",
+        "to": "analysis4",
         "kind": "data"
       },
       {
@@ -150,13 +109,13 @@
         "slot": 2
       },
       {
-        "from": "loader1",
-        "to": "analysis4",
+        "from": "loader2",
+        "to": "analysis2",
         "kind": "data"
       },
       {
-        "from": "loader2",
-        "to": "analysis2",
+        "from": "loader3",
+        "to": "analysis3",
         "kind": "data"
       },
       {
@@ -165,8 +124,49 @@
         "kind": "data"
       },
       {
-        "from": "loader3",
-        "to": "analysis3",
+        "from": "analysis3",
+        "to": "analysis2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis2",
+        "to": "pool1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis1",
+        "to": "pool1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization2",
         "kind": "data"
       }
     ],

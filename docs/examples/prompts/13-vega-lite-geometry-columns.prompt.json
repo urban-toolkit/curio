@@ -19,6 +19,13 @@
   "expected": {
     "nodes": [
       {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "analysis1",
         "type": "curio.builtin/python-computation",
         "role": "analysis",
@@ -57,13 +64,6 @@
         "ref": "analysis6",
         "type": "curio.builtin/python-computation",
         "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "loader1",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
         "executable": true,
         "hasContent": true
       },
@@ -119,6 +119,36 @@
     ],
     "edges": [
       {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis5",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis6",
+        "kind": "data"
+      },
+      {
         "from": "analysis1",
         "to": "visualization1",
         "kind": "data"
@@ -151,36 +181,6 @@
       {
         "from": "analysis6",
         "to": "visualization7",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "analysis1",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "analysis2",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "analysis3",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "analysis4",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "analysis5",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "analysis6",
         "kind": "data"
       }
     ],

@@ -20,6 +20,27 @@
   "expected": {
     "nodes": [
       {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      },
+      {
         "ref": "analysis1",
         "type": "curio.builtin/python-computation",
         "role": "analysis",
@@ -34,25 +55,11 @@
         "hasContent": true
       },
       {
-        "ref": "loader1",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "loader2",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "pool1",
-        "type": "curio.builtin/data-pool",
-        "role": "pool",
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
         "executable": false,
-        "hasContent": false
+        "hasContent": true
       },
       {
         "ref": "visualization1",
@@ -67,34 +74,17 @@
         "role": "visualization",
         "executable": false,
         "hasContent": true
-      },
-      {
-        "ref": "visualization3",
-        "type": "curio.builtin/vis-vega",
-        "role": "visualization",
-        "executable": false,
-        "hasContent": true
       }
     ],
     "edges": [
       {
-        "from": "analysis1",
-        "to": "visualization1",
-        "kind": "data"
-      },
-      {
-        "from": "analysis2",
-        "to": "visualization2",
+        "from": "loader2",
+        "to": "pool1",
         "kind": "data"
       },
       {
         "from": "loader1",
         "to": "analysis1",
-        "kind": "data"
-      },
-      {
-        "from": "loader2",
-        "to": "pool1",
         "kind": "data"
       },
       {
@@ -105,6 +95,16 @@
       {
         "from": "pool1",
         "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization2",
         "kind": "data"
       }
     ],

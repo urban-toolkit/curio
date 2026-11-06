@@ -20,13 +20,6 @@
   "expected": {
     "nodes": [
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
         "role": "loader",
@@ -41,6 +34,13 @@
         "hasContent": true
       },
       {
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "visualization1",
         "type": "curio.builtin/vis-vega",
         "role": "visualization",
@@ -49,11 +49,6 @@
       }
     ],
     "edges": [
-      {
-        "from": "analysis1",
-        "to": "visualization1",
-        "kind": "data"
-      },
       {
         "from": "loader1",
         "to": "analysis1",
@@ -64,6 +59,11 @@
         "to": "analysis1",
         "kind": "data",
         "slot": 1
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
       }
     ],
     "sources": {

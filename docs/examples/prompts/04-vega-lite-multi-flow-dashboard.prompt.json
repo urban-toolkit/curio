@@ -19,44 +19,9 @@
   "expected": {
     "nodes": [
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis2",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis3",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis4",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis5",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis6",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
         "executable": true,
         "hasContent": true
       },
@@ -117,31 +82,45 @@
         "hasContent": true
       },
       {
-        "ref": "loader1",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "visualization1",
-        "type": "curio.builtin/vis-vega",
-        "role": "visualization",
-        "executable": false,
+        "ref": "analysis2",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
         "hasContent": true
       },
       {
-        "ref": "visualization2",
-        "type": "curio.builtin/vis-vega",
-        "role": "visualization",
-        "executable": false,
+        "ref": "analysis3",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
         "hasContent": true
       },
       {
-        "ref": "visualization3",
-        "type": "curio.builtin/vis-vega",
-        "role": "visualization",
-        "executable": false,
+        "ref": "analysis4",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis5",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis6",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
         "hasContent": true
       },
       {
@@ -164,37 +143,68 @@
         "role": "visualization",
         "executable": false,
         "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
       }
     ],
     "edges": [
       {
-        "from": "analysis1",
-        "to": "visualization1",
+        "from": "loader1",
+        "to": "analysis7",
         "kind": "data"
       },
       {
-        "from": "analysis2",
-        "to": "visualization2",
+        "from": "loader1",
+        "to": "analysis8",
         "kind": "data"
       },
       {
-        "from": "analysis3",
-        "to": "visualization3",
+        "from": "loader1",
+        "to": "analysis9",
         "kind": "data"
       },
       {
-        "from": "analysis4",
-        "to": "analysis1",
+        "from": "loader1",
+        "to": "analysis10",
         "kind": "data"
       },
       {
-        "from": "analysis5",
-        "to": "analysis2",
+        "from": "loader1",
+        "to": "analysis11",
         "kind": "data"
       },
       {
-        "from": "analysis6",
-        "to": "analysis3",
+        "from": "loader1",
+        "to": "analysis12",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis13",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis14",
         "kind": "data"
       },
       {
@@ -246,43 +256,33 @@
         "kind": "data"
       },
       {
-        "from": "loader1",
-        "to": "analysis7",
+        "from": "analysis1",
+        "to": "visualization1",
         "kind": "data"
       },
       {
-        "from": "loader1",
-        "to": "analysis8",
+        "from": "analysis2",
+        "to": "visualization2",
         "kind": "data"
       },
       {
-        "from": "loader1",
-        "to": "analysis9",
+        "from": "analysis3",
+        "to": "visualization3",
         "kind": "data"
       },
       {
-        "from": "loader1",
-        "to": "analysis10",
+        "from": "analysis4",
+        "to": "analysis1",
         "kind": "data"
       },
       {
-        "from": "loader1",
-        "to": "analysis11",
+        "from": "analysis5",
+        "to": "analysis2",
         "kind": "data"
       },
       {
-        "from": "loader1",
-        "to": "analysis12",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "analysis13",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "analysis14",
+        "from": "analysis6",
+        "to": "analysis3",
         "kind": "data"
       }
     ],

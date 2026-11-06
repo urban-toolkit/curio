@@ -22,13 +22,6 @@
   "expected": {
     "nodes": [
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
         "role": "loader",
@@ -71,11 +64,11 @@
         "hasContent": true
       },
       {
-        "ref": "endpoint1",
-        "type": "curio.builtin/spatial-join",
-        "role": "endpoint",
-        "executable": false,
-        "hasContent": false
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
       },
       {
         "ref": "endpoint2",
@@ -134,6 +127,13 @@
         "hasContent": false
       },
       {
+        "ref": "endpoint1",
+        "type": "curio.builtin/spatial-join",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
         "ref": "visualization1",
         "type": "curio.builtin/vis-simple",
         "role": "visualization",
@@ -146,13 +146,6 @@
         "role": "visualization",
         "executable": false,
         "hasContent": false
-      },
-      {
-        "ref": "visualization3",
-        "type": "curio.builtin/vis-vega",
-        "role": "visualization",
-        "executable": false,
-        "hasContent": true
       },
       {
         "ref": "visualization4",
@@ -195,14 +188,16 @@
         "role": "visualization",
         "executable": false,
         "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
       }
     ],
     "edges": [
-      {
-        "from": "analysis1",
-        "to": "endpoint1",
-        "kind": "data"
-      },
       {
         "from": "loader1",
         "to": "analysis1",
@@ -265,12 +260,6 @@
       },
       {
         "from": "loader6",
-        "to": "endpoint1",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "loader6",
         "to": "endpoint4",
         "kind": "data"
       },
@@ -303,8 +292,14 @@
         "slot": 1
       },
       {
-        "from": "endpoint1",
-        "to": "visualization3",
+        "from": "loader6",
+        "to": "endpoint1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis1",
+        "to": "endpoint1",
         "kind": "data"
       },
       {
@@ -345,6 +340,11 @@
       {
         "from": "endpoint9",
         "to": "visualization9",
+        "kind": "data"
+      },
+      {
+        "from": "endpoint1",
+        "to": "visualization3",
         "kind": "data"
       }
     ],

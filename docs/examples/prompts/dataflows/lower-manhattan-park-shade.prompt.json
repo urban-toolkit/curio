@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/lower-manhattan-park-shade.json",
-    "sha256": "cf5ad9a4f0fab16f0cbbdf2faacf40004d1f0889f26b52817bd465fccae28be9",
+    "sha256": "4370273598959d212188c6cf39a99e090d20861a781fa6814834e993f603b94f",
     "walkthrough": null
   },
   "prompt": "Run SCOUT's shadow model on Lower Manhattan and compare the shade in its parks across three scenarios. From the OpenStreetMap extract of Lower Manhattan in this checkout, docs/examples/data/lower_mnt.osm.pbf, load with Autark the parks of the Financial District to City Hall, the box from longitude -74.018 to -74.004 and latitude 40.7 to 40.713, and the buildings of a box about 300 metres larger on every side, up to the edge of the extract over the water to the west and south: longitude -74.0194416 to -74.0005 and latitude 40.698762 to 40.7157, so the towers that shade the parks at its edge are there too. Give every building part a height in metres: the height mapped for it, else its number of levels times a floor height, else a default height, both set on the node. Keep the named parks of at least a minimum area, set on the node, that are not mostly under the building footprints, a park mapped in pieces under one name as one park and a park mapped twice once. Mark the building parts the what-ifs change by one rule for every park: at least a tall building height, 60 metres, and within a distance of any park, 75 metres, both set on the step that marks them. The scenarios: the buildings as they are; the marked parts taken out; and the marked parts cut down to the tall building height. Each what-if is a list of edits on the marked parts, picked by the mark, that a user can extend with more, picking buildings on that scenario's map of its buildings, which is linked both ways to the edits. In each scenario, turn the buildings' heights into a zoom 16 height raster with SCOUT's building rasterizer, run SCOUT's Deep Umbra shadow model on it, with the season, summer, from one setting wired into the three scenarios' shadow model runs, and measure each park's minutes of shadow: the mean, median and 90th percentile, the mean as a share of the season's daylight, and the shares of the park in sun, partial shade and deep shade. Draw each scenario's buildings in 3D colored by height and its shadow on Autark maps, each kind of map on one color range the scenarios share. Then compare the scenarios: chart each park's mean minutes of shadow in the three, and for each what-if take the change in shadow from the buildings as they are, cell by cell, and each park's change in shade, each drawn on a map on one color range centered on no change. The rasterizer and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
@@ -30,6 +30,20 @@
         "hasContent": true
       },
       {
+        "ref": "visualization5",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
         "ref": "visualization2",
         "type": "curio.builtin/autk-grammar",
         "role": "visualization",
@@ -45,20 +59,6 @@
       },
       {
         "ref": "visualization4",
-        "type": "curio.builtin/autk-grammar",
-        "role": "visualization",
-        "executable": false,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization5",
-        "type": "curio.builtin/autk-grammar",
-        "role": "visualization",
-        "executable": false,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization6",
         "type": "curio.builtin/autk-grammar",
         "role": "visualization",
         "executable": false,
@@ -97,6 +97,20 @@
         "type": "curio.builtin/autk-grammar",
         "role": "visualization",
         "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/edit-features",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform2",
+        "type": "curio.builtin/edit-features",
+        "role": "transform",
+        "executable": true,
         "hasContent": true
       },
       {
@@ -163,20 +177,6 @@
         "hasContent": true
       },
       {
-        "ref": "transform1",
-        "type": "curio.builtin/edit-features",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform2",
-        "type": "curio.builtin/edit-features",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "analysis10",
         "type": "curio.rasterization/raster-calculator",
         "role": "analysis",
@@ -191,13 +191,6 @@
         "hasContent": true
       },
       {
-        "ref": "analysis12",
-        "type": "curio.rasterization/rasterize-buildings",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "analysis13",
         "type": "curio.rasterization/rasterize-buildings",
         "role": "analysis",
@@ -206,6 +199,13 @@
       },
       {
         "ref": "analysis14",
+        "type": "curio.rasterization/rasterize-buildings",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis12",
         "type": "curio.rasterization/rasterize-buildings",
         "role": "analysis",
         "executable": true,
@@ -249,6 +249,36 @@
       {
         "from": "visualization1",
         "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "transform1",
+        "to": "visualization5",
+        "kind": "interaction"
+      },
+      {
+        "from": "transform1",
+        "to": "analysis13",
+        "kind": "data"
+      },
+      {
+        "from": "transform2",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "transform2",
+        "to": "visualization6",
+        "kind": "interaction"
+      },
+      {
+        "from": "transform2",
+        "to": "analysis14",
         "kind": "data"
       },
       {
@@ -374,36 +404,6 @@
         "slot": 2
       },
       {
-        "from": "transform1",
-        "to": "visualization5",
-        "kind": "data"
-      },
-      {
-        "from": "transform1",
-        "to": "visualization5",
-        "kind": "interaction"
-      },
-      {
-        "from": "transform1",
-        "to": "analysis13",
-        "kind": "data"
-      },
-      {
-        "from": "transform2",
-        "to": "visualization6",
-        "kind": "data"
-      },
-      {
-        "from": "transform2",
-        "to": "visualization6",
-        "kind": "interaction"
-      },
-      {
-        "from": "transform2",
-        "to": "analysis14",
-        "kind": "data"
-      },
-      {
         "from": "analysis10",
         "to": "visualization7",
         "kind": "data"
@@ -414,11 +414,6 @@
         "kind": "data"
       },
       {
-        "from": "analysis12",
-        "to": "analysis17",
-        "kind": "data"
-      },
-      {
         "from": "analysis13",
         "to": "analysis15",
         "kind": "data"
@@ -426,6 +421,11 @@
       {
         "from": "analysis14",
         "to": "analysis16",
+        "kind": "data"
+      },
+      {
+        "from": "analysis12",
+        "to": "analysis17",
         "kind": "data"
       },
       {

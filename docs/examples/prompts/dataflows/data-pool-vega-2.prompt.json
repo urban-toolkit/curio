@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/data-pool-vega-2.json",
-    "sha256": "f1a89c4d9b8d495c4ae66dc46a07f3f2df6a080885e9e16cfd0bdb8657a4741d",
+    "sha256": "79d52a5576aa3183cb9ca7e1edad81e6cdcf0574a3ee01aa8e3983003b3236e8",
     "walkthrough": null
   },
   "prompt": "Load the Chicago green roofs and the zip-coded boundary polygons from the Data Catalog and join them so each roof carries its zip code. Route the joined result through a fan-out, then pick out the ten zip codes with the largest green roof area and chart them as a Vega-Lite bar chart.",
@@ -16,13 +16,6 @@
   },
   "expected": {
     "nodes": [
-      {
-        "ref": "analysis1",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
       {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
@@ -38,6 +31,13 @@
         "hasContent": false
       },
       {
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "visualization1",
         "type": "curio.builtin/vis-vega",
         "role": "visualization",
@@ -47,11 +47,6 @@
     ],
     "edges": [
       {
-        "from": "analysis1",
-        "to": "visualization1",
-        "kind": "data"
-      },
-      {
         "from": "loader1",
         "to": "pool1",
         "kind": "data"
@@ -59,6 +54,11 @@
       {
         "from": "pool1",
         "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization1",
         "kind": "data"
       }
     ],

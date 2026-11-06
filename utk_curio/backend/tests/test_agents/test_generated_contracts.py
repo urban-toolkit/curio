@@ -556,11 +556,12 @@ def _trill() -> dict:
     return json.loads((REPO_ROOT / contracts.TRILL_SCHEMA).read_text(encoding="utf-8"))
 
 
-#: The node vocabulary the preamble used before its lists were generated. No
-#: prompt names a node by it any more.
+#: The node vocabulary the preamble used before its lists were generated, and
+#: the Python node's enum name since its id became python-computation. No
+#: prompt names a node by them any more.
 _LEGACY_NAMES = (
-    "DATA_LOADING", "DATA_EXPORT", "DATA_TRANSFORMATION", "PYTHON_COMPUTATION",
-    "VIS_VEGA", "VIS_SIMPLE", "DATA_POOL", "MERGE_FLOW", "AUTK_GRAMMAR",
+    "DATA_LOADING", "DATA_EXPORT", "DATA_TRANSFORMATION", "COMPUTATION_ANALYSIS",
+    "PYTHON_COMPUTATION", "VIS_VEGA", "VIS_SIMPLE", "DATA_POOL", "MERGE_FLOW", "AUTK_GRAMMAR",
 )
 
 

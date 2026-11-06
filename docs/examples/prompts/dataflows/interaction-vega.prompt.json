@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/interaction-vega.json",
-    "sha256": "e4f5998e993a909e95a618a1da10be16451a6f38a65b152441eed126a842091c",
+    "sha256": "482cff630801c5f70a56e2853209af9cf01e23868b419cb973b45f30b4f42d42",
     "walkthrough": null
   },
   "prompt": "Read the accessibility score polygons from docs/examples/data/access_score.geojson in this checkout, keeping coverage, the average attribute count, the neighborhood name and the geometry. Clean and flatten that attribute count into columns, then compute a weighted accessibility score per neighborhood in a Python step, projecting to a metric CRS first. Fan the scored neighborhoods out and plot accessibility by neighborhood in Vega-Lite, linked to the map view so a selection in the chart highlights the neighborhood.",
@@ -18,20 +18,6 @@
   },
   "expected": {
     "nodes": [
-      {
-        "ref": "analysis1",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "analysis2",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
       {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
@@ -47,6 +33,20 @@
         "hasContent": false
       },
       {
+        "ref": "analysis2",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "visualization1",
         "type": "curio.builtin/vis-vega",
         "role": "visualization",
@@ -55,16 +55,6 @@
       }
     ],
     "edges": [
-      {
-        "from": "analysis1",
-        "to": "pool1",
-        "kind": "data"
-      },
-      {
-        "from": "analysis2",
-        "to": "analysis1",
-        "kind": "data"
-      },
       {
         "from": "loader1",
         "to": "analysis2",
@@ -79,6 +69,16 @@
         "from": "pool1",
         "to": "visualization1",
         "kind": "interaction"
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "pool1",
+        "kind": "data"
       }
     ],
     "sources": {

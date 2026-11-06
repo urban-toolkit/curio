@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/widget.json",
-    "sha256": "63feeb7732ece4eb786a7547ddbcd55b3e02180a4b0740463ba90054d8bb8a0e",
+    "sha256": "adac15c9987cfa2055b03221588a807982a566d2868e9b7ad41fd29d0e3fe7c5",
     "walkthrough": null
   },
   "prompt": "Make a nine-row table of letters and numbers in a Python computation step, and add a second computation step holding a number-input widget that returns its multiplier. Feed the table and the multiplier into one further step, route part of the flow through a fan-out, and in a further computation step multiply the table's numbers by the widget's value. End with a second combining step so the multiplied result can be read alongside the original.",
@@ -17,14 +17,21 @@
   "expected": {
     "nodes": [
       {
-        "ref": "analysis1",
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "analysis2",
         "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "analysis2",
+        "ref": "analysis1",
         "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
@@ -36,31 +43,24 @@
         "role": "analysis",
         "executable": true,
         "hasContent": true
-      },
-      {
-        "ref": "pool1",
-        "type": "curio.builtin/data-pool",
-        "role": "pool",
-        "executable": false,
-        "hasContent": false
       }
     ],
     "edges": [
+      {
+        "from": "analysis2",
+        "to": "pool1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis3",
+        "kind": "data"
+      },
       {
         "from": "analysis1",
         "to": "analysis3",
         "kind": "data",
         "slot": 1
-      },
-      {
-        "from": "analysis2",
-        "to": "analysis3",
-        "kind": "data"
-      },
-      {
-        "from": "analysis2",
-        "to": "pool1",
-        "kind": "data"
       },
       {
         "from": "analysis3",

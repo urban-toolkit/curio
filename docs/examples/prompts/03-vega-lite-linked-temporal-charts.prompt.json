@@ -19,16 +19,16 @@
   "expected": {
     "nodes": [
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/python-computation",
-        "role": "analysis",
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "loader1",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
         "executable": true,
         "hasContent": true
       },
@@ -49,6 +49,11 @@
     ],
     "edges": [
       {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
         "from": "analysis1",
         "to": "visualization1",
         "kind": "data"
@@ -56,11 +61,6 @@
       {
         "from": "analysis1",
         "to": "visualization2",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "analysis1",
         "kind": "data"
       }
     ],

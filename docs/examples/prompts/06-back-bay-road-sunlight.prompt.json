@@ -49,13 +49,6 @@
         "hasContent": true
       },
       {
-        "ref": "visualization5",
-        "type": "curio.builtin/autk-grammar",
-        "role": "visualization",
-        "executable": false,
-        "hasContent": true
-      },
-      {
         "ref": "visualization6",
         "type": "curio.builtin/autk-grammar",
         "role": "visualization",
@@ -84,6 +77,27 @@
         "hasContent": true
       },
       {
+        "ref": "visualization5",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "pool1",
+        "type": "curio.builtin/data-pool",
+        "role": "pool",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/edit-features",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "analysis1",
         "type": "curio.builtin/python-computation",
         "role": "analysis",
@@ -108,20 +122,6 @@
         "ref": "analysis4",
         "type": "curio.builtin/python-computation",
         "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "pool1",
-        "type": "curio.builtin/data-pool",
-        "role": "pool",
-        "executable": false,
-        "hasContent": false
-      },
-      {
-        "ref": "transform1",
-        "type": "curio.builtin/edit-features",
-        "role": "transform",
         "executable": true,
         "hasContent": true
       },
@@ -181,28 +181,6 @@
         "kind": "data"
       },
       {
-        "from": "analysis1",
-        "to": "visualization10",
-        "kind": "data"
-      },
-      {
-        "from": "analysis2",
-        "to": "visualization10",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis3",
-        "to": "visualization10",
-        "kind": "data",
-        "slot": 2
-      },
-      {
-        "from": "analysis4",
-        "to": "visualization5",
-        "kind": "data"
-      },
-      {
         "from": "pool1",
         "to": "visualization6",
         "kind": "data"
@@ -231,6 +209,28 @@
         "from": "transform1",
         "to": "visualization9",
         "kind": "interaction"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization10",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization10",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization10",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization5",
+        "kind": "data"
       }
     ],
     "sources": {
