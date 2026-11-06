@@ -1,25 +1,35 @@
-"""``curio_export(data, name)``: write a node's data to a file it returns.
+"""``curio_export(data, name, part=None)``: write a node's data to a file it returns.
 
 The file goes where ``curio_output_file`` puts the files a node returns, and
 the call returns the file's name, which is the output of a Data Export node:
 its Download button reads the file that name names (``util/output_files.py``).
 
 What the data is decides how it is written: a table as CSV, a GeoDataFrame as
-GeoJSON, a raster as GeoTIFF, and anything else as JSON. An empty name is
-``data_export``, which the node's Download names after what feeds the node
-(``utils/dataExportTarget.ts`` in the canvas). The file's extension is its
-format's: a name with none gets it, and a name ending in another data format's
-(``trees.csv`` for a GeoDataFrame) gets it in that one's place, so a file's
-name never says a format its bytes are not.
+GeoJSON, a raster as GeoTIFF, a tuple, list or dict that holds a table or a
+raster (a bundle's parts) as one zip of its parts (``util/bundle_zip.py``),
+and anything else as JSON. Nothing is written as its text: JSON refuses a
+table, a raster or any other object it cannot hold. ``part`` writes one part
+of a tuple, list or dict, named by its label, its key or its position, in its
+own format; empty, it writes every part.
+
+An empty name is ``data_export``, which the node's Download names after what
+feeds the node (``utils/dataExportTarget.ts`` in the canvas). The file's
+extension is its format's: a name with none gets it, and a name ending in
+another data format's (``trees.csv`` for a GeoDataFrame) gets it in that one's
+place, so a file's name never says a format its bytes are not.
 """
 
 from __future__ import annotations
 
+import datetime
+import decimal
 import json
 import os
+import pathlib
 import re
 import shutil
 import unicodedata
+import uuid
 
 #: The stem of a file whose data carries no name of its own.
 DEFAULT_STEM = "data_export"
@@ -28,6 +38,10 @@ DEFAULT_STEM = "data_export"
 #: the one it is given first.
 EXTENSIONS = {"dataframe": ("csv",), "geodataframe": ("geojson", "json"), "raster": ("tif", "tiff")}
 JSON_EXTENSIONS = ("json",)
+ZIP_EXTENSIONS = ("zip",)
+
+#: The values JSON writes as their text, which is what they are.
+_TEXT_VALUES = (datetime.date, datetime.time, datetime.timedelta, decimal.Decimal, uuid.UUID, pathlib.PurePath)
 
 #: The extensions of data formats: a name ending in one that is not its data's
 #: format's has it replaced by the format's. Any other ending, ``trees.v2``,
@@ -50,8 +64,11 @@ _TRAILING = re.compile(r"[._]+$")
 
 def extensions_for(data) -> tuple:
     """The extensions a file of *data* may end in, the one it is given first."""
+    from utk_curio.sandbox.util.bundle_zip import holds_parts
     from utk_curio.sandbox.util.codec import detect_kind
 
+    if holds_parts(data):
+        return ZIP_EXTENSIONS
     return EXTENSIONS.get(detect_kind(data), JSON_EXTENSIONS)
 
 
@@ -84,8 +101,13 @@ def export_name(name, data) -> str:
 
 
 def _json_default(value):
-    """What JSON cannot hold, as the nearest value it can."""
+    """What JSON cannot hold, as the nearest value it can: a numpy number or
+    array as one, a date, a time, a decimal, a UUID or a path as its text. A
+    table, a raster or any other object is refused, saying what it is: its
+    text is no data (a table's is its preview)."""
     import numpy as np
+
+    from utk_curio.sandbox.util.codec import _json_safe_value, named_type
 
     if isinstance(value, np.integer):
         return int(value)
@@ -94,14 +116,25 @@ def _json_default(value):
     if isinstance(value, np.bool_):
         return bool(value)
     if isinstance(value, np.ndarray):
-        return value.tolist()
-    return str(value)
+        return _json_safe_value(value.tolist())
+    if isinstance(value, (np.datetime64, np.timedelta64, _TEXT_VALUES)):
+        return str(value)
+    raise TypeError(
+        "curio_export writes a table, a GeoDataFrame, a raster or a JSON value, and the data "
+        f"holds {named_type(value)}, which is none of them."
+    )
 
 
 def write(data, path: str) -> None:
-    """Write *data* to *path*, in the format its kind is written in."""
+    """Write *data* to *path*, in the format its kind is written in. A tuple,
+    list or dict that holds a table or a raster is a zip of its parts
+    (``bundle_zip``)."""
+    from utk_curio.sandbox.util import bundle_zip
     from utk_curio.sandbox.util.codec import _json_safe_value, detect_kind
 
+    if bundle_zip.holds_parts(data):
+        bundle_zip.write_zip(path, *bundle_zip.parts_of(data))
+        return
     kind = detect_kind(data)
     if kind == "geodataframe":
         data.to_file(path, driver="GeoJSON")
@@ -122,14 +155,21 @@ def write(data, path: str) -> None:
 
         rasterio.shutil.copy(data, path, driver="GTiff")
         return
+    # Whole before the file is opened, so a value JSON refuses leaves none.
+    text = json.dumps(_json_safe_value(data), ensure_ascii=False, default=_json_default)
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump(_json_safe_value(data), handle, ensure_ascii=False, default=_json_default)
+        handle.write(text)
 
 
-def export(data, name, output_file) -> str:
-    """Write *data* to the file *name* names in the node's output folder
-    (*output_file* is the node's ``curio_output_file``) and return the
-    file's name."""
+def export(data, name, output_file, part=None) -> str:
+    """Write *data*, or the one part of it *part* names (``bundle_zip.pick``;
+    None or empty for all of it), to the file *name* names in the node's
+    output folder (*output_file* is the node's ``curio_output_file``) and
+    return the file's name."""
+    if part is not None and part != "":
+        from utk_curio.sandbox.util.bundle_zip import pick
+
+        data = pick(data, part)
     file_name = export_name(name, data)
     write(data, output_file(file_name))
     return file_name
