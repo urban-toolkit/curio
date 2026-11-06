@@ -96,6 +96,7 @@ WORKFLOW_FILES = [
     "docs/examples/dataflows/interaction-vega-autark.json",
 
     "docs/examples/dataflows/widget.json",
+    "docs/examples/dataflows/filter-rows-with-widgets.json",
 
     "docs/examples/dataflows/vega.json",
     "docs/examples/dataflows/autk-map.json",
