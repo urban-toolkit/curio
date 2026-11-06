@@ -1382,6 +1382,17 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
+      # Torch, OpenBLAS and the other OpenMP libraries start a thread per CPU
+      # they see, and an arcade runner shows all 192 CPUs of a machine its 44
+      # runners share: there example 28's training ran past the sandbox's 300 s
+      # at load 500 (run 42230248452). The stack gets this runner's share, at
+      # most 8 as Jest's workers have, which docker-compose.ci-isolated.yml
+      # hands on as OMP_NUM_THREADS. Users' stacks keep a thread per CPU.
+      - name: 📏 Size the stack's library threads to this runner
+        run: |
+          threads=$(nproc); [ "$threads" -gt 8 ] && threads=8
+          echo "CURIO_CI_LIBRARY_THREADS=$threads" >> "$GITHUB_ENV"
+
       # runner-env: as in e2e-desktop.
       - uses: ./.github/actions/start-stack
         with:
