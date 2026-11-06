@@ -108,6 +108,7 @@ from .utils import (
     set_canvas_zoom,
     set_node_code,
     stub_db_login,
+    take_agents_out,
     wait_for_node_done,
     wait_for_node_settled,
     wait_for_projects_page,
@@ -2039,6 +2040,15 @@ def chapter_agents(run: StressRun) -> None:
 
     with run.step("Open a dataflow with something for an agent to look at"):
         _enter_project(run, name="Stress: agents")
+        # Every dataflow starts with the agents Curio adds by default. This
+        # chapter adds every agent itself, so the ones this dataflow holds are
+        # taken out of it through the API before the drawer shows them.
+        project_id = SHARED["project"]["id"]
+        lockfile = f"{run.backend}/api/agents/projects/{project_id}"
+        held = [row["dirName"] for row in api_json(lockfile, _token(run))["agents"]]
+        take_agents_out(run.backend, _token(run), held, project_id=project_id)
+        left = [row["dirName"] for row in api_json(lockfile, _token(run))["agents"]]
+        assert not left, f"the dataflow still holds {left}"
         reset_zoom(page)
         loader = drag_builtin_to_canvas(page, builtin_tile(page, "data-loading"), at=(150, 150))
         transform = drag_builtin_to_canvas(
@@ -2151,17 +2161,27 @@ def chapter_agents(run: StressRun) -> None:
                 installed.append(coord)      # already in, e.g. a required closure
                 continue
             try:
+                add.first.click()
                 with page.expect_response(
                     lambda r: "/api/agents/projects/" in r.url
                     and r.url.endswith("/install")
                     and r.request.method == "POST",
                     timeout=120000,
                 ):
-                    add.first.click()
-                installed.append(coord)
-            except PlaywrightTimeoutError:
+                    # Adding confirms first (#196), listing any required agents.
+                    accept_confirm_dialog(
+                        page, title=re.compile(r"^Add "), button="Add to project"
+                    )
+            except (PlaywrightTimeoutError, AssertionError):
                 run.note(f"adding {coord} produced no install response",
                          step="Add all agents to the dataflow", severity="error")
+                continue
+            installed.append(coord)
+            # The drawer reads every card again after an add, so an agent the
+            # add brought as required shows Remove before its own turn.
+            expect(
+                card.first.get_by_role("button", name="Remove from project", exact=True)
+            ).to_be_visible(timeout=30000)
             page.wait_for_timeout(250)
         SHARED["installed_agents"] = installed
         log(f"[stress] installed {len(installed)} agents")

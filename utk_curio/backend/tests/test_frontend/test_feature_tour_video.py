@@ -111,6 +111,7 @@ from .utils import (
     scenario_card_button,
     set_node_code,
     stub_db_login,
+    take_agents_out,
     wait_for_drawer_closed,
     wait_for_node_done,
     wait_for_projects_page,
@@ -178,6 +179,8 @@ _DEFAULT_MODEL = "gemma4"
 AGENT_EXPLAINER = "agent.curio.researcher@1"
 AGENT_CONNECTION = "agent.curio.node-builder@1"
 AGENT_BUILDER = "agent.curio.dataflow-builder@1"
+# The agent the Node Builder requires, which adding the Node Builder brings.
+AGENT_FINDER = "agent.curio.dataset-finder@1"
 
 AGENT_SEARCH_PLACEHOLDER = "Search agents, publishers, tags…"
 
@@ -604,6 +607,12 @@ def _open_agent_drawer(ctx: Ctx):
 
 def _agent_card(drawer, coord: str):
     return drawer.locator(f'article[data-agent-coord="{coord}"]')
+
+
+def _dataflow_id(page) -> str | None:
+    """The id of the dataflow the canvas has open, or None before its first save."""
+    match = re.search(r"/dataflow/([0-9a-f-]{36})", page.url)
+    return match.group(1) if match else None
 
 
 def _add_agent(ctx: Ctx, drawer, coord: str, *, hold: float = 1200):
@@ -1328,6 +1337,16 @@ def scene_agent_catalog(ctx: Ctx) -> None:
     tour.chapter(
         "08", "The Agent Catalog",
         "The third catalog: the assistants you attach to a dataflow.",
+    )
+    # Every dataflow starts with the agents Curio adds by default, so the four
+    # this scene adds (the Node Builder brings the Dataset Finder) are taken
+    # out of it through the API before the drawer shows them: each card then
+    # offers Add. A dataflow never saved has no lockfile and its cards read the
+    # account's agents, so there they are taken out of all its projects.
+    take_agents_out(
+        ctx.backend, _session_token(page),
+        (AGENT_EXPLAINER, AGENT_CONNECTION, AGENT_FINDER, AGENT_BUILDER),
+        project_id=_dataflow_id(page),
     )
     drawer = _open_agent_drawer(ctx)
     tour.say(
@@ -2548,6 +2567,16 @@ def scene_catalog_pages(ctx: Ctx) -> None:
     tour.scroll(700, steps=7)
     tour.hush()
 
+    # Every catalog agent is in all the account's projects from the start, so
+    # the first one no other agent requires is taken out of all of them,
+    # through the API, before the page shows it: its details then offer Add to
+    # all projects.
+    token = _session_token(page)
+    entries = api_json(f"{ctx.backend}/api/agents/catalog", token)["items"]
+    required = {row["coord"] for entry in entries for row in entry.get("requiresAgents") or []}
+    coord = next(entry["dirName"] for entry in entries if entry["dirName"] not in required)
+    take_agents_out(ctx.backend, token, [coord])
+
     page.goto(f"{ctx.frontend}/catalog/agents")
     page.wait_for_load_state("domcontentloaded")
     expect(
@@ -2565,12 +2594,14 @@ def scene_catalog_pages(ctx: Ctx) -> None:
             tour.click(button.first, hold=900)
     tour.hush()
 
-    card = page.locator("article").first
-    if card.count():
-        tour.click(card, hold=1200)
-        add = page.get_by_role("button", name="Add to all projects", exact=True)
-        if add.count():
-            tour.focus(add.first, hold=1600)
+    card = page.locator(f'article[data-agent-coord="{coord}"]')
+    expect(card).to_have_count(1, timeout=20000)
+    tour.click(card, hold=1200)
+    # The details beside the grid are the selected agent's alone, so they hold
+    # the page's one Add to all projects.
+    add = page.get_by_role("button", name="Add to all projects", exact=True)
+    expect(add).to_be_visible(timeout=15000)
+    tour.focus(add, hold=1600)
     tour.say(
         "Account-level, on purpose",
         "This page cannot add to a dataflow: adding is relative to one, and it has none.",
