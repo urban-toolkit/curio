@@ -7,7 +7,7 @@ and the backend (``backend/config.py``), which reads the file, and redacts the
 endpoints out of provider errors (``agents/infrastructure/providers.py``).
 
 The endpoint file (``--llm-endpoint-file``) holds one section per endpoint,
-named by the label users see in API Settings::
+named by the label users see in API Settings ("Provided by <name>")::
 
     [Lab gateway]
     base_url=https://llm.example.test/v1
@@ -22,8 +22,8 @@ named by the label users see in API Settings::
 ``api_key`` and ``models`` are required. ``base_url`` is optional (empty or
 absent is the provider's own endpoint), and so is ``provider``
 (``openai_compatible``, ``anthropic`` or ``gemini``; ``openai_compatible`` when
-absent). The first section's first model is the Deployment default, and what
-guests answer with.
+absent). The first section's first model is Curio's default, and what guests
+answer with. Signed-in users can pick any model of any section instead.
 
 No URL or key is ever put in an error message, a log line or the environment:
 only the file's path travels, in :data:`ENDPOINT_FILE_VARIABLE`, to the

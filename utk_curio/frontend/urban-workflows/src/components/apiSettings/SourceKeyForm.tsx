@@ -12,7 +12,7 @@ export function sourceKeyInputId(slot: string): string {
 
 /**
  * The form for one key a Discovery Catalog source sends, opened from API keys'
- * "Add configuration" or a saved key's row. The field is masked and
+ * "Add configuration" or a saved key's Edit. The field is masked and
  * write-only: the server says whether a key is saved, never what it is.
  */
 export const SourceKeyForm: React.FC<{
@@ -48,9 +48,9 @@ export const SourceKeyForm: React.FC<{
   };
 
   const state = row.present
-    ? "(saved - leave blank to keep)"
+    ? "(saved, leave blank to keep)"
     : row.inherited
-      ? "(inherited - leave blank to use it)"
+      ? "(inherited, leave blank to use it)"
       : "(optional)";
 
   return (

@@ -4,12 +4,13 @@
 configurations (``agents/llm_configs.py``) and the operator's endpoints
 (``config.DEFAULT_LLM_ENDPOINTS``, the endpoint file, read at call time):
 
-- a hosted guest runs on the guest configuration, the Deployment default's
-  endpoint and model;
+- a hosted guest runs on the guest configuration, Curio's default endpoint
+  and model;
 - an internal agent on its caller's, always;
-- any other agent on the configuration chosen for it;
+- any other agent on what was chosen for it: a configuration, a pick of one
+  of this Curio's models, or Curio's default;
 - with no choice, a delegated agent on its caller's, and an attached one on
-  the default configuration, else the Deployment default (the first
+  the default (a configuration or a pick), else Curio's default (the first
   endpoint's first model), else a refusal whose remedy opens API Settings;
 - a reference that does not resolve is refused, never replaced.
 
@@ -58,12 +59,18 @@ def _own(store, user_key=USER, **fields):
     return store.create(user_key, body)
 
 
-def _here(store, endpoint_name="Gateway", model="llama4-large", label="Here", user_key=USER):
-    """A This Curio install configuration, saved as the route saves one."""
-    return store.create(
-        user_key, {"label": label, "endpoint": "deployment", "endpointName": endpoint_name, "model": model},
-        offered_endpoints=pc.deployment_endpoints(),
+def _pick_default(store, endpoint_name="Gateway", model="llama4-large", user_key=USER) -> str:
+    """Make a pick of one of this Curio's models the default, as the route
+    does; return the pick."""
+    return store.set_default(
+        user_key, llm_configs.pick_choice(endpoint_name, model), offered_endpoints=pc.deployment_endpoints(),
     )
+
+
+def _choose(store, agent_id: str, chosen: str, user_key=USER) -> dict:
+    """Choose for *agent_id* as the route does."""
+    return store.set_choices(user_key, {agent_id: chosen}, choosable=frozenset({agent_id}),
+                             offered_endpoints=pc.deployment_endpoints())
 
 
 class TestTheFallbackOrder:
@@ -83,7 +90,7 @@ class TestTheFallbackOrder:
         assert (out.base_url, out.api_key, out.model) == (
             "https://sage.example.edu/v1", "operator-secret-key", "llama4",
         )
-        assert (out.config_id, out.source, out.label) == (None, "deployment", "Deployment default")
+        assert (out.config_id, out.source, out.label) == (None, "deployment", "Curio's default")
 
     def test_nothing_configured_is_a_refusal_with_a_remedy(self, deployment, monkeypatch):
         llm_deployment.withdraw(monkeypatch)
@@ -103,8 +110,7 @@ class TestTheFallbackOrder:
 class TestAChoicePerAgent:
     def _chosen(self, store, agent_id="agent.curio.node-builder", **fields):
         created = _own(store, label=fields.pop("label", "Chosen"), model=fields.pop("model", "chosen-model"), **fields)
-        store.set_choices(USER, {agent_id: created["id"]},
-                          choosable=frozenset({agent_id}), deployment_default=True)
+        _choose(store, agent_id, created["id"])
         return created
 
     def test_an_attached_agent_runs_on_its_choice_over_the_default(self, deployment):
@@ -134,11 +140,36 @@ class TestAChoicePerAgent:
         out = pc.resolve_llm(USER, "agent.curio.dataflow-planner", caller=caller)
         assert (out.api_key, out.model, out.source) == ("k", "claude", "caller")
 
-    def test_the_deployment_default_can_be_chosen(self, deployment):
-        deployment.set_choices(USER, {"agent.curio.researcher": "deployment"},
-                               choosable=frozenset({"agent.curio.researcher"}), deployment_default=True)
+    def test_curios_default_can_be_chosen(self, deployment):
+        _choose(deployment, "agent.curio.researcher", "deployment")
         out = pc.resolve_llm(USER, "agent.curio.researcher")
-        assert (out.model, out.source, out.label) == ("llama4", "assigned", "Deployment default")
+        assert (out.model, out.source, out.label) == ("llama4", "assigned", "Curio's default")
+
+    def test_a_pick_can_be_chosen_over_the_default(self, deployment):
+        default = _own(deployment, label="Default")
+        deployment.set_default(USER, default["id"])
+        _choose(deployment, "agent.curio.researcher", llm_configs.pick_choice("Second", "small-model"))
+        out = pc.resolve_llm(USER, "agent.curio.researcher")
+        assert (out.base_url, out.api_key, out.model) == (
+            "https://second.example.test/v1", "second-secret-key", "small-model",
+        )
+        assert (out.config_id, out.label, out.source, out.on_deployment) == (None, "Curio · Second", "assigned", True)
+        assert pc.resolve_llm(USER, "agent.curio.dataflow-builder").config_id == default["id"]
+
+    def test_a_delegate_runs_on_its_own_pick_not_its_callers(self, deployment):
+        _choose(deployment, "agent.curio.node-builder", llm_configs.pick_choice("Gateway", "llama4-large"))
+        caller = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="claude", source="default")
+        out = pc.resolve_llm(USER, "agent.curio.node-builder", caller=caller)
+        assert (out.api_key, out.model, out.source) == ("operator-secret-key", "llama4-large", "assigned")
+
+    def test_an_internal_agent_ignores_a_pick_written_for_it(self, deployment):
+        _own(deployment, label="Planner")  # the account's file exists
+        doc = deployment.read(USER)
+        doc["agents"]["agent.curio.dataflow-planner"] = llm_configs.pick_choice("Gateway", "llama4-large")
+        deployment._write(USER, doc)
+        caller = ProviderConfig(api_key="k", api_type="anthropic", base_url="", model="claude", source="assigned")
+        out = pc.resolve_llm(USER, "agent.curio.dataflow-planner", caller=caller)
+        assert (out.api_key, out.model, out.source) == ("k", "claude", "caller")
 
     def test_a_choice_that_names_nothing_is_refused_not_replaced(self, deployment):
         chosen = self._chosen(deployment, "agent.curio.researcher")
@@ -150,8 +181,7 @@ class TestAChoicePerAgent:
         assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.curio.researcher"}
 
     def test_a_withdrawn_deployment_choice_is_refused(self, deployment, monkeypatch):
-        deployment.set_choices(USER, {"agent.curio.researcher": "deployment"},
-                               choosable=frozenset({"agent.curio.researcher"}), deployment_default=True)
+        _choose(deployment, "agent.curio.researcher", "deployment")
         llm_deployment.withdraw(monkeypatch)
         with pytest.raises(pc.ProviderConfigError, match="no longer offers"):
             pc.resolve_llm(USER, "agent.curio.researcher")
@@ -182,79 +212,99 @@ class TestAChoicePerAgent:
         assert pc.resolve_llm(USER).model == "changed-after-import"
 
 
-class TestThisCurioInstall:
-    def test_it_takes_the_endpoints_url_and_key_with_the_users_model(self, deployment):
-        created = _here(deployment, "Gateway", "llama4-large")
-        deployment.set_default(USER, created["id"])
+class TestAPickOfCuriosModels:
+    """One of this Curio's models picked as the default: it runs on that
+    endpoint's type, URL and key with the picked model, and a pick the file
+    no longer offers is refused with one sentence naming what is."""
+
+    def test_it_takes_the_endpoints_url_and_key_with_the_picked_model(self, deployment):
+        pick = _pick_default(deployment, "Gateway", "llama4-large")
+        assert pick == 'curio:["Gateway","llama4-large"]'
         out = pc.resolve_llm(USER)
         assert (out.base_url, out.api_key, out.model) == (
             "https://sage.example.edu/v1", "operator-secret-key", "llama4-large",
         )
-        assert (out.config_id, out.on_deployment) == (created["id"], True)
+        assert (out.config_id, out.label, out.source, out.on_deployment) == (None, "Curio · Gateway", "default", True)
 
-    def test_a_configuration_on_the_second_endpoint_answers_on_its_key(self, deployment):
-        created = _here(deployment, "Second", "small-model")
-        deployment.set_default(USER, created["id"])
+    def test_a_pick_on_the_second_endpoint_answers_on_its_key(self, deployment):
+        _pick_default(deployment, "Second", "small-model")
         out = pc.resolve_llm(USER)
         assert (out.base_url, out.api_key, out.model) == (
             "https://second.example.test/v1", "second-secret-key", "small-model",
         )
 
-    def test_a_model_name_on_two_endpoints_runs_on_the_one_chosen(self, deployment):
-        on_gateway = _here(deployment, "Gateway", "llama4", label="On the gateway")
-        on_second = _here(deployment, "Second", "llama4", label="On the second")
-        deployment.set_default(USER, on_second["id"])
+    def test_a_model_name_on_two_endpoints_runs_on_the_one_picked(self, deployment):
+        _pick_default(deployment, "Second", "llama4")
         assert (pc.resolve_llm(USER).base_url, pc.resolve_llm(USER).api_key) == (
             "https://second.example.test/v1", "second-secret-key",
         )
-        deployment.set_default(USER, on_gateway["id"])
+        _pick_default(deployment, "Gateway", "llama4")
         assert (pc.resolve_llm(USER).base_url, pc.resolve_llm(USER).api_key) == (
             "https://sage.example.edu/v1", "operator-secret-key",
         )
 
     def test_a_withdrawn_endpoint_file_is_refused(self, deployment, monkeypatch):
-        created = _here(deployment)
-        deployment.set_default(USER, created["id"])
+        _pick_default(deployment)
         llm_deployment.withdraw(monkeypatch)
-        with pytest.raises(pc.ProviderConfigError, match="no\\s+longer offers"):
+        with pytest.raises(pc.ProviderConfigError) as refused:
             pc.resolve_llm(USER)
+        assert str(refused.value) == "This Curio offers no models of its own."
 
     def test_a_model_that_left_its_endpoints_list_is_refused_not_replaced(self, deployment, monkeypatch):
-        created = _here(deployment, "Gateway", "llama4-large")
-        deployment.set_default(USER, created["id"])
+        pick = _pick_default(deployment, "Gateway", "llama4-large")
         llm_deployment.change_first(monkeypatch, models=("llama4",))
         with pytest.raises(pc.ProviderConfigError) as refused:
             pc.resolve_llm(USER, "agent.curio.researcher")
-        assert str(refused.value) == pc.offered_refusal("Gateway", "llama4-large")
+        assert str(refused.value) == pc.pick_refusal(pick)
         assert str(refused.value) == (
-            "'llama4-large' is not a model of 'Gateway' on this Curio install, which offers "
-            "Gateway: llama4; Second: llama4, small-model."
+            "'Gateway' offers no model 'llama4-large'; Curio offers Gateway: llama4; Second: llama4, small-model."
         )
         assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.curio.researcher"}
 
     def test_an_endpoint_the_file_no_longer_names_is_refused_not_replaced(self, deployment, monkeypatch):
-        created = _here(deployment, "Second", "small-model")
-        deployment.set_default(USER, created["id"])
+        _choose(deployment, "agent.curio.researcher", llm_configs.pick_choice("Second", "small-model"))
         llm_deployment.offer(monkeypatch, GATEWAY)
         with pytest.raises(pc.ProviderConfigError) as refused:
-            pc.resolve_llm(USER)
-        assert str(refused.value) == (
-            "This Curio install has no endpoint 'Second'; it offers Gateway: llama4, llama4-large."
-        )
+            pc.resolve_llm(USER, "agent.curio.researcher")
+        assert str(refused.value) == "Curio has no endpoint 'Second'; it offers Gateway: llama4, llama4-large."
+        assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.curio.researcher"}
 
     @pytest.mark.parametrize("endpoint_name, model, fragment", [
         ("Elsewhere", "llama4", "has no endpoint 'Elsewhere'"),
-        ("Gateway", "small-model", "'small-model' is not a model of 'Gateway'"),
-        ("", "llama4", "names one of its endpoints"),
+        ("Gateway", "small-model", "'Gateway' offers no model 'small-model'"),
     ])
     def test_a_save_outside_the_file_is_refused_with_the_same_sentence(
         self, deployment, endpoint_name, model, fragment,
     ):
+        pick = llm_configs.pick_choice(endpoint_name, model)
+        for save in (
+            lambda: _pick_default(deployment, endpoint_name, model),
+            lambda: _choose(deployment, "agent.curio.researcher", pick),
+        ):
+            with pytest.raises(llm_configs.LlmConfigError) as refused:
+                save()
+            assert fragment in str(refused.value)
+            assert str(refused.value) == pc.pick_refusal(pick)
+        doc = deployment.read(USER)
+        assert (doc["default"], doc["agents"]) == (None, {})
+
+    def test_a_configuration_on_this_curios_endpoint_is_refused_and_a_stored_one_dropped(self, deployment):
         with pytest.raises(llm_configs.LlmConfigError) as refused:
-            _here(deployment, endpoint_name, model)
-        assert fragment in str(refused.value)
-        assert str(refused.value) == pc.offered_refusal(endpoint_name, model)
-        assert deployment.list(USER) == []
+            deployment.create(USER, {"label": "Here", "endpoint": "deployment", "endpointName": "Gateway",
+                                     "model": "llama4-large"})
+        assert str(refused.value) == llm_configs.DEPLOYMENT_REFUSAL
+        # One an earlier Curio stored, with the choices that named it.
+        own = _own(deployment)
+        doc = deployment.read(USER)
+        doc["configs"]["llm-00000000000d"] = {"label": "Here", "endpoint": "deployment",
+                                              "endpointName": "Gateway", "model": "llama4-large"}
+        doc["default"] = "llm-00000000000d"
+        doc["agents"] = {"agent.curio.researcher": "llm-00000000000d", "agent.curio.node-builder": own["id"]}
+        deployment._write(USER, doc)
+        # The account answers on its other choices.
+        out = pc.resolve_llm(USER, "agent.curio.researcher")
+        assert (out.source, out.base_url, out.model) == ("deployment", "https://sage.example.edu/v1", "llama4")
+        assert pc.resolve_llm(USER, "agent.curio.node-builder").config_id == own["id"]
 
 
 class TestKeysStayWithTheirEndpoint:
@@ -287,6 +337,12 @@ class TestGuests:
         _own(deployment, user_key="guest")
         deployment.set_default("guest", deployment.list("guest")[0]["id"])
         assert pc.resolve_llm("guest").source == "guest"
+        # Nor a pick left in it: a guest answers on Curio's default.
+        _pick_default(deployment, "Second", "small-model", user_key="guest")
+        _choose(deployment, "agent.curio.researcher", llm_configs.pick_choice("Second", "small-model"),
+                user_key="guest")
+        out = pc.resolve_llm("guest", "agent.curio.researcher")
+        assert (out.source, out.model, out.base_url) == ("guest", "llama4", "https://sage.example.edu/v1")
 
     def test_without_an_endpoint_file_guests_get_no_ai(self, deployment, monkeypatch):
         llm_deployment.withdraw(monkeypatch)
@@ -325,16 +381,21 @@ class TestWhatARunRecords:
                        "baseUrlHost": "api.openai.com", "source": "default"}
 
     def test_a_pin_on_this_curios_endpoints_names_no_host(self, deployment):
-        created = _here(deployment, "Second", "small-model")
-        deployment.set_default(USER, created["id"])
-        for config_ in (pc.resolve_llm(USER), pc.deployment_config(USER), pc.resolve_llm("guest")):
+        _pick_default(deployment, "Second", "small-model")
+        _choose(deployment, "agent.curio.researcher", llm_configs.pick_choice("Gateway", "llama4-large"))
+        for config_ in (pc.resolve_llm(USER), pc.resolve_llm(USER, "agent.curio.researcher"),
+                        pc.deployment_config(USER), pc.resolve_llm("guest")):
             pin, answers = pc.llm_pin(config_), pc._answers(config_)
             assert pin["baseUrlHost"] == "" and answers["baseUrlHost"] == "", (pin, answers)
             text = repr((pin, answers))
             assert "sage.example.edu" not in text and "second.example.test" not in text
+            assert "secret" not in text
+        assert pc.llm_pin(pc.resolve_llm(USER)) == {
+            "configId": None, "label": "Curio · Second", "baseUrlHost": "", "source": "default",
+        }
         payload = pc._deployment_payload(USER, False)
         assert payload == {
-            "label": "Deployment default", "endpointOffered": True, "apiType": "openai_compatible",
+            "label": "Curio's default", "apiType": "openai_compatible",
             "model": "llama4", "endpoints": [
                 {"name": "Gateway", "models": ["llama4", "llama4-large"]},
                 {"name": "Second", "models": ["llama4", "small-model"]},

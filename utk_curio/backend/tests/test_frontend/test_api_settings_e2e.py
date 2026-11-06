@@ -13,6 +13,10 @@ Covers the panel's lasting promises:
 - The default chosen on Agent configuration is the configuration that answers
   the next run, and an agent given a configuration of its own there runs on
   it, even when another agent delegates to it.
+- This Curio's own endpoints (``--llm-endpoint-file``) are read-only Curio
+  rows on the API keys tab, and any of their models is picked on Agent
+  configuration, while the editor stays the same; neither their hosts nor
+  their keys reach the page.
 
 Nothing here reaches a provider. The #241 cases use the no-key short circuit
 (the backend refuses without opening a socket) and stubbed responses for the
@@ -52,7 +56,7 @@ if TYPE_CHECKING:
 
 #: Long enough to be unmistakable in a page dump, and never a real key.
 KEY = "AIza-e2e-" + "k" * 24
-SAVED = "(saved - leave blank to keep)"
+SAVED = "(saved, leave blank to keep)"
 
 
 @pytest.fixture()
@@ -313,6 +317,10 @@ DEPLOYMENT_ENDPOINTS = [
     {"name": "Gateway", "models": ["model-a", "model-b"]},
     {"name": "Second", "models": ["model-b", "model-c"]},
 ]
+#: The pick of the second endpoint's model-b, as the page sends it and the
+#: server stores it: one model name on two endpoints, the second's.
+SECOND_MODEL_B = 'curio:["Second","model-b"]'
+GATEWAY_MODEL_A = 'curio:["Gateway","model-a"]'
 
 
 def _llm_deployment(backend: str, method: str, body: dict | None = None) -> dict:
@@ -350,8 +358,8 @@ def _a_configuration_is_saved_and_its_key_never_reaches_the_page(api_settings):
 
     # The first configuration becomes the default, and the list says so.
     row = _row(page, "Work Gemini")
-    expect(row).to_contain_text("Default", timeout=15000)
-    expect(row).to_contain_text("saved")
+    expect(row).to_contain_text("My default", timeout=15000)
+    expect(row).to_contain_text("Key saved")
     expect(row).to_contain_text("Language model")
     _show_tab(page, "Agent configuration")
     expect(page.get_by_test_id("llm-active")).to_contain_text("Work Gemini", timeout=15000)
@@ -368,38 +376,82 @@ def _a_configuration_is_saved_and_its_key_never_reaches_the_page(api_settings):
     )
     assert not any(KEY in value for value in values)
 
-    # This Curio install: one choice among its endpoints' models, grouped by
-    # endpoint, with nothing to fetch.
+    # This Curio's endpoints: one read-only Curio row each, in the file's
+    # order, provided by its section, with its models.
     _show_tab(page, "API keys")
     _wait_for_keys(page)
-    editor = _open_editor(page)
-    editor.get_by_label("Label").fill("Here")
-    _tab(editor, "This Curio install").click()
-    expect(editor).to_contain_text("Runs on this Curio install's own endpoint with its key.")
-    expect(editor.get_by_role("button", name=re.compile(r"^(Fetch|Refresh) models"))).to_have_count(0)
-    model = editor.get_by_label("Model")
-    groups = model.locator("optgroup")
-    expect(groups).to_have_count(2)
+    curio_rows = _section(page).get_by_test_id("llm-curio-row")
+    expect(curio_rows).to_have_count(2, timeout=15000)
     for number, endpoint in enumerate(DEPLOYMENT_ENDPOINTS):
-        expect(groups.nth(number)).to_have_attribute("label", endpoint["name"])
-        expect(groups.nth(number).locator("option")).to_have_text(endpoint["models"])
-    # The same model name on the second endpoint.
-    model.select_option(json.dumps(["Second", "model-b"], separators=(",", ":")))
+        row = curio_rows.nth(number)
+        expect(row).to_have_attribute("data-endpoint", endpoint["name"])
+        expect(row).to_contain_text("Curio")
+        expect(row).to_contain_text(f"Provided by {endpoint['name']}")
+        expect(row).to_contain_text("Language model")
+        for name in endpoint["models"]:
+            expect(row).to_contain_text(name)
+        expect(row.get_by_role("button")).to_have_count(0)
+    expect(curio_rows.nth(0)).to_contain_text("Curio default")
+    expect(curio_rows.nth(1)).not_to_contain_text("Curio default")
+
+    # The editor is the same as without the file: four providers, Fetch, and
+    # nothing about Curio's own models.
+    editor = _open_editor(page)
+    providers = editor.get_by_role("group", name="Provider").get_by_role("button")
+    expect(providers).to_have_text(["OpenAI", "Anthropic", "Gemini", "Custom"])
+    expect(_tab(editor, "This Curio install")).to_have_count(0)
+    expect(editor.get_by_role("button", name=re.compile(r"^(Fetch|Refresh) models"))).to_have_count(1)
+    expect(editor).not_to_contain_text("Gateway")
+    editor.get_by_role("button", name="Cancel", exact=True).click()
+    expect(_editor(page)).to_be_hidden(timeout=15000)
+
+    # Agent configuration: the default picks the second endpoint's model-b, a
+    # name the first endpoint lists too, and one agent picks the first's model-a.
+    _show_tab(page, "Agent configuration")
+    default = page.get_by_label("Default for my agents", exact=True)
+    expect(default.locator("optgroup")).to_have_count(3)
+    for number, endpoint in enumerate(DEPLOYMENT_ENDPOINTS):
+        group = default.locator("optgroup").nth(number)
+        expect(group).to_have_attribute("label", f"Curio · {endpoint['name']}")
+        expect(group.locator("option")).to_have_text(endpoint["models"])
+    expect(default.locator("optgroup").nth(2)).to_have_attribute("label", "My configurations")
     with page.expect_response(
-        lambda r: r.url.endswith("/api/agents/llm/configs") and r.request.method == "POST",
+        lambda r: r.url.endswith("/api/agents/llm/default") and r.request.method == "PUT",
         timeout=30000,
-    ) as created:
-        editor.get_by_role("button", name="Add configuration", exact=True).click()
-    assert created.value.status == 201, created.value.text()
-    here = created.value.json()["config"]
-    assert (here["endpoint"], here["endpointName"], here["model"], here["baseUrlHost"]) == (
-        "deployment", "Second", "model-b", "",
-    ), here
-    expect(_row(page, "Here")).to_be_visible(timeout=15000)
+    ) as picked:
+        default.select_option(SECOND_MODEL_B)
+    assert picked.value.ok, picked.value.text()
+    assert json.loads(picked.value.request.post_data or "{}") == {"configId": SECOND_MODEL_B}
+    expect(page.get_by_test_id("llm-active")).to_contain_text("Curio · Second", timeout=15000)
+    expect(page.get_by_test_id("llm-active")).to_contain_text("model-b")
+    models = page.get_by_test_id("agent-models-section")
+    researcher = models.get_by_label("Researcher", exact=True)
+    expect(researcher.locator("option").first).to_have_text("Follows my default")
+    with page.expect_response(
+        lambda r: r.url.endswith("/api/agents/llm/assignments") and r.request.method == "PUT",
+        timeout=30000,
+    ) as assigned:
+        researcher.select_option(GATEWAY_MODEL_A)
+    assert assigned.value.ok, assigned.value.text()
+    expect(researcher).to_be_enabled(timeout=15000)
+    expect(models).to_contain_text("Runs on Curio · Gateway · model-a")
 
     listing = _listing(api_settings)
     assert listing["deployment"]["endpoints"] == DEPLOYMENT_ENDPOINTS, listing["deployment"]
-    for text in (json.dumps(listing), created.value.text(), page.content()):
+    assert listing["default"] == SECOND_MODEL_B, listing["default"]
+    assert listing["assignments"].get("agent.curio.researcher") == GATEWAY_MODEL_A, listing["assignments"]
+    assert (listing["active"]["label"], listing["active"]["model"], listing["active"]["baseUrlHost"]) == (
+        "Curio · Second", "model-b", "",
+    ), listing["active"]
+    assert all(c["endpoint"] == "own" for c in listing["configs"]), listing["configs"]
+
+    # A reload keeps both picks, and still nothing of the endpoints' hosts or keys.
+    page.reload()
+    expect(page.get_by_label("Default for my agents", exact=True)).to_have_value(SECOND_MODEL_B, timeout=15000)
+    expect(
+        page.get_by_test_id("agent-models-section").get_by_label("Researcher", exact=True)
+    ).to_have_value(GATEWAY_MODEL_A)
+    for text in (json.dumps(listing), picked.value.text(), assigned.value.text(), page.content()):
         assert DEPLOYMENT_HOST not in text and DEPLOYMENT_KEY not in text and SECOND_KEY not in text
     values = page.evaluate(
         "() => Array.from(document.querySelectorAll('input, select')).map(i => i.value)"
@@ -476,7 +528,7 @@ def test_moving_a_configuration_never_carries_its_key(api_settings):
         editor.get_by_role("button", name="Save configuration").click()
     assert moved.value.status == 200, moved.value.text()
     expect(_editor(page)).to_be_hidden(timeout=15000)
-    expect(_row(page, "Work Gemini")).to_contain_text("none", timeout=15000)
+    expect(_row(page, "Work Gemini")).to_contain_text("No key", timeout=15000)
     [now] = [c for c in _listing(api_settings)["configs"] if c["id"] == config["id"]]
     assert now["baseUrlHost"] == "localhost:11434" and now["hasApiKey"] is False, now
 
@@ -507,7 +559,7 @@ def test_the_default_chosen_here_answers_the_next_run(signed_in):
     page = session.page
     _open_api_settings(page)
     _show_tab(page, "Agent configuration")
-    default = page.get_by_label("Default for agents", exact=True)
+    default = page.get_by_label("Default for my agents", exact=True)
     expect(default).to_have_value(made["Scripted A"]["id"], timeout=15000)
     with page.expect_response(
         lambda r: r.url.endswith("/api/agents/llm/default") and r.request.method == "PUT",
@@ -517,7 +569,7 @@ def test_the_default_chosen_here_answers_the_next_run(signed_in):
     assert chosen.value.ok, chosen.value.text()
     expect(page.get_by_test_id("llm-active")).to_contain_text("Scripted B", timeout=15000)
     _show_tab(page, "API keys")
-    expect(_row(page, "Scripted B")).to_contain_text("Default", timeout=15000)
+    expect(_row(page, "Scripted B")).to_contain_text("My default", timeout=15000)
 
     project = api_json(
         f"{session.backend}/api/projects", session.token, method="POST",

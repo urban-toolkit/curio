@@ -337,8 +337,9 @@ def main():
             "File of this Curio's own LLM endpoints, one [section] each with its "
             "api_key, its models and, optionally, its base_url and provider (see "
             "DEPLOYMENT.md, LLM configurations). The first section's first model "
-            "is the Deployment default and the guests'. Only the backend reads "
-            "it. Without it, Curio offers no endpoint of its own and users add "
+            "is Curio's default and the guests'; signed-in users can pick any of "
+            "the file's models in API Settings. Only the backend reads it. "
+            "Without it, Curio offers no models of its own and users add "
             "theirs in API Settings. Under --deploy, the execution user must not "
             "be able to read it."
         ),

@@ -5,33 +5,34 @@ and it needs only the storage key, so it works in job threads, which have no
 request. The fallback order:
 
 - A **hosted guest** (a guest on an instance launched with ``--deploy``) runs
-  on the guest configuration, the Deployment default's endpoint and model, for
-  every agent. Every visitor shares that account, so it never opens a
+  on the guest configuration, Curio's default endpoint and model, for every
+  agent. Every visitor shares that account, so it never opens a
   configurations file.
 - An **internal** agent (a built-in that runs only as a delegate) always runs
   on its caller's configuration.
-- Any other agent runs on the configuration **chosen for it** in API Settings.
+- Any other agent runs on what was **chosen for it** in API Settings: one of
+  the account's configurations, one of this Curio's models (a pick,
+  ``llm_configs.pick_choice``) or Curio's default.
 - With no choice, a **delegated** agent (``caller`` given) runs on its
-  caller's configuration, and an attached one on the account's **default
-  configuration**, else the **Deployment default** (the first model of the
-  first endpoint in the operator's endpoint file, ``config.DEFAULT_LLM_ENDPOINTS``),
-  else the run is refused.
+  caller's configuration, and an attached one on the account's **default**
+  (a configuration or a pick), else **Curio's default** (the first model of
+  the first endpoint in the operator's endpoint file,
+  ``config.DEFAULT_LLM_ENDPOINTS``), else the run is refused.
 - A reference that does not resolve (a choice or a default naming no
-  configuration, a Deployment default the deployment withdrew, a This Curio
-  install configuration whose endpoint the file no longer has or whose model
-  that endpoint no longer lists, an unreadable file) is refused. It never falls
-  back to another configuration.
+  configuration, Curio's default when the file is gone, a pick whose endpoint
+  the file no longer has or whose model that endpoint no longer lists, an
+  unreadable file) is refused. It never falls back to another configuration.
 
 No page ever sees the host of one of this Curio's endpoints (``shown_host``).
 
-The deployment is offered only **whole**. There is no per-field inheritance: a
-configuration of the user's own never borrows the operator's key or URL, and
-the operator's endpoints are reachable only as the Deployment default or as a
-This Curio install configuration, which names one endpoint of the file and one
-of its models, and takes that endpoint's type, URL and key.
+This Curio's endpoints are offered only **whole**. There is no per-field
+inheritance: a configuration of the user's own never borrows the operator's
+key or URL, and the operator's endpoints are reachable only as Curio's default
+or as a pick, which names one endpoint of the file and one of its models, and
+takes that endpoint's type, URL and key.
 
 Without ``--deploy`` the shared guest is the one local user: it owns its
-configurations like any account, and its Deployment default is everyone's.
+configurations like any account, and its Curio's default is everyone's.
 """
 
 from __future__ import annotations
@@ -45,8 +46,13 @@ SOURCE_CALLER = "caller"
 SOURCE_DEFAULT = "default"
 SOURCE_DEPLOYMENT = "deployment"
 SOURCE_GUEST = "guest"
-DEPLOYMENT_LABEL = "Deployment default"
+DEPLOYMENT_LABEL = "Curio's default"
 GUEST_LABEL = "Guest configuration"
+
+
+def pick_label(endpoint_name: str) -> str:
+    """How a run on a pick of *endpoint_name*'s models is named."""
+    return f"Curio · {endpoint_name}"
 
 
 class ProviderConfigError(ValueError):
@@ -82,21 +88,15 @@ def deployment_endpoints() -> tuple:
     return tuple(_settings().DEFAULT_LLM_ENDPOINTS or ())
 
 
-def deployment_offered() -> bool:
-    """Whether users may add a This Curio install configuration."""
-    return bool(deployment_endpoints())
-
-
 def deployment_endpoint(name: str):
     """The endpoint of the file named *name*, or None."""
     return next((endpoint for endpoint in deployment_endpoints() if endpoint.name == name), None)
 
 
-def offered_refusal(endpoint_name: str, model: str) -> str | None:
-    """Why a This Curio install configuration may not run *model* on the
-    endpoint named *endpoint_name*, or None. One sentence for a save and a
-    run alike, naming what is offered."""
-    return llm_configs.offered_model_refusal(endpoint_name, model, deployment_endpoints())
+def pick_refusal(choice: str) -> str | None:
+    """Why the pick *choice* does not run on this Curio, or None. One
+    sentence for a save and a run alike, naming what is offered."""
+    return llm_configs.pick_refusal(choice, deployment_endpoints())
 
 
 def _on_endpoint(endpoint, model: str, **fields) -> ProviderConfig:
@@ -107,9 +107,9 @@ def _on_endpoint(endpoint, model: str, **fields) -> ProviderConfig:
 
 
 def deployment_config(user_key: str, *, guest: bool | None = None) -> ProviderConfig | None:
-    """The Deployment default: the first endpoint of the file with its first
-    model, or None when the operator named no endpoint file. A hosted guest
-    answers with it as the guest configuration."""
+    """Curio's default: the first endpoint of the file with its first model,
+    or None when the operator named no endpoint file. A hosted guest answers
+    with it as the guest configuration."""
     endpoints = deployment_endpoints()
     if not endpoints:
         return None
@@ -124,26 +124,23 @@ def deployment_config(user_key: str, *, guest: bool | None = None) -> ProviderCo
 def build_config(user_key: str, config_id: str, record: dict, *, source: str,
                  guest: bool | None = None, agent_id: str | None = None) -> ProviderConfig:
     """The ProviderConfig one stored configuration answers with."""
-    label = record.get("label") or ""
-    model = record.get("model") or ""
-    if record.get("endpoint") == llm_configs.ENDPOINT_DEPLOYMENT:
-        if not deployment_offered():
-            raise ProviderConfigError(
-                f"The configuration {label!r} uses this Curio install's endpoint, which it no "
-                "longer offers. Choose another configuration in API Settings.",
-                agent_id=agent_id,
-            )
-        name = record.get("endpointName") or ""
-        refusal = offered_refusal(name, model)
-        if refusal:
-            raise ProviderConfigError(refusal, agent_id=agent_id)
-        return _on_endpoint(deployment_endpoint(name), model,
-                            config_id=config_id, label=label, source=source)
     return ProviderConfig(
         api_key=record.get("apiKey") or "", api_type=record.get("apiType") or "openai_compatible",
-        base_url=record.get("baseUrl") or "", model=model,
-        config_id=config_id, label=label, source=source,
+        base_url=record.get("baseUrl") or "", model=record.get("model") or "",
+        config_id=config_id, label=record.get("label") or "", source=source,
     )
+
+
+def pick_config(choice: str, *, source: str, agent_id: str | None = None) -> ProviderConfig:
+    """The ProviderConfig a pick of one of this Curio's models answers with:
+    that endpoint's type, URL and key with the picked model. A pick the
+    endpoint file no longer offers is refused, never replaced."""
+    refusal = pick_refusal(choice)
+    if refusal:
+        raise ProviderConfigError(refusal, agent_id=agent_id)
+    endpoint_name, model = llm_configs.parse_pick(choice)
+    return _on_endpoint(deployment_endpoint(endpoint_name), model,
+                        label=pick_label(endpoint_name), source=source)
 
 
 def resolve_llm(user_key: str, agent_id: str | None = None, *,
@@ -177,11 +174,13 @@ def resolve_llm(user_key: str, agent_id: str | None = None, *,
         config = deployment_config(user_key, guest=guest)
         if config is None:
             raise ProviderConfigError(
-                f"{agent_id} is set to the Deployment default, which this Curio no longer "
-                "offers. Choose another configuration for it in API Settings.",
+                f"{agent_id} is set to Curio's default, which this Curio no longer "
+                "offers. Choose another for it in API Settings.",
                 agent_id=agent_id,
             )
         return replace(config, source=SOURCE_ASSIGNED)
+    if llm_configs.is_pick(chosen):
+        return pick_config(chosen, source=SOURCE_ASSIGNED, agent_id=agent_id)
     if chosen:
         record = doc["configs"].get(chosen)
         if record is None:
@@ -195,6 +194,8 @@ def resolve_llm(user_key: str, agent_id: str | None = None, *,
     if caller is not None:
         return replace(caller, source=SOURCE_CALLER)
     default_id = doc["default"]
+    if llm_configs.is_pick(default_id):
+        return pick_config(default_id, source=SOURCE_DEFAULT, agent_id=agent_id)
     if default_id:
         record = doc["configs"].get(default_id)
         if record is None:
@@ -254,7 +255,6 @@ def _deployment_payload(user_key: str, guest: bool) -> dict:
     config = deployment_config(user_key, guest=guest)
     return {
         "label": config.label if config else DEPLOYMENT_LABEL,
-        "endpointOffered": deployment_offered(),
         "apiType": config.api_type if config else None,
         "model": config.model if config else None,
         "endpoints": [

@@ -468,7 +468,7 @@ def reset_db():
             stores_cleared = _clear_test_user_stores()
         # A clock a failed test left set would date the next test's records.
         record_clock.set_now(None)
-        # So would a stand-in LLM endpoint offer the next test This Curio install.
+        # So would a stand-in LLM endpoint offer the next test Curio's models.
         _restore_llm_deployment()
     finally:
         in_flight.open()
@@ -555,7 +555,7 @@ def llm_deployment():
     """Give this backend stand-in endpoints of its own, as
     ``--llm-endpoint-file`` does, or take them back.
 
-    For a test of what the page is told about This Curio install (its
+    For a test of what the page is told about Curio's own models (its
     endpoints' names and models, never a host or a key). Nothing is asked of
     an endpoint: a test that sets them runs no agent on them.
 

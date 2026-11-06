@@ -146,7 +146,7 @@ def _deployment(sandbox) -> dict:
         # The switch the package and dataset catalog routes obey.
         "factoryPublishAllowed": bool(packages_routes_common.CURIO_ALLOW_FACTORY_CATALOG_PUBLISH),
         "saveNodeOutputDefault": bool(config.CURIO_DEFAULT_SAVE_NODE_OUTPUT),
-        # The Deployment default a signed-in user falls back to: the operator's
+        # Curio's default, which a signed-in user falls back to: the operator's
         # endpoint with a model (``provider_config.deployment_config``).
         "llmProviderConfigured": _deployment_llm_configured(),
         # Whether the operator named a search provider (--agent-search-url);

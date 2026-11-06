@@ -776,54 +776,36 @@ class TestProviderModels:
         assert res.status_code == 200
         assert res.get_json()["models"] == ["gemma4"]
 
-    def test_this_curio_install_answers_with_its_endpoints_models_and_asks_no_one(
-        self, client, user_and_token, monkeypatch
+    @pytest.mark.parametrize("offered", [True, False], ids=["with-the-file", "without-the-file"])
+    def test_this_curios_own_endpoint_is_never_asked(
+        self, client, user_and_token, monkeypatch, offered
     ):
-        """The one list that is an allowlist: the models the operator's endpoint
-        file lists for the endpoint asked about by name. No SDK is reached
+        """Its models are the endpoint file's, which the listing names: asking
+        for them here is refused with one sentence. No SDK is reached
         (``_no_real_calls`` fails a test that reaches one), and nothing is
         recorded as remembered."""
+        from utk_curio.backend.app.agents.infrastructure import llm_configs
         from utk_curio.backend.app.agents.repositories import model_catalog
 
-        llm_deployment.offer(
-            monkeypatch,
-            llm_deployment.endpoint("Gateway", models=("model-a", "model-b")),
-            llm_deployment.endpoint("Second", base_url="https://second.example.test/v1",
-                                    api_key="second-fake-key", models=("model-b", "model-c")),
-        )
+        if offered:
+            llm_deployment.offer(
+                monkeypatch,
+                llm_deployment.endpoint("Gateway", models=("model-a", "model-b")),
+                llm_deployment.endpoint("Second", base_url="https://second.example.test/v1",
+                                        api_key="second-fake-key", models=("model-b", "model-c")),
+            )
+        else:
+            llm_deployment.withdraw(monkeypatch)
         user, token = user_and_token
 
-        for name, models in (("Gateway", ["model-a", "model-b"]), ("Second", ["model-b", "model-c"])):
+        for name in ("Gateway", "Second", "Elsewhere"):
             res = client.post(self.URL, headers=_auth(token),
                               json={"endpoint": "deployment", "endpointName": name})
-            assert res.status_code == 200, res.get_json()
-            assert res.get_json() == {
-                "models": models, "listable": True, "source": "deployment",
-                "remembered": [], "rememberedAt": None, "warning": None,
-            }
+            assert (res.status_code, res.get_json()) == (400, {"error": llm_configs.DEPLOYMENT_REFUSAL})
             assert "example.test" not in res.get_data(as_text=True)
-        refused = client.post(self.URL, headers=_auth(token),
-                              json={"endpoint": "deployment", "endpointName": "Elsewhere"})
-        assert refused.status_code == 400
-        assert refused.get_json()["error"] == (
-            "This Curio install has no endpoint 'Elsewhere'; it offers "
-            "Gateway: model-a, model-b; Second: model-b, model-c."
-        )
         assert model_catalog.remembered_models(
             _user_dir_key(user), "openai_compatible", "http://127.0.0.1:9/v1",
         ) == ([], None)
-
-    def test_without_an_endpoint_file_there_is_no_this_curio_install_to_ask(
-        self, client, user_and_token, monkeypatch
-    ):
-        llm_deployment.withdraw(monkeypatch)
-        _, token = user_and_token
-
-        res = client.post(self.URL, headers=_auth(token),
-                          json={"endpoint": "deployment", "endpointName": "Test gateway"})
-
-        assert res.status_code == 400
-        assert res.get_json()["error"] == "this Curio install offers no endpoint of its own"
 
     def test_a_failed_listing_does_not_name_this_curios_endpoints(
         self, client, user_and_token, monkeypatch

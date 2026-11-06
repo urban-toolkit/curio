@@ -10,11 +10,15 @@ Covers ``agents/llm_configs.py`` and the ``/api/agents/llm`` routes:
   local guest owns its configurations;
 - the model listing borrows a stored key only for that key's own endpoint;
 - the configuration chosen per agent: which agents may have one, what the
-  listing says each answers with, and a delete moving agents in one write.
+  listing says each answers with, and a delete moving agents in one write;
+- this Curio's own models (the endpoint file): picked as the default or for an
+  agent, never configured, and a configuration on this Curio's endpoint
+  refused on every write and dropped when the file is read.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import stat
@@ -191,8 +195,9 @@ class TestValidation:
         ({"apiType": "gemini", "baseUrl": "", "apiKey": ""}, "needs its API key"),
         ({"apiKey": "two\nlines"}, "one line"),
         ({"apiKey": "k" * 4097}, "longer than 4096"),
-        ({"endpoint": "deployment"}, "takes only a label, an endpoint name and a model"),
-        ({"endpointName": "Test gateway"}, "only a This Curio install configuration names an endpoint"),
+        ({"endpoint": "deployment"}, llm_configs.DEPLOYMENT_REFUSAL),
+        ({"endpoint": "elsewhere"}, "endpoint must be 'own'"),
+        ({"endpointName": "Test gateway"}, "unknown field(s): endpointName"),
     ])
     def test_a_bad_configuration_is_refused(self, client, user_and_token, tmp_curio, fields, fragment):
         _, token = user_and_token
@@ -228,13 +233,31 @@ class TestValidation:
             refused = client.post(f"{BASE}/configs", json=body, headers=_auth(token))
         assert refused.status_code == 400
 
-    def test_this_curio_install_needs_the_deployment_to_offer_it(self, client, user_and_token, tmp_curio, monkeypatch):
-        _, token = user_and_token
-        body = {"label": "Here", "endpoint": "deployment", "endpointName": "Test gateway", "model": "test-model"}
-        assert client.post(f"{BASE}/configs", json=body, headers=_auth(token)).status_code == 201
-        llm_deployment.withdraw(monkeypatch)
-        body["label"] = "Here 2"
-        assert client.post(f"{BASE}/configs", json=body, headers=_auth(token)).status_code == 400
+    @pytest.mark.parametrize("offered", [True, False], ids=["with-the-file", "without-the-file"])
+    def test_a_configuration_on_this_curios_endpoint_is_refused_on_create_and_edit(
+        self, client, user_and_token, tmp_curio, monkeypatch, offered,
+    ):
+        """One sentence, whatever else the body says: Curio's models are
+        picked, never configured."""
+        user, token = user_and_token
+        if not offered:
+            llm_deployment.withdraw(monkeypatch)
+        own = _create(client, token).get_json()["config"]
+        before = llm_configs.default_store().read(_user_dir_key(user))
+        for body in (
+            {"label": "Here", "endpoint": "deployment", "endpointName": "Test gateway", "model": "test-model"},
+            {"label": "Here", "endpoint": "deployment", "model": "test-model"},
+        ):
+            created = client.post(f"{BASE}/configs", json=body, headers=_auth(token))
+            assert (created.status_code, created.get_json()["error"]) == (400, llm_configs.DEPLOYMENT_REFUSAL)
+        for body in ({"endpoint": "deployment"}, {"endpoint": "deployment", "endpointName": "Test gateway"}):
+            edited = client.patch(f"{BASE}/configs/{own['id']}", json=body, headers=_auth(token))
+            assert (edited.status_code, edited.get_json()["error"]) == (400, llm_configs.DEPLOYMENT_REFUSAL)
+        # Nothing was written, and the own configuration is as it was.
+        assert llm_configs.default_store().read(_user_dir_key(user)) == before
+        # "own" is still what a configuration says it is.
+        assert client.patch(f"{BASE}/configs/{own['id']}", json={"endpoint": "own", "model": "gpt-4o"},
+                            headers=_auth(token)).status_code == 200
 
 
 class TestDuplicateDeleteAndDefault:
@@ -272,7 +295,7 @@ class TestDuplicateDeleteAndDefault:
         listing = response.get_json()
         # Its endpoints' names and models, never a host or a key.
         assert listing["deployment"] == {
-            "label": "Deployment default", "endpointOffered": True, "apiType": "openai_compatible",
+            "label": "Curio's default", "apiType": "openai_compatible",
             "model": "test-model", "endpoints": [{"name": "Test gateway", "models": ["test-model"]}],
         }
         assert "test-key" not in response.get_data(as_text=True)
@@ -300,8 +323,13 @@ class TestGuests:
             "apiType": "openai_compatible", "baseUrlHost": "",
         }
         assert "127.0.0.1" not in response.get_data(as_text=True)
+        # It sees this Curio's endpoints by name, and picks none of them.
+        assert listing["deployment"]["endpoints"] == [{"name": "Test gateway", "models": ["test-model"]}]
         assert _create(client, token).status_code == 403
         assert client.put(f"{BASE}/default", json={"configId": None}, headers=_auth(token)).status_code == 403
+        pick = llm_configs.pick_choice("Test gateway", "test-model")
+        assert client.put(f"{BASE}/default", json={"configId": pick}, headers=_auth(token)).status_code == 403
+        assert client.get(BASE, headers=_auth(token)).get_json()["active"]["source"] == "guest"
 
     def test_the_local_guest_owns_its_configurations(self, client, db, tmp_curio, monkeypatch):
         _, token = _shared_guest(db)
@@ -334,7 +362,7 @@ class TestAChoicePerAgent:
         assert not ids & builtin.internal_agent_ids()
         builder = next(row for row in listing["agents"] if row["id"] == "agent.curio.dataflow-builder")
         assert builder["name"] == "Dataflow Builder" and builder["choice"] is None
-        # With no choice and no default, the Deployment default answers it.
+        # With no choice and no default, Curio's default answers it.
         assert builder["answers"]["source"] == "deployment"
 
     def test_a_choice_is_saved_listed_and_answers(self, client, user_and_token, tmp_curio):
@@ -352,14 +380,14 @@ class TestAChoicePerAgent:
         cleared = self._choose(client, token, {"agent.curio.node-builder": None}).get_json()
         assert cleared["assignments"] == {}
 
-    def test_the_deployment_default_is_choosable_only_while_there_is_one(
+    def test_curios_default_is_choosable_only_while_there_is_one(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
         _, token = user_and_token
         assert self._choose(client, token, {"agent.curio.dataset-finder": "deployment"}).status_code == 200
         llm_deployment.withdraw(monkeypatch)
         refused = self._choose(client, token, {"agent.curio.researcher": "deployment"})
-        assert refused.status_code == 400 and "no Deployment default" in refused.get_json()["error"]
+        assert (refused.status_code, refused.get_json()["error"]) == (400, "This Curio offers no models of its own.")
 
     @pytest.mark.parametrize("body, status, fragment", [
         ({"agent.curio.dataflow-planner": None}, 400, "not an agent whose model you can choose"),
@@ -439,21 +467,18 @@ class TestModelListing:
     def test_the_deployments_endpoint_is_never_asked_and_its_key_never_lent(
         self, client, user_and_token, tmp_curio, monkeypatch,
     ):
-        """Its models are the file's, and an endpoint typed beside a This Curio
-        install configuration is asked with only what is typed."""
+        """Its models are the file's, which the listing names: asking about
+        this Curio's endpoint is refused, and asks no one."""
         _, token = user_and_token
         seen = self._capture(monkeypatch)
-        answer = client.post("/api/agents/provider-models",
-                             json={"endpoint": "deployment", "endpointName": "Test gateway"},
-                             headers=_auth(token)).get_json()
-        assert answer["models"] == ["test-model"] and seen == []
-        here = client.post(f"{BASE}/configs", json={
-            "label": "Here", "endpoint": "deployment", "endpointName": "Test gateway", "model": "test-model",
-        }, headers=_auth(token)).get_json()["config"]
-        client.post("/api/agents/provider-models",
-                    json={"configId": here["id"], "apiType": "openai_compatible",
-                          "baseUrl": "https://elsewhere.example.com/v1"}, headers=_auth(token))
-        assert [(c.base_url, c.api_key) for c in seen] == [("https://elsewhere.example.com/v1", "")]
+        for body in (
+            {"endpoint": "deployment", "endpointName": "Test gateway"},
+            {"endpoint": "deployment", "apiType": "openai_compatible", "baseUrl": "https://elsewhere.example.com/v1"},
+        ):
+            refused = client.post("/api/agents/provider-models", json=body, headers=_auth(token))
+            assert (refused.status_code, refused.get_json()["error"]) == (400, llm_configs.DEPLOYMENT_REFUSAL)
+            assert "test-model" not in refused.get_data(as_text=True)
+        assert seen == []
 
     def test_with_neither_no_key_is_borrowed(self, client, user_and_token, tmp_curio, monkeypatch):
         _, token = user_and_token
@@ -466,149 +491,241 @@ class TestModelListing:
 
 
 #: This Curio's two endpoints in the tests below (fake names, hosts and keys).
-GATEWAY = llm_deployment.endpoint("Gateway", models=("model-a", "model-b"))
-SECOND = llm_deployment.endpoint("Second", base_url="https://second.example.test/v1",
-                                 api_key="second-fake-key-0001", models=("model-b", "model-c"))
-OFFER = "Gateway: model-a, model-b; Second: model-b, model-c"
+#: Their names hold a space, a colon and a slash, and so do their models.
+GATEWAY = llm_deployment.endpoint("Gateway: lab one", models=("org/model-a", "model-b"))
+SECOND = llm_deployment.endpoint("Second / west", base_url="https://second.example.test/v1",
+                                 api_key="second-fake-key-0001", models=("model-b", "org/model-c"))
+OFFER = "Gateway: lab one: org/model-a, model-b; Second / west: model-b, org/model-c"
 
 
-class TestThisCurioInstallsEndpoints:
+def _pick(endpoint_name: str, model: str) -> str:
+    return llm_configs.pick_choice(endpoint_name, model)
+
+
+class TestCuriosModels:
     """The endpoint file: the listing names its endpoints and their models,
-    the model listing answers with an endpoint's models without asking it, and
-    a This Curio install configuration takes one endpoint and one of its
-    models."""
+    and any of those models is picked, for the default or for one agent,
+    without a configuration. A pick runs on its endpoint's key and URL, and
+    one the file no longer offers is refused."""
 
     @pytest.fixture()
     def offered(self, monkeypatch):
         llm_deployment.offer(monkeypatch, GATEWAY, SECOND)
-
-    def _here(self, client, token, **fields):
-        body = {"label": "Here", "endpoint": "deployment", "endpointName": "Second", "model": "model-b", **fields}
-        return client.post(f"{BASE}/configs", json=body, headers=_auth(token))
 
     def test_the_listing_names_the_endpoints_and_their_models(self, client, user_and_token, tmp_curio, offered):
         _, token = user_and_token
         response = client.get(BASE, headers=_auth(token))
         deployment = response.get_json()["deployment"]
         assert deployment["endpoints"] == [
-            {"name": "Gateway", "models": ["model-a", "model-b"]},
-            {"name": "Second", "models": ["model-b", "model-c"]},
+            {"name": "Gateway: lab one", "models": ["org/model-a", "model-b"]},
+            {"name": "Second / west", "models": ["model-b", "org/model-c"]},
         ]
-        # The Deployment default is the first endpoint's first model.
-        assert (deployment["model"], deployment["endpointOffered"]) == ("model-a", True)
+        # Curio's default is the first endpoint's first model.
+        assert (deployment["label"], deployment["model"]) == ("Curio's default", "org/model-a")
+        assert "endpointOffered" not in deployment
         text = response.get_data(as_text=True)
         assert "example.test" not in text and "fake-key" not in text and "127.0.0.1" not in text
 
-    def test_the_model_listing_answers_with_an_endpoints_models_and_asks_no_one(
-        self, client, user_and_token, tmp_curio, offered, monkeypatch,
-    ):
-        _, token = user_and_token
-        asked, remembered = [], []
-        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.list_provider_models',
-                            lambda config_: asked.append(config_) or ["live-model"])
-        monkeypatch.setattr('utk_curio.backend.app.agents.repositories.model_catalog.remember_models',
-                            lambda *args, **kwargs: remembered.append(args))
-        config_id = self._here(client, token).get_json()["config"]["id"]
-        for body, models in (
-            ({"endpoint": "deployment", "endpointName": "Gateway"}, ["model-a", "model-b"]),
-            ({"endpoint": "deployment", "endpointName": "Second"}, ["model-b", "model-c"]),
-            ({"configId": config_id}, ["model-b", "model-c"]),
-        ):
-            response = client.post("/api/agents/provider-models", json=body, headers=_auth(token))
-            assert response.status_code == 200, response.get_json()
-            answer = response.get_json()
-            assert (answer["models"], answer["source"], answer["listable"]) == (models, "deployment", True)
-            assert "example.test" not in response.get_data(as_text=True)
-        assert asked == [] and remembered == []
-
-    def test_a_configuration_naming_another_endpoint_still_asks_it(
-        self, client, user_and_token, tmp_curio, offered, monkeypatch,
-    ):
-        _, token = user_and_token
-        asked = []
-        monkeypatch.setattr('utk_curio.backend.app.agents.infrastructure.providers.list_provider_models',
-                            lambda config_: asked.append(config_) or ["live-model"])
-        config_id = self._here(client, token).get_json()["config"]["id"]
-        response = client.post("/api/agents/provider-models",
-                               json={"configId": config_id, "apiType": "openai_compatible",
-                                     "baseUrl": "https://elsewhere.example.test/v1"},
-                               headers=_auth(token))
-        assert response.get_json()["models"] == ["live-model"]
-        assert [(c.base_url, c.api_key) for c in asked] == [("https://elsewhere.example.test/v1", "")]
-
-    def test_an_endpoint_or_model_outside_the_file_is_refused_on_every_write(
+    def test_a_pick_is_stored_as_one_string_and_lists_back_as_it_is(
         self, client, user_and_token, tmp_curio, offered,
     ):
         user, token = user_and_token
-        refused = self._here(client, token, model="model-a")
-        assert refused.status_code == 400
-        sentence = refused.get_json()["error"]
-        assert sentence == f"'model-a' is not a model of 'Second' on this Curio install, which offers {OFFER}."
-        unknown = self._here(client, token, endpointName="Elsewhere")
-        assert (unknown.status_code, unknown.get_json()["error"]) == (
-            400, f"This Curio install has no endpoint 'Elsewhere'; it offers {OFFER}.",
-        )
-        here = self._here(client, token).get_json()["config"]
-        assert (here["endpointName"], here["model"]) == ("Second", "model-b")
-        assert client.patch(f"{BASE}/configs/{here['id']}", json={"model": "model-a"},
-                            headers=_auth(token)).get_json()["error"] == sentence
-        assert client.post(f"{BASE}/configs/{here['id']}/duplicate", json={"model": "model-a"},
-                           headers=_auth(token)).get_json()["error"] == sentence
-        # Moving it to the other endpoint takes that endpoint's models.
-        moved = client.patch(f"{BASE}/configs/{here['id']}", json={"endpointName": "Gateway", "model": "model-a"},
-                             headers=_auth(token))
-        assert moved.status_code == 200, moved.get_json()
-        assert (moved.get_json()["config"]["endpointName"], moved.get_json()["config"]["model"]) == (
-            "Gateway", "model-a",
-        )
-        # An own configuration moved to this Curio install names an endpoint too.
-        own = _create(client, token).get_json()["config"]
-        unnamed = client.patch(f"{BASE}/configs/{own['id']}", json={"endpoint": "deployment"},
-                               headers=_auth(token))
-        assert unnamed.status_code == 400
-        assert unnamed.get_json()["error"] == f"A This Curio install configuration names one of its endpoints; it offers {OFFER}."
-        stored = llm_configs.default_store().read(_user_dir_key(user))["configs"]
-        assert {(c.get("endpointName"), c["model"]) for c in stored.values()} == {
-            ("Gateway", "model-a"), (None, "gpt-4o-mini"),
-        }
-        # An own configuration takes any model.
-        assert _create(client, token, label="Own 2", model="model-z").status_code == 201
+        pick = _pick("Second / west", "org/model-c")
+        assert pick == 'curio:["Second / west","org/model-c"]'
+        chosen = client.put(f"{BASE}/default", json={"configId": pick}, headers=_auth(token))
+        assert chosen.status_code == 200, chosen.get_json()
+        assert chosen.get_json()["default"] == pick
+        on_file = json.loads(llm_configs.default_store().path(_user_dir_key(user)).read_text(encoding="utf-8"))
+        assert on_file["default"] == pick
+        # The same pair written another way is stored the one way.
+        spaced = 'curio:[ "Gateway: lab one" , "model-b" ]'
+        again = client.put(f"{BASE}/default", json={"configId": spaced}, headers=_auth(token))
+        assert again.get_json()["default"] == _pick("Gateway: lab one", "model-b")
 
-    def test_a_configuration_answers_on_its_own_endpoint(
+    def test_the_default_on_a_pick_answers_on_that_endpoints_key_and_url(
         self, client, user_and_token, tmp_curio, offered,
     ):
         from utk_curio.backend.app.agents.infrastructure import provider_config as pc
 
         user, token = user_and_token
-        here = self._here(client, token).get_json()["config"]
-        client.put(f"{BASE}/default", json={"configId": here["id"]}, headers=_auth(token))
-        out = pc.resolve_llm(_user_dir_key(user))
+        # The same model name on the second endpoint is the second endpoint's.
+        client.put(f"{BASE}/default", json={"configId": _pick("Second / west", "model-b")}, headers=_auth(token))
+        out = pc.resolve_llm(_user_dir_key(user), "agent.curio.researcher")
         assert (out.base_url, out.api_key, out.model) == (
             "https://second.example.test/v1", "second-fake-key-0001", "model-b",
         )
+        assert (out.config_id, out.label, out.source, out.on_deployment) == (
+            None, "Curio · Second / west", "default", True,
+        )
+        listing = client.get(BASE, headers=_auth(token)).get_json()
+        assert listing["active"] == {
+            "source": "default", "configId": None, "label": "Curio · Second / west", "model": "model-b",
+            "apiType": "openai_compatible", "baseUrlHost": "",
+        }
 
-    def test_no_host_of_this_curio_install_in_any_answer(
+    def test_an_agent_on_a_pick_answers_on_it_and_the_others_follow_the_default(
+        self, client, user_and_token, tmp_curio, offered,
+    ):
+        from utk_curio.backend.app.agents.infrastructure import provider_config as pc
+
+        user, token = user_and_token
+        own = _create(client, token).get_json()["config"]
+        client.put(f"{BASE}/default", json={"configId": own["id"]}, headers=_auth(token))
+        pick = _pick("Gateway: lab one", "model-b")
+        chosen = client.put(f"{BASE}/assignments", json={"agent.curio.node-builder": pick}, headers=_auth(token))
+        assert chosen.status_code == 200, chosen.get_json()
+        listing = chosen.get_json()
+        assert listing["assignments"] == {"agent.curio.node-builder": pick}
+        row = next(r for r in listing["agents"] if r["id"] == "agent.curio.node-builder")
+        assert row["choice"] == pick
+        assert (row["answers"]["source"], row["answers"]["label"], row["answers"]["model"]) == (
+            "assigned", "Curio · Gateway: lab one", "model-b",
+        )
+        out = pc.resolve_llm(_user_dir_key(user), "agent.curio.node-builder")
+        assert (out.base_url, out.api_key, out.model) == ("http://127.0.0.1:9/v1", "test-key", "model-b")
+        # Another agent follows the account's default.
+        assert pc.resolve_llm(_user_dir_key(user), "agent.curio.researcher").config_id == own["id"]
+        # Curio's default is a choice too, and null clears either.
+        assert client.put(f"{BASE}/assignments", json={"agent.curio.node-builder": "deployment"},
+                          headers=_auth(token)).get_json()["assignments"] == {"agent.curio.node-builder": "deployment"}
+        assert client.put(f"{BASE}/assignments", json={"agent.curio.node-builder": None},
+                          headers=_auth(token)).get_json()["assignments"] == {}
+
+    @pytest.mark.parametrize("pick, sentence", [
+        (_pick("Second / west", "org/model-a"), f"'Second / west' offers no model 'org/model-a'; Curio offers {OFFER}."),
+        (_pick("Elsewhere", "model-b"), f"Curio has no endpoint 'Elsewhere'; it offers {OFFER}."),
+        ("curio:not a pair", f"'curio:not a pair' is not one of Curio's models; it offers {OFFER}."),
+    ])
+    def test_a_pick_outside_the_file_is_refused_with_one_sentence_and_nothing_is_written(
+        self, client, user_and_token, tmp_curio, offered, pick, sentence,
+    ):
+        user, token = user_and_token
+        refused = client.put(f"{BASE}/default", json={"configId": pick}, headers=_auth(token))
+        assert (refused.status_code, refused.get_json()["error"]) == (400, sentence)
+        refused = client.put(f"{BASE}/assignments", json={
+            "agent.curio.researcher": _pick("Gateway: lab one", "model-b"), "agent.curio.node-builder": pick,
+        }, headers=_auth(token))
+        assert (refused.status_code, refused.get_json()["error"]) == (400, sentence)
+        doc = llm_configs.default_store().read(_user_dir_key(user))
+        assert (doc["default"], doc["agents"]) == (None, {})
+
+    def test_without_the_file_no_pick_is_accepted(self, client, user_and_token, tmp_curio, monkeypatch):
+        _, token = user_and_token
+        llm_deployment.withdraw(monkeypatch)
+        pick = _pick("Test gateway", "test-model")
+        for response in (
+            client.put(f"{BASE}/default", json={"configId": pick}, headers=_auth(token)),
+            client.put(f"{BASE}/assignments", json={"agent.curio.researcher": pick}, headers=_auth(token)),
+        ):
+            assert (response.status_code, response.get_json()["error"]) == (
+                400, "This Curio offers no models of its own.",
+            )
+
+    def test_a_pick_that_left_the_file_is_refused_at_run_time_and_listed_as_it_is(
+        self, client, user_and_token, tmp_curio, offered, monkeypatch,
+    ):
+        from utk_curio.backend.app.agents.infrastructure import provider_config as pc
+
+        user, token = user_and_token
+        default_pick = _pick("Second / west", "org/model-c")
+        agent_pick = _pick("Gateway: lab one", "model-b")
+        client.put(f"{BASE}/default", json={"configId": default_pick}, headers=_auth(token))
+        client.put(f"{BASE}/assignments", json={"agent.curio.node-builder": agent_pick}, headers=_auth(token))
+        # The operator drops the second endpoint and the first one's second model.
+        llm_deployment.offer(monkeypatch, dataclasses.replace(GATEWAY, models=("org/model-a",)))
+        offer = "Gateway: lab one: org/model-a"
+        with pytest.raises(pc.ProviderConfigError) as refused:
+            pc.resolve_llm(_user_dir_key(user), "agent.curio.researcher")
+        assert str(refused.value) == f"Curio has no endpoint 'Second / west'; it offers {offer}."
+        assert refused.value.remedy == {"kind": "llm-config", "agentId": "agent.curio.researcher"}
+        with pytest.raises(pc.ProviderConfigError) as refused:
+            pc.resolve_llm(_user_dir_key(user), "agent.curio.node-builder")
+        assert str(refused.value) == f"'Gateway: lab one' offers no model 'model-b'; Curio offers {offer}."
+        # The listing keeps both, so the page can show them as no longer offered.
+        listing = client.get(BASE, headers=_auth(token)).get_json()
+        assert listing["default"] == default_pick
+        assert listing["assignments"] == {"agent.curio.node-builder": agent_pick}
+        assert listing["active"]["source"] is None and "Second / west" in listing["active"]["error"]
+        row = next(r for r in listing["agents"] if r["id"] == "agent.curio.node-builder")
+        assert row["choice"] == agent_pick and "offers no model 'model-b'" in row["answers"]["error"]
+
+    def test_no_host_or_key_of_this_curio_in_any_answer(
         self, client, user_and_token, tmp_curio, offered,
     ):
         _, token = user_and_token
-        created = self._here(client, token)
-        config_id = created.get_json()["config"]["id"]
+        pick = _pick("Second / west", "org/model-c")
         responses = [
-            created,
-            client.patch(f"{BASE}/configs/{config_id}", json={"model": "model-c"}, headers=_auth(token)),
-            client.post(f"{BASE}/configs/{config_id}/duplicate", json={}, headers=_auth(token)),
-            client.put(f"{BASE}/default", json={"configId": config_id}, headers=_auth(token)),
-            client.put(f"{BASE}/assignments", json={"agent.curio.researcher": config_id}, headers=_auth(token)),
+            client.put(f"{BASE}/default", json={"configId": pick}, headers=_auth(token)),
+            client.put(f"{BASE}/assignments", json={"agent.curio.researcher": pick}, headers=_auth(token)),
+            client.put(f"{BASE}/assignments", json={"agent.curio.node-builder": "deployment"}, headers=_auth(token)),
             client.get(BASE, headers=_auth(token)),
         ]
         for response in responses:
-            assert response.status_code in (200, 201), response.get_json()
+            assert response.status_code == 200, response.get_json()
             text = response.get_data(as_text=True)
             assert "example.test" not in text and "127.0.0.1" not in text and "fake-key" not in text
+            assert "test-key" not in text
         listing = responses[-1].get_json()
-        assert {c["baseUrlHost"] for c in listing["configs"]} == {""}
-        assert {c["endpointName"] for c in listing["configs"]} == {"Second"}
-        assert (listing["active"]["configId"], listing["active"]["baseUrlHost"]) == (config_id, "")
+        assert listing["active"]["baseUrlHost"] == ""
+        assert {row["answers"]["baseUrlHost"] for row in listing["agents"]} == {""}
+
+
+class TestAConfigurationOnThisCuriosEndpointIsDropped:
+    """A file an earlier Curio wrote can hold a configuration on this Curio's
+    endpoint (``endpoint: "deployment"``). It is dropped when the file is read,
+    with the default and the choices that named it."""
+
+    def _write_old_file(self, user_key: str) -> dict:
+        own = {"label": "Mine", "endpoint": "own", "apiType": "anthropic", "baseUrl": "",
+               "apiKey": KEY, "model": "claude", "createdAt": 1, "updatedAt": 1}
+        here = {"label": "Here", "endpoint": "deployment", "endpointName": "Test gateway",
+                "model": "test-model", "createdAt": 2, "updatedAt": 2}
+        doc = {
+            "version": 1,
+            "configs": {"llm-00000000000a": own, "llm-00000000000d": here},
+            "default": "llm-00000000000d",
+            "agents": {"agent.curio.researcher": "llm-00000000000d", "agent.curio.node-builder": "llm-00000000000a"},
+        }
+        store = llm_configs.default_store()
+        store.path(user_key).parent.mkdir(parents=True, exist_ok=True)
+        store._write(user_key, doc)
+        return doc
+
+    def test_it_is_dropped_on_read_and_the_account_falls_back(self, client, user_and_token, tmp_curio):
+        from utk_curio.backend.app.agents.infrastructure import provider_config as pc
+
+        user, token = user_and_token
+        user_key = _user_dir_key(user)
+        self._write_old_file(user_key)
+        doc = llm_configs.default_store().read(user_key)
+        assert list(doc["configs"]) == ["llm-00000000000a"]
+        assert doc["default"] is None
+        assert doc["agents"] == {"agent.curio.node-builder": "llm-00000000000a"}
+        listing = client.get(BASE, headers=_auth(token)).get_json()
+        assert [c["id"] for c in listing["configs"]] == ["llm-00000000000a"]
+        assert all("endpointName" not in c for c in listing["configs"])
+        assert listing["default"] is None and listing["assignments"] == {"agent.curio.node-builder": "llm-00000000000a"}
+        # The researcher falls back to the default, Curio's default here.
+        out = pc.resolve_llm(user_key, "agent.curio.researcher")
+        assert (out.source, out.model) == ("deployment", "test-model")
+        # Its id is gone everywhere a request can name it.
+        assert client.patch(f"{BASE}/configs/llm-00000000000d", json={"model": "x"},
+                            headers=_auth(token)).status_code == 404
+        assert client.post("/api/agents/provider-models", json={"configId": "llm-00000000000d"},
+                           headers=_auth(token)).status_code == 404
+        assert client.put(f"{BASE}/default", json={"configId": "llm-00000000000d"},
+                          headers=_auth(token)).status_code == 404
+
+    def test_the_next_write_leaves_it_out_of_the_file(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        user_key = _user_dir_key(user)
+        self._write_old_file(user_key)
+        assert _create(client, token, label="Another").status_code == 201
+        on_file = json.loads(llm_configs.default_store().path(user_key).read_text(encoding="utf-8"))
+        assert "llm-00000000000d" not in on_file["configs"]
+        assert all(c.get("endpoint") == "own" for c in on_file["configs"].values())
+        assert on_file["default"] is None
+        assert on_file["agents"] == {"agent.curio.node-builder": "llm-00000000000a"}
 
 
 class TestTheAccountRowNoLongerHoldsOne:
