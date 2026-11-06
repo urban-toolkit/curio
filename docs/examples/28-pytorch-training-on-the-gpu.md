@@ -72,7 +72,7 @@ return pd.DataFrame({
 
 The network starts from random weights. Each epoch shuffles the 900 pictures, takes them 30 at a time, and moves the weights against the gradient of the cross-entropy loss with Adam. Then the node measures the accuracy on both sets with the weights the network has.
 
-The network is made on the CPU from the seed, and the shuffles are drawn there too by a generator of their own, so the network starts and trains alike on every device. With the settings example 27 describes, a rerun on the same machine gives the same numbers, which the node rounds to three decimals.
+The network is made on the CPU from the seed, and the shuffles are drawn there too by a generator of their own, so the network starts and trains alike on every device. With the settings example 27 describes, a rerun on the same machine gives the same numbers, which the node rounds to three decimals. It trains in float64: every GPU adds up its sums in an order of its own, and in float32 those last bits grow, epoch after epoch, into the decimals shown.
 
 ```python
 import os
@@ -127,8 +127,8 @@ def pixels(uri):
 
 
 def tensors(frame):
-    """A frame's pictures and the index of each one's shape, on the device."""
-    images = torch.from_numpy(np.stack([pixels(uri) for uri in frame["image"]]))
+    """A frame's pictures, in float64, and the index of each one's shape, on the device."""
+    images = torch.from_numpy(np.stack([pixels(uri) for uri in frame["image"]])).double()
     labels = torch.tensor([SHAPES.index(shape) for shape in frame["shape"]])
     return images.to(device), labels.to(device)
 
@@ -142,8 +142,10 @@ train_images, train_labels = tensors(input_0[input_0["split"] == "train"])
 held_images, held_labels = tensors(input_0[input_0["split"] == "held out"])
 
 # Made on the CPU, from the seed, and the batches drawn there too, so the
-# network starts and trains alike on every device.
-model = TinyCNN().to(device)
+# network starts and trains alike on every device. In float64: each GPU sums
+# in its own order, and in float32 those last bits grow, epoch after epoch,
+# into the three decimals shown.
+model = TinyCNN().double().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
 shuffle = torch.Generator().manual_seed(28)
 
