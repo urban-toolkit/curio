@@ -270,8 +270,16 @@ class NoBackendTestIsLostTest(unittest.TestCase):
         cls.everything, cls.pieces, cls.listed = everything, pieces, listed
 
     def test_the_listing_names_what_each_part_runs(self):
-        """What build-image lists for a filtered run is what each unit part then runs."""
-        self.assertEqual(sorted(self.listed), [f"unit-backend-{k}" for k in range(1, self.PARTS + 1)])
+        """What build-image lists for a filtered run is what each unit part then runs.
+
+        pytest loads the conftest of every test* folder under its argument,
+        --ignore or not, so the e2e split lists its jobs too, each holding
+        nothing: this session collected no e2e test.
+        """
+        unit = sorted(job for job in self.listed if job.startswith("unit-"))
+        self.assertEqual(unit, [f"unit-backend-{k}" for k in range(1, self.PARTS + 1)])
+        others = {job: keys for job, keys in self.listed.items() if not job.startswith("unit-")}
+        self.assertEqual(others, {job: [] for job in others})
         for k, piece in enumerate(self.pieces, 1):
             self.assertEqual(sorted(self.listed[f"unit-backend-{k}"]),
                              sorted(parts.case_key(*parts.nodeid_address(nodeid)) for nodeid in piece), k)

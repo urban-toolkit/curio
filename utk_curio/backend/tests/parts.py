@@ -27,6 +27,9 @@ deselection, each split writes the tests every CI job of its suite would run
 by the keys of ``case_key``, and no test runs. A filtered Full stack build
 (a re-mint's ``remint_filter``, or its ``tests`` input) collects each suite once
 this way, so the jobs and parts that hold no selected test start no stack.
+pytest loads the conftest of every test* folder under its argument, --ignore
+or not, so a backend unit collection lists the e2e jobs too, each holding
+nothing.
 """
 
 from __future__ import annotations
