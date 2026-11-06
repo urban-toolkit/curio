@@ -52,6 +52,12 @@ class ProtocolError(ValueError):
 #   {"kind": "null"}
 #   {"kind": "bool"|"int"|"float"|"str", "value": ...}
 #   {"kind": "json", "file": "in_0.json"}                       list or dict
+#   {"kind": "json", "file": "in_0.json", "stored": true,
+#    "refs": [spec | null, ...]}       an input's stored list or dict, read as
+#                                      stored_inputs.read_stored reads it; for
+#                                      a node's one input whose wrapper names
+#                                      outputs, "refs" holds each one's spec,
+#                                      by its place in the wrapper
 #   {"kind": "dataframe", "file": "in_0.parquet",
 #    "encoded_object_columns": [...]}
 #   {"kind": "geodataframe", "file": "in_0.parquet",

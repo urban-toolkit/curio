@@ -130,7 +130,10 @@ def _parse_outputs_refs(file_path):
 def _build_input_spec(file_path, data_type, scratch_dir, session_id, saved_paths=None):
     """Stage whatever this node's input references, returning its spec. An
     input that is a saved output of the run's dataflow (*saved_paths*) is
-    staged from its own file when the store has no row for it."""
+    staged from its own file when the store has no row for it. Whatever
+    *data_type* names, a stored list or dict is read as the in-process path
+    reads it (``staging.stage_input``, ``stored_inputs.read_stored``): one
+    Autark layer as its frame, an ``outputs`` wrapper as the list it holds."""
     from utk_curio.sandbox.util import staging
 
     if data_type == "outputs":

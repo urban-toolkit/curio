@@ -1499,12 +1499,11 @@ GPU_COMPUTE_SPEC = json.dumps({"compute": [{
 }]}, indent=2)
 
 #: What the GPU made, read back in Python as the table shows it. An Autark
-#: node hands its layer on as ``{dataType, data}``, the data a FeatureCollection,
-#: on the canvas and on a dashboard alike.
+#: node's one layer reaches Python as its GeoDataFrame, on the canvas and on
+#: a dashboard alike.
 GPU_AFTER_CODE = (
-    "import geopandas as gpd\n"
     "import pandas as pd\n\n"
-    "frame = gpd.GeoDataFrame.from_features(input_0['data']['features'])\n"
+    "frame = input_0\n"
     "return pd.DataFrame({\n"
     "    'count': [int(v) for v in frame['count']],\n"
     "    'doubled': [int(round(float(v))) for v in frame['doubled']],\n"
