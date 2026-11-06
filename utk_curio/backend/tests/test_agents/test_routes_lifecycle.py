@@ -208,9 +208,7 @@ class TestMaterialize:
 
         user, token = user_and_token
         coord = "agent.curio.dataset-finder@1"
-        # Not in the store before install (it's a built-in resolved from the
-        # roster): the copy the account's default agents left is taken away.
-        shutil.rmtree(storage.agent_definition_dir(_user_dir_key(user), coord), ignore_errors=True)
+        # Not in the store before install (it's a built-in resolved from the roster).
         assert storage.load_installed_agent_definition(_user_dir_key(user), coord) is None
         client.post(
             f"/api/agents/projects/{alice_project}/install",
