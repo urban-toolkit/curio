@@ -1,7 +1,6 @@
 """Playwright E2E: save a project and verify it loads in executed state."""
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
@@ -14,6 +13,7 @@ from .utils import (
     require_project_page,
     require_user_auth,
     run_node_and_wait,
+    save_dataflow,
     signup_and_enter_new_workflow,
     signup_e2e_user,
     stub_db_login,
@@ -78,19 +78,11 @@ def _save_from_the_file_menu_then_find_it(page, base_url: str, *, username: str)
         username=username,
     )
 
-    file_btn = page.get_by_role("button", name=re.compile("File"))
-    file_btn.wait_for(state="visible", timeout=15000)
-    file_btn.click(force=True)
-
-    save_btn = page.get_by_role("button", name="Save dataflow", exact=True)
-    save_btn.wait_for(state="visible", timeout=5000)
-    save_btn.click()
-    # `handleSave` closes the File menu once the save + refreshSavedProjects
-    # round-trip completes, so the Save button being hidden is our signal that
-    # the save is fully done.
-    save_btn.wait_for(state="hidden", timeout=10000)
-    # wait for the save to be completed
-    page.wait_for_timeout(2000)
+    # From the click until the create is answered the menu item reads
+    # "Saving...", so "Save dataflow" hides at once and says nothing of the
+    # server: wait for the create's answer.
+    created = save_dataflow(page)
+    assert created.get("name") == "DefaultDataflow", created
 
     # Navigate to /projects (the current home for saved dataflows after
     # the file-menu simplification). `FlowProvider` seeds `workflowName` to
