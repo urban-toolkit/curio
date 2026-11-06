@@ -2036,6 +2036,37 @@ def rename_project(user, project_id: str, new_name: str) -> ProjectSummary:
     )
 
 
+def _renames_only(data: ProjectUpdate) -> bool:
+    """Whether the PUT *data* names the dataflow and changes nothing else, as
+    the canvas title's rename sends it."""
+    return (
+        isinstance(data.name, str) and bool(data.name.strip())
+        and data.spec is None and data.outputs is None and data.description is None
+        and data.thumbnail_accent is None and data.categories is None and data.history is None
+    )
+
+
+def rename_for_visitor(user, project_id: str, data: ProjectUpdate) -> Optional[ProjectDetail]:
+    """A hosted guest's rename of a dataflow their account owns: their own
+    copy's name (``visitor_copies.rename``), answered with the dataflow as
+    their canvas opens it. The row, which every guest's gallery lists, keeps
+    its name. ``None`` for any other PUT, and for anyone else, whose save
+    :func:`update_project` makes or refuses."""
+    if not _renames_only(data):
+        return None
+    spec = visitor_copies.rename(user, project_id, data.name.strip())
+    if spec is None:
+        return None
+    project = repo.get_for_user(project_id, user.id)
+    ukey = _user_dir_key(user)
+    detail = _to_detail(
+        project, spec=spec, outputs=_output_refs_from_manifest(storage.read_manifest(ukey, project_id)),
+        spec_revision=storage.spec_revision(ukey, project_id),
+        categories=_categories(user, project_id, spec),
+    )
+    return visitor_copies.with_spec(detail, spec)
+
+
 #: What anyone but the owner and the editors the owner invited is told who
 #: would rename the dataflow.
 RENAME_WATCHER_REFUSAL = "Only the owner and the editors the owner invited rename this dataflow."

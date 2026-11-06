@@ -99,7 +99,11 @@ def update_project(project_id: str):
         return _error(str(exc))
 
     try:
-        detail = services.update_project(g.user, project_id, data, sign_in=get_current_token())
+        # A hosted guest's rename names their own copy (visitor_copies.py);
+        # update_project refuses their other saves.
+        detail = services.rename_for_visitor(g.user, project_id, data)
+        if detail is None:
+            detail = services.update_project(g.user, project_id, data, sign_in=get_current_token())
     except NotFoundError:
         return _error("Project not found", 404)
     except ProjectError as exc:
