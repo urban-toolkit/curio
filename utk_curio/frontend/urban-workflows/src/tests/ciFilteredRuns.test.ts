@@ -194,6 +194,17 @@ describe("a filtered Full stack build", () => {
         expect(asking.filter((c) => !/env\.CURIO_CI_HOLDS (!= 'false'|== '')/.test(c))).toEqual([]);
     });
 
+    test("ci-report puts a lone job's results in their folder before anything reads them", () => {
+        // download-artifact extracts a lone pattern match into its path itself, as when a
+        // filtered run's one part sent results; every check reads inputs/ci-inputs-<job>/.
+        const all = steps("ci-report");
+        const download = all.findIndex((step) => /pattern: ci-inputs-\*/.test(step.text));
+        expect(download).toBeGreaterThanOrEqual(0);
+        const next = all[download + 1];
+        expect(next.condition).toBe("");
+        expect(next.text).toContain('mv "${files[@]}" "inputs/$name/"');
+    });
+
     test("the folders a job's condition looks for are the selection script's suites", () => {
         const folders = [scriptConstant("E2E"), scriptConstant("BACKEND"), scriptConstant("SANDBOX"), `${scriptConstant("JEST")}/`];
         const named = [...read(WORKFLOW).matchAll(/contains\(inputs\.tests, '([^']+)'\)/g)].map((match) => match[1]);

@@ -2246,6 +2246,33 @@ jobs:
           pattern: ci-inputs-*
           path: inputs
 
+      # download-artifact puts a lone match straight into its path, with no
+      # folder of its name: so a filtered run whose one part sent results, or
+      # a run where only one job got as far as its upload. Every check below
+      # reads inputs/ci-inputs-<job>/, so those results go into their folder,
+      # named by the run's one ci-inputs artifact.
+      - name: 📁 Put a lone job's results in their folder
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob dotglob
+          folders=(inputs/ci-inputs-*/)
+          files=(inputs/*)
+          if [ ${#folders[@]} -gt 0 ] || [ ${#files[@]} -eq 0 ]; then exit 0; fi
+          curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" \
+            -o "$RUNNER_TEMP/artifacts.json"
+          name=$(python3 -c 'import json, sys; names = sorted({a["name"] for a in json.load(open(sys.argv[1]))["artifacts"] if a["name"].startswith("ci-inputs-")}); print(names[0] if len(names) == 1 else "")' "$RUNNER_TEMP/artifacts.json")
+          if [ -z "$name" ]; then
+            echo "::warning::results lie in inputs/ with no job's folder, and no single ci-inputs artifact names them"
+            exit 0
+          fi
+          mkdir "inputs/$name"
+          mv "${files[@]}" "inputs/$name/"
+          echo "the one job's results go to inputs/$name/"
+
       - name: 🧩 Merge them
         shell: bash
         run: |
