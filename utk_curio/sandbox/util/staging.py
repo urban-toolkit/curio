@@ -96,13 +96,14 @@ _SAVED_SCALAR_KINDS = ("int", "float", "bool", "str", "null")
 _RASTER_SUFFIXES = (".tif", ".tiff", ".vrt")
 
 
-def stage_saved_output(saved, scratch_dir, *, name, slot="in"):
+def stage_saved_output(saved, scratch_dir, *, name, slot="in", read_as=None):
     """Stage the saved output *name* of the run's dataflow from the file its
     owner's store holds (*saved*, ``{"path", "dataType"}``, as
     ``parsers.shape_saved_paths`` gives it), as its store row would be
     staged, with nothing re-encoded and no row added: a frame, a raster or a
     JSON value is linked, a scalar given by value, and a bundle staged part
-    by part from its dataset's folder.
+    by part from its dataset's folder. A JSON value is read as *read_as*
+    says (:func:`stage_input`).
 
     The parent parses no table here: a frame's kind is the data type the
     manifest records, and its decode metadata the ``.decode.json`` beside it,
@@ -117,12 +118,13 @@ def stage_saved_output(saved, scratch_dir, *, name, slot="in"):
     if path.name == "bundle.json":
         return _stage_saved_bundle(path, scratch_dir, name=name, slot=slot)
     kind = str(saved.get("dataType") or "").strip().lower()
-    return _stage_saved_file(path, kind, scratch_dir, name=name, slot=slot)
+    return _stage_saved_file(path, kind, scratch_dir, name=name, slot=slot, read_as=read_as)
 
 
-def _stage_saved_file(path, kind, scratch_dir, *, name, slot, in_bundle=False):
+def _stage_saved_file(path, kind, scratch_dir, *, name, slot, in_bundle=False, read_as=None):
     """The input spec of one saved file of kind *kind*: the file itself, or a
-    bundle's part (*in_bundle*), whose scalar is kept as ``{"value": ...}``."""
+    bundle's part (*in_bundle*), whose scalar is kept as ``{"value": ...}``.
+    A JSON value is read as *read_as* says (:func:`stage_input`)."""
     if kind in _SAVED_FRAME_KINDS and path.suffix == ".parquet":
         target = scratch_dir / f"{slot}.parquet"
         _link_or_copy(path, target)
@@ -144,7 +146,7 @@ def _stage_saved_file(path, kind, scratch_dir, *, name, slot, in_bundle=False):
     if kind in _SAVED_JSON_KINDS and path.suffix == ".json":
         target = scratch_dir / f"{slot}.json"
         _link_or_copy(path, target)
-        return {"kind": "json", "file": target.name}
+        return _json_spec(target.name, read_as)
     if kind in _SAVED_SCALAR_KINDS and path.suffix == ".json":
         value = json.loads(path.read_text(encoding="utf-8"))
         if in_bundle:
@@ -188,7 +190,25 @@ def _stage_saved_bundle(bundle, scratch_dir, *, name, slot):
     return {"kind": "sequence", "container": container, "items": items}
 
 
-def stage_input(art_id, scratch_dir, *, session_id=None, slot="in", saved_paths=None):
+#: How a staged input's stored value is read (``stored_inputs.read_stored``):
+#: as a node's one input, whose wrapper's outputs are staged beside it, or as
+#: one of a node's several inputs (or an output a wrapper names), whose
+#: wrapper is read only when it holds its values itself. A part of a stored
+#: tuple, list or dict is read as it is stored (``read_as=None``).
+READ_AS_INPUT = "input"
+READ_AS_CIRCLE = "circle"
+
+
+def _json_spec(name, read_as):
+    """The input spec of the JSON file *name*: read as an input reads a stored
+    value (``stored_inputs.read_stored``) unless it is a part of one."""
+    spec = {"kind": "json", "file": name}
+    if read_as is not None:
+        spec["stored"] = True
+    return spec
+
+
+def stage_input(art_id, scratch_dir, *, session_id=None, slot="in", saved_paths=None, read_as=READ_AS_INPUT):
     """Stage the artifact *art_id* into *scratch_dir* and return its input spec.
 
     *slot* prefixes the staged filenames so a node's several inputs do
@@ -197,8 +217,45 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in", saved_paths=
     the run's dataflow (*saved_paths*) is staged from its own file
     (:func:`stage_saved_output`); one the owner's runs kept is staged from the
     store under the kept session that made it, its parts too.
+
+    *read_as* says how the child reads a stored list or dict, by the rule the
+    in-process path follows (``stored_inputs.read_stored``): as a node's one
+    input (:data:`READ_AS_INPUT`, the default), whose wrapper's outputs are
+    staged too, under this session and with *saved_paths*, as in process; as
+    one of several (:data:`READ_AS_CIRCLE`); or, None, as it is stored.
     """
     scratch_dir = Path(scratch_dir)
+    spec, value = _stage_artifact(
+        art_id, scratch_dir, session_id=session_id, slot=slot, saved_paths=saved_paths, read_as=read_as,
+    )
+    if read_as == READ_AS_INPUT and spec.get("stored"):
+        _stage_named_outputs(spec, value, scratch_dir, slot=slot, session_id=session_id, saved_paths=saved_paths)
+    return spec
+
+
+def _stage_named_outputs(spec, value, scratch_dir, *, slot, session_id, saved_paths):
+    """The outputs a node's one input names, when its stored value is a
+    wrapper that names them (``stored_inputs.names_outputs``), each staged
+    beside it as one of several inputs, in ``spec["refs"]`` by its place in
+    the wrapper (None for an element it holds itself). *value* is the staged
+    JSON, read from its file when None."""
+    from utk_curio.sandbox.util.stored_inputs import is_ref, names_outputs, ref_name
+
+    if value is None:
+        value = json.loads((scratch_dir / spec["file"]).read_text(encoding="utf-8"))
+    if not names_outputs(value):
+        return
+    spec["refs"] = [
+        stage_input(ref_name(item), scratch_dir, session_id=session_id, slot=f"{slot}_{index}",
+                    saved_paths=saved_paths, read_as=READ_AS_CIRCLE)
+        if is_ref(item) else None
+        for index, item in enumerate(value["data"])
+    ]
+
+
+def _stage_artifact(art_id, scratch_dir, *, session_id, slot, saved_paths, read_as):
+    """``(spec, value)``: the input spec of *art_id* (:func:`stage_input`),
+    and the JSON value it staged when it read one, else None."""
     try:
         kind, v_int, v_float, v_str, v_json, blob = _read_row(art_id, session_id)
     except Exception as store_error:
@@ -210,12 +267,28 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in", saved_paths=
         if saved:
             try:
                 if saved.get("session"):
-                    return stage_input(art_id, scratch_dir, session_id=saved["session"], slot=slot)
-                return stage_saved_output(saved, scratch_dir, name=art_id, slot=slot)
+                    return _stage_artifact(art_id, scratch_dir, session_id=saved["session"], slot=slot,
+                                           saved_paths=None, read_as=read_as)
+                return stage_saved_output(saved, scratch_dir, name=art_id, slot=slot, read_as=read_as), None
             except (KeyError, OSError, ValueError):
                 pass
         raise store_error
 
+    if kind in ("list", "dict"):
+        value = _read_json_artifact(v_str) if v_str else json.loads(v_json)
+        name = f"{slot}.json"
+        (scratch_dir / name).write_text(
+            json.dumps(codec._json_safe_value(value), ensure_ascii=False,
+                       allow_nan=False),
+            encoding="utf-8",
+        )
+        return _json_spec(name, read_as), value
+    return _stage_row(art_id, scratch_dir, kind, v_int, v_float, v_str, v_json, blob,
+                      session_id=session_id, slot=slot), None
+
+
+def _stage_row(art_id, scratch_dir, kind, v_int, v_float, v_str, v_json, blob, *, session_id, slot):
+    """The input spec of a store row that is not a list or dict."""
     if kind == "null":
         return {"kind": "null"}
     if kind == "bool":
@@ -226,16 +299,6 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in", saved_paths=
         return {"kind": "float", "value": v_float}
     if kind == "str":
         return {"kind": "str", "value": v_str}
-
-    if kind in ("list", "dict"):
-        value = _read_json_artifact(v_str) if v_str else json.loads(v_json)
-        name = f"{slot}.json"
-        (scratch_dir / name).write_text(
-            json.dumps(codec._json_safe_value(value), ensure_ascii=False,
-                       allow_nan=False),
-            encoding="utf-8",
-        )
-        return {"kind": "json", "file": name}
 
     if kind in ("dataframe", "geodataframe"):
         name = f"{slot}.parquet"
@@ -276,7 +339,7 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in", saved_paths=
             "container": "tuple" if kind == "outputs" else "list",
             "items": [
                 stage_input(cid, scratch_dir, session_id=session_id,
-                            slot=f"{slot}_{index}")
+                            slot=f"{slot}_{index}", read_as=None)
                 for index, cid in enumerate(child_ids)
             ],
         }
@@ -287,7 +350,7 @@ def stage_input(art_id, scratch_dir, *, session_id=None, slot="in", saved_paths=
             "kind": "mapping",
             "items": {
                 key: stage_input(cid, scratch_dir, session_id=session_id,
-                                 slot=f"{slot}_{index}")
+                                 slot=f"{slot}_{index}", read_as=None)
                 for index, (key, cid) in enumerate(child_id_map.items())
             },
         }
@@ -299,14 +362,15 @@ def stage_outputs_list(refs, scratch_dir, *, session_id=None, saved_paths=None):
     """Stage the list of upstream references of a node with several inputs.
 
     ``/exec`` receives ``dataType == 'outputs'`` with a list of ``{'path': id}``
-    dicts (or bare ids). This is the entry point for that shape.
+    dicts (or bare ids). This is the entry point for that shape. Each is read
+    as one of several inputs (:data:`READ_AS_CIRCLE`), as in process.
     """
     items = []
     for index, ref in enumerate(refs):
         art_id = ref.get("path") if isinstance(ref, dict) else ref
         items.append(
             stage_input(art_id, scratch_dir, session_id=session_id, slot=f"in_{index}",
-                        saved_paths=saved_paths)
+                        saved_paths=saved_paths, read_as=READ_AS_CIRCLE)
         )
     return {"kind": "sequence", "container": "tuple", "items": items}
 

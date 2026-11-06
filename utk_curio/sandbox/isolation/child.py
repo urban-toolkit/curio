@@ -420,7 +420,18 @@ def rebuild_input(spec, scratch_dir):
 
     if kind == "json":
         with open(os.path.join(scratch_dir, spec["file"]), encoding="utf-8") as handle:
-            return json.load(handle)
+            value = json.load(handle)
+        if not spec.get("stored"):
+            return value
+        # An input's stored list or dict, read by the rule the in-process path
+        # follows: one Autark layer as its frame, several as the list of them,
+        # each output a wrapper names from the spec the parent staged for it.
+        from utk_curio.sandbox.util.stored_inputs import read_stored
+
+        refs = spec.get("refs")
+        if refs is None:
+            return read_stored(value)
+        return read_stored(value, lambda index, _elem: rebuild_input(refs[index], scratch_dir))
 
     if kind == "dataframe":
         import pandas as pd
