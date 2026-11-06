@@ -433,18 +433,27 @@ box: drop a file or a Data Catalog dataset on the node, or click **Choose file**
 to pick a file, and its code, on the **Code** tab, loads it ([Data Catalog](#data-catalog)).
 
 A Data Export node opens on its **Widgets** tab, which holds only its
-**File name** and its **Download** button. Its code, on the **Code** tab,
-`return curio_export(input_0, [!! file_name !!])`, writes the data wired into
-it to a file: a table as CSV, a GeoDataFrame as GeoJSON or a raster as GeoTIFF.
-Once the node has run, the button names the file,
+**File name**, its **Part** and its **Download** button. Its code, on the
+**Code** tab, `return curio_export(input_0, [!! file_name !!], part=[!! part !!])`,
+writes the data wired into it to a file: a table as CSV, a GeoDataFrame as
+GeoJSON or a raster as GeoTIFF. A bundle, or several values that hold a table
+or a raster (a node's tuple, list or dict), is one zip: a file per part, named
+after the part's label, and a `bundle.json`, the zip the Data Catalog's
+[Export](DATA-CATALOG.md#5-previews-schema-and-export) gives for the same
+parts. Once the node has run, the button names the file,
 and **Download** saves it. When the node's result is out of date,
 **Download** first runs the node and the nodes above it.
 
 - The file ends in its format's extension: **File name** `trees` gives
   `trees.csv` for a table, and `trees.csv` gives `trees.geojson` for a
-  GeoDataFrame.
+  GeoDataFrame. Several values give `trees.zip`.
 - With **File name** empty, the file is named after the node or dataset wired
   into it.
+- **Part** writes one part alone, in its own format: its label
+  (`Trees (OpenStreetMap)`), its key in a dict, or its position from `0`.
+  Empty, it writes every part.
+- A table or a raster inside a part, or a value JSON cannot hold, stops the
+  node with a message naming it.
 - To write another format, write it in the code to a file of the node's and
   return that file:
 
