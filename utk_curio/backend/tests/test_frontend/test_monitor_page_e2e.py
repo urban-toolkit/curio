@@ -16,6 +16,7 @@ tokens back from the route and from the page.
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from typing import TYPE_CHECKING
@@ -144,6 +145,11 @@ def test_an_agent_turn_shows_its_models_tokens_in_the_llm_section(app_frontend: 
     assert model in {row["model"] for row in body["hourly"]}, body["hourly"]
 
     # 3. The page shows them: the model's row, on its own key, and its line in both charts.
+    # PROBE: the browser's errors and warnings while the page loads.
+    console: list[str] = []
+    page.on("console", lambda msg: console.append(f"{msg.type}: {msg.text}"[:300])
+            if msg.type in ("error", "warning") else None)
+    page.on("pageerror", lambda error: console.append(f"pageerror: {error}"[:300]))
     page.goto(f"{app_frontend.base_url}/monitor", timeout=120000)
     page.get_by_role("heading", name="LLM tokens").wait_for(timeout=30000)
     row = page.locator(f'[data-testid="monitor-llm-models"] tr[data-model="{model}"]')
@@ -152,6 +158,40 @@ def test_an_agent_turn_shows_its_models_tokens_in_the_llm_section(app_frontend: 
     tokens = f"{counted['inputTokens']} in · {counted['outputTokens']} out"
     assert "Own key" in text and text.count(tokens) == 3, text
     section = page.get_by_test_id("monitor-llm-tokens")
-    section.locator('[role="img"] svg').nth(1).wait_for(timeout=30000)
-    legend = section.locator("svg text", has_text=f"{model} (own key)")
-    legend.nth(1).wait_for(timeout=30000)
+    try:
+        section.locator("svg.marks").nth(1).wait_for(state="attached", timeout=20000)
+    except Exception as error:  # PROBE: report what is there either way
+        console.append(f"probe: no second svg.marks attached in 20 s ({type(error).__name__})")
+    page.wait_for_timeout(1500)
+    probe = section.evaluate(PROBE_JS)
+    probe["hourly"] = len(api_json(f"{current_server}/api/monitor/llm", token)["hourly"])
+    probe["console"] = console[-10:]
+    raise AssertionError("PROBE " + json.dumps(probe, separators=(",", ":")))
+
+
+# PROBE: the chart hosts of the LLM tokens section, and the histograms' hosts.
+PROBE_JS = """(section) => {
+  const box = (el) => { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; };
+  const doc = section.ownerDocument;
+  const cards = [...section.querySelectorAll("h3")]
+    .filter((h) => /tokens per hour/.test(h.textContent || ""))
+    .map((h) => h.parentElement);
+  return {
+    marks: section.querySelectorAll("svg.marks").length,
+    imgSvg: section.querySelectorAll('[role="img"] svg').length,
+    gdocSvg: section.querySelectorAll('[role="graphics-document"] svg').length,
+    pageImg: doc.querySelectorAll('[role="img"]').length,
+    pageGdoc: doc.querySelectorAll('[role="graphics-document"]').length,
+    others: [...doc.querySelectorAll("svg.marks")].filter((svg) => !section.contains(svg)).map((svg) => [
+      svg.parentElement.getAttribute("role"), svg.parentElement.getAttribute("aria-label"), box(svg)]),
+    cards: cards.map((card) => ({
+      box: box(card),
+      kids: [...card.children].map((kid) => [kid.tagName, kid.getAttribute("role"), kid.getAttribute("aria-label"),
+        kid.getAttribute("aria-roledescription"), box(kid)]),
+      svgs: [...card.querySelectorAll("svg.marks")].map((svg) => [svg.getAttribute("width"), svg.getAttribute("height"),
+        box(svg), svg.checkVisibility ? svg.checkVisibility() : null,
+        [...svg.querySelectorAll("text")].map((t) => t.textContent).filter((t) => t && t.includes("(own key)"))]),
+      html: card.outerHTML.slice(0, 500),
+    })),
+  };
+}"""
