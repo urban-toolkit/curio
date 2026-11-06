@@ -53,9 +53,9 @@ def draw(shape, rng):
 
 def as_data_uri(picture):
     """A PNG data: URI, which Simple View shows as it is."""
-    buffer = io.BytesIO()
-    Image.fromarray(picture).save(buffer, format="PNG")
-    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+    png = io.BytesIO()
+    Image.fromarray(picture).save(png, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(png.getvalue()).decode()
 
 
 rng = np.random.default_rng(28)

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/28-pytorch-training-on-the-gpu.json",
-    "sha256": "30fc06b4be9d105778338e26492ac13e13f27df492d9787a6b31c68c5724ca25",
+    "sha256": "89425d61395effcb5dc81bb63fa03007079aff420c5a9782a188f5d4b82c0b3f",
     "walkthrough": "docs/examples/28-pytorch-training-on-the-gpu.md"
   },
   "prompt": "Draw labeled pictures of circles, squares and triangles in code, each shape at a random size, position, rotation and colour on a light background: nine hundred to train on and sixty held out. Train a tiny convolutional network on them from scratch in PyTorch, on the GPU when there is one, seeded and deterministic, for twenty epochs of small shuffled batches with Adam, and after each epoch record the training loss, the accuracy on the training pictures and on the held-out ones, and the device it ran on. Show that table, and chart the loss and both accuracies by epoch.",
