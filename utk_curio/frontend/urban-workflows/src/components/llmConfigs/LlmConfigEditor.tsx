@@ -1,15 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import modal from "../modal-content.module.css";
 import styles from "./LlmConfigs.module.css";
+import { llmConfigsApi, type LlmConfig, type LlmConfigInput } from "../../api/llmConfigsApi";
 import {
-  llmConfigsApi,
-  type LlmConfig,
-  type LlmConfigInput,
-  type LlmDeployment,
-} from "../../api/llmConfigsApi";
-import {
-  DEPLOYMENT_TAB_LABEL,
   PROVIDER_INFO,
+  UI_MODES,
   endpointFields,
   formatSeenAt,
   uiModeOf,
@@ -18,21 +13,26 @@ import {
 
 /**
  * Adds or edits one LLM configuration: a label, a provider, its endpoint, a
- * write-only key and a model. A key typed here is sent once and never shown
- * again; editing leaves it in place unless a new one is typed or it is
- * removed. The server refuses a key that would follow its configuration to a
- * different endpoint, and its message is shown as is.
+ * write-only key and a model. The form is the same whether or not this Curio
+ * offers models of its own: those are picked on Agent configuration, never
+ * configured. A key typed here is sent once and never shown again; editing
+ * leaves it in place unless a new one is typed or it is removed. The server
+ * refuses a key that would follow its configuration to a different endpoint,
+ * and its message is shown as is.
  */
 export const LlmConfigEditor: React.FC<{
   initial: LlmConfig | null;
-  deployment: LlmDeployment;
   /** For a new configuration: whether "Make this my default" starts checked. */
   defaultChecked?: boolean;
   /** API keys' "Kind" select, when "Add configuration" opened this editor. */
   kindPicker?: React.ReactNode;
+  /** Editing: copy this configuration, its key included, server-side. */
+  onDuplicate?: () => void;
+  /** Editing: the account holds as many configurations as it may. */
+  duplicateDisabled?: boolean;
   onSaved: (config: LlmConfig, makeDefault: boolean) => void;
   onCancel: () => void;
-}> = ({ initial, deployment, defaultChecked = false, kindPicker, onSaved, onCancel }) => {
+}> = ({ initial, defaultChecked = false, kindPicker, onDuplicate, duplicateDisabled = false, onSaved, onCancel }) => {
   const [label, setLabel] = useState(initial?.label ?? "");
   const [mode, setMode] = useState<UiMode>(initial ? uiModeOf(initial) : "openai");
   const [baseUrl, setBaseUrl] = useState(
@@ -41,7 +41,6 @@ export const LlmConfigEditor: React.FC<{
   const [apiKey, setApiKey] = useState("");
   const [clearKey, setClearKey] = useState(false);
   const [model, setModel] = useState(initial?.model ?? "");
-  const [endpointName, setEndpointName] = useState(initial?.endpointName ?? "");
   const [makeDefault, setMakeDefault] = useState(defaultChecked);
   const [models, setModels] = useState<string[]>([]);
   const [replay, setReplay] = useState<{ at: string | null } | null>(null);
@@ -50,24 +49,7 @@ export const LlmConfigEditor: React.FC<{
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const tabs: UiMode[] = useMemo(
-    () => [
-      "openai",
-      "anthropic",
-      "gemini",
-      "custom",
-      ...(deployment.endpointOffered || initial?.endpoint === "deployment" ? (["deployment"] as UiMode[]) : []),
-    ],
-    [deployment.endpointOffered, initial?.endpoint],
-  );
-  const info = mode === "deployment" ? null : PROVIDER_INFO[mode];
-  // This Curio install: the Model field is a choice among the models this
-  // Curio's endpoints list, grouped by endpoint, and nothing is fetched.
-  const offered = deployment.endpoints ?? [];
-  const pickOffered = mode === "deployment";
-  const isOffered = (name: string, chosen: string) =>
-    offered.some((endpoint) => endpoint.name === name && endpoint.models.includes(chosen));
-  const choice = isOffered(endpointName, model.trim()) ? JSON.stringify([endpointName, model.trim()]) : "";
+  const info = PROVIDER_INFO[mode];
   const sameEndpoint = initial !== null && uiModeOf(initial) === mode
     && (mode !== "custom" || baseUrl.trim().replace(/\/+$/, "") === initial.baseUrl);
   const keySaved = Boolean(initial?.hasApiKey) && sameEndpoint && !clearKey;
@@ -80,18 +62,6 @@ export const LlmConfigEditor: React.FC<{
     setModelsNote(null);
     setClearKey(false);
     if (next !== "custom") setBaseUrl("");
-    // A new This Curio install configuration starts on the Deployment
-    // default, the first endpoint's first model.
-    if (next === "deployment" && !isOffered(endpointName, model.trim()) && offered[0]?.models.length) {
-      setEndpointName(offered[0].name);
-      setModel(offered[0].models[0]);
-    }
-  };
-
-  const choose = (value: string) => {
-    const [name, chosen] = JSON.parse(value) as [string, string];
-    setEndpointName(name);
-    setModel(chosen);
   };
 
   const fetchModels = async () => {
@@ -134,14 +104,10 @@ export const LlmConfigEditor: React.FC<{
       model: model.trim(),
       ...endpointFields(mode, baseUrl, initial),
     };
-    if (mode === "deployment") {
-      body.endpointName = endpointName;
-    } else {
-      if (apiKey) body.apiKey = apiKey;
-      // A saved key stays with its endpoint: moving without typing one saves
-      // the configuration keyless, or the server says this provider needs one.
-      else if (clearKey || (initial?.hasApiKey && !sameEndpoint)) body.clearApiKey = true;
-    }
+    if (apiKey) body.apiKey = apiKey;
+    // A saved key stays with its endpoint: moving without typing one saves
+    // the configuration keyless, or the server says this provider needs one.
+    else if (clearKey || (initial?.hasApiKey && !sameEndpoint)) body.clearApiKey = true;
     try {
       const res = initial ? await llmConfigsApi.update(initial.id, body) : await llmConfigsApi.create(body);
       setApiKey("");
@@ -153,8 +119,7 @@ export const LlmConfigEditor: React.FC<{
     }
   };
 
-  const canSave = !saving && label.trim() && model.trim() && (mode !== "custom" || baseUrl.trim())
-    && (!pickOffered || isOffered(endpointName, model.trim()));
+  const canSave = !saving && label.trim() && model.trim() && (mode !== "custom" || baseUrl.trim());
 
   return (
     <div className={styles.editor} data-testid="llm-config-editor">
@@ -177,7 +142,7 @@ export const LlmConfigEditor: React.FC<{
       <div className={modal.field}>
         <span className={modal.label} id={`${idBase}-provider`}>Provider</span>
         <div className={styles.modeTabs} role="group" aria-labelledby={`${idBase}-provider`}>
-          {tabs.map((tab) => (
+          {UI_MODES.map((tab) => (
             <button
               key={tab}
               type="button"
@@ -186,19 +151,13 @@ export const LlmConfigEditor: React.FC<{
               onClick={() => selectMode(tab)}
               disabled={saving}
             >
-              {tab === "deployment" ? DEPLOYMENT_TAB_LABEL : PROVIDER_INFO[tab].label}
+              {PROVIDER_INFO[tab].label}
             </button>
           ))}
         </div>
       </div>
 
-      {mode === "deployment" ? (
-        <p className={styles.note}>
-          Runs on this Curio install&apos;s own endpoint with its key. You choose the model.
-        </p>
-      ) : null}
-
-      {info?.showBaseUrl ? (
+      {info.showBaseUrl ? (
         <div className={modal.field}>
           <label className={modal.label} htmlFor={`${idBase}-base-url`}>Base URL</label>
           <input
@@ -213,115 +172,86 @@ export const LlmConfigEditor: React.FC<{
         </div>
       ) : null}
 
-      {mode !== "deployment" && info ? (
-        <div className={modal.field}>
-          <label className={modal.label} htmlFor={`${idBase}-api-key`}>
-            API key{" "}
-            <span className={styles.optional}>
-              {keySaved
-                ? "(saved - leave blank to keep)"
-                : info.keyRequired || mode === "openai"
-                  ? "(required)"
-                  : "(optional for keyless servers)"}
-            </span>
-          </label>
-          <input
-            id={`${idBase}-api-key`}
-            className={modal.input}
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder={keySaved ? "••••••••  (unchanged)" : ""}
-            autoComplete="new-password"
-            disabled={saving}
-          />
-          <span className={modal.hint}>
-            Kept on this Curio for this configuration only and never shown again.
-            {initial?.hasApiKey && !sameEndpoint
-              ? " A key never follows a configuration to another endpoint, so enter it again."
-              : ""}
+      <div className={modal.field}>
+        <label className={modal.label} htmlFor={`${idBase}-api-key`}>
+          API key{" "}
+          <span className={styles.optional}>
+            {keySaved
+              ? "(saved, leave blank to keep)"
+              : info.keyRequired || mode === "openai"
+                ? "(required)"
+                : "(optional for keyless servers)"}
           </span>
-          {info.keyLink ? (
-            <a href={info.keyLink} target="_blank" rel="noreferrer" className={styles.keyLink}>
-              {info.keyLinkLabel} ↗
-            </a>
-          ) : null}
-          {keySaved && !info.keyRequired ? (
-            <button
-              type="button"
-              className={styles.quietBtn}
-              onClick={() => setClearKey(true)}
-              disabled={saving}
-            >
-              Remove the saved key
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+        </label>
+        <input
+          id={`${idBase}-api-key`}
+          className={modal.input}
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder={keySaved ? "••••••••  (unchanged)" : ""}
+          autoComplete="new-password"
+          disabled={saving}
+        />
+        <span className={modal.hint}>
+          Kept on this Curio for this configuration only and never shown again.
+          {initial?.hasApiKey && !sameEndpoint
+            ? " A key never follows a configuration to another endpoint, so enter it again."
+            : ""}
+        </span>
+        {info.keyLink ? (
+          <a href={info.keyLink} target="_blank" rel="noreferrer" className={styles.keyLink}>
+            {info.keyLinkLabel} ↗
+          </a>
+        ) : null}
+        {keySaved && !info.keyRequired ? (
+          <button
+            type="button"
+            className={styles.quietBtn}
+            onClick={() => setClearKey(true)}
+            disabled={saving}
+          >
+            Remove the saved key
+          </button>
+        ) : null}
+      </div>
 
       <div className={modal.field}>
         <label className={modal.label} htmlFor={`${idBase}-model`}>Model</label>
-        {pickOffered ? (
-          <select
-            id={`${idBase}-model`}
-            className={modal.input}
-            value={choice}
-            onChange={(e) => choose(e.target.value)}
-            disabled={saving}
-          >
-            {choice ? null : (
-              <option value="" disabled>
-                {model.trim()
-                  ? `${endpointName ? `${endpointName}: ` : ""}${model.trim()} (not offered)`
-                  : "Choose a model"}
-              </option>
-            )}
-            {offered.map((endpoint) => (
-              <optgroup key={endpoint.name} label={endpoint.name}>
-                {endpoint.models.map((m) => (
-                  <option key={m} value={JSON.stringify([endpoint.name, m])}>{m}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        ) : (
-          <input
-            id={`${idBase}-model`}
-            className={modal.input}
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder={info?.model || ""}
-            list={models.length ? `${idBase}-models` : undefined}
-            autoComplete="off"
-            disabled={saving}
-          />
-        )}
-        {!pickOffered && models.length ? (
+        <input
+          id={`${idBase}-model`}
+          className={modal.input}
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          placeholder={info.model}
+          list={models.length ? `${idBase}-models` : undefined}
+          autoComplete="off"
+          disabled={saving}
+        />
+        {models.length ? (
           <datalist id={`${idBase}-models`}>
             {models.map((m) => (
               <option key={m} value={m} />
             ))}
           </datalist>
         ) : null}
-        {pickOffered ? null : (
-          <div className={styles.modelFetchRow}>
-            <button
-              type="button"
-              className={styles.fetchModelsBtn}
-              onClick={() => void fetchModels()}
-              disabled={loadingModels || saving}
-            >
-              {loadingModels ? "Fetching models…" : models.length ? "Refresh models" : "Fetch models"}
-            </button>
-            {models.length ? (
-              <span className={modal.hint}>
-                {replay ? "Last reported by this endpoint" + formatSeenAt(replay.at) : "From this endpoint"}:{" "}
-                {models.length} model{models.length === 1 ? "" : "s"}
-              </span>
-            ) : null}
-          </div>
-        )}
-        {!pickOffered && modelsNote ? <span className={modal.hint} role="status">{modelsNote}</span> : null}
+        <div className={styles.modelFetchRow}>
+          <button
+            type="button"
+            className={styles.fetchModelsBtn}
+            onClick={() => void fetchModels()}
+            disabled={loadingModels || saving}
+          >
+            {loadingModels ? "Fetching models…" : models.length ? "Refresh models" : "Fetch models"}
+          </button>
+          {models.length ? (
+            <span className={modal.hint}>
+              {replay ? "Last reported by this endpoint" + formatSeenAt(replay.at) : "From this endpoint"}:{" "}
+              {models.length} model{models.length === 1 ? "" : "s"}
+            </span>
+          ) : null}
+        </div>
+        {modelsNote ? <span className={modal.hint} role="status">{modelsNote}</span> : null}
       </div>
 
       {!initial ? (
@@ -337,13 +267,28 @@ export const LlmConfigEditor: React.FC<{
       ) : null}
 
       {error ? <p className={modal.error} role="alert">{error}</p> : null}
-      <div className={modal.buttonRow}>
-        <button type="button" className={modal.ghostBtn} onClick={onCancel} disabled={saving}>
-          Cancel
-        </button>
-        <button type="button" className={modal.primaryBtn} onClick={() => void save()} disabled={!canSave}>
-          {saving ? "Saving…" : initial ? "Save configuration" : "Add configuration"}
-        </button>
+      <div className={styles.editorFooter}>
+        <div className={styles.footerGroup}>
+          {initial && onDuplicate ? (
+            <button
+              type="button"
+              className={modal.ghostBtn}
+              onClick={onDuplicate}
+              disabled={saving || duplicateDisabled}
+              aria-label={`Duplicate ${initial.label}`}
+            >
+              Duplicate
+            </button>
+          ) : null}
+        </div>
+        <div className={styles.footerGroup}>
+          <button type="button" className={modal.ghostBtn} onClick={onCancel} disabled={saving}>
+            Cancel
+          </button>
+          <button type="button" className={modal.primaryBtn} onClick={() => void save()} disabled={!canSave}>
+            {saving ? "Saving…" : initial ? "Save configuration" : "Add configuration"}
+          </button>
+        </div>
       </div>
     </div>
   );

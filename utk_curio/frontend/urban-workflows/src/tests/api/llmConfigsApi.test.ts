@@ -62,7 +62,7 @@ describe("llmConfigsApi", () => {
     expect(JSON.parse(init.body)).toEqual({ label: "Copy", model: "gpt-4o" });
   });
 
-  it("sets the default, null meaning the Deployment default", async () => {
+  it("sets the default, null meaning Curio's default, a pick of one of Curio's models sent as it is", async () => {
     await llmConfigsApi.setDefault("llm-00000000000a");
     let [url, init] = mocked.mock.calls[0];
     expect(url).toBe("/api/agents/llm/default");
@@ -72,21 +72,22 @@ describe("llmConfigsApi", () => {
     await llmConfigsApi.setDefault(null);
     [url, init] = mocked.mock.calls[1];
     expect(JSON.parse(init.body)).toEqual({ configId: null });
+
+    const pick = 'curio:["Lab: one / two","org/model-x"]';
+    await llmConfigsApi.setDefault(pick);
+    [url, init] = mocked.mock.calls[2];
+    expect(JSON.parse(init.body)).toEqual({ configId: pick });
   });
 
-  it("lists models by configuration or by this Curio install, never with a key it did not type", async () => {
-    await llmConfigsApi.models({ endpoint: "deployment" });
-    let [url, init] = mocked.mock.calls[0];
-    expect(url).toBe("/api/agents/provider-models");
-    expect(init.method).toBe("POST");
-    expect(JSON.parse(init.body)).toEqual({ endpoint: "deployment" });
-
+  it("lists models by configuration, never with a key it did not type", async () => {
     await llmConfigsApi.models({
       apiType: "openai_compatible",
       baseUrl: "http://localhost:11434/v1",
       configId: "llm-00000000000a",
     });
-    [url, init] = mocked.mock.calls[1];
+    const [url, init] = mocked.mock.calls[0];
+    expect(url).toBe("/api/agents/provider-models");
+    expect(init.method).toBe("POST");
     expect(JSON.parse(init.body)).toEqual({
       apiType: "openai_compatible",
       baseUrl: "http://localhost:11434/v1",

@@ -49,9 +49,10 @@ name: Deploy
 #   7. The stacks' own LLM endpoint (optional): secrets CURIO_DEPLOY_API_KEY
 #      and CURIO_DEPLOY_BASE_URL on the dev and stable environments, and the
 #      repository variable CURIO_DEPLOY_MODELS, a JSON list of model names
-#      whose first is the Deployment default. Each deploy writes them as one
-#      endpoint, [This Curio], to the checkout's .secrets/llm-endpoint
-#      (owner-only) and starts the stack with --llm-endpoint-file.
+#      whose first is Curio's default. Each deploy writes them as one
+#      endpoint, [Electronic Visualization Lab], to the checkout's
+#      .secrets/llm-endpoint (owner-only) and starts the stack with
+#      --llm-endpoint-file.
 
 # A merge to main deploys curio-dev once: bump-version.yml runs on the merge
 # (its paths list what the deployed image holds), pushes the bump commit, and
@@ -121,7 +122,7 @@ jobs:
                 exit 1
                 ;;
             esac
-            printf '[This Curio]\nbase_url=%s\napi_key=%s\nmodels=%s\n' \
+            printf '[Electronic Visualization Lab]\nbase_url=%s\napi_key=%s\nmodels=%s\n' \
               "$CURIO_DEPLOY_BASE_URL" "$CURIO_DEPLOY_API_KEY" "$models" \
               | ssh -i ~/.ssh/id_ed25519 deploy@utk \
                   'umask 077 && mkdir -p /srv/curio-dev/.secrets && cat > /srv/curio-dev/.secrets/llm-endpoint.new && mv /srv/curio-dev/.secrets/llm-endpoint.new /srv/curio-dev/.secrets/llm-endpoint'
@@ -334,7 +335,7 @@ jobs:
                 exit 1
                 ;;
             esac
-            printf '[This Curio]\nbase_url=%s\napi_key=%s\nmodels=%s\n' \
+            printf '[Electronic Visualization Lab]\nbase_url=%s\napi_key=%s\nmodels=%s\n' \
               "$CURIO_DEPLOY_BASE_URL" "$CURIO_DEPLOY_API_KEY" "$models" \
               | ssh -i ~/.ssh/id_ed25519 deploy@utk \
                   'umask 077 && mkdir -p /srv/curio/.secrets && cat > /srv/curio/.secrets/llm-endpoint.new && mv /srv/curio/.secrets/llm-endpoint.new /srv/curio/.secrets/llm-endpoint'

@@ -129,17 +129,27 @@ def cmd_list(args) -> int:
 _BUILDER = "agent.curio.dataflow-builder"
 
 
-def _switch_to_model(client, model: str, tag: str) -> tuple[str | None, str]:
-    """Choose a temporary configuration naming *model* for the evaluation
-    account's Dataflow Builder; return ``(its previous choice, temporary
-    configuration id)``.
+def _curio_pick(listing: dict, model: str) -> str | None:
+    """The choice of *model* on the first of this Curio's endpoints that lists
+    it (``curio:["<endpoint>","<model>"]``, as the server writes one), or None."""
+    for endpoint in (listing.get("deployment") or {}).get("endpoints") or []:
+        if model in (endpoint.get("models") or []):
+            pair = json.dumps([endpoint.get("name"), model], separators=(",", ":"), ensure_ascii=False)
+            return "curio:" + pair
+    return None
+
+
+def _switch_to_model(client, model: str, tag: str) -> tuple[str | None, str | None]:
+    """Choose *model* for the evaluation account's Dataflow Builder; return
+    ``(its previous choice, temporary configuration id or None)``.
 
     This is how a model that is not active gets measured at all: the Builder
-    answers with the configuration chosen for it, so evaluating another model
-    means choosing one that names it for the duration. The copy is made
-    server-side from the configuration the Builder answers with now, so this
-    tool never reads a key, and the caller restores the choice and removes the
-    copy in a ``finally``.
+    answers with what is chosen for it, so evaluating another model means
+    choosing one that names it for the duration. A model this Curio's own
+    endpoints list is chosen as it is. Otherwise a copy is made server-side
+    from the configuration the Builder answers with now, so this tool never
+    reads a key. The caller restores the choice, and removes a copy, in a
+    ``finally``.
     """
     listing = client.json("/api/agents/llm")
     builder = next(
@@ -147,22 +157,19 @@ def _switch_to_model(client, model: str, tag: str) -> tuple[str | None, str]:
     )
     previous = builder.get("choice")
     answering = (builder.get("answers") or {}).get("configId")
-    label = f"agent_eval {tag}"
-    if answering:
-        created = client.json(
-            f"/api/agents/llm/configs/{answering}/duplicate", method="POST",
-            payload={"label": label, "model": model},
-        )["config"]
-    elif (listing.get("deployment") or {}).get("endpointOffered"):
-        created = client.json(
-            "/api/agents/llm/configs", method="POST",
-            payload={"label": label, "endpoint": "deployment", "model": model},
-        )["config"]
-    else:
+    pick = _curio_pick(listing, model)
+    if pick and not answering:
+        client.json("/api/agents/llm/assignments", method="PUT", payload={_BUILDER: pick})
+        return previous, None
+    if not answering:
         raise live_mod.LiveEvalRefused(
             "the evaluation account has no LLM configuration to evaluate a model "
             "on; add one in API Settings first"
         )
+    created = client.json(
+        f"/api/agents/llm/configs/{answering}/duplicate", method="POST",
+        payload={"label": f"agent_eval {tag}", "model": model},
+    )["config"]
     client.json("/api/agents/llm/assignments", method="PUT", payload={_BUILDER: created["id"]})
     return previous, created["id"]
 
@@ -207,12 +214,14 @@ def cmd_run(args) -> int:
     )
     previous_choice = None
     temporary_id = None
+    switched = False
     try:
         if args.model:
             previous_choice, temporary_id = _switch_to_model(client, args.model, report.run_id)
+            switched = True
             report.notes.append(
-                f"evaluated model {args.model!r} through a temporary configuration "
-                "chosen for the Dataflow Builder (previous choice: "
+                f"evaluated model {args.model!r} through a temporary choice "
+                "for the Dataflow Builder (previous choice: "
                 f"{previous_choice or 'none, it followed the default'})"
             )
         run.run(fixtures, examples=_examples_for(fixtures))
@@ -220,19 +229,20 @@ def cmd_run(args) -> int:
         print(f"refused: {refusal}", file=sys.stderr)
         return 3
     finally:
-        if temporary_id is not None:
+        if switched:
             try:
                 client.json(
                     "/api/agents/llm/assignments", method="PUT",
                     payload={_BUILDER: previous_choice},
                 )
-                client.json(f"/api/agents/llm/configs/{temporary_id}", method="DELETE")
+                if temporary_id is not None:
+                    client.json(f"/api/agents/llm/configs/{temporary_id}", method="DELETE")
             except Exception as exc:  # noqa: BLE001 - say so, do not hide it
+                removal = f" and remove {temporary_id}" if temporary_id is not None else ""
                 print(
-                    "WARNING: could not restore the Dataflow Builder's configuration "
+                    "WARNING: could not restore the Dataflow Builder's choice "
                     f"({previous_choice or 'none, it followed the default'}) on the "
-                    f"evaluation account and remove {temporary_id}: {exc}. Do both "
-                    "in API Settings.",
+                    f"evaluation account{removal}: {exc}. Do it in API Settings.",
                     file=sys.stderr,
                 )
 

@@ -112,8 +112,9 @@ Settings; the deployment can offer endpoints of its own on top, in an
 endpoint file that only the backend reads, named by `--llm-endpoint-file`.
 It is the one LLM setting.
 
-The file holds one section per endpoint. The section's name is the label
-users see in API Settings:
+The file holds one section per endpoint. The section's name is what users
+see in API Settings, under **Curio**: a section named `[Lab gateway]` reads
+**Provided by Lab gateway**.
 
 ```ini
 [Lab gateway]
@@ -139,13 +140,14 @@ models=claude-haiku-4-5
 | `base_url` | Its URL. Leave it out for the provider's own endpoint. |
 | `provider` | `openai_compatible` (the default), `anthropic` or `gemini`. |
 
-Lines starting with `#` or `;` are comments. The first section's first model
-is the **Deployment default**: a read-only row on the **API keys** tab of
-every user's API Settings, which answers for any user who has not chosen a
-default of their own, and the **guest configuration** every guest answers
-with. Users are also offered **This Curio install**: a configuration of their
-own on one of the file's endpoints, with one of its models. No endpoint's key
-or address reaches a browser.
+Lines starting with `#` or `;` are comments. Each section is a read-only
+**Curio** row on the **API keys** tab of every user's API Settings, listing
+its models, and a signed-in user can pick any of them, as their default or for
+one agent, on the **Agent configuration** tab. The first section's first model
+is **Curio's default**: it answers for any user who has not chosen a default
+of their own, and it is the **guest configuration** every guest answers with.
+To change it for everyone, reorder the file and recreate the stack. No
+endpoint's key or address reaches a browser.
 
 To set it up on a server:
 
@@ -165,9 +167,10 @@ To set it up on a server:
        file: /srv/secrets/llm-endpoints
    ```
 
-3. Recreate the stack. Signed-in users then see the **Deployment default** row
-   on the **API keys** tab, and **This Curio install** offers each endpoint's
-   models.
+3. Recreate the stack. Signed-in users then see one **Curio** row per section
+   on the **API keys** tab, the first model marked **Curio default**, and the
+   **Agent configuration** tab offers every model under **Curio ·** and the
+   section's name.
 
 The start stops with a message naming the section when the file is missing
 or cannot be read, when a section lacks `api_key` or `models`, names an
@@ -382,12 +385,12 @@ The repo includes [`.github/workflows/deploy.yml`](../.github/workflows/deploy.y
 
 To adapt it: install Tailscale on the server (`sudo tailscale up --advertise-tags=tag:curio-server --ssh`), create a Tailscale OAuth client with the `auth_keys` scope and tag `tag:ci`, add an ACL allowing `tag:ci -> tag:curio-server:22`, create a `deploy` user on the server with the `docker` group, and set three GitHub secrets: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`, `DEPLOY_SSH_KEY` (private key whose pubkey is in `~deploy/.ssh/authorized_keys`). Then update the hostname (`utk` → your Tailscale machine name) and the `--backend-url` addresses the workflow writes into each stack's `docker-compose.site.yml`.
 
-To give both stacks an LLM endpoint of their own (the Deployment default and **This Curio install** in [LLM configurations](#llm-configurations)):
+To give both stacks an LLM endpoint of their own (the **Curio** rows and Curio's default in [LLM configurations](#llm-configurations)):
 
 1. In the repository's **Settings → Environments**, open `dev` and add the secrets `CURIO_DEPLOY_API_KEY` (the endpoint's key) and `CURIO_DEPLOY_BASE_URL` (its OpenAI-compatible base URL). Do the same for `stable`.
-2. In **Settings → Secrets and variables → Actions → Variables**, add the repository variable `CURIO_DEPLOY_MODELS`, a JSON list of the endpoint's model names, such as `["model-a", "model-b"]`. The first is the Deployment default.
-3. Deploy. Each deploy writes the two secrets and the models as one endpoint, named **This Curio**, to `.secrets/llm-endpoint` in the stack's checkout, a file only the `deploy` user reads, and starts the stack with `--llm-endpoint-file`. The job's log masks the URL and its host.
-4. Sign in to the stack and open **API Settings**: the **API keys** tab shows the Deployment default row with the first model.
+2. In **Settings → Secrets and variables → Actions → Variables**, add the repository variable `CURIO_DEPLOY_MODELS`, a JSON list of the endpoint's model names, such as `["model-a", "model-b"]`. The first is Curio's default.
+3. Deploy. Each deploy writes the two secrets and the models as one endpoint, the section `[Electronic Visualization Lab]`, to `.secrets/llm-endpoint` in the stack's checkout, a file only the `deploy` user reads, and starts the stack with `--llm-endpoint-file`. The job's log masks the URL and its host.
+4. Sign in to the stack and open **API Settings**: the **API keys** tab shows the **Curio** row, **Provided by Electronic Visualization Lab**, with the first model marked **Curio default**.
 
 Without both secrets, the deploy removes `.secrets/llm-endpoint` and the stack has no endpoint of its own.
 
@@ -424,7 +427,7 @@ It shows:
 
 - **Deployment** - version, the requested and active isolation mode, and which
   optional features are configured. Settings that have a value somebody chose
-  (the execution account, and whether there is a Deployment default LLM) are
+  (the execution account, and whether Curio offers LLM models of its own) are
   reported only as "configured" or "none", never as their value.
 - **Hardware** - CPU model and core count, memory, swap, load average (raw and
   per core), and the resident memory of the backend and sandbox processes. The
