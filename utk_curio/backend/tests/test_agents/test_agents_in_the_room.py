@@ -354,9 +354,7 @@ def test_on_the_guest_account_another_guests_lock_holds_the_agent_back_and_the_a
     from utk_curio.backend.app.users.models import User, UserSession
 
     monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
-    for name, value in (("GUEST_LLM_API_TYPE", "openai_compatible"), ("GUEST_LLM_BASE_URL", "http://127.0.0.1:9/v1"),
-                        ("GUEST_LLM_MODEL", "test-model"), ("GUEST_LLM_API_KEY", "test-key")):
-        monkeypatch.setattr(config, name, value)
+    # The guest runs on the conftest's endpoint, the Deployment default's.
     monkeypatch.setattr(changes, "LOCK_WAIT_S", 0.6)
     monkeypatch.setattr(changes, "_LOCK_POLL_S", 0.02)
     guest = User(username=config.CURIO_SHARED_GUEST_USERNAME, name="Shared Guest", is_guest=True)

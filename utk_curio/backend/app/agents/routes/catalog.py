@@ -98,11 +98,10 @@ def list_provider_models():
     models for the previous configuration.
 
     The body names the endpoint as it is on screen: ``apiType``, ``baseUrl``
-    and ``apiKey``. A stored key is used instead of a typed one in two cases
+    and ``apiKey``. A stored key is used instead of a typed one in one case
     only: ``configId`` borrows that configuration's key while the endpoint
-    asked about is still that configuration's own, and ``endpoint:
-    "deployment"`` asks this Curio install's endpoint with its own key. With
-    neither, no key is borrowed.
+    asked about is still that configuration's own. With none, no key is
+    borrowed, and the operator's keys never are.
 
     **Hybrid, per #241 - and both halves come from the API.** Two sources:
 
@@ -127,21 +126,22 @@ def list_provider_models():
     why we could not ask now" beats an error and an empty box. With nothing
     remembered - a new account that has not pasted a key - the reason *is* the
     answer and this is a 400.
+
+    This Curio's own endpoints are never asked: their models are the ones the
+    endpoint file lists, which the listing (``GET /api/agents/llm``) names,
+    and their keys are never lent. ``endpoint: "deployment"`` is refused.
     """
 
     data = request.get_json(silent=True) or {}
+    if data.get("endpoint") == agents_llm_configs.ENDPOINT_DEPLOYMENT:
+        return _error(agents_llm_configs.DEPLOYMENT_REFUSAL, 400)
     api_type = (data.get("apiType") or "").strip()
     base_url = (data.get("baseUrl") or "").strip()
     api_key = (data.get("apiKey") or "").strip()
 
     user_key = _user_dir_key(g.user)
     guest = bool(getattr(g.user, "is_guest", False))
-    if data.get("endpoint") == "deployment":
-        endpoint = agents_provider_config.deployment_endpoint(user_key, guest=guest)
-        if endpoint is None:
-            return _error("this Curio install offers no endpoint of its own")
-        api_type, base_url, api_key = endpoint
-    elif data.get("configId"):
+    if data.get("configId"):
         # A key belongs to the endpoint it was saved against, and
         # ``provider_key`` is where Curio says what "the same endpoint" means.
         # Once the caller names a different one - another provider, or a URL
@@ -154,15 +154,9 @@ def list_provider_models():
         )
         if record is None:
             return _error(f"no LLM configuration {config_id!r}", 404)
-        if record.get("endpoint") == agents_llm_configs.ENDPOINT_DEPLOYMENT:
-            endpoint = agents_provider_config.deployment_endpoint(user_key, guest=guest)
-            if endpoint is None:
-                return _error("this Curio install offers no endpoint of its own")
-            saved_type, saved_url, saved_key = endpoint
-        else:
-            saved_type = record.get("apiType") or ""
-            saved_url = record.get("baseUrl") or ""
-            saved_key = record.get("apiKey") or ""
+        saved_type = record.get("apiType") or ""
+        saved_url = record.get("baseUrl") or ""
+        saved_key = record.get("apiKey") or ""
         api_type = api_type or saved_type
         if agents_model_catalog.provider_key(api_type) == agents_model_catalog.provider_key(saved_type):
             base_url = base_url or saved_url

@@ -11,7 +11,8 @@ import {
   type DiscoveryKeyRow,
 } from "../../services/discoveryCatalog";
 import { LlmConfigEditor } from "../llmConfigs/LlmConfigEditor";
-import { PROVIDER_INFO, providerLabel } from "../llmConfigs/llmProviderInfo";
+import { providerLabel } from "../llmConfigs/llmProviderInfo";
+import { CURIO_DEFAULT_BADGE, CURIO_DEFAULT_LABEL, CURIO_ROW_NAME, providedBy } from "../llmConfigs/curioModels";
 import { NodeKeyForm, deliveryText, formatUsed } from "./NodeKeyForm";
 import { SourceKeyForm, usedByText } from "./SourceKeyForm";
 import type { ApiSettingsFocus } from "./apiSettingsRequest";
@@ -22,12 +23,6 @@ import { HOSTED_GUEST_KEYS_NOTE } from "./useHostedGuest";
 export function listNames(names: string[]): string {
   if (names.length <= 1) return names.join("");
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-}
-
-function deploymentProviderLabel(apiType: string | null): string {
-  if (apiType === "anthropic") return PROVIDER_INFO.anthropic.label;
-  if (apiType === "gemini") return PROVIDER_INFO.gemini.label;
-  return "OpenAI-compatible";
 }
 
 /** What "Add configuration" adds: a language model, one data source's key,
@@ -42,12 +37,36 @@ type Editing =
 
 const SOURCE_PREFIX = "source:";
 
+const PLUS_ICON = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"
+    strokeLinecap="round" aria-hidden="true" focusable="false">
+    <path d="M8 3v10M3 8h10" />
+  </svg>
+);
+
+const REMOVE_ICON = (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"
+    strokeLinecap="round" aria-hidden="true" focusable="false">
+    <path d="M4 4l8 8M12 4l-8 8" />
+  </svg>
+);
+
+const EDIT_ICON = (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"
+    strokeLinejoin="round" aria-hidden="true" focusable="false">
+    <path d="M10.5 2.5l3 3L6 13H3v-3z" />
+    <path d="M9 4l3 3" />
+  </svg>
+);
+
 /**
- * API Settings, API keys: every key this account uses, in one list, and one
- * "Add configuration" for each kind.
+ * API Settings, API keys: every key this account uses, in one list. The "+"
+ * at the end of the list's header adds one of any kind.
  *
- * - Language model: the Deployment default (this Curio's own, read only) and
- *   each LLM configuration, an endpoint and a model.
+ * - Language model: one read-only row per endpoint of this Curio's own (the
+ *   operator's endpoint file), named Curio and provided by that endpoint,
+ *   listing its models; then each LLM configuration of the user's own, an
+ *   endpoint and a model. Curio's models are picked on Agent configuration.
  * - Data source: the key a Discovery Catalog source sends, listed once one is
  *   saved or this Curio supplies one. The kinds are the keys the sources'
  *   manifests declare (`GET /api/discovery/keys`), so a key a new source needs
@@ -55,9 +74,9 @@ const SOURCE_PREFIX = "source:";
  * - Node code: a key node code reads as `curio_secret("<name>")`, sent only to
  *   its host.
  *
- * Every key is write-only: the list says whether one is saved, never what it
- * is. A guest on a hosted Curio sees the guest configuration and can add
- * nothing.
+ * A row the user owns ends with Remove and Edit. Every key is write-only: the
+ * list says whether one is saved, never what it is. A guest on a hosted Curio
+ * sees this Curio's rows and can add nothing.
  */
 export const ApiKeysTab: React.FC<{
   llm: LlmListingState;
@@ -188,6 +207,8 @@ export const ApiKeysTab: React.FC<{
   const llmEditable = Boolean(listing?.editable);
   const configs = llmEditable ? listing!.configs : [];
   const deployment = listing?.deployment ?? null;
+  // This Curio's own endpoints, which every account sees, a hosted guest's too.
+  const curioEndpoints = deployment?.endpoints ?? [];
   const full = listing ? configs.length >= listing.maxConfigs : true;
   const listedSources = (sourceRows ?? []).filter((r) => r.present || r.inherited);
   const addableSources = (sourceRows ?? []).filter((r) => !r.present);
@@ -201,6 +222,8 @@ export const ApiKeysTab: React.FC<{
         : !hostedGuest
           ? "node"
           : null;
+  const loaded = sourceRows !== null && nodeKeys !== null;
+  const canAdd = firstKind !== null && loaded;
 
   const chosenFor = (choice: string) =>
     (listing?.agents ?? []).filter((row) => row.choice === choice).map((row) => row.name);
@@ -214,7 +237,7 @@ export const ApiKeysTab: React.FC<{
     const defaultNote =
       listing?.default === config.id
         ? deployment?.model
-          ? ` It is your default, so runs will use the Deployment default (${deployment.model}).`
+          ? ` It is your default, so runs will use ${CURIO_DEFAULT_LABEL} (${deployment.model}).`
           : " It is your default, and nothing will answer a run until you choose another."
         : "";
     return movedNote + defaultNote;
@@ -238,16 +261,39 @@ export const ApiKeysTab: React.FC<{
     </span>
   );
 
-  const action = (label: string, ariaLabel: string, onClick: () => void, disabled = false) => (
+  const iconButton = (
+    icon: React.ReactNode, tooltip: string, ariaLabel: string, onClick: () => void,
+  ) => (
     <button
       type="button"
-      className={llmStyles.actionBtn}
-      disabled={anyBusy || disabled}
+      className={llmStyles.iconBtn}
+      disabled={anyBusy}
       aria-label={ariaLabel}
+      data-tooltip={tooltip}
       onClick={onClick}
     >
-      {label}
+      {icon}
     </button>
+  );
+
+  /** The last cell of a row the user owns: Remove, then Edit, or the removal's question. */
+  const ownedActions = (
+    id: string,
+    label: string,
+    question: string,
+    remove: () => void,
+    open: () => void,
+  ) => (
+    <td className={`${llmStyles.actions} ${confirming === id ? llmStyles.confirming : ""}`}>
+      {confirming === id ? (
+        confirmCell(id, label, question, remove)
+      ) : (
+        <span className={llmStyles.rowIcons}>
+          {iconButton(REMOVE_ICON, "Remove", `Remove ${label}`, () => setConfirming(id))}
+          {iconButton(EDIT_ICON, "Edit", `Edit ${label}`, open)}
+        </span>
+      )}
+    </td>
   );
 
   const kindPicker =
@@ -284,13 +330,21 @@ export const ApiKeysTab: React.FC<{
     const close = () => edit(null);
     if (editing.mode === "llm" || (editing.mode === "add" && editing.kind === "llm")) {
       if (!listing) return null;
+      const initial = editing.mode === "llm" ? editing.config : null;
       return (
         <LlmConfigEditor
           key={formSeq}
-          initial={editing.mode === "llm" ? editing.config : null}
-          deployment={listing.deployment}
+          initial={initial}
           defaultChecked={editing.mode === "add" && configs.length === 0}
           kindPicker={kindPicker}
+          onDuplicate={initial ? () => {
+            edit(null);
+            void act(`duplicate:${initial.id}`, async () => {
+              const copy = await llmConfigsApi.duplicate(initial.id);
+              setStatus(`Added ${copy.config.label}.`);
+            });
+          } : undefined}
+          duplicateDisabled={full || anyBusy}
           onCancel={close}
           onSaved={(saved, makeDefault) => {
             edit(null);
@@ -324,7 +378,7 @@ export const ApiKeysTab: React.FC<{
     const slot = editing.mode === "source" ? editing.slot : editing.kind.slice(SOURCE_PREFIX.length);
     const row = (sourceRows ?? []).find((r) => r.slot === slot);
     if (!row) return null;
-    const title = editing.mode === "add" ? "Add a configuration" : `${row.present ? "Replace" : "Override"} ${row.label}`;
+    const title = editing.mode === "add" ? "Add a configuration" : `Replace ${row.label}`;
     return (
       <SourceKeyForm
         key={formSeq}
@@ -337,8 +391,9 @@ export const ApiKeysTab: React.FC<{
     );
   };
 
-  const empty =
-    !(llmEditable && deployment?.model) && configs.length === 0 && listedSources.length === 0 && !(nodeKeys ?? []).length;
+  const nodeKeyList = nodeKeys ?? [];
+  const anyRows =
+    curioEndpoints.length + configs.length + listedSources.length + nodeKeyList.length > 0;
 
   return (
     <div className={styles.tabBody}data-testid="api-keys-tab">
@@ -354,8 +409,7 @@ export const ApiKeysTab: React.FC<{
           <p className={llmStyles.active}>
             {listing.active.source ? (
               <>
-                Guests use <strong>{listing.active.model}</strong>
-                {listing.active.baseUrlHost ? <> at <code>{listing.active.baseUrlHost}</code></> : null}.
+                Guests use <strong>{listing.active.model}</strong> on this Curio&apos;s endpoint.
               </>
             ) : (
               listing.active.error
@@ -369,9 +423,9 @@ export const ApiKeysTab: React.FC<{
       {sourceError ? <p className={modal.error} role="alert">{sourceError}</p> : null}
       {nodeError ? <p className={modal.error} role="alert">{nodeError}</p> : null}
 
-      {sourceRows === null || nodeKeys === null ? (
+      {!loaded ? (
         <div className={llmStyles.skeleton} aria-busy="true">Loading your keys…</div>
-      ) : empty ? (
+      ) : !anyRows && !canAdd ? (
         llmEditable || !hostedGuest ? <p className={llmStyles.empty}>No keys yet.</p> : null
       ) : (
         <table className={llmStyles.table}>
@@ -381,57 +435,66 @@ export const ApiKeysTab: React.FC<{
               <th scope="col">Name</th>
               <th scope="col">Kind</th>
               <th scope="col">Details</th>
-              <th scope="col">Key</th>
-              <th scope="col"><span className={modal.hint}>Actions</span></th>
+              <th scope="col" className={llmStyles.actionsHead}>
+                <span className={llmStyles.srOnly}>Actions</span>
+                {canAdd && !editing ? (
+                  <button
+                    type="button"
+                    className={llmStyles.iconBtn}
+                    disabled={anyBusy}
+                    aria-label="Add configuration"
+                    data-tooltip="Add configuration"
+                    onClick={() => edit({ mode: "add", kind: firstKind! })}
+                  >
+                    {PLUS_ICON}
+                  </button>
+                ) : null}
+              </th>
             </tr>
           </thead>
           <tbody>
-            {llmEditable && deployment?.model ? (
-              <tr data-testid="llm-deployment-row">
-                <td className={llmStyles.name}>
-                  {deployment.label}
-                  {listing!.default === null ? <span className={llmStyles.badge}>Default</span> : null}
-                </td>
-                <td>Language model</td>
-                <td>
-                  {deploymentProviderLabel(deployment.apiType)} · {deployment.model}
-                  {deployment.baseUrlHost ? <span className={llmStyles.host}>{deployment.baseUrlHost}</span> : null}
-                  {chosenLine(chosenFor("deployment"))}
-                </td>
-                <td>set by this Curio</td>
-                <td />
-              </tr>
-            ) : null}
+            {curioEndpoints.map((endpoint, index) => {
+              const [first, ...rest] = endpoint.models;
+              return (
+                <tr key={`curio:${endpoint.name}`} data-testid="llm-curio-row" data-endpoint={endpoint.name}>
+                  <td className={llmStyles.name}>
+                    {CURIO_ROW_NAME}
+                    <span className={llmStyles.status}>{providedBy(endpoint.name)}</span>
+                  </td>
+                  <td>Language model</td>
+                  <td>
+                    {first}
+                    {index === 0 ? <span className={llmStyles.badge}>{CURIO_DEFAULT_BADGE}</span> : null}
+                    {rest.length ? <span className={llmStyles.host}>{rest.join(", ")}</span> : null}
+                  </td>
+                  <td />
+                </tr>
+              );
+            })}
             {configs.map((config) => {
               const id = `llm:${config.id}`;
               return (
                 <tr key={id} data-key-row={id}>
                   <td className={llmStyles.name}>
                     {config.label}
-                    {listing!.default === config.id ? <span className={llmStyles.badge}>Default</span> : null}
+                    <span className={llmStyles.status}>{config.hasApiKey ? "Key saved" : "No key"}</span>
                   </td>
                   <td>Language model</td>
                   <td>
                     {providerLabel(config)} · {config.model}
+                    {listing!.default === config.id ? <span className={llmStyles.badge}>My default</span> : null}
                     {config.baseUrlHost ? <span className={llmStyles.host}>{config.baseUrlHost}</span> : null}
                     {chosenLine(chosenFor(config.id))}
                   </td>
-                  <td>{config.endpoint === "deployment" ? "this Curio's" : config.hasApiKey ? "saved" : "none"}</td>
-                  <td className={llmStyles.actions}>
-                    {confirming === id
-                      ? confirmCell(id, config.label, `Remove ${config.label}?${removeNote(config)}`, () => {
-                          void act(id, () => llmConfigsApi.remove(config.id)).finally(() => setConfirming(null));
-                        })
-                      : (
-                        <>
-                          {action("Edit", `Edit ${config.label}`, () => edit({ mode: "llm", config }))}
-                          {action("Duplicate", `Duplicate ${config.label}`, () => {
-                            void act(`duplicate:${config.id}`, () => llmConfigsApi.duplicate(config.id));
-                          }, full)}
-                          {action("Remove", `Remove ${config.label}`, () => setConfirming(id))}
-                        </>
-                      )}
-                  </td>
+                  {ownedActions(
+                    id,
+                    config.label,
+                    `Remove ${config.label}?${removeNote(config)}`,
+                    () => {
+                      void act(id, () => llmConfigsApi.remove(config.id)).finally(() => setConfirming(null));
+                    },
+                    () => edit({ mode: "llm", config }),
+                  )}
                 </tr>
               );
             })}
@@ -439,54 +502,54 @@ export const ApiKeysTab: React.FC<{
               const id = `source:${row.slot}`;
               return (
                 <tr key={id} data-key-row={id}>
-                  <td className={llmStyles.name}>{row.label}</td>
+                  <td className={llmStyles.name}>
+                    {row.label}
+                    <span className={llmStyles.status}>{row.present ? "Key saved" : "Set by this Curio"}</span>
+                  </td>
                   <td>Data source</td>
                   <td>{usedByText(row)}</td>
-                  <td>{row.present ? "saved" : "set by this Curio"}</td>
-                  <td className={llmStyles.actions}>
-                    {confirming === id
-                      ? confirmCell(id, row.label, `Remove the saved ${row.label}?`, () => void removeSource(row))
-                      : (
-                        <>
-                          {row.present
-                            ? action("Replace", `Replace ${row.label}`, () => edit({ mode: "source", slot: row.slot }))
-                            : action("Override", `Override ${row.label}`, () => edit({ mode: "source", slot: row.slot }))}
-                          {row.present ? action("Remove", `Remove ${row.label}`, () => setConfirming(id)) : null}
-                        </>
-                      )}
-                  </td>
+                  {row.present ? (
+                    ownedActions(
+                      id,
+                      row.label,
+                      `Remove the saved ${row.label}?`,
+                      () => void removeSource(row),
+                      () => edit({ mode: "source", slot: row.slot }),
+                    )
+                  ) : (
+                    <td />
+                  )}
                 </tr>
               );
             })}
-            {(nodeKeys ?? []).map((k) => {
+            {nodeKeyList.map((k) => {
               const id = `node:${k.name}`;
               return (
                 <tr key={id} data-key-row={id}>
-                  <td className={llmStyles.name}>{k.name}</td>
+                  <td className={llmStyles.name}>
+                    {k.name}
+                    <span className={llmStyles.status}>Key saved</span>
+                  </td>
                   <td>Node code</td>
                   <td>
                     {k.host} · {deliveryText(k.delivery)}
                     <span className={llmStyles.host}>{formatUsed(k.lastUsedAt)}</span>
                   </td>
-                  <td>saved</td>
-                  <td className={llmStyles.actions}>
-                    {confirming === id
-                      ? confirmCell(
-                          id,
-                          k.name,
-                          `Nodes that call curio_secret("${k.name}") will fail until a key with this name is saved again.`,
-                          () => void removeNodeKey(k.name),
-                        )
-                      : (
-                        <>
-                          {action("Replace", `Replace ${k.name}`, () => edit({ mode: "node", key: k }))}
-                          {action("Remove", `Remove ${k.name}`, () => setConfirming(id))}
-                        </>
-                      )}
-                  </td>
+                  {ownedActions(
+                    id,
+                    k.name,
+                    `Nodes that call curio_secret("${k.name}") will fail until a key with this name is saved again.`,
+                    () => void removeNodeKey(k.name),
+                    () => edit({ mode: "node", key: k }),
+                  )}
                 </tr>
               );
             })}
+            {!anyRows ? (
+              <tr>
+                <td colSpan={4} className={llmStyles.empty}>No keys yet.</td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       )}
@@ -495,20 +558,7 @@ export const ApiKeysTab: React.FC<{
       {keyError ? <p className={modal.error} role="alert">{keyError}</p> : null}
       {status ? <p className={modal.success} role="status">{status}</p> : null}
 
-      {editing ? (
-        editor()
-      ) : firstKind && sourceRows !== null && nodeKeys !== null ? (
-        <div className={modal.buttonRow}>
-          <button
-            type="button"
-            className={modal.ghostBtn}
-            disabled={anyBusy}
-            onClick={() => edit({ mode: "add", kind: firstKind })}
-          >
-            Add configuration
-          </button>
-        </div>
-      ) : null}
+      {editing ? editor() : null}
     </div>
   );
 };

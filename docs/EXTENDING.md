@@ -60,7 +60,7 @@ Three patterns cover essentially every node Curio ships:
 | Pattern | Examples | Backend? |
 |---|---|---|
 | **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-grammar`, `column-filter` (`curio.example-ui@1`) | None. The behavior hook does its work in the browser. |
-| **Sandbox-Python** | `data-loading`, `data-transformation`, `computation-analysis`, `data-summary`, `accumulated-shadow` (`model.scout.deep-umbra@1`), `image-segmentation` (`model.curio.ddrnet23-slim@1`) | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` behavior. User-provided Python runs out-of-process. A package template does the same with its own starter file and Python dependencies (§4.2). |
+| **Sandbox-Python** | `data-loading`, `computation-analysis`, `data-summary`, `accumulated-shadow` (`model.scout.deep-umbra@1`), `image-segmentation` (`model.curio.ddrnet23-slim@1`) | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` behavior. User-provided Python runs out-of-process. A package template does the same with its own starter file and Python dependencies (§4.2). |
 | **Backend route** | `spatial-join` (geopandas `sjoin`) | A route in Curio's backend that the behavior hook calls: Spatial Join's is one handler in [`api/routes.py`](../utk_curio/backend/app/api/routes.py) over a helper in [`common/spatial.py`](../utk_curio/backend/app/common/spatial.py). A feature with several routes gets its own Flask blueprint under [`utk_curio/backend/app/<feature>/`](../utk_curio/backend/app/) (§5). Right call when the node needs server-side work the sandbox can't reasonably do. |
 
 Pure-frontend is the right default; reach for the sandbox before a blueprint, and only stand up a blueprint when neither covers it. Third-party data and models come in through the Discovery Catalog (§3), and a node reads them from the Data or Model Catalog.
@@ -529,7 +529,9 @@ The smallest possible package adds one template plus its behavior hook. Use this
    ```tsx
    import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
    export const useMyNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
-     // Read `data.input` from upstream, push downstream via `data.outputCallback`.
+     // Read `data.input` from upstream. To push rows downstream, keep them with
+     //   `window.curio.storeOutput(data.nodeId, { data, dataType })` and hand the
+     //   reference it answers to `data.outputCallback`.
      // Return `{ contentComponent: <YourUI /> }` to render a body, or omit for
      //   icon-only nodes (also set `containerStyle.noContent: true` in the
      //   manifest; see §4.4 for the spatial-join hook).

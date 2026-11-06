@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/interaction-vega-autark.json",
-    "sha256": "ff30dde555ae286a74862a2dfacef9e2fc504af1236af1868d523ec3aa8b4353",
+    "sha256": "679a355cbbed1f1884e47e6ecf4335906587a36e5a1fb2e5be8dd51cc698551e",
     "walkthrough": null
   },
   "prompt": "Read the accessibility score polygons from docs/examples/data/access_score.geojson in this checkout, keep coverage, the average attribute count, the neighborhood name and the geometry, clean and flatten the attribute counts, and compute a weighted accessibility score per neighborhood in a Python step. Fan the result out to two linked views: an Autark map coloured by the accessibility score and a Vega-Lite plot of accessibility by neighborhood, with selections travelling between them.",
@@ -33,6 +33,13 @@
         "hasContent": true
       },
       {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
         "role": "loader",
@@ -45,13 +52,6 @@
         "role": "pool",
         "executable": false,
         "hasContent": false
-      },
-      {
-        "ref": "transform1",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
       },
       {
         "ref": "visualization2",
@@ -73,8 +73,13 @@
         "kind": "data"
       },
       {
+        "from": "analysis2",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
         "from": "loader1",
-        "to": "transform1",
+        "to": "analysis2",
         "kind": "data"
       },
       {
@@ -91,11 +96,6 @@
         "from": "pool1",
         "to": "visualization2",
         "kind": "interaction"
-      },
-      {
-        "from": "transform1",
-        "to": "analysis1",
-        "kind": "data"
       }
     ],
     "sources": {

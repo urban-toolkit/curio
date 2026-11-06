@@ -26,7 +26,7 @@ orthoimagery**, so it runs as it opens. Adding **Drone orthoimagery** from the
 ```mermaid
 flowchart LR
   L[`Data Loading`<br/>the tile collection] --> M[`Vega-Lite`<br/>footprints by year]
-  L --> F[`Data Transformation`<br/>2024 only]
+  L --> F[`Python Computation`<br/>2024 only]
   F --> X[`Mosaic Rasters`<br/>one raster]
   X --> B[`Python Computation`<br/>band means]
   B --> V[`Simple View`<br/>the summary]

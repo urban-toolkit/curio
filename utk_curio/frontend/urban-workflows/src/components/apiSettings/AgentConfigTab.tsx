@@ -4,14 +4,16 @@ import llmStyles from "../llmConfigs/LlmConfigs.module.css";
 import styles from "./ApiSettings.module.css";
 import { llmConfigsApi } from "../../api/llmConfigsApi";
 import { AgentModelsSection } from "../llmConfigs/AgentModelsSection";
+import { ModelChoiceOptions, choiceValue } from "../llmConfigs/ModelChoiceOptions";
 import type { ApiSettingsFocus } from "./apiSettingsRequest";
 import type { LlmListingState } from "./useLlmListing";
 
 /**
  * API Settings, Agent configuration: which language model the agents run on.
- * The default answers every agent with no choice of its own; the table below
- * gives an agent a configuration of its own. The configurations themselves
- * are added and edited on the API keys tab.
+ * The default answers every agent with no choice of its own; the list below
+ * gives an agent one of its own. Each offers Curio's default, every model of
+ * this Curio's own endpoints and the account's configurations, which are
+ * added and edited on the API keys tab.
  *
  * A guest on a hosted Curio sees the guest configuration and nothing to choose.
  */
@@ -47,8 +49,7 @@ export const AgentConfigTab: React.FC<{
         <p className={llmStyles.active}>
           {active.source ? (
             <>
-              Guests use <strong>{active.model}</strong>
-              {active.baseUrlHost ? <> at <code>{active.baseUrlHost}</code></> : null}.
+              Guests use <strong>{active.model}</strong> on this Curio&apos;s endpoint.
             </>
           ) : (
             active.error
@@ -83,33 +84,25 @@ export const AgentConfigTab: React.FC<{
           </p>
         ) : (
           <div className={modal.field}>
-            <label className={modal.label} htmlFor="agent-default-config">Default for agents</label>
+            <label className={modal.label} htmlFor="agent-default-config">Default for my agents</label>
             <select
               id="agent-default-config"
               className={modal.select}
-              value={listing.default ?? ""}
+              value={choiceValue(listing.default)}
               disabled={busy !== null}
               onChange={(e) => {
                 const next = e.target.value || null;
                 void act("default", () => llmConfigsApi.setDefault(next));
               }}
             >
-              {deployment.model ? (
-                <option value="">
-                  {deployment.label} · {deployment.model}
-                </option>
-              ) : (
+              {deployment.model ? null : (
                 <option value="" disabled>
                   None chosen
                 </option>
               )}
-              {listing.configs.map((config) => (
-                <option key={config.id} value={config.id}>
-                  {config.label} · {config.model}
-                </option>
-              ))}
+              <ModelChoiceOptions listing={listing} curioDefaultValue="" current={listing.default} />
             </select>
-            <span className={modal.hint}>Every agent with no configuration of its own below runs on this one.</span>
+            <span className={modal.hint}>Every agent with no choice of its own below runs on this one.</span>
           </div>
         )}
       </section>

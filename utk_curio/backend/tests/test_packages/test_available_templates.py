@@ -177,7 +177,7 @@ class TestInputArity:
             _template("data-loading", "Load", input_ports=[]),
             _template("computation-analysis", "Compute",
                       input_ports=[{"types": ["DATAFRAME"], "cardinality": "[1,n]"}]),
-            _template("data-transformation", "Transform",
+            _template("pair-in", "Pair In",
                       input_ports=[{"types": ["DATAFRAME"], "cardinality": "[1,2]"}]),
             _template("vis-vega", "Vega",
                       input_ports=[{"types": ["DATAFRAME"], "cardinality": "1"}]),
@@ -201,7 +201,7 @@ class TestInputArity:
         assert by_id["curio.builtin/data-loading"]["maxIncomingEdges"] == 0
         # A single port takes its declared maximum: each edge gets a circle.
         assert by_id["curio.builtin/computation-analysis"]["maxIncomingEdges"] is None
-        assert by_id["curio.builtin/data-transformation"]["maxIncomingEdges"] == 2
+        assert by_id["curio.builtin/pair-in"]["maxIncomingEdges"] == 2
         assert by_id["curio.builtin/vis-vega"]["maxIncomingEdges"] == 1
         assert by_id["curio.builtin/spatial-join"]["maxIncomingEdges"] == 2
         # A growing port with a finite bound stops at it: five circles, no sixth.

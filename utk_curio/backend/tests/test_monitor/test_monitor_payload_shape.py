@@ -60,23 +60,27 @@ class TestTopLevelShape:
 
 
 class TestTheDeploymentLlm:
-    """``llmProviderConfigured`` says whether there is a Deployment default: the
-    deployment's endpoint with a model, read at call time."""
+    """``llmProviderConfigured`` says whether there is a Deployment default: an
+    endpoint file with an endpoint, whose first model it is, read at call
+    time."""
 
-    def _flag(self, client, monkeypatch, **values):
-        from utk_curio.backend import config
+    def _flag(self, client, monkeypatch, *endpoints):
+        from utk_curio.backend.tests._support import llm_deployment
 
-        for name, value in {"DEFAULT_LLM_BASE_URL": "", "DEFAULT_LLM_API_KEY": "",
-                            "DEFAULT_LLM_MODEL": "", **values}.items():
-            monkeypatch.setattr(config, name, value)
+        llm_deployment.offer(monkeypatch, *endpoints)
         return client.get("/api/monitor").get_json()["deployment"]["llmProviderConfigured"]
 
     def test_an_endpoint_with_a_model_is_configured(self, client, monkeypatch):
-        assert self._flag(client, monkeypatch, DEFAULT_LLM_BASE_URL="https://llm.example.com/v1",
-                          DEFAULT_LLM_MODEL="m") is True
+        from utk_curio.backend.tests._support import llm_deployment
 
-    def test_an_endpoint_without_a_model_is_not(self, client, monkeypatch):
-        assert self._flag(client, monkeypatch, DEFAULT_LLM_BASE_URL="https://llm.example.com/v1") is False
+        assert self._flag(client, monkeypatch, llm_deployment.endpoint(
+            base_url="https://llm.example.com/v1", models=("m",))) is True
+
+    def test_several_endpoints_are_configured(self, client, monkeypatch):
+        from utk_curio.backend.tests._support import llm_deployment
+
+        assert self._flag(client, monkeypatch, llm_deployment.endpoint("One", models=("m",)),
+                          llm_deployment.endpoint("Two", models=("n",))) is True
 
     def test_nothing_set_is_not(self, client, monkeypatch):
         assert self._flag(client, monkeypatch) is False

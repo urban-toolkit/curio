@@ -12,7 +12,7 @@ This guide is in six parts, plus operator notes:
 - [4. LLM configurations](#4-llm-configurations): which model answers, and where it is set.
 - [5. Importing, publishing, and sharing](#5-importing-publishing-and-sharing): your own definitions and offering them to everyone, and an agent of your own that holds a skill of your own.
 - [6. The manifest](#6-the-manifest): writing your own agent.
-- [Operator notes](#operator-notes): the Deployment default and launcher flags.
+- [Operator notes](#operator-notes): Curio's own models and launcher flags.
 
 ---
 
@@ -379,39 +379,49 @@ The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVE
 
 ## 4. LLM configurations
 
-Every agent, on every dataflow, answers with an **LLM configuration**: the one chosen for it in **API Settings**, else your default. Configurations belong to your account. On a dataflow you edit at its owner's invitation, the agents answer with the owner's ([Invited editors](#invited-editors)). **API Settings** is in the top bar: on `/projects` and the catalog pages it opens the settings page; on the canvas and the dashboard it opens on the right side, and the dataflow stays open. The **API Settings** button in the Agent Catalog drawer's header opens it on the **Agent configuration** tab. Configurations are the rows of kind **Language model** on the **API keys** tab. A configuration is:
+Every agent, on every dataflow, answers with what is chosen for it in **API Settings**, else your default: one of your **LLM configurations**, or one of the models the operator of your Curio offers. Configurations and choices belong to your account. On a dataflow you edit at its owner's invitation, the agents answer with the owner's ([Invited editors](#invited-editors)). **API Settings** is in the top bar: on `/projects` and the catalog pages it opens the settings page; on the canvas and the dashboard it opens on the right side, and the dataflow stays open. The **API Settings** button in the Agent Catalog drawer's header opens it on the **Agent configuration** tab. Configurations are the rows of kind **Language model** on the **API keys** tab. A configuration is:
 
 | Field | What it is |
 |---|---|
 | Label | Your name for it, unique in your account. |
-| Provider | OpenAI, Anthropic, Gemini, Custom (any OpenAI-compatible endpoint), or **This Curio install** when the operator offers its endpoint. |
+| Provider | OpenAI, Anthropic, Gemini or Custom (any OpenAI-compatible endpoint). |
 | Base URL | Only for Custom: Ollama, LM Studio, vLLM, Groq, Azure. |
-| API key | Write-only, and held for this configuration's endpoint only. Editing leaves it in place unless you type a new one or remove it; changing the provider, or the base URL's scheme, host or port, needs it again. This Curio install uses the operator's key, which you never see. |
+| API key | Write-only, and held for this configuration's endpoint only. Editing leaves it in place unless you type a new one or remove it; changing the provider, or the base URL's scheme, host or port, needs it again. |
 | Model | Which model answers. For OpenAI, Anthropic and Gemini the empty box shows the provider's default model in grey; type it or another model. **Fetch models** suggests what the endpoint serves. |
 
 To add a configuration:
 
 1. Get an API key from the provider (see [USAGE.md](USAGE.md#your-configurations) for each provider's link).
 2. Open **API Settings** from the top bar (on the canvas it opens on the right).
-3. On the **API keys** tab, click **Add configuration**.
+3. On the **API keys** tab, click **+** (**Add configuration**) at the end of the table's header.
 4. In **Kind**, choose **Language model**.
 5. Type a **Label**, choose the **Provider**, paste the **API key**, and type the **Model** (the provider's default model is shown in grey), or click **Fetch models** and pick one. **Custom** also asks for the **Base URL**.
-6. Click **Add configuration**. The configuration's row shows in the list, with **saved** in its **Key** column when you gave a key.
+6. Click **Add configuration**. The configuration's row shows in the list, with **Key saved** under its name when you gave a key.
 
-**Make this my default** is ticked for your first configuration. Each row offers **Edit**, **Duplicate** (the copy keeps the key) and **Remove**; an account holds up to 32. Its **Details** show the provider, the model and the host, and **Chosen for** lists the agents chosen to run on it. The **Default** badge marks your default. The **Deployment default** row is the operator's own configuration: read-only, with **set by this Curio** in its **Key** column, shown when the operator configured one, and the one that answers while you have no default of your own. Choosing it in **Default for agents**, or removing your own default, goes back to it.
+**Make this my default** is ticked for your first configuration. Each row of yours ends with **x** (**Remove**) and a pencil (**Edit**); the editor's **Duplicate** makes a copy that keeps the key. An account holds up to 32. A row's **Details** show the provider, the model and the host, and **Chosen for** lists the agents chosen to run on it. The **My default** badge marks your default.
 
-### Default and Agent models
+When the operator offers models of its own, the list starts with one read-only **Curio** row per endpoint of the operator's, with **Provided by** and the endpoint's name under it and the endpoint's models in its **Details**. The **Curio default** badge marks **Curio's default**, the model that answers while you have no default of your own; removing your own default goes back to it.
 
-The **Agent configuration** tab chooses which configuration answers. Its **Default** section names what answers your agents (**Answering now:** a label and a model) and sets your default in **Default for agents**: the Deployment default or any of your configurations. Below it, **Agent models** lists the four catalog agents plus your imported and published agents, each with a select: **Default** (your default configuration), any of your configurations, or the Deployment default. A change is saved at once. Which configuration answers a run:
+### Default and each agent
 
-| Run | Configuration |
+The **Agent configuration** tab chooses what answers. It names what answers your agents (**Answering now:** a label and a model) and sets your default in **Default for my agents**. Below it, **Each agent** lists the four catalog agents plus your imported and published agents, each with a select whose first choice, **Follows my default**, runs it on your default. A change is saved at once. Both offer, in order:
+
+| Choice | What it runs on |
 |---|---|
-| An agent you attach (chat, Solve, Simulation, the per-node Solve) | Its choice, else your default, else the Deployment default |
+| **Curio's default** | The first model the operator lists, beside it in the list; it follows the operator's list. |
+| A model under **Curio ·** and an endpoint's name | That model on that endpoint of the operator's, with its key, which you never see. |
+| A configuration under **My configurations** | That configuration. |
+
+Without models of the operator's, only your configurations are offered. Which choice answers a run:
+
+| Run | Choice |
+|---|---|
+| An agent you attach (chat, Solve, Simulation, the per-node Solve) | Its choice, else your default, else Curio's default |
 | A mode another agent asks for | Its agent's choice, else its caller's |
 | An internal helper (the Dataflow Planner, the Dataflow Reader, the content evaluator) | Always its caller's |
 | A guest on a `--deploy` instance | The guest configuration, for every agent |
 
-A choice that names nothing, such as a removed configuration or a Deployment default the operator withdrew, refuses the run with **Open API Settings**, which opens the **Agent configuration** tab on that agent's row; it never falls back to another configuration. Removing a configuration sends the agents chosen for it back to the default, and its confirmation names them.
+A choice that names nothing, such as a removed configuration, or a model or endpoint the operator took out of the endpoint file, refuses the run with **Open API Settings**, which opens the **Agent configuration** tab on that agent's row; it never falls back to another configuration. Such a model shows **(no longer offered)** in the list until you pick another. Removing a configuration sends the agents chosen for it back to the default, and its confirmation names them.
 
 A Solve of the Dataflow Builder runs on the Builder's configuration, and writes each node's content through Node Builder's content mode and each source through Dataset Finder, each on its own choice. The choices a Solve needs are checked before it starts, and one that names nothing refuses it. After a dataset selection, the node is built on its builder's configuration, not the Dataset Finder's.
 
@@ -432,7 +442,7 @@ It is a convenience, not a gate: the field stays free text. Two sources fill the
 
 Until a key has listed an endpoint's models, there are no suggestions: the Model box shows the provider's default model in grey, and you type the model. A model you type by hand is always accepted.
 
-Whoever runs the install can set a Deployment default with `curio.py start` flags (see [Operator notes](#operator-notes)). It is not stored in your account, so when the operator changes it, the Deployment default row changes with it.
+The operator's models need no configuration and no **Fetch models**: they are picked on the **Agent configuration** tab. Whoever runs the install lists them in the file `--llm-endpoint-file` names (see [Operator notes](#operator-notes)). The list is not stored in your account, so when the operator changes it, the **Curio** rows and the choices change with it.
 
 **Curio does not meter, cap, or bill agent runs.** There is no quota screen and no spend limit: the tokens are billed to whoever's key is in use. Curio keeps a local, per-day record of what ran (see [Storage layers](#storage-layers)), and calls no usage or billing API.
 
@@ -593,16 +603,11 @@ Once written, import the package with the drawer's **Import agent** button ([par
 
 ## Operator notes
 
-Curio ships with **no default LLM endpoint**. Until an operator sets a Deployment default, or a user adds an LLM configuration on the **API keys** tab of **API Settings**, that user's agents stop with the error *"No LLM configuration answers this run."* and a link to API Settings.
+Curio ships with **no default LLM endpoint**. Until an operator names an endpoint file, or a user adds an LLM configuration on the **API keys** tab of **API Settings**, that user's agents stop with the error *"No LLM configuration answers this run."* and a link to API Settings.
 
 | Variable | Flag | Effect |
 |---|---|---|
-| `CURIO_DEFAULT_LLM_API_TYPE` | `--llm-provider` | The provider kind of the deployment's endpoint. |
-| `CURIO_DEFAULT_LLM_BASE_URL` | `--llm-base-url` | The deployment's endpoint. With it or a key set, users are offered **This Curio install**. |
-| `CURIO_DEFAULT_LLM_MODEL` | `--llm-model` | The Deployment default's model. Without one there is no Deployment default. |
-| `CURIO_DEFAULT_LLM_API_KEY` | none | The deployment's API key. Set it in the environment. |
-| `GUEST_LLM_API_KEY` | `--guest-llm-api-key` | The key of the guest configuration, which every guest on a `--deploy` instance answers with. Unset, it takes `CURIO_DEFAULT_LLM_API_KEY`; with neither, guests get no AI. |
-| `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | `--guest-llm-provider`, `--guest-llm-base-url`, `--guest-llm-model` | The guest configuration's provider, endpoint and model. Unset, it takes the deployment's; an empty endpoint is the provider's own. A guest configuration needs a key and a model. |
+| `CURIO_DEFAULT_LLM_ENDPOINT_FILE` | `--llm-endpoint-file` | The file of this Curio's own LLM endpoints, one section each, with its key, its models and, optionally, its URL and provider ([DEPLOYMENT.md](DEPLOYMENT.md#llm-configurations)). Only the backend reads it. Each section is a **Curio** row on the **API keys** tab, provided by the section's name, and users can pick any of its models on the **Agent configuration** tab. The first section's first model is Curio's default and the guest configuration. Without it there is no Curio's default. |
 | `CURIO_SEARCH_URL` | `--agent-search-url` | Where the web-search tool looks, as a URL template with `{q}`. Defaults to DuckDuckGo's keyless Instant Answer API; point it at a local SearXNG, SerpAPI, or Google Programmable Search for ranked results. |
 | `CURIO_SOLVE_MAX_ATTEMPTS` | `--solve-max-attempts` | How many times Solve may try one node, counting the first generation. Default 40. |
 | `CURIO_SOLVE_NODE_BUDGET` | `--solve-node-budget` | Wall-clock seconds Solve may spend repairing a node solved on its own, as with **Solve this node**. Default 900. |

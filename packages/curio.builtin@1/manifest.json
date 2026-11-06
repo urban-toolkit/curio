@@ -87,7 +87,7 @@
     },
     {
       "category": "data",
-      "description": "The Data Export box writes the data connected to it to a file, and its Download button saves the file: its code writes a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF and anything else as JSON. File name names the file; left empty, the download is named after the node or dataset that feeds it.",
+      "description": "The Data Export box writes the data connected to it to a file, and its Download button saves the file: its code writes a table as CSV, a GeoDataFrame as GeoJSON or a raster as GeoTIFF. File name names the file; left empty, the download is named after the node or dataset that feeds it.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -119,40 +119,6 @@
         }
       ],
       "opensOnControls": true
-    },
-    {
-      "category": "data",
-      "description": "The Data Transformation box is responsible for performing any kinds of transformations to the data.",
-      "editor": "code",
-      "engine": "python",
-      "hasCode": true,
-      "hasGrammar": false,
-      "hasWidgets": true,
-      "iconRef": "fa-solid:database",
-      "id": "data-transformation",
-      "inputPorts": [
-        {
-          "cardinality": "[1,n]",
-          "types": [
-            "DATAFRAME",
-            "GEODATAFRAME",
-            "RASTER"
-          ]
-        }
-      ],
-      "label": "Data Transformation",
-      "behavior": "code",
-      "outputPorts": [
-        {
-          "cardinality": "[1,2]",
-          "types": [
-            "DATAFRAME",
-            "GEODATAFRAME",
-            "RASTER"
-          ]
-        }
-      ],
-      "paletteOrder": 3
     },
     {
       "bidirectional": true,
@@ -189,7 +155,7 @@
     },
     {
       "category": "computation",
-      "description": "The Computation Analysis box is the generic box responsible for performing any kinds of computations.",
+      "description": "The Python Computation box is the generic box responsible for performing any kinds of computations.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,
@@ -228,7 +194,7 @@
       "paletteOrder": 2
     },
     {
-      "category": "computation",
+      "category": "data",
       "description": "The Data Summary node computes descriptive statistics and schema information (shape, dtypes, missing values, describe) for a DataFrame.",
       "editor": "code",
       "engine": "python",
@@ -256,7 +222,7 @@
           ]
         }
       ],
-      "paletteOrder": 10
+      "paletteOrder": 3
     },
     {
       "category": "computation",
@@ -302,7 +268,7 @@
       "badge": "VEGA",
       "bidirectional": true,
       "category": "vis_grammar",
-      "description": "The Vega box is responsible for visualizing 2D plots.",
+      "description": "The Vega-Lite box is responsible for visualizing 2D plots.",
       "editor": "grammar",
       "engine": "python",
       "grammarId": "vega-lite",

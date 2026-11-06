@@ -69,12 +69,12 @@ describe("datasetDisplayTitle (clean, user-facing dataset name)", () => {
       datasetDisplayTitle(
         makeDataset({
           origin: "computed",
-          title: "Data Transformation",
+          title: "Python Computation",
           fileName: "1782498496720 Ef610Da8.Json",
           dirName: "computed.node-x@1",
         }),
       ),
-    ).toBe("Data Transformation");
+    ).toBe("Python Computation");
   });
 
   test("computed datasets with no captured node name (title === fileName) fall back to dirName", () => {
@@ -171,7 +171,7 @@ describe("datasetSubtitle (secondary line under the title)", () => {
       datasetSubtitle(
         makeDataset({
           origin: "computed",
-          title: "Data Transformation",
+          title: "Python Computation",
           fileName: "1782498496720 Ef610Da8.Json",
           dirName: "computed.node-x@1",
         }),
@@ -238,7 +238,7 @@ describe("isGeneratedDataFileName", () => {
 
   test("treats real human/node names as NOT generated", () => {
     expect(isGeneratedDataFileName("Autark")).toBe(false);
-    expect(isGeneratedDataFileName("Data Transformation")).toBe(false);
+    expect(isGeneratedDataFileName("Python Computation")).toBe(false);
     expect(isGeneratedDataFileName("Chicago Boundary")).toBe(false);
     expect(isGeneratedDataFileName("")).toBe(false);
     expect(isGeneratedDataFileName(null)).toBe(false);

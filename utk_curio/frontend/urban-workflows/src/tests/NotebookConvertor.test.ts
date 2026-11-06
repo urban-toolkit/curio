@@ -91,7 +91,6 @@ describe("trillToNotebook", () => {
   it("emits a cell for every node type, not just the three the importer makes", () => {
     const everyType = [
       NodeType.DATA_LOADING,
-      NodeType.DATA_TRANSFORMATION,
       NodeType.COMPUTATION_ANALYSIS,
       NodeType.DATA_SUMMARY,
       NodeType.DATA_EXPORT,
@@ -130,7 +129,7 @@ describe("trillToNotebook", () => {
         },
         {
           id: "xform",
-          type: NodeType.DATA_TRANSFORMATION,
+          type: NodeType.COMPUTATION_ANALYSIS,
           content: "df = input_0.copy()\ndf['b'] = df['a'] * 2\nreturn df\n",
         },
       ])
@@ -281,8 +280,8 @@ describe("trillToNotebook", () => {
     const nb = trillToNotebook(
       spec(
         [
-          { id: "a", type: NodeType.DATA_TRANSFORMATION, content: "return input_0\n" },
-          { id: "b", type: NodeType.DATA_TRANSFORMATION, content: "return input_0\n" },
+          { id: "a", type: NodeType.COMPUTATION_ANALYSIS, content: "return input_0\n" },
+          { id: "b", type: NodeType.COMPUTATION_ANALYSIS, content: "return input_0\n" },
         ],
         [
           ["a", "b"],

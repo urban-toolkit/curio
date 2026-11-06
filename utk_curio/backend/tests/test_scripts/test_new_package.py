@@ -99,6 +99,23 @@ def test_with_ui_reads_its_input_with_the_canvas_reader(tmp_path):
     assert resolve.index("hostFetchData()") < resolve.index("/get?fileName=")
 
 
+def test_with_ui_stores_its_output_and_hands_on_the_reference(tmp_path):
+    """A node made with ``--with-ui`` stores its rows with
+    ``window.curio.storeOutput`` and hands on what that answers, a reference,
+    as every other node does. Rows handed on as they are reach a chart, which
+    reads them in the browser, but never a Python or JS node, and are not
+    saved with the dataflow (#1333)."""
+    assert new_package.main(["me.heatmap", "--with-ui", "--dest", str(tmp_path)]) == 0
+    source = next((tmp_path / "me.heatmap@1" / "sources").glob("*Behavior.tsx")).read_text(encoding="utf-8")
+    emit = source[source.index("const emit = useCallback("):]
+    emit = emit[: emit.index("}, [")]
+
+    assert "(window as any).curio?.storeOutput" in source
+    assert "await store(" in emit, emit
+    assert emit.index("await store(") < emit.index("data.outputCallback(data.nodeId, stored)")
+    assert "outputCallback(data.nodeId, {" not in emit, "the rows are handed on as they are"
+
+
 def test_major_and_template_id_overrides(tmp_path):
     rc = new_package.main(
         ["me.thing", "--major", "2", "--template-id", "my-thing", "--dest", str(tmp_path)]

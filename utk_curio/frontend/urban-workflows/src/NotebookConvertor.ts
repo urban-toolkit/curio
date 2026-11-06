@@ -401,7 +401,6 @@ function outputVarName(node: TrillNode): string {
 /** Templates whose ``content`` is a Python function body, run as ``userCode(input_0, ...)``. */
 const PYTHON_BODY_TYPES = new Set<string>([
   NodeType.DATA_LOADING,
-  NodeType.DATA_TRANSFORMATION,
   NodeType.COMPUTATION_ANALYSIS,
   NodeType.DATA_SUMMARY,
   NodeType.DATA_EXPORT,

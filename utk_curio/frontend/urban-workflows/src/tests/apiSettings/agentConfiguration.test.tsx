@@ -2,11 +2,11 @@ import React from "react";
 import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 
 /**
- * API Settings, Agent configuration: the configuration each agent runs on,
- * chosen from the account's configurations, the Deployment default, or Default
- * (follow the default configuration). Saved on change; the key list says which
- * agents each configuration is chosen for, and removing one names the agents
- * that go back to the default.
+ * API Settings, Agent configuration, Each agent: what each agent runs on,
+ * chosen from Follows my default, Curio's default, any of this Curio's own
+ * models, or the account's configurations. Saved on change; the key list says
+ * which agents each configuration is chosen for, and removing one names the
+ * agents that go back to the default.
  */
 
 const WORK = {
@@ -33,8 +33,8 @@ const listingOf = (overrides: Record<string, unknown> = {}) => ({
     { id: "agent.curio.node-builder", name: "Node Builder", category: "node", choice: LOCAL.id,
       answers: answering("Local", "llama3", "assigned") },
   ],
-  deployment: { label: "Deployment default", endpointOffered: true, apiType: "openai_compatible",
-    baseUrlHost: "sage.example.edu", model: "llama4" },
+  deployment: { label: "Curio's default", apiType: "openai_compatible",
+    model: "llama4", endpoints: [{ name: "Gateway", models: ["llama4", "org/coder-7b"] }] },
   active: answering("Work", "gpt-4o-mini"),
   editable: true,
   reason: null,
@@ -96,6 +96,14 @@ beforeEach(() => {
 
 const models = async () => within(await screen.findByTestId("agent-models-section"));
 const select = (name: string) => screen.getByLabelText(name) as HTMLSelectElement;
+/** A pick of one of Curio's models, as the server stores it. */
+const pick = (endpoint: string, model: string) => `curio:${JSON.stringify([endpoint, model])}`;
+/** A select's options as [value, text, group label], in order. */
+const optionsOf = (element: HTMLSelectElement) =>
+  Array.from(element.options).map((o) => [
+    o.value, o.textContent, o.parentElement?.tagName === "OPTGROUP" ? (o.parentElement as HTMLOptGroupElement).label : "",
+  ]);
+const NO_FILE = { label: "Curio's default", apiType: null, model: null, endpoints: [] };
 
 describe("Agent configuration", () => {
   it("is the second tab, and the first one a page or drawer can open on", async () => {
@@ -117,28 +125,80 @@ describe("Agent configuration", () => {
     await screen.findByRole("table");
   });
 
-  it("lists every agent with its choice and what it runs on", async () => {
+  it("lists every agent under Each agent with its choice and what it runs on", async () => {
     render(<Panel />);
     const section = await models();
+    expect(section.getByRole("heading", { name: "Each agent" })).toBeInTheDocument();
     expect(section.getAllByRole("combobox")).toHaveLength(3);
     expect(select("Researcher").value).toBe("");
     expect(select("Node Builder").value).toBe(LOCAL.id);
     expect(section.getByText("Runs on Local · llama3")).toBeInTheDocument();
   });
 
-  it("offers Default, every configuration and the Deployment default", async () => {
+  it("offers Follows my default first, then the default's own choices in the same order", async () => {
     render(<Panel />);
     await models();
-    const options = Array.from(select("Researcher").options).map((o) => [o.value, o.textContent]);
-    expect(options).toEqual([
-      ["", "Default (Work)"],
-      [WORK.id, "Work · gpt-4o-mini"],
-      [LOCAL.id, "Local · llama3"],
-      ["deployment", "Deployment default · llama4"],
+    expect(optionsOf(select("Researcher"))).toEqual([
+      ["", "Follows my default", ""],
+      ["deployment", "Curio's default: llama4", ""],
+      [pick("Gateway", "llama4"), "llama4", "Curio · Gateway"],
+      [pick("Gateway", "org/coder-7b"), "org/coder-7b", "Curio · Gateway"],
+      [WORK.id, "Work: gpt-4o-mini", "My configurations"],
+      [LOCAL.id, "Local: llama3", "My configurations"],
+    ]);
+    // The default's select offers the same choices after its own first one.
+    const defaults = optionsOf(select("Default for my agents"));
+    expect(defaults.slice(1)).toEqual(optionsOf(select("Researcher")).slice(2));
+    expect(defaults[0]).toEqual(["", "Curio's default: llama4", ""]);
+  });
+
+  it("without the file, offers Follows my default and my configurations only", async () => {
+    mockListing = listingOf({ deployment: NO_FILE });
+    render(<Panel />);
+    await models();
+    expect(optionsOf(select("Researcher"))).toEqual([
+      ["", "Follows my default", ""],
+      [WORK.id, "Work: gpt-4o-mini", "My configurations"],
+      [LOCAL.id, "Local: llama3", "My configurations"],
     ]);
   });
 
-  it("saves a choice on change, and Default clears it", async () => {
+  it("saves a pick of one of Curio's models for one agent", async () => {
+    render(<Panel />);
+    await models();
+    fireEvent.change(select("Researcher"), { target: { value: pick("Gateway", "org/coder-7b") } });
+    await waitFor(() =>
+      expect(mockApi.setAssignments).toHaveBeenCalledWith({ "agent.curio.researcher": pick("Gateway", "org/coder-7b") }),
+    );
+  });
+
+  it("shows a pick or Curio's default that the file no longer offers, so it is picked again", async () => {
+    const gone = pick("Old lab", "model-z");
+    mockListing = listingOf({
+      deployment: NO_FILE,
+      agents: [
+        { id: "agent.curio.researcher", name: "Researcher", category: "node", choice: gone,
+          answers: { source: null, error: "Curio has no endpoint 'Old lab'; it offers none." } },
+        { id: "agent.curio.node-builder", name: "Node Builder", category: "node", choice: "deployment",
+          answers: { source: null, error: "agent.curio.node-builder is set to Curio's default, which this Curio no longer offers." } },
+      ],
+    });
+    render(<Panel />);
+    await models();
+    const researcher = select("Researcher");
+    expect(researcher.value).toBe(gone);
+    expect(researcher.options[researcher.selectedIndex].textContent).toBe("Curio · Old lab: model-z (no longer offered)");
+    expect(researcher.options[researcher.selectedIndex].disabled).toBe(true);
+    const builder = select("Node Builder");
+    expect(builder.value).toBe("deployment");
+    expect(builder.options[builder.selectedIndex].textContent).toBe("Curio's default (no longer offered)");
+    expect(builder.options[builder.selectedIndex].disabled).toBe(true);
+    expect(screen.getByText(/Curio has no endpoint 'Old lab'/)).toBeInTheDocument();
+    fireEvent.change(researcher, { target: { value: LOCAL.id } });
+    await waitFor(() => expect(mockApi.setAssignments).toHaveBeenCalledWith({ "agent.curio.researcher": LOCAL.id }));
+  });
+
+  it("saves a choice on change, and Follows my default clears it", async () => {
     render(<Panel />);
     await models();
     fireEvent.change(select("Researcher"), { target: { value: LOCAL.id } });

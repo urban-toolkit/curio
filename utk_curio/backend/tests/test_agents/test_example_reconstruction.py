@@ -251,6 +251,14 @@ class TestTheModelSeesOnlyThePrompt:
         assert ONE.prompt in json.dumps(driver.calls[0])
 
 
+def _loader_ref(payload) -> str:
+    """Example 01's one Data Loading node, the head of its flow. The plan's
+    nodes come in the canonical order, which sorts its Python Computation
+    nodes first, so the loader is found by its type."""
+    (ref,) = [n["ref"] for n in payload["nodes"] if n["nodeType"].endswith("data-loading")]
+    return ref
+
+
 class TestMutationsFailForTheRightReason:
     """A harness that cannot fail is not a harness. Each mutation is a wrong
     answer of a different kind, and each must land in its own category."""
@@ -301,12 +309,15 @@ class TestMutationsFailForTheRightReason:
         declares no input -- is refused by the runtime's own plan validation
         and is the next test.)"""
         def mutate(payload, contents):
-            loader = payload["nodes"][0]["ref"]
-            transform1 = payload["nodes"][1]["ref"]
+            loader = _loader_ref(payload)
+            # The shared cleanup: the one node the loader feeds.
+            (cleanup,) = {edge["to"] for edge in payload["edges"] if edge["from"] == loader}
             for edge in payload["edges"]:
-                if edge["from"] == transform1 and edge["to"] != loader:
+                if edge["from"] == cleanup:
                     edge["from"] = loader
                     break
+            else:
+                raise AssertionError("example 01's cleanup feeds no aggregation")
 
         result = self._mutated_attempt(client, user_and_token, monkeypatch, mutate)
         assert "topology" in result.score.categories, result.scored.as_dict()
@@ -316,12 +327,16 @@ class TestMutationsFailForTheRightReason:
     def test_an_edge_the_contract_forbids_is_refused_by_the_runtime(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
-        """An edge into a Data Loading node contradicts the template's declared
-        ports, so the plan never mints: the runtime corrects the model instead.
-        The harness records a refusal, which is a different finding from a
-        badly-built graph and must not be reported as one."""
+        """An edge from a node the Data Loading node feeds back into it closes
+        a cycle the contract forbids, so the plan never mints: the runtime
+        corrects the model instead. The harness records a refusal, which is a
+        different finding from a badly-built graph and must not be reported as
+        one."""
         def mutate(payload, contents):
-            payload["edges"][-1]["to"] = payload["nodes"][0]["ref"]
+            loader = _loader_ref(payload)
+            # The last edge that does not leave the loader: its source lies below it.
+            (edge, *_) = [e for e in reversed(payload["edges"]) if e["from"] != loader]
+            edge["to"] = loader
 
         result = self._mutated_attempt(client, user_and_token, monkeypatch, mutate)
         assert result.turn.refused
@@ -331,11 +346,15 @@ class TestMutationsFailForTheRightReason:
     def test_a_wrong_template_fails_as_both_missing_and_extra(
         self, client, user_and_token, tmp_curio, monkeypatch
     ):
+        # Data Loading takes any input and hands on any output, as Python
+        # Computation does, so the plan still mints with one in its place.
         def mutate(payload, contents):
             for node in payload["nodes"]:
-                if node["nodeType"].endswith("data-transformation"):
-                    node["nodeType"] = "curio.builtin/computation-analysis"
+                if node["nodeType"].endswith("computation-analysis"):
+                    node["nodeType"] = "curio.builtin/data-loading"
                     break
+            else:
+                raise AssertionError("example 01's plan holds no Python Computation node")
 
         result = self._mutated_attempt(client, user_and_token, monkeypatch, mutate)
         assert "missing-node" in result.score.categories
@@ -366,7 +385,7 @@ class TestMutationsFailForTheRightReason:
         real pipeline the runtime gets there first, which is the better
         outcome and worth pinning."""
         def mutate(payload, contents):
-            loader = payload["nodes"][0]["ref"]
+            loader = _loader_ref(payload)
             contents[loader] = (
                 'import pandas as pd\n'
                 'p = curio_data_path("data.invented.nowhere")\n'
@@ -400,7 +419,9 @@ class TestMutationsFailForTheRightReason:
         a refusal rather than a fabricated graph -- both are failures, and the
         report must not confuse them."""
         def mutate(payload, contents):
-            payload["nodes"][0]["nodeType"] = "someone.invented/magic-loader"
+            loader = _loader_ref(payload)
+            (node,) = [n for n in payload["nodes"] if n["ref"] == loader]
+            node["nodeType"] = "someone.invented/magic-loader"
 
         result = self._mutated_attempt(client, user_and_token, monkeypatch, mutate)
         assert result.turn.refused

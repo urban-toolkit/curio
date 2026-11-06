@@ -135,7 +135,7 @@ class FormatPlan:
     #: a drop writes from it for the format (``widgetLoaderCode`` in
     #: ``datasetLoaderSnippets.ts``).
     loader_code: str
-    #: Downstream Data Transformation source. Prints ``NAME=value;`` markers and
+    #: Downstream Python Computation source. Prints ``NAME=value;`` markers and
     #: returns a frame the view stage (if any) can chart.
     transform_code: str
     #: Vega-Lite spec for a third, view node - or ``None`` for no view stage.

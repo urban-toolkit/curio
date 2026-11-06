@@ -10,12 +10,11 @@ import { apiFetch } from "../utils/authApi";
  * key is sent once, in a create or an update, and never read back.
  */
 
-/** One configuration, as every response carries it. */
+/** One configuration of the user's own endpoint, as every response carries it. */
 export interface LlmConfig {
   id: string;
   label: string;
-  /** `own`: the user's type, URL and key. `deployment`: This Curio install. */
-  endpoint: "own" | "deployment";
+  endpoint: "own";
   apiType: string;
   baseUrl: string;
   baseUrlHost: string;
@@ -25,15 +24,21 @@ export interface LlmConfig {
   updatedAt: number | null;
 }
 
-/** What this Curio offers of its own. */
+/** One of this Curio's own endpoints: its name and its models, never its URL or key. */
+export interface LlmDeploymentEndpoint {
+  name: string;
+  models: string[];
+}
+
+/** What this Curio offers of its own. Its endpoints' URLs and keys never leave the server. */
 export interface LlmDeployment {
+  /** "Curio's default". */
   label: string;
-  /** This Curio install can be chosen as a configuration's endpoint. */
-  endpointOffered: boolean;
   apiType: string | null;
-  baseUrlHost: string | null;
-  /** The Deployment default's model, or null when there is no Deployment default. */
+  /** Curio's default model (the first endpoint's first), or null without an endpoint file. */
   model: string | null;
+  /** This Curio's endpoints, in the operator's order: any of their models can be picked. */
+  endpoints: LlmDeploymentEndpoint[];
 }
 
 /** What answers a run now. */
@@ -43,6 +48,7 @@ export interface LlmActive {
   label?: string;
   model?: string;
   apiType?: string;
+  /** Empty when it runs on this Curio's own endpoint. */
   baseUrlHost?: string;
   error?: string;
 }
@@ -56,7 +62,11 @@ export interface LlmAgentRow {
   capabilities?: string[];
   /** For an agent with Solve, the agents its Solve runs, by name, in the order it asks them. */
   solveRuns?: string[];
-  /** The configuration chosen for it, `"deployment"`, or null: it follows the rules. */
+  /**
+   * What is chosen for it: a configuration id, a pick of one of this Curio's
+   * models (`curio:["<endpoint>","<model>"]`), `"deployment"` (Curio's
+   * default), or null: it follows the rules.
+   */
   choice: string | null;
   /** What it answers with when attached, or why nothing does. */
   answers: LlmActive;
@@ -64,9 +74,9 @@ export interface LlmAgentRow {
 
 export interface LlmListing {
   configs: LlmConfig[];
-  /** The default configuration's id; null means the Deployment default. */
+  /** The default: a configuration id or a pick of one of this Curio's models; null means Curio's default. */
   default: string | null;
-  /** agentId to configuration id or `"deployment"`, for the agents with a choice. */
+  /** agentId to configuration id, pick or `"deployment"`, for the agents with a choice. */
   assignments: Record<string, string>;
   /** The agents whose configuration may be chosen, never an internal one. */
   agents: LlmAgentRow[];
@@ -82,7 +92,7 @@ export interface LlmListing {
 
 export interface LlmConfigInput {
   label?: string;
-  endpoint?: "own" | "deployment";
+  endpoint?: "own";
   apiType?: string;
   baseUrl?: string;
   /** Write-only. Blank on an update keeps the stored key. */
@@ -124,7 +134,7 @@ export const llmConfigsApi = {
     return apiFetch(`${BASE}/configs/${encodeURIComponent(id)}`, { method: "DELETE" });
   },
 
-  /** Choose agents' configurations: an id, `"deployment"`, or null to clear. */
+  /** Choose what agents run on: an id, a pick, `"deployment"`, or null to clear. */
   setAssignments(choices: Record<string, string | null>): Promise<LlmListing> {
     return apiFetch(`${BASE}/assignments`, { method: "PUT", body: JSON.stringify(choices) });
   },
@@ -137,7 +147,7 @@ export const llmConfigsApi = {
     });
   },
 
-  /** Choose the default; null is the Deployment default. */
+  /** Choose the default: an id or a pick; null is Curio's default. */
   setDefault(configId: string | null): Promise<LlmListing> {
     return apiFetch(`${BASE}/default`, { method: "PUT", body: JSON.stringify({ configId }) });
   },
@@ -145,13 +155,11 @@ export const llmConfigsApi = {
   /**
    * The models an endpoint serves, for the editor's Model field. Posted with
    * what is on screen. A stored key is used only when `configId` names the
-   * configuration being edited and the endpoint is still its own, or when
-   * `endpoint` is `"deployment"` (This Curio install); with neither, no key is
-   * borrowed.
+   * configuration being edited and the endpoint is still its own; with none,
+   * no key is borrowed.
    */
   models(input: {
     configId?: string;
-    endpoint?: "deployment";
     apiType?: string;
     baseUrl?: string;
     apiKey?: string;

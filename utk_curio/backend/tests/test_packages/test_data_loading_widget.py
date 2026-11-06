@@ -78,7 +78,7 @@ def test_the_package_listing_carries_the_flag_and_the_data_widget():
     assert loading["source"] == "sources/data-loading.py"
     assert loading["widgets"] == [DATA]
     assert by_id["data-export"]["opensOnControls"] is True
-    assert by_id["data-transformation"]["opensOnControls"] is False
+    assert by_id["computation-analysis"]["opensOnControls"] is False
 
 
 # ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@ panel is wired to it - and the wiring is the part that breaks, because the
 lineage is derived state three providers away from the nodes it reads.
 
 The test makes one user gesture, a single edge from a dataset's loader node to a
-Data Transformation node, and checks three surfaces that must all follow it:
+Python Computation node, and checks three surfaces that must all follow it:
 
 * **The panel, with nothing saved.** "Consumed by (0)" becomes "Consumed by
   (1)". That section is recomputed from the open canvas, never fetched, so the
@@ -92,13 +92,13 @@ DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
 CARD = 'article:not([role="status"])'
 
 LOADER_TYPE = "curio.builtin/data-loading"
-TRANSFORM_TYPE = "curio.builtin/data-transformation"
-TRANSFORM_TILE = "#tile-data-transformation"
-# The label the node registry gives curio.builtin/data-transformation, which is
+TRANSFORM_TYPE = "curio.builtin/computation-analysis"
+TRANSFORM_TILE = "#tile-computation-analysis"
+# The label the node registry gives curio.builtin/computation-analysis, which is
 # what the consumer card names the node (`resolveNodeLabel` wins over the raw
 # type). Asserting the label rather than the id also proves the panel resolved
 # the node against the registry instead of printing a coordinate at the user.
-TRANSFORM_LABEL = "Data Transformation"
+TRANSFORM_LABEL = "Python Computation"
 
 # A node is 525x350 at zoom 1 in a 1280x720 viewport, so anything closer than
 # ~600px apart horizontally overlaps and the later node's body covers the

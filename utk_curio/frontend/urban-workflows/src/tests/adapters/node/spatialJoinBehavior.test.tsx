@@ -35,6 +35,7 @@ jest.mock('../../../providers/ToastProvider', () => ({
 // separate from the `global.fetch` mock, which stands in for the join route.
 jest.mock('../../../services/api', () => ({
   fetchData: jest.fn(),
+  storeOutput: jest.fn(),
 }));
 
 import { useSpatialJoinBehavior } from '../../../adapters/node/spatialJoinBehavior';
@@ -157,6 +158,42 @@ function readBody(contentComponent: React.ReactNode) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockFlow.dashboardOn = false;
+  const { storeOutput } = require('../../../services/api');
+  (storeOutput as jest.Mock).mockImplementation(async (_nodeId: string, value: { dataType: string }) => (
+    { path: 'art-joined', dataType: value.dataType }
+  ));
+});
+
+describe('the joined rows are stored (#1333)', () => {
+  test('the node stores what the join answered and hands on the reference', async () => {
+    const answer = joined([{ type: 'Feature', geometry: POINTS.features[0].geometry, properties: { name: 'photo-1.jpg', pri_neigh: 'Loop' } }]);
+    mockFetch(answer);
+    const { rerender, data, nodeState } = renderJoin();
+
+    await feed(rerender);
+
+    const { storeOutput } = require('../../../services/api');
+    await waitFor(() => expect(data.outputCallback).toHaveBeenCalledTimes(1));
+    expect(storeOutput).toHaveBeenCalledWith('sj-1', { data: answer, dataType: 'geodataframe' });
+    // A code node reads only a stored output: rows handed on as they are
+    // reached a chart and never a Python or JS node, and no save kept them.
+    expect(data.outputCallback).toHaveBeenCalledWith('sj-1', { path: 'art-joined', dataType: 'geodataframe' });
+    expect(nodeState.setOutput).toHaveBeenLastCalledWith({ code: 'success', content: '' });
+  });
+
+  test('a store that fails is the join failing, and nothing goes downstream', async () => {
+    mockFetch(joined([]));
+    const { storeOutput } = require('../../../services/api');
+    (storeOutput as jest.Mock).mockRejectedValueOnce(new Error('Could not store the output (HTTP 500)'));
+    const { rerender, data, nodeState } = renderJoin();
+
+    await feed(rerender);
+
+    await waitFor(() => expect(nodeState.setOutput).toHaveBeenLastCalledWith({
+      code: 'error', content: 'Could not store the output (HTTP 500)',
+    }));
+    expect(data.outputCallback).not.toHaveBeenCalled();
+  });
 });
 
 describe('which input is which (#576)', () => {

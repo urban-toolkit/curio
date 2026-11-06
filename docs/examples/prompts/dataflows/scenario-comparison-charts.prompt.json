@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/scenario-comparison-charts.json",
-    "sha256": "b0bf8e27e7c5e609c188349faf0c511900ba73db9e7ca09b6cb9444507375024",
+    "sha256": "de6e2931fee5b8c15f116b95737a3997bde50e0a32596ebc65464c926bd88a7b",
     "walkthrough": null
   },
   "prompt": "Make a gallery of nine ways to chart a comparison of scenarios, one row per example table from the Data Catalog: pedestrians per hour on four streets, flood damage curves, flooded streets by depth, peak depths of simulated storms, daily trips by mode, building carbon by life-cycle stage, park area in shade, bike route factors and green roof systems. Each table names its scenario in a case column. For every scenario keep its rows in a step of its own, with the case picked by a choice widget, and make that step the scenario; the 10-, 50- and 100-year storms are one scenario each across the two storm tables. Chart each table's scenarios in one Vega-Lite chart that reads each scenario's step directly and draws each scenario in its color: the pedestrians as lines with a band in a panel per street, the damage curves as one curve per damage state, the flooded streets as grouped bars with error bars, the peak depths as a strip of ticks per storm with its median, the daily trips as grouped bars by mode, the building carbon as stacked bars with their totals, the park shade as a donut per design, the bike route factors as a matrix of circles sized by weight and the green roof systems as a table. Those nine charts are not part of the standard node set, so whatever provides them needs installing first.",
@@ -28,6 +28,174 @@
   },
   "expected": {
     "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis5",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis6",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis7",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis8",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis9",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis10",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis11",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis12",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis13",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis14",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis15",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis16",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis17",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis18",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis19",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis20",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis21",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis22",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis23",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis24",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
       {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
@@ -88,174 +256,6 @@
         "ref": "loader9",
         "type": "curio.builtin/data-loading",
         "role": "loader",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform1",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform2",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform3",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform4",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform5",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform6",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform7",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform8",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform9",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform10",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform11",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform12",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform13",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform14",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform15",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform16",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform17",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform18",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform19",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform20",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform21",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform22",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform23",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform24",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
         "executable": true,
         "hasContent": true
       },
@@ -325,259 +325,259 @@
     ],
     "edges": [
       {
-        "from": "loader1",
-        "to": "transform4",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "transform5",
-        "kind": "data"
-      },
-      {
-        "from": "loader2",
-        "to": "transform6",
-        "kind": "data"
-      },
-      {
-        "from": "loader2",
-        "to": "transform7",
-        "kind": "data"
-      },
-      {
-        "from": "loader3",
-        "to": "transform15",
-        "kind": "data"
-      },
-      {
-        "from": "loader3",
-        "to": "transform16",
-        "kind": "data"
-      },
-      {
-        "from": "loader4",
-        "to": "transform17",
-        "kind": "data"
-      },
-      {
-        "from": "loader4",
-        "to": "transform18",
-        "kind": "data"
-      },
-      {
-        "from": "loader5",
-        "to": "transform1",
-        "kind": "data"
-      },
-      {
-        "from": "loader5",
-        "to": "transform2",
-        "kind": "data"
-      },
-      {
-        "from": "loader5",
-        "to": "transform3",
-        "kind": "data"
-      },
-      {
-        "from": "loader6",
-        "to": "transform8",
-        "kind": "data"
-      },
-      {
-        "from": "loader6",
-        "to": "transform9",
-        "kind": "data"
-      },
-      {
-        "from": "loader6",
-        "to": "transform10",
-        "kind": "data"
-      },
-      {
-        "from": "loader7",
-        "to": "transform19",
-        "kind": "data"
-      },
-      {
-        "from": "loader7",
-        "to": "transform20",
-        "kind": "data"
-      },
-      {
-        "from": "loader7",
-        "to": "transform21",
-        "kind": "data"
-      },
-      {
-        "from": "loader8",
-        "to": "transform22",
-        "kind": "data"
-      },
-      {
-        "from": "loader8",
-        "to": "transform23",
-        "kind": "data"
-      },
-      {
-        "from": "loader8",
-        "to": "transform24",
-        "kind": "data"
-      },
-      {
-        "from": "loader9",
-        "to": "transform11",
-        "kind": "data"
-      },
-      {
-        "from": "loader9",
-        "to": "transform12",
-        "kind": "data"
-      },
-      {
-        "from": "loader9",
-        "to": "transform13",
-        "kind": "data"
-      },
-      {
-        "from": "loader9",
-        "to": "transform14",
-        "kind": "data"
-      },
-      {
-        "from": "transform1",
+        "from": "analysis1",
         "to": "visualization1",
         "kind": "data"
       },
       {
-        "from": "transform2",
+        "from": "analysis2",
         "to": "visualization1",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "transform3",
+        "from": "analysis3",
         "to": "visualization1",
         "kind": "data",
         "slot": 2
       },
       {
-        "from": "transform4",
+        "from": "analysis4",
         "to": "visualization2",
         "kind": "data"
       },
       {
-        "from": "transform5",
+        "from": "analysis5",
         "to": "visualization2",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "transform6",
+        "from": "analysis6",
         "to": "visualization3",
         "kind": "data"
       },
       {
-        "from": "transform7",
+        "from": "analysis7",
         "to": "visualization3",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "transform8",
+        "from": "analysis8",
         "to": "visualization4",
         "kind": "data"
       },
       {
-        "from": "transform9",
+        "from": "analysis9",
         "to": "visualization4",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "transform10",
+        "from": "analysis10",
         "to": "visualization4",
         "kind": "data",
         "slot": 2
       },
       {
-        "from": "transform11",
+        "from": "analysis11",
         "to": "visualization5",
         "kind": "data"
       },
       {
-        "from": "transform12",
+        "from": "analysis12",
         "to": "visualization5",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "transform13",
+        "from": "analysis13",
         "to": "visualization5",
         "kind": "data",
         "slot": 2
       },
       {
-        "from": "transform14",
+        "from": "analysis14",
         "to": "visualization5",
         "kind": "data",
         "slot": 3
       },
       {
-        "from": "transform15",
+        "from": "analysis15",
         "to": "visualization6",
         "kind": "data"
       },
       {
-        "from": "transform16",
+        "from": "analysis16",
         "to": "visualization6",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "transform17",
+        "from": "analysis17",
         "to": "visualization7",
         "kind": "data"
       },
       {
-        "from": "transform18",
+        "from": "analysis18",
         "to": "visualization7",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "transform19",
+        "from": "analysis19",
         "to": "visualization8",
         "kind": "data"
       },
       {
-        "from": "transform20",
+        "from": "analysis20",
         "to": "visualization8",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "transform21",
+        "from": "analysis21",
         "to": "visualization8",
         "kind": "data",
         "slot": 2
       },
       {
-        "from": "transform22",
+        "from": "analysis22",
         "to": "visualization9",
         "kind": "data"
       },
       {
-        "from": "transform23",
+        "from": "analysis23",
         "to": "visualization9",
         "kind": "data",
         "slot": 1
       },
       {
-        "from": "transform24",
+        "from": "analysis24",
         "to": "visualization9",
         "kind": "data",
         "slot": 2
+      },
+      {
+        "from": "loader1",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis5",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "analysis6",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "analysis7",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
+        "to": "analysis15",
+        "kind": "data"
+      },
+      {
+        "from": "loader3",
+        "to": "analysis16",
+        "kind": "data"
+      },
+      {
+        "from": "loader4",
+        "to": "analysis17",
+        "kind": "data"
+      },
+      {
+        "from": "loader4",
+        "to": "analysis18",
+        "kind": "data"
+      },
+      {
+        "from": "loader5",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader5",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "loader5",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "loader6",
+        "to": "analysis8",
+        "kind": "data"
+      },
+      {
+        "from": "loader6",
+        "to": "analysis9",
+        "kind": "data"
+      },
+      {
+        "from": "loader6",
+        "to": "analysis10",
+        "kind": "data"
+      },
+      {
+        "from": "loader7",
+        "to": "analysis19",
+        "kind": "data"
+      },
+      {
+        "from": "loader7",
+        "to": "analysis20",
+        "kind": "data"
+      },
+      {
+        "from": "loader7",
+        "to": "analysis21",
+        "kind": "data"
+      },
+      {
+        "from": "loader8",
+        "to": "analysis22",
+        "kind": "data"
+      },
+      {
+        "from": "loader8",
+        "to": "analysis23",
+        "kind": "data"
+      },
+      {
+        "from": "loader8",
+        "to": "analysis24",
+        "kind": "data"
+      },
+      {
+        "from": "loader9",
+        "to": "analysis11",
+        "kind": "data"
+      },
+      {
+        "from": "loader9",
+        "to": "analysis12",
+        "kind": "data"
+      },
+      {
+        "from": "loader9",
+        "to": "analysis13",
+        "kind": "data"
+      },
+      {
+        "from": "loader9",
+        "to": "analysis14",
+        "kind": "data"
       }
     ],
     "sources": {
@@ -602,7 +602,7 @@
       "outputKind": "dataframe"
     },
     {
-      "ref": "transform1",
+      "ref": "analysis1",
       "mustMention": [
         "case"
       ],
@@ -691,5 +691,5 @@
     ],
     "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the datasets' identifiers only. The nine datasets are Curio's example tables, written by its seeded script and published under MIT."
   },
-  "notes": "Nine rows, one per example table: per scenario a Data Transformation node whose Case widget keeps that scenario's rows, and one of the Vega-Lite package's charts taking each scenario's node on an input of its own, its columns set in its widgets. Twenty-one scenarios; each storm's holds a node of each of the two storm tables."
+  "notes": "Nine rows, one per example table: per scenario a Python Computation node whose Case widget keeps that scenario's rows, and one of the Vega-Lite package's charts taking each scenario's node on an input of its own, its columns set in its widgets. Twenty-one scenarios; each storm's holds a node of each of the two storm tables."
 }

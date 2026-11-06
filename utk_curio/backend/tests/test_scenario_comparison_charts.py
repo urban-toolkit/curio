@@ -42,7 +42,7 @@ COMPARISON_DIR = "curio.vega-lite@1"
 COMPARISON = REPO_ROOT / "packages" / COMPARISON_DIR
 
 LOAD = "curio.builtin/data-loading"
-KEEP = "curio.builtin/data-transformation"
+KEEP = "curio.builtin/computation-analysis"
 
 STORMS = ["10-year storm", "50-year storm", "100-year storm"]
 
@@ -110,7 +110,7 @@ def _dataset_read_by(node: dict) -> str:
 
 
 def _row(flow: dict, dataset_id: str) -> dict:
-    """The table's row of the dataflow: its loader, its Data Transformation
+    """The table's row of the dataflow: its loader, its Python Computation
     nodes in the order of the chart's circles, and the chart they feed."""
     by_id = {node["id"]: node for node in flow["nodes"]}
     [loader] = [node for node in _of_type(flow, LOAD) if _dataset_read_by(node) == dataset_id]
@@ -288,7 +288,7 @@ def test_each_chart_takes_its_scenarios_in_the_order_of_their_boxes():
 
 def test_every_chart_is_a_vega_lite_package_chart_fed_by_its_scenarios_nodes_alone():
     """Nine charts, each a node of the Vega-Lite package's that reads only its scenarios'
-    Data Transformation nodes and feeds nothing."""
+    Python Computation nodes and feeds nothing."""
     flow = _flow()
     by_id = {node["id"]: node for node in flow["nodes"]}
     charts = [node for node in flow["nodes"] if node["type"] in CHART_TYPES]

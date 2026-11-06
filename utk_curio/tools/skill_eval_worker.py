@@ -11,8 +11,8 @@ runs, so no sandbox either.
 
 - **The model:** the endpoint of ``CURIO_EVAL_BASE_URL``, ``CURIO_EVAL_API_KEY``
   and ``CURIO_EVAL_MODEL`` becomes the Deployment default every account
-  answers with, set in this process's settings (``config.DEFAULT_LLM_*``), as
-  an operator sets it. So every call goes through the provider code API
+  answers with, set in this process's settings (``config.DEFAULT_LLM_ENDPOINTS``),
+  as an operator's endpoint file sets it. So every call goes through the provider code API
   Settings uses, and the key is written nowhere: not in an LLM configuration,
   not in the state folder.
 - **A run:** a new evaluation account, made for it and for each try of it,
@@ -120,6 +120,7 @@ from utk_curio.backend.app.agents.evaluation import run_context, skill_evals  # 
 from utk_curio.backend.app.agents.evaluation.report import scrub  # noqa: E402
 from utk_curio.backend.app.agents.infrastructure import provider_config, providers  # noqa: E402
 from utk_curio.backend.extensions import db  # noqa: E402
+from utk_curio.common import llm_endpoint  # noqa: E402
 
 #: The base entry's page that holds the grader's words, and its two sections.
 GRADER_PAGE = "skill-evals.md"
@@ -151,8 +152,9 @@ PROJECT_NAME = "My dataflow"
 #: and the handle its username and email are made from.
 ACCOUNT_NAME = "Skill evaluation"
 ACCOUNT_HANDLE = "evaluation"
-#: The settings a Deployment default is read from (``provider_config``).
+#: The endpoint a Deployment default is read from (``provider_config``).
 OPENAI_COMPATIBLE = "openai_compatible"
+EVAL_ENDPOINT_NAME = "Evaluation endpoint"
 #: Loggers that print each request's URL at their INFO level.
 _URL_LOGGERS = ("httpx", "httpcore", "openai", "urllib3")
 
@@ -571,11 +573,12 @@ class Worker:
         db.create_all()
         self._sign_in()
         self.client = self.app.test_client()
-        # The endpoint, as an operator's Deployment default: read at each call.
-        backend_config.DEFAULT_LLM_API_TYPE = OPENAI_COMPATIBLE
-        backend_config.DEFAULT_LLM_BASE_URL = endpoint.base_url
-        backend_config.DEFAULT_LLM_API_KEY = endpoint.api_key
-        backend_config.DEFAULT_LLM_MODEL = endpoint.model
+        # The endpoint, as an operator's endpoint file's one endpoint: its
+        # model is the Deployment default, read at each call.
+        backend_config.DEFAULT_LLM_ENDPOINTS = (llm_endpoint.Endpoint(
+            name=EVAL_ENDPOINT_NAME, api_type=OPENAI_COMPATIBLE, base_url=endpoint.base_url,
+            api_key=endpoint.api_key, models=(endpoint.model,),
+        ),)
         self.seams = _Seams()
         self.seams.install()
 

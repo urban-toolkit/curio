@@ -653,7 +653,7 @@ ZIPS_EXAMPLE = "02-vega-lite-spatial-density.json"
 #: longest first, selected with ``{"name": "zip_select", "select": {"type":
 #: "point", "fields": ["zip"], "toggle": "event.shiftKey"}}``.
 ZIP_BARS_ID = "d23e2587-57bf-4db4-84fe-cdb7c2de638d"
-#: Example 02's data transformation node, which holds the tag on that chart.
+#: Example 02's Python Computation node, which holds the tag on that chart.
 ZIP_TAG_NODE_ID = "e5e7e21f-609d-496b-b231-659ee91ff9af"
 
 # What one field reads in the tooltip of the mark under the pointer: Curio's

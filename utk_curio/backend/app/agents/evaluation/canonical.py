@@ -14,7 +14,7 @@ section 19: *a curated semantic-output rubric rather than byte equality*).
 
 The canonical form is order-independent, and that takes more than sorting by
 attributes: a graph whose nodes carry identical attributes (example 01's three
-Data Transformation nodes, example 05's five loaders) would otherwise hand its
+Python Computation nodes, example 05's five loaders) would otherwise hand its
 indices out in file order, so reversing the file would reverse the edges. So
 the node order is a canonical LABELING -- colour refinement to a fixed point,
 then individualization with backtracking, keeping the lexicographically
@@ -313,7 +313,7 @@ def _refine(colors: list, in_adj: list, out_adj: list, out_slots: bool = False) 
 
     A node's next colour is its current colour plus the multiset of its
     incoming ``(colour, kind, slot)`` and outgoing ``(colour, kind)`` -- so a
-    Data Transformation that feeds two charts separates from one that feeds a
+    Python Computation that feeds two charts separates from one that feeds a
     single chart without either of them being named. With *out_slots*, an
     outgoing edge's circle counts too, ``(colour, kind, slot)``: the nodes
     that feed one node's circles then separate by circle.

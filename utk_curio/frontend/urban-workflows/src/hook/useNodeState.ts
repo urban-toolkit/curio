@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { NodeTemplateId } from '../registry/types';
 import { ICodeDataContent, MissingModuleNotice } from '../types';
 import { Starter, useStarterContext } from '../providers/StarterProvider';
@@ -35,12 +35,33 @@ export function useNodeState(data: any, nodeType: NodeTemplateId) {
   const { user } = useUserContext();
   const { projectId } = useFlowContext();
 
+  // The data the code was last written on: the code it held before, and the
+  // code it holds for the editor to take (`defaultCode`).
+  const writtenRef = useRef<{ data: any; before: unknown; defaultCode: unknown } | null>(null);
+
   useEffect(() => {
+    writtenRef.current = { data, before: data.code, defaultCode: data.defaultCode };
     data.code = code;
     // The flow's state does not see this write, so a view that reads every
     // node's code (codeEdits) is told here.
     noteCodeEdit();
   }, [code]);
+
+  // The canvas can hand the node a copy of its data made just before that
+  // write: a run's result that lands in the render a keystroke does spreads
+  // the data as it was, while React Flow, which takes the canvas's nodes in
+  // an effect, still draws the node with the data written on. The copy holds
+  // the code from before the write and the same code for the editor, so the
+  // editor's code is written on it too. Data that brings the editor other
+  // code keeps it, and the editor's change writes it here once taken.
+  useEffect(() => {
+    const written = writtenRef.current;
+    if (!written || written.data === data) return;
+    writtenRef.current = { data, before: data.code, defaultCode: data.defaultCode };
+    if (data.code === code || data.code !== written.before || data.defaultCode !== written.defaultCode) return;
+    data.code = code;
+    noteCodeEdit();
+  }, [data]);
 
   // Mirrored by direct mutation rather than setNodes, deliberately: a setNodes
   // per keystroke re-rendered the whole canvas (dev/70). reactFlow.getNodes()

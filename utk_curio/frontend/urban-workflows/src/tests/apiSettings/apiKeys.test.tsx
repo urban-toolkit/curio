@@ -3,11 +3,12 @@ import { act, render, screen, waitFor, fireEvent, within } from "@testing-librar
 
 /**
  * API Settings, API keys: every key the account uses in one list, and one "Add
- * configuration" whose Kind picks what is added. The language models are
- * tested in llmConfigurations.test.tsx; this file covers the other two kinds.
- * A data source key the Discovery Catalog sends (the Hugging Face and Socrata
- * tokens among them), drawn from the server's list; and a key node code reads
- * by name, bound to one host. Every key is write-only.
+ * configuration" (the + at the end of the list's header) whose Kind picks what
+ * is added. A row the account owns ends with Remove and Edit. The language
+ * models are tested in llmConfigurations.test.tsx; this file covers the other
+ * two kinds. A data source key the Discovery Catalog sends (the Hugging Face
+ * and Socrata tokens among them), drawn from the server's list; and a key node
+ * code reads by name, bound to one host. Every key is write-only.
  */
 
 const SIGNED_IN = { is_guest: false };
@@ -26,8 +27,8 @@ jest.mock("../../providers/UserProvider", () => ({
   }),
 }));
 
-// No language model of the account's own and no Deployment default, so the
-// list holds only the kinds this file is about.
+// No language model of the account's own and no endpoint file, so the list
+// holds only the kinds this file is about.
 let mockLlmEditable = true;
 jest.mock("../../api/llmConfigsApi", () => ({
   llmConfigsApi: {
@@ -35,7 +36,7 @@ jest.mock("../../api/llmConfigsApi", () => ({
       Promise.resolve({
         configs: [],
         default: null,
-        deployment: { label: "Deployment default", endpointOffered: false, apiType: null, baseUrlHost: null, model: null },
+        deployment: { label: "Curio's default", apiType: null, model: null, endpoints: [] },
         active: { source: null, error: "No LLM configuration answers this run." },
         editable: mockLlmEditable,
         reason: mockLlmEditable ? null : "LLM configurations are not available to guests on this Curio.",
@@ -117,6 +118,9 @@ const labelOf = (id: string) => document.querySelector(`label[for="${id.slice(1)
 const rowOf = async (name: string) => (await screen.findByText(name, { selector: "td" })).closest("tr")!;
 const kindSelect = () => screen.getByLabelText("Kind") as HTMLSelectElement;
 const kindValues = () => Array.from(kindSelect().options).map((o) => o.value);
+/** A row's buttons, by accessible name, in order, with their tooltips. */
+const buttonsOf = (row: HTMLElement) =>
+  within(row).queryAllByRole("button").map((b) => [b.getAttribute("aria-label"), b.getAttribute("data-tooltip")]);
 
 /** "Add configuration", then the given Kind. */
 const addKind = async (value: string) => {
@@ -152,11 +156,37 @@ describe("API keys", () => {
     expect(screen.getByRole("tab", { name: "API keys" })).toHaveAttribute("aria-selected", "true");
     const table = await screen.findByRole("table");
     expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
-      "Name", "Kind", "Details", "Key", "Actions",
+      "Name", "Kind", "Details", "Actions",
     ]);
     await waitFor(() => expect(table).toHaveTextContent("census"));
     expect(await rowOf("Hugging Face token")).toHaveTextContent("Data source");
     expect(await rowOf("census")).toHaveTextContent("Node code");
+  });
+
+  it("ends every row the account owns with Remove, then Edit, and no text buttons", async () => {
+    mockKeyRows = [HF_ROW({ present: true }), SOCRATA_ROW({ inherited: true })];
+    mockKeys = [{ name: "census", host: "api.census.gov", delivery: "code", use: "", createdAt: 1, lastUsedAt: null }];
+    open();
+    expect(buttonsOf(await rowOf("Hugging Face token"))).toEqual([
+      ["Remove Hugging Face token", "Remove"], ["Edit Hugging Face token", "Edit"],
+    ]);
+    expect(buttonsOf(await rowOf("census"))).toEqual([["Remove census", "Remove"], ["Edit census", "Edit"]]);
+    // A key this Curio sets is not the account's: it has neither.
+    expect(buttonsOf(await rowOf("Socrata app token"))).toEqual([]);
+    expect(screen.queryByRole("button", { name: /^(Replace|Override) / })).toBeNull();
+    expect(screen.getByRole("table").querySelectorAll("[title]")).toHaveLength(0);
+  });
+
+  it("Add configuration is the + at the end of the list's header", async () => {
+    open();
+    const table = await screen.findByRole("table");
+    const add = within(table).getByRole("button", { name: "Add configuration" });
+    expect(add.closest("th")).not.toBeNull();
+    expect(add).toHaveAttribute("data-tooltip", "Add configuration");
+    // With nothing saved the list says so under its header.
+    expect(table).toHaveTextContent("No keys yet.");
+    fireEvent.click(add);
+    expect(kindSelect().value).toBe("llm");
   });
 
   it("offers no provider form of its own", async () => {
@@ -201,8 +231,9 @@ describe("a data source key: the Hugging Face token", () => {
   it("says a token is saved without ever showing it", async () => {
     mockKeyRows = [HF_ROW({ present: true }), SOCRATA_ROW()];
     open();
-    expect(await rowOf("Hugging Face token")).toHaveTextContent("saved");
-    fireEvent.click(screen.getByRole("button", { name: "Replace Hugging Face token" }));
+    expect(await rowOf("Hugging Face token")).toHaveTextContent("Key saved");
+    fireEvent.click(screen.getByRole("button", { name: "Edit Hugging Face token" }));
+    expect(screen.getByRole("heading", { name: "Replace Hugging Face token" })).toBeInTheDocument();
     expect(field(HF_ID)!.value).toBe("");
     expect(field(HF_ID)!.placeholder).toContain("unchanged");
   });
@@ -325,12 +356,12 @@ describe("a key for node code (dev/116)", () => {
     await waitFor(() => expect(screen.queryByText("census", { selector: "td" })).toBeNull());
   });
 
-  it("Replace keeps the name and the host, and asks for the key again", async () => {
+  it("Edit keeps the name and the host, and asks for the key again", async () => {
     mockKeys = [CENSUS];
     mockPut.mockResolvedValue({ key: CENSUS });
     open();
-    await rowOf("census");
-    fireEvent.click(screen.getByRole("button", { name: "Replace census" }));
+    expect(await rowOf("census")).toHaveTextContent("Key saved");
+    fireEvent.click(screen.getByRole("button", { name: "Edit census" }));
     const editor = within(screen.getByTestId("node-key-editor"));
     expect(editor.getByRole("heading", { name: "Replace census" })).toBeInTheDocument();
     expect((editor.getByLabelText("Name") as HTMLInputElement).readOnly).toBe(true);
@@ -396,8 +427,8 @@ describe("a data source key: the Socrata app token", () => {
     mockKeyRows = [HF_ROW(), SOCRATA_ROW({ present: true })];
     open();
     await rowOf("Socrata app token");
-    fireEvent.click(screen.getByRole("button", { name: "Replace Socrata app token" }));
-    expect(labelOf(SOCRATA_ID)).toContain("(saved - leave blank to keep)");
+    fireEvent.click(screen.getByRole("button", { name: "Edit Socrata app token" }));
+    expect(labelOf(SOCRATA_ID)).toContain("(saved, leave blank to keep)");
     expect(field(SOCRATA_ID)!.value).toBe("");
     expect(field(SOCRATA_ID)!.placeholder).toContain("unchanged");
   });
@@ -463,18 +494,20 @@ describe("a deployment-supplied portal token", () => {
     // authenticates you.
     mockKeyRows = [HF_ROW(), SOCRATA_ROW({ inherited: true })];
     open();
-    expect(await rowOf("Socrata app token")).toHaveTextContent("set by this Curio");
+    expect(await rowOf("Socrata app token")).toHaveTextContent("Set by this Curio");
     expect(screen.queryByRole("button", { name: "Remove Socrata app token" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Override Socrata app token" }));
-    expect(labelOf(SOCRATA_ID)).toContain("inherited");
+    expect(screen.queryByRole("button", { name: "Edit Socrata app token" })).toBeNull();
+    // Overriding it is adding the account's own.
+    await addKind("source:socrata.app-token");
+    expect(labelOf(SOCRATA_ID)).toContain("(inherited, leave blank to use it)");
     expect(screen.getByText(/Leave this blank to use it/)).toBeInTheDocument();
   });
 
   it("a token you saved yourself takes precedence in the copy", async () => {
     mockKeyRows = [HF_ROW(), SOCRATA_ROW({ present: true, inherited: true })];
     open();
-    expect(await rowOf("Socrata app token")).toHaveTextContent("saved");
-    fireEvent.click(screen.getByRole("button", { name: "Replace Socrata app token" }));
+    expect(await rowOf("Socrata app token")).toHaveTextContent("Key saved");
+    fireEvent.click(screen.getByRole("button", { name: "Edit Socrata app token" }));
     expect(labelOf(SOCRATA_ID)).toContain("saved");
     expect(labelOf(SOCRATA_ID)).not.toContain("inherited");
   });

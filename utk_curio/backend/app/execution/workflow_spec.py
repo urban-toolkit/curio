@@ -81,15 +81,13 @@ GRAMMAR_TYPES = {"VIS_VEGA", "AUTK_GRAMMAR"}
 # These tables are the OFFLINE FALLBACK (DEC-076): the template roster decides
 # executability whenever it is reachable; do not grow them.
 PY_CODE_TYPES = {
-    "DATA_LOADING", "DATA_TRANSFORMATION", "DATA_EXPORT",
-    "COMPUTATION_ANALYSIS",
+    "DATA_LOADING", "DATA_EXPORT", "COMPUTATION_ANALYSIS",
 }
 CODE_TYPES = PY_CODE_TYPES | {"JS_COMPUTATION"}
 
 # The CODE_TYPES that render a "code" tab with a Monaco editor: all of them.
 CODE_EDITOR_TYPES = {
-    "DATA_LOADING", "DATA_TRANSFORMATION", "DATA_EXPORT",
-    "COMPUTATION_ANALYSIS",
+    "DATA_LOADING", "DATA_EXPORT", "COMPUTATION_ANALYSIS",
     "JS_COMPUTATION",
 }
 
@@ -103,7 +101,6 @@ CODE_EDITOR_TYPES = {
 # Legacy uppercase ids that already appear in JSON pass through unchanged.
 NAMESPACED_TO_LEGACY: dict[str, str] = {
     "curio.builtin/data-loading":         "DATA_LOADING",
-    "curio.builtin/data-transformation":  "DATA_TRANSFORMATION",
     "curio.builtin/data-export":          "DATA_EXPORT",
     "curio.builtin/computation-analysis": "COMPUTATION_ANALYSIS",
     "curio.builtin/data-summary":         "DATA_SUMMARY",

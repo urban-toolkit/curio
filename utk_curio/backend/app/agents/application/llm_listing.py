@@ -1,5 +1,6 @@
-"""``GET /api/agents/llm``: the account's configurations without keys, its default, the deployment's offer,
-what answers a run now, the agents whose configuration it may choose, and whether this account may change any of it.
+"""``GET /api/agents/llm``: the account's configurations without keys, its default, this Curio's own endpoints
+and their models, what answers a run now, the agents whose choice it may make, and whether this account may change
+any of it.
 
 Application layer of the agents package (re-derived on enh/agent-catalog): cut from
 ``infrastructure/provider_config.py`` because it composes the configuration store with the agents
@@ -34,11 +35,9 @@ def llm_listing(user) -> dict:
     else:
         store = llm_configs.default_store()
         configs = store.list(user_key)
+        # A configuration id, a pick of one of this Curio's models, or None
+        # for Curio's default.
         default = store.default_id(user_key)
-        for entry in configs:
-            if entry["endpoint"] == llm_configs.ENDPOINT_DEPLOYMENT:
-                entry["apiType"] = deployment["apiType"] or ""
-                entry["baseUrlHost"] = deployment["baseUrlHost"] or ""
         stored = store.choices(user_key)
         agents = []
         for row in agents_catalog.choosable_agents(user_key):

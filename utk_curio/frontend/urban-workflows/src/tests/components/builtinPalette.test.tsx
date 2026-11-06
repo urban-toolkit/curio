@@ -49,12 +49,11 @@ const mockBuiltin = [
     { id: "curio.builtin/data-loading@1", label: "Data Loading", category: "data" },
     { id: "curio.builtin/data-export@1", label: "Data Export", category: "data" },
     { id: "curio.builtin/computation-analysis@1", label: "Python Computation", category: "computation" },
-    { id: "curio.builtin/data-transformation@1", label: "Data Transformation", category: "data" },
+    { id: "curio.builtin/data-summary@1", label: "Data Summary", category: "data" },
     { id: "curio.builtin/spatial-join@1", label: "Spatial Join", category: "data" },
     { id: "curio.builtin/autk-grammar@1", label: "Autark", category: "vis_grammar", badge: "AUTK" },
     { id: "curio.builtin/vis-vega@1", label: "Vega-Lite", category: "vis_grammar", badge: "VEGA" },
     { id: "curio.builtin/vis-simple@1", label: "Simple View", category: "vis_simple" },
-    { id: "curio.builtin/data-summary@1", label: "Data Summary", category: "computation" },
     { id: "curio.builtin/js-computation@1", label: "JS Computation", category: "computation" },
     { id: "curio.builtin/data-pool@1", label: "Data Pool", category: "data" },
     { id: "curio.builtin/edit-features@1", label: "Map Editor", category: "data" },
@@ -86,8 +85,8 @@ import ToolsMenu from "../../components/menus/nodes/ToolsMenu";
 /** The groups the tiles came in before, top to bottom: data and flow, then
  *  computation, then the views. */
 const GROUPS = [
-    ["data-loading", "data-export", "data-transformation", "spatial-join", "data-pool", "edit-features", "note"],
-    ["computation-analysis", "data-summary", "js-computation"],
+    ["data-loading", "data-export", "data-summary", "spatial-join", "data-pool", "edit-features", "note"],
+    ["computation-analysis", "js-computation"],
     ["autk-grammar", "vis-vega", "vis-simple"],
 ];
 

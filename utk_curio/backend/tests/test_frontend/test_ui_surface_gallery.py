@@ -59,7 +59,7 @@ USER_NAME = "UI Gallery User"
 # canvas border and the thumbnail's bars are coloured by, so this spec is the
 # fixture behind "does a catalog package match its canvas node".
 CATEGORY_NODES = [
-    ("gallery-data", "curio.builtin/data-transformation", 240, 140),
+    ("gallery-data", "curio.builtin/data-loading", 240, 140),
     ("gallery-computation", "curio.builtin/computation-analysis", 240, 340),
     ("gallery-vis", "curio.builtin/vis-vega", 240, 540),
 ]

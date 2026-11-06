@@ -19,7 +19,6 @@
   "agent.curio.node-builder@1 dataset.fetch.author": 58500,
   "agent.curio.node-builder@1 node.content.generate, curio.builtin/data-loading": 57800,
   "agent.curio.node-builder@1 node.content.generate, curio.builtin/computation-analysis": 57800,
-  "agent.curio.node-builder@1 node.content.generate, curio.builtin/data-transformation": 58200,
   "agent.curio.node-builder@1 node.content.generate, curio.builtin/js-computation": 57800,
   "agent.curio.node-builder@1 node.content.generate, curio.builtin/vis-vega": 51200,
   "agent.curio.node-builder@1 node.content.generate, curio.builtin/autk-grammar": 47300,

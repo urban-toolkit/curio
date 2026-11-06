@@ -302,7 +302,7 @@ class TestIsolatedChild(unittest.TestCase):
             ("return input_0['x']", "nothing arrived on input circle 0"),
         ):
             isolated = self._run(code)
-            in_process = worker.execute_code(textwrap.indent(code, "    "), "", "DATA_TRANSFORMATION", "",
+            in_process = worker.execute_code(textwrap.indent(code, "    "), "", "COMPUTATION_ANALYSIS", "",
                                              session_id=None)
             isolated_line = isolated["stderr"].strip().splitlines()[-1]
             self.assertIn(said, isolated_line)

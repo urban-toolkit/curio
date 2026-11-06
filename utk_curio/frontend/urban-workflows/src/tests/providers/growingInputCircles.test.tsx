@@ -131,7 +131,7 @@ function descriptor(id: string, inputCardinality: string | null): NodeDescriptor
 beforeAll(() => {
   registerNode(descriptor('curio.builtin/data-loading@1', null));
   registerNode(descriptor('curio.builtin/computation-analysis@1', '[1,n]'));
-  registerNode(descriptor('curio.builtin/data-transformation@1', '[1,2]'));
+  registerNode(descriptor('acme.steps/two-inputs@1', '[1,2]'));
   registerNode(descriptor('curio.builtin/data-summary@1', '1'));
 });
 
@@ -295,7 +295,7 @@ describe('edges into a growing node', () => {
   });
 
   test('past the maximum an edge is refused, naming it', async () => {
-    await fanIn('curio.builtin/data-transformation@1');
+    await fanIn('acme.steps/two-inputs@1');
     await connect('a', 't');
     await connect('b', 't');
     await connect('c', 't');

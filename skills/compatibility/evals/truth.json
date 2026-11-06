@@ -32,7 +32,7 @@
       "case": 1,
       "name": "golden",
       "kind": "golden",
-      "source": "packages/curio.builtin@1/manifest.json's ports: a Vega-Lite node (vis-vega) takes a DATAFRAME or a GEODATAFRAME, a Python node (data-transformation, computation-analysis) takes and returns more; docs/examples/dataflows/default-workflow.json node 7877e099-7c1b-4496-8be7-43264794aea4, whose content returns a list (random_array)",
+      "source": "packages/curio.builtin@1/manifest.json's ports: a Vega-Lite node (vis-vega) takes a DATAFRAME or a GEODATAFRAME, a Python node (computation-analysis) takes and returns more; docs/examples/dataflows/default-workflow.json node 7877e099-7c1b-4496-8be7-43264794aea4, whose content returns a list (random_array)",
       "fails": [],
       "reply": "The node 7877e099-7c1b-4496-8be7-43264794aea4 returns a list, and a Vega-Lite node takes only a DataFrame or a GeoDataFrame, so the plan does not feed the list to the chart. A Python node, Numbers as a table, turns the list into a DataFrame first, and the new Vega-Lite node receives exactly one data edge, from that node.",
       "changes": {
@@ -44,7 +44,7 @@
                 "goal": "Numbers as a table \u2014 Turn the list of 11 random numbers into a DataFrame, one row per number with its place and its value, for the bar chart.",
                 "id": "a4d4c8c8-ff2c-4212-ad6e-7ed28da190c2",
                 "title": "Numbers as a table",
-                "type": "curio.builtin/data-transformation"
+                "type": "curio.builtin/computation-analysis"
               },
               {
                 "content": "",
@@ -83,7 +83,7 @@
               "+2 nodes · +2 connections",
               "2 pending for Build & validate or Solve",
               "agents attached: Node Builder ×2",
-              "no Dataset Finder: does not attach to data-transformation nodes",
+              "no Dataset Finder: does not attach to computation-analysis nodes",
               "Topology: acyclic."
             ],
             "undo": true
@@ -100,7 +100,7 @@
             "nodes": [
               {
                 "ref": "numbers-table",
-                "nodeType": "curio.builtin/data-transformation",
+                "nodeType": "curio.builtin/computation-analysis",
                 "title": "Numbers as a table",
                 "intent": "Turn the list of 11 random numbers into a DataFrame, one row per number with its place and its value, for the bar chart."
               },
@@ -135,7 +135,7 @@
         2,
         3
       ],
-      "reply": "Here is the plan:\n\n```json\n{\n  \"goal\": \"Chart the 11 random numbers as a bar chart in Vega-Lite.\",\n  \"nodes\": [\n    {\n      \"ref\": \"numbers-table\",\n      \"nodeType\": \"curio.builtin/data-transformation\",\n      \"title\": \"Numbers as a table\",\n      \"intent\": \"Turn the list of 11 random numbers into a DataFrame, one row per number with its place and its value, for the bar chart.\"\n    },\n    {\n      \"ref\": \"numbers-chart\",\n      \"nodeType\": \"curio.builtin/vis-vega\",\n      \"title\": \"Random numbers\",\n      \"intent\": \"A bar chart of the 11 random numbers, one bar per number.\"\n    }\n  ],\n  \"edges\": [\n    {\n      \"from\": \"7877e099-7c1b-4496-8be7-43264794aea4\",\n      \"to\": \"numbers-table\"\n    },\n    {\n      \"from\": \"numbers-table\",\n      \"to\": \"numbers-chart\"\n    }\n  ]\n}\n```",
+      "reply": "Here is the plan:\n\n```json\n{\n  \"goal\": \"Chart the 11 random numbers as a bar chart in Vega-Lite.\",\n  \"nodes\": [\n    {\n      \"ref\": \"numbers-table\",\n      \"nodeType\": \"curio.builtin/computation-analysis\",\n      \"title\": \"Numbers as a table\",\n      \"intent\": \"Turn the list of 11 random numbers into a DataFrame, one row per number with its place and its value, for the bar chart.\"\n    },\n    {\n      \"ref\": \"numbers-chart\",\n      \"nodeType\": \"curio.builtin/vis-vega\",\n      \"title\": \"Random numbers\",\n      \"intent\": \"A bar chart of the 11 random numbers, one bar per number.\"\n    }\n  ],\n  \"edges\": [\n    {\n      \"from\": \"7877e099-7c1b-4496-8be7-43264794aea4\",\n      \"to\": \"numbers-table\"\n    },\n    {\n      \"from\": \"numbers-table\",\n      \"to\": \"numbers-chart\"\n    }\n  ]\n}\n```",
       "changes": {
         "changed": {},
         "cards": [],
@@ -282,7 +282,7 @@
       "case": 3,
       "name": "golden",
       "kind": "golden",
-      "source": "packages/curio.builtin@1/manifest.json's ports: a Vega-Lite node (vis-vega) takes a DATAFRAME or a GEODATAFRAME, a Python node (data-transformation, computation-analysis) takes and returns more; a GeoTIFF dataset read as a raster (skills/node-functions/SKILL.md's curio_load_data, as docs/examples/dataflows/quad-cities-flood-vulnerability.json's depth loaders read data.scout.flood-depth-2050-2080-no-nbs) and its cells read into a table in Python, as that example's node 34326814-c132-4eb4-9d73-268368968592 reads them (depth.read(1, masked=True))",
+      "source": "packages/curio.builtin@1/manifest.json's ports: a Vega-Lite node (vis-vega) takes a DATAFRAME or a GEODATAFRAME, a Python node (computation-analysis) takes and returns more; a GeoTIFF dataset read as a raster (skills/node-functions/SKILL.md's curio_load_data, as docs/examples/dataflows/quad-cities-flood-vulnerability.json's depth loaders read data.scout.flood-depth-2050-2080-no-nbs) and its cells read into a table in Python, as that example's node 34326814-c132-4eb4-9d73-268368968592 reads them (depth.read(1, masked=True))",
       "fails": [],
       "reply": "A Vega-Lite node takes only a DataFrame or a GeoDataFrame, so no edge carries the raster itself into the chart. The plan loads the raster, then a Python node turns its cells into a table of positions and depths, one row per cell that holds a depth, and that table is the one data edge the Vega-Lite heatmap receives.",
       "changes": {

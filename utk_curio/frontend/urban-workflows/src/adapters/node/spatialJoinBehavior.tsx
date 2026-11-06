@@ -3,7 +3,7 @@ import { useEdges, Position } from 'reactflow';
 import { NodeBehaviorHook, HandleDef } from '../../registry/types';
 import { useFlowContext } from '../../providers/FlowProvider';
 import { useToastContext } from '../../providers/ToastProvider';
-import { fetchData } from '../../services/api';
+import { fetchData, storeOutput } from '../../services/api';
 import { askedOfPage } from '../../services/runs/dashboardRunSteps';
 import { backendUrl } from '../../utils/backendUrl';
 import { inputSlotOf, isDataEdge, slotHandleId } from '../../utils/inputSlots';
@@ -220,8 +220,13 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
         }
         return r.json();
       })
-      .then(fc => {
+      .then(async fc => {
         if (!aliveRef.current) return;
+        // The pairs go downstream as a stored output, as a run's do: a Python
+        // or JavaScript node reads only a stored output, and a save records
+        // only those (#1333).
+        const stored = await storeOutput(node.nodeId, { data: fc, dataType: 'geodataframe' });
+        if (!aliveRef.current || controller.signal.aborted) return;
         const meta = fc?.metadata ?? {};
         const count = (v: unknown) => (typeof v === 'number' ? v : 0);
         const warnings: string[] = Array.isArray(meta.warnings) ? meta.warnings : [];
@@ -236,7 +241,7 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
         });
         // Downstream first, then the outcome: the outcome is what tells a run
         // this node is done, and the nodes it feeds must have the rows by then.
-        node.outputCallback(node.nodeId, { data: fc, dataType: 'geodataframe' });
+        node.outputCallback(node.nodeId, stored);
         // A warning is still a completed join - downstream gets data - but the
         // node says so where the user is looking, and once as a toast.
         outcomeRef.current = { code: 'success', content: warnings.join('\n') };
@@ -272,7 +277,7 @@ export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   // What each circle holds, read circle by circle. Not `data.input`: that
   // names only the latest arrival, and when both inputs landed in one render
-  // (a Run All of example 10 handed a join the Data Transformation's polygons
+  // (a Run All of example 10 handed a join the Python Computation's polygons
   // and a Simple View's points 50 ms apart) this effect saw only the second,
   // and the join said it had nothing to join when the run asked it. A
   // circle's value is resolved once, when it changes.

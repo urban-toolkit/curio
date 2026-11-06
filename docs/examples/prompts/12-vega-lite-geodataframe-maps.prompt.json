@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/12-vega-lite-geodataframe-maps.json",
-    "sha256": "7f88c02c9b6a3046e64dc7d60270586ee140b87c6c5d89d119002324e2b7374b",
+    "sha256": "a8bfa1fc243c21baa720122d2a29c86e3c384bc6095dc2e8d5c95b4fb9c56892",
     "walkthrough": "docs/examples/12-vega-lite-geodataframe-maps.md"
   },
   "prompt": "Load the Chicago ZIP boundary polygons from the Data Catalog and draw them as a map straight from the frame, without converting anything first. Then take the centroid of each polygon and show a second map with the polygons and their centre points together, and add an ordinary non-spatial chart off the same table so I can see the attributes beside the geometry.",
@@ -19,16 +19,16 @@
   "expected": {
     "nodes": [
       {
-        "ref": "loader1",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "transform1",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
         "executable": true,
         "hasContent": true
       },
@@ -56,13 +56,13 @@
     ],
     "edges": [
       {
-        "from": "loader1",
-        "to": "transform1",
+        "from": "analysis1",
+        "to": "visualization1",
         "kind": "data"
       },
       {
         "from": "loader1",
-        "to": "visualization1",
+        "to": "analysis1",
         "kind": "data"
       },
       {
@@ -71,7 +71,7 @@
         "kind": "data"
       },
       {
-        "from": "transform1",
+        "from": "loader1",
         "to": "visualization3",
         "kind": "data"
       }

@@ -292,14 +292,14 @@ Some sources take an API key. Mapillary and Google Street View need one. The Cit
    - **Hugging Face token**: at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens), create a token with read access.
    - **Socrata app token**: sign up at [evergreen.data.socrata.com](https://evergreen.data.socrata.com/signup) and create an app token.
 2. **Open API Settings** from the top bar. On `/projects` and the catalog pages it opens the settings page; on the canvas it opens on the right side. A source's **Add yours in API Settings** (**Change it in API Settings** once a key is saved), in its details, opens API Settings on that key's form.
-3. On the **API keys** tab, click **Add configuration**.
+3. On the **API keys** tab, click **+** (**Add configuration**) at the end of the table's header.
 4. In **Kind**, under **Data source**, choose the key's name. It lists the key of every source on this Curio that takes one: with the sources Curio ships, **Socrata app token**, **Hugging Face token**, **Google Maps API key** and **Mapillary access token**. The form says which sources use it.
 5. **Paste the key** into the field and click **Save**. A line confirms it, for example *Saved the Mapillary access token.*
-6. **Check the list and the card.** The key's row shows **saved** in its **Key** column. In the Discovery Catalog, the source's card reads **Token set** as soon as you save, also on a page that was already open, and its rows download.
+6. **Check the list and the card.** The key's row shows **Key saved** under its name. In the Discovery Catalog, the source's card reads **Token set** as soon as you save, also on a page that was already open, and its rows download.
 
 ### Your key and your account
 
-A key belongs to your account, and is sent only to the sources that use it, each at its own address. A saved key's row offers **Replace** and **Remove**. When whoever runs this Curio set one for everyone, the key is listed with **set by this Curio** in its **Key** column, and its **Override** saves your own key, which takes its place for your account.
+A key belongs to your account, and is sent only to the sources that use it, each at its own address. A saved key's row ends with **x** (**Remove**) and a pencil (**Edit**), which replaces it. When whoever runs this Curio set one for everyone, the key is listed with **Set by this Curio** under its name, and adding the same key with **+** saves your own key, which takes its place for your account.
 
 A guest on a Curio started with `--deploy` cannot save a token. Without `--deploy`, the shared guest saves one like any account, and everyone using that Curio shares it.
 
@@ -476,7 +476,7 @@ Curio reads public S3 buckets, and Hugging Face dataset repositories, with your 
 |---|---|---|
 | `CURIO_DISCOVERY_ROOT` | `--discovery-root` | Reads the shipped sources from this directory instead of `<repo_root>/discovery`. |
 | `CURIO_DISCOVERY_MAX_DOWNLOAD_MB` | `--discovery-max-download-mb` | The largest file a download or a bucket add takes, in megabytes. Default 1024. A source's manifest may set a lower limit for itself. |
-| `CURIO_DEFAULT_SOCRATA_APP_TOKEN` | none | A Socrata app token every account inherits until it saves its own, for the City of Chicago Data Portal. A source whose manifest sets `auth.operatorDefault` reads its key's default from `CURIO_DEFAULT_` and its `auth.secretId` in capitals, with every other character as `_`, never from one of Curio's own settings such as `CURIO_DEFAULT_LLM_API_KEY`. |
+| `CURIO_DEFAULT_SOCRATA_APP_TOKEN` | none | A Socrata app token every account inherits until it saves its own, for the City of Chicago Data Portal. A source whose manifest sets `auth.operatorDefault` reads its key's default from `CURIO_DEFAULT_` and its `auth.secretId` in capitals, with every other character as `_`, never from one of Curio's own settings such as `CURIO_DEFAULT_LLM_ENDPOINT_FILE`. |
 | `CURIO_MEDIA_CACHE_MAX_GB` | `--media-cache-max-gb` | How much each account may hold in cached bucket files and downloaded street-level images, in gigabytes. Default 20. |
 
 **Sources ship with the deployment.** To change or remove a shipped one, edit the sources directory and restart. The Docker image bakes `discovery/` in; see [DEPLOYMENT.md § Configure the stack](DEPLOYMENT.md#1-configure-the-stack).

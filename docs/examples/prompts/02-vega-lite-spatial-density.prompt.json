@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/02-vega-lite-spatial-density.json",
-    "sha256": "d91f163fe19109c8ccd0f29a8d3774b211e3c347920c9bac678cb5533e4f4280",
+    "sha256": "b11784523fc72f536409cb6724f6abff2f895f74112ae7460b39d955dd60d24c",
     "walkthrough": "docs/examples/02-vega-lite-spatial-density.md"
   },
   "prompt": "Using the Chicago green roofs inventory and the zip-coded Chicago neighborhood boundary polygons from the Data Catalog, I want to see where vegetated roof area concentrates. Load the roof inventory, fill in its missing values, and chart the distribution of roof sizes as a histogram. Separately, load the boundary polygons and spatially join the roofs into them so each roof carries its zip code, then fan that joined result out so several views can read it: a dot-density map of the roofs, and a bar chart of the ten zip codes with the most vegetated area, which needs its own aggregation step first.",
@@ -19,6 +19,20 @@
   },
   "expected": {
     "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
       {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
@@ -39,20 +53,6 @@
         "role": "pool",
         "executable": false,
         "hasContent": false
-      },
-      {
-        "ref": "transform1",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform2",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
       },
       {
         "ref": "visualization1",
@@ -78,32 +78,32 @@
     ],
     "edges": [
       {
-        "from": "loader1",
-        "to": "pool1",
-        "kind": "data"
-      },
-      {
-        "from": "loader2",
-        "to": "transform1",
-        "kind": "data"
-      },
-      {
-        "from": "pool1",
-        "to": "transform2",
-        "kind": "data"
-      },
-      {
-        "from": "pool1",
+        "from": "analysis1",
         "to": "visualization1",
         "kind": "data"
       },
       {
-        "from": "transform1",
+        "from": "analysis2",
         "to": "visualization2",
         "kind": "data"
       },
       {
-        "from": "transform2",
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "pool1",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "pool1",
         "to": "visualization3",
         "kind": "data"
       }
@@ -119,14 +119,14 @@
   },
   "intents": [
     {
-      "ref": "loader1",
+      "ref": "loader2",
       "mustMention": [
         "green roof",
         "roof"
       ]
     },
     {
-      "ref": "loader2",
+      "ref": "loader1",
       "mustMention": [
         "boundary",
         "polygon",
@@ -135,7 +135,7 @@
       "outputKind": "geodataframe"
     },
     {
-      "ref": "transform2",
+      "ref": "analysis2",
       "mustMention": [
         "top",
         "zip"

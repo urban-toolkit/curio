@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/09-heterogeneous-data-linked-views.json",
-    "sha256": "19f1ba1082f82dad59bfa6562a4abd73e194366aefe0952577d66e335d547e9e",
+    "sha256": "36dec1d3cf7e67b842aada443051a0b0337204b9464d4ee65879fcafe70eefc5",
     "walkthrough": "docs/examples/09-heterogeneous-data-linked-views.md"
   },
   "prompt": "I want to see where Milan's heat exposure overlaps with its older residents. Three datasets in the Data Catalog hold the inputs: the mean radiant temperature raster, the hourly ERA5 weather table, and the census polygons carrying the over-65 share. Load the raster and the weather table, bundle them together as one input, and compute the universal thermal climate index on the raster grid in a Python step. Then load the census polygons, bundle them with the index result, and compute zonal statistics so each polygon carries its mean index value. Reproject and filter the result, and show it two ways linked to each other: a thematic 3D map with Autark and a Vega-Lite scatter of the index against the older-adult share. The thermal comfort and zonal statistics libraries are not part of the Curio framework, so whatever provides them has to be installed.",
@@ -43,6 +43,20 @@
         "hasContent": true
       },
       {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
         "role": "loader",
@@ -64,20 +78,6 @@
         "hasContent": true
       },
       {
-        "ref": "transform1",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform2",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "visualization2",
         "type": "curio.builtin/vis-vega",
         "role": "visualization",
@@ -95,55 +95,55 @@
     "edges": [
       {
         "from": "analysis1",
-        "to": "transform1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization3",
         "kind": "data"
       },
       {
         "from": "analysis2",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
         "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "analysis3",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "loader1",
-        "to": "analysis1",
+        "to": "analysis3",
         "kind": "data",
         "slot": 2
       },
       {
         "from": "loader2",
-        "to": "analysis2",
+        "to": "analysis4",
         "kind": "data",
         "slot": 1
       },
       {
         "from": "loader3",
-        "to": "analysis1",
+        "to": "analysis3",
         "kind": "data"
       },
       {
         "from": "loader3",
-        "to": "analysis2",
-        "kind": "data"
-      },
-      {
-        "from": "transform1",
-        "to": "visualization1",
-        "kind": "data"
-      },
-      {
-        "from": "transform1",
-        "to": "transform2",
-        "kind": "data"
-      },
-      {
-        "from": "transform1",
-        "to": "visualization3",
-        "kind": "data"
-      },
-      {
-        "from": "transform2",
-        "to": "visualization2",
+        "to": "analysis4",
         "kind": "data"
       },
       {
@@ -187,7 +187,7 @@
       "outputKind": "geodataframe"
     },
     {
-      "ref": "analysis1",
+      "ref": "analysis3",
       "mustMention": [
         "utci",
         "thermal",
@@ -195,7 +195,7 @@
       ]
     },
     {
-      "ref": "analysis2",
+      "ref": "analysis4",
       "mustMention": [
         "zonal",
         "statistic"

@@ -272,14 +272,16 @@ npm run build
 
 Curio's AI surfaces (the Agent Catalog's agents, the node-authoring assistants, and chat) answer with an **LLM configuration** set up in **API Settings**: the one chosen for the agent, else your default.
 
-Curio ships no endpoint of its own. Until you add a configuration, or the operator of your Curio sets a Deployment default, the AI surfaces report that no LLM configuration answers.
+Curio ships no endpoint of its own. Until you add a configuration, or the operator of your Curio names an endpoint file, the AI surfaces report that no LLM configuration answers.
 
 ### Your configurations
 
 **API Settings** is in the top bar. On the **Projects page**, the catalog pages and **Monitor** it opens the settings page, `/settings`; on the canvas and the dashboard it opens on the right side, and the dataflow stays open. It has two tabs:
 
-- **API keys** lists every key your account uses in one table, with the columns **Name**, **Kind**, **Details**, **Key** and **Actions**. Your LLM configurations are of kind **Language model**, the keys the Discovery Catalog sends to data sources are of kind **Data source**, and the keys your node code reads are of kind **Node code**. **Add configuration**, under the table, adds any of them.
-- **Agent configuration** chooses your default configuration in **Default for agents**, and the configuration each agent runs on in **Agent models**.
+- **API keys** lists every key your account uses in one table, with the columns **Name**, **Kind** and **Details**. Your LLM configurations are of kind **Language model**, the keys the Discovery Catalog sends to data sources are of kind **Data source**, and the keys your node code reads are of kind **Node code**. The **+** at the end of the table's header (**Add configuration**) adds any of them. Under a row's name is whether its key is saved, and a row of yours ends with **x** (**Remove**) and a pencil (**Edit**).
+- **Agent configuration** chooses what your agents run on: **Default for my agents**, and each agent's own under **Each agent**.
+
+When the operator of your Curio offers models of its own, the **API keys** tab starts with one **Curio** row for each of the operator's endpoints, read-only, with **Provided by** and the endpoint's name under it, and the endpoint's models in its **Details**. The model every account answers on until it picks another carries the **Curio default** badge.
 
 A button elsewhere that opens API Settings, such as **Add key for** a host or **Change in API Settings**, opens it on one form or row: from the Projects page or a catalog page it goes to the settings page, and on the canvas it opens API Settings on the right side.
 
@@ -287,10 +289,20 @@ To add an LLM configuration:
 
 1. Get an API key from the provider (the table below links to the OpenAI, Anthropic and Gemini key pages).
 2. Open **API Settings** from the top bar (on the canvas it opens on the right).
-3. On the **API keys** tab, click **Add configuration**.
+3. On the **API keys** tab, click **+** (**Add configuration**) at the end of the table's header.
 4. In **Kind**, choose **Language model**.
 5. Type a **Label**, choose the **Provider**, paste the **API key**, and type the **Model** (the provider's default model is shown in grey), or click **Fetch models** and pick one. **Custom** also asks for the **Base URL**.
-6. Click **Add configuration**. The configuration's row shows in the list, with **saved** in its **Key** column when you gave a key.
+6. Click **Add configuration**. The configuration's row shows in the list, with **Key saved** under its name when you gave a key.
+
+To answer on one of the models this Curio offers instead, no configuration is needed:
+
+1. Open **API Settings** from the top bar (on the canvas it opens on the right).
+2. Click the **Agent configuration** tab.
+3. In **Default for my agents**, pick a model under **Curio ·** and the endpoint's name. **Curio's default**, first in the list, follows whatever model the operator lists first.
+4. To give one agent a model of its own, pick it in that agent's list under **Each agent**. **Follows my default** puts the agent back on your default.
+5. The choice is saved at once. **Answering now** names the endpoint and the model, for example **Curio · Lab gateway · gpt-4o**, and each agent's line under **Each agent** says what it runs on.
+
+A model the operator no longer offers shows **(no longer offered)** in the list, and runs that would use it stop and say what is offered: pick another.
 
 Configurations and choices belong to your account and apply to all of your projects; the fields, the row actions and which configuration answers a run are in [AGENT-CATALOG.md part 4](AGENT-CATALOG.md#4-llm-configurations).
 
@@ -307,7 +319,7 @@ The following providers are supported:
 
 With OpenAI and Custom, an agent's turn waits up to five minutes for a reply to begin, and ends when a reply that has begun sends nothing for two minutes; its error then says that the model's server stopped sending.
 
-A **Data source** key is one the Discovery Catalog sends to a source: the Socrata app token, the Hugging Face token, the Google Maps API key or the Mapillary access token. In **Add configuration**, the **Kind** list offers each one you have not saved, under **Data source**. A saved one is listed with **Replace** and **Remove**, and its **Details** say which sources use it. A key whoever runs this Curio set for everyone is listed with **set by this Curio** in its **Key** column, and **Override** saves your own. [DISCOVERY-CATALOG.md part 5](DISCOVERY-CATALOG.md#5-api-tokens) walks through setting one, step by step.
+A **Data source** key is one the Discovery Catalog sends to a source: the Socrata app token, the Hugging Face token, the Google Maps API key or the Mapillary access token. In **Add configuration**, the **Kind** list offers each one you have not saved, under **Data source**. A saved one ends with **x** (**Remove**) and the pencil (**Edit**), and its **Details** say which sources use it. A key whoever runs this Curio set for everyone is listed with **Set by this Curio** under its name; adding the same key in **Add configuration** saves your own. [DISCOVERY-CATALOG.md part 5](DISCOVERY-CATALOG.md#5-api-tokens) walks through setting one, step by step.
 
 ### Keys for node code
 
@@ -318,13 +330,13 @@ never read back. To save one:
 
 1. Get the key from the API's provider.
 2. Open **API Settings** from the top bar (on the canvas it opens on the right).
-3. On the **API keys** tab, click **Add configuration**.
+3. On the **API keys** tab, click **+** (**Add configuration**) at the end of the table's header.
 4. In **Kind**, choose **Another API, for node code**.
 5. Type a **Name** (for example `census`) and the **Host** (for example
    `api.census.gov`), choose how it is **Sent as** (with the **Parameter name**
    or **Header name** when it is not sent in the code), and paste the **Key**.
-6. Click **Save key**. The key's row shows in the list, with **saved** in its
-   **Key** column; its **Details** show the host, how the key is sent and when
+6. Click **Save key**. The key's row shows in the list, with **Key saved**
+   under its name; its **Details** show the host, how the key is sent and when
    it was last used. When the name is already saved for another host, the form
    offers **Replace the host binding**.
 
@@ -359,29 +371,34 @@ leaves your browser. Dismiss it if the value is not a key.
 
 ### Guest users
 
-On a Curio started with `--deploy`, guests cannot add LLM configurations: every guest answers with the **guest configuration** the operator sets. They cannot save data source or node code keys either, and **Add key for** and **Save as API key** do not appear for them. Without `--deploy`, Curio signs you in as the shared guest, which adds configurations and saves its tokens in API Settings like any account; they are shared by everyone using that Curio, and the guest configuration is its Deployment default.
+On a Curio started with `--deploy`, guests cannot add LLM configurations or pick a model: every guest answers with the **guest configuration** the operator sets, and sees the **Curio** rows. They cannot save data source or node code keys either, and **Add key for** and **Save as API key** do not appear for them. Without `--deploy`, Curio signs you in as the shared guest, which adds configurations, picks models and saves its tokens in API Settings like any account; they are shared by everyone using that Curio.
 
-The guest configuration's provider, endpoint and model are `curio.py` flags: `--guest-llm-provider` (`openai_compatible`, `anthropic` or `gemini`), `--guest-llm-base-url` (empty for the provider's own endpoint) and `--guest-llm-model`. Its key is `GUEST_LLM_API_KEY` in **`utk_curio/backend/.env`**.
+The guest configuration is Curio's default: the first model of the first endpoint in the file `--llm-endpoint-file` names (see the [deployment guide](DEPLOYMENT.md#llm-configurations)). Without that file, guests get no AI, and agents refuse guest runs and say so.
 
-Each one that is not set takes the deployment's value (see the [deployment guide](DEPLOYMENT.md#llm-configurations)). A guest configuration needs both a key and a model; without either, agents refuse guest runs and say so.
+**Example:** a file with an OpenAI-compatible gateway, a local Ollama server (it takes any key, so give it a placeholder) and Anthropic, here `llm-endpoints`, readable by its owner only (`chmod 600 llm-endpoints`):
 
-**Examples**, each with its key in `utk_curio/backend/.env`:
+```ini
+[Lab gateway]
+base_url=https://llm.example.org/v1
+api_key=sk-proj-abc123...
+models=gpt-4o-mini,gpt-4o
 
-OpenAI (`GUEST_LLM_API_KEY=sk-proj-abc123...`):
-```bash
-python curio.py start --deploy --guest-llm-model gpt-4o-mini
+[Local Ollama]
+base_url=http://localhost:11434/v1
+api_key=ollama
+models=llama3.2
+
+[Anthropic]
+provider=anthropic
+api_key=sk-ant-...
+models=claude-haiku-4-5
 ```
 
-Local Ollama server (it takes any key, so give it a placeholder: `GUEST_LLM_API_KEY=ollama`):
 ```bash
-python curio.py start --deploy --guest-llm-provider openai_compatible \
-  --guest-llm-base-url http://localhost:11434/v1 --guest-llm-model llama3.2
+python curio.py start --deploy --llm-endpoint-file llm-endpoints
 ```
 
-Anthropic Claude (`GUEST_LLM_API_KEY=sk-ant-...`):
-```bash
-python curio.py start --deploy --guest-llm-provider anthropic --guest-llm-model claude-haiku-4-5
-```
+Guests then answer on `gpt-4o-mini` at the lab gateway. Signed-in users see three **Curio** rows on the **API keys** tab (**Provided by Lab gateway**, **Provided by Local Ollama** and **Provided by Anthropic**), and can pick any of the four models on the **Agent configuration** tab.
 
 ## The Tools panel
 
@@ -418,8 +435,8 @@ to pick a file, and its code, on the **Code** tab, loads it ([Data Catalog](#dat
 A Data Export node opens on its **Widgets** tab, which holds only its
 **File name** and its **Download** button. Its code, on the **Code** tab,
 `return curio_export(input_0, [!! file_name !!])`, writes the data wired into
-it to a file: a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF
-and anything else as JSON. Once the node has run, the button names the file,
+it to a file: a table as CSV, a GeoDataFrame as GeoJSON or a raster as GeoTIFF.
+Once the node has run, the button names the file,
 and **Download** saves it. When the node's result is out of date,
 **Download** first runs the node and the nodes above it.
 
@@ -698,8 +715,8 @@ started.
 
 ## Several inputs
 
-Data Loading, Python Computation, Data Transformation, JS Computation, Data Pool,
-Vega-Lite and Autark nodes take several input edges, and so does a package node whose
+Data Loading, Python Computation, JS Computation, Data Pool, Vega-Lite and
+Autark nodes take several input edges, and so does a package node whose
 input port allows more than one. Connect an edge to the node's input circle and a new
 empty circle appears below it; each new edge takes the next circle. Circles are
 numbered from 0, top to bottom. A Data Loading node needs no input: wire a node into

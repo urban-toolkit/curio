@@ -264,7 +264,7 @@ def test_the_listing_names_every_skill_with_what_it_serves_and_who_uses_it(clien
     assert widgets["author"] == "curio" and widgets["license"] == "MIT" and widgets["files"] == []
     # Its kinds of node come from the templates whose behavior it serves, the
     # base package's first.
-    assert widgets["nodeKinds"][:3] == ["Data Loading", "Data Export", "Data Transformation"]
+    assert widgets["nodeKinds"][:3] == ["Data Loading", "Data Export", "Python Computation"]
     assert "Vega-Lite" in widgets["nodeKinds"] and "Autark" in widgets["nodeKinds"]
     assert cards["scenarios"]["features"] == ["scenario-boxes"] and cards["scenarios"]["nodeKinds"] == []
     assert cards["provenance"]["nodeKinds"] == [] and cards["provenance"]["features"] == []

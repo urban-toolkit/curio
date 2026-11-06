@@ -71,7 +71,7 @@ built-in nodes, with nothing extra to declare.
 
 ### From the canvas
 
-1. Drop a **Data Transformation** node on the canvas and write your Python in
+1. Drop a **Python Computation** node on the canvas and write your Python in
    the **Code** view. What the edge on input circle 0 delivers is `input_0`, on
    circle 1 `input_1`, and so on (see [Input names](USAGE.md#input-names)).
    Whatever you `return` becomes this node's output. Run it until it does what
@@ -380,8 +380,9 @@ export const useMyNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
   const contentComponent = (
     <div>
       <input value={value} onChange={(e) => setValue(e.target.value)} />
-      <button onClick={() => {
-        data.outputCallback(data.nodeId, { data: result, dataType: 'dataframe' });
+      <button onClick={async () => {
+        const stored = await window.curio.storeOutput(data.nodeId, { data: result, dataType: 'dataframe' });
+        data.outputCallback(data.nodeId, stored);
         nodeState.setOutput({ code: 'success', content: '' });
       }}>
         Send downstream
@@ -392,6 +393,11 @@ export const useMyNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
   return { contentComponent };
 };
 ```
+
+`window.curio.storeOutput` keeps the rows as an output, a `dataframe` or a
+`geodataframe`, and answers the reference to hand on, as every node hands on
+its output. Python and JavaScript nodes read only stored outputs, and a save
+records only those.
 
 `contentComponent` is the usual one. The full set (`sendCodeOverride`,
 `dynamicHandles`, `handlesOverride`, `defaultValueOverride` and the rest) is

@@ -181,16 +181,21 @@ settings page (`src/pages/settings/SettingsPage.tsx`, at `/settings/keys` and
 in its URL, the drawer in its state. Its two tabs:
 
 - **API keys** (`ApiKeysTab`): one table of every key the account uses. Its
-  **Language model** rows come from `GET /api/agents/llm` (the Deployment
-  default and each LLM configuration), its **Data source** rows from
+  **Language model** rows come from `GET /api/agents/llm` (a read-only Curio
+  row per endpoint of this Curio's own, from `deployment.endpoints`, and each
+  LLM configuration), its **Data source** rows from
   `GET /api/discovery/keys` (a key is listed when one is saved or inherited),
-  and its **Node code** rows from `/api/users/me/connection-keys`.
-  **Add configuration** opens one editor whose **Kind** select picks the form:
-  `LlmConfigEditor`, `SourceKeyForm` for a key without a saved one, or
-  `NodeKeyForm`.
+  and its **Node code** rows from `/api/users/me/connection-keys`. A row the
+  account owns ends with Remove and Edit icons. **Add configuration**, the
+  **+** at the end of the header, opens one editor whose **Kind** select picks
+  the form: `LlmConfigEditor`, `SourceKeyForm` for a key without a saved one,
+  or `NodeKeyForm`. Edit opens the same form for the row.
 - **Agent configuration** (`AgentConfigTab`): the default
-  (`PUT /api/agents/llm/default`) and `AgentModelsSection`, the configuration
-  each agent runs on (`PUT /api/agents/llm/assignments`).
+  (`PUT /api/agents/llm/default`) and `AgentModelsSection`, what each agent
+  runs on (`PUT /api/agents/llm/assignments`). Both selects offer the same
+  choices (`ModelChoiceOptions`): Curio's default, each of this Curio's
+  models grouped by endpoint, and the account's configurations;
+  `curioModels.ts` writes and reads a pick.
 
 A card elsewhere asks for a place in API Settings without importing it.
 `apiSettingsRequest.ts` dispatches a `curio:api-settings` window event carrying
@@ -806,8 +811,8 @@ Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 
 | Category | Templates |
 |---|---|
-| Data | `data-loading`, `data-transformation`, `data-export`, `data-pool`, `spatial-join` |
-| Computation | `computation-analysis`, `data-summary`, `js-computation` |
+| Data | `data-loading`, `data-export`, `data-summary`, `data-pool`, `spatial-join` |
+| Computation | `computation-analysis`, `js-computation` |
 | Grammar (Autark) | `autk-grammar`, one node whose UrbanSpec unifies OSM/PBF loading, GPU `compute`, and `map` + `plot` rendering |
 | Chart/table visualization | `vis-vega`, `vis-simple` (a table, or a card per row when the frame carries images) |
 
@@ -1776,7 +1781,7 @@ Everything an agent reads is hand-written Markdown in `agents/`, the Agent Catal
 
   | Field | Renders | Source |
   |---|---|---|
-  | `trill.schema`, `builtin.nodes`, `builtin.control`, `builtin.inputs`, `builtin.outputs`, `builtin.input_count`, `builtin.output_count`, `builtin.interaction`, `autk.grammar` | The preamble's Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; its lists of built-in templates (description, control, port types, the connections an input accepts, output cardinality, interaction support), naming each template by its label; and the `autark` skill's section on Autark documents (see [The Autark Schema](#the-autark-schema)) | The Trill schema, the built-in manifest, `input_capacity`, the vendored Autark schema |
+  | `trill.schema`, `builtin.nodes`, `builtin.control`, `builtin.inputs`, `builtin.outputs`, `builtin.input_count`, `builtin.interaction`, `autk.grammar` | The preamble's Trill block, projected from [`docs/schemas/trill.v1.json`](schemas/trill.v1.json) to the fields `contracts.TRILL_PROMPT_FIELDS` names; its lists of built-in templates (description, control, port types, the connections an input accepts, interaction support), naming each template by its label; and the `autark` skill's section on Autark documents (see [The Autark Schema](#the-autark-schema)) | The Trill schema, the built-in manifest, `input_capacity`, the vendored Autark schema |
   | `agent.name:<agent id>` | A built-in agent's display name | The shipped agents' manifests (`builtin.list_builtin_manifests`) |
   | `template.label:<package id>/<template id>` | A built-in template's label | The built-in manifest |
   | `inputs.handles` | The handles of a node's input circles, `"in", "in_1", "in_2", ...` | `workflow_spec.slot_handle_id` |
@@ -1929,46 +1934,72 @@ A manifest's `providerRequirements` is a preference: nothing refuses a run over 
 An account's LLM configurations live in one owner-only file,
 `.curio/users/<u>/llm-configs.json` (`{version, configs, default, agents}`),
 kept by [`llm_configs.py`](../utk_curio/backend/app/agents/infrastructure/llm_configs.py).
-`agents` maps an agent id (the coordinate before `@`, so one choice covers
-every version and project) to a configuration id or `"deployment"`. Nothing
-about the choice goes into a project, attachment or manifest.
+`default` and `agents` (which maps an agent id, the coordinate before `@`, so
+one choice covers every version and project) each hold a configuration id, a
+pick, or for an agent `"deployment"`, Curio's default; a `null` default is
+Curio's default. Nothing about the choice goes into a project, attachment or
+manifest.
 Only the store's own reads (`LlmConfigStore.read` and `record`) carry a key:
-every response carries `hasApiKey` and `baseUrlHost` instead. The file is written through
+every response carries `hasApiKey` and `baseUrlHost` instead, and a run on
+this Curio's own endpoint shows an empty `baseUrlHost`, since its host never
+leaves the server. The file is written through
 [`owner_only_file.py`](../utk_curio/backend/app/common/owner_only_file.py),
 which connection keys and Data source keys use too: a 0700 directory and a 0600 file, written to a
 temp file, fsynced and renamed under an exclusive lock.
 
 A configuration names its own endpoint (`endpoint: "own"`, with `apiType`,
-`baseUrl` and `apiKey`) or this Curio install's (`endpoint: "deployment"`),
-whose type, URL and key are read from the deployment when a run resolves it. A
-key never follows a configuration to another endpoint: an update that changes
-the type, or the URL's scheme, host or port, needs the key again or
-`clearApiKey`.
+`baseUrl` and `apiKey`). A key never follows a configuration to another
+endpoint: an update that changes the type, or the URL's scheme, host or port,
+needs the key again or `clearApiKey`. A create or update with `endpoint:
+"deployment"` answers 400 with one sentence (`llm_configs.DEPLOYMENT_REFUSAL`),
+and `read` drops a stored one, with the default and the agent choices that
+named it.
+
+This Curio's own models are picked, never configured. A pick is one string,
+`curio:` followed by the compact JSON pair `["<endpoint name>", "<model>"]`
+(`llm_configs.pick_choice`, the text the page's `JSON.stringify` writes too),
+so a name with spaces, colons or slashes round-trips; the store parses what a
+request sends and writes it back canonically. The default and the assignments
+take a pick only while the file offers it: otherwise they answer 400 with one
+sentence naming every endpoint and model on offer (`llm_configs.pick_refusal`),
+and `resolve_llm` refuses a stored pick that left the file with the same
+sentence. `/api/agents/provider-models` never asks this Curio's endpoints:
+`endpoint: "deployment"` is refused.
+
+The operator's endpoints reach `config.DEFAULT_LLM_ENDPOINTS` only from the
+file `--llm-endpoint-file` names, one section each (`utk_curio/common/llm_endpoint.py`,
+`Endpoint`), whose path the launcher hands to the backend alone. The launcher
+refuses to start while a variable that used to set them is in its environment
+(`llm_endpoint.RETIRED_VARIABLES`), the backend warns of one left in its
+`.env` (`upgrade_notices.py`), and the frontend's servers and build and the
+sandbox start without the variables that could hold a key or URL
+(`llm_endpoint.BACKEND_ONLY_VARIABLES`), so node code cannot read them.
 
 [`provider_config.resolve_llm`](../utk_curio/backend/app/agents/infrastructure/provider_config.py)
-is the one resolver, and it reads `config.DEFAULT_LLM_*` and `GUEST_LLM_*`
-at call time. It needs only the storage key, so it
+is the one resolver, and it reads `config.DEFAULT_LLM_ENDPOINTS` at call
+time. It needs only the storage key, so it
 works in job threads:
 
 1. A hosted guest (a guest on a `--deploy` instance) runs on the guest
-   configuration, `GUEST_LLM_*`, and never opens the file; so does every
-   delegate of a guest's run.
+   configuration, Curio's default endpoint and model, and never opens the
+   file; so does every delegate of a guest's run.
 2. An internal agent (`builtin.internal_agent_ids()`, the shipped agents whose
    `catalog.listed` is false) runs on its caller's configuration, always.
-3. Any other agent runs on the configuration chosen for it (`source:
-   "assigned"`).
+3. Any other agent runs on what was chosen for it (`source: "assigned"`): a
+   configuration, a pick (that endpoint's type, URL and key with the picked
+   model, labelled `Curio · <endpoint name>`) or Curio's default.
 4. With no choice, a delegated agent runs on its caller's (`source: "caller"`),
-   and an attached one on the account's default configuration, else the
-   Deployment default (the deployment's endpoint with
-   `CURIO_DEFAULT_LLM_MODEL`), else the run is refused.
+   and an attached one on the account's default, a configuration or a pick,
+   else Curio's default (the first endpoint of the file with its first model,
+   `source: "deployment"`), else the run is refused.
 
 A reference that does not resolve (a choice or a default naming no
-configuration, a withdrawn Deployment default or This Curio install endpoint,
-an unreadable file) is refused, never replaced with another configuration. A
-refusal is a `ProviderConfigError`, answered as a 400 with
-`remedy: {kind: "llm-config", agentId}`. The local shared guest (a launch
-without `--deploy`) owns a file like any account, and its Deployment default
-reads `GUEST_LLM_*`.
+configuration, Curio's default when the file is gone, a pick whose endpoint or
+model the file no longer has, an unreadable file) is refused, never replaced
+with another configuration. A refusal is a `ProviderConfigError`, answered as
+a 400 with `remedy: {kind: "llm-config", agentId}`. The local shared guest (a
+launch without `--deploy`) owns a file like any account, and its Curio's
+default is everyone's.
 
 Where it is called:
 
@@ -1988,11 +2019,14 @@ Where it is called:
 - `choosable_agents` lists who may have a choice: the catalog cards, published
   definitions and the account's imports, one row per agent id.
 
-The resolved `ProviderConfig` carries `config_id`, `label` and `source`, and
-its `api_key` is left out of its `repr`. Run pins record
-`llm: {configId, label, baseUrlHost, source}`, ledger entries record
-`llmConfigId`, and provider error text is redacted with the call's own key
-before it is streamed, persisted, logged or returned.
+The resolved `ProviderConfig` carries `config_id`, `label`, `source` and
+`on_deployment` (it runs on this Curio's own endpoint), and its `api_key` and
+`base_url` are left out of its `repr`. Run pins record
+`llm: {configId, label, baseUrlHost, source}`, with an empty `baseUrlHost` on
+this Curio's endpoint (`provider_config.shown_host`), ledger entries record
+`llmConfigId`, and provider error text loses the call's own key, and every
+endpoint of the file's key, URL, host and port, and host
+(`providers.redacted_text`) before it is streamed, persisted, logged or returned.
 
 ---
 
@@ -2720,6 +2754,7 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 | `/version` | GET | Installed `utk_curio` version, as JSON |
 | `/processPythonCode` | POST | Execute Python node code (proxies to sandbox `/exec`) |
 | `/processJavaScriptCode` | POST | Execute JS node code via Node.js subprocess (proxies to sandbox `/execJs`) |
+| `/storeOutput` | POST | Keep rows a node made in the browser (`{dataType: dataframe or geodataframe, data}`, a Spatial Join's pairs) as a frame artifact under the caller's session, through the sandbox's `/artifacts/store`, and answer the `{path, dataType}` reference the node hands on, so Python and JavaScript nodes read them and a save records them; anything else is a 400 with its reason |
 | `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged store cannot serve is read from `savedPath`, the file the owner's store holds for a dataflow's saved output, which only the backend sends, so a saved output is readable by anyone who can load the project; no other file is read by name |
 | `/get-preview` | GET | First N rows + metadata of an artifact, for DataPool display |
 | `/raster` | GET | A raster artifact (or one `part` of a tuple) as GeoTIFF bytes for an Autark node, described in the `X-Curio-Raster` header; 413 with its size over `maxCells` or `maxSide`. A raster output the session-tagged store cannot serve is read from `savedPath`, as `/get` does |
@@ -2869,7 +2904,7 @@ A viewer of a dashboard changes a pinned control, a widget its node's tile shows
 - **Controls.** `dashboard_controls` gives what a viewer may change: every widget of a pinned node but the kinds `contracts/dashboardRuns.json` keeps read-only (`text`, `text-list`, `file`), whose free value could name another of the owner's datasets or files. Each value is checked with `check_widget_value`, the Widgets tab's check.
 - **Plan.** The saved spec, read with the saved outputs that can be read (`services._saved_outputs`), gets the values laid over it in memory, and is never written. A node the values change is one whose code, as a run sends it, differs; it and every node below it are reached. The targets are the nodes the tiles read (`dashboard_source_node_ids`) that are reached or have no saved output; `plan_run` reuses the saved outputs of every node not reached, but those feeding a step only a browser runs (directly or through forwarded nodes) that no tile reads, which run too (`_plan_for_the_page`): the page reads only the tiles' saved outputs it opened with, its own results and what the run sends. With no target the start answers no run, and the page keeps the saved outputs.
 - **Steps.** Each runs as Play does in the owner's store (`node_exec`, with the owner's datasets, models and packages), with no node id, so nothing is installed or journaled, and `save_dataset` off. A Python step whose code reads a connection key (`curio_secret`) fails at once with `NO_KEYS_MESSAGE`: a viewer's run uses no key.
-- **Steps only a browser runs** (the run role `browser`: an Autark compute node, a Spatial Join) are the page's. The run ends `needs_canvas`, as a canvas's run on the server does, or `succeeded` when only a tile reads them, and records them (`browserSteps`). The page runs them and sends each result with the run's token to `/steps/<nodeId>` (`keep_tab_result`), which checks only its shape (`TAB_RESULT_KINDS`, at most `MAX_TAB_RESULT_BYTES`) and stores it as it came (the sandbox's `/artifact-sessions/store`, never run). The page's next start names those results (`browserOutputs`) with the same token: they stand in for the steps, the steps below run on them, and a tile's own step among them is no longer a target. The server cannot check what a browser sends, so a result and every output made from it (`_below`) are kept for that page alone (`private_to`, a digest of the token) for `TAB_OWN_HOURS`, and no other page reads them.
+- **Steps only a browser runs** (the run role `browser`: an Autark compute node, a Spatial Join) are the page's. The run ends `needs_canvas`, as a canvas's run on the server does, or `succeeded` when only a tile reads them, and records them (`browserSteps`). The page runs them and sends each result with the run's token to `/steps/<nodeId>` (`keep_tab_result`), which checks only its shape (`TAB_RESULT_KINDS`, at most `MAX_TAB_RESULT_BYTES`) and stores it (the sandbox's `/artifact-sessions/store`, never run): an Autark layer as it came, a Spatial Join's pairs as a frame, as `/storeOutput` keeps them. The page's next start names those results (`browserOutputs`) with the same token: they stand in for the steps, the steps below run on them, and a tile's own step among them is no longer a target. The server cannot check what a browser sends, so a result and every output made from it (`_below`) are kept for that page alone (`private_to`, a digest of the token) for `TAB_OWN_HOURS`, and no other page reads them.
 - **Kept outputs.** Each step's output is kept by [`runs/kept.py`](../utk_curio/backend/app/runs/kept.py), the one place any kept run keeps its outputs, in `kept_step_output` (alembic revisions `d2e3f4a5b6c7` and `e3f4a5b6c7d8`), under `step_key`, a digest of the step's code as sent, its inputs (saved outputs or kept ones, each its own artifact), a fingerprint of the owner's package store, the files of the datasets its code reads, and Curio's version. Each entry says who made it (`made_by`: the dataflow's owner, an editor she invited, or a viewer, as here). A step whose key is kept answers with the kept output and runs nothing. Each step's artifacts carry a session of their own (`common/kept_sessions.py`); `/artifact-sessions/describe` gives the entry its artifact ids and size. A step reads the artifacts of its run's earlier steps and of the outputs kept from earlier runs: the sandbox lets one kept session read another's, and no session of another shape reads theirs or is read by them (`parsers.session_may_read`, which the store, its preview and staging for an isolated child all apply). Entries go 7 days after they were made (`KEPT_DAYS`), whatever their use since, and the next run that needs them makes them again. `prune` sweeps them every 6 hours (`start_prune_scheduler`, off under `--testing`), at the end of each run and on the first start after a restart; past 2 GiB of the viewers' outputs on a dataflow (`MAX_KEPT_BYTES`), their least recently used go first. The owner's and the editors' are bounded by their 7 days alone, since their open canvases show them, an editor's private ones too; a tab's own lives an hour (`TAB_OWN_HOURS`), and an owner's private one its full days. The sandbox forgets the sessions of the entries that go (`/artifact-sessions/forget`, which names only sessions of the kept shape), and a deleted dataflow's entries go with it (an `after_delete` on the entry, forgotten after the commit). The same six-hour sweep empties the sandbox's store of what it made more than 7 days ago, saved or not (`sweep_store`, `/artifacts/sweep`, `parsers.forget_made_before`; never what it made in the last day): an artifact goes with its row, a part of a tuple, list or dict output by its whole output's age. A kept run's artifacts are left to their entries a day longer, and then go too, whether or not an entry was ever written for them. Only files under `artifacts/` are removed: those rows' files, and any file there that no remaining row names and nothing has used for 7 days (a raster an in-process run rebuilt is touched when it is used again). So are the files earlier versions wrote at the top of `.curio/data`: a run's second encode of a table (`<id>_output.parquet` and its sidecars), a load's copies of saved outputs and their `bundles/`. A saved output is the Data Catalog's link to the store's file, which keeps it. A run's record stays longer than its outputs, so a step that finished more than 7 days ago names no `outputPath` (`runs/service.step_payload`), and a canvas opened later restores no output that is gone.
 - **Limits.** `common/address_limiter.py`: 10 runs a minute per visitor address, 120 overall, of the values visitors try; opening the page, with the saved values, a start that joins a run, and the first start that goes on from the steps a run left to its page (`_continues_a_run`) cost nothing. With `--proxy-hops N` the backend reads the address from the `X-Forwarded-For` those proxies add (`ProxyFix` in `app/__init__.py`), as every per-address limit does, and without it from the request itself. The hosted stacks pass 1 (`docker-compose.deploy.yml`). Two live runs per dashboard, in a registry of their own (so an owner's runs never wait on them), and a start whose values already run joins that run. Half the sandbox's isolated pool (`common/exec_pool.py`) is the most nodes viewers' runs execute at once.
 - **Following.** A start answers a run id and a token; the stream and a private output's read take the token in `RUN_TOKEN_HEADER` (`X-Curio-Run-Token`, in the CORS Allow-Headers). Events carry no reply and no printed text; a step's `artifactIds` are the artifacts its kept output holds, which the page reads through the routes below.
@@ -3002,13 +3037,13 @@ Catalog and account scope:
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/agents/catalog` | GET | List the agent definitions available to add: the catalog cards and published definitions, never an internal built-in (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
-| `/api/agents/llm` | GET | The account's LLM configurations (never a key: `hasApiKey` and `baseUrlHost` instead), its default, what the deployment offers, what answers a run now, and the agents whose configuration may be chosen, each with its choice and what it answers with. A hosted guest gets the guest configuration and `editable: false` |
+| `/api/agents/llm` | GET | The account's LLM configurations (never a key: `hasApiKey` and `baseUrlHost` instead), its default (a configuration id, a pick or `null` for Curio's default), this Curio's own models (`deployment: {label, apiType, model, endpoints: [{name, models}]}`, never a host or a key), what answers a run now (`baseUrlHost` empty on this Curio's endpoints), and the agents whose choice may be made, each with its choice and what it answers with. A hosted guest gets the guest configuration and `editable: false` |
 | `/api/agents/llm/configs` | POST | Add a configuration. **400** on an unknown field or an invalid one, **403** for a hosted guest |
 | `/api/agents/llm/configs/<id>` | PATCH, DELETE | Change one (a blank key keeps the stored one; a new endpoint needs the key again) or remove it, which resets a removed default and clears the agents chosen for it (`moved`) |
 | `/api/agents/llm/configs/<id>/duplicate` | POST | Copy one, its key included, server-side; `{label?, model?}` |
-| `/api/agents/llm/default` | PUT | Choose the default, `{configId}`; `null` is the Deployment default |
-| `/api/agents/llm/assignments` | PUT | Choose agents' configurations: a partial map of agent id to a configuration id, `"deployment"` or `null` (clears). Nothing is written unless every entry is valid; an internal agent is refused; **403** for a hosted guest |
-| `/api/agents/provider-models` | POST | The models API Settings can offer for the endpoint being configured. POST because the editor asks *before* the user saves, carrying the provider, base URL and key on screen. A stored key is borrowed only with `configId`, and only while the endpoint on screen is still that configuration's own, or with `endpoint: "deployment"`; with neither, no key is borrowed. Hybrid, both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is a 400 |
+| `/api/agents/llm/default` | PUT | Choose the default, `{configId}`: a configuration id, a pick (`curio:["<endpoint>","<model>"]`) the file offers, or `null` for Curio's default |
+| `/api/agents/llm/assignments` | PUT | Choose what agents run on: a partial map of agent id to a configuration id, a pick the file offers, `"deployment"` (Curio's default) or `null` (clears). Nothing is written unless every entry is valid; an internal agent is refused; **403** for a hosted guest |
+| `/api/agents/provider-models` | POST | The models API Settings can offer for the endpoint being configured. POST because the editor asks *before* the user saves, carrying the provider, base URL and key on screen. A stored key is borrowed only with `configId`, and only while the endpoint on screen is still that configuration's own; without it, no key is borrowed, and this Curio's own endpoints are never asked (`endpoint: "deployment"` is a 400). Hybrid, both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is a 400 |
 | `/api/agents/settings` | GET, PUT | The catalog settings: each one's schema, default, the account's value and the agents that read it, plus whether this account may change them. `PUT` takes key to value (`null` restores the default) and saves nothing unless every value is valid; **403** for a hosted guest |
 | `/api/agents/skills` | GET | Every skill the account sees, as the Skill Catalog shows it: Curio's, the account's own, the shared catalog's it holds no copy of, then those of the packages it reaches, each with its description, facts and files, what it serves (`behaviors`, `features`, `nodeKinds`), whether every call holds it (`core`), whose it is (`source`), `published`, `publishedByYou`, `publishable`, `removable`, and the agents that use it after the account's changes, plus whether this account may change them |
 | `/api/agents/skills/<name>` | GET, DELETE | `GET`: one skill's text as an agent reads it, its frontmatter left out (a skill Curio ships with its markers filled), and its files; **404** for a skill the account does not see. `DELETE`: delete a skill the account holds and take it off every agent's list; **400** when an agent's instruction or capability names it as its own, **404** for one it does not hold, **403** for a hosted guest |
@@ -3194,7 +3229,7 @@ blocker signature, so a dataset dropped on an upstream loader is progress.
 | `src/registry/nodeRegistry.ts` | Singleton store of all `NodeDescriptor`s; subscribed by the palette + canvas |
 | `src/registry/packageRegistryBootstrap.ts` | Boot-time orchestration: load installed packages, inject behavior bundles, build descriptors |
 | `src/registry/registryReadiness.ts` | Whether the registry has finished a load: a placeholder node waits on it, and the canvas's load fit waits on it while a node has no descriptor |
-| `src/registry/index.ts` | Exposes `window.curio.registerBehavior`, `window.curio.backendUrl`, `window.curio.getAuthToken` and `window.curio.fetchData` (the canvas's reader of an output) for package bundles |
+| `src/registry/index.ts` | Exposes `window.curio.registerBehavior`, `window.curio.backendUrl`, `window.curio.getAuthToken`, `window.curio.fetchData` (the canvas's reader of an output) and `window.curio.storeOutput` (keeps rows a node made as an output, `/storeOutput`, and answers the reference to hand on) for package bundles |
 | `src/registry/types.ts` | TypeScript interfaces for descriptors, adapters, behavior hooks |
 | `src/constants.ts` | `SupportedType` and `EdgeType` enums, and `NodeType`, the built-in template ids (node types live in package manifests) |
 | `src/adapters/node/` | Built-in behavior hook implementations (code, vega, autk family, …) |
@@ -3219,7 +3254,7 @@ blocker signature, so a dataset dropped on an upstream loader is progress.
 | `src/components/apiSettings/` | API Settings: `ApiSettingsPanel` (the two tabs), `ApiKeysTab`, `AgentConfigTab`, `SourceKeyForm`, `NodeKeyForm`, `ApiSettingsDrawer`, `ApiSettingsRequestHost` and `apiSettingsRequest.ts` (the `curio:api-settings` request event) |
 | `src/pages/settings/SettingsPage.tsx` | The settings page, `/settings/keys` and `/settings/agents` |
 | `src/pages/monitor/MonitorContent.tsx`, `MonitorDrawer.tsx` | The monitor's content, rendered by the `/monitor` page and by its drawer |
-| `src/components/llmConfigs/` | The LLM configuration editor, Agent models and the `llm-config` remedy button, over `src/api/llmConfigsApi.ts` |
+| `src/components/llmConfigs/` | The LLM configuration editor, the choices of the default and of each agent (with Curio's own models, `curioModels.ts`) and the `llm-config` remedy button, over `src/api/llmConfigsApi.ts` |
 | `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
 ### Backend

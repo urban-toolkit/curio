@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/14-vega-lite-crs-and-geometry-types.json",
-    "sha256": "af5a9e3f644a498748fc81e7f124d039cece1dac7117c72d370d142020408c78",
+    "sha256": "16da3ab7761d6b2a9eed09d372ffb6c330d081baaa87dce42b501ff1c6a39c5c",
     "walkthrough": "docs/examples/14-vega-lite-crs-and-geometry-types.md"
   },
   "prompt": "Take the Chicago ZIP boundary polygons from the Data Catalog and reproject them into several different coordinate systems, and also derive point and line geometries from them. Draw every one of those frames on a map, with the same map spec for every coordinate system, so I can confirm the coordinate system does not change what I have to write, and make sure the lines show up too.",
@@ -19,58 +19,58 @@
   "expected": {
     "nodes": [
       {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis5",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis6",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis7",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
         "role": "loader",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform1",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform2",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform3",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform4",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform5",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform6",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform7",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
         "executable": true,
         "hasContent": true
       },
@@ -126,73 +126,73 @@
     ],
     "edges": [
       {
-        "from": "loader1",
-        "to": "transform1",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "transform2",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "transform3",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "transform4",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "transform5",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "transform6",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "transform7",
-        "kind": "data"
-      },
-      {
-        "from": "transform1",
+        "from": "analysis1",
         "to": "visualization1",
         "kind": "data"
       },
       {
-        "from": "transform2",
+        "from": "analysis2",
         "to": "visualization2",
         "kind": "data"
       },
       {
-        "from": "transform3",
+        "from": "analysis3",
         "to": "visualization3",
         "kind": "data"
       },
       {
-        "from": "transform4",
+        "from": "analysis4",
         "to": "visualization4",
         "kind": "data"
       },
       {
-        "from": "transform5",
+        "from": "analysis5",
         "to": "visualization5",
         "kind": "data"
       },
       {
-        "from": "transform6",
+        "from": "analysis6",
         "to": "visualization6",
         "kind": "data"
       },
       {
-        "from": "transform7",
+        "from": "analysis7",
         "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis5",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis6",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis7",
         "kind": "data"
       }
     ],

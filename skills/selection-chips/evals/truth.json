@@ -42,7 +42,7 @@
             "changed": [
               {
                 "id": "c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70",
-                "type": "curio.builtin/data-transformation",
+                "type": "curio.builtin/computation-analysis",
                 "title": "Roofs in the picked zip codes",
                 "changes": {
                   "content": {
@@ -58,9 +58,9 @@
           {
             "tool": "node.content.write",
             "kind": "content",
-            "summary": "Replaced the content of the Data Transformation node · Roofs in the picked zip codes",
+            "summary": "Replaced the content of the Python Computation node · Roofs in the picked zip codes",
             "lines": [
-              "Data Transformation node · Roofs in the picked zip codes"
+              "Python Computation node · Roofs in the picked zip codes"
             ],
             "nodeId": "c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70",
             "undo": true
@@ -182,7 +182,7 @@
             "changed": [
               {
                 "id": "c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70",
-                "type": "curio.builtin/data-transformation",
+                "type": "curio.builtin/computation-analysis",
                 "title": "Roofs in the picked zip codes",
                 "changes": {
                   "content": {
@@ -198,9 +198,9 @@
           {
             "tool": "node.content.write",
             "kind": "content",
-            "summary": "Replaced the content of the Data Transformation node · Roofs in the picked zip codes",
+            "summary": "Replaced the content of the Python Computation node · Roofs in the picked zip codes",
             "lines": [
-              "Data Transformation node · Roofs in the picked zip codes"
+              "Python Computation node · Roofs in the picked zip codes"
             ],
             "nodeId": "c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70",
             "undo": true

@@ -501,18 +501,18 @@ def test_a_change_card_tells_the_grader_whether_it_offers_its_undo():
     content = [
         {"type": "text", "text": "The code is back."},
         {"type": "change", "changeId": "c1", "status": "applied", "tool": "node.content.write", "kind": "content",
-         "summary": "Replaced the content of the node", "lines": ["Data Transformation node"], "nodeId": "n1",
+         "summary": "Replaced the content of the node", "lines": ["Python Computation node"], "nodeId": "n1",
          "preview": "return 1"},
         {"type": "change", "changeId": "c2", "status": "undone", "tool": "node.create", "kind": "node",
-         "summary": "Added a node", "lines": [], "nodeId": "n2", "nodeType": "curio.builtin/data-transformation"},
+         "summary": "Added a node", "lines": [], "nodeId": "n2", "nodeType": "curio.builtin/computation-analysis"},
         {"type": "change", "status": "applied", "tool": "node.settings.write", "kind": "settings",
          "summary": "Changed the node's settings", "lines": [], "nodeId": "n3"},
     ]
     assert change_cards(content) == [
         {"tool": "node.content.write", "kind": "content", "summary": "Replaced the content of the node",
-         "lines": ["Data Transformation node"], "nodeId": "n1", "undo": True},
+         "lines": ["Python Computation node"], "nodeId": "n1", "undo": True},
         {"tool": "node.create", "kind": "node", "summary": "Added a node", "lines": [], "nodeId": "n2",
-         "nodeType": "curio.builtin/data-transformation", "undo": False},
+         "nodeType": "curio.builtin/computation-analysis", "undo": False},
         {"tool": "node.settings.write", "kind": "settings", "summary": "Changed the node's settings", "lines": [],
          "nodeId": "n3", "undo": False},
     ]

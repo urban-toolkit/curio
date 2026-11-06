@@ -15,7 +15,7 @@ everything else has to match it.
      were blank even though README has a blurb for all eleven.
   3. Three mermaid pipeline diagrams drew a different graph than their JSON
      (04 duplicated a shared node, 09 drew one node where there were two,
-     10 omitted a Data Transformation node).
+     10 omitted a Python Computation node).
   4. Markdown code blocks had drifted from the node bodies they document.
 
 Deliberately *semantic* rather than textual, for (4): the walkthroughs
@@ -137,7 +137,7 @@ def test_the_mermaid_diagram_draws_as_many_nodes_as_the_json_has(stem: str):
 
     Counting rather than matching shapes: it caught all three real cases (04 drew
     a shared node twice, 09 collapsed two of its nodes into one, 10 dropped a
-    Data Transformation) without needing to model mermaid's syntax.
+    Python Computation) without needing to model mermaid's syntax.
     """
     md = _markdown(stem)
     block = re.search(r"```mermaid\n(.*?)```", md, re.S)

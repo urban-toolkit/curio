@@ -33,7 +33,7 @@ Run All drives the whole path:
    grid, a median flood depth of 7.164 m without NbS and 4.900 m with every
    NbS (``test_scout_flood.py``).
 5. Two more Data Loading nodes read CDC's SVI census tracts and USGS's
-   waterways from the Data Catalog, a Data Transformation keeps the 28 tracts
+   waterways from the Data Catalog, a Python Computation keeps the 28 tracts
    NHD's rivers touch, and an Autark map draws their SVI percentile, its
    legend titled "Social vulnerability (SVI percentile)" and labelled 0 to 1.
 6. In each scenario Tract depth averages the depth over each tract's land,
@@ -104,8 +104,10 @@ CALCULATOR_TYPE = "curio.rasterization/raster-calculator"
 PACKAGES = ("curio.rasterization@1", "curio.vega-lite@1")
 MAP_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
-TRANSFORMATION_TYPE = "curio.builtin/data-transformation"
 PYTHON_TYPE = "curio.builtin/computation-analysis"
+#: The Python steps over the tracts, the riverside tracts and each scenario's
+#: Tract depth, told from the other Python nodes by title.
+TRACT_STEP_TITLES = ("Riverside tracts", "Tract depth")
 LOADER_TYPE = "curio.builtin/data-loading"
 BARS_TYPE, POINTS_TYPE, GROUPED_BARS_TYPE = "curio.vega-lite/bars", "curio.vega-lite/points", "curio.vega-lite/grouped-bars"
 CHART_TYPES = (BARS_TYPE, POINTS_TYPE, GROUPED_BARS_TYPE)
@@ -165,26 +167,30 @@ def _nodes_of(spec: dict, node_type: str) -> list[str]:
     return [node["id"] for node in spec["dataflow"]["nodes"] if node["type"] == node_type]
 
 
+def _tract_step(node: dict) -> bool:
+    return node["type"] == PYTHON_TYPE and node.get("title") in TRACT_STEP_TITLES
+
+
 def _part(node: dict) -> str:
     """What a scenario's node is: the Raster Calculator that chooses the depth,
     the one of statistics, the one averaging the depth by period (its code
-    returns its own table), or Tract depth (the Data Transformation)."""
+    returns its own table), or Tract depth (a tract step)."""
     if node["type"] == CALCULATOR_TYPE:
         if "\nreturn raster_statistics(" in node["content"]:
             return "statistics"
         return "by period" if "\nreturn pd.DataFrame(" in node["content"] else "depth"
-    assert node["type"] == TRANSFORMATION_TYPE, node["type"]
+    assert _tract_step(node), (node["type"], node.get("title"))
     assert not node["metadata"].get("widgets"), node["id"]
     return "tract depth"
 
 
 def _scenario_parts(spec: dict) -> dict:
-    """Each scenario's Raster Calculators and Data Transformations, by part."""
+    """Each scenario's Raster Calculators and tract steps, by part."""
     nodes = {node["id"]: node for node in spec["dataflow"]["nodes"]}
     return {
         scenario["id"]: {
             _part(nodes[node_id]): node_id for node_id in scenario["nodes"]
-            if nodes[node_id]["type"] in (CALCULATOR_TYPE, TRANSFORMATION_TYPE)
+            if nodes[node_id]["type"] == CALCULATOR_TYPE or _tract_step(nodes[node_id])
         }
         for scenario in spec["dataflow"]["scenarios"]
     }
@@ -201,7 +207,8 @@ def _settings(spec: dict) -> dict:
     fed = {edge["target"] for edge in spec["dataflow"]["edges"]}
     found = {
         node["title"]: node["id"] for node in spec["dataflow"]["nodes"]
-        if node["type"] == PYTHON_TYPE and node["id"] not in members and node["id"] not in fed
+        if node["type"] == PYTHON_TYPE and not _tract_step(node) and node["id"] not in members
+        and node["id"] not in fed
     }
     assert sorted(found) == ["Projection period", "Region"], found
     return found
@@ -216,7 +223,7 @@ def _by_part_and_mode(spec: dict, types: tuple, mode_of) -> dict:
     settings = set(_settings(spec).values())
     found = {}
     for node in nodes.values():
-        if node["type"] not in types or node["id"] in members or node["id"] in settings:
+        if node["type"] not in types or _tract_step(node) or node["id"] in members or node["id"] in settings:
             continue
         (part,) = {_part(nodes[e["source"]]) for e in spec["dataflow"]["edges"] if e["target"] == node["id"]}
         found[(part, mode_of(node))] = node["id"]
@@ -234,9 +241,9 @@ def _comparisons(spec: dict) -> dict:
 
 
 def _riverside(spec: dict) -> str:
-    """The Data Transformation in no scenario: the riverside tracts."""
+    """The tract step in no scenario: the riverside tracts."""
     (riverside,) = [node["id"] for node in spec["dataflow"]["nodes"]
-                    if node["type"] == TRANSFORMATION_TYPE and node["id"] not in _members(spec)]
+                    if _tract_step(node) and node["id"] not in _members(spec)]
     return riverside
 
 
@@ -440,8 +447,8 @@ def test_two_flood_scenarios_are_mapped_and_charted(
     median_chart = comparisons[("statistics", "chart")]
     difference_map = _map_after(spec, difference)
     types = {node["id"]: node["type"] for node in spec["dataflow"]["nodes"]}
-    steps = [(node_id, node_type) for node_id, node_type in types.items()
-             if node_type in (CALCULATOR_TYPE, MAP_TYPE, TRANSFORMATION_TYPE)]
+    steps = [(node["id"], node["type"]) for node in spec["dataflow"]["nodes"]
+             if node["type"] in (CALCULATOR_TYPE, MAP_TYPE) or _tract_step(node)]
     assert len(steps) == 17, steps
     # Two of the seven Raster Calculators take the depth's statistics.
     statistics = [node["id"] for node in spec["dataflow"]["nodes"] if node["type"] == CALCULATOR_TYPE

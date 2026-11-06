@@ -183,7 +183,7 @@ class AnInputTest(SavedOutputTestCase):
         response = self.client.post("/exec", json={
             "code": textwrap.indent("return int(input_0['n'].sum()) + len(input_0['tags'][0])\n", "    "),
             "file_path": NAME,
-            "nodeType": "DATA_TRANSFORMATION",
+            "nodeType": "COMPUTATION_ANALYSIS",
             "dataType": "dataframe",
             "session_id": "new-sign-in",
             "saved_paths": {NAME: {"path": str(path), "dataType": "dataframe"}},

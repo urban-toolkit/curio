@@ -169,6 +169,30 @@ FOREIGN_WRAPPER_MESSAGE = (
     "This step's input names an output that is not its dataflow's, so it does not run."
 )
 
+#: What a run answers when its code reads an input that arrived as rows handed
+#: on as they are, which no run reads: only a stored output reaches node code.
+INLINE_ROWS_MESSAGE = (
+    "This node's code reads `{name}`, but the node feeding it handed on its rows "
+    "without storing them, so this node cannot read them. That node must store its "
+    "output first, with window.curio.storeOutput, and hand on the reference it answers."
+)
+
+
+def inline_rows_problem(run: "NodeRun", *, language: str) -> str | None:
+    """:data:`INLINE_ROWS_MESSAGE` when *run*'s code reads an input that is
+    rows handed on as they are: ``data`` with no ``filename`` or ``path``
+    naming a stored output, and not a bundle of several inputs, whose
+    elements the sandbox reads either way. None otherwise."""
+    from utk_curio.sandbox.util.input_names import input_name, input_names_read, input_names_read_js
+
+    raw = run.input
+    if not isinstance(raw, dict) or 'data' not in raw or raw.get('dataType') == 'outputs':
+        return None
+    if any(isinstance(raw.get(key), str) and raw[key].strip() for key in ('filename', 'path')):
+        return None
+    read = (input_names_read if language == 'python' else input_names_read_js)(run.code or '')
+    return INLINE_ROWS_MESSAGE.format(name=input_name(read[0])) if read else None
+
 
 def _foreign_wrapped(dataflow_id: str | None, wrapped: list[str] | None, saved_inputs: dict) -> bool:
     """Whether a run in a kept session of its own, a dashboard viewer's step
@@ -618,6 +642,12 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
     label = _LABELS[language]
     tag = label.lstrip('/')
     input_ref = parse_input_ref(run.input)
+    inline_rows = inline_rows_problem(run, language=language)
+    if inline_rows:
+        return {
+            'stdout': [], 'stderr': inline_rows, 'input': input_ref,
+            'output': {'path': '', 'dataType': 'str'},
+        }, 200
     names = input_names(input_ref)
     saved_inputs = resolve_saved_inputs(names, run.dataflow_id)
     # What a wrapper among the inputs names is read for the run too, so it is

@@ -453,6 +453,39 @@ def process_python_code():
         return jsonify(e.payload), e.status
 
 
+#: How long the sandbox may take to keep a node's rows (``/storeOutput``).
+SANDBOX_STORE_TIMEOUT = 120
+
+
+@bp.route('/storeOutput', methods=['POST'])
+@require_auth
+def store_output():
+    """Keep the rows a node made in the browser as an output, as a run keeps
+    its own, under the caller's session, the one their runs are tagged with.
+
+    Request body: ``{"value": {"dataType": "dataframe" | "geodataframe",
+    "data": ...}, "nodeType"?: str}``. Answers ``{"output": {path, dataType}}``,
+    the reference the node hands on: a Python or JavaScript node reads only a
+    stored output, and a save records only those. A value that is not such
+    rows is a 400 that says why.
+    """
+    body = request.get_json(silent=True) or {}
+    payload = {"sessionId": get_current_token(), "value": body.get("value")}
+    if isinstance(body.get("nodeType"), str):
+        payload["nodeType"] = body["nodeType"]
+    resp = _sandbox_call(
+        'post', '/artifacts/store',
+        label='/artifacts/store', timeout=SANDBOX_STORE_TIMEOUT, json=payload,
+    )
+    if isinstance(resp, tuple):
+        return resp
+    try:
+        answer = resp.json()
+    except ValueError:
+        answer = {"error": f"The sandbox could not keep the output (HTTP {resp.status_code})."}
+    return jsonify(answer), resp.status_code
+
+
 @bp.route('/nodeRuntime', methods=['POST'])
 @require_auth
 def report_node_runtime():

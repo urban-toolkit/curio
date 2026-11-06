@@ -6,11 +6,11 @@ This example shows how to fan out a single spatially-joined dataset to multiple 
 
 ```mermaid
 flowchart LR
-  L1[`Data Loading`<br/>CSV] --> T1[`Data Transformation`<br/>fill NA] --> V1[`Vega-Lite`<br/>size histogram]
+  L1[`Data Loading`<br/>CSV] --> T1[`Python Computation`<br/>fill NA] --> V1[`Vega-Lite`<br/>size histogram]
 
   L2[`Data Loading`<br/>CSV + GeoJSON sjoin] --> P[`Data Pool`]
   P --> V2[`Vega-Lite`<br/>dot density map]
-  P --> T2[`Data Transformation`<br/>top-10 zips] --> V3[`Vega-Lite`<br/>bar chart]
+  P --> T2[`Python Computation`<br/>top-10 zips] --> V3[`Vega-Lite`<br/>bar chart]
 ```
 
 ## Data
@@ -35,7 +35,7 @@ df = curio_load_data("data.cityofchicago.green-roofs")
 return df
 ```
 
-## Step 2: Fill missing values (`Data Transformation`)
+## Step 2: Fill missing values (`Python Computation`)
 
 A trivial cleanup pass so the histogram in Step 3 is not skewed by `NaN` rows. Pandas 3.0 raises `TypeError` when filling string columns with an integer, so the fill is scoped to numeric dtypes; string nulls are left untouched.
 
@@ -183,7 +183,7 @@ Each circle is one rooftop, sized by vegetated area, plotted in lat/lon with bou
 }
 ```
 
-## Step 7: Top-10 zips by vegetated area (`Data Transformation`)
+## Step 7: Top-10 zips by vegetated area (`Python Computation`)
 
 The third branch off the pool reduces the joined table down to the ten zip codes with the most vegetated rooftop area.
 

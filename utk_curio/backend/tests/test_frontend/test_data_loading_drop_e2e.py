@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 LOADER_TYPE = "curio.builtin/data-loading"
-TRANSFORM_TYPE = "curio.builtin/data-transformation"
+TRANSFORM_TYPE = "curio.builtin/computation-analysis"
 STARTER = "data = curio_load_data([!! data !!])\nreturn data\n"
 STEM = "data-loading-drop"
 TREES = "tree_id,height\n1,10\n2,12\n3,9\n"
@@ -154,11 +154,11 @@ def _holds(page, node_id: str, title: str) -> None:
 
 
 def _rows_reach_the_next_node(page, loader: str, rows: int) -> None:
-    """A run of the loader hands its rows to a Data Transformation wired after it."""
+    """A run of the loader hands its rows to a Python Computation wired after it."""
     # A close-up leaves the view framed on the loader: back to the view the
     # loader was dropped in, so the next node lands beside it.
     set_canvas_zoom(page, 1)
-    transform = drag_builtin_to_canvas(page, "#tile-data-transformation", at=(760, 220))
+    transform = drag_builtin_to_canvas(page, "#tile-computation-analysis", at=(760, 220))
     set_node_code(page, transform, COUNT_ROWS)
     connect_nodes(page, loader, transform)
     loader_output = run_node_and_wait(page, loader, node_type=LOADER_TYPE)
@@ -198,7 +198,7 @@ def test_data_loading_and_data_export_show_only_their_controls_and_a_python_node
     set_canvas_zoom(page, 0.5)
     loader = drag_builtin_to_canvas(page, "#tile-data-loading", at=(120, 150))
     export = drag_builtin_to_canvas(page, "#tile-data-export", at=(420, 150))
-    python = drag_builtin_to_canvas(page, "#tile-data-transformation", at=(720, 150))
+    python = drag_builtin_to_canvas(page, "#tile-computation-analysis", at=(720, 150))
 
     # Data Loading and Data Export open on their Widgets tab, which shows only
     # their controls: the Data box, and File name with Download.

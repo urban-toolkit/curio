@@ -684,7 +684,7 @@ class TestSessionFirstHour:
             s.tour.beat(800)
 
         with s.step("Look over the node rail to see what is on offer",
-                    "Eleven built-in tiles, grouped data / computation / views."):
+                    "Ten built-in tiles, grouped data / computation / views."):
             wrong_tile: list[str] = []
             nameless: list[str] = []
             # The tiles are drawn only while the Built-in palette is open.
@@ -1128,7 +1128,7 @@ class TestSessionRealData:
         with s.step("Compute something from it",
                     "Income per capita, and the column names my CSV really has.",
                     chapter="Working with it"):
-            transform_id = grid_drop(s, "data-transformation", 0, 1)
+            transform_id = grid_drop(s, "computation-analysis", 0, 1)
             connect_nodes(page, loader_id, transform_id)
             set_node_code(
                 page, transform_id,
@@ -1145,7 +1145,7 @@ class TestSessionRealData:
             )
             output = run_and_report(
                 s, transform_id, label="the transformation over my CSV",
-                node_type="curio.builtin/data-transformation",
+                node_type="curio.builtin/computation-analysis",
             )
             flat = " ".join(output.split())
             if "Rogers Park, North" not in flat and "Rogers Park" not in flat:
@@ -1186,7 +1186,7 @@ class TestSessionRealData:
             s.tour.beat(800)
             run_and_report(
                 s, transform_id, label="the transformation, saving its output",
-                node_type="curio.builtin/data-transformation",
+                node_type="curio.builtin/computation-analysis",
             )
 
         with s.step("Look for the computed dataset in the catalog",
@@ -1536,7 +1536,7 @@ class TestSessionExtending:
             page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
             loader_id = drop_node(s, "data-loading", (150, 150))
             set_node_code(page, loader_id, QUICKSTART_LOADER)
-            transform_id = drop_node(s, "data-transformation", (760, 150))
+            transform_id = drop_node(s, "computation-analysis", (760, 150))
             connect_nodes(page, loader_id, transform_id)
             set_node_code(
                 page, transform_id,
@@ -1551,7 +1551,7 @@ class TestSessionExtending:
             )
             run_and_report(
                 s, transform_id, label="my ranking transformation",
-                node_type="curio.builtin/data-transformation",
+                node_type="curio.builtin/computation-analysis",
             )
             _fit_view(page)
             s.state.update(loader=loader_id, transform=transform_id)
@@ -2003,36 +2003,36 @@ class TestSessionAbuse:
         with s.step("Build a three-node chain to abuse"):
             set_canvas_zoom(page, 0.6)
             loader = grid_drop(s, "data-loading", 0, 0)
-            middle = grid_drop(s, "data-transformation", 1, 0)
-            tail = grid_drop(s, "data-transformation", 2, 0)
+            middle = grid_drop(s, "computation-analysis", 1, 0)
+            tail = grid_drop(s, "computation-analysis", 2, 0)
             connect_nodes(page, loader, middle)
             connect_nodes(page, middle, tail)
             set_node_code(page, loader, QUICKSTART_LOADER)
             set_node_code(page, middle, "df = input_0.copy()\ndf['c'] = df['b'] * 2\nreturn df\n")
             set_node_code(page, tail, "df = input_0\nprint('tail sees', list(df.columns))\nreturn df\n")
             run_and_report(s, tail, label="the chain's tail",
-                           node_type="curio.builtin/data-transformation")
+                           node_type="curio.builtin/computation-analysis")
             _fit_view(page)
             s.state.update(loader=loader, middle=middle, tail=tail)
 
-        with s.step("Add a Data Summary and a second transformation",
+        with s.step("Add a Data Summary and a Vega-Lite chart",
                     "Setting up an illegal edge, not attempting it yet."):
             summary = grid_drop(s, "data-summary", 0, 1)
             # NOT spatial-join as the target: it declares two input ports, so its
             # handles are not called "in" and connect_nodes fails on the missing
             # handle rather than on type validation - which reads as a refusal
             # without ConnectionValidator ever being consulted.
-            # data-transformation takes DATAFRAME/GEODATAFRAME/RASTER on a single
-            # "in" handle and data-summary emits JSON, so this is a real mismatch
-            # exercised through the normal handles.
-            sink = grid_drop(s, "data-transformation", 2, 1)
+            # vis-vega takes DATAFRAME/GEODATAFRAME on its first circle, "in",
+            # and data-summary emits JSON, so this is a real mismatch exercised
+            # through the normal handles.
+            sink = grid_drop(s, "vis-vega", 2, 1)
             connect_nodes(page, s.state["loader"], summary)
             s.state["summary"], s.state["sink"] = summary, sink
 
         # Only the illegal gesture lives in this step: a failure in the setup
         # above would otherwise be recorded as "refused as it should be".
         with s.step("Connect two incompatible ports",
-                    "Data Summary emits JSON; a transformation wants a frame.",
+                    "Data Summary emits JSON; a Vega-Lite chart wants a frame.",
                     expect="error"):
             connect_nodes(
                 page, s.state["summary"], s.state["sink"], timeout=6000
@@ -2048,7 +2048,7 @@ class TestSessionAbuse:
             play_node(page, s.state["tail"])
             status = wait_for_node_settled(
                 page, s.state["tail"],
-                node_type="curio.builtin/data-transformation",
+                node_type="curio.builtin/computation-analysis",
                 timeout_ms=90000,
             )
             s.note(f"running inside a cycle settled as {status!r}")
@@ -2100,7 +2100,7 @@ class TestSessionAbuse:
                 play_node(page, s.state["tail"])
                 status = wait_for_node_settled(
                     page, s.state["tail"],
-                    node_type="curio.builtin/data-transformation",
+                    node_type="curio.builtin/computation-analysis",
                     timeout_ms=90000,
                 )
                 s.note(

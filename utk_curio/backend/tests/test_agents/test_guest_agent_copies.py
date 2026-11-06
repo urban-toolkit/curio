@@ -57,10 +57,7 @@ def shared_example(client, db, tmp_curio, monkeypatch):
     )
     assert created.status_code == 201, created.get_data(as_text=True)
     monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
-    monkeypatch.setattr(config, "GUEST_LLM_API_TYPE", "openai_compatible")
-    monkeypatch.setattr(config, "GUEST_LLM_BASE_URL", "http://127.0.0.1:9/v1")
-    monkeypatch.setattr(config, "GUEST_LLM_MODEL", "test-model")
-    monkeypatch.setattr(config, "GUEST_LLM_API_KEY", "test-key")
+    # Hosted guests answer on the conftest's endpoint, the Deployment default's.
     test_routes_proposals.TestNodeCreate()._write_builtin_package(GUEST_KEY)
     return created.get_json()["id"]
 
