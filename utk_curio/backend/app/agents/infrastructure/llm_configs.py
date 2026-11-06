@@ -11,8 +11,10 @@ two-layer lock)::
      "agents": {"<agentId>": "<id>" | "deployment"}}
 
 A configuration's ``endpoint`` is ``own`` (the user's type, URL and key) or
-``deployment`` ("This Curio install": the user owns only the label and the
-model; type, URL and key are read from the deployment when a run resolves it).
+``deployment`` ("This Curio install": the user owns the label, which of the
+operator's endpoints it runs on, ``endpointName``, and one of that endpoint's
+models; type, URL and key are read from the endpoint file when a run resolves
+it).
 A ``null`` default means the deployment's own default, when the operator set
 one (``provider_config``).
 
@@ -49,6 +51,7 @@ MAX_LABEL_CHARS = 80
 MAX_MODEL_CHARS = 200
 MAX_URL_CHARS = 500
 MAX_KEY_CHARS = 4096
+MAX_ENDPOINT_NAME_CHARS = 200
 
 ENDPOINT_OWN = "own"
 ENDPOINT_DEPLOYMENT = "deployment"
@@ -64,7 +67,7 @@ _KEY_REQUIRED = {"anthropic": "an Anthropic", "gemini": "a Gemini"}
 #: Types whose endpoint is the SDK's own: they take no base URL.
 _NO_BASE_URL = ("anthropic", "gemini")
 
-_CREATE_FIELDS = frozenset({"label", "endpoint", "apiType", "baseUrl", "apiKey", "model"})
+_CREATE_FIELDS = frozenset({"label", "endpoint", "endpointName", "apiType", "baseUrl", "apiKey", "model"})
 _UPDATE_FIELDS = _CREATE_FIELDS | {"clearApiKey"}
 
 
@@ -140,6 +143,35 @@ def _now() -> int:
     return int(time.time())
 
 
+def offered_model_refusal(endpoint_name: str, model: str, endpoints) -> str | None:
+    """Why a This Curio install configuration may not run *model* on the
+    operator's endpoint named *endpoint_name*, or None. The one sentence a save
+    and a run give, naming every endpoint and model on offer (*endpoints* are
+    ``llm_endpoint.Endpoint``)."""
+    from utk_curio.common.llm_endpoint import offered_models
+
+    endpoint = next((e for e in endpoints if e.name == endpoint_name), None)
+    if endpoint is not None and model in endpoint.models:
+        return None
+    offer = offered_models(endpoints)
+    if endpoint is not None:
+        return f"{model!r} is not a model of {endpoint_name!r} on this Curio install, which offers {offer}."
+    if endpoint_name:
+        return f"This Curio install has no endpoint {endpoint_name!r}; it offers {offer}."
+    return f"A This Curio install configuration names one of its endpoints; it offers {offer}."
+
+
+def _check_offered(record: dict, endpoints) -> None:
+    if record.get("endpoint") == ENDPOINT_DEPLOYMENT:
+        refusal = offered_model_refusal(record.get("endpointName") or "", record.get("model") or "", endpoints)
+        if refusal:
+            raise LlmConfigError(refusal)
+
+
+def _endpoint_name(value: object) -> str:
+    return _one_line(value, "endpointName", MAX_ENDPOINT_NAME_CHARS, required=False)
+
+
 def base_url_host(base_url: str, api_type: str = "") -> str:
     """What may be shown of an endpoint: its host and port, never a path or a key.
 
@@ -164,6 +196,7 @@ def public(config_id: str, record: dict) -> dict:
         "apiType": record.get("apiType") or "",
         "baseUrl": record.get("baseUrl") or "",
         "baseUrlHost": base_url_host(record.get("baseUrl") or "", record.get("apiType") or ""),
+        "endpointName": record.get("endpointName") or "",
         "hasApiKey": bool(record.get("apiKey")),
         "model": record.get("model") or "",
         "createdAt": record.get("createdAt"),
@@ -272,8 +305,10 @@ class LlmConfigStore:
             raise LlmConfigError(f"{_KEY_REQUIRED[api_type]} configuration needs its API key")
         return {"apiType": api_type, "baseUrl": url, "apiKey": api_key}
 
-    def create(self, user_key: str, body: object, *, deployment_offered: bool) -> dict:
-        """Add a configuration and return its ref."""
+    def create(self, user_key: str, body: object, *, offered_endpoints: tuple = ()) -> dict:
+        """Add a configuration and return its ref. A This Curio install
+        configuration names one of *offered_endpoints* (the operator's,
+        ``llm_endpoint.Endpoint``) and one of its models."""
         body = self._check_fields(body, _CREATE_FIELDS)
         endpoint = body.get("endpoint") or ENDPOINT_OWN
         if endpoint not in (ENDPOINT_OWN, ENDPOINT_DEPLOYMENT):
@@ -281,12 +316,17 @@ class LlmConfigStore:
         label = _one_line(body.get("label"), "label", MAX_LABEL_CHARS, required=True)
         model = _one_line(body.get("model"), "model", MAX_MODEL_CHARS, required=True)
         if endpoint == ENDPOINT_DEPLOYMENT:
-            if not deployment_offered:
+            if not offered_endpoints:
                 raise LlmConfigError("this Curio install offers no endpoint of its own")
             if any(body.get(k) for k in ("apiType", "baseUrl", "apiKey")):
-                raise LlmConfigError("a This Curio install configuration takes only a label and a model")
-            fields = {}
+                raise LlmConfigError(
+                    "a This Curio install configuration takes only a label, an endpoint name and a model"
+                )
+            fields = {"endpointName": _endpoint_name(body.get("endpointName"))}
+            _check_offered({"endpoint": endpoint, "model": model, **fields}, offered_endpoints)
         else:
+            if body.get("endpointName"):
+                raise LlmConfigError("only a This Curio install configuration names an endpoint")
             fields = self._own_fields(
                 api_type=_api_type(body.get("apiType")),
                 base_url=body.get("baseUrl"), api_key=_api_key(body.get("apiKey")),
@@ -306,11 +346,12 @@ class LlmConfigStore:
             return public(config_id, doc["configs"][config_id])
 
     def update(self, user_key: str, config_id: str, body: object, *,
-               deployment_offered: bool) -> dict:
+               offered_endpoints: tuple = ()) -> dict:
         """Change a configuration and return its ref. A blank key keeps the
         stored one; ``clearApiKey`` removes it. A key never follows its
         configuration to another endpoint: changing the type, or the URL's
-        scheme, host or port, needs the key again."""
+        scheme, host or port, needs the key again. A This Curio install
+        configuration ends on one of *offered_endpoints* and one of its models."""
         body = self._check_fields(body, _UPDATE_FIELDS)
         with self._locked(user_key):
             doc = self.read(user_key)
@@ -329,13 +370,19 @@ class LlmConfigStore:
             new_key = _api_key(body.get("apiKey"))
             clear = body.get("clearApiKey") is True
             if endpoint == ENDPOINT_DEPLOYMENT:
-                if not deployment_offered:
+                if not offered_endpoints:
                     raise LlmConfigError("this Curio install offers no endpoint of its own")
                 if any(body.get(k) for k in ("apiType", "baseUrl", "apiKey")):
-                    raise LlmConfigError("a This Curio install configuration takes only a label and a model")
+                    raise LlmConfigError(
+                        "a This Curio install configuration takes only a label, an endpoint name and a model"
+                    )
                 for key in ("apiType", "baseUrl", "apiKey"):
                     record.pop(key, None)
+                if "endpointName" in body:
+                    record["endpointName"] = _endpoint_name(body["endpointName"])
             else:
+                if body.get("endpointName"):
+                    raise LlmConfigError("only a This Curio install configuration names an endpoint")
                 api_type = _api_type(body.get("apiType", record.get("apiType")))
                 base_url = body.get("baseUrl", record.get("baseUrl"))
                 api_key = new_key or ("" if clear else record.get("apiKey") or "")
@@ -352,7 +399,9 @@ class LlmConfigStore:
                         "to a different endpoint"
                     )
                 record = candidate
+                record.pop("endpointName", None)
             record["endpoint"] = endpoint
+            _check_offered(record, offered_endpoints)
             record["updatedAt"] = _now()
             doc["configs"][config_id] = record
             self._write(user_key, doc)
@@ -377,9 +426,10 @@ class LlmConfigStore:
             return {"deleted": config_id, "moved": moved, "default": doc["default"]}
 
     def duplicate(self, user_key: str, config_id: str, *, label: str | None = None,
-                  model: str | None = None) -> dict:
+                  model: str | None = None, offered_endpoints: tuple = ()) -> dict:
         """Copy a configuration, its key included (the copy is made here, so
-        the key never travels), under a new id and a free label."""
+        the key never travels), under a new id and a free label. A This Curio
+        install copy names one of *offered_endpoints* and one of its models."""
         with self._locked(user_key):
             doc = self.read(user_key)
             source = doc["configs"].get(config_id)
@@ -395,6 +445,7 @@ class LlmConfigStore:
             record = dict(source)
             if model is not None:
                 record["model"] = _one_line(model, "model", MAX_MODEL_CHARS, required=True)
+            _check_offered(record, offered_endpoints)
             new_id = self._new_id(doc["configs"])
             now = _now()
             record.update({"label": wanted, "createdAt": now, "updatedAt": now})

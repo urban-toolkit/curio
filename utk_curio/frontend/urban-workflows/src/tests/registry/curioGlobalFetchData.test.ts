@@ -14,7 +14,7 @@ jest.mock("../../adapters/vegaLiteAdapter", () => ({}));
 jest.mock("../../adapters/autkGrammarAdapter", () => ({}));
 
 import "../../registry";
-import { fetchData } from "../../services/api";
+import { fetchData, storeOutput } from "../../services/api";
 import { setOpenDataflow } from "../../services/dataflowReads";
 
 const originalFetch = global.fetch;
@@ -54,6 +54,11 @@ afterEach(() => {
 test("packages get the reader the canvas reads outputs with", () => {
     expect(typeof curio()?.fetchData).toBe("function");
     expect(curio().fetchData).toBe(fetchData);
+});
+
+test("packages keep the rows they hand on as the canvas's nodes do (#1333)", () => {
+    expect(typeof curio()?.storeOutput).toBe("function");
+    expect(curio().storeOutput).toBe(storeOutput);
 });
 
 test("while a dataflow is open, a package reads an output on that dataflow's route", async () => {

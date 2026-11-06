@@ -31,13 +31,6 @@ def _llm_refusal():
     return llm_config_refusal(g.user)
 
 
-def _deployment_offered() -> bool:
-
-    return agents_provider_config.deployment_endpoint(
-        _user_dir_key(g.user), guest=bool(getattr(g.user, "is_guest", False))
-    ) is not None
-
-
 @agents_bp.route("/llm", methods=["GET"])
 @require_auth
 def get_llm():
@@ -54,7 +47,9 @@ def get_llm():
 @agents_bp.route("/llm/configs", methods=["POST"])
 @require_auth
 def create_llm_config():
-    """Add a configuration: ``{label, endpoint?, apiType, baseUrl?, apiKey?, model}``."""
+    """Add a configuration: ``{label, endpoint?, apiType, baseUrl?, apiKey?, model}``,
+    or ``{label, endpoint: "deployment", endpointName, model}`` for This Curio
+    install."""
 
     refusal = _llm_refusal()
     if refusal:
@@ -62,7 +57,7 @@ def create_llm_config():
     try:
         config = agents_llm_configs.default_store().create(
             _user_dir_key(g.user), request.get_json(silent=True),
-            deployment_offered=_deployment_offered(),
+            offered_endpoints=agents_provider_config.deployment_endpoints(),
         )
     except agents_llm_configs.LlmConfigError as exc:
         return _llm_error(exc)
@@ -81,7 +76,7 @@ def update_llm_config(config_id: str):
     try:
         config = agents_llm_configs.default_store().update(
             _user_dir_key(g.user), config_id, request.get_json(silent=True),
-            deployment_offered=_deployment_offered(),
+            offered_endpoints=agents_provider_config.deployment_endpoints(),
         )
     except agents_llm_configs.LlmConfigError as exc:
         return _llm_error(exc)
@@ -118,6 +113,7 @@ def duplicate_llm_config(config_id: str):
     try:
         config = agents_llm_configs.default_store().duplicate(
             _user_dir_key(g.user), config_id, label=body.get("label"), model=body.get("model"),
+            offered_endpoints=agents_provider_config.deployment_endpoints(),
         )
     except agents_llm_configs.LlmConfigError as exc:
         return _llm_error(exc)

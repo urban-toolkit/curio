@@ -50,6 +50,8 @@ USERS = {
      "**This is an evaluation report, not a re"): "the evaluation report a person reads",
     ("utk_curio/backend/app/datasets/infrastructure/left_out_files.py", "_could_not_download",
      "Curio could not download : . A pip insta"): "the error of a download the Data Catalog makes",
+    ("utk_curio/backend/app/execution/node_exec.py", "<module>",
+     "This node's code reads `{name}`, but the"): "a node's error on Play",
     ("utk_curio/backend/app/packages/builder/deps.py", "resolve_js_dependencies",
      "this deployment has no approved JS regis"): "a package build's check, on the build's review",
     ("utk_curio/backend/app/packages/builder/models.py", "_coordinate_grammar_error",

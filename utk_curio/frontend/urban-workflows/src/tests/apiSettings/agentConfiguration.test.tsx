@@ -34,7 +34,7 @@ const listingOf = (overrides: Record<string, unknown> = {}) => ({
       answers: answering("Local", "llama3", "assigned") },
   ],
   deployment: { label: "Deployment default", endpointOffered: true, apiType: "openai_compatible",
-    baseUrlHost: "sage.example.edu", model: "llama4" },
+    model: "llama4", endpoints: [{ name: "Gateway", models: ["llama4"] }] },
   active: answering("Work", "gpt-4o-mini"),
   editable: true,
   reason: null,

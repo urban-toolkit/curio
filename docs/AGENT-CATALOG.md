@@ -384,10 +384,10 @@ Every agent, on every dataflow, answers with an **LLM configuration**: the one c
 | Field | What it is |
 |---|---|
 | Label | Your name for it, unique in your account. |
-| Provider | OpenAI, Anthropic, Gemini, Custom (any OpenAI-compatible endpoint), or **This Curio install** when the operator offers its endpoint. |
+| Provider | OpenAI, Anthropic, Gemini, Custom (any OpenAI-compatible endpoint), or **This Curio install** when the operator offers endpoints of its own. |
 | Base URL | Only for Custom: Ollama, LM Studio, vLLM, Groq, Azure. |
-| API key | Write-only, and held for this configuration's endpoint only. Editing leaves it in place unless you type a new one or remove it; changing the provider, or the base URL's scheme, host or port, needs it again. This Curio install uses the operator's key, which you never see. |
-| Model | Which model answers. For OpenAI, Anthropic and Gemini the empty box shows the provider's default model in grey; type it or another model. **Fetch models** suggests what the endpoint serves. |
+| API key | Write-only, and held for this configuration's endpoint only. Editing leaves it in place unless you type a new one or remove it; changing the provider, or the base URL's scheme, host or port, needs it again. This Curio install uses the operator's key and endpoint, which you never see. |
+| Model | Which model answers. For OpenAI, Anthropic and Gemini the empty box shows the provider's default model in grey; type it or another model. **Fetch models** suggests what the endpoint serves. For This Curio install, a list of the models each of the operator's endpoints offers, grouped by endpoint. |
 
 To add a configuration:
 
@@ -395,10 +395,10 @@ To add a configuration:
 2. Open **API Settings** from the top bar (on the canvas it opens on the right).
 3. On the **API keys** tab, click **Add configuration**.
 4. In **Kind**, choose **Language model**.
-5. Type a **Label**, choose the **Provider**, paste the **API key**, and type the **Model** (the provider's default model is shown in grey), or click **Fetch models** and pick one. **Custom** also asks for the **Base URL**.
+5. Type a **Label**, choose the **Provider**, paste the **API key**, and type the **Model** (the provider's default model is shown in grey), or click **Fetch models** and pick one. **Custom** also asks for the **Base URL**. **This Curio install** takes no key: pick the **Model** from its list, grouped by endpoint.
 6. Click **Add configuration**. The configuration's row shows in the list, with **saved** in its **Key** column when you gave a key.
 
-**Make this my default** is ticked for your first configuration. Each row offers **Edit**, **Duplicate** (the copy keeps the key) and **Remove**; an account holds up to 32. Its **Details** show the provider, the model and the host, and **Chosen for** lists the agents chosen to run on it. The **Default** badge marks your default. The **Deployment default** row is the operator's own configuration: read-only, with **set by this Curio** in its **Key** column, shown when the operator configured one, and the one that answers while you have no default of your own. Choosing it in **Default for agents**, or removing your own default, goes back to it.
+**Make this my default** is ticked for your first configuration. Each row offers **Edit**, **Duplicate** (the copy keeps the key) and **Remove**; an account holds up to 32. Its **Details** show the provider, the model and the host (none for This Curio install), and **Chosen for** lists the agents chosen to run on it. The **Default** badge marks your default. The **Deployment default** row is the operator's own configuration: read-only, with **set by this Curio** in its **Key** column, shown when the operator configured one, and the one that answers while you have no default of your own. Choosing it in **Default for agents**, or removing your own default, goes back to it.
 
 ### Default and Agent models
 
@@ -432,7 +432,9 @@ It is a convenience, not a gate: the field stays free text. Two sources fill the
 
 Until a key has listed an endpoint's models, there are no suggestions: the Model box shows the provider's default model in grey, and you type the model. A model you type by hand is always accepted.
 
-Whoever runs the install can set a Deployment default with `curio.py start` flags (see [Operator notes](#operator-notes)). It is not stored in your account, so when the operator changes it, the Deployment default row changes with it.
+**This Curio install** has no **Fetch models**: its **Model** is a choice among the models the operator's endpoints list, grouped by endpoint, and a configuration takes no other. When the operator takes its endpoint or its model out of the endpoint file, a configuration on it refuses its runs with **Open API Settings** until you pick a listed model in its **Edit**.
+
+Whoever runs the install can set a Deployment default in the file `--llm-endpoint-file` names (see [Operator notes](#operator-notes)). It is not stored in your account, so when the operator changes it, the Deployment default row changes with it.
 
 **Curio does not meter, cap, or bill agent runs.** There is no quota screen and no spend limit: the tokens are billed to whoever's key is in use. Curio keeps a local, per-day record of what ran (see [Storage layers](#storage-layers)), and calls no usage or billing API.
 
@@ -597,12 +599,7 @@ Curio ships with **no default LLM endpoint**. Until an operator sets a Deploymen
 
 | Variable | Flag | Effect |
 |---|---|---|
-| `CURIO_DEFAULT_LLM_API_TYPE` | `--llm-provider` | The provider kind of the deployment's endpoint. |
-| `CURIO_DEFAULT_LLM_BASE_URL` | `--llm-base-url` | The deployment's endpoint. With it or a key set, users are offered **This Curio install**. |
-| `CURIO_DEFAULT_LLM_MODEL` | `--llm-model` | The Deployment default's model. Without one there is no Deployment default. |
-| `CURIO_DEFAULT_LLM_API_KEY` | none | The deployment's API key. Set it in the environment. |
-| `GUEST_LLM_API_KEY` | `--guest-llm-api-key` | The key of the guest configuration, which every guest on a `--deploy` instance answers with. Unset, it takes `CURIO_DEFAULT_LLM_API_KEY`; with neither, guests get no AI. |
-| `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_MODEL` | `--guest-llm-provider`, `--guest-llm-base-url`, `--guest-llm-model` | The guest configuration's provider, endpoint and model. Unset, it takes the deployment's; an empty endpoint is the provider's own. A guest configuration needs a key and a model. |
+| `CURIO_DEFAULT_LLM_ENDPOINT_FILE` | `--llm-endpoint-file` | The file of this Curio's own LLM endpoints, one section each, with its key, its models and, optionally, its URL and provider ([DEPLOYMENT.md](DEPLOYMENT.md#llm-configurations)). Only the backend reads it. The first section's first model is the Deployment default and the guest configuration, and users are offered **This Curio install** on any of its endpoints. Without it there is no Deployment default. |
 | `CURIO_SEARCH_URL` | `--agent-search-url` | Where the web-search tool looks, as a URL template with `{q}`. Defaults to DuckDuckGo's keyless Instant Answer API; point it at a local SearXNG, SerpAPI, or Google Programmable Search for ranked results. |
 | `CURIO_SOLVE_MAX_ATTEMPTS` | `--solve-max-attempts` | How many times Solve may try one node, counting the first generation. Default 40. |
 | `CURIO_SOLVE_NODE_BUDGET` | `--solve-node-budget` | Wall-clock seconds Solve may spend repairing a node solved on its own, as with **Solve this node**. Default 900. |

@@ -47,8 +47,7 @@ export const AgentConfigTab: React.FC<{
         <p className={llmStyles.active}>
           {active.source ? (
             <>
-              Guests use <strong>{active.model}</strong>
-              {active.baseUrlHost ? <> at <code>{active.baseUrlHost}</code></> : null}.
+              Guests use <strong>{active.model}</strong> on this Curio&apos;s endpoint.
             </>
           ) : (
             active.error

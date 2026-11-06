@@ -26,6 +26,7 @@ from utk_curio.cli.logs import (
     log_warning,
     logger,
 )
+from utk_curio.common.llm_endpoint import without_backend_only
 from utk_curio.sandbox.isolation.lifecycle import server_environment
 
 
@@ -66,7 +67,7 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
                 stderr=subprocess.STDOUT,
                 text=True,
                 shell=shell_required,
-                env={**os.environ}
+                env=without_backend_only(os.environ),
             )
             threading.Thread(target=stream_output, args=(process, "Frontend", COLOR_FRONTEND), daemon=True).start()
 
@@ -89,7 +90,7 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
                 clean_shutdown()
                 return None
 
-            env = os.environ.copy()
+            env = without_backend_only(os.environ)
             env = {
                 **env,
                 "PYTHONPATH": project_root + os.pathsep + env.get("PYTHONPATH", ""),
@@ -331,6 +332,9 @@ def start_sandbox(host, port):
     # Its allocators fitted as its isolated children's are, before it starts:
     # glibc and Arrow settle theirs once per process (isolation/lifecycle.py).
     env = server_environment(env)
+    # Node code runs in this process and in its children, so the deployment's
+    # LLM key and URL, and the file that holds them, stay with the backend.
+    env = without_backend_only(env)
 
     process = subprocess.Popen(
         [sys.executable, "-u", "-m", "sandbox.server"],

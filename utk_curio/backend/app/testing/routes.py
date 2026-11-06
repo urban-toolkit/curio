@@ -468,6 +468,8 @@ def reset_db():
             stores_cleared = _clear_test_user_stores()
         # A clock a failed test left set would date the next test's records.
         record_clock.set_now(None)
+        # So would a stand-in LLM endpoint offer the next test This Curio install.
+        _restore_llm_deployment()
     finally:
         in_flight.open()
     return jsonify({
@@ -532,6 +534,56 @@ def clock():
         return jsonify({"error": "now must be an ISO 8601 time with a zone"}), 400
     record_clock.set_now(moment.astimezone(timezone.utc))
     return jsonify({"now": _iso(record_clock.utc_now())}), 200
+
+
+#: The deployment's LLM endpoints as they were before ``/llm-deployment`` set
+#: stand-ins, or None while none are set.
+_llm_deployment_saved: tuple | None = None
+
+
+def _restore_llm_deployment() -> None:
+    global _llm_deployment_saved
+    from utk_curio.backend import config as settings
+
+    saved, _llm_deployment_saved = _llm_deployment_saved, None
+    if saved is not None:
+        settings.DEFAULT_LLM_ENDPOINTS = saved
+
+
+@testing_bp.route("/llm-deployment", methods=["POST", "DELETE"])
+def llm_deployment():
+    """Give this backend stand-in endpoints of its own, as
+    ``--llm-endpoint-file`` does, or take them back.
+
+    For a test of what the page is told about This Curio install (its
+    endpoints' names and models, never a host or a key). Nothing is asked of
+    an endpoint: a test that sets them runs no agent on them.
+
+    Body (POST): ``{"file": "<an endpoint file's text>"}``, read as the
+    launch reads the file (``llm_endpoint.parse_endpoints``). ``DELETE`` puts
+    the launch's endpoints back, as ``reset-db`` does.
+    Response: ``{"endpoints": [{"name", "models"}]}``, what is now offered.
+    """
+    global _llm_deployment_saved
+    from utk_curio.backend import config as settings
+    from utk_curio.common import llm_endpoint
+
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body.get("file"), str):
+            return jsonify({"error": "file must be an endpoint file's text"}), 400
+        try:
+            endpoints = llm_endpoint.parse_endpoints(body["file"], "the test's endpoint file")
+        except llm_endpoint.EndpointFileError as exc:
+            return jsonify({"error": str(exc)}), 400
+        if _llm_deployment_saved is None:
+            _llm_deployment_saved = tuple(settings.DEFAULT_LLM_ENDPOINTS)
+        settings.DEFAULT_LLM_ENDPOINTS = endpoints
+    else:
+        _restore_llm_deployment()
+    return jsonify({"endpoints": [
+        {"name": endpoint.name, "models": list(endpoint.models)} for endpoint in settings.DEFAULT_LLM_ENDPOINTS
+    ]}), 200
 
 
 @testing_bp.route("/stub-project", methods=["POST"])

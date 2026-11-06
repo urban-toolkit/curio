@@ -15,6 +15,7 @@ import json
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.projects.services import _user_dir_key
+from utk_curio.backend.tests._support import llm_deployment
 
 
 def _auth(token):
@@ -465,7 +466,7 @@ class TestADelegateFailureNeverCarriesTheKey:
         from utk_curio.backend import config
 
         key = "sk-delegate-secret-0123456789"
-        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", key)
+        llm_deployment.change_first(monkeypatch, api_key=key)
         _, token = user_and_token
         pid = _project(client, token)
         att_id, _ = _setup(client, token, pid, monkeypatch)

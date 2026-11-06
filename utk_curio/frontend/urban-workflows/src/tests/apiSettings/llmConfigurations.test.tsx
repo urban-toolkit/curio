@@ -16,12 +16,13 @@ const listingOf = (overrides: Record<string, unknown> = {}) => ({
     label: "Deployment default",
     endpointOffered: true,
     apiType: "openai_compatible",
-    baseUrlHost: "sage.example.edu",
     model: "llama4",
+    endpoints: [{ name: "Gateway", models: ["llama4", "llama4-large"] }],
   },
+  // As the server answers: this Curio's endpoint is never named by its host.
   active: {
     source: "deployment", configId: null, label: "Deployment default", model: "llama4",
-    apiType: "openai_compatible", baseUrlHost: "sage.example.edu",
+    apiType: "openai_compatible", baseUrlHost: "",
   },
   editable: true,
   reason: null,
@@ -105,13 +106,32 @@ describe("the language models in the key list", () => {
     expect(row).toHaveTextContent("Default");
     expect(row).toHaveTextContent("Language model");
     expect(row).toHaveTextContent("llama4");
-    expect(row).toHaveTextContent("sage.example.edu");
+    expect(row).not.toHaveTextContent("sage.example.edu");
     expect(row).toHaveTextContent("set by this Curio");
     expect(within(await table()).getAllByRole("row")).toHaveLength(2); // the header and this row
     showTab("Agent configuration");
-    expect(await screen.findByTestId("llm-active")).toHaveTextContent(
-      "Answering now: Deployment default · llama4 at sage.example.edu",
-    );
+    const active = await screen.findByTestId("llm-active");
+    expect(active).toHaveTextContent("Answering now: Deployment default · llama4");
+    expect(active).not.toHaveTextContent(" at ");
+  });
+
+  it("never shows this Curio's endpoint host, even when a listing carries one", async () => {
+    mockListing = listingOf({
+      deployment: {
+        label: "Deployment default", endpointOffered: true, apiType: "openai_compatible",
+        model: "llama4", endpoints: [{ name: "Gateway", models: ["llama4"] }], baseUrlHost: "sage.example.edu",
+      },
+    });
+    render(<Panel />);
+    const row = await screen.findByTestId("llm-deployment-row");
+    expect(row).toHaveTextContent("llama4");
+    expect(row).not.toHaveTextContent("sage.example.edu");
+    fireEvent.click(screen.getByRole("button", { name: "Add configuration" }));
+    const editor = within(screen.getByTestId("llm-config-editor"));
+    fireEvent.click(editor.getByRole("button", { name: "This Curio install" }));
+    expect(editor.getByText("Runs on this Curio install's own endpoint with its key. You choose the model."))
+      .toBeInTheDocument();
+    expect(screen.getByTestId("llm-config-editor")).not.toHaveTextContent("sage.example.edu");
   });
 
   it("shows a configuration's provider, model and whether a key is saved, never the key", async () => {
@@ -158,7 +178,7 @@ describe("the language models in the key list", () => {
 
   it("with nothing to choose from, Agent configuration sends you to API keys", async () => {
     mockListing = listingOf({
-      deployment: { label: "Deployment default", endpointOffered: false, apiType: null, baseUrlHost: null, model: null },
+      deployment: { label: "Deployment default", endpointOffered: false, apiType: null, model: null, endpoints: [] },
       active: { source: null, error: "No LLM configuration answers this run." },
     });
     render(<Panel initial="agents" />);
@@ -218,22 +238,76 @@ describe("the editor", () => {
     expect(editor.getByText("(required)")).toBeInTheDocument();
   });
 
-  it("This Curio install takes only a label and a model", async () => {
-    mockApi.create.mockResolvedValue({ config: { ...MINE, endpoint: "deployment" } });
+  it("This Curio install takes a label, then an endpoint's model from one list grouped by endpoint", async () => {
+    mockListing = listingOf({
+      deployment: {
+        label: "Deployment default", endpointOffered: true, apiType: "openai_compatible", model: "model-a",
+        endpoints: [
+          { name: "Gateway", models: ["model-a", "model-b"] },
+          { name: "Second", models: ["model-b", "model-c"] },
+        ],
+      },
+    });
+    mockApi.create.mockResolvedValue({ config: { ...MINE, endpoint: "deployment", endpointName: "Second", model: "model-b" } });
     const editor = await openEditor();
     fireEvent.click(editor.getByRole("button", { name: "This Curio install" }));
     expect(editor.queryByLabelText(/API key/)).toBeNull();
+    const model = editor.getByLabelText("Model") as HTMLSelectElement;
+    expect(model.tagName).toBe("SELECT");
+    const groups = Array.from(model.querySelectorAll("optgroup"));
+    expect(groups.map((g) => [g.label, Array.from(g.querySelectorAll("option")).map((o) => o.textContent)]))
+      .toEqual([["Gateway", ["model-a", "model-b"]], ["Second", ["model-b", "model-c"]]]);
+    // It starts on the Deployment default: the first endpoint's first model.
+    expect(JSON.parse(model.value)).toEqual(["Gateway", "model-a"]);
+    // Nothing to fetch: the models are this Curio's own.
+    expect(editor.queryByRole("button", { name: /models/ })).toBeNull();
     fireEvent.change(editor.getByLabelText("Label"), { target: { value: "Here" } });
-    fireEvent.change(editor.getByLabelText("Model"), { target: { value: "llama4-large" } });
+    // The same model name on the second endpoint is the second endpoint's.
+    fireEvent.change(model, { target: { value: JSON.stringify(["Second", "model-b"]) } });
     fireEvent.click(editor.getByRole("button", { name: "Add configuration" }));
     await waitFor(() =>
-      expect(mockApi.create).toHaveBeenCalledWith({ label: "Here", model: "llama4-large", endpoint: "deployment" }),
+      expect(mockApi.create).toHaveBeenCalledWith({
+        label: "Here", model: "model-b", endpoint: "deployment", endpointName: "Second",
+      }),
+    );
+    expect(mockApi.models).not.toHaveBeenCalled();
+  });
+
+  it("a configuration whose endpoint or model left the file must choose again", async () => {
+    const here = {
+      ...MINE, id: "llm-00000000000d", label: "Here", endpoint: "deployment", endpointName: "Old", baseUrl: "",
+      baseUrlHost: "", hasApiKey: false, model: "model-z",
+    };
+    mockListing = listingOf({
+      configs: [here],
+      deployment: {
+        label: "Deployment default", endpointOffered: true, apiType: "openai_compatible",
+        model: "model-a", endpoints: [{ name: "Gateway", models: ["model-a", "model-b"] }],
+      },
+    });
+    mockApi.update.mockResolvedValue({ config: { ...here, endpointName: "Gateway", model: "model-b" } });
+    render(<Panel />);
+    const row = (await screen.findByRole("button", { name: "Edit Here" })).closest("tr")!;
+    expect(row).toHaveTextContent("This Curio install · Old · model-z");
+    fireEvent.click(within(row).getByRole("button", { name: "Edit Here" }));
+    const editor = within(screen.getByTestId("llm-config-editor"));
+    const model = editor.getByLabelText("Model") as HTMLSelectElement;
+    expect(model.value).toBe("");
+    expect(model.options[0].textContent).toBe("Old: model-z (not offered)");
+    expect(model.options[0].disabled).toBe(true);
+    expect(editor.getByRole("button", { name: "Save configuration" })).toBeDisabled();
+    fireEvent.change(model, { target: { value: JSON.stringify(["Gateway", "model-b"]) } });
+    fireEvent.click(editor.getByRole("button", { name: "Save configuration" }));
+    await waitFor(() =>
+      expect(mockApi.update).toHaveBeenCalledWith(here.id, {
+        label: "Here", model: "model-b", endpoint: "deployment", endpointName: "Gateway",
+      }),
     );
   });
 
   it("This Curio install is not offered when the deployment has no endpoint", async () => {
     mockListing = listingOf({
-      deployment: { label: "Deployment default", endpointOffered: false, apiType: null, baseUrlHost: null, model: null },
+      deployment: { label: "Deployment default", endpointOffered: false, apiType: null, model: null, endpoints: [] },
     });
     const editor = await openEditor();
     expect(editor.queryByRole("button", { name: "This Curio install" })).toBeNull();
@@ -344,6 +418,9 @@ describe("guests", () => {
     render(<Panel />);
     expect(await screen.findByText(/not available to guests/)).toBeInTheDocument();
     expect(screen.getByText("small")).toBeInTheDocument();
+    // This Curio's endpoint is never named by its host, even one a listing carries.
+    expect(screen.getByText("small").closest("p")).toHaveTextContent("Guests use small on this Curio's endpoint.");
+    expect(document.body).not.toHaveTextContent("guest.example.edu");
     expect(screen.getByText("Personal keys cannot be saved on a shared guest account.")).toBeInTheDocument();
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.queryByRole("button", { name: "Add configuration" })).toBeNull();

@@ -327,65 +327,20 @@ def main():
             "flip it on each node."
         ),
     )
+    # This Curio's own LLM endpoint: one file, read by the backend alone, so
+    # neither its URL nor its key is ever on a command line (which every user
+    # on the host can read), in the environment node code inherits, or in the
+    # browser. It is the only LLM setting there is.
     parser.add_argument(
-        "--llm-provider", default=None, choices=["openai_compatible", "anthropic", "gemini"],
+        "--llm-endpoint-file", default=None, metavar="PATH",
         help=(
-            "Provider kind of this Curio's own LLM endpoint (sets "
-            "CURIO_DEFAULT_LLM_API_TYPE, default openai_compatible)."
-        ),
-    )
-    parser.add_argument(
-        "--llm-base-url", default=None, metavar="URL",
-        help=(
-            "Base URL of this Curio's own OpenAI-compatible endpoint (sets "
-            "CURIO_DEFAULT_LLM_BASE_URL). Curio ships NO default endpoint. "
-            "With this or CURIO_DEFAULT_LLM_API_KEY set, users can add an LLM "
-            "configuration on it ('This Curio install' in API Settings)."
-        ),
-    )
-    parser.add_argument(
-        "--llm-model", default=None, metavar="NAME",
-        help=(
-            "Model of the Deployment default, the LLM configuration that "
-            "answers a user who has not chosen a default of their own (sets "
-            "CURIO_DEFAULT_LLM_MODEL). No default: without it there is no "
-            "Deployment default."
-        ),
-    )
-    # There is deliberately no --llm-api-key. A key passed as an argument is
-    # visible in the process list to every user on the host; set
-    # CURIO_DEFAULT_LLM_API_KEY in the environment instead.
-    parser.add_argument(
-        "--guest-llm-api-key", default=None, metavar="KEY",
-        help=(
-            "API key of the guest configuration, which guests answer with "
-            "(sets GUEST_LLM_API_KEY). It otherwise takes "
-            "CURIO_DEFAULT_LLM_API_KEY, and with neither, guests get no AI. "
-            "The guest configuration takes the deployment's provider, URL "
-            "and model unless --guest-llm-provider, --guest-llm-base-url and "
-            "--guest-llm-model say otherwise."
-        ),
-    )
-    parser.add_argument(
-        "--guest-llm-provider", default=None, choices=["openai_compatible", "anthropic", "gemini"],
-        help=(
-            "Provider kind of the guest configuration (sets GUEST_LLM_API_TYPE). "
-            "Defaults to the deployment's, --llm-provider."
-        ),
-    )
-    parser.add_argument(
-        "--guest-llm-base-url", default=None, metavar="URL",
-        help=(
-            "Endpoint of the guest configuration (sets GUEST_LLM_BASE_URL). "
-            "Defaults to the deployment's, --llm-base-url; an empty value is "
-            "the provider's own endpoint."
-        ),
-    )
-    parser.add_argument(
-        "--guest-llm-model", default=None, metavar="NAME",
-        help=(
-            "Model of the guest configuration (sets GUEST_LLM_MODEL). Defaults "
-            "to the deployment's, --llm-model; without one, guests get no AI."
+            "File of this Curio's own LLM endpoints, one [section] each with its "
+            "api_key, its models and, optionally, its base_url and provider (see "
+            "DEPLOYMENT.md, LLM configurations). The first section's first model "
+            "is the Deployment default and the guests'. Only the backend reads "
+            "it. Without it, Curio offers no endpoint of its own and users add "
+            "theirs in API Settings. Under --deploy, the execution user must not "
+            "be able to read it."
         ),
     )
     parser.add_argument(
@@ -510,10 +465,6 @@ def main():
         exec_memory_mb=args.exec_memory_mb,
         exec_timeout=args.exec_timeout,
         exec_parallelism=args.exec_parallelism,
-        llm_provider=args.llm_provider,
-        llm_base_url=args.llm_base_url,
-        llm_model=args.llm_model,
-        guest_llm_api_key=args.guest_llm_api_key,
         agent_search_url=args.agent_search_url,
         backend_url=args.backend_url,
         discovery_root=args.discovery_root,
@@ -526,9 +477,6 @@ def main():
         validation_exec_timeout=args.validation_exec_timeout,
         validation_node_limit=args.validation_node_limit,
         discovery_max_download_mb=args.discovery_max_download_mb,
-        guest_llm_provider=args.guest_llm_provider,
-        guest_llm_base_url=args.guest_llm_base_url,
-        guest_llm_model=args.guest_llm_model,
         media_cache_max_gb=args.media_cache_max_gb,
         db_pool_size=args.db_pool_size,
         db_pool_overflow=args.db_pool_overflow,
@@ -543,6 +491,7 @@ def main():
         collab_origins=args.collab_origins,
         collab_namespace=args.collab_namespace,
         log_to_stdout=args.log_to_stdout,
+        llm_endpoint_file=args.llm_endpoint_file,
     )
 
     # Handle standalone rebuild or db init without starting servers. Neither

@@ -6,6 +6,7 @@ import secrets
 from pathlib import Path
 
 from utk_curio.cli.logs import log_always, log_warning
+from utk_curio.common import llm_endpoint
 
 
 #: The unprivileged account isolated node code runs as. The Docker image
@@ -86,7 +87,7 @@ def set_state_dir(state_dir=None):
         os.environ["CURIO_STATE_DIR"] = str(Path(state_dir).expanduser().resolve())
 
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, llm_provider=None, llm_base_url=None, llm_model=None, guest_llm_api_key=None, agent_search_url=None, backend_url=None, discovery_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None, guest_llm_provider=None, guest_llm_base_url=None, guest_llm_model=None, media_cache_max_gb=None, db_pool_size=None, db_pool_overflow=None, db_pool_timeout=None, proxy_hops=None, package_workers=None, js_parallelism=None, js_registry_url=None, js_block_unpinned=None, shared_guest_name=None, shared_guest_username=None, collab_origins=None, collab_namespace=None, log_to_stdout=None, packages_root=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, agent_search_url=None, backend_url=None, discovery_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None, media_cache_max_gb=None, db_pool_size=None, db_pool_overflow=None, db_pool_timeout=None, proxy_hops=None, package_workers=None, js_parallelism=None, js_registry_url=None, js_block_unpinned=None, shared_guest_name=None, shared_guest_username=None, collab_origins=None, collab_namespace=None, log_to_stdout=None, packages_root=None, llm_endpoint_file=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -258,14 +259,10 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     # AI provider. Curio ships no endpoint of its own (see backend/config.py):
     # an instance whose operator configures nothing resolves no provider, and
     # the agent surfaces say so rather than reaching a third party nobody chose.
-    if llm_provider:
-        os.environ["CURIO_DEFAULT_LLM_API_TYPE"] = str(llm_provider)
-    if llm_base_url:
-        os.environ["CURIO_DEFAULT_LLM_BASE_URL"] = str(llm_base_url)
-    if llm_model:
-        os.environ["CURIO_DEFAULT_LLM_MODEL"] = str(llm_model)
-    if guest_llm_api_key:
-        os.environ["GUEST_LLM_API_KEY"] = str(guest_llm_api_key)
+    # The one way to give it one is the endpoint file.
+    _refuse_the_old_llm_variables()
+    if llm_endpoint_file:
+        _use_endpoint_file(llm_endpoint_file, deploy=deploy, exec_user=exec_user)
 
     # The agents' web-search tool. Unset, it uses DuckDuckGo's keyless Instant
     # Answer API (DEFAULT_SEARCH_URL in agents/application/tools.py).
@@ -275,11 +272,8 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     # Operator settings the servers read (backend/config.py, the package
     # builder and runtime, the sandbox worker, the media cache). Each is written
     # only when its flag is passed; 0 and an empty value are values an operator
-    # can mean (no pool overflow, the provider's own endpoint).
+    # can mean (no pool overflow, a default package registry).
     for env_name, value in (
-        ("GUEST_LLM_API_TYPE", guest_llm_provider),
-        ("GUEST_LLM_BASE_URL", guest_llm_base_url),
-        ("GUEST_LLM_MODEL", guest_llm_model),
         ("CURIO_DB_POOL_SIZE", db_pool_size),
         ("CURIO_DB_POOL_OVERFLOW", db_pool_overflow),
         ("CURIO_DB_POOL_TIMEOUT", db_pool_timeout),
@@ -331,3 +325,57 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
 
 def _is_testing() -> bool:
     return os.environ.get("CURIO_TESTING", "").lower() in ("1", "true", "yes")
+
+
+def _refuse_the_old_llm_variables():
+    """Stop a start whose environment still holds one of the LLM settings the
+    endpoint file replaced: Curio reads none of them, and starting without
+    the endpoint they meant would leave the agents silently unconfigured."""
+    held = [name for name in llm_endpoint.RETIRED_VARIABLES if name in os.environ]
+    if held:
+        raise SystemExit(
+            f"Refusing to start: {', '.join(held)} {'is' if len(held) == 1 else 'are'} "
+            "set, but this Curio's LLM endpoints, keys and models are read only from "
+            "the file --llm-endpoint-file names; put them there and unset "
+            f"{'it' if len(held) == 1 else 'them'}."
+        )
+
+
+def _use_endpoint_file(path, *, deploy, exec_user):
+    """``--llm-endpoint-file``: check the file, then hand its path, and only its
+    path, to the backend (``services.py`` keeps it from every other child).
+
+    Under ``--deploy`` the execution user must not be able to read it, as
+    ``hardening.SENSITIVE_PATHS`` asks of ``instance/``: a node that could open
+    it would read the key.
+    """
+    resolved = Path(path).expanduser().resolve()
+    try:
+        llm_endpoint.read_endpoint_file(resolved)
+    except llm_endpoint.EndpointFileError as exc:
+        raise SystemExit(f"Refusing to start: {exc}.") from None
+    if deploy and exec_user:
+        _refuse_an_endpoint_file_node_code_can_read(resolved, exec_user)
+    os.environ[llm_endpoint.ENDPOINT_FILE_VARIABLE] = str(resolved)
+
+
+def _refuse_an_endpoint_file_node_code_can_read(path, exec_user):
+    from utk_curio.sandbox.isolation import hardening
+
+    try:
+        import pwd
+
+        account = pwd.getpwnam(exec_user)
+    except (ImportError, KeyError):
+        raise SystemExit(
+            f"Refusing to start: the execution user {exec_user!r} has no account, so "
+            f"who can read the LLM endpoint file {path} cannot be checked."
+        ) from None
+    findings = hardening.audit(
+        os.sep, uid=account.pw_uid, gid=account.pw_gid,
+        paths=((str(path), "the LLM endpoints' URLs and keys"),),
+    )
+    if findings:
+        raise SystemExit(
+            f"Refusing to start: {findings[0]} Make the file readable by its owner only."
+        )
