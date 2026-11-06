@@ -456,7 +456,15 @@ def test_typing_that_goes_on_past_a_runs_start_is_an_entry_each_side_of_the_run(
         "the run's start"
     )
     _release_the_held_run_entry(page)
-    run_node_and_wait(page, NODE, node_type="computation-analysis", timeout_ms=120000)
+    with page.expect_request(
+        lambda request: request.method == "POST" and request.url.endswith(f"/history/nodes/{NODE}/runs"),
+        timeout=150000,
+    ) as third_entry:
+        run_node_and_wait(page, NODE, node_type="computation-analysis", timeout_ms=120000)
+    # A run's entry names the code the node held when it started, which the
+    # typing that went on past the second run's start had left.
+    named = (third_entry.value.post_data_json or {}).get("code")
+    assert named == THIRD, f"the third run's entry named {named!r}, not the code the node held at its start"
 
     panel = _open_runs(page)
     expect(panel.locator("[data-provenance-item]")).to_have_count(5, timeout=20000)
