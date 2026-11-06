@@ -87,7 +87,7 @@
     },
     {
       "category": "data",
-      "description": "The Data Export box writes the data connected to it to a file, and its Download button saves the file: its code writes a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF, and a bundle or several values holding a table or a raster as one zip, a file per part and a bundle.json. File name names the file; left empty, the download is named after the node or dataset that feeds it. Part names one part to write alone, by its label, its key or its position from 0; left empty, every part is written.",
+      "description": "The Data Export box writes the data connected to it to a file, and its Download button saves the file: its code writes a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF or a bundle as one zip. File name names the file; left empty, the download is named after the node or dataset that feeds it. Part writes one part alone.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,

@@ -167,13 +167,18 @@ def with_part_label(value, part: dict):
     *part* in its ``metadata`` (``codec.PART_LABEL``) when it is a table or a
     GeoDataFrame, beside what the metadata holds: its layer's name and type
     stay as they are. A zip of the parts names each file after its label
-    (``bundle_zip``); a raster or a value has nowhere to carry one."""
+    (``bundle_zip``); a raster or a value has nowhere to carry one. A label
+    that is the frame's own layer name adds nothing: a zip names the part
+    after that name all the same (``bundle_zip.part_label``)."""
     from utk_curio.sandbox.util.codec import PART_LABEL, detect_kind
 
     label = part.get("label")
-    if isinstance(label, str) and label and detect_kind(value) in ("dataframe", "geodataframe"):
-        held = value.__dict__.get("metadata")
-        value.__dict__["metadata"] = {**(held if isinstance(held, dict) else {}), PART_LABEL: label}
+    if not isinstance(label, str) or not label or detect_kind(value) not in ("dataframe", "geodataframe"):
+        return value
+    held = value.__dict__.get("metadata")
+    held = held if isinstance(held, dict) else {}
+    if held.get("name") != label:
+        value.__dict__["metadata"] = {**held, PART_LABEL: label}
     return value
 
 

@@ -441,11 +441,12 @@ _OUTPUT_FILE_CALL_RE = re.compile(
 #: argument with no call in it, as ``input_0``, and a name or a part that is a
 #: widget's chip (``[!! file_name !!]``).
 EXPORT_CALL = "curio_export"
+_EXPORT_NAME = r"""[fFrRbBuU]{0,2}(?P<q>["'])(?:\\.|(?!(?P=q))[^\\\n])*(?P=q)"""
+_EXPORT_PART = _EXPORT_NAME.replace("<q>", "<p>").replace("=q)", "=p)")
+_WIDGET_CHIP = r"\[!![^\n]*?!!\]"
 _EXPORT_CALL_RE = re.compile(
-    r"""\bcurio_export\([^()\n]*?,\s*(?:name\s*=\s*)?"""
-    r"""(?:[fFrRbBuU]{0,2}(?P<q>["'])(?:\\.|(?!(?P=q))[^\\\n])*(?P=q)|\[!![^\n]*?!!\])"""
-    r"""(?:\s*,\s*(?:part\s*=\s*)?"""
-    r"""(?:[fFrRbBuU]{0,2}(?P<p>["'])(?:\\.|(?!(?P=p))[^\\\n])*(?P=p)|\[!![^\n]*?!!\]|-?\d+))?\s*\)"""
+    r"\bcurio_export\([^()\n]*?,\s*(?:name\s*=\s*)?(?:" + _EXPORT_NAME + "|" + _WIDGET_CHIP + ")"
+    + r"(?:\s*,\s*(?:part\s*=\s*)?(?:" + _EXPORT_PART + "|" + _WIDGET_CHIP + r"|-?\d+))?\s*\)"
 )
 
 
