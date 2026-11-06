@@ -969,9 +969,13 @@ def _start(job, run, user_key: str) -> dict[str, Any]:
     whatever the worker had reached by then: a fast one finishes first, and an
     unchanged refresh would answer as a dataset already held, with a 200.
     """
+    from utk_curio.backend.app.projects import visitor_copies
+
     row = job.to_row()
     try:
-        job_store.run_in_background(run)
+        # For the visitor whose request starts it: a hosted guest's download
+        # is named after them on the worker's thread, which holds no request.
+        job_store.run_in_background(visitor_copies.carrying(run))
     except Exception as exc:  # noqa: BLE001 - no thread, so nothing else will
         ratelimit.download_slots.release(user_key)
         job_store.jobs.finish(job, "failed", error=f"{exc}"[:300], stage_message="Failed")

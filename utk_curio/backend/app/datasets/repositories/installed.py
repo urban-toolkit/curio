@@ -307,6 +307,17 @@ class InstalledDatasetRepository:
 
         return changed
 
+    def lands_on(self, dataflow_id: str) -> str:
+        """The dataflow a change to *dataflow_id*'s datasets is written to, as
+        :meth:`mutate_refs` writes it: *dataflow_id* itself, or a hosted
+        guest's own copy of it, made now (``projects/visitor_copies.py``)."""
+        from utk_curio.backend.app.projects import visitor_copies
+
+        if not visitor_copies.copies_for(self.user):
+            return dataflow_id
+        project, _store_key = self._dataflow_store(dataflow_id)
+        return visitor_copies.for_request(self.user, project.id, make=True)
+
     def mutate_refs(self, dataflow_id: str, mutate, *, cleanup: bool = False) -> dict[str, Any]:
         """Atomically read-modify-write this dataflow's refs (dev/82).
 

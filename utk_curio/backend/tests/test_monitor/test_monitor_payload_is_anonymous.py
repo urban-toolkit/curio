@@ -21,13 +21,15 @@ import re
 
 import pytest
 
-from utk_curio.backend.app.monitor import counters
+from utk_curio.backend.app.monitor import counters, llm_tokens
 
 IPV4 = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
 # An address, not any "@": the hardware section names the CPU, and an Intel
 # model reads "Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz".
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 ISO_Z = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+# A host name with a top-level domain, as a model name never needs one.
+HOST = re.compile(r"\b(?:[a-z0-9-]+\.)+[a-z]{2,24}\b", re.I)
 
 # Every string an aggregate payload is allowed to contain, beyond a timestamp.
 # Closed vocabularies only: if a value cannot be enumerated here, it does not
@@ -186,3 +188,56 @@ def test_the_storage_payload_is_anonymous_too(client, seeded, state_root):
 
     walk(body, "$")
     assert not offenders, f"free-text strings reached the storage payload: {offenders}"
+
+
+def test_the_llm_payload_names_models_and_nobody(client):
+    """The third aggregate route, held to the same rule with one exemption.
+
+    It names the models that answered, the owner's call, and a model is
+    whatever a user typed for their own key. So only the values of ``model``
+    are exempt from the closed vocabulary, and the scans still run on them: a
+    model typed as an address, a host or a sentence is recorded as ``other``.
+    """
+    llm_tokens.record("gemma4", curio=True, input_tokens=120, output_tokens=30)
+    typed = (
+        "zqxprobe@probe.invalid", "https://llm.zqx.example/v1", "llm.zqx.example",
+        "llm.zqx.example:8443", "203.0.113.77", "203.0.113.77:11434", "zqx probe",
+    )
+    for model in typed:
+        llm_tokens.record(model, curio=False, input_tokens=5, output_tokens=1)
+
+    response = client.get("/api/monitor/llm")
+    raw = response.get_data(as_text=True)
+    assert "zqx" not in raw.lower(), "a typed address reached the payload"
+    assert EMAIL.search(raw) is None, "an email-shaped string reached the payload"
+    assert "probe.invalid" not in raw
+    assert IPV4.search(raw) is None, "an IP-shaped string reached the payload"
+    assert "hostname" not in raw.lower()
+
+    body = response.get_json()
+    # Not vacuous: every typed address was counted, as other.
+    assert {(entry["model"], entry["curio"]): entry["kept"]["requests"] for entry in body["models"]} == {
+        ("gemma4", True): 1,
+        ("other", False): len(typed),
+    }
+
+    offenders = []
+
+    def walk(node, path, key=None):
+        if isinstance(node, dict):
+            for name, value in node.items():
+                walk(value, f"{path}.{name}", name)
+        elif isinstance(node, list):
+            for i, value in enumerate(node):
+                walk(value, f"{path}[{i}]")
+        elif isinstance(node, str):
+            if key == "model":
+                if EMAIL.search(node) or IPV4.search(node) or HOST.search(node):
+                    offenders.append((path, node))
+                return
+            if ISO_Z.match(node) or node in ALLOWED_STRINGS:
+                return
+            offenders.append((path, node))
+
+    walk(body, "$")
+    assert not offenders, f"free text or an address reached the LLM payload: {offenders}"

@@ -11,6 +11,20 @@ import { MemoryRouter } from "react-router-dom";
 jest.mock("../../pages/monitor/MonitorCharts", () => ({
   DurationHistogram: () => <div data-testid="duration-chart" />,
   StoreSizeHistogram: () => <div data-testid="store-chart" />,
+  // What a line chart was handed: its name, and each line's tokens added up.
+  LinesOverTime: ({ label, rows, colors }: any) => (
+    <div data-testid="lines-chart" aria-label={label}>
+      {colors.domain.map((line: string, index: number) => (
+        <span key={line} data-color={colors.range[index]}>
+          {`${line}: ${rows
+            .filter((row: any) => row.line === line)
+            .reduce((sum: number, row: any) => sum + row.tokens, 0)} over ${
+            rows.filter((row: any) => row.line === line).length
+          } hours`}
+        </span>
+      ))}
+    </div>
+  ),
 }));
 
 jest.mock("../../components/VersionBadge", () => ({
@@ -48,15 +62,18 @@ jest.mock("../../api/monitorApi", () => ({
   fetchMonitor: jest.fn(),
   fetchMonitorStorage: jest.fn(),
   fetchMonitorErrors: jest.fn(),
+  fetchMonitorLlm: jest.fn(),
   postClientError: jest.fn(),
 }));
 
 import {
   fetchMonitor,
   fetchMonitorErrors,
+  fetchMonitorLlm,
   fetchMonitorStorage,
 } from "../../api/monitorApi";
 import MonitorPage from "../../pages/monitor/MonitorPage";
+import { getByTooltip } from "../_support/tooltips";
 
 const monitorPayload = {
   generatedAt: "2026-09-22T14:03:11Z",
@@ -124,6 +141,30 @@ const errorsPayload = {
              context: {}, count: 1 }],
 };
 
+const llmPayload = {
+  computedAt: "2026-09-22T14:03:11Z", startedAt: "2026-09-21T08:40:00Z",
+  maxDays: 90, ageSeconds: 4, ttlSeconds: 60,
+  hourlyFrom: "2026-09-15T15:00:00Z", hourlyTo: "2026-09-22T14:00:00Z",
+  hourly: [
+    { hour: "2026-09-22T12:00:00Z", model: "gemma4", curio: true,
+      inputTokens: 8200, outputTokens: 1100, requests: 4 },
+    { hour: "2026-09-22T13:00:00Z", model: "gemma4", curio: true,
+      inputTokens: 10000, outputTokens: 1000, requests: 5 },
+    { hour: "2026-09-22T13:00:00Z", model: "gpt-5", curio: false,
+      inputTokens: 640, outputTokens: 210, requests: 2 },
+  ],
+  models: [
+    { model: "gemma4", curio: true,
+      last24h: { inputTokens: 18200, outputTokens: 2100, requests: 9 },
+      last7d: { inputTokens: 1234567, outputTokens: 98000, requests: 410 },
+      kept: { inputTokens: 2469606, outputTokens: 120000, requests: 530 } },
+    { model: "gpt-5", curio: false,
+      last24h: { inputTokens: 640, outputTokens: 210, requests: 2 },
+      last7d: { inputTokens: 640, outputTokens: 210, requests: 2 },
+      kept: { inputTokens: 640, outputTokens: 210, requests: 2 } },
+  ],
+};
+
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={["/monitor"]}>
@@ -139,12 +180,13 @@ describe("MonitorPage", () => {
     (fetchMonitor as jest.Mock).mockResolvedValue(monitorPayload);
     (fetchMonitorStorage as jest.Mock).mockResolvedValue(storagePayload);
     (fetchMonitorErrors as jest.Mock).mockResolvedValue(errorsPayload);
+    (fetchMonitorLlm as jest.Mock).mockResolvedValue(llmPayload);
   });
 
   test("renders every section", async () => {
     renderPage();
     for (const heading of [
-      "Deployment", "Hardware", "Execution", "Accounts and content",
+      "Deployment", "Hardware", "Execution", "LLM tokens", "Accounts and content",
       "Storage", "Recent errors",
     ]) {
       expect(
@@ -227,6 +269,57 @@ describe("MonitorPage", () => {
   test("the error log is rendered from its own payload", async () => {
     renderPage();
     expect(await screen.findByText("KeyError: 'population'")).toBeInTheDocument();
+  });
+
+  describe("LLM tokens", () => {
+    test("the table names each model, where it ran and its tokens", async () => {
+      renderPage();
+      const table = await screen.findByTestId("monitor-llm-models");
+      const curio = (await within(table).findByText("gemma4")).closest("tr") as HTMLElement;
+      expect(within(curio).getByText("Curio's endpoint")).toBeInTheDocument();
+      expect(within(curio).getByText("18.2K in · 2.1K out")).toBeInTheDocument();
+      expect(within(curio).getByText("1.2M in · 98K out")).toBeInTheDocument();
+      expect(within(curio).getByText("2.5M in · 120K out")).toBeInTheDocument();
+      expect(within(curio).getByText("530")).toBeInTheDocument();
+      // The exact counts are the cell's Curio tooltip, never a title.
+      expect(getByTooltip(curio, "18,200 input tokens, 2,100 output tokens, 9 requests")).toBeInTheDocument();
+      expect(curio.querySelector("[title]")).toBeNull();
+
+      const own = within(table).getByText("gpt-5").closest("tr") as HTMLElement;
+      expect(within(own).getByText("Own key")).toBeInTheDocument();
+      expect(within(own).getAllByText("640 in · 210 out")).toHaveLength(3);
+    });
+
+    test("the tiles add up the last 24 hours, and what ran on Curio's endpoint", async () => {
+      renderPage();
+      const section = await screen.findByTestId("monitor-llm-tokens");
+      expect(await within(section).findByText("18.8K")).toBeInTheDocument();
+      expect(within(section).getByText("18.2K on Curio's endpoint")).toBeInTheDocument();
+      expect(within(section).getByText("2.3K")).toBeInTheDocument();
+      expect(within(section).getByText("2.1K on Curio's endpoint")).toBeInTheDocument();
+      expect(within(section).getByText("412 in 7 days")).toBeInTheDocument();
+    });
+
+    test("each chart draws a line per model over every hour of the 7 days", async () => {
+      renderPage();
+      const charts = await screen.findAllByTestId("lines-chart");
+      expect(charts.map((chart) => chart.getAttribute("aria-label"))).toEqual([
+        "Input tokens per hour by model, last 7 days",
+        "Output tokens per hour by model, last 7 days",
+      ]);
+      expect(within(charts[0]).getByText("gemma4 (Curio): 18200 over 168 hours")).toBeInTheDocument();
+      expect(within(charts[0]).getByText("gpt-5 (own key): 640 over 168 hours")).toBeInTheDocument();
+      expect(within(charts[1]).getByText("gemma4 (Curio): 2100 over 168 hours")).toBeInTheDocument();
+      expect(within(charts[1]).getByText("gpt-5 (own key): 210 over 168 hours")).toBeInTheDocument();
+    });
+
+    test("an instance no model answered says so, and draws no chart", async () => {
+      (fetchMonitorLlm as jest.Mock).mockResolvedValue({ ...llmPayload, hourly: [], models: [] });
+      renderPage();
+      expect(await screen.findByText("No LLM requests since the backend started.")).toBeInTheDocument();
+      expect(screen.getAllByText("No LLM requests in the last 7 days.")).toHaveLength(2);
+      expect(screen.queryByTestId("lines-chart")).not.toBeInTheDocument();
+    });
   });
 
   describe("chrome", () => {

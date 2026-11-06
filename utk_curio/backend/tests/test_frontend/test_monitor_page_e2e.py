@@ -1,18 +1,26 @@
-"""Playwright E2E: the monitor page renders, polls, pauses and logs a browser error.
+"""Playwright E2E: the monitor page renders, polls, pauses and logs a browser error,
+and its LLM tokens section counts an agent's turn.
 
-One test, deliberately. It exercises the whole chain end to end -- the React
-page, the real backend, the sandbox proxy, real SQL and the public error
-ingest -- without running a node or loading a dataflow, so it stays cheap.
+The first test exercises the whole chain end to end -- the React page, the real
+backend, the sandbox proxy, real SQL and the public error ingest -- without
+running a node or loading a dataflow, so it stays cheap.
 
 The browser-error step is the only coverage that path gets anywhere: the
 window handler, the public POST, the ring buffer and the render are four
 separate pieces and nothing else joins them up.
+
+The second runs one scripted agent turn (``utils/scripted_llm.py``) on a model
+of its own, so its calls are told apart from every other test's, and reads its
+tokens back from the route and from the page.
 """
 
 from __future__ import annotations
 
 import re
+import uuid
 from typing import TYPE_CHECKING
+
+from .utils import api_json, captured_agent_calls, script_agent_replies, stub_db_user, use_scripted_llm
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
@@ -35,7 +43,7 @@ def test_monitor_page_shows_stats_errors_and_polls(app_frontend: FrontendPage, p
     page.wait_for_load_state("domcontentloaded")
 
     # 1. Every section renders.
-    for heading in ("Deployment", "Hardware", "Execution",
+    for heading in ("Deployment", "Hardware", "Execution", "LLM tokens",
                     "Accounts and content", "Storage", "Recent errors"):
         page.get_by_role("heading", name=heading).wait_for(timeout=30000)
 
@@ -68,8 +76,8 @@ def test_monitor_page_shows_stats_errors_and_polls(app_frontend: FrontendPage, p
     # 7. The aggregate panels name nobody. Scoped to those panels rather than
     #    the whole body: the error log is raw by design, so a body-wide
     #    assertion would now be wrong rather than strict.
-    for panel in ("monitor-deployment", "monitor-hardware",
-                  "monitor-execution", "monitor-accounts", "monitor-storage"):
+    for panel in ("monitor-deployment", "monitor-hardware", "monitor-execution",
+                  "monitor-llm-tokens", "monitor-accounts", "monitor-storage"):
         text = page.get_by_test_id(panel).inner_text()
         assert EMAIL.search(text) is None, f"{panel} rendered an email-shaped string"
         assert IPV4.search(text) is None, f"{panel} rendered an IP-shaped string"
@@ -95,3 +103,55 @@ def test_monitor_page_shows_stats_errors_and_polls(app_frontend: FrontendPage, p
         marker,
     )
     page.get_by_text(marker).wait_for(timeout=30000)
+
+
+#: The agent the turn runs: one that attaches to the canvas, so the dataflow
+#: needs no node.
+RESEARCHER = "agent.curio.researcher@1"
+
+
+def test_an_agent_turn_shows_its_models_tokens_in_the_llm_section(app_frontend: FrontendPage, page,
+                                                                   current_server: str):
+    from utk_curio.backend.app.agents.infrastructure.testing_provider import DEFAULT_USAGE
+
+    # 1. One turn, on a scripted model no other test uses, on the user's own key.
+    model = f"monitor-e2e-{uuid.uuid4().hex[:8]}"
+    session = stub_db_user(current_server, username=f"monitor_llm_{model[-8:]}", name="Monitor Tokens",
+                           project_name="Monitor tokens")
+    token = session["token"]
+    use_scripted_llm(current_server, token, model=model, label="Monitor tokens")
+    base = f"{current_server}/api/agents/projects/{session['project']['id']}"
+    if RESEARCHER not in {row["dirName"] for row in api_json(base, token)["agents"]}:
+        api_json(f"{base}/install", token, method="POST", payload={"coord": RESEARCHER})
+    attachment = api_json(f"{base}/attachments", token, method="POST",
+                          payload={"coord": RESEARCHER, "target": {"kind": "canvas"}})
+    script_agent_replies(current_server, "The monitor counts this turn.")
+    run = api_json(f"{base}/attachments/{attachment['attachmentId']}/run", token, method="POST",
+                   payload={"message": "How many tokens did this take?"}, timeout=60.0)
+    assert "The monitor counts this turn." in run["reply"], run["reply"]
+
+    # 2. The route counts each of its calls once, the conversation's title
+    #    among them, at the usage the scripted provider reports for each.
+    calls = [call for call in captured_agent_calls(current_server) if call["model"] == model]
+    assert calls, captured_agent_calls(current_server)
+    counted = {"inputTokens": DEFAULT_USAGE["in"] * len(calls),
+               "outputTokens": DEFAULT_USAGE["out"] * len(calls), "requests": len(calls)}
+    body = api_json(f"{current_server}/api/monitor/llm", token)
+    entry = next((entry for entry in body["models"] if entry["model"] == model), None)
+    assert entry is not None, body["models"]
+    assert (entry["curio"], entry["last24h"], entry["last7d"], entry["kept"]) == (
+        False, counted, counted, counted), entry
+    assert model in {row["model"] for row in body["hourly"]}, body["hourly"]
+
+    # 3. The page shows them: the model's row, on its own key, and its line in both charts.
+    page.goto(f"{app_frontend.base_url}/monitor", timeout=120000)
+    page.get_by_role("heading", name="LLM tokens").wait_for(timeout=30000)
+    row = page.locator(f'[data-testid="monitor-llm-models"] tr[data-model="{model}"]')
+    row.wait_for(timeout=30000)
+    text = row.inner_text()
+    tokens = f"{counted['inputTokens']} in · {counted['outputTokens']} out"
+    assert "Own key" in text and text.count(tokens) == 3, text
+    section = page.get_by_test_id("monitor-llm-tokens")
+    section.locator('[role="img"] svg').nth(1).wait_for(timeout=30000)
+    legend = section.locator("svg text", has_text=f"{model} (own key)")
+    legend.nth(1).wait_for(timeout=30000)
