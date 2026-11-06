@@ -152,7 +152,9 @@ def test_everything_a_hosted_guest_does_stays_in_its_own_copy(client, example, d
     # An agent on A's node reads the dataflow as A's canvas shows it, and
     # searches A's Data Catalog for the copy.
     node_builder = _attached(client, example, NODE_BUILDER, {"kind": "node", "targetId": "a"})
-    calls = _script(monkeypatch, [_tool("dataflow.read", {}), _tool("catalog.search", {"q": "trees"}), "Read."])
+    calls = _script(monkeypatch, [
+        _tool("dataflow.read", {"include": ["content"]}), _tool("catalog.search", {"q": "trees"}), "Read.",
+    ])
     run = client.post(f"/api/agents/projects/{example}/attachments/{node_builder['attachmentId']}/run",
                       json={"message": "what does this node do?"}, headers=_auth(VISITOR_A))
     assert run.status_code == 200, run.get_data(as_text=True)
