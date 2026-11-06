@@ -1460,6 +1460,11 @@ jobs:
           fi
           echo "OK: node execution was dispatched to the zygote"
 
+      # After the workflows, as the check above, so it never stops the tests.
+      - name: 🔒 Assert an isolated child's torch uses the job's thread count
+        if: ${{ !cancelled() }}
+        run: python3 scripts/ci_isolated_threads.py
+
       - name: 📋 Capture sandbox/backend logs
         if: always()
         run: |
