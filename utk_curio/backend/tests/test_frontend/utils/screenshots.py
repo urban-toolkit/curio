@@ -4,7 +4,10 @@ frame nodes for a capture, and the browser log kept beside the baselines.
 
 import os
 import json
+import traceback
+from contextlib import contextmanager
 from io import BytesIO
+from typing import NamedTuple
 
 import allure
 import pytest
@@ -115,6 +118,103 @@ REMINT_HOW = (
     "-f remint=true`, review the frames on that run's curio-ci-report.html, "
     "then commit its reminted-baselines artifact."
 )
+
+#: Where a CI run that writes no baselines keeps its candidates: the captures
+#: a re-mint would write, one per frame that moved past REMINT_MIN_RATIO
+#: outside the volatile text and held still on a second capture, or that has
+#: no baseline yet, each under the name of the baseline it was compared with.
+#: CI's e2e jobs set it on every run but a re-mint, and the ci-report job
+#: uploads them as the candidate-baselines artifact.
+CANDIDATE_DIR_ENV = "CURIO_E2E_CANDIDATE_DIR"
+
+
+def candidate_dir(environ=os.environ) -> str | None:
+    """Where this run keeps its candidates, or None when it keeps none.
+
+    None on a mint or re-mint run, which writes baselines instead, and on any
+    run without CANDIDATE_DIR_ENV (a local run, the unit suites).
+    """
+    if MINT_BASELINES or REMINT_BASELINES:
+        return None
+    return environ.get(CANDIDATE_DIR_ENV) or None
+
+
+#: The frame failures of the running test, told at its end: a list while
+#: frame_failures_at_the_end holds them, None otherwise.
+_held: list | None = None
+
+#: What ends a test the same way whether or not one of its frames failed.
+_PASS_THROUGH = (KeyboardInterrupt, SystemExit, pytest.exit.Exception)
+
+_UTILS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+@contextmanager
+def frame_failures_at_the_end():
+    """Hold the block's frame failures, and fail at its end naming them all.
+
+    test_frontend's conftest wraps each test's call in it. On a run that keeps
+    candidates (candidate_dir), a frame over its budget or without a baseline
+    is noted where it is taken and the test goes on, so every later frame is
+    captured too. At the end the test fails with an AssertionError that starts
+    with the first frame's own message and names every other one. When the
+    test raised after such a frame, or skipped, that failure takes the place of
+    what it raised, which it names, so a test that failed at a frame fails
+    still. Without a held frame the test ends as it would have.
+
+    Off, or inside another hold, it holds nothing and a frame failure raises
+    where it is taken, as on every run that keeps no candidates.
+    """
+    global _held
+    if _held is not None or not candidate_dir():
+        yield
+        return
+    held = _held = []
+    try:
+        yield
+    except _PASS_THROUGH:
+        raise
+    except BaseException as exc:  # noqa: BLE001 - a skip or an xfail too
+        if held:
+            raise AssertionError(_told(held, then=exc)) from exc
+        raise
+    finally:
+        _held = None
+    if held:
+        raise AssertionError(_told(held))
+
+
+def _frame_failed(message: str) -> None:
+    """A frame failed: raise *message*, or hold it for the test's end."""
+    if _held is None:
+        raise AssertionError(message)
+    _held.append((message, _where()))
+
+
+def _where() -> str:
+    """The file and line that asked for the frame: the innermost caller
+    outside these helpers."""
+    for frame in reversed(traceback.extract_stack()[:-1]):
+        if os.path.dirname(os.path.abspath(frame.filename)) != _UTILS_DIR:
+            return f"{os.path.basename(frame.filename)}:{frame.lineno}"
+    return ""
+
+
+def _told(held, then=None) -> str:
+    """The failure of a test whose frames *held* failed, then *then*, if it raised."""
+    (first, where), rest = held[0], held[1:]
+    lines = [first]
+    if where:
+        lines.append(f"  frame taken at {where}")
+    lines.append("The test went on to its end, so its later frames were captured too.")
+    if rest:
+        lines.append(f"{len(rest)} more frame{'s' if len(rest) > 1 else ''} of this test failed:")
+        lines += [f"- {message}" + (f" (taken at {at})" if at else "") for message, at in rest]
+    if then is not None:
+        said = str(then).strip().splitlines()
+        lines.append(f"Then the test raised {type(then).__name__}"
+                     + (f": {said[0]}" if said else ""))
+    return "\n".join(lines)
 
 
 #: Baselines a re-mint rewrites whatever it finds, named by a part of their
@@ -370,13 +470,84 @@ def _assert_mintable(image, expected_path: str, page) -> None:
 MAX_DIFF_RATIO = 0.10
 
 
+class _Judgment(NamedTuple):
+    """What the re-mint rule makes of a capture.
+
+    *verdict* is one of:
+
+    * ``unchanged``: it moved by REMINT_MIN_RATIO or less outside the volatile
+      text, and was not forced;
+    * ``refused``: _assert_mintable refused it, with *error*;
+    * ``recapture-failed``: the second capture raised *error*;
+    * ``unsettled``: the second capture, *again*, differs from the first past
+      the budget (*settle*), so the screen had not settled;
+    * ``moved``: it would become the baseline (*settle* is the second capture
+      against it).
+
+    *evidence* is what a record of the comparison shows.
+    """
+    verdict: str
+    evidence: dict
+    error: BaseException | None = None
+    again: object = None
+    settle: object = None
+
+
+def _judge(page, capture, new_img, *, baseline=None, cmp=None, boxes=(),
+           pixel_threshold, max_diff_ratio, name, forced=False,
+           before_recapture=None) -> _Judgment:
+    """Judge *new_img* as a re-mint does, for both a re-mint and a candidate.
+
+    *baseline* is the committed image *cmp* compared *new_img* with, and
+    *boxes* the volatile text's (_volatile_boxes), which the move is measured
+    without. With no *baseline* there is nothing to measure against, as for a
+    frame that has none yet: only the mint checks and the second capture judge
+    it. *name* is the baseline the capture would become, for _assert_mintable's
+    message. *before_recapture* runs once the capture passed those checks,
+    right before the second capture: a re-mint writes the baseline there.
+
+    Captures again only a capture that moved, and never raises for the
+    verdict: each caller decides what a verdict does to its test.
+    """
+    if baseline is None:
+        evidence = dict(created=new_img)
+    else:
+        volatile = _box_mask(boxes, cmp.counted.shape) if new_img.size == baseline.size else None
+        changed = cmp.counted & ~volatile if volatile is not None else cmp.counted
+        remint_ratio = int(changed.sum()) / cmp.total if cmp.total else 0.0
+        evidence = dict(
+            expected=baseline, created=new_img, expected_cmp=cmp.expected_cmp,
+            arr=cmp.arr, counted=cmp.counted, volatile=volatile,
+            mismatched=cmp.mismatched, total=cmp.total, ratio=cmp.ratio,
+            remint_ratio=remint_ratio, remint_min_ratio=REMINT_MIN_RATIO,
+            forced=forced,
+        )
+        if remint_ratio <= REMINT_MIN_RATIO and not forced:
+            return _Judgment("unchanged", evidence)
+    try:
+        _assert_mintable(new_img, name, page)
+    except AssertionError as exc:
+        return _Judgment("refused", evidence, error=exc)
+    if before_recapture is not None:
+        before_recapture()
+    try:
+        again = capture()
+    except Exception as exc:  # noqa: BLE001 - the caller reports it
+        return _Judgment("recapture-failed", evidence, error=exc)
+    settle = _compare_images(again, new_img, pixel_threshold)
+    if settle.ratio > max_diff_ratio:
+        return _Judgment("unsettled", evidence, again=again, settle=settle)
+    return _Judgment("moved", evidence, settle=settle)
+
+
 def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
             max_diff_ratio, record_args, forced=False, target=None, kind="",
             clip_rect=None) -> str:
     """Write a fresh capture over its baseline when the screen changed.
 
     Changed means more than REMINT_MIN_RATIO of the pixels differ outside the
-    volatile text, or the frame is *forced* (REMINT_FORCE names it). Otherwise the
+    volatile text, or the frame is *forced* (REMINT_FORCE names it), as
+    :func:`_judge` decides for re-mints and candidates alike. Otherwise the
     baseline stays as committed and the record says ``unchanged``. A re-minted frame is recorded next to the baseline it
     replaced, for the CI report page, and captured a second time: when that
     capture differs from the first by more than the budget the screen had not
@@ -417,38 +588,30 @@ def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
         raise
 
     cmp = _compare_images(new_img, old_img, pixel_threshold)
-    volatile = _box_mask(boxes, cmp.counted.shape) if new_img.size == old_img.size else None
-    changed = cmp.counted & ~volatile if volatile is not None else cmp.counted
-    remint_ratio = int(changed.sum()) / cmp.total if cmp.total else 0.0
-    evidence = dict(
-        expected=old_img, created=new_img, expected_cmp=cmp.expected_cmp,
-        arr=cmp.arr, counted=cmp.counted, volatile=volatile,
-        mismatched=cmp.mismatched, total=cmp.total, ratio=cmp.ratio,
-        remint_ratio=remint_ratio, remint_min_ratio=REMINT_MIN_RATIO,
-        forced=forced,
+    judged = _judge(
+        page, capture, new_img, baseline=old_img, cmp=cmp, boxes=boxes,
+        pixel_threshold=pixel_threshold, max_diff_ratio=max_diff_ratio,
+        name=target, forced=forced, before_recapture=lambda: new_img.save(target),
     )
-    if remint_ratio <= REMINT_MIN_RATIO and not forced:
+    evidence = judged.evidence
+    if judged.verdict == "unchanged":
         comparisons.record("unchanged", **evidence, **record_args)
         return expected_path
 
-    try:
-        _assert_mintable(new_img, target, page)
-    except AssertionError as exc:
-        comparisons.record("capture-error", error=str(exc), **evidence, **record_args)
-        raise
-    new_img.save(target)
-    try:
-        again = capture()
-    except Exception as exc:
+    if judged.verdict == "refused":
+        comparisons.record("capture-error", error=str(judged.error), **evidence, **record_args)
+        raise judged.error
+    if judged.verdict == "recapture-failed":
+        exc = judged.error
         put_back()
         comparisons.record(
             "capture-error", expected=old_img, created=new_img,
             error=f"second capture failed, baseline left as committed: "
                   f"{type(exc).__name__}: {exc}", **record_args,
         )
-        raise
-    settle = _compare_images(again, new_img, pixel_threshold)
-    if settle.ratio > max_diff_ratio:
+        raise exc
+    settle, again = judged.settle, judged.again
+    if judged.verdict == "unsettled":
         put_back()
         comparisons.record(
             "failed", expected=new_img, created=again,
@@ -474,6 +637,54 @@ def _remint(page, expected_path, capture, *, clip_selector, pixel_threshold,
         **evidence, **written,
     )
     return target
+
+
+def _keep_candidate(directory: str, baseline: str, image) -> str:
+    """Write *image* to *directory* under *baseline*'s file name, the PNG a
+    re-mint would write over it. Returns the reason it could not, or ""."""
+    try:
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, os.path.basename(baseline))
+        tmp = path + ".tmp"
+        image.save(tmp, format="PNG")
+        os.replace(tmp, path)
+        return ""
+    except Exception as exc:  # noqa: BLE001 - best effort, like the records
+        return f"it could not be written: {type(exc).__name__}: {exc}"
+
+
+def _as_candidate(judged: _Judgment, directory: str, baseline: str, max_diff_ratio: float) -> dict:
+    """What a record adds for *judged*, and the candidate kept when it moved.
+
+    A capture that would not become a baseline is no candidate, and the record
+    says why; on this run that never fails the test.
+    """
+    verdict, error, settle = judged.verdict, judged.error, judged.settle
+    if verdict == "unchanged":
+        return {}
+    if verdict == "refused":
+        return {"not_candidate": str(error)}
+    if verdict == "recapture-failed":
+        return {"not_candidate": f"a second capture failed: {type(error).__name__}: {error}"}
+    fields = {"recapture_ratio": settle.ratio}
+    if verdict == "unsettled":
+        fields["not_candidate"] = (
+            f"the screen was still changing: a second capture right after differs "
+            f"from it by {settle.ratio:.2%}, over the {max_diff_ratio:.2%} budget")
+        return fields
+    unwritten = _keep_candidate(directory, baseline, judged.evidence["created"])
+    if unwritten:
+        fields["not_candidate"] = unwritten
+    else:
+        fields["candidate"] = True
+    return fields
+
+
+#: Added to a failed frame's message when its capture was kept as a candidate.
+_CANDIDATE_KEPT = (
+    " This run kept its capture as a candidate: review it on the run's "
+    "curio-ci-report.html, then commit it from the candidate-baselines artifact."
+)
 
 
 def save_workflow_test_screenshot(
@@ -558,6 +769,14 @@ def save_workflow_test_screenshot(
     with a baseline of that kind, ``<name>.<kind>.png``, is compared with it,
     and a re-mint writes that file, never the default baseline.
 
+    On a CI run that keeps candidates (:func:`candidate_dir`), a capture that
+    moved past REMINT_MIN_RATIO gets the re-mint's judgment (:func:`_judge`),
+    and one a re-mint would write is kept as a candidate, as is a settled
+    capture of a frame without a baseline. A frame over its budget or without
+    a baseline fails its test at the test's end there, inside
+    :func:`frame_failures_at_the_end`, so the test's later frames are captured
+    too. Only frames that moved pay for the judgment.
+
     Returns the path to the expected screenshot file.
     """
     if not 0.0 <= max_diff_ratio <= MAX_DIFF_RATIO:
@@ -635,8 +854,15 @@ def save_workflow_test_screenshot(
                 "the definition of correct for every later run, so it is not "
                 "something a test run should produce as a side effect."
             )
-            comparisons.record_missing(_capture, **record_args)
-            raise AssertionError(message)
+            candidates = candidate_dir()
+            if candidates is None:
+                comparisons.record_missing(_capture, **record_args)
+            elif _missing_candidate(page, _capture, candidates, expected_path,
+                                    pixel_threshold=pixel_threshold,
+                                    max_diff_ratio=max_diff_ratio, record_args=record_args):
+                message += _CANDIDATE_KEPT
+            _frame_failed(message)
+            return expected_path
         minted = _capture()
         _assert_mintable(minted, expected_path, page)
         minted.save(expected_path)
@@ -666,11 +892,25 @@ def save_workflow_test_screenshot(
     mismatched, total, ratio = cmp.mismatched, cmp.total, cmp.ratio
     failed = ratio > max_diff_ratio
 
-    comparisons.record(
-        "failed" if failed else "minted" if minted_now else "passed",
+    evidence = dict(
         expected=expected_img, created=actual_img, expected_cmp=expected_cmp,
         arr=cmp.arr, counted=cmp.counted, mismatched=mismatched, total=total,
-        ratio=ratio, **record_args,
+        ratio=ratio,
+    )
+    # A run that keeps candidates judges a frame that moved as a re-mint would.
+    # The volatile text is read after the capture, only for such a frame.
+    candidates = candidate_dir()
+    if candidates is not None and ratio > REMINT_MIN_RATIO:
+        boxes = _volatile_boxes(page, clip_selector if clip_selector is not None else clip_rect)
+        judged = _judge(
+            page, _capture, actual_img, baseline=expected_img, cmp=cmp, boxes=boxes,
+            pixel_threshold=pixel_threshold, max_diff_ratio=max_diff_ratio, name=expected_path,
+        )
+        evidence = {**judged.evidence,
+                    **_as_candidate(judged, candidates, expected_path, max_diff_ratio)}
+    comparisons.record(
+        "failed" if failed else "minted" if minted_now else "passed",
+        **evidence, **record_args,
     )
 
     if failed:
@@ -698,7 +938,7 @@ def save_workflow_test_screenshot(
             attachment_type=allure.attachment_type.PNG,
         )
 
-        raise AssertionError(
+        _frame_failed(
             f"Screenshot regression for {os.path.basename(expected_path)}: "
             f"{mismatched}/{total} pixels differ ({ratio:.2%}), "
             f"allowed {max_diff_ratio:.2%}. "
@@ -706,8 +946,27 @@ def save_workflow_test_screenshot(
             f"actual {actual_img.size[0]}x{actual_img.size[1]}. "
             f"Actual saved to {actual_path}. "
             f"See Allure report attachments for visual diff."
+            + (_CANDIDATE_KEPT if evidence.get("candidate") else "")
         )
     return expected_path
+
+
+def _missing_candidate(page, capture, directory, expected_path, *, pixel_threshold,
+                       max_diff_ratio, record_args) -> bool:
+    """Record a frame without a baseline, keeping its capture as a candidate
+    when the mint checks pass and a second capture agrees with it, as a mint's
+    does. Returns whether it kept one."""
+    try:
+        first = capture()
+    except Exception as exc:  # noqa: BLE001 - recorded, as record_missing does
+        comparisons.record("missing", error=f"capture failed: {type(exc).__name__}: {exc}",
+                           **record_args)
+        return False
+    judged = _judge(page, capture, first, pixel_threshold=pixel_threshold,
+                    max_diff_ratio=max_diff_ratio, name=expected_path)
+    fields = _as_candidate(judged, directory, expected_path, max_diff_ratio)
+    comparisons.record("missing", **judged.evidence, **fields, **record_args)
+    return bool(fields.get("candidate"))
 
 
 def park_pointer(page: Page) -> None:

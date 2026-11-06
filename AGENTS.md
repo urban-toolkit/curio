@@ -86,7 +86,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `sandbox.py`: direct sandbox calls, `load_artifact_as_dict`, `execute_workflow_programmatically`, and `snapshot_artifact` with `artifact_differences` (two runs' outputs compared as stored: tables over Arrow, lists and dicts by their stored JSON, never the JSON envelope; unit test `tests/test_artifact_snapshots.py`).
   - `vega_svg.py`: Vega-Lite SVG helpers.
   - `capture_waits.py`: what a capture waits for: `_wait_for_reactflow_ready`, `dismiss_toasts`, `_wait_for_webfont`, running nodes; and `settled_viewport`, the canvas view once a move has landed (no d3 transition left on the canvas, two equal reads). `images.py`: captures, `_compare_images`.
-  - `screenshots.py`: `save_workflow_test_screenshot`, `MAX_DIFF_RATIO`, mint and re-mint, `frame_nodes`, `dump_browser_log`.
+  - `screenshots.py`: `save_workflow_test_screenshot`, `MAX_DIFF_RATIO`, mint and re-mint, the candidates a run that writes no baselines keeps (`_judge`, the one judgment of a moved frame both use) and `frame_failures_at_the_end`, `frame_nodes`, `dump_browser_log`.
   - `closeups.py`: `save_node_closeup`, the close-up budgets, viewport hints. `dialogs.py`: `accept_confirm_dialog`, `wait_for_drawer_closed`, `leave_agent_badge`.
   - `scenario_drawer.py`: the open dataflow's scenarios in the Scenario Catalog drawer's In project tab: `open_in_project_tab`, `in_project_card`, `scenario_card_button`, `open_scenario_details`, `scenario_part`, `close_scenario_drawer`.
   - `interactions.py`: interaction frames, brush and mark probes.
@@ -121,7 +121,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 - `test-gpu`: e2e tests that need WebGPU, on a GPU runner.
 - `unit`: backend pytest in four parts, plus the sandbox suite.
 - `jest`: Jest and `npm run typecheck`.
-- `e2e-desktop`: e2e tests without WebGPU, split over CPU runners.
+- `e2e-desktop`: e2e tests without WebGPU, split over CPU runners. On every run but a re-mint it and test-gpu keep the frames a re-mint would write as candidates (`CURIO_E2E_CANDIDATE_DIR`), which ci-report uploads as the `candidate-baselines` artifact, and a failed frame fails its test at the test's end.
 - `test-isolated`: Python-node workflows on the fork-isolated stack (`docker-compose.ci-isolated.yml`).
 - `test-exec-user`: isolation with an execution account (`docker-compose.ci-exec-user.yml`).
 - `preview-runner`: preview runner tests (`utk_curio/tools/preview_runner.py`) in headless Chromium.

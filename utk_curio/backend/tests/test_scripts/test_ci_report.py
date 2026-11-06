@@ -380,6 +380,77 @@ def test_a_remint_run_shows_what_replaced_each_baseline_biggest_change_first(tmp
     assert summary.rstrip().endswith("Re-mint: 3 baselines replaced, 1 kept.")
 
 
+def _candidate_page(tmp_path):
+    """A run that keeps candidates: two moved frames, one over its budget, a
+    new one, one that moved but did not settle, and one that did not move."""
+    compare = tmp_path / "compare"
+    floor = {"remint_min_ratio": 0.0005}
+    _comparison(compare, "c_moved", status="passed", ratio=0.02, remint_ratio=0.02,
+                recapture_ratio=0.0, volatile_pixels=0, candidate=True, **floor)
+    _comparison(compare, "c_over", status="failed", ratio=0.3, remint_ratio=0.3,
+                recapture_ratio=0.0, volatile_pixels=0, candidate=True, **floor)
+    _comparison(compare, "c_new", status="missing", ratio=None, images=("created",),
+                recapture_ratio=0.0, candidate=True)
+    _comparison(compare, "n_moving", status="passed", ratio=0.04, remint_ratio=0.04,
+                recapture_ratio=0.5, volatile_pixels=0,
+                not_candidate="the screen was still changing: a second capture right after "
+                              "differs from it by 50.00%, over the 20.00% budget", **floor)
+    _comparison(compare, "p_still", status="passed", ratio=0.0)
+    out, summary = tmp_path / "report.html", tmp_path / "summary.md"
+    assert ci_report.main(["--comparisons", str(compare), "--out", str(out),
+                           "--summary", str(summary)]) == 0
+    return out.read_text(encoding="utf-8"), summary.read_text(encoding="utf-8")
+
+
+def test_a_candidate_reads_as_the_remint_it_stands_for(tmp_path):
+    page, summary = _candidate_page(tmp_path)
+    assert ('data-group="candidate" aria-pressed="false">Candidates <span class="num">3</span>'
+            in page)
+    assert "card.dataset.candidate === '1'" in page
+    assert page.count('data-candidate="1"') == 3
+    assert "3 frames are candidate baselines, the captures a re-mint would write" in page
+    assert "(1 of them over their budgets, 1 without a baseline yet)" in page
+    assert "<code>candidate-baselines</code> artifact" in page
+
+    moved = _card(page, "screenshot_c_moved.png")
+    assert 'data-group="within"' in moved and "candidate" in moved
+    assert "<figcaption>Committed baseline</figcaption>" in moved
+    assert "<figcaption>Candidate</figcaption>" in moved
+    assert "not counting volatile text" in moved
+    # A candidate over its budget is still a failed comparison of a red test.
+    over = _card(page, "screenshot_c_over.png")
+    assert 'data-group="over"' in over and "over the budget until committed" in over
+    new = _card(page, "screenshot_c_new.png")
+    assert 'data-group="missing"' in new
+    assert "No baseline exists, so this capture is a candidate for one" in new
+    assert "<figcaption>Candidate</figcaption>" in new
+    # A frame that moved but is no candidate says why.
+    moving = _card(page, "screenshot_n_moving.png")
+    assert 'data-candidate=""' in moving
+    assert "is no candidate: the screen was still changing" in moving
+    assert "<figcaption>Created</figcaption>" in moving
+
+    assert ci_report.overall(ci_report.build(ci_report.parse_args([
+        "--comparisons", str(tmp_path / "compare"), "--out", "x"]))) == "failed"
+    assert "1 over budget, 1 without a baseline" in summary
+    assert summary.rstrip().endswith("Candidates: 3 frames, in the candidate-baselines artifact.")
+    assert "A re-mint run" not in page
+
+
+def test_an_interaction_pair_shows_a_candidates_capture():
+    record = {"status": "passed", "candidate": True,
+              "images": {"expected": "/x/expected.png", "created": "/x/created.png"}}
+    assert ci_report.pair_frame(record) == "/x/created.png"
+    record.pop("candidate")
+    assert ci_report.pair_frame(record) == "/x/expected.png"
+
+
+def test_a_run_without_candidates_shows_no_candidates(tmp_path):
+    page, summary = _build(tmp_path)
+    assert 'data-group="candidate"' not in page and "candidate baselines" not in page
+    assert "Candidates" not in summary
+
+
 def test_a_minted_baseline_has_its_own_group_ahead_of_the_passes(tmp_path):
     compare = tmp_path / "compare"
     _comparison(compare, "a_pass", status="passed", ratio=0.0)
