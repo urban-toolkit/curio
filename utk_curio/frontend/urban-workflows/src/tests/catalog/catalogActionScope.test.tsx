@@ -19,12 +19,12 @@
 import fs from "fs";
 import path from "path";
 import React from "react";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 
 import { shouldShowPublishPill } from "../../components/packages/CatalogPublishPill";
+import { describeTheAgentImportPicker } from "../_support/agentImportPicker";
 
 const SRC = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
@@ -192,49 +192,9 @@ jest.mock("../../services/agents/agentsApi", () => ({
   agentsApi: { uploadImport: jest.fn() },
 }));
 
-describe("the agent import picker can assemble a real package", () => {
-  test("a second selection adds to the first instead of replacing it", async () => {
-    // An agent package is `<id>@<major>/manifest.json` plus
-    // `<id>@<major>/prompts/*.md` - two directories - and one OS file dialog
-    // cannot span two directories. `pick` used to `setFiles(read)`, so the
-    // second dialog discarded the manifest picked in the first and the flow
-    // could never be completed against the documented layout.
-    const { AgentImportModal } = await import(
-      "../../components/agents/catalog/AgentImportModal"
-    );
-    render(<AgentImportModal onClose={() => {}} onImported={() => {}} />);
-    const input = screen.getByLabelText("Package files") as HTMLInputElement;
-    // Read the running tally, not the page: the hint above the picker also
-    // says "manifest.json", so a text query matches two nodes.
-    const summary = () => document.querySelector(".summary")?.textContent ?? "";
-
-    const manifest = new File(['{"id":"a"}'], "manifest.json", { type: "application/json" });
-    await userEvent.upload(input, manifest);
-    await waitFor(() => expect(summary()).toContain("manifest.json"));
-    expect(summary()).toContain("0 prompt file");
-
-    const prompt = new File(["hello"], "explain.txt", { type: "text/plain" });
-    await userEvent.upload(input, prompt);
-    await waitFor(() => expect(summary()).toContain("1 prompt file"));
-    // The manifest survived the second dialog. This is the whole point.
-    expect(summary()).toContain("manifest.json");
-  });
-
-  test("Clear empties an accumulating selection", async () => {
-    const { AgentImportModal } = await import(
-      "../../components/agents/catalog/AgentImportModal"
-    );
-    render(<AgentImportModal onClose={() => {}} onImported={() => {}} />);
-    const input = screen.getByLabelText("Package files") as HTMLInputElement;
-    await userEvent.upload(
-      input,
-      new File(['{"id":"a"}'], "manifest.json", { type: "application/json" }),
-    );
-    await userEvent.click(await screen.findByRole("button", { name: "Clear" }));
-    // The whole tally goes, not just its text.
-    await waitFor(() => expect(document.querySelector(".summary")).toBeNull());
-  });
-});
+// The cases live in _support so agentImportPickerColdLoad.test.tsx can run
+// them behind a slow load of the modal.
+describeTheAgentImportPicker();
 
 // ── 6. Two projects sharing a name are distinguishable ───────────────────────
 
