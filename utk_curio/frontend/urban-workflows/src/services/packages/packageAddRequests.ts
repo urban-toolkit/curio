@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import type { PackageKind } from "./types";
 
@@ -51,18 +51,30 @@ export function requestPackageAdd(request: PackageAddRequest): boolean {
   return !window.dispatchEvent(event);
 }
 
-/** A drawer's side: *take* answers whether it took a request, while *enabled*. */
+/**
+ * A drawer's side: *take* answers whether it took a request, while *enabled*.
+ *
+ * The listener stays on for as long as *enabled* holds, and answers with the
+ * *take* of the drawer's last render. A card dropped while the dataflow was
+ * still opening is sent from an effect of the commit the dataflow opens in
+ * (`useDropsWhileOpening`), which gives the drawer a new *take* too, since its
+ * Add reads the dataflow's id. A listener put back for each new *take* was off
+ * at that moment (a commit runs every cleanup before any effect), so no drawer
+ * took the request, and the drop said to add the package first.
+ */
 export function usePackageAddRequests(
   take: (request: PackageAddRequest) => boolean,
   enabled = true,
 ): void {
+  const takeRef = useRef(take);
+  takeRef.current = take;
   useEffect(() => {
     if (!enabled || typeof window === "undefined") return;
     const onRequest = (event: Event) => {
       const request = (event as CustomEvent<PackageAddRequest>).detail;
-      if (!event.defaultPrevented && request && take(request)) event.preventDefault();
+      if (!event.defaultPrevented && request && takeRef.current(request)) event.preventDefault();
     };
     window.addEventListener(PACKAGE_ADD_REQUEST_EVENT, onRequest);
     return () => window.removeEventListener(PACKAGE_ADD_REQUEST_EVENT, onRequest);
-  }, [take, enabled]);
+  }, [enabled]);
 }
