@@ -572,10 +572,6 @@ def _types(port_list: list) -> str:
     return ", ".join(dict.fromkeys(types))
 
 
-def _cardinality(port_list: list) -> str:
-    return ", ".join(port.get("cardinality", "") for port in port_list)
-
-
 def builtin_lists(manifest: dict) -> dict[str, str]:
     """The preamble's lists of built-in templates, one line per template in
     manifest order, keyed by the ``{{builtin.<list>}}`` field each fills. An
@@ -585,7 +581,7 @@ def builtin_lists(manifest: dict) -> dict[str, str]:
 
     rows: dict[str, list[str]] = {
         "nodes": [], "control": [], "inputs": [], "outputs": [],
-        "input_count": [], "output_count": [], "interaction": [],
+        "input_count": [], "interaction": [],
     }
     for template in manifest.get("templates", []):
         label = template.get("label") or template.get("id")
@@ -598,8 +594,6 @@ def builtin_lists(manifest: dict) -> dict[str, str]:
             single = inputs[0].get("cardinality") if len(inputs) == 1 else None
             capacity = input_capacity(len(inputs), single)
             rows["input_count"].append(f"- {label}: {'any number' if capacity is None else capacity}")
-        if outputs:
-            rows["output_count"].append(f"- {label}: {_cardinality(outputs)}")
         if template.get("bidirectional"):
             rows["interaction"].append(f"- {label}")
     return {f"builtin.{key}": "\n".join(lines) for key, lines in rows.items()}
@@ -1164,7 +1158,7 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "trill.schema": PromptField(lambda src: render_trill_block(src.trill)),
     **{key: _builtin_list(key) for key in (
         "builtin.nodes", "builtin.control", "builtin.inputs", "builtin.outputs",
-        "builtin.input_count", "builtin.output_count", "builtin.interaction",
+        "builtin.input_count", "builtin.interaction",
     )},
     "inputs.handles": PromptField(_input_handles),
     "inputs.chip": PromptField(_input_chip, takes_arg=True),

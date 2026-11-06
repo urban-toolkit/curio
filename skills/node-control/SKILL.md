@@ -4,8 +4,8 @@ description: >-
   Use this skill when writing or changing what a node runs. It says whether a node is controlled
   through code, through grammar or not at all, how Python code returns data to pass it on, how
   code reads each input through an input chip, a column chip or a layer chip, how a tuple hands on
-  several values, and how a grammar node such as Vega-Lite receives the table of the node before
-  it, with no data field in its spec.
+  several values, what a grammar node hands on, and how a Vega-Lite spec reads its inputs: the
+  first with no data field, another by naming its dataset.
 license: MIT
 compatibility: Written for Curio's agents, their tools and node code.
 metadata:
@@ -46,9 +46,9 @@ But if the previous node outputs a single data like, but not limited to, a dataf
     return {{inputs.chip:0}}
 ```
 
-Every data received from a node controllable through grammar is automatically passed forward to its output connection. 
+A node controllable through grammar passes its input on, except an {{template.label:curio.builtin/autk-grammar}} node that draws no map or plot: it passes on the layers it loaded or computed, and nothing when the layers it computed are empty.
 
-To use incoming data in a node controllable through grammar the node has to receive the data as a dictionary where the variables are keys of the dictionary like:
+A {{template.label:curio.builtin/vis-vega}} node draws the DataFrame or GeoDataFrame the node before it returns, like:
 
 ```python
     import pandas as pd
@@ -59,7 +59,7 @@ To use incoming data in a node controllable through grammar the node has to rece
     return df
 ```
 
-When generating the grammar for Vega-Lite do not include the data field. It will be populated automatically based on the dataframe of the previous node. For example we can connect the previous dataframe into this Vega-Lite grammar:
+A Vega-Lite spec with no data field draws the node's first input, input_0, which Curio fills in, so a spec that draws only it writes none. The spec or a layer draws another input by naming its dataset, "data": {"name": "{{inputs.chip:1}}"}, or every input's rows stacked, "data": {"name": "{{inputs.stacked}}"}; the vega-lite-starter skill says more. For example we can connect the previous dataframe into this Vega-Lite grammar:
 
 ```json
 {
