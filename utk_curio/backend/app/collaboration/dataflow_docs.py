@@ -2186,10 +2186,13 @@ def _update(sid: str, me: dict, project_id: str, message: bytes) -> dict:
         return _refused("not_synced")
     data = _framed(message[2:])
     if entry.unmade is not None:
-        # A hosted guest's copy not made yet: a tab that only looks sends an
-        # update with nothing in it, and makes nothing; its first change
+        # A hosted guest's copy not made yet: a tab that only looks sends
+        # updates that bring nothing, and makes nothing; its first change
         # makes the copy, which it is then applied to.
-        if data == _EMPTY_UPDATE:
+        changes = _brings_a_change(entry, data)
+        if changes is None:
+            return _refused("invalid_message")
+        if not changes:
             return {"ok": True, "kept": {}}
         if not _made_for_its_tabs(entry):
             return _refused("unavailable")
@@ -2205,6 +2208,27 @@ def _update(sid: str, me: dict, project_id: str, message: bytes) -> dict:
 #: An update that brings nothing: no item and no deletion, as a tab answers
 #: the server's step 1 with when it holds nothing the server lacks.
 _EMPTY_UPDATE = b"\x00\x00"
+
+
+def _brings_a_change(entry: _OpenDoc, data: bytes) -> Optional[bool]:
+    """Whether the update *data* changes the open doc *entry*, a hosted
+    guest's copy not made yet: read on a doc of its own built from it, so
+    *entry*'s doc changes only once the copy is made. A tab's answer to the
+    server's step 1 carries every deletion its doc holds, which the server's
+    holds already: it brings no change. ``None`` for an update that does not
+    apply."""
+    if data == _EMPTY_UPDATE:
+        return False
+    scratch = doc_mapping.new_doc()
+    with entry.lock:
+        scratch.apply_update(entry.doc.get_update())
+    try:
+        clocks, before = _clocks(scratch), doc_mapping.doc_to_dataflow(scratch)
+        scratch.apply_update(data)
+        return _clocks(scratch) != clocks or not doc_mapping.same(before, doc_mapping.doc_to_dataflow(scratch))
+    except (ValueError, RuntimeError, IndexError, AssertionError, doc_mapping.DocMappingError):
+        logger.info("an update for dataflow %s does not apply", entry.project_id, exc_info=True)
+        return None
 
 
 def _made_for_its_tabs(entry: _OpenDoc) -> bool:
