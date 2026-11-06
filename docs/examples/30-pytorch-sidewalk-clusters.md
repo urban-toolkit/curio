@@ -133,7 +133,8 @@ totals = counts.groupby(["column", "row"])["labels"].sum().rename("labels_in_squ
 # Each square's cluster with the most labels, the smaller number on a tie.
 squares = counts.sort_values(["labels", "cluster"], ascending=[False, True], kind="stable")
 squares = squares.drop_duplicates(["column", "row"]).join(totals, on=["column", "row"])
-squares = squares.sort_values(["row", "column"], kind="stable")
+# By cluster: the map's legend lists the clusters in the order it meets them.
+squares = squares.sort_values(["cluster", "row", "column"], kind="stable")
 
 return gpd.GeoDataFrame(
     {"cluster": squares["cluster"].to_numpy(), "labels": squares["labels_in_square"].to_numpy()},

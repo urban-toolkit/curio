@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/30-pytorch-sidewalk-clusters.json",
-    "sha256": "823453709c1e5e6996daaa39b27916a53333048c40c0ecb3c566fde47755a428",
+    "sha256": "eb6ea648f5d5f2400f8915f73ff7ecd71c3f55be76730b679b39a047fc033567",
     "walkthrough": "docs/examples/30-pytorch-sidewalk-clusters.md"
   },
   "prompt": "Load all of Project Sidewalk's Chicago sidewalk labels from the Data Catalog and group them by place into eight clusters with k-means in PyTorch, on the GPU when there is one: positions in metres, k-means++ starts drawn from a seeded generator, steps until no label changes cluster, clusters numbered from the largest, and the device it ran on. Chart how many labels of each type each cluster holds. Gather the labels into squares of a kilometre, each in the cluster most of its labels are in, and map the squares coloured by that cluster on an Autark map.",
