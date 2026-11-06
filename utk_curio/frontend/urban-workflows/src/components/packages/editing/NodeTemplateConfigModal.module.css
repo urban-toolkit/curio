@@ -8,7 +8,9 @@
     touch-action: pan-y;
     font-family: var(--curio-font-family);
     color: var(--curio-text-primary);
-    background: var(--curio-page-bg);
+    /* tmp/pr-run-frames-parity only, never merged: a visible change that moves
+       the Node settings frames, for #1344's parity runs. */
+    background: #c8daf0;
 }
 
 .title {
