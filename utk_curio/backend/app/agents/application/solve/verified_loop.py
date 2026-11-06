@@ -50,6 +50,7 @@ from utk_curio.backend.app.agents.application.solve import rounds as agents_roun
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.domain import validation as agents_validation
+from utk_curio.backend.app.common import job_registry
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.execution.code_references import node_run_code
 from utk_curio.backend.app.packages import service as packages_services
@@ -648,7 +649,10 @@ class VerifiedRounds:
                 }
             progress_queue.put(("done", result))
 
-        thread = threading.Thread(target=_run_validation)
+        # A thread starts with no app context: the run looks up what its code
+        # reads in the database (the collections of the dataflow's owner, for
+        # an editor she invited) as on the thread that starts it.
+        thread = threading.Thread(target=job_registry.in_app_context(_run_validation))
         thread.start()
         while True:
             item = progress_queue.get()
