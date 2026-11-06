@@ -163,12 +163,19 @@ def download_dataset(dataset_id: str):
             download_name=target["download_name"],
             mimetype=target.get("mimetype") or "application/octet-stream",
         )
-    return send_file(
+    response = send_file(
         target["path"],
         as_attachment=True,
         download_name=target["download_name"],
         mimetype=target.get("mimetype"),
     )
+    cleanup = target.get("cleanup")
+    if cleanup:
+        # A zip of a dataset's parts is written for this download alone.
+        import shutil
+
+        response.call_on_close(lambda: shutil.rmtree(cleanup, ignore_errors=True))
+    return response
 
 
 @datasets_bp.route("/datasets/import", methods=["POST"])
