@@ -647,8 +647,73 @@ def artifact_sessions_store():
     if not isinstance(value, dict):
         abort(400, "value must be an object")
     node_type = body.get('nodeType') if isinstance(body.get('nodeType'), str) else None
+    if value.get('dataType') in STORABLE_KINDS and 'layerName' not in value:
+        # A Spatial Join's pairs: kept as a frame, as /artifacts/store keeps
+        # them, so a Python node after it reads a frame, not their envelope.
+        # An Autark layer keeps its envelope, which names the layer.
+        try:
+            frame = stored_frame(value)
+        except Exception as e:  # noqa: BLE001 - what the rows lack is the page's to fix
+            abort(400, f"value's data is not a {value['dataType']}: {type(e).__name__}: {e}")
+        path = save_to_duckdb(frame, node_id=node_type, session_id=session_id)
+        return jsonify({'output': {'path': path, 'dataType': value['dataType']}})
     path = save_to_duckdb(value, node_id=node_type, session_id=session_id)
     return jsonify({'output': {'path': path, 'dataType': detect_kind(value)}})
+
+
+#: The kinds of rows a node made in the browser that ``/artifacts/store`` keeps.
+STORABLE_KINDS = ('dataframe', 'geodataframe')
+
+
+def stored_frame(value):
+    """The frame *value* holds, ``{dataType, data}`` as a node hands rows on:
+    rebuilt as an input layer is (``parsers.parseInput``), with the columns'
+    own types and the coordinate system its FeatureCollection names."""
+    from utk_curio.sandbox.util.input_layers import _crs_named_by
+    from utk_curio.sandbox.util.parsers import parseInput
+
+    frame = parseInput(value)
+    if value['dataType'] == 'dataframe':
+        # parse_dataframe makes every column an object column.
+        return frame.infer_objects()
+    declared = _crs_named_by(value['data'])
+    if declared and frame.crs is None and 'geometry' in frame.columns:
+        frame = frame.set_crs(declared)
+    return frame
+
+
+@app.route('/artifacts/store', methods=['POST'])
+@require_sandbox_token
+@holds_duckdb
+def artifacts_store():
+    """Keep ``value``, rows a node made in the browser (``{dataType, data}``,
+    a dataframe or a geodataframe), as a frame artifact of the session
+    ``sessionId``, as a run keeps its output: a reference to it is what a
+    Python or JavaScript node reads, and what a save records. Answers
+    ``{output: {path, dataType}}``."""
+    from utk_curio.common.kept_sessions import is_kept_session
+    from utk_curio.sandbox.util.parsers import save_to_duckdb
+
+    def refused(message):
+        # JSON, so the backend can hand the reason to the node that asked.
+        return jsonify({'error': message}), 400
+
+    body = request.get_json(silent=True) or {}
+    session_id = body.get('sessionId')
+    if not isinstance(session_id, str) or not session_id:
+        return refused("sessionId must name the session the rows are kept for")
+    if is_kept_session(session_id):
+        return refused("a kept run's session keeps a page's result through /artifact-sessions/store")
+    value = body.get('value')
+    if not isinstance(value, dict) or value.get('dataType') not in STORABLE_KINDS:
+        return refused(f"The output must be an object whose dataType is {' or '.join(STORABLE_KINDS)}.")
+    try:
+        frame = stored_frame(value)
+    except Exception as e:  # noqa: BLE001 - what the rows lack is the caller's to fix
+        return refused(f"The output's data is not a {value['dataType']}: {type(e).__name__}: {e}")
+    node_type = body.get('nodeType') if isinstance(body.get('nodeType'), str) else None
+    path = save_to_duckdb(frame, node_id=node_type, session_id=session_id)
+    return jsonify({'output': {'path': path, 'dataType': value['dataType']}})
 
 
 #: The most sessions one call to ``/artifacts/readable`` names, its ``reads``'

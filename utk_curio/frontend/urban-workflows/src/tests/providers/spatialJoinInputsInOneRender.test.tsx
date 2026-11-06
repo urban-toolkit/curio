@@ -284,6 +284,10 @@ beforeEach(() => {
   posted.length = 0;
   mockFetchData.mockImplementation(async (path: string) => ARTIFACTS[path]);
   (global as any).fetch = jest.fn(async (url: string, init?: { body?: string }) => {
+    // The join keeps its pairs as an output before it hands them on (#1333).
+    if (String(url).endsWith('/storeOutput')) {
+      return { ok: true, status: 200, json: async () => ({ output: { path: 'art-joined', dataType: 'geodataframe' } }) };
+    }
     if (!String(url).endsWith('/spatial_join')) return { ok: false, status: 404, json: async () => ({}) };
     const body = JSON.parse(init?.body ?? '{}');
     posted.push({ left: body.left, right: body.right });
