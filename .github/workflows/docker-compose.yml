@@ -126,7 +126,10 @@ on:
       # A re-mint run: e2e only, and every screenshot whose screen changed is
       # written over its baseline. Review the frames on the run's
       # curio-ci-report.html, then commit its reminted-baselines artifact.
-      # This is the only way baselines are made (see the test_frontend README).
+      # Every other run keeps the same frames as candidates, in its
+      # candidate-baselines artifact; a re-mint is still the way for
+      # remint_force, remint_gpu_kind, and a frame a run left out (see the
+      # test_frontend README).
       remint:
         description: 'Re-mint the screenshot baselines (e2e only; artifact reminted-baselines)'
         type: boolean
@@ -185,6 +188,14 @@ permissions:
 env:
   CURIO_CI_REPEAT: ${{ (!inputs.remint && inputs.repeat) || '1' }}
 
+# A new push to a PR cancels the PR's older run, see "Concurrency" below.
+concurrency:
+  group: >-
+    ${{ github.event_name == 'pull_request' && github.event.action != 'labeled'
+    && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number)
+    || format('{0}-run-{1}', github.workflow, github.run_id) }}
+  cancel-in-progress: true
+
 # Where the jobs run:
 #
 #   * CPU jobs: GitHub-hosted ubuntu-latest while the organization's hosted
@@ -220,7 +231,17 @@ env:
 # stack tears it down at its end with stop-stack, which also removes the images
 # and build cache CI jobs leave on that daemon.
 #
-# Concurrency is set on the GPU jobs, not on the run: a GPU runner has one GPU
+# Concurrency. A PR's runs share one group with cancel-in-progress, so a new
+# push cancels the PR's older run, whose result no longer says anything about
+# what would merge. A cancelled self-hosted job may leave its stack behind;
+# the next job on that runner removes it first (`&reclaim`). Every other run is
+# a group of its own and is never cancelled this way: main's pushes, the
+# dispatches (re-mints, before-runs, the Weekly flake hunt's repeat-10 run),
+# the schedule, and a `labeled` run, which carries only the stress job and must
+# not cancel the run of the push it labels. GitHub applies the group to a
+# re-run too: re-running an older run of a PR cancels the PR's newer one.
+#
+# Inside a run, the GPU jobs have groups of their own: a GPU runner has one GPU
 # and a fixed set of CI ports, so two of its jobs must never execute at once,
 # while CPU jobs each get a runner of their own. Keyed per ref, not repo-wide:
 # GitHub keeps only ONE job pending per group, so a repo-wide group let each
@@ -531,6 +552,12 @@ jobs:
       # and difference images (tests/test_frontend/comparisons.py), for the CI
       # report page the ci-report job builds.
       CURIO_E2E_COMPARE_DIR: ${{ github.workspace }}/ci-report/comparisons
+      # On every run but a re-mint: the captures a re-mint would write (frames
+      # that moved and held still, and new ones), for review on the report
+      # page; a failed frame fails its test at the test's end, so its later
+      # frames are captured too (utils/screenshots.py candidate_dir). Inside
+      # ci-report/, so they reach the CI report inputs.
+      CURIO_E2E_CANDIDATE_DIR: ${{ !inputs.remint && format('{0}/ci-report/candidate-baselines', github.workspace) || '' }}
       # "1" on a re-mint dispatch, which runs the e2e suite alone with
       # --remint-baselines; the filter narrows it with -k. Read by the steps
       # below from the environment, never spliced into a script: the filter is
@@ -1157,6 +1184,7 @@ jobs:
       CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/ci-report/failures
       CURIO_E2E_TRACE: "1"
       CURIO_E2E_COMPARE_DIR: ${{ github.workspace }}/ci-report/comparisons
+      CURIO_E2E_CANDIDATE_DIR: ${{ !inputs.remint && format('{0}/ci-report/candidate-baselines', github.workspace) || '' }}
       CURIO_REMINT: ${{ inputs.remint && '1' || '' }}
       CURIO_REMINT_FILTER: ${{ inputs.remint_filter }}
       CURIO_REMINT_FORCE: ${{ inputs.remint_force }}
@@ -1988,7 +2016,8 @@ jobs:
   # suite's results with the failures, and every screenshot comparison, from
   # every runner alike. Uploaded unzipped, so its entry in the run's
   # artifact list opens in the browser. On a re-mint it also merges the e2e
-  # jobs' baselines into one reminted-baselines artifact to review and commit.
+  # jobs' baselines into one reminted-baselines artifact to review and commit,
+  # and on any other run their candidates into candidate-baselines.
   #
   # And it checks that the split lost nothing a run could still lose. That
   # every test is collected on exactly one runner is a unit test
@@ -2028,9 +2057,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p merged/comparisons merged/failures merged/reminted-baselines
+          mkdir -p merged/comparisons merged/failures merged/reminted-baselines merged/candidate-baselines
           for dir in inputs/*/; do
-            for part in comparisons failures reminted-baselines; do
+            for part in comparisons failures reminted-baselines candidate-baselines; do
               if [ -d "$dir$part" ]; then cp -r "$dir$part/." "merged/$part/"; fi
             done
           done
@@ -2087,6 +2116,19 @@ jobs:
           path: merged/reminted-baselines/
           if-no-files-found: warn
           retention-days: 7
+
+      # Every other run's candidates, the frames a re-mint would write, under
+      # their baselines' names: review them on the report page and commit the
+      # approved ones, with no re-mint dispatch. None, no artifact.
+      - name: 📤 Upload the candidate baselines
+        if: always() && !inputs.remint
+        uses: actions/upload-artifact@v6
+        with:
+          name: candidate-baselines
+          path: merged/candidate-baselines/
+          if-no-files-found: ignore
+          retention-days: 7
+          overwrite: true
 
       # continue-on-error: the page reports on the run, it must never be the
       # reason the run is red. The PR fields come in through env, never inline
@@ -2167,3 +2209,16 @@ jobs:
             echo
             cat ci-report/summary.md 2>/dev/null || true
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # The same summary as a file, for the Weekly flake hunt's report on its own
+      # page (scripts/ci_weekly_report.py), which reads this rather than every
+      # ci-inputs artifact.
+      - name: 📤 Upload the summary
+        if: always() && steps.ci_report.outputs.file != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-summary
+          path: ci-report/summary.md
+          if-no-files-found: ignore
+          retention-days: 30
+          overwrite: true

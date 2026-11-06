@@ -327,8 +327,30 @@ Four things are easy to get wrong against the catalog drawers:
 `docs/examples/dataflows/expected_outputs/`, named
 `screenshot_<stem>_<test_name>.png`. **A missing baseline fails the run.**
 
-Baselines are made on CI and nowhere else. Push the branch, then dispatch a
-re-mint run of the Full stack build:
+Baselines are made on CI and nowhere else. A PR's own run of the Full stack
+build already holds the frames to review, the ones a re-mint would write, as
+candidates:
+
+1. Open the PR run's `curio-ci-report.html`. The **Candidates** filter shows
+   every frame that moved past the re-mint threshold (below) and held still on
+   a second capture, and every settled capture of a frame without a baseline,
+   each next to its committed baseline. A candidate keeps its comparison's
+   status, so one over its budget still reads Over budget and its test failed.
+2. Check every candidate the PR means to change, as for a re-mint (step 2
+   below), and leave out main's drift and run noise.
+3. Download the run's `candidate-baselines` artifact, copy the approved frames
+   into `docs/examples/dataflows/expected_outputs/` and commit them. The next
+   PR run compares with them.
+
+The PR run tests the PR merged with current main, so there is no need to merge
+main first. On that run a frame over its budget or without a baseline no
+longer stops its test: the test goes on and fails at its end, naming every
+such frame, so the frames after it are captured too. Frames that did not move
+cost nothing extra; one that moved is judged exactly as a re-mint judges it.
+
+A re-mint dispatch is still the way for frames a fix changes by less than the
+threshold (`remint_force`), for a baseline of one GPU kind (`remint_gpu_kind`,
+see "Baselines per GPU kind" below), and for a branch with no PR:
 
 ```
 gh workflow run docker-compose.yml --ref <branch> -f remint=true
@@ -337,7 +359,10 @@ gh workflow run docker-compose.yml --ref <branch> -f remint=true
 # a frame the two GPU models draw differently: see "Baselines per GPU kind" below
 ```
 
-That run is the e2e suite alone, under `--remint-baselines`, on the GPU share
+A normal dispatch of a branch with no PR keeps candidates too, the same way a
+PR run does.
+
+A re-mint run is the e2e suite alone, under `--remint-baselines`, on the GPU share
 and the CPU parts alike, each re-minting the baselines it compares: each
 capture is compared with its committed baseline, and when its screen changed
 the capture is written over the baseline; a missing baseline is minted. Then:
@@ -360,10 +385,16 @@ change a little between any two runs (an id wrapping at another character, a
 node a pixel away), so each re-mint replaces some of them too. A re-minted frame is captured twice, and
 when the two differ by more than the budget the screen had not settled: the
 baseline is left as committed and the test fails. Minting refuses a capture
-whose webfont did not load or that came out blank.
+whose webfont did not load or that came out blank. A PR run applies the same
+rule, the same checks and the same second capture to each frame that moved,
+in the same function (`_judge` in `utils/screenshots.py`); a frame that fails
+them there is no candidate, its card says why, and the test's outcome stays
+its comparison's.
 
 `--mint-baselines` and `--remint-baselines` refuse to run anywhere but CI
-(`GITHUB_ACTIONS=true`).
+(`GITHUB_ACTIONS=true`). Candidates are kept only where CI's e2e jobs set
+`CURIO_E2E_CANDIDATE_DIR`, so a local run fails at its first failed frame, as
+before.
 
 The helper waits until no node on the canvas is running, so a view that draws on
 its own after its input arrives is captured drawn; pass `allow_running=True` only
@@ -560,7 +591,7 @@ test_frontend/
     capture_waits.py          # viewport fit, dismiss_toasts, webfont and running-node waits
     images.py                 # captures (a Curio tooltip hidden unless kept), _compare_images
     dialogs.py                # accept_confirm_dialog, wait_for_drawer_closed, leave_agent_badge
-    screenshots.py            # save_workflow_test_screenshot, mint and re-mint, frame_nodes
+    screenshots.py            # save_workflow_test_screenshot, mint, re-mint and candidates, frame_nodes
     closeups.py               # save_node_closeup, close-up budgets, viewport hints
     interactions.py           # interaction frames, brush and mark probes
     tooltips.py               # the Curio tooltip: hovers, the one on screen, its close-up box
@@ -1082,6 +1113,7 @@ the autouse `e2e_clean_db` must not truncate between them.
 | `CURIO_SANDBOX_TOKEN` | The sandbox's shared secret for `/exec`, `/execJs`, `/get`, `/artifact-meta` and `/monitor` (`sandbox/app/auth.py`). The self-managed path mints one and publishes it to this process; **with `CURIO_E2E_USE_EXISTING=1` you must set it yourself, to the same value the running stack was started with**: `curio.py start` mints a random one otherwise, and nothing can recover it. A mismatch fails with that sentence. |
 | `CURIO_E2E_FRONTEND_PORT` | Frontend port for existing servers (default: `8080`) |
 | `CURIO_E2E_COMPARE_DIR` | Record every screenshot comparison, passing or not, into this directory: one folder each with the expected, created and difference images and `record.json`, which `scripts/ci_report.py` turns into one HTML page. Unset, nothing is recorded. |
+| `CURIO_E2E_CANDIDATE_DIR` | CI's e2e jobs set it on every run but a re-mint: keep the captures a re-mint would write in this directory, under their baselines' names, and fail a test with a failed frame at its end, naming every such frame (see "Screenshot baselines"). Unset, or on a mint or re-mint run, nothing is kept and a failed frame fails its test where it is taken. |
 | `CURIO_E2E_GPU_KIND` | The run's GPU kind, `arcade-gpu`, `utk-gpu` or `utk-desktop`: a frame with a baseline of that kind is compared with it (see *Baselines per GPU kind*). CI's test-gpu job sets it from its runner's name. Unset, every frame is compared with its default baseline. |
 | `CURIO_TESTING` | Two jobs: switches the backend to test-only DB paths under `.curio/test/`, **and** is the second factor the `/api/testing/*` blueprint and the scripted LLM provider require. Exported by `../conftest.py`; externally-booted servers (compose stacks included) must be given it explicitly. |
 | `DATABASE_URL_TEST` | SQLAlchemy URL for the test DB (defaults to `sqlite:///…/.curio/test/urban_workflow_test.db`). |

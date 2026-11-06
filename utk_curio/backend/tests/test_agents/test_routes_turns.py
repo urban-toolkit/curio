@@ -312,7 +312,7 @@ class TestExecutionRecords:
         # the (empty) shipped defaults.
         from utk_curio.backend import config as backend_config
 
-        # The Deployment default: the first endpoint's first model.
+        # Curio's default: the first endpoint's first model.
         DEFAULT_LLM_API_TYPE = backend_config.DEFAULT_LLM_ENDPOINTS[0].api_type
         DEFAULT_LLM_MODEL = backend_config.DEFAULT_LLM_ENDPOINTS[0].models[0]
 
@@ -346,7 +346,7 @@ class TestExecutionRecords:
         assert pins["provider"] == DEFAULT_LLM_API_TYPE
         assert pins["model"] == DEFAULT_LLM_MODEL
         # The deployment's endpoint is named by its label, never its host.
-        assert pins["llm"] == {"configId": None, "label": "Deployment default",
+        assert pins["llm"] == {"configId": None, "label": "Curio's default",
                                "baseUrlHost": "", "source": "deployment"}
         assert "127.0.0.1:9" not in json.dumps(turns)
         # dev/39: granted tools are pinned, every one, in the declared order,

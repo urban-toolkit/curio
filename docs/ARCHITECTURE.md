@@ -181,16 +181,21 @@ settings page (`src/pages/settings/SettingsPage.tsx`, at `/settings/keys` and
 in its URL, the drawer in its state. Its two tabs:
 
 - **API keys** (`ApiKeysTab`): one table of every key the account uses. Its
-  **Language model** rows come from `GET /api/agents/llm` (the Deployment
-  default and each LLM configuration), its **Data source** rows from
+  **Language model** rows come from `GET /api/agents/llm` (a read-only Curio
+  row per endpoint of this Curio's own, from `deployment.endpoints`, and each
+  LLM configuration), its **Data source** rows from
   `GET /api/discovery/keys` (a key is listed when one is saved or inherited),
-  and its **Node code** rows from `/api/users/me/connection-keys`.
-  **Add configuration** opens one editor whose **Kind** select picks the form:
-  `LlmConfigEditor`, `SourceKeyForm` for a key without a saved one, or
-  `NodeKeyForm`.
+  and its **Node code** rows from `/api/users/me/connection-keys`. A row the
+  account owns ends with Remove and Edit icons. **Add configuration**, the
+  **+** at the end of the header, opens one editor whose **Kind** select picks
+  the form: `LlmConfigEditor`, `SourceKeyForm` for a key without a saved one,
+  or `NodeKeyForm`. Edit opens the same form for the row.
 - **Agent configuration** (`AgentConfigTab`): the default
-  (`PUT /api/agents/llm/default`) and `AgentModelsSection`, the configuration
-  each agent runs on (`PUT /api/agents/llm/assignments`).
+  (`PUT /api/agents/llm/default`) and `AgentModelsSection`, what each agent
+  runs on (`PUT /api/agents/llm/assignments`). Both selects offer the same
+  choices (`ModelChoiceOptions`): Curio's default, each of this Curio's
+  models grouped by endpoint, and the account's configurations;
+  `curioModels.ts` writes and reads a pick.
 
 A card elsewhere asks for a place in API Settings without importing it.
 `apiSettingsRequest.ts` dispatches a `curio:api-settings` window event carrying
@@ -806,8 +811,8 @@ Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 
 | Category | Templates |
 |---|---|
-| Data | `data-loading`, `data-export`, `data-pool`, `spatial-join` |
-| Computation | `computation-analysis`, `data-summary`, `js-computation` |
+| Data | `data-loading`, `data-export`, `data-summary`, `data-pool`, `spatial-join` |
+| Computation | `computation-analysis`, `js-computation` |
 | Grammar (Autark) | `autk-grammar`, one node whose UrbanSpec unifies OSM/PBF loading, GPU `compute`, and `map` + `plot` rendering |
 | Chart/table visualization | `vis-vega`, `vis-simple` (a table, or a card per row when the frame carries images) |
 
@@ -1929,28 +1934,37 @@ A manifest's `providerRequirements` is a preference: nothing refuses a run over 
 An account's LLM configurations live in one owner-only file,
 `.curio/users/<u>/llm-configs.json` (`{version, configs, default, agents}`),
 kept by [`llm_configs.py`](../utk_curio/backend/app/agents/infrastructure/llm_configs.py).
-`agents` maps an agent id (the coordinate before `@`, so one choice covers
-every version and project) to a configuration id or `"deployment"`. Nothing
-about the choice goes into a project, attachment or manifest.
+`default` and `agents` (which maps an agent id, the coordinate before `@`, so
+one choice covers every version and project) each hold a configuration id, a
+pick, or for an agent `"deployment"`, Curio's default; a `null` default is
+Curio's default. Nothing about the choice goes into a project, attachment or
+manifest.
 Only the store's own reads (`LlmConfigStore.read` and `record`) carry a key:
-every response carries `hasApiKey` and `baseUrlHost` instead, and `baseUrlHost`
-is empty for this Curio install's endpoint, whose host never leaves the server. The file is written through
+every response carries `hasApiKey` and `baseUrlHost` instead, and a run on
+this Curio's own endpoint shows an empty `baseUrlHost`, since its host never
+leaves the server. The file is written through
 [`owner_only_file.py`](../utk_curio/backend/app/common/owner_only_file.py),
 which connection keys and Data source keys use too: a 0700 directory and a 0600 file, written to a
 temp file, fsynced and renamed under an exclusive lock.
 
 A configuration names its own endpoint (`endpoint: "own"`, with `apiType`,
-`baseUrl` and `apiKey`) or one of this Curio install's (`endpoint:
-"deployment"`, with `endpointName`), whose type, URL and key are read from the
-operator's endpoint file when a run resolves it. Such a configuration takes
-one of that endpoint's models: a create, update or duplicate with an unknown
-endpoint or another model answers 400 naming every endpoint and model on offer
-(`provider_config.offered_refusal`), `/api/agents/provider-models` answers
-with the endpoint's models without asking it, and `resolve_llm` refuses a
-stored one whose endpoint or model left the file with the same sentence. A
-key never follows a configuration to another endpoint: an update that changes
-the type, or the URL's scheme, host or port, needs the key again or
-`clearApiKey`.
+`baseUrl` and `apiKey`). A key never follows a configuration to another
+endpoint: an update that changes the type, or the URL's scheme, host or port,
+needs the key again or `clearApiKey`. A create or update with `endpoint:
+"deployment"` answers 400 with one sentence (`llm_configs.DEPLOYMENT_REFUSAL`),
+and `read` drops a stored one, with the default and the agent choices that
+named it.
+
+This Curio's own models are picked, never configured. A pick is one string,
+`curio:` followed by the compact JSON pair `["<endpoint name>", "<model>"]`
+(`llm_configs.pick_choice`, the text the page's `JSON.stringify` writes too),
+so a name with spaces, colons or slashes round-trips; the store parses what a
+request sends and writes it back canonically. The default and the assignments
+take a pick only while the file offers it: otherwise they answer 400 with one
+sentence naming every endpoint and model on offer (`llm_configs.pick_refusal`),
+and `resolve_llm` refuses a stored pick that left the file with the same
+sentence. `/api/agents/provider-models` never asks this Curio's endpoints:
+`endpoint: "deployment"` is refused.
 
 The operator's endpoints reach `config.DEFAULT_LLM_ENDPOINTS` only from the
 file `--llm-endpoint-file` names, one section each (`utk_curio/common/llm_endpoint.py`,
@@ -1967,24 +1981,25 @@ time. It needs only the storage key, so it
 works in job threads:
 
 1. A hosted guest (a guest on a `--deploy` instance) runs on the guest
-   configuration, the Deployment default's endpoint and model, and never opens
-   the file; so does every delegate of a guest's run.
+   configuration, Curio's default endpoint and model, and never opens the
+   file; so does every delegate of a guest's run.
 2. An internal agent (`builtin.internal_agent_ids()`, the shipped agents whose
    `catalog.listed` is false) runs on its caller's configuration, always.
-3. Any other agent runs on the configuration chosen for it (`source:
-   "assigned"`).
+3. Any other agent runs on what was chosen for it (`source: "assigned"`): a
+   configuration, a pick (that endpoint's type, URL and key with the picked
+   model, labelled `Curio · <endpoint name>`) or Curio's default.
 4. With no choice, a delegated agent runs on its caller's (`source: "caller"`),
-   and an attached one on the account's default configuration, else the
-   Deployment default (the first endpoint of the file with its first model),
-   else the run is refused.
+   and an attached one on the account's default, a configuration or a pick,
+   else Curio's default (the first endpoint of the file with its first model,
+   `source: "deployment"`), else the run is refused.
 
 A reference that does not resolve (a choice or a default naming no
-configuration, a withdrawn Deployment default, a This Curio install endpoint
-or model the file no longer has, an unreadable file) is refused, never replaced with another configuration. A
-refusal is a `ProviderConfigError`, answered as a 400 with
-`remedy: {kind: "llm-config", agentId}`. The local shared guest (a launch
-without `--deploy`) owns a file like any account, and its Deployment default
-is everyone's.
+configuration, Curio's default when the file is gone, a pick whose endpoint or
+model the file no longer has, an unreadable file) is refused, never replaced
+with another configuration. A refusal is a `ProviderConfigError`, answered as
+a 400 with `remedy: {kind: "llm-config", agentId}`. The local shared guest (a
+launch without `--deploy`) owns a file like any account, and its Curio's
+default is everyone's.
 
 Where it is called:
 
@@ -3022,13 +3037,13 @@ Catalog and account scope:
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/agents/catalog` | GET | List the agent definitions available to add: the catalog cards and published definitions, never an internal built-in (`projectId` marks those already in that dataflow). Returns `{items, agents, facets}`, the same envelope the dataset catalog returns |
-| `/api/agents/llm` | GET | The account's LLM configurations (never a key: `hasApiKey` and `baseUrlHost` instead, the host empty for this Curio install's endpoint), its default, what the deployment offers (`deployment: {label, endpointOffered, apiType, model, endpoints: [{name, models}]}`, never a host or a key), what answers a run now, and the agents whose configuration may be chosen, each with its choice and what it answers with. A hosted guest gets the guest configuration and `editable: false` |
+| `/api/agents/llm` | GET | The account's LLM configurations (never a key: `hasApiKey` and `baseUrlHost` instead), its default (a configuration id, a pick or `null` for Curio's default), this Curio's own models (`deployment: {label, apiType, model, endpoints: [{name, models}]}`, never a host or a key), what answers a run now (`baseUrlHost` empty on this Curio's endpoints), and the agents whose choice may be made, each with its choice and what it answers with. A hosted guest gets the guest configuration and `editable: false` |
 | `/api/agents/llm/configs` | POST | Add a configuration. **400** on an unknown field or an invalid one, **403** for a hosted guest |
 | `/api/agents/llm/configs/<id>` | PATCH, DELETE | Change one (a blank key keeps the stored one; a new endpoint needs the key again) or remove it, which resets a removed default and clears the agents chosen for it (`moved`) |
 | `/api/agents/llm/configs/<id>/duplicate` | POST | Copy one, its key included, server-side; `{label?, model?}` |
-| `/api/agents/llm/default` | PUT | Choose the default, `{configId}`; `null` is the Deployment default |
-| `/api/agents/llm/assignments` | PUT | Choose agents' configurations: a partial map of agent id to a configuration id, `"deployment"` or `null` (clears). Nothing is written unless every entry is valid; an internal agent is refused; **403** for a hosted guest |
-| `/api/agents/provider-models` | POST | The models API Settings can offer for the endpoint being configured. POST because the editor asks *before* the user saves, carrying the provider, base URL and key on screen. A stored key is borrowed only with `configId`, and only while the endpoint on screen is still that configuration's own, or with `endpoint: "deployment"`; with neither, no key is borrowed. Hybrid, both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is a 400 |
+| `/api/agents/llm/default` | PUT | Choose the default, `{configId}`: a configuration id, a pick (`curio:["<endpoint>","<model>"]`) the file offers, or `null` for Curio's default |
+| `/api/agents/llm/assignments` | PUT | Choose what agents run on: a partial map of agent id to a configuration id, a pick the file offers, `"deployment"` (Curio's default) or `null` (clears). Nothing is written unless every entry is valid; an internal agent is refused; **403** for a hosted guest |
+| `/api/agents/provider-models` | POST | The models API Settings can offer for the endpoint being configured. POST because the editor asks *before* the user saves, carrying the provider, base URL and key on screen. A stored key is borrowed only with `configId`, and only while the endpoint on screen is still that configuration's own; without it, no key is borrowed, and this Curio's own endpoints are never asked (`endpoint: "deployment"` is a 400). Hybrid, both halves from the API: the live listing (OpenAI-compatible, Anthropic and Gemini, all via `agents/providers.py`), falling back to what that endpoint last reported, recorded per account by `agents/model_catalog.py`. Answers `{models, listable, source, remembered, rememberedAt, warning}`; a failed listing is a 200 with `source: "remembered"` unless nothing was ever recorded, which is a 400 |
 | `/api/agents/settings` | GET, PUT | The catalog settings: each one's schema, default, the account's value and the agents that read it, plus whether this account may change them. `PUT` takes key to value (`null` restores the default) and saves nothing unless every value is valid; **403** for a hosted guest |
 | `/api/agents/skills` | GET | Every skill the account sees, as the Skill Catalog shows it: Curio's, the account's own, the shared catalog's it holds no copy of, then those of the packages it reaches, each with its description, facts and files, what it serves (`behaviors`, `features`, `nodeKinds`), whether every call holds it (`core`), whose it is (`source`), `published`, `publishedByYou`, `publishable`, `removable`, and the agents that use it after the account's changes, plus whether this account may change them |
 | `/api/agents/skills/<name>` | GET, DELETE | `GET`: one skill's text as an agent reads it, its frontmatter left out (a skill Curio ships with its markers filled), and its files; **404** for a skill the account does not see. `DELETE`: delete a skill the account holds and take it off every agent's list; **400** when an agent's instruction or capability names it as its own, **404** for one it does not hold, **403** for a hosted guest |
@@ -3239,7 +3254,7 @@ blocker signature, so a dataset dropped on an upstream loader is progress.
 | `src/components/apiSettings/` | API Settings: `ApiSettingsPanel` (the two tabs), `ApiKeysTab`, `AgentConfigTab`, `SourceKeyForm`, `NodeKeyForm`, `ApiSettingsDrawer`, `ApiSettingsRequestHost` and `apiSettingsRequest.ts` (the `curio:api-settings` request event) |
 | `src/pages/settings/SettingsPage.tsx` | The settings page, `/settings/keys` and `/settings/agents` |
 | `src/pages/monitor/MonitorContent.tsx`, `MonitorDrawer.tsx` | The monitor's content, rendered by the `/monitor` page and by its drawer |
-| `src/components/llmConfigs/` | The LLM configuration editor, Agent models and the `llm-config` remedy button, over `src/api/llmConfigsApi.ts` |
+| `src/components/llmConfigs/` | The LLM configuration editor, the choices of the default and of each agent (with Curio's own models, `curioModels.ts`) and the `llm-config` remedy button, over `src/api/llmConfigsApi.ts` |
 | `src/components/menus/libraries/LibraryManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
 ### Backend

@@ -3,6 +3,11 @@ import modal from "../modal-content.module.css";
 import styles from "./LlmConfigs.module.css";
 import type { LlmAgentRow, LlmListing } from "../../api/llmConfigsApi";
 import { declaresCapability, ORCHESTRATE_CAPABILITY } from "../../services/agents/agentCapabilities";
+import { CURIO_DEFAULT_CHOICE } from "./curioModels";
+import { ModelChoiceOptions, choiceValue } from "./ModelChoiceOptions";
+
+/** The first choice of every agent's select: no choice of its own. */
+export const FOLLOWS_MY_DEFAULT = "Follows my default";
 
 /** The agents an agent's Solve always runs, by name ("A", "A and B", "A, B and C"),
  * or null when it is not an agent with Solve or runs none. */
@@ -12,23 +17,17 @@ function solveRunsText(row: LlmAgentRow): string | null {
   return names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-/** What "Default" means for this account right now. */
-function defaultLabel(listing: LlmListing): string {
-  const chosen = listing.configs.find((c) => c.id === listing.default);
-  if (chosen) return chosen.label;
-  return listing.deployment.model ? listing.deployment.label : "none";
-}
-
 function answersLine(row: LlmAgentRow): string {
   if (!row.answers.source) return row.answers.error ?? "Nothing answers it.";
   return `Runs on ${row.answers.label} · ${row.answers.model}`;
 }
 
 /**
- * API Settings, Agent configuration: the configuration each agent runs on, saved on
- * change. One row per agent the server lists (the catalog cards, published
- * definitions and the account's imports); internal agents are never listed,
- * since they always run on their caller's configuration.
+ * API Settings, Agent configuration, Each agent: what each agent runs on,
+ * saved on change. One row per agent the server lists (the catalog cards,
+ * published definitions and the account's imports); internal agents are never
+ * listed, since they always run on their caller's configuration. Each select
+ * offers "Follows my default", then the default's own choices.
  */
 export const AgentModelsSection: React.FC<{
   listing: LlmListing;
@@ -47,14 +46,10 @@ export const AgentModelsSection: React.FC<{
 
   const agents = listing.agents ?? [];
   if (agents.length === 0) return null;
-  const fallback = defaultLabel(listing);
 
   return (
     <section className={styles.section} data-testid="agent-models-section" aria-labelledby="agent-models-heading">
-      <h3 className={styles.heading} id="agent-models-heading">Agent models</h3>
-      <p className={styles.intro}>
-        Choose the configuration each agent runs on. Default follows your default configuration.
-      </p>
+      <h3 className={styles.heading} id="agent-models-heading">Each agent</h3>
       <table className={styles.table}>
         <thead>
           <tr>
@@ -82,21 +77,12 @@ export const AgentModelsSection: React.FC<{
                     id={selectId}
                     ref={focused ? focusedRef : undefined}
                     className={modal.select}
-                    value={row.choice ?? ""}
+                    value={choiceValue(row.choice)}
                     disabled={busy}
                     onChange={(e) => onChoose(row.id, e.target.value || null)}
                   >
-                    <option value="">Default ({fallback})</option>
-                    {listing.configs.map((config) => (
-                      <option key={config.id} value={config.id}>
-                        {config.label} · {config.model}
-                      </option>
-                    ))}
-                    {listing.deployment.model ? (
-                      <option value="deployment">
-                        {listing.deployment.label} · {listing.deployment.model}
-                      </option>
-                    ) : null}
+                    <option value="">{FOLLOWS_MY_DEFAULT}</option>
+                    <ModelChoiceOptions listing={listing} curioDefaultValue={CURIO_DEFAULT_CHOICE} current={row.choice} />
                   </select>
                   <span className={row.answers.source ? styles.host : modal.error}>{answersLine(row)}</span>
                 </td>

@@ -3,8 +3,9 @@
 This is the one place raw LLM-provider SDKs are used, so LLM/provider behavior
 stays out of the route/flow/node modules (the ``agents/`` ownership boundary in
 the plan's module-encapsulation memo). Callers resolve a :class:`ProviderConfig`
-(``provider_config.resolve_llm``: an LLM configuration, the Deployment default
-or the guest configuration) and hand it to :func:`run_chat_turn`; they never
+(``provider_config.resolve_llm``: an LLM configuration, Curio's default, a
+pick of one of this Curio's models, or the guest configuration) and hand it
+to :func:`run_chat_turn`; they never
 import ``openai`` / ``anthropic`` / ``google.generativeai`` directly.
 
 A turn is typed (:class:`ChatTurn`), and a run loop takes one from

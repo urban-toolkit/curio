@@ -35,10 +35,13 @@ describe("The deploy's LLM endpoint", () => {
         }
     });
 
-    test("the file holds the endpoint with its models, as one section", () => {
+    test("the file holds the endpoint with its models, as one section named for who provides it", () => {
         for (const send of sends) {
-            expect(send).toContain("printf '[This Curio]\\nbase_url=%s\\napi_key=%s\\nmodels=%s\\n'");
+            expect(send).toContain(
+                "printf '[Electronic Visualization Lab]\\nbase_url=%s\\napi_key=%s\\nmodels=%s\\n'",
+            );
         }
+        expect(text).not.toContain("[This Curio]");
     });
 
     test("each stack mounts the file and names only its path, for a release that reads it", () => {
