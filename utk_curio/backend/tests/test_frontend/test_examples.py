@@ -4,6 +4,7 @@ Catches drift in [docs/examples/0X-*.json] without running the browser,
 complementing the full Playwright e2e in test_workflows.py.
 """
 
+import ast
 import json
 import os
 import re
@@ -110,6 +111,19 @@ EXAMPLE_INVARIANTS = [
       "curio.builtin/js-computation": 1,
       "curio.builtin/vis-vega": 1, "curio.builtin/autk-grammar": 1,
       "curio.builtin/data-pool": 1}, False),
+    # PyTorch on the GPU: the Python Computation nodes run torch.
+    ("27-pytorch-shape-classifier.json", 5, 4,
+     {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
+      "curio.builtin/vis-simple": 1, "curio.builtin/vis-vega": 1}, False),
+    ("28-pytorch-training-on-the-gpu.json", 4, 3,
+     {"curio.builtin/data-loading": 1, "curio.builtin/computation-analysis": 1,
+      "curio.builtin/vis-simple": 1, "curio.builtin/vis-vega": 1}, False),
+    ("29-pytorch-street-photos.json", 4, 3,
+     {"curio.builtin/data-loading": 1, "curio.builtin/computation-analysis": 1,
+      "curio.builtin/vis-simple": 1, "curio.builtin/vis-vega": 1}, False),
+    ("30-pytorch-sidewalk-clusters.json", 6, 5,
+     {"curio.builtin/data-loading": 1, "curio.builtin/computation-analysis": 3,
+      "curio.builtin/vis-vega": 1, "curio.builtin/autk-grammar": 1}, False),
 ]
 
 
@@ -133,6 +147,8 @@ FAN_IN_NODES = {
     # #819: two Python nodes (one with three inputs), JS Computation,
     # Vega-Lite, Autark and Data Pool.
     "26-several-inputs.json": 6,
+    # The network: the pictures on "in", its weights on "in_1".
+    "27-pytorch-shape-classifier.json": 1,
 }
 
 
@@ -235,6 +251,49 @@ def test_example_documented_invariants(
             f"brushing, got 0. Edge types: "
             f"{sorted({e.get('type') or 'data' for e in edges})}"
         )
+
+
+def _definitions(basename: str, node_id: str) -> dict[str, str]:
+    """The top-level functions and classes of one node's code, as AST dumps by name."""
+    with open(os.path.join(EXAMPLES_DIR, basename), encoding="utf-8") as handle:
+        nodes = json.load(handle)["dataflow"]["nodes"]
+    code = next(node["content"] for node in nodes if node["id"] == node_id)
+    return {
+        statement.name: ast.dump(statement)
+        for statement in ast.parse(code).body
+        if isinstance(statement, (ast.FunctionDef, ast.ClassDef))
+    }
+
+
+def test_examples_27_and_28_draw_one_kind_of_picture_for_one_network():
+    """Example 28 trains example 27's network on pictures drawn as 27 draws
+    them, and ``scripts/build_example_shape_classifier.py`` trains the weights 27
+    ships with 27's own ``draw`` and ``TinyCNN``: one drawing and one network."""
+    pictures_27 = _definitions("27-pytorch-shape-classifier.json", "shape-pictures")
+    pictures_28 = _definitions("28-pytorch-training-on-the-gpu.json", "training-pictures")
+    network_27 = _definitions("27-pytorch-shape-classifier.json", "shape-classifier")
+    network_28 = _definitions("28-pytorch-training-on-the-gpu.json", "training-run")
+    assert pictures_27["draw"] == pictures_28["draw"]
+    assert pictures_27["as_data_uri"] == pictures_28["as_data_uri"]
+    assert network_27["TinyCNN"] == network_28["TinyCNN"]
+    assert network_27["pixels"] == network_28["pixels"]
+
+
+def test_example_27s_weights_are_the_arrays_its_network_takes():
+    """``docs/examples/data/shape-cnn.npz`` holds float32 arrays named as the
+    network's ``state_dict`` names them, in its layers' shapes, and nothing
+    ``np.load`` needs a pickle for."""
+    import numpy as np
+
+    weights = np.load(os.path.join(EXAMPLES_DIR, "data", "shape-cnn.npz"), allow_pickle=False)
+    assert {name: weights[name].shape for name in weights.files} == {
+        "features.0.weight": (16, 3, 3, 3), "features.0.bias": (16,),
+        "features.2.weight": (32, 16, 3, 3), "features.2.bias": (32,),
+        "features.4.weight": (32, 32, 3, 3), "features.4.bias": (32,),
+        "features.6.weight": (32, 32, 3, 3), "features.6.bias": (32,),
+        "classify.weight": (3, 32), "classify.bias": (3,),
+    }
+    assert {weights[name].dtype for name in weights.files} == {np.dtype("float32")}
 
 
 #: The examples whose two views link directly (owner, 2026-10-21): one
@@ -527,15 +586,18 @@ def test_example_07_drives_compute_gpgpu():
 #: extracts are consumed by autk-grammar ``pbfFileUrl`` specs, which take a URL
 #: the *browser* fetches from the unauthenticated ``/file/`` route, not a Python
 #: path a loader can resolve by dataset id -- and ``.pbf`` is not even a catalog
-#: format. The Niteroi raster belongs to the same Autark example. ImageTest/ is a
-#: directory the image fixture globs, and the remaining entries serve only the
-#: legacy ``docs/examples/dataflows`` fixtures.
+#: format. The Niteroi raster belongs to the same Autark example. Example 27's
+#: network weights are a ``.npz`` its node reads with ``np.load``: neither a
+#: catalog format nor a Model Catalog model, whose models run without torch.
+#: ImageTest/ is a directory the image fixture globs, and the remaining entries
+#: serve only the legacy ``docs/examples/dataflows`` fixtures.
 _DATA_DIR_ALLOWLIST = (
     "back_bay.osm.pbf",
     "chicago_loop.osm.pbf",
     "lower_mnt.osm.pbf",
     "niteroi.osm.pbf",
     "niteroi_lst_verao_2001_2024.tif",
+    "shape-cnn.npz",
     "ImageTest",
     "access_score.geojson",
     "nyc_zip.geojson",

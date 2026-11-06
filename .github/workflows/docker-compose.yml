@@ -496,7 +496,9 @@ jobs:
     # Runs on a GPU runner: an arcade one while one is free, utk-gpu otherwise
     # (pick-runners). It runs the e2e tests whose browser needs WebGPU -- the
     # WebGPU compute examples (06/07) and every other Autark dataflow need real
-    # hardware WebGPU, which a CPU runner cannot provide -- and nothing else:
+    # hardware WebGPU, which a CPU runner cannot provide -- and those whose
+    # dataflow's node code runs torch, which only this job's container runs on
+    # the GPU, and nothing else:
     # a GPU runner is one machine, so everything on it runs in series, while
     # the CPU runners run the rest of the suite on as many runners as the jobs
     # below ask for. Which e2e test goes where is decided from the tests
@@ -535,6 +537,9 @@ jobs:
       # Hardware WebGPU path (see conftest.py browser_type_launch_args).
       CURIO_WEBGPU_BACKEND: hardware
       CURIO_REQUIRE_HARDWARE_WEBGPU: "1"
+      # A node that runs torch here runs it on the GPU: test_node_execution fails
+      # one whose device column says otherwise (docker-compose.ci-shards.yml).
+      CURIO_E2E_REQUIRE_CUDA: "1"
       # Only the e2e tests that need what utk has (runner_split.py).
       CURIO_E2E_RUNNER: utk
       # autk-grammar data pools parse city-scale PBFs server-side; give the
@@ -1365,7 +1370,10 @@ jobs:
       # files and cannot be compared, although the mosaic itself runs.
       # netcdf-hourly-rain.json: a forked child reads the SCOUT WRF group, a NetCDF file a
       # variable, from its staged copies (#662).
-      ISOLATED_WORKFLOWS: data-pool-dataframe.json,data-pool-geodataframe.json,multi-input.json,vega.json,netcdf-hourly-rain.json,21-storage-photos-and-videos.json,22-storage-audio-recordings.json
+      # 27 to 29: a forked child imports torch, whose CUDA libraries map only under the
+      # stack's --exec-memory-mb, and runs it on this runner's CPU. Not 30: its Autark
+      # map needs WebGPU, which a CPU runner's browser lacks.
+      ISOLATED_WORKFLOWS: data-pool-dataframe.json,data-pool-geodataframe.json,multi-input.json,vega.json,netcdf-hourly-rain.json,21-storage-photos-and-videos.json,22-storage-audio-recordings.json,27-pytorch-shape-classifier.json,28-pytorch-training-on-the-gpu.json,29-pytorch-street-photos.json
       CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/ci-report/failures
       CURIO_E2E_TRACE: "1"
     steps:

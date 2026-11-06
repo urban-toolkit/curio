@@ -55,7 +55,10 @@ share an arcade GPU runner (`arcade-gpu-01` to `arcade-gpu-04`) while one is fre
 still called `utk`, after the first GPU runner. A test runs on `utk` when its
 browser runs WebGPU: a `test_workflows.py` case whose dataflow has an Autark node, a
 walkthrough scene whose example or script drives Autark or the GPU, and any
-other module whose source mentions Autark or WebGPU. Such tests carry the
+other module whose source mentions Autark or WebGPU. So does a `test_workflows.py`
+case whose dataflow's node code imports torch: only the GPU job's container has
+the GPU, and there `test_node_execution` fails a torch node whose `device`
+column does not say `cuda` (`CURIO_E2E_REQUIRE_CUDA`). Such tests carry the
 `webgpu` marker. A test that needs the sibling backends of `--parallel` is
 marked `needs_parallel` and runs on `utk` too. The GPU job runs as many
 workers as its runner's free memory and video memory hold

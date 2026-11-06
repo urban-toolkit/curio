@@ -2,16 +2,19 @@
 
 CI runs the e2e suite on two kinds of machine. A self-hosted GPU runner
 (``arcade-gpu-01..04``, ``utk-gpu`` or ``utk-desktop-01``; the share keeps the name
-``utk``) has an NVIDIA GPU and is the only place hardware WebGPU exists; it is also
-one machine, so everything on it runs in series. The CPU runners (GitHub-hosted
+``utk``) has an NVIDIA GPU and is the only place hardware WebGPU exists, and the
+only one whose curio container gets the GPU (``docker-compose.ci-shards.yml``); it
+is also one machine, so everything on it runs in series. The CPU runners (GitHub-hosted
 ``ubuntu-latest``, self-hosted ``[self-hosted, arcade, cpu]`` or the utk-desktop runners'
 ``[self-hosted, utk-desktop]``) have no GPU in use but come
 as many as a matrix asks for. So a test belongs on utk only when the browser
-has to run WebGPU, and everything else is spread across a matrix of CPU jobs.
+has to run WebGPU or its dataflow's node code runs torch, which there runs on
+CUDA, and everything else is spread across a matrix of CPU jobs.
 
 The line is drawn from the tests themselves, never from a list someone keeps:
 
-* a ``test_workflows`` case needs WebGPU when its dataflow has an Autark node;
+* a ``test_workflows`` case needs the GPU when its dataflow has an Autark node
+  or node code that imports torch;
 * so does a ``test_shipped_scenario_drops_e2e`` case, by the dataflow it drops
   a scenario from;
 * a walkthrough scene does when its example dataflow does, or its script
@@ -49,6 +52,7 @@ from __future__ import annotations
 import ast
 import functools
 import inspect
+import json
 import os
 import re
 from pathlib import Path
@@ -60,6 +64,10 @@ DURATIONS_FILE = Path(__file__).with_name("e2e_durations.json")
 
 #: What marks a test, a scene or a dataflow as needing WebGPU in the browser.
 WEBGPU_RE = re.compile(r"autk|autark|webgpu|navigator\.gpu", re.IGNORECASE)
+
+#: What marks node code that runs torch, which runs on CUDA only in the GPU
+#: runner's container and on the CPU anywhere else: a line importing it.
+TORCH_RE = re.compile(r"^\s*(?:import|from)\s+torch(?:vision)?\b", re.MULTILINE)
 
 RUNNERS = ("utk", "desktop")
 
@@ -79,10 +87,30 @@ def dataflow_needs_webgpu(path: str) -> bool:
         return True
 
 
+@functools.lru_cache(maxsize=None)
+def dataflow_runs_torch(path: str) -> bool:
+    """Whether the code of a node of a dataflow file imports torch."""
+    try:
+        nodes = json.loads(Path(path).read_text(encoding="utf-8"))["dataflow"]["nodes"]
+    except (OSError, ValueError):
+        # A dataflow that cannot be read cannot be judged; keep it on utk.
+        return True
+    except (KeyError, TypeError):
+        # A file that is no dataflow has no node to run torch.
+        return False
+    return any(TORCH_RE.search(str(node.get("content") or "")) for node in nodes)
+
+
+def dataflow_needs_the_gpu(path: str) -> bool:
+    """Whether a dataflow's tests belong on the GPU runner: for WebGPU in the
+    browser, or for torch on CUDA in the container."""
+    return dataflow_needs_webgpu(path) or dataflow_runs_torch(path)
+
+
 def walk_needs_webgpu(walk) -> bool:
-    """Whether a walkthrough scene needs WebGPU: its example, or its script."""
+    """Whether a walkthrough scene needs the GPU runner: its example, or its script."""
     example = getattr(walk, "example", None)
-    if example and dataflow_needs_webgpu(str(REPO_ROOT / "docs" / "examples" / example)):
+    if example and dataflow_needs_the_gpu(str(REPO_ROOT / "docs" / "examples" / example)):
         return True
     try:
         source = inspect.getsource(walk.run)
@@ -101,16 +129,16 @@ def module_needs_webgpu(path: str) -> bool:
 
 
 def item_needs_webgpu(item) -> bool:
-    """Whether the item belongs on utk: WebGPU, or the parallel stack."""
+    """Whether the item belongs on utk: WebGPU, torch on CUDA, or the parallel stack."""
     if item.get_closest_marker("needs_parallel") is not None:
         return True
     module = getattr(item, "module", None)
     name = module.__name__.rsplit(".", 1)[-1] if module is not None else ""
     params = getattr(getattr(item, "callspec", None), "params", {}) or {}
     if name == WORKFLOW_MODULE and "loaded_workflow" in params:
-        return dataflow_needs_webgpu(str(params["loaded_workflow"]))
+        return dataflow_needs_the_gpu(str(params["loaded_workflow"]))
     if name == SHIPPED_DROPS_MODULE and "dataflow" in params:
-        return dataflow_needs_webgpu(str(REPO_ROOT / params["dataflow"]))
+        return dataflow_needs_the_gpu(str(REPO_ROOT / params["dataflow"]))
     if name == WALKTHROUGH_MODULE and "walk" in params:
         return walk_needs_webgpu(params["walk"])
     path = getattr(module, "__file__", None)

@@ -1,0 +1,121 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "29-pytorch-street-photos",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/29-pytorch-street-photos.json",
+    "sha256": "c0f08561f8ff9754795bfd541b68f05d09606ac029fa8d6c04632387f872fc8f",
+    "walkthrough": "docs/examples/29-pytorch-street-photos.md"
+  },
+  "prompt": "Load the Mapillary street photo sample around Lincoln Park in Chicago from the Data Catalog. For each photo, measure with convolutions in PyTorch, on the GPU when there is one, the share of its pixels that are green (twice the green channel minus red and blue, smoothed) and the share that lie on edges (Sobel gradients of the brightness), and write an overlay of the photo with those pixels marked, linked from the result as a derived image of that photo. Show each photo beside its overlay with the two shares, the device and its photographer, and a bar chart ranking the photos by their green share.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.curio.mapillary-sample"
+    ],
+    "packages": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-simple",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.curio.mapillary-sample"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "green"
+      ],
+      "outputKind": "dataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-simple",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-11-06",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.curio.mapillary-sample",
+        "licence": "CC-BY-SA-4.0"
+      }
+    ]
+  },
+  "notes": "GPU convolutions in PyTorch over a photo collection, with an overlay per photo written as a derived file; the photos are committed, so it runs offline."
+}

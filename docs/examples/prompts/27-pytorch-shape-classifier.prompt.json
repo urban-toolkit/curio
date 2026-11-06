@@ -1,0 +1,131 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "27-pytorch-shape-classifier",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/27-pytorch-shape-classifier.json",
+    "sha256": "dfc7afbf60f302c865815ad209573cb3427613053f317dcae001e14748cfe042",
+    "walkthrough": "docs/examples/27-pytorch-shape-classifier.md"
+  },
+  "prompt": "Draw sixty small labeled pictures in code, twenty each of circles, squares and triangles, each shape at a random size, position, rotation and colour on a light background, kept as images in a column. Load the trained weights of a tiny convolutional network from the repository file docs/examples/data/shape-cnn.npz without unpickling anything, and classify every picture with that network in PyTorch, on the GPU when there is one and on the CPU otherwise, seeded and deterministic, recording which device it ran on. Show each picture with its true shape, the predicted one and the confidence, and chart the share of each shape the network gets right.",
+  "context": null,
+  "required": {
+    "datasets": [],
+    "packages": [],
+    "paths": [
+      "docs/examples/data/shape-cnn.npz"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/vis-simple",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 1
+      }
+    ],
+    "sources": {
+      "datasetIds": [],
+      "paths": [
+        "docs/examples/data/shape-cnn.npz"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "classif"
+      ],
+      "outputKind": "dataframe",
+      "slotOrderMatters": true
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/vis-simple",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T0",
+    "needs": [],
+    "skip": []
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-11-06",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": []
+  },
+  "notes": "A pretrained PyTorch network, its weights read by path, classifying pictures drawn in code; it runs on the GPU when there is one and on the CPU otherwise."
+}

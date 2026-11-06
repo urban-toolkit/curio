@@ -271,6 +271,50 @@
       "Geometries"
     ]
   },
+  "27-pytorch-shape-classifier": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas",
+      "PyTorch"
+    ],
+    "data_type": [
+      "Tables",
+      "Imagery"
+    ]
+  },
+  "28-pytorch-training-on-the-gpu": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas",
+      "PyTorch"
+    ],
+    "data_type": [
+      "Tables",
+      "Imagery"
+    ]
+  },
+  "29-pytorch-street-photos": {
+    "tags": [
+      "Vega-Lite",
+      "Pandas",
+      "PyTorch"
+    ],
+    "data_type": [
+      "Tables",
+      "Imagery"
+    ]
+  },
+  "30-pytorch-sidewalk-clusters": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "PyTorch"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries"
+    ]
+  },
   "dataflows/autk-map": {
     "tags": [
       "Autark",

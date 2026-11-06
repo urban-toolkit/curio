@@ -1,0 +1,148 @@
+{
+  "dataflow": {
+    "categories": {
+      "city": [
+        "Chicago"
+      ],
+      "topic": [
+        "Mobility and streets"
+      ],
+      "complexity": [
+        "Intermediate"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "sidewalk-labels",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 215,
+        "content": "labels = curio_load_data(\"data.projectsidewalk.chicago-labels\")\n\nreturn labels[[\"label_type\", \"severity\", \"neighborhood\", \"geometry\"]]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load all 145,880 Project Sidewalk labels for Chicago.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "label-clusters",
+        "type": "curio.builtin/computation-analysis",
+        "x": 645,
+        "y": 215,
+        "content": "import os\n\n# Before CUDA starts, so cuBLAS repeats its sums in the same order on every run.\nos.environ[\"CUBLAS_WORKSPACE_CONFIG\"] = \":4096:8\"\n\nimport numpy as np\nimport torch\n\n# The same numbers on every run: seeded, deterministic kernels only, and full\n# float32 precision (no TF32), so every GPU rounds them alike.\ntorch.manual_seed(30)\ntorch.use_deterministic_algorithms(True)\ntorch.backends.fp32_precision = \"ieee\"\ntorch.backends.cudnn.benchmark = False\ndevice = \"cuda\" if torch.cuda.is_available() else \"cpu\"\n\nK = 8\n\n# Each label's place in metres (Illinois East), around the labels' mean, in\n# float64, so every device puts each label in the same cluster.\nmetres = input_0.geometry.to_crs(26971)\nxy = np.column_stack([metres.x, metres.y])\npoints = torch.from_numpy(xy - xy.mean(axis=0)).to(device)\n\n\ndef squared_distances(centres):\n    \"\"\"Every label's squared distance to every centre, labels by centres.\"\"\"\n    return (points[:, None, :] - centres[None, :, :]).square().sum(dim=2)\n\n\n# k-means++ starts: each next centre a label drawn with odds by its squared\n# distance to the nearest centre so far, by a generator on the CPU, so every\n# device draws the same ones.\ndraws = torch.Generator().manual_seed(30)\ncentres = points[torch.randint(len(points), (1,), generator=draws).to(device)]\nfor _ in range(K - 1):\n    nearest = squared_distances(centres).min(dim=1).values\n    pick = torch.multinomial((nearest / nearest.sum()).cpu(), 1, generator=draws)\n    centres = torch.cat([centres, points[pick.to(device)]])\n\n# Lloyd's steps until no label changes cluster: each centre moves to the mean\n# of its labels, a product with the labels' one-hot clusters.\nassigned = None\nfor step in range(1, 101):\n    closest = squared_distances(centres).argmin(dim=1)\n    if assigned is not None and torch.equal(closest, assigned):\n        break\n    assigned = closest\n    members = torch.nn.functional.one_hot(assigned, K).to(points.dtype)\n    centres = (members.T @ points) / members.sum(dim=0).clamp(min=1)[:, None]\nprint(f\"Ran on {device}: {K} clusters, settled after {step} steps.\")\n\n# Clusters numbered from the largest, 1 to K.\nsizes = torch.nn.functional.one_hot(assigned, K).sum(dim=0).cpu()\nrank = torch.empty(K, dtype=torch.long)\nrank[torch.argsort(sizes, descending=True, stable=True)] = torch.arange(K)\n\nclustered = input_0.copy()\nclustered[\"cluster\"] = (rank[assigned.cpu()] + 1).numpy()\nclustered[\"device\"] = device\nreturn clustered\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Cluster the labels by place with k-means in PyTorch, on the GPU when there is one.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "cluster-counts",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1290,
+        "y": 0,
+        "content": "# How many labels of each type each cluster holds.\ncounts = input_0.groupby([\"cluster\", \"label_type\"]).size()\n\nreturn counts.reset_index(name=\"labels\")\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Count the labels of each type in each cluster.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "cluster-types",
+        "type": "curio.builtin/vis-vega",
+        "x": 1935,
+        "y": 0,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"How many labels of each type each cluster holds.\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"cluster\",\n      \"type\": \"ordinal\",\n      \"title\": \"Cluster\",\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"labels\",\n      \"type\": \"quantitative\",\n      \"aggregate\": \"sum\",\n      \"title\": \"Labels\"\n    },\n    \"color\": {\n      \"field\": \"label_type\",\n      \"type\": \"nominal\",\n      \"title\": \"Label type\"\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"cluster\"\n      },\n      {\n        \"field\": \"label_type\"\n      },\n      {\n        \"field\": \"labels\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart each cluster's labels by type.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "labels-to-draw",
+        "type": "curio.builtin/computation-analysis",
+        "x": 1290,
+        "y": 430,
+        "content": "# Every tenth label, enough to show the clusters on a map.\nreturn input_0.iloc[::10][[\"cluster\", \"label_type\", \"geometry\"]]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep every tenth label for the map.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "cluster-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1935,
+        "y": 430,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"cluster\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"title\": \"Cluster\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the labels colored by cluster.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-sidewalk-labelsout-label-clustersin",
+        "source": "sidewalk-labels",
+        "sourceHandle": "out",
+        "target": "label-clusters",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-label-clustersout-cluster-countsin",
+        "source": "label-clusters",
+        "sourceHandle": "out",
+        "target": "cluster-counts",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-cluster-countsout-cluster-typesin",
+        "source": "cluster-counts",
+        "sourceHandle": "out",
+        "target": "cluster-types",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-label-clustersout-labels-to-drawin",
+        "source": "label-clusters",
+        "sourceHandle": "out",
+        "target": "labels-to-draw",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-labels-to-drawout-cluster-mapin",
+        "source": "labels-to-draw",
+        "sourceHandle": "out",
+        "target": "cluster-map",
+        "targetHandle": "in"
+      }
+    ],
+    "name": "PyTorch: sidewalk clusters",
+    "description": "Project Sidewalk's 145,880 Chicago labels clustered by place with k-means in PyTorch, on the GPU when there is one: an Autark map of the labels by cluster, and each cluster's labels by type.",
+    "task": "Cluster sidewalk accessibility labels by place on the GPU and map the clusters.",
+    "timestamp": 0,
+    "provenance_id": "pytorch-sidewalk-clusters",
+    "packages": [],
+    "datasets": [
+      {
+        "datasetId": "data.projectsidewalk.chicago-labels",
+        "dirName": "data.projectsidewalk.chicago-labels@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-06T00:00:00Z"
+      }
+    ]
+  }
+}

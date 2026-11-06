@@ -73,6 +73,7 @@ from .utils import (
     wait_for_run_guard_released,
     watch_brush,
 )
+from .runner_split import TORCH_RE
 from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES, parse_workflow
 
 """
@@ -200,6 +201,26 @@ EDIT_FEATURES = "curio.builtin/edit-features"
 def _plays(node: NodeSpec) -> bool:
     """Whether the canvas gives *node* a play button that the run clicks."""
     return node.has_play_button or node.type == EDIT_FEATURES
+
+
+#: The column of its output a node that runs torch says the device it ran on in.
+DEVICE_COLUMN = "device"
+
+
+def _torch_devices(spec, expected_map) -> dict[str, list]:
+    """The devices each node of *spec* whose code imports torch says it ran on,
+    read from the programmatic run's snapshot of its output; none for a node
+    whose output has no device column."""
+    devices = {}
+    for node in spec.nodes:
+        if not TORCH_RE.search(node.content or ""):
+            continue
+        table = (expected_map.get(node.id) or {}).get("table")
+        if table is None or DEVICE_COLUMN not in table.schema.names:
+            devices[node.id] = []
+            continue
+        devices[node.id] = sorted(set(table.column(DEVICE_COLUMN).to_pylist()))
+    return devices
 
 
 def _linked_maps(spec, node_id: str) -> list[str]:
@@ -997,6 +1018,25 @@ class TestWorkflowCanvas:
         expected_map = execute_workflow_programmatically(
             self.spec, seed=42, username=getattr(self, "username", None)
         )
+
+        # A node that runs torch says in its output's device column what it ran
+        # on; in test-gpu's container, which has the GPU, that must be cuda.
+        devices = _torch_devices(self.spec, expected_map)
+        if devices:
+            # The job's log lists them (conftest.py's pytest_terminal_summary).
+            request.node.user_properties.append(
+                ("torch_devices", f"{os.path.basename(self.spec.filepath)}: {devices}"))
+            missing = sorted(node_id for node_id, found in devices.items() if not found)
+            assert not missing, (
+                f"{os.path.basename(self.spec.filepath)}: the torch nodes {missing} say in no "
+                f"'{DEVICE_COLUMN}' column of their output which device they ran on"
+            )
+            if os.environ.get("CURIO_E2E_REQUIRE_CUDA") == "1":
+                off = {node_id: found for node_id, found in devices.items() if found != ["cuda"]}
+                assert not off, (
+                    f"{os.path.basename(self.spec.filepath)}: torch nodes ran on {off}, not cuda, "
+                    "in the container that has the GPU (CURIO_E2E_REQUIRE_CUDA=1)"
+                )
 
         self._execute_all_playable_nodes()
 

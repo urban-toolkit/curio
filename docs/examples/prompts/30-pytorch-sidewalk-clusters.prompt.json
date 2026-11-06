@@ -1,0 +1,157 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "30-pytorch-sidewalk-clusters",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/30-pytorch-sidewalk-clusters.json",
+    "sha256": "f5bf7f00813c6fa4085644415315a390618368f76bf583fba66a34c5de703dcf",
+    "walkthrough": "docs/examples/30-pytorch-sidewalk-clusters.md"
+  },
+  "prompt": "Load all of Project Sidewalk's Chicago sidewalk labels from the Data Catalog and group them by place into eight clusters with k-means in PyTorch, on the GPU when there is one: positions in metres, k-means++ starts drawn from a seeded generator, steps until no label changes cluster, clusters numbered from the largest, and the device it ran on. Chart how many labels of each type each cluster holds, and map every tenth label coloured by its cluster on an Autark map.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.projectsidewalk.chicago-labels"
+    ],
+    "packages": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis3",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.projectsidewalk.chicago-labels"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "analysis3",
+      "mustMention": [
+        "cluster"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis2",
+      "outputKind": "dataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T3",
+    "needs": [
+      "gpu"
+    ],
+    "skip": [
+      {
+        "when": "gpu",
+        "reason": "The Autark map needs hardware WebGPU; the plan and apply half of this fixture still runs offline.",
+        "scope": "execution"
+      }
+    ]
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-11-06",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.projectsidewalk.chicago-labels",
+        "licence": "Project Sidewalk API terms"
+      }
+    ]
+  },
+  "notes": "k-means in PyTorch over 145,880 points from the Data Catalog, with an Autark map of a tenth of them by cluster."
+}
