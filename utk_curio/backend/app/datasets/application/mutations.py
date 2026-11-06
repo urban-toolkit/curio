@@ -247,6 +247,7 @@ class CatalogMutations:
                 source_updated_at=source_updated_at,
                 source_encoding=source_encoding,
                 discovery_source=discovery_source,
+                visitor=self._visitor(),
             )
         except InstallerError as exc:
             raise DatasetCatalogError(str(exc)) from exc
@@ -310,6 +311,7 @@ class CatalogMutations:
                 discovery_source=discovery_source,
                 description=description,
                 collection=collection,
+                visitor=self._visitor(),
             )
         except InstallerError as exc:
             raise DatasetCatalogError(str(exc)) from exc
@@ -1271,6 +1273,24 @@ class CatalogMutations:
             index_repo.safe_forget(user_key, dir_name)
         except Exception:  # noqa: BLE001
             pass
+
+    def _visitor(self) -> str | None:
+        """What a hosted guest's upload or download is named after in the
+        store every guest reads (``visitor_copies.visitor_of``), so it lists
+        for that guest alone; None for anyone else. A hosted guest whose
+        sign-in neither the request nor its run knows is refused, rather than
+        given a dataset every guest would list."""
+        from utk_curio.backend.app.projects import visitor_copies
+
+        if not visitor_copies.copies_for(self.user):
+            return None
+        visitor = visitor_copies.visitor_of(self._paths.sign_in)
+        if visitor is None:
+            raise DatasetCatalogError(
+                "Curio could not tell which guest's visit this dataset belongs to, so it was not added.",
+                403,
+            )
+        return visitor
 
     def _refuse_hosted_guest(self, action: str) -> None:
         """Refuse *action*, such as "delete datasets", to a hosted guest, with

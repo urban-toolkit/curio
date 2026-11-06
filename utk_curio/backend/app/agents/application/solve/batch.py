@@ -68,6 +68,7 @@ from utk_curio.backend.app.agents.domain import upstream_schema as agents_upstre
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.packages import service as _pkg_services
 from utk_curio.backend.app.projects import storage as projects_storage
+from utk_curio.backend.app.projects import visitor_copies
 from utk_curio.backend.app.agents.domain import agent_text
 
 log = logging.getLogger(__name__)
@@ -1172,7 +1173,8 @@ class SolveBatch:
                     continue
                 yield "solve_wave", {"wave": wave_no, "of": len(waves), "nodeIds": list(wave)}
                 for target in wave:
-                    pool.submit(self.solve_one, target)
+                    # For the visitor the job serves, on the worker's thread too.
+                    pool.submit(visitor_copies.carrying(self.solve_one), target)
                 yield from self._drain_wave(wave)
                 if wave_no < len(waves):
                     # dev/118: the wave boundary persists and heartbeats;
