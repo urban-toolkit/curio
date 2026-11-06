@@ -3,7 +3,11 @@ it, and what ``/output-file`` serves.
 
 ``curio_export(data, name)`` writes a table as CSV, a GeoDataFrame as GeoJSON,
 a raster as GeoTIFF and anything else as JSON, under a name that ends in its
-format's extension, and returns that name, which is the node's output. The file
+format's extension, and returns that name, which is the node's output. A tuple,
+list or dict that holds a table or a raster, a bundle's parts, is one zip: a
+file per part named after its label, and ``bundle.json``. ``part=`` writes one
+part, named by its label, its key or its position. No frame is ever written as
+its text. The file
 goes in the folder of the run (``util/output_files.py``): in process the run
 writes there itself, and an isolated child writes into its scratch directory,
 from which the parent keeps the one file the output names. ``/output-file``
@@ -215,6 +219,181 @@ def test_a_long_name_is_cut_to_what_curio_output_file_takes_keeping_its_extensio
     assert name.endswith("x.csv")
 
 
+# -- several values: one zip -------------------------------------------------
+
+def _stations():
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    return gpd.GeoDataFrame(
+        {"name": ["Clark/Lake", "Grand"]},
+        geometry=[Point(447000, 4637000), Point(447500, 4637800)], crs="EPSG:32616",
+    )
+
+
+def _labelled(frame, label):
+    """*frame* as a bundle's part reads: its label in ``metadata["partLabel"]``."""
+    frame.__dict__["metadata"] = {**(frame.__dict__.get("metadata") or {}), "partLabel": label}
+    return frame
+
+
+def _zip(path: Path) -> tuple[list[str], dict]:
+    """The members of the zip at *path*, in their order, and its bundle.json."""
+    import zipfile
+
+    with zipfile.ZipFile(path) as archive:
+        return archive.namelist(), json.loads(archive.read("bundle.json"))
+
+
+def _unzipped(path: Path, folder: Path) -> Path:
+    import zipfile
+
+    with zipfile.ZipFile(path) as archive:
+        archive.extractall(folder)
+    return folder
+
+
+def test_a_tuple_of_a_table_a_geo_table_a_raster_and_a_number_is_one_zip(tmp_path):
+    import geopandas as gpd
+    import rasterio
+    import zipfile
+
+    source = _geotiff(tmp_path / "heights.tif")
+    with rasterio.open(source) as raster:
+        path = _exported(tmp_path, (TREES, _stations(), raster, 42), "layers")
+
+    assert path.name == "layers.zip"
+    names, spec = _zip(path)
+    assert names == ["Table_part_1.csv", "Geo_table_part_2.geojson", "Raster_part_3.tif", "bundle.json"]
+    assert spec == {
+        "version": 1,
+        "container": "tuple",
+        "parts": [
+            {"index": 0, "label": "Table · part 1", "kind": "dataframe", "file": "Table_part_1.csv"},
+            {"index": 1, "label": "Geo table · part 2", "kind": "geodataframe", "file": "Geo_table_part_2.geojson"},
+            {"index": 2, "label": "Raster · part 3", "kind": "raster", "file": "Raster_part_3.tif"},
+            {"index": 3, "label": "Number · part 4", "kind": "int", "value": 42},
+        ],
+    }
+    out = _unzipped(path, tmp_path / "out")
+    assert (out / "Table_part_1.csv").read_text(encoding="utf-8") == TREES_CSV
+    stations = gpd.read_file(out / "Geo_table_part_2.geojson")
+    assert stations.crs.to_epsg() == 32616 and list(stations["name"]) == ["Clark/Lake", "Grand"]
+    assert (out / "Raster_part_3.tif").read_bytes() == source.read_bytes()
+    # Every member carries one date, so the same parts make the same file.
+    with zipfile.ZipFile(path) as archive:
+        assert {info.date_time for info in archive.infolist()} == {(1980, 1, 1, 0, 0, 0)}
+    assert sorted(p.name for p in path.parent.iterdir()) == ["layers.zip"]
+
+
+def test_a_dicts_keys_name_its_parts_and_their_files(tmp_path):
+    path = _exported(tmp_path, {"trees": TREES, "stations": _stations(), "count": 2}, "")
+
+    assert path.name == "data_export.zip"
+    names, spec = _zip(path)
+    assert names == ["trees.csv", "stations.geojson", "bundle.json"]
+    assert spec["container"] == "dict"
+    assert spec["parts"] == [
+        {"index": 0, "key": "trees", "label": "trees", "kind": "dataframe", "file": "trees.csv"},
+        {"index": 1, "key": "stations", "label": "stations", "kind": "geodataframe", "file": "stations.geojson"},
+        {"index": 2, "key": "count", "label": "count", "kind": "int", "value": 2},
+    ]
+
+
+def test_a_parts_label_is_the_bundles_then_its_key_then_its_frames_name():
+    from utk_curio.sandbox.util.bundle_zip import parts_of
+
+    named = _stations()
+    named.__dict__["metadata"] = {"name": "table_stations", "layerType": "points"}
+    container, parts = parts_of({
+        "labelled": _labelled(TREES.copy(), "Trees (OpenStreetMap)"),
+        "keyed": named,
+    })
+    assert container == "dict"
+    assert [(part.key, part.label) for part in parts] == [("labelled", "Trees (OpenStreetMap)"), ("keyed", "keyed")]
+    container, parts = parts_of((named, 1.5))
+    assert container == "tuple"
+    assert [(part.key, part.label) for part in parts] == [(None, "table_stations"), (None, "Number · part 2")]
+
+
+def test_labels_that_clash_or_hold_odd_characters_give_plain_distinct_names(tmp_path):
+    labels = [
+        "Trees (OpenStreetMap)", "trees: OpenStreetMap", "../../etc/passwd",
+        "Árvores de 2024", "???", ".hidden",
+    ]
+    path = _exported(tmp_path, [_labelled(TREES.copy(), label) for label in labels], "odd")
+
+    names, spec = _zip(path)
+    assert names == [
+        "Trees_OpenStreetMap.csv", "trees_OpenStreetMap_2.csv", "etc_passwd.csv",
+        "Arvores_de_2024.csv", "part_5.csv", "hidden.csv", "bundle.json",
+    ]
+    assert spec["container"] == "list"
+    assert [part["label"] for part in spec["parts"]] == labels
+    assert sorted(p.name for p in _unzipped(path, tmp_path / "out").iterdir()) == sorted(names)
+
+
+def _exported_part(tmp_path: Path, data, part, name="pick") -> Path:
+    from utk_curio.sandbox.util.exports import export
+
+    folder = tmp_path / "run"
+    folder.mkdir(exist_ok=True)
+    return folder / export(data, name, lambda file_name: str(folder / file_name), part)
+
+
+def test_part_writes_the_one_part_it_names_by_label_key_or_position(tmp_path):
+    layers = (_labelled(TREES.copy(), "Trees"), _labelled(_stations(), "Stations"))
+
+    by_label = _exported_part(tmp_path, layers, "Stations")
+    assert by_label.name == "pick.geojson"
+    assert json.loads(by_label.read_text(encoding="utf-8"))["type"] == "FeatureCollection"
+    assert _exported_part(tmp_path, layers, 0).read_text(encoding="utf-8") == TREES_CSV
+    # A position as the Part widget gives it, as text.
+    assert _exported_part(tmp_path, layers, "1").name == "pick.geojson"
+    keyed = {"k": _labelled(TREES.copy(), "Trees"), "count": 3}
+    assert _exported_part(tmp_path, keyed, "k").read_text(encoding="utf-8") == TREES_CSV
+    assert _exported_part(tmp_path, keyed, "Trees").read_text(encoding="utf-8") == TREES_CSV
+    assert json.loads(_exported_part(tmp_path, keyed, "count").read_text(encoding="utf-8")) == 3
+    # An empty Part, as the widget is when it is left empty: every part.
+    assert _exported_part(tmp_path, layers, "").name == "pick.zip"
+
+
+def test_part_on_one_value_or_a_part_that_is_not_there_is_refused(tmp_path):
+    import re
+
+    with pytest.raises(ValueError, match="part names one part of a tuple, list or dict, and the data is a pandas DataFrame"):
+        _exported_part(tmp_path, TREES, "Trees")
+    layers = (_labelled(TREES.copy(), "Trees"), _labelled(_stations(), "Stations"))
+    for part in ("Roads", 2, "-1"):
+        with pytest.raises(ValueError, match=re.escape(
+            f"the data has no part {part!r}: its parts are 'Trees' and 'Stations', or 0 to 1 by position"
+        )):
+            _exported_part(tmp_path, layers, part)
+
+
+def test_a_frame_inside_a_part_is_refused_and_no_frame_is_ever_written_as_text(tmp_path):
+    import re
+
+    from utk_curio.sandbox.util.exports import export
+
+    folder = tmp_path / "run"
+    folder.mkdir()
+
+    def output_file(file_name):
+        return str(folder / file_name)
+
+    with pytest.raises(ValueError, match=re.escape(
+        "the part 'Array · part 2' holds a pandas DataFrame: make each table or raster a part of its own"
+    )):
+        export((TREES, [TREES, 1]), "nested", output_file)
+    # No part is a frame here, and still no frame or data object becomes text.
+    with pytest.raises(TypeError, match="the data holds a pandas DataFrame"):
+        export([[TREES]], "deeper", output_file)
+    with pytest.raises(TypeError, match="the data holds a pandas Series"):
+        export({"heights": pd.Series([10, 12])}, "series", output_file)
+    assert list(folder.iterdir()) == []
+
+
 # -- where a run keeps it ------------------------------------------------------
 
 def test_a_run_in_process_writes_the_file_in_its_own_folder_and_the_route_serves_it(client):
@@ -286,6 +465,37 @@ def test_an_isolated_run_hands_its_file_to_the_parent_which_keeps_it_in_the_runs
     assert kept.read_text(encoding="utf-8") == TREES_CSV
     staging.persist_output(manifest["output"], node_id=EXPORT_TYPE, session_id="alice", art_id=art_id)
     assert output_files.named_file(art_id, "alice") == kept.resolve()
+
+
+def test_an_isolated_run_fed_a_bundle_writes_one_zip_and_the_parent_keeps_only_it(store, tmp_path):
+    """The parts reach the child staged from the store, each with its label,
+    a table's too, and the parent keeps the zip alone."""
+    from utk_curio.sandbox.isolation import child, protocol
+    from utk_curio.sandbox.util import output_files, staging
+    from utk_curio.sandbox.util.parsers import _make_id, save_to_duckdb
+
+    loaded = save_to_duckdb((_labelled(TREES.copy(), "Trees"), _labelled(_stations(), "CTA stations")))
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    result = child.run_node({
+        "code": "    return curio_export(input_0, 'layers', part='')\n",
+        "node_type": EXPORT_TYPE, "data_type": "outputs", "scratch_dir": str(scratch),
+        "input": staging.stage_input(loaded, scratch), "dataset_paths": {}, "session_imports": [], "limits": {},
+    }, lambda: {"pd": pd})
+
+    assert result["ok"], result["stderr"]
+    assert result["output"] == {"kind": "str", "value": "layers.zip"}
+    assert result["outputFiles"] == ["layers.zip"]
+    manifest = protocol.parse_child_result(json.dumps(result).encode(), scratch_dir=str(scratch))
+    art_id = _make_id()
+    kept = output_files.keep_named_file(manifest["output"], str(scratch), manifest["outputFiles"], art_id)
+    assert kept == output_files.run_output_dir(art_id) / "layers.zip"
+    assert sorted(p.name for p in kept.parent.iterdir()) == ["layers.zip"]
+    names, spec = _zip(kept)
+    assert names == ["Trees.csv", "CTA_stations.geojson", "bundle.json"]
+    assert [(part["label"], part["kind"]) for part in spec["parts"]] == [
+        ("Trees", "dataframe"), ("CTA stations", "geodataframe"),
+    ]
 
 
 def test_the_parent_keeps_only_a_plain_file_the_child_was_given_a_name_for(store, tmp_path):

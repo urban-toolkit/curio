@@ -284,3 +284,41 @@ def test_export_downloads_the_server_named_file(
     )
 
     _close_details(page)
+
+
+#: A hub bundle, Chicago Loop Layers, and the zip its Export saves: one GeoJSON
+#: per layer, then its bundle.json.
+BUNDLE = ("data.curio.chicago-loop-layers", "Chicago Loop Layers", "Chicago Loop Layers.zip")
+
+
+def test_a_bundles_export_downloads_one_zip_of_its_parts(
+    app_frontend: "FrontendPage", current_server: str, page, tmp_path,
+):
+    import io
+    import json
+    import zipfile
+
+    require_project_page()
+    require_user_auth()
+    session = _enter_dataflow(page, app_frontend, current_server, username="dataset_export_zip_user")
+    dataset_id, title, expected_filename = BUNDLE
+
+    export = _open_details(page, _open_drawer_from_menu(page), dataset_id, title)
+    with page.expect_download(timeout=EXPORT_DOWNLOAD_TIMEOUT_MS) as download:
+        export.click()
+
+    assert download.value.suggested_filename == expected_filename
+    saved = tmp_path / expected_filename
+    download.value.save_as(str(saved))
+    body = saved.read_bytes()
+    assert body == api_json(f"{current_server}/api/datasets/{dataset_id}/download", session["token"], raw=True)
+    with zipfile.ZipFile(io.BytesIO(body)) as archive:
+        names = archive.namelist()
+        spec = json.loads(archive.read("bundle.json"))
+    assert names[-1] == "bundle.json" and len(names) == 5, names
+    assert [part["file"] for part in spec["parts"]] == names[:-1]
+    assert all(name.endswith(".geojson") for name in names[:-1]), names
+    expect(
+        page.get_by_label("Notifications").get_by_text("Could not export dataset.")
+    ).to_have_count(0)
+    _close_details(page)

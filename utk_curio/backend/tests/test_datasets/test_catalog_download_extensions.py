@@ -18,6 +18,10 @@ Run::
 """
 from __future__ import annotations
 
+import io
+import json
+import zipfile
+
 import pytest
 
 from utk_curio.backend.app.datasets.domain.constants import FORMAT_TO_EXTENSION
@@ -26,9 +30,10 @@ from utk_curio.backend.tests.dataset_catalog_coverage import catalog_datasets
 CATALOG = catalog_datasets()
 IDS = [dataset.dataset_id for dataset in CATALOG]
 
-#: Formats with no single file to download: a bundle is several parts, and a
-#: collection's files stay in its source.
-NOT_EXPORTABLE = ("bundle", "collection")
+#: Formats with no file to download: a collection's files stay in its source.
+NOT_EXPORTABLE = ("collection",)
+#: Formats that download as one zip of their parts and a ``bundle.json``.
+ZIPPED = ("bundle",)
 
 
 def _auth(token):
@@ -42,7 +47,7 @@ def test_every_committed_format_has_a_download_extension():
             dataset.manifest.format
             for dataset in CATALOG
             if dataset.manifest.format not in FORMAT_TO_EXTENSION
-            and dataset.manifest.format not in NOT_EXPORTABLE
+            and dataset.manifest.format not in NOT_EXPORTABLE + ZIPPED
         }
     )
     assert not missing, (
@@ -77,6 +82,19 @@ def test_a_hub_dataset_downloads_with_the_right_filename(
 
     disposition = resp.headers.get("Content-Disposition", "")
     assert "attachment" in disposition.lower(), disposition
+    if dataset.manifest.format in ZIPPED:
+        # One file per part its bundle.json lists, then that bundle.json.
+        assert f"{dataset.manifest.name}.zip" in disposition, disposition
+        assert resp.mimetype == "application/zip", resp.mimetype
+        listed = json.loads(dataset.root.joinpath(dataset.manifest.data_file).read_text(encoding="utf-8"))
+        with zipfile.ZipFile(io.BytesIO(resp.data)) as archive:
+            names = archive.namelist()
+            spec = json.loads(archive.read("bundle.json"))
+            assert all(archive.read(name) for name in names), names
+        assert names[-1] == "bundle.json" and len(names) == len(listed["parts"]) + 1, names
+        assert [part["label"] for part in spec["parts"]] == [part["label"] for part in listed["parts"]]
+        assert [part["file"] for part in spec["parts"]] == names[:-1]
+        return
     # The export may legitimately re-serialize (parquet -> csv/geojson), so the
     # suffix is checked against the set of plausible ones rather than pinned to
     # the stored format.
