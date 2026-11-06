@@ -108,7 +108,14 @@ const VegaChart: React.FC<{ spec: any; height: number; label: string }> = ({
     };
   }, [spec, height]);
 
-  return <div ref={host} aria-label={label} role="img" style={{ width: "100%" }} />;
+  // Vega makes the element it draws into a "graphics-document" named "Vega
+  // visualization" (vega-view's initializeAria), so the chart's role and name
+  // sit on a wrapper Vega never touches.
+  return (
+    <div aria-label={label} role="img" style={{ width: "100%" }}>
+      <div ref={host} style={{ width: "100%" }} />
+    </div>
+  );
 };
 
 function durationBinLabel(bucket: DurationBucket, previous: number | null): string {
