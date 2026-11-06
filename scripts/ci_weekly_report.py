@@ -22,6 +22,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.request
 import zipfile
 from collections import Counter
@@ -56,8 +57,30 @@ class Api:
                 time.sleep(10)
 
     def bytes(self, path: str) -> bytes:
-        with self._open(path) as response:
+        """An artifact's zip. The API answers with a redirect to storage, which
+        refuses a request that still carries the token, so the redirect is
+        followed by hand, without it."""
+        opener = urllib.request.build_opener(_KeepRedirect)
+        request = urllib.request.Request(self.base + path, headers={
+            "Authorization": f"Bearer {self.token}",
+            "Accept": "application/vnd.github+json",
+        })
+        try:
+            with opener.open(request, timeout=60) as response:
+                return response.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (301, 302, 303, 307, 308):
+                raise
+            location = exc.headers["Location"]
+        with urllib.request.urlopen(location, timeout=120) as response:
             return response.read()
+
+
+class _KeepRedirect(urllib.request.HTTPRedirectHandler):
+    """Hands a redirect back as an HTTPError instead of following it."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
 
 
 def started_runs(fetch, since: str) -> list[dict]:
