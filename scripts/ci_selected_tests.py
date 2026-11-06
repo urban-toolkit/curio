@@ -4,6 +4,7 @@
     python scripts/ci_selected_tests.py targets <suite>
     python scripts/ci_selected_tests.py split [--remint] [--remint-filter EXPR]
     python scripts/ci_selected_tests.py holding <listing>... [--job JOB]
+    python scripts/ci_selected_tests.py holding --whole-suites [--remint-filter EXPR]
     python scripts/ci_selected_tests.py check <ci-inputs dir> <listing>... [--remint-filter EXPR]
 
 A run is filtered when it is a re-mint with a ``remint_filter`` (a pytest -k
@@ -32,7 +33,10 @@ scripts/ci_never_run.py reads results by. ``holding`` names the jobs that hold
 a selected test, for the jobs and parts to start only when they do: the
 listed ones, ``unit-sandbox`` for a sandbox word and ``jest`` for a Jest file,
 as ``holding=,e2e-desktop-3,unit-backend-1,``; with ``--job``, whether that one
-job holds any, as ``CURIO_CI_HOLDS=true`` for $GITHUB_ENV.
+job holds any, as ``CURIO_CI_HOLDS=true`` for $GITHUB_ENV. When the collection
+failed, ``--whole-suites`` names every job of each suite the run selects from
+(a misspelled test name fails pytest's collection), so no other suite's parts
+start.
 
 ``check`` is what ci-report runs on a filtered run instead of
 ci_never_run.py's whole-suite check, which cannot hold there (the jobs that
@@ -45,8 +49,9 @@ hold no selected test send no results). It fails the run when:
 4. a test in the results only skipped (ci_never_run.py's check, on what ran);
 5. a ``remint_filter`` selected no test at all.
 
-Without a listing (build-image's collection failed, so every part ran) it
-checks 1 for sandbox and Jest, then 3 to 5 on what ran, and says so.
+Without a listing (build-image's collection failed, so every part of the
+selected suites ran) it checks 1 for sandbox and Jest, then 3 to 5 on what
+ran, and says so.
 """
 
 from __future__ import annotations
@@ -153,6 +158,26 @@ def holding(listed: dict | None, words, root: Path = REPO_ROOT) -> list[str]:
     return sorted(jobs)
 
 
+def whole_suites(words, remint_filter: str = "", root: Path = REPO_ROOT) -> list[str]:
+    """Every job of each suite a word, or a re-mint's filter, is in: when the collection failed.
+
+    A word of one suite can hold no test of another's jobs, so a failed
+    collection still starts no part of a suite the run did not name. test-gpu
+    lists its own share.
+    """
+    sys.path.insert(0, str(REPO_ROOT))
+    from utk_curio.backend.tests import parts
+
+    suites = by_suite(words, root)
+    jobs = set()
+    if suites["e2e"] or remint_filter:
+        jobs.update(f"e2e-desktop-{k}" for k in range(1, parts.E2E_DESKTOP_PARTS + 1))
+    if suites["backend"]:
+        jobs.update(f"unit-backend-{k}" for k in range(1, parts.BACKEND_UNIT_PARTS + 1))
+    jobs.update(job for suite, job in WHOLE_SUITE_JOBS.items() if suites[suite])
+    return sorted(jobs)
+
+
 def _dotted(word: str) -> str:
     """A pytest word as the dotted name of what it selects: tests.test_x.TestA.test_b."""
     path, _, rest = word.partition("::")
@@ -216,7 +241,7 @@ def check(inputs: Path, listed: dict | None, words, remint_filter: str = "",
         wanted.append("unit-backend-1")
     if wanted and (listed is None or any(job not in listed for job in wanted)):
         notes.append("no list of the selected tests from build-image (its collection failed, so every "
-                     "part ran): each word is checked against what ran, and every test that ran")
+                     "part of their suites ran): each word is checked against what ran, and every test that ran")
         listed = {}
     listed = listed or {}
 
@@ -263,6 +288,8 @@ def main(argv) -> int:
     hold = commands.add_parser("holding")
     hold.add_argument("listings", nargs="*", type=Path)
     hold.add_argument("--job")
+    hold.add_argument("--whole-suites", action="store_true")
+    hold.add_argument("--remint-filter", default="")
     checking = commands.add_parser("check")
     checking.add_argument("inputs", type=Path)
     checking.add_argument("listings", nargs="*", type=Path)
@@ -286,7 +313,7 @@ def main(argv) -> int:
             return 0
         listed = read_listings(args.listings)
         if args.command == "holding":
-            jobs = holding(listed, words)
+            jobs = whole_suites(words, args.remint_filter) if args.whole_suites else holding(listed, words)
             print(f"Jobs that hold a selected test: {', '.join(jobs) or 'none'}", file=sys.stderr)
             if args.job:
                 print(f"CURIO_CI_HOLDS={'true' if args.job in jobs else 'false'}")

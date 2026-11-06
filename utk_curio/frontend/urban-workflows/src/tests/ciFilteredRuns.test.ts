@@ -147,8 +147,14 @@ describe("a filtered Full stack build", () => {
             }
         }
         expect(unfiltered).toEqual([]);
-        // build-image's holding output comes from its collection, which only a filter starts.
-        expect(jobBlock("build-image")).toMatch(/^ {6}holding: \$\{\{ steps\.select\.outputs\.holding \}\}$/m);
+        // build-image's holding output comes from its collection, which only a filter starts, or
+        // from the step after it that names the selected suites' parts when it failed.
+        expect(jobBlock("build-image")).toMatch(
+            /^ {6}holding: \$\{\{ steps\.select\.outputs\.holding \|\| steps\.unlisted\.outputs\.holding \}\}$/m,
+        );
+        const unlisted = steps("build-image").find((step) => step.id === "unlisted");
+        expect(unlisted?.condition).toBe("steps.select.outcome == 'failure'");
+        expect(unlisted?.text).toContain("ci_selected_tests.py holding --whole-suites");
     });
 
     test.each([

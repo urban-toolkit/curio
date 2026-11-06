@@ -113,6 +113,14 @@ def test_the_jobs_that_hold_a_selected_test(tmp_path):
     assert selected.read_listings([tmp_path / "missing"]) is None
 
 
+def test_a_failed_collection_starts_every_part_of_the_selected_suites_and_no_other():
+    """A misspelled test name fails the collection: its suite's parts run, no other suite's."""
+    assert selected.whole_suites([UNIT]) == [f"unit-backend-{k}" for k in range(1, 5)]
+    e2e_parts = sorted(f"e2e-desktop-{k}" for k in range(1, 15))
+    assert selected.whole_suites([], remint_filter="test_x") == e2e_parts
+    assert selected.whole_suites([E2E, SANDBOX, JEST]) == sorted([*e2e_parts, "jest", "unit-sandbox"])
+
+
 def test_holding_prints_the_output_and_one_jobs_answer(tmp_path, capsys, monkeypatch):
     listing = _listing(tmp_path / "listed", {"test-gpu": ["tests.test_frontend.t::a"], "e2e-desktop-1": []})
     monkeypatch.setenv("CURIO_TESTS", "")

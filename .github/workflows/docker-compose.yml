@@ -354,9 +354,10 @@ jobs:
       image: ${{ steps.name.outputs.image }}
       runners: ${{ steps.pick.outputs.runners }}
       # On a filtered run, the jobs and parts that hold a selected test, as
-      # ",e2e-desktop-3,unit-backend-1,". Empty, every one runs: on every run
-      # without a filter, and on one whose collection failed.
-      holding: ${{ steps.select.outputs.holding }}
+      # ",e2e-desktop-3,unit-backend-1,", or every part of the suites it
+      # selects from when its collection failed. Empty on every run without a
+      # filter: then every job and part runs.
+      holding: ${{ steps.select.outputs.holding || steps.unlisted.outputs.holding }}
     steps:
       # The first step of every job that can run on a self-hosted runner; the
       # jobs below repeat it as `*reclaim`. A job cancelled before its teardown
@@ -473,9 +474,9 @@ jobs:
       # image's packages, as e2e-desktop and test-gpu do, both shares at once;
       # the backend unit suite inside the image, as the unit job does. A push,
       # a PR, the schedule and a dispatch with neither filter (the Weekly flake
-      # hunt's repeat 10) skip these steps, so every job and part runs, and so
-      # does a filtered run whose collection failed. A word of tests that is in
-      # no suite's folder fails here (scripts/ci_selected_tests.py).
+      # hunt's repeat 10) skip these steps, so every job and part runs. A word
+      # of tests that is in no suite's folder, or names no file, fails here
+      # (scripts/ci_selected_tests.py).
       - name: 🧮 Sort the selected tests by suite
         id: suites
         if: ${{ (inputs.remint && inputs.remint_filter) || inputs.tests }}
@@ -541,9 +542,18 @@ jobs:
             echo "Only these jobs and parts run their steps: \`${holding#holding=}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: ⚠️ Every job and part runs, since the collection failed
+      # A misspelled test name fails pytest's collection. Every part of the
+      # suites the run selects from then runs, each with the filter, and no
+      # part of another suite starts.
+      - name: ⚠️ Every part of the selected suites runs, since the collection failed
+        id: unlisted
         if: steps.select.outcome == 'failure'
-        run: echo "::warning::The selected tests could not be listed, so every job and part runs, each with the filter."
+        env:
+          CURIO_TESTS: ${{ inputs.tests }}
+          CURIO_REMINT_FILTER: ${{ inputs.remint && inputs.remint_filter || '' }}
+        run: |
+          echo "::warning::The selected tests could not be listed, so every part of their suites runs, each with the filter."
+          python3 scripts/ci_selected_tests.py holding --whole-suites --remint-filter "$CURIO_REMINT_FILTER" | tee -a "$GITHUB_OUTPUT"
 
       # ci-report checks that every test listed here ran.
       - name: 📤 Upload the lists of the selected tests
