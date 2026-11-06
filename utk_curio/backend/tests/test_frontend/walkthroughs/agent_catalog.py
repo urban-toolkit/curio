@@ -5,7 +5,7 @@ import re
 
 from playwright.sync_api import expect
 
-from ..utils import accept_confirm_dialog, api_json
+from ..utils import accept_confirm_dialog, api_json, take_agents_out
 from .framework import Ctx, walkthrough
 
 
@@ -72,6 +72,57 @@ def remove_one_from_all_projects(ctx: Ctx) -> str:
     # Remove from all projects walks every dataflow the account has.
     api_json(f"{ctx.backend}/api/agents/imports/{coord}", _session_token(ctx), method="DELETE", timeout=60.0)
     return coord
+
+
+def default_agent_and_what_it_requires(ctx: Ctx) -> list[str]:
+    """An agent the account has by default that requires others and that no
+    other agent requires, then every agent it requires, those the required
+    ones require among them. Taken out of a dataflow together, the first
+    one's Add names the others it brings back."""
+    cards = {
+        card["dirName"]: card
+        for card in api_json(f"{ctx.backend}/api/agents/catalog", _session_token(ctx))["items"]
+    }
+    required = {r["coord"] for card in cards.values() for r in card.get("requiresAgents") or []}
+    root = next(
+        coord for coord, card in cards.items()
+        if card.get("imported") and card.get("requiresAgents") and coord not in required
+    )
+    closure, frontier = [root], [root]
+    while frontier:
+        for row in (cards.get(frontier.pop(0)) or {}).get("requiresAgents") or []:
+            if row.get("coord") and row["coord"] not in closure:
+                closure.append(row["coord"])
+                frontier.append(row["coord"])
+    return closure
+
+
+def _dataflow_id(ctx: Ctx) -> str:
+    match = re.search(r"/dataflow/([0-9a-f-]{36})", ctx.page.url)
+    assert match, f"the scene is not on a saved dataflow: {ctx.page.url}"
+    return match.group(1)
+
+
+def take_out_of_this_dataflow(ctx: Ctx, coords) -> list[str]:
+    """Take each agent of *coords* out of the saved dataflow the page shows,
+    through the API, as Remove from project does (``take_agents_out``: each
+    before the agents it requires). Every dataflow starts with the agents
+    Curio adds by default, so a scene about adding one takes it out first.
+
+    The rail's agent palette read the lockfile when the dataflow opened; it
+    reads it again on the signal the drawer sends after an Add, so its count
+    is the lockfile's before the scene goes on."""
+    page, token, project_id = ctx.page, _session_token(ctx), _dataflow_id(ctx)
+    order = take_agents_out(ctx.backend, token, coords, project_id=project_id)
+    left = api_json(f"{ctx.backend}/api/agents/projects/{project_id}", token)["agents"]
+    assert not {card["dirName"] for card in left} & set(coords), (
+        f"{sorted(coords)} were taken out, and the dataflow still holds {[card['dirName'] for card in left]}"
+    )
+    page.evaluate("() => window.dispatchEvent(new Event('curio:agent-catalog-refresh'))")
+    expect(page.locator("#agents-palette").get_by_role("button").first).to_have_text(
+        re.compile(rf"^\s*{len(left)}\s*Agent Catalog\s*$"), timeout=15000,
+    )
+    return order
 
 
 def fits_on_one_line(button) -> dict:
