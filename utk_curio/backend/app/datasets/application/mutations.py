@@ -1014,10 +1014,12 @@ class CatalogMutations:
 
         Best-effort per project, like its package peer: one project with a
         malformed spec must not abort the other nineteen. Returns
-        ``{"datasets": [...], "projects": [{"id", "ok", "error?"}]}``.
+        ``{"datasets": [...], "projects": [{"id", "ok", "error?"}]}``. A
+        hosted guest is refused (:meth:`_refuse_hosted_guest`).
         """
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
+        self._refuse_hosted_guest("add datasets to all projects")
         from utk_curio.backend.app.datasets import defaults as dataset_defaults
         from utk_curio.backend.app.projects import repositories as projects_repo
 
@@ -1054,10 +1056,12 @@ class CatalogMutations:
         chose, and nothing else silently depends on it.
 
         Uninstall is per-project detach only - it never deletes the dataset
-        itself, which stays in the account catalog.
+        itself, which stays in the account catalog. A hosted guest is refused
+        (:meth:`_refuse_hosted_guest`).
         """
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
+        self._refuse_hosted_guest("remove datasets from all projects")
         from utk_curio.backend.app.datasets import defaults as dataset_defaults
         from utk_curio.backend.app.projects import repositories as projects_repo
 
@@ -1263,6 +1267,19 @@ class CatalogMutations:
         except Exception:  # noqa: BLE001
             pass
 
+    def _refuse_hosted_guest(self, action: str) -> None:
+        """Refuse *action*, such as "delete datasets", to a hosted guest, with
+        a 403 (``capabilities.catalog_entry_refusal``): every guest shares one
+        account, whose dataset store every guest reads and whose list for all
+        projects every guest's dataflows start with. Asked before anything is
+        written; without ``--deploy`` the shared guest is the one local user,
+        which may."""
+        from utk_curio.backend.app.users.capabilities import catalog_entry_refusal
+
+        refusal = catalog_entry_refusal(self.user, action)
+        if refusal:
+            raise DatasetCatalogError(refusal, 403)
+
     def _assert_can_manage_shared_catalog(self, verb: str) -> None:
         """Raise 403 unless the caller is an account that may write shared state.
 
@@ -1453,9 +1470,11 @@ class CatalogMutations:
         The single path that deletes the account asset (uninstall keeps it).
         Cascades: unpublish from the hub if published → remove the dataset's ref
         from every dataflow that references it → delete the account-store folder.
+        A hosted guest is refused (:meth:`_refuse_hosted_guest`).
         """
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
+        self._refuse_hosted_guest("delete datasets")
         from utk_curio.backend.app.datasets.infrastructure.storage import (
             list_user_datasets,
         )

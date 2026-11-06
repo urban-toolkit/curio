@@ -56,8 +56,11 @@ def can_manage_shared_catalog(user) -> bool:
     guest" are the same principal and an ownership check cannot separate them
     (#222).
 
-    Note this is deliberately NOT a check on the *dataset*: a guest may still
-    import, compute and delete datasets in the guest store. What it withholds
+    Note this is NOT a check on the *dataset*: a guest may still import and
+    compute datasets in the guest store, and the local guest delete them. A
+    hosted guest may not delete one, nor add one to all projects or remove
+    one from all projects (:func:`catalog_entry_refusal`): every guest reads
+    that store and starts its dataflows from that list. What this withholds
     is reaching into state other accounts can see.
 
     ``None`` passes. It is the internal/system caller -- the context that
@@ -159,7 +162,8 @@ def agent_skills_refusal(user) -> str | None:
 def catalog_entry_refusal(user, action: str) -> str | None:
     """Why *user* may not *action*, such as "import agents" or "publish
     skills", or ``None``: importing, removing, publishing or unpublishing an
-    entry of the Agent or Skill Catalog, an agent or a skill.
+    entry of the Agent or Skill Catalog, an agent or a skill; and deleting a
+    dataset, or adding one to all projects or removing one from all projects.
 
     The same two parts as :func:`settings_refusal`: a local run always may,
     and a hosted guest may not, because every guest shares one account, so
