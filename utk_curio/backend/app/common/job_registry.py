@@ -43,6 +43,37 @@ class JobRefused(ValueError):
         self.job_id = job_id
 
 
+def app_context_at_hand() -> Callable | None:
+    """The ``app_context`` of the app the calling thread runs in, for work it
+    hands to a thread of its own: Flask keeps the app's context in a context
+    variable, which a new thread does not inherit. None outside an app (unit
+    tests, tools), where that work runs bare."""
+    try:
+        from flask import current_app, has_app_context
+
+        if has_app_context():
+            return current_app._get_current_object().app_context
+    except Exception:  # noqa: BLE001 - not under Flask
+        pass
+    return None
+
+
+def in_app_context(fn: Callable) -> Callable:
+    """*fn*, run in a context of the app the calling thread runs in, pushed
+    for each call and popped when it returns, for a pool's thread to run: the
+    database and the app's config answer there as on the calling thread. *fn*
+    itself outside an app."""
+    app_context = app_context_at_hand()
+    if app_context is None:
+        return fn
+
+    def in_context(*args, **kwargs):
+        with app_context():
+            return fn(*args, **kwargs)
+
+    return in_context
+
+
 @dataclass
 class Job:
     job_id: str
@@ -236,13 +267,7 @@ class JobRegistry:
         if app_context is None:
             # The generator runs outside the request; give it the app context
             # the request had (config, extensions) when one is available.
-            try:
-                from flask import current_app, has_app_context
-
-                if has_app_context():
-                    app_context = current_app._get_current_object().app_context
-            except Exception:  # not under Flask (unit tests, tools): run bare
-                app_context = None
+            app_context = app_context_at_hand()
         thread = threading.Thread(
             target=self._run, args=(job, events, app_context, on_finish), daemon=True,
             name=f"{self.name}-job-{job.kind}-{job.job_id[:8]}",
