@@ -1,5 +1,5 @@
 /**
- * Turn the three monitor payloads into something a person can hand over.
+ * Turn the four monitor payloads into something a person can hand over.
  *
  * The point of the monitor page is that someone hitting a problem can share
  * what they are seeing without an operator in the loop. That means two
@@ -11,6 +11,8 @@
  */
 import type {
   MonitorErrorsPayload,
+  MonitorLlmCounts,
+  MonitorLlmPayload,
   MonitorPayload,
   MonitorStoragePayload,
 } from "../api/monitorApi";
@@ -22,6 +24,25 @@ export interface DiagnosticsInput {
   monitor: MonitorPayload | null;
   storage: MonitorStoragePayload | null;
   errors: MonitorErrorsPayload | null;
+  llm?: MonitorLlmPayload | null;
+}
+
+// One locale, so a count reads the same in every browser and in a test.
+const COMPACT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const EXACT = new Intl.NumberFormat("en-US");
+
+/** A count as a tile or a table cell shows it: 950, 1.2K, 3.4M. */
+export function formatCount(count: number | null | undefined): string {
+  return count == null ? "n/a" : COMPACT.format(count);
+}
+
+/** A count in full: 1,234,567. */
+export function formatExactCount(count: number | null | undefined): string {
+  return count == null ? "n/a" : EXACT.format(count);
+}
+
+function llmCounts(counts: MonitorLlmCounts): string {
+  return `${formatExactCount(counts.inputTokens)} in · ${formatExactCount(counts.outputTokens)} out, ${formatExactCount(counts.requests)} requests`;
 }
 
 export function formatBytes(bytes: number | null | undefined): string {
@@ -44,7 +65,7 @@ export function formatDuration(seconds: number | null | undefined): string {
   return `${(seconds / 86400).toFixed(1)}d`;
 }
 
-export function toMarkdown({ monitor, storage, errors }: DiagnosticsInput): string {
+export function toMarkdown({ monitor, storage, errors, llm }: DiagnosticsInput): string {
   const lines: string[] = ["## Curio diagnostics", ""];
 
   if (monitor) {
@@ -98,6 +119,20 @@ export function toMarkdown({ monitor, storage, errors }: DiagnosticsInput): stri
     );
   }
 
+  if (llm) {
+    lines.push("", "### LLM tokens", `_Since ${llm.startedAt}, at most ${llm.maxDays} days._`, "");
+    if (llm.models.length === 0) {
+      lines.push("_No LLM requests since the backend started._");
+    }
+    for (const entry of llm.models) {
+      // A backtick in a name a user typed would end the code span early.
+      const model = entry.model.replace(/`/g, "'");
+      lines.push(
+        `- \`${model}\` (${entry.curio ? "Curio's endpoint" : "own key"}): 24 hours ${llmCounts(entry.last24h)}; 7 days ${llmCounts(entry.last7d)}; all kept ${llmCounts(entry.kept)}`
+      );
+    }
+  }
+
   const list = errors?.errors ?? [];
   lines.push("", `### Recent errors (${list.length})`, "");
   if (list.length === 0) {
@@ -130,6 +165,7 @@ export function toJson(input: DiagnosticsInput): string {
       monitor: input.monitor,
       storage: input.storage,
       errors: input.errors,
+      llm: input.llm ?? null,
     },
     null,
     2
