@@ -557,11 +557,14 @@ def llm_deployment():
 
     For a test of what the page is told about Curio's own models (its
     endpoints' names and models, never a host or a key). Nothing is asked of
-    an endpoint: a test that sets them runs no agent on them.
+    an endpoint a file names: a test that sets them runs no agent on them.
 
     Body (POST): ``{"file": "<an endpoint file's text>"}``, read as the
-    launch reads the file (``llm_endpoint.parse_endpoints``). ``DELETE`` puts
-    the launch's endpoints back, as ``reset-db`` does.
+    launch reads the file (``llm_endpoint.parse_endpoints``), or
+    ``{"scripted": true}``: the scripted provider (``testing_provider.py``)
+    as this Curio's one endpoint, whose model a hosted guest's agents answer
+    with, as ``/agent-script`` scripts it. ``DELETE`` puts the launch's
+    endpoints back, as ``reset-db`` does.
     Response: ``{"endpoints": [{"name", "models"}]}``, what is now offered.
     """
     global _llm_deployment_saved
@@ -570,12 +573,16 @@ def llm_deployment():
 
     if request.method == "POST":
         body = request.get_json(silent=True) or {}
-        if not isinstance(body.get("file"), str):
+        if body.get("scripted") is True:
+            endpoints = (llm_endpoint.Endpoint(name="Scripted", api_type="testing", base_url="",
+                                               api_key="scripted", models=("scripted",)),)
+        elif not isinstance(body.get("file"), str):
             return jsonify({"error": "file must be an endpoint file's text"}), 400
-        try:
-            endpoints = llm_endpoint.parse_endpoints(body["file"], "the test's endpoint file")
-        except llm_endpoint.EndpointFileError as exc:
-            return jsonify({"error": str(exc)}), 400
+        else:
+            try:
+                endpoints = llm_endpoint.parse_endpoints(body["file"], "the test's endpoint file")
+            except llm_endpoint.EndpointFileError as exc:
+                return jsonify({"error": str(exc)}), 400
         if _llm_deployment_saved is None:
             _llm_deployment_saved = tuple(settings.DEFAULT_LLM_ENDPOINTS)
         settings.DEFAULT_LLM_ENDPOINTS = endpoints
