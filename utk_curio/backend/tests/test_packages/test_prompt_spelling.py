@@ -28,6 +28,7 @@ MISSPELLINGS = {
     "you explanation": "the Node Explainer's instruction (#430)",
     "recieved": "the default preamble",
     "foward": "the default preamble",
+    "compatilibity": "the compatibility skill",
 }
 
 
