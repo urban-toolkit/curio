@@ -22,6 +22,10 @@ _sandbox_session = requests.Session()
 api_address = 'http://' + os.getenv('FLASK_SANDBOX_HOST', '127.0.0.1')
 api_port = int(os.getenv('FLASK_SANDBOX_PORT', 2000))
 
+#: How long the sandbox may take to store what a page made: a node's rows
+#: (``/storeOutput``) or a dashboard step's result (``runs/viewer.py``).
+SANDBOX_STORE_TIMEOUT = 120
+
 
 class SandboxTransportError(Exception):
     """The sandbox could not be asked: it timed out, was unreachable, or

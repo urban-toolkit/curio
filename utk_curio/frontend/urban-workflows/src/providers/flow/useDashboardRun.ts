@@ -23,7 +23,7 @@ import type { ReactFlowInstance } from "reactflow";
 import type { useToastContext } from "../ToastProvider";
 import { dashboardRunsApi, type DashboardRunEvent } from "../../services/runs/dashboardRunsApi";
 import { forgetDashboardRunFiles, rememberDashboardRunFiles } from "../../services/runs/dashboardRunFiles";
-import { askPage, forgetPageSteps, keepPageResult } from "../../services/runs/dashboardRunSteps";
+import { askPage, forgetPageSteps, keepPageResult, pageResultNotKept } from "../../services/runs/dashboardRunSteps";
 import { dashboardSourceNodeIds } from "../../utils/dashboardLayout";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { dashboardValues, type DashboardValues } from "../../utils/widgets/dashboardControls";
@@ -154,9 +154,15 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         return (data && resolveNodeDisplayLabel(data)) || nodeId;
     };
 
-    /** The nodes below a step the page could not run say so, as a run says it of a failed node. */
+    /**
+     * The nodes below a step the page could not run say so, as a run says it
+     * of a failed node. A step that ran but whose result the run could not
+     * keep (a busy server) is not the browser's doing, and says that instead.
+     */
     const showWaitingSkipped = (run: FollowedDashboardRun, failed: string[]) => {
-        const why = `"${stepName(failed[0])}" could not run in this browser.`;
+        const why = pageResultNotKept(failed[0])
+            ? `"${stepName(failed[0])}" ran, but its result could not be kept. Change a control to run it again.`
+            : `"${stepName(failed[0])}" could not run in this browser.`;
         for (const nodeId of run.waiting) outcomes.showSkipped(nodeId, `No data yet: ${why}`);
         setStopped(why);
     };
