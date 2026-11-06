@@ -21,6 +21,9 @@ account/installed row wins, and installed-marking flips ``installed=True``).
 Every hosted guest reads the guest account's store, so a node output one of
 them added to their own copy of a dataflow (``projects/visitor_copies.py``)
 lists for that guest alone, and goes with the copy (:func:`drop_dataflow_outputs`).
+So does a file one of them imported or a dataset they downloaded, whose name
+holds the guest (``imported.<visitor>.x<id>``), and it goes when the server
+starts (:func:`drop_uploads`).
 """
 
 from __future__ import annotations
@@ -70,29 +73,35 @@ class UserDatasetRepository:
     """Lists account-level *imported* and *computed* datasets from the user store."""
 
     def __init__(self, user: Any | None, *, sign_in: str | None = None):
-        """*sign_in*, for a store listed for a request: the caller's, the
-        request's own when not given, which tells a hosted guest's own copy
-        from another's (:meth:`_lists`)."""
+        """*sign_in*, for a store listed for a request: the caller's, else
+        the request's or the run's, read once when a dataset needs it, which
+        tells a hosted guest's own datasets from another's (:meth:`_lists`)."""
         self.user = user
         self.sign_in = sign_in
+        self._sign_in_read = sign_in is not None
 
-    def _lists(self, user_key: str, manifest: Any) -> bool:
+    def _lists(self, user_key: str, manifest: Any, name: str | None = None) -> bool:
         """Whether the dataset of the store of *user_key* that *manifest*
-        describes lists for this caller: in the guest account's store, one a
-        hosted guest's copy of a dataflow made lists for that guest alone
+        describes, in the folder *name*, lists for this caller: in the guest
+        account's store, one a hosted guest's copy of a dataflow made, and one
+        a hosted guest uploaded or downloaded, lists for that guest alone
         (``visitor_copies.lists_for``)."""
         if user_key != GUEST_KEY:
             return True
         from utk_curio.backend.app.projects import visitor_copies
 
-        return visitor_copies.lists_for(manifest.producer_dataflow_id, self.sign_in)
+        if not visitor_copies.a_visitors(manifest.producer_dataflow_id, name):
+            return True
+        if not self._sign_in_read:
+            self.sign_in, self._sign_in_read = visitor_copies.current_sign_in(), True
+        return visitor_copies.lists_for(manifest.producer_dataflow_id, self.sign_in, name=name)
 
     def lists_row(self, user_key: str, row: Any) -> bool:
         """:meth:`_lists` for the dataset of the store of *user_key* whose
         index row is *row*."""
         if user_key != GUEST_KEY:
             return True
-        return self._lists(user_key, index_repo.manifest_from_row(row))
+        return self._lists(user_key, index_repo.manifest_from_row(row), row.dir_name)
 
     def find_by_discovery_resource(
         self,
@@ -232,7 +241,7 @@ class UserDatasetRepository:
             else:
                 continue
             manifest = _manifest_for(dataset_root, rows.get(name))
-            if manifest is None or not self._lists(user_key, manifest):
+            if manifest is None or not self._lists(user_key, manifest, name):
                 continue
             items.append(item_from_manifest(manifest, dataset_root, origin=origin))
         return items
@@ -267,7 +276,7 @@ class UserDatasetRepository:
             if not dataset_root.name.startswith(prefix):
                 continue
             manifest = _manifest_for(dataset_root, rows.get(dataset_root.name))
-            if manifest is None or not self._lists(user_key, manifest):
+            if manifest is None or not self._lists(user_key, manifest, dataset_root.name):
                 continue
             items.append(item_from_manifest(manifest, dataset_root, origin="computed"))
         return items
@@ -298,6 +307,31 @@ def drop_dataflow_outputs(user_key: str, dataflow_ids: Iterable[str]) -> set[str
             continue
         index_repo.safe_forget(user_key, dataset_root.name)
     return staying
+
+
+def drop_uploads(user_key: str) -> list[str]:
+    """Delete every dataset a hosted guest uploaded or downloaded to the
+    store of *user_key*, whose name holds the guest
+    (``visitor_copies.added_by``), with its index row and what Curio made
+    from its files; the folders that could not be deleted."""
+    from utk_curio.backend.app.datasets.infrastructure.storage import list_user_datasets
+    from utk_curio.backend.app.discovery.infrastructure.media_dirs import forget_media
+    from utk_curio.backend.app.projects import visitor_copies
+
+    left: list[str] = []
+    for dataset_root in list_user_datasets(user_key):
+        if visitor_copies.added_by(dataset_root.name) is None:
+            continue
+        shutil.rmtree(dataset_root, ignore_errors=True)
+        if dataset_root.exists():
+            left.append(dataset_root.name)
+            continue
+        index_repo.safe_forget(user_key, dataset_root.name)
+        try:
+            forget_media(user_key, dataset_root.name.split("@", 1)[0])
+        except Exception:  # noqa: BLE001 - the dataset itself is gone
+            logger.warning("Could not remove media made from %s", dataset_root.name, exc_info=True)
+    return left
 
 
 def _whole(discovered: dict[str, Any]) -> bool:
