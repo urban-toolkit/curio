@@ -18,8 +18,10 @@ Two postures, deliberately different, and the split is the point:
   therefore exempt from that rule. See its docstring in `errors.py` for what
   that exposes and what an operator should do about it.
 
-Everything else here is in-process and bounded: counters are ints, history is a
-fixed-length deque. None of it is persisted, so those numbers reset when the
-process restarts, which is why `uptimeSeconds` ships in the payload. The LLM
-tokens are the exception: `llm_tokens.py` keeps them on disk for 90 days.
+Everything here covers the running process and is bounded: counters are ints,
+the duration window is a fixed-length deque, and every number resets when the
+process restarts, which is why `uptimeSeconds` ships in the payload. The
+hourly histories (`history.py`: the LLM tokens of `llm_tokens.py`) are also
+written to `.curio/monitor/<name>.json` as they change, hold at most 90 days,
+and start over, file included, when the backend starts.
 """

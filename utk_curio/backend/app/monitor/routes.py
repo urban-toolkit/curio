@@ -189,8 +189,8 @@ def monitor_storage_route():
 
 @monitor_bp.route("/llm", methods=["GET"])
 def monitor_llm_route():
-    """Each model's LLM tokens per hour and in total, from a cached read of
-    the day files. Aggregates, naming models (``llm_tokens.py``)."""
+    """Each model's LLM tokens per hour and in total, since the backend
+    started. Aggregates, naming models (``llm_tokens.py``)."""
     return jsonify(llm_tokens.snapshot())
 
 

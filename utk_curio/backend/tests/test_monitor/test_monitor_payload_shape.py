@@ -265,3 +265,54 @@ class TestContentSection:
         assert content["datasets"]["totalBytes"] == 0
         assert content["datasets"]["medianBytes"] == 0
         assert content["execCacheEntries"] == 0
+
+
+class TestTheLlmRoute:
+    """``/api/monitor/llm``: the hourly rows of the last 7 days and each
+    model's totals, every documented key present and typed."""
+
+    STAMP = "%Y-%m-%dT%H:%M:%SZ"
+    COUNTS = {"inputTokens", "outputTokens", "requests"}
+    NOW = datetime(2026, 11, 6, 15, 20, 7, tzinfo=timezone.utc)
+
+    def test_the_documented_keys_are_present_and_typed(self, client, monkeypatch):
+        from utk_curio.backend.app.monitor import llm_tokens
+
+        monkeypatch.setattr(llm_tokens, "_now", lambda: self.NOW)
+        llm_tokens.record("gemma4", curio=True, input_tokens=120, output_tokens=30)
+        llm_tokens.record("gpt-5", curio=False, input_tokens=40, output_tokens=8)
+        body = client.get("/api/monitor/llm").get_json()
+
+        assert set(body) == {"computedAt", "startedAt", "maxDays", "ageSeconds", "ttlSeconds",
+                             "hourlyFrom", "hourlyTo", "hourly", "models"}
+        assert body["computedAt"] == "2026-11-06T15:20:07Z"
+        # When this process's history began: the backend's start.
+        datetime.strptime(body["startedAt"], self.STAMP)
+        assert (body["hourlyFrom"], body["hourlyTo"]) == ("2026-10-30T16:00:00Z", "2026-11-06T15:00:00Z")
+        assert (datetime.strptime(body["hourlyTo"], self.STAMP)
+                - datetime.strptime(body["hourlyFrom"], self.STAMP)) == timedelta(hours=7 * 24 - 1)
+        assert body["maxDays"] == 90
+        assert isinstance(body["ageSeconds"], int) and body["ttlSeconds"] == 60
+
+        assert [(row["hour"], row["model"], row["curio"]) for row in body["hourly"]] == [
+            ("2026-11-06T15:00:00Z", "gemma4", True),
+            ("2026-11-06T15:00:00Z", "gpt-5", False),
+        ]
+        for row in body["hourly"]:
+            assert set(row) == {"hour", "model", "curio"} | self.COUNTS
+            assert all(type(row[key]) is int for key in self.COUNTS), row
+
+        assert [(entry["model"], entry["curio"]) for entry in body["models"]] == [
+            ("gemma4", True), ("gpt-5", False),
+        ]
+        for entry in body["models"]:
+            assert set(entry) == {"model", "curio", "last24h", "last7d", "kept"}
+            for window in ("last24h", "last7d", "kept"):
+                assert set(entry[window]) == self.COUNTS
+                assert all(type(entry[window][key]) is int for key in self.COUNTS), entry
+        assert body["models"][0]["kept"] == {"inputTokens": 120, "outputTokens": 30, "requests": 1}
+
+    def test_an_instance_no_model_answered_lists_nothing(self, client):
+        body = client.get("/api/monitor/llm").get_json()
+        assert (body["hourly"], body["models"]) == ([], [])
+        assert body["maxDays"] == 90
