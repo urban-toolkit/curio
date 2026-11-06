@@ -12,7 +12,7 @@
       ]
     },
     "name": "Several inputs",
-    "description": "One node fed by several others, in every kind of node that takes several inputs: Python, Data Transformation, JavaScript, Vega-Lite, Autark and a Data Pool, with a tuple arriving on one input.",
+    "description": "One node fed by several others, in every kind of node that takes several inputs: Python, JavaScript, Vega-Lite, Autark and a Data Pool, with a tuple arriving on one input.",
     "task": "Join air quality readings, stations and ZIP codes, then chart, map and tabulate them.",
     "timestamp": 0,
     "provenance_id": "several-inputs",
@@ -116,7 +116,7 @@
       },
       {
         "id": "several-transform",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1935,
         "y": 215,
         "title": "Name the readings",

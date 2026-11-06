@@ -103,7 +103,7 @@
     "groupId": { "type": ["string", "null"], "description": "Shared by the datasets of one multi-layer import, which the Data Catalog shows as one entry with a tab each. The NetCDF variables of one file, stored a file each, share one that starts with 'netcdf.'." },
     "layerName": { "type": ["string", "null"], "description": "The layer, or the NetCDF variable, this dataset holds in its group." },
     "producerNodeId": { "type": ["string", "null"], "description": "For a node's saved output: the node that computed it." },
-    "producerNodeType": { "type": ["string", "null"], "description": "That node's type, such as 'curio.builtin/data-transformation'." },
+    "producerNodeType": { "type": ["string", "null"], "description": "That node's type, such as 'curio.builtin/computation-analysis'." },
     "producerDataflowId": { "type": ["string", "null"], "description": "The id of the dataflow the node is in." },
     "producerDataflowName": { "type": ["string", "null"], "description": "That dataflow's name when the output was saved." },
     "upstreamInputs": {

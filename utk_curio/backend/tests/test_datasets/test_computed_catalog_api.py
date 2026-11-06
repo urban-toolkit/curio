@@ -331,7 +331,7 @@ def test_process_python_code_titles_computed_dataset_with_node_name(client, user
             "code": "    return df\n",
             "nodeType": "PYTHON_COMPUTATION",
             "nodeId": node_id,
-            "nodeName": "Data Transformation",
+            "nodeName": "Python Computation",
             "dataflowId": project_id,
             "input": {"path": "", "dataType": "str"},
             "saveOutputDataset": True,
@@ -346,7 +346,7 @@ def test_process_python_code_titles_computed_dataset_with_node_name(client, user
         headers=auth_headers(token),
     ).get_json()
     item = next(i for i in catalog["items"] if i["id"] == expected_id)
-    assert item["title"] == "Data Transformation"
+    assert item["title"] == "Python Computation"
     # The generated filename is the store's file of the table, saved as it is.
     assert item["fileName"] == title_from_filename(f"{table}.parquet")
 
@@ -381,13 +381,13 @@ def test_reinstall_computed_dataset_recovers_node_title_from_node_title_param(cl
         data=json.dumps({
             "datasetId": dataset_id,
             "sourceItem": source_item,
-            "nodeTitle": "Data Transformation",
+            "nodeTitle": "Python Computation",
         }),
         headers=auth_headers(token),
     )
     assert resp.status_code == 200, resp.get_data(as_text=True)
     body = resp.get_json()
-    assert body["title"] == "Data Transformation"
+    assert body["title"] == "Python Computation"
     # The JSON value installs as the file ``<id>.json``.
     assert body["fileName"] == title_from_filename(f"{filename}.json")
 

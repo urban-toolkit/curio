@@ -71,7 +71,7 @@ built-in nodes, with nothing extra to declare.
 
 ### From the canvas
 
-1. Drop a **Data Transformation** node on the canvas and write your Python in
+1. Drop a **Python Computation** node on the canvas and write your Python in
    the **Code** view. What the edge on input circle 0 delivers is `input_0`, on
    circle 1 `input_1`, and so on (see [Input names](USAGE.md#input-names)).
    Whatever you `return` becomes this node's output. Run it until it does what

@@ -106,6 +106,10 @@ def test_the_roster_decides_what_a_package_node_runs():
     # A saved Parameter node, the same.
     "curio.builtin/parameter",
     "curio.builtin/parameter@1",
+    # A saved Data Transformation node, the same: Python Computation runs its
+    # code (#1327).
+    "curio.builtin/data-transformation",
+    "curio.builtin/data-transformation@1",
     # A package nothing holds.
     "curio.nowhere/missing-node",
     "curio.nowhere/missing-node@1",

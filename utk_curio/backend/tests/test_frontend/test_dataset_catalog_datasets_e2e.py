@@ -7,7 +7,7 @@ the app itself uses (``list_catalog_datasets`` via
 *format* has no recipe fails loudly rather than quietly collecting nothing.
 
 Each case installs the dataset from the drawer, drops it on the canvas to get a
-Data Loading node whose Data widget holds it, wires a Data Transformation to
+Data Loading node whose Data widget holds it, wires a Python Computation to
 it, runs both, and asserts on values parsed out of the committed file -
 row/feature counts, column names, the geometry type that came back from
 ``gpd.read_file``. Geo datasets get a third
@@ -94,10 +94,10 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 LOADER_TYPE = "curio.builtin/data-loading"
-TRANSFORM_TYPE = "curio.builtin/data-transformation"
+TRANSFORM_TYPE = "curio.builtin/computation-analysis"
 VEGA_TYPE = "curio.builtin/vis-vega"
 
-TRANSFORM_TILE = "#tile-data-transformation"
+TRANSFORM_TILE = "#tile-computation-analysis"
 VEGA_TILE = "#tile-vis-vega"
 
 DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'

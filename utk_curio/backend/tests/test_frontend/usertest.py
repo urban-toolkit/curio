@@ -430,7 +430,6 @@ class UserSession:
 PALETTE_LABELS: dict[str, str] = {
     "data-loading": "Data Loading",
     "data-export": "Data Export",
-    "data-transformation": "Data Transformation",
     "spatial-join": "Spatial Join",
     "data-pool": "Data Pool",
     "computation-analysis": "Python Computation",
@@ -462,7 +461,6 @@ def palette_tile(page, template_id: str):
 PALETTE_ICON_CLASS: dict[str, str] = {
     "data-loading": "fa-upload",
     "data-export": "fa-download",
-    "data-transformation": "fa-database",
     "data-pool": "fa-server",
     "computation-analysis": "fa-python",
     "data-summary": "fa-rectangle-list",

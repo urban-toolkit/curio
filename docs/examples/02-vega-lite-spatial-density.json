@@ -18,7 +18,7 @@
       },
       {
         "id": "e5e7e21f-609d-496b-b231-659ee91ff9af",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 108,
         "content": "import pandas as pd\n\ndf = input_0\n# Fill numeric NaN with 0; pandas 3.0 raises TypeError when filling string\n# columns with an int, so scope the fill to numeric dtypes and leave string\n# nulls untouched.\nnumeric_cols = df.select_dtypes(include='number').columns\ndf = df.copy()\ndf[numeric_cols] = df[numeric_cols].fillna(0)\n\nreturn df",
@@ -83,7 +83,7 @@
       },
       {
         "id": "a9995883-f2ea-4b42-b74d-59ebc727afc6",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1290,
         "y": 430,
         "content": "joined = input_0\n\ntop_10_largest = (joined.groupby('zip')['VEGETATED_SQFT']\n    .sum()\n    .reset_index()\n    .sort_values(by='VEGETATED_SQFT', ascending=False)\n    .head(10))\n\nreturn top_10_largest\n",

@@ -1,14 +1,14 @@
 # Example: Multiple Vega-Lite views from chained transforms
 
-This example demonstrates how a single `Data Loading` source can be cleaned once, then forked into two parallel `Data Transformation` nodes that feed two independent Vega-Lite views. The use case is sidewalk accessibility data from [Project Sidewalk](https://sidewalk-chicago.cs.washington.edu/api): we load a GeoJSON of labelled accessibility issues, derive an agreement ratio + severity tier, then summarise the data both *by feature type* (bar chart) and *by neighborhood* (bubble chart).
+This example demonstrates how a single `Data Loading` source can be cleaned once, then forked into two parallel `Python Computation` nodes that feed two independent Vega-Lite views. The use case is sidewalk accessibility data from [Project Sidewalk](https://sidewalk-chicago.cs.washington.edu/api): we load a GeoJSON of labelled accessibility issues, derive an agreement ratio + severity tier, then summarise the data both *by feature type* (bar chart) and *by neighborhood* (bubble chart).
 
 ## Pipeline overview
 
 ```mermaid
 flowchart LR
-  L[`Data Loading`] --> C[`Data Transformation`<br/>clean + enrich]
-  C --> F[`Data Transformation`<br/>by feature type] --> VF[`Vega-Lite`<br/>bar chart]
-  C --> N[`Data Transformation`<br/>by neighborhood] --> VN[`Vega-Lite`<br/>bubble chart]
+  L[`Data Loading`] --> C[`Python Computation`<br/>clean + enrich]
+  C --> F[`Python Computation`<br/>by feature type] --> VF[`Vega-Lite`<br/>bar chart]
+  C --> N[`Python Computation`<br/>by neighborhood] --> VN[`Vega-Lite`<br/>bubble chart]
 ```
 
 ## Data
@@ -41,7 +41,7 @@ gdf.metadata = {
 return gdf
 ```
 
-## Step 2: Clean and enrich (`Data Transformation`)
+## Step 2: Clean and enrich (`Python Computation`)
 
 This single transform is the shared root for both downstream branches. It selects the relevant columns, derives an `agreement_ratio` from the agree / disagree counts, bins `severity` into a four-level ordinal `severity_level`, and ensures the GeoDataFrame is in EPSG:4326 so any later spatial step has a known CRS.
 
@@ -79,7 +79,7 @@ processed_gdf.metadata = {
 return processed_gdf
 ```
 
-## Step 3: Aggregate by feature type (`Data Transformation`)
+## Step 3: Aggregate by feature type (`Python Computation`)
 
 The first branch groups the cleaned features by `label_type` and computes the count, mean severity, and mean agreement per group. The output table is named `feature_stats` so the Vega-Lite spec can reference it by name.
 
@@ -107,7 +107,7 @@ feature_stats.metadata = {
 return feature_stats
 ```
 
-## Step 4: Aggregate by neighborhood (`Data Transformation`)
+## Step 4: Aggregate by neighborhood (`Python Computation`)
 
 The second branch is structurally identical to Step 3, but groups by `neighborhood`. Keeping the two aggregations as separate nodes (rather than computing both inside one node and unpacking downstream) lets each Vega-Lite view declare a clean named source and makes the fork explicit on the canvas.
 
@@ -199,4 +199,4 @@ Neighborhoods sit on the y-axis (sorted by count, descending) so the long catego
 
 ## Final result
 
-The two views read from the same cleaned root but answer different questions: the bar chart calls out which kinds of accessibility issues dominate citywide, while the bubble chart points to the neighborhoods carrying the worst combination of count and severity. Adding more aggregation branches (e.g. by month, by survey wave) is just one more `Data Transformation` + `Vega-Lite` pair off the same root.
+The two views read from the same cleaned root but answer different questions: the bar chart calls out which kinds of accessibility issues dominate citywide, while the bubble chart points to the neighborhoods carrying the worst combination of count and severity. Adding more aggregation branches (e.g. by month, by survey wave) is just one more `Python Computation` + `Vega-Lite` pair off the same root.

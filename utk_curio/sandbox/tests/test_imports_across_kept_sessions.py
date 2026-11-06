@@ -41,7 +41,7 @@ class ImportsAcrossKeptSessionsTestCase(unittest.TestCase):
         response = self.client.post("/exec", json={
             "code": textwrap.indent(code, "    "),
             "file_path": "",
-            "nodeType": "DATA_TRANSFORMATION",
+            "nodeType": "COMPUTATION_ANALYSIS",
             "dataType": "",
             "session_id": session_id,
             "imports_session": imports_session,

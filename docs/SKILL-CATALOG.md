@@ -41,7 +41,7 @@ The skills Curio ships are the folders of its [`skills/`](../skills/), one skill
 | `nodes` | pick node types, knowing what each takes and gives | every call, in the preamble |
 | `node-control` | write a node's code or spec: what it reads and what it hands on | every call, in the preamble |
 | `compatibility` | connect outputs only to inputs that accept them | every call, in the preamble |
-| `node-functions` | call Curio's `curio_*` functions from node code | nodes whose content is code: Data Loading, Data Transformation, Python, JavaScript, Data Summary, Data Export and Map Editor |
+| `node-functions` | call Curio's `curio_*` functions from node code | nodes whose content is code: Data Loading, Python, JavaScript, Data Summary, Data Export and Map Editor |
 | `catalogs` | find and load datasets, models and keys from the catalogs | nodes whose content is code |
 | `widgets` | declare, place and set widgets, dataset widgets and values several nodes share | nodes whose content is code, Vega-Lite and Autark nodes |
 | `selection-chips` | read a view's selections through selection tags | nodes whose content is code, Vega-Lite and Autark nodes |

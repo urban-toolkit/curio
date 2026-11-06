@@ -774,12 +774,12 @@ def chapter_access(run: StressRun) -> None:
 def chapter_canvas(run: StressRun) -> None:
     page, tour = run.page, run.tour
     tour.chapter("Chapter 2", "The canvas",
-                 "All eleven built-in nodes, their editors, and the guards.")
+                 "All ten built-in nodes, their editors, and the guards.")
 
     with run.step("Open a fresh dataflow"):
         _enter_project(run, name="Stress: canvas")
 
-    with run.step("Drag all eleven built-in node types onto the canvas"):
+    with run.step("Drag all ten built-in node types onto the canvas"):
         reset_zoom(page)
         # The tiles are drawn only while the Built-in palette is open; closed
         # again after the drops, so its panel covers none of the canvas.
@@ -791,7 +791,7 @@ def chapter_canvas(run: StressRun) -> None:
         placed = _drop_grid(run, sources)
         close_tools_palette(page, "builtin")
         run.state["placed"] = dict(placed)
-        assert len(placed) == 11, f"only {len(placed)} of 11 tiles produced a node"
+        assert len(placed) == 10, f"only {len(placed)} of 10 tiles produced a node"
         fit_view(page)
         run.snap("all-builtin-nodes")
 
@@ -848,10 +848,10 @@ def chapter_canvas(run: StressRun) -> None:
         )
         reset_zoom(page)
 
-    with run.step("Data Loading -> Data Transformation, wired by hand"):
+    with run.step("Data Loading -> Python Computation, wired by hand"):
         loader = drag_builtin_to_canvas(page, builtin_tile(page, "data-loading"), at=(150, 150))
         transform = drag_builtin_to_canvas(
-            page, builtin_tile(page, "data-transformation"), at=(760, 150)
+            page, builtin_tile(page, "computation-analysis"), at=(760, 150)
         )
         run.state.update(loader=loader, transform=transform)
         set_node_code(page, loader, _loader_code())
@@ -936,7 +936,7 @@ def chapter_canvas(run: StressRun) -> None:
                 # goes to the inline [data-curio-node-output] box instead.
                 if tab != "Output":
                     run.note(
-                        f"the {tab} tab is absent on a Data Transformation node",
+                        f"the {tab} tab is absent on a Python Computation node",
                         step="Walk the node editor tabs", severity="warning",
                     )
                 continue
@@ -981,10 +981,10 @@ def chapter_canvas(run: StressRun) -> None:
         _pan(page, -1350)
         reset_zoom(page)
         left = drag_builtin_to_canvas(
-            page, builtin_tile(page, "data-transformation"), at=(150, 150)
+            page, builtin_tile(page, "computation-analysis"), at=(150, 150)
         )
         right = drag_builtin_to_canvas(
-            page, builtin_tile(page, "data-transformation"), at=(760, 150)
+            page, builtin_tile(page, "computation-analysis"), at=(760, 150)
         )
         run.state.update(guard_left=left, guard_right=right)
         # Both handles have to be inside the frame for the drag to be attempted
@@ -1356,7 +1356,7 @@ def chapter_nodes(run: StressRun) -> None:
     with run.step("Build a node worth packaging"):
         reset_zoom(page)
         node_id = drag_builtin_to_canvas(
-            page, builtin_tile(page, "data-transformation"), at=(300, 150)
+            page, builtin_tile(page, "computation-analysis"), at=(300, 150)
         )
         run.state["authored"] = node_id
         set_node_code(
@@ -1892,7 +1892,7 @@ def chapter_data(run: StressRun) -> None:
 
     with run.step("Save a node's output back into the Data Catalog"):
         transform = drag_builtin_to_canvas(
-            page, builtin_tile(page, "data-transformation"), at=(760, 150)
+            page, builtin_tile(page, "computation-analysis"), at=(760, 150)
         )
         # The upstream loader is the uploaded bike-trips CSV, so the transform
         # has to use ITS columns - TRANSFORM_CODE speaks the ACS dataset's.
@@ -2043,7 +2043,7 @@ def chapter_agents(run: StressRun) -> None:
         reset_zoom(page)
         loader = drag_builtin_to_canvas(page, builtin_tile(page, "data-loading"), at=(150, 150))
         transform = drag_builtin_to_canvas(
-            page, builtin_tile(page, "data-transformation"), at=(760, 150)
+            page, builtin_tile(page, "computation-analysis"), at=(760, 150)
         )
         set_node_code(page, loader, _loader_code())
         set_node_code(page, transform, TRANSFORM_CODE)

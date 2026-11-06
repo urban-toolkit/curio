@@ -698,8 +698,8 @@ started.
 
 ## Several inputs
 
-Data Loading, Python Computation, Data Transformation, JS Computation, Data Pool,
-Vega-Lite and Autark nodes take several input edges, and so does a package node whose
+Data Loading, Python Computation, JS Computation, Data Pool, Vega-Lite and
+Autark nodes take several input edges, and so does a package node whose
 input port allows more than one. Connect an edge to the node's input circle and a new
 empty circle appears below it; each new edge takes the next circle. Circles are
 numbered from 0, top to bottom. A Data Loading node needs no input: wire a node into

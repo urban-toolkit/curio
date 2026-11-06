@@ -57,9 +57,9 @@ EXAMPLE = "01-vega-lite-chained-transforms.json"
 TEST_NAME = "test_a_provenance_branch_folds_under_the_version_it_left_from"
 
 #: The version put back: every node, and only the connection into the first
-#: Data Transformation.
+#: Python Computation.
 BACK_TO = 8
-#: The first two Data Transformations. Connecting them on version 8 is one
+#: The first two Python Computations. Connecting them on version 8 is one
 #: edit, so one new version, made from version 8.
 FIRST_TRANSFORM = "a0c5d21f-ce16-4318-95fe-598451859de1"
 SECOND_TRANSFORM = "6475234e-0288-49cd-b03f-19852717c980"

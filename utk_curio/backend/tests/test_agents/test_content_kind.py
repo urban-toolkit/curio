@@ -44,7 +44,6 @@ class TestTemplateContentKind:
         assert kinds["computation-analysis"] == "code"
         assert kinds["js-computation"] == "code"
         assert kinds["data-summary"] == "code"
-        assert kinds["data-transformation"] == "code"
         # Its code writes the file its Download button saves.
         assert kinds["data-export"] == "code"
         # Its code is written for it from its edit list, and runs (#662).
@@ -62,10 +61,11 @@ class TestTemplateContentKind:
         assert kinds["note"] == "note"
         # Every shipped template is routed above, and no other ships: the
         # Merge Flow left the manifest (#662), its fan-in now lands on the
-        # input circles of the node it fed, and the Raster Calculator is a
-        # node of Rasterization, curio.rasterization@1 (below).
+        # input circles of the node it fed, the Raster Calculator is a node
+        # of Rasterization, curio.rasterization@1 (below), and Data
+        # Transformation's code runs in Python Computation (#1327).
         assert set(kinds) == {
-            "data-loading", "data-export", "data-transformation", "data-pool",
+            "data-loading", "data-export", "data-pool",
             "computation-analysis", "data-summary", "js-computation",
             "vis-vega", "vis-simple", "autk-grammar", "spatial-join",
             "edit-features", "note",

@@ -4,7 +4,7 @@ komar41's ScenarioCharts in #914; each chart on its scenarios' own nodes since
 the plan answering komar41's review, step 6.2).
 
 ``docs/examples/dataflows/scenario-comparison-charts.json`` loads nine example
-tables from the Data Catalog. In each row a Data Transformation node per
+tables from the Data Catalog. In each row a Python Computation node per
 scenario keeps that scenario's rows, and a chart of the Vega-Lite package
 (``curio.vega-lite@1``) takes each of those nodes on an input of its own: a
 Vega-Lite chart whose spec names no scenario and no color, and writes them
@@ -83,7 +83,7 @@ DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "scenario-compa
 VEGA_LITE = Path(REPO_ROOT) / "packages" / "curio.vega-lite@1"
 TEST_NAME = "test_the_nine_charts_draw_their_scenarios_with_no_network"
 LOAD = "curio.builtin/data-loading"
-KEEP = "curio.builtin/data-transformation"
+KEEP = "curio.builtin/computation-analysis"
 #: The two charts whose scenarios color only their axis labels.
 STAGES = "data.curio.example-building-carbon"
 WEIGHTS = "data.curio.example-bike-route-factors"

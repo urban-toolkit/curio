@@ -49,13 +49,13 @@ VEGA = ["widgets", "selection-chips", "vega-lite-starter", "vega-lite-maps"]
 AUTK = ["widgets", "selection-chips", "autark", "autark-starter"]
 #: The node kinds of example 26, in its order.
 KINDS = [
-    "curio.builtin/data-loading", "curio.builtin/computation-analysis", "curio.builtin/data-transformation",
+    "curio.builtin/data-loading", "curio.builtin/computation-analysis",
     "curio.builtin/js-computation", "curio.builtin/vis-vega", "curio.builtin/autk-grammar",
     "curio.builtin/data-pool",
 ]
 BY_KIND = {
     "curio.builtin/data-loading": CODE, "curio.builtin/computation-analysis": CODE,
-    "curio.builtin/data-transformation": CODE, "curio.builtin/js-computation": CODE,
+    "curio.builtin/js-computation": CODE,
     "curio.builtin/vis-vega": VEGA, "curio.builtin/autk-grammar": AUTK,
     "curio.builtin/data-pool": ["interaction-edges"],
 }
@@ -393,7 +393,7 @@ def test_no_run_of_a_prompt_loses_a_procedure_its_text_held(tmp_curio):
                 missing = [name for name in procedures if name not in _names(run.handed)]
                 if missing:
                     lost.append((coord, file, where, missing))
-    assert checked >= 30, checked
+    assert checked >= 27, checked
     assert not lost, f"these runs lost the procedures their prompts held: {lost}"
 
 

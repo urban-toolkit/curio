@@ -25,7 +25,7 @@ def _example_json_paths() -> list[str]:
 # (basename, expected_nodes, expected_edges, min_type_counts, requires_interaction_edge)
 EXAMPLE_INVARIANTS = [
     ("01-vega-lite-chained-transforms.json", 6, 5,
-     {"curio.builtin/data-loading": 1, "curio.builtin/data-transformation": 3, "curio.builtin/vis-vega": 2}, False),
+     {"curio.builtin/data-loading": 1, "curio.builtin/computation-analysis": 3, "curio.builtin/vis-vega": 2}, False),
     ("02-vega-lite-spatial-density.json", 8, 6,
      {"curio.builtin/data-pool": 1, "curio.builtin/vis-vega": 2}, False),
     ("03-vega-lite-linked-temporal-charts.json", 4, 3,
@@ -58,13 +58,13 @@ EXAMPLE_INVARIANTS = [
     ("11-autark-pbf-loading.json", 3, 3,
      {"curio.builtin/autk-grammar": 3}, True),
     ("12-vega-lite-geodataframe-maps.json", 5, 4,
-     {"curio.builtin/data-loading": 1, "curio.builtin/data-transformation": 1,
+     {"curio.builtin/data-loading": 1, "curio.builtin/computation-analysis": 1,
       "curio.builtin/vis-vega": 3}, False),
     ("13-vega-lite-geometry-columns.json", 14, 13,
-     {"curio.builtin/data-loading": 1, "curio.builtin/data-transformation": 6,
+     {"curio.builtin/data-loading": 1, "curio.builtin/computation-analysis": 6,
       "curio.builtin/vis-vega": 7}, False),
     ("14-vega-lite-crs-and-geometry-types.json", 15, 14,
-     {"curio.builtin/data-loading": 1, "curio.builtin/data-transformation": 7,
+     {"curio.builtin/data-loading": 1, "curio.builtin/computation-analysis": 7,
       "curio.builtin/vis-vega": 7}, False),
     ("15-vega-lite-spec-forms-and-catalogs.json", 12, 10,
      {"curio.builtin/data-loading": 3, "curio.builtin/spatial-join": 1,
@@ -72,7 +72,7 @@ EXAMPLE_INVARIANTS = [
     ("16-simple-view-tables-and-images.json", 4, 2,
      {"curio.builtin/data-loading": 2, "curio.builtin/vis-simple": 2}, False),
     ("17-autark-geodataframe-maps.json", 15, 15,
-     {"curio.builtin/data-loading": 1, "curio.builtin/data-transformation": 4,
+     {"curio.builtin/data-loading": 1, "curio.builtin/computation-analysis": 4,
       "curio.builtin/autk-grammar": 5, "curio.builtin/vis-vega": 5}, True),
     ("18-storage-orthorectified-imagery.json", 6, 5,
      {"curio.builtin/data-loading": 1, "curio.media/mosaic-rasters": 1,
@@ -100,14 +100,14 @@ EXAMPLE_INVARIANTS = [
       "curio.rasterization/raster-calculator": 1, "curio.builtin/autk-grammar": 3}, False),
     # #576: one Spatial Join per operation, plus two over a point on an edge.
     ("25-spatial-join-operations.json", 25, 28,
-     {"curio.builtin/data-loading": 6, "curio.builtin/data-transformation": 1,
+     {"curio.builtin/data-loading": 6, "curio.builtin/computation-analysis": 1,
       "curio.builtin/spatial-join": 9, "curio.builtin/vis-vega": 7,
       "curio.builtin/vis-simple": 2}, False),
     # #819: one node fed by several others in every kind that takes several
     # inputs, one input a tuple from another Python node.
     ("26-several-inputs.json", 10, 14,
-     {"curio.builtin/data-loading": 3, "curio.builtin/computation-analysis": 2,
-      "curio.builtin/data-transformation": 1, "curio.builtin/js-computation": 1,
+     {"curio.builtin/data-loading": 3, "curio.builtin/computation-analysis": 3,
+      "curio.builtin/js-computation": 1,
       "curio.builtin/vis-vega": 1, "curio.builtin/autk-grammar": 1,
       "curio.builtin/data-pool": 1}, False),
 ]
@@ -130,7 +130,7 @@ FAN_IN_NODES = {
     "23-storage-folder-of-different-files.json": 1,
     "24-scout-shadow-model-chicago-loop.json": 1,
     "25-spatial-join-operations.json": 9,
-    # #819: Python (three inputs), Data Transformation, JS Computation,
+    # #819: two Python nodes (one with three inputs), JS Computation,
     # Vega-Lite, Autark and Data Pool.
     "26-several-inputs.json": 6,
 }

@@ -56,7 +56,7 @@ class ExecReadsSavedInputTestCase(unittest.TestCase):
         response = self.client.post("/exec", json={
             "code": textwrap.indent("return int(input_0['n'].sum())\n", "    "),
             "file_path": file_path,
-            "nodeType": "DATA_TRANSFORMATION",
+            "nodeType": "COMPUTATION_ANALYSIS",
             "dataType": "dataframe",
             "session_id": session_id,
             "saved_paths": saved_paths or {},

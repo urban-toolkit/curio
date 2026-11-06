@@ -43,7 +43,7 @@
       },
       {
         "id": "7651188c-d864-5de0-acde-54376c0be3a0",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 645,
         "content": "import pandas as pd\n\n# A plain DataFrame that still holds a column of shapely geometries.\nreturn pd.DataFrame(input_0)",
@@ -82,7 +82,7 @@
       },
       {
         "id": "b3f68832-7b27-52db-9b76-883f643efd36",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 645,
         "y": 1505,
         "content": "import pandas as pd\n\n# The attributes alone: nothing here can be drawn on a map.\nreturn pd.DataFrame(input_0.drop(columns=\"geometry\"))",
@@ -121,7 +121,7 @@
       },
       {
         "id": "a557e70d-aeba-59a0-8de0-f1b0ce394053",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1290,
         "y": 322,
         "content": "# The same frame in a projected CRS (Illinois East, in metres), declared.\nreturn input_0.to_crs(26971)",
@@ -160,7 +160,7 @@
       },
       {
         "id": "ae1128ee-768a-5aac-be11-4a90acd27829",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 1290,
         "y": 752,
         "content": "gdf = input_0\n\n# Two layers: the ZIP polygons, and a point at each one's centre.\ncentres = gdf.copy()\ncentres[\"geometry\"] = gdf.to_crs(26971).centroid.to_crs(4326)\n\nreturn gdf, centres",

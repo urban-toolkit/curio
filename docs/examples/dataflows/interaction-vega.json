@@ -21,7 +21,7 @@
       },
       {
         "id": "node5",
-        "type": "curio.builtin/data-transformation",
+        "type": "curio.builtin/computation-analysis",
         "x": 15.11818432063103,
         "y": 803.8284485331462,
         "content": "import geopandas as gpd\r\n\r\ngdf_neighborhood = input_0\r\n\r\ngdf_neighborhood = gdf_neighborhood.join(pd.json_normalize(gdf_neighborhood[\"avg_attribute_count\"])).drop(columns=[\"avg_attribute_count\"])\r\n\r\ngdf_neighborhood = gdf_neighborhood.dropna(subset=[\"coverage\"])\r\ngdf_neighborhood = gdf_neighborhood.dropna(subset=[\"geometry\"])\r\ngdf_neighborhood = gdf_neighborhood.dropna(subset=[\"neighborhood_name\"])\r\ngdf_neighborhood[\"CurbRamp\"] = gdf_neighborhood[\"CurbRamp\"].fillna(0)\r\ngdf_neighborhood[\"NoCurbRamp\"] = gdf_neighborhood[\"NoCurbRamp\"].fillna(0)\r\ngdf_neighborhood[\"Obstacle\"] = gdf_neighborhood[\"Obstacle\"].fillna(0)\r\ngdf_neighborhood[\"SurfaceProblem\"] = gdf_neighborhood[\"SurfaceProblem\"].fillna(0)\r\n\r\nreturn gdf_neighborhood",

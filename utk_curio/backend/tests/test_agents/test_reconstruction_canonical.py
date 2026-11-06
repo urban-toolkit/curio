@@ -97,7 +97,9 @@ def _edge(source, target, **extra):
 
 
 LOADER = "curio.builtin/data-loading"
-TRANSFORM = "curio.builtin/data-transformation"
+#: A data step: a data-category code template that declares no loadsDataset,
+#: a loader at the head of a flow and a transform once fed. Builtin has none.
+TRANSFORM = "ai.utk.uhvi/uhvi-zones"
 VEGA = "curio.builtin/vis-vega"
 POOL = "curio.builtin/data-pool"
 #: A node that takes several inputs, one per circle (what a Merge Flow fed).
@@ -294,7 +296,7 @@ class TestRoles:
         """Data Loading declares ``loadsDataset``: its node is a loader at the
         head of a flow and still one when a node feeds it a value, such as
         the region a loader reads from a node wired into it. The same edge
-        into a Data Transformation makes that a transform."""
+        into a data step makes that a transform."""
         assert _manifest_template(LOADER).get("loadsDataset") is True
         assert TEMPLATES[LOADER].category == "data"
         for incoming in (False, True):
@@ -641,7 +643,7 @@ def _record_searches(monkeypatch) -> list:
 
 class TestCanonicalLabeling:
     """The property the first cut of this module got wrong: sorting nodes by
-    their attributes is NOT enough. Example 01's three Data Transformation
+    their attributes is NOT enough. Example 01's three Python Computation
     nodes are attribute-identical, so file order decided their indices and a
     reversed file produced different edges. The labeling below is the fix."""
 

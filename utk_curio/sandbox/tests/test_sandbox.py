@@ -491,7 +491,7 @@ class TestProjDataDir(unittest.TestCase):
         reproject_result = execute_code(
             reproject_code,
             file_path=load_result['output']['path'],
-            node_type='DATA_TRANSFORMATION',
+            node_type='COMPUTATION_ANALYSIS',
             data_type='geodataframe',
             launch_dir=_REPO_ROOT,
             session_id=None,
@@ -524,7 +524,7 @@ class TestNoInputTripwire(unittest.TestCase):
         result = execute_code(
             "    return input_0.head()\n",
             file_path='',
-            node_type='DATA_TRANSFORMATION',
+            node_type='COMPUTATION_ANALYSIS',
             data_type='',
             launch_dir=_REPO_ROOT,
             session_id=None,
@@ -545,7 +545,7 @@ class TestNoInputTripwire(unittest.TestCase):
             result = execute_code(
                 f"    return {name}.head()\n",
                 file_path='',
-                node_type='DATA_TRANSFORMATION',
+                node_type='COMPUTATION_ANALYSIS',
                 data_type='',
                 launch_dir=_REPO_ROOT,
                 session_id=None,
@@ -593,7 +593,7 @@ class TestNoInputTripwire(unittest.TestCase):
             result = execute_code(
                 code,
                 file_path='',
-                node_type='DATA_TRANSFORMATION',
+                node_type='COMPUTATION_ANALYSIS',
                 data_type='',
                 launch_dir=_REPO_ROOT,
                 session_id=None,

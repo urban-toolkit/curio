@@ -8,7 +8,7 @@
       "prompt": "Add a node after the one whose code is just `return input_0, input_1`. The new node should return a small table with the row count of each of the two loaded tables.",
       "expected_output": "One new Python node whose code reads the two tables by indexing its one input, input_0[0] and input_0[1], reads no input_1, and returns a table of the two counts.",
       "assertions": [
-        "The answer creates one new node (node.create) of a Python code template, such as Python Computation or Data Transformation.",
+        "The answer creates one new node (node.create) of a Python code template, such as Python Computation.",
         "The code it writes reads the two tables by indexing its one input: input_0[0] and input_0[1], or the chip [!! input_0 !!] indexed the same way.",
         "The code reads no input_1: both tables arrive together, as one tuple, on one input circle.",
         "The code returns the two row counts with return, as a DataFrame or a dict."

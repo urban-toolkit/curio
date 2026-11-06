@@ -32,13 +32,13 @@ describe("resolveNodeDisplayLabel (node-type → display name)", () => {
     // A real (non-numeric) node type always resolves to a non-empty name; in the
     // running app the populated registry maps it to a human label (e.g. "Data
     // Transformation"), here it falls back to the type slug.
-    expect(resolveNodeDisplayLabel({ nodeType: NodeType.DATA_TRANSFORMATION })).toBeTruthy();
+    expect(resolveNodeDisplayLabel({ nodeType: NodeType.COMPUTATION_ANALYSIS })).toBeTruthy();
   });
 
   test("a custom node title (title) wins over the type label", () => {
     expect(
       resolveNodeDisplayLabel({
-        nodeType: NodeType.DATA_TRANSFORMATION,
+        nodeType: NodeType.COMPUTATION_ANALYSIS,
         title: "My Cleaner",
       }),
     ).toBe("My Cleaner");
@@ -94,14 +94,14 @@ describe("resolveComputedInstallTitle (node title sent on (re)install)", () => {
     expect(
       resolveComputedInstallTitle({
         origin: "computed",
-        producerNodeType: NodeType.DATA_TRANSFORMATION,
+        producerNodeType: NodeType.COMPUTATION_ANALYSIS,
       }),
     ).toBeTruthy();
   });
 
   test("returns undefined for non-computed datasets", () => {
     expect(
-      resolveComputedInstallTitle({ origin: "imported", producerNodeType: NodeType.DATA_TRANSFORMATION }),
+      resolveComputedInstallTitle({ origin: "imported", producerNodeType: NodeType.COMPUTATION_ANALYSIS }),
     ).toBeUndefined();
   });
 

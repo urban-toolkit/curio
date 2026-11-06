@@ -562,7 +562,7 @@ class TestNoInputMessage(ChildTestCase):
         in_process = worker.execute_code(
             code,
             file_path='',
-            node_type='DATA_TRANSFORMATION',
+            node_type='COMPUTATION_ANALYSIS',
             data_type='',
             session_id=None,
         )

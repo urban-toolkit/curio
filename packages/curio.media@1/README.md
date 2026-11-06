@@ -27,7 +27,7 @@ Each node's settings are constants at the top of its code:
 ```
 [ Data Loading: a collection ] ──► [ Sample Video Frames ] ──► [ Simple View ]
 [ Data Loading: noise recordings ] ──► [ Split Audio ] ──► [ Vega-Lite: level over time ]
-[ Data Loading: orthoimagery ] ──► [ Data Transformation: keep one year ] ──► [ Mosaic Rasters ] ──► [ UHVI Zonal Stats ]
+[ Data Loading: orthoimagery ] ──► [ Python Computation: keep one year ] ──► [ Mosaic Rasters ] ──► [ UHVI Zonal Stats ]
 ```
 
 ## Files

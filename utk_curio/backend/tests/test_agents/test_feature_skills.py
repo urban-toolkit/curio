@@ -121,7 +121,7 @@ def test_every_skill_is_shipped_and_the_preamble_places_the_core_three():
 
 def test_every_built_in_template_is_named_in_a_skill_or_a_page():
     templates = [t["id"] for t in json.loads(BUILTIN_MANIFEST.read_text(encoding="utf-8"))["templates"]]
-    assert len(templates) >= 13, templates
+    assert len(templates) >= 12, templates
     named = {found for text in _sources().values() for found in _TEMPLATE_MARKER_RE.findall(text)}
     missing = [template for template in templates if template not in named]
     assert not missing, (

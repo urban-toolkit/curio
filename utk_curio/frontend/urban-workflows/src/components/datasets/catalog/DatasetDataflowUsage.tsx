@@ -3,7 +3,7 @@ import {
   DatasetDataflowUsageRef,
   datasetCatalogApi,
 } from "../../../services/datasetCatalog";
-import { formatNodeTypeLabel } from "../../../services/datasetLineage";
+import { nodeKindLabel } from "./nodeKindLabel";
 import { DetailLink } from "./DetailLink";
 import styles from "./DatasetDataflowUsage.module.css";
 
@@ -43,7 +43,7 @@ export function useDatasetDataflowUsage(
 function consumerLabel(flow: DatasetDataflowUsageRef): string | null {
   const nodes = flow.nodes ?? [];
   if (nodes.length > 0) {
-    return nodes.map((node) => formatNodeTypeLabel(node.nodeType ?? undefined)).join(", ");
+    return nodes.map((node) => nodeKindLabel(node.nodeType)).join(", ");
   }
   if (flow.nodeCount > 0) {
     return `${flow.nodeCount} ${flow.nodeCount === 1 ? "node" : "nodes"}`;

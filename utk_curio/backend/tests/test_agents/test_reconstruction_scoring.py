@@ -44,7 +44,8 @@ from utk_curio.backend.tests.test_agents.test_reconstruction_canonical import TE
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 LOADER = "curio.builtin/data-loading"
-TRANSFORM = "curio.builtin/data-transformation"
+#: A data step: a data-category code template that declares no loadsDataset.
+TRANSFORM = "ai.utk.uhvi/uhvi-zones"
 VEGA = "curio.builtin/vis-vega"
 POOL = "curio.builtin/data-pool"
 #: A node that takes several inputs, one per circle (what a Merge Flow fed).

@@ -49,7 +49,7 @@ FLOOD = REPO / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerabil
 #: The flood dataflow's node that averages each period's depth, in each scenario.
 AVERAGE = "Average depth by period"
 #: A node of no package, which a run hands no package's modules.
-PLAIN = "curio.builtin/data-transformation"
+PLAIN = "curio.builtin/computation-analysis"
 #: What left core for the package. Curio's own code defines none of them.
 MOVED = (
     "curio_raster_calculate", "curio_raster_statistics", "raster_calculate", "raster_statistics",
@@ -165,7 +165,7 @@ def test_absolute_gives_the_size_of_the_change(tmp_path, out):
     "curio_raster_statistics(input_0, mask=input_1, mask_values=[1])",
 ])
 def test_a_plain_python_node_calling_the_old_helpers_is_refused(workspace, call):
-    """A Data Transformation, a node of no package, that calls a raster helper
+    """A Python Computation, a node of no package, that calls a raster helper
     every Python node used to have, on two rasters on one grid, a call those
     helpers ran, is told to use a Raster Calculator and where its functions
     are."""

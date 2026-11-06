@@ -324,6 +324,27 @@ class TestNodesTheServerDoesNotRun:
         assert finished["other"]["status"] == "ok"
         assert outcome(events) == {"status": "failed", "ok": 2, "failed": 1, "skipped": 1, "waiting": 0}
 
+    @pytest.mark.parametrize("gone", ["curio.builtin/data-transformation", "curio.builtin/data-transformation@1"])
+    def test_a_saved_data_transformation_node_fails_naming_its_type_and_skips_what_it_feeds(self, gone):
+        # A saved Data Transformation node: Builtin holds its template no more
+        # (#1327), so the run fails it as the canvas's card names it and skips
+        # the chart it fed. The same code in a Python Computation node runs.
+        recorder, events, finished = run(spec(
+            [node("a"),
+             node("gone", gone, "return input_0", title="Keep the rows"),
+             node("chart", "curio.builtin/vis-vega", "{}"),
+             node("kept", CODE, "return input_0")],
+            [edge("a", "gone"), edge("gone", "chart"), edge("a", "kept")],
+        ))
+        assert "gone" not in recorder.calls
+        assert finished["gone"]["status"] == "error"
+        assert finished["gone"]["stderrTail"] == f"No installed package provides {gone}"
+        assert finished["chart"]["status"] == "skipped"
+        assert '"Keep the rows", failed' in finished["chart"]["skipReason"]
+        assert "kept" in recorder.calls
+        assert finished["kept"]["status"] == "ok"
+        assert outcome(events) == {"status": "failed", "ok": 2, "failed": 1, "skipped": 1, "waiting": 0}
+
     def test_a_saved_parameter_node_fails_naming_its_type_and_its_tag_names_no_widget(self):
         # A saved Parameter node: no package holds its template any more, so
         # the run fails it as the canvas's card names it, and a node whose code

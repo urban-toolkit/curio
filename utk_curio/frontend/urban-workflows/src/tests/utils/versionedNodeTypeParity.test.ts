@@ -73,7 +73,7 @@ describe('a preview colours both id forms alike', () => {
   // the kind of regression a type check cannot catch.
   const COLOURED: NodeType[] = [
     NodeType.DATA_LOADING,
-    NodeType.DATA_TRANSFORMATION,
+    NodeType.COMPUTATION_ANALYSIS,
     NodeType.DATA_POOL,
     NodeType.VIS_VEGA,
   ];

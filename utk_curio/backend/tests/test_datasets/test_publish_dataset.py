@@ -71,7 +71,7 @@ def test_publish_persists_producer_lineage_in_hub_manifest(tmp_path, monkeypatch
         "id": "computed.flow-1.n1", "title": "Lineaged", "format": "csv",
         "path": data_file.as_posix(), "origin": "computed",
         "producerNodeId": "n1",
-        "producerNodeType": "curio.builtin/data-transformation",
+        "producerNodeType": "curio.builtin/computation-analysis",
         "producerDataflowId": "flow-1",
         "producerDataflowName": "My Flow",
         "upstreamInputs": [{"nodeId": "up1", "nodeType": "DATA_LOADING"}],
@@ -83,7 +83,7 @@ def test_publish_persists_producer_lineage_in_hub_manifest(tmp_path, monkeypatch
         (cat_root / "computed.flow-1.n1@1" / "manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["producerNodeId"] == "n1"
-    assert manifest["producerNodeType"] == "curio.builtin/data-transformation"
+    assert manifest["producerNodeType"] == "curio.builtin/computation-analysis"
     assert manifest["producerDataflowId"] == "flow-1"
     assert manifest["producerDataflowName"] == "My Flow"
     assert manifest["upstreamInputs"] == [{"nodeId": "up1", "nodeType": "DATA_LOADING"}]

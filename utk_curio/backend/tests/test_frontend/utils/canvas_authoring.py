@@ -538,7 +538,7 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
     """Drag *source* onto the canvas and return the id of the node it created.
 
     *source* is a locator for anything draggable that the canvas accepts: a
-    built-in palette tile (``#tile-data-transformation``), a package palette row
+    built-in palette tile (``#tile-computation-analysis``), a package palette row
     (``[data-pkg-template-id="..."]``), or a dataset row/card
     (``[data-dataset-id="..."]``), in a palette that is open.
     ``drag_builtin_to_canvas`` opens the Built-in palette around a tile's drag.
@@ -1083,7 +1083,6 @@ EXPORT_DOWNLOAD_TIMEOUT_MS = 120000
 _HEAVY_NODE_TYPES = {
     "AUTK_GRAMMAR",
     "DATA_LOADING",
-    "DATA_TRANSFORMATION",
     "COMPUTATION_ANALYSIS",
     # A model over every image of a collection: example 10's 40 photos.
     "IMAGE_SEGMENTATION",
@@ -1125,8 +1124,8 @@ def read_node_error_text(node_el) -> str | None:
 
     Otherwise the inline output area, where CodeEditor renders any output
     (success or error) into the box carrying the ``[N]:`` counter — the
-    sandbox's stderr/traceback for COMPUTATION_ANALYSIS / DATA_LOADING /
-    DATA_TRANSFORMATION. We switch to the code tab so that area is in the
+    sandbox's stderr/traceback for COMPUTATION_ANALYSIS / DATA_LOADING.
+    We switch to the code tab so that area is in the
     layout, then read it.
     """
     try:

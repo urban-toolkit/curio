@@ -752,7 +752,7 @@ class TestInputSlotOrderIsTheHandle:
             "nodes": [
                 {"id": "b", "type": "curio.builtin/data-loading", "content": "return 1"},
                 {"id": "p", "type": "curio.builtin/data-loading", "content": "return 2"},
-                {"id": "t", "type": "curio.builtin/data-transformation", "content": "return input_0"},
+                {"id": "t", "type": "curio.builtin/computation-analysis", "content": "return input_0"},
             ],
             "edges": [
                 {"id": "b396ed2d-3679-4b38-bbf7-5829d1db082c", "source": "b",

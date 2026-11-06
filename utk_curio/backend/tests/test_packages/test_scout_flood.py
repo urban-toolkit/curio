@@ -88,8 +88,11 @@ PACKAGE_MODULES = {CALCULATOR: {"root": str(CALCULATOR_STARTER.parent), "names":
 PARAMETER = "curio.builtin/parameter"
 COMPARE = "curio.builtin/compare-scenarios"
 MAP = "curio.builtin/autk-grammar"
-TRANSFORMATION = "curio.builtin/data-transformation"
 PYTHON = "curio.builtin/computation-analysis"
+#: The Python steps over the tracts, the riverside tracts and each scenario's
+#: Tract depth, which :func:`_kind` tells from the other Python nodes by title.
+TRANSFORMATION = "tract step"
+TRACT_STEP_TITLES = ("Riverside tracts", "Tract depth")
 BARS = "curio.vega-lite/bars"
 POINTS = "curio.vega-lite/points"
 GROUPED_BARS = "curio.vega-lite/grouped-bars"
@@ -510,7 +513,7 @@ def _setting_nodes(spec: dict) -> dict:
     members = _members(spec)
     return {
         node["title"]: node for node in spec["nodes"]
-        if node["type"] == PYTHON and node["id"] not in members and not _feeds(spec, node["id"])
+        if _kind(node) == PYTHON and node["id"] not in members and not _feeds(spec, node["id"])
     }
 
 
@@ -616,10 +619,18 @@ def _members(spec: dict) -> set:
     return {node_id for scenario in spec["scenarios"] for node_id in scenario["nodes"]}
 
 
+def _kind(node: dict) -> str:
+    """A node's type, with the tract steps (``TRANSFORMATION``) apart from the
+    other Python nodes."""
+    if node["type"] == PYTHON and node.get("title") in TRACT_STEP_TITLES:
+        return TRANSFORMATION
+    return node["type"]
+
+
 def _riverside(spec: dict) -> dict:
-    """The Data Transformation in no scenario: the riverside tracts."""
+    """The tract step in no scenario: the riverside tracts."""
     members = _members(spec)
-    (riverside,) = [n for n in spec["nodes"] if n["type"] == TRANSFORMATION and n["id"] not in members]
+    (riverside,) = [n for n in spec["nodes"] if _kind(n) == TRANSFORMATION and n["id"] not in members]
     return riverside
 
 
@@ -627,7 +638,7 @@ def _scenario_parts(spec: dict) -> dict:
     """Each scenario's nodes by their part, one node per part: its Raster
     Calculators, the one that chooses the depth (``choose``), the one of
     statistics and the one with the NbS widget averaging by period (``by
-    period``), its Data Transformation per tract (``tract depth``), and its
+    period``), its Python Computation per tract (``tract depth``), and its
     two Autark maps, of the depth (``depth map``) and of the tracts' mean
     depth (``tract map``), by the node they draw."""
     nodes = {n["id"]: n for n in spec["nodes"]}
@@ -639,8 +650,8 @@ def _scenario_parts(spec: dict) -> dict:
                 part = {CALCULATE: "choose", STATISTICS: "statistics", BY_PERIOD: "by period"}[_returns(node)]
             elif node["type"] == MAP:
                 (drawn,) = _feeds(spec, node["id"]).values()
-                part = {CALCULATOR: "depth map", TRANSFORMATION: "tract map"}[nodes[drawn]["type"]]
-            elif node["type"] == TRANSFORMATION:
+                part = {CALCULATOR: "depth map", TRANSFORMATION: "tract map"}[_kind(nodes[drawn])]
+            elif _kind(node) == TRANSFORMATION:
                 assert not node["metadata"].get("widgets"), node["id"]
                 part = "tract depth"
             else:
@@ -664,7 +675,7 @@ def _comparisons(spec: dict) -> dict:
     settings = {node["id"] for node in _setting_nodes(spec).values()}
     found = {}
     for node in spec["nodes"]:
-        if node["id"] in members or node["id"] in settings or node["type"] not in (CALCULATOR, PYTHON, *CHARTS):
+        if node["id"] in members or node["id"] in settings or _kind(node) not in (CALCULATOR, PYTHON, *CHARTS):
             continue
         (part,) = {part_of[source] for source in _feeds(spec, node["id"]).values()}
         key = (part, "chart" if node["type"] in CHARTS else "difference")
@@ -701,10 +712,10 @@ def test_the_dataflow_is_made_of_curios_own_nodes_and_scouts_raster_calculator()
     Vega-Lite package for the charts, and Curio's own nodes otherwise: two Python nodes holding the settings, the
     Region and the Projection period, and no Parameter node; five Data Loading
     nodes, three for the seven rasters and one each for the tracts and the
-    waterways; a Data Transformation keeping the riverside tracts; three
+    waterways; a Python Computation keeping the riverside tracts; three
     Raster Calculators per scenario, one choosing the depth, one taking its
     statistics and one averaging the depth by period, an Autark map of the
-    depth, a Data Transformation, the depth per tract, and an Autark map of
+    depth, a Python Computation, the depth per tract, and an Autark map of
     it; a Raster Calculator taking the change in depth and a Python node the
     change per tract; the Vega-Lite package's Bars, Points and Grouped bars; Autark maps of
     the vulnerability, of the change in depth and of the change per tract;
@@ -718,7 +729,7 @@ def test_the_dataflow_is_made_of_curios_own_nodes_and_scouts_raster_calculator()
     assert [ref["datasetId"] for ref in spec["datasets"]] == DATASET_IDS
     counts = {}
     for n in spec["nodes"]:
-        counts[n["type"]] = counts.get(n["type"], 0) + 1
+        counts[_kind(n)] = counts.get(_kind(n), 0) + 1
     assert counts == {
         LOADING: 5, CALCULATOR: 7, TRANSFORMATION: 3, MAP: 7, PYTHON: 3, BARS: 1, POINTS: 1, GROUPED_BARS: 1,
     }
@@ -887,7 +898,7 @@ def test_each_scenario_chooses_by_scouts_classes_takes_the_statistics_and_maps_t
     chosen, codes = {}, {}
     for scenario in scenarios.values():
         members = [nodes[i] for i in scenario["nodes"]]
-        assert sorted(n["type"] for n in members) == sorted(
+        assert sorted(_kind(n) for n in members) == sorted(
             [MAP, MAP, CALCULATOR, CALCULATOR, CALCULATOR, TRANSFORMATION])
         (calculator,) = [n for n in members if n["type"] == CALCULATOR and _returns(n) == CALCULATE]
         (statistics,) = [n for n in members if n["type"] == CALCULATOR and _returns(n) == STATISTICS]
@@ -967,7 +978,7 @@ def test_an_autark_map_after_the_difference_draws_the_change_in_depth_on_a_seque
 
 
 def test_the_riverside_tracts_read_cdcs_tracts_and_nhds_waterways_and_a_map_draws_their_vulnerability():
-    """A Data Transformation in no scenario reads the SVI tracts on circle 0
+    """A Python Computation in no scenario reads the SVI tracts on circle 0
     and the waterways on circle 1. An Autark map after it, in no scenario,
     draws each tract's SVI percentile in reds over the whole range a percentile
     takes, its legend titled by the grammar's ``title``, valid for the grammar."""
@@ -1068,7 +1079,7 @@ def test_every_nodes_code_resolves_with_nothing_left_over():
     from utk_curio.backend.app.execution.code_references import resolve_references
 
     for n in _dataflow()["nodes"]:
-        if n["type"] in (LOADING, CALCULATOR, TRANSFORMATION, PYTHON):
+        if n["type"] in (LOADING, CALCULATOR, PYTHON):
             code, problems = resolve_references(n["content"], n["metadata"].get("widgets") or [], "python")
             assert problems == [], (n["id"], problems)
             assert "[!!" not in code
@@ -1512,7 +1523,7 @@ CHOSEN = {"no-nbs": [], "nbs": ALL_NBS}
 
 
 def test_the_riverside_tracts_are_the_28_tracts_nhds_rivers_touch(workspace, monkeypatch):
-    """The Data Transformation keeps the tracts NHD's stream and river areas
+    """The Python Computation keeps the tracts NHD's stream and river areas
     touch, with CDC's columns and outlines: 28 tracts in the three counties,
     where 81,021 people live, each with an SVI percentile."""
     from utk_curio.sandbox.util.parsers import load_from_duckdb

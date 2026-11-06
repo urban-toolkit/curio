@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/13-vega-lite-geometry-columns.json",
-    "sha256": "508fa482a3854ed06dedeb89f44b7a5acffbbe1c4360f92dbb90cb649709f2db",
+    "sha256": "2eaa54a8b4f73af943f3ca4cfcafe64cd26077ddec2fef0f8e8a931e3857601a",
     "walkthrough": "docs/examples/13-vega-lite-geometry-columns.md"
   },
   "prompt": "Using the Chicago ZIP boundary polygons from the Data Catalog, show me how a geometry column behaves whatever it is called: one frame whose geometry column has an unusual name, one that carries several geometry columns at once, and one with no geometry at all. Draw each case in its own map or chart so I can compare what the same spec does with each.",
@@ -19,51 +19,51 @@
   "expected": {
     "nodes": [
       {
+        "ref": "analysis1",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis5",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis6",
+        "type": "curio.builtin/computation-analysis",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
         "role": "loader",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform1",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform2",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform3",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform4",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform5",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
-        "executable": true,
-        "hasContent": true
-      },
-      {
-        "ref": "transform6",
-        "type": "curio.builtin/data-transformation",
-        "role": "transform",
         "executable": true,
         "hasContent": true
       },
@@ -119,68 +119,68 @@
     ],
     "edges": [
       {
-        "from": "loader1",
-        "to": "transform1",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "transform2",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "transform3",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "transform4",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "transform5",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "transform6",
-        "kind": "data"
-      },
-      {
-        "from": "transform1",
+        "from": "analysis1",
         "to": "visualization1",
         "kind": "data"
       },
       {
-        "from": "transform2",
+        "from": "analysis2",
         "to": "visualization2",
         "kind": "data"
       },
       {
-        "from": "transform3",
+        "from": "analysis3",
         "to": "visualization3",
         "kind": "data"
       },
       {
-        "from": "transform4",
+        "from": "analysis4",
         "to": "visualization4",
         "kind": "data"
       },
       {
-        "from": "transform5",
+        "from": "analysis5",
         "to": "visualization5",
         "kind": "data"
       },
       {
-        "from": "transform6",
+        "from": "analysis6",
         "to": "visualization6",
         "kind": "data"
       },
       {
-        "from": "transform6",
+        "from": "analysis6",
         "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis5",
+        "kind": "data"
+      },
+      {
+        "from": "loader1",
+        "to": "analysis6",
         "kind": "data"
       }
     ],
