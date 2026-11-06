@@ -267,6 +267,33 @@ def _scripted_replies(spec: AgentManifest) -> tuple[str, str | None, list[str]]:
 _CARDS = [m for m in builtin.list_builtin_manifests() if m.catalog.listed]
 
 
+def _take_out(current_server: str, token: str, base: str, coord: str) -> set[str]:
+    """Take *coord* out of the dataflow through the API, after each agent
+    there that requires it: every dataflow starts with the agents Curio adds
+    by default, so an install of *coord* is then what writes it. Returns the
+    coordinates the dataflow holds after."""
+    cards = {c["dirName"]: c for c in api_json(f"{current_server}/api/agents/catalog", token)["items"]}
+
+    def requires(other: str) -> set[str]:
+        return {r["coord"] for r in (cards.get(other) or {}).get("requiresAgents") or []}
+
+    held = {row["dirName"] for row in api_json(base, token)["agents"]}
+    out, grew = {coord}, True
+    while grew:
+        grew = False
+        for other in sorted(held - out):
+            if requires(other) & out:
+                out.add(other)
+                grew = True
+    remaining = out & held
+    while remaining:
+        free = [c for c in sorted(remaining) if not any(c in requires(o) for o in remaining - {c})]
+        for c in free or sorted(remaining)[:1]:
+            api_json(f"{base}/{c}", token, method="DELETE")
+            remaining.discard(c)
+    return {row["dirName"] for row in api_json(base, token)["agents"]}
+
+
 @pytest.mark.parametrize("spec", _CARDS, ids=_spec_id)
 def test_agent_installs_attaches_and_runs(spec, current_server: str):
     """One built-in agent, all the way through: install, attach, run, persist.
@@ -294,8 +321,12 @@ def test_agent_installs_attaches_and_runs(spec, current_server: str):
 
     use_scripted_llm(current_server, token)
 
-    # 1. Install. The server resolves and writes the whole requiresAgents
-    #    closure, so a composite brings its hard dependencies with it.
+    # 1. Install. The dataflow starts with the agent, as every one does, so it
+    #    is taken out first. The server resolves and writes the whole
+    #    requiresAgents closure, so a composite brings its hard dependencies
+    #    with it.
+    before = _take_out(current_server, token, base, coord)
+    assert coord not in before, f"{coord} is still in the dataflow: {sorted(before)}"
     api_json(f"{base}/install", token, method="POST", payload={"coord": coord})
     installed = {row["dirName"] for row in api_json(base, token)["agents"]}
     assert coord in installed, f"install did not write {coord}: {sorted(installed)}"
@@ -615,8 +646,8 @@ def test_an_autark_document_is_written_under_its_schema(current_server: str):
         "content": "", "in": "DEFAULT", "out": "DEFAULT", "goal": "map the points",
         "metadata": {"keywords": []},
     })
-    # Nothing else is installed: node.content.generate is the Node Builder's
-    # own mode, so the agent attached here is the delegate too.
+    # node.content.generate is the Node Builder's own mode, so the agent
+    # attached here is the delegate too.
     token, base, attachment_id = _attached(spec, current_server, "autkschema", project_spec=project)
     constrained, _ = reply_schemas.autk_reply_schema(reply_schemas.FLAVOR_STRICT).encode(AUTK_DOCUMENT)
     script_agent_replies(
