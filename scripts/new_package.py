@@ -4,7 +4,7 @@
 WHY
 ---
 A node package is a directory with a ``manifest.json`` declaring one or more
-node templates. Written by hand it is easy to get subtly wrong — the id
+node templates. Written by hand it is easy to get subtly wrong: the id
 patterns, the required template fields, the port shapes, and the
 ``integrity.json`` companion all have to line up before the palette will show
 your node. This script emits a package that is valid on the first run, so the
@@ -12,10 +12,10 @@ first thing you debug is your own node logic rather than the envelope.
 
 Two flavours, matching the two ways a node can be implemented:
 
-* **default** — a Python node. The template uses the built-in ``code``
+* **default**: a Python node. The template uses the built-in ``code``
   behavior, so Curio renders its standard code editor and runs your Python in
   the sandbox. No frontend build, no JavaScript.
-* ``--with-ui`` — a node with its own React interface. Adds a behavior hook
+* ``--with-ui``: a node with its own React interface. Adds a behavior hook
   plus the bundle entry point and declares ``behaviorScript`` in the manifest.
   This flavour needs one extra step: ``npm run build:packages``, which bundles
   every package that declares ``behaviorScript`` and holds
@@ -66,10 +66,10 @@ SCHEMA_URL = (
 #
 # Plain (non-f) strings with __TOKEN__ placeholders. The generated files are
 # full of JS/JSX braces, so f-string interpolation here would mean doubling
-# every one of them — token replacement keeps these templates readable and
+# every one of them; token replacement keeps these templates readable and
 # copy-pasteable into a real .tsx file.
 
-_PYTHON_TEMPLATE = r'''"""__LABEL__ — Python node.
+_PYTHON_TEMPLATE = r'''"""__LABEL__: a Python node.
 
 ``input_0`` holds whatever the edge on input circle 0 delivers, ``input_1`` the
 edge on circle 1, and so on: one variable per circle. A tuple an upstream node
@@ -94,11 +94,11 @@ _BEHAVIOR_TEMPLATE = r"""import React, { useCallback, useEffect, useState } from
 import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
 
 /**
- * __LABEL__ — a node with its own React interface.
+ * __LABEL__: a node with its own React interface.
  *
  * A behavior hook is a React custom hook. It receives the node's runtime
  * `data` and the shared `nodeState`, and returns the pieces of the node it
- * wants to override — here just `contentComponent`, the JSX rendered inside
+ * wants to override, here just `contentComponent`, the JSX rendered inside
  * the node body. All the normal rules of hooks apply.
  */
 
@@ -297,7 +297,7 @@ _INDEX_TEMPLATE = r"""/**
  * template's `behavior` field in manifest.json.
  *
  * React, ReactDOM and ReactFlow are externalised to `window` so this bundle
- * shares Curio's own instances — two copies of React break every hook.
+ * shares Curio's own instances: two copies of React break every hook.
  */
 
 import { __HOOK_NAME__ } from './__HOOK_FILE__';
