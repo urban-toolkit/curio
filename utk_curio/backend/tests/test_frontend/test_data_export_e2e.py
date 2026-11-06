@@ -2,8 +2,9 @@
 
 A Data Export node holds
 ``return curio_export(input_0, [!! file_name !!], part=[!! part !!])`` on its
-Code tab, and opens on its Widgets tab, which shows only its File name and
-Part, then its Download button. A File name typed and not yet left is the one
+Code tab, and opens on its Widgets tab, which shows only its File name, then
+its Download button, and its Part dropdown once its input holds several
+parts. A File name typed and not yet left is the one
 Download takes. A run writes the data on its input to a file, a table as CSV, a GeoDataFrame as
 GeoJSON and a raster as GeoTIFF, under the File name with its format's
 extension, and the button names that file. Download saves it; with no result
@@ -14,7 +15,8 @@ saves the file that run wrote, with no run of its own.
 
 A bundle on its input, the Chicago Loop Layers a Data Loading node loads,
 downloads as one zip, the zip the Data Catalog's Export of that bundle gives,
-and a Part that names one layer saves that layer alone.
+and a layer picked in the Part dropdown, which lists All parts and then each
+layer by its label, saves that layer alone. A single table shows no Part.
 
 Each download is checked by its bytes: the table and the GeoJSON parsed, the
 GeoTIFF opened, the zip's files and bundle.json read.
@@ -130,7 +132,7 @@ def _chain(page, code: str) -> tuple[str, str]:
     set_node_code(page, source, code)
     export = drag_builtin_to_canvas(page, "#tile-data-export", at=(760, 220))
     wait_for_node_code(page, export, STARTER)
-    # It opens on its Widgets tab, where its File name, Part and Download are, alone.
+    # It opens on its Widgets tab, where its File name and Download are, alone.
     expect(node_locator(page, export).locator(WIDGETS_TAB)).to_have_class(re.compile(r"\bactive\b"), timeout=30000)
     assert_shows_only_controls(page, export)
     connect_nodes(page, source, export)
@@ -188,8 +190,10 @@ def test_a_table_downloads_as_csv_under_its_file_name_running_the_nodes_before_i
     wait_for_node_done(page, source)
     wait_for_node_done(page, export, node_type=EXPORT_TYPE)
     expect(_download_button(page, export)).to_have_text("Download trees.csv", timeout=30000)
-    # The run left the node on its Widgets tab.
+    # The run left the node on its Widgets tab, and one table has no parts to pick.
     expect(node_locator(page, export).locator(WIDGETS_TAB)).to_have_class(re.compile(r"\bactive\b"))
+    expect(_widgets_panel(page, export).get_by_label("Part", exact=True)).to_have_count(0)
+    expect(_widgets_panel(page, export).locator('[data-widget-row="part"]')).to_have_count(0)
     page.mouse.move(5, 5)
     save_node_closeup(page, STEM, export, test_name=f"{STEM}_after_a_download")
 
@@ -290,6 +294,8 @@ def test_a_bundle_downloads_as_the_zip_the_data_catalogs_export_gives_and_part_s
     connect_nodes(page, loader, export)
     expect(_download_button(page, export)).to_be_enabled(timeout=30000)
     _name_the_file(page, export, "layers")
+    # Nothing has run: the node does not know its input's parts yet.
+    expect(_widgets_panel(page, export).get_by_label("Part", exact=True)).to_have_count(0)
 
     name, body = _download(page, export, tmp_path)
 
@@ -303,8 +309,24 @@ def test_a_bundle_downloads_as_the_zip_the_data_catalogs_export_gives_and_part_s
     assert _zip_contents(catalog) == (names, spec, features)
     assert [(part["index"], part["file"]) for part in spec["parts"]] == list(enumerate(CHICAGO_FILES))
 
-    # Part names one layer by its label: that layer alone, as GeoJSON.
-    _fill_widget(page, export, "Part", "part", "Trees (OpenStreetMap)")
+    # The Part dropdown lists All parts, then each layer by its label, and a
+    # layer picked there is saved alone, as GeoJSON.
+    part = _widgets_panel(page, export).get_by_label("Part", exact=True)
+    expect(part).to_be_visible(timeout=60000)
+    expect(part.locator("option")).to_have_count(1 + len(CHICAGO_FILES))
+    assert part.locator("option").first.inner_text() == "All parts"
+    assert [spec_part["label"] for spec_part in spec["parts"]] == [
+        part.locator("option").nth(index + 1).get_attribute("data-label") for index in range(len(CHICAGO_FILES))
+    ]
+    part.select_option(value="Trees (OpenStreetMap)")
+    page.wait_for_function(
+        """({ nodeId }) => {
+            const node = window.__curio_reactFlow.getNodes().find((n) => n.id === nodeId);
+            const widget = node && (node.data.widgets || []).find((w) => w && w.name === "part");
+            return !!widget && widget.value === "Trees (OpenStreetMap)";
+        }""",
+        arg={"nodeId": export}, timeout=15000,
+    )
     name, body = _download(page, export, tmp_path)
 
     assert name == "layers.geojson"

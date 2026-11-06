@@ -239,8 +239,9 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
          "file, curio_export(input_0, [!! file_name !!], part=[!! part !!]): a "
          "table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF, a "
          "bundle as one zip. The node opens on its Widgets tab, which shows "
-         "only its File name, its Part and one Download button under them, "
-         "and the button names the file once a run wrote it. Its code "
+         "only its File name and one Download button under it, with a Part "
+         "dropdown when its input holds several parts, and the button names "
+         "the file once a run wrote it. Its code "
          "is on its Code tab, and it has a play, as any code node has.",
     tests=[
         "src/tests/utils/dataExportTarget.test.ts",
@@ -260,7 +261,7 @@ def spatial_join_explains_itself(ctx: Ctx) -> None:
 def data_export_is_one_button(ctx: Ctx) -> None:
     from ..utils import assert_shows_only_controls, drag_builtin_to_canvas, node_locator, wait_for_node_code
 
-    ctx.say("Data Export", "Its File name, its Part and one Download button, on its Widgets tab.")
+    ctx.say("Data Export", "Its File name and one Download button, on its Widgets tab.")
     node_id = drag_builtin_to_canvas(ctx.page, "#tile-data-export", at=(260, 200))
     node = node_locator(ctx.page, node_id)
     node.scroll_into_view_if_needed()
@@ -276,11 +277,11 @@ def data_export_is_one_button(ctx: Ctx) -> None:
         re.compile(r"\bactive\b"), timeout=20000,
     )
 
-    # On the Widgets tab, alone: the File name and the Part, and under them
-    # the one Download button.
+    # On the Widgets tab, alone: the File name, and under it the one Download
+    # button. Unconnected, it has no parts to offer: no Part.
     panel = node.locator("[data-widget-controls]")
     expect(panel.get_by_text("File name", exact=True)).to_be_visible(timeout=20000)
-    expect(panel.get_by_text("Part", exact=True)).to_be_visible()
+    expect(panel.get_by_text("Part", exact=True)).to_have_count(0)
     assert_shows_only_controls(ctx.page, node_id)
     download = panel.locator('[data-node-controls] button[aria-label^="Download"]')
     expect(download).to_have_count(1)
