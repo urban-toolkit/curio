@@ -503,6 +503,14 @@
       "Tables"
     ]
   },
+  "dataflows/filter-rows-with-widgets": {
+    "tags": [
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables"
+    ]
+  },
   "dataflows/lower-manhattan-park-shade": {
     "tags": [
       "Autark",

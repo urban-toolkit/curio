@@ -1,0 +1,11 @@
+{
+  "sha256": {
+    "LICENSE": "f4560d98289bdd7bf1f9dd91bb1a0efac7e148dd3b09eb55fbf6047909967988",
+    "README.md": "158d298730201fe5c63f0c1882d15de8d4d2c14d78639238988188549c882734",
+    "manifest.json": "50416df01feacb0d6f9b34ed5b46c9fceaa2fe3ff1ce140a0eab058b9251c700",
+    "scripts/behaviors.js": "7fa14e59c8418d307cc2f2791e996d3f03b7b0acb75f22b1e411283064572e23",
+    "scripts/behaviors.js.map": "faef2ecf2231786e4a8b08bd9e12a0a6bbfbd2e3aa7a7efeef63a9d18ebb0d6f",
+    "sources/index.tsx": "41d0751d616d5a14aa8dfde7c123fda5446cbf70e390c59b629c6ba8c3772168",
+    "sources/uiNodeBehavior.tsx": "748da244a61e326b3a05296d85b23e4f5c24da7d3bda0d3d2ac3fc3200df9501"
+  }
+}

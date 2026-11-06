@@ -1,5 +1,6 @@
 /**
- * Webpack config for building each first-party package's behavior bundle.
+ * Webpack config for building each in-repo package's behavior bundle: the
+ * shipped catalog's and the e2e suite's test packages'.
  *
  * Each entry compiles a package's `sources/index.tsx` into a self-contained
  * UMD bundle that lands back in the package directory, at the path its
@@ -17,13 +18,14 @@
  */
 
 const path = require("path");
-const { packageEntries } = require("./webpack/packageEntries");
+const { PACKAGE_ROOTS, packageEntries } = require("./webpack/packageEntries");
 
-// One entry per package under `packages/` whose manifest declares a
-// `behaviorScript` and that holds `sources/index.tsx`, read off the manifests
-// (webpack/packageEntries.js). A package built outside this repository ships
-// its bundle already built, with no `sources/index.tsx`.
-const PACKAGE_ENTRIES = packageEntries(path.resolve(__dirname, "../../../packages"));
+// One entry per package under `packages/` or the e2e suite's test packages
+// whose manifest declares a `behaviorScript` and that holds
+// `sources/index.tsx`, read off the manifests (webpack/packageEntries.js). A
+// package built outside this repository ships its bundle already built, with
+// no `sources/index.tsx`.
+const PACKAGE_ENTRIES = packageEntries(...PACKAGE_ROOTS);
 
 // React, ReactFlow, and Curio's behavior-registry function are shared with
 // the host page. Mapping them to `window.*` globals keeps each package

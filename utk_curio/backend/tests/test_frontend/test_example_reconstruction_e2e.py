@@ -43,6 +43,7 @@ from utk_curio.backend.app.agents.evaluation.fixtures import (
     FIXTURE_ROOT,
     load_fixture,
 )
+from utk_curio.backend.tests._support.ui_test_package import UI_TEST_NODE_LABEL, UI_TEST_PACKAGE
 
 from .utils import (
     api_json,
@@ -262,12 +263,13 @@ class TestPaletteShowsWhatWasProvisioned:
         )
 
     def test_a_package_contributes_its_templates_to_the_palette(
-        self, reconstruction_session
+        self, reconstruction_session, ui_node_in_catalog
     ):
         """Enlisting a package must put its templates in the palette, because
         that -- not the lockfile -- is where a person looks for them.
-        ``curio.example-ui@1`` because it declares no python dependencies: any
-        other package runs pip inside the request (see test_node_catalog.py)."""
+        ``test.ui-node@1``, planted in the catalog for the test, because it
+        declares no python dependencies: any other package runs pip inside the
+        request (see test_node_catalog.py)."""
         require_project_page()
         require_user_auth()
         session = reconstruction_session
@@ -276,20 +278,20 @@ class TestPaletteShowsWhatWasProvisioned:
         api_json(
             f"{session['backend']}/api/packages/projects/{project_id}/install",
             session["token"], method="POST",
-            payload={"dirName": "curio.example-ui@1"},
+            payload={"dirName": UI_TEST_PACKAGE},
         )
         page.goto(f"{session['frontend']}/dataflow/{project_id}")
         page.wait_for_load_state("domcontentloaded")
         dismiss_toasts(page)
         open_tools_palette(page, "packages")
         package = page.locator(
-            '#packages-palette [data-pkg-palette-coords~="curio.example-ui@1"]'
+            f'#packages-palette [data-pkg-palette-coords~="{UI_TEST_PACKAGE}"]'
         )
         expect(package).to_have_count(1, timeout=45000)
         # The package's kinds are rows inside its accordion; the grip carries
         # data-pkg-template-id and the label sits beside it.
         row = package.locator("div:has(> [data-pkg-template-id])").filter(
-            has_text="Column Filter"
+            has_text=UI_TEST_NODE_LABEL
         )
         expect(row).to_have_count(1, timeout=15000)
 

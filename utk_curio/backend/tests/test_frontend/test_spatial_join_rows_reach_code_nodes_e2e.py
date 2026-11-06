@@ -4,7 +4,8 @@ A node that hands on rows as they are, ``{data, dataType}``, reaches a chart or
 a Simple View, which read them in the browser, but never a Python or JS node:
 the run sends the backend only a stored output, so the code read nothing and
 failed with "nothing arrived on input circle 0". komar41's #1333 found it on
-the Column Filter example; the Spatial Join, a built-in node, did the same.
+a package node with its own interface; the Spatial Join, a built-in node, did
+the same.
 
 Two Data Loading nodes feed a Spatial Join (intersects, pairs), which feeds a
 Python Computation, a JS Computation and a Simple View. Each code node prints

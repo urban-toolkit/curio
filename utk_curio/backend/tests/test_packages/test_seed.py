@@ -986,7 +986,7 @@ def test_the_shipped_catalog_digest_history_is_well_formed():
 
     history = seed_state.legacy_catalog_digests()
     for dir_name in (
-        "ai.utk.uhvi@1", "curio.example-ui@1", "curio.media@1",
+        "ai.utk.uhvi@1", "curio.media@1",
         "curio.streetvision@1", "curio.weather@1",
     ):
         assert history.get(dir_name), f"no catalog digests for {dir_name}"

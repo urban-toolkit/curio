@@ -1,20 +1,21 @@
 """Playwright E2E: a dataflow holding a package's own node opens by its link and on reload.
 
-The Column Filter of ``curio.example-ui@1`` draws its own interface with a
-behavior hook that its package's bundle registers when it runs. A full load of
-a dataflow, by its link or by a reload, builds the node descriptors before that
+The UI Node of ``test.ui-node@1``, a package made with
+``scripts/new_package.py --with-ui``, draws its own interface with a behavior
+hook that its package's bundle registers when it runs. A full load of a
+dataflow, by its link or by a reload, builds the node descriptors before that
 bundle has run: the node mounts with the generic package hook, and the bundle's
 hook arrives in a rebuild after it. The node kept its body and called the new
 hook where the old one's hooks were, React threw (its error 311), and the
 route's error boundary replaced the whole canvas with "Something went wrong
 here."
 
-The owner adds ``curio.example-ui@1``, drops the Column Filter and saves. The
-dataflow is then opened by its link, in a new full load, and reloaded. Each
-time the package's bundle is held until the node is on the canvas, so the node
-mounts before its hook is registered whichever of the page's registry
-refreshes asks for the bundle first. The canvas stays, and the Column Filter
-draws its own interface.
+The package is planted in the catalog for the test (``ui_node_in_catalog``).
+The owner adds it, drops the UI Node and saves. The dataflow is then opened by
+its link, in a new full load, and reloaded. Each time the package's bundle is
+held until the node is on the canvas, so the node mounts before its hook is
+registered whichever of the page's registry refreshes asks for the bundle
+first. The canvas stays, and the UI Node draws its own interface.
 
 The same swap, without a browser: ``universalNodeHookSwap.test.tsx``.
 
@@ -31,6 +32,12 @@ from urllib.parse import unquote, urlparse
 
 from playwright.sync_api import expect
 
+from utk_curio.backend.tests._support.ui_test_package import (
+    UI_TEST_BUNDLE_GLOBAL,
+    UI_TEST_NODE_WAITING,
+    UI_TEST_PACKAGE,
+)
+
 from .test_package_refresh_e2e import _install_from_the_node_catalog
 from .utils import (
     api_json,
@@ -44,15 +51,14 @@ from .utils import (
     save_dataflow,
     stub_login_and_enter_workflow,
 )
-from .walkthroughs.column_filter import EXAMPLE_UI_PKG
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-#: What the Column Filter's own interface says before a frame reaches it. Only
-#: the package's hook draws it: the generic package hook draws nothing in a
-#: node with no editor.
-OWN_INTERFACE = "Connect a DataFrame upstream"
+#: What the UI Node's own interface says before a frame reaches it. Only the
+#: package's hook draws it: the generic package hook draws nothing in a node
+#: with no editor.
+OWN_INTERFACE = UI_TEST_NODE_WAITING
 
 #: What an error boundary draws in place of what threw (``ErrorBoundary.tsx``).
 BOUNDARY_CARD = "Something went wrong here."
@@ -60,18 +66,18 @@ BOUNDARY_CARD = "Something went wrong here."
 #: The line an error boundary logs when it catches a render error.
 BOUNDARY_LOG = "[ErrorBoundary] contained a render error"
 
-#: The global the example package's bundle sets once it has run, which is when
-#: it registers the Column Filter's behavior (its UMD name, from
+#: The global the package's bundle sets once it has run, which is when it
+#: registers the UI Node's behavior (its UMD name, from
 #: ``webpack.packages.config.js``).
-BUNDLE_GLOBAL = "curio_example-ui_1"
+BUNDLE_GLOBAL = UI_TEST_BUNDLE_GLOBAL
 
 
 def _is_the_bundle(url: str) -> bool:
-    """The example package's behavior bundle,
+    """The package's behavior bundle,
     ``/api/packages/<dirName>/file/scripts/behaviors.js``. The dirName reaches
     the wire percent-encoded (``%40`` for ``@``), so the path is decoded first."""
     path = unquote(urlparse(url).path)
-    return f"/api/packages/{EXAMPLE_UI_PKG}/file/" in path and path.endswith("/behaviors.js")
+    return f"/api/packages/{UI_TEST_PACKAGE}/file/" in path and path.endswith("/behaviors.js")
 
 
 class _ParkedBundle:
@@ -112,13 +118,13 @@ def _draws_its_own_interface(page, node_id: str, *, when: str) -> None:
         expect(node_locator(page, node_id).get_by_text(OWN_INTERFACE)).to_be_visible(timeout=30000)
     except AssertionError as exc:
         raise AssertionError(
-            f"{when}, the Column Filter does not draw its own interface. "
+            f"{when}, the UI Node does not draw its own interface. "
             f"It shows: {_node_text(page, node_id)[:300]!r}"
         ) from exc
 
 
 def _open_with_the_bundle_held(page, navigate, node_id: str) -> None:
-    """Navigate with the bundle parked until the Column Filter is on the canvas.
+    """Navigate with the bundle parked until the UI Node is on the canvas.
 
     A full load starts its registry refreshes before the dataflow loads, and
     the one that asks for the bundle first decides whether the node mounts
@@ -134,8 +140,8 @@ def _open_with_the_bundle_held(page, navigate, node_id: str) -> None:
 
 
 def _opens_whole(page, node_id: str, boundary_logs: list[str], *, when: str) -> None:
-    """The canvas is there, with no error boundary's card, and the Column
-    Filter draws its own interface once its package's hook is registered."""
+    """The canvas is there, with no error boundary's card, and the UI Node
+    draws its own interface once its package's hook is registered."""
     node = node_locator(page, node_id)
     own = node.get_by_text(OWN_INTERFACE)
     card = page.get_by_role("alert").filter(has_text=BOUNDARY_CARD)
@@ -145,7 +151,7 @@ def _opens_whole(page, node_id: str, boundary_logs: list[str], *, when: str) -> 
         expect(own.or_(card).first).to_be_visible(timeout=60000)
     except AssertionError as exc:
         raise AssertionError(
-            f"{when}, the Column Filter never drew its own interface. "
+            f"{when}, the UI Node never drew its own interface. "
             f"It shows: {_node_text(page, node_id)[:300]!r}"
         ) from exc
     # The dataflow is the owner's, and waiting for a shared-view banner gives a
@@ -163,7 +169,7 @@ def _opens_whole(page, node_id: str, boundary_logs: list[str], *, when: str) -> 
 
 
 def test_a_dataflow_holding_a_packages_own_node_opens_by_its_link_and_on_reload(
-    app_frontend: "FrontendPage", current_server: str, page,
+    app_frontend: "FrontendPage", current_server: str, page, ui_node_in_catalog,
 ):
     require_project_page()
     require_user_auth()
@@ -185,20 +191,20 @@ def test_a_dataflow_holding_a_packages_own_node_opens_by_its_link_and_on_reload(
     page.wait_for_function(f"() => window[{BUNDLE_GLOBAL!r}] !== undefined", timeout=30000)
 
     open_tools_palette(page, "packages")
-    row = page.locator(f'#packages-palette [data-pkg-palette-coords~="{EXAMPLE_UI_PKG}"]')
+    row = page.locator(f'#packages-palette [data-pkg-palette-coords~="{UI_TEST_PACKAGE}"]')
     expect(row).to_have_count(1, timeout=30000)
-    column_filter = drag_to_canvas(page, row, at=(640, 260))
+    ui_node = drag_to_canvas(page, row, at=(640, 260))
     close_tools_palette(page, "packages")
-    _draws_its_own_interface(page, column_filter, when="Right after the drop")
+    _draws_its_own_interface(page, ui_node, when="Right after the drop")
 
     save_dataflow(page)
     dataflow = api_json(
         f"{current_server}/api/projects/{project_id}", session["token"],
     )["spec"]["dataflow"]
-    assert column_filter in {node["id"] for node in dataflow["nodes"]}, (
-        f"the save did not record the Column Filter: {dataflow['nodes']}"
+    assert ui_node in {node["id"] for node in dataflow["nodes"]}, (
+        f"the save did not record the UI Node: {dataflow['nodes']}"
     )
-    assert EXAMPLE_UI_PKG in (dataflow.get("packages") or []), (
+    assert UI_TEST_PACKAGE in (dataflow.get("packages") or []), (
         f"the save did not record the package in the dataflow: {dataflow.get('packages')}"
     )
 
@@ -210,10 +216,10 @@ def test_a_dataflow_holding_a_packages_own_node_opens_by_its_link_and_on_reload(
 
     # 1. Opened by its link, in a new full load.
     _open_with_the_bundle_held(
-        page, lambda: page.goto(f"{base}/dataflow/{project_id}"), column_filter,
+        page, lambda: page.goto(f"{base}/dataflow/{project_id}"), ui_node,
     )
-    _opens_whole(page, column_filter, boundary_logs, when="Opened by its link")
+    _opens_whole(page, ui_node, boundary_logs, when="Opened by its link")
 
     # 2. Reloaded.
-    _open_with_the_bundle_held(page, page.reload, column_filter)
-    _opens_whole(page, column_filter, boundary_logs, when="After a reload")
+    _open_with_the_bundle_held(page, page.reload, ui_node)
+    _opens_whole(page, ui_node, boundary_logs, when="After a reload")

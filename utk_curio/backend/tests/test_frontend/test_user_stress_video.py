@@ -41,6 +41,12 @@ import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
+from utk_curio.backend.tests._support.ui_test_package import (
+    UI_TEST_NODE_TYPE,
+    UI_TEST_PACKAGE,
+    UI_TEST_PACKAGE_NAME,
+)
+
 from .tour import VIDEO_SIZE, finalize_video
 from .usertest import (
     PALETTE_ICON_CLASS,
@@ -60,6 +66,7 @@ from .utils import (
     activate_header_icon,
     api_json,
     canvas_nodes,
+    catalog_test_package,
     close_tools_palette,
     connect_nodes,
     dismiss_toasts,
@@ -141,8 +148,10 @@ CARD = 'article:not([role="status"])'
 
 GEO_DATASET = "data.utk.chicago-boundary"
 
-PKG_DIR = "curio.example-ui@1"
-PKG_NAME = "Example: Custom UI Node"
+#: A test package with no python deps, planted in the catalog for the session
+#: that adds it.
+PKG_DIR = UI_TEST_PACKAGE
+PKG_NAME = UI_TEST_PACKAGE_NAME
 
 # ---------------------------------------------------------------------------
 # Content the sessions type
@@ -1500,10 +1509,11 @@ class TestSessionExtending:
     """A user who wants Curio to do something it does not ship with."""
 
     def test_extending(self, browser, frontend_server, current_server):
-        run_session(
-            browser, frontend_server, current_server,
-            session_id="s4", title="S4 Extending Curio", body=self._body,
-        )
+        with catalog_test_package(current_server, PKG_DIR):
+            run_session(
+                browser, frontend_server, current_server,
+                session_id="s4", title="S4 Extending Curio", body=self._body,
+            )
 
     def _body(self, s: UserSession) -> None:
         page = s.page
@@ -1558,7 +1568,7 @@ class TestSessionExtending:
 
         # --- node packages -------------------------------------------------
         with s.step("Install a package from the Node Catalog",
-                    "The example UI package: no python deps to resolve.",
+                    "A test package with its own node interface: no python deps to resolve.",
                     chapter="Packages"):
             palette = open_tools_palette(page, "packages")
             s.tour.click(
@@ -1572,7 +1582,7 @@ class TestSessionExtending:
             )
             expect(drawer).to_be_visible(timeout=20000)
             search = drawer.get_by_placeholder("Search packages, publishers, tags…")
-            s.tour.type_into(search, "example", delay=70)
+            s.tour.type_into(search, PKG_NAME, delay=70)
             card = drawer.locator(f'article[data-pkg-dir="{PKG_DIR}"]')
             expect(card).to_have_count(1, timeout=20000)
             with page.expect_response(
@@ -1616,7 +1626,7 @@ class TestSessionExtending:
         with s.step("Work out how a custom-UI node is supposed to run",
                     "It has controls in its body rather than a code editor.",
                     expect="either"):
-            # Deliberately not run_and_report: curio.example-ui declares
+            # Deliberately not run_and_report: test.ui-node declares
             # editor:"none" / hasWidgets:false, and styles.tsx only renders the
             # play control inside the `sendCodeToWidgets != undefined` block, so
             # this node has no Play button at all. Asserting one exists was this
@@ -1636,7 +1646,7 @@ class TestSessionExtending:
                     "how to run it",
                     severity="warning",
                     detail_full=(
-                        "curio.example-ui/column-filter has no play button "
+                        f"{UI_TEST_NODE_TYPE} has no play button "
                         "(styles.tsx gates it on sendCodeToWidgets) and its body "
                         f"text does not say how to trigger it. Body: {body[:600]}"
                     ),
