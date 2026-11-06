@@ -20,9 +20,12 @@ the server's Yjs doc, which tabs sync with the ``yjs`` event
 
 A join takes the same ``room_role``, which the room's list shows, and a change
 to the editors reaches the room at once (``roles.py``). A join is refused for
-a dataflow that does not exist, and for a hosted guest's join to a dataflow a
-guest owns (``access.joins_room``: the examples every hosted guest opens as
-its own), so each such canvas stays its own.
+a dataflow that does not exist. A hosted guest's join to a dataflow the guest
+account owns (an example every hosted guest opens) is its join to the room of
+its own copy of it (``visitor_copies.room_for``), which it owns: the join
+answers with the copy's id (``projectId``), which every later event of the
+socket names. The copy is made on the guest's first change in its doc, not
+here. A hosted guest joins no other guest's copy (``access.joins_room``).
 
 Each socket is one participant, with an id of its own that its join answers
 with: two tabs of one account, or two hosted guests on the one guest account,
@@ -59,8 +62,9 @@ READ_ONLY_REFUSAL = (
     "You are watching this dataflow: only its owner and the editors they "
     "invited can change it."
 )
-#: What a hosted guest's join to a dataflow a guest owns is answered with.
-GUEST_OWNED_REFUSAL = "A guest's canvas of this dataflow is its own, so it joins no room."
+#: What a hosted guest's join to a dataflow a guest owns that is not its own
+#: copy of it is answered with: another guest's copy.
+GUEST_OWNED_REFUSAL = "A guest edits only its own copy of this dataflow."
 
 
 def _valid_project_id(value) -> bool:
@@ -68,15 +72,23 @@ def _valid_project_id(value) -> bool:
 
 
 def _account(sess: dict):
-    """The socket's account, as ``access.room_role`` reads one."""
-    return SimpleNamespace(id=sess.get("user_id"), is_guest=bool(sess.get("is_guest")))
+    """The socket's account, as ``access.room_role`` reads one, with the
+    sign-in a hosted guest's copy is named by (``visitor_copies.is_room_of``)."""
+    return SimpleNamespace(
+        id=sess.get("user_id"), is_guest=bool(sess.get("is_guest")),
+        username=sess.get("username"), sign_in=sess.get("sign_in"),
+    )
 
 
 def _project(project_id: str):
+    """The dataflow *project_id* names: its row, or a hosted guest's copy,
+    which has none (``visitor_copies.as_row``)."""
+    from utk_curio.backend.app.projects import visitor_copies
     from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.extensions import db
 
-    return db.session.get(Project, project_id)
+    project = db.session.get(Project, project_id)
+    return project if project is not None else visitor_copies.as_row(project_id)
 
 
 def _who(participant: dict) -> dict:
@@ -156,6 +168,9 @@ def register(sio):
             "profile_image": user.profile_image,
             "is_guest": bool(user.is_guest),
             "token_session_id": session.id,
+            # A guest's sign-in names its own copy of a dataflow its account
+            # owns (visitor_copies.copy_id). It stays on the server.
+            "sign_in": session.token if user.is_guest else None,
             "participant_id": room_state.new_participant_id(),
         })
 
@@ -188,7 +203,7 @@ def register(sio):
 
     @sio.on("join_session", namespace=ns)
     def _join(payload):
-        from utk_curio.backend.app.projects import access
+        from utk_curio.backend.app.projects import access, visitor_copies
 
         sess, _room, err = _gated(payload, require_room=False)
         if err:
@@ -200,9 +215,12 @@ def register(sio):
         if project is None:
             return {"ok": False, "error": "unknown_project"}
         account = _account(sess)
+        # A hosted guest on a dataflow its account owns joins its own copy's room.
+        project = visitor_copies.room_for(account, project, account.sign_in) or project
         if not access.joins_room(account, project):
             return {"ok": False, "error": "guest_owned", "message": GUEST_OWNED_REFUSAL}
         role = access.room_role(account, project)
+        project_id = project.id
         room = room_state.room_for(project_id)
         join_room(room, namespace=ns)
         user_info = {
@@ -226,6 +244,9 @@ def register(sio):
             "snapshot": snap,
             "participant_id": sess["participant_id"],
             "role": role,
+            # The id the room's events name: the dataflow's, or a hosted
+            # guest's own copy's.
+            "projectId": project_id,
         }
 
     # ------------------------------------------------------------------

@@ -23,12 +23,19 @@ output is kept on the copy and its outcome recorded in the copy's runtime
 journal (``execution/node_exec.py``), a Data Catalog Add or Remove changes the
 copy's datasets (``services.mutate_dataflow_datasets``), and a rename names the
 copy (:func:`rename`). Each makes the copy when there is none.
+
+So do the guest's own edits on the canvas: the guest's tab joins the room of
+its copy (:func:`room_for`), keyed by the copy's id, and syncs the copy's doc
+(``collaboration/dataflow_docs.py``). A room opens the doc of a copy not made
+yet from the dataflow as it is, in memory, and the guest's first change there
+makes the copy (:func:`make`), so a visitor who only looks makes none.
 """
 from __future__ import annotations
 
 import dataclasses
 import json
 import logging
+import threading
 import uuid
 from typing import Optional
 
@@ -211,4 +218,107 @@ def drop_all() -> int:
         kept.forget_dataflows(dropped)
     except Exception:  # noqa: BLE001 - the copies go either way, and their kept outputs at the end of their days
         logger.warning("could not forget the outputs kept on %d hosted guest copies", len(dropped), exc_info=True)
+    with _rooms_lock:
+        _rooms.clear()
     return len(dropped)
+
+
+# ---------------------------------------------------------------------------
+# A copy's room: the guest's own edits on the canvas
+# ---------------------------------------------------------------------------
+
+#: The copies whose rooms a hosted guest's tab joined, made or not yet: each
+#: copy's id and the dataflow it copies (:func:`room_for`).
+_rooms: dict[str, str] = {}
+_rooms_lock = threading.Lock()
+
+
+@dataclasses.dataclass(frozen=True)
+class Copy:
+    """A hosted guest's copy of a dataflow, read as the room reads a
+    dataflow's row (``collaboration/events.py``): it has no row, so its owner
+    is the account that owns the dataflow it copies, the shared guest's, and
+    its one member is the sign-in its id names (:func:`is_room_of`)."""
+
+    #: The copy's id (:func:`copy_id`).
+    id: str
+    #: The dataflow it copies.
+    copies: str
+    #: Its owner, the account that owns the dataflow it copies.
+    user_id: int
+    owner: object
+
+
+def _source(own: str) -> Optional[str]:
+    """The dataflow the copy *own* copies: its ``visitor.json`` says, or, for
+    a copy not made yet, the room that opened it (:func:`room_for`)."""
+    try:
+        copied = json.loads((storage.project_dir(GUEST_KEY, own) / VISITOR_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        copied = None
+    source = copied.get("copies") if isinstance(copied, dict) else None
+    if isinstance(source, str) and source:
+        return source
+    with _rooms_lock:
+        return _rooms.get(own)
+
+
+def as_row(own: str) -> Optional[Copy]:
+    """The copy *own* as the room reads a dataflow's row (:class:`Copy`), or
+    ``None`` when *own* is no copy a room or a request made, or the dataflow
+    it copies is gone."""
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.extensions import db
+
+    source = _source(own)
+    project = db.session.get(Project, source) if source else None
+    if project is None:
+        return None
+    return Copy(id=own, copies=project.id, user_id=project.user_id, owner=project.owner)
+
+
+def room_for(user, project, sign_in: Optional[str]) -> Optional[Copy]:
+    """The copy whose room the tab of a hosted guest signed in as *sign_in*
+    joins for *project*, a dataflow the guest's account owns: the guest's
+    own copy of it (:func:`copy_id`), made or not yet. Nothing is written:
+    the copy is made on the guest's first change (:func:`make`). ``None`` for
+    anyone else, for another account's dataflow, and for a copy itself."""
+    if isinstance(project, Copy) or not sign_in or not copies_for(user):
+        return None
+    if project is None or getattr(project, "user_id", None) != getattr(user, "id", None):
+        return None
+    own = copy_id(sign_in, project.id)
+    with _rooms_lock:
+        _rooms[own] = project.id
+    return Copy(id=own, copies=project.id, user_id=project.user_id, owner=project.owner)
+
+
+def is_room_of(sign_in: Optional[str], project) -> bool:
+    """Whether *project* is the copy the visitor signed in as *sign_in*
+    edits: a :class:`Copy` whose id that sign-in and the dataflow it copies
+    make. Another guest's copy is not, nor any dataflow's row."""
+    return isinstance(project, Copy) and bool(sign_in) and copy_id(sign_in, project.copies) == project.id
+
+
+def make(own: str) -> bool:
+    """Make the copy *own*, whose room a guest's tab joined, on the guest's
+    first change there: the dataflow it copies as it is now, without its
+    history. The doc the room opened for it becomes the copy's
+    (``dataflow_docs.create``), so its tabs sync on. Whether it is made."""
+    source = _source(own)
+    if source is None:
+        return False
+    _make(source, own)
+    return _has_copy(own)
+
+
+def own_copy_source(user, project_id: str) -> Optional[str]:
+    """The dataflow *project_id* copies, when *project_id* is the copy the
+    request's visitor works on (a hosted guest's own, by its sign-in): an
+    agent's tool names the copy by its id. ``None`` for anything else."""
+    if not copies_for(user):
+        return None
+    sign_in = _sign_in()
+    if not is_own_copy(sign_in, project_id):
+        return None
+    return _source(project_id)
