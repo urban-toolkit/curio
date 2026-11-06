@@ -490,10 +490,10 @@ def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":
     return budget
 
 
-def _catalog_listing_items(project_id: str) -> list | None:
+def _catalog_listing_items(project_id: str, user=None) -> list | None:
     """The datasets the datasets domain lists for this project, the SAME
-    listing ``catalog.search`` serves, read as the request's account; None,
-    logged, when the catalog cannot be read."""
+    listing ``catalog.search`` serves, read as *user*, else as the request's
+    account; None, logged, when the catalog cannot be read."""
     try:
         from flask import g, has_request_context
 
@@ -501,7 +501,8 @@ def _catalog_listing_items(project_id: str) -> list | None:
             DatasetCatalogService,
         )
 
-        user = getattr(g, "user", None) if has_request_context() else None
+        if user is None:
+            user = getattr(g, "user", None) if has_request_context() else None
         listing = DatasetCatalogService(user).list_catalog(dataflow_id=project_id)
     except Exception:  # a broken catalog is data, never a run error
         log.warning(
@@ -554,6 +555,21 @@ def _catalog_grounding_refs(project_id: str, items: list | None = None) -> tuple
             path="",
         ))
     return by_path, by_id
+
+
+def _catalog_reader(project_id: str):
+    """``() -> (by_path, by_id) | None``: :func:`_catalog_grounding_refs` of
+    the project's Data Catalog as the request's account reads it, read when it
+    is called; None when the catalog cannot be read. A Solve's job and its
+    pool's threads hold no request, so the account is taken now, in the
+    request that starts the Solve."""
+    user = agents_askers.person()
+
+    def _read():
+        items = _catalog_listing_items(project_id, user=user)
+        return None if items is None else _catalog_grounding_refs(project_id, items)
+
+    return _read
 
 
 def _session_grounding_evidence(
@@ -617,7 +633,9 @@ def _grounding_context(
     """dev/114 (DEC-072): everything the gate needs for ONE mint — catalog
     paths, the conversation's evidence, the run-budgeted prober, and the
     grant-aware corrective routes. ``base`` (a Solve batch's precomputed
-    catalog paths / texts / verified map) replaces the per-mint reads.
+    catalog paths / texts / verified map) replaces the per-mint reads; the
+    gate reads its Data Catalog again (``read_catalog``) when the code names
+    an id that read did not find, as a dataset added while the Solve runs.
 
     The user's own messages, which hold the values a data-loading node's
     inline data may add, are the conversation's alone: not *extra_texts*
@@ -644,12 +662,14 @@ def _grounding_context(
     if base is not None:
         catalog_paths = base.get("catalog_paths") or {}
         catalog_ids = base.get("catalog_ids") or {}
+        read_catalog = base.get("read_catalog")
         texts = list(base.get("texts") or [])
         verified = dict(base.get("verified") or {})
         secrets = dict(base["secrets"]) if "secrets" in base else _connection_key_refs(keys)
         messages: tuple[str, ...] = ()
     else:
         catalog_paths, catalog_ids = _catalog_grounding_refs(project_id)
+        read_catalog = None
         texts, verified = _session_grounding_evidence(user_key, project_id, loop_ctx)
         secrets = _connection_key_refs(keys)
         messages = tuple(texts)
@@ -716,6 +736,7 @@ def _grounding_context(
     return source_grounding.GroundingContext(
         catalog_paths=catalog_paths,
         catalog_ids=catalog_ids,
+        read_catalog=read_catalog,
         user_paths=source_grounding.user_paths(texts),
         verified_urls=verified,
         synthetic_requested=source_grounding.synthetic_requested(texts, params),
@@ -1107,7 +1128,9 @@ def _solve_grounding_base(
     account's models and the modules its packages ship (an invited
     editor's: :func:`_package_modules`), and the saved keys of whoever asked
     for the Solve, with the storage key they are under (``"keys"``,
-    :func:`_keys_of`)."""
+    :func:`_keys_of`). ``"read_catalog"`` reads the Data Catalog again, as
+    the same account, for a gate that meets an id the first read did not
+    find (:func:`_catalog_reader`)."""
     dataflow = (spec or {}).get("dataflow") or {}
     texts = [str(dataflow.get("task") or ""), str(dataflow.get("name") or "")]
     for node_id in targets:
@@ -1119,6 +1142,7 @@ def _solve_grounding_base(
     return {
         "catalog_paths": by_path,
         "catalog_ids": by_id,
+        "read_catalog": _catalog_reader(project_id),
         "texts": [t for t in texts if t.strip()],
         "verified": {},
         "keys": keys,
