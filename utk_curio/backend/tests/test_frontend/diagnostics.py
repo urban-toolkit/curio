@@ -7,7 +7,8 @@ record of which node was stuck. ``conftest.py`` now calls :func:`finish` after
 every test, and on failure this writes, per test, into
 ``$CURIO_E2E_FAILURE_DIR/<test id>/``:
 
-- ``screenshot.png``   the whole page at the moment of failure
+- ``screenshot.png``   the whole page at the moment of failure, its Autark maps
+                       painted in as a frame capture paints them
 - ``nodes.txt``        every canvas node's id, ``data-curio-node-status``,
                       its ``data-curio-node-error`` when it failed, and
                        visible text, which is what shows *which* node was
@@ -177,6 +178,22 @@ def finish(item, *, failed):
     return written
 
 
+def _retake_with_maps_painted(page, path, out_dir):
+    """Take *page*'s screenshot again with each Autark map painted in, as every
+    frame capture is (utils/images.py): on the GPU runner no Chrome screenshot
+    holds a WebGPU canvas, so the first one showed each map blank under its
+    legend. Only a page that has just taken a screenshot is asked, so it
+    answers."""
+    try:
+        from .utils.images import _map_canvases_painted
+
+        with _map_canvases_painted(page) as painted:
+            if painted:
+                page.screenshot(path=path, full_page=True, timeout=15000)
+    except Exception as exc:
+        _note(out_dir, f"painting the maps into the screenshot failed: {exc}")
+
+
 def capture(page, out_dir, *, title=""):
     """Write the screenshot, node states and browser log for *page*."""
     os.makedirs(out_dir, exist_ok=True)
@@ -193,6 +210,8 @@ def capture(page, out_dir, *, title=""):
         # the whole run.
         responsive = type(exc).__name__ != "TimeoutError"
         _note(out_dir, f"screenshot failed: {exc}")
+    if written:
+        _retake_with_maps_painted(page, path, out_dir)
 
     if responsive:
         try:
