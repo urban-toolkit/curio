@@ -71,7 +71,7 @@ class TestWhichOutputsAreNeeded:
     def test_a_pinned_chart_needs_the_node_that_produced_its_rows(self):
         spec = spec_of(
             [
-                node("py", "curio.builtin/computation-analysis"),
+                node("py", "curio.builtin/python-computation"),
                 node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
             ],
             [edge("py", "chart")],
@@ -84,7 +84,7 @@ class TestWhichOutputsAreNeeded:
         # output is not what the tile needs.
         spec = spec_of(
             [
-                node("py", "curio.builtin/computation-analysis"),
+                node("py", "curio.builtin/python-computation"),
                 node("pool", "curio.builtin/data-pool"),
                 node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
             ],
@@ -96,8 +96,8 @@ class TestWhichOutputsAreNeeded:
     def test_it_stops_at_the_nearest_producer_not_the_furthest(self):
         spec = spec_of(
             [
-                node("a", "curio.builtin/computation-analysis"),
-                node("b", "curio.builtin/computation-analysis"),
+                node("a", "curio.builtin/python-computation"),
+                node("b", "curio.builtin/python-computation"),
                 node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
             ],
             [edge("a", "b"), edge("b", "chart")],
@@ -148,7 +148,7 @@ class TestWhichOutputsAreNeeded:
         # to miss them and treat a pass-through as a producer.
         spec = spec_of(
             [
-                node("py", "curio.builtin/computation-analysis@2"),
+                node("py", "curio.builtin/python-computation@2"),
                 node("pool", "curio.builtin/data-pool@1"),
                 node("chart", "curio.builtin/vis-vega@1", dashboardPinned=True),
             ],
@@ -164,7 +164,7 @@ class TestWhichOutputsAreNeeded:
         for chart_type in ("curio.vega-lite/donuts@1", "curio.vega-lite/donuts"):
             spec = spec_of(
                 [
-                    node("py", "curio.builtin/computation-analysis"),
+                    node("py", "curio.builtin/python-computation"),
                     node("donuts", chart_type),
                     node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
                 ],
@@ -199,7 +199,7 @@ class TestWhichOutputsAreNeeded:
 
     def test_nothing_pinned_needs_nothing(self):
         spec = spec_of(
-            [node("py", "curio.builtin/computation-analysis")],
+            [node("py", "curio.builtin/python-computation")],
             [],
         )
 
@@ -219,8 +219,8 @@ class TestBuildPayload:
         # rows are somebody's data and have no business in a shared page.
         spec = spec_of(
             [
-                node("py", "curio.builtin/computation-analysis"),
-                node("other", "curio.builtin/computation-analysis"),
+                node("py", "curio.builtin/python-computation"),
+                node("other", "curio.builtin/python-computation"),
                 node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
             ],
             [edge("py", "chart")],
@@ -237,7 +237,7 @@ class TestBuildPayload:
     def test_it_keys_outputs_by_the_filename_a_tile_looks_up(self):
         spec = spec_of(
             [
-                node("py", "curio.builtin/computation-analysis"),
+                node("py", "curio.builtin/python-computation"),
                 node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
             ],
             [edge("py", "chart")],
@@ -262,7 +262,7 @@ class TestBuildPayload:
 
         spec = spec_of(
             [
-                node("py", "curio.builtin/computation-analysis"),
+                node("py", "curio.builtin/python-computation"),
                 node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
             ],
             [edge("py", "chart")],
@@ -291,7 +291,7 @@ class TestBuildPayload:
 
         spec = spec_of(
             [
-                node("py", "curio.builtin/computation-analysis"),
+                node("py", "curio.builtin/python-computation"),
                 node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
             ],
             [edge("py", "chart")],
@@ -316,8 +316,8 @@ class TestBuildPayload:
     def test_an_output_no_tile_needs_may_be_missing(self):
         spec = spec_of(
             [
-                node("py", "curio.builtin/computation-analysis"),
-                node("other", "curio.builtin/computation-analysis"),
+                node("py", "curio.builtin/python-computation"),
+                node("other", "curio.builtin/python-computation"),
                 node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
             ],
             [edge("py", "chart")],
@@ -462,7 +462,7 @@ def served(geotiff=GEOTIFF):
 def raster_map_spec():
     return spec_of(
         [
-            node("py", "curio.builtin/computation-analysis"),
+            node("py", "curio.builtin/python-computation"),
             node("map", "curio.builtin/autk-grammar", code=RENDER_SPEC, dashboardPinned=True),
         ],
         [edge("py", "map")],
@@ -646,8 +646,8 @@ class TestSizeLimit:
     def _spec(self):
         return spec_of(
             [
-                node("heavy", "curio.builtin/computation-analysis"),
-                node("light", "curio.builtin/computation-analysis"),
+                node("heavy", "curio.builtin/python-computation"),
+                node("light", "curio.builtin/python-computation"),
                 node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
                 node("chart2", "curio.builtin/vis-vega", dashboardPinned=True),
             ],
@@ -746,8 +746,8 @@ class TestSizeLimit:
     def test_an_output_no_tile_reads_does_not_count_against_the_budget(self):
         spec = spec_of(
             [
-                node("py", "curio.builtin/computation-analysis"),
-                node("other", "curio.builtin/computation-analysis"),
+                node("py", "curio.builtin/python-computation"),
+                node("other", "curio.builtin/python-computation"),
                 node("chart", "curio.builtin/vis-vega", dashboardPinned=True),
             ],
             [edge("py", "chart")],

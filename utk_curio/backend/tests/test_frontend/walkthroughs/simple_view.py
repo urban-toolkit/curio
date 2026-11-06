@@ -30,7 +30,7 @@ def simple_view_shows_a_frames_images(ctx: Ctx) -> None:
     page = ctx.page
 
     producer = first_node_of_type(
-        IMAGE_URLS_EXAMPLE, "computation-analysis", containing="image_url",
+        IMAGE_URLS_EXAMPLE, "python-computation", containing="image_url",
     )
     viewer = first_node_of_type(IMAGE_URLS_EXAMPLE, "vis-simple")
 
@@ -40,7 +40,7 @@ def simple_view_shows_a_frames_images(ctx: Ctx) -> None:
     ctx.say("A Simple View, waiting on the node above it",
             "The frame it is about to receive carries a column of pictures.")
 
-    text = run_node_and_wait(page, producer, node_type="computation-analysis",
+    text = run_node_and_wait(page, producer, node_type="python-computation",
                              timeout_ms=180000)
     assert "Saved to file" in text, (
         f"the producer should have written an artifact, got {text!r}"

@@ -501,7 +501,7 @@ class TestStreamedSolve:
         helper = TestSolve()
         # A 5-node plan: 3 dispatch immediately (the worker pool), 2 queue.
         plan = {"goal": "big", "nodes": [
-            {"ref": f"n{i}", "nodeType": "curio.builtin/computation-analysis",
+            {"ref": f"n{i}", "nodeType": "curio.builtin/python-computation",
              "title": f"Step {i}", "intent": f"do step {i}"}
             for i in range(5)
         ], "edges": []}
@@ -845,7 +845,7 @@ class TestALandedPlan:
 
         user, token = user_and_token
         plan = {"goal": "extend", "nodes": [
-            {"ref": "a", "nodeType": "curio.builtin/computation-analysis",
+            {"ref": "a", "nodeType": "curio.builtin/python-computation",
              "title": "Analyze", "intent": "crunch"},
         ], "edges": [{"from": "n1", "to": "a"}]}  # n1 = the seeded baseline node
         reply = f"Plan.\n```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"

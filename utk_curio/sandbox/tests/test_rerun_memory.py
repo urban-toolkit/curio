@@ -146,7 +146,7 @@ class FinishedRunHoldsNothingTest(unittest.TestCase):
             loaded = execute_code(load, "", "DATA_LOADING", "", launch_dir=self._tmp.name,
                                   session_id="probe")
             self.assertEqual(loaded["stderr"], "")
-            shaped = execute_code(shape, loaded["output"]["path"], "COMPUTATION_ANALYSIS",
+            shaped = execute_code(shape, loaded["output"]["path"], "PYTHON_COMPUTATION",
                                   loaded["output"]["dataType"], launch_dir=self._tmp.name,
                                   session_id="probe")
             self.assertEqual(shaped["stderr"], "")

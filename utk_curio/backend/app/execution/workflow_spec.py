@@ -81,13 +81,13 @@ GRAMMAR_TYPES = {"VIS_VEGA", "AUTK_GRAMMAR"}
 # These tables are the OFFLINE FALLBACK (DEC-076): the template roster decides
 # executability whenever it is reachable; do not grow them.
 PY_CODE_TYPES = {
-    "DATA_LOADING", "DATA_EXPORT", "COMPUTATION_ANALYSIS",
+    "DATA_LOADING", "DATA_EXPORT", "PYTHON_COMPUTATION",
 }
 CODE_TYPES = PY_CODE_TYPES | {"JS_COMPUTATION"}
 
 # The CODE_TYPES that render a "code" tab with a Monaco editor: all of them.
 CODE_EDITOR_TYPES = {
-    "DATA_LOADING", "DATA_EXPORT", "COMPUTATION_ANALYSIS",
+    "DATA_LOADING", "DATA_EXPORT", "PYTHON_COMPUTATION",
     "JS_COMPUTATION",
 }
 
@@ -102,7 +102,7 @@ CODE_EDITOR_TYPES = {
 NAMESPACED_TO_LEGACY: dict[str, str] = {
     "curio.builtin/data-loading":         "DATA_LOADING",
     "curio.builtin/data-export":          "DATA_EXPORT",
-    "curio.builtin/computation-analysis": "COMPUTATION_ANALYSIS",
+    "curio.builtin/python-computation": "PYTHON_COMPUTATION",
     "curio.builtin/data-summary":         "DATA_SUMMARY",
     "curio.builtin/js-computation":       "JS_COMPUTATION",
     "curio.builtin/vis-vega":             "VIS_VEGA",
@@ -119,7 +119,7 @@ def package_code_types() -> dict[str, str]:
     """Shipped package templates that are Python code nodes, by namespaced id.
 
     A template with ``behavior: "code"``, ``engine: "python"`` and a code
-    editor renders and runs like a Computation Analysis node, so the e2e suite
+    editor renders and runs like a Python Computation node, so the e2e suite
     plays it, reads its editor, and executes it for the ground truth like one.
     Without this, a package's code node reads as passive and its output is
     never computed, so every node downstream compares against its input.
@@ -138,7 +138,7 @@ def package_code_types() -> dict[str, str]:
                 if (template.get("behavior"), template.get("engine"), template.get("editor")) == (
                     "code", "python", "code",
                 ):
-                    found[f"{manifest['id']}/{template['id']}"] = "COMPUTATION_ANALYSIS"
+                    found[f"{manifest['id']}/{template['id']}"] = "PYTHON_COMPUTATION"
         _package_code_types = found
     return _package_code_types
 

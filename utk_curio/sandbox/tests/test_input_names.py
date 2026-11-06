@@ -136,7 +136,7 @@ class TestInProcess(unittest.TestCase):
 
         file_path, data_type = _refs(values) if values else ("", "")
         result = execute_code(
-            textwrap.indent(code, "    "), file_path, "curio.builtin/computation-analysis", data_type,
+            textwrap.indent(code, "    "), file_path, "curio.builtin/python-computation", data_type,
             save_dataset=False, input_slots=slots,
         )
         if result["stderr"]:
@@ -190,7 +190,7 @@ class TestThroughTheExecRoute(unittest.TestCase):
 
         file_path, data_type = _refs(values)
         response = self.client.post(route, json={
-            "code": code, "file_path": file_path, "nodeType": "curio.builtin/computation-analysis",
+            "code": code, "file_path": file_path, "nodeType": "curio.builtin/python-computation",
             "dataType": data_type, "save_dataset": False, "input_slots": slots,
         })
         self.assertEqual(response.status_code, 200, response.data)
@@ -258,7 +258,7 @@ class TestIsolatedChild(unittest.TestCase):
         self.addCleanup(shutil.rmtree, scratch, True)
         request = {
             "code": textwrap.indent(code, "    "),
-            "node_type": "curio.builtin/computation-analysis",
+            "node_type": "curio.builtin/python-computation",
             "data_type": "",
             "scratch_dir": str(scratch),
             "input": {"kind": "none"},
@@ -302,7 +302,7 @@ class TestIsolatedChild(unittest.TestCase):
             ("return input_0['x']", "nothing arrived on input circle 0"),
         ):
             isolated = self._run(code)
-            in_process = worker.execute_code(textwrap.indent(code, "    "), "", "COMPUTATION_ANALYSIS", "",
+            in_process = worker.execute_code(textwrap.indent(code, "    "), "", "PYTHON_COMPUTATION", "",
                                              session_id=None)
             isolated_line = isolated["stderr"].strip().splitlines()[-1]
             self.assertIn(said, isolated_line)

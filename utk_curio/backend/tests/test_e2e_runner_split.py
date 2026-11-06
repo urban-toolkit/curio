@@ -8,6 +8,7 @@ the options CI runs it with: the parts add up to the suite, what shares a
 session stays on one part, and a part holds only tests that will run.
 """
 
+import json
 import re
 import sys
 import tempfile
@@ -41,6 +42,43 @@ class ClassificationTest(unittest.TestCase):
 
     def test_an_unreadable_dataflow_stays_on_utk(self):
         self.assertTrue(runner_split.dataflow_needs_webgpu(str(DATAFLOWS / "missing.json")))
+        self.assertTrue(runner_split.dataflow_runs_torch(str(DATAFLOWS / "missing.json")))
+
+    def test_a_dataflow_whose_code_runs_torch_needs_the_gpu_runner(self):
+        """Its torch runs on CUDA in the GPU runner's container, and on the CPU
+        anywhere else, whether or not the dataflow has an Autark node."""
+        for example in ("27-pytorch-shape-classifier.json", "28-pytorch-training-on-the-gpu.json",
+                        "29-pytorch-street-photos.json", "30-pytorch-sidewalk-clusters.json"):
+            self.assertTrue(runner_split.dataflow_runs_torch(str(EXAMPLES / example)), example)
+            self.assertTrue(runner_split.dataflow_needs_the_gpu(str(EXAMPLES / example)), example)
+        self.assertFalse(runner_split.dataflow_needs_webgpu(str(EXAMPLES / "28-pytorch-training-on-the-gpu.json")))
+        self.assertFalse(runner_split.dataflow_runs_torch(str(EXAMPLES / "10-street-vision-cv-analysis.json")))
+        self.assertFalse(runner_split.dataflow_needs_the_gpu(str(DATAFLOWS / "vega.json")))
+
+    def test_the_import_is_what_counts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            def dataflow(name, code):
+                path = Path(folder) / name
+                path.write_text('{"dataflow": {"nodes": [{"content": %s}]}}' % json.dumps(code), encoding="utf-8")
+                return str(path)
+
+            self.assertTrue(runner_split.dataflow_runs_torch(dataflow("a.json", "import torch\nreturn 1")))
+            self.assertTrue(runner_split.dataflow_runs_torch(
+                dataflow("b.json", "import torch.nn.functional as F\nreturn 1")))
+            self.assertTrue(runner_split.dataflow_runs_torch(dataflow("c.json", "from torchvision import io")))
+            self.assertFalse(runner_split.dataflow_runs_torch(dataflow("d.json", "# a torch lit the way\nreturn 1")))
+            self.assertFalse(runner_split.dataflow_runs_torch(dataflow("e.json", "import torchaudio_like")))
+
+    def test_a_torch_workflow_runs_on_utk(self):
+        def case(workflow):
+            return SimpleNamespace(
+                get_closest_marker=lambda name: None,
+                module=SimpleNamespace(__name__="utk_curio.backend.tests.test_frontend.test_workflows"),
+                callspec=SimpleNamespace(params={"loaded_workflow": str(EXAMPLES / workflow)}),
+            )
+
+        self.assertTrue(runner_split.item_needs_webgpu(case("29-pytorch-street-photos.json")))
+        self.assertFalse(runner_split.item_needs_webgpu(case("16-simple-view-tables-and-images.json")))
 
     def test_a_walk_needs_webgpu_through_its_example_or_its_script(self):
         def plain(ctx):

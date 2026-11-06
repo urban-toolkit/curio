@@ -1,0 +1,112 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Intermediate"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "shape-pictures",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 0,
+        "content": "# Draws 60 labeled pictures, 20 circles, 20 squares and 20 triangles, so the\n# example reads no data file.\nimport base64\nimport io\n\nimport numpy as np\nimport pandas as pd\nfrom PIL import Image\n\nSHAPES = [\"circle\", \"square\", \"triangle\"]\nSIZE = 64\n\n\ndef draw(shape, rng):\n    \"\"\"One SIZE x SIZE picture of *shape*, at a random size, place, turn and color.\"\"\"\n    radius = rng.uniform(13, 24)\n    centre = rng.uniform(radius + 2, SIZE - radius - 2, size=2)\n    turn = rng.uniform(0, 2 * np.pi)\n    y, x = np.mgrid[0:SIZE, 0:SIZE] + 0.5\n    dx, dy = x - centre[0], y - centre[1]\n    if shape == \"circle\":\n        inside = dx ** 2 + dy ** 2 <= radius ** 2\n    else:\n        # A square or a triangle in that circle: inside the half-plane of every side.\n        sides = 4 if shape == \"square\" else 3\n        apothem = radius * np.cos(np.pi / sides)\n        angles = turn + 2 * np.pi * np.arange(sides) / sides\n        inside = np.all([dx * np.cos(a) + dy * np.sin(a) <= apothem for a in angles], axis=0)\n    ground = rng.uniform(0.85, 1.0, size=3)\n    color = rng.uniform(0.05, 0.7, size=3)\n    return (np.where(inside[..., None], color, ground) * 255).astype(np.uint8)\n\n\ndef as_data_uri(picture):\n    \"\"\"A PNG data: URI, which Simple View shows as it is.\"\"\"\n    png = io.BytesIO()\n    Image.fromarray(picture).save(png, format=\"PNG\")\n    return \"data:image/png;base64,\" + base64.b64encode(png.getvalue()).decode()\n\n\nrng = np.random.default_rng(27)\nshapes = [SHAPES[i % len(SHAPES)] for i in range(60)]\nreturn pd.DataFrame({\n    \"picture\": [f\"P{i + 1:02d}\" for i in range(len(shapes))],\n    \"shape\": shapes,\n    \"image\": [as_data_uri(draw(shape, rng)) for shape in shapes],\n})\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw 60 labeled 64 x 64 pictures of circles, squares and triangles, as data: URIs.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "shape-weights",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 430,
+        "content": "# The tiny network's weights, trained once on 1,500 other pictures drawn the\n# same way (scripts/build_example_shape_classifier.py), read with no pickle.\nimport numpy as np\n\nweights = np.load(\"docs/examples/data/shape-cnn.npz\", allow_pickle=False)\nreturn {name: weights[name].tolist() for name in weights.files}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the tiny network's trained weights from docs/examples/data/shape-cnn.npz.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "shape-classifier",
+        "type": "curio.builtin/python-computation",
+        "x": 645,
+        "y": 215,
+        "content": "import os\n\n# Before CUDA starts, so cuBLAS repeats its sums in the same order on every run.\nos.environ[\"CUBLAS_WORKSPACE_CONFIG\"] = \":4096:8\"\n\nimport base64\nimport io\n\nimport numpy as np\nimport torch\nfrom PIL import Image\n\n# The same numbers on every run: seeded, deterministic kernels only, and full\n# float32 precision (no TF32), so every GPU rounds them alike.\ntorch.manual_seed(27)\ntorch.use_deterministic_algorithms(True)\ntorch.backends.fp32_precision = \"ieee\"\ntorch.backends.cudnn.benchmark = False\ndevice = \"cuda\" if torch.cuda.is_available() else \"cpu\"\n\nSHAPES = [\"circle\", \"square\", \"triangle\"]\n\n\nclass TinyCNN(torch.nn.Module):\n    \"\"\"Four strided 3 x 3 convolutions, each feature's largest value anywhere in\n    the picture (a corner, a curve), and one linear layer.\"\"\"\n\n    def __init__(self):\n        super().__init__()\n        self.features = torch.nn.Sequential(\n            torch.nn.Conv2d(3, 16, 3, stride=2, padding=1), torch.nn.ReLU(),\n            torch.nn.Conv2d(16, 32, 3, stride=2, padding=1), torch.nn.ReLU(),\n            torch.nn.Conv2d(32, 32, 3, stride=2, padding=1), torch.nn.ReLU(),\n            torch.nn.Conv2d(32, 32, 3, stride=2, padding=1), torch.nn.ReLU(),\n        )\n        self.classify = torch.nn.Linear(32, len(SHAPES))\n\n    def forward(self, pictures):\n        return self.classify(self.features(pictures - 0.5).amax(dim=(2, 3)))\n\n\ndef pixels(uri):\n    \"\"\"A data: URI's picture as 3 x 64 x 64 numbers from 0 to 1.\"\"\"\n    png = base64.b64decode(uri.split(\",\", 1)[1])\n    rgb = np.asarray(Image.open(io.BytesIO(png)).convert(\"RGB\"), dtype=np.float32) / 255\n    return rgb.transpose(2, 0, 1)\n\n\npictures, weights = input_0, input_1\nmodel = TinyCNN()\nmodel.load_state_dict({name: torch.tensor(values) for name, values in weights.items()})\nmodel = model.to(device).eval()\n\nbatch = torch.from_numpy(np.stack([pixels(uri) for uri in pictures[\"image\"]])).to(device)\nwith torch.no_grad():\n    confidence, guess = torch.softmax(model(batch), dim=1).max(dim=1)\nprint(f\"Ran on {device}.\")\n\nresult = pictures[[\"picture\", \"shape\"]].copy()\nresult[\"predicted\"] = [SHAPES[i] for i in guess.tolist()]\n# Whole percents, so every GPU shows the same ones.\nresult[\"confidence_pct\"] = np.rint(confidence.cpu().numpy() * 100).astype(int)\nresult[\"device\"] = device\nresult[\"image\"] = pictures[\"image\"]\nreturn result\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Classify each picture with the tiny network in PyTorch, on the GPU when there is one, and say which device it ran on.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "shape-cards",
+        "type": "curio.builtin/vis-simple",
+        "x": 1290,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show each picture beside its shape, the network's guess and its confidence.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "shape-accuracy",
+        "type": "curio.builtin/vis-vega",
+        "x": 1290,
+        "y": 430,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"The share of each shape's pictures the network names right.\",\n  \"transform\": [\n    {\n      \"calculate\": \"datum.predicted === datum.shape ? 100 : 0\",\n      \"as\": \"right\"\n    },\n    {\n      \"aggregate\": [\n        {\n          \"op\": \"mean\",\n          \"field\": \"right\",\n          \"as\": \"accuracy\"\n        }\n      ],\n      \"groupby\": [\n        \"shape\"\n      ]\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"shape\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"accuracy\",\n      \"type\": \"quantitative\",\n      \"title\": \"Named right (%)\",\n      \"scale\": {\n        \"domain\": [\n          0,\n          100\n        ]\n      }\n    },\n    \"color\": {\n      \"field\": \"shape\",\n      \"type\": \"nominal\",\n      \"legend\": null\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"shape\"\n      },\n      {\n        \"field\": \"accuracy\",\n        \"format\": \".0f\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart the share of each shape the network names right.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-shape-picturesout-shape-classifierin",
+        "source": "shape-pictures",
+        "sourceHandle": "out",
+        "target": "shape-classifier",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-shape-weightsout-shape-classifierin_1",
+        "source": "shape-weights",
+        "sourceHandle": "out",
+        "target": "shape-classifier",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-shape-classifierout-shape-cardsin",
+        "source": "shape-classifier",
+        "sourceHandle": "out",
+        "target": "shape-cards",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-shape-classifierout-shape-accuracyin",
+        "source": "shape-classifier",
+        "sourceHandle": "out",
+        "target": "shape-accuracy",
+        "targetHandle": "in"
+      }
+    ],
+    "name": "PyTorch: shape classifier",
+    "description": "A tiny convolutional network in PyTorch, on the GPU when there is one, sorts 60 drawn pictures into circles, squares and triangles: each picture with its prediction, and the accuracy by shape.",
+    "task": "Classify small drawn pictures of shapes with a pretrained PyTorch network on the GPU.",
+    "timestamp": 0,
+    "provenance_id": "pytorch-shape-classifier",
+    "packages": []
+  }
+}

@@ -29,7 +29,7 @@
       },
       {
         "id": "755abf58-59e0-5e25-ad1c-9a0a2e654c0e",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 82,
         "y": 1864,
         "content": "# The season all three scenarios' shadow runs in, which each Accumulated\n# Shadow node reads on input_1.\nreturn [!! season !!]\n",
@@ -59,7 +59,7 @@
       },
       {
         "id": "park-shade-heights",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 645,
         "y": 1624,
         "content": "import pandas as pd\n\n# OpenStreetMap's buildings in the loader's buildings box, a row for each\n# building and each part of one, as Autark hands them on. Rasterize Buildings\n# reads a \"height\" column in metres with a value in every row: the height\n# mapped for the row, else its number of levels times the floor height, else\n# the default height.\nbuildings = [!! input_0:table_osm_buildings !!]\nheight = pd.to_numeric(buildings[\"height\"], errors=\"coerce\")\nlevels = pd.to_numeric(buildings[\"building:levels\"], errors=\"coerce\")\nheight = height.fillna(levels * float([!! floor_height !!])).fillna(float([!! default_height !!]))\n# What the nodes below read: building_id, which Autark gives every row of a\n# cluster of buildings that overlap, the name, the height and the footprint.\nbuildings = buildings[[\"building_id\", \"name\", \"geometry\"]].assign(height=height)\n# Mark the frame as buildings, so an Autark map extrudes each footprint to its height.\nbuildings.metadata = {\"layerType\": \"buildings\"}\nreturn buildings\n",
@@ -97,7 +97,7 @@
       },
       {
         "id": "park-shade-parks",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1290,
         "y": 1245,
         "content": "# OpenStreetMap's parks, playgrounds and green spaces in the loader's parks\n# box, as Autark cuts them at it. The named parks large enough to measure, in\n# the open: a \"park\" mostly under the building footprints (input_1), such as\n# a public atrium, is left out. Areas in metres, in the parks' UTM zone, so\n# this works for any city.\nparks = [!! input_0:table_osm_parks !!]\nparks = parks[parks[\"name\"].notna() & parks.geometry.type.isin([\"Polygon\", \"MultiPolygon\"])]\n# A park mapped in pieces under one name is one park, its name its key in the\n# comparisons.\nparks = parks[[\"name\", \"geometry\"]].dissolve(by=\"name\", as_index=False)\nutm = parks.estimate_utm_crs()\nparks = parks.to_crs(utm)\narea = parks.area\nroofed = parks.intersection(input_1.to_crs(utm).union_all()).area / area\nparks = parks[(area >= float([!! min_area !!])) & (roofed < 0.5)].assign(area_m2=area)\n# One park mapped twice (two outlines that almost coincide, under two names)\n# counts once: the larger outline is kept.\nkept = []\nfor i in parks.sort_values(\"area_m2\", ascending=False).index:\n    if not any(parks.geometry[i].intersection(parks.geometry[k]).area >= 0.8 * parks.area_m2[i]\n               and parks.area_m2[k] <= 1.25 * parks.area_m2[i] for k in kept):\n        kept.append(i)\nparks = parks.loc[sorted(kept)].rename(columns={\"name\": \"park\"})[[\"park\", \"area_m2\", \"geometry\"]]\nreturn parks.to_crs(4326).sort_values(\"park\").reset_index(drop=True)\n",
@@ -124,7 +124,7 @@
       },
       {
         "id": "park-shade-around",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1935,
         "y": 1469,
         "content": "import pandas as pd\n\n# The building parts the what-ifs change, by one rule for every park, so the\n# parks compare fairly: at least the Tall building height tall, and within the\n# Distance from a park of any park. input_0 is the buildings, a row per part;\n# input_1 the parks. Distances in metres, in the parks' UTM zone.\nbuildings, parks = input_0, input_1\ntall = float([!! tall_height !!])\nutm = parks.estimate_utm_crs()\nfootprints = buildings.to_crs(utm).geometry\ndistance = pd.DataFrame({park: footprints.distance(outline)\n                         for park, outline in zip(parks[\"park\"], parks.to_crs(utm).geometry)})\nmarked = buildings.assign(nearest_park=distance.idxmin(axis=1), park_distance_m=distance.min(axis=1))\nmarked[\"around_park\"] = (marked[\"height\"] >= tall) & (marked[\"park_distance_m\"] <= float([!! park_distance !!]))\n# What Height cap cuts a marked part down to: the Tall building height.\nmarked[\"height_cap_m\"] = tall\n# assign drops the frame's metadata: mark it as buildings again.\nmarked.metadata = {\"layerType\": \"buildings\"}\nreturn marked\n",
@@ -218,7 +218,7 @@
       },
       {
         "id": "park-shade-existing-shade",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 2598,
         "y": 1432,
         "content": "import numpy as np\nimport pandas as pd\nfrom rasterio.features import geometry_mask\n\n# input_0: the accumulated shadow in minutes, a raster; input_1: the parks.\nshadow, parks = input_0, input_1\n# The minutes of daylight the shadow's season stands for, which Accumulated\n# Shadow writes on its raster: SCOUT's 720 in summer, 540 in spring, 360 in\n# winter.\ndaylight = float(shadow.tags()[\"minutes\"])\nminutes = shadow.read(1, masked=True).filled(np.nan).astype(\"float64\")\nrows = []\nfor park in parks.to_crs(shadow.crs).itertuples():\n    inside = geometry_mask([park.geometry], out_shape=minutes.shape, transform=shadow.transform, invert=True)\n    values = minutes[inside]\n    values = values[~np.isnan(values)]\n    if values.size == 0:\n        continue\n    share = values / daylight\n    rows.append({\n        \"park\": park.park,\n        \"cells\": int(values.size),\n        \"mean_min\": float(values.mean()),\n        \"median_min\": float(np.median(values)),\n        \"p90_min\": float(np.percentile(values, 90)),\n        \"pct_daylight\": float(values.mean() / daylight),\n        # Shares of the park's cells: in sun (shaded under a quarter of the\n        # daylight), in partial shade, and in deep shade (over three quarters).\n        \"share_sun\": float((share < 0.25).mean()),\n        \"share_partial\": float(((share >= 0.25) & (share < 0.75)).mean()),\n        \"share_deep\": float((share >= 0.75).mean()),\n    })\nreturn parks.merge(pd.DataFrame(rows), on=\"park\")\n",
@@ -330,7 +330,7 @@
       },
       {
         "id": "park-shade-removed-shade",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 4568,
         "y": 162,
         "content": "import numpy as np\nimport pandas as pd\nfrom rasterio.features import geometry_mask\n\n# input_0: the accumulated shadow in minutes, a raster; input_1: the parks.\nshadow, parks = input_0, input_1\n# The minutes of daylight the shadow's season stands for, which Accumulated\n# Shadow writes on its raster: SCOUT's 720 in summer, 540 in spring, 360 in\n# winter.\ndaylight = float(shadow.tags()[\"minutes\"])\nminutes = shadow.read(1, masked=True).filled(np.nan).astype(\"float64\")\nrows = []\nfor park in parks.to_crs(shadow.crs).itertuples():\n    inside = geometry_mask([park.geometry], out_shape=minutes.shape, transform=shadow.transform, invert=True)\n    values = minutes[inside]\n    values = values[~np.isnan(values)]\n    if values.size == 0:\n        continue\n    share = values / daylight\n    rows.append({\n        \"park\": park.park,\n        \"cells\": int(values.size),\n        \"mean_min\": float(values.mean()),\n        \"median_min\": float(np.median(values)),\n        \"p90_min\": float(np.percentile(values, 90)),\n        \"pct_daylight\": float(values.mean() / daylight),\n        # Shares of the park's cells: in sun (shaded under a quarter of the\n        # daylight), in partial shade, and in deep shade (over three quarters).\n        \"share_sun\": float((share < 0.25).mean()),\n        \"share_partial\": float(((share >= 0.25) & (share < 0.75)).mean()),\n        \"share_deep\": float((share >= 0.75).mean()),\n    })\nreturn parks.merge(pd.DataFrame(rows), on=\"park\")\n",
@@ -442,7 +442,7 @@
       },
       {
         "id": "park-shade-capped-shade",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 4568,
         "y": 1022,
         "content": "import numpy as np\nimport pandas as pd\nfrom rasterio.features import geometry_mask\n\n# input_0: the accumulated shadow in minutes, a raster; input_1: the parks.\nshadow, parks = input_0, input_1\n# The minutes of daylight the shadow's season stands for, which Accumulated\n# Shadow writes on its raster: SCOUT's 720 in summer, 540 in spring, 360 in\n# winter.\ndaylight = float(shadow.tags()[\"minutes\"])\nminutes = shadow.read(1, masked=True).filled(np.nan).astype(\"float64\")\nrows = []\nfor park in parks.to_crs(shadow.crs).itertuples():\n    inside = geometry_mask([park.geometry], out_shape=minutes.shape, transform=shadow.transform, invert=True)\n    values = minutes[inside]\n    values = values[~np.isnan(values)]\n    if values.size == 0:\n        continue\n    share = values / daylight\n    rows.append({\n        \"park\": park.park,\n        \"cells\": int(values.size),\n        \"mean_min\": float(values.mean()),\n        \"median_min\": float(np.median(values)),\n        \"p90_min\": float(np.percentile(values, 90)),\n        \"pct_daylight\": float(values.mean() / daylight),\n        # Shares of the park's cells: in sun (shaded under a quarter of the\n        # daylight), in partial shade, and in deep shade (over three quarters).\n        \"share_sun\": float((share < 0.25).mean()),\n        \"share_partial\": float(((share >= 0.25) & (share < 0.75)).mean()),\n        \"share_deep\": float((share >= 0.75).mean()),\n    })\nreturn parks.merge(pd.DataFrame(rows), on=\"park\")\n",
@@ -558,7 +558,7 @@
       },
       {
         "id": "park-shade-removed-park-change",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 5450,
         "y": 0,
         "content": "# Towers removed's shade per park, on input_1, minus Existing's, on input_0,\n# matched by the park's name: in each number column, Towers removed's value\n# minus Existing's, and change says whether any of them differs. A park\n# only Existing has is removed, and one only Towers removed has is added,\n# their numbers empty. The outline and the other values are Towers removed's,\n# or Existing's for a removed park.\nimport numpy as np\nimport pandas as pd\n\nbefore, after = input_0.set_index(\"park\"), input_1.set_index(\"park\")\ngone = before.index.difference(after.index, sort=False)\nkeys = [*before.index, *after.index.difference(before.index, sort=False)]\nout = (pd.concat([after, before.loc[gone]]) if len(gone) else after).reindex(keys)\nnumbers = [\n    column for column in before.columns\n    if column != before.geometry.name and column in after.columns\n    and pd.api.types.is_numeric_dtype(before[column]) and not pd.api.types.is_bool_dtype(before[column])\n]\nwas = before[numbers].reindex(keys).astype(\"float64\")\nnow = after[numbers].reindex(keys).astype(\"float64\")\nout[numbers] = now - was\nchanged = ((was.isna() != now.isna()) | (was.notna() & now.notna() & (now != was))).any(axis=1)\nout.insert(0, \"change\", np.select(\n    [out.index.isin(gone), ~out.index.isin(before.index), changed.to_numpy()],\n    [\"removed\", \"added\", \"changed\"], \"unchanged\",\n))\nreturn out.reset_index()\n",
@@ -614,7 +614,7 @@
       },
       {
         "id": "park-shade-capped-park-change",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 5450,
         "y": 500,
         "content": "# Height cap's shade per park, on input_1, minus Existing's, on input_0,\n# matched by the park's name: in each number column, Height cap's value\n# minus Existing's, and change says whether any of them differs. A park\n# only Existing has is removed, and one only Height cap has is added,\n# their numbers empty. The outline and the other values are Height cap's,\n# or Existing's for a removed park.\nimport numpy as np\nimport pandas as pd\n\nbefore, after = input_0.set_index(\"park\"), input_1.set_index(\"park\")\ngone = before.index.difference(after.index, sort=False)\nkeys = [*before.index, *after.index.difference(before.index, sort=False)]\nout = (pd.concat([after, before.loc[gone]]) if len(gone) else after).reindex(keys)\nnumbers = [\n    column for column in before.columns\n    if column != before.geometry.name and column in after.columns\n    and pd.api.types.is_numeric_dtype(before[column]) and not pd.api.types.is_bool_dtype(before[column])\n]\nwas = before[numbers].reindex(keys).astype(\"float64\")\nnow = after[numbers].reindex(keys).astype(\"float64\")\nout[numbers] = now - was\nchanged = ((was.isna() != now.isna()) | (was.notna() & now.notna() & (now != was))).any(axis=1)\nout.insert(0, \"change\", np.select(\n    [out.index.isin(gone), ~out.index.isin(before.index), changed.to_numpy()],\n    [\"removed\", \"added\", \"changed\"], \"unchanged\",\n))\nreturn out.reset_index()\n",

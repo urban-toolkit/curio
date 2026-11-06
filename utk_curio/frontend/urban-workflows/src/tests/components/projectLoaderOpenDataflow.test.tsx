@@ -99,7 +99,7 @@ describe("the dataflow a canvas reads its outputs on", () => {
     renderLoader();
 
     await waitFor(() => expect(mockLoadTrill).toHaveBeenCalled());
-    expect(mockLoadSharedProject).toHaveBeenCalledWith(ROUTE_ID, { lastResults: true });
+    expect(mockLoadSharedProject).toHaveBeenCalledWith(ROUTE_ID, { lastResults: true, signal: expect.any(AbortSignal) });
     expect(openDataflowId()).toBe(ROUTE_ID);
   });
 
@@ -165,6 +165,6 @@ describe("what a shared dataflow opens with", () => {
     renderLoader(presentation);
 
     await waitFor(() => expect(mockLoadTrill).toHaveBeenCalled());
-    expect(mockLoadSharedProject.mock.calls).toEqual([[ROUTE_ID, asked]]);
+    expect(mockLoadSharedProject.mock.calls).toEqual([[ROUTE_ID, { ...asked, signal: expect.any(AbortSignal) }]]);
   });
 });

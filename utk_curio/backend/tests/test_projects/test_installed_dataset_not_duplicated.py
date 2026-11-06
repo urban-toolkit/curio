@@ -46,7 +46,7 @@ def _install_a_dataset_the_loader_reads():
         "dataflow": {
             "nodes": [
                 {"id": LOADER, "type": "curio.builtin/data-loading"},
-                {"id": PRODUCER, "type": "curio.builtin/computation-analysis"},
+                {"id": PRODUCER, "type": "curio.builtin/python-computation"},
             ],
             "datasets": [{
                 "datasetId": f"computed.{DATAFLOW_ID}.some-other-node",

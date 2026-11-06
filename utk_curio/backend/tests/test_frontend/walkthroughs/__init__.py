@@ -49,7 +49,6 @@ from . import (  # noqa: F401
     visual_claims,
     dataflow_identity,
     catalog_chrome,
-    column_filter,
     agent_chat,
     simple_view,
     crown_heights,

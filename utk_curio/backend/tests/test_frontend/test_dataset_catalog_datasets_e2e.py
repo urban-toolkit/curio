@@ -94,10 +94,10 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 LOADER_TYPE = "curio.builtin/data-loading"
-TRANSFORM_TYPE = "curio.builtin/computation-analysis"
+TRANSFORM_TYPE = "curio.builtin/python-computation"
 VEGA_TYPE = "curio.builtin/vis-vega"
 
-TRANSFORM_TILE = "#tile-computation-analysis"
+TRANSFORM_TILE = "#tile-python-computation"
 VEGA_TILE = "#tile-vis-vega"
 
 DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'

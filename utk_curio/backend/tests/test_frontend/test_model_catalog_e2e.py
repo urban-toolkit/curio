@@ -68,7 +68,7 @@ def _spec(*, code: str = "return [1]", node_id: str = "model-catalog-node") -> d
             "nodes": [
                 {
                     "id": node_id,
-                    "type": "curio.builtin/computation-analysis",
+                    "type": "curio.builtin/python-computation",
                     "x": 420,
                     "y": 300,
                     "content": code,

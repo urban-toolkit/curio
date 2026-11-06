@@ -281,6 +281,7 @@ from .offline_install import (  # noqa: F401
     plant_catalog_package,
     remove_catalog_package,
     offline_catalog_package,
+    catalog_test_package,
 )
 from .page import FrontendPage  # noqa: F401
 from .scripted_llm import (  # noqa: F401

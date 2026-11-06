@@ -127,26 +127,21 @@ def list_provider_models():
     remembered - a new account that has not pasted a key - the reason *is* the
     answer and this is a 400.
 
-    The one list that is an allowlist is this Curio's own. ``endpoint:
-    "deployment"`` with ``endpointName``, or the ``configId`` of a This Curio
-    install configuration with nothing else on screen, answers with the models
-    the endpoint file lists for that endpoint (``source: "deployment"``): no
-    endpoint is asked, nothing is remembered, and a This Curio install
-    configuration takes only one of them.
+    This Curio's own endpoints are never asked: their models are the ones the
+    endpoint file lists, which the listing (``GET /api/agents/llm``) names,
+    and their keys are never lent. ``endpoint: "deployment"`` is refused.
     """
 
     data = request.get_json(silent=True) or {}
+    if data.get("endpoint") == agents_llm_configs.ENDPOINT_DEPLOYMENT:
+        return _error(agents_llm_configs.DEPLOYMENT_REFUSAL, 400)
     api_type = (data.get("apiType") or "").strip()
     base_url = (data.get("baseUrl") or "").strip()
     api_key = (data.get("apiKey") or "").strip()
 
     user_key = _user_dir_key(g.user)
     guest = bool(getattr(g.user, "is_guest", False))
-    # One of this Curio's own endpoints, when that is what is asked about.
-    deployment_name = None
-    if data.get("endpoint") == "deployment":
-        deployment_name = str(data.get("endpointName") or "")
-    elif data.get("configId"):
+    if data.get("configId"):
         # A key belongs to the endpoint it was saved against, and
         # ``provider_key`` is where Curio says what "the same endpoint" means.
         # Once the caller names a different one - another provider, or a URL
@@ -159,35 +154,14 @@ def list_provider_models():
         )
         if record is None:
             return _error(f"no LLM configuration {config_id!r}", 404)
-        if record.get("endpoint") == agents_llm_configs.ENDPOINT_DEPLOYMENT:
-            # The operator's key is never lent, so an endpoint typed on screen
-            # is asked with only what is typed.
-            if not (api_type or base_url or api_key):
-                deployment_name = record.get("endpointName") or ""
-        else:
-            saved_type = record.get("apiType") or ""
-            saved_url = record.get("baseUrl") or ""
-            saved_key = record.get("apiKey") or ""
-            api_type = api_type or saved_type
-            if agents_model_catalog.provider_key(api_type) == agents_model_catalog.provider_key(saved_type):
-                base_url = base_url or saved_url
-            if not api_key and agents_model_catalog.provider_key(api_type, base_url) == agents_model_catalog.provider_key(saved_type, saved_url):
-                api_key = saved_key
-
-    if deployment_name is not None:
-        if not agents_provider_config.deployment_offered():
-            return _error("this Curio install offers no endpoint of its own")
-        endpoint = agents_provider_config.deployment_endpoint(deployment_name)
-        if endpoint is None:
-            return _error(agents_provider_config.offered_refusal(deployment_name, ""), 400)
-        return jsonify({
-            "models": list(endpoint.models),
-            "listable": True,
-            "source": "deployment",
-            "remembered": [],
-            "rememberedAt": None,
-            "warning": None,
-        }), 200
+        saved_type = record.get("apiType") or ""
+        saved_url = record.get("baseUrl") or ""
+        saved_key = record.get("apiKey") or ""
+        api_type = api_type or saved_type
+        if agents_model_catalog.provider_key(api_type) == agents_model_catalog.provider_key(saved_type):
+            base_url = base_url or saved_url
+        if not api_key and agents_model_catalog.provider_key(api_type, base_url) == agents_model_catalog.provider_key(saved_type, saved_url):
+            api_key = saved_key
 
     api_type = api_type or "openai_compatible"
 

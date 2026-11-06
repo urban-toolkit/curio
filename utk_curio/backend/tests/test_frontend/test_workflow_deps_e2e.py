@@ -19,8 +19,9 @@ Covered below this level:
 What only a browser proves is the end-to-end consequence, which is what this
 test asserts.
 
-``curio.example-ui@1`` is the declared package because it has zero python deps,
-so no pip runs. Never point this at ``curio.weather@1``,
+``test.ui-node@1``, planted in the catalog for the test
+(``ui_node_in_catalog``), is the declared package because it has zero python
+deps, so no pip runs. Never point this at ``curio.weather@1``,
 ``ai.utk.uhvi@1`` or ``model.curio.ddrnet23-slim@1``: those pull
 rasterio/geopandas/onnxruntime through a synchronous 30-minute-capped pip call, and the
 resulting user-store copy makes every later ``curio start`` re-resolve them.
@@ -38,6 +39,8 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import expect
 
+from utk_curio.backend.tests._support.ui_test_package import UI_TEST_PACKAGE, UI_TEST_PACKAGE_ID
+
 from .utils import (
     api_json,
     open_tools_palette,
@@ -51,8 +54,8 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-PKG_DIR = "curio.example-ui@1"
-PKG_ID = "curio.example-ui"
+PKG_DIR = UI_TEST_PACKAGE
+PKG_ID = UI_TEST_PACKAGE_ID
 
 
 def _dataflow_declaring(pkg_dir: str) -> dict:
@@ -64,7 +67,7 @@ def _dataflow_declaring(pkg_dir: str) -> dict:
             "nodes": [
                 {
                     "id": "declared-deps-node",
-                    "type": "curio.builtin/computation-analysis",
+                    "type": "curio.builtin/python-computation",
                     "x": 400,
                     "y": 300,
                     "content": "return [1]",
@@ -145,6 +148,7 @@ def test_importing_a_dataflow_installs_its_declared_packages(
     current_server: str,
     page,
     tmp_path,
+    ui_node_in_catalog,
     uninstall_declared_package,
 ):
     require_project_page()

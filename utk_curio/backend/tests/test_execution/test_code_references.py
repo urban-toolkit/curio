@@ -503,7 +503,7 @@ def _spec(nodes, edges=()):
     return {"dataflow": {"nodes": list(nodes), "edges": list(edges)}}
 
 
-def _node(node_id, content, widgets=None, node_type="curio.builtin/computation-analysis"):
+def _node(node_id, content, widgets=None, node_type="curio.builtin/python-computation"):
     node = {"id": node_id, "type": node_type, "content": content, "goal": ""}
     if widgets is not None:
         node["metadata"] = {"widgets": widgets}
@@ -692,7 +692,7 @@ class TestANameThatStartsWithAt:
 PICKED = {"name": "picked", "node": "chart", "column": "osm_id", "ids": [101, 104]}
 
 
-def _picker(node_id, content, selections, node_type="curio.builtin/computation-analysis"):
+def _picker(node_id, content, selections, node_type="curio.builtin/python-computation"):
     return {"id": node_id, "type": node_type, "content": content, "goal": "", "metadata": {"selections": selections}}
 
 

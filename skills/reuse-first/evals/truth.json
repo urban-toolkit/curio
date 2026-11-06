@@ -4,7 +4,7 @@
     {
       "case": 1,
       "assertions": [
-        "The answer makes one node.create whose nodeType is curio.builtin/computation-analysis.",
+        "The answer makes one node.create whose nodeType is curio.builtin/python-computation.",
         "The answer proposes no package: no package.install and no package.draft.apply.",
         "The answer does not say a new node type or package has to be written for this.",
         "The code it writes computes, for each zip code, the share of roofs whose VEGETATED_SQFT is above 10,000."
@@ -13,8 +13,8 @@
     {
       "case": 2,
       "assertions": [
-        "The answer proposes package.install with dirName curio.example-ui@1.",
-        "The install's reason names the step that needs it: filtering the top zip codes' rows from controls in the node.",
+        "The answer proposes package.install with dirName curio.vega-lite@1.",
+        "The install's reason names the step that needs it: the lollipop chart of the two scenarios' mean shadow lengths.",
         "The answer drafts no package of its own (no package.draft.apply) and asks for none to be written.",
         "The answer does not claim the package is installed or the node exists before the user applies the install."
       ]
@@ -45,7 +45,7 @@
                 "goal": "For each zip code, the share of its green roofs with more than 10,000 square feet of vegetation.",
                 "id": "66b159de-9abb-466d-bb56-83cc938f00b3",
                 "title": "Share of large green roofs",
-                "type": "curio.builtin/computation-analysis"
+                "type": "curio.builtin/python-computation"
               }
             ]
           }
@@ -56,11 +56,11 @@
             "kind": "node",
             "summary": "Created a new Python Computation node · Share of large green roofs",
             "lines": [
-              "Python Computation · curio.builtin/computation-analysis",
+              "Python Computation · curio.builtin/python-computation",
               "node 66b159de-9abb-466d-bb56-83cc938f00b3"
             ],
             "nodeId": "66b159de-9abb-466d-bb56-83cc938f00b3",
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "undo": true
           }
         ],
@@ -71,7 +71,7 @@
           "tool": "node.create",
           "status": "applied",
           "arguments": {
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "title": "Share of large green roofs",
             "goal": "For each zip code, the share of its green roofs with more than 10,000 square feet of vegetation.",
             "content": "# For each zip code, the share of its green roofs with more than 10,000 square\n# feet of vegetation.\nroofs = input_0\nlarge = roofs['VEGETATED_SQFT'] > 10000\nshare = large.groupby(roofs['zip']).mean().reset_index(name='share_over_10000_sqft')\nreturn share\n"
@@ -105,18 +105,18 @@
       "case": 2,
       "name": "golden",
       "kind": "golden",
-      "source": "packages/curio.example-ui@1/manifest.json, the Nodes Catalog's Example: Custom UI Node package and its Column Filter template, as packages.catalog lists it; the install proposed with package.install, which waits for the user's review (utk_curio/backend/app/agents/application/proposals/mint.py, its package-install proposal)",
+      "source": "packages/curio.vega-lite@1/manifest.json, the Nodes Catalog's Vega-Lite package and its Lollipops template (one input per scenario, each drawn in its box's color, a stem from 0 and a dot of the Value column combined as the Combine widget says, its starter the node's whole content), as packages.catalog lists it; the install proposed with package.install, which waits for the user's review (utk_curio/backend/app/agents/application/proposals/mint.py, its package-install proposal)",
       "fails": [],
-      "reply": "The Nodes Catalog's Example: Custom UI Node package (curio.example-ui@1) holds Column Filter, which does this: its controls are drawn in the node, with no code editor, and only the rows that match go on. I proposed installing it for the step after the top 10 zip codes. Nothing is installed until you apply the install in its review; then the node can be added. No package of its own needs to be written.",
+      "reply": "The Nodes Catalog's Vega-Lite package (curio.vega-lite@1) holds Lollipops, which does this: it takes each scenario's shadow step on an input of its own, draws a stem from zero and a dot per scenario in its box's color, and its widgets name the column and how its rows combine, the mean here, with no spec to write. I proposed installing it for the lollipop chart of the two scenarios' mean shadow lengths. Nothing is installed until you apply the install in its review; then the chart can be added. No package of its own needs to be written.",
       "changes": {
         "changed": {},
         "cards": [],
         "awaiting_review": [
           {
-            "dirName": "curio.example-ui@1",
-            "packageName": "Example: Custom UI Node",
-            "reason": "No listed template draws its controls in the node itself with no code editor. Column Filter does: after the transformation that keeps the top 10 zip codes, it filters their rows by a column, a comparison and a threshold picked from controls in the node.",
-            "summary": "Install package · Example: Custom UI Node",
+            "dirName": "curio.vega-lite@1",
+            "packageName": "Vega-Lite",
+            "reason": "No listed template draws a chart set by widgets with no spec to write. Lollipops does: a stem and a dot of the two scenarios' mean shadow length, each scenario on an input of its own and in its box's color.",
+            "summary": "Install package · Vega-Lite",
             "tool": "package.install"
           }
         ]
@@ -141,7 +141,7 @@
         1,
         2
       ],
-      "reply": "Install the Example: Custom UI Node package, whose Column Filter does this:\n\n```json\n{\n  \"dirName\": \"curio.example-ui@1\",\n  \"reason\": \"No listed template draws its controls in the node itself with no code editor. Column Filter does: after the transformation that keeps the top 10 zip codes, it filters their rows by a column, a comparison and a threshold picked from controls in the node.\"\n}\n```",
+      "reply": "Install the Vega-Lite package, whose Lollipops does this:\n\n```json\n{\n  \"dirName\": \"curio.vega-lite@1\",\n  \"reason\": \"No listed template draws a chart set by widgets with no spec to write. Lollipops does: a stem and a dot of the two scenarios' mean shadow length, each scenario on an input of its own and in its box's color.\"\n}\n```",
       "changes": {
         "changed": {},
         "cards": [],

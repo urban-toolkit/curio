@@ -96,8 +96,8 @@ describe("the shipped examples need no de-overlapping", () => {
 describe("a genuinely overlapping spec is repaired", () => {
     test("separates the pair example 04 used to ship with", () => {
         const nodes = [
-            { id: "2704287e", position: { x: 1200, y: 1518 }, data: { nodeType: "curio.builtin/computation-analysis" } },
-            { id: "f4cb8452", position: { x: 1204, y: 1836 }, data: { nodeType: "curio.builtin/computation-analysis" } },
+            { id: "2704287e", position: { x: 1200, y: 1518 }, data: { nodeType: "curio.builtin/python-computation" } },
+            { id: "f4cb8452", position: { x: 1204, y: 1836 }, data: { nodeType: "curio.builtin/python-computation" } },
         ];
 
         const result = deoverlapNodes(nodes, { measure });

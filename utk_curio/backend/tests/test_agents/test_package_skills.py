@@ -328,13 +328,13 @@ def test_a_package_skill_is_held_as_written_where_curios_is_rendered(tmp_curio):
 
 def test_a_package_skill_serves_its_own_packages_templates_and_no_others(tmp_curio):
     """``curio-templates`` names templates of the skill's own package, by
-    their ids in its manifest: a skill naming ``computation-analysis`` serves
+    their ids in its manifest: a skill naming ``python-computation`` serves
     its package's node of that id, which it has none of, never Curio's
     Python node."""
     skill_runs = _skill_runs()
     trees = _store_package(
         KEY, "acme.trees",
-        {"street-trees": _skill("street-trees", "## Trees\n", "  curio-templates: tree-count computation-analysis\n")},
+        {"street-trees": _skill("street-trees", "## Trees\n", "  curio-templates: tree-count python-computation\n")},
         templates=("tree-count",),
     )
     nodes = [{"id": "t", "type": "acme.trees/tree-count"}, {"id": "c", "type": CA}]
@@ -352,7 +352,7 @@ def test_a_package_skill_serves_its_own_packages_templates_and_no_others(tmp_cur
     by_name = {skill.name: skill for skill in chat.catalog}
     assert "street-trees" in by_name, chat.names
     skill = by_name["street-trees"]
-    assert skill_runs.templates_served(skill, trees) == {"acme.trees/tree-count", "acme.trees/computation-analysis"}
+    assert skill_runs.templates_served(skill, trees) == {"acme.trees/tree-count", "acme.trees/python-computation"}
     assert skill_runs.templates_served(skill, None) == set()
 
 

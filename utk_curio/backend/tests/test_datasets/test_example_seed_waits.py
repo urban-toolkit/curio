@@ -71,7 +71,7 @@ def user_id(file_db_app):
 
 def _spec() -> dict:
     return {"dataflow": {"name": "Seed waits", "nodes": [
-        {"id": "a", "type": "curio.builtin/computation-analysis", "content": "return 1"},
+        {"id": "a", "type": "curio.builtin/python-computation", "content": "return 1"},
     ], "edges": []}}
 
 

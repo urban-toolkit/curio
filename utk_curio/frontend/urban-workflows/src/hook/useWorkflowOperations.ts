@@ -26,7 +26,7 @@ import { DEFAULT_WORKFLOW_NAME } from "../constants";
 import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap, extractKeywordMaps } from "../utils/flowNodeUtils";
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
-import { projectsApi, OutputRef, DatasetInstallWarning, type ProjectDetail, type TileLayout } from "../api/projectsApi";
+import { projectsApi, OutputRef, DatasetInstallWarning, type LoadOptions, type ProjectDetail, type TileLayout } from "../api/projectsApi";
 import type { DataflowCategories, HandCategories } from "../utils/dataflowCategories";
 import { normalizeScenarios, type Scenario, type ScenarioSet } from "../utils/scenarios/scenarioModel";
 import { normalizeScenarioSets } from "../utils/scenarios/scenarioSets";
@@ -130,6 +130,17 @@ export interface LoadedDataflow {
      *  it (a never-saved canvas's first save, Save a copy): its bind writes
      *  what the canvas changed after. */
     canvas?: any;
+}
+
+/**
+ * A load the page has left (its signal aborted) stops here, as an aborted read
+ * does, before it sets anything: the canvas's runs and saves act on the id it
+ * would set (run 42191681614 sent a canvas's runs to the dataflow it had left).
+ */
+function leftBeforeItAnswered(options?: LoadOptions): void {
+    if (options?.signal?.aborted) {
+        throw new DOMException("The page left this dataflow before it loaded.", "AbortError");
+    }
 }
 
 export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
@@ -1545,8 +1556,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         return detail;
     }, [workflowNameRef, setWorkflowName, reactFlow, deps.outputsRef, blockGuestSaves, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
 
-    const loadProject = useCallback(async (id: string, options?: { lastResults?: boolean }) => {
+    const loadProject = useCallback(async (id: string, options?: LoadOptions) => {
         const result = await projectsApi.get(id, options);
+        leftBeforeItAnswered(options);
         const { project, outputs } = result;
 
         // Pin the ref here rather than letting the next render carry it over,
@@ -1570,8 +1582,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         return result;
     }, []);
 
-    const loadSharedProject = useCallback(async (id: string, options?: { lastResults?: boolean }) => {
+    const loadSharedProject = useCallback(async (id: string, options?: LoadOptions) => {
         const result = await projectsApi.getShared(id, options);
+        leftBeforeItAnswered(options);
         const { project, outputs } = result;
 
         // Deliberately leave projectId=null: this dataflow is not "open for

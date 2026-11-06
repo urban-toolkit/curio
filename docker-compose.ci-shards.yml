@@ -1,6 +1,18 @@
-# CI overlay: publish the ports of the EXTRA e2e shards.
+# CI overlay of test-gpu, the only job that uses it: the curio container gets
+# the runner's GPU, a pids limit sized for one backend and sandbox pair per
+# e2e worker, and the ports of the EXTRA e2e shards.
 #
-# `scripts/test.sh --parallel N` runs the e2e suite on N pytest-xdist workers,
+# The GPU: a device request that the host's NVIDIA Container Toolkit answers
+# with the GPU and the driver's libcuda.so.1, which the image's CUDA, the
+# libraries its torch build brings, runs on (the Dockerfile). test-gpu runs utk_curio/sandbox/tests/
+# test_cuda_mlp.py, test_cuda_torch.py and test_cuda_isolated.py in the container with it, and the
+# examples whose nodes run torch run on it there. A daemon without the toolkit
+# refuses to start the container at all, so every runner of test-gpu needs it:
+# utk's and utk-desktop-01's own Docker, and the Docker inside each arcade GPU
+# runner (uic-evl/evl-github-runners). compute is CUDA; utility is NVML and
+# nvidia-smi.
+#
+# The shard ports: `scripts/test.sh --parallel N` runs the e2e suite on N pytest-xdist workers,
 # each against its own backend+sandbox pair behind the one frontend. In CI the
 # pairs for shards 1..N-1 run INSIDE the same container as the base stack
 # (started with `docker compose exec -d`, see the workflow), on container ports
@@ -30,6 +42,15 @@ services:
     # container. The isolation tests that 4096 is there for never run
     # against this overlay.
     pids_limit: 16384
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     ports:
       - "127.0.0.1:${CURIO_E2E_SHARD1_BACKEND_PORT:-5023}:5003"
       - "127.0.0.1:${CURIO_E2E_SHARD1_SANDBOX_PORT:-2021}:2001"

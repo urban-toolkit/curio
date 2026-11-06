@@ -596,12 +596,12 @@ def test_the_template_runs_in_the_sandbox_and_a_new_widget_value_gives_a_new_res
 
         def run(factor):
             spec = {"dataflow": {"nodes": [
-                {"id": "a", "type": "curio.builtin/computation-analysis", "content": "return 21"},
+                {"id": "a", "type": "curio.builtin/python-computation", "content": "return 21"},
                 {"id": "b", "type": node_type, "content": written["source"]["code"],
                  "metadata": {"widgets": [{**written["template"]["widgets"][0], "value": factor}]}},
             ], "edges": [{"id": "e1", "source": "a", "target": "b"}]}}
             roster = {
-                "curio.builtin/computation-analysis": {"executable": True, "engine": "python"},
+                "curio.builtin/python-computation": {"executable": True, "engine": "python"},
                 node_type: {"executable": True, "engine": "python"},
             }
             report = runner.run_through_node("guest", "p-function-node", spec, "b", exec_fn=exec_fn, templates=roster)

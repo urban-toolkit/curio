@@ -96,3 +96,7 @@ services:
       - 0.0.0.0
       - --sandbox-port
       - "2000"
+      # The deploy's node budget (deploy.yml's site file), so the boundary is
+      # asserted at the cap the deploy ships.
+      - --exec-memory-mb
+      - "24576"

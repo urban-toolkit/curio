@@ -26,7 +26,7 @@ import pytest
 
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import auth_headers
 
-CODE = "curio.builtin/computation-analysis"
+CODE = "curio.builtin/python-computation"
 TOKENS = {"bob": "bob-token-for-runs", "carol": "carol-token-for-runs", "erin": "erin-token-for-runs"}
 TREES = b"tree,species\n1,elm\n2,oak\n"
 

@@ -153,7 +153,7 @@ describe('nodeRegistry', () => {
   describe('getPaletteNodeTypes', () => {
     test('returns only inPalette descriptors sorted by paletteOrder', () => {
       registerNode(makeDescriptor({
-        id: NodeType.COMPUTATION_ANALYSIS,
+        id: NodeType.PYTHON_COMPUTATION,
         inPalette: true,
         paletteOrder: 99,
         label: 'Z-Last',

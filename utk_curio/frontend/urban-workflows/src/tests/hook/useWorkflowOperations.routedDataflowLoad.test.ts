@@ -170,6 +170,45 @@ describe("an action on the dataflow while the routed one is still loading", () =
     expect(projectsApi.update).not.toHaveBeenCalled();
   });
 
+  it("takes no dataflow id from a load the route left before it answered", async () => {
+    // File > Load made the canvas a dataflow of its own while the routed one
+    // was still answering (run 42191681614). That late answer pinned the
+    // canvas back to the dataflow it had left, so its runs went there and were
+    // refused: the server's copy of it held none of the canvas's nodes.
+    routeTo(ROUTED);
+    let answer!: (value: unknown) => void;
+    (projectsApi.get as jest.Mock).mockImplementation(
+      () => new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const { result } = renderOps();
+    // What ProjectLoader hands the load: the route's signal, which leaving
+    // the dataflow aborts.
+    const route = new AbortController();
+    const options = { lastResults: true, signal: route.signal };
+
+    let outcome: string | undefined;
+    await act(async () => {
+      const loading = result.current.loadProject(ROUTED, options).then(
+        () => "loaded",
+        (err: Error) => err.name,
+      );
+      route.abort();
+      answer({
+        project: { id: ROUTED, name: "wf", updated_at: null },
+        spec: { dataflow: { nodes: [], edges: [] } },
+        outputs: [],
+      });
+      outcome = await loading;
+    });
+
+    expect({ outcome, projectId: result.current.projectId }).toEqual({
+      outcome: "AbortError",
+      projectId: null,
+    });
+  });
+
   it("does not wait once the dataflow is loaded", async () => {
     // The common case has to stay synchronous-ish: a latch left open by a load
     // that already delivered its id would stall every later action.

@@ -64,7 +64,7 @@ NODE_TYPE = "model.scout.weather-gnn/weather-routing"
 WEIGHTS_LICENSE = "Used with the permission of SCOUT's authors"
 WEIGHTS_PUBLISHER = "SCOUT (urban-toolkit/scout)"
 SCOUT = "https://github.com/urban-toolkit/scout"
-PYTHON_TYPE = "curio.builtin/computation-analysis"
+PYTHON_TYPE = "curio.builtin/python-computation"
 AUTARK_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 #: The Vega-Lite package, whose Bars node charts each metric.

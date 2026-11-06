@@ -186,7 +186,7 @@ const CANVAS: Record<string, XY> = {
   c: { x: 1400, y: 300 },
 };
 
-const NODE_TYPE = 'curio.builtin/computation-analysis';
+const NODE_TYPE = 'curio.builtin/python-computation';
 
 function canvasNode(id: string, position: XY, extra: Record<string, unknown> = {}) {
   return {

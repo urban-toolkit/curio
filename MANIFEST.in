@@ -46,6 +46,7 @@ include docs/examples/data/lower_mnt.osm.pbf
 include docs/examples/data/niteroi.osm.pbf
 include docs/examples/data/niteroi_lst_verao_2001_2024.tif
 include docs/examples/data/access_score.geojson
+include docs/examples/data/shape-cnn.npz
 recursive-include docs/examples/data/ImageTest *
 
 # The example model package and its export script, which Curio does not read:

@@ -50,7 +50,7 @@
       },
       {
         "id": "3c72fe30-65b0-5a65-a3a6-3ee0d55ca00b",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 645,
         "y": -450,
         "content": "import datetime\nimport math\nfrom zoneinfo import ZoneInfo\n\nimport geopandas as gpd\nimport pyproj\nfrom astral import Observer\nfrom astral.sun import azimuth, elevation\nfrom shapely.geometry import Point\nfrom suntime import Sun\n\n# Every day of 2027 cut into the steps the GPU step walks. A day counts from\n# 1.5 hours after its sunrise to 1.5 hours before its sunset (suntime), in New\n# York time, in steps of 10 minutes, the last one shorter. At the middle\n# of each step astral gives the sun's azimuth and its elevation, with\n# refraction. One point per day, at the site: its date, its window\n# (window_from, window_to) and the minutes it counts (window_min), and where\n# its steps start among the year's (first_step) and how many there are\n# (step_count).\nYEAR = 2027\nLATITUDE, LONGITUDE = 40.6696, -73.9558  # the site, 1550 Bedford Avenue\nNEW_YORK = ZoneInfo(\"America/New_York\")\nSTEP = datetime.timedelta(minutes=10)\nMARGIN = datetime.timedelta(hours=1.5)\n\n# The ground cells are in metres in the site's UTM zone, whose north is not\n# quite true north: turn the sun's azimuth by the angle between the two.\nutm = gpd.GeoSeries([Point(LONGITUDE, LATITUDE)], crs=4326).estimate_utm_crs()\nto_grid = pyproj.Transformer.from_crs(4326, utm, always_xy=True)\nx0, y0 = to_grid.transform(LONGITUDE, LATITUDE)\nx1, y1 = to_grid.transform(LONGITUDE, LATITUDE + 0.01)\nturn = math.degrees(math.atan2(x1 - x0, y1 - y0))\n\n\ndef clock(moment):\n    \"\"\"*moment* as a New York clock reads it, to the minute: 8:46 AM EST.\"\"\"\n    moment = (moment + datetime.timedelta(seconds=30)).replace(second=0, microsecond=0)\n    noon = \"AM\" if moment.hour < 12 else \"PM\"\n    return f\"{moment.hour % 12 or 12}:{moment.minute:02d} {noon} {moment.tzname()}\"\n\n\nsun = Sun(LATITUDE, LONGITUDE)\nobserver = Observer(latitude=LATITUDE, longitude=LONGITUDE)\ndays, steps, day = [], [], datetime.date(YEAR, 1, 1)\nwhile day.year == YEAR:\n    start = sun.get_sunrise_time(day, NEW_YORK) + MARGIN\n    end = sun.get_sunset_time(day, NEW_YORK) - MARGIN\n    # suntime works in UTC, where a summer sunset in New York falls on the next\n    # day: a window that does not run forward is a wrong day, not an empty one.\n    if not start < end:\n        raise ValueError(f\"suntime gave {day} no window: {start} to {end}\")\n    first, moment = len(steps), start\n    while moment < end:\n        length = min(STEP, end - moment)\n        middle = moment + length / 2\n        toward = math.radians(azimuth(observer, middle) + turn)\n        steps.append([\n            math.sin(toward),  # toward east\n            math.cos(toward),  # toward north\n            1 / math.tan(math.radians(elevation(observer, middle))),\n            length.total_seconds() / 60,\n        ])\n        moment += length\n    days.append({\n        \"date\": day.isoformat(),\n        \"window_from\": clock(start),\n        \"window_to\": clock(end),\n        \"window_min\": (end - start).total_seconds() / 60,\n        \"first_step\": first,\n        \"step_count\": len(steps) - first,\n    })\n    day += datetime.timedelta(days=1)\nyear = gpd.GeoDataFrame(days, geometry=[Point(LONGITUDE, LATITUDE)] * len(days), crs=4326)\n# Every step of the year on the first point (toward east, toward north, cot of\n# the elevation, minutes), for the GPU step that walks each day's.\nyear[\"steps\"] = [steps] + [None] * (len(year) - 1)\nyear.metadata = {\"layerType\": \"points\"}\nreturn year\n",
@@ -64,7 +64,7 @@
       },
       {
         "id": "8f8b8c77-6778-56b8-a500-39601670fee7",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 645,
         "y": 0,
         "content": "import datetime\nimport math\nfrom zoneinfo import ZoneInfo\n\nimport geopandas as gpd\nimport pyproj\nfrom astral import Observer\nfrom astral.sun import azimuth, elevation\nfrom shapely.geometry import Point\nfrom suntime import Sun\n\n# The day the maps and the day's plot show, one of 2027's equinoxes and\n# solstices (the Day widget), cut into the steps the GPU steps walk. The day\n# counts from 1.5 hours after its sunrise to 1.5 hours before its sunset\n# (suntime), in New York time, in steps of 10 minutes, the last one\n# shorter. At the middle of each step astral gives the sun's azimuth and its\n# elevation, with refraction. One point per step, at the site.\nDAYS = {\"Spring equinox\": \"2027-03-20\", \"Summer solstice\": \"2027-06-21\", \"Fall equinox\": \"2027-09-23\", \"Winter solstice\": \"2027-12-21\"}\nLATITUDE, LONGITUDE = 40.6696, -73.9558  # the site, 1550 Bedford Avenue\nNEW_YORK = ZoneInfo(\"America/New_York\")\nSTEP = datetime.timedelta(minutes=10)\nMARGIN = datetime.timedelta(hours=1.5)\n\nlabel = [!! day !!]\nday = datetime.date.fromisoformat(DAYS[label])\nsun = Sun(LATITUDE, LONGITUDE)\nstart = sun.get_sunrise_time(day, NEW_YORK) + MARGIN\nend = sun.get_sunset_time(day, NEW_YORK) - MARGIN\n# suntime works in UTC, where a summer sunset in New York falls on the next\n# day: a window that does not run forward is a wrong day, not an empty one.\nif not start < end:\n    raise ValueError(f\"suntime gave {label} ({day}) no window: {start} to {end}\")\n\n# The ground cells are in metres in the site's UTM zone, whose north is not\n# quite true north: turn the sun's azimuth by the angle between the two.\nutm = gpd.GeoSeries([Point(LONGITUDE, LATITUDE)], crs=4326).estimate_utm_crs()\nto_grid = pyproj.Transformer.from_crs(4326, utm, always_xy=True)\nx0, y0 = to_grid.transform(LONGITUDE, LATITUDE)\nx1, y1 = to_grid.transform(LONGITUDE, LATITUDE + 0.01)\nturn = math.degrees(math.atan2(x1 - x0, y1 - y0))\n\n\ndef clock(moment):\n    \"\"\"*moment* as a New York clock reads it, to the minute: 8:46 AM EST.\"\"\"\n    moment = (moment + datetime.timedelta(seconds=30)).replace(second=0, microsecond=0)\n    noon = \"AM\" if moment.hour < 12 else \"PM\"\n    return f\"{moment.hour % 12 or 12}:{moment.minute:02d} {noon} {moment.tzname()}\"\n\n\nobserver = Observer(latitude=LATITUDE, longitude=LONGITUDE)\nrows, moment = [], start\nwhile moment < end:\n    length = min(STEP, end - moment)\n    middle = moment + length / 2\n    toward = math.radians(azimuth(observer, middle) + turn)\n    rows.append({\n        \"east\": math.sin(toward),\n        \"north\": math.cos(toward),\n        \"cot\": 1 / math.tan(math.radians(elevation(observer, middle))),\n        \"minutes\": length.total_seconds() / 60,\n        # The New York clock time written as if it were UTC, so a plot draws\n        # the same hours in a browser anywhere.\n        \"time\": middle.replace(tzinfo=None).isoformat(timespec=\"seconds\") + \"Z\",\n        \"clock\": clock(middle),\n    })\n    moment += length\nsteps = gpd.GeoDataFrame(rows, geometry=[Point(LONGITUDE, LATITUDE)] * len(rows), crs=4326)\nsteps[\"day\"], steps[\"window_from\"], steps[\"window_to\"] = label, clock(start), clock(end)\n# Every step on the first point, for the GPU step that walks the whole day\n# from each ground cell.\nsteps[\"steps\"] = [steps[[\"east\", \"north\", \"cot\", \"minutes\"]].to_numpy().tolist()] + [None] * (len(steps) - 1)\nsteps.metadata = {\"layerType\": \"points\"}\nreturn steps\n",
@@ -100,7 +100,7 @@
       },
       {
         "id": "e891762d-1198-5a8c-b43a-b41b22582249",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 645,
         "y": 450,
         "content": "import geopandas as gpd\nimport numpy as np\nimport shapely\n\n# The open ground the shadow is counted on: square cells of 3 m over the\n# area around the buildings, but for those whose centre lies in an existing\n# building (input_0). Each cell holds its column and row, its centre in metres\n# from the grid's south-west corner (x east, y north), and on_block, whether\n# it lies on Block 1259 (input_1). The grid rides along on every cell (its\n# corner in the site's UTM zone, epsg, the cell's side, its columns and rows),\n# so the nodes that draw buildings into it draw them on these same cells.\nCELL = 3\nbuildings, block = input_0, input_1\nutm = buildings.estimate_utm_crs()\nroofs = buildings.to_crs(utm)\nwest, south, east, north = roofs.total_bounds\ncols, rows = int(np.ceil((east - west) / CELL)), int(np.ceil((north - south) / CELL))\ncol, row = np.meshgrid(np.arange(cols), np.arange(rows))\ncol, row = col.ravel(), row.ravel()\nx, y = (col + 0.5) * CELL, (row + 0.5) * CELL\ncentres = shapely.points(west + x, south + y)\n# The rule the buildings are drawn by: a centre in a footprint is under its roof.\nunder = np.zeros(len(centres), bool)\nunder[shapely.STRtree(roofs.geometry.values).query(centres, predicate=\"within\")[0]] = True\non_block = shapely.contains_xy(block.to_crs(utm).union_all(), west + x, south + y)\nkeep = ~under\ncells = gpd.GeoDataFrame(\n    {\"col\": col[keep], \"row\": row[keep], \"x\": x[keep], \"y\": y[keep], \"on_block\": on_block[keep].astype(int)},\n    geometry=shapely.box(west + x[keep] - CELL / 2, south + y[keep] - CELL / 2,\n                         west + x[keep] + CELL / 2, south + y[keep] + CELL / 2),\n    crs=utm,\n)\ncells[\"grid_west\"], cells[\"grid_south\"], cells[\"cell\"] = float(west), float(south), float(CELL)\ncells[\"cols\"], cells[\"rows\"], cells[\"epsg\"] = cols, rows, utm.to_epsg()\ncells = cells.to_crs(buildings.crs)\n# Tell the Autark map these are areas, so it fills them.\ncells.metadata = {\"layerType\": \"polygons\"}\nreturn cells\n",
@@ -114,7 +114,7 @@
       },
       {
         "id": "2be9fdd4-c902-5a3e-af89-e0ad66f45a2c",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 645,
         "y": 900,
         "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\n# The area the maps show, one box around every building. A map loads it first\n# and does not draw it: Autark clips every layer it loads after the first to\n# the first one's outline, so with this box first every layer stays whole.\nreturn gpd.GeoDataFrame({\"area\": [\"map\"]}, geometry=[box(*input_0.total_bounds)], crs=input_0.crs)\n",
@@ -128,7 +128,7 @@
       },
       {
         "id": "6eaa947f-44ae-52e9-9c1d-ab93da3bf2d1",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1290,
         "y": -900,
         "content": "import geopandas as gpd\nimport numpy as np\nimport shapely\nfrom shapely.geometry import box\n\n# This scenario's buildings (input_0) as the GPU steps read them, one feature:\n# heights, the roof over each cell of the ground grid (input_1), 0 where no\n# building stands, row by row from the south; tallest, the highest roof; and\n# spots, the centres of Block 1259's open-ground cells. A cell's height is the\n# roof of the building its centre lies in, the rule the grid drops cells by.\nbuildings, grid = input_0, input_1\nfirst = grid.iloc[0]\nutm = f\"EPSG:{int(first['epsg'])}\"\nwest, south, cell = float(first[\"grid_west\"]), float(first[\"grid_south\"]), float(first[\"cell\"])\ncols, rows = int(first[\"cols\"]), int(first[\"rows\"])\ncol, row = np.meshgrid(np.arange(cols), np.arange(rows))\ncentres = shapely.points(west + (col.ravel() + 0.5) * cell, south + (row.ravel() + 0.5) * cell)\nroofs = buildings.to_crs(utm)\ncentre, roof = shapely.STRtree(roofs.geometry.values).query(centres, predicate=\"within\")\nheights = np.zeros(rows * cols)\nnp.maximum.at(heights, centre, roofs[\"height\"].to_numpy(dtype=float)[roof])\non_block = grid[grid[\"on_block\"] == 1]\nprepared = gpd.GeoDataFrame(\n    {\n        \"heights\": [np.round(heights.reshape(rows, cols), 2).tolist()],\n        \"tallest\": [float(heights.max())],\n        \"spots\": [on_block[[\"x\", \"y\"]].to_numpy(dtype=float).tolist()],\n    },\n    geometry=[box(west, south, west + cols * cell, south + rows * cell)], crs=utm,\n).to_crs(4326)\nprepared.metadata = {\"layerType\": \"polygons\"}\nreturn prepared\n",
@@ -184,7 +184,7 @@
       },
       {
         "id": "755fbc3c-68d1-50cf-ae8e-f72f9dac8413",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 2580,
         "y": -900,
         "content": "import pandas as pd\n\n# The ground cells with the minutes the GPU step found each in shadow that\n# day (shadow_min) and the share of the day's window that is (shadow_share,\n# in %). The step hands on the cells, input_0's first layer, with its result\n# under compute, and the day's steps as its third layer. A cell it marked -1\n# lies under a roof in this scenario, so it is left out.\ncells = [!! input_0:input_0 !!]\nsteps = [!! input_0:input_2 !!]\n# The GPU step hands its layers on as GeoJSON, in longitude and latitude.\nif cells.crs is None:\n    cells = cells.set_crs(4326)\nif \"shadow_min\" not in cells.columns:\n    cells[\"shadow_min\"] = [row.get(\"shadow_min\") if isinstance(row, dict) else None for row in cells[\"compute\"]]\ncells[\"shadow_min\"] = pd.to_numeric(cells[\"shadow_min\"])\ncells = cells[cells[\"shadow_min\"] >= 0].copy()\nwindow = float(pd.to_numeric(steps[\"minutes\"]).sum())\ncells[\"shadow_share\"] = 100 * cells[\"shadow_min\"] / window\ncells = cells[[\"col\", \"row\", \"x\", \"y\", \"on_block\", \"shadow_min\", \"shadow_share\", \"geometry\"]]\ncells.metadata = {\"layerType\": \"polygons\"}\nreturn cells\n",
@@ -198,7 +198,7 @@
       },
       {
         "id": "ca233f8e-302e-5e89-977a-c93dd5f2abba",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 2580,
         "y": -450,
         "content": "import pandas as pd\n\n# The share of Block 1259's open ground in shadow at each step of the day\n# (share, in %), with the step's time and minutes and the day's window, as a\n# table the day's plot reads. The GPU step hands on the steps, input_0's\n# first layer, with its result under compute.\nsteps = [!! input_0:input_0 !!]\nif \"share\" not in steps.columns:\n    steps[\"share\"] = [row.get(\"share\") if isinstance(row, dict) else None for row in steps[\"compute\"]]\nreturn pd.DataFrame({\n    \"time\": steps[\"time\"],\n    \"clock\": steps[\"clock\"],\n    \"share\": pd.to_numeric(steps[\"share\"]),\n    \"minutes\": pd.to_numeric(steps[\"minutes\"]),\n    \"day\": steps[\"day\"],\n    \"window_from\": steps[\"window_from\"],\n    \"window_to\": steps[\"window_to\"],\n})\n",
@@ -212,7 +212,7 @@
       },
       {
         "id": "95b43de1-57a0-507a-8770-4c476dd1f4ec",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 2580,
         "y": 0,
         "content": "import pandas as pd\n\n# Each day of the year on Block 1259's open ground: the minutes it spends in\n# shadow over the day's window, on average (shadow_min), the same as text\n# (in_shadow), and the window, a row per day. The GPU step hands on the days,\n# input_0's first layer, with its result under compute.\ndef duration(minutes):\n    hours, rest = divmod(round(minutes), 60)\n    if not hours:\n        return f\"{rest} min\"\n    return f\"{hours} h {rest} min\" if rest else f\"{hours} h\"\n\n\ndays = [!! input_0:input_0 !!]\nif \"shadow_min\" not in days.columns:\n    days[\"shadow_min\"] = [row.get(\"shadow_min\") if isinstance(row, dict) else None for row in days[\"compute\"]]\ndays = pd.DataFrame({\n    \"date\": days[\"date\"],\n    \"shadow_min\": pd.to_numeric(days[\"shadow_min\"]),\n    \"window_from\": days[\"window_from\"],\n    \"window_to\": days[\"window_to\"],\n    \"window_min\": pd.to_numeric(days[\"window_min\"]),\n})\ndays[\"in_shadow\"] = [duration(minutes) for minutes in days[\"shadow_min\"]]\n# Each day's noon written as UTC, so a plot draws the same date in a browser\n# anywhere.\ndays[\"time\"] = days[\"date\"] + \"T12:00:00Z\"\nreturn days\n",
@@ -226,7 +226,7 @@
       },
       {
         "id": "6336c9a7-c75a-527f-9b35-254eb952b512",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 3225,
         "y": -900,
         "content": "import numpy as np\n\n# What the map colors: the cells in shadow at all that day, by the share of\n# the day's window they spend in it (in %), in classes 5 points wide, each\n# drawn at its middle. Cells of a class that touch become one area: cell by\n# cell, the two scenarios' maps would outgrow the data a shared dashboard\n# carries. The map sets the scale from 0 to 100, so both maps color a share\n# alike.\nSTEP = 5\nshaded = input_0.loc[input_0[\"shadow_share\"] > 0, [\"shadow_share\", \"geometry\"]]\nshaded = shaded.assign(shadow_share=(np.ceil(shaded[\"shadow_share\"] / STEP) - 0.5) * STEP)\nshown = shaded.dissolve(by=\"shadow_share\", as_index=False).explode(index_parts=False).reset_index(drop=True)\nshown.metadata = {\"layerType\": \"polygons\"}\nreturn shown\n",
@@ -280,7 +280,7 @@
       },
       {
         "id": "72b34012-476a-50d2-abf3-f6c271a50f54",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1290,
         "y": 1350,
         "content": "import geopandas as gpd\nimport numpy as np\nimport shapely\nfrom shapely.geometry import box\n\n# This scenario's buildings (input_0) as the GPU steps read them, one feature:\n# heights, the roof over each cell of the ground grid (input_1), 0 where no\n# building stands, row by row from the south; tallest, the highest roof; and\n# spots, the centres of Block 1259's open-ground cells. A cell's height is the\n# roof of the building its centre lies in, the rule the grid drops cells by.\nbuildings, grid = input_0, input_1\nfirst = grid.iloc[0]\nutm = f\"EPSG:{int(first['epsg'])}\"\nwest, south, cell = float(first[\"grid_west\"]), float(first[\"grid_south\"]), float(first[\"cell\"])\ncols, rows = int(first[\"cols\"]), int(first[\"rows\"])\ncol, row = np.meshgrid(np.arange(cols), np.arange(rows))\ncentres = shapely.points(west + (col.ravel() + 0.5) * cell, south + (row.ravel() + 0.5) * cell)\nroofs = buildings.to_crs(utm)\ncentre, roof = shapely.STRtree(roofs.geometry.values).query(centres, predicate=\"within\")\nheights = np.zeros(rows * cols)\nnp.maximum.at(heights, centre, roofs[\"height\"].to_numpy(dtype=float)[roof])\non_block = grid[grid[\"on_block\"] == 1]\nprepared = gpd.GeoDataFrame(\n    {\n        \"heights\": [np.round(heights.reshape(rows, cols), 2).tolist()],\n        \"tallest\": [float(heights.max())],\n        \"spots\": [on_block[[\"x\", \"y\"]].to_numpy(dtype=float).tolist()],\n    },\n    geometry=[box(west, south, west + cols * cell, south + rows * cell)], crs=utm,\n).to_crs(4326)\nprepared.metadata = {\"layerType\": \"polygons\"}\nreturn prepared\n",
@@ -348,7 +348,7 @@
       },
       {
         "id": "9439839c-cf4e-5d3f-b3a5-3977577f7e76",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 2580,
         "y": 1350,
         "content": "import pandas as pd\n\n# The ground cells with the minutes the GPU step found each in shadow that\n# day (shadow_min) and the share of the day's window that is (shadow_share,\n# in %). The step hands on the cells, input_0's first layer, with its result\n# under compute, and the day's steps as its third layer. A cell it marked -1\n# lies under a roof in this scenario, so it is left out.\ncells = [!! input_0:input_0 !!]\nsteps = [!! input_0:input_2 !!]\n# The GPU step hands its layers on as GeoJSON, in longitude and latitude.\nif cells.crs is None:\n    cells = cells.set_crs(4326)\nif \"shadow_min\" not in cells.columns:\n    cells[\"shadow_min\"] = [row.get(\"shadow_min\") if isinstance(row, dict) else None for row in cells[\"compute\"]]\ncells[\"shadow_min\"] = pd.to_numeric(cells[\"shadow_min\"])\ncells = cells[cells[\"shadow_min\"] >= 0].copy()\nwindow = float(pd.to_numeric(steps[\"minutes\"]).sum())\ncells[\"shadow_share\"] = 100 * cells[\"shadow_min\"] / window\ncells = cells[[\"col\", \"row\", \"x\", \"y\", \"on_block\", \"shadow_min\", \"shadow_share\", \"geometry\"]]\ncells.metadata = {\"layerType\": \"polygons\"}\nreturn cells\n",
@@ -365,7 +365,7 @@
       },
       {
         "id": "da085a5c-60a6-5023-80b0-1f5a1dfc0e06",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 2580,
         "y": 1800,
         "content": "import pandas as pd\n\n# The share of Block 1259's open ground in shadow at each step of the day\n# (share, in %), with the step's time and minutes and the day's window, as a\n# table the day's plot reads. The GPU step hands on the steps, input_0's\n# first layer, with its result under compute.\nsteps = [!! input_0:input_0 !!]\nif \"share\" not in steps.columns:\n    steps[\"share\"] = [row.get(\"share\") if isinstance(row, dict) else None for row in steps[\"compute\"]]\nreturn pd.DataFrame({\n    \"time\": steps[\"time\"],\n    \"clock\": steps[\"clock\"],\n    \"share\": pd.to_numeric(steps[\"share\"]),\n    \"minutes\": pd.to_numeric(steps[\"minutes\"]),\n    \"day\": steps[\"day\"],\n    \"window_from\": steps[\"window_from\"],\n    \"window_to\": steps[\"window_to\"],\n})\n",
@@ -382,7 +382,7 @@
       },
       {
         "id": "cb9f7863-af5c-5ace-a1f3-52027f8bf6f4",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 2580,
         "y": 2250,
         "content": "import pandas as pd\n\n# Each day of the year on Block 1259's open ground: the minutes it spends in\n# shadow over the day's window, on average (shadow_min), the same as text\n# (in_shadow), and the window, a row per day. The GPU step hands on the days,\n# input_0's first layer, with its result under compute.\ndef duration(minutes):\n    hours, rest = divmod(round(minutes), 60)\n    if not hours:\n        return f\"{rest} min\"\n    return f\"{hours} h {rest} min\" if rest else f\"{hours} h\"\n\n\ndays = [!! input_0:input_0 !!]\nif \"shadow_min\" not in days.columns:\n    days[\"shadow_min\"] = [row.get(\"shadow_min\") if isinstance(row, dict) else None for row in days[\"compute\"]]\ndays = pd.DataFrame({\n    \"date\": days[\"date\"],\n    \"shadow_min\": pd.to_numeric(days[\"shadow_min\"]),\n    \"window_from\": days[\"window_from\"],\n    \"window_to\": days[\"window_to\"],\n    \"window_min\": pd.to_numeric(days[\"window_min\"]),\n})\ndays[\"in_shadow\"] = [duration(minutes) for minutes in days[\"shadow_min\"]]\n# Each day's noon written as UTC, so a plot draws the same date in a browser\n# anywhere.\ndays[\"time\"] = days[\"date\"] + \"T12:00:00Z\"\nreturn days\n",
@@ -399,7 +399,7 @@
       },
       {
         "id": "d89f7440-724b-578f-b68f-896974b76ade",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 3225,
         "y": 1350,
         "content": "import numpy as np\n\n# What the map colors: the cells in shadow at all that day, by the share of\n# the day's window they spend in it (in %), in classes 5 points wide, each\n# drawn at its middle. Cells of a class that touch become one area: cell by\n# cell, the two scenarios' maps would outgrow the data a shared dashboard\n# carries. The map sets the scale from 0 to 100, so both maps color a share\n# alike.\nSTEP = 5\nshaded = input_0.loc[input_0[\"shadow_share\"] > 0, [\"shadow_share\", \"geometry\"]]\nshaded = shaded.assign(shadow_share=(np.ceil(shaded[\"shadow_share\"] / STEP) - 0.5) * STEP)\nshown = shaded.dissolve(by=\"shadow_share\", as_index=False).explode(index_parts=False).reset_index(drop=True)\nshown.metadata = {\"layerType\": \"polygons\"}\nreturn shown\n",
@@ -440,7 +440,7 @@
       },
       {
         "id": "d0649118-6943-5803-86a0-e9f3e56c8fb6",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 4915,
         "y": 0,
         "content": "# The shade the proposed building adds on each open-ground cell that day:\n# the minutes in shadow with it (input_1) less the minutes without it\n# (input_0), cell by cell. The cells under the building itself are not\n# ground with it, so they drop out.\nwithout, with_building = input_0, input_1\nadded = with_building.merge(without[[\"col\", \"row\", \"shadow_min\"]], on=[\"col\", \"row\"], suffixes=(\"\", \"_without\"))\nadded[\"added_min\"] = added[\"shadow_min\"] - added[\"shadow_min_without\"]\nadded = added[[\"col\", \"row\", \"x\", \"y\", \"on_block\", \"added_min\", \"geometry\"]]\nadded.metadata = {\"layerType\": \"polygons\"}\nreturn added\n",
@@ -454,7 +454,7 @@
       },
       {
         "id": "93f86091-2454-52f6-920a-dd11f6e39cda",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 5560,
         "y": 0,
         "content": "import math\n\nimport geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import box\n\n# What the map colors: the cells the proposed building shades at all, by the\n# minutes it adds, the scale topped at the 90th percentile of them so the far\n# reach of its shadow stays visible beside the cells next to it, which it\n# shades almost all day. input_0 is the shade added per cell, input_1 the\n# buildings with the proposed one.\nshaded = input_0.loc[input_0[\"added_min\"] > 0, [\"added_min\", \"geometry\"]].copy()\nif len(shaded):\n    top = float(shaded[\"added_min\"].quantile(0.9))\n    shaded[\"added_shown\"] = shaded[\"added_min\"].clip(upper=top)\n    # Autark's legend runs from the layer's lowest value to its highest, so\n    # two small cells hidden under the proposed building hold the whole\n    # minutes below and above them: the legend reads from floor to ceiling.\n    low, high = math.floor(shaded[\"added_shown\"].min()), math.ceil(shaded[\"added_shown\"].max())\n    tower = input_1[input_1[\"status\"] != \"Existing\"].to_crs(shaded.crs).union_all().centroid\n    side = 1e-6\n    anchors = gpd.GeoDataFrame(\n        {\"added_shown\": [float(low), float(high)]},\n        geometry=[box(tower.x - side, tower.y - side, tower.x, tower.y),\n                  box(tower.x, tower.y, tower.x + side, tower.y + side)],\n        crs=shaded.crs,\n    )\n    shaded = pd.concat([shaded, anchors], ignore_index=True)\nshaded.metadata = {\"layerType\": \"polygons\"}\nreturn shaded\n",
@@ -531,7 +531,7 @@
       },
       {
         "id": "6920455d-0912-512e-8c3e-97d0ed207152",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 4915,
         "y": 1800,
         "content": "import calendar\n\nimport numpy as np\nimport pandas as pd\n\n# The shade the proposed building adds on Block 1259's open ground a day (its\n# time in shadow with the building less its time without it, day by day),\n# month by month: the average over the month's days and their standard\n# deviation, in whole minutes. input_0 is the scenario without the proposed\n# building, input_1 the one with it, a row per day each.\nwithout, with_building = input_0, input_1\ndays = without[[\"date\", \"shadow_min\"]].merge(\n    with_building[[\"date\", \"shadow_min\"]], on=\"date\", suffixes=(\"_without\", \"_with\"))\nadded = days[\"shadow_min_with\"] - days[\"shadow_min_without\"]\nrows = []\nfor month, minutes in added.groupby(pd.to_datetime(days[\"date\"]).dt.month):\n    rows.append({\n        \"Month\": calendar.month_name[month],\n        # The spread of the month's own days, all of them (ddof 0).\n        \"Shade added per day (average ± standard deviation)\":\n            f\"{round(float(minutes.mean()))} ± {round(float(np.std(minutes)))} min\",\n    })\nreturn pd.DataFrame(rows)\n",

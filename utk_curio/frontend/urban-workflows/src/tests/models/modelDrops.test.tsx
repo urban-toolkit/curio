@@ -292,11 +292,11 @@ describe("a model dropped on a node", () => {
     const call = `m = curio_load_model("${relief}")`;
     const nodes = [
       { id: "own", data: { nodeType: `${relief}/local-relief@1`, code: call } },
-      { id: "bound", data: { nodeType: "curio.builtin/computation-analysis@1", code: call,
+      { id: "bound", data: { nodeType: "curio.builtin/python-computation@1", code: call,
                               modelRefs: [{ id: relief, name: "Local Relief (example)" }] } },
-      { id: "in-code-only", data: { nodeType: "curio.builtin/computation-analysis@1", code: call } },
-      { id: "template-only", data: { nodeType: "curio.builtin/computation-analysis@1", defaultCode: call } },
-      { id: "other", data: { nodeType: "curio.builtin/computation-analysis@1",
+      { id: "in-code-only", data: { nodeType: "curio.builtin/python-computation@1", code: call } },
+      { id: "template-only", data: { nodeType: "curio.builtin/python-computation@1", defaultCode: call } },
+      { id: "other", data: { nodeType: "curio.builtin/python-computation@1",
                              code: 'm = curio_load_model("model.curio.ddrnet23-slim")' } },
     ];
     expect(nodesNamingModelInCodeOnly(nodes, relief)).toEqual(["in-code-only", "template-only"]);

@@ -33,7 +33,7 @@ const picked = (ids: number[]) => [{ name: "picked", node: "scatter", column: "o
 /** A counting node whose tag the chart's redraw has just emptied. */
 function countingNode() {
   const data: any = { nodeId: "count", code: CODE, selections: picked([]) };
-  const hook = renderHook(() => useNodeState(data, "curio.builtin/computation-analysis" as any));
+  const hook = renderHook(() => useNodeState(data, "curio.builtin/python-computation" as any));
   return { data, hook };
 }
 

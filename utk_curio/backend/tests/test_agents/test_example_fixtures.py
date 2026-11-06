@@ -55,13 +55,15 @@ class TestCompleteness:
         fixtures = set(FIXTURE_IDS)
         assert not examples - fixtures, f"examples with no fixture: {sorted(examples - fixtures)}"
         assert not fixtures - examples, f"fixtures with no example: {sorted(fixtures - examples)}"
-        # The 26 numbered examples (24 from #662, 25 from #576, 26 from #819)
-        # and the 28 test dataflows (#662 added scenarios, quad-cities-flood-vulnerability,
+        # The 30 numbered examples (24 from #662, 25 from #576, 26 from #819,
+        # 27 to 30 PyTorch on the GPU)
+        # and the 31 test dataflows (#662 added scenarios, quad-cities-flood-vulnerability,
         # chicago-loop-shadow-towers, chicago-rain-wind-routing and netcdf-hourly-rain, the plan for #914
         # lower-manhattan-park-shade, and komar41's #914 the scenario
-        # comparison charts, chicago-loop-layers for the Map Editor node, and
-        # komar41's crown-heights-1550-bedford-shadow for the Date widget).
-        assert len(fixtures) == 56
+        # comparison charts, chicago-loop-layers for the Map Editor node,
+        # komar41's crown-heights-1550-bedford-shadow for the Date widget, and
+        # filter-rows-with-widgets for rows a widget rule keeps).
+        assert len(fixtures) == 61
 
     def test_fixture_ids_are_unique(self):
         assert len(FIXTURE_IDS) == len(set(FIXTURE_IDS))
@@ -69,8 +71,8 @@ class TestCompleteness:
     def test_the_curated_and_legacy_corpora_are_both_covered(self):
         curated = [f for f in FIXTURES if f.path.parent.name == "prompts"]
         legacy = [f for f in FIXTURES if f.path.parent.name == "dataflows"]
-        assert len(curated) == 26
-        assert len(legacy) == 30
+        assert len(curated) == 30
+        assert len(legacy) == 31
 
     def test_every_split_is_populated_and_heldout_is_a_minority(self):
         """Splits exist so an export has somewhere to draw from; a held-out set
@@ -306,8 +308,8 @@ class TestFixturesAreNotMistakenForDataflows:
         corpus by glob; the fixture directory must stay outside both."""
         curated = list((REPO_ROOT / "docs" / "examples").glob("[0-9][0-9]-*.json"))
         legacy = list((REPO_ROOT / "docs" / "examples" / "dataflows").glob("*.json"))
-        assert len(curated) == 26
-        assert len(legacy) == 30
+        assert len(curated) == 30
+        assert len(legacy) == 31
         assert not any(".prompt.json" in p.name for p in curated + legacy)
 
 

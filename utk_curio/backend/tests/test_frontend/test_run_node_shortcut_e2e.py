@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 NODE_ID = "run-shortcut-node"
-NODE_TYPE = "curio.builtin/computation-analysis"
+NODE_TYPE = "curio.builtin/python-computation"
 
 # One line, no trailing newline: "a line was inserted" is then simply "the
 # model has more than one line".

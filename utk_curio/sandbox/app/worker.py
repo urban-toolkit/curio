@@ -405,74 +405,54 @@ def _resolve_outputs_elem(elem, session_id=None, saved_paths=None):
     An 'outputs' input - from a node's several input circles, or a Data Pool's
     multi-layer wrapper - bundles one entry per connected circle / layer. An entry is one of:
       * a DuckDB reference: a `{'path', ...}` dict, or a bare artifact-id/filename
-        string (a project restored from persisted outputs seeds the latter) -
-        loaded from DuckDB;
-      * an inline `{'dataType', 'data'}` envelope - e.g. a Data Pool layer
+        string (a project restored from persisted outputs seeds the latter):
+        loaded from DuckDB, and read as an input reads a stored value
+        (``stored_inputs.read_stored``), one Autark layer as its frame and
+        several as the list of them;
+      * an inline `{'dataType', 'data'}` envelope (e.g. a Data Pool layer
         `{'dataType':'geodataframe','data':<FeatureCollection>,'layerName':...}`
-        wired straight into a code node - reconstructed with `parseInput`;
+        wired straight into a code node): reconstructed with `parseInput`
+        (``stored_inputs.read_element``);
       * any other already-concrete value, used as-is.
     Distinguishing on the keys keeps refs loading while letting inline values flow
     through instead of raising KeyError('path'). A ref that is a saved output
     of the run's dataflow is read in place from *saved_paths* when the store
-    has no row for it (``parsers.load_artifact``).
+    has no row for it (``parsers.load_artifact``). A wrapper a loaded output
+    holds that names other outputs is read as it is stored: only a node's one
+    input reads the outputs its wrapper names (:func:`_expand_outputs_wrapper`).
     """
-    from utk_curio.sandbox.util.parsers import load_artifact, parseInput
-    if isinstance(elem, str):
-        return load_artifact(elem, session_id=session_id, saved_paths=saved_paths)
-    if isinstance(elem, dict):
-        if 'path' in elem:
-            return load_artifact(elem['path'], session_id=session_id, saved_paths=saved_paths)
-        if 'dataType' in elem and 'data' in elem:
-            return _keep_layer_identity(parseInput(elem), elem)
-    return elem
+    from utk_curio.sandbox.util.parsers import load_artifact
+    from utk_curio.sandbox.util.stored_inputs import is_ref, read_element, read_stored, ref_name
 
-
-def _keep_layer_identity(value, envelope):
-    """A layer an Autark node handed on keeps its name and its layer type.
-
-    Its envelope names them (``layerName``, ``layerType``); the frame keeps them
-    where Curio keeps a frame's own (``metadata``, which ``parseOutput`` hands
-    on), so a node can tell an Autark node's layers apart, as the Edit Features
-    node does to edit one of them (#662). A frame that already has a name keeps
-    it.
-    """
-    from utk_curio.sandbox.util.codec import is_geospatial_frame
-
-    name = envelope.get('layerName')
-    if not isinstance(name, str) or not name or not is_geospatial_frame(value):
-        return value
-    meta = getattr(value, 'metadata', None)
-    if isinstance(meta, dict) and meta.get('name'):
-        return value
-    kept = {'name': name}
-    if isinstance(envelope.get('layerType'), str) and envelope['layerType']:
-        kept['layerType'] = envelope['layerType']
-    value.__dict__['metadata'] = kept
-    return value
+    if is_ref(elem):
+        return read_stored(load_artifact(ref_name(elem), session_id=session_id, saved_paths=saved_paths))
+    return read_element(elem)
 
 
 def _expand_outputs_wrapper(input_data, session_id=None, saved_paths=None):
-    """Resolve a bundled ('outputs') input to the per-circle list user code expects.
+    """A node's one input as user code reads it (``stored_inputs.read_stored``).
 
-    A bundle reaches a code node in one of two shapes:
+    One envelope of a frame, as an Autark node hands on one layer, is that
+    frame. A bundle (an ``outputs`` wrapper) reaches a code node in one of two
+    shapes:
       * live  - an inline list of refs, already expanded by the caller's
         `data_type == 'outputs'` branch; passed through here untouched.
-      * reloaded - when the upstream bundle was persisted (project save, or
-        the JS-node I/O round-trip through DuckDB), the node receives a single ref
-        to it. `parse_input_ref` remaps that ref's 'outputs' dataType to a plain
-        load, so `load_from_duckdb` hands back the whole
-        `{dataType:'outputs', data:[refs]}` wrapper dict. Without this, user code
-        gets the wrapper object (e.g. `const [a,b] = input_0` → "input_0 is not iterable").
-    In the reloaded case, resolve each inner element so the input matches the live list.
+      * reloaded - when the upstream bundle was persisted (project save, an
+        Autark node's layers, or the JS-node I/O round-trip through DuckDB),
+        the node receives a single ref to it, which `load_from_duckdb` hands
+        back as the whole `{dataType:'outputs', data:[...]}` wrapper dict,
+        whatever dataType the request names. Without this, user code gets the
+        wrapper object (e.g. `const [a,b] = input_0` → "input_0 is not iterable").
+    In the reloaded case, resolve each inner element so the input matches the
+    live list: the outputs it names are read too, which the backend checks
+    first (``node_exec.wrapped_input_names``).
     """
-    if (isinstance(input_data, dict)
-            and input_data.get('dataType') == 'outputs'
-            and isinstance(input_data.get('data'), list)):
-        return [
-            _resolve_outputs_elem(elem, session_id=session_id, saved_paths=saved_paths)
-            for elem in input_data['data']
-        ]
-    return input_data
+    from utk_curio.sandbox.util.stored_inputs import read_stored
+
+    return read_stored(
+        input_data,
+        lambda _index, elem: _resolve_outputs_elem(elem, session_id=session_id, saved_paths=saved_paths),
+    )
 
 
 def _make_curio_data_path(dataset_paths):

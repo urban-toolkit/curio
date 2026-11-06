@@ -27,7 +27,7 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "data-loading",
     "data-export",
     "data-pool",
-    "computation-analysis",
+    "python-computation",
     "data-summary",
     "js-computation",
     "vis-vega",

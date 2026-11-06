@@ -60,13 +60,13 @@ def test_each_kind_of_check_decides_its_assertion_from_the_run_s_record():
             "nodes": {
                 "added": [{"id": "chart", "type": "curio.builtin/vis-vega",
                            "content": json.dumps({"encoding": {"color": {"field": "scenario_name"}}})}],
-                "changed": [{"id": "rows", "type": "curio.builtin/computation-analysis",
+                "changed": [{"id": "rows", "type": "curio.builtin/python-computation",
                              "changes": {"content": {"before": "x = 1", "after": "threshold = [!! threshold !!]"}}}],
             },
             "edges": {"added": [{"id": "e", "source": "pool", "target": "chart", "type": "Interaction"}]},
         },
         reply="The AirNow host, www.airnowapi.org, needs a key.",
-        types={"pool": "curio.builtin/data-pool", "rows": "curio.builtin/computation-analysis"},
+        types={"pool": "curio.builtin/data-pool", "rows": "curio.builtin/python-computation"},
     )
     meets = {
         "a call that landed": _check("tool", tool="node.settings.write"),
@@ -79,7 +79,7 @@ def test_each_kind_of_check_decides_its_assertion_from_the_run_s_record():
         "an interaction edge between two types": _check("edge-added", **{
             "from": "curio.builtin/data-pool", "to": "curio.builtin/vis-vega", "interaction": True}),
         "code that holds a pattern": _check("code", node="rows", pattern=r"\[!! threshold !!\]"),
-        "code that lacks one": _check("code", type="curio.builtin/computation-analysis", pattern=r"= 25", absent=True),
+        "code that lacks one": _check("code", type="curio.builtin/python-computation", pattern=r"= 25", absent=True),
         "a spec's field and value": _check("spec", type="curio.builtin/vis-vega", path="encoding.color.field",
                                            equals="scenario_name"),
         "a spec without a field": _check("spec", node="chart", path="encoding.x", absent=True),

@@ -5,9 +5,11 @@ import pytest
 from playwright.sync_api import Browser, BrowserType
 
 from utk_curio.backend.tests import parts
+from utk_curio.backend.tests._support.ui_test_package import UI_TEST_PACKAGE
 
 from . import comparisons, diagnostics, early_guards, runner_split
-from .utils import REPO_ROOT, start_catalog_calendar, stop_catalog_calendar
+from .utils import REPO_ROOT, catalog_test_package, start_catalog_calendar, stop_catalog_calendar
+from .utils import screenshots
 from .fixtures import _clean_db
 
 
@@ -95,6 +97,7 @@ WORKFLOW_FILES = [
     "docs/examples/dataflows/interaction-vega-autark.json",
 
     "docs/examples/dataflows/widget.json",
+    "docs/examples/dataflows/filter-rows-with-widgets.json",
 
     "docs/examples/dataflows/vega.json",
     "docs/examples/dataflows/autk-map.json",
@@ -148,6 +151,13 @@ WORKFLOW_FILES = [
     # One node fed by several others, in every kind of node that takes several
     # inputs, one input a tuple (#819).
     "docs/examples/26-several-inputs.json",
+    # PyTorch on the GPU: a node of each runs torch, so test-gpu runs them, in
+    # the container that has the GPU (runner_split.py), and the isolated stack
+    # runs 27 to 29 too (ISOLATED_WORKFLOWS in docker-compose.yml).
+    "docs/examples/27-pytorch-shape-classifier.json",
+    "docs/examples/28-pytorch-training-on-the-gpu.json",
+    "docs/examples/29-pytorch-street-photos.json",
+    "docs/examples/30-pytorch-sidewalk-clusters.json",
 ]
 
 
@@ -224,6 +234,15 @@ def catalog_calendar(request, e2e_clean_db):
     stop_catalog_calendar(backend)
 
 
+@pytest.fixture()
+def ui_node_in_catalog(current_server):
+    """``test.ui-node@1`` in the backend's Node Catalog for this test, and out
+    of it after: the package a test adds when any package will do, since it
+    declares no Python libraries (``tests/_support/ui_test_package.py``)."""
+    with catalog_test_package(current_server, UI_TEST_PACKAGE):
+        yield UI_TEST_PACKAGE
+
+
 def pytest_generate_tests(metafunc):
     """Parametrize any test / fixture that requests ``loaded_workflow``.
     Ref: https://docs.pytest.org/en/stable/example/parametrize.html#a-quick-port-of-testscenarios
@@ -275,8 +294,8 @@ def pytest_itemcollected(item):
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",
-        "webgpu: the browser runs WebGPU, so CI runs it on the utk GPU runner "
-        "(set automatically, see runner_split.py)",
+        "webgpu: the browser runs WebGPU, or the dataflow's node code runs torch, "
+        "so CI runs it on the utk GPU runner (set automatically, see runner_split.py)",
     )
     config.addinivalue_line(
         "markers",
@@ -331,6 +350,23 @@ class _OnlyWorkflows:
             items[:] = kept
 
 
+def pytest_terminal_summary(terminalreporter):
+    """List the devices the dataflows' torch nodes ran on, as each
+    ``test_node_execution`` recorded them (``torch_devices``), so the job's log
+    says where they ran. The reports carry them from the xdist workers."""
+    lines = sorted({
+        value
+        for reports in terminalreporter.stats.values()
+        for report in reports
+        for name, value in (getattr(report, "user_properties", None) or ())
+        if name == "torch_devices"
+    })
+    if lines:
+        terminalreporter.write_sep("-", "devices the torch nodes ran on")
+        for line in lines:
+            terminalreporter.write_line(line)
+
+
 def pytest_collection_modifyitems(config, items):
     """Mark the WebGPU tests.
 
@@ -349,17 +385,24 @@ def pytest_collection_modifyitems(config, items):
 # Failure diagnostics
 # ------------------------------------------------------------------ #
 
-@pytest.hookimpl(hookwrapper=True)
+@pytest.hookimpl(wrapper=True)
 def pytest_runtest_call(item):
     """Start the test's trace chunk, once its page exists (see diagnostics.py).
 
     Also names the test its screenshot comparisons are recorded under
-    (comparisons.py), since the capture helper is not handed its item.
+    (comparisons.py), since the capture helper is not handed its item, and,
+    on a CI run that keeps candidate baselines, fails the test at its end for
+    every frame over its budget or without a baseline
+    (screenshots.frame_failures_at_the_end), so its later frames are captured
+    too.
     """
     diagnostics.start_trace_chunk(item)
     comparisons.current_nodeid = item.nodeid
-    yield
-    comparisons.current_nodeid = None
+    try:
+        with screenshots.frame_failures_at_the_end():
+            return (yield)
+    finally:
+        comparisons.current_nodeid = None
 
 
 @pytest.hookimpl(hookwrapper=True)

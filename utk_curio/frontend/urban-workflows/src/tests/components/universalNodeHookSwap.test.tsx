@@ -2,8 +2,8 @@
  * A node's body starts again when the hook its descriptor holds changes, and
  * only then.
  *
- * A package that ships its own behavior (the Column Filter of
- * `curio.example-ui@1`) registers its hook from a bundle the registry loads for
+ * A package that ships its own behavior (one made with
+ * `scripts/new_package.py --with-ui`) registers its hook from a bundle the registry loads for
  * the open dataflow's packages. Opening such a dataflow by its link, as a reload
  * does, builds the descriptors before that bundle has run: the node mounts with
  * the generic package hook (`usePackageNodeBehavior`), then the bundle registers
@@ -107,7 +107,7 @@ type Pack = Parameters<typeof registerPackageTemplates>[0][number];
 
 /**
  * A package with one node, as `GET /api/packages` lists it. Without a `source`
- * it has no editor and draws its own interface, as the Column Filter does; with
+ * it has no editor and draws its own interface, as a `--with-ui` node does; with
  * one it opens a code editor with that starter.
  */
 function pack(packageId: string, behavior: string, source: string | null = null): Pack {
@@ -162,7 +162,7 @@ function rebuildRegistry(...packs: Pack[]): void {
 
 /**
  * A package's own interface, with state first and hooks of other kinds and in
- * another number than the generic package hook's, as the Column Filter's
+ * another number than the generic package hook's, as a `--with-ui` node's
  * behavior has.
  */
 const useOwnInterface: NodeBehaviorHook = () => {

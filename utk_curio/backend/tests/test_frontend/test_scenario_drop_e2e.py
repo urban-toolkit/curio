@@ -141,7 +141,7 @@ def _source_spec() -> dict:
         "Shadows",
         [
             _node(LOADER, "curio.builtin/data-loading", 0, _grid_code(1)),
-            _node(SCALE, "curio.builtin/computation-analysis", 645, SCALE_CODE),
+            _node(SCALE, "curio.builtin/python-computation", 645, SCALE_CODE),
             _node(MAP, "curio.builtin/autk-grammar", 1290, MAP_CONTENT),
         ],
         [
@@ -491,7 +491,7 @@ def test_a_dropped_scenario_brings_the_packages_its_levers_need(
         username="scenario_packages_e2e",
         project_name="Plain",
         project_spec=_dataflow(
-            "Plain", [_node("plain", "curio.builtin/computation-analysis", 0, "return 1")],
+            "Plain", [_node("plain", "curio.builtin/python-computation", 0, "return 1")],
             packages=["curio.builtin@1"],
         ),
     )
@@ -633,7 +633,7 @@ def test_a_scenario_dropped_into_an_empty_dataflow_keeps_its_box_in_sight(
             "Heights",
             [
                 _node(LOADER, "curio.builtin/data-loading", 0, _grid_code(1)),
-                _node(SCALE, "curio.builtin/computation-analysis", 645, SCALE_CODE),
+                _node(SCALE, "curio.builtin/python-computation", 645, SCALE_CODE),
             ],
             [{"id": "e-load-scale", "source": LOADER, "target": SCALE, "sourceHandle": "out", "targetHandle": "in"}],
             [{"id": SCENARIO, "name": "Twice as tall", "color": "#e86a3c", "nodes": [SCALE]}],
@@ -731,7 +731,7 @@ def test_a_scenario_from_a_project_never_run_runs_its_context_there_and_drops(
     loader = {**_node(LOADER, "curio.builtin/data-loading", 0, _grid_code(1)), "title": "Grid"}
     source = _create_project(current_server, token, "Heights", _dataflow(
         "Heights",
-        [loader, _node(SCALE, "curio.builtin/computation-analysis", 645, SCALE_CODE)],
+        [loader, _node(SCALE, "curio.builtin/python-computation", 645, SCALE_CODE)],
         [{"id": "e-load-scale", "source": LOADER, "target": SCALE, "sourceHandle": "out", "targetHandle": "in"}],
         [{"id": SCENARIO, "name": "Twice as tall", "color": "#e86a3c", "nodes": [SCALE]}],
     ))
@@ -844,7 +844,7 @@ def test_two_scenarios_of_a_set_dragged_one_after_the_other_form_one_set(
     target = session["project"]["id"]
     node_locator(page, OWN).wait_for(state="visible", timeout=45000)
 
-    py = "curio.builtin/computation-analysis"
+    py = "curio.builtin/python-computation"
     edge = lambda s, t, h="in": {"id": f"e-{s}-{t}", "source": s, "target": t, "sourceHandle": "out", "targetHandle": h}  # noqa: E731
     spec = _dataflow(
         "Heights",

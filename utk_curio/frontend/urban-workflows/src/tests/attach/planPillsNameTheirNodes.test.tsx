@@ -9,7 +9,7 @@ import React from "react";
 import { render, screen, within } from "@testing-library/react";
 import { faCircle } from "@fortawesome/free-solid-svg-icons";
 
-const PYTHON = "curio.builtin/computation-analysis@1";
+const PYTHON = "curio.builtin/python-computation@1";
 const LOAD = "02590590-5a1e-4d4b-9c1e-1a2b3c4d5e6f";
 const STATS = "7c1e9f30-2b4d-4e8a-b1c2-3d4e5f6a7b8c";
 // A plan node that is no longer on the canvas.

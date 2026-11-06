@@ -82,11 +82,11 @@ function flowNode(id: string, ran: boolean) {
   const code = `return '${id}'`;
   return {
     id,
-    type: 'curio.builtin/computation-analysis',
+    type: 'curio.builtin/python-computation',
     position: { x: 0, y: 0 },
     data: {
       nodeId: id,
-      nodeType: 'curio.builtin/computation-analysis',
+      nodeType: 'curio.builtin/python-computation',
       code,
       ...(ran ? { executedCode: code, output: { code: 'success', content: '' } } : {}),
     },

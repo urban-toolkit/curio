@@ -286,7 +286,7 @@ class TestADelegatedDocument:
 
     @pytest.mark.parametrize("inputs", [
         {"nodeType": VEGA, "intent": "chart the points"},
-        {"nodeType": "curio.builtin/computation-analysis", "intent": "count"},
+        {"nodeType": "curio.builtin/python-computation", "intent": "count"},
     ])
     def test_another_kind_is_asked_as_before(self, inputs):
         testing_provider.script_chat_capabilities(structured_output=True)

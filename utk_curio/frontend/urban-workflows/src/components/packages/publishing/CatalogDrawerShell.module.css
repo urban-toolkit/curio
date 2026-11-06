@@ -41,6 +41,23 @@
     pointer-events: auto;
 }
 
+/* A pinned drawer stays open while the canvas, the palette and the top bar
+   keep working: the root and the scrim let the pointer through, the scrim is
+   not drawn, and the panel keeps the pointer while it is presented, so a
+   pinned drawer sliding away takes no click. pinnedDrawer sets the attribute,
+   for every drawer. */
+.overlayRoot[data-pinned="true"] {
+    pointer-events: none;
+}
+
+.overlayRootPresented[data-pinned="true"] > .drawer {
+    pointer-events: auto;
+}
+
+.overlayRoot[data-pinned="true"] > .scrim {
+    opacity: 0;
+}
+
 .scrim {
     position: absolute;
     inset: 0;

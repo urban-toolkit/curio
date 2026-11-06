@@ -83,7 +83,7 @@ def test_membership_lists_each_node_s_scenarios_in_the_set_s_order():
 
 
 def _spec():
-    nodes = [{"id": i, "type": "curio.builtin/computation-analysis", "content": "", "x": 0, "y": 0}
+    nodes = [{"id": i, "type": "curio.builtin/python-computation", "content": "", "x": 0, "y": 0}
              for i in ("load", "a", "b", "chart")]
     edges = [{"source": "load", "target": "a"}, {"source": "load", "target": "b"},
              {"source": "a", "target": "chart"}, {"source": "b", "target": "chart"}]

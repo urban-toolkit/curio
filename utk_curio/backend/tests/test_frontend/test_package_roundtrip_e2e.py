@@ -81,8 +81,8 @@ PACKAGE_NAME = "E2E Roundtrip"
 # kind" by matching the node's label against the target package's kinds.
 HEAD_LABEL = "E2E Head"
 
-TRANSFORM_TILE = "#tile-computation-analysis"
-TRANSFORM_TYPE = "curio.builtin/computation-analysis"
+TRANSFORM_TILE = "#tile-python-computation"
+TRANSFORM_TYPE = "curio.builtin/python-computation"
 LOADER_TYPE = "curio.builtin/data-loading"
 
 # The inline output box shows stdout plus "Saved to file: …" - never the return

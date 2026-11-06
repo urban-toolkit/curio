@@ -405,6 +405,28 @@ describe("AgentCatalogDrawer", () => {
     expect(screen.getByRole("button", { name: "Unpin drawer" })).toHaveAttribute("aria-pressed", "true");
   });
 
+  // #1352: pinned, the drawer stays open while the canvas, the palette and the
+  // top bar keep working. Its root carries data-pinned, on which the shell's
+  // stylesheet takes the pointer off the root and the scrim, and its panel is
+  // no longer a modal dialog. Unpinned, it is one, over a scrim.
+  it("pinned, its root lets the page work and its panel is not modal; unpinned, it is modal", () => {
+    const drawer = (pinned: boolean) => (
+      <AgentCatalogDrawer presented projectId="p1" pinned={pinned} onPinToggle={jest.fn()} />
+    );
+    const { container, rerender } = render(drawer(false));
+    const root = container.querySelector("[data-curio-agent-catalog-drawer]");
+    expect(root).not.toHaveAttribute("data-pinned");
+    expect(screen.getByRole("dialog", { name: "Agent Catalog" })).toHaveAttribute("aria-modal", "true");
+
+    rerender(drawer(true));
+    expect(root).toHaveAttribute("data-pinned", "true");
+    expect(screen.getByRole("dialog", { name: "Agent Catalog" })).not.toHaveAttribute("aria-modal");
+
+    rerender(drawer(false));
+    expect(root).not.toHaveAttribute("data-pinned");
+    expect(screen.getByRole("dialog", { name: "Agent Catalog" })).toHaveAttribute("aria-modal", "true");
+  });
+
   it("no card offers a per-agent settings cog, in any scope", async () => {
     // There used to be one per In-dataflow card, opening a run/spend policy
     // editor. Curio no longer caps either, so the editor and its three scopes

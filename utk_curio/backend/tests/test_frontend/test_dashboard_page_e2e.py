@@ -641,7 +641,7 @@ def _controls_spec() -> dict:
             "nodes": [
                 _with_choice(_node(PRODUCER, "curio.builtin/data-loading", 0, ROWS_PRODUCER_CODE),
                              "rows", "Rows", ["three", "five"]),
-                _with_choice(_node(SHAPER, "curio.builtin/computation-analysis", 700, SHAPER_CODE),
+                _with_choice(_node(SHAPER, "curio.builtin/python-computation", 700, SHAPER_CODE),
                              "scale", "Scale", ["one", "ten"]),
                 {**_node(POOL, "curio.builtin/data-pool", 1400), "dashboardPinned": True},
                 _node(CHART, "curio.builtin/vis-vega", 2100, CHART_SPEC),
@@ -1499,12 +1499,11 @@ GPU_COMPUTE_SPEC = json.dumps({"compute": [{
 }]}, indent=2)
 
 #: What the GPU made, read back in Python as the table shows it. An Autark
-#: node hands its layer on as ``{dataType, data}``, the data a FeatureCollection,
-#: on the canvas and on a dashboard alike.
+#: node's one layer reaches Python as its GeoDataFrame, on the canvas and on
+#: a dashboard alike.
 GPU_AFTER_CODE = (
-    "import geopandas as gpd\n"
     "import pandas as pd\n\n"
-    "frame = gpd.GeoDataFrame.from_features(input_0['data']['features'])\n"
+    "frame = input_0\n"
     "return pd.DataFrame({\n"
     "    'count': [int(v) for v in frame['count']],\n"
     "    'doubled': [int(round(float(v))) for v in frame['doubled']],\n"
@@ -1530,7 +1529,7 @@ def _gpu_spec() -> dict:
                 _with_choice(_node(GPU_LOAD, "curio.builtin/data-loading", 0, GPU_LOAD_CODE),
                              "rows", "Rows", ["three", "five"]),
                 _node(GPU_STEP, "curio.builtin/autk-grammar", 700, GPU_COMPUTE_SPEC),
-                _node(GPU_AFTER, "curio.builtin/computation-analysis", 1400, GPU_AFTER_CODE),
+                _node(GPU_AFTER, "curio.builtin/python-computation", 1400, GPU_AFTER_CODE),
                 _node(POOL, "curio.builtin/data-pool", 2100),
             ],
             "edges": [edge(GPU_LOAD, GPU_STEP), edge(GPU_STEP, GPU_AFTER), edge(GPU_AFTER, POOL)],
@@ -1816,7 +1815,7 @@ def _scenario_spec() -> dict:
     def pinned(node: dict) -> dict:
         return {**node, "dashboardPinned": True}
 
-    factor = {**_node(SCN_FACTOR, "curio.builtin/computation-analysis", 0, "return [!! factor !!]\n"), "y": 700}
+    factor = {**_node(SCN_FACTOR, "curio.builtin/python-computation", 0, "return [!! factor !!]\n"), "y": 700}
     factor["metadata"]["widgets"] = [{"name": "factor", "type": "number", "default": 2}]
     edge = lambda source, target, handle="in": {  # noqa: E731
         "id": f"e-{source}-{target}", "source": source, "target": target,
@@ -1832,10 +1831,10 @@ def _scenario_spec() -> dict:
             "nodes": [
                 pinned(_node(SCN_LOAD, "curio.builtin/data-loading", 0, PRODUCER_CODE)),
                 pinned(factor),
-                pinned(_node(SCN_BASE, "curio.builtin/computation-analysis", 700, "return input_0\n")),
-                pinned({**_node(SCN_TALL, "curio.builtin/computation-analysis", 700,
+                pinned(_node(SCN_BASE, "curio.builtin/python-computation", 700, "return input_0\n")),
+                pinned({**_node(SCN_TALL, "curio.builtin/python-computation", 700,
                                 "factor = input_1\nreturn input_0\n"), "y": 700}),
-                pinned(_node(SCN_COMPARE, "curio.builtin/computation-analysis", 1400, "return input_0\n")),
+                pinned(_node(SCN_COMPARE, "curio.builtin/python-computation", 1400, "return input_0\n")),
             ],
             "edges": [
                 edge(SCN_LOAD, SCN_BASE),

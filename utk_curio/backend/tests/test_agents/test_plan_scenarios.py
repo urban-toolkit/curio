@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import copy
 
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 VEGA = "curio.builtin/vis-vega"
 
 

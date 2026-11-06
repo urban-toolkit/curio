@@ -37,7 +37,7 @@ NODES = ("table-node", "bundle-node")
 def _spec(name, *nodes):
     return {"dataflow": {
         "name": name,
-        "nodes": [{"id": node, "type": "curio.builtin/computation-analysis"} for node in nodes],
+        "nodes": [{"id": node, "type": "curio.builtin/python-computation"} for node in nodes],
         "edges": [],
     }}
 

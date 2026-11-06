@@ -91,7 +91,7 @@ describe("trillToNotebook", () => {
   it("emits a cell for every node type, not just the three the importer makes", () => {
     const everyType = [
       NodeType.DATA_LOADING,
-      NodeType.COMPUTATION_ANALYSIS,
+      NodeType.PYTHON_COMPUTATION,
       NodeType.DATA_SUMMARY,
       NodeType.DATA_EXPORT,
       NodeType.DATA_POOL,
@@ -129,7 +129,7 @@ describe("trillToNotebook", () => {
         },
         {
           id: "xform",
-          type: NodeType.COMPUTATION_ANALYSIS,
+          type: NodeType.PYTHON_COMPUTATION,
           content: "df = input_0.copy()\ndf['b'] = df['a'] * 2\nreturn df\n",
         },
       ])
@@ -158,7 +158,7 @@ describe("trillToNotebook", () => {
       spec(
         [
           { id: "src", type: NodeType.DATA_LOADING, content: "return 1\n" },
-          { id: "dst", type: NodeType.COMPUTATION_ANALYSIS, content: "return input_0 + 1\n" },
+          { id: "dst", type: NodeType.PYTHON_COMPUTATION, content: "return input_0 + 1\n" },
         ],
         [["src", "dst"]]
       )
@@ -177,7 +177,7 @@ describe("trillToNotebook", () => {
         [
           { id: "a", type: NodeType.DATA_LOADING, content: "return 1\n" },
           { id: "b", type: NodeType.DATA_LOADING, content: "return 2\n" },
-          { id: "m", type: NodeType.COMPUTATION_ANALYSIS, content: "return input_0, input_1\n" },
+          { id: "m", type: NodeType.PYTHON_COMPUTATION, content: "return input_0, input_1\n" },
         ],
         [
           ["a", "m", "in_1"],
@@ -280,8 +280,8 @@ describe("trillToNotebook", () => {
     const nb = trillToNotebook(
       spec(
         [
-          { id: "a", type: NodeType.COMPUTATION_ANALYSIS, content: "return input_0\n" },
-          { id: "b", type: NodeType.COMPUTATION_ANALYSIS, content: "return input_0\n" },
+          { id: "a", type: NodeType.PYTHON_COMPUTATION, content: "return input_0\n" },
+          { id: "b", type: NodeType.PYTHON_COMPUTATION, content: "return input_0\n" },
         ],
         [
           ["a", "b"],
@@ -307,7 +307,7 @@ describe("trillToNotebook with inputs named input_k", () => {
       spec(
         [
           { id: "src", type: NodeType.DATA_LOADING, content: "return 1\n" },
-          { id: "dst", type: NodeType.COMPUTATION_ANALYSIS, content: "return input_0 + 1\n" },
+          { id: "dst", type: NodeType.PYTHON_COMPUTATION, content: "return input_0 + 1\n" },
         ],
         [["src", "dst"]]
       )
@@ -324,7 +324,7 @@ describe("trillToNotebook with inputs named input_k", () => {
         [
           { id: "a", type: NodeType.DATA_LOADING, content: "return 1\n" },
           { id: "b", type: NodeType.DATA_LOADING, content: "return 2\n" },
-          { id: "m", type: NodeType.COMPUTATION_ANALYSIS, content: "return input_0, input_1, [!! input_2 !!]\n" },
+          { id: "m", type: NodeType.PYTHON_COMPUTATION, content: "return input_0, input_1, [!! input_2 !!]\n" },
         ],
         [
           ["a", "m", "in_2"],
@@ -343,7 +343,7 @@ describe("trillToNotebook with inputs named input_k", () => {
       spec(
         [
           { id: "a", type: NodeType.DATA_LOADING, content: "return 1\n" },
-          { id: "m", type: NodeType.COMPUTATION_ANALYSIS, content: 'return f"{input_0} and {input_1}, not input_2"\n' },
+          { id: "m", type: NodeType.PYTHON_COMPUTATION, content: 'return f"{input_0} and {input_1}, not input_2"\n' },
         ],
         [["a", "m"]]
       )
@@ -359,8 +359,8 @@ describe("trillToNotebook with a chart that reads its inputs stacked", () => {
     const flow = spec(
       [
         { id: "load", type: NodeType.DATA_LOADING, content: "return 1\n" },
-        { id: "base", type: NodeType.COMPUTATION_ANALYSIS, content: "return input_0\n" },
-        { id: "free", type: NodeType.COMPUTATION_ANALYSIS, content: "return input_0\n", title: "Free node" } as NodeSpec,
+        { id: "base", type: NodeType.PYTHON_COMPUTATION, content: "return input_0\n" },
+        { id: "free", type: NodeType.PYTHON_COMPUTATION, content: "return input_0\n", title: "Free node" } as NodeSpec,
         { id: "v", type: NodeType.VIS_VEGA, content: chartSpec },
       ],
       [

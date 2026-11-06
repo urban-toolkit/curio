@@ -47,7 +47,7 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
           className={`${styles.iconBtn} ${pinned ? styles.iconBtnActive : ""}`}
           aria-label={pinned ? "Unpin drawer" : "Pin drawer open"}
           aria-pressed={pinned}
-          data-tooltip={pinned ? "Unpin drawer" : "Pin drawer (scrim won't close)"}
+          data-tooltip={pinned ? "Unpin drawer" : "Keep open while you use the canvas"}
           onClick={onPinToggle}
         >
           <FontAwesomeIcon icon={faThumbtack} aria-hidden />

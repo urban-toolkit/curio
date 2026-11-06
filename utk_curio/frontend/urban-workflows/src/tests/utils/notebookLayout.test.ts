@@ -192,7 +192,7 @@ describe("the height of a cell's output", () => {
 
   test("a Data Export is a code node: its box is a code node's", () => {
     expect(notebookOutputBox("curio.builtin/data-export@1")).toEqual(
-      notebookOutputBox("curio.builtin/computation-analysis@1"),
+      notebookOutputBox("curio.builtin/python-computation@1"),
     );
     expect(notebookOutputBox("curio.builtin/data-export@1")).toEqual({ height: 360, overflow: "auto" });
   });

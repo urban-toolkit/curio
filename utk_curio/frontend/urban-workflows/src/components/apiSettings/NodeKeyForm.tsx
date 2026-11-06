@@ -40,7 +40,7 @@ export function formatUsed(ts: number | null): string {
  * The form for a key node code reads by name, as `curio_secret("<name>")`,
  * sent only to its host. The key is entered once through a masked, write-only
  * field and never read back. Opened from API keys' "Add configuration", from a
- * saved key's Replace, or from a card's "Add key for <host>" with the host
+ * saved key's Edit, or from a card's "Add key for <host>" with the host
  * filled in.
  */
 export const NodeKeyForm: React.FC<{

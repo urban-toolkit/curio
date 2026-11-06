@@ -106,7 +106,7 @@ def _hold_the_package(user):
 
 
 def _code_node(node_id, code):
-    return {"id": node_id, "type": "curio.builtin/computation-analysis", "content": f"# node {node_id}\n{code}"}
+    return {"id": node_id, "type": "curio.builtin/python-computation", "content": f"# node {node_id}\n{code}"}
 
 
 def _create(client, token):

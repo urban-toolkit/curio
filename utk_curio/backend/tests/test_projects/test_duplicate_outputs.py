@@ -23,7 +23,7 @@ from utk_curio.backend.app.projects.schemas import OutputRef, ProjectCreate
 def _spec(name: str) -> dict:
     return {"dataflow": {
         "name": name,
-        "nodes": [{"id": "py-1", "type": "curio.builtin/computation-analysis"}],
+        "nodes": [{"id": "py-1", "type": "curio.builtin/python-computation"}],
         "edges": [],
     }}
 

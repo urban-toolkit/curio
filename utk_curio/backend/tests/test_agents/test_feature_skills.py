@@ -280,7 +280,7 @@ def test_dataflow_read_lists_each_nodes_selection_tags(tmp_curio):
     spec = {"dataflow": {"nodes": [
         {"id": "chart", "type": "curio.builtin/vis-vega", "content": "{}"},
         {"id": "map", "type": "curio.builtin/autk-grammar", "content": "{}"},
-        {"id": "pick", "type": "curio.builtin/computation-analysis",
+        {"id": "pick", "type": "curio.builtin/python-computation",
          "content": "return input_0[input_0['osm_id'].isin([!! selection picked !!])]",
          "metadata": {"selections": [
              {"name": "picked", "node": "chart", "column": "osm_id", "ids": [987654321, 987654322]},

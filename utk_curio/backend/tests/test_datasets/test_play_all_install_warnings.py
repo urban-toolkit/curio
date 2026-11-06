@@ -136,7 +136,7 @@ def _analysis_spec(node_id):
     return {
         "dataflow": {
             "datasets": [],
-            "nodes": [{"id": node_id, "type": "curio.builtin/computation-analysis"}],
+            "nodes": [{"id": node_id, "type": "curio.builtin/python-computation"}],
         }
     }
 

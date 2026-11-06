@@ -34,7 +34,7 @@ from .utils import (
     watch_run_all,
 )
 
-PYTHON = "curio.builtin/computation-analysis"
+PYTHON = "curio.builtin/python-computation"
 SAVED = "kept-output"
 UNSAVED = "unsaved-output"
 

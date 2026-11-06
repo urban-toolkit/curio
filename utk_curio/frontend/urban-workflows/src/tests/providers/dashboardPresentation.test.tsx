@@ -134,7 +134,7 @@ async function flush() {
 /** Build a producer feeding a pinned chart, the shape a dashboard is made of. */
 async function addPinnedChain(saveOutputDataset?: boolean) {
   await act(async () => {
-    api.addNode(makeNode('py', NodeType.COMPUTATION_ANALYSIS,
+    api.addNode(makeNode('py', NodeType.PYTHON_COMPUTATION,
       saveOutputDataset === undefined ? {} : { saveOutputDataset }), undefined, false);
     api.addNode(makeNode('chart', NodeType.VIS_VEGA, { dashboardPinned: true }), undefined, false);
   });
@@ -310,7 +310,7 @@ describe('which outputs get saved', () => {
   test('a producer that feeds nothing pinned is left alone', async () => {
     renderFlow();
     await act(async () => {
-      api.addNode(makeNode('py', NodeType.COMPUTATION_ANALYSIS, { saveOutputDataset: false }), undefined, false);
+      api.addNode(makeNode('py', NodeType.PYTHON_COMPUTATION, { saveOutputDataset: false }), undefined, false);
     });
     await flush();
 
@@ -358,7 +358,7 @@ describe('pinning', () => {
   test('it says which outputs will be saved', async () => {
     renderFlow();
     await act(async () => {
-      api.addNode(makeNode('py', NodeType.COMPUTATION_ANALYSIS, { templateName: 'Load trips' }), undefined, false);
+      api.addNode(makeNode('py', NodeType.PYTHON_COMPUTATION, { templateName: 'Load trips' }), undefined, false);
       api.addNode(makeNode('chart', NodeType.VIS_VEGA), undefined, false);
     });
     await flush();
@@ -391,7 +391,7 @@ describe('restoring outputs', () => {
   test('hydration can be told which edges to use', async () => {
     renderFlow(true);
     await act(async () => {
-      api.addNode(makeNode('py', NodeType.COMPUTATION_ANALYSIS), undefined, false);
+      api.addNode(makeNode('py', NodeType.PYTHON_COMPUTATION), undefined, false);
       api.addNode(makeNode('chart', NodeType.VIS_VEGA, { dashboardPinned: true }), undefined, false);
     });
     await flush();

@@ -42,7 +42,7 @@ FRAMES = "collaboration-doc"
 _TOAST = '[aria-label="Notifications"] [role="status"]:has-text("{}")'
 CODE_NODE = "doc-code"
 SPEC_NODE = "doc-other"
-TYPE = "curio.builtin/computation-analysis"
+TYPE = "curio.builtin/python-computation"
 OWNER, EDITOR, WATCHER = "doc_owner_e2e", "doc_editor_e2e", "doc_watcher_e2e"
 SCENARIO = "doc-scenario"
 

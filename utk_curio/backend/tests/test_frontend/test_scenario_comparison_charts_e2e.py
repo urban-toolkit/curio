@@ -83,7 +83,7 @@ DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "scenario-compa
 VEGA_LITE = Path(REPO_ROOT) / "packages" / "curio.vega-lite@1"
 TEST_NAME = "test_the_nine_charts_draw_their_scenarios_with_no_network"
 LOAD = "curio.builtin/data-loading"
-KEEP = "curio.builtin/computation-analysis"
+KEEP = "curio.builtin/python-computation"
 #: The two charts whose scenarios color only their axis labels.
 STAGES = "data.curio.example-building-carbon"
 WEIGHTS = "data.curio.example-bike-route-factors"

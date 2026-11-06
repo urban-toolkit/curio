@@ -484,7 +484,7 @@ def test_a_table_the_document_does_not_draw_leaves_the_others_whole(
     spec = _spec(TWO_CITIES_LOADER, b_only)
     for node in spec["dataflow"]["nodes"]:
         if node["id"] == LOADER_ID:
-            node["type"] = "curio.builtin/computation-analysis"
+            node["type"] = "curio.builtin/python-computation"
     _open(page, app_frontend, current_server, username="autark_input_two_cities", spec=spec)
     adapter = webgpu_adapter(page)
     assert adapter, f"drawing an Autark map needs a WebGPU adapter, which CI's GPU job has: {adapter}"

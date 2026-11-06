@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/17-autark-geodataframe-maps.json",
-    "sha256": "251dc5222ee59562c1420967bccdf3fe80e43727b27d2e62771001b35f9a7524",
+    "sha256": "89fd0271bf3e18c3d147e742f4fa48dedb55603432d5554e0b2fe9f2c188df76",
     "walkthrough": "docs/examples/17-autark-geodataframe-maps.md"
   },
   "prompt": "Load the Chicago ZIP boundary polygons from the Data Catalog, keep the downtown ZIPs (the Loop and its neighbours), and add each ZIP's area in square kilometres, measured in a projected coordinate system. Draw the frame as an Autark map coloured by area, and next to it the same map in Vega-Lite. Then show the same pair of maps three more times: once from a plain DataFrame that still holds the geometry column, once from a DataFrame with the geometry dropped (both views should say there is nothing to draw), and once from the frame reprojected to Illinois East. Also make a second layer with a point at the centre of each ZIP and draw the polygons and the points together on one Autark map. Finally add a bar chart of area by ZIP, linked to the first Autark map so that hovering a bar highlights its ZIP.",
@@ -18,6 +18,13 @@
   },
   "expected": {
     "nodes": [
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
       {
         "ref": "visualization1",
         "type": "curio.builtin/autk-grammar",
@@ -47,45 +54,52 @@
         "hasContent": true
       },
       {
-        "ref": "visualization5",
-        "type": "curio.builtin/autk-grammar",
-        "role": "visualization",
-        "executable": false,
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis2",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis3",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis4",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "loader1",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
-        "executable": true,
+        "ref": "visualization9",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization10",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
         "hasContent": true
       },
       {
@@ -108,58 +122,9 @@
         "role": "visualization",
         "executable": false,
         "hasContent": true
-      },
-      {
-        "ref": "visualization9",
-        "type": "curio.builtin/vis-vega",
-        "role": "visualization",
-        "executable": false,
-        "hasContent": true
-      },
-      {
-        "ref": "visualization10",
-        "type": "curio.builtin/vis-vega",
-        "role": "visualization",
-        "executable": false,
-        "hasContent": true
       }
     ],
     "edges": [
-      {
-        "from": "analysis1",
-        "to": "visualization1",
-        "kind": "data"
-      },
-      {
-        "from": "analysis2",
-        "to": "visualization2",
-        "kind": "data"
-      },
-      {
-        "from": "analysis2",
-        "to": "visualization6",
-        "kind": "data"
-      },
-      {
-        "from": "analysis3",
-        "to": "visualization3",
-        "kind": "data"
-      },
-      {
-        "from": "analysis3",
-        "to": "visualization7",
-        "kind": "data"
-      },
-      {
-        "from": "analysis4",
-        "to": "visualization4",
-        "kind": "data"
-      },
-      {
-        "from": "analysis4",
-        "to": "visualization8",
-        "kind": "data"
-      },
       {
         "from": "loader1",
         "to": "visualization5",
@@ -193,6 +158,41 @@
       {
         "from": "loader1",
         "to": "visualization10",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "visualization8",
         "kind": "data"
       },
       {

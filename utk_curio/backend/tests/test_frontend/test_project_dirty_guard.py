@@ -56,7 +56,7 @@ EXAMPLE = "01-vega-lite-chained-transforms.json"
 #: A built-in left-rail tile, always present. Dragging one onto the canvas is the
 #: suite's proven way to make a genuine edit (``drag_to_canvas``); a raw mouse
 #: drag of an existing node is far more brittle and tests nothing extra here.
-ANALYSIS_TILE = "#tile-computation-analysis"
+ANALYSIS_TILE = "#tile-python-computation"
 
 
 def _example_spec() -> dict:

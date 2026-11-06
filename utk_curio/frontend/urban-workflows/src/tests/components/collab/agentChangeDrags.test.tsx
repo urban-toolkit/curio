@@ -35,7 +35,7 @@ import {
 const NOW = 1_700_000_000_000;
 const BOX = { left: 60, top: 48 };
 const MS = 500;
-const TYPE = "curio.builtin/computation-analysis";
+const TYPE = "curio.builtin/python-computation";
 
 type Store = ReturnType<typeof useStoreApi>;
 
@@ -228,7 +228,7 @@ describe("a change on a canvas no doc binds plays its drags before it lands", ()
 describe("a drag names a node type as the dataflow does", () => {
     test("without its major, and starts at its tile, which names it with its major", () => {
         const descriptor = {
-            id: `${TYPE}@1`, label: "Computation Analysis", category: "computation", icon: faUpload,
+            id: `${TYPE}@1`, label: "Python Computation", category: "computation", icon: faUpload,
             package: { packageId: "curio.builtin" },
         } as unknown as NodeDescriptor;
         const mine = new Awareness(new Y.Doc());
@@ -244,7 +244,7 @@ describe("a drag names a node type as the dataflow does", () => {
             </DataflowDocContext.Provider>,
         );
         boxed(document.getElementById("builtin-palette"), 50, 150, 112, 50);
-        boxed(document.getElementById("tile-computation-analysis"), 172, 220, 45, 45);
+        boxed(document.getElementById("tile-python-computation"), 172, 220, 45, 45);
         expect(document.querySelectorAll(`[data-palette-item="${TYPE}@1"]`)).toHaveLength(1);
 
         // The agent's state, as the server relays it: the plan's node type, as

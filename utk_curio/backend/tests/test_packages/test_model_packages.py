@@ -155,7 +155,7 @@ def _capture_sandbox(monkeypatch):
 def _run_loader(client, token):
     return client.post("/processPythonCode", headers={"Authorization": f"Bearer {token}"}, json={
         "code": f'model = curio_load_model("{MODEL_ID}")\nreturn 1',
-        "nodeType": "COMPUTATION_ANALYSIS",
+        "nodeType": "PYTHON_COMPUTATION",
         "input": "",
     })
 

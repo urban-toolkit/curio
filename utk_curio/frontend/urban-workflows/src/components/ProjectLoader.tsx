@@ -183,6 +183,11 @@ export const ProjectLoader: React.FC<{
     // fired before the load lands waits for it instead of reading the empty
     // flow state as "never saved" and creating a second dataflow (#340).
     beginProjectLoad(id);
+    // Aborted once the route leaves this dataflow before its load is in (the
+    // cleanup below), and the load then stops wherever it has got to.
+    const opening = new AbortController();
+    const { signal } = opening;
+    let settled = false;
 
     /** Apply a loaded project. */
     const applyResult = (
@@ -252,6 +257,7 @@ export const ProjectLoader: React.FC<{
       } catch {
         /* loader continues; descriptor-miss surfaces per-node, not as a hard stop */
       }
+      if (signal.aborted) return;
       // A standalone dashboard was served with its spec and its rows inside it,
       // so there is nothing to load. Taken before the request, not after a
       // failure: the point of the page is that it never reaches the network.
@@ -268,13 +274,17 @@ export const ProjectLoader: React.FC<{
       // it gets the page's own data like anyone else.
       const embedded = getEmbeddedDashboard();
       if (embedded) {
-        if (await mayEditServedDashboard()) {
+        const mayEdit = await mayEditServedDashboard();
+        if (signal.aborted) return;
+        if (mayEdit) {
           try {
-            const result = await loadProject(id);
+            const result = await loadProject(id, { signal });
+            if (signal.aborted) return;
             applyResult(result, { trusted: true });
             setLoadState("loaded");
             return;
           } catch (ownerErr) {
+            if (signal.aborted) return;
             console.error("Failed to load the dashboard as its owner:", ownerErr);
           }
         }
@@ -300,13 +310,16 @@ export const ProjectLoader: React.FC<{
         // A canvas opens with the results it was left with, each node its
         // owner's runs ran showing its newest kept result; a dashboard with
         // what was saved, and its viewers' runs (useDashboardRun).
-        const result = await loadProject(id, { lastResults: !presentation });
+        const result = await loadProject(id, { lastResults: !presentation, signal });
+        if (signal.aborted) return;
         applyResult(result, { trusted: true });
         setLoadState("loaded");
         // The dataflow's last run on the server, if it is still going or
         // waits for a tab. Canvas only.
         if (!presentation) void attachLatestRunRef.current(id);
       } catch (err) {
+        // Not a failure: the page left the dataflow, and says nothing of it.
+        if (signal.aborted) return;
         // 404 from the owner-scoped endpoint means either the project doesn't
         // exist or the current user isn't its owner. Try the shared (link-based)
         // endpoint before giving up — it's how share URLs work for visitors.
@@ -323,11 +336,13 @@ export const ProjectLoader: React.FC<{
             // A canvas of an editor the owner invited opens with the results
             // his own runs kept, as hers opens with hers; anyone else, and a
             // dashboard, with the saved outputs.
-            const result = await loadSharedProject(id, { lastResults: !presentation });
+            const result = await loadSharedProject(id, { lastResults: !presentation, signal });
+            if (signal.aborted) return;
             applyResult(result, { trusted: false });
             openedFromLink = id;
             setLoadState("loaded");
           } catch (sharedErr) {
+            if (signal.aborted) return;
             console.error("Failed to load shared project:", sharedErr);
             setLoadState("failed");
             // Two different failures land here: the shared endpoint refusing
@@ -363,7 +378,23 @@ export const ProjectLoader: React.FC<{
       // side of it the canvas carries the stored spec: a save that was waiting
       // then persists this dataflow rather than the empty canvas it would have
       // caught a moment earlier, which would be a wipe rather than a fork.
-    })().finally(() => settleProjectLoad(id));
+    })().finally(() => {
+      settled = true;
+      settleProjectLoad(id);
+    });
+
+    // The route left this dataflow before its load was in (File > New, File
+    // > Load, another dataflow): nothing the load fetches reaches the page.
+    // Its answer would put this dataflow back on a canvas that is now
+    // another's, and that canvas's runs would go to this one (run
+    // 42191681614). The page opens nothing meanwhile, and coming back to
+    // this dataflow opens it.
+    return () => {
+      if (settled) return;
+      opening.abort();
+      if (loaded.current === id) loaded.current = null;
+      setLoadState("idle");
+    };
   }, [id]);
 
   // File > Load (#751): the menu left the open dataflow the way File > New

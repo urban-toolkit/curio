@@ -34,7 +34,7 @@ NB = "agent.curio.node-builder@1"
 DFB = "agent.curio.dataflow-builder@1"
 AUTK = "curio.builtin/autk-grammar"
 VEGA = "curio.builtin/vis-vega"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 SKILL = "dashboards"
 MESSAGE = "dashboards.tile-loads-own-data"
 #: The account and the dataflow the check is asked about directly.

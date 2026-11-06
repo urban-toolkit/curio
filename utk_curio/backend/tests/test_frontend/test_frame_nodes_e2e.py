@@ -233,8 +233,8 @@ def _spec() -> dict:
             "provenance_id": "Frame nodes",
             "nodes": [
                 node(NEAR, "curio.builtin/data-loading", 0, "return 1\n"),
-                node(MIDDLE, "curio.builtin/computation-analysis", 2400, "return input_0\n"),
-                node(FAR, "curio.builtin/computation-analysis", 4800, "return input_0\n"),
+                node(MIDDLE, "curio.builtin/python-computation", 2400, "return input_0\n"),
+                node(FAR, "curio.builtin/python-computation", 4800, "return input_0\n"),
             ],
             "edges": [],
         }

@@ -632,10 +632,10 @@ DRAWER_AGENTS = '[data-curio-agent-catalog-drawer="true"]'
 BUILTIN_TILES: tuple[str, ...] = (
     "data-loading",
     "data-export",
+    "data-summary",
     "spatial-join",
     "data-pool",
-    "computation-analysis",
-    "data-summary",
+    "python-computation",
     "js-computation",
     "autk-grammar",
     "vis-vega",

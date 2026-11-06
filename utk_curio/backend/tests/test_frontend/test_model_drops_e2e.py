@@ -125,7 +125,7 @@ def _relief_code(model_id: str) -> str:
 
 def _one_node(code: str) -> dict:
     return {"dataflow": {"name": "Model drops", "task": "", "edges": [], "nodes": [{
-        "id": NODE, "type": "curio.builtin/computation-analysis", "x": 0, "y": 0,
+        "id": NODE, "type": "curio.builtin/python-computation", "x": 0, "y": 0,
         "content": code, "in": "DEFAULT", "out": "DEFAULT", "goal": "",
         "metadata": {"keywords": []},
     }]}}

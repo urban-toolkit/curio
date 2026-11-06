@@ -4,6 +4,7 @@ Catches drift in [docs/examples/0X-*.json] without running the browser,
 complementing the full Playwright e2e in test_workflows.py.
 """
 
+import ast
 import json
 import os
 import re
@@ -25,13 +26,13 @@ def _example_json_paths() -> list[str]:
 # (basename, expected_nodes, expected_edges, min_type_counts, requires_interaction_edge)
 EXAMPLE_INVARIANTS = [
     ("01-vega-lite-chained-transforms.json", 6, 5,
-     {"curio.builtin/data-loading": 1, "curio.builtin/computation-analysis": 3, "curio.builtin/vis-vega": 2}, False),
+     {"curio.builtin/data-loading": 1, "curio.builtin/python-computation": 3, "curio.builtin/vis-vega": 2}, False),
     ("02-vega-lite-spatial-density.json", 8, 6,
      {"curio.builtin/data-pool": 1, "curio.builtin/vis-vega": 2}, False),
     ("03-vega-lite-linked-temporal-charts.json", 4, 3,
      {"curio.builtin/vis-vega": 2}, False),
     ("04-vega-lite-multi-flow-dashboard.json", 21, 23,
-     {"curio.builtin/computation-analysis": 3, "curio.builtin/vis-vega": 2}, False),
+     {"curio.builtin/python-computation": 3, "curio.builtin/vis-vega": 2}, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, 22,
      {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
     # Its comparisons are a Vega-Lite Bars chart over a Roads node per scenario and a
@@ -39,7 +40,7 @@ EXAMPLE_INVARIANTS = [
     # Its Map Editor node feeds a map of the buildings and is linked to it.
     ("06-back-bay-road-sunlight.json", 16, 19,
      {"curio.builtin/autk-grammar": 9, "curio.builtin/data-pool": 1,
-      "curio.builtin/computation-analysis": 4, "curio.builtin/edit-features": 1,
+      "curio.builtin/python-computation": 4, "curio.builtin/edit-features": 1,
       "curio.vega-lite/bars": 1}, True),
     ("07-autark-gpu-shader.json", 4, 4,
      {"curio.builtin/autk-grammar": 4}, True),
@@ -58,13 +59,13 @@ EXAMPLE_INVARIANTS = [
     ("11-autark-pbf-loading.json", 3, 3,
      {"curio.builtin/autk-grammar": 3}, True),
     ("12-vega-lite-geodataframe-maps.json", 5, 4,
-     {"curio.builtin/data-loading": 1, "curio.builtin/computation-analysis": 1,
+     {"curio.builtin/data-loading": 1, "curio.builtin/python-computation": 1,
       "curio.builtin/vis-vega": 3}, False),
     ("13-vega-lite-geometry-columns.json", 14, 13,
-     {"curio.builtin/data-loading": 1, "curio.builtin/computation-analysis": 6,
+     {"curio.builtin/data-loading": 1, "curio.builtin/python-computation": 6,
       "curio.builtin/vis-vega": 7}, False),
     ("14-vega-lite-crs-and-geometry-types.json", 15, 14,
-     {"curio.builtin/data-loading": 1, "curio.builtin/computation-analysis": 7,
+     {"curio.builtin/data-loading": 1, "curio.builtin/python-computation": 7,
       "curio.builtin/vis-vega": 7}, False),
     ("15-vega-lite-spec-forms-and-catalogs.json", 12, 10,
      {"curio.builtin/data-loading": 3, "curio.builtin/spatial-join": 1,
@@ -72,7 +73,7 @@ EXAMPLE_INVARIANTS = [
     ("16-simple-view-tables-and-images.json", 4, 2,
      {"curio.builtin/data-loading": 2, "curio.builtin/vis-simple": 2}, False),
     ("17-autark-geodataframe-maps.json", 15, 15,
-     {"curio.builtin/data-loading": 1, "curio.builtin/computation-analysis": 4,
+     {"curio.builtin/data-loading": 1, "curio.builtin/python-computation": 4,
       "curio.builtin/autk-grammar": 5, "curio.builtin/vis-vega": 5}, True),
     ("18-storage-orthorectified-imagery.json", 6, 5,
      {"curio.builtin/data-loading": 1, "curio.media/mosaic-rasters": 1,
@@ -81,7 +82,7 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/data-loading": 1, "curio.builtin/vis-simple": 1,
       "curio.builtin/vis-vega": 1}, False),
     ("20-storage-folder-of-csv-files.json", 5, 4,
-     {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
+     {"curio.builtin/data-loading": 2, "curio.builtin/python-computation": 1,
       "curio.builtin/vis-vega": 2}, False),
     ("21-storage-photos-and-videos.json", 5, 4,
      {"curio.builtin/data-loading": 1, "curio.media/video-frames": 1,
@@ -90,7 +91,7 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/data-loading": 1, "curio.media/split-audio": 1,
       "curio.builtin/vis-simple": 1, "curio.builtin/vis-vega": 1}, False),
     ("23-storage-folder-of-different-files.json", 4, 3,
-     {"curio.builtin/data-loading": 2, "curio.builtin/computation-analysis": 1,
+     {"curio.builtin/data-loading": 2, "curio.builtin/python-computation": 1,
       "curio.builtin/vis-vega": 1}, False),
     # Rasterize Buildings returns one raster, so no node picks it out (#819).
     # It and the Raster Calculator are Rasterization's (curio.rasterization@1).
@@ -100,16 +101,29 @@ EXAMPLE_INVARIANTS = [
       "curio.rasterization/raster-calculator": 1, "curio.builtin/autk-grammar": 3}, False),
     # #576: one Spatial Join per operation, plus two over a point on an edge.
     ("25-spatial-join-operations.json", 25, 28,
-     {"curio.builtin/data-loading": 6, "curio.builtin/computation-analysis": 1,
+     {"curio.builtin/data-loading": 6, "curio.builtin/python-computation": 1,
       "curio.builtin/spatial-join": 9, "curio.builtin/vis-vega": 7,
       "curio.builtin/vis-simple": 2}, False),
     # #819: one node fed by several others in every kind that takes several
     # inputs, one input a tuple from another Python node.
     ("26-several-inputs.json", 10, 14,
-     {"curio.builtin/data-loading": 3, "curio.builtin/computation-analysis": 3,
+     {"curio.builtin/data-loading": 3, "curio.builtin/python-computation": 3,
       "curio.builtin/js-computation": 1,
       "curio.builtin/vis-vega": 1, "curio.builtin/autk-grammar": 1,
       "curio.builtin/data-pool": 1}, False),
+    # PyTorch on the GPU: the Python Computation nodes run torch.
+    ("27-pytorch-shape-classifier.json", 5, 4,
+     {"curio.builtin/data-loading": 2, "curio.builtin/python-computation": 1,
+      "curio.builtin/vis-simple": 1, "curio.builtin/vis-vega": 1}, False),
+    ("28-pytorch-training-on-the-gpu.json", 4, 3,
+     {"curio.builtin/data-loading": 1, "curio.builtin/python-computation": 1,
+      "curio.builtin/vis-simple": 1, "curio.builtin/vis-vega": 1}, False),
+    ("29-pytorch-street-photos.json", 4, 3,
+     {"curio.builtin/data-loading": 1, "curio.builtin/python-computation": 1,
+      "curio.builtin/vis-simple": 1, "curio.builtin/vis-vega": 1}, False),
+    ("30-pytorch-sidewalk-clusters.json", 6, 5,
+     {"curio.builtin/data-loading": 1, "curio.builtin/python-computation": 3,
+      "curio.builtin/vis-vega": 1, "curio.builtin/autk-grammar": 1}, False),
 ]
 
 
@@ -133,6 +147,8 @@ FAN_IN_NODES = {
     # #819: two Python nodes (one with three inputs), JS Computation,
     # Vega-Lite, Autark and Data Pool.
     "26-several-inputs.json": 6,
+    # The network: the pictures on "in", its weights on "in_1".
+    "27-pytorch-shape-classifier.json": 1,
 }
 
 
@@ -235,6 +251,49 @@ def test_example_documented_invariants(
             f"brushing, got 0. Edge types: "
             f"{sorted({e.get('type') or 'data' for e in edges})}"
         )
+
+
+def _definitions(basename: str, node_id: str) -> dict[str, str]:
+    """The top-level functions and classes of one node's code, as AST dumps by name."""
+    with open(os.path.join(EXAMPLES_DIR, basename), encoding="utf-8") as handle:
+        nodes = json.load(handle)["dataflow"]["nodes"]
+    code = next(node["content"] for node in nodes if node["id"] == node_id)
+    return {
+        statement.name: ast.dump(statement)
+        for statement in ast.parse(code).body
+        if isinstance(statement, (ast.FunctionDef, ast.ClassDef))
+    }
+
+
+def test_examples_27_and_28_draw_one_kind_of_picture_for_one_network():
+    """Example 28 trains example 27's network on pictures drawn as 27 draws
+    them, and ``scripts/build_example_shape_classifier.py`` trains the weights 27
+    ships with 27's own ``draw`` and ``TinyCNN``: one drawing and one network."""
+    pictures_27 = _definitions("27-pytorch-shape-classifier.json", "shape-pictures")
+    pictures_28 = _definitions("28-pytorch-training-on-the-gpu.json", "training-pictures")
+    network_27 = _definitions("27-pytorch-shape-classifier.json", "shape-classifier")
+    network_28 = _definitions("28-pytorch-training-on-the-gpu.json", "training-run")
+    assert pictures_27["draw"] == pictures_28["draw"]
+    assert pictures_27["as_data_uri"] == pictures_28["as_data_uri"]
+    assert network_27["TinyCNN"] == network_28["TinyCNN"]
+    assert network_27["pixels"] == network_28["pixels"]
+
+
+def test_example_27s_weights_are_the_arrays_its_network_takes():
+    """``docs/examples/data/shape-cnn.npz`` holds float32 arrays named as the
+    network's ``state_dict`` names them, in its layers' shapes, and nothing
+    ``np.load`` needs a pickle for."""
+    import numpy as np
+
+    weights = np.load(os.path.join(EXAMPLES_DIR, "data", "shape-cnn.npz"), allow_pickle=False)
+    assert {name: weights[name].shape for name in weights.files} == {
+        "features.0.weight": (16, 3, 3, 3), "features.0.bias": (16,),
+        "features.2.weight": (32, 16, 3, 3), "features.2.bias": (32,),
+        "features.4.weight": (32, 32, 3, 3), "features.4.bias": (32,),
+        "features.6.weight": (32, 32, 3, 3), "features.6.bias": (32,),
+        "classify.weight": (3, 32), "classify.bias": (3,),
+    }
+    assert {weights[name].dtype for name in weights.files} == {np.dtype("float32")}
 
 
 #: The examples whose two views link directly (owner, 2026-10-21): one
@@ -412,7 +471,7 @@ def test_example_06_is_three_scenarios_over_one_context():
     for box, roads, compute in zip((baseline, twice, towers), WHATIF_ROADS, computes):
         assert box["nodes"][-1] == roads, box["id"]
         node = nodes[roads]
-        assert (node["type"], node["title"]) == ("curio.builtin/computation-analysis", "Roads"), roads
+        assert (node["type"], node["title"]) == ("curio.builtin/python-computation", "Roads"), roads
         assert node["content"].endswith("return [!! input_0:table_osm_roads !!]\n"), node["content"]
         assert node["content"] == nodes[WHATIF_ROADS[0]]["content"], roads
         assert [(e["source"], e.get("targetHandle") or "in") for e in flow["edges"] if e["target"] == roads] == [
@@ -450,7 +509,7 @@ def test_example_06_is_three_scenarios_over_one_context():
     # change, on a diverging scale centered on no change, under the grammar's
     # title.
     change = nodes[WHATIF_CHANGE]
-    assert (change["type"], change["title"]) == ("curio.builtin/computation-analysis", "Sunlight change")
+    assert (change["type"], change["title"]) == ("curio.builtin/python-computation", "Sunlight change")
     assert {e.get("targetHandle"): e["source"] for e in flow["edges"] if e["target"] == WHATIF_CHANGE} == {
         "in": "whatif-baseline-map", "in_1": "whatif-modified-map",
     }
@@ -527,15 +586,18 @@ def test_example_07_drives_compute_gpgpu():
 #: extracts are consumed by autk-grammar ``pbfFileUrl`` specs, which take a URL
 #: the *browser* fetches from the unauthenticated ``/file/`` route, not a Python
 #: path a loader can resolve by dataset id -- and ``.pbf`` is not even a catalog
-#: format. The Niteroi raster belongs to the same Autark example. ImageTest/ is a
-#: directory the image fixture globs, and the remaining entries serve only the
-#: legacy ``docs/examples/dataflows`` fixtures.
+#: format. The Niteroi raster belongs to the same Autark example. Example 27's
+#: network weights are a ``.npz`` its node reads with ``np.load``: neither a
+#: catalog format nor a Model Catalog model, whose models run without torch.
+#: ImageTest/ is a directory the image fixture globs, and the remaining entries
+#: serve only the legacy ``docs/examples/dataflows`` fixtures.
 _DATA_DIR_ALLOWLIST = (
     "back_bay.osm.pbf",
     "chicago_loop.osm.pbf",
     "lower_mnt.osm.pbf",
     "niteroi.osm.pbf",
     "niteroi_lst_verao_2001_2024.tif",
+    "shape-cnn.npz",
     "ImageTest",
     "access_score.geojson",
     "nyc_zip.geojson",

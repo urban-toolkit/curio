@@ -11,7 +11,7 @@
 import React from "react";
 import { render, screen, within } from "@testing-library/react";
 
-const PYTHON = "curio.builtin/computation-analysis@1";
+const PYTHON = "curio.builtin/python-computation@1";
 // The plan's three nodes, in its order. Their ids sort in another order.
 const STREETS = "c41d7e20-6a3b-4f1e-9d2c-5b8a7e6f4d3c";
 const GRID = "1f7a9b3c-2d4e-4a6b-8c1d-3e5f7a9b1c2d";

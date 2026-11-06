@@ -120,13 +120,13 @@ def test_merge_carries_producer_lineage_from_loser():
     }
     store_row = {
         "id": "computed.f.n", "origin": "computed", "producerNodeId": "n",
-        "producerNodeType": "curio.builtin/computation-analysis",
+        "producerNodeType": "curio.builtin/python-computation",
         "producerDataflowId": "f", "producerDataflowName": "My Flow",
         "upstreamInputs": [{"nodeId": "up1"}],
     }
     for a, b in ((hub_row, store_row), (store_row, hub_row)):
         merged = merge_catalog_items(a, b)
-        assert merged["producerNodeType"] == "curio.builtin/computation-analysis"
+        assert merged["producerNodeType"] == "curio.builtin/python-computation"
         assert merged["producerDataflowId"] == "f"
         assert merged["producerDataflowName"] == "My Flow"
         assert merged["upstreamInputs"] == [{"nodeId": "up1"}]

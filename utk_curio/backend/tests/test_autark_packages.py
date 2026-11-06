@@ -4,15 +4,16 @@ autk-grammar, autk-compute, autk-db and autk-plot come from the registry, with
 autk-core, one copy of each, in the frontend's tree; the repo root's tree,
 which the sandbox's Node and the Discovery Catalog's OpenStreetMap downloads
 load autk-db from, takes autk-db and autk-core the same way. autk-map is the
-one Autark package Curio vendors: 4.1.1-curio.3, packed from
+one Autark package Curio vendors: 4.1.1-curio.4, packed from
 urban-toolkit/autark#118 (a raster colored with one color function),
-autark#120 (a destroyed map releases its shared SSAO textures) and autark#121
-(a legend's end labels inside its ramp) until Autark releases them, one copy
-in the frontend's tree, which autk-grammar's maps use too (an npm override).
-The Autark packages, all but autk-grammar, which is released on its own, are
-one release, 4.1.0 or later: from 4.1.0 on, autk-map draws a map on demand
-(adapters/node/autkMapDrawing). The vendored autk-map is release 4.1.1 with
-those three changes. autk-grammar is 4.1.0 or later: from 4.1.0
+autark#120 (a destroyed map releases its shared SSAO textures), autark#121
+(a legend's end labels inside its ramp) and autark#122 (numbers under a
+categorical color map drawn in their legend label's color) until Autark
+releases them, one copy in the frontend's tree, which autk-grammar's maps use
+too (an npm override). The Autark packages, all but autk-grammar, which is
+released on its own, are one release, 4.1.0 or later: from 4.1.0 on, autk-map
+draws a map on demand (adapters/node/autkMapDrawing). The vendored autk-map is
+release 4.1.1 with those four changes. autk-grammar is 4.1.0 or later: from 4.1.0
 on, it lists the maps a run drew (`AutkGrammar.maps`), which is where Curio
 takes a node's maps from (`grammarMaps`). Nothing else is vendored.
 """
@@ -46,10 +47,10 @@ GRAMMAR_MAPS_RELEASE = (4, 1, 0)
 #: The one vendored Autark package, in the frontend's tree: its tarball in
 #: vendor/autark/, its version and its npm integrity.
 VENDORED_NAME = "autk-map"
-VENDORED_TARBALL = "urban-toolkit-autk-map-4.1.1-curio.3.tgz"
-VENDORED_VERSION = "4.1.1-curio.3"
+VENDORED_TARBALL = "urban-toolkit-autk-map-4.1.1-curio.4.tgz"
+VENDORED_VERSION = "4.1.1-curio.4"
 VENDORED_INTEGRITY = (
-    "sha512-BCaopaFdE7jqdJ3BWHK2WzriB4yXgBlekaSNBPmi75FZfiM3weUCyfVnspmH33oO+vDPFlFwEO7M8oSBFRkLhQ=="
+    "sha512-tzW/tZVMZ1ARnlj6C/DjmZejmdZ0Jg/maAu4nYB9XiPagTAwbtyR1viEDHY/H3ekfTsDISTeeGoVwBowgz/wkQ=="
 )
 VENDORED_SPEC = f"file:vendor/autark/{VENDORED_TARBALL}"
 

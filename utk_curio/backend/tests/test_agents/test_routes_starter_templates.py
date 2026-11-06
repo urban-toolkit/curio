@@ -47,7 +47,7 @@ WIDGETS = [
     {"name": "y", "type": "text", "label": "Y column", "default": "y"},
 ]
 
-LOAD = {"ref": "load", "nodeType": "curio.builtin/computation-analysis",
+LOAD = {"ref": "load", "nodeType": "curio.builtin/python-computation",
         "title": "Load", "intent": "load the counts"}
 CHART = {"ref": "chart", "nodeType": "test.charts/lines", "title": "Counts by hour",
          "intent": "draw the counts", "widgets": [{"name": "y", "type": "text", "value": "pedestrians"}]}
@@ -174,7 +174,7 @@ class TestAPlannedTemplateKeepsItsStarter:
             [LOAD, CHART], [{"from": "load", "to": "chart"}], [_install_charts],
         )
         created = _by_type(card["canvas"]["nodes"])
-        chart, load = created["test.charts/lines"], created["curio.builtin/computation-analysis"]
+        chart, load = created["test.charts/lines"], created["curio.builtin/python-computation"]
         _assert_starts_with_the_starter_and_the_plans_widgets(chart)
         _assert_starts_with_the_starter_and_the_plans_widgets(_saved_nodes(user, alice_project)[chart["id"]])
         assert load["content"] == ""

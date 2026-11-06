@@ -91,7 +91,7 @@ import type { UserData } from '../../utils/authApi';
 import { restoredByNode, restoredOutputs, withOutputs, type SavedOutputRef } from '../../utils/restoredOutputs';
 
 const PROJECT_ID = 'tuple-reopen';
-const NODE_TYPE = 'curio.builtin/computation-analysis';
+const NODE_TYPE = 'curio.builtin/python-computation';
 // Example 09's UTCI node returns a tuple, and its zonal node indexes it.
 const PRODUCER = 'tuple-utci';
 const CONSUMER = 'tuple-zonal';

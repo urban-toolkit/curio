@@ -59,8 +59,8 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-TILE = "#tile-computation-analysis"
-NODE_TYPE = "curio.builtin/computation-analysis"
+TILE = "#tile-python-computation"
+NODE_TYPE = "curio.builtin/python-computation"
 
 SOURCE_CODE = "factor = \nreturn factor * 10\n"
 SOURCE_WITH_REFERENCE = "factor = [!! factor !!]\nreturn factor * 10\n"

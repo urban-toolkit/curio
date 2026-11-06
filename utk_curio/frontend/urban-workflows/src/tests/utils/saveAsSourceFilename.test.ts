@@ -28,7 +28,7 @@ import { descriptorToTemplateDraft } from "../../utils/palettePackageFactoryDraf
 
 const descriptor = (overrides: Record<string, any> = {}) =>
   ({
-    id: "curio.builtin/computation-analysis@1",
+    id: "curio.builtin/python-computation@1",
     label: "Python Computation",
     description: "",
     category: "computation",
@@ -58,7 +58,7 @@ const canvasDraft = (
 describe("Save-As source filenames", () => {
   test("a canvas node's filename comes from its template id, not a constant", () => {
     const draft = canvasDraft(descriptor(), "return ['first']", "E2E First");
-    expect(draft.sourceFilename).toBe("computation-analysis.py");
+    expect(draft.sourceFilename).toBe("python-computation.py");
     expect(draft.sourceFilename).not.toBe("default.py");
   });
 
@@ -70,10 +70,10 @@ describe("Save-As source filenames", () => {
       descriptor(),
       "return ['second']",
       "E2E Second",
-      "computation-analysis-k-abc123",
+      "python-computation-k-abc123",
     );
 
-    expect(second.sourceFilename).toBe("computation-analysis-k-abc123.py");
+    expect(second.sourceFilename).toBe("python-computation-k-abc123.py");
     expect(first.sourceFilename).not.toBe(second.sourceFilename);
     // And each keeps its own body: sharing a filename is what used to lose one.
     expect(first.sourceCode).toContain("first");

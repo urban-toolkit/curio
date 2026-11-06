@@ -1,0 +1,108 @@
+{
+  "dataflow": {
+    "categories": {
+      "city": [
+        "Chicago"
+      ],
+      "topic": [
+        "Greenery"
+      ],
+      "complexity": [
+        "Intermediate"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "street-photos",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 215,
+        "content": "photos = curio_load_collection(\"data.curio.mapillary-sample\")\n\nreturn photos\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the 40 Mapillary street photos around Lincoln Park.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "photo-measures",
+        "type": "curio.builtin/python-computation",
+        "x": 645,
+        "y": 215,
+        "content": "import os\n\n# Before CUDA starts, so cuBLAS repeats its sums in the same order on every run.\nos.environ[\"CUBLAS_WORKSPACE_CONFIG\"] = \":4096:8\"\n\nimport numpy as np\nimport pandas as pd\nimport torch\nimport torch.nn.functional as F\nfrom PIL import Image\n\n# The same numbers on every run: seeded, deterministic kernels only, and full\n# float32 precision (no TF32), so every GPU rounds them alike.\ntorch.manual_seed(29)\ntorch.use_deterministic_algorithms(True)\ntorch.backends.fp32_precision = \"ieee\"\ntorch.backends.cudnn.benchmark = False\ndevice = \"cuda\" if torch.cuda.is_available() else \"cpu\"\n\n#: A pixel is green when 2G - R - B, smoothed over 5 x 5 pixels, passes this.\nGREEN = 0.1\n#: A pixel is on an edge when the brightness changes by more than this a pixel.\nEDGE = 0.2\n\n# Each measure is a convolution: weights over the color channels, a 5 x 5\n# mean, and Sobel's two 3 x 3 gradients of the brightness.\nexcess_green = torch.tensor([-1.0, 2.0, -1.0]).view(1, 3, 1, 1).to(device)\nsmooth = torch.full((1, 1, 5, 5), 1 / 25).to(device)\nbrightness = torch.tensor([0.299, 0.587, 0.114]).view(1, 3, 1, 1).to(device)\nsobel = torch.tensor([[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]])\ngradients = torch.stack([sobel, sobel.T]).unsqueeze(1).to(device) / 4\n\nrows = []\nfor photo in input_0.itertuples():\n    with Image.open(photo.path) as source:\n        rgb = np.asarray(source.convert(\"RGB\"), dtype=np.float32) / 255\n    image = torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0).to(device)\n    green = F.conv2d(F.conv2d(image, excess_green), smooth, padding=2) > GREEN\n    change = F.conv2d(F.conv2d(image, brightness), gradients, padding=1)\n    edges = change.square().sum(dim=1, keepdim=True).sqrt() > EDGE\n\n    # The overlay: the photo dimmed, its green pixels green and its edges white.\n    overlay = image * 0.5\n    overlay = torch.where(green, torch.tensor([0.2, 0.8, 0.3], device=device).view(1, 3, 1, 1), overlay)\n    overlay = torch.where(edges, torch.ones(1, 3, 1, 1, device=device), overlay)\n    picture = (overlay[0].permute(1, 2, 0).cpu().numpy() * 255).round().astype(np.uint8)\n    derived = curio_derived_file(photo.dataset_id, photo.file_id, 0, \"png\", kind=\"image\", tag=\"greenedges\")\n    Image.fromarray(picture).save(derived[\"path\"])\n\n    rows.append({\n        \"image_id\": photo.image_id,\n        \"creator\": photo.creator,\n        # One decimal, so every GPU shows the same numbers.\n        \"green_pct\": round(green.float().mean().item() * 100, 1),\n        \"edge_pct\": round(edges.float().mean().item() * 100, 1),\n        \"device\": device,\n        \"thumbnail\": photo.thumbnail,\n        \"overlay_url\": derived[\"image_url\"],\n    })\nprint(f\"Ran on {device}.\")\n\nreturn pd.DataFrame(rows)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Measure each photo's green share and edge density with convolutions in PyTorch, on the GPU when there is one, and write an overlay of both per photo.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "photo-cards",
+        "type": "curio.builtin/vis-simple",
+        "x": 1290,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show each photo beside its overlay, with its green share and edge density.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "photo-ranking",
+        "type": "curio.builtin/vis-vega",
+        "x": 1290,
+        "y": 430,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"The photos ranked by their green share, colored by how much of each is edges.\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"y\": {\n      \"field\": \"image_id\",\n      \"type\": \"nominal\",\n      \"sort\": \"-x\",\n      \"title\": \"Photos, greenest first\",\n      \"axis\": {\n        \"labels\": false,\n        \"ticks\": false\n      }\n    },\n    \"x\": {\n      \"field\": \"green_pct\",\n      \"type\": \"quantitative\",\n      \"title\": \"Green (% of pixels)\"\n    },\n    \"color\": {\n      \"field\": \"edge_pct\",\n      \"type\": \"quantitative\",\n      \"title\": \"Edges (%)\",\n      \"scale\": {\n        \"scheme\": \"viridis\"\n      }\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"image_id\"\n      },\n      {\n        \"field\": \"creator\"\n      },\n      {\n        \"field\": \"green_pct\"\n      },\n      {\n        \"field\": \"edge_pct\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Rank the photos by their green share.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-street-photosout-photo-measuresin",
+        "source": "street-photos",
+        "sourceHandle": "out",
+        "target": "photo-measures",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-photo-measuresout-photo-cardsin",
+        "source": "photo-measures",
+        "sourceHandle": "out",
+        "target": "photo-cards",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-photo-measuresout-photo-rankingin",
+        "source": "photo-measures",
+        "sourceHandle": "out",
+        "target": "photo-ranking",
+        "targetHandle": "in"
+      }
+    ],
+    "name": "PyTorch: street photos",
+    "description": "Mapillary photos around Lincoln Park measured with convolutions in PyTorch, on the GPU when there is one: each photo's green share and edge density, an overlay of both, and the photos ranked by green.",
+    "task": "Measure greenery and edges in street photos with GPU convolutions.",
+    "timestamp": 0,
+    "provenance_id": "pytorch-street-photos",
+    "packages": [],
+    "datasets": [
+      {
+        "datasetId": "data.curio.mapillary-sample",
+        "dirName": "data.curio.mapillary-sample@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-06T00:00:00Z"
+      }
+    ]
+  }
+}

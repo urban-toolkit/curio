@@ -162,7 +162,7 @@
       "hasGrammar": false,
       "hasWidgets": true,
       "iconRef": "fa-brands:python",
-      "id": "computation-analysis",
+      "id": "python-computation",
       "inputPorts": [
         {
           "cardinality": "[1,n]",
@@ -194,7 +194,7 @@
       "paletteOrder": 2
     },
     {
-      "category": "computation",
+      "category": "data",
       "description": "The Data Summary node computes descriptive statistics and schema information (shape, dtypes, missing values, describe) for a DataFrame.",
       "editor": "code",
       "engine": "python",
@@ -222,7 +222,7 @@
           ]
         }
       ],
-      "paletteOrder": 10
+      "paletteOrder": 3
     },
     {
       "category": "computation",

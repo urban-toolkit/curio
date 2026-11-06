@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 #: The types a saved Data Transformation node carries: a node made in code
 #: wrote the first, one dropped from the palette the second.
 GONE_TYPES = ("curio.builtin/data-transformation", "curio.builtin/data-transformation@1")
-PYTHON_TYPE = "curio.builtin/computation-analysis"
+PYTHON_TYPE = "curio.builtin/python-computation"
 PROJECT = "Data Transformation removed e2e"
 
 GONE = "dt-gone-unversioned"
@@ -101,7 +101,7 @@ def test_the_built_in_palette_has_no_data_transformation_tile(
     expect(panel.locator("#tile-edit-features")).to_be_visible(timeout=30000)
     tiles = panel.locator('[id^="tile-"]').evaluate_all("(tiles) => tiles.map((tile) => tile.id)")
     assert "tile-data-transformation" not in tiles, f"the Built-in palette holds Data Transformation: {tiles}"
-    assert "tile-computation-analysis" in tiles, f"the Built-in palette lacks Python Computation: {tiles}"
+    assert "tile-python-computation" in tiles, f"the Built-in palette lacks Python Computation: {tiles}"
     expect(panel.get_by_label("Data Transformation", exact=True)).to_have_count(0)
 
 

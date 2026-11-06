@@ -2,8 +2,8 @@
  * #432: Save as package node into an existing package sends a draft of that
  * package, and the backend lays it over the installed copy.
  *
- * A template that ships no source of its own (curio.example-ui's Column
- * Filter is driven by its behavior bundle) must stay that way. The draft used
+ * A template that ships no source of its own (a `--with-ui` node is driven
+ * by its behavior bundle) must stay that way. The draft used
  * to invent `sources/<templateId>.py` for it, with placeholder code, so the
  * saved package gained a fake source file and the template a `source` it
  * never had.
@@ -39,13 +39,13 @@ function template(templateId: string, source: string | null): PackageTemplatePay
 const target: PackagePayload = {
   packageId: "me.ui", major: 1, version: "1.0.0", name: "UI", publisher: "t", description: "",
   license: "MIT", permissions: [], dependencies: { packages: {}, python: {}, js: {} },
-  templates: [template("column-filter", null), template("loader", "sources/loader.py")],
+  templates: [template("ui-node", null), template("loader", "sources/loader.py")],
   dirName: "me.ui@1", lineage: null, familyKey: "me.ui@1", channel: "stable",
 };
 
 test("a template with no source of its own is sent without one", () => {
   mockDesc = {
-    id: "curio.builtin/computation-analysis" as NodeDescriptor["id"],
+    id: "curio.builtin/python-computation" as NodeDescriptor["id"],
     label: "Station reader", category: "computation", editor: "code", hasCode: true,
     inputPorts: [], outputPorts: [], source: "package",
     package: { packageId: "curio.builtin", major: 1, version: "1.0.0" },
@@ -59,8 +59,8 @@ test("a template with no source of its own is sent without one", () => {
   const templates = payload.manifest.templates as Array<Record<string, unknown>>;
   const byId = Object.fromEntries(templates.map((t) => [t.id, t]));
 
-  expect(byId["column-filter"].source).toBeUndefined();
-  expect(payload.sources["column-filter"]).toBeUndefined();
+  expect(byId["ui-node"].source).toBeUndefined();
+  expect(payload.sources["ui-node"]).toBeUndefined();
   // The template that has a source keeps it, and the canvas node is added.
   expect(byId.loader.source).toBe("sources/loader.py");
   expect(templates).toHaveLength(3);

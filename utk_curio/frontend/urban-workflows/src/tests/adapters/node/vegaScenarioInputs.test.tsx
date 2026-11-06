@@ -84,8 +84,8 @@ const edge = (source: string, target: string, targetHandle = "in") => ({
 const BASE = { id: "s-base", name: "Baseline", color: "#2a9d8f", nodes: ["base"] };
 const TALL = { id: "s-tall", name: "Twice as tall", color: "#e76f51", nodes: ["tall"] };
 const NODES = [
-  node("base", "curio.builtin/computation-analysis@1", { title: "Shade" }),
-  node("tall", "curio.builtin/computation-analysis@1", { title: "Shade" }),
+  node("base", "curio.builtin/python-computation@1", { title: "Shade" }),
+  node("tall", "curio.builtin/python-computation@1", { title: "Shade" }),
   node("chart", "curio.builtin/vis-vega@1"),
 ];
 const EDGES = [edge("base", "chart", "in"), edge("tall", "chart", "in_1")];
@@ -331,8 +331,8 @@ describe("a chart reading inputs with no box among its inputs", () => {
   test("untitled nodes of one type, in no box, give their rows one name, in the spec's own colors", async () => {
     setFlow([], {
       nodes: [
-        node("base", "curio.builtin/computation-analysis@1"),
-        node("tall", "curio.builtin/computation-analysis@1"),
+        node("base", "curio.builtin/python-computation@1"),
+        node("tall", "curio.builtin/python-computation@1"),
         node("chart", "curio.builtin/vis-vega@1"),
       ],
     });

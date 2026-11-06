@@ -20,6 +20,6 @@ The node's code or spec places each widget where its value is used, as its refer
 
 A dataset widget's value is the id of a Data Catalog dataset, layer group or collection, empty until a file or a dataset is dropped on its node; its reference becomes that id as a quoted text, so `curio_load_data({{widgets.reference:data}})` loads it. A run refuses code that reads an empty one.
 
-A value several nodes read is a widget on one {{template.label:curio.builtin/computation-analysis}} node that returns it, wired into each reader.
+A value several nodes read is a widget on one {{template.label:curio.builtin/python-computation}} node that returns it, wired into each reader.
 
 A node already on the canvas takes new widget values through node.settings.write: its "widgets" maps each widget's name to the new value, which must fit the widget's type and options as a value typed in the Widgets tab must. The node's code stays as it was. Only the user adds a widget to a node already on the canvas, in its Widgets tab.

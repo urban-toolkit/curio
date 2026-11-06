@@ -920,7 +920,7 @@ class TestNewNodeTypesFromTheWritingMode:
         assert card["status"] == "ok"
         sent = _retry_sent(calls)
         assert "reuse territory" in sent
-        assert "curio.builtin/computation-analysis" in sent
+        assert "curio.builtin/python-computation" in sent
 
 
 def _ukey(client, user):

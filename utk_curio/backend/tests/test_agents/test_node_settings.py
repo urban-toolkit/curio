@@ -197,8 +197,8 @@ def test_only_a_template_with_the_nodes_behavior_takes_its_setting():
     assert view.template_problem("data-pool", "Data Pool", "plan node 'pool'") == (
         "plan node 'pool': a Data Pool node has no image column; only a Simple View node takes simpleVis"
     )
-    assert view.template_problem(None, "Computation Analysis", "params.simpleVis") == (
-        "params.simpleVis: a Computation Analysis node has no image column; only a Simple View node takes simpleVis"
+    assert view.template_problem(None, "Python Computation", "params.simpleVis") == (
+        "params.simpleVis: a Python Computation node has no image column; only a Simple View node takes simpleVis"
     )
 
 

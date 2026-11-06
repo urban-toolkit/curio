@@ -43,7 +43,7 @@ from utk_curio.backend.tests.test_agents.test_source_grounding_routes import (
 NB = "agent.curio.node-builder@1"
 DFB = "agent.curio.dataflow-builder@1"
 DL = "curio.builtin/data-loading"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 #: A template whose node takes one input: its only circle is input_0.
 SUMMARY = "curio.builtin/data-summary"
 

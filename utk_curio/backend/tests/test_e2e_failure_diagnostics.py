@@ -11,6 +11,7 @@ import types
 import pytest
 
 from utk_curio.backend.tests.test_frontend import diagnostics
+from utk_curio.backend.tests.test_frontend.utils import images
 
 
 class _Tracing:
@@ -128,6 +129,40 @@ def test_a_failing_diagnostic_never_raises():
     page = _Page(nodes=[POOL], screenshot_error=RuntimeError("target closed"))
     written = diagnostics.finish(_item(workflow_page=page), failed=True)
     assert [os.path.basename(p) for p in written] == ["nodes.txt"]
+
+
+class _MapPage(_Page):
+    """A page with an Autark map, which a screenshot on the GPU runner shows only
+    while the frame captures' painting holds it (utils/images.py)."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.painted = False
+        self.shots = []
+
+    def evaluate(self, js):
+        if js == images._PAINT_MAP_CANVASES_JS:
+            self.painted = True
+            return 1
+        if js == images._UNPAINT_MAP_CANVASES_JS:
+            self.painted = False
+            return None
+        return super().evaluate(js)
+
+    def screenshot(self, path, full_page, timeout):
+        super().screenshot(path, full_page, timeout)
+        self.shots.append("map" if self.painted else "blank map")
+
+
+def test_the_screenshot_shows_the_autark_maps_as_a_frame_does():
+    """Example 30's failure screenshot showed its map blank under the legend,
+    while its frames showed the map: the screenshot left out the WebGPU canvas,
+    which frame captures paint in. The page is left as it was."""
+    page = _MapPage(nodes=[DATA])
+    written = diagnostics.finish(_item(workflow_page=page), failed=True)
+    assert "screenshot.png" in [os.path.basename(p) for p in written]
+    assert page.shots[-1] == "map"
+    assert not page.painted
 
 
 def test_tracing_is_off_unless_asked_for():

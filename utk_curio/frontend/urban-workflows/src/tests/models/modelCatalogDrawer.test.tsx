@@ -126,6 +126,26 @@ function tab(name: "Browse all" | "In project"): HTMLElement {
   return screen.getByRole("button", { name: new RegExp(`^${name}`) });
 }
 
+/** #1352: pinned, a drawer stays open while the canvas, the palette and the
+ *  top bar keep working. Its root carries data-pinned, on which the shell's
+ *  stylesheet takes the pointer off the root and the scrim, and its panel is
+ *  not a modal dialog. Unpinned, it is one, over a scrim. Pins the drawer at
+ *  *root*, whose dialog is *name*, and unpins it. */
+async function expectThePinToLetThePageWork(root: string, name: string) {
+  const dialog = await screen.findByRole("dialog", { name });
+  const drawer = document.querySelector(root);
+  expect(drawer).not.toHaveAttribute("data-pinned");
+  expect(dialog).toHaveAttribute("aria-modal", "true");
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Pin drawer open" }));
+  expect(drawer).toHaveAttribute("data-pinned", "true");
+  expect(dialog).not.toHaveAttribute("aria-modal");
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Unpin drawer" }));
+  expect(drawer).not.toHaveAttribute("data-pinned");
+  expect(dialog).toHaveAttribute("aria-modal", "true");
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockLockfile = ["curio.rasterization@1", "model.curio.ddrnet23-slim@1"];
@@ -264,7 +284,7 @@ describe("the canvas Model Catalog drawer", () => {
     mockNodes = [{
       id: "n1",
       data: {
-        nodeType: "curio.builtin/computation-analysis@1",
+        nodeType: "curio.builtin/python-computation@1",
         code: 'model = curio_load_model("model.curio.ddrnet23-slim")\nreturn 1',
       },
     }];
@@ -402,6 +422,12 @@ describe("the canvas Model Catalog drawer", () => {
     expect(root).not.toHaveAttribute("data-dragging");
   });
 
+  test("pinned, the drawer lets the page work and is not modal; unpinned, it is modal", async () => {
+    renderModelDrawer();
+    await modelCard("model.curio.ddrnet23-slim@1");
+    await expectThePinToLetThePageWork(MODEL_DRAWER, "Model Catalog");
+  });
+
   test("a node that does not run a model is refused", async () => {
     renderModelDrawer();
     const ddrnet = await modelCard("model.curio.ddrnet23-slim@1");
@@ -434,6 +460,16 @@ describe("the canvas Node Catalog drawer", () => {
     fireEvent.click(tab("In project"));
     await waitFor(() => expect(card(NODE_DRAWER, "model.curio.ddrnet23-slim@1")).toBeNull());
     expect(card(NODE_DRAWER, "curio.rasterization@1")).not.toBeNull();
+  });
+
+  test("pinned, the drawer lets the page work and is not modal; unpinned, it is modal", async () => {
+    render(
+      <MemoryRouter>
+        <NodeCatalogDrawer presented onRequestClose={jest.fn()} onExitComplete={jest.fn()} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(card(NODE_DRAWER, "curio.rasterization@1")).not.toBeNull());
+    await expectThePinToLetThePageWork(NODE_DRAWER, "Node Catalog");
   });
 });
 

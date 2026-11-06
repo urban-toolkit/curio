@@ -21,7 +21,7 @@ button a card shows for a given prop set.
 Agents are safe to install in a way node packages are not: no pip, no archive
 extraction, no behavior script. The install writes a coordinate into the
 project's lockfile and copies prompt files into the user store, so there is no
-equivalent of the node suite's "only curio.example-ui@1 may be installed" rule.
+equivalent of the node suite's "only test.ui-node@1 may be installed" rule.
 
 Run::
 
@@ -77,7 +77,7 @@ def _one_node_spec() -> dict:
             "nodes": [
                 {
                     "id": "agent-baseline-node",
-                    "type": "curio.builtin/computation-analysis",
+                    "type": "curio.builtin/python-computation",
                     "x": 420,
                     "y": 300,
                     "content": "return [1]",

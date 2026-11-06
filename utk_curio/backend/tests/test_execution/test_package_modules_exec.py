@@ -110,7 +110,7 @@ def test_play_sends_nothing_new_for_any_other_node(client, user_and_token, monke
     sent = []
     _fake_sandbox(monkeypatch, sent)
 
-    for node_type in ("curio.builtin/computation-analysis", "PYTHON_COMPUTATION", "ai.test.other/caller"):
+    for node_type in ("curio.builtin/python-computation", "PYTHON_COMPUTATION", "ai.test.other/caller"):
         assert _play(client, token, project_id, node_type).status_code == 200
     assert all("package_modules" not in body for _path, body in sent)
 
@@ -152,11 +152,11 @@ def test_the_headless_runner_sends_them_too(tmp_curio):
         return {"stdout": [], "stderr": "", "output": {"path": f"art-{len(calls)}", "dataType": "int"}}
 
     spec = {"dataflow": {"nodes": [
-        {"id": "a", "type": "curio.builtin/computation-analysis", "content": "return 1"},
+        {"id": "a", "type": "curio.builtin/python-computation", "content": "return 1"},
         {"id": "b", "type": NODE_TYPE, "content": "return input_0"},
     ], "edges": [{"id": "e1", "source": "a", "target": "b"}]}}
     roster = {
-        "curio.builtin/computation-analysis": {"executable": True, "engine": "python"},
+        "curio.builtin/python-computation": {"executable": True, "engine": "python"},
         NODE_TYPE: {"executable": True, "engine": "python"},
     }
     report = runner.run_through_node("4242", "p-modules", spec, "b", exec_fn=exec_fn, templates=roster)

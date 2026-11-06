@@ -62,7 +62,7 @@ EXEC_USER = os.environ.get("CURIO_LIVE_EXEC_USER", "curio-exec")
 # persistent-directory path rather than creating a fresh one each time.
 USER_KEY = "ci-exec-user-boundary"
 
-NODE_TYPE = "curio.builtin/computation-analysis"
+NODE_TYPE = "curio.builtin/python-computation"
 
 pytestmark = pytest.mark.skipif(
     not BASE_URL,

@@ -58,7 +58,7 @@ def test_connecting_a_second_node_fetches_nothing_for_the_node_already_fed(
     require_user_auth()
     spec = _spec()
     spec["dataflow"]["nodes"].append(
-        {**_node(SECOND, "curio.builtin/computation-analysis", 700), "y": 600}
+        {**_node(SECOND, "curio.builtin/python-computation", 700), "y": 600}
     )
     stub_login_and_enter_workflow(
         page,

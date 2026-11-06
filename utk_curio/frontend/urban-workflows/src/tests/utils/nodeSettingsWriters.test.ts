@@ -86,7 +86,7 @@ test("a setting no setter takes goes into the node's data through updateDataNode
 });
 
 test("a widget's new value on a node with no setter leaves it out of date, the dataflow Unsaved, and asks for an automatic run", () => {
-  const flow = canvas([node("chart", "curio.builtin/computation-analysis@1", { widgets: [COMBINE, THRESHOLD] })]);
+  const flow = canvas([node("chart", "curio.builtin/python-computation@1", { widgets: [COMBINE, THRESHOLD] })]);
 
   writeNodeSettings(flow, "chart", { widgets: { combine: "max" } });
 
@@ -101,9 +101,9 @@ test("a widget's new value on a node with no setter leaves it out of date, the d
 
 test("a value node's new value with no setter leaves it out of date and runs it, the node its readers follow", () => {
   const flow = canvas([
-    node("v", "curio.builtin/computation-analysis@1", { code: "return [!! season !!]", widgets: [SEASON] }),
-    node("a", "curio.builtin/computation-analysis@1", { code: "s = input_0" }),
-    node("b", "curio.builtin/computation-analysis@1", { code: "print(1)" }),
+    node("v", "curio.builtin/python-computation@1", { code: "return [!! season !!]", widgets: [SEASON] }),
+    node("a", "curio.builtin/python-computation@1", { code: "s = input_0" }),
+    node("b", "curio.builtin/python-computation@1", { code: "print(1)" }),
   ]);
 
   writeNodeSettings(flow, "v", { widgets: { season: "winter" } });

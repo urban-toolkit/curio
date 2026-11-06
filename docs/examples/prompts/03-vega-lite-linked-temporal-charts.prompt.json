@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/03-vega-lite-linked-temporal-charts.json",
-    "sha256": "2f71e4a60815c3fa9f704f469af7434171aa0742a064456ce2400215eded12db",
+    "sha256": "22465571eeb39681d6e744adeb3523081be9793b14d4cc5d93f364dff1d35181",
     "walkthrough": "docs/examples/03-vega-lite-linked-temporal-charts.md"
   },
   "prompt": "From the Chicago speed camera violations table in the Data Catalog, I want a per-camera and per-year picture. Load the violations, then aggregate them by camera and by year in a Python computation step. Feed that same aggregation into two linked Vega-Lite charts: a stacked bar chart of violations per camera and a line chart of the citywide yearly total.",
@@ -19,16 +19,16 @@
   "expected": {
     "nodes": [
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
         "executable": true,
         "hasContent": true
       },
       {
-        "ref": "loader1",
-        "type": "curio.builtin/data-loading",
-        "role": "loader",
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
         "executable": true,
         "hasContent": true
       },
@@ -49,6 +49,11 @@
     ],
     "edges": [
       {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
         "from": "analysis1",
         "to": "visualization1",
         "kind": "data"
@@ -56,11 +61,6 @@
       {
         "from": "analysis1",
         "to": "visualization2",
-        "kind": "data"
-      },
-      {
-        "from": "loader1",
-        "to": "analysis1",
         "kind": "data"
       }
     ],

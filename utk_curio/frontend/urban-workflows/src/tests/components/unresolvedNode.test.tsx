@@ -137,7 +137,7 @@ describe("packageDisplayName", () => {
   it("turns a package id into something readable", () => {
     expect(packageDisplayName("model.curio.ddrnet23-slim")).toBe("Ddrnet23 Slim");
     expect(packageDisplayName("ai.utk.uhvi")).toBe("Uhvi");
-    expect(packageDisplayName("curio.example-ui")).toBe("Example Ui");
+    expect(packageDisplayName("test.ui-node")).toBe("Ui Node");
   });
 });
 
@@ -185,7 +185,7 @@ describe("UnresolvedNode", () => {
 
   it.each([
     ["an empty type", ""],
-    ["a type with no package prefix", "computation-analysis"],
+    ["a type with no package prefix", "python-computation"],
     ["a prefix that is not a dotted package id", "curio/thing"],
     ["a leading slash", "/thing"],
   ])("is terminal for %s", (_label, nodeType) => {

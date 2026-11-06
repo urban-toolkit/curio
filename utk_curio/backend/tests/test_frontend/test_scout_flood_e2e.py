@@ -104,7 +104,7 @@ CALCULATOR_TYPE = "curio.rasterization/raster-calculator"
 PACKAGES = ("curio.rasterization@1", "curio.vega-lite@1")
 MAP_TYPE = "curio.builtin/autk-grammar"
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
-PYTHON_TYPE = "curio.builtin/computation-analysis"
+PYTHON_TYPE = "curio.builtin/python-computation"
 #: The Python steps over the tracts, the riverside tracts and each scenario's
 #: Tract depth, told from the other Python nodes by title.
 TRACT_STEP_TITLES = ("Riverside tracts", "Tract depth")

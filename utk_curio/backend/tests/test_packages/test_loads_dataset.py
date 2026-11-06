@@ -122,7 +122,7 @@ class TestTheRosterCarriesTheFlag:
             assert "loadsDataset" in flags(node_type, None), node_type
         assert "loadsDataset" in flags("ai.test.loaders/fetch-weather", snapshot)
         assert "loadsDataset" not in flags("ai.test.loaders/data-loading", snapshot)
-        assert flags("curio.builtin/computation-analysis", snapshot) == frozenset()
+        assert flags("curio.builtin/python-computation", snapshot) == frozenset()
         assert flags("", snapshot) == frozenset()
 
 
@@ -142,7 +142,7 @@ class TestTheStoreListingCarriesTheFlag:
         # The account's curio.builtin, from before its Data Loading declared it.
         _write_package(key, "curio.builtin", 1, [
             _template("data-loading", "Data Loading"),
-            _template("computation-analysis", "Python Computation"),
+            _template("python-computation", "Python Computation"),
         ])
         _write_package(key, "ai.test.loaders", 1, [
             {**_template("fetch-weather", "Fetch weather"), "loadsDataset": True},
@@ -154,6 +154,6 @@ class TestTheStoreListingCarriesTheFlag:
             for template in package["templates"]
         }
         assert listed["curio.builtin/data-loading@1"] is True
-        assert listed["curio.builtin/computation-analysis@1"] is False
+        assert listed["curio.builtin/python-computation@1"] is False
         assert listed["ai.test.loaders/fetch-weather@1"] is True
         assert listed["ai.test.loaders/data-loading@1"] is False

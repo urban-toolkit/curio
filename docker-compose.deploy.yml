@@ -14,7 +14,22 @@ services:
     # Bring the container back up automatically after a host reboot or daemon
     # restart, but respect a manual `docker stop`.
     restart: unless-stopped
+    # The host's GPU, asked for as test-gpu's docker-compose.ci-shards.yml
+    # asks: the host's NVIDIA Container Toolkit hands the container the GPU
+    # and the driver's libcuda.so.1, which the image's torch runs node code
+    # on. A daemon without the toolkit refuses to start the container, so a
+    # host with no NVIDIA GPU takes the request back in its
+    # docker-compose.site.yml (DEPLOYMENT.md). compute is CUDA; utility is
+    # NVML and nvidia-smi.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
       # Each node's Python runs in a confined child process instead of
       # in-process: memory and CPU capped, a seccomp denylist, and -- because
       # an execution account is found -- as an unprivileged user that cannot

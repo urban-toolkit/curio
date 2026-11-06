@@ -120,7 +120,7 @@ def _spec() -> dict:
             "name": "Widget panel scrollbar",
             "task": "",
             "nodes": [{
-                "id": NODE, "type": "curio.builtin/computation-analysis", "x": 0, "y": 0, "content": CODE,
+                "id": NODE, "type": "curio.builtin/python-computation", "x": 0, "y": 0, "content": CODE,
                 "in": "DEFAULT", "out": "DEFAULT", "goal": "",
                 "metadata": {"keywords": [], "widgets": WIDGETS},
             }],

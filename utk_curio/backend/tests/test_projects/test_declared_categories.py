@@ -27,7 +27,7 @@ import pytest
 #: A tag and a data type no rule of ``category_rules.json`` gives.
 HYDROLOGY = {"tags": ["Hydrology"], "dataTypes": ["Point clouds"]}
 #: A node type no manifest in these tests' folders holds: a Python node.
-PYTHON_NODE = "curio.builtin/computation-analysis@1"
+PYTHON_NODE = "curio.builtin/python-computation@1"
 NOTHING = {"tags": [], "data_type": []}
 
 

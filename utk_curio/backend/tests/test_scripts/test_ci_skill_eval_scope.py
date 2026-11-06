@@ -2,11 +2,13 @@
 
 ``scripts/ci_skill_eval_scope.py`` runs first in that workflow and decides
 whether it calls a model at all, and on which skills. For ``auto``, a changed
-skill is measured whole, every skill's test cases for a core skill, one smoke
-case per skill for agent text or code, and nothing for anything else. A wrong
-answer either spends the owner's model server on nothing or lets a skill
-change go unmeasured, so these feed it changes shaped like a diff, on a small
-tree of skills, and check the real tree's core skills too.
+skill is measured whole, every skill's test cases for a core skill or a change
+to which core skills the preamble places, a skill's test cases for a page its
+body renders, and nothing for anything else, agent text and code among it, since
+the evaluations measure skills. A wrong answer either spends the
+owner's model server on nothing or lets a skill change go unmeasured, so these
+feed it changes shaped like a diff, on a small tree of skills, and check the
+real tree's core skills and rendered pages too.
 """
 from __future__ import annotations
 
@@ -126,11 +128,16 @@ def test_a_package_s_skill_is_a_skill_too(tree):
     assert _measures(found) == {"parks": CASES}
 
 
-def test_a_core_skill_or_its_page_measures_every_skill_s_test_cases(tree):
-    for path in ("skills/nodes/SKILL.md", "agents/agent.curio.builtin@1/default_preamble.md"):
-        found = scope.from_changes([Change("M", path)], root=tree, old_text=_old(tree))
+def test_a_core_skill_or_the_core_skills_a_page_places_measure_every_skill_s_test_cases(tree):
+    preamble = "agents/agent.curio.builtin@1/default_preamble.md"
+    for path, edits in (("skills/nodes/SKILL.md", None), (preamble, {preamble: "You are Curio.\n"})):
+        found = scope.from_changes([Change("M", path)], root=tree, old_text=_old(tree, edits))
         assert found["measure"] == "core", path
         assert _measures(found) == {name: CASES for name in ("birds", "nodes", "parks", "trees")}, path
+    # The preamble's other words are no skill's: they measure nothing.
+    words = scope.from_changes([Change("M", preamble)], root=tree,
+                               old_text=_old(tree, {preamble: "You are Curio, plainly.\n{{skill:nodes}}\n"}))
+    assert words["measures"] == {} and words["measure"] == "none"
     # A core skill's own evaluations are in no prompt: they measure it alone.
     own = scope.from_changes([Change("M", "skills/nodes/evals/evals.json")], root=tree, old_text=_old(tree))
     assert own["measure"] == "changed" and _measures(own) == {"nodes": CASES}
@@ -141,18 +148,48 @@ def test_a_core_skill_or_its_page_measures_every_skill_s_test_cases(tree):
     assert _measures(both)["trees"] == WHOLE and _measures(both)["birds"] == CASES
 
 
-def test_agent_text_or_code_measures_one_smoke_case_of_every_other_skill(tree):
+def test_a_page_a_skill_s_body_renders_measures_that_skill_s_test_cases(tree):
+    """A page of the base entry that a skill's body renders, through a marker
+    whose field reads it or through ``{{include:<page>}}``, is that skill's
+    text: its test cases both ways, and nothing of the other skills."""
+    base = tree / "agents" / "agent.curio.builtin@1"
+    (base / "autark-grammar.md").write_text("## region\nThe grammar.\n", encoding="utf-8")
+    (base / "rules").mkdir()
+    (base / "rules" / "plan-rules.md").write_text("## rules\nA plan.\n", encoding="utf-8")
+    for name, marker in (("birds", "{{autk.grammar}}"), ("trees", "{{include:rules/plan-rules.md}}")):
+        skill = tree / "skills" / name / "SKILL.md"
+        skill.write_text(skill.read_text(encoding="utf-8") + f"{marker}\n", encoding="utf-8")
+    grammar = "agents/agent.curio.builtin@1/autark-grammar.md"
+    rules = "agents/agent.curio.builtin@1/rules/plan-rules.md"
+    assert scope.rendered(tree) == {grammar: {"birds"}, rules: {"trees"}}
+    found = scope.from_changes([Change("M", grammar)], root=tree, old_text=_old(tree))
+    assert found["measure"] == "changed"
+    assert _measures(found) == {"birds": CASES}
+    found = scope.from_changes([Change("M", rules)], root=tree, old_text=_old(tree))
+    assert _measures(found) == {"trees": CASES}
+    # A core skill is in every prompt, and so is a page its body renders.
+    nodes = tree / "skills" / "nodes" / "SKILL.md"
+    nodes.write_text(nodes.read_text(encoding="utf-8") + "{{include:rules/plan-rules.md}}\n", encoding="utf-8")
+    found = scope.from_changes([Change("M", rules)], root=tree, old_text=_old(tree))
+    assert found["measure"] == "core"
+    assert _measures(found) == {name: CASES for name in ("birds", "nodes", "parks", "trees")}
+
+
+def test_agent_text_or_code_alone_measures_nothing(tree):
+    """The evaluations measure skills: a branch that changes agent text or
+    code and no skill measures nothing, and a skill it changes beside them is
+    measured alone."""
     for path in ("agents/agent.curio.builtin@1/tools.md", "utk_curio/backend/app/agents/application/tools.py",
                  "utk_curio/tools/skill_eval_worker.py", "packages/curio.parks@1/manifest.json",
                  "docs/schemas/trill.v1.json", ".github/workflows/skill-evals.yml",
                  "scripts/ci_skill_evals.py", "scripts/skill_eval_floors.json"):
         found = scope.from_changes([Change("M", path)], root=tree, old_text=_old(tree))
-        assert found["measure"] == "smoke", path
-        assert _measures(found) == {name: SMOKE for name in ("birds", "nodes", "parks", "trees")}, path
+        assert found["measures"] == {} and found["measure"] == "none", path
+        assert found["why"] == ["no skill changed, so the evaluations measure nothing"], path
     mixed = scope.from_changes([Change("M", "agents/agent.curio.builtin@1/tools.md"),
                                 Change("M", "skills/trees/SKILL.md")], root=tree, old_text=_old(tree))
     assert mixed["measure"] == "changed"
-    assert _measures(mixed) == {"trees": CASES, "birds": SMOKE, "nodes": SMOKE, "parks": SMOKE}
+    assert _measures(mixed) == {"trees": CASES}
 
 
 def test_anything_else_measures_nothing(tree):
@@ -265,3 +302,38 @@ def test_main_s_core_skills_are_the_preamble_s():
     assert pages == {"agents/agent.curio.builtin@1/default_preamble.md"}
     shipped = scope.skills_with_evals(REPO_ROOT)
     assert placed <= set(shipped) and {"vega-lite-charts", "rasterization"} <= set(shipped)
+
+
+def test_the_pages_the_scope_finds_in_each_skill_s_body_are_those_its_render_reads(monkeypatch):
+    """The scope runs without the backend, so it finds the pages a skill's body
+    renders from its markers (FIELD_PAGES). A render of each shipped skill
+    notes each page of the base entry whose text it reads, and the two must
+    agree: a field that comes to read a page fails here until FIELD_PAGES
+    names it. A page whose path alone is checked, as loading the agents'
+    manifests for ``{{agent.name:<id>}}`` checks the preamble's, puts none of
+    its text in the body. Before FIELD_PAGES, a change to autark-grammar.md,
+    which autark's ``{{autk.grammar}}`` renders, gave autark one smoke case."""
+    from utk_curio.backend.app.agents.domain import agent_text
+
+    read: set[str] = set()
+    page_text, include = agent_text.page_text, agent_text.include
+
+    def noted_text(page: str) -> str:
+        read.add(page)
+        return page_text(page)
+
+    def noted_include(page: str, including: tuple[str, ...]) -> str:
+        read.add(page)
+        return include(page, including)
+
+    monkeypatch.setattr(agent_text, "page_text", noted_text)
+    monkeypatch.setattr(agent_text, "include", noted_include)
+    entry = scope.base_entry(REPO_ROOT).relative_to(REPO_ROOT).as_posix()
+    found: dict[str, set[str]] = {}
+    for name, folder in sorted(scope.skills_with_evals(REPO_ROOT).items()):
+        read.clear()
+        agent_text.render(REPO_ROOT / folder / "SKILL.md")
+        for page in read:
+            found.setdefault(f"{entry}/{page}", set()).add(name)
+    assert scope.rendered(REPO_ROOT) == found
+    assert "autark" in found[f"{entry}/autark-grammar.md"]

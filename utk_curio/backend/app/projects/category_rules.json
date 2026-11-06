@@ -6,6 +6,7 @@
     { "imports": ["osmnx"], "dataTypes": ["OpenStreetMap"] },
     { "imports": ["rasterio", "rioxarray", "xarray"], "dataTypes": ["Rasters"] },
     { "imports": ["PIL"], "dataTypes": ["Imagery"] },
+    { "imports": ["torch", "torchvision"], "tags": ["PyTorch"] },
     { "imports": ["wave"], "dataTypes": ["Audio"] },
     { "fileExtensions": ["pbf"], "dataTypes": ["OpenStreetMap"] },
     { "fileExtensions": ["tif", "tiff"], "dataTypes": ["Rasters"] },
@@ -38,7 +39,7 @@
     "audio": { "dataTypes": ["Audio"] }
   },
   "displayOrder": {
-    "tags": ["Autark", "Vega-Lite", "GeoPandas", "Pandas", "GPU compute", "Computer vision"],
+    "tags": ["Autark", "Vega-Lite", "GeoPandas", "Pandas", "PyTorch", "GPU compute", "Computer vision"],
     "dataTypes": ["Tables", "Geometries", "Imagery", "OpenStreetMap", "Rasters", "Video", "Audio"]
   }
 }

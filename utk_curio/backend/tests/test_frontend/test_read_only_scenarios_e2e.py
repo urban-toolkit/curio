@@ -49,7 +49,7 @@ def _node(node_id: str, node_type: str, x: int, y: int, content: str) -> dict:
 def _spec() -> dict:
     """A loader read by two scenarios, Open (expanded) and Shut (collapsed),
     whose comparison is their set's shared outcome, drawn collapsed."""
-    py = "curio.builtin/computation-analysis"
+    py = "curio.builtin/python-computation"
     edge = lambda s, t, h="in": {"id": f"e-{s}-{t}", "source": s, "target": t, "sourceHandle": "out", "targetHandle": h}  # noqa: E731
     return {"dataflow": {
         "name": "Read-only scenarios", "task": "", "timestamp": 1789193389280, "provenance_id": "ro",

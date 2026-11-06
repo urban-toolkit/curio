@@ -73,7 +73,7 @@ function node(id: string, selected: boolean) {
     position: { x: 0, y: 0 },
     width: 525,
     height: 350,
-    data: { nodeType: "curio.builtin/computation-analysis@1", title: id },
+    data: { nodeType: "curio.builtin/python-computation@1", title: id },
   };
 }
 

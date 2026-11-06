@@ -83,21 +83,27 @@ beforeEach(() => {
 test("a category opened stays open while the dataflow is open, and closes when another dataflow opens", async () => {
   mockRouteId = FIRST_ID;
   const view = render(canvas());
-  await waitFor(() => expect(mockLoadProject).toHaveBeenCalledWith(FIRST_ID, { lastResults: true }));
+  await waitFor(() =>
+    expect(mockLoadProject).toHaveBeenCalledWith(FIRST_ID, { lastResults: true, signal: expect.any(AbortSignal) }),
+  );
   openCategory(view.container, "widgets");
   view.rerender(canvas());
   expect(widgetsOpen(view.container)).toBe(true);
 
   mockRouteId = SECOND_ID;
   view.rerender(canvas());
-  await waitFor(() => expect(mockLoadProject).toHaveBeenCalledWith(SECOND_ID, { lastResults: true }));
+  await waitFor(() =>
+    expect(mockLoadProject).toHaveBeenCalledWith(SECOND_ID, { lastResults: true, signal: expect.any(AbortSignal) }),
+  );
   expect(headerRow(view.container)).toEqual([{ category: "widgets", label: "Widgets 1", open: false }]);
 });
 
 test("a new dataflow starts with its headers closed", async () => {
   mockRouteId = FIRST_ID;
   const view = render(canvas());
-  await waitFor(() => expect(mockLoadProject).toHaveBeenCalledWith(FIRST_ID, { lastResults: true }));
+  await waitFor(() =>
+    expect(mockLoadProject).toHaveBeenCalledWith(FIRST_ID, { lastResults: true, signal: expect.any(AbortSignal) }),
+  );
   openCategory(view.container, "widgets");
 
   mockRouteId = "new";

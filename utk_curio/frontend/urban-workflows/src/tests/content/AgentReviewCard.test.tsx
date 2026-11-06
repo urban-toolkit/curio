@@ -161,7 +161,7 @@ describe("AgentReviewCard: dev/48 install kinds", () => {
       preview: "1 added / 0 modified / 0 preserved files; 1 node(s) after install",
       pins: { artifactDigest: "d".repeat(64), target: "ai.agent.sentiment@1" },
       status: "pending",
-      justification: "Considered curio.builtin/computation-analysis: it cannot hold streaming output.",
+      justification: "Considered curio.builtin/python-computation: it cannot hold streaming output.",
       draft: {
         mode: "create",
         target: "ai.agent.sentiment@1",

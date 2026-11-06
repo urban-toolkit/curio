@@ -42,7 +42,7 @@
             "changed": [
               {
                 "id": "c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70",
-                "type": "curio.builtin/computation-analysis",
+                "type": "curio.builtin/python-computation",
                 "title": "Roofs in the picked zip codes",
                 "changes": {
                   "content": {
@@ -132,7 +132,7 @@
             "changed": [
               {
                 "id": "e8d24b91-3f05-4c7a-b6d1-0a9c27e5f413",
-                "type": "curio.builtin/computation-analysis",
+                "type": "curio.builtin/python-computation",
                 "title": "Mean roof size",
                 "changes": {
                   "content": {
@@ -182,7 +182,7 @@
             "changed": [
               {
                 "id": "c3a1f0d2-7b64-4e19-9a2e-5d8b1c6e4f70",
-                "type": "curio.builtin/computation-analysis",
+                "type": "curio.builtin/python-computation",
                 "title": "Roofs in the picked zip codes",
                 "changes": {
                   "content": {

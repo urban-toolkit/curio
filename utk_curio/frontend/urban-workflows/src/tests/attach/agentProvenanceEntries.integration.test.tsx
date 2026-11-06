@@ -164,7 +164,7 @@ const AGAIN = "return input_0[input_0['year'] < 2020]";
 /** A Python node on the canvas, added with no agent named. */
 const PYTHON = {
   id: 'python-node',
-  type: 'curio.builtin/computation-analysis',
+  type: 'curio.builtin/python-computation',
   content: BEFORE,
   goal: 'years',
   x: 500,

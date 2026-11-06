@@ -214,7 +214,7 @@ class TestReviewProposals:
         # while the chat header names the node by its kind.
         _, token = user_and_token
         att_id, _ = self._setup(client, token, alice_project, monkeypatch)
-        node = {"id": "n1", "type": "curio.builtin/computation-analysis",
+        node = {"id": "n1", "type": "curio.builtin/python-computation",
                 "title": "Word counts", "content": "print(1)"}
         client.put(
             f"/api/projects/{alice_project}",
@@ -464,7 +464,7 @@ class TestNodeCreate:
             "dependencies": {"packages": {}, "python": {}, "js": {}},
             "templates": templates or [
                 {
-                    "id": "computation-analysis", "label": "Computation Analysis",
+                    "id": "python-computation", "label": "Python Computation",
                     "category": "computation", "engine": "python", "editor": "code",
                     "description": "Run python analysis code.",
                     # Real-manifest parity (dev/67-3): one declared "[1,n]"
@@ -492,7 +492,7 @@ class TestNodeCreate:
         }
         (d / "manifest.json").write_text(_json.dumps(manifest), encoding="utf-8")
 
-    def _create_tail(self, node_type="curio.builtin/computation-analysis", content="print('new')", extra=""):
+    def _create_tail(self, node_type="curio.builtin/python-computation", content="print('new')", extra=""):
         return (
             '```curio.v1\n{"toolRequest": {"tool": "node.create", '
             f'"params": {{"nodeType": "{node_type}", "content": "{content}"{extra}}}}}}}\n```'
@@ -503,7 +503,7 @@ class TestNodeCreate:
         f-string and cannot express a multi-line source body."""
         import json as _json
 
-        params.setdefault("nodeType", "curio.builtin/computation-analysis")
+        params.setdefault("nodeType", "curio.builtin/python-computation")
         return (
             "```curio.v1\n"
             + _json.dumps({"toolRequest": {"tool": "node.create", "params": params}})
@@ -570,7 +570,7 @@ class TestNodeCreate:
         self._run(client, token, alice_project, att_id)
         system = calls[0][0]["content"]
         assert "Available node templates" in system
-        assert "- curio.builtin/computation-analysis — Computation Analysis" in system
+        assert "- curio.builtin/python-computation — Python Computation" in system
         # Non-authorable templates are not offered.
         assert "data-pool" not in system
 
@@ -601,10 +601,10 @@ class TestNodeCreate:
         card = _the_change(body)
         assert (card["kind"], card["status"]) == ("node", "applied")
         # dev/119 (DEC-076): the roster's executability rides the card as display.
-        assert (card["nodeType"], card["executable"]) == ("curio.builtin/computation-analysis", True)
+        assert (card["nodeType"], card["executable"]) == ("curio.builtin/python-computation", True)
         assert "contentSha256" not in card  # no digest for a creation
         created = self._created(body)
-        assert created["type"] == "curio.builtin/computation-analysis"
+        assert created["type"] == "curio.builtin/python-computation"
         assert created["content"] == "print('new')"
         # Placement: a gutter right of the existing node's right edge (x 100 plus
         # the default 525 width), on its row, so the two never overlap (#499).
@@ -766,9 +766,9 @@ class TestDataflowPlanMint:
         plan = {
             "goal": "heat analysis",
             "nodes": nodes or [
-                {"ref": "a", "nodeType": "curio.builtin/computation-analysis",
+                {"ref": "a", "nodeType": "curio.builtin/python-computation",
                  "title": "Load", "intent": "load the data"},
-                {"ref": "b", "nodeType": "curio.builtin/computation-analysis",
+                {"ref": "b", "nodeType": "curio.builtin/python-computation",
                  "title": "Analyze", "intent": "compute stats"},
             ],
             "edges": edges if edges is not None else [{"from": "a", "to": "b"}],
@@ -979,13 +979,13 @@ class TestPlanTemplateSpellings:
     ):
         body, _, _ = self._mint(
             client, user_and_token, alice_project, monkeypatch,
-            nodes=[{"ref": "a", "nodeType": "curio.builtin/computation-analysis@1",
+            nodes=[{"ref": "a", "nodeType": "curio.builtin/python-computation@1",
                     "title": "Load", "intent": "load"}],
         )
         # Landed, AND the stored plan pins the canonical unversioned id rather
         # than whatever spelling the model happened to send.
         assert _landed_plan(body)["plan"]["nodes"][0]["nodeType"] == (
-            "curio.builtin/computation-analysis"
+            "curio.builtin/python-computation"
         )
 
     def test_legacy_enum_node_types_land_canonical(
@@ -993,11 +993,11 @@ class TestPlanTemplateSpellings:
     ):
         body, _, _ = self._mint(
             client, user_and_token, alice_project, monkeypatch,
-            nodes=[{"ref": "a", "nodeType": "COMPUTATION_ANALYSIS",
+            nodes=[{"ref": "a", "nodeType": "PYTHON_COMPUTATION",
                     "title": "Load", "intent": "load"}],
         )
         assert _landed_plan(body)["plan"]["nodes"][0]["nodeType"] == (
-            "curio.builtin/computation-analysis"
+            "curio.builtin/python-computation"
         )
 
     def test_mixed_spellings_in_one_plan_all_canonicalise(
@@ -1008,17 +1008,17 @@ class TestPlanTemplateSpellings:
         body, _, _ = self._mint(
             client, user_and_token, alice_project, monkeypatch,
             nodes=[
-                {"ref": "a", "nodeType": "curio.builtin/computation-analysis",
+                {"ref": "a", "nodeType": "curio.builtin/python-computation",
                  "title": "One", "intent": "i"},
-                {"ref": "b", "nodeType": "curio.builtin/computation-analysis@1",
+                {"ref": "b", "nodeType": "curio.builtin/python-computation@1",
                  "title": "Two", "intent": "i"},
-                {"ref": "c", "nodeType": "COMPUTATION_ANALYSIS",
+                {"ref": "c", "nodeType": "PYTHON_COMPUTATION",
                  "title": "Three", "intent": "i"},
             ],
             edges=[{"from": "a", "to": "b"}],
         )
         assert {n["nodeType"] for n in _landed_plan(body)["plan"]["nodes"]} == {
-            "curio.builtin/computation-analysis"
+            "curio.builtin/python-computation"
         }
 
     def test_a_plan_may_use_a_non_authorable_template(
@@ -1058,7 +1058,7 @@ class TestPlanTemplateSpellings:
         would be worse than refusing, so the refusal stays."""
         body, _, _ = self._mint(
             client, user_and_token, alice_project, monkeypatch,
-            nodes=[{"ref": "a", "nodeType": "computation-analysis",
+            nodes=[{"ref": "a", "nodeType": "python-computation",
                     "title": "Load", "intent": "load"}],
         )
         assert all(p["type"] not in ("proposal", "change") for p in body["content"])
@@ -1070,7 +1070,7 @@ class TestPlanTemplateSpellings:
         spelling names is on the canvas."""
         body, _, _ = self._mint(
             client, user_and_token, alice_project, monkeypatch,
-            nodes=[{"ref": "a", "nodeType": "curio.builtin/computation-analysis@1",
+            nodes=[{"ref": "a", "nodeType": "curio.builtin/python-computation@1",
                     "title": "Load", "intent": "load"}],
         )
         [created] = _landed_plan(body)["canvas"]["nodes"]
@@ -1132,7 +1132,7 @@ class TestDataflowPlanApply:
             nodes=[
                 {"ref": "a", "nodeType": "curio.builtin/data-loading",
                  "title": "Load boundaries", "intent": "load the community areas"},
-                {"ref": "b", "nodeType": "curio.builtin/computation-analysis",
+                {"ref": "b", "nodeType": "curio.builtin/python-computation",
                  "title": "Analyze", "intent": "compute density"},
             ],
             edges=[{"from": "a", "to": "b"}],
@@ -1271,7 +1271,7 @@ class TestDataflowPlanApply:
         # shortcut): plans describe intent; content is generated and
         # validated per node after creation. The refusal is corrective.
         user, token = user_and_token
-        nodes = [{"ref": "a", "nodeType": "curio.builtin/computation-analysis",
+        nodes = [{"ref": "a", "nodeType": "curio.builtin/python-computation",
                   "title": "Done", "intent": "already coded", "content": "print('x')"}]
         helper = TestDataflowPlanMint()
         att_id, calls = helper._setup(
@@ -1323,16 +1323,16 @@ class TestDestructiveReplan:
         return f"```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
 
     def _new_node(self, ref="a", title="API Fetch"):
-        return {"ref": ref, "nodeType": "curio.builtin/computation-analysis",
+        return {"ref": ref, "nodeType": "curio.builtin/python-computation",
                 "title": title, "intent": "fetch from the api"}
 
     def _setup(self, client, user, token, project_id, monkeypatch, replies,
-               cleaner_type="curio.builtin/computation-analysis"):
+               cleaner_type="curio.builtin/python-computation"):
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         TestNodeCreate()._write_builtin_package(_user_dir_key(user))
         spec = {"dataflow": {"nodes": [
-            {"id": "old-loader", "type": "curio.builtin/computation-analysis",
+            {"id": "old-loader", "type": "curio.builtin/python-computation",
              "content": "load_csv()", "goal": "Load CSV", "x": 10, "y": 20},
             {"id": "cleaner", "type": cleaner_type,
              "content": "clean()", "goal": "Clean", "x": 430, "y": 20},
@@ -1411,7 +1411,7 @@ class TestDestructiveReplan:
         assert "old-loader" in self._landing(user, alice_project, att_id)["removeContentSha256"]
         (removal,) = card["plan"]["removals"]
         assert removal == {"id": "old-loader", "label": "Load CSV",
-                           "nodeType": "curio.builtin/computation-analysis",
+                           "nodeType": "curio.builtin/python-computation",
                            "contentChars": len("load_csv()")}
         assert card["plan"]["cascadeCount"] == 1  # edge-1 dies with it
         assert "removes 1 node" in card["summary"]
@@ -1545,7 +1545,7 @@ class TestThePlanCard:
     def test_expects_rides_the_plan_card(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         plan = {"goal": "g", "nodes": [
-            {"ref": "a", "nodeType": "curio.builtin/computation-analysis",
+            {"ref": "a", "nodeType": "curio.builtin/python-computation",
              "title": "Load", "intent": "load it",
              "expects": "in: none · out: dataframe"},
         ], "edges": []}
@@ -1601,7 +1601,7 @@ class TestPlanFanInValidation:
     #: The default roster plus a node whose one input port takes at most two
     #: edges ("[1,2]"): two circles, "in" and "in_1".
     BOUNDED_TEMPLATES = [
-        {"id": "computation-analysis", "label": "Computation Analysis",
+        {"id": "python-computation", "label": "Python Computation",
          "category": "computation", "engine": "python", "editor": "code",
          "description": "Run python analysis code.",
          "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
@@ -1629,7 +1629,7 @@ class TestPlanFanInValidation:
 
         return f"Plan.\n```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
 
-    def _node(self, ref, node_type="curio.builtin/computation-analysis"):
+    def _node(self, ref, node_type="curio.builtin/python-computation"):
         return {"ref": ref, "nodeType": node_type, "title": ref.upper(),
                 "intent": f"do {ref}"}
 
@@ -2278,18 +2278,20 @@ class TestNewNodeTypesInADraft:
         refusal = self._refusal(client, token, alice_project, monkeypatch, params)
         assert f"at most {mint._JUSTIFICATION_MAX_CHARS}" in refusal
 
-    @pytest.mark.parametrize("label", [
-        "Computation Analysis",  # its slug is the built-in's template id
-        "python computation",    # the built-in's label, in another case
+    @pytest.mark.parametrize("label,twin", [
+        # Its slug is a built-in's template id; that template's label is Map Editor.
+        ("Edit Features", "curio.builtin/edit-features"),
+        # A built-in's label, in another case.
+        ("python computation", "curio.builtin/python-computation"),
     ])
     def test_a_new_template_like_an_existing_one_is_reuse_territory(
-            self, client, user_and_token, tmp_curio, alice_project, monkeypatch, label):
+            self, client, user_and_token, tmp_curio, alice_project, monkeypatch, label, twin):
         _, token = user_and_token
         params = TestPackageBuilderTools()._draft_params()
         params["manifest"]["templates"][0]["label"] = label
         refusal = self._refusal(client, token, alice_project, monkeypatch, params)
         assert "reuse territory" in refusal
-        assert "curio.builtin/computation-analysis" in refusal  # the template to use
+        assert twin in refusal  # the template to use
         assert "note-kind" in refusal
         assert "a label no existing template has" in refusal
 
@@ -2478,7 +2480,7 @@ class TestTheOneTemplateToolIsRetired:
 
         user, token = user_and_token
         request = {"toolRequest": {"tool": self.RETIRED, "params": {
-            "justification": "Considered curio.builtin/computation-analysis: it cannot score.",
+            "justification": "Considered curio.builtin/python-computation: it cannot score.",
             "template": {"label": "Sentiment Scorer", "engine": "python",
                          "content": "print('score')"},
         }}}
@@ -2507,7 +2509,7 @@ class TestTheOneTemplateToolIsRetired:
         attachments.get_attachment(spec, att_id)["activeProposal"] = {
             "proposalId": "saved-before",
             "tool": self.RETIRED,
-            "justification": "Considered curio.builtin/computation-analysis: it cannot score.",
+            "justification": "Considered curio.builtin/python-computation: it cannot score.",
             "template": {"label": "Sentiment Scorer", "engine": "python",
                          "description": "", "content": "print('score')"},
             "summary": "Create a new custom node type: Sentiment Scorer",
@@ -2541,7 +2543,7 @@ class TestBackendDraftEndToEnd:
         return {
             "mode": "create",
             "justification": (
-                "Considered curio.builtin/computation-analysis: it runs in the shared "
+                "Considered curio.builtin/python-computation: it runs in the shared "
                 "sandbox, and this count runs in its own package backend."
             ),
             "manifest": {
@@ -2761,7 +2763,7 @@ class TestPlanTopologyMint:
 
     COORD = "agent.curio.dataflow-builder@1"
     TEMPLATES = [
-        {"id": "computation-analysis", "label": "Computation Analysis", "category": "computation",
+        {"id": "python-computation", "label": "Python Computation", "category": "computation",
          "engine": "python", "editor": "code", "description": "d",
          "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
          "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
@@ -2777,9 +2779,9 @@ class TestPlanTopologyMint:
     # The owner's canvas, its Merge Flow now the code step that combines
     # (#662): Load, Transform, Combine, Pool, Vis, each feeding the next.
     NODES = [
-        {"id": "load", "type": "curio.builtin/computation-analysis", "content": "", "goal": "Fabricate", "x": 0, "y": 0},
-        {"id": "xform", "type": "curio.builtin/computation-analysis", "content": "", "goal": "Transform", "x": 400, "y": 0},
-        {"id": "combine", "type": "curio.builtin/computation-analysis", "content": "", "goal": "Pool Input Combine", "x": 800, "y": 0},
+        {"id": "load", "type": "curio.builtin/python-computation", "content": "", "goal": "Fabricate", "x": 0, "y": 0},
+        {"id": "xform", "type": "curio.builtin/python-computation", "content": "", "goal": "Transform", "x": 400, "y": 0},
+        {"id": "combine", "type": "curio.builtin/python-computation", "content": "", "goal": "Pool Input Combine", "x": 800, "y": 0},
         {"id": "pool", "type": "curio.builtin/data-pool", "content": "", "goal": "Time Data Pool", "x": 1200, "y": 0},
         {"id": "vis", "type": "curio.builtin/vis-vega", "content": "", "goal": "Metric Distribution", "x": 1600, "y": 0},
     ]
@@ -2868,7 +2870,7 @@ class TestPlanTopologyMint:
         assert self._landed(body) is None
         feedback = calls[1][-1]["content"]
         assert "invalid interaction edges" in feedback
-        assert "'combine' is computation-analysis" in feedback
+        assert "'combine' is python-computation" in feedback
         assert "end the interaction edge at a view that highlights or at a data-pool" in feedback
 
     def test_removal_only_plan_that_breaks_a_user_cycle_lands_and_names_the_connection(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
@@ -2925,7 +2927,7 @@ class TestPlanTopologyMint:
     def test_a_plan_that_leaves_a_user_cycle_alone_is_not_blamed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         cyclic = self.EDGES + [{"id": "e5", "source": "vis", "target": "combine", "sourceHandle": "out", "targetHandle": "in_1"}]
-        plan = {"goal": "note", "nodes": [{"ref": "n", "nodeType": "curio.builtin/computation-analysis",
+        plan = {"goal": "note", "nodes": [{"ref": "n", "nodeType": "curio.builtin/python-computation",
                                           "title": "Side", "intent": "unrelated"}], "edges": []}
         att_id, _ = self._setup(client, user, token, alice_project, monkeypatch,
                                 replies=["Add.\n" + self._tail(plan)], edges=cyclic)
@@ -2935,7 +2937,7 @@ class TestPlanTopologyMint:
         user, token = user_and_token
         with_feedback = self.EDGES + [{"id": "e5", "source": "vis", "target": "pool", "type": "Interaction",
                                        "sourceHandle": "in/out", "targetHandle": "in/out"}]
-        plan = {"goal": "extend", "nodes": [{"ref": "n", "nodeType": "curio.builtin/computation-analysis",
+        plan = {"goal": "extend", "nodes": [{"ref": "n", "nodeType": "curio.builtin/python-computation",
                                             "title": "Post", "intent": "downstream"}],
                 "edges": [{"from": "vis", "to": "n"}]}
         att_id, _ = self._setup(client, user, token, alice_project, monkeypatch,
@@ -2983,7 +2985,7 @@ class TestPlanTopologyApply:
     def test_its_card_reports_a_user_cycle_the_plan_left_alone(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         base = self._base()
-        plan = {"goal": "side", "nodes": [{"ref": "n", "nodeType": "curio.builtin/computation-analysis",
+        plan = {"goal": "side", "nodes": [{"ref": "n", "nodeType": "curio.builtin/python-computation",
                                           "title": "Side", "intent": "unrelated"}], "edges": []}
         att_id, _ = base._setup(client, user, token, alice_project, monkeypatch,
                                 replies=["Add.\n" + base._tail(plan)], edges=self._cyclic_edges())

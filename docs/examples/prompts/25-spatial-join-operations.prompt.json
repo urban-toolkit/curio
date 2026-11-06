@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/25-spatial-join-operations.json",
-    "sha256": "0e3cbcfa72ec08f5ebdc4aab5bec5f758316c806eacbdbb633e36883d52128fa",
+    "sha256": "9380f31a9a53d1e09b00de0dee920fff3c2a9851ef4387c59cace62e59a880ad",
     "walkthrough": null
   },
   "prompt": "From the Data Catalog, load Chicago's green roofs, a sample of Project Sidewalk labels spread across the city, the city's neighborhoods and its ZIP codes, and show every kind of spatial join side by side: the neighborhood each green roof is in; a map of how many sidewalk labels lie within each neighborhood; the labels each neighborhood contains, by type; which neighborhoods border each other; which ZIP codes each neighborhood overlaps; which neighborhoods each ZIP border runs through; and how far each green roof is from the nearest sidewalk label. Add two small squares that share an edge and three points, one inside a square, one on the shared edge and one outside both, and show that the point on the edge meets both squares but lies within neither.",
@@ -21,13 +21,6 @@
   },
   "expected": {
     "nodes": [
-      {
-        "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
       {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
@@ -71,11 +64,11 @@
         "hasContent": true
       },
       {
-        "ref": "endpoint1",
-        "type": "curio.builtin/spatial-join",
-        "role": "endpoint",
-        "executable": false,
-        "hasContent": false
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
       },
       {
         "ref": "endpoint2",
@@ -134,6 +127,13 @@
         "hasContent": false
       },
       {
+        "ref": "endpoint1",
+        "type": "curio.builtin/spatial-join",
+        "role": "endpoint",
+        "executable": false,
+        "hasContent": false
+      },
+      {
         "ref": "visualization1",
         "type": "curio.builtin/vis-simple",
         "role": "visualization",
@@ -146,13 +146,6 @@
         "role": "visualization",
         "executable": false,
         "hasContent": false
-      },
-      {
-        "ref": "visualization3",
-        "type": "curio.builtin/vis-vega",
-        "role": "visualization",
-        "executable": false,
-        "hasContent": true
       },
       {
         "ref": "visualization4",
@@ -195,14 +188,16 @@
         "role": "visualization",
         "executable": false,
         "hasContent": true
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
       }
     ],
     "edges": [
-      {
-        "from": "analysis1",
-        "to": "endpoint1",
-        "kind": "data"
-      },
       {
         "from": "loader1",
         "to": "analysis1",
@@ -265,12 +260,6 @@
       },
       {
         "from": "loader6",
-        "to": "endpoint1",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "loader6",
         "to": "endpoint4",
         "kind": "data"
       },
@@ -303,8 +292,14 @@
         "slot": 1
       },
       {
-        "from": "endpoint1",
-        "to": "visualization3",
+        "from": "loader6",
+        "to": "endpoint1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis1",
+        "to": "endpoint1",
         "kind": "data"
       },
       {
@@ -345,6 +340,11 @@
       {
         "from": "endpoint9",
         "to": "visualization9",
+        "kind": "data"
+      },
+      {
+        "from": "endpoint1",
+        "to": "visualization3",
         "kind": "data"
       }
     ],

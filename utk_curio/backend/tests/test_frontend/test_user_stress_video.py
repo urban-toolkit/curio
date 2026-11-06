@@ -41,6 +41,12 @@ import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
+from utk_curio.backend.tests._support.ui_test_package import (
+    UI_TEST_NODE_TYPE,
+    UI_TEST_PACKAGE,
+    UI_TEST_PACKAGE_NAME,
+)
+
 from .tour import VIDEO_SIZE, finalize_video
 from .usertest import (
     PALETTE_ICON_CLASS,
@@ -60,6 +66,7 @@ from .utils import (
     activate_header_icon,
     api_json,
     canvas_nodes,
+    catalog_test_package,
     close_tools_palette,
     connect_nodes,
     dismiss_toasts,
@@ -141,8 +148,10 @@ CARD = 'article:not([role="status"])'
 
 GEO_DATASET = "data.utk.chicago-boundary"
 
-PKG_DIR = "curio.example-ui@1"
-PKG_NAME = "Example: Custom UI Node"
+#: A test package with no python deps, planted in the catalog for the session
+#: that adds it.
+PKG_DIR = UI_TEST_PACKAGE
+PKG_NAME = UI_TEST_PACKAGE_NAME
 
 # ---------------------------------------------------------------------------
 # Content the sessions type
@@ -1128,7 +1137,7 @@ class TestSessionRealData:
         with s.step("Compute something from it",
                     "Income per capita, and the column names my CSV really has.",
                     chapter="Working with it"):
-            transform_id = grid_drop(s, "computation-analysis", 0, 1)
+            transform_id = grid_drop(s, "python-computation", 0, 1)
             connect_nodes(page, loader_id, transform_id)
             set_node_code(
                 page, transform_id,
@@ -1145,7 +1154,7 @@ class TestSessionRealData:
             )
             output = run_and_report(
                 s, transform_id, label="the transformation over my CSV",
-                node_type="curio.builtin/computation-analysis",
+                node_type="curio.builtin/python-computation",
             )
             flat = " ".join(output.split())
             if "Rogers Park, North" not in flat and "Rogers Park" not in flat:
@@ -1186,7 +1195,7 @@ class TestSessionRealData:
             s.tour.beat(800)
             run_and_report(
                 s, transform_id, label="the transformation, saving its output",
-                node_type="curio.builtin/computation-analysis",
+                node_type="curio.builtin/python-computation",
             )
 
         with s.step("Look for the computed dataset in the catalog",
@@ -1500,10 +1509,11 @@ class TestSessionExtending:
     """A user who wants Curio to do something it does not ship with."""
 
     def test_extending(self, browser, frontend_server, current_server):
-        run_session(
-            browser, frontend_server, current_server,
-            session_id="s4", title="S4 Extending Curio", body=self._body,
-        )
+        with catalog_test_package(current_server, PKG_DIR):
+            run_session(
+                browser, frontend_server, current_server,
+                session_id="s4", title="S4 Extending Curio", body=self._body,
+            )
 
     def _body(self, s: UserSession) -> None:
         page = s.page
@@ -1536,7 +1546,7 @@ class TestSessionExtending:
             page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
             loader_id = drop_node(s, "data-loading", (150, 150))
             set_node_code(page, loader_id, QUICKSTART_LOADER)
-            transform_id = drop_node(s, "computation-analysis", (760, 150))
+            transform_id = drop_node(s, "python-computation", (760, 150))
             connect_nodes(page, loader_id, transform_id)
             set_node_code(
                 page, transform_id,
@@ -1551,14 +1561,14 @@ class TestSessionExtending:
             )
             run_and_report(
                 s, transform_id, label="my ranking transformation",
-                node_type="curio.builtin/computation-analysis",
+                node_type="curio.builtin/python-computation",
             )
             _fit_view(page)
             s.state.update(loader=loader_id, transform=transform_id)
 
         # --- node packages -------------------------------------------------
         with s.step("Install a package from the Node Catalog",
-                    "The example UI package: no python deps to resolve.",
+                    "A test package with its own node interface: no python deps to resolve.",
                     chapter="Packages"):
             palette = open_tools_palette(page, "packages")
             s.tour.click(
@@ -1572,7 +1582,7 @@ class TestSessionExtending:
             )
             expect(drawer).to_be_visible(timeout=20000)
             search = drawer.get_by_placeholder("Search packages, publishers, tags…")
-            s.tour.type_into(search, "example", delay=70)
+            s.tour.type_into(search, PKG_NAME, delay=70)
             card = drawer.locator(f'article[data-pkg-dir="{PKG_DIR}"]')
             expect(card).to_have_count(1, timeout=20000)
             with page.expect_response(
@@ -1616,7 +1626,7 @@ class TestSessionExtending:
         with s.step("Work out how a custom-UI node is supposed to run",
                     "It has controls in its body rather than a code editor.",
                     expect="either"):
-            # Deliberately not run_and_report: curio.example-ui declares
+            # Deliberately not run_and_report: test.ui-node declares
             # editor:"none" / hasWidgets:false, and styles.tsx only renders the
             # play control inside the `sendCodeToWidgets != undefined` block, so
             # this node has no Play button at all. Asserting one exists was this
@@ -1636,7 +1646,7 @@ class TestSessionExtending:
                     "how to run it",
                     severity="warning",
                     detail_full=(
-                        "curio.example-ui/column-filter has no play button "
+                        f"{UI_TEST_NODE_TYPE} has no play button "
                         "(styles.tsx gates it on sendCodeToWidgets) and its body "
                         f"text does not say how to trigger it. Body: {body[:600]}"
                     ),
@@ -2003,15 +2013,15 @@ class TestSessionAbuse:
         with s.step("Build a three-node chain to abuse"):
             set_canvas_zoom(page, 0.6)
             loader = grid_drop(s, "data-loading", 0, 0)
-            middle = grid_drop(s, "computation-analysis", 1, 0)
-            tail = grid_drop(s, "computation-analysis", 2, 0)
+            middle = grid_drop(s, "python-computation", 1, 0)
+            tail = grid_drop(s, "python-computation", 2, 0)
             connect_nodes(page, loader, middle)
             connect_nodes(page, middle, tail)
             set_node_code(page, loader, QUICKSTART_LOADER)
             set_node_code(page, middle, "df = input_0.copy()\ndf['c'] = df['b'] * 2\nreturn df\n")
             set_node_code(page, tail, "df = input_0\nprint('tail sees', list(df.columns))\nreturn df\n")
             run_and_report(s, tail, label="the chain's tail",
-                           node_type="curio.builtin/computation-analysis")
+                           node_type="curio.builtin/python-computation")
             _fit_view(page)
             s.state.update(loader=loader, middle=middle, tail=tail)
 
@@ -2048,7 +2058,7 @@ class TestSessionAbuse:
             play_node(page, s.state["tail"])
             status = wait_for_node_settled(
                 page, s.state["tail"],
-                node_type="curio.builtin/computation-analysis",
+                node_type="curio.builtin/python-computation",
                 timeout_ms=90000,
             )
             s.note(f"running inside a cycle settled as {status!r}")
@@ -2100,7 +2110,7 @@ class TestSessionAbuse:
                 play_node(page, s.state["tail"])
                 status = wait_for_node_settled(
                     page, s.state["tail"],
-                    node_type="curio.builtin/computation-analysis",
+                    node_type="curio.builtin/python-computation",
                     timeout_ms=90000,
                 )
                 s.note(
@@ -2110,7 +2120,7 @@ class TestSessionAbuse:
         with s.step("Import a library nobody installed",
                     "Library install is refused for guests, so this must explain "
                     "itself.", quiet_console=True):
-            probe = grid_drop(s, "computation-analysis", 0, 2)
+            probe = grid_drop(s, "python-computation", 0, 2)
             set_node_code(
                 page, probe,
                 "import curio_definitely_not_a_real_package as nope\n"
@@ -2118,7 +2128,7 @@ class TestSessionAbuse:
             )
             play_node(page, probe)
             status = wait_for_node_settled(
-                page, probe, node_type="curio.builtin/computation-analysis",
+                page, probe, node_type="curio.builtin/python-computation",
                 timeout_ms=120000,
             )
             detail = " ".join(
@@ -2197,7 +2207,7 @@ class TestSessionAbuse:
         with s.step("Navigate away in the middle of a run",
                     "Then come back and see what state the node is in.",
                     expect="either", quiet_console=True):
-            slow = grid_drop(s, "computation-analysis", 1, 2)
+            slow = grid_drop(s, "python-computation", 1, 2)
             set_node_code(
                 page, slow,
                 "import time\n"

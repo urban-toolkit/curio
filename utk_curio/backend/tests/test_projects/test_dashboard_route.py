@@ -34,7 +34,7 @@ def _spec_with_pinned_chart():
             "nodes": [
                 {
                     "id": "py",
-                    "type": "curio.builtin/computation-analysis",
+                    "type": "curio.builtin/python-computation",
                     "x": 0,
                     "y": 0,
                 },

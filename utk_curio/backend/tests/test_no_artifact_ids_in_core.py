@@ -88,7 +88,7 @@ _CASES = "cases beside the code they test, read only by the Jest and pytest suit
 #: Each other hit app code may hold: file -> (ids, why).
 ALLOWED = {
     "utk_curio/backend/app/packages/repositories/legacy_catalog_digests.json": (
-        {"ai.utk.uhvi", "curio.example-ui", "curio.media", "curio.weather"},
+        {"ai.utk.uhvi", "curio.media", "curio.weather"},
         _DIGESTS,
     ),
     "utk_curio/backend/app/agents/evaluation/live.py": ({"agent.curio.dataflow-builder"}, _EVALUATION),

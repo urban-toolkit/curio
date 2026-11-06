@@ -137,7 +137,7 @@ test('a registered template keeps the loadsDataset flag its manifest declares', 
   expect(loadsDatasetOf('acme.tools/geocode@1')).toBe(true);
   expect(loadsDatasetOf('acme.tools/fetch-roads@1')).toBeUndefined();
   expect(loadsDatasetOf('acme.tools/data-loading@1')).toBeUndefined();
-  expect(loadsDatasetOf('curio.builtin/computation-analysis@1')).toBeUndefined();
+  expect(loadsDatasetOf('curio.builtin/python-computation@1')).toBeUndefined();
 });
 
 describe('the canvas rules that read what a template declares', () => {
@@ -160,7 +160,7 @@ describe('the canvas rules that read what a template declares', () => {
         datasetId: 'acme.parcels',
         nodes: [
           { data: { nodeId: 'loader', nodeType: loaderType, datasetRefs: ['acme.parcels'] } },
-          { data: { nodeId: 'after', nodeType: 'curio.builtin/computation-analysis@1' } },
+          { data: { nodeId: 'after', nodeType: 'curio.builtin/python-computation@1' } },
         ],
         edges: [{ source: 'loader', target: 'after' }],
       }).consumingNodes.map((n: { nodeId: string }) => n.nodeId);

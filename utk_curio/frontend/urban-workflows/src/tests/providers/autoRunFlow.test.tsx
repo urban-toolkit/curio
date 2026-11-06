@@ -199,11 +199,11 @@ async function renderFlow(value: UserContextValue, { dashboardOn = false } = {})
     api.addNode(
       {
         id: 'counter',
-        type: 'curio.builtin/computation-analysis',
+        type: 'curio.builtin/python-computation',
         position: { x: 0, y: 300 },
         data: {
           nodeId: 'counter',
-          nodeType: 'curio.builtin/computation-analysis',
+          nodeType: 'curio.builtin/python-computation',
           code: CODE,
           selections: [TAG],
           output: { code: 'success' },

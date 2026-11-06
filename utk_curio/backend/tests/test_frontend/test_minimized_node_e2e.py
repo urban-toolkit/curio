@@ -63,7 +63,7 @@ CLOSEUP_STEM = "minimized-node-chip"
 
 def _node(node_id: str, x: int, y: int, title: str | None = None, minimized: bool = False) -> dict:
     node = {
-        "id": node_id, "type": "curio.builtin/computation-analysis", "x": x, "y": y,
+        "id": node_id, "type": "curio.builtin/python-computation", "x": x, "y": y,
         "content": "return 1\n", "in": "DEFAULT", "out": "DEFAULT", "goal": "",
         "metadata": {"keywords": []},
     }

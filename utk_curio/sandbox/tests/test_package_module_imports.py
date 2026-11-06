@@ -263,7 +263,7 @@ def test_another_node_cannot_import_a_packages_modules(run_in_process, tmp_path)
     assert first["stderr"] == "", first["stderr"]
     other = run_in_process(
         "    import building_height\n    return 1\n",
-        node_type="curio.builtin/computation-analysis", session_id="s-468",
+        node_type="curio.builtin/python-computation", session_id="s-468",
     )
     assert other["output"]["path"] == ""
     assert "No module named 'building_height'" in other["stderr"]
@@ -329,7 +329,7 @@ def test_in_process_a_later_node_gets_the_library_import_but_not_the_modules(run
     assert load_from_duckdb(first["output"]["path"]) == 42, first["stderr"]
     later = run_in_process(
         "    return ','.join(n for n in ('convert_raster', 'statistics') if n in globals())\n",
-        node_type="curio.builtin/computation-analysis", session_id="s-share",
+        node_type="curio.builtin/python-computation", session_id="s-share",
     )
     assert later["stderr"] == "", later["stderr"]
     assert load_from_duckdb(later["output"]["path"]) == "statistics"

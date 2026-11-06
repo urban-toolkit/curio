@@ -30,6 +30,8 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import expect
 
+from utk_curio.backend.tests._support.ui_test_package import UI_TEST_PACKAGE, UI_TEST_PACKAGE_NAME
+
 from .utils import (
     EXPORT_DOWNLOAD_TIMEOUT_MS,
     api_json,
@@ -44,8 +46,9 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-PKG_DIR = "curio.example-ui@1"
-PKG_NAME = "Example: Custom UI Node"
+#: Planted in the catalog for each test (``ui_node_in_catalog``).
+PKG_DIR = UI_TEST_PACKAGE
+PKG_NAME = UI_TEST_PACKAGE_NAME
 EXPORT_LABEL = f"Export {PKG_NAME} as a .curio.zip archive"
 
 CLONE_ID = "e2e.roundtrip-pkg"
@@ -101,7 +104,7 @@ def _one_node_spec() -> dict:
             "nodes": [
                 {
                     "id": "catalog-baseline-node",
-                    "type": "curio.builtin/computation-analysis",
+                    "type": "curio.builtin/python-computation",
                     "x": 420,
                     "y": 300,
                     "content": "return [1]",
@@ -194,6 +197,7 @@ def test_export_then_load_package_through_node_catalog(
     current_server: str,
     page,
     tmp_path,
+    ui_node_in_catalog,
     uninstall_packages,
 ):
     require_project_page()
@@ -207,7 +211,7 @@ def test_export_then_load_package_through_node_catalog(
     # 1. Seed over the API rather than driving the drawer twice: the export
     #    affordance only exists for a package in BOTH the user store and this
     #    project's lockfile, and only curio.builtin is seeded by default.
-    #    curio.example-ui@1 declares no python deps, so nothing reaches pip.
+    #    test.ui-node@1 declares no python deps, so nothing reaches pip.
     catalog = api_json(f"{current_server}/api/packages/catalog", token)
     row = next(p for p in catalog["packages"] if p["dirName"] == PKG_DIR)
     assert row["dependencies"]["python"] == {}, row["dependencies"]["python"]
@@ -341,6 +345,7 @@ def test_export_from_the_drawer_in_dataflow_tab(
     current_server: str,
     page,
     tmp_path,
+    ui_node_in_catalog,
     uninstall_packages,
 ):
     """The drawer's own export control, distinct from the palette accordion's.

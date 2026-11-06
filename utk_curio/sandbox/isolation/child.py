@@ -104,9 +104,16 @@ def _install_seccomp_filter(*, required):
 
     Network denial is why hosting requires Linux. ``unshare(CLONE_NEWNET)``
     would be stronger but needs CAP_SYS_ADMIN, which Docker does not grant by
-    default. Blocking ``socket`` outright is available to an unprivileged
-    process and is enough: the child's result travels through a file, so it
-    needs no sockets at all.
+    default. Blocking ``socket`` for every family but ``AF_UNIX`` is available
+    to an unprivileged process and is enough: the child's result travels
+    through a file, and a local socket reaches no network.
+
+    The local family stays open for CUDA: when its driver starts, it binds and
+    listens on an abstract local socket (``cuda-uvmfd-<namespace>-<pid>``), and
+    it gives up with error 304 when ``socket``, ``bind`` or ``listen`` is
+    refused, so torch in a child would see no GPU. ``connect`` and ``accept``
+    stay denied, and so do the send and receive calls: a child may make and
+    bind a local socket, but no socket carries anything into or out of it.
     """
     try:
         import pyseccomp as seccomp
@@ -121,7 +128,8 @@ def _install_seccomp_filter(*, required):
 
     DENIED = (
         # Network. Without these the child can exfiltrate anything it reads.
-        "socket", "socketcall", "connect", "bind", "listen", "accept", "accept4",
+        # ``socket`` itself is denied below for every family but AF_UNIX.
+        "socketcall", "connect", "accept", "accept4",
         "sendto", "sendmsg", "recvfrom", "recvmsg",
         # Debugger attachment: ptrace on a sibling would sidestep everything.
         "ptrace", "process_vm_readv", "process_vm_writev",
@@ -136,6 +144,8 @@ def _install_seccomp_filter(*, required):
     # EPERM rather than killing the process, so the failure surfaces as a
     # normal Python OSError with a traceback pointing at the user's line.
     # A killed child would just look like a mysterious crash.
+    import socket
+
     filter_ = seccomp.SyscallFilter(defaction=seccomp.ALLOW)
     for name in DENIED:
         try:
@@ -143,6 +153,8 @@ def _install_seccomp_filter(*, required):
         except (ValueError, OSError):
             # Syscall unknown on this architecture; nothing to block.
             continue
+    # A socket of any family but AF_UNIX, the first argument of socket().
+    filter_.add_rule(seccomp.ERRNO(1), "socket", seccomp.Arg(0, seccomp.NE, socket.AF_UNIX))
     filter_.load()
     return True
 
@@ -420,7 +432,18 @@ def rebuild_input(spec, scratch_dir):
 
     if kind == "json":
         with open(os.path.join(scratch_dir, spec["file"]), encoding="utf-8") as handle:
-            return json.load(handle)
+            value = json.load(handle)
+        if not spec.get("stored"):
+            return value
+        # An input's stored list or dict, read by the rule the in-process path
+        # follows: one Autark layer as its frame, several as the list of them,
+        # each output a wrapper names from the spec the parent staged for it.
+        from utk_curio.sandbox.util.stored_inputs import read_stored
+
+        refs = spec.get("refs")
+        if refs is None:
+            return read_stored(value)
+        return read_stored(value, lambda index, _elem: rebuild_input(refs[index], scratch_dir))
 
     if kind == "dataframe":
         import pandas as pd

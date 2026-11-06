@@ -45,7 +45,7 @@ OLD_CHIP_CODE = "return int([!! input 0 !!]['n'].sum())\n"
 OLD_JS_CODE = "return arg.length;"
 NEW_CODE = "return int(input_0['n'].sum())\n"
 
-COMPUTE = "curio.builtin/computation-analysis"
+COMPUTE = "curio.builtin/python-computation"
 JAVASCRIPT = "curio.builtin/js-computation"
 
 
@@ -103,12 +103,12 @@ def test_an_old_dataflow_says_what_each_old_input_name_is_now(
     run_all_and_wait(page, timeout_ms=180000)
 
     assert wait_for_node_settled(page, LOADER_ID, node_type="DATA_LOADING") == "done"
-    assert wait_for_node_settled(page, NEW_ID, node_type="COMPUTATION_ANALYSIS") == "done"
+    assert wait_for_node_settled(page, NEW_ID, node_type="PYTHON_COMPUTATION") == "done"
 
     said = {}
     for node_id, node_type in (
-        (OLD_ARG_ID, "COMPUTATION_ANALYSIS"),
-        (OLD_CHIP_ID, "COMPUTATION_ANALYSIS"),
+        (OLD_ARG_ID, "PYTHON_COMPUTATION"),
+        (OLD_CHIP_ID, "PYTHON_COMPUTATION"),
         (OLD_JS_ID, "JS_COMPUTATION"),
     ):
         status = wait_for_node_settled(page, node_id, node_type=node_type)

@@ -62,9 +62,9 @@ def test_the_older_saved_shape_is_read_too():
     title has always read."""
     from utk_curio.backend.app.execution import node_names
 
-    labels = {"curio.builtin/computation-analysis": "Python Computation"}
+    labels = {"curio.builtin/python-computation": "Python Computation"}
     assert node_names.saved_node_label(
-        {"id": "n", "data": {"nodeType": "curio.builtin/computation-analysis@1"}}, labels,
+        {"id": "n", "data": {"nodeType": "curio.builtin/python-computation@1"}}, labels,
     ) == "Python Computation"
 
 
@@ -94,4 +94,4 @@ def test_the_fallback_title_has_no_version_suffix():
     from utk_curio.backend.app.projects.services import _humanize_node_type
 
     assert _humanize_node_type("curio.builtin/data-loading@1") == "Data Loading"
-    assert _humanize_node_type("curio.builtin/computation-analysis@1") == "Computation Analysis"
+    assert _humanize_node_type("curio.builtin/python-computation@1") == "Python Computation"

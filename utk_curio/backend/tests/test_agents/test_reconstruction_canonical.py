@@ -33,12 +33,14 @@ from utk_curio.backend.app.agents.evaluation.fixtures import (
     FIXTURE_SCHEMA_PATH,
     example_paths,
 )
+from utk_curio.backend.tests._support.ui_test_package import UI_TEST_NODE_TYPE, UI_TEST_PACKAGE_DIR
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
-def _template_index() -> dict:
-    """Manifest facts for every shipped template, read from the manifests.
+def _template_index(packages: Path = REPO_ROOT / "packages") -> dict:
+    """Manifest facts for every template of the packages under *packages*,
+    the shipped ones unless named, read from the manifests.
 
     Deliberately the same derivation the authoring aid uses
     (``scripts/example_fixture_skeleton.py::template_index``) and the same
@@ -50,7 +52,7 @@ def _template_index() -> dict:
     # Each fact the value declares, read from its manifest key.
     declared = {field.name for field in fields(TemplateFacts)}
     index: dict = {}
-    for manifest_path in sorted((REPO_ROOT / "packages").glob("*/manifest.json")):
+    for manifest_path in sorted(packages.glob("*/manifest.json")):
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         package_id = str(manifest.get("id") or "")
         for template in manifest.get("templates") or []:
@@ -72,6 +74,9 @@ def _template_index() -> dict:
 
 
 TEMPLATES = _template_index()
+#: The e2e suite's test packages, which no shipped dataflow uses, kept apart
+#: from the shipped templates the fixtures resolve against.
+TEST_TEMPLATES = _template_index(UI_TEST_PACKAGE_DIR.parent)
 
 
 def _manifest_template(canonical: str) -> dict:
@@ -103,7 +108,7 @@ TRANSFORM = "ai.utk.uhvi/uhvi-zones"
 VEGA = "curio.builtin/vis-vega"
 POOL = "curio.builtin/data-pool"
 #: A node that takes several inputs, one per circle (what a Merge Flow fed).
-ANALYSIS = "curio.builtin/computation-analysis"
+ANALYSIS = "curio.builtin/python-computation"
 
 
 class TestTheSchemaItself:
@@ -199,7 +204,7 @@ class TestNormalizationKeepsWhatItMust:
 
     def test_a_different_template_changes_the_graph(self):
         one = _spec([_node("a", LOADER), _node("b", TRANSFORM)], [_edge("a", "b")])
-        other = _spec([_node("a", LOADER), _node("b", "curio.builtin/computation-analysis")],
+        other = _spec([_node("a", LOADER), _node("b", "curio.builtin/python-computation")],
                       [_edge("a", "b")])
         assert canonical_graph_from_spec(one, templates=TEMPLATES).type_counts() != (
             canonical_graph_from_spec(other, templates=TEMPLATES).type_counts()
@@ -283,7 +288,7 @@ class TestRoles:
         assert role_for_template(TEMPLATES[VEGA], has_incoming_data_edge=True) == "visualization"
         assert role_for_template(TEMPLATES[POOL], has_incoming_data_edge=True) == "pool"
         assert role_for_template(
-            TEMPLATES["curio.builtin/computation-analysis"], has_incoming_data_edge=True
+            TEMPLATES["curio.builtin/python-computation"], has_incoming_data_edge=True
         ) == "analysis"
         assert role_for_template(
             TEMPLATES["curio.builtin/data-export"], has_incoming_data_edge=True
@@ -350,7 +355,7 @@ class TestRoles:
         assert TEMPLATES[LOADER].executable is True
         assert TEMPLATES[VEGA].executable is False  # grammar, no code
         assert TEMPLATES["curio.builtin/js-computation"].executable is True  # javascript
-        assert TEMPLATES["curio.example-ui/column-filter"].executable is False  # package, no code
+        assert TEST_TEMPLATES[UI_TEST_NODE_TYPE].executable is False  # package, no code
         # A model package's node with no source of its own: python, so executable.
         assert TEMPLATES["model.curio.ddrnet23-slim/image-segmentation"].executable is True
 
@@ -410,8 +415,8 @@ class TestTheShippedCorpus:
         paths = example_paths()
         curated = [p for p in paths if p.parent.name == "examples"]
         legacy = [p for p in paths if p.parent.name == "dataflows"]
-        assert len(curated) == 26, [p.name for p in curated]
-        assert len(legacy) == 30, [p.name for p in legacy]
+        assert len(curated) == 30, [p.name for p in curated]
+        assert len(legacy) == 31, [p.name for p in legacy]
 
     @pytest.mark.parametrize("path", example_paths(), ids=lambda p: p.stem)
     def test_every_example_canonicalizes_with_known_templates(self, path):

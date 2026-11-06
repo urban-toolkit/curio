@@ -112,7 +112,7 @@ class TestSelfRaised:
         worker._worker_init()
         result = worker.execute_code(
             "    raise KeyError('No common column found')\n", "",
-            "curio.builtin/computation-analysis", "str", save_dataset=False,
+            "curio.builtin/python-computation", "str", save_dataset=False,
         )
         assert ft.raising_frame(result["stderr"]) == "<string>:2 in userCode"
         assert ft.is_self_raised(result["stderr"]) is True

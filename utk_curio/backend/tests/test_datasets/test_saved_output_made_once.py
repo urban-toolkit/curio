@@ -58,7 +58,7 @@ def _install(art_id: str, data_type: str):
         data_type=data_type,
         node_name="Python Computation",
         dataflow_id=DATAFLOW,
-        node_type="curio.builtin/computation-analysis",
+        node_type="curio.builtin/python-computation",
     )
 
 
@@ -75,7 +75,7 @@ def _stored_by_an_isolated_child(code: str, tmp_path: Path) -> str:
     scratch.mkdir()
     request = {
         "code": code,
-        "node_type": "curio.builtin/computation-analysis",
+        "node_type": "curio.builtin/python-computation",
         "data_type": "",
         "scratch_dir": str(scratch),
         "input": {"kind": "none"},

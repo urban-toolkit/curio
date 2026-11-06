@@ -3,19 +3,19 @@
   "cases": [
     {
       "name": "a built-in node takes its template's label",
-      "nodeType": "curio.builtin/computation-analysis@1",
-      "templateLabel": "Python Computation",
-      "label": "Python Computation"
+      "nodeType": "curio.builtin/edit-features@1",
+      "templateLabel": "Map Editor",
+      "label": "Map Editor"
     },
     {
       "name": "an unversioned type takes the same label",
-      "nodeType": "curio.builtin/computation-analysis",
-      "templateLabel": "Python Computation",
-      "label": "Python Computation"
+      "nodeType": "curio.builtin/edit-features",
+      "templateLabel": "Map Editor",
+      "label": "Map Editor"
     },
     {
       "name": "a title wins over the template's label",
-      "nodeType": "curio.builtin/computation-analysis@1",
+      "nodeType": "curio.builtin/python-computation@1",
       "customLabel": "Dict output",
       "templateLabel": "Python Computation",
       "label": "Dict output"

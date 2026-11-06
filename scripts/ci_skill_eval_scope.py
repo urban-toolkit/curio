@@ -10,16 +10,19 @@ What it runs is this script's answer, a scope. With its ``scope`` input
   ``packages/<package>/skills/<name>/``): its test cases, 3 runs with the
   skill and 3 without. Its trigger queries too when the skill is new, its
   ``description`` changed or its trigger queries did.
-- **A core skill or the page that places it** (a page of the base entry of
-  ``agents/`` that holds ``{{skill:<name>}}``, the preamble): every skill's
-  test cases, 3 runs both ways, since every prompt holds them. A change to a
+- **A core skill, or which core skills a page places** (a page of the base
+  entry of ``agents/`` that holds ``{{skill:<name>}}``, the preamble): every
+  skill's test cases, 3 runs both ways, since every prompt holds them. The
+  page's other words are no skill's, so they measure nothing. A change to a
   core skill's ``evals/`` alone, which no prompt holds, measures that skill
   as any other.
-- **Agent text or code** (``agents/``, the agents' backend, the evaluation
-  tools, the package manifests whose descriptions prompts list, the Trill
-  schema, this node's own files): every other skill's first test case, once,
-  with the skill.
-- **Anything else:** nothing, and the run measures nothing.
+- **A page a skill's body renders** (a page of the base entry that its
+  ``{{include:<page>}}`` puts there, or that one of its markers' fields reads
+  as it renders, :data:`FIELD_PAGES`): that skill's test cases, 3 runs both
+  ways, as a change to its body does, or every skill's for a core skill.
+- **Anything else**, agent text and code among it: nothing, since the
+  evaluations measure skills and no skill changed. A ``smoke`` dispatch still
+  checks agent code live.
 
 The other values of the input ask for a measure outright: ``none``, ``smoke``
 (every skill's first test case, once), ``core`` (every skill's test cases),
@@ -78,21 +81,17 @@ TRUTH_FILE = "truth.json"
 #: The measures from the narrowest, so the widest a scope holds names it.
 ORDER = ("none", "smoke", "changed", "core", "full")
 
-#: Paths whose change is agent text or code: every skill's smoke case.
-AGENT_PATHS = (
-    re.compile(r"^agents/"),
-    re.compile(r"^skills/[^/]+$"),
-    re.compile(r"^utk_curio/backend/app/agents/"),
-    re.compile(r"^utk_curio/tools/(agent_eval|skill_eval_[a-z_]+|skill_benchmark)\.py$"),
-    re.compile(r"^packages/[^/]+/manifest\.json$"),
-    re.compile(r"^docs/schemas/trill\.v1\.json$"),
-    re.compile(r"^scripts/(ci_skill_eval[a-z_]*|skill_eval[a-z_]*)\.(py|json)$"),
-    re.compile(r"^\.github/workflows/skill-evals\.yml$"),
-)
 #: A skill's folder in a path: ``skills/<name>/`` or ``packages/<package>/skills/<name>/``.
 SKILL_PATH = re.compile(r"^(?:packages/[^/]+/)?skills/([^/]+)/")
 #: How a page places a skill's body.
 PLACED = re.compile(r"\{\{skill:([a-z0-9-]+)\}\}")
+#: A marker in a page or a skill's body: ``{{field}}`` or ``{{field:argument}}`` (``contracts.render_template``).
+MARKER = re.compile(r"\{\{([a-z0-9_.]+)(?::([^}]*))?\}\}")
+#: The pages of the base entry a marker's field reads as it renders, by the
+#: field (``contracts.PROMPT_FIELDS``); ``{{include:<page>}}`` names its own.
+#: This script runs without the backend, so a test renders every skill and
+#: checks these against the pages each render read.
+FIELD_PAGES = {"autk.grammar": ("autark-grammar.md",)}
 
 
 @dataclass(frozen=True)
@@ -140,6 +139,23 @@ def core(root: Path) -> tuple[set[str], set[str]]:
             pages.add(page.relative_to(root).as_posix())
             placed.update(names)
     return pages, placed
+
+
+def rendered(root: Path) -> dict[str, set[str]]:
+    """The base entry's pages that a skill's body renders, by their paths, and
+    the skills with evaluations whose bodies render each: the page of a
+    ``{{include:<page>}}``, or those a marker's field reads (:data:`FIELD_PAGES`)."""
+    entry = base_entry(root)
+    found: dict[str, set[str]] = {}
+    if entry is None:
+        return found
+    for name, folder in skills_with_evals(root).items():
+        skill = root / folder / "SKILL.md"
+        text = skill.read_text(encoding="utf-8") if skill.is_file() else ""
+        for field, argument in MARKER.findall(text):
+            for page in (argument,) if field == "include" else FIELD_PAGES.get(field, ()):
+                found.setdefault((entry / page).relative_to(root).as_posix(), set()).add(name)
+    return found
 
 
 def description(text: str | None) -> str | None:
@@ -197,6 +213,7 @@ def from_changes(changes: Iterable[Change], *, root: Path, old_text: Callable[[s
             return file.read_text(encoding="utf-8") if file.is_file() else None
     evals = skills_with_evals(root)
     core_pages, core_skills = core(root)
+    renders = rendered(root)
     measures: dict[str, dict] = {}
     why: list[str] = []
     widest = "none"
@@ -208,17 +225,25 @@ def from_changes(changes: Iterable[Change], *, root: Path, old_text: Callable[[s
         nonlocal widest
         widest = max(widest, word, key=ORDER.index)
 
+    entry = base_entry(root)
+    pages_at = f"{entry.relative_to(root).as_posix()}/" if entry is not None else None
     changed_skills: dict[str, list[Change]] = {}
-    agent = []
+    rendering: dict[str, list[str]] = {}
     for change in changes:
         found = SKILL_PATH.match(change.path)
         if found:
             changed_skills.setdefault(found.group(1), []).append(change)
-        elif change.path in core_pages:
-            why.append(f"{change.path} places the core skills, which every prompt holds")
-            reach("core")
-        elif any(pattern.match(change.path) for pattern in AGENT_PATHS):
-            agent.append(change.path)
+            continue
+        # A page that places core skills, now or on main, counts only for the skills it places.
+        placed_before = (set(PLACED.findall(old_text(change.path) or ""))
+                         if pages_at and change.path.startswith(pages_at) else set())
+        if change.path in core_pages or placed_before:
+            if placed_before != set(PLACED.findall(new_text(change.path) or "")):
+                why.append(f"{change.path} changes the core skills it places, which every prompt holds")
+                reach("core")
+            continue
+        for name in renders.get(change.path, ()):
+            rendering.setdefault(name, []).append(change.path)
 
     for name, mine in sorted(changed_skills.items()):
         # A core skill's own evaluations are in no prompt: they measure it alone.
@@ -250,17 +275,22 @@ def from_changes(changes: Iterable[Change], *, root: Path, old_text: Callable[[s
             measure(name, CASES)
         reach("changed")
 
+    for name, pages in sorted(rendering.items()):
+        shown = ", ".join(pages)
+        # A core skill is in every prompt, and so is a page its body renders.
+        if name in core_skills:
+            why.append(f"{shown} renders into {name}, a core skill, which every prompt holds")
+            reach("core")
+            continue
+        why.append(f"{shown} renders into {name}'s body: its test cases, {RUNS} runs both ways")
+        measure(name, CASES)
+        reach("changed")
+
     if widest == "core":
         for name in evals:
             measure(name, CASES)
-    if agent:
-        shown = ", ".join(agent[:3]) + (f" and {len(agent) - 3} more" if len(agent) > 3 else "")
-        why.append(f"agent text or code changed ({shown}): each other skill's first test case, once")
-        for name in evals:
-            measure(name, SMOKE)
-        reach("smoke")
     if not measures:
-        why.append("nothing an agent reads changed")
+        why.append("no skill changed, so the evaluations measure nothing")
     return {"version": 1, "measure": widest if measures else "none", "why": why, "measures": measures}
 
 

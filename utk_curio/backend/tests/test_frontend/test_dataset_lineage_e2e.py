@@ -92,9 +92,9 @@ DRAWER_ROOT = '[data-curio-dataset-catalog-drawer="true"]'
 CARD = 'article:not([role="status"])'
 
 LOADER_TYPE = "curio.builtin/data-loading"
-TRANSFORM_TYPE = "curio.builtin/computation-analysis"
-TRANSFORM_TILE = "#tile-computation-analysis"
-# The label the node registry gives curio.builtin/computation-analysis, which is
+TRANSFORM_TYPE = "curio.builtin/python-computation"
+TRANSFORM_TILE = "#tile-python-computation"
+# The label the node registry gives curio.builtin/python-computation, which is
 # what the consumer card names the node (`resolveNodeLabel` wins over the raw
 # type). Asserting the label rather than the id also proves the panel resolved
 # the node against the registry instead of printing a coordinate at the user.

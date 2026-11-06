@@ -21,6 +21,14 @@ The status is ``passed``, ``failed``, ``minted``, ``missing`` or
 capture replaced the baseline; ``expected.png`` is the one it replaced) or
 ``unchanged`` (the baseline was kept).
 
+On a CI run that keeps candidates (``screenshots.candidate_dir``), a frame that
+moved past the re-mint threshold is judged as a re-mint would judge it, so
+its record also has the re-mint's numbers (``remint_ratio``,
+``volatile_pixels``, ``recapture_ratio``). Its status stays the comparison's,
+and ``candidate`` is true when its capture was kept as a candidate, the PNG a
+re-mint would write; ``not_candidate`` says why one that moved was not. A
+``missing`` record can be a candidate too.
+
 A comparison with a baseline of the run's GPU kind (``<name>.<kind>.png``)
 also records ``gpu_kind``. A re-mint that made such a baseline records the
 default baseline it was compared with as ``compared_with``; ``expected.png``
@@ -89,7 +97,8 @@ def record(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
            counted=None, mismatched=None, total=None, ratio=None, error=None,
            volatile=None, remint_ratio=None, remint_min_ratio=None,
            recapture_ratio=None, expected_bytes=None, forced=False, closeup=False,
-           interaction=None, gpu_kind=None, compared_with=None, environ=os.environ):
+           interaction=None, gpu_kind=None, compared_with=None, candidate=False,
+           not_candidate=None, environ=os.environ):
     """Write one comparison's folder. Returns its path, or None when off.
 
     *expected_bytes* is the baseline as it was before a re-mint replaced it;
@@ -98,7 +107,8 @@ def record(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
     *interaction* places a frame in its before/after pair
     (``utils.save_interaction_frame``). *gpu_kind* says *baseline* is that GPU
     kind's, and *compared_with* names the default baseline a new one of a GPU
-    kind was compared with.
+    kind was compared with. *candidate* says ``created.png`` was kept as a
+    candidate baseline, and *not_candidate* why a frame that moved was not.
     """
     if not enabled(environ):
         return None
@@ -112,7 +122,7 @@ def record(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
             remint_min_ratio=remint_min_ratio, recapture_ratio=recapture_ratio,
             expected_bytes=expected_bytes, forced=forced, closeup=closeup,
             interaction=interaction, gpu_kind=gpu_kind, compared_with=compared_with,
-            environ=environ,
+            candidate=candidate, not_candidate=not_candidate, environ=environ,
         )
     except Exception as exc:
         print(f"[e2e-compare] could not record {os.path.basename(baseline)}: {exc}")
@@ -141,7 +151,7 @@ def _write(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
            expected, created, expected_cmp, arr, counted, mismatched, total,
            ratio, error, volatile, remint_ratio, remint_min_ratio,
            recapture_ratio, expected_bytes, forced, closeup, interaction,
-           gpu_kind, compared_with, environ):
+           gpu_kind, compared_with, candidate, not_candidate, environ):
     test_id = nodeid(environ)
     name = os.path.basename(baseline)
     out_dir = _claim(environ[DIR_ENV], name, test_id)
@@ -182,7 +192,8 @@ def _write(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
         "error": error,
         "images": images,
     }
-    # Only a re-mint writes these, so every other record reads as before.
+    # Only a re-mint, or a moved frame judged for a candidate, writes these, so
+    # every other record reads as before.
     for key, value in (("remint_ratio", remint_ratio), ("remint_min_ratio", remint_min_ratio),
                        ("recapture_ratio", recapture_ratio), ("volatile_pixels", volatile_pixels)):
         if value is not None:
@@ -197,6 +208,10 @@ def _write(status, *, baseline, pixel_threshold, max_diff_ratio, capture,
         data["gpu_kind"] = gpu_kind
     if compared_with:
         data["compared_with"] = compared_with
+    if candidate:
+        data["candidate"] = True
+    if not_candidate:
+        data["not_candidate"] = not_candidate
     # Last, and atomically: the report skips a folder without record.json, so
     # a run killed mid-write leaves nothing half-read.
     tmp = os.path.join(out_dir, "record.json.tmp")

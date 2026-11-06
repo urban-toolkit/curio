@@ -80,7 +80,7 @@ def run(body: str, session_id: str = "sess-1") -> dict:
         for line in textwrap.dedent(body).strip("\n").split("\n")
     )
     return worker.execute_code(
-        indented, "", "curio.builtin/computation-analysis", "str",
+        indented, "", "curio.builtin/python-computation", "str",
         session_id=session_id, save_dataset=False,
     )
 

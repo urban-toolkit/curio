@@ -130,7 +130,7 @@ async function flush() {
 
 const CREATED = {
   id: 'server-minted-node-id',
-  type: 'curio.builtin/computation-analysis',
+  type: 'curio.builtin/python-computation',
   content: "print('new')",
   goal: 'sum it',
   x: 500,
@@ -147,7 +147,7 @@ describe('apply→canvas bridge integration (dev/48 §3.3 / dev/51 regression)',
     await flush();
     const inserted = api.nodes.find((n: any) => n.id === CREATED.id);
     expect(inserted).toBeDefined();
-    expect(inserted?.data?.nodeType).toBe('curio.builtin/computation-analysis');
+    expect(inserted?.data?.nodeType).toBe('curio.builtin/python-computation');
     expect(inserted?.position).toEqual({ x: 500, y: 60 });
     // The serialized content field carries the applied content (the next
     // canvas save must round-trip it — the dev/48 clobber guarantee).
@@ -238,7 +238,7 @@ describe('apply→canvas bridge integration (dev/48 §3.3 / dev/51 regression)',
 // A node that already ran, and a node an agent then wires to it.
 const PLANNED = {
   id: 'planned-node-id',
-  type: 'curio.builtin/computation-analysis',
+  type: 'curio.builtin/python-computation',
   content: '',
   goal: 'Plot it',
   x: 900,

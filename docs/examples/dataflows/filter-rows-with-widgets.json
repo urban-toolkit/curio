@@ -1,0 +1,123 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Beginner"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "load-table",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 200,
+        "content": "import pandas as pd\n\nreturn pd.DataFrame({\n    \"name\": [\"Alpha\", \"Bravo\", \"Charlie\", \"Delta\", \"Echo\", \"Foxtrot\"],\n    \"height\": [30, 24, 18, 12, 9, 18],\n    \"floors\": [10, 8, 6, 4, 3, 6],\n})\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "A small table of six rows.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Load table"
+      },
+      {
+        "id": "filter-rows",
+        "type": "curio.builtin/python-computation",
+        "x": 620,
+        "y": 200,
+        "content": "import operator\n\n# The three widgets: the column, the comparison and the threshold.\ncolumn = [!! column !!]\nkeep = [!! keep !!]\nthreshold = [!! threshold !!]\n\ncompare = {\">\": operator.gt, \">=\": operator.ge, \"<\": operator.lt, \"<=\": operator.le}[keep]\nreturn input_0[compare(input_0[column], threshold)]\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keeps the rows that pass the rule set in the Widgets tab: column, comparison and threshold.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "column",
+              "type": "choice",
+              "label": "Column",
+              "default": "height",
+              "options": {
+                "choices": [
+                  "height",
+                  "floors"
+                ]
+              }
+            },
+            {
+              "name": "keep",
+              "type": "choice",
+              "label": "Keep",
+              "default": ">",
+              "options": {
+                "choices": [
+                  ">",
+                  ">=",
+                  "<",
+                  "<="
+                ]
+              }
+            },
+            {
+              "name": "threshold",
+              "type": "number",
+              "label": "Threshold",
+              "default": 15
+            }
+          ]
+        },
+        "title": "Filter rows"
+      },
+      {
+        "id": "show-table",
+        "type": "curio.builtin/vis-simple",
+        "x": 1240,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Shows the filtered rows as a table.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Show filtered rows"
+      },
+      {
+        "id": "print-rows",
+        "type": "curio.builtin/python-computation",
+        "x": 1240,
+        "y": 420,
+        "content": "# The filtered rows arrive here as input_0.\nprint(input_0)\n\nreturn input_0\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Reads the filtered rows in Python and prints them.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Print filtered rows"
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-load-tableout-filter-rowsin",
+        "source": "load-table",
+        "target": "filter-rows"
+      },
+      {
+        "id": "reactflow__edge-filter-rowsout-show-tablein",
+        "source": "filter-rows",
+        "target": "show-table"
+      },
+      {
+        "id": "reactflow__edge-filter-rowsout-print-rowsin",
+        "source": "filter-rows",
+        "target": "print-rows"
+      }
+    ],
+    "name": "Filter rows with widgets",
+    "task": "Filters a table by a column, a comparison and a threshold set with widgets, and passes the rows to a Simple View and a Python Computation node.",
+    "timestamp": 1793913939680,
+    "provenance_id": "filter-rows-with-widgets",
+    "packages": []
+  }
+}

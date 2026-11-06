@@ -12,6 +12,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker +
   - [LLM configurations](#llm-configurations)
 - [2. Configure Caddy](#2-configure-caddy)
 - [3. Build and run](#3-build-and-run)
+  - [The GPU](#the-gpu)
 - [Updating](#updating)
 - [Optional: dev stack alongside stable](#optional-dev-stack-alongside-stable)
 - [Optional: CI/CD with GitHub Actions + Tailscale](#optional-cicd-with-github-actions--tailscale)
@@ -32,13 +33,13 @@ cd /srv/curio
 mkdir -p instance .curio datasets
 ```
 
-Create `/srv/curio/docker-compose.site.yml` with Curio's arguments for this site: the address the browser reaches the backend at, and the path the app is served under. Both must match the Caddy paths in step 2. The `ports` line publishes the backend and the frontend on loopback only, so they are reached through Caddy (`!override` needs Docker Compose 2.24.4 or newer).
+Create `/srv/curio/docker-compose.site.yml` with Curio's arguments for this site: the address the browser reaches the backend at, the path the app is served under, and the memory each node may allocate. The address and the path must match the Caddy paths in step 2. `--exec-memory-mb 24576` gives a node room to run PyTorch on the GPU: under the default 4096, `import torch` fails in a node. The `ports` line publishes the backend and the frontend on loopback only, so they are reached through Caddy (`!override` needs Docker Compose 2.24.4 or newer).
 
 ```yaml
 services:
   curio:
     ports: !override ["127.0.0.1:5002:5002", "127.0.0.1:8080:8080"]
-    command: ["--backend-url", "https://lab-name.your-uni.edu/curio/api", "--base-path", "/curio"]
+    command: ["--backend-url", "https://lab-name.your-uni.edu/curio/api", "--base-path", "/curio", "--exec-memory-mb", "24576"]
 ```
 
 The three directories you created, `instance/`, `datasets/` and `.curio/`, are bind-mounted into the container and persist across recreates:
@@ -112,8 +113,9 @@ Settings; the deployment can offer endpoints of its own on top, in an
 endpoint file that only the backend reads, named by `--llm-endpoint-file`.
 It is the one LLM setting.
 
-The file holds one section per endpoint. The section's name is the label
-users see in API Settings:
+The file holds one section per endpoint. The section's name is what users
+see in API Settings, under **Curio**: a section named `[Lab gateway]` reads
+**Provided by Lab gateway**.
 
 ```ini
 [Lab gateway]
@@ -139,13 +141,14 @@ models=claude-haiku-4-5
 | `base_url` | Its URL. Leave it out for the provider's own endpoint. |
 | `provider` | `openai_compatible` (the default), `anthropic` or `gemini`. |
 
-Lines starting with `#` or `;` are comments. The first section's first model
-is the **Deployment default**: a read-only row on the **API keys** tab of
-every user's API Settings, which answers for any user who has not chosen a
-default of their own, and the **guest configuration** every guest answers
-with. Users are also offered **This Curio install**: a configuration of their
-own on one of the file's endpoints, with one of its models. No endpoint's key
-or address reaches a browser.
+Lines starting with `#` or `;` are comments. Each section is a read-only
+**Curio** row on the **API keys** tab of every user's API Settings, listing
+its models, and a signed-in user can pick any of them, as their default or for
+one agent, on the **Agent configuration** tab. The first section's first model
+is **Curio's default**: it answers for any user who has not chosen a default
+of their own, and it is the **guest configuration** every guest answers with.
+To change it for everyone, reorder the file and recreate the stack. No
+endpoint's key or address reaches a browser.
 
 To set it up on a server:
 
@@ -165,9 +168,10 @@ To set it up on a server:
        file: /srv/secrets/llm-endpoints
    ```
 
-3. Recreate the stack. Signed-in users then see the **Deployment default** row
-   on the **API keys** tab, and **This Curio install** offers each endpoint's
-   models.
+3. Recreate the stack. Signed-in users then see one **Curio** row per section
+   on the **API keys** tab, the first model marked **Curio default**, and the
+   **Agent configuration** tab offers every model under **Curio ·** and the
+   section's name.
 
 The start stops with a message naming the section when the file is missing
 or cannot be read, when a section lacks `api_key` or `models`, names an
@@ -318,6 +322,30 @@ Then load `https://lab-name.your-uni.edu/curio/` in a browser. If something look
 
 **Run one backend process.** The backend keeps each open dataflow's live copy, the one everyone editing it shares, in its own memory. So one backend process serves a deployment's data directories: never run a second process, worker or replica on them, where each would keep its own copy of a dataflow and the two would drift apart.
 
+### The GPU
+
+On x86_64 the image carries PyTorch and torchvision built for CUDA 12.9, with CUDA 12.9's runtime libraries and NVRTC, which node code uses with nothing to install. A container gets the GPU from the host, which needs:
+
+- an NVIDIA driver, 525 or newer (`nvidia-smi` prints its version);
+- the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), set up for Docker. Restarting Docker stops every container on the host until it is back:
+
+```bash
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+This lists the GPU when a container can get it:
+
+```bash
+docker run --rm --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,utility python:3.12-slim nvidia-smi -L
+```
+
+`docker-compose.deploy.yml` asks Docker for the host's GPUs, and Docker refuses to start the stack on a host that cannot hand them over. On a host with no NVIDIA GPU, add this line to the `curio` service in `docker-compose.site.yml`, which takes the request back:
+
+```yaml
+    deploy: !reset {}
+```
+
 ## Updating
 
 Pull the new code, then rebuild and recreate:
@@ -360,7 +388,7 @@ Clone into `/srv/curio-dev` and write its `docker-compose.site.yml`, which also 
 services:
   curio:
     ports: !override ["127.0.0.1:5012:5002", "127.0.0.1:8090:8080"]
-    command: ["--backend-url", "https://lab-name.your-uni.edu/curio-dev/api", "--base-path", "/curio-dev"]
+    command: ["--backend-url", "https://lab-name.your-uni.edu/curio-dev/api", "--base-path", "/curio-dev", "--exec-memory-mb", "24576"]
 ```
 
 Add two more `handle_path` blocks to the same Caddy site (`/curio-dev/api/*` → 5012, `/curio-dev/*` → 8090). Then:
@@ -382,12 +410,12 @@ The repo includes [`.github/workflows/deploy.yml`](../.github/workflows/deploy.y
 
 To adapt it: install Tailscale on the server (`sudo tailscale up --advertise-tags=tag:curio-server --ssh`), create a Tailscale OAuth client with the `auth_keys` scope and tag `tag:ci`, add an ACL allowing `tag:ci -> tag:curio-server:22`, create a `deploy` user on the server with the `docker` group, and set three GitHub secrets: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`, `DEPLOY_SSH_KEY` (private key whose pubkey is in `~deploy/.ssh/authorized_keys`). Then update the hostname (`utk` → your Tailscale machine name) and the `--backend-url` addresses the workflow writes into each stack's `docker-compose.site.yml`.
 
-To give both stacks an LLM endpoint of their own (the Deployment default and **This Curio install** in [LLM configurations](#llm-configurations)):
+To give both stacks an LLM endpoint of their own (the **Curio** rows and Curio's default in [LLM configurations](#llm-configurations)):
 
 1. In the repository's **Settings → Environments**, open `dev` and add the secrets `CURIO_DEPLOY_API_KEY` (the endpoint's key) and `CURIO_DEPLOY_BASE_URL` (its OpenAI-compatible base URL). Do the same for `stable`.
-2. In **Settings → Secrets and variables → Actions → Variables**, add the repository variable `CURIO_DEPLOY_MODELS`, a JSON list of the endpoint's model names, such as `["model-a", "model-b"]`. The first is the Deployment default.
-3. Deploy. Each deploy writes the two secrets and the models as one endpoint, named **This Curio**, to `.secrets/llm-endpoint` in the stack's checkout, a file only the `deploy` user reads, and starts the stack with `--llm-endpoint-file`. The job's log masks the URL and its host.
-4. Sign in to the stack and open **API Settings**: the **API keys** tab shows the Deployment default row with the first model.
+2. In **Settings → Secrets and variables → Actions → Variables**, add the repository variable `CURIO_DEPLOY_MODELS`, a JSON list of the endpoint's model names, such as `["model-a", "model-b"]`. The first is Curio's default.
+3. Deploy. Each deploy writes the two secrets and the models as one endpoint, the section `[Electronic Visualization Lab]`, to `.secrets/llm-endpoint` in the stack's checkout, a file only the `deploy` user reads, and starts the stack with `--llm-endpoint-file`. The job's log masks the URL and its host.
+4. Sign in to the stack and open **API Settings**: the **API keys** tab shows the **Curio** row, **Provided by Electronic Visualization Lab**, with the first model marked **Curio default**.
 
 Without both secrets, the deploy removes `.secrets/llm-endpoint` and the stack has no endpoint of its own.
 
@@ -424,7 +452,7 @@ It shows:
 
 - **Deployment** - version, the requested and active isolation mode, and which
   optional features are configured. Settings that have a value somebody chose
-  (the execution account, and whether there is a Deployment default LLM) are
+  (the execution account, and whether Curio offers LLM models of its own) are
   reported only as "configured" or "none", never as their value.
 - **Hardware** - CPU model and core count, memory, swap, load average (raw and
   per core), and the resident memory of the backend and sandbox processes. The
@@ -483,6 +511,8 @@ flooding it cannot push real errors out of the log.
 | `SSL_ERROR_INTERNAL_ERROR_ALERT` | Caddy has no cert for that hostname. Check the Caddyfile block exists, DNS resolves, and (Path A) port 80 is reachable from the public internet. |
 | `systemctl reload caddy` hangs | Caddy stuck in cert-fetch retry. Use `restart` instead, then check `journalctl -u caddy`. |
 | Mixed-content errors in browser console | `--backend-url` in `docker-compose.site.yml` is an `http://` address. Use the `https://` one and run `docker compose up -d --force-recreate`. |
+| `could not select device driver "nvidia"` when the stack starts | The host has no NVIDIA Container Toolkit, or no NVIDIA GPU. Set up the toolkit ([The GPU](#the-gpu)), or add `deploy: !reset {}` to the `curio` service in `docker-compose.site.yml`. |
+| A node that imports torch fails with `failed to map segment from shared object` | Its memory budget is too small for PyTorch's CUDA libraries. Pass `--exec-memory-mb 24576` in `docker-compose.site.yml`. |
 | Nodes fail and you cannot see why | Open `/monitor`. The error log there holds the last failures with their tracebacks, and survives longer than `.curio/messages.log`, which is truncated on every launch. |
 | `/monitor` says the sandbox is unreachable | The sandbox process is down or not answering within 3s. The rest of the page stays current; check `docker compose logs curio`. |
 

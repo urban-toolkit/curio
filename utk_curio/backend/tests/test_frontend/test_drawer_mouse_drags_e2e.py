@@ -71,7 +71,7 @@ NETCDF_LOADER = (
     "ds = curio_load_data([!! data !!])\n"
     "# ds cannot leave this node: return a table, a raster or a value made from it.\n"
 )
-ANALYSIS_TYPE = "curio.builtin/computation-analysis"
+ANALYSIS_TYPE = "curio.builtin/python-computation"
 SEGMENTATION = "model.curio.ddrnet23-slim/image-segmentation"
 
 BOUNDARY = "data.utk.chicago-boundary"

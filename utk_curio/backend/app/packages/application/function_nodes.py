@@ -47,7 +47,7 @@ MAX_MODULE_FILES = 200
 MAX_SOURCE_BYTES = 1_000_000
 
 #: The port types a Python Computation node takes and gives
-#: (``curio.builtin/computation-analysis``).
+#: (``curio.builtin/python-computation``).
 PORT_TYPES = ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON", "RASTER"]
 
 

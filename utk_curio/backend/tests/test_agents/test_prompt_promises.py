@@ -152,7 +152,7 @@ def _absent_output_a_consumer_refuses() -> str:
     from utk_curio.backend.app.agents.domain import validation
 
     spec = {"dataflow": {
-        "nodes": [{"id": "n1", "type": "curio.builtin/computation-analysis"},
+        "nodes": [{"id": "n1", "type": "curio.builtin/python-computation"},
                   {"id": "n2", "type": "curio.builtin/vis-vega", "goal": "Trips chart"}],
         "edges": [{"id": "e1", "source": "n1", "target": "n2"}],
     }}
@@ -224,7 +224,7 @@ def test_a_run_with_no_tools_is_never_told_to_load_a_skill(tmp_curio):
             told += [(page, name, said) for said in _loads(text)]
     preamble = builtin.read_page("default_preamble.md", wanted_by="the test")
     told += [("default_preamble.md", "", said) for said in _loads(preamble)]
-    for node_type in ("curio.builtin/computation-analysis", "curio.builtin/vis-vega", "curio.builtin/autk-grammar"):
+    for node_type in ("curio.builtin/python-computation", "curio.builtin/vis-vega", "curio.builtin/autk-grammar"):
         run = skill_runs.for_delegated("4242", "p", builtin.get_builtin_manifest(NODE_BUILDER), "node.content.generate",
                                        {"nodeType": node_type}, None, preamble, refused="document-invalid")
         assert run.handed, node_type

@@ -12,8 +12,10 @@ Covered more cheaply elsewhere, and deliberately not re-asserted here:
 ``src/tests/components/packageCardActions.test.tsx`` owns which button a card
 shows for a given prop set.
 
-``curio.example-ui@1`` is the ONLY package a test may install: it declares no
-python dependencies, so nothing shells out to pip. ``curio.weather@1``,
+``test.ui-node@1``, a test package each test plants in the catalog and takes
+out after (the ``ui_node_in_catalog`` fixture), is the ONLY package a test may
+install: it declares no python dependencies, so nothing shells out to pip.
+``curio.weather@1``,
 ``ai.utk.uhvi@1`` and ``model.curio.ddrnet23-slim@1`` pull
 rasterio/geopandas/onnxruntime through a synchronous call capped at 30 minutes, and
 the resulting user-store copy makes every later ``curio start`` re-resolve them
@@ -30,6 +32,12 @@ from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
 
+from utk_curio.backend.tests._support.ui_test_package import (
+    UI_TEST_PACKAGE,
+    UI_TEST_PACKAGE_ID,
+    UI_TEST_PACKAGE_NAME,
+)
+
 from .utils import (
     api_json,
     open_tools_palette,
@@ -43,9 +51,9 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-PKG_DIR = "curio.example-ui@1"
-PKG_ID = "curio.example-ui"
-PKG_NAME = "Example: Custom UI Node"
+PKG_DIR = UI_TEST_PACKAGE
+PKG_ID = UI_TEST_PACKAGE_ID
+PKG_NAME = UI_TEST_PACKAGE_NAME
 BUILTIN_DIR = "curio.builtin@1"
 
 DRAWER_ROOT = '[data-curio-node-catalog-drawer="true"]'
@@ -68,7 +76,7 @@ def _one_node_spec() -> dict:
             "nodes": [
                 {
                     "id": "catalog-baseline-node",
-                    "type": "curio.builtin/computation-analysis",
+                    "type": "curio.builtin/python-computation",
                     "x": 420,
                     "y": 300,
                     "content": "return [1]",
@@ -133,7 +141,7 @@ def _card(drawer, dir_name):
 
 
 def test_drawer_lists_catalog_packages(
-    app_frontend: "FrontendPage", current_server: str, page
+    app_frontend: "FrontendPage", current_server: str, page, ui_node_in_catalog
 ):
     require_project_page()
     require_user_auth()
@@ -185,7 +193,7 @@ def test_drawer_lists_catalog_packages(
 
 
 def test_drawer_search_filters_by_package_id(
-    app_frontend: "FrontendPage", current_server: str, page
+    app_frontend: "FrontendPage", current_server: str, page, ui_node_in_catalog
 ):
     require_project_page()
     require_user_auth()
@@ -210,7 +218,7 @@ def test_drawer_search_filters_by_package_id(
 
 
 def test_add_package_propagates_to_palette(
-    app_frontend: "FrontendPage", current_server: str, page
+    app_frontend: "FrontendPage", current_server: str, page, ui_node_in_catalog
 ):
     require_project_page()
     require_user_auth()

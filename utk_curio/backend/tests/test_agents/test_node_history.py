@@ -51,7 +51,7 @@ def _write(history: dict | None, nodes=("n1",), content: str = "return input_0")
     from utk_curio.backend.app.projects import storage as projects_storage
 
     spec: dict = {"dataflow": {
-        "nodes": [{"id": n, "type": "curio.builtin/computation-analysis", "content": content} for n in nodes],
+        "nodes": [{"id": n, "type": "curio.builtin/python-computation", "content": content} for n in nodes],
         "edges": [],
     }}
     if history is not None:

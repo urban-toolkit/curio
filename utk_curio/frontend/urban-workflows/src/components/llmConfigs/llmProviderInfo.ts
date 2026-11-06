@@ -1,7 +1,10 @@
 import type { LlmConfig } from "../../api/llmConfigsApi";
 
 /** A configuration editor's provider tab. */
-export type UiMode = "openai" | "anthropic" | "gemini" | "custom" | "deployment";
+export type UiMode = "openai" | "anthropic" | "gemini" | "custom";
+
+/** The editor's provider tabs, in order: the same with and without this Curio's own models. */
+export const UI_MODES: UiMode[] = ["openai", "anthropic", "gemini", "custom"];
 
 export interface ProviderInfo {
   label: string;
@@ -24,7 +27,7 @@ export const OPENAI_BASE_URL = "https://api.openai.com/v1";
 
 // Ids are the canonical ones, without a date suffix: a constructed
 // `-YYYYMMDD` variant is not guaranteed to resolve.
-export const PROVIDER_INFO: Record<Exclude<UiMode, "deployment">, ProviderInfo> = {
+export const PROVIDER_INFO: Record<UiMode, ProviderInfo> = {
   openai: {
     label: "OpenAI",
     model: "gpt-4o-mini",
@@ -60,11 +63,8 @@ export const PROVIDER_INFO: Record<Exclude<UiMode, "deployment">, ProviderInfo> 
   },
 };
 
-export const DEPLOYMENT_TAB_LABEL = "This Curio install";
-
 /** The tab a stored configuration belongs on. */
-export function uiModeOf(config: Pick<LlmConfig, "endpoint" | "apiType" | "baseUrl">): UiMode {
-  if (config.endpoint === "deployment") return "deployment";
+export function uiModeOf(config: Pick<LlmConfig, "apiType" | "baseUrl">): UiMode {
   if (config.apiType === "anthropic") return "anthropic";
   if (config.apiType === "gemini") return "gemini";
   if (config.apiType === "openai_compatible" && config.baseUrl.replace(/\/+$/, "") === OPENAI_BASE_URL) {
@@ -78,8 +78,7 @@ export function endpointFields(
   mode: UiMode,
   baseUrl: string,
   current?: Pick<LlmConfig, "apiType"> | null,
-): { endpoint: "own" | "deployment"; apiType?: string; baseUrl?: string } {
-  if (mode === "deployment") return { endpoint: "deployment" };
+): { endpoint: "own"; apiType: string; baseUrl: string } {
   if (mode === "anthropic" || mode === "gemini") return { endpoint: "own", apiType: mode, baseUrl: "" };
   if (mode === "openai") return { endpoint: "own", apiType: "openai_compatible", baseUrl: OPENAI_BASE_URL };
   // A Custom tab keeps a non-standard type it was created with (the scripted
@@ -91,11 +90,9 @@ export function endpointFields(
 }
 
 /** How the configurations table names a configuration's provider. */
-export function providerLabel(config: Pick<LlmConfig, "endpoint" | "apiType" | "baseUrl">): string {
-  const mode = uiModeOf(config);
-  if (mode === "deployment") return DEPLOYMENT_TAB_LABEL;
+export function providerLabel(config: Pick<LlmConfig, "apiType" | "baseUrl">): string {
   if (config.apiType === "testing") return "Scripted (tests)";
-  return PROVIDER_INFO[mode].label;
+  return PROVIDER_INFO[uiModeOf(config)].label;
 }
 
 /** " (on 3 Sep 2026)", or "" when the timestamp is missing or unparseable. */

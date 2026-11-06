@@ -159,7 +159,7 @@ def test_the_join_says_its_tuple_input_holds_2_values(
     require_project_page()
     require_user_auth()
     nodes = _open(page, app_frontend, current_server, SEVERAL_INPUTS, username="input_lines_join")
-    assert nodes[JOIN]["type"] == "curio.builtin/computation-analysis", nodes[JOIN]["type"]
+    assert nodes[JOIN]["type"] == "curio.builtin/python-computation", nodes[JOIN]["type"]
     assert "return means, peaks" in nodes["several-summary"]["content"]
 
     # The join's inputs hold their values; the join itself does not run.

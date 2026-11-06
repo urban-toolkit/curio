@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-COMPUTE = "curio.builtin/computation-analysis@1"
+COMPUTE = "curio.builtin/python-computation@1"
 
 
 def _headers(token: str) -> dict:

@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/dataflows/chicago-loop-shadow-towers.json",
-    "sha256": "6b35eebec157a88a356e7803b58b576dab5c0638400c797f647a850d1f8f8135",
+    "sha256": "8d6479dd18a9ed4395c49399cd05eae97060dd83f38e5ac78fbd8d224a3166b7",
     "walkthrough": null
   },
   "prompt": "Compare two scenarios of SCOUT's high-rise shadow case on the Chicago Loop. Load SCOUT's Loop buildings from the Data Catalog; in one scenario keep them as they are, in the other first take out the 15 buildings SCOUT's second scenario removes, by their building ids, as edits I can change later, removing, raising or lowering others, on a map of the remaining buildings colored by height and linked both ways to the edits, so a building I pick on the map is picked there. In both, turn the buildings' heights into a zoom 16 height raster with SCOUT's building rasterizer, run SCOUT's Deep Umbra shadow model on it, with the season, summer, from one setting wired into both scenarios' shadow model runs, draw the accumulated shadow on an Autark map of its own, both scenarios' maps on one color scale from 0 to 720 minutes, and take its mean and median over the ground, where the height raster is under 1.08 m. Then chart the two scenarios' mean accumulated shadow side by side, and map how the shadow changes when the buildings are removed. The rasterizer, the raster statistics and the shadow model are not part of the standard node set, so whatever provides them needs installing first.",
@@ -50,13 +50,6 @@
         "hasContent": true
       },
       {
-        "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
-        "role": "analysis",
-        "executable": true,
-        "hasContent": true
-      },
-      {
         "ref": "loader1",
         "type": "curio.builtin/data-loading",
         "role": "loader",
@@ -67,6 +60,13 @@
         "ref": "transform1",
         "type": "curio.builtin/edit-features",
         "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
         "executable": true,
         "hasContent": true
       },
@@ -129,18 +129,6 @@
     ],
     "edges": [
       {
-        "from": "analysis1",
-        "to": "analysis7",
-        "kind": "data",
-        "slot": 1
-      },
-      {
-        "from": "analysis1",
-        "to": "analysis8",
-        "kind": "data",
-        "slot": 1
-      },
-      {
         "from": "loader1",
         "to": "transform1",
         "kind": "data"
@@ -164,6 +152,18 @@
         "from": "transform1",
         "to": "analysis6",
         "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis7",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis8",
+        "kind": "data",
+        "slot": 1
       },
       {
         "from": "analysis2",

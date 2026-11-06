@@ -99,7 +99,7 @@ PROPOSED_CONTENT = "print('proposed by the agent')"
 CREATED_CONTENT = "print('new node')"
 PLAN_NODE_TITLES = ("Load", "Analyze")
 
-BUILTIN_NODE_TYPE = "curio.builtin/computation-analysis"
+BUILTIN_NODE_TYPE = "curio.builtin/python-computation"
 
 VISIBLE_PROSE = "Here is what I found."
 

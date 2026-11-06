@@ -281,7 +281,7 @@ describe("a dashboard served with its data", () => {
     const { getByTestId } = renderLoader(true);
 
     await waitFor(() => expect(getByTestId("state").textContent).toBe("loaded"));
-    expect(mockLoadProject).toHaveBeenCalledWith(mockRouteId);
+    expect(mockLoadProject).toHaveBeenCalledWith(mockRouteId, { signal: expect.any(AbortSignal) });
     expect(mockLoadSharedProject).not.toHaveBeenCalled();
   });
 

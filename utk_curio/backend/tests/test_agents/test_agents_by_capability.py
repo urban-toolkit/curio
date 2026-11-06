@@ -49,7 +49,7 @@ COPIES = (
 _RENAMED = {shipped.split("@")[0]: copy.split("@")[0] for shipped, copy, _ in COPIES}
 
 DL = "curio.builtin/data-loading"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 URL = "https://data.example.org/areas.geojson"
 #: A user key with an agent store of its own (``tmp_curio`` isolates it).
 UKEY = "7"
@@ -219,7 +219,7 @@ class TestSpecLookupsReadCapabilities:
         out = plans._attach_plan_node_agents(UKEY, spec, "n1", CA, parent=parent)
         assert [r["agentId"] for r in out["attached"]] == ["agent.test.my-builder"]
         assert [r["agentId"] for r in out["skipped"]] == ["agent.test.my-finder"]
-        assert "does not attach to computation-analysis nodes" in out["skipped"][0]["reason"]
+        assert "does not attach to python-computation nodes" in out["skipped"][0]["reason"]
         # The Researcher is installed and attaches to any node; it is never one of them.
         assert {r["coord"] for r in attachments.list_attachments(spec)} == {MY_BUILDER}
 

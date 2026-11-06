@@ -21,6 +21,22 @@ import os
 import pytest
 
 
+def pytest_configure(config):
+    """Leave the ``cuda`` tests out unless the ``-m`` expression names them.
+
+    They run on the GPU (``test_cuda_mlp.py``, ``test_cuda_torch.py``,
+    ``test_cuda_isolated.py``), which
+    only test-gpu's container has, and test-gpu runs them with ``-m cuda``. Composed with the
+    caller's expression as the backend conftest composes its opt-in marks, but
+    only when that expression does not name ``cuda``: ``(cuda) and not cuda``
+    would select nothing.
+    """
+    config.addinivalue_line("markers", "cuda: runs on the GPU through CUDA; only test-gpu runs it, with -m cuda")
+    existing = getattr(config.option, "markexpr", "") or ""
+    if "cuda" not in existing:
+        setattr(config.option, "markexpr", f"({existing}) and not cuda" if existing else "not cuda")
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _unauthenticated_sandbox():
     """Run the suite against the sandbox's unauthenticated local mode."""

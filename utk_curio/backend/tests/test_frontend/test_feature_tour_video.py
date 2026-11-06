@@ -78,6 +78,8 @@ from playwright.sync_api import expect
 from .test_scenario_drop_e2e import _toast
 from .test_scenarios_canvas_e2e import _box
 from .test_selection_tags_e2e import _drag_selection_tag_to_line_end, _open_tab, _panel
+from utk_curio.backend.tests._support.ui_test_package import UI_TEST_PACKAGE, UI_TEST_PACKAGE_NAME
+
 from .tour import REPO_ROOT, VIDEO_SIZE, Tour, finalize_video, out_dir, speed
 from .utils import (
     _post_json,
@@ -90,6 +92,7 @@ from .utils import (
     CANVAS_DROP_TARGET,
     _DRAG_TO_CANVAS_JS,
     canvas_nodes,
+    catalog_test_package,
     edge_client_point,
     close_tools_palette,
     connect_nodes,
@@ -133,9 +136,10 @@ DATASET_ID = "data.utk.acs-neighborhood-profile"
 DATASET_TITLE = "ACS Neighborhood Profile"
 
 # The only package a tour may install: it declares no python dependencies, so
-# nothing shells out to pip mid-recording.
-PKG_DIR = "curio.example-ui@1"
-PKG_NAME = "Example: Custom UI Node"
+# nothing shells out to pip mid-recording. A test package, planted in the
+# catalog for its scene and taken out after it.
+PKG_DIR = UI_TEST_PACKAGE
+PKG_NAME = UI_TEST_PACKAGE_NAME
 
 DRAWER_DATA = '[data-curio-dataset-catalog-drawer="true"]'
 DRAWER_NODES = '[data-curio-node-catalog-drawer="true"]'
@@ -183,9 +187,9 @@ DATAFLOW_GOAL = (
     "Compare income per capita across neighborhoods and flag the outliers."
 )
 
-TRANSFORM_TILE = "#tile-computation-analysis"
+TRANSFORM_TILE = "#tile-python-computation"
 LOADER_TYPE = "curio.builtin/data-loading"
-TRANSFORM_TYPE = "curio.builtin/computation-analysis"
+TRANSFORM_TYPE = "curio.builtin/python-computation"
 
 # The quickstart scene is docs/QUICK-START.md on camera, with its code and spec.
 LOADING_TILE = "#tile-data-loading"
@@ -989,7 +993,7 @@ def scene_canvas(ctx: Ctx) -> None:
     open_tools_palette(page, "builtin")
     for tile, label in (
         ("#tile-data-loading", "Data Loading"),
-        ("#tile-computation-analysis", "Python Computation"),
+        ("#tile-python-computation", "Python Computation"),
         ("#tile-data-pool", "Data Pool"),
         ("#tile-autk-grammar", "Autark: 2D and 3D maps, GPU compute"),
         ("#tile-vis-vega", "Vega-Lite charts"),
@@ -1221,6 +1225,11 @@ def scene_lineage(ctx: Ctx) -> None:
 
 
 def scene_node_catalog(ctx: Ctx) -> None:
+    with catalog_test_package(ctx.backend, PKG_DIR):
+        _add_a_package_from_the_node_catalog(ctx)
+
+
+def _add_a_package_from_the_node_catalog(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     tour.chapter(
         "07", "The Node Catalog",
@@ -1241,7 +1250,7 @@ def scene_node_catalog(ctx: Ctx) -> None:
         hold=3000,
     )
     search = drawer.get_by_placeholder("Search packages, publishers, tags…")
-    tour.type_into(search, "example", delay=90)
+    tour.type_into(search, PKG_NAME, delay=90)
     tour.beat(1200)
 
     card = drawer.locator(f'article[data-pkg-dir="{PKG_DIR}"]')
@@ -1905,7 +1914,7 @@ def scene_heat(ctx: Ctx) -> None:
     at = _node_positions(page)
     scatter, boxplot = sorted(charts, key=lambda i: at[i][0])
     projection = next(
-        i for i in _node_ids_by_type(page, "computation-analysis")
+        i for i in _node_ids_by_type(page, "python-computation")
         if abs(at[i][0] - at[maps[0]][0]) < 1
     )
     block = [projection, boxplot] + maps + [scatter]
@@ -2035,7 +2044,7 @@ WHATIF_MAPS = ["whatif-baseline-map", "whatif-modified-map", "whatif-towers-map"
 #: The nodes that compare its scenarios, each with its type: the Vega-Lite
 #: package's Bars of the mean sunlight, and the Python node that takes each
 #: road's sunlight change.
-WHATIF_COMPARES = [("whatif-compare-chart", "bars"), ("whatif-compare-difference", "computation-analysis")]
+WHATIF_COMPARES = [("whatif-compare-chart", "bars"), ("whatif-compare-difference", "python-computation")]
 WHATIF_BASELINE = "s-baseline"
 WHATIF_BASELINE_NODES = ["whatif-baseline-compute", "whatif-baseline-map"]
 WHATIF_TWICE = "s-twice"
@@ -2064,7 +2073,7 @@ PICKED_CODE = (
     'print("Picked:", ", ".join(zips["zip"]))\n'
     "return zips\n"
 )
-CODE_TYPE = "curio.builtin/computation-analysis"
+CODE_TYPE = "curio.builtin/python-computation"
 
 # The function the nodefromfunction scene makes a node of.
 FUNCTION_CHOICE = "model.scout.deep-umbra@1|deep_umbra.deep_umbra|season_factor"
@@ -2395,7 +2404,7 @@ def scene_selection_tag(ctx: Ctx) -> None:
         [at[0], at[1]],
     )
     page.wait_for_timeout(800)
-    reader = drag_builtin_to_canvas(page, "#tile-computation-analysis", at=(300 + 645, 650 - 415))
+    reader = drag_builtin_to_canvas(page, "#tile-python-computation", at=(300 + 645, 650 - 415))
     _fit_nodes(page, [ZIPS_LOADER, reader])
     dismiss_toasts(page)
     # The edge is drawn from the loader, below and left of the map, to the

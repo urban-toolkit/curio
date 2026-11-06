@@ -193,7 +193,7 @@ class TestReachability:
         assert {f.fixture_id for f in with_widgets} == {
             "widget", "scenarios", "quad-cities-flood-vulnerability", "06-back-bay-road-sunlight",
             "chicago-loop-shadow-towers", "24-scout-shadow-model-chicago-loop", "chicago-rain-wind-routing", "lower-manhattan-park-shade",
-            "scenario-comparison-charts", "crown-heights-1550-bedford-shadow",
+            "scenario-comparison-charts", "crown-heights-1550-bedford-shadow", "filter-rows-with-widgets",
         }
         for fixture in with_widgets:
             example = _example(fixture)
@@ -350,7 +350,7 @@ class TestMutationsFailForTheRightReason:
         # Computation does, so the plan still mints with one in its place.
         def mutate(payload, contents):
             for node in payload["nodes"]:
-                if node["nodeType"].endswith("computation-analysis"):
+                if node["nodeType"].endswith("python-computation"):
                     node["nodeType"] = "curio.builtin/data-loading"
                     break
             else:
@@ -365,7 +365,7 @@ class TestMutationsFailForTheRightReason:
     ):
         def mutate(payload, contents):
             payload["nodes"].append({
-                "ref": "spare", "nodeType": "curio.builtin/computation-analysis",
+                "ref": "spare", "nodeType": "curio.builtin/python-computation",
                 "title": "Spare", "intent": "an extra step nobody asked for",
             })
             payload["edges"].append({"from": payload["nodes"][0]["ref"], "to": "spare"})

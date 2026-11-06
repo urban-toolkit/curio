@@ -92,7 +92,7 @@ const makeNode = (id: string) =>
     id,
     type: CURIO_UNIVERSAL_NODE_TYPE,
     position: { x: 0, y: 0 },
-    data: { nodeId: id, nodeType: NodeType.COMPUTATION_ANALYSIS, input: '', inputTypes: [], saveOutputDataset: false },
+    data: { nodeId: id, nodeType: NodeType.PYTHON_COMPUTATION, input: '', inputTypes: [], saveOutputDataset: false },
   }) as any;
 
 async function flush() {

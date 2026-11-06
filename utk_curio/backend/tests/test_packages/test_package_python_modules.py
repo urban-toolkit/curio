@@ -225,8 +225,8 @@ class TestARunIsHandedItsPackagesModules:
         assert modules_for_node("guest", "ai.test.heights/caller@1") == expected
 
     @pytest.mark.parametrize("node_type", [
-        "curio.builtin/computation-analysis",
-        "curio.builtin/computation-analysis@1",
+        "curio.builtin/python-computation",
+        "curio.builtin/python-computation@1",
         "PYTHON_COMPUTATION",
         "ai.test.absent/caller",
         "ai.test.heights/not-a-template",

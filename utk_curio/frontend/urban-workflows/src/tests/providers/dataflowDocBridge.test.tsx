@@ -75,7 +75,7 @@ const TYPE = "curio.builtin/python-computation@1";
 
 /** Each node field's value in another tab's change, and a second one. */
 const NODE_SAMPLES: Record<string, [unknown, unknown]> = {
-    type: ["curio.builtin/computation-analysis@1", TYPE],
+    type: ["curio.builtin/python-computation@1", TYPE],
     x: [111, 222],
     y: [333, 444],
     width: [640, 700],

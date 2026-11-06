@@ -227,7 +227,7 @@ def test_an_invited_editors_move_reaches_the_owner_and_a_watcher_only_watches(
         assert _position(owner) == pytest.approx(moved, abs=0.5), "a watcher's drag reached the owner"
 
         # The editor's next change reaches everyone: the owner and the watcher.
-        added = drag_builtin_to_canvas(editor, "#tile-computation-analysis", at=(200, 450))
+        added = drag_builtin_to_canvas(editor, "#tile-python-computation", at=(200, 450))
         node_locator(owner, added).wait_for(timeout=15000)
         node_locator(watcher, added).wait_for(timeout=15000)
 

@@ -141,7 +141,7 @@ beforeEach(() => {
         id: "real",
         type: "universal",
         position: { x: 0, y: 0 },
-        data: { nodeId: "real", nodeType: "curio.builtin/computation-analysis", title: "Real heights" },
+        data: { nodeId: "real", nodeType: "curio.builtin/python-computation", title: "Real heights" },
       },
     ],
     edges: [],

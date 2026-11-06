@@ -212,7 +212,7 @@ class APythonNodeReceivesTheRasterTest(StoreTestCase):
         _worker_init()
         case = cases()[0]
         art_id = save_to_duckdb(case["envelope"], "autark-node")
-        result = execute_code(self.CHECK, art_id, "curio.builtin/computation-analysis", "dict",
+        result = execute_code(self.CHECK, art_id, "curio.builtin/python-computation", "dict",
                               save_dataset=False)
         self.assertEqual(result["stderr"], "")
         self.assertEqual(result["output"]["dataType"], "str")
@@ -232,7 +232,7 @@ class APythonNodeReceivesTheRasterTest(StoreTestCase):
         _worker_init()
         case = cases()[0]
         art_id = save_to_duckdb(case["envelope"], "autark-node")
-        result = execute_code("    return input_0\n", art_id, "curio.builtin/computation-analysis", "dict",
+        result = execute_code("    return input_0\n", art_id, "curio.builtin/python-computation", "dict",
                               save_dataset=False)
         self.assertEqual(result["stderr"], "")
         self.assertEqual(result["output"]["dataType"], "raster")
@@ -250,7 +250,7 @@ class APythonNodeReceivesTheRasterTest(StoreTestCase):
             Path(scratch, "in_0.json").write_text(json.dumps(case["envelope"]), encoding="utf-8")
             request = {
                 "code": self.CHECK,
-                "node_type": "curio.builtin/computation-analysis",
+                "node_type": "curio.builtin/python-computation",
                 "data_type": "dict",
                 "scratch_dir": scratch,
                 "input": {"kind": "json", "file": "in_0.json"},
@@ -513,7 +513,7 @@ class ARasterOutputAfterAReopenTest(StoreTestCase):
         _worker_init()
         art_id, saved = self.saved(FIXTURE.read_bytes())
         result = execute_code(
-            APythonNodeReceivesTheRasterTest.CHECK, art_id, "curio.builtin/computation-analysis", "raster",
+            APythonNodeReceivesTheRasterTest.CHECK, art_id, "curio.builtin/python-computation", "raster",
             session_id="new-sign-in", save_dataset=False, saved_paths=self.saved_paths(art_id, saved),
         )
         self.assertEqual(result["stderr"], "")

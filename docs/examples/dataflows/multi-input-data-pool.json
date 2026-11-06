@@ -17,7 +17,7 @@
       },
       {
         "id": "f5d5c6d5-c5af-41fa-a5c5-7d1180de358f",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": -41.62681321147792,
         "y": 497.69981704227314,
         "content": "import pandas as pd\r\n\r\nd = {'a': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'b': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=d)\r\n\r\nreturn df",
@@ -30,7 +30,7 @@
       },
       {
         "id": "f947ea8b-27f7-4968-83cb-bb6b45242498",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": -35.275676741932955,
         "y": 888.5446515223786,
         "content": "import pandas as pd\r\n\r\ne = {'x': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'y': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=e)\r\n\r\nreturn df",
@@ -43,7 +43,7 @@
       },
       {
         "id": "df45c018-6da7-4a4e-be9c-aca061252358",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": -25.130440486177633,
         "y": 1298.1330399536264,
         "content": "import pandas as pd\r\n\r\nf = {'u': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'v': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=f)\r\n\r\nreturn df",
@@ -56,7 +56,7 @@
       },
       {
         "id": "f0f8183e-ef9f-40ee-a800-5ed974dc71ed",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": -20.799358027463768,
         "y": 1703.4142745729523,
         "content": "import pandas as pd\r\n\r\nz = {'s': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 't': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=z)\r\n\r\nreturn df",
@@ -69,7 +69,7 @@
       },
       {
         "id": "6af4345b-7fa3-4acb-bfde-79470b22aa5c",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": -26.892827066786424,
         "y": 2195.796289881986,
         "content": "import pandas as pd\r\n\r\ny = {'m': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'n': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=y)\r\n\r\nreturn df",

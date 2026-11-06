@@ -86,12 +86,12 @@ def _shared(plan):
 
 def test_a_context_node_with_no_title_is_named_as_its_header_names_it(client, user_and_token):
     """The drop names the loader that stands for a context node after it, so
-    the name is the node's own: its title, else its template's label ("Python
-    Computation"), never its type in words ("Computation Analysis")."""
+    the name is the node's own: its title, else its template's label ("JS
+    Computation"), never its type in words ("Js Computation")."""
     _, token = user_and_token
     spec = {"dataflow": {
         "name": "Heights",
-        "nodes": [_node("prep"), _node("a", x=300)],
+        "nodes": [_node("prep", "js-computation"), _node("a", x=300)],
         "edges": [_edge("prep", "a")],
         "scenarioSets": [{"id": "h", "name": "Heights"}],
         "scenarios": [{"id": "s1", "name": "Taller", "color": "#2a9d8f", "nodes": ["a"], "set": "h",
@@ -103,7 +103,7 @@ def test_a_context_node_with_no_title_is_named_as_its_header_names_it(client, us
 
     plan = _plan(client, token, source, target, "s1").get_json()
 
-    assert [(entry["nodeId"], entry["label"]) for entry in plan["context"]] == [("prep", "Python Computation")]
+    assert [(entry["nodeId"], entry["label"]) for entry in plan["context"]] == [("prep", "JS Computation")]
 
 
 def test_the_first_scenario_of_a_set_brings_only_the_shared_outcomes_it_feeds_alone(client, user_and_token):

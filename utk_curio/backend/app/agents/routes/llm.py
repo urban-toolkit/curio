@@ -47,9 +47,9 @@ def get_llm():
 @agents_bp.route("/llm/configs", methods=["POST"])
 @require_auth
 def create_llm_config():
-    """Add a configuration: ``{label, endpoint?, apiType, baseUrl?, apiKey?, model}``,
-    or ``{label, endpoint: "deployment", endpointName, model}`` for This Curio
-    install."""
+    """Add a configuration: ``{label, endpoint?, apiType, baseUrl?, apiKey?, model}``.
+    ``endpoint`` is ``"own"`` when given: one of this Curio's own models is
+    picked as the default or for an agent, never configured."""
 
     refusal = _llm_refusal()
     if refusal:
@@ -57,7 +57,6 @@ def create_llm_config():
     try:
         config = agents_llm_configs.default_store().create(
             _user_dir_key(g.user), request.get_json(silent=True),
-            offered_endpoints=agents_provider_config.deployment_endpoints(),
         )
     except agents_llm_configs.LlmConfigError as exc:
         return _llm_error(exc)
@@ -76,7 +75,6 @@ def update_llm_config(config_id: str):
     try:
         config = agents_llm_configs.default_store().update(
             _user_dir_key(g.user), config_id, request.get_json(silent=True),
-            offered_endpoints=agents_provider_config.deployment_endpoints(),
         )
     except agents_llm_configs.LlmConfigError as exc:
         return _llm_error(exc)
@@ -113,7 +111,6 @@ def duplicate_llm_config(config_id: str):
     try:
         config = agents_llm_configs.default_store().duplicate(
             _user_dir_key(g.user), config_id, label=body.get("label"), model=body.get("model"),
-            offered_endpoints=agents_provider_config.deployment_endpoints(),
         )
     except agents_llm_configs.LlmConfigError as exc:
         return _llm_error(exc)
@@ -123,17 +120,21 @@ def duplicate_llm_config(config_id: str):
 @agents_bp.route("/llm/default", methods=["PUT"])
 @require_auth
 def put_llm_default():
-    """Choose the default configuration: ``{configId}``, or null for the
-    deployment's own."""
+    """Choose the default: ``{configId}``, a configuration id, a pick of one
+    of this Curio's models (``curio:["<endpoint>","<model>"]``), or null for
+    Curio's default."""
 
     refusal = _llm_refusal()
     if refusal:
         return _error(refusal, 403)
     body = request.get_json(silent=True)
     if not isinstance(body, dict) or "configId" not in body:
-        return _error("send {configId}, a configuration id or null")
+        return _error("send {configId}, a configuration id, one of Curio's models or null")
     try:
-        agents_llm_configs.default_store().set_default(_user_dir_key(g.user), body["configId"])
+        agents_llm_configs.default_store().set_default(
+            _user_dir_key(g.user), body["configId"],
+            offered_endpoints=agents_provider_config.deployment_endpoints(),
+        )
         return jsonify(agents_llm_listing.llm_listing(g.user)), 200
     except agents_llm_configs.LlmConfigError as exc:
         return _llm_error(exc)
@@ -142,21 +143,21 @@ def put_llm_default():
 @agents_bp.route("/llm/assignments", methods=["PUT"])
 @require_auth
 def put_llm_assignments():
-    """Choose the configuration an agent runs on: a partial map of agent id to
-    a configuration id, ``"deployment"`` or ``null`` (which clears the choice).
-    Agent ids are the catalog cards, published definitions and the account's
-    imports; an internal agent always runs on its caller's and is refused."""
+    """Choose what an agent runs on: a partial map of agent id to a
+    configuration id, a pick of one of this Curio's models, ``"deployment"``
+    (Curio's default) or ``null`` (which clears the choice). Agent ids are the
+    catalog cards, published definitions and the account's imports; an
+    internal agent always runs on its caller's and is refused."""
 
     refusal = _llm_refusal()
     if refusal:
         return _error(refusal, 403)
     user_key = _user_dir_key(g.user)
-    guest = bool(getattr(g.user, "is_guest", False))
     try:
         agents_llm_configs.default_store().set_choices(
             user_key, request.get_json(silent=True),
             choosable=frozenset(row["id"] for row in agents_services.choosable_agents(user_key)),
-            deployment_default=agents_provider_config.deployment_config(user_key, guest=guest) is not None,
+            offered_endpoints=agents_provider_config.deployment_endpoints(),
         )
         return jsonify(agents_llm_listing.llm_listing(g.user)), 200
     except agents_llm_configs.LlmConfigError as exc:

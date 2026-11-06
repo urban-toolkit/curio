@@ -52,7 +52,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-PYTHON = "curio.builtin/computation-analysis"
+PYTHON = "curio.builtin/python-computation"
 FRAMES = "auto-run-845"
 TOGGLE = "Run stale nodes automatically"
 

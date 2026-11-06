@@ -234,7 +234,7 @@ class TestDataflowReadProjection:
         from utk_curio.backend.app.projects import storage as projects_storage
 
         nodes = [
-            {"id": f"n{i}", "type": "curio.builtin/computation-analysis",
+            {"id": f"n{i}", "type": "curio.builtin/python-computation",
              "goal": f"step {i}", "content": "x" * content_chars}
             for i in range(n_nodes)
         ]
@@ -281,7 +281,7 @@ class TestDataflowReadProjection:
         spec = {"dataflow": {"nodes": [
             {"id": "a", "type": "t", "content": ""},
             {"id": "b", "type": "t", "content": ""},
-            {"id": "m", "type": "curio.builtin/computation-analysis", "content": ""},
+            {"id": "m", "type": "curio.builtin/python-computation", "content": ""},
         ], "edges": [
             {"id": "e1", "source": "a", "target": "m",
              "sourceHandle": "out", "targetHandle": "in"},
@@ -335,13 +335,13 @@ class TestDataflowReadProjection:
 
         spec = {"dataflow": {"nodes": [
             {"id": "load", "type": "curio.builtin/data-loading", "content": "return 1"},
-            {"id": "a", "type": "curio.builtin/computation-analysis",
+            {"id": "a", "type": "curio.builtin/python-computation",
              "content": "return input_0 * [!! factor !!] * input_1",
              "metadata": {"widgets": [{"name": "factor", "type": "number", "default": 1, "value": 2}]}},
             {"id": "b", "type": "curio.builtin/vis-vega", "content": "{}"},
-            {"id": "p", "type": "curio.builtin/computation-analysis", "content": "return [!! season !!]",
+            {"id": "p", "type": "curio.builtin/python-computation", "content": "return [!! season !!]",
              "metadata": {"widgets": [{"name": "season", "type": "text", "default": "winter"}]}},
-            {"id": "a2", "type": "curio.builtin/computation-analysis", "content": "return input_0",
+            {"id": "a2", "type": "curio.builtin/python-computation", "content": "return input_0",
              "metadata": {"copiedFrom": ["a"]}},
         ], "edges": [
             {"id": "e1", "source": "load", "target": "a"},
@@ -394,7 +394,7 @@ class TestDataflowReadProjection:
         """*count* nodes with goals of *goal* characters, a widget and a
         lineage each, the first *edges* of them chained."""
         nodes = [
-            {"id": f"node-{i:04d}", "type": "curio.builtin/computation-analysis", "goal": "g" * goal, "content": "x",
+            {"id": f"node-{i:04d}", "type": "curio.builtin/python-computation", "goal": "g" * goal, "content": "x",
              "metadata": {"widgets": [{"name": "w", "type": "number", "default": 1}], "copiedFrom": [f"origin-{i}"]}}
             for i in range(count)
         ]
@@ -428,7 +428,7 @@ class TestDataflowReadProjection:
         assert len(payload["nodes"]) + payload["nodesElided"] == 400
         assert [n["id"] for n in payload["nodes"]] == [f"node-{i:04d}" for i in range(len(payload["nodes"]))]
         assert payload["nodes"][0] == {
-            "id": "node-0000", "type": "curio.builtin/computation-analysis", "hasContent": True, "contentChars": 1,
+            "id": "node-0000", "type": "curio.builtin/python-computation", "hasContent": True, "contentChars": 1,
         }
         assert payload["datasets"] == [{"datasetId": "d"}]
 
@@ -461,7 +461,7 @@ def _project_with_scenarios(client, token, name: str, scenarios: list[dict]) -> 
     """A project of the signed-in account, saved through its route, with two
     nodes, ``a`` and ``b``, and *scenarios*. Its id."""
     nodes = [
-        {"id": node_id, "type": "curio.builtin/computation-analysis@1", "content": "return input_0", "x": 0, "y": 0}
+        {"id": node_id, "type": "curio.builtin/python-computation@1", "content": "return input_0", "x": 0, "y": 0}
         for node_id in ("a", "b")
     ]
     spec = {"dataflow": {"name": name, "nodes": nodes, "edges": [], "scenarios": scenarios}}
@@ -596,7 +596,7 @@ class TestNodeRuntimeRead:
         from utk_curio.backend.app.projects import storage as projects_storage
 
         spec = {"dataflow": {"nodes": [
-            {"id": "n1", "type": "curio.builtin/computation-analysis", "content": content},
+            {"id": "n1", "type": "curio.builtin/python-computation", "content": content},
         ], "edges": []}}
         projects_storage.write_spec(self.UKEY, self.PID, spec)
 

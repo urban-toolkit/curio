@@ -108,7 +108,7 @@ const LOADER = 'curio.builtin/data-loading@1';
 const POOL = 'curio.builtin/data-pool@1';
 const VEGA = 'curio.builtin/vis-vega@1';
 const SIMPLE = 'curio.builtin/vis-simple@1';
-const PYTHON = 'curio.builtin/computation-analysis@1';
+const PYTHON = 'curio.builtin/python-computation@1';
 
 /** The built-in templates as packages/curio.builtin@1/manifest.json declares them. */
 const SHIPPED_TEMPLATES: any[] = JSON.parse(

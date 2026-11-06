@@ -692,6 +692,24 @@ def test_a_grader_that_thinks_as_long_as_a_turn_may_still_writes_its_whole_grade
                                  "outputTokens": CAP + _ThinkingModel.tokens_of(grade), "thinking": True}
 
 
+def test_a_grader_that_thinks_three_turns_long_still_writes_its_whole_grade(
+        thinking_model, monkeypatch, tmp_path):
+    """On 11-05 Qwen3.8-27B, the benchmark's grader, thought past 8,192 tokens
+    on one grade in each of two runs, and each grade was lost on all three
+    tries. Here the grader thinks for three of a turn's whole caps, then writes
+    its grade: it is graded on the first try."""
+    from utk_curio.backend.app.agents.evaluation import skill_evals
+
+    task = _graded_task(skill_evals)
+    server = thinking_model(thinking=3 * CAP, reply=_whole_grade(task))
+    worker = _grader_on(server, monkeypatch, tmp_path)
+    grading = _outcome(lambda: worker._grade(task, {"reply": GRADED_REPLY}, GRADED_CHANGES))
+    results = grading.get("assertion_results") if isinstance(grading, dict) else None
+    assert isinstance(results, list), f"the grade never came whole: {grading!r}"
+    assert [item["passed"] for item in results] == [passed for passed, _ in GRADED]
+    assert len(server.requests) == 1, f"the grader was asked {len(server.requests)} times"
+
+
 def test_a_grade_cut_while_the_grader_still_thinks_says_so(thinking_model, monkeypatch, tmp_path):
     """The grader thinks past its whole cap on every try. The grade said only
     that its reply was cut; it says the grader spent all of the cap thinking,

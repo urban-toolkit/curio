@@ -79,6 +79,9 @@ STATUS_RANK = {"passed": 0, "xfailed": 1, "skipped": 2, "error": 3, "failed": 4}
 # "reminted" and "unchanged" come only from a --remint-baselines run: the first
 # replaced its baseline, the second kept it. "minted" is a baseline this run
 # wrote where there was none, so it is new and needs a look like a re-mint.
+# A record of any other run can also be a candidate ("candidate": true), the
+# capture a re-mint would write, which a filter of its own shows across these
+# groups; its status stays the comparison's.
 COMPARISON_GROUP = {
     "failed": "over", "capture-error": "capture", "missing": "missing",
     "passed": "within", "minted": "minted",
@@ -381,12 +384,13 @@ PAIR_FADE = 0.2  # as comparisons.FADE: how much of the after frame shows under 
 def pair_frame(record):
     """The image a pair shows for *record*: its baseline as this run leaves it.
 
-    A re-mint wrote this run's capture over the baseline, and a missing
-    baseline has only the capture that would become one. Every other record's
-    baseline is the file as committed, or as a mint just wrote it.
+    A re-mint wrote this run's capture over the baseline, a missing baseline
+    has only the capture that would become one, and a candidate's capture is
+    what would replace its baseline. Every other record's baseline is the file
+    as committed, or as a mint just wrote it.
     """
     images = record.get("images") or {}
-    if record.get("status") in ("reminted", "missing"):
+    if record.get("status") in ("reminted", "missing") or record.get("candidate"):
         return images.get("created")
     return images.get("expected") or images.get("created")
 
@@ -1174,7 +1178,8 @@ def render_pairs(report):
             f'which lights up <code>{esc(pair.get("target"))}</code>.</p>{"".join(rows)}</article>')
     intro = ('<p class="note">Each row is one node of an interaction step, framed together '
              "with the other node, before and after the gesture. The frames are the baselines "
-             "as this run leaves them, so on a mint or re-mint run they are the new ones. "
+             "as this run leaves them, so on a mint or re-mint run they are the new ones, and "
+             "a candidate shows its capture. "
              f"What changed marks in red every pixel that differs by more than {PAIR_CHANGE_THRESHOLD} "
              "in a channel between the two.</p>")
     return (f'<section id="interactions"><h2>Interaction pairs</h2>{intro}'
@@ -1194,7 +1199,12 @@ def render_comparisons(report):
     chips += [f'<button type="button" class="chip {g}" data-group="{g}" aria-pressed="false">'
               f'{GROUP_LABEL[g]} <span class="num">{counts[g]}</span></button>'
               for g in GROUP_ORDER if counts[g]]
-    # Across the groups: every node framed on its own, whatever became of it.
+    # Across the groups: every frame kept as a candidate baseline, passing,
+    # over its budget or new, and every node framed on its own.
+    candidates = sum(1 for r in shown if r.get("candidate"))
+    if candidates:
+        chips.append('<button type="button" class="chip candidate" data-group="candidate" '
+                     f'aria-pressed="false">Candidates <span class="num">{candidates}</span></button>')
     closeups = sum(1 for r in shown if r.get("closeup"))
     if closeups:
         chips.append('<button type="button" class="chip closeup" data-group="closeup" '
@@ -1214,6 +1224,8 @@ def render_comparisons(report):
     intro = render_remint_intro(records) if counts["reminted"] or kept else ""
     if counts["minted"]:
         intro += render_minted_intro(records)
+    if candidates:
+        intro += render_candidate_intro(records)
     cards = "".join(render_comparison(report, r) for r in shown)
     return (f'<section id="comparisons"><h2>Screenshot comparisons</h2>{intro}{tools}{legend}'
             f'<div class="cards">{cards}</div>{render_unchanged(kept)}</section>')
@@ -1237,6 +1249,24 @@ def render_remint_intro(records):
             "text a run writes fresh every time (file names, ids, dates, times and the app "
             f"version).{requested} Each re-minted card shows the baseline it replaced; the "
             "replacements are in this run's <code>reminted-baselines</code> artifact.</p>")
+
+
+def render_candidate_intro(records):
+    candidates = [r for r in records if r.get("candidate")]
+    new = sum(1 for r in candidates if r.get("status") == "missing")
+    over = sum(1 for r in candidates if r.get("status") == "failed")
+    floor = _remint_floor(records)
+    rule = f"more than {percent(floor)} of its pixels" if floor is not None else "past the re-mint threshold"
+    parts = [f"{over} of them over their budgets"] if over else []
+    if new:
+        parts.append(f"{new} without a baseline yet")
+    return (f'<p class="note">{len(candidates)} frames are candidate baselines, the captures a '
+            f"re-mint would write: each moved by {rule}, not counting text a run writes fresh "
+            "every time, or has no baseline yet, and a second capture right after agreed with it"
+            f'{" (" + ", ".join(parts) + ")" if parts else ""}. The Candidates filter shows them '
+            "next to their committed baselines. They are in this run's "
+            "<code>candidate-baselines</code> artifact, under their baselines' names: commit the "
+            "ones you approve.</p>")
 
 
 def render_minted_intro(records):
@@ -1271,6 +1301,9 @@ def render_comparison(report, record):
     ratio = record.get("ratio")
 
     head = [badge(group, COMPARISON_LABEL.get(status, status)), f"<h3>{esc(baseline)}</h3>"]
+    candidate = bool(record.get("candidate"))
+    if candidate:
+        head.append(badge("candidate", "candidate"))
     # The baseline of the run's GPU kind, kept beside the default one.
     gpu_kind = record.get("gpu_kind")
     if gpu_kind:
@@ -1286,8 +1319,11 @@ def render_comparison(report, record):
         test_bits += " " + badge("failed", "test failed")
     captions = (("expected", "Expected"), ("created", "Created"), ("diff", "Difference"))
 
-    if status == "reminted":
-        captions = (("expected", "Committed baseline"), ("created", "Re-minted"),
+    # A candidate reads as the re-mint it stands for: the frame that would
+    # replace its baseline, or become one.
+    if status == "reminted" or (candidate and status != "missing"):
+        captions = (("expected", "Committed baseline"),
+                    ("created", "Candidate" if candidate else "Re-minted"),
                     ("diff", "Difference"))
         against = "the committed baseline"
         # A new baseline of a GPU kind, shown against the default one.
@@ -1309,6 +1345,13 @@ def render_comparison(report, record):
             head.append(badge("over", "over the budget until committed"))
         if record.get("forced"):
             head.append(badge("reminted", "requested"))
+        meter = ""
+    elif candidate:
+        # No baseline yet: the capture, and a second one that agreed with it.
+        captions = (("expected", "Baseline"), ("created", "Candidate"), ("diff", "Difference"))
+        verdict = ("No baseline exists, so this capture is a candidate for one. A second capture "
+                   f"right after moved {percent(record.get('recapture_ratio'))}; budget "
+                   f"<strong>{percent(budget)}</strong>.")
         meter = ""
     elif status == "minted":
         # The new baseline, and a second capture compared with it.
@@ -1343,6 +1386,9 @@ def render_comparison(report, record):
     if record.get("capture"):
         facts.append(record["capture"])
     error = f'<pre class="message">{esc(record["error"])}</pre>' if record.get("error") else ""
+    if record.get("not_candidate"):
+        error += (f'<p class="muted">It moved past the re-mint threshold but is no candidate: '
+                  f'{esc(record["not_candidate"])}</p>')
 
     figures = []
     for kind, caption in captions:
@@ -1362,7 +1408,8 @@ def render_comparison(report, record):
                            f"<figcaption>{caption}</figcaption></figure>")
     search = f"{baseline} {test}".lower()
     return (f'<article class="card cmp" id="{esc(record.get("anchor") or "")}" '
-            f'data-group="{group}" data-closeup="{"1" if record.get("closeup") else ""}" '
+            f'data-group="{group}" data-candidate="{"1" if candidate else ""}" '
+            f'data-closeup="{"1" if record.get("closeup") else ""}" '
             f'data-interaction="{"1" if record.get("interaction") else ""}" '
             f'data-search="{esc(search)}">'
             f'<header class="card-head">{"".join(head)}</header>'
@@ -1419,6 +1466,9 @@ def render_summary(report):
               if counts["reminted"] or counts["unchanged"] else "")
     if counts["minted"]:
         remint += f" Minted: {counts['minted']} new baselines."
+    candidates = sum(1 for r in report.comparisons if r.get("candidate"))
+    if candidates:
+        remint += f" Candidates: {candidates} frames, in the candidate-baselines artifact."
     if report.pairs:
         remint += f" Interaction pairs: {len(report.pairs)} steps."
     lines += ["", f"Screenshot comparisons: {len(report.comparisons)} recorded, "
@@ -1478,7 +1528,7 @@ border:1px solid currentColor;white-space:nowrap}
 .badge.failed,.badge.failure,.badge.error,.badge.over,.badge.unreadable{color:var(--fail)}
 .badge.missing,.badge.capture,.badge.cancelled,.badge.unclear,.badge.timed_out{color:var(--warn)}
 .badge.skipped,.badge.neutral,.badge.unknown,.badge.xfailed,.badge.unchanged{color:var(--skip)}
-.badge.reminted,.badge.minted,.badge.closeup,.badge.interaction,.badge.gpukind{color:var(--accent)}
+.badge.reminted,.badge.minted,.badge.candidate,.badge.closeup,.badge.interaction,.badge.gpukind{color:var(--accent)}
 table{border-collapse:collapse;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:8px}
 th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 th{font-size:12px;color:var(--muted);font-weight:600}
@@ -1555,6 +1605,7 @@ JS = """
     const q = ((search && search.value) || '').trim().toLowerCase();
     for (const card of cards) {
       const inGroup = group === 'all' || card.dataset.group === group ||
+                      (group === 'candidate' && card.dataset.candidate === '1') ||
                       (group === 'closeup' && card.dataset.closeup === '1') ||
                       (group === 'interaction' && card.dataset.interaction === '1');
       card.hidden = !(inGroup && (!q || card.dataset.search.includes(q)));

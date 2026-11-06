@@ -18,7 +18,7 @@ test_data = {
     "workflow": "test_workflow",
     "data": {
         "workflow_name": "test_workflow",
-        "activity_name": "COMPUTATION_ANALYSIS",
+        "activity_name": "PYTHON_COMPUTATION",
         "activityexec_start_time": "2025-05-09T02:00:00",
         "activityexec_end_time": "2025-05-09T03:00:00",
         "types_input": {"input_relation_1": 1},
@@ -467,7 +467,7 @@ class TestMissingModuleReporting(unittest.TestCase):
         ):
             resp = self.client.post(
                 route,
-                json={"code": "    import sklearn", "nodeType": "COMPUTATION_ANALYSIS",
+                json={"code": "    import sklearn", "nodeType": "PYTHON_COMPUTATION",
                       "input": {}},
                 headers=self._auth_headers(),
             )

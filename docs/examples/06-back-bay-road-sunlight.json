@@ -85,7 +85,7 @@
       },
       {
         "id": "whatif-baseline-roads",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 2087,
         "y": 720,
         "title": "Roads",
@@ -149,7 +149,7 @@
       },
       {
         "id": "whatif-modified-roads",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 2087,
         "y": 1934,
         "title": "Roads",
@@ -245,7 +245,7 @@
       },
       {
         "id": "whatif-towers-roads",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 2966,
         "y": 2428,
         "title": "Roads",
@@ -309,7 +309,7 @@
       },
       {
         "id": "whatif-compare-difference",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 2966,
         "y": 752,
         "title": "Sunlight change",

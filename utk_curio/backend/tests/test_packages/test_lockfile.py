@@ -809,7 +809,7 @@ def _python_node(node_id: str, *, bound: bool, model_ref: str = DDRNET_ID, runs:
         metadata["modelRefs"] = [{"id": model_ref, "name": "DDRNet23-Slim (street scenes)"}]
     return {
         "id": node_id,
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "content": f'model = curio_load_model("{runs}")\nreturn 1\n',
         "metadata": metadata,
     }
@@ -979,7 +979,7 @@ class TestPackageUsage:
         by_name = {row["dataflowName"]: row for row in ours}
         assert by_name["Code only"]["dataflowId"] == ids["Code only"]
         assert by_name["Code only"]["nodes"] == [
-            {"nodeId": "in-code", "nodeType": "curio.builtin/computation-analysis"},
+            {"nodeId": "in-code", "nodeType": "curio.builtin/python-computation"},
         ]
         assert by_name["Bound and in code"]["nodeCount"] == 2
         assert [node["nodeId"] for node in by_name["Bound and in code"]["nodes"]] == ["bound", "in-code"]

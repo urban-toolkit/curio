@@ -76,7 +76,7 @@ def _spec(name: str) -> dict:
             "nodes": [
                 {
                     "id": "title-dock-node",
-                    "type": "curio.builtin/computation-analysis",
+                    "type": "curio.builtin/python-computation",
                     "x": 420,
                     "y": 360,
                     "content": "return 1",

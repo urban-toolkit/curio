@@ -49,12 +49,12 @@ VEGA = ["widgets", "selection-chips", "vega-lite-starter", "vega-lite-maps"]
 AUTK = ["widgets", "selection-chips", "autark", "autark-starter"]
 #: The node kinds of example 26, in its order.
 KINDS = [
-    "curio.builtin/data-loading", "curio.builtin/computation-analysis",
+    "curio.builtin/data-loading", "curio.builtin/python-computation",
     "curio.builtin/js-computation", "curio.builtin/vis-vega", "curio.builtin/autk-grammar",
     "curio.builtin/data-pool",
 ]
 BY_KIND = {
-    "curio.builtin/data-loading": CODE, "curio.builtin/computation-analysis": CODE,
+    "curio.builtin/data-loading": CODE, "curio.builtin/python-computation": CODE,
     "curio.builtin/js-computation": CODE,
     "curio.builtin/vis-vega": VEGA, "curio.builtin/autk-grammar": AUTK,
     "curio.builtin/data-pool": ["interaction-edges"],

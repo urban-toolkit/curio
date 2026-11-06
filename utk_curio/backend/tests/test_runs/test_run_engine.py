@@ -11,7 +11,7 @@ import threading
 
 import pytest
 
-CODE = "curio.builtin/computation-analysis"
+CODE = "curio.builtin/python-computation"
 AUTARK = "curio.builtin/autk-grammar"
 DATA_SPEC = json.dumps({"data": [{"type": "osm"}]})
 #: An Autark compute step: only the browser makes its layers.
@@ -245,7 +245,7 @@ class TestNodesTheServerDoesNotRun:
     TEMPLATES = {
         # As the store's roster has it: the Map Editor node runs its code.
         "curio.builtin/edit-features": {"executable": True, "engine": "python"},
-        "curio.builtin/computation-analysis": {"executable": True, "engine": "python"},
+        "curio.builtin/python-computation": {"executable": True, "engine": "python"},
     }
 
     @staticmethod

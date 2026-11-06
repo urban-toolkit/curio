@@ -79,7 +79,7 @@ function liveNode(id: string, nodeType: string, title: string, x: number) {
 }
 const NODES = [
   liveNode("load", "curio.builtin/data-loading@1", "Load parcels", 0),
-  liveNode("scale", "curio.builtin/computation-analysis@1", "Scale heights", 645),
+  liveNode("scale", "curio.builtin/python-computation@1", "Scale heights", 645),
   liveNode("chart", "curio.builtin/vis-vega@1", "Height chart", 1290),
 ];
 const EDGES = [

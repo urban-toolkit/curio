@@ -47,7 +47,7 @@ def test_an_isolated_node_is_told_the_same(code, named, tmp_path):
     from utk_curio.sandbox.isolation import child
 
     result = child.run_node({
-        "code": code, "node_type": "curio.builtin/computation-analysis", "data_type": "",
+        "code": code, "node_type": "curio.builtin/python-computation", "data_type": "",
         "scratch_dir": str(tmp_path), "input": {"kind": "none"}, "dataset_paths": {},
         "session_imports": [], "limits": {},
     }, lambda: {"pd": pd})
