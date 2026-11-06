@@ -24,6 +24,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# PyTorch and torchvision, so node code runs torch models with nothing to
+# install, on the GPU when it can reach one. On x86_64 they are the CUDA 12.9
+# builds, whose wheels are the image's CUDA: NVIDIA's pip packages of the
+# CUDA 12.9 runtime libraries (cudart, cuBLAS, cuFFT, cuRAND, cuSOLVER,
+# cuSPARSE, nvJitLink, NVRTC), cuDNN and NCCL. CUDA 12.9 runs on an R525 or
+# newer driver, so on arcade's R550 too, where CUDA 13 does not; torch 2.13.0
+# is the newest torch with a 12.9 build, and 12.8 and later builds cover the
+# RTX PRO 6000's sm_120. Exact local versions, so pip never takes PyPI's
+# CUDA 13 wheel of the same number; PyPI is there for the dependencies only it
+# has. Elsewhere (a Mac's arm64, which has no NVIDIA GPU) the CPU builds. The
+# driver's libcuda.so.1 and the GPU come from the host, through its NVIDIA
+# Container Toolkit, to a container that asks for a GPU
+# (docker-compose.ci-shards.yml), so the build stops on a copy of it anywhere
+# in the image, which would hide the host's.
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) build=cu129 ;; \
+      *) build=cpu ;; \
+    esac; \
+    pip install --no-cache-dir \
+      --index-url "https://download.pytorch.org/whl/$build" --extra-index-url https://pypi.org/simple \
+      "torch==2.13.0+$build" "torchvision==0.28.0+$build"; \
+    if find / -xdev -name 'libcuda.so.1' -not -path '*/stubs/*' | grep .; then \
+      echo "The image holds a CUDA driver library, which would hide the host's." >&2; \
+      exit 1; \
+    fi
+
 # Repo-root node_modules for the sandbox's Node.js subprocess
 # (@urban-toolkit/autk-db — see utk_curio/sandbox/app/worker.py).
 # Early layer: only rebuilds when the root lockfile changes; the

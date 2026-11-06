@@ -108,7 +108,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - `steps.py`: shared steps: `load_example_spec`, `opening_spec` (a scene's example, cut back by its `start`), `first_node_of_type`, `frame_until_on_top`, the provenance drawer, canvas counts.
   - Scenes, one module per surface: `provenance.py`, `agent_catalog.py`, `cross_catalog.py`, `account_examples.py`, `robustness.py` (dashboard page, Autark without WebGPU, Run All after a failed node), `layout.py`, `visual_claims.py` (#218 to #227), `dataflow_identity.py`, `catalog_chrome.py`, `agent_chat.py`, `simple_view.py`, `crown_heights.py` (the Crown Heights example built a step at a time, with scripted agents: the guide's clips of it).
   - The video runner (`test_walkthrough_videos.py`) saves each scene's `ctx.mark` calls as `<slug>.marks.json`: where a clip starts and ends and which waits it cuts.
-- Sandbox: `utk_curio/sandbox/tests/` (`conftest.py`).
+- Sandbox: `utk_curio/sandbox/tests/` (`conftest.py`, which leaves the `cuda` mark out unless `-m` names it; only test-gpu runs those tests).
 - Frontend Jest: `src/tests/` (guide in `src/tests/README.md`); `npm test` and `npm run typecheck` in `utk_curio/frontend/urban-workflows/`.
 - Stress harness: `utk_curio/backend/tests/stress/` (`driver.py`: one user; `sockets.py`: its tab of a shared dataflow, a pycrdt doc over Socket.IO; `backend_probe.py`: the backend's threads, memory and doc files, read where it runs; `report.py`).
 
@@ -117,8 +117,8 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 `.github/workflows/docker-compose.yml` jobs:
 
 - `pick-runners`: picks the runners of the jobs that start at once (`scripts/ci_pick_runners.py`). On a push to main it also looks for a green run of the commit's tree (`scripts/ci_tested_tree.py`); when one exists, every test job skips and the run's summary and `tested-by` artifact link to that run.
-- `build-image`: builds the CI image once per commit, pushes it to GHCR, then picks the runners of the jobs that wait on it. Built with the Dockerfile's `CURIO_CI_SETUP=1`, it also holds what `curio.py setup --with-examples` installs, so CI stacks boot with `CURIO_SKIP_DEP_INSTALL=1` and the jobs run `scripts/test.sh --skip-setup`.
-- `test-gpu`: e2e tests that need WebGPU, on a GPU runner.
+- `build-image`: builds the CI image once per commit, pushes it to GHCR, then picks the runners of the jobs that wait on it. Built with the Dockerfile's `CURIO_CI_SETUP=1`, it also holds what `curio.py setup --with-examples` installs, so CI stacks boot with `CURIO_SKIP_DEP_INSTALL=1` and the jobs run `scripts/test.sh --skip-setup`. Every image, the deploy's and CI's, carries torch and torchvision built for CUDA 12.9 on x86_64, whose wheels bring CUDA 12.9's libraries and NVRTC (the Dockerfile's `python_base`).
+- `test-gpu`: e2e tests that need WebGPU, on a GPU runner. `docker-compose.ci-shards.yml` gives its curio container the runner's GPU, and after the e2e tests it runs on it in that container a tiny MLP through CUDA and a matmul through torch (`utk_curio/sandbox/tests/test_cuda_mlp.py` and `test_cuda_torch.py`, `-m cuda`), whose results ci-report reads as `cuda.xml`.
 - `unit`: backend pytest in four parts, plus the sandbox suite.
 - `jest`: Jest and `npm run typecheck`.
 - `e2e-desktop`: e2e tests without WebGPU, split over CPU runners. On every run but a re-mint it and test-gpu keep the frames a re-mint would write as candidates (`CURIO_E2E_CANDIDATE_DIR`), which ci-report uploads as the `candidate-baselines` artifact, and a failed frame fails its test at the test's end.
