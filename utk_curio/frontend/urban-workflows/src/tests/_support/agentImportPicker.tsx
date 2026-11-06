@@ -8,6 +8,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 
+// Loaded with the file, before any case's clock starts: CI's Jest starts with
+// no transform cache, and a case that loaded the modal itself paid for
+// transforming everything it imports (7,517 ms on main's run 42230248452).
+import { AgentImportModal } from "../../components/agents/catalog/AgentImportModal";
+
 /** *clockMs* is each case's clock; Jest's own 5 s when left out. */
 export function describeTheAgentImportPicker(clockMs?: number): void {
   describe("the agent import picker can assemble a real package", () => {
@@ -17,9 +22,6 @@ export function describeTheAgentImportPicker(clockMs?: number): void {
       // cannot span two directories. `pick` used to `setFiles(read)`, so the
       // second dialog discarded the manifest picked in the first and the flow
       // could never be completed against the documented layout.
-      const { AgentImportModal } = await import(
-        "../../components/agents/catalog/AgentImportModal"
-      );
       render(<AgentImportModal onClose={() => {}} onImported={() => {}} />);
       const input = screen.getByLabelText("Package files") as HTMLInputElement;
       // Read the running tally, not the page: the hint above the picker also
@@ -39,9 +41,6 @@ export function describeTheAgentImportPicker(clockMs?: number): void {
     }, clockMs);
 
     test("Clear empties an accumulating selection", async () => {
-      const { AgentImportModal } = await import(
-        "../../components/agents/catalog/AgentImportModal"
-      );
       render(<AgentImportModal onClose={() => {}} onImported={() => {}} />);
       const input = screen.getByLabelText("Package files") as HTMLInputElement;
       await userEvent.upload(

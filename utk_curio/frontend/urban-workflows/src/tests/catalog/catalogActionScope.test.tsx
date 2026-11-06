@@ -24,6 +24,10 @@ import { MemoryRouter } from "react-router-dom";
 import "@testing-library/jest-dom";
 
 import { shouldShowPublishPill } from "../../components/packages/CatalogPublishPill";
+// Loaded with the file, as the picker's modal is (_support/agentImportPicker):
+// a case that loads a component itself pays for its transform on its own clock.
+import { DatasetDataflowUsageSection } from "../../components/datasets/catalog/DatasetDataflowUsage";
+import { datasetCatalogApi } from "../../services/datasetCatalog";
 import { describeTheAgentImportPicker } from "../_support/agentImportPicker";
 
 const SRC = path.resolve(__dirname, "../..");
@@ -208,11 +212,7 @@ jest.mock("../../services/datasetLineage", () => ({
 
 describe("the usage list never looks like it repeats itself", () => {
   async function renderUsage(usage: Array<Record<string, unknown>>) {
-    const { datasetCatalogApi } = await import("../../services/datasetCatalog");
     (datasetCatalogApi.datasetUsage as jest.Mock).mockResolvedValue(usage);
-    const { DatasetDataflowUsageSection } = await import(
-      "../../components/datasets/catalog/DatasetDataflowUsage"
-    );
     render(
       <MemoryRouter>
         <DatasetDataflowUsageSection datasetId="d1" />
