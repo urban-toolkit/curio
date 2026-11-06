@@ -3,10 +3,11 @@
 The owner and the editors the owner invited edit, and everyone else who opens
 the link watches: the server refuses each of a watcher's edits. Participants
 are told apart by participant, not by account, so two tabs of one account, or
-two hosted guests on the one guest account, are two people. A hosted guest
-joins no room of a dataflow a guest owns, and a change to the editors reaches
-the room at once. The dataflow itself is the server's Yjs doc, whose roles
-``test_dataflow_docs.py`` holds; code is typed together, with no vote.
+two hosted guests on the one guest account, are two people. A hosted guest on
+a dataflow a guest owns joins the room of its own copy of it, which it owns
+(``test_guest_copy_rooms.py`` holds its doc), and a change to the editors
+reaches the room at once. The dataflow itself is the server's Yjs doc, whose
+roles ``test_dataflow_docs.py`` holds; code is typed together, with no vote.
 """
 
 from __future__ import annotations
@@ -154,15 +155,16 @@ def test_two_participants_of_one_account_are_told_apart(collab_app):
     assert other["ok"] is True and other["lock"]["participant_id"] == two["participant_id"]
 
 
-def test_a_hosted_guest_joins_no_room_of_a_dataflow_a_guest_owns(collab_app, monkeypatch):
+def test_a_hosted_guest_owns_only_its_own_copys_room_and_watches_an_accounts_dataflow(collab_app, monkeypatch):
     """On a Curio started with --deploy every visitor is the shared guest,
-    which owns the examples: each visitor's canvas of one stays its own. Such
-    a guest watches an account's dataflow."""
+    which owns the examples: a visitor's join to one is to the room of its
+    own copy of it, which it owns, keyed by the copy's id, and never to the
+    example's own room. Such a guest watches an account's dataflow."""
     from utk_curio.backend import config
-    from utk_curio.backend.app.collaboration.events import GUEST_OWNED_REFUSAL
+    from utk_curio.backend.app.projects import visitor_copies
 
     monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
-    application, socketio, _ = collab_app
+    application, socketio, room_state = collab_app
     with application.app_context():
         guest, g_tok = make_user(config.CURIO_SHARED_GUEST_USERNAME, is_guest=True)
         token = g_tok.token
@@ -171,9 +173,21 @@ def test_a_hosted_guest_joins_no_room_of_a_dataflow_a_guest_owns(collab_app, mon
         alices = make_project(alice)
     visitor = connect(socketio, application, token)
 
-    assert join(visitor, example) == {"ok": False, "error": "guest_owned", "message": GUEST_OWNED_REFUSAL}
+    joined = join(visitor, example)
+    own = visitor_copies.copy_id(token, example)
+    assert joined["ok"] is True and joined["role"] == "owner", joined
+    assert joined["projectId"] == own != example
+    # The visitor is in its copy's room alone, and the example's holds no one.
+    assert room_state.users_in(room_state.room_for(example)) == []
+    assert [u["role"] for u in room_state.users_in(room_state.room_for(own))] == ["owner"]
+    lock = visitor.emit("node_lock", {"projectId": own, "nodeId": "n1"}, namespace=NAMESPACE, callback=True)
+    assert lock["ok"] is True, lock
+    refused = visitor.emit("node_lock", {"projectId": example, "nodeId": "n1"}, namespace=NAMESPACE, callback=True)
+    assert refused == {"ok": False, "error": "not_joined"}
+
     watching = join(visitor, alices)
     assert watching["ok"] is True and watching["role"] == "watcher"
+    assert watching["projectId"] == alices
     ack = visitor.emit("node_lock", {"projectId": alices, "nodeId": "n1"},
                        namespace=NAMESPACE, callback=True)
     assert ack["error"] == "read_only"
