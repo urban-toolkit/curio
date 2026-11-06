@@ -447,11 +447,16 @@ class TestBuiltinPromptPropagation:
         on_disk = instruction.read_text(encoding="utf-8")
         assert on_disk == builtin.read_prompt_text(self.COORD, "instruction")
 
-    def test_owned_import_shadow_keeps_its_bytes(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        # A deliberate user shadow of a built-in coord is authoritative for
-        # its OWN bytes — dev/60 must not steamroll it (regression).
-        user, token = user_and_token
-        manifest = {
+    #: The prompt files of an agent of the account's own at :attr:`COORD`.
+    SHADOW_PROMPTS = {
+        "prompts/preamble.txt": "my preamble",
+        "prompts/mine.txt": "MY OWN INSTRUCTION BYTES",
+    }
+
+    def _shadow_manifest(self) -> dict:
+        """The manifest of an agent of the account's own, under the id and
+        major Curio ships the Dataflow Builder at."""
+        return {
             "id": "agent.curio.dataflow-builder", "name": "My Builder", "category": "canvas",
             "version": "1.0.0", "purpose": "mine",
             "capabilities": [{"id": "dataflow.orchestrate", "contractVersion": "1"}],
@@ -465,16 +470,65 @@ class TestBuiltinPromptPropagation:
             "providerRequirements": {"capabilities": ["structured-output"]},
             "provenance": {"publisher": "me", "license": "MIT", "trust": "imported"},
         }
-        r = client.post(
-            "/api/agents/imports/upload",
-            json={"manifest": manifest, "prompts": {
-                "prompts/preamble.txt": "my preamble",
-                "prompts/mine.txt": "MY OWN INSTRUCTION BYTES",
-            }},
-            headers=_auth(token),
-        )
+
+    def _store_files(self, key: str) -> dict:
+        """Each file of the account's store copy of :attr:`COORD`, its bytes
+        by its path in the copy."""
+        base = storage.agent_definition_dir(key, self.COORD)
+        return {str(path.relative_to(base)): path.read_bytes() for path in sorted(base.rglob("*")) if path.is_file()}
+
+    def test_an_upload_under_a_shipped_coordinate_is_refused_for_every_account(
+        self, client, user_and_token, tmp_curio
+    ):
+        # The id and major of an agent Curio ships stay Curio's: an upload
+        # under them is refused, and the account's copy keeps Curio's bytes.
+        # Every account holds that copy once it has had the agents Curio adds
+        # by default; a store that holds none is refused the same way.
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        held = storage.load_installed_agent_definition(key, self.COORD)
+        assert held is not None and held.provenance.trust == "built-in"
+        curios = self._store_files(key)
+        instruction = builtin.get_builtin_manifest(self.COORD).prompts["instruction"].path
+        assert curios[instruction].decode("utf-8") == builtin.read_prompt_text(self.COORD, "instruction")
+        imported = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
+        upload = {"manifest": self._shadow_manifest(), "prompts": self.SHADOW_PROMPTS}
+        refusal = f"{self.COORD!r} is an agent Curio ships; give yours an id of its own"
+
+        r = client.post("/api/agents/imports/upload", json=upload, headers=_auth(token))
+        assert r.status_code == 409, r.get_data(as_text=True)
+        assert r.get_json()["error"] == refusal
+        assert self._store_files(key) == curios
+        assert storage.load_installed_agent_definition(key, self.COORD).provenance.trust == "built-in"
+        assert client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"] == imported
+
+        shutil.rmtree(storage.agent_definition_dir(key, self.COORD))
+        r = client.post("/api/agents/imports/upload", json=upload, headers=_auth(token))
+        assert r.status_code == 409, r.get_data(as_text=True)
+        assert r.get_json()["error"] == refusal
+        assert storage.load_installed_agent_definition(key, self.COORD) is None
+
+    def test_owned_import_shadow_keeps_its_bytes(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # A deliberate user shadow of a built-in coord is authoritative for
+        # its OWN bytes: dev/60 must not steamroll it (regression). An
+        # account from before uploads there were refused for every account
+        # can hold one, as the upload wrote it: arranged in its store here.
+        import hashlib
+
+        from utk_curio.backend.app.agents.repositories import imports
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        manifest = self._shadow_manifest()
+        for asset in manifest["prompts"].values():
+            asset["sha256"] = hashlib.sha256(self.SHADOW_PROMPTS[asset["path"]].encode("utf-8")).hexdigest()
+        shutil.rmtree(storage.agent_definition_dir(key, self.COORD), ignore_errors=True)
+        storage.write_definition(key, self.COORD, manifest, self.SHADOW_PROMPTS)
+        imports.add_imported_agent(key, self.COORD)
+        assert storage.load_installed_agent_definition(key, self.COORD).provenance.trust == "imported"
+        r = client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.COORD}, headers=_auth(token))
         assert r.status_code == 201, r.get_data(as_text=True)
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.COORD}, headers=_auth(token))
+        assert self._store_files(key)["prompts/mine.txt"] == b"MY OWN INSTRUCTION BYTES"
         att_id = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
             json={"coord": self.COORD, "target": {"kind": "canvas"}},
