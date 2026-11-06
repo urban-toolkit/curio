@@ -22,6 +22,7 @@ collection finds the same tests as before.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import tempfile
@@ -54,11 +55,31 @@ def collect(argv: list[str], cwd: Path, env: dict[str, str]) -> list[str]:
     return ids
 
 
-def collect_each(calls, cwd: Path) -> list[list[str]]:
+def list_parts(argv: list[str], cwd: Path, env: dict[str, str]) -> dict[str, list[str]]:
+    """What *argv* lists with ``CURIO_LIST_PARTS`` (tests/parts.py): each CI job's test keys.
+
+    The same process as :func:`collect`, with a listing file of its own. Fails
+    with the end of the process's output when it wrote none.
+    """
+    with tempfile.TemporaryDirectory(prefix="curio-list-") as folder:
+        listing = Path(folder) / "parts.json"
+        environ = {key: value for key, value in os.environ.items() if key not in STATE_PATHS}
+        environ.update(CURIO_STATE_DIR=str(Path(folder) / "state"), LOG_TO_STDOUT="1")
+        environ.update(env)
+        environ["CURIO_LIST_PARTS"] = str(listing)
+        run = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, env=environ)
+        if not listing.exists():
+            raise AssertionError(f"the listing wrote no file:\n{run.stdout[-2000:]}\n{run.stderr[-2000:]}")
+        return json.loads(listing.read_text(encoding="utf-8"))
+
+
+def collect_each(calls, cwd: Path, listings=()) -> list[list[str]]:
     """:func:`collect` for each ``(argv, env)`` in *calls*, in their order.
 
-    At most ``COLLECTORS`` run at once.
+    Then :func:`list_parts` for each ``(argv, env)`` in *listings*, whose
+    results follow. At most ``COLLECTORS`` run at once.
     """
     with ThreadPoolExecutor(max_workers=COLLECTORS) as pool:
         futures = [pool.submit(collect, argv, cwd, env) for argv, env in calls]
+        futures += [pool.submit(list_parts, argv, cwd, env) for argv, env in listings]
         return [future.result() for future in futures]

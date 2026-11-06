@@ -20,11 +20,19 @@ file only costs balance, never a test.
 
 The split runs after every other plugin has deselected (``after_deselection``),
 so a part's load counts only the tests that will run in it.
+
+``CURIO_LIST_PARTS=<file>`` lists instead of running: after the same
+deselection, each split writes the tests every CI job of its suite would run
+(``test-gpu``, ``e2e-desktop-<k>``, ``unit-backend-<k>``) into that JSON file,
+by the keys of ``case_key``, and no test runs. A filtered Full stack build
+(a re-mint's ``remint_filter``, or its ``tests`` input) collects each suite once
+this way, so the jobs and parts that hold no selected test start no stack.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import statistics
 from collections import defaultdict
@@ -34,6 +42,9 @@ from pathlib import Path
 #: backend entries in .github/workflows/docker-compose.yml.
 E2E_DESKTOP_PARTS = 14
 BACKEND_UNIT_PARTS = 4
+
+#: The file a collection lists every CI job's tests in, instead of running them.
+LIST_PARTS = "CURIO_LIST_PARTS"
 
 #: What a group costs when no durations were recorded at all.
 DEFAULT_GROUP_SECONDS = 30.0
@@ -57,12 +68,17 @@ def case_key(classname: str, name: str) -> str:
     return f"{classname}::{XDIST_GROUP.sub('', name)}"
 
 
-def item_address(item) -> tuple[str, str]:
-    """The (classname, name) pytest's JUnit writer gives a collected item."""
+def nodeid_address(nodeid: str) -> tuple[str, str]:
+    """The (classname, name) pytest's JUnit writer gives the test of a node id."""
     from _pytest.junitxml import mangle_test_address
 
-    names = mangle_test_address(item.nodeid)
+    names = mangle_test_address(nodeid)
     return ".".join(names[:-1]), names[-1]
+
+
+def item_address(item) -> tuple[str, str]:
+    """The (classname, name) pytest's JUnit writer gives a collected item."""
+    return nodeid_address(item.nodeid)
 
 
 def item_key(item) -> str:
@@ -132,6 +148,29 @@ def assign(groups, parts: int, durations: dict,
     return placed
 
 
+def placement(items, count: int, group_of, key_of, durations: dict) -> list[int]:
+    """The 0-based part of each of ``items``, in their order, out of ``count``.
+
+    ``group_of(item)`` is what must stay on one part with the item, and
+    ``key_of(item)`` the item's key in ``durations``.
+    """
+    groups = [group_of(item) for item in items]
+    members = defaultdict(set)
+    for item, group in zip(items, groups):
+        members[group].add(key_of(item))
+    seconds = group_seconds(members, durations)
+    placed = assign(seconds, count, seconds)
+    return [placed[group] for group in groups]
+
+
+def split(items, count: int, group_of, key_of, durations: dict) -> list[list]:
+    """Every part's items, in their order: what ``keep_part`` keeps for each k."""
+    pieces = [[] for _ in range(count)]
+    for item, part in zip(items, placement(items, count, group_of, key_of, durations)):
+        pieces[part].append(item)
+    return pieces
+
+
 def keep_part(items, value: str, group_of, key_of, durations: dict, name: str = "part"):
     """Split ``items`` into (this part's items, the rest) for ``value`` = ``k/n``.
 
@@ -139,18 +178,28 @@ def keep_part(items, value: str, group_of, key_of, durations: dict, name: str = 
     ``key_of(item)`` the item's key in ``durations``.
     """
     index, count = parse_part(value, name)
-    groups = [group_of(item) for item in items]
-    members = defaultdict(set)
-    for item, group in zip(items, groups):
-        members[group].add(key_of(item))
-    seconds = group_seconds(members, durations)
-    placed = assign(seconds, count, seconds)
-    kept = [item for item, group in zip(items, groups) if placed[group] == index]
-    dropped = [item for item, group in zip(items, groups) if placed[group] != index]
+    where = placement(items, count, group_of, key_of, durations)
+    kept = [item for item, part in zip(items, where) if part == index]
+    dropped = [item for item, part in zip(items, where) if part != index]
     return kept, dropped
 
 
-def after_deselection(select):
+def write_listing(path, jobs: dict) -> None:
+    """Add ``{job: [test keys]}`` to the listing at ``path``, keeping its other jobs.
+
+    Both splits can list into one file when one session collects both suites.
+    """
+    path = Path(path)
+    try:
+        listed = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        listed = {}
+    listed.update(jobs)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(listed, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def after_deselection(select, listing=None):
     """A pytest plugin that keeps one part: ``select(items)`` -> (kept, dropped).
 
     Its hook wraps every other ``pytest_collection_modifyitems`` and selects
@@ -160,17 +209,45 @@ def after_deselection(select):
     deselected tests toward a part's load. Imports pytest when called, so this
     module stays importable without it (scripts/ci_never_run.py reads
     ``case_key`` on a runner that has no pytest).
+
+    With ``CURIO_LIST_PARTS`` set, ``listing(items)`` -> ``({job: its items},
+    the items it placed)``, or None for a session without this suite's tests,
+    replaces the selection: the placed items are deselected, and once the
+    collection has ended without an error their jobs go into the file, by
+    ``item_key``. Every item still selected then is deselected too, so a listing
+    runs no test (pytest's exit 5). A collection error writes nothing.
     """
     import pytest
 
     class AfterDeselection:
+        listed: dict | None = None
+
         @pytest.hookimpl(wrapper=True)
         def pytest_collection_modifyitems(self, config, items):
             result = yield
+            if listing is not None and os.environ.get(LIST_PARTS, "").strip():
+                found = listing(items)
+                if found is not None:
+                    jobs, placed = found
+                    self.listed = {job: [item_key(item) for item in members]
+                                   for job, members in jobs.items()}
+                    ids = {id(item) for item in placed}
+                    config.hook.pytest_deselected(items=list(placed))
+                    items[:] = [item for item in items if id(item) not in ids]
+                    return result
             kept, dropped = select(items)
             if dropped:
                 config.hook.pytest_deselected(items=dropped)
                 items[:] = kept
             return result
+
+        def pytest_collection_finish(self, session):
+            if self.listed is None:
+                return
+            if session.items:
+                session.config.hook.pytest_deselected(items=list(session.items))
+                session.items[:] = []
+            if not session.testsfailed:
+                write_listing(os.environ[LIST_PARTS].strip(), self.listed)
 
     return AfterDeselection()

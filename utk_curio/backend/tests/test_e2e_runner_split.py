@@ -233,14 +233,33 @@ class NoTestIsLostTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # The whole suite, utk's share and every desktop part, several at once
-        # (_support/collection.py).
-        everything, utk, *shards = collection.collect_each(
+        # The whole suite, utk's share, every desktop part, and the listing of
+        # every job a filtered CI run makes (CURIO_LIST_PARTS, both runners at
+        # once), several at once (_support/collection.py).
+        everything, utk, *shards, listed = collection.collect_each(
             [cls.command(), cls.command(CURIO_E2E_RUNNER="utk")]
             + [cls.command(CURIO_E2E_RUNNER="desktop", CURIO_E2E_PART=f"{k}/{cls.SHARDS}")
                for k in range(1, cls.SHARDS + 1)],
-            BACKEND)
-        cls.everything, cls.utk, cls.shards = everything, utk, shards
+            BACKEND, listings=[cls.command()])
+        cls.everything, cls.utk, cls.shards, cls.listed = everything, utk, shards, listed
+
+    @staticmethod
+    def keys(nodeids):
+        return sorted(parts.case_key(*parts.nodeid_address(nodeid)) for nodeid in nodeids)
+
+    def test_the_listing_names_what_each_job_runs(self):
+        """What build-image lists for a filtered run is what test-gpu and each desktop part then run."""
+        jobs = ["test-gpu", *(f"e2e-desktop-{k}" for k in range(1, self.SHARDS + 1))]
+        self.assertEqual(sorted(self.listed), sorted(jobs))
+        self.assertEqual(sorted(self.listed["test-gpu"]), self.keys(self.utk))
+        for k, shard in enumerate(self.shards, 1):
+            self.assertEqual(sorted(self.listed[f"e2e-desktop-{k}"]), self.keys(shard), k)
+
+    def test_a_listing_of_one_runner_names_only_its_job(self):
+        """test-gpu lists its own share before it starts a stack (CURIO_E2E_RUNNER=utk)."""
+        argv, env = self.command(CURIO_E2E_RUNNER="utk")
+        listed = collection.list_parts(argv, BACKEND, env)
+        self.assertEqual(listed, {"test-gpu": self.listed["test-gpu"]})
 
     def test_every_test_runs_on_exactly_one_runner_and_shard(self):
         everything, utk, shards = self.everything, self.utk, self.shards

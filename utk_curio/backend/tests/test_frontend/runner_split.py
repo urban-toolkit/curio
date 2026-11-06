@@ -217,6 +217,37 @@ def environment_part(items):
     return select(items, runner, shard)
 
 
+def listing(items, runner: str | None = None, durations: dict | None = None):
+    """Each CI job's share of the e2e items, for ``CURIO_LIST_PARTS`` (tests/parts.py).
+
+    ``({"test-gpu": utk's share, "e2e-desktop-1": ..., ...}, the e2e items)``:
+    the desktop share in ``parts.E2E_DESKTOP_PARTS`` parts, split as each part
+    splits it. ``runner`` lists only that runner's jobs; None lists both. Only
+    the items under test_frontend/ are this suite's.
+    """
+    if runner and runner not in RUNNERS:
+        raise ValueError(f"CURIO_E2E_RUNNER must be one of {RUNNERS}, got {runner!r}")
+    here = Path(__file__).resolve().parent
+    e2e = [item for item in items if Path(str(item.path)).resolve().is_relative_to(here)]
+    utk, desktop = [], []
+    for item in e2e:
+        (utk if item_needs_webgpu(item) else desktop).append(item)
+    jobs = {}
+    if runner in (None, "utk"):
+        jobs["test-gpu"] = utk
+    if runner in (None, "desktop"):
+        pieces = parts.split(desktop, parts.E2E_DESKTOP_PARTS, part_key, item_key,
+                             parts.load_durations(DURATIONS_FILE) if durations is None else durations)
+        jobs.update({f"e2e-desktop-{k}": piece for k, piece in enumerate(pieces, 1)})
+    return jobs, e2e
+
+
+def environment_listing(items):
+    """``listing`` for the runner the environment names, or both when it names none."""
+    runner, _ = from_environment()
+    return listing(items, runner)
+
+
 def from_environment(environ=os.environ) -> tuple[str | None, str | None]:
     runner = (environ.get("CURIO_E2E_RUNNER") or "").strip() or None
     # Not CURIO_E2E_SHARD: tests/shards.py already means the in-container

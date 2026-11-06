@@ -505,7 +505,7 @@ def pytest_configure(config):
         "contract: checks a third party's response SHAPE; runs in CI, skips when unreachable",
     )
     netguard.install()
-    config.pluginmanager.register(suite_parts.after_deselection(unit_part), "curio-unit-part")
+    config.pluginmanager.register(suite_parts.after_deselection(unit_part, unit_listing), "curio-unit-part")
     # Imported only when a flag is passed, so an ordinary run never pays for
     # (or is broken by) importing the e2e helper module. Refused off CI.
     mint = getattr(config.option, "mint_baselines", False)
@@ -558,16 +558,39 @@ def unit_part(items):
     value = (os.environ.get("CURIO_UNIT_PART") or "").strip()
     if not value:
         return items, []
-    # The e2e suite under test_frontend/ is split its own way (CURIO_E2E_PART),
-    # so its items are left alone even when both are collected in one session.
-    e2e_dir = Path(__file__).resolve().parent / "test_frontend"
-    unit, e2e = [], []
-    for item in items:
-        (e2e if Path(str(item.path)).resolve().is_relative_to(e2e_dir) else unit).append(item)
+    unit, e2e = _unit_and_e2e(items)
     kept, dropped = suite_parts.keep_part(
         unit, value, unit_group_of, unit_group_of,
         suite_parts.load_durations(UNIT_DURATIONS_FILE), "CURIO_UNIT_PART")
     return kept + e2e, dropped
+
+
+def _unit_and_e2e(items):
+    """The backend unit items, and the e2e ones under test_frontend/.
+
+    The e2e suite is split its own way (CURIO_E2E_PART), so its items are left
+    alone even when both are collected in one session.
+    """
+    e2e_dir = Path(__file__).resolve().parent / "test_frontend"
+    unit, e2e = [], []
+    for item in items:
+        (e2e if Path(str(item.path)).resolve().is_relative_to(e2e_dir) else unit).append(item)
+    return unit, e2e
+
+
+def unit_listing(items):
+    """Each unit job's part of the backend suite, for ``CURIO_LIST_PARTS`` (tests/parts.py).
+
+    ``({"unit-backend-1": ..., ...}, the unit items)``, in ``BACKEND_UNIT_PARTS``
+    parts split as each part splits them, or None for a session that collected
+    no unit test (the e2e suite's).
+    """
+    unit, _ = _unit_and_e2e(items)
+    if not unit:
+        return None
+    pieces = suite_parts.split(unit, suite_parts.BACKEND_UNIT_PARTS, unit_group_of, unit_group_of,
+                               suite_parts.load_durations(UNIT_DURATIONS_FILE))
+    return {f"unit-backend-{k}": piece for k, piece in enumerate(pieces, 1)}, unit
 
 
 @pytest.fixture(scope="session")

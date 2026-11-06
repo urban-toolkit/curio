@@ -298,9 +298,11 @@ def pytest_configure(config):
     config.pluginmanager.register(early_guards.EarlyGuards(), "curio-early-guards")
     # This runner's share and part, chosen once every other plugin has
     # deselected (-m, -k, _OnlyWorkflows), so a part's load counts only the
-    # tests that will run in it.
+    # tests that will run in it. With CURIO_LIST_PARTS, every CI job's share
+    # is listed instead and nothing runs (tests/parts.py).
     config.pluginmanager.register(
-        parts.after_deselection(runner_split.environment_part), "curio-e2e-part")
+        parts.after_deselection(runner_split.environment_part, runner_split.environment_listing),
+        "curio-e2e-part")
 
 
 class _OnlyWorkflows:

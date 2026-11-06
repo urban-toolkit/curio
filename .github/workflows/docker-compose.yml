@@ -131,8 +131,10 @@ on:
         description: 'Re-mint the screenshot baselines (e2e only; artifact reminted-baselines)'
         type: boolean
         default: false
+      # Only the e2e parts and test-gpu that hold a test it selects start
+      # (build-image's collection, below).
       remint_filter:
-        description: 'With remint: a pytest -k expression to re-mint only some tests (empty for all)'
+        description: 'With remint: a pytest -k expression to re-mint only some tests (empty for all); only the parts that hold one start'
         type: string
         default: ''
       remint_force:
@@ -173,6 +175,16 @@ on:
         type: choice
         options: ['1', '2', '3', '5', '10']
         default: '1'
+      # A before-run (main plus a new test, to show it fails without its fix),
+      # or any run of a few tests: they run as on a push, not re-minted, and
+      # only the jobs and parts that hold one start (build-image's collection,
+      # below; scripts/ci_selected_tests.py). test-isolated, test-exec-user,
+      # preview-runner and the stress jobs do not run, and ci-report checks
+      # that every selected test ran.
+      tests:
+        description: 'Run only these tests: space-separated pytest node ids or paths under utk_curio/backend/tests or utk_curio/sandbox/tests, and Jest test files under utk_curio/frontend/urban-workflows/src (empty for all)'
+        type: string
+        default: ''
 
 # Least privilege: the job needs only to read the checked-out code. It must
 # NOT have access to deploy/Tailscale secrets (see deploy.yml).
@@ -326,7 +338,11 @@ jobs:
   # alike, picks the runners of the jobs that wait on it.
   build-image:
     needs: pick-runners
-    if: ${{ needs.pick-runners.result == 'success' }}
+    # A tests run of Jest files alone needs no image.
+    if: >-
+      needs.pick-runners.result == 'success' &&
+      (!inputs.tests || contains(inputs.tests, 'utk_curio/backend/tests') ||
+       contains(inputs.tests, 'utk_curio/sandbox/tests'))
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['build-image'] }}
     timeout-minutes: 45
     # actions: read lets the last step list the repository's jobs.
@@ -337,6 +353,10 @@ jobs:
     outputs:
       image: ${{ steps.name.outputs.image }}
       runners: ${{ steps.pick.outputs.runners }}
+      # On a filtered run, the jobs and parts that hold a selected test, as
+      # ",e2e-desktop-3,unit-backend-1,". Empty, every one runs: on every run
+      # without a filter, and on one whose collection failed.
+      holding: ${{ steps.select.outputs.holding }}
     steps:
       # The first step of every job that can run on a self-hosted runner; the
       # jobs below repeat it as `*reclaim`. A job cancelled before its teardown
@@ -443,6 +463,97 @@ jobs:
           cache-from: type=gha,scope=curio-image
           cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,scope=curio-image,mode=max' || '' }}
 
+      # A filtered run, a re-mint with a remint_filter or a dispatch with
+      # tests, starts only the jobs and parts that hold a selected test: a
+      # filtered re-mint of one test started all 14 e2e parts, each pulling the
+      # image and booting a stack to run nothing. Which ones hold a test comes
+      # from collecting each suite once here, the way its jobs run it, with
+      # CURIO_LIST_PARTS (utk_curio/backend/tests/parts.py), which lists every
+      # job's share and runs nothing: the e2e suite on this runner with the
+      # image's packages, as e2e-desktop and test-gpu do, both shares at once;
+      # the backend unit suite inside the image, as the unit job does. A push,
+      # a PR, the schedule and a dispatch with neither filter (the Weekly flake
+      # hunt's repeat 10) skip these steps, so every job and part runs, and so
+      # does a filtered run whose collection failed. A word of tests that is in
+      # no suite's folder fails here (scripts/ci_selected_tests.py).
+      - name: 🧮 Sort the selected tests by suite
+        id: suites
+        if: ${{ (inputs.remint && inputs.remint_filter) || inputs.tests }}
+        env:
+          CURIO_TESTS: ${{ inputs.tests }}
+          CURIO_REMINT: ${{ inputs.remint && '1' || '' }}
+          CURIO_REMINT_FILTER: ${{ inputs.remint_filter }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "${CURIO_REMINT:-}" = 1 ]; then args+=(--remint --remint-filter "$CURIO_REMINT_FILTER"); fi
+          python3 scripts/ci_selected_tests.py split "${args[@]}" | tee -a "$GITHUB_OUTPUT"
+
+      - name: 🐍 The image's Python, for the e2e collection
+        if: steps.suites.outputs.e2e == 'true'
+        continue-on-error: true
+        uses: ./.github/actions/image-env
+        with:
+          image: ${{ steps.name.outputs.image }}
+
+      # The filter goes in quoted, as the e2e jobs pass it; one process, since
+      # xdist workers would each list. The state folder is out of the checkout.
+      - name: 🎯 List the jobs and parts that hold a selected test
+        id: select
+        if: steps.suites.outcome == 'success'
+        continue-on-error: true
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          CURIO_TESTS: ${{ inputs.tests }}
+          CURIO_REMINT: ${{ inputs.remint && '1' || '' }}
+          CURIO_REMINT_FILTER: ${{ inputs.remint_filter }}
+          E2E: ${{ steps.suites.outputs.e2e }}
+          BACKEND: ${{ steps.suites.outputs.backend }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          listed="$RUNNER_TEMP/ci-selected"
+          mkdir -p "$listed"
+          if [ "$E2E" = true ]; then
+            addopts=""
+            if [ "${CURIO_REMINT:-}" = 1 ] && [ -n "${CURIO_REMINT_FILTER:-}" ]; then
+              printf -v quoted '%q' "$CURIO_REMINT_FILTER"
+              addopts="-k $quoted"
+            fi
+            PYTEST_ADDOPTS="$addopts" CURIO_LIST_PARTS="$listed/e2e.json" CURIO_E2E_PARALLEL=1 \
+              CURIO_STATE_DIR="$RUNNER_TEMP/curio-list-state" \
+              bash scripts/test.sh --e2e-only --use-existing --skip-setup --allow-empty || true
+            test -s "$listed/e2e.json"
+          fi
+          if [ "$BACKEND" = true ]; then
+            # The container writes as root; the listing is handed back.
+            docker run --rm --entrypoint bash -e CURIO_TESTS -e OWNER="$(id -u):$(id -g)" \
+              -e CURIO_LIST_PARTS=/listed/unit.json -v "$listed:/listed" "$IMAGE" -c \
+              'bash scripts/test.sh --backend-only --use-existing --skip-setup; chown -R "$OWNER" /listed' || true
+            test -s "$listed/unit.json"
+          fi
+          holding="$(python3 scripts/ci_selected_tests.py holding "$listed")"
+          echo "$holding" >> "$GITHUB_OUTPUT"
+          {
+            echo "### A filtered run"
+            echo
+            echo "Only these jobs and parts run their steps: \`${holding#holding=}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: ⚠️ Every job and part runs, since the collection failed
+        if: steps.select.outcome == 'failure'
+        run: echo "::warning::The selected tests could not be listed, so every job and part runs, each with the filter."
+
+      # ci-report checks that every test listed here ran.
+      - name: 📤 Upload the lists of the selected tests
+        if: steps.select.outcome == 'success'
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-selected
+          path: ${{ runner.temp }}/ci-selected/
+          retention-days: 7
+
       # The runners of the jobs that wait on the image, picked as they are
       # about to start, whether the image was built or reused: a pick made
       # when the run started is minutes old by now, and the hosted room it
@@ -500,9 +611,12 @@ jobs:
     # the push or PR that produced the ref, and repeating them would hold the
     # GPU for another 20 minutes. A push to main whose tree a run already
     # tested green (pick-runners' tested_by) runs none of them either.
-    if: ${{ needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' }}
+    if: ${{ needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' && (!inputs.tests || contains(inputs.tests, 'utk_curio/backend/tests/test_frontend')) }}
 
     env:
+      # A tests run that names an e2e test (the job sits out one that names
+      # none): only those, through scripts/test.sh.
+      CURIO_TESTS: ${{ inputs.tests }}
       # Boot the CI stack with auth + projects enabled. Without the overlay the
       # image's default CMD carries no auth flag, which means CURIO_NO_AUTH=1 --
       # and the e2e suite then skips every owner-authenticated test via
@@ -671,16 +785,61 @@ jobs:
           docker compose -p curio-ci build --parallel
           echo "CURIO_CI_OWN_IMAGE=1" >> "$GITHUB_ENV"
 
+      # A filtered run (a re-mint with a remint_filter, or tests): this job
+      # starts with the run, before build-image's collection, so it lists its
+      # own share the same way (CURIO_LIST_PARTS, tests/parts.py) before it
+      # starts a stack, and with no selected test it stops here: every later
+      # step but the teardown asks CURIO_CI_HOLDS. The state folder is out of
+      # the checkout, so the stack's container still makes .curio/. A run
+      # without a filter skips these three steps, and so does every step's
+      # check; a failed collection leaves CURIO_CI_HOLDS unset, so the job runs.
+      - name: 🐍 The image's Python, for the collection
+        if: ${{ (inputs.remint && inputs.remint_filter) || inputs.tests }}
+        continue-on-error: true
+        uses: ./.github/actions/image-env
+        with:
+          image: curio-ci-curio
+
+      - name: 🧮 Check the selected tests
+        if: ${{ (inputs.remint && inputs.remint_filter) || inputs.tests }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "${CURIO_REMINT:-}" = 1 ]; then args+=(--remint --remint-filter "$CURIO_REMINT_FILTER"); fi
+          python3 scripts/ci_selected_tests.py split "${args[@]}"
+
+      - name: 🎯 Does this job hold a selected test?
+        if: ${{ (inputs.remint && inputs.remint_filter) || inputs.tests }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          addopts=""
+          if [ "${CURIO_REMINT:-}" = 1 ] && [ -n "${CURIO_REMINT_FILTER:-}" ]; then
+            printf -v quoted '%q' "$CURIO_REMINT_FILTER"
+            addopts="-k $quoted"
+          fi
+          listing="$RUNNER_TEMP/ci-selected-test-gpu.json"
+          PYTEST_ADDOPTS="$addopts" CURIO_LIST_PARTS="$listing" CURIO_E2E_PARALLEL=1 \
+            CURIO_STATE_DIR="$RUNNER_TEMP/curio-list-state" \
+            bash scripts/test.sh --e2e-only --use-existing --skip-setup --allow-empty || true
+          test -s "$listing"
+          python3 scripts/ci_selected_tests.py holding "$listing" --job test-gpu | tee -a "$GITHUB_ENV"
+
       - name: ▶️ Start containers
+        if: env.CURIO_CI_HOLDS != 'false'
         run: docker compose -p curio-ci up -d
 
       # The runner's pytest uses the packages of the image just built, copied
-      # while its container boots.
-      - uses: ./.github/actions/image-env
+      # while its container boots; a filtered run copied them above.
+      - if: env.CURIO_CI_HOLDS == ''
+        uses: ./.github/actions/image-env
         with:
           image: curio-ci-curio
 
       - name: 🧪 Wait for services to become healthy
+        if: env.CURIO_CI_HOLDS != 'false'
         id: stack_healthy
         shell: bash
         run: |
@@ -733,6 +892,7 @@ jobs:
       # error inside an autouse fixture on a bare 404 -- 12k log lines that say
       # nothing about the cause. Ask once, here, and name it.
       - name: 🔒 Assert the test stubs are reachable
+        if: env.CURIO_CI_HOLDS != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -750,6 +910,7 @@ jobs:
       # page it serves must name this stack's backend: the e2e suite injects
       # window.__CURIO_BACKEND_URL__ and so would never notice a wrong one.
       - name: 🔒 Assert the container serves the page for this stack
+        if: env.CURIO_CI_HOLDS != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -759,6 +920,7 @@ jobs:
           echo "OK: the page names ${CURIO_E2E_BACKEND_URL}."
 
       - name: 🔧 Give .curio/ permissions for host-side tests
+        if: env.CURIO_CI_HOLDS != 'false'
         run: |
           # Docker creates .curio/ as root; the host runner needs write access
           # to create .curio/playwright/expected/. The runner user (deploy) has
@@ -767,6 +929,7 @@ jobs:
             || mkdir -p .curio/playwright/expected
 
       - name: 📦 Stage the built bundle for the host-side SPA test
+        if: env.CURIO_CI_HOLDS != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -795,6 +958,7 @@ jobs:
       # runner, and video memory, every 5 s. It stops by itself after 95
       # minutes, and the runner ends it with the job.
       - name: 📈 Record memory use while the tests run
+        if: env.CURIO_CI_HOLDS != 'false'
         run: |
           nohup python3 scripts/ci_memory_budget.py sample --out ci-report/memory.tsv > /dev/null 2>&1 &
           echo $! > "$RUNNER_TEMP/memory-sampler.pid"
@@ -803,12 +967,14 @@ jobs:
       # total above cannot say which backend, sandbox or Node run grows
       # (scripts/ci_stack_processes.py).
       - name: 📈 Record each process's memory in the CI container
+        if: env.CURIO_CI_HOLDS != 'false'
         run: |
           nohup python3 scripts/ci_stack_processes.py sample --project curio-ci \
             --out ci-report/stack-processes.jsonl > "$RUNNER_TEMP/stack-processes.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/stack-processes.pid"
 
       - name: 🧩 Start the extra e2e shards inside the CI container
+        if: env.CURIO_CI_HOLDS != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -865,6 +1031,7 @@ jobs:
           done
 
       - name: 🎭 Run the WebGPU e2e tests (hardware WebGPU)
+        if: env.CURIO_CI_HOLDS != 'false'
         env:
           # JUnit for the CI report page. Absolute, since test.sh changes
           # directory before it runs pytest. ci_repeat.sh fills in {run}.
@@ -903,6 +1070,9 @@ jobs:
             export PYTEST_ADDOPTS
             echo "Re-minting with PYTEST_ADDOPTS=$PYTEST_ADDOPTS"
           fi
+          # A tests run whose collection above failed may hold none here;
+          # ci-report checks that each selected test ran.
+          if [ -n "${CURIO_TESTS:-}" ]; then extra+=(--allow-empty); fi
           # One worker runs without xdist, and finds the second shard from
           # CURIO_E2E_SHARDS (tests/shards.py shard_count); xdist workers
           # count theirs from PYTEST_XDIST_WORKER_COUNT.
@@ -914,7 +1084,7 @@ jobs:
       # report page and then a commit. The *_actual.png a failure leaves behind
       # is gitignored, so --exclude-standard keeps it out.
       - name: 📦 Collect the re-minted baselines
-        if: always() && env.CURIO_REMINT == '1'
+        if: always() && env.CURIO_REMINT == '1' && env.CURIO_CI_HOLDS != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -933,7 +1103,7 @@ jobs:
           curl --fail http://localhost:8100 || (echo "Frontend not reachable" && exit 1)
 
       - name: 📋 Capture sandbox/backend logs (autk-db errors)
-        if: always()
+        if: always() && env.CURIO_CI_HOLDS != 'false'
         run: |
           docker compose -p curio-ci logs --no-color --tail=8000 > "$GITHUB_WORKSPACE/container-logs.txt" 2>&1 || true
           # The real autk-db worker stderr ([execJs] ...) goes to
@@ -953,7 +1123,7 @@ jobs:
 
       # The peaks go to the job's summary, the samples to the CI report inputs.
       - name: 📈 Memory this job used
-        if: always()
+        if: always() && env.CURIO_CI_HOLDS != 'false'
         shell: bash
         run: |
           kill "$(cat "$RUNNER_TEMP/memory-sampler.pid" 2>/dev/null)" 2>/dev/null || true
@@ -964,7 +1134,7 @@ jobs:
       # JUnit, screenshot comparisons, failure diagnostics, the memory samples
       # and, on a re-mint, the baselines it wrote.
       - name: 📤 Upload the results for the CI report
-        if: always()
+        if: always() && env.CURIO_CI_HOLDS != 'false'
         uses: actions/upload-artifact@v6
         with:
           name: ci-inputs-test-gpu
@@ -973,7 +1143,7 @@ jobs:
           retention-days: 7
 
       - name: 📤 Upload sandbox logs
-        if: always()
+        if: always() && env.CURIO_CI_HOLDS != 'false'
         uses: actions/upload-artifact@v6
         with:
           name: container-logs
@@ -1025,13 +1195,20 @@ jobs:
       FLASK_SANDBOX_HOST: localhost
       FLASK_SANDBOX_PORT: "2020"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      # A tests run: only the selected tests of this suite (scripts/test.sh).
+      CURIO_TESTS: ${{ inputs.tests }}
+      # Whether this entry holds a selected test (build-image's holding, empty
+      # on a run without a filter: then every entry does). One that holds none
+      # skips every step after the checkout, so it starts no stack.
+      CURIO_CI_HOLDS: ${{ needs.build-image.outputs.holding == '' || contains(needs.build-image.outputs.holding, format(',unit-{0},', matrix.name)) }}
     steps:
       - *reclaim
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
-      - uses: ./.github/actions/start-stack
+      - if: env.CURIO_CI_HOLDS == 'true'
+        uses: ./.github/actions/start-stack
         with:
           image: ${{ needs.build-image.outputs.image }}
           project: curio-ci
@@ -1041,18 +1218,24 @@ jobs:
       # directory is the container's (root-owned), so the host cannot create it.
       # --skip-setup: the image's build already ran curio.py setup.
       - name: 🧪 Run the ${{ matrix.name }} unit tests
+        if: env.CURIO_CI_HOLDS == 'true'
         # About 6 minutes a backend part, a run (each part holds about 6 of
         # the suite's 24 minutes of test time). The limit is for a hang, so it
         # fails here rather than holding the job until its own timeout.
         timeout-minutes: ${{ inputs.repeat > 1 && 340 || 25 }}
         run: |
+          # A tests run whose collection failed may hold none here; ci-report
+          # checks that each selected test ran.
+          extra=()
+          if [ -n "${CURIO_TESTS:-}" ]; then extra+=(--allow-empty); fi
           bash scripts/ci_repeat.sh docker compose -p curio-ci exec -T \
             -e CURIO_UNIT_PART="${{ matrix.part }}" \
+            -e "CURIO_TESTS=${CURIO_TESTS:-}" \
             -e PYTEST_ADDOPTS=--junitxml=/app/.curio/ci-report/${{ matrix.name }}{run}.xml curio \
-            bash scripts/test.sh --${{ matrix.suite }}-only --use-existing --skip-setup
+            bash scripts/test.sh --${{ matrix.suite }}-only --use-existing --skip-setup "${extra[@]}"
 
       - name: 📤 Upload the results for the CI report
-        if: always()
+        if: always() && env.CURIO_CI_HOLDS == 'true'
         uses: actions/upload-artifact@v6
         with:
           name: ci-inputs-unit-${{ matrix.name }}
@@ -1063,7 +1246,7 @@ jobs:
           retention-days: 7
 
       - uses: ./.github/actions/stop-stack
-        if: always()
+        if: always() && env.CURIO_CI_HOLDS == 'true'
         with:
           project: curio-ci
 
@@ -1071,7 +1254,7 @@ jobs:
   # they run on the checkout rather than inside an image.
   jest:
     needs: pick-runners
-    if: ${{ needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' && !inputs.remint }}
+    if: ${{ needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' && !inputs.remint && (!inputs.tests || contains(inputs.tests, 'utk_curio/frontend/urban-workflows/src/')) }}
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['jest'] }}
     timeout-minutes: ${{ inputs.repeat > 1 && 350 || 30 }}
     defaults:
@@ -1098,17 +1281,31 @@ jobs:
         # --json feeds the CI report page; the console output is unchanged.
         # Jest starts a worker per core but one; a self-hosted runner shows all
         # of its server's cores (192 on arcade), so the workers are capped at 8.
+        # A tests run runs only its Jest files (scripts/ci_selected_tests.py).
+        env:
+          CURIO_TESTS: ${{ inputs.tests }}
         run: |
           workers=$(( $(nproc) - 1 )); [ "$workers" -gt 8 ] && workers=8; [ "$workers" -lt 1 ] && workers=1
+          selected=()
+          if [ -n "${CURIO_TESTS:-}" ]; then
+            files="$(python3 "$GITHUB_WORKSPACE/scripts/ci_selected_tests.py" targets jest)"
+            selected=(--runTestsByPath)
+            while IFS= read -r file; do
+              if [ -n "$file" ]; then selected+=("$file"); fi
+            done <<< "$files"
+            echo "Only ${selected[*]:1}"
+          fi
           bash "$GITHUB_WORKSPACE/scripts/ci_repeat.sh" \
-            npm test -- --maxWorkers="$workers" --json --outputFile="$GITHUB_WORKSPACE/ci-report/jest{run}.json"
+            npm test -- --maxWorkers="$workers" --json --outputFile="$GITHUB_WORKSPACE/ci-report/jest{run}.json" \
+            "${selected[@]}"
 
+      # A tests run checks its Jest files only.
       - name: TypeScript typecheck
         # Jest transpiles through babel, which strips types without checking
         # them, so main could sit broken for tsc while every build was green.
         # --pretty false pins the "file(line,col): error TSnnnn" lines the CI
         # report page reads. bash, for pipefail: tee must not hide the status.
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !inputs.tests }}
         shell: bash
         run: |
           set -o pipefail
@@ -1169,6 +1366,13 @@ jobs:
       FLASK_SANDBOX_HOST: localhost
       FLASK_SANDBOX_PORT: "2020"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      # A tests run: only the selected e2e tests (scripts/test.sh).
+      CURIO_TESTS: ${{ inputs.tests }}
+      # Whether this part holds a selected test (build-image's holding, empty
+      # on a run without a filter: then every part does). A part that holds
+      # none skips every step after the checkout, so it pulls no image and
+      # starts no stack.
+      CURIO_CI_HOLDS: ${{ needs.build-image.outputs.holding == '' || contains(needs.build-image.outputs.holding, format(',e2e-desktop-{0},', matrix.part)) }}
     steps:
       - *reclaim
 
@@ -1177,7 +1381,8 @@ jobs:
 
       # runner-env: the runner's pytest uses the image's packages
       # (.github/actions/image-env), so test.sh skips its setup.
-      - uses: ./.github/actions/start-stack
+      - if: env.CURIO_CI_HOLDS == 'true'
+        uses: ./.github/actions/start-stack
         with:
           image: ${{ needs.build-image.outputs.image }}
           project: curio-ci
@@ -1185,6 +1390,7 @@ jobs:
           runner-env: "true"
 
       - name: 🔧 Give .curio/ permissions for host-side tests
+        if: env.CURIO_CI_HOLDS == 'true'
         run: |
           docker run --rm -v "$PWD/.curio:/c" alpine chmod -R a+rwx /c \
             || mkdir -p .curio/playwright/expected
@@ -1192,6 +1398,7 @@ jobs:
       # Same as test-gpu: test_spa_deep_link_e2e.py serves the bundle the image
       # ships, and dist/ is not in the checkout.
       - name: 📦 Stage the built bundle for the host-side SPA test
+        if: env.CURIO_CI_HOLDS == 'true'
         run: |
           set -euo pipefail
           cid="$(docker compose -p curio-ci ps -q curio | head -n1)"
@@ -1201,6 +1408,7 @@ jobs:
           test -f utk_curio/frontend/urban-workflows/dist/index.html
 
       - name: 🎭 Run this part of the e2e tests
+        if: env.CURIO_CI_HOLDS == 'true'
         env:
           # ci_repeat.sh fills in {run}.
           PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e{run}.xml
@@ -1226,10 +1434,13 @@ jobs:
             fi
             export PYTEST_ADDOPTS
           fi
+          # A tests run whose collection failed may hold none here; ci-report
+          # checks that each selected test ran.
+          if [ -n "${CURIO_TESTS:-}" ]; then extra+=(--allow-empty); fi
           bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing --skip-setup "${extra[@]}"
 
       - name: 📦 Collect the re-minted baselines
-        if: always() && env.CURIO_REMINT == '1'
+        if: always() && env.CURIO_REMINT == '1' && env.CURIO_CI_HOLDS == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -1240,14 +1451,14 @@ jobs:
           while IFS= read -r f; do cp "$f" ci-report/reminted-baselines/; done < reminted-list.txt
 
       - name: 📋 Capture the stack's logs
-        if: always()
+        if: always() && env.CURIO_CI_HOLDS == 'true'
         run: |
           docker compose -p curio-ci logs --no-color --tail=8000 > ci-report/container-logs.txt 2>&1 || true
           docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
             'cat .curio/messages.log 2>/dev/null' > ci-report/curio-messages.txt 2>&1 || true
 
       - name: 📤 Upload the results for the CI report
-        if: always()
+        if: always() && env.CURIO_CI_HOLDS == 'true'
         uses: actions/upload-artifact@v6
         with:
           name: ci-inputs-e2e-desktop-${{ matrix.part }}
@@ -1256,7 +1467,7 @@ jobs:
           retention-days: 7
 
       - uses: ./.github/actions/stop-stack
-        if: always()
+        if: always() && env.CURIO_CI_HOLDS == 'true'
         with:
           project: curio-ci
 
@@ -1269,7 +1480,7 @@ jobs:
   # /exec only -- /execJs spawns Node either way (sandbox/app/api.py).
   test-isolated:
     needs: [pick-runners, build-image]
-    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' && needs.build-image.result == 'success' && !inputs.remint }}
+    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' && needs.build-image.result == 'success' && !inputs.remint && !inputs.tests }}
     runs-on: ${{ fromJSON(needs.build-image.outputs.runners)['test-isolated'] }}
     timeout-minutes: ${{ inputs.repeat > 1 && 350 || 45 }}
     permissions:
@@ -1411,7 +1622,7 @@ jobs:
   # HTTP API instead, which touches none of the hardened paths from the host.
   test-exec-user:
     needs: [pick-runners, build-image]
-    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' && needs.build-image.result == 'success' && !inputs.remint }}
+    if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' && needs.build-image.result == 'success' && !inputs.remint && !inputs.tests }}
     runs-on: ${{ fromJSON(needs.build-image.outputs.runners)['test-exec-user'] }}
     timeout-minutes: 30
     permissions:
@@ -1538,7 +1749,8 @@ jobs:
       needs.pick-runners.outputs.tested_by == '' &&
       !inputs.remint &&
       github.event_name != 'schedule' &&
-      github.event.action != 'labeled'
+      github.event.action != 'labeled' &&
+      !inputs.tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -1632,7 +1844,7 @@ jobs:
   #   container (--probe).
   test-desktop-stress:
     needs: [pick-runners, build-image]
-    if: ${{ !cancelled() && needs.pick-runners.outputs.tested_by == '' && needs.build-image.result == 'success' && !inputs.remint }}
+    if: ${{ !cancelled() && needs.pick-runners.outputs.tested_by == '' && needs.build-image.result == 'success' && !inputs.remint && !inputs.tests }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -1786,7 +1998,7 @@ jobs:
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name == 'schedule' ||
-       (github.event_name == 'workflow_dispatch' && (inputs.stress || inputs.repeat > 1) && !inputs.remint) ||
+       (github.event_name == 'workflow_dispatch' && (inputs.stress || inputs.repeat > 1) && !inputs.remint && !inputs.tests) ||
        (github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'stress')))
     runs-on: [self-hosted, utk, gpu]
@@ -2039,6 +2251,27 @@ jobs:
       - name: 🚫 Fail on a desktop test that skipped for want of WebGPU
         run: python3 scripts/ci_check_split.py inputs
 
+      # A filtered run (a re-mint with a remint_filter, or tests) runs only the
+      # jobs and parts that hold a selected test, so the whole-suite check
+      # below says "not checked": the others sent no results. This checks the
+      # selected tests instead (scripts/ci_selected_tests.py): every job that
+      # holds one sent results, every test build-image listed ran, every word
+      # of tests selected a test that ran, and a remint_filter selected one.
+      - name: 📥 Download the lists of the selected tests
+        if: ${{ !cancelled() && ((inputs.remint && inputs.remint_filter) || inputs.tests) }}
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: ci-selected
+          path: selected
+
+      - name: 🚫 Fail on a selected test that did not run
+        if: ${{ !cancelled() && ((inputs.remint && inputs.remint_filter) || inputs.tests) }}
+        env:
+          CURIO_TESTS: ${{ inputs.tests }}
+          CURIO_REMINT_FILTER: ${{ inputs.remint && inputs.remint_filter || '' }}
+        run: python3 scripts/ci_selected_tests.py check inputs selected --remint-filter "$CURIO_REMINT_FILTER"
+
       # Every job that sends JUnit results, so a test only one of them runs is
       # not mistaken for one that ran nowhere. The parts follow the counts in
       # tests/parts.py, as e2e-desktop's and unit's matrices do
@@ -2052,14 +2285,15 @@ jobs:
           python3 scripts/ci_never_run.py inputs unit-backend-{1..4} unit-sandbox \
             test-gpu test-isolated test-exec-user preview-runner e2e-desktop-{1..14}
 
-      # A run that tested its whole tree green, not a re-mint and with no job
-      # skipped, names an artifact after that tree: a push to main with the
-      # same tree then passes by a link to this run (pick-runners,
-      # scripts/ci_tested_tree.py). A PR run's tree is its merge ref's.
+      # A run that tested its whole tree green, not a re-mint, not a tests run
+      # and with no job skipped, names an artifact after that tree: a push to
+      # main with the same tree then passes by a link to this run
+      # (pick-runners, scripts/ci_tested_tree.py). A PR run's tree is its
+      # merge ref's.
       - name: 🌳 Name the tree this run tested green
         id: tree
         if: >-
-          success() && !inputs.remint &&
+          success() && !inputs.remint && !inputs.tests &&
           !contains(needs.*.result, 'failure') &&
           !contains(needs.*.result, 'cancelled') &&
           !contains(needs.*.result, 'skipped')
