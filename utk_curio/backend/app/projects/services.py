@@ -1498,10 +1498,15 @@ def mutate_dataflow_datasets(user, project_id: str, mutate, *, cleanup: bool = F
     dataflow and its row stay as every other guest opens them. *cleanup* is
     a write for another of the account's actions, a deleted dataset's refs
     cleared out of every dataflow that held it, which writes the dataflow
-    itself, as :func:`update_project`'s *cleanup* does.
+    itself, as :func:`update_project`'s *cleanup* does. The guest's agents
+    name their copy by its id (the Dataset Finder's Apply): that write is the
+    copy's, by the request's sign-in alone.
     """
-    project = repo.get_for_user(project_id, user.id)
     ukey = _user_dir_key(user)
+    if visitor_copies.own_copy_source(user, project_id) is not None:
+        mutated = storage.mutate_dataflow_datasets(ukey, project_id, mutate)
+        return mutated[0] if mutated is not None else None
+    project = repo.get_for_user(project_id, user.id)
     own = project_id if cleanup else visitor_copies.for_request(user, project_id, make=True)
     if own != project_id:
         mutated = storage.mutate_dataflow_datasets(ukey, own, mutate)
@@ -2333,23 +2338,42 @@ HISTORY_WATCHER_REFUSAL = "Only the owner and the editors the owner invited see 
 HISTORY_CLEAR_REFUSAL = "Only the owner can clear this dataflow's history."
 
 
-def _history_of(user, project_id: str, *, clears: bool = False):
-    """The dataflow, its owner's storage key and *user*'s role in it, for a
-    read or a change of its history: the owner's and invited editors'
-    alone, and clearing it the owner's (``access.room_role``). A watcher and
-    a hosted guest are refused, as is anyone for a dataflow that is gone."""
+def _history_of(user, project_id: str, *, clears: bool = False, make: bool = False):
+    """The dataflow whose history *user* reads or changes, its owner's
+    storage key and *user*'s role in it: the owner's and invited editors'
+    alone, and clearing it the owner's (``access.room_role``). A watcher is
+    refused, as is anyone for a dataflow that is gone.
+
+    A hosted guest's history of a dataflow its account owns is its own copy's
+    (``visitor_copies.py``), whose room it owns: a change to it makes the copy
+    when there is none (*make*), and a read of a copy not made yet is ``None``
+    for the dataflow, which has none of its own yet. Any other dataflow's
+    history a hosted guest only watches."""
     from utk_curio.backend.app.projects import access
     from utk_curio.backend.app.projects.models import Project
 
     project = db.session.get(Project, project_id)
     if project is None:
         raise repo.NotFoundError(f"Project {project_id} not found")
+    if visitor_copies.copies_for(user) and project.user_id == user.id:
+        own = visitor_copies.for_request(user, project_id, make=make)
+        return (own if own != project_id else None), _owner_user_dir_key(project), access.OWNER
     role = access.room_role(user, project)
     if role not in access.EDIT_ROLES:
         raise ProjectError(HISTORY_WATCHER_REFUSAL, 403)
     if clears and role != access.OWNER:
         raise ProjectError(HISTORY_CLEAR_REFUSAL, 403)
-    return project, _owner_user_dir_key(project), role
+    return project_id, _owner_user_dir_key(project), role
+
+
+def _history_to_change(user, project_id: str) -> tuple[str, str]:
+    """The dataflow whose history *user* changes, and its owner's storage
+    key (:func:`_history_of`): a hosted guest's own copy, made now when there
+    is none."""
+    own, ukey, _role = _history_of(user, project_id, make=True)
+    if own is None:
+        raise ProjectError("This dataflow's history could not be started.", 409)
+    return own, ukey
 
 
 def _history_person(user) -> dict:
@@ -2427,10 +2451,12 @@ def project_history(user, project_id: str) -> dict:
     from utk_curio.backend.app.collaboration import history
     from utk_curio.backend.app.projects import access
 
-    _project, ukey, role = _history_of(user, project_id)
-    listed = history.versions(ukey, project_id)
+    own, ukey, role = _history_of(user, project_id)
+    if own is None:
+        return {"versions": [], "head": None, "kept": False, "canClear": False}
+    listed = history.versions(ukey, own)
     _history_names(ukey, listed["versions"])
-    return {**listed, "kept": history.has_points(ukey, project_id), "canClear": role == access.OWNER}
+    return {**listed, "kept": history.has_points(ukey, own), "canClear": role == access.OWNER}
 
 
 def node_entries(ukey: str, project_id: str, node_id: str, *, code: Optional[str] = None) -> dict:
@@ -2447,24 +2473,26 @@ def node_entries(ukey: str, project_id: str, node_id: str, *, code: Optional[str
 def node_history(user, project_id: str, node_id: str) -> dict:
     """The node's runs and edits as its Provenance drawer lists them
     (:func:`node_entries`), to *user*."""
-    _project, ukey, _role = _history_of(user, project_id)
-    spec = dataflow_docs.read(ukey, project_id) or {}
+    own, ukey, _role = _history_of(user, project_id)
+    if own is None:
+        return {"entries": [], "current": None}
+    spec = dataflow_docs.read(ukey, own) or {}
     node = next((n for n in (spec.get("dataflow") or {}).get("nodes") or []
                  if isinstance(n, dict) and n.get("id") == node_id), None)
     code = node.get("content") if isinstance(node, dict) and isinstance(node.get("content"), str) else None
-    return node_entries(ukey, project_id, node_id, code=code)
+    return node_entries(ukey, own, node_id, code=code)
 
 
 def record_run(user, project_id: str, node_id: str, body: dict) -> dict:
     """A run of the node on *user*'s tab, as its entry and its point."""
     from utk_curio.backend.app.collaboration import history
 
-    _project, ukey, _role = _history_of(user, project_id)
+    own, ukey = _history_to_change(user, project_id)
     code = body.get("code") if isinstance(body.get("code"), str) else ""
     inputs = body.get("inputs") if isinstance(body.get("inputs"), list) else []
     outputs = body.get("outputs") if isinstance(body.get("outputs"), list) else []
     return _history_errors(lambda: history.note_run(
-        ukey, project_id, _history_person(user), node_id, inputs=inputs, outputs=outputs,
+        ukey, own, _history_person(user), node_id, inputs=inputs, outputs=outputs,
         start_time=str(body.get("startTime") or ""), end_time=str(body.get("endTime") or ""), code=code,
     ))
 
@@ -2473,21 +2501,23 @@ def record_edit(user, project_id: str, node_id: str, label) -> dict:
     """An edit *user* made in the node's body (a Map Editor's), named *label*."""
     from utk_curio.backend.app.collaboration import history
 
-    _project, ukey, _role = _history_of(user, project_id)
+    own, ukey = _history_to_change(user, project_id)
     return _history_errors(lambda: history.note_edit(
-        ukey, project_id, _history_person(user), node_id, str(label or "").strip() or "Edit",
+        ukey, own, _history_person(user), node_id, str(label or "").strip() or "Edit",
     ))
 
 
-def dataflow_categories(project_id: str) -> dict:
+def dataflow_categories(project_id: str, *, user=None) -> dict:
     """The dataflow's categories as it is now (its source, and what its nodes
     make of it), which the canvas title shows, read as a load serves them
     (:func:`load_project`). No tab saves the dataflow, whose answer carried
     them: every tab of it asks again as it changes, the owner's, an invited
     editor's and a watcher's, as anyone who opens its link reads it
-    (:func:`_opened_by_link`)."""
+    (:func:`_opened_by_link`). A hosted guest's canvas (*user*) shows those
+    of its own copy, once it has one (``visitor_copies.py``)."""
     project, ukey = _opened_by_link(project_id)
-    spec = _without_history(_with_effective_packages(dataflow_docs.read(ukey, project_id), ukey, project_id))
+    shown = visitor_copies.for_request(user, project_id, make=False) if user is not None else project_id
+    spec = _without_history(_with_effective_packages(dataflow_docs.read(ukey, shown), ukey, shown))
     return _categories(project.owner, project_id, spec)
 
 
@@ -2499,7 +2529,9 @@ def record_saved(user, project_id: str) -> dict:
     the canvas title shows, as a save's answer carried them."""
     from utk_curio.backend.app.collaboration import history
 
-    _project, ukey, _role = _history_of(user, project_id)
+    if visitor_copies.copies_for(user):
+        raise ProjectError(GUEST_SAVE_REFUSAL, 403)
+    _own, ukey, _role = _history_of(user, project_id)
     dataflow_docs.flush(project_id)
     answer = _history_errors(lambda: history.saved(ukey, project_id, _history_person(user)))
     return {**answer, "categories": dataflow_categories(project_id)}
@@ -2509,8 +2541,8 @@ def put_back_version(user, project_id: str, point_id: str) -> dict:
     """Put the version back on the canvas, for every tab."""
     from utk_curio.backend.app.collaboration import history
 
-    _project, ukey, _role = _history_of(user, project_id)
-    return _history_errors(lambda: history.put_back(ukey, project_id, point_id, _history_person(user)))
+    own, ukey = _history_to_change(user, project_id)
+    return _history_errors(lambda: history.put_back(ukey, own, point_id, _history_person(user)))
 
 
 def write_node_code(user, project_id: str, node_id: str, body: dict) -> dict:
@@ -2518,19 +2550,22 @@ def write_node_code(user, project_id: str, node_id: str, body: dict) -> dict:
     only if the node still holds the code it began from."""
     from utk_curio.backend.app.collaboration import history
 
-    _project, ukey, _role = _history_of(user, project_id)
+    own, ukey = _history_to_change(user, project_id)
     expect, code = body.get("from"), body.get("code")
     if not isinstance(expect, str) or not isinstance(code, str):
         raise ProjectError("Send the code the node holds (from) and the code to put back (code).", 400)
     label = str(body.get("label") or "").strip() or "Code put back"
     return _history_errors(lambda: history.write_code(
-        ukey, project_id, _history_person(user), node_id, expect=expect, code=code, label=label,
+        ukey, own, _history_person(user), node_id, expect=expect, code=code, label=label,
     ))
 
 
 def clear_history(user, project_id: str, point_id: str) -> dict:
-    """The owner clears the history before the version *point_id*."""
+    """The owner clears the history before the version *point_id*: a hosted
+    guest, its own copy's."""
     from utk_curio.backend.app.collaboration import history
 
-    _project, ukey, _role = _history_of(user, project_id, clears=True)
-    return _history_errors(lambda: history.clear_before(ukey, project_id, point_id))
+    own, ukey, _role = _history_of(user, project_id, clears=True)
+    if own is None:
+        raise repo.NotFoundError(f"Version {point_id} not found")
+    return _history_errors(lambda: history.clear_before(ukey, own, point_id))

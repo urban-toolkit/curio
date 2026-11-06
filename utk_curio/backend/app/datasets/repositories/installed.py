@@ -37,17 +37,22 @@ class InstalledDatasetRepository:
         holds its spec and the datasets it lists, for its owner and for an
         editor the owner invited. ``access.agents_role`` says which: it tells
         the owner by account first, as the agents' routes do, so a hosted
-        guest keeps the examples its account owns. Anyone else is told the
-        dataflow is not found."""
+        guest keeps the examples its account owns. A hosted guest's own copy
+        of one, which its agents' tools name by its id and which has no row,
+        is read as its own (``visitor_copies.own_copy_source``), by the
+        request's sign-in alone. Anyone else is told the dataflow is not
+        found."""
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
-        from utk_curio.backend.app.projects import access
+        from utk_curio.backend.app.projects import access, visitor_copies
         from utk_curio.backend.app.projects.models import Project
         from utk_curio.backend.app.projects.repositories import NotFoundError
         from utk_curio.backend.app.projects.services import _owner_user_dir_key
         from utk_curio.backend.extensions import db
 
         project = db.session.get(Project, dataflow_id)
+        if project is None and visitor_copies.own_copy_source(self.user, dataflow_id) is not None:
+            project = visitor_copies.as_row(dataflow_id)
         if project is None or access.agents_role(self.user, project) not in access.EDIT_ROLES:
             raise NotFoundError(f"Project {dataflow_id} not found")
         return project, _owner_user_dir_key(project)

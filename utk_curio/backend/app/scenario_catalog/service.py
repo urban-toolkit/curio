@@ -328,7 +328,14 @@ class ScenarioCatalogService:
         spec lock, one at a time (``projects.copy_outputs``). Refused, changing
         nothing, while the plan has a problem or a context node still to run;
         a saved output that is gone, or that cannot be copied, is a 409, the
-        second saying to try again."""
+        second saying to try again. A hosted guest is refused, changing
+        nothing: its account's dataflows are every guest's, and the page says
+        so before it sends one."""
+        from utk_curio.backend.app.users.capabilities import catalog_entry_refusal
+
+        refusal = catalog_entry_refusal(self.user, "add scenarios")
+        if refusal:
+            raise ScenarioCatalogError(refusal, 403)
         plan, row, spec, (target_row, target_spec) = self._plan(project_id, scenario_id, target_id, present)
         unsaved = [
             f'"{plan["scenario"]["name"]}" reads {item["label"]}, which has no saved output in {row.name}: '

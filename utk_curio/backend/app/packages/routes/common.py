@@ -97,9 +97,32 @@ def opened_dataflow_packages(project_id: str):
     them (``project_packages.OwnersPackages``), for anyone who may open the
     dataflow by its link (``projects.services._opened_by_link``, the rule of
     its shared read): its owner, an editor the owner invited, a watcher. A
-    dataflow that is gone is "project not found" (404)."""
+    hosted guest reads those of its own copy, once it has one
+    (``projects/visitor_copies.py``). A dataflow that is gone is "project not
+    found" (404)."""
+    from utk_curio.backend.app.projects import visitor_copies
+
     project, store_key = _opened_by_link(project_id)
-    return OwnersPackages(store_key, project.id)
+    return OwnersPackages(store_key, visitor_copies.for_request(g.user, project.id, make=False))
+
+
+def project_read(project_id: str) -> str:
+    """The dataflow a read of *project_id*'s lockfile reads: itself, or a
+    hosted guest's own copy of it, once it has one (``projects/visitor_copies.py``)."""
+    from utk_curio.backend.app.projects import visitor_copies
+
+    return visitor_copies.for_request(g.user, project_id, make=False)
+
+
+def refuse_a_hosted_guests_change() -> None:
+    """Refuse a hosted guest's change to a dataflow's packages: the dataflows
+    its account owns are the examples every guest opens, as its Node Catalog
+    says before it sends one."""
+    from utk_curio.backend.app.users.capabilities import catalog_entry_refusal
+
+    refusal = catalog_entry_refusal(g.user, "change a dataflow's packages")
+    if refusal:
+        raise PackageServiceError(refusal, 403)
 
 
 def catalog_publish_disabled():

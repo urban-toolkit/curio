@@ -16,6 +16,8 @@ from utk_curio.backend.app.packages.routes.common import (
     _map_package_errors,
     opened_dataflow_packages,
     packages_bp,
+    project_read,
+    refuse_a_hosted_guests_change,
     require_project,
     user_key,
 )
@@ -41,9 +43,10 @@ def list_dataflow_packages(project_id: str):
 @require_auth
 @_map_package_errors
 def get_project_packages(project_id: str):
-    """``{"packages": [...dirNames]}`` for the project's lockfile."""
+    """``{"packages": [...dirNames]}`` for the project's lockfile: a hosted
+    guest's own copy's, once it has one."""
     require_project(project_id)
-    dirs = packages_project_packages.get_project_lockfile(user_key(), project_id)
+    dirs = packages_project_packages.get_project_lockfile(user_key(), project_read(project_id))
     return jsonify({"packages": sorted(dirs)}), 200
 
 
@@ -52,9 +55,11 @@ def get_project_packages(project_id: str):
 @_map_package_errors
 def install_to_project_route(project_id: str):
     """Install a catalog package into one project's lockfile. The payload carries
-    ``importErrors``: the install itself answers whether the libraries work."""
+    ``importErrors``: the install itself answers whether the libraries work.
+    A hosted guest is refused: its account's dataflows are every guest's."""
     dir_name = requests.dir_name(request.get_json(silent=True) or {})
     require_project(project_id)
+    refuse_a_hosted_guests_change()
     return jsonify(packages_project_packages.install_to_project(user_key(), project_id, dir_name)), 201
 
 
@@ -62,6 +67,8 @@ def install_to_project_route(project_id: str):
 @require_auth
 @_map_package_errors
 def uninstall_from_project_route(project_id: str, dir_name: str):
-    """Drop a package from one project's lockfile; auto-prune the user store."""
+    """Drop a package from one project's lockfile; auto-prune the user store.
+    A hosted guest is refused, as its install is."""
     require_project(project_id)
+    refuse_a_hosted_guests_change()
     return jsonify(packages_project_packages.uninstall_from_project(user_key(), project_id, dir_name)), 200
