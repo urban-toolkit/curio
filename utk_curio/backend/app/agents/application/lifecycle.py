@@ -6,6 +6,10 @@ unpublication share is here too: a hosted guest's refusal
 (:func:`publish_entry`, :func:`unpublish_entry`), which
 ``skill_lifecycle.py`` calls for skills.
 
+So are the agents every account has by default: each catalog card Curio
+ships, added to an account as **Add to all projects** adds an agent
+(:func:`seed_default_agents`).
+
 Application layer of the agents package (memo dev/142, B2; re-derived on enh/agent-catalog): cut from
 ``services.py`` by responsibility; every function keeps its name and body. Sibling modules are reached
 module-qualified (``agents_<module>.name``) so a test that patches the owner is seen by every caller,
@@ -111,11 +115,67 @@ def import_agent(user_key: str, coord: str, *, user=None) -> dict:
     """
     refuse_hosted_guest(user, "import agents")
     _refuse_internal(coord)
+    return _add_to_all_projects(user_key, coord, user)
+
+
+def _add_to_all_projects(user_key: str, coord: str, user) -> dict:
+    """What **Add to all projects** does once the account may: *coord*'s bytes
+    in the account's store, *coord* in My Imports, and *coord* installed into
+    every project the account has."""
     agents_catalog._require_definition(user_key, coord)
     agents_catalog._materialize_definition(user_key, coord)
     imports.add_imported_agent(user_key, coord)
     projects = _fan_out_imports(user, user_key, coord, install=True)
     return {"coord": coord, "imported": True, "projects": projects}
+
+
+def default_agent_coords() -> list[str]:
+    """The agents every account has by default: each agent Curio ships whose
+    manifest lists it as a catalog card (``catalog.listed``), in the roster's
+    order. A helper, which runs only as other agents' delegate, never is."""
+    return [m.dir_name for m in builtin.list_builtin_manifests() if m.catalog.listed]
+
+
+def _not_yet_seeded(user_key: str) -> list[str]:
+    """The default agents Curio has not added to the account yet, sorted, the
+    order a new dataflow installs an account's imports in."""
+    seeded = imports.load_seeded_agents(user_key)
+    return sorted(coord for coord in default_agent_coords() if coord not in seeded)
+
+
+def seed_default_agents(user_key: str, user) -> list[str]:
+    """Add each default agent (:func:`default_agent_coords`) Curio has not added
+    to *user*'s account yet, as **Add to all projects** does: in My Imports and
+    in every dataflow the account has. Returns the coordinates it added.
+
+    The imports file records each one added (``imports.record_seeded``), so an
+    agent the account removed from all its projects is not added again, while
+    one Curio ships later still arrives. Curio makes this choice, not the
+    account, so a hosted guest is not refused (:func:`refuse_hosted_guest`).
+
+    One seeding per account at a time (``imports.seeding``): a second request
+    waits, then finds the first one's record. Nothing to add costs one read of
+    the imports file, without the lock. Never raises into a request: a failure
+    is logged, and the request goes on without the agents it could not add."""
+    if user is None:
+        return []
+    try:
+        if not _not_yet_seeded(user_key):
+            return []
+        with imports.seeding(user_key):
+            added: list[str] = []
+            for coord in _not_yet_seeded(user_key):
+                try:
+                    _add_to_all_projects(user_key, coord, user)
+                except Exception:  # noqa: BLE001 - one agent never stops the others
+                    log.warning("Could not add the default agent %s to account %s", coord, user_key, exc_info=True)
+                    continue
+                added.append(coord)
+            imports.record_seeded(user_key, added)
+            return added
+    except Exception:  # noqa: BLE001 - the request goes on without them
+        log.warning("Could not add the default agents to account %s", user_key, exc_info=True)
+        return []
 
 
 #: How many dataflows a refusal of Remove from all projects names, before
@@ -189,13 +249,16 @@ def remove_import(user_key: str, coord: str, *, user=None) -> dict:
     return {"coord": coord, "imported": False, "projects": projects}
 
 
-def seed_project_with_imported_agents(user_key: str, project_id: str) -> None:
-    """Install the account's imported agents into a brand-new project.
+def seed_project_with_imported_agents(user_key: str, project_id: str, *, user=None) -> None:
+    """Install the account's imported agents into a brand-new project, after
+    adding the default agents Curio has not added to *user*'s account yet
+    (:func:`seed_default_agents`).
 
     The "future" half of "all your projects, present and future"; the walk above
     is the "present" half. Best-effort: a stale import must degrade to "that
     agent is missing here", never to "the project could not be created".
     """
+    seed_default_agents(user_key, user)
     try:
         coords = imports.load_imported_agents(user_key)
     except Exception:  # noqa: BLE001
