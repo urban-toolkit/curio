@@ -324,7 +324,7 @@ Then load `https://lab-name.your-uni.edu/curio/` in a browser. If something look
 
 ### The GPU
 
-The image carries the CUDA 12.9 toolkit on x86_64, with its runtime libraries, NVRTC and nvcc, and PyTorch and torchvision built for CUDA 12.9, which node code imports with nothing to install. A container gets the GPU from the host, which needs:
+On x86_64 the image carries PyTorch and torchvision built for CUDA 12.9, with CUDA 12.9's runtime libraries and NVRTC, which node code uses with nothing to install. A container gets the GPU from the host, which needs:
 
 - an NVIDIA driver, 525 or newer (`nvidia-smi` prints its version);
 - the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), set up for Docker. Restarting Docker stops every container on the host until it is back:

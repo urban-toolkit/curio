@@ -3,8 +3,8 @@
 # e2e worker, and the ports of the EXTRA e2e shards.
 #
 # The GPU: a device request that the host's NVIDIA Container Toolkit answers
-# with the GPU and the driver's libcuda.so.1, which the image's CUDA toolkit
-# and torch run on (the Dockerfile). test-gpu runs utk_curio/sandbox/tests/
+# with the GPU and the driver's libcuda.so.1, which the image's CUDA, the
+# libraries its torch build brings, runs on (the Dockerfile). test-gpu runs utk_curio/sandbox/tests/
 # test_cuda_mlp.py and test_cuda_torch.py in the container with it. A daemon without the toolkit
 # refuses to start the container at all, so every runner of test-gpu needs it:
 # utk's and utk-desktop-01's own Docker, and the Docker inside each arcade GPU

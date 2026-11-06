@@ -1,11 +1,12 @@
-"""Curio's container runs a model on the GPU with the image's CUDA toolkit.
+"""Curio's container runs a model on the GPU with the image's CUDA.
 
-The image carries CUDA 12.9 (the Dockerfile's ``python_base``). The GPU and
-the driver's ``libcuda.so.1`` come from the host: its NVIDIA driver and its
-NVIDIA Container Toolkit hand them to a container that asks for a GPU, as
-test-gpu's ``docker-compose.ci-shards.yml`` does. This runs a tiny MLP, 64 to
-32 to 10 units (``cuda_mlp.npy``, written by ``cuda_mlp_weights.py``), with
-nothing but ctypes and numpy:
+The image's CUDA 12.9 is NVIDIA's pip packages that its torch build brings
+(the Dockerfile's ``python_base``), NVRTC among them. The GPU and the driver's
+``libcuda.so.1`` come from the host: its NVIDIA driver and its NVIDIA
+Container Toolkit hand them to a container that asks for a GPU, as test-gpu's
+``docker-compose.ci-shards.yml`` does. This runs a tiny MLP, 64 to 32 to 10
+units (``cuda_mlp.npy``, written by ``cuda_mlp_weights.py``), with nothing but
+ctypes and numpy:
 
 - NVML (``libnvidia-ml.so.1``) reads the driver's release;
 - the driver API (``libcuda.so.1``) reads the device and loads and launches
@@ -26,15 +27,14 @@ Run:  python -m pytest utk_curio/sandbox/tests/test_cuda_mlp.py -m cuda -v -s
 
 import ctypes
 import glob
-import shutil
-import subprocess
+import sys
 
 import numpy as np
 import pytest
 
 from utk_curio.sandbox.tests import cuda_mlp_weights
 
-#: The CUDA toolkit the Dockerfile installs.
+#: The CUDA of the torch build the Dockerfile installs, whose NVRTC this compiles with.
 CUDA_VERSION = (12, 9)
 #: The largest difference from numpy the GPU's forward pass may show.
 TOLERANCE = 1e-4
@@ -82,10 +82,10 @@ def _load(names, why):
 
 
 def _nvrtc():
-    """NVRTC 12, from the loader's path or the toolkit's own folders."""
-    folders = glob.glob("/usr/local/cuda*/lib64") + glob.glob("/usr/local/cuda*/targets/*/lib")
-    names = ["libnvrtc.so.12", *(f"{folder}/libnvrtc.so.12" for folder in sorted(folders))]
-    return _load(names, "the image has no CUDA 12 toolkit (the Dockerfile's python_base installs it)")
+    """NVRTC 12: NVIDIA's pip package of it (``nvidia/cuda_nvrtc/lib``), else the loader's path."""
+    wheels = sorted(path for entry in sys.path for path in glob.glob(f"{entry}/nvidia/cuda_nvrtc/lib/libnvrtc.so.12"))
+    return _load([*wheels, "libnvrtc.so.12"],
+                 "the image has no CUDA 12 NVRTC (the Dockerfile's torch build brings nvidia-cuda-nvrtc-cu12)")
 
 
 def _driver():
@@ -233,17 +233,12 @@ def _forward_on_the_cpu(x, layers):
 
 
 @pytest.mark.cuda
-def test_the_image_carries_cuda_12_9_with_nvrtc_and_nvcc(record_property):
-    """NVRTC and nvcc are the Dockerfile's CUDA, and nvcc is on PATH."""
+def test_the_image_carries_cuda_12_9_nvrtc(record_property):
+    """The NVRTC the MLP compiles with is the CUDA of the Dockerfile's torch build."""
     nvrtc_version = _nvrtc_version(_nvrtc())
     assert nvrtc_version == CUDA_VERSION, f"NVRTC is CUDA {nvrtc_version}, not the Dockerfile's {CUDA_VERSION}"
-    nvcc = shutil.which("nvcc")
-    assert nvcc, "nvcc is not on PATH (the Dockerfile puts /usr/local/cuda/bin there)"
-    release = subprocess.run([nvcc, "--version"], capture_output=True, text=True, check=True).stdout
-    wanted = "release {}.{}".format(*CUDA_VERSION)
-    assert wanted in release, f"{nvcc} --version does not say {wanted}:\n{release}"
-    print(f"CUDA toolkit: NVRTC {nvrtc_version[0]}.{nvrtc_version[1]}, {nvcc} ({wanted})")
-    record_property("cuda_toolkit", "{}.{}".format(*nvrtc_version))
+    print("CUDA NVRTC: {}.{}".format(*nvrtc_version))
+    record_property("cuda_nvrtc", "{}.{}".format(*nvrtc_version))
 
 
 @pytest.mark.cuda

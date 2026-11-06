@@ -24,41 +24,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# The CUDA 12.9 toolkit: its runtime libraries, NVRTC and nvcc (whose package
-# brings build-essential, the host compiler nvcc calls). From NVIDIA's Debian 12
-# repository: its Debian 13 one starts at CUDA 13.1, which needs an R580 or
-# newer driver, and arcade's H100s run R550, while 12.9 runs on R525 and newer.
-# Its packages need only libraries Debian 13 has. The driver's libcuda.so.1
-# and the GPU itself come from the host, through its NVIDIA Container Toolkit,
-# to a container that asks for a GPU (docker-compose.ci-shards.yml); in any
-# other container the toolkit sits unused. x86_64 only: NVIDIA has no CUDA 12
-# for Debian 12 on arm64, and an arm64 build (a Mac's) has no NVIDIA GPU to
-# run it on.
-RUN set -eu; \
-    arch="$(dpkg --print-architecture)"; \
-    if [ "$arch" != amd64 ]; then \
-      echo "No CUDA toolkit on $arch: NVIDIA has no CUDA 12.9 for Debian 12 there."; \
-      exit 0; \
-    fi; \
-    curl -fsSL -o /tmp/cuda-keyring.deb \
-      https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64/cuda-keyring_1.1-1_all.deb; \
-    dpkg -i /tmp/cuda-keyring.deb; \
-    rm /tmp/cuda-keyring.deb; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends cuda-libraries-12-9 cuda-nvcc-12-9; \
-    rm -rf /var/lib/apt/lists/*
-ENV PATH=/usr/local/cuda/bin:${PATH}
-
 # PyTorch and torchvision, so node code runs torch models with nothing to
-# install, on the GPU when it can reach one. On x86_64 the CUDA 12.9 builds,
-# whose wheels bring their own copies of the CUDA libraries they link: PyPI's
-# default torch is built for CUDA 13, which arcade's R550 driver cannot run,
-# and torch 2.13.0 is the newest with a 12.9 build (12.8 and later cover the
-# RTX PRO 6000's sm_120). Exact local versions, so pip never takes PyPI's
-# CUDA 13 wheel of the same number; PyPI is there for the dependencies only
-# it has. Elsewhere (a Mac's arm64) the CPU builds. Then the build stops on a
-# driver library anywhere in the image (the toolkit's stubs aside), which
-# would hide the one the host mounts.
+# install, on the GPU when it can reach one. On x86_64 they are the CUDA 12.9
+# builds, whose wheels are the image's CUDA: NVIDIA's pip packages of the
+# CUDA 12.9 runtime libraries (cudart, cuBLAS, cuFFT, cuRAND, cuSOLVER,
+# cuSPARSE, nvJitLink, NVRTC), cuDNN and NCCL. CUDA 12.9 runs on an R525 or
+# newer driver, so on arcade's R550 too, where CUDA 13 does not; torch 2.13.0
+# is the newest torch with a 12.9 build, and 12.8 and later builds cover the
+# RTX PRO 6000's sm_120. Exact local versions, so pip never takes PyPI's
+# CUDA 13 wheel of the same number; PyPI is there for the dependencies only it
+# has. Elsewhere (a Mac's arm64, which has no NVIDIA GPU) the CPU builds. The
+# driver's libcuda.so.1 and the GPU come from the host, through its NVIDIA
+# Container Toolkit, to a container that asks for a GPU
+# (docker-compose.ci-shards.yml), so the build stops on a copy of it anywhere
+# in the image, which would hide the host's.
 RUN set -eu; \
     case "$(dpkg --print-architecture)" in \
       amd64) build=cu129 ;; \

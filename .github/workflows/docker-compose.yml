@@ -970,8 +970,8 @@ jobs:
         run: |
           curl --fail http://localhost:8100 || (echo "Frontend not reachable" && exit 1)
 
-      # The image's CUDA toolkit runs a tiny MLP on this runner's GPU inside
-      # the curio container, and the image's torch multiplies on it, as plain
+      # The image's CUDA (NVRTC and the driver API) runs a tiny MLP on this
+      # runner's GPU inside the curio container, and its torch multiplies on it, as plain
       # Python rather than node code (utk_curio/sandbox/tests/test_cuda_mlp.py
       # and test_cuda_torch.py, which only -m cuda selects). After the e2e
       # tests, so a failure here never hides theirs, and their browsers have
