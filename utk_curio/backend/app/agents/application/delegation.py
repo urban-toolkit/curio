@@ -82,9 +82,10 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
     Order: (1) the parent's ``delegatesTo`` entries, in declaration order
     (dev/15: order = preference); (2) any other template installed in THIS
     project that declares the capability and that ``delegatesTo`` does not
-    name, in sorted-coord order (deterministic tie-break). Never consults
-    other projects. When nothing installed matches but a ``delegatesTo``
-    entry is visible in the catalog, the outcome is ``not-installed`` (the
+    name, the account's own agents before the agents Curio ships, each by id
+    (``builtin.answering_order``). Never consults other projects. When
+    nothing installed matches but a ``delegatesTo`` entry is visible in the
+    catalog, the outcome is ``not-installed`` (the
     missing-specialist proposal path); a capability nobody declares is
     ``unresolvable``.
 
@@ -123,11 +124,12 @@ def resolve_among(
             visible_coord, visible_m = find_visible(user_key, agent_id)
             if visible_m is not None and capability in visible_m.capability_ids:
                 missing = Resolution("not-installed", visible_coord, visible_m)
-    # Capability-first fallback: any other installed template declaring it.
+    # Capability-first fallback: any other installed template declaring it,
+    # the account's own before Curio's (``builtin.answering_order``).
     # An agent delegatesTo names was walked above for what its entry
     # delegates, and takes nothing else; the parent takes only its modes.
     named = {*preferred_ids, parent.agent_id}
-    for coord in sorted(installed, key=coord_order):
+    for coord in builtin.answering_order(installed):
         if coord.split("@", 1)[0] in named:
             continue
         m = catalog._resolve_definition(user_key, coord)
