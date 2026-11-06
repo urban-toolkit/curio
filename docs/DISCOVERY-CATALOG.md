@@ -115,6 +115,8 @@ A storage source is read when it is first opened, and again when its listing is 
 | **View model** | A row marked **In your Model Catalog** | Nothing | The `/catalog/models` page, with the model's details open; on the canvas, the Model Catalog drawer. |
 | **Set a token** | **API Settings**, **API keys** tab | Your account | The source's card reads **Token set**. |
 
+A guest on a Curio started with `--deploy` downloads into a Data Catalog of its own: what it downloads or adds shows for that guest alone, and goes when the server restarts.
+
 ### Workflows
 
 **I want a dataset but do not know which portal has it.** Open `/catalog/discovery` and type in the search box. Every searchable portal and every storage source is asked at once and the results are interleaved. If a portal is slow or down, a line names it and the other results still show. A storage source still being read for the first time is named in a line of its own, and its rows join the results when it is done.
