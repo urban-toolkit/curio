@@ -712,8 +712,10 @@ class TestPartLabels:
             dataset_formats={"data.x.layers": {"format": "bundle"}},
         )
         assert loaded["stderr"] == "", loaded["stderr"]
+        # A node's one input that is a tuple is named "file", as the backend
+        # names it (node_exec.parse_input_ref): "outputs" is several circles.
         reported = execute_code(
-            REPORT_LABELS, loaded["output"]["path"], "PYTHON_COMPUTATION", "outputs", save_dataset=False,
+            REPORT_LABELS, loaded["output"]["path"], "PYTHON_COMPUTATION", "file", save_dataset=False,
         )
         assert reported["stderr"] == "", reported["stderr"]
         assert load_from_duckdb(reported["output"]["path"]) == "DataFrame:Trees|GeoDataFrame:CTA stations"
@@ -739,7 +741,7 @@ class TestPartLabels:
         second = store / "scratch-report"
         second.mkdir()
         reported = child.run_node({
-            "code": REPORT_LABELS, "node_type": "curio.builtin/python-computation", "data_type": "outputs",
+            "code": REPORT_LABELS, "node_type": "curio.builtin/python-computation", "data_type": "file",
             "scratch_dir": str(second), "input": staging.stage_input(art_id, second),
             "dataset_paths": {}, "session_imports": [], "limits": {},
         }, lambda: {"pd": pd})

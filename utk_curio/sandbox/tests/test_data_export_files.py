@@ -479,7 +479,9 @@ def test_an_isolated_run_fed_a_bundle_writes_one_zip_and_the_parent_keeps_only_i
     scratch.mkdir()
     result = child.run_node({
         "code": "    return curio_export(input_0, 'layers', part='')\n",
-        "node_type": EXPORT_TYPE, "data_type": "outputs", "scratch_dir": str(scratch),
+        # A node's one input that is a tuple is named "file", as the backend
+        # names it (node_exec.parse_input_ref): "outputs" is several circles.
+        "node_type": EXPORT_TYPE, "data_type": "file", "scratch_dir": str(scratch),
         "input": staging.stage_input(loaded, scratch), "dataset_paths": {}, "session_imports": [], "limits": {},
     }, lambda: {"pd": pd})
 

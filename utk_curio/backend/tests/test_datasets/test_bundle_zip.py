@@ -328,7 +328,7 @@ REFUSED = {
         "it holds 'extra.csv', which bundle.json does not list",
     ),
     "a listed file it does not hold": (
-        {"bundle.json": _bundle_json(_part(), _part("more.csv", index=1))}, (),
+        {"bundle.json": _bundle_json(_part(), _part("more.csv", index=1)), "trees.csv": CSV}, (),
         "bundle.json lists 'more.csv', which the zip does not hold",
     ),
     "a bundle.json that is not JSON": ({"bundle.json": "{parts", "trees.csv": CSV}, (), "its bundle.json is not JSON"),
