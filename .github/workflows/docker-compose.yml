@@ -2167,3 +2167,16 @@ jobs:
             echo
             cat ci-report/summary.md 2>/dev/null || true
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # The same summary as a file, for the Weekly flake hunt's report on its own
+      # page (scripts/ci_weekly_report.py), which reads this rather than every
+      # ci-inputs artifact.
+      - name: 📤 Upload the summary
+        if: always() && steps.ci_report.outputs.file != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-summary
+          path: ci-report/summary.md
+          if-no-files-found: ignore
+          retention-days: 30
+          overwrite: true

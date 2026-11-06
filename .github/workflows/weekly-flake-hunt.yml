@@ -7,6 +7,11 @@ name: Weekly flake hunt
 # is exactly the one a person starts from the Actions tab with repeat 10. A
 # workflow_dispatch is the one event the repository's own token may start.
 #
+# Then `report` waits for the run it started and writes that week's report on
+# this run's own page (scripts/ci_weekly_report.py): the run, its jobs, its CI
+# report page, its flaky tests and its suite table. This run ends red when the
+# Full stack build did not pass or found a flaky test.
+#
 # 08:00 UTC is 3 AM in Chicago during CDT and 2 AM once CST starts, the quiet
 # hours the Full stack build's own schedule uses. Run this by hand from the
 # Actions tab to start the same run now.
@@ -22,8 +27,42 @@ jobs:
   dispatch:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      since: ${{ steps.start.outputs.since }}
     steps:
       - name: ▶️ Start the Full stack build on main with repeat 10
+        id: start
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run docker-compose.yml --repo "$GITHUB_REPOSITORY" --ref main -f repeat=10
+        run: |
+          echo "since=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          gh workflow run docker-compose.yml --repo "$GITHUB_REPOSITORY" --ref main -f repeat=10
+
+  # The repeat-10 run takes about four hours (3.2 and 3.9 on 10-24 and 10-31),
+  # and a GitHub-hosted job stops at six, so this waits on an arcade CPU runner,
+  # which it holds while the run lasts and which pick-runners counts as busy.
+  report:
+    needs: dispatch
+    runs-on: [self-hosted, arcade, cpu]
+    timeout-minutes: 720
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      # A Full stack build job on this runner can leave root-owned files in the
+      # workspace, which the checkout cannot remove (as the stacks' reclaim
+      # step in docker-compose.yml hands them back).
+      - name: 🧹 Reclaim root-owned files
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: scripts/ci_weekly_report.py
+          sparse-checkout-cone-mode: false
+
+      - name: 📋 Wait for the run and write the week's report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SINCE: ${{ needs.dispatch.outputs.since }}
+        run: python3 scripts/ci_weekly_report.py --since "$SINCE" --out "$GITHUB_STEP_SUMMARY"
