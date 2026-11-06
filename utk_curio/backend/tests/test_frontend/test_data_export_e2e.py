@@ -333,3 +333,7 @@ def test_a_bundle_downloads_as_the_zip_the_data_catalogs_export_gives_and_part_s
     assert len(json.loads(body.decode("utf-8"))["features"]) == CHICAGO_FILES["Trees_OpenStreetMap.geojson"]
     wait_for_node_done(page, export, node_type=EXPORT_TYPE)
     expect(_download_button(page, export)).to_have_text("Download layers.geojson", timeout=30000)
+    # The node as it shows a bundle: Part names the layer it saves.
+    expect(part).to_have_value("Trees (OpenStreetMap)")
+    page.mouse.move(5, 5)
+    save_node_closeup(page, STEM, export, test_name=f"{STEM}_a_bundle_with_one_part_picked")
