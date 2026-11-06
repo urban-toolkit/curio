@@ -194,11 +194,10 @@ def load_dataset_parquet(path):
 
     frame_metadata, _encoded = _read_parquet_sidecar_meta(path)
     frame = restore_parquet_sidecar(frame, path, geometry_col=geometry_col)
-    if frame_metadata is not None:
-        try:
-            frame.metadata = frame_metadata
-        except Exception:  # noqa: BLE001 - metadata is best-effort
-            pass
+    if isinstance(frame_metadata, dict):
+        # In ``__dict__``: an attribute set on a table names a column, and
+        # would take the place of one called ``metadata``.
+        frame.__dict__['metadata'] = frame_metadata
 
     return frame
 

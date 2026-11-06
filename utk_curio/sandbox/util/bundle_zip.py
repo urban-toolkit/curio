@@ -238,7 +238,7 @@ def json_value(value, *, part: str | None = None):
         )
         separator = ": " if detect_kind(inner) in FILE_KINDS else ", "
         raise PartRefused(
-            "curio_export writes each part as a file or a JSON value, and the part "
+            "a zip of several parts holds each as a file or a JSON value, and the part "
             f"{part!r} holds {_named(inner)}{separator}{advice}."
         ) from None
 
@@ -281,7 +281,7 @@ def _write_part(archive: zipfile.ZipFile, work: str, part: Part, stem: str) -> d
             entry.update(kind="list" if kind == "outputs" else kind, value=json_value(value, part=part.label))
         else:
             raise PartRefused(
-                "curio_export writes each part as a file or a JSON value, and the part "
+                "a zip of several parts holds each as a file or a JSON value, and the part "
                 f"{part.label!r} is {_named(value)}, which is neither."
             )
         return entry

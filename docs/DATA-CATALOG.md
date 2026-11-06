@@ -282,9 +282,9 @@ A dataset's details have four tabs: **Overview**, **Schema**, **Table Preview**,
 | `shp` | Not previewable. |
 | `collection` | The index, one row per file, below a strip of its first files. |
 
-**Export**, in the details, downloads the dataset as a file. A Parquet dataset is exported as **GeoJSON** for geo data or **CSV** for a plain table, matching what the preview showed. Collections cannot be exported.
+**Export**, in the details, downloads the dataset as a file. A Parquet dataset is exported as **GeoJSON** for geo data or **CSV** for a plain table, matching what the preview showed. Collections and groups of NetCDF variables cannot be exported.
 
-A bundle, a node's output of several parts and a multi-layer group download as one **zip**, named after the dataset (`Chicago Loop Layers.zip`). It holds a file per part, named after the part's label, and a `bundle.json`:
+A bundle, a node's output of several parts and a multi-layer group (OSM, GeoPackage or GTFS) download as one **zip**, named after the dataset (`Chicago Loop Layers.zip`). It holds a file per part, named after the part's label, and a `bundle.json`:
 
 | Part | In the zip |
 |---|---|
