@@ -42,11 +42,13 @@ def _interrupted(seconds):
     raise KeyboardInterrupt
 
 
-def _start(monkeypatch, *, must_build, deploy=True, failing_check=None, server="all", seed=None):
+def _start(monkeypatch, *, must_build, deploy=True, failing_check=None, server="all", seed=None,
+           backend_starts=None):
     """Run ``curio.py start <server>`` with every step recorded instead of done.
 
     *seed*, when given, is what the DuckDB extension step also does, so a test
-    can see where the extensions land.
+    can see where the extensions land. *backend_starts*, when given, runs where
+    the backend would start, so a test can see what it would inherit.
 
     Returns the order of the steps, the servers, and how main() exited.
     """
@@ -85,7 +87,7 @@ def _start(monkeypatch, *, must_build, deploy=True, failing_check=None, server="
     monkeypatch.setattr(launcher, "install_framework_requirements", step("framework requirements"))
     monkeypatch.setattr(launcher, "install_manifest_dependencies", step("manifest dependencies"))
     monkeypatch.setattr(launcher, "seed_duckdb_extensions", step("duckdb extensions", then=seed))
-    monkeypatch.setattr(launcher, "start_backend", step("backend", servers["backend"]))
+    monkeypatch.setattr(launcher, "start_backend", step("backend", servers["backend"], then=backend_starts))
     monkeypatch.setattr(launcher, "start_sandbox", step("sandbox", servers["sandbox"]))
     monkeypatch.setattr(launcher, "start_frontend", step("frontend", servers["frontend"]))
     monkeypatch.setattr(launcher, "threading", SimpleNamespace(
@@ -127,6 +129,37 @@ def test_a_frontend_that_must_build_starts_last(monkeypatch):
     assert code == 0
     for name, server in servers.items():
         assert server.calls[:1] == ["terminate"], (name, server.calls)
+
+
+def test_the_servers_start_with_the_open_files_limit_raised(monkeypatch):
+    """Docker starts a container's processes at a soft limit of 1024 open files
+    and macOS a terminal's at 256, and every server inherits the launcher's: the
+    hosted stable backend ran out of its 1024 on 11-06. ``start`` raises it
+    toward the hard limit before the first server starts."""
+    resource = pytest.importorskip("resource")
+    import os
+
+    original = resource.getrlimit(resource.RLIMIT_NOFILE)
+    soft, hard = original
+    folder = "/proc/self/fd" if os.path.isdir("/proc/self/fd") else "/dev/fd"
+    low = max(256, len(os.listdir(folder)) + 128)
+    if hard != resource.RLIM_INFINITY and low >= hard:
+        pytest.skip(f"the hard limit ({hard}) leaves no room to raise from {low}")
+    seen = {}
+
+    def read_the_limit():
+        seen["soft"] = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
+
+    resource.setrlimit(resource.RLIMIT_NOFILE, (low, hard))
+    try:
+        steps, _servers, code = _start(monkeypatch, must_build=False, backend_starts=read_the_limit)
+    finally:
+        resource.setrlimit(resource.RLIMIT_NOFILE, original)
+
+    assert code == 0
+    assert "backend" in steps
+    assert seen["soft"] > low, f"the backend would start at {seen['soft']} open files, as low as {low}"
+    assert hard == resource.RLIM_INFINITY or seen["soft"] <= hard
 
 
 def test_a_failed_check_stops_the_frontend_it_started_first(monkeypatch):
