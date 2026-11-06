@@ -26,6 +26,25 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 
+#: Sends the dataflow's create (``POST /api/projects``) 4 s after the page
+#: asks for it, as a loaded server answers late: on run 42264242795 a create
+#: took 13 s on a busy CPU runner.
+_SLOW_CREATE_JS = r"""(() => {
+    const send = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+        const href = typeof input === "string" ? input : (input instanceof URL ? input.href : input.url);
+        const method = String((init && init.method) || (input instanceof Request ? input.method : "GET"));
+        const path = new URL(href, window.location.href).pathname;
+        if (method.toUpperCase() !== "POST" || !/\/api\/projects$/.test(path)) {
+            return send(input, init);
+        }
+        return new Promise((resolve, reject) => {
+            setTimeout(() => { send(input, init).then(resolve, reject); }, 4000);
+        });
+    };
+})()"""
+
+
 def test_project_save_via_menu(app_frontend: "FrontendPage", page):
     """Save via File > Save dataflow and verify the project appears on /projects.
 
@@ -39,12 +58,24 @@ def test_project_save_via_menu(app_frontend: "FrontendPage", page):
     new entry renders, which is the user-facing path that replaced the
     submenu.
     """
+    _save_from_the_file_menu_then_find_it(page, app_frontend.base_url, username="prjtester")
+
+
+def test_a_slow_create_from_the_file_menu_is_on_the_projects_page(app_frontend: "FrontendPage", page):
+    """A create the server answers late still lists the dataflow on /projects."""
+    page.add_init_script(_SLOW_CREATE_JS)
+    _save_from_the_file_menu_then_find_it(page, app_frontend.base_url, username="prjslow")
+
+
+def _save_from_the_file_menu_then_find_it(page, base_url: str, *, username: str) -> None:
+    """Sign up, save the new dataflow with File > Save dataflow, then find it
+    on /projects."""
     require_project_page()
     signup_and_enter_new_workflow(
         page,
-        app_frontend.base_url,
+        base_url,
         name="Project Tester",
-        username="prjtester",
+        username=username,
     )
 
     file_btn = page.get_by_role("button", name=re.compile("File"))
@@ -65,7 +96,7 @@ def test_project_save_via_menu(app_frontend: "FrontendPage", page):
     # the file-menu simplification). `FlowProvider` seeds `workflowName` to
     # "DefaultDataflow" and `handleSave` defaults to that name, so a project
     # row with that title must be present.
-    page.goto(f"{app_frontend.base_url}/projects")
+    page.goto(f"{base_url}/projects")
     page.wait_for_load_state("domcontentloaded")
     wait_for_projects_page(page, timeout=15000)
     expected = page.get_by_text("DefaultDataflow", exact=True)
