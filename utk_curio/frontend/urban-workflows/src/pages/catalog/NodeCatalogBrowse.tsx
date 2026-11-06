@@ -36,6 +36,7 @@ const PAGE_COPY: Record<PackageKind, {
   searchPlaceholder: string;
   sortAriaLabel: string;
   noneMatch: string;
+  loading: string;
   notFound: string;
 }> = {
   node: {
@@ -48,6 +49,7 @@ const PAGE_COPY: Record<PackageKind, {
     searchPlaceholder: "Search packages…",
     sortAriaLabel: "Sort packages",
     noneMatch: "No packages match the current filters.",
+    loading: "Loading packages…",
     notFound: "This package is not in your Node Catalog.",
   },
   model: {
@@ -60,6 +62,7 @@ const PAGE_COPY: Record<PackageKind, {
     searchPlaceholder: "Search models…",
     sortAriaLabel: "Sort models",
     noneMatch: "No models match the current filters.",
+    loading: "Loading models…",
     notFound: "This model is not in your Model Catalog.",
   },
 };
@@ -93,6 +96,8 @@ export const NodeCatalogBrowse: React.FC<NodeCatalogBrowseProps> = ({
     clearFilters,
     setSelectedDirName,
     loaded,
+    loadFailed,
+    retryLoad,
     busy,
     actionError,
     catalogPublishAllowed,
@@ -317,18 +322,41 @@ export const NodeCatalogBrowse: React.FC<NodeCatalogBrowseProps> = ({
             }}
           >
             {actionError}
-            <button
-              type="button"
-              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}
-              onClick={dismissActionError}
-            >
-              ×
-            </button>
+            <span>
+              {loadFailed ? (
+                <button
+                  type="button"
+                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}
+                  aria-label="Retry"
+                  data-tooltip="Retry"
+                  onClick={() => {
+                    // A load that fails again brings the banner back.
+                    dismissActionError();
+                    retryLoad();
+                  }}
+                >
+                  ↻
+                </button>
+              ) : null}
+              <button
+                type="button"
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}
+                onClick={dismissActionError}
+              >
+                ×
+              </button>
+            </span>
           </div>
         ) : null}
 
         {filtered.length === 0 ? (
-          <div className={browseStyles.empty}>{copy.noneMatch}</div>
+          // Only a listing that arrived can say nothing matches: before then
+          // the page is loading, and a failed load says so above.
+          loaded ? (
+            <div className={browseStyles.empty}>{copy.noneMatch}</div>
+          ) : loadFailed ? null : (
+            <div className={browseStyles.empty} aria-busy="true">{copy.loading}</div>
+          )
         ) : (
           <section className={browseStyles.cardGrid}>
             {filtered.map((pkg) => {

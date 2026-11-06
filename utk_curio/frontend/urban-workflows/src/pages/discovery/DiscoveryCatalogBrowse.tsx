@@ -288,7 +288,7 @@ export const DiscoveryCatalogBrowse: React.FC = () => {
               </div>
             ) : null}
           </div>
-        ) : !loading && sources.length === 0 ? (
+        ) : !loading && !error && sources.length === 0 ? (
           <div className={browseStyles.empty}>
             {provider || auth
               ? "No portal matches those filters."
