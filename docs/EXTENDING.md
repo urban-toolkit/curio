@@ -2,10 +2,10 @@
 
 Curio nodes are defined by **packages**, not by code. A package is a directory under [`packages/`](../packages/) that ships a `manifest.json` declaring one or more node *templates*. Each template references a **behavior key** that resolves to a React hook implementing the node's behaviour. Optionally, a behavior hook calls a backend route in Curio for work the browser and the sandbox cannot do.
 
-This guide walks through adding a new node package end-to-end. Its examples are code in this repository: [`curio.example-ui@1`](../packages/curio.example-ui@1/) for a node with its own React interface (manifest, behavior hook, `behaviorScript` bundle), [`model.scout.deep-umbra@1`](../packages/model.scout.deep-umbra@1/) for a code node with Python dependencies declared in `manifest.dependencies.python`, a module of its own and sandbox helpers, the built-in Spatial Join for a node that calls a backend route, and the [Discovery Catalog](DISCOVERY-CATALOG.md) for third-party APIs, per-account keys and long downloads. Easier packages can skip several of the steps below.
+This guide walks through adding a new node package end-to-end. Its examples are code in this repository: the package `python scripts/new_package.py <id> --with-ui` writes for a node with its own React interface (manifest, behavior hook, `behaviorScript` bundle), [`model.scout.deep-umbra@1`](../packages/model.scout.deep-umbra@1/) for a code node with Python dependencies declared in `manifest.dependencies.python`, a module of its own and sandbox helpers, the built-in Spatial Join for a node that calls a backend route, and the [Discovery Catalog](DISCOVERY-CATALOG.md) for third-party APIs, per-account keys and long downloads. Easier packages can skip several of the steps below.
 
 > [!TIP]
-> **Writing your first package?** Start with [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md), a task-ordered walkthrough from `git clone` to a working node, including the edit → rebuild → reload loop. Scaffold with `python scripts/new_package.py <id> [--with-ui]`, and read [`packages/curio.example-ui@1`](../packages/curio.example-ui@1/) for a minimal custom-UI node with no API keys or heavy dependencies. Come back here for the reference detail: backend blueprints, external services, dependency declaration, and the manifest's finer points.
+> **Writing your first package?** Start with [`docs/AUTHORING-NODES.md`](AUTHORING-NODES.md), a task-ordered walkthrough from `git clone` to a working node, including the edit → rebuild → reload loop. Scaffold with `python scripts/new_package.py <id> [--with-ui]`; with `--with-ui` it writes a minimal custom-UI node with no API keys or heavy dependencies. Come back here for the reference detail: backend blueprints, external services, dependency declaration, and the manifest's finer points.
 
 ## Every catalog is a folder of manifests
 
@@ -59,7 +59,7 @@ Three patterns cover essentially every node Curio ships:
 
 | Pattern | Examples | Backend? |
 |---|---|---|
-| **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-grammar`, `column-filter` (`curio.example-ui@1`) | None. The behavior hook does its work in the browser. |
+| **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-grammar`, a node made with `scripts/new_package.py --with-ui` | None. The behavior hook does its work in the browser. |
 | **Sandbox-Python** | `data-loading`, `computation-analysis`, `data-summary`, `accumulated-shadow` (`model.scout.deep-umbra@1`), `image-segmentation` (`model.curio.ddrnet23-slim@1`) | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` behavior. User-provided Python runs out-of-process. A package template does the same with its own starter file and Python dependencies (§4.2). |
 | **Backend route** | `spatial-join` (geopandas `sjoin`) | A route in Curio's backend that the behavior hook calls: Spatial Join's is one handler in [`api/routes.py`](../utk_curio/backend/app/api/routes.py) over a helper in [`common/spatial.py`](../utk_curio/backend/app/common/spatial.py). A feature with several routes gets its own Flask blueprint under [`utk_curio/backend/app/<feature>/`](../utk_curio/backend/app/) (§5). Right call when the node needs server-side work the sandbox can't reasonably do. |
 
@@ -297,14 +297,14 @@ Sandbox helpers follow the same rule: `curio_segment` imports `onnxruntime`, or 
 
 ## 4. Walked example: three nodes
 
-One node per pattern in §2: Column Filter (`curio.example-ui@1`) renders its own interface, Accumulated Shadow (`model.scout.deep-umbra@1`) is a code node in a package, and Spatial Join (`curio.builtin@1`) calls a backend route.
+One node per pattern in §2: My Node, the node `python scripts/new_package.py me.my-node --with-ui` writes, renders its own interface, Accumulated Shadow (`model.scout.deep-umbra@1`) is a code node in a package, and Spatial Join (`curio.builtin@1`) calls a backend route.
 
-### 4.1 A custom-UI template in [`packages/curio.example-ui@1/manifest.json`](../packages/curio.example-ui@1/manifest.json)
+### 4.1 A custom-UI template in the scaffold's `packages/me.my-node@1/manifest.json`
 
 ```jsonc
 "behaviorScript": "scripts/behaviors.js",
 "templates": [
-  { "id": "column-filter", "behavior": "column-filter", "editor": "none",
+  { "id": "my-node", "behavior": "my-node", "editor": "none",
     "inputPorts":  [{"cardinality":"1","types":["DATAFRAME"]}],
     "outputPorts": [{"cardinality":"1","types":["DATAFRAME"]}] }
 ]
@@ -379,16 +379,16 @@ A new feature of Curio, a built-in template among them, also gets a skill in [`s
 
 ### 4.4 Behavior hooks
 
-Column Filter's hook ships inside its package, at [`packages/curio.example-ui@1/sources/`](../packages/curio.example-ui@1/sources/); Spatial Join's lives with the built-ins in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/). Accumulated Shadow runs on the built-in `code` behavior and needs no hook of its own.
+My Node's hook ships inside its package, in `sources/`; Spatial Join's lives with the built-ins in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/). Accumulated Shadow runs on the built-in `code` behavior and needs no hook of its own.
 
-- [`columnFilterBehavior.tsx`](../packages/curio.example-ui@1/sources/columnFilterBehavior.tsx): reads `data.input` with `resolveInput`, which reads a sandbox artifact reference with `window.curio.fetchData` and passes an inline payload through; keeps the column, comparison and threshold in `useState`; sends the matching rows downstream with `data.outputCallback` and reports through `nodeState.setOutput`. It returns only `contentComponent`.
+- `sources/myNodeBehavior.tsx`, the hook the scaffold writes: reads `data.input` with `resolveInput`, which reads a sandbox artifact reference with `window.curio.fetchData` and passes an inline payload through; keeps the column picked in its body in `useState`; keeps that column as an output with `window.curio.storeOutput`, hands on the reference it answers with `data.outputCallback` and reports through `nodeState.setOutput`. It returns only `contentComponent`.
 - [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx): the only node here with two input ports, whose circles it draws with `handlesOverride`. Keeps what each circle holds apart (`data.portInputs`) and posts both inputs to `/spatial_join` (§4.5). Worth reading if you ever need a 2-input node.
 
-The package's hook registers from its bundle entry point, [`sources/index.tsx`](../packages/curio.example-ui@1/sources/index.tsx), through `window.curio`:
+The package's hook registers from its bundle entry point, `sources/index.tsx`, through `window.curio`:
 
 ```tsx
 function registerAll(curio: CurioGlobal) {
-  curio.registerBehavior('column-filter', useColumnFilterBehavior);
+  curio.registerBehavior('my-node', useMyNodeBehavior);
 }
 ```
 
@@ -406,10 +406,10 @@ Spatial Join's route is a single handler at the end of [`api/routes.py`](../utk_
 
 ### 4.6 Shipping the package
 
-The three packages are bundled in-repo under [`packages/`](../packages/). Seeding covers `curio.builtin@1` plus, when Curio starts with `--with-examples`, whatever the shipped example dataflows declare as dependencies (`example_dep_package_ids` in [`backend/app/packages/application/seeding.py`](../utk_curio/backend/app/packages/application/seeding.py)). Example 24 declares `model.scout.deep-umbra@1`, so Deep Umbra is installed with the examples. `curio.example-ui@1` is in neither set: users opt in by clicking **Add to project** in the catalog. Generally:
+Deep Umbra and Spatial Join's package are bundled in-repo under [`packages/`](../packages/); a package of your own goes there too. Seeding covers `curio.builtin@1` plus, when Curio starts with `--with-examples`, whatever the shipped example dataflows declare as dependencies (`example_dep_package_ids` in [`backend/app/packages/application/seeding.py`](../utk_curio/backend/app/packages/application/seeding.py)). Example 24 declares `model.scout.deep-umbra@1`, so Deep Umbra is installed with the examples. A package in neither set is one users opt in to by clicking **Add to project** in the catalog. Generally:
 
 - **Bundled-and-auto-installed** → `curio.builtin@1`, which every user must have, and, with `--with-examples`, the packages a shipped dataflow declares (`curio.weather@1`, `curio.media@1`, `curio.rasterization@1`, `curio.vega-lite@1`, and the model packages `model.curio.ddrnet23-slim@1`, `model.scout.deep-umbra@1` and `model.scout.weather-gnn@1`).
-- **Bundled-and-installable** → optional first-party packages like `curio.example-ui@1`, `ai.utk.uhvi@1`. Visible in the catalog without a remote registry roundtrip.
+- **Bundled-and-installable** → optional first-party packages like `ai.utk.uhvi@1`. Visible in the catalog without a remote registry roundtrip.
 - **Remote** → publishing through Curio's catalog endpoint, for third-party packages. Same manifest schema.
 
 ### 4.7 How behavior distribution works (and why)
@@ -418,7 +418,7 @@ When you install a package that ships its own custom node UIs, Curio needs to fi
 
 1. **The package directory contains both the manifest *and* a pre-built `scripts/behaviors.js`.** For first-party packages (in-repo), `npm run build` produces that JS via [`webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js). Third-party authors compile their own. The bundle lives under `scripts/` because that subdirectory is one of the archive validator's allowed top-level dirs (see [`archive.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/repositories/archive.py)), so the bundle survives the catalog install round-trip.
 2. **The manifest declares the bundle via `behaviorScript: "scripts/behaviors.js"`** (a top-level field, not per-template). The path is relative to the package directory; any allowed-subdirectory location works.
-3. **At app boot, the frontend's `loadInstalledPackages` fetches `/api/packages/<dirName>/file/scripts/behaviors.js` with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors**. (A plain `<script src>` can't carry an `Authorization` header, so Firefox's OpaqueResponseBlocking would reject the `require_auth` 401 response, and the inline-injection path bypasses that.) The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each behavior hook it ships. By the time `buildDescriptor` looks up `getBehavior('column-filter')`, the key is registered.
+3. **At app boot, the frontend's `loadInstalledPackages` fetches `/api/packages/<dirName>/file/scripts/behaviors.js` with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors**. (A plain `<script src>` can't carry an `Authorization` header, so Firefox's OpaqueResponseBlocking would reject the `require_auth` 401 response, and the inline-injection path bypasses that.) The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each behavior hook it ships. By the time `buildDescriptor` looks up `getBehavior('my-node')`, the key is registered.
 
    The bundle reads an upstream output with `window.curio.fetchData`, the function the canvas reads outputs with, which reads on the open dataflow's route. It reads its backend URL at runtime from `window.curio.backendUrl`, never from a build-time `process.env.BACKEND_URL`. Curio's main bundle exposes both in [`src/registry/index.ts`](../utk_curio/frontend/urban-workflows/src/registry/index.ts).
 4. **The behavior bundle externalises React, ReactDOM, ReactFlow, and `registerBehavior`** so it shares Curio's instances at runtime. Curio's main bundle exposes them as `window.React`, `window.ReactDOM`, `window.ReactFlow`, `window.curio.registerBehavior` ([`src/registry/index.ts`](../utk_curio/frontend/urban-workflows/src/registry/index.ts)). Without this, distinct React copies would break rules-of-hooks.
@@ -821,6 +821,7 @@ CURIO_EVAL_BASE_URL='<base URL>' CURIO_EVAL_API_KEY='<key>' CURIO_EVAL_MODEL='<m
   - **What it measures:** its `scope` input, `auto` by default, which is what the branch changes against main ([`ci_skill_eval_scope.py`](../scripts/ci_skill_eval_scope.py)):
     - a changed skill: its test cases, three runs both ways, and its trigger queries too when the skill is new or its description or its queries changed;
     - a core skill, or the preamble that places it: every skill's test cases, three runs both ways;
+    - a page of the base entry a skill's body renders, by its `{{include:<page>}}` or a marker whose field reads it (autark's `{{autk.grammar}}` reads `autark-grammar.md`): that skill's test cases, three runs both ways;
     - agent text or code: every other skill's first test case, once, with the skill;
     - anything else: nothing.
 

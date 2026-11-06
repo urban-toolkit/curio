@@ -67,9 +67,9 @@ describe("packagesApi.download", () => {
       blob: async () => new Blob(["PK"]),
     }) as unknown as typeof fetch;
 
-    return packagesApi.download("curio.example-ui@1").then(() => {
+    return packagesApi.download("test.ui-node@1").then(() => {
       expect(clicked).toHaveLength(1);
-      expect(clicked[0].download).toBe("curio.example-ui@1.curio.zip");
+      expect(clicked[0].download).toBe("test.ui-node@1.curio.zip");
       expect(clicked[0].href).toBe("blob:archive-url");
       expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:archive-url");
     });

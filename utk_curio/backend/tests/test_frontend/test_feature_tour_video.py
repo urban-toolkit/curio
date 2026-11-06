@@ -78,6 +78,8 @@ from playwright.sync_api import expect
 from .test_scenario_drop_e2e import _toast
 from .test_scenarios_canvas_e2e import _box
 from .test_selection_tags_e2e import _drag_selection_tag_to_line_end, _open_tab, _panel
+from utk_curio.backend.tests._support.ui_test_package import UI_TEST_PACKAGE, UI_TEST_PACKAGE_NAME
+
 from .tour import REPO_ROOT, VIDEO_SIZE, Tour, finalize_video, out_dir, speed
 from .utils import (
     _post_json,
@@ -90,6 +92,7 @@ from .utils import (
     CANVAS_DROP_TARGET,
     _DRAG_TO_CANVAS_JS,
     canvas_nodes,
+    catalog_test_package,
     edge_client_point,
     close_tools_palette,
     connect_nodes,
@@ -133,9 +136,10 @@ DATASET_ID = "data.utk.acs-neighborhood-profile"
 DATASET_TITLE = "ACS Neighborhood Profile"
 
 # The only package a tour may install: it declares no python dependencies, so
-# nothing shells out to pip mid-recording.
-PKG_DIR = "curio.example-ui@1"
-PKG_NAME = "Example: Custom UI Node"
+# nothing shells out to pip mid-recording. A test package, planted in the
+# catalog for its scene and taken out after it.
+PKG_DIR = UI_TEST_PACKAGE
+PKG_NAME = UI_TEST_PACKAGE_NAME
 
 DRAWER_DATA = '[data-curio-dataset-catalog-drawer="true"]'
 DRAWER_NODES = '[data-curio-node-catalog-drawer="true"]'
@@ -1221,6 +1225,11 @@ def scene_lineage(ctx: Ctx) -> None:
 
 
 def scene_node_catalog(ctx: Ctx) -> None:
+    with catalog_test_package(ctx.backend, PKG_DIR):
+        _add_a_package_from_the_node_catalog(ctx)
+
+
+def _add_a_package_from_the_node_catalog(ctx: Ctx) -> None:
     page, tour = ctx.page, ctx.tour
     tour.chapter(
         "07", "The Node Catalog",
@@ -1241,7 +1250,7 @@ def scene_node_catalog(ctx: Ctx) -> None:
         hold=3000,
     )
     search = drawer.get_by_placeholder("Search packages, publishers, tags…")
-    tour.type_into(search, "example", delay=90)
+    tour.type_into(search, PKG_NAME, delay=90)
     tour.beat(1200)
 
     card = drawer.locator(f'article[data-pkg-dir="{PKG_DIR}"]')

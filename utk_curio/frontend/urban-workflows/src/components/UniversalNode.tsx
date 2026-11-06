@@ -51,8 +51,8 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 // `data.nodeType` does (Save-As rebinds the node to a new package kind), and it
 // can change while the type stays. A full load, by a dataflow's link or a
 // reload, builds the descriptors before the bundle of a package that ships its
-// own behavior has run, so a node of that package (the Column Filter of
-// `curio.example-ui@1`) mounts with the generic package hook, and the rebuild
+// own behavior has run, so a node of that package (one made with
+// `scripts/new_package.py --with-ui`) mounts with the generic package hook, and the rebuild
 // that follows the bundle's registration hands the same type the package's
 // hook. Keying the inner body by its type and by the hook it calls
 // (`behaviorHookId`) remounts it in both cases, so the new hook chain starts

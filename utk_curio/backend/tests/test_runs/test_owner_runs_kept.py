@@ -436,9 +436,10 @@ def test_a_run_reading_a_wrapper_of_the_dataflows_own_outputs_is_kept(client, db
 def test_the_owners_sign_in_reads_a_kept_output_on_the_routes_that_name_no_dataflow(
     client, db, user_and_token, sandbox, route,
 ):
-    """A package's node reads its input on ``/get``, as ``curio.example-ui``'s
-    Column Filter does: the owner's sign-in, a later one too, reads what
-    their runs kept under the session that made it."""
+    """A package's node reads its input on ``/get``, as a node made with
+    ``scripts/new_package.py --with-ui`` does on a host without
+    ``window.curio.fetchData``: the owner's sign-in, a later one too, reads
+    what their runs kept under the session that made it."""
     user, token = user_and_token
     project_id = create_project(client, token, name="Package reads")
     _play(client, token, project_id, "a")

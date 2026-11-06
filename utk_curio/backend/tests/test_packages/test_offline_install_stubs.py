@@ -9,6 +9,8 @@ staged wheel is what pip installs with no index, everything is put back
 afterwards, nothing but a test library or a test package gets through, and
 every test package is one the catalog accepts, with a library of its own. A
 test model package's weights travel in base64 and land under ``models/``.
+``test.ui-node@1``, the test package with no library, plants the same way,
+with its bundle.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from utk_curio.backend.tests._support.offline_wheels import (
     build_wheel,
     wheel_file_name,
 )
+from utk_curio.backend.tests._support.ui_test_package import UI_TEST_PACKAGE
 
 LIB = WheelLibrary(
     dist="curio-wheelhouse-unit",
@@ -34,9 +37,13 @@ LIB = WheelLibrary(
 )
 PIP_KEYS = ("PIP_NO_INDEX", "PIP_FIND_LINKS", "PIP_DISABLE_PIP_VERSION_CHECK")
 TEST_PACKAGES = Path(__file__).resolve().parents[1] / "test_frontend" / "packages"
+#: Every test package the e2e suite plants.
+ALL_TEST_PACKAGE_DIRS = sorted(path.name for path in TEST_PACKAGES.iterdir() if path.is_dir())
 #: One test package per e2e test of an install path, each with its own library.
-TEST_PACKAGE_DIRS = sorted(path.name for path in TEST_PACKAGES.iterdir() if path.is_dir())
+TEST_PACKAGE_DIRS = [name for name in ALL_TEST_PACKAGE_DIRS if name.startswith("test.wheelhouse-")]
 TEST_PACKAGE_DIR = "test.wheelhouse-probe@1"
+#: The file the plant route writes itself, which no plant sends.
+INTEGRITY_FILE = "integrity.json"
 
 
 def _post(client, route: str, **body):
@@ -55,12 +62,14 @@ def _wheel(library: WheelLibrary = LIB) -> dict:
 
 
 def _test_package_files(dir_name: str = TEST_PACKAGE_DIR) -> dict:
-    """A test package's text files: everything but a model package's weights."""
+    """A test package's text files: everything but a model package's weights
+    and its ``integrity.json``, which the route writes for what it planted."""
     root = TEST_PACKAGES / dir_name
     return {
         path.relative_to(root).as_posix(): path.read_text(encoding="utf-8")
         for path in sorted(root.rglob("*"))
         if path.is_file() and not _is_weight(root, path)
+        and path.relative_to(root).as_posix() != INTEGRITY_FILE
     }
 
 
@@ -169,6 +178,33 @@ def test_the_e2e_tests_have_a_test_package_each():
         "test.wheelhouse-pair@1",
         "test.wheelhouse-probe@1",
     ]
+    # Beside them, the one test package with no library: the node that draws
+    # its own interface.
+    assert ALL_TEST_PACKAGE_DIRS == sorted([*TEST_PACKAGE_DIRS, UI_TEST_PACKAGE])
+
+
+def test_the_ui_test_package_plants_with_its_bundle_and_no_library_and_is_removed(client, catalog):
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+
+    planted = _post(client, "catalog-package", action="plant", dirName=UI_TEST_PACKAGE,
+                    files=_test_package_files(UI_TEST_PACKAGE))
+
+    assert planted.status_code == 200, planted.get_json()
+    assert sorted(planted.get_json()["files"]) == sorted(_test_package_files(UI_TEST_PACKAGE))
+    manifest = load_package_manifest(catalog / UI_TEST_PACKAGE)
+    assert manifest.dir_name == UI_TEST_PACKAGE
+    assert manifest.python_deps == {}
+    raw = json.loads((catalog / UI_TEST_PACKAGE / "manifest.json").read_text(encoding="utf-8"))
+    bundle = catalog / UI_TEST_PACKAGE / raw["behaviorScript"]
+    assert bundle.read_text(encoding="utf-8") == (TEST_PACKAGES / UI_TEST_PACKAGE / raw["behaviorScript"]).read_text(
+        encoding="utf-8")
+    # The route hashed what it planted, which is the package as committed.
+    assert json.loads((catalog / UI_TEST_PACKAGE / INTEGRITY_FILE).read_text(encoding="utf-8")) == json.loads(
+        (TEST_PACKAGES / UI_TEST_PACKAGE / INTEGRITY_FILE).read_text(encoding="utf-8"))
+
+    removed = _post(client, "catalog-package", action="remove", dirName=UI_TEST_PACKAGE)
+
+    assert removed.get_json() == {"removed": UI_TEST_PACKAGE, "present": False}
 
 
 @pytest.mark.parametrize("dir_name", TEST_PACKAGE_DIRS)

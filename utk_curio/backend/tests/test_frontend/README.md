@@ -706,7 +706,11 @@ content: the Node Catalog reads `<repo_root>/packages/`, the Data Catalog reads
 reads the shipped agents in `<repo_root>/agents/`. A fresh test user already
 sees five packages, three datasets and four agents.
 
-**Only `curio.example-ui@1` may be installed in a test.** It declares no python
+**Only `test.ui-node@1` may be installed in a test.** It is a test package
+(`packages/test.ui-node@1/`, made with `scripts/new_package.py --with-ui`, its
+bundle built by `npm run build:packages`), which the `ui_node_in_catalog`
+fixture plants in the backend's catalog for one test and takes out after
+(`utils/offline_install.py`'s `catalog_test_package`). It declares no python
 dependencies, so nothing shells out to pip. `curio.weather@1`,
 `ai.utk.uhvi@1` and `model.curio.ddrnet23-slim@1` pull rasterio / geopandas /
 **torch** through a synchronous call capped at 30 minutes - and worse, the

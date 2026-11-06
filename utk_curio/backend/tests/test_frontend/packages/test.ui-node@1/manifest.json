@@ -1,32 +1,31 @@
 {
   "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
-  "id": "curio.example-ui",
-  "name": "Example: Custom UI Node",
+  "id": "test.ui-node",
+  "name": "UI Node",
   "publisher": "Curio",
-  "description": "A minimal worked example of a node that renders its own React interface instead of a code editor. Filters a DataFrame's rows by a numeric threshold you pick from controls in the node body. No API keys, no Python dependencies — read it, fork it, replace the UI with your own.",
+  "description": "A test package: one node that draws its own interface in place of a code editor, made with scripts/new_package.py --with-ui. No Python libraries.",
   "version": "1.0.0",
   "license": "MIT",
   "compatibility": {
     "curioRuntime": ">=0.5.0",
     "major": 1
   },
-  "createdAt": "2026-08-22T00:00:00Z",
+  "createdAt": "2026-11-06T00:18:52Z",
   "dependencies": {
     "js": {},
     "packages": {},
     "python": {}
   },
   "permissions": [],
-  "behaviorScript": "scripts/behaviors.js",
   "templates": [
     {
-      "id": "column-filter",
-      "label": "Column Filter",
-      "description": "Pick a numeric column, a comparison and a threshold from controls in the node body; sends the matching rows downstream. A reference implementation for custom-UI nodes.",
+      "id": "ui-node",
+      "label": "UI Node",
+      "description": "Lists the columns of the DataFrame on its input; Send this column downstream keeps the chosen column as its output.",
       "category": "computation",
       "engine": "python",
       "editor": "none",
-      "behavior": "column-filter",
+      "behavior": "ui-node",
       "iconRef": "fa-solid:cube",
       "hasCode": false,
       "hasWidgets": false,
@@ -48,5 +47,6 @@
         }
       ]
     }
-  ]
+  ],
+  "behaviorScript": "scripts/behaviors.js"
 }

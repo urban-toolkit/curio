@@ -2,15 +2,13 @@
 
 ``parseOutput`` is the only thing that decides what a ``dataframe`` payload
 looks like to the browser, and every custom-UI node that reads one depends on
-the answer. Nothing asserted it, so when the reference example package
-(``curio.example-ui@1``'s Column Filter) was written against the *other*
-plausible encoding — a row map, which a bare ``DataFrame.to_dict()`` produces —
-the mismatch was invisible: ``asFrame`` returned ``None``, the node rendered its
-"connect something upstream" hint forever, and nothing threw.
+the answer. A node written against the *other* plausible encoding, a row map,
+which a bare ``DataFrame.to_dict()`` produces, finds no frame: it renders its
+"connect something upstream" hint forever, and nothing throws.
 
-The node now accepts both encodings. This file pins the one Curio actually
-sends, so a change here fails loudly instead of silently emptying every
-custom-UI node that consumes a DataFrame.
+The ``--with-ui`` scaffold (``scripts/new_package.py``) accepts both encodings.
+This file pins the one Curio actually sends, so a change here fails loudly
+instead of silently emptying every custom-UI node that consumes a DataFrame.
 """
 import json
 

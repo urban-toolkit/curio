@@ -1373,7 +1373,7 @@ jobs:
       # 27 to 29: a forked child imports torch, whose CUDA libraries map only under the
       # stack's --exec-memory-mb, and runs it on this runner's CPU. Not 30: its Autark
       # map needs WebGPU, which a CPU runner's browser lacks.
-      ISOLATED_WORKFLOWS: data-pool-dataframe.json,data-pool-geodataframe.json,multi-input.json,vega.json,netcdf-hourly-rain.json,21-storage-photos-and-videos.json,22-storage-audio-recordings.json,27-pytorch-shape-classifier.json,28-pytorch-training-on-the-gpu.json,29-pytorch-street-photos.json
+      ISOLATED_WORKFLOWS: data-pool-dataframe.json,data-pool-geodataframe.json,multi-input.json,vega.json,netcdf-hourly-rain.json,21-storage-photos-and-videos.json,22-storage-audio-recordings.json,filter-rows-with-widgets.json,27-pytorch-shape-classifier.json,28-pytorch-training-on-the-gpu.json,29-pytorch-street-photos.json
       CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/ci-report/failures
       CURIO_E2E_TRACE: "1"
     steps:

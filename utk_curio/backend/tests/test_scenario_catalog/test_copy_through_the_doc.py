@@ -8,7 +8,17 @@ from __future__ import annotations
 
 import pytest
 
-from .test_copy import BASELINE, _copy, _node, _save_outputs, _source_and_target, _spec
+from utk_curio.backend.tests._support.ui_test_package import UI_TEST_NODE_TYPE, UI_TEST_PACKAGE
+
+from .test_copy import (  # noqa: F401 - ui_package_in_the_catalog is a fixture
+    BASELINE,
+    _copy,
+    _node,
+    _save_outputs,
+    _source_and_target,
+    _spec,
+    ui_package_in_the_catalog,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -20,24 +30,24 @@ def _rooms():
     room_state.reset_for_tests()
 
 
-def test_a_drops_package_reaches_a_tab_of_its_target(app, client, user_and_token):
+def test_a_drops_package_reaches_a_tab_of_its_target(app, client, user_and_token, ui_package_in_the_catalog):
     from utk_curio.backend.tests.test_collaboration._ydoc_client import synced_tab
 
     _, token = user_and_token
     nodes = [
         _node("load", "data-loading", "return 1"),
-        {"id": "a", "type": "curio.example-ui/column-filter@1", "content": "return input_0", "x": 300, "y": 0},
+        {"id": "a", "type": f"{UI_TEST_NODE_TYPE}@1", "content": "return input_0", "x": 300, "y": 0},
     ]
     edges = [{"id": "e1", "source": "load", "target": "a", "sourceHandle": "out", "targetHandle": "in"}]
     source, target = _source_and_target(client, token, _spec("Shadows", [{**BASELINE, "nodes": ["a"]}], nodes, edges))
     _save_outputs(client, token, source, {"load": "id\n1\n"})
     tab = synced_tab(app, token, target)
-    assert "curio.example-ui@1" not in (tab.dataflow().get("packages") or [])
+    assert UI_TEST_PACKAGE not in (tab.dataflow().get("packages") or [])
 
     resp = _copy(client, token, source, target, [{"source": "load", "node": "loader-1"}])
 
     assert resp.status_code == 200, resp.get_data(as_text=True)
-    assert resp.get_json()["added"] == ["curio.example-ui@1"]
-    assert "curio.example-ui@1" in (tab.dataflow().get("packages") or []), (
+    assert resp.get_json()["added"] == [UI_TEST_PACKAGE]
+    assert UI_TEST_PACKAGE in (tab.dataflow().get("packages") or []), (
         "the package the drop added never reached the target's tab"
     )

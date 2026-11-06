@@ -1,6 +1,6 @@
 """``/api/testing/package-store``: the plant the #194 e2e stands an upgrade on.
 
-``test_package_refresh_e2e.py`` installs ``curio.example-ui@1`` from the Node
+``test_package_refresh_e2e.py`` installs ``test.ui-node@1`` from the Node
 Catalog, asks this route to make the store copy stale, and checks that reopening
 the dataflow brings the catalog's copy back. Once in five it failed at the plant
 itself, "planting staleness did not change the hash" (repeat run 37673654766):
@@ -35,9 +35,10 @@ from utk_curio.backend.app.packages.infrastructure.locks import (
 from utk_curio.backend.app.packages.repositories import catalog_dir, seed_state
 from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 from utk_curio.backend.app.projects.services import _user_dir_key
+from utk_curio.backend.tests._support.ui_test_package import UI_TEST_PACKAGE, ui_test_package_in
 
-#: The package and file the e2e plants in: the file the #194 fix changed.
-PKG_DIR = "curio.example-ui@1"
+#: The package and file the e2e plants in: the package's behavior bundle.
+PKG_DIR = UI_TEST_PACKAGE
 PKG_FILE = "scripts/behaviors.js"
 
 
@@ -51,14 +52,16 @@ def _post(client, **body):
 
 @pytest.fixture()
 def installed(user_and_token):
-    """``curio.example-ui@1`` installed from the catalog, as the drawer leaves it.
+    """``test.ui-node@1`` installed from the catalog, as the drawer leaves it,
+    and in the catalog for the test, as the e2e plants it.
 
     Answers ``(username, store key)``.
     """
     user, _token = user_and_token
     user_key = _user_dir_key(user)
-    install_package_from_directory(user_key, catalog_dir.catalog_root() / PKG_DIR)
-    return user.username, user_key
+    with ui_test_package_in(catalog_dir.catalog_root()) as in_the_catalog:
+        install_package_from_directory(user_key, in_the_catalog)
+        yield user.username, user_key
 
 
 def _store_snapshot(user_key: str) -> list[tuple[str, int, int]]:

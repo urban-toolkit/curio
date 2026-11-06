@@ -16,7 +16,7 @@ There are two kinds of node, and they are very different amounts of work:
 | You write | Python | A React hook (TypeScript) |
 | Build step | none | `npm run build:packages` |
 | Authored from | the canvas, no restart | files in `packages/`, rebuild + reload |
-| Example | [`curio.weather@1`](../packages/curio.weather@1/) | [`curio.example-ui@1`](../packages/curio.example-ui@1/) |
+| Example | [`curio.weather@1`](../packages/curio.weather@1/) | the scaffold: `python scripts/new_package.py <id> --with-ui` |
 
 Start with Tier 1 even if you know you want Tier 2. It gets you a working
 package in ten minutes and teaches the manifest, which Tier 2 also needs.
@@ -405,11 +405,6 @@ documented in [ARCHITECTURE.md § Behavior Hooks](ARCHITECTURE.md#behavior-hooks
 and typed in
 [`registry/types.ts`](../utk_curio/frontend/urban-workflows/src/registry/types.ts).
 
-Read [`packages/curio.example-ui@1`](../packages/curio.example-ui@1/) before
-writing your own. It is a complete, minimal custom-UI node: a column filter in
-around 150 lines of hook, with no API keys and no Python dependencies, and it
-is meant to be forked.
-
 ---
 
 ## Reading upstream data
@@ -437,10 +432,9 @@ Curio publishes it.
 
 A node that only handles the inline shape appears to work when you wire it to
 another custom-UI node, then does nothing at all behind a Data Loading node.
-`resolveInput` in
-[`columnFilterBehavior.tsx`](../packages/curio.example-ui@1/sources/columnFilterBehavior.tsx)
-handles both shapes plus the generic envelopes the sandbox sometimes wraps
-around an artifact; copy it.
+`resolveInput` in the hook the `--with-ui` scaffold writes
+(`sources/<name>Behavior.tsx`) handles both shapes plus the generic envelopes
+the sandbox sometimes wraps around an artifact; keep it.
 
 When your node calls the backend itself, read its address from
 `window.curio.backendUrl`, not `process.env.BACKEND_URL`. The env var is

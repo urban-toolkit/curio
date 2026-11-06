@@ -190,7 +190,6 @@ VEGA_SPEC = json.dumps(
 #: the module before and after. Backend, sandbox and this pytest process all run
 #: from the same interpreter, so find_spec here sees what a node would see.
 PACKAGE_DEPS: dict[str, tuple[str, ...]] = {
-    "curio.example-ui@1": (),
     "curio.weather@1": ("pythermalcomfort", "rasterio", "rasterstats"),
     "ai.utk.uhvi@1": ("rasterio",),
     "model.curio.ddrnet23-slim@1": ("onnxruntime",),

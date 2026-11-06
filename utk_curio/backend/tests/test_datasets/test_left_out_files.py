@@ -76,6 +76,9 @@ CLONE = "https://github.com/urban-toolkit/curio"
 #: A built frontend: its bundles, and the source maps beside them.
 DIST = "utk_curio/frontend/urban-workflows/dist"
 BUILT = [f"{DIST}/index.html", f"{DIST}/main.js", f"{DIST}/main.js.map", f"{DIST}/vendors.js", f"{DIST}/vendors.js.map"]
+#: A package with its own interface, its bundle and source map built by ``npm
+#: run build:packages`` where its ``behaviorScript`` says.
+PACKAGE_BUNDLE = ["packages/me.heatmap@1/scripts/behaviors.js", "packages/me.heatmap@1/scripts/behaviors.js.map"]
 INFRASTRUCTURE = "utk_curio/backend/app/datasets/infrastructure"
 #: What the release runs to leave the files out and record them
 #: (``publish-pip-to-pypi.yml``), and the module that downloads them.
@@ -189,8 +192,8 @@ def test_manifest_in_and_setup_py_leave_out_exactly_the_listed_files_and_the_fro
     repository's ``package.json`` and ``package-lock.json`` (``setup.py``
     copies them into the wheel), and a built frontend: the listed files and
     the frontend's source maps stay out, and nothing else does. A package's
-    own source map ships: ``curio.example-ui@1`` names it in its
-    ``integrity.json``."""
+    own source map ships, as ``npm run build:packages`` writes it beside the
+    package's bundle, which names it in its ``integrity.json``."""
     from setuptools._distutils.filelist import FileList
 
     monkeypatch.chdir(REPO)
@@ -199,7 +202,7 @@ def test_manifest_in_and_setup_py_leave_out_exactly_the_listed_files_and_the_fro
         for folder in ("datasets", "models", "packages")
         for path in (REPO / folder).rglob("*")
         if path.is_file()
-    )
+    ) + PACKAGE_BUNDLE
     shipped_beside_the_code = [f"{INFRASTRUCTURE}/left_out_files.record.json"]
     node_packages = ["package.json", "package-lock.json"]
     everything = set(repository) | set(BUILT) | set(shipped_beside_the_code) | set(node_packages)
@@ -219,7 +222,7 @@ def test_manifest_in_and_setup_py_leave_out_exactly_the_listed_files_and_the_fro
         sorted(shipped - (everything - left_out - source_maps)),
         sorted((everything - left_out - source_maps) - shipped),
     )
-    assert "packages/curio.example-ui@1/scripts/behaviors.js.map" in shipped
+    assert set(PACKAGE_BUNDLE) <= shipped, sorted(set(PACKAGE_BUNDLE) - shipped)
 
 
 def test_the_release_records_each_listed_file_with_its_size_and_sha256(tmp_path):

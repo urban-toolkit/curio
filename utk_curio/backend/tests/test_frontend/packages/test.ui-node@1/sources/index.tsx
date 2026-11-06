@@ -8,17 +8,17 @@
  * template's `behavior` field in manifest.json.
  *
  * React, ReactDOM and ReactFlow are externalised to `window` so this bundle
- * shares Curio's own instances — two copies of React break every hook.
+ * shares Curio's own instances: two copies of React break every hook.
  */
 
-import { useColumnFilterBehavior } from './columnFilterBehavior';
+import { useUiNodeBehavior } from './uiNodeBehavior';
 
 type CurioGlobal = {
   registerBehavior: (key: string, hook: any) => void;
 };
 
 function registerAll(curio: CurioGlobal) {
-  curio.registerBehavior('column-filter', useColumnFilterBehavior);
+  curio.registerBehavior('ui-node', useUiNodeBehavior);
 }
 
 if (typeof window !== 'undefined') {

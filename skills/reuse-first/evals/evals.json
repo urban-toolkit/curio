@@ -18,11 +18,12 @@
     {
       "id": 2,
       "agent": "agent.curio.node-builder@1",
-      "prompt": "After the transformation that keeps the top 10 zip codes, I want a node where I pick a column, a comparison and a threshold from controls drawn right in the node itself, with no code editor, and only the matching rows go on.",
-      "expected_output": "The ladder's second rung: the Nodes Catalog's Example: Custom UI Node package (curio.example-ui@1) holds Column Filter, which does exactly this, so the answer proposes package.install of curio.example-ui@1 with a reason naming the filter step, and writes no package of its own.",
+      "dataflow": "docs/examples/dataflows/scenarios.json",
+      "prompt": "Chart the two scenarios' mean shadow length as a lollipop per scenario, a stem from zero and a dot, each in its scenario's color, with each scenario's shadow step on an input of its own. The column and how its rows combine should be widgets I set, with no Vega-Lite spec for me to write.",
+      "expected_output": "The ladder's second rung: the Nodes Catalog's Vega-Lite package (curio.vega-lite@1) holds Lollipops, a chart that takes each scenario on an input of its own, draws it in its box's color and plots the column its widgets name, combined as its Combine widget says, with no spec to write, so the answer proposes package.install of curio.vega-lite@1 with a reason naming the chart step, and writes no package of its own.",
       "assertions": [
-        "The answer proposes package.install with dirName curio.example-ui@1.",
-        "The install's reason names the step that needs it: filtering the top zip codes' rows from controls in the node.",
+        "The answer proposes package.install with dirName curio.vega-lite@1.",
+        "The install's reason names the step that needs it: the lollipop chart of the two scenarios' mean shadow lengths.",
         "The answer drafts no package of its own (no package.draft.apply) and asks for none to be written.",
         "The answer does not claim the package is installed or the node exists before the user applies the install."
       ]
