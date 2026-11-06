@@ -3,8 +3,10 @@ import React, { useCallback, useState } from "react";
 import {
   fetchMonitor,
   fetchMonitorErrors,
+  fetchMonitorLlm,
   fetchMonitorStorage,
   type MonitorErrorsPayload,
+  type MonitorLlmPayload,
   type MonitorPayload,
   type MonitorStoragePayload,
 } from "../../api/monitorApi";
@@ -17,6 +19,7 @@ import {
   toMarkdown,
 } from "../../utils/diagnosticsBundle";
 import ErrorLogPanel from "./ErrorLogPanel";
+import { LlmTokensSection } from "./LlmTokensSection";
 import { DurationHistogram, StoreSizeHistogram } from "./MonitorCharts";
 import { Chip, Meter, StatTile } from "./StatTile";
 import styles from "./MonitorPage.module.css";
@@ -25,12 +28,14 @@ const FAST_POLL_MS = 5000;
 // The storage walk is the one expensive call; the backend caches it for the
 // same 60s, so polling faster would only ever return the same cached body.
 const STORAGE_POLL_MS = 60000;
+// Hourly rows: the backend holds the body 60s unless a request changed it.
+const LLM_POLL_MS = 60000;
 
 /**
  * What the monitor shows: the toolbar, the deployment, hardware, execution,
- * accounts and storage sections, and the recent errors. The /monitor page and
- * the canvas's Monitor drawer both render this, and it polls only while it is
- * mounted.
+ * LLM tokens, accounts and storage sections, and the recent errors. The
+ * /monitor page and the canvas's Monitor drawer both render this, and it polls
+ * only while it is mounted.
  */
 export const MonitorContent: React.FC = () => {
   const [paused, setPaused] = useState(false);
@@ -47,11 +52,13 @@ export const MonitorContent: React.FC = () => {
     STORAGE_POLL_MS,
     paused
   );
+  const llm = useMonitorPoll<MonitorLlmPayload>(fetchMonitorLlm, LLM_POLL_MS, paused);
 
   const bundle = {
     monitor: monitor.data,
     storage: storage.data,
     errors: errors.data,
+    llm: llm.data,
   };
 
   const onCopy = useCallback(async () => {
@@ -341,6 +348,13 @@ export const MonitorContent: React.FC = () => {
             )}
           </div>
         </div>
+      </section>
+
+      <section className={styles.section} aria-labelledby="mon-llm">
+        <h2 id="mon-llm" className={styles.heading}>
+          LLM tokens
+        </h2>
+        <LlmTokensSection payload={llm.data} />
       </section>
 
       <section className={styles.section} aria-labelledby="mon-accounts">

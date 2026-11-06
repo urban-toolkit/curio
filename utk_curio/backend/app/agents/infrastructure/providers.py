@@ -24,7 +24,11 @@ slots is sent as its text, as it always was.
 **Usage.** ``inputTokens`` counts every input token, cached or not, on every
 provider (Anthropic reports cache reads and writes apart from its input
 count). ``cacheReadTokens`` and ``cacheWriteTokens`` are added when the
-provider reports them.
+provider reports them. Each request's usage also reaches the monitor once,
+right after the request, by its model and whether it ran on this Curio's
+endpoint (:func:`_counted`, ``monitor/llm_tokens.py``): a request asked again
+counts each time it was asked, a stream its caller stopped counts what its
+provider had reported, and the scripted provider counts what it scripted.
 
 **Native tools.** ``tools`` offers the model tools, each ``{name, description,
 parameters}`` (``tools.native_tools``), and ``tool_choice`` is ``"auto"`` or
@@ -133,6 +137,7 @@ import uuid
 from dataclasses import dataclass, field, replace
 
 from utk_curio.backend.app.agents.domain import agent_text
+from utk_curio.backend.app.monitor import llm_tokens as monitor_llm_tokens
 
 
 class NativeToolsRefused(RuntimeError):
@@ -771,6 +776,19 @@ def _summed_usage(usage_out: dict | None, sinks: list[dict]) -> None:
     usage_out.update(total)
 
 
+def _counted(config: ProviderConfig, sink: dict) -> None:
+    """One request's usage on the monitor (``monitor/llm_tokens.py``),
+    counted once, as soon as the request ends: what its provider reported,
+    a failed or stopped request's included. A request whose provider
+    reported no usage counts nothing. Never raises."""
+    if "inputTokens" not in sink:
+        return
+    monitor_llm_tokens.record(
+        config.model, curio=config.on_deployment,
+        input_tokens=sink.get("inputTokens"), output_tokens=sink.get("outputTokens"),
+    )
+
+
 def _asked_with_room(config: ProviderConfig, max_output_tokens, thinking_tokens, usage_out, ask) -> ChatTurn:
     """A whole turn, asked through ``ask(limit, usage_sink)``, with the room
     a model that thinks gets (see the module docstring)."""
@@ -784,12 +802,13 @@ def _asked_with_room(config: ProviderConfig, max_output_tokens, thinking_tokens,
         try:
             turn = ask(limit, sink)
         except Exception as exc:
-            _summed_usage(usage_out, sinks)
             if room and _status_code_of(exc) in (400, 422):
                 room, refused = 0, True
                 continue
             raise
-        _summed_usage(usage_out, sinks)
+        finally:
+            _summed_usage(usage_out, sinks)
+            _counted(config, sink)
         if refused:
             _note_room_refused(config)
         if turn.thinking:
@@ -825,14 +844,18 @@ def _streamed_with_room(config: ProviderConfig, max_output_tokens, thinking_toke
                     wrote = True
                 yield event
         except Exception as exc:
-            _summed_usage(usage_out, sinks)
             if room and not wrote and _status_code_of(exc) in (400, 422):
                 room, refused = 0, True
                 continue
             raise
         finally:
-            events.close()
-        _summed_usage(usage_out, sinks)
+            # A caller that stops reading ends the stream at its last piece:
+            # what the provider reported by then is the turn's and the monitor's.
+            try:
+                events.close()
+            finally:
+                _summed_usage(usage_out, sinks)
+                _counted(config, sink)
         if refused:
             _note_room_refused(config)
         if ended.get("thinking"):
@@ -901,10 +924,14 @@ def _run_chat_turn(
         # deployment even if a config names it. See agents/testing_provider.py.
         from utk_curio.backend.app.agents.infrastructure.testing_provider import run_scripted_turn
 
-        return run_scripted_turn(
-            messages, usage_out=usage_out, config=config, tools=tools, tool_choice=tool_choice,
+        sink: dict = {}
+        turn = run_scripted_turn(
+            messages, usage_out=sink, config=config, tools=tools, tool_choice=tool_choice,
             reply_schema=reply_schema,
         )
+        _summed_usage(usage_out, [sink])
+        _counted(config, sink)
+        return turn
     return _asked_with_room(
         config, max_output_tokens, thinking_tokens, usage_out,
         lambda limit, sink: _one_turn(config, messages, limit, sink, tools, tool_choice, reply_schema),
@@ -1302,9 +1329,12 @@ def _stream_chat_turn(config, messages, max_output_tokens, usage_out, tools, too
         # is a deterministic sequence of deltas, and one is a sequence.
         from utk_curio.backend.app.agents.infrastructure.testing_provider import run_scripted_turn
 
+        sink: dict = {}
         turn = run_scripted_turn(
-            messages, usage_out=usage_out, config=config, tools=tools, tool_choice=tool_choice
+            messages, usage_out=sink, config=config, tools=tools, tool_choice=tool_choice
         )
+        _summed_usage(usage_out, [sink])
+        _counted(config, sink)
         if turn.text or not turn.tool_calls:
             yield turn.text
         yield from turn.tool_calls
