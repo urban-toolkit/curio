@@ -32,7 +32,7 @@
   </p>
 </div>
 
-> 🌐 **Hosted instances.** Try Curio in your browser without installing anything. Stable at [**flow.urbantk.org**](https://flow.urbantk.org), and the latest `main` build at [**dev.urbantk.org**](https://dev.urbantk.org). Sign in to save dataflows; guests can browse shared examples read-only. To run your own server, see the [deployment guide](docs/DEPLOYMENT.md). For local deployment, see [installation and usage guide](docs/USAGE.md). Local installs require **Python 3.12**.
+> 🌐 **Hosted instances.** Try Curio in your browser without installing anything. Stable at [**flow.urbantk.org**](https://flow.urbantk.org), and the latest `main` build at [**dev.urbantk.org**](https://dev.urbantk.org). Sign in to save dataflows; guests can change the shared examples, and their changes are kept for their visit. To run your own server, see the [deployment guide](docs/DEPLOYMENT.md). For local deployment, see [installation and usage guide](docs/USAGE.md). Local installs require **Python 3.12**.
 
 Curio is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations.
 

@@ -375,6 +375,8 @@ On a Curio started with `--deploy`, guests cannot add LLM configurations or pick
 
 The guest configuration is Curio's default: the first model of the first endpoint in the file `--llm-endpoint-file` names (see the [deployment guide](DEPLOYMENT.md#llm-configurations)). Without that file, guests get no AI, and agents refuse guest runs and say so.
 
+A guest on a Curio started with `--deploy` can change the examples. What a guest changes on an example, by hand or through its agents, is kept in that guest's own copy of it, which its agents read and no other guest sees. The top bar reads **Kept for this visit**. The copy lasts for that browser's sign-in, until a sign-out, an expired session or a restart of the server; **File > Save** and **Save a copy** ask the guest to sign in. A guest's own runs stay in the browser, and its agents' **Solve** and node runs run its copy on the server.
+
 **Example:** a file with an OpenAI-compatible gateway, a local Ollama server (it takes any key, so give it a placeholder) and Anthropic, here `llm-endpoints`, readable by its owner only (`chmod 600 llm-endpoints`):
 
 ```ini
@@ -1863,7 +1865,7 @@ For the full guide, covering how a call holds its skills, your own skills and th
 
 ## Real-time collaboration
 
-Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. Each person's pointer shows on the others' canvases too, in their color with their name, and fades while it rests. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example stays its own.
+Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. Each person's pointer shows on the others' canvases too, in their color with their name, and fades while it rests. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example is its own copy of it, which only that guest's tabs share (see [Guest users](#guest-users)).
 
 Who is here shows in the dock at the top of the canvas, beside the canvas agents: a chip for each other person, with their initials in their color. Hover one for their name, their role and the node they are editing, and click it to move your view to where they point on the canvas. The **Activity** button at the end of the row lists who joined, who left and whose role changed. A node someone is in shows their initials in its corner.
 
