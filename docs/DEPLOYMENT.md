@@ -108,27 +108,72 @@ loops, not a guarantee you can make to a third party.
 ### LLM configurations
 
 Curio ships no LLM endpoint. Users add their own LLM configurations in API
-Settings; the deployment can offer its own on top, through these settings the
-backend reads at start:
+Settings; the deployment can offer endpoints of its own on top, in an
+endpoint file that only the backend reads, named by `--llm-endpoint-file`.
+It is the one LLM setting.
 
-| Variable | Flag | What it sets |
-|---|---|---|
-| `CURIO_DEFAULT_LLM_API_TYPE` | `--llm-provider` | The provider kind of the deployment's endpoint: `openai_compatible` (the default), `anthropic` or `gemini`. |
-| `CURIO_DEFAULT_LLM_BASE_URL` | `--llm-base-url` | The deployment's endpoint. |
-| `CURIO_DEFAULT_LLM_API_KEY` | none | Its key. |
-| `CURIO_DEFAULT_LLM_MODEL` | `--llm-model` | The model of the **Deployment default**. |
-| `GUEST_LLM_API_TYPE`, `GUEST_LLM_BASE_URL`, `GUEST_LLM_API_KEY`, `GUEST_LLM_MODEL` | `--guest-llm-provider`, `--guest-llm-base-url`, `--guest-llm-api-key`, `--guest-llm-model` | The **guest configuration**, which every guest answers with. Each one that is unset takes the matching `CURIO_DEFAULT_LLM_*` value, and the configuration needs a key and a model. |
+The file holds one section per endpoint. The section's name is the label
+users see in API Settings:
 
-With a model and an endpoint or a key set, the Deployment default is a
-read-only row on the **API keys** tab of every user's API Settings, and it answers for any user who has not chosen a default of their
-own. With an endpoint or a key set, users are also offered **This Curio
-install**: a configuration of their own that runs on the deployment's endpoint
-with its key and a model they choose. The key never reaches a browser.
+```ini
+[Lab gateway]
+base_url=https://llm.example.org/v1
+api_key=<the gateway's key>
+models=model-a,model-b
 
-Pass the flags in the `command:` of `docker-compose.site.yml`. Put the keys in
-`utk_curio/backend/.env`, which is copied into the image (rebuild after
-changing it), or in the container's `environment:` in
-`docker-compose.site.yml`.
+[Local Ollama]
+base_url=http://localhost:11434/v1
+api_key=ollama
+models=llama3.2
+
+[Anthropic]
+provider=anthropic
+api_key=<an Anthropic key>
+models=claude-haiku-4-5
+```
+
+| Line | What it sets |
+|---|---|
+| `api_key` | The endpoint's key. Required; a keyless server such as Ollama takes any placeholder. |
+| `models` | The models it offers, comma-separated. Required. |
+| `base_url` | Its URL. Leave it out for the provider's own endpoint. |
+| `provider` | `openai_compatible` (the default), `anthropic` or `gemini`. |
+
+Lines starting with `#` or `;` are comments. The first section's first model
+is the **Deployment default**: a read-only row on the **API keys** tab of
+every user's API Settings, which answers for any user who has not chosen a
+default of their own, and the **guest configuration** every guest answers
+with. Users are also offered **This Curio install**: a configuration of their
+own on one of the file's endpoints, with one of its models. No endpoint's key
+or address reaches a browser.
+
+To set it up on a server:
+
+1. Write the file outside the checkout, or in a folder git and Docker ignore,
+   readable by its owner only: `chmod 600 llm-endpoints`.
+2. Mount it read-only into the container and pass its path in the `command:`
+   of `docker-compose.site.yml`:
+
+   ```yaml
+   services:
+     curio:
+       secrets:
+         - llm_endpoints
+       command: ["--llm-endpoint-file", "/run/secrets/llm_endpoints"]
+   secrets:
+     llm_endpoints:
+       file: /srv/secrets/llm-endpoints
+   ```
+
+3. Recreate the stack. Signed-in users then see the **Deployment default** row
+   on the **API keys** tab, and **This Curio install** offers each endpoint's
+   models.
+
+The start stops with a message naming the section when the file is missing
+or cannot be read, when a section lacks `api_key` or `models`, names an
+unknown provider or line, or repeats a model, a line or a section, and, under
+`--deploy`, when the execution account could read the file. The frontend,
+the sandbox and node code never see the file, its path or its values.
 
 Each user's configurations, keys included, are kept in
 `.curio/users/<user>/llm-configs.json`, a 0600 file in a 0700 directory. The
@@ -346,7 +391,7 @@ To give both stacks an LLM endpoint of their own (the Deployment default and **T
 
 Without both secrets, the deploy removes `.secrets/llm-endpoint` and the stack has no endpoint of its own.
 
-Pushing to `main` triggers the dev deploy. Stable runs manually via Actions → Deploy → Run workflow.
+A merge to `main` deploys the dev stack once: Bump version bumps the patch version and dispatches the dev deploy of that commit. Stable runs manually via Actions → Deploy → Run workflow.
 
 `deploy.yml` takes two inputs: `ref` (branch, tag, or SHA; empty deploys the latest `v*` tag) and `target` (`both` / `dev` / `stable`). Both jobs check out the requested ref and rebuild with `--no-cache --force-recreate`.
 
@@ -356,7 +401,7 @@ Version bumps are automated by [`.github/workflows/bump-version.yml`](../.github
 
 | You do | Bump | Tag | Deploys |
 |---|---|---|---|
-| Push to `main` (touching `utk_curio/**` or `docs/examples/**`) | patch | none | dev only |
+| Push to `main` (touching anything the deployed image holds) | patch | none | dev only |
 | Actions → Bump version → Run workflow, `bump: minor` | minor | `vX.Y.0` | dev **and** stable |
 | Actions → Bump version → Run workflow, `bump: major` | major | `vX.0.0` | dev **and** stable |
 

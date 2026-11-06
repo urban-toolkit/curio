@@ -14,9 +14,6 @@ const DOCS = path.join(REPO_ROOT, "docs");
 
 /** #615: the operator settings that were environment-only. */
 const OPERATOR_FLAGS = [
-    "--guest-llm-provider",
-    "--guest-llm-base-url",
-    "--guest-llm-model",
     "--media-cache-max-gb",
     "--db-pool-size",
     "--db-pool-overflow",
@@ -53,8 +50,27 @@ function guidesNaming(flag: string, guides: Array<[string, string]>): string[] {
     return guides.filter(([, text]) => pattern.test(text)).map(([name]) => name);
 }
 
+/** The LLM flags and variables the endpoint file replaced: no guide names one. */
+const REMOVED_LLM_SETTINGS = [
+    "--llm-provider", "--llm-base-url", "--llm-model", "--llm-models",
+    "--guest-llm-api-key", "--guest-llm-provider", "--guest-llm-base-url", "--guest-llm-model",
+    "CURIO_DEFAULT_LLM_API_TYPE", "CURIO_DEFAULT_LLM_BASE_URL", "CURIO_DEFAULT_LLM_API_KEY",
+    "CURIO_DEFAULT_LLM_MODEL", "CURIO_DEFAULT_LLM_MODELS",
+    "GUEST_LLM_API_TYPE", "GUEST_LLM_BASE_URL", "GUEST_LLM_API_KEY", "GUEST_LLM_MODEL",
+];
+
 test.each(OPERATOR_FLAGS)("a guide names %s", (flag) => {
     expect(guidesNaming(flag, readGuides())).not.toEqual([]);
+});
+
+test("DEPLOYMENT.md, USAGE.md and AGENT-CATALOG.md name --llm-endpoint-file, the one LLM flag", () => {
+    expect(guidesNaming("--llm-endpoint-file", readGuides())).toEqual(
+        expect.arrayContaining(["AGENT-CATALOG.md", "DEPLOYMENT.md", "USAGE.md"]),
+    );
+});
+
+test.each(REMOVED_LLM_SETTINGS)("no guide names %s", (name) => {
+    expect(guidesNaming(name, readGuides())).toEqual([]);
 });
 
 test("every curio.py flag is named in a guide", () => {

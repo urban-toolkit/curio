@@ -1,6 +1,8 @@
 import os
 from dotenv import load_dotenv
 
+from utk_curio.common import llm_endpoint
+
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(basedir, '.env'))
@@ -88,27 +90,28 @@ CURIO_BACKEND_DEBUG = _env_flag("CURIO_BACKEND_DEBUG", False)
 COLLAB_CORS_ORIGINS = os.environ.get("COLLAB_CORS_ORIGINS", "*")
 COLLAB_NAMESPACE = os.environ.get("COLLAB_NAMESPACE", "/collab")
 
-# Default LLM provider - the single source of truth for provider/model/API
-# defaults when a user (or guest) has not configured their own, so the app has
-# no second built-in default hiding elsewhere. Each value is env-overridable.
+# This Curio's own LLM endpoints, the single source of truth for what answers a
+# user (or guest) who has not configured their own, so the app has no second
+# built-in default hiding elsewhere.
 #
-# Base URL and model ship EMPTY on purpose. A deployment points these at its own
-# provider; an instance that configures nothing resolves no provider, and the
-# agent surfaces say so and link to API Settings. Shipping a live third-party
-# endpoint as the built-in default would send an unconfigured instance's prompts
-# somewhere its operator never chose.
-DEFAULT_LLM_API_TYPE = os.environ.get("CURIO_DEFAULT_LLM_API_TYPE", "openai_compatible")
-DEFAULT_LLM_BASE_URL = os.environ.get("CURIO_DEFAULT_LLM_BASE_URL", "")
-DEFAULT_LLM_MODEL = os.environ.get("CURIO_DEFAULT_LLM_MODEL", "")
-DEFAULT_LLM_API_KEY = os.environ.get("CURIO_DEFAULT_LLM_API_KEY", "")
+# They ship EMPTY on purpose: an instance that configures nothing resolves no
+# provider, and the agent surfaces say so and link to API Settings. Shipping a
+# live third-party endpoint as the built-in default would send an unconfigured
+# instance's prompts somewhere its operator never chose.
+#
+# They come only from the endpoint file the launcher names (--llm-endpoint-file,
+# utk_curio/common/llm_endpoint.py), so no URL or key is ever in a process's
+# environment or command line. The first endpoint's first model is the
+# Deployment default, and the one guests answer with. A variable that used to
+# set any of this, left in .env, is not read (app/upgrade_notices.py says so).
 
-# Guest LLM config inherits the default provider above unless explicitly
-# overridden. With no deployment default configured, guests inherit nothing and
-# AI stays unavailable to them until an operator sets one.
-GUEST_LLM_API_TYPE = os.environ.get("GUEST_LLM_API_TYPE", DEFAULT_LLM_API_TYPE)
-GUEST_LLM_BASE_URL = os.environ.get("GUEST_LLM_BASE_URL", DEFAULT_LLM_BASE_URL)
-GUEST_LLM_API_KEY = os.environ.get("GUEST_LLM_API_KEY", DEFAULT_LLM_API_KEY)
-GUEST_LLM_MODEL = os.environ.get("GUEST_LLM_MODEL", DEFAULT_LLM_MODEL)
+
+def _deployment_endpoints() -> tuple:
+    path = os.environ.get(llm_endpoint.ENDPOINT_FILE_VARIABLE, "")
+    return llm_endpoint.read_endpoint_file(path) if path else ()
+
+
+DEFAULT_LLM_ENDPOINTS = _deployment_endpoints()
 
 
 def _is_dev() -> bool:

@@ -23,7 +23,7 @@ import '../adapters/autkGrammarAdapter';
 import * as ReactNS from 'react';
 import { getToken } from '../utils/authApi';
 import * as ReactFlowNS from 'reactflow';
-import { fetchData } from '../services/api';
+import { fetchData, storeOutput } from '../services/api';
 import { registerBehavior } from './behaviorRegistry';
 
 if (typeof window !== 'undefined') {
@@ -53,6 +53,10 @@ if (typeof window !== 'undefined') {
     // run made, else on the open dataflow's route (services/dataflowReads.ts),
     // which reads an output the dataflow saved under any sign-in, else `/get`.
     fetchData,
+    // How a package's node hands on rows it made, as a built-in node does:
+    // stored as an output, whose reference goes downstream, so Python and
+    // JavaScript nodes can read them and a save records them.
+    storeOutput,
   };
   const pending: Array<(c: { registerBehavior: typeof registerBehavior }) => void> =
     Array.isArray(w.__curioPendingPackages__) ? w.__curioPendingPackages__ : [];

@@ -204,25 +204,42 @@ class ProviderConfig:
 
     The rest say where the config came from (``provider_config.resolve_llm``):
     the LLM configuration's id and label, and ``source`` (``default``,
-    ``deployment`` or ``guest``). The key is left out of the repr, so a logged config never shows it.
+    ``deployment`` or ``guest``). ``on_deployment`` is True when it runs on
+    this Curio's own endpoint, whose host never leaves the server. The key and
+    the URL are left out of the repr, so a logged config never shows them.
     """
 
     api_key: str = field(repr=False)
     api_type: str
-    base_url: str
+    base_url: str = field(repr=False)
     model: str
     config_id: str | None = None
     label: str = ""
     source: str = ""
+    on_deployment: bool = False
+
+
+def redacted_text(text: object, config: ProviderConfig | None) -> str:
+    """Provider error text without the call's own key, and without any of
+    this Curio's own endpoints: their keys, their URLs, their hosts and ports,
+    or their hosts. For any message that is persisted, streamed, logged or
+    returned."""
+    from utk_curio.backend import config as settings
+    from utk_curio.common.llm_endpoint import redact_endpoints
+    from utk_curio.common.redaction import redact
+
+    endpoints = tuple(settings.DEFAULT_LLM_ENDPOINTS or ())
+    message = str(text)
+    keys = {"llm-api-key": config.api_key if config is not None else ""}
+    for number, endpoint in enumerate(endpoints, start=1):
+        keys[f"llm-deployment-key-{number}"] = endpoint.api_key
+    message = redact(message, {name: value for name, value in keys.items() if value}) or message
+    return redact_endpoints(message, (endpoint.base_url for endpoint in endpoints))
 
 
 def _redacted(exc: BaseException, config: ProviderConfig) -> str:
-    """SDK error text with the call's own key taken out, for any message that
-    is persisted, streamed, logged or returned."""
-    from utk_curio.common.redaction import redact
-
-    text = str(exc)
-    return (redact(text, {"llm-api-key": config.api_key}) or text) if config.api_key else text
+    """SDK error text as :func:`redacted_text` leaves it."""
+    return redacted_text(exc, config)
 
 
 @dataclass(frozen=True)

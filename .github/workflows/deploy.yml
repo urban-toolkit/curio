@@ -53,32 +53,11 @@ name: Deploy
 #      endpoint, [This Curio], to the checkout's .secrets/llm-endpoint
 #      (owner-only) and starts the stack with --llm-endpoint-file.
 
+# A merge to main deploys curio-dev once: bump-version.yml runs on the merge
+# (its paths list what the deployed image holds), pushes the bump commit, and
+# dispatches this workflow with target dev. A push trigger here as well would
+# deploy the merge commit and then, a minute later, the bump commit.
 on:
-  push:
-    branches: [main]
-    # utk_curio/frontend/urban-workflows/src/tests/deployPaths.test.ts checks
-    # that this list covers what the deployed image copies.
-    paths:
-      - 'utk_curio/**'
-      - 'docs/**'
-      - 'Dockerfile'
-      - 'docker-compose.yml'
-      - 'docker-compose.deploy.yml'
-      - '.github/workflows/deploy.yml'
-      # Baked into the image (see Dockerfile runtime_base COPYs). Without
-      # these, a commit that only touches the package catalog never triggers
-      # a deploy and curio-dev keeps serving a stale `packages/` tree.
-      - 'requirements.txt'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'curio.py'
-      - 'scripts/**'
-      - 'agents/**'
-      - 'skills/**'
-      - 'packages/**'
-      - 'datasets/**'
-      - 'discovery/**'
-      - 'vendor/**'
   workflow_dispatch:
     inputs:
       ref:
@@ -97,9 +76,9 @@ on:
 
 jobs:
   deploy-dev:
-    # Runs on every push (matching the paths filter) AND on dispatches unless
-    # target is stable-only, so dev tracks stable on full releases.
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.target == 'both' || inputs.target == 'dev'))
+    # Every dispatch but a stable-only one: Bump version's after each merge,
+    # and a release's (target both), so dev tracks stable on full releases.
+    if: inputs.target == 'both' || inputs.target == 'dev'
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-dev

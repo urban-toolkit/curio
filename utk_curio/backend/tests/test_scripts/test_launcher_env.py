@@ -26,6 +26,7 @@ import pytest
 
 import utk_curio
 from utk_curio.cli.environment import set_environment_variables
+from utk_curio.common.llm_endpoint import RETIRED_VARIABLES
 
 
 def _launcher_source() -> str:
@@ -556,18 +557,15 @@ def test_only_with_examples_seeds_examples():
 # asserted below too, so a later change has to be deliberate about it.
 
 AGENT_AND_BUILD_KEYS = (
-    "CURIO_DEFAULT_LLM_API_TYPE",
-    "CURIO_DEFAULT_LLM_BASE_URL",
-    "CURIO_DEFAULT_LLM_MODEL",
-    "GUEST_LLM_API_KEY",
+    "CURIO_DEFAULT_LLM_ENDPOINT_FILE",
     "CURIO_SEARCH_URL",
+    # The LLM settings the endpoint file replaced: a start refuses them.
+    *RETIRED_VARIABLES,
 )
 
 #: Variables an operator may set, that deliberately have NO launcher flag.
 #: Each is asserted flagless in TestVariablesThatStayEnvOnly below.
 NO_FLAG_KEYS = (
-    # A key in argv is visible in the process list to every user on the host.
-    "CURIO_DEFAULT_LLM_API_KEY",
     # The package-build subsystem, which is not part of the agent catalog.
     "CURIO_BUILD_ESBUILD",
     "CURIO_BUILD_PREVIEW_RUNNER",
@@ -600,16 +598,8 @@ class TestAgentAndBuildFlags:
     def test_every_flag_reaches_its_variable(self):
         set_environment_variables(
             **BASE,
-            llm_provider="anthropic",
-            llm_base_url="https://example.test/v1",
-            llm_model="some-model",
-            guest_llm_api_key="gk",
             agent_search_url="https://search.test/?q={query}",
         )
-        assert os.environ["CURIO_DEFAULT_LLM_API_TYPE"] == "anthropic"
-        assert os.environ["CURIO_DEFAULT_LLM_BASE_URL"] == "https://example.test/v1"
-        assert os.environ["CURIO_DEFAULT_LLM_MODEL"] == "some-model"
-        assert os.environ["GUEST_LLM_API_KEY"] == "gk"
         assert os.environ["CURIO_SEARCH_URL"] == "https://search.test/?q={query}"
 
     def test_omitted_flags_leave_the_environment_alone(self):
@@ -617,8 +607,7 @@ class TestAgentAndBuildFlags:
 
         An operator who configured a provider through the environment (or a
         .env) must not have it cleared by a start that simply did not repeat
-        the flag - an empty CURIO_DEFAULT_LLM_MODEL means "no provider", which
-        would silently disable every AI surface.
+        the flag.
         """
         set_environment_variables(**BASE)
         for key in AGENT_AND_BUILD_KEYS:
@@ -644,15 +633,11 @@ class TestAgentAndBuildFlags:
             )
         )
         assert flags == {
-            "--llm-provider",
-            "--llm-base-url",
-            "--llm-model",
-            "--guest-llm-api-key",
+            # This Curio's LLM endpoints, in a file only the backend reads: the
+            # one LLM flag there is.
+            "--llm-endpoint-file",
             "--agent-search-url",
-            # #615: the guest configuration, package builds and node workers.
-            "--guest-llm-provider",
-            "--guest-llm-base-url",
-            "--guest-llm-model",
+            # #615: package builds and node workers.
             "--js-registry-url",
             "--js-block-unpinned",
             "--js-parallelism",
@@ -680,6 +665,308 @@ class TestVariablesThatStayEnvOnly:
         # operator feature.
         source = _launcher_source()
         assert "CURIO_TESTING_LLM_SCRIPT" not in source
+
+
+# ── This Curio's own LLM endpoints: the file, and only the file ─────────────
+#
+# Fake names, hosts and keys only.
+
+FAKE_URL = "https://llm.example.test/v1"
+FAKE_HOST = "llm.example.test"
+FAKE_KEY = "fake-endpoint-key-0001"
+ENDPOINT_FILE = "CURIO_DEFAULT_LLM_ENDPOINT_FILE"
+ENDPOINTS = f"""\
+[Lab gateway]
+base_url={FAKE_URL}
+api_key={FAKE_KEY}
+models=model-a,model-b
+
+[Hosted]
+provider=anthropic
+api_key=fake-hosted-key-0002
+models=model-c
+"""
+
+#: The LLM flags the endpoint file replaced.
+REMOVED_LLM_FLAGS = (
+    "--llm-provider", "--llm-base-url", "--llm-model", "--llm-models",
+    "--guest-llm-api-key", "--guest-llm-provider", "--guest-llm-base-url", "--guest-llm-model",
+)
+
+
+def _endpoint_file(tmp_path, text=ENDPOINTS, mode=0o600):
+    path = tmp_path / "llm-endpoints"
+    path.write_text(text, encoding="utf-8")
+    os.chmod(path, mode)
+    return path
+
+
+class TestTheOldLlmSettingsAreGone:
+    @pytest.mark.parametrize("flag", REMOVED_LLM_FLAGS)
+    def test_the_parser_refuses_each_old_flag(self, flag, monkeypatch, capsys):
+        from utk_curio import main as launcher
+
+        assert flag not in _parser_flags()
+        # One token, so the value is not read as the start command's server.
+        monkeypatch.setattr("sys.argv", ["curio.py", "start", f"{flag}=value"])
+        # The launcher's shutdown handlers stay out of the test process.
+        monkeypatch.setattr(signal, "signal", lambda *args, **kwargs: None)
+        with pytest.raises(SystemExit) as exited:
+            launcher.main()
+        assert exited.value.code == 2, f"curio.py start {flag} did not stop at its arguments"
+        assert f"unrecognized arguments: {flag}=value" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("keyword", [
+        "llm_provider", "llm_base_url", "llm_model", "llm_models",
+        "guest_llm_api_key", "guest_llm_provider", "guest_llm_base_url", "guest_llm_model",
+    ])
+    def test_the_launcher_takes_none_of_them(self, keyword):
+        import inspect
+
+        assert keyword not in inspect.signature(set_environment_variables).parameters
+        with pytest.raises(TypeError):
+            set_environment_variables(**BASE, **{keyword: "value"})
+
+    @pytest.mark.parametrize("name", RETIRED_VARIABLES)
+    def test_each_old_variable_stops_the_start(self, name, tmp_path):
+        os.environ[name] = "old-fake-value-0003"
+
+        for files in ({}, {"llm_endpoint_file": str(_endpoint_file(tmp_path))}):
+            with pytest.raises(SystemExit) as stopped:
+                set_environment_variables(**BASE, **files)
+            message = str(stopped.value)
+            assert name in message and "--llm-endpoint-file" in message, message
+            assert "old-fake-value-0003" not in message
+            assert ENDPOINT_FILE not in os.environ
+
+    def test_an_empty_old_variable_stops_it_too(self):
+        os.environ["GUEST_LLM_MODEL"] = ""
+
+        with pytest.raises(SystemExit, match="GUEST_LLM_MODEL is set"):
+            set_environment_variables(**BASE)
+
+    def test_several_are_named_in_one_sentence(self):
+        os.environ["CURIO_DEFAULT_LLM_API_KEY"] = "old-fake-value-0003"
+        os.environ["GUEST_LLM_MODEL"] = "old-model"
+
+        with pytest.raises(SystemExit) as stopped:
+            set_environment_variables(**BASE)
+        assert "CURIO_DEFAULT_LLM_API_KEY, GUEST_LLM_MODEL are set" in str(stopped.value)
+
+    def test_the_backend_reads_none_of_them(self):
+        """A variable left in ``utk_curio/backend/.env`` reaches the backend
+        without the launcher seeing it: it is not read."""
+        for name in RETIRED_VARIABLES:
+            os.environ[name] = "https://old.example.test/v1" if name.endswith("_URL") else "old-fake-value-0003"
+        assert _fresh("utk_curio.backend.config", "list(m.DEFAULT_LLM_ENDPOINTS)") == []
+        assert _fresh("utk_curio.backend.config", "[n for n in ('DEFAULT_LLM_API_TYPE', 'DEFAULT_LLM_BASE_URL', "
+                      "'DEFAULT_LLM_API_KEY', 'DEFAULT_LLM_MODEL', 'DEFAULT_LLM_MODELS', 'GUEST_LLM_API_TYPE', "
+                      "'GUEST_LLM_BASE_URL', 'GUEST_LLM_API_KEY', 'GUEST_LLM_MODEL') if hasattr(m, n)]") == []
+
+
+class TestTheEndpointFile:
+    def test_only_its_path_is_in_the_environment_and_the_backend_reads_it(self, tmp_path):
+        path = _endpoint_file(tmp_path)
+
+        set_environment_variables(**BASE, llm_endpoint_file=str(path))
+
+        assert os.environ[ENDPOINT_FILE] == str(path.resolve())
+        environment = json.dumps(dict(os.environ))
+        for value in (FAKE_KEY, FAKE_HOST, "fake-hosted-key-0002", "model-a"):
+            assert value not in environment, value
+        read = "[[e.name, e.api_type, e.base_url, e.api_key, list(e.models)] for e in m.DEFAULT_LLM_ENDPOINTS]"
+        assert _fresh("utk_curio.backend.config", read) == [
+            ["Lab gateway", "openai_compatible", FAKE_URL, FAKE_KEY, ["model-a", "model-b"]],
+            ["Hosted", "anthropic", "", "fake-hosted-key-0002", ["model-c"]],
+        ]
+
+    def test_without_it_curio_offers_no_endpoint(self):
+        set_environment_variables(**BASE)
+
+        assert ENDPOINT_FILE not in os.environ
+        assert _fresh("utk_curio.backend.config", "list(m.DEFAULT_LLM_ENDPOINTS)") == []
+
+    @pytest.mark.parametrize("make, fragment", [
+        pytest.param(lambda tmp: tmp / "no-such-file", "does not exist", id="missing"),
+        # A directory cannot be read as a file, even by root, which CI runs as.
+        pytest.param(lambda tmp: tmp, "cannot be read", id="unreadable"),
+        pytest.param(lambda tmp: _endpoint_file(tmp, f"[E]\nbase_url={FAKE_URL}\nmodels=m\n"), "has no api_key",
+                     id="no-key"),
+        pytest.param(lambda tmp: _endpoint_file(tmp, f"[E]\napi_key={FAKE_KEY}\n"), "has no models",
+                     id="no-models"),
+        pytest.param(lambda tmp: _endpoint_file(tmp, f"[E]\nprovider=nobody\napi_key={FAKE_KEY}\nmodels=m\n"),
+                     "names the provider 'nobody'", id="unknown-provider"),
+        pytest.param(lambda tmp: _endpoint_file(tmp, f"[E]\napi_key={FAKE_KEY}\nmodels=m\nmodel=m\n"),
+                     "has 'model', which is not one of", id="unknown-key"),
+        pytest.param(lambda tmp: _endpoint_file(tmp, f"api_key={FAKE_KEY}\n"), "comes before any [section]",
+                     id="no-section"),
+        pytest.param(lambda tmp: _endpoint_file(tmp, ""), "names no endpoint", id="empty"),
+    ])
+    def test_a_file_it_cannot_use_stops_the_start(self, tmp_path, make, fragment):
+        with pytest.raises(SystemExit) as stopped:
+            set_environment_variables(**BASE, llm_endpoint_file=str(make(tmp_path)))
+
+        message = str(stopped.value)
+        assert fragment in message, message
+        assert FAKE_KEY not in message and FAKE_HOST not in message, message
+        assert ENDPOINT_FILE not in os.environ
+
+    def test_the_first_endpoints_first_model_is_the_default_and_the_guests(self, tmp_path):
+        set_environment_variables(**BASE, deploy=False, llm_endpoint_file=str(_endpoint_file(tmp_path)))
+
+        default = ("from utk_curio.backend.app.agents.infrastructure import provider_config as pc; "
+                   "c = pc.deployment_config('7')")
+        code = (f"import json; {default}; g = pc.deployment_config('guest', guest=True); "
+                "print(json.dumps([c.model, c.api_key, g.model, g.api_key]))")
+        done = subprocess.run(
+            [sys.executable, "-c", code], cwd=Path(utk_curio.__file__).resolve().parent.parent,
+            env=dict(os.environ), capture_output=True, text=True,
+        )
+        assert done.returncode == 0, done.stderr
+        assert json.loads(done.stdout.strip().splitlines()[-1]) == ["model-a", FAKE_KEY, "model-a", FAKE_KEY]
+
+
+def _exec_account(monkeypatch, path):
+    """``pwd.getpwnam`` answering for an execution account that neither owns
+    *path* nor is in its group."""
+    import pwd
+
+    owner = os.stat(path)
+    account = SimpleNamespace(pw_uid=owner.st_uid + 4242, pw_gid=owner.st_gid + 4242)
+    monkeypatch.setattr(pwd, "getpwnam", lambda name: account)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX accounts and modes")
+class TestTheEndpointFileUnderDeploy:
+    def test_a_file_the_execution_user_can_read_stops_the_start(
+        self, tmp_path, linux_host, has_exec_account, monkeypatch,
+    ):
+        path = _endpoint_file(tmp_path, mode=0o644)
+        _exec_account(monkeypatch, path)
+
+        with pytest.raises(SystemExit) as stopped:
+            set_environment_variables(**BASE, deploy=True, llm_endpoint_file=str(path))
+
+        message = str(stopped.value)
+        assert "the execution user can read" in message and str(path.resolve()) in message, message
+        assert FAKE_KEY not in message
+        assert ENDPOINT_FILE not in os.environ
+
+    def test_an_owner_only_file_starts(self, tmp_path, linux_host, has_exec_account, monkeypatch):
+        path = _endpoint_file(tmp_path, mode=0o600)
+        _exec_account(monkeypatch, path)
+
+        set_environment_variables(**BASE, deploy=True, llm_endpoint_file=str(path))
+
+        assert os.environ[ENDPOINT_FILE] == str(path.resolve())
+
+
+class _Started:
+    """A child the launcher believes it started and still running."""
+
+    def __init__(self):
+        import io
+
+        self.stdout = io.StringIO("")
+        self.stderr = None
+        self.returncode = None
+
+    def poll(self):
+        return None
+
+
+class _NoThread:
+    """The thread that would stream a child's output, never started."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def start(self):
+        pass
+
+
+def _child_environments(monkeypatch):
+    """The environment each server would start with, no process started."""
+    from utk_curio.cli import services
+
+    started = {}
+
+    def popen(args, **kwargs):
+        started.setdefault("calls", []).append(kwargs.get("env"))
+        return _Started()
+
+    monkeypatch.setattr(services, "subprocess", SimpleNamespace(
+        Popen=popen, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT,
+        run=subprocess.run, CalledProcessError=subprocess.CalledProcessError,
+        TimeoutExpired=subprocess.TimeoutExpired))
+    monkeypatch.setattr(services, "threading", SimpleNamespace(Thread=_NoThread))
+    monkeypatch.setattr(services, "_kill_port", lambda port: None)
+    monkeypatch.setattr(services, "_skip_dep_install", lambda: True)
+    monkeypatch.setattr(services, "prepare_backend_database", lambda: None)
+    monkeypatch.setattr(services, "_frontend_must_build", lambda force_rebuild: False)
+    monkeypatch.setattr(services, "_frontend_is_built", lambda: True)
+
+    def one(start):
+        started.pop("calls", None)
+        cwd = os.getcwd()
+        try:
+            start()
+        finally:
+            os.chdir(cwd)
+        (env,) = started["calls"]
+        return env
+
+    monkeypatch.setenv("CURIO_DEV", "0")
+    environments = {
+        "backend": one(lambda: services.start_backend("127.0.0.1", 2998)),
+        "sandbox": one(lambda: services.start_sandbox("127.0.0.1", 2999)),
+        "frontend": one(lambda: services.start_frontend("127.0.0.1", 2997)),
+    }
+    monkeypatch.setenv("CURIO_DEV", "1")
+    environments["frontend (--dev)"] = one(lambda: services.start_frontend("127.0.0.1", 2997))
+    return environments
+
+
+BACKEND_ONLY = (
+    "CURIO_DEFAULT_LLM_API_KEY", "CURIO_DEFAULT_LLM_BASE_URL",
+    "GUEST_LLM_API_KEY", "GUEST_LLM_BASE_URL", ENDPOINT_FILE,
+)
+
+
+# These write os.environ directly: the isolation fixtures put each of these
+# variables back, and a monkeypatch undo after them would delete it.
+
+
+def test_only_the_backend_starts_with_the_endpoint_and_its_file(tmp_path, monkeypatch):
+    set_environment_variables(**BASE, llm_endpoint_file=str(_endpoint_file(tmp_path)))
+    for name in ("GUEST_LLM_API_KEY", "GUEST_LLM_BASE_URL"):
+        os.environ[name] = "guest-fake-value-0003"
+
+    environments = _child_environments(monkeypatch)
+
+    assert environments["backend"][ENDPOINT_FILE] == os.environ[ENDPOINT_FILE]
+    assert environments["backend"]["GUEST_LLM_API_KEY"] == "guest-fake-value-0003"
+    for child in ("sandbox", "frontend", "frontend (--dev)"):
+        held = [name for name in BACKEND_ONLY if name in environments[child]]
+        assert held == [], f"the {child} starts with {held}"
+        assert "guest-fake-value-0003" not in json.dumps(environments[child]), child
+
+
+def test_a_key_that_reached_the_environment_stays_with_the_backend_too(monkeypatch):
+    """The start refuses these names, and the children are started without
+    them all the same: a value set after the check, or by a process that
+    started the servers without it, never reaches node code."""
+    set_environment_variables(**BASE)
+    os.environ["CURIO_DEFAULT_LLM_API_KEY"] = FAKE_KEY
+    os.environ["CURIO_DEFAULT_LLM_BASE_URL"] = FAKE_URL
+
+    environments = _child_environments(monkeypatch)
+
+    assert environments["backend"]["CURIO_DEFAULT_LLM_API_KEY"] == FAKE_KEY
+    assert environments["backend"]["CURIO_DEFAULT_LLM_BASE_URL"] == FAKE_URL
+    for child in ("sandbox", "frontend", "frontend (--dev)"):
+        text = json.dumps(environments[child])
+        assert FAKE_KEY not in text and FAKE_HOST not in text, child
 
 
 # ── The address the frontend bundle is built against ────────────────────────
@@ -903,12 +1190,9 @@ def test_a_preset_testing_env_var_still_counts(monkeypatch):
 # Each is a curio.py argument now, written the way #614's are: only when the
 # flag is passed, so a value already in the environment is still read.
 
-#: Every variable these flags write: #615's table, CURIO_PACKAGES_ROOT and
-#: CURIO_PROXY_HOPS.
+#: Every variable these flags write: #615's table but the guest configuration's,
+#: CURIO_PACKAGES_ROOT and CURIO_PROXY_HOPS.
 OPERATOR_KEYS = (
-    "GUEST_LLM_API_TYPE",
-    "GUEST_LLM_BASE_URL",
-    "GUEST_LLM_MODEL",
     "CURIO_MEDIA_CACHE_MAX_GB",
     "CURIO_DB_POOL_SIZE",
     "CURIO_DB_POOL_OVERFLOW",
@@ -929,9 +1213,6 @@ OPERATOR_KEYS = (
 
 #: The flags that write them.
 OPERATOR_FLAG_NAMES = (
-    "--guest-llm-provider",
-    "--guest-llm-base-url",
-    "--guest-llm-model",
     "--media-cache-max-gb",
     "--db-pool-size",
     "--db-pool-overflow",
@@ -1022,13 +1303,6 @@ _POOL = "m.Config.SQLALCHEMY_ENGINE_OPTIONS"
 
 #: (keyword, value passed, variable, value written, reader, what the reader returns)
 OPERATOR_FLAGS = [
-    pytest.param("guest_llm_provider", "anthropic", "GUEST_LLM_API_TYPE", "anthropic",
-                 _backend("m.GUEST_LLM_API_TYPE"), "anthropic", id="guest-llm-provider"),
-    pytest.param("guest_llm_base_url", "https://guest.example.test/v1", "GUEST_LLM_BASE_URL",
-                 "https://guest.example.test/v1", _backend("m.GUEST_LLM_BASE_URL"),
-                 "https://guest.example.test/v1", id="guest-llm-base-url"),
-    pytest.param("guest_llm_model", "small-model", "GUEST_LLM_MODEL", "small-model",
-                 _backend("m.GUEST_LLM_MODEL"), "small-model", id="guest-llm-model"),
     pytest.param("media_cache_max_gb", 2.5, "CURIO_MEDIA_CACHE_MAX_GB", "2.5",
                  _media_cache_bytes, int(2.5 * 1024**3), id="media-cache-max-gb"),
     pytest.param("db_pool_size", 16, "CURIO_DB_POOL_SIZE", "16",
@@ -1082,17 +1356,6 @@ def test_an_operator_flag_reaches_the_setting_its_server_reads(
 
 # The tests below write os.environ directly: the isolation fixtures put each of
 # these variables back, and a monkeypatch undo after them would delete it.
-
-
-def test_an_empty_guest_base_url_sends_guests_to_the_providers_own_endpoint():
-    """Unset, the guest configuration takes the deployment's endpoint; empty
-    is how an operator gives guests the provider's own one instead."""
-    os.environ["CURIO_DEFAULT_LLM_BASE_URL"] = "http://localhost:11434/v1"
-
-    set_environment_variables(**BASE, guest_llm_base_url="")
-
-    assert os.environ["GUEST_LLM_BASE_URL"] == ""
-    assert _fresh("utk_curio.backend.config", "m.GUEST_LLM_BASE_URL") == ""
 
 
 def test_omitted_operator_flags_leave_the_environment_alone():

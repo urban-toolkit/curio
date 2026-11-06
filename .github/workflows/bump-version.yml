@@ -1,11 +1,35 @@
 name: Bump version
 
+# A merge to main that changes what the deployed image holds bumps the patch
+# version and dispatches deploy.yml for curio-dev, so each merge deploys once,
+# on its bump commit.
 on:
   push:
     branches: [main]
+    # utk_curio/frontend/urban-workflows/src/tests/deployPaths.test.ts checks
+    # that this list covers what the deployed image copies.
     paths:
       - 'utk_curio/**'
-      - 'docs/examples/**'
+      - 'docs/**'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - 'docker-compose.deploy.yml'
+      - '.github/workflows/deploy.yml'
+      - '.github/workflows/bump-version.yml'
+      # Baked into the image (see Dockerfile runtime_base COPYs). Without
+      # these, a commit that only touches the package catalog never triggers
+      # a deploy and curio-dev keeps serving a stale `packages/` tree.
+      - 'requirements.txt'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'curio.py'
+      - 'scripts/**'
+      - 'agents/**'
+      - 'skills/**'
+      - 'packages/**'
+      - 'datasets/**'
+      - 'discovery/**'
+      - 'vendor/**'
   workflow_dispatch:
     inputs:
       bump:
@@ -56,10 +80,19 @@ jobs:
           echo "BUMP=$BUMP" >> $GITHUB_ENV
           echo "Bump type: $BUMP (trigger: ${{ github.event_name }})"
 
+      # Two merges close together start two runs, and the later push is
+      # rejected as non-fast-forward. Both bumps rewrite the same line, so a
+      # rebase would conflict: each try starts again from main as it is now,
+      # which also holds the other run's bump.
       - name: Bump version
         if: env.SKIP != 'true'
         run: |
-          NEW_VERSION=$(BUMP="${{ env.BUMP }}" python3 <<'PYEOF'
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3 4 5; do
+            git fetch --quiet origin main
+            git reset --quiet --hard origin/main
+            BUMP="${{ env.BUMP }}" python3 - > "$RUNNER_TEMP/new-version" <<'PYEOF'
           import os, re, pathlib
           p = pathlib.Path('utk_curio/__init__.py')
           text = p.read_text()
@@ -78,14 +111,18 @@ jobs:
           p.write_text(re.sub(r'''__version__\s*=\s*["'].*?["']''', f'__version__ = "{new}"', text))
           print(new)
           PYEOF
-          )
-          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add utk_curio/__init__.py
-          git commit -m "chore: bump version to $NEW_VERSION"
-          git push
+            NEW_VERSION=$(cat "$RUNNER_TEMP/new-version")
+            git add utk_curio/__init__.py
+            git commit --quiet -m "chore: bump version to $NEW_VERSION"
+            if git push origin HEAD:main; then
+              echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+              exit 0
+            fi
+            echo "main moved during try $attempt; bumping again from the new main"
+            sleep $((attempt * 5))
+          done
+          echo "::error::main kept moving: the bump was not pushed after 5 tries"
+          exit 1
 
       - name: Tag and deploy minor/major releases
         if: env.SKIP != 'true' && (env.BUMP == 'minor' || env.BUMP == 'major')
@@ -116,3 +153,15 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -d '{"ref":"main","inputs":{"ref":"main","target":"dev"}}'
           echo "Dispatched dev-only Deploy for the patch bump."
+
+      # Deploy dispatches only from here, so a bump that failed must not leave
+      # curio-dev on an older main.
+      - name: Deploy dev even when the bump failed
+        if: failure() && env.SKIP != 'true'
+        run: |
+          curl -sS -f -X POST \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/deploy.yml/dispatches" \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            -d '{"ref":"main","inputs":{"ref":"main","target":"dev"}}'
+          echo "The bump failed; dispatched a dev-only Deploy of main anyway."

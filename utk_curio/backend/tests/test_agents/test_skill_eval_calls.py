@@ -57,12 +57,12 @@ def scripted(client, user_and_token, tmp_curio, monkeypatch):
     """The scripted model is the Deployment default, as a worker makes its
     endpoint one, so every account a run signs in to answers with it; nothing
     is queued before or after the test."""
-    from utk_curio.backend import config
+    from utk_curio.backend.tests._support import llm_deployment
 
     testing_provider.reset()
-    for name, value in (("DEFAULT_LLM_API_TYPE", "testing"), ("DEFAULT_LLM_BASE_URL", "http://scripted.invalid"),
-                        ("DEFAULT_LLM_API_KEY", ""), ("DEFAULT_LLM_MODEL", "scripted")):
-        monkeypatch.setattr(config, name, value)
+    llm_deployment.offer(monkeypatch, llm_deployment.endpoint(
+        "Scripted", api_type="testing", base_url="http://scripted.invalid", api_key="", models=("scripted",),
+    ))
     yield
     testing_provider.reset()
 

@@ -30,6 +30,7 @@ from utk_curio.backend import config
 from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.app.agents.infrastructure.providers import ChatTurn, ProviderConfig
 from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests._support import llm_deployment
 
 #: The limits, scaled down: a stream's silence once a chunk has come, and any
 #: one read (the wait for the first chunk).
@@ -310,7 +311,7 @@ def test_a_turn_whose_model_server_stops_sending_answers_that_it_stopped(
     """The blocking run route, which a delegated run's call shares: the turn
     answers 502 with what happened, where it waited out each read."""
     server = model_server("stall")
-    monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", server.base_url)
+    llm_deployment.change_first(monkeypatch, base_url=server.base_url)
     _, token = user_and_token
     coord = "agent.curio.researcher@1"
     client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))

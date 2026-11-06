@@ -354,8 +354,7 @@ export const ApiKeysTab: React.FC<{
           <p className={llmStyles.active}>
             {listing.active.source ? (
               <>
-                Guests use <strong>{listing.active.model}</strong>
-                {listing.active.baseUrlHost ? <> at <code>{listing.active.baseUrlHost}</code></> : null}.
+                Guests use <strong>{listing.active.model}</strong> on this Curio&apos;s endpoint.
               </>
             ) : (
               listing.active.error
@@ -395,7 +394,6 @@ export const ApiKeysTab: React.FC<{
                 <td>Language model</td>
                 <td>
                   {deploymentProviderLabel(deployment.apiType)} · {deployment.model}
-                  {deployment.baseUrlHost ? <span className={llmStyles.host}>{deployment.baseUrlHost}</span> : null}
                   {chosenLine(chosenFor("deployment"))}
                 </td>
                 <td>set by this Curio</td>
@@ -412,7 +410,9 @@ export const ApiKeysTab: React.FC<{
                   </td>
                   <td>Language model</td>
                   <td>
-                    {providerLabel(config)} · {config.model}
+                    {providerLabel(config)}
+                    {config.endpoint === "deployment" && config.endpointName ? ` · ${config.endpointName}` : ""}
+                    {" · "}{config.model}
                     {config.baseUrlHost ? <span className={llmStyles.host}>{config.baseUrlHost}</span> : null}
                     {chosenLine(chosenFor(config.id))}
                   </td>

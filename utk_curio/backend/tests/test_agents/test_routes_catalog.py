@@ -13,6 +13,7 @@ from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.repositories import publications
 from utk_curio.backend.app.agents.repositories import storage
 from utk_curio.backend.app.projects.services import _user_dir_key
+from utk_curio.backend.tests._support import llm_deployment
 
 from utk_curio.backend.tests._support.agent_routes import (
     _auth,
@@ -422,7 +423,9 @@ class TestProviderModels:
 
     Nothing here is authored: the fallback is a recording, so the tests below
     always establish it by performing a successful fetch first. And nothing is
-    ever an allowlist - no assertion here should ever say a model was refused.
+    an allowlist but the models this Curio's own endpoints list, which their
+    operator names in the endpoint file: no other assertion here should ever
+    say a model was refused.
     """
 
     URL = "/api/agents/provider-models"
@@ -431,7 +434,7 @@ class TestProviderModels:
     def _no_real_calls(self, monkeypatch):
         """Make an unstubbed provider call fail loudly instead of dialling out.
 
-        The suite's ``DEFAULT_LLM_BASE_URL`` is unroutable on purpose so a
+        The suite's stand-in endpoint URL is unroutable on purpose so a
         forgotten stub cannot reach anything - but that only protects the
         OpenAI-compatible path. The Anthropic and Gemini SDKs ignore
         ``base_url`` and always talk to their own hosts, so listing them needs
@@ -462,30 +465,14 @@ class TestProviderModels:
 
     @staticmethod
     def _no_deployment_key(monkeypatch):
-        """Drop the suite's stand-in operator key (``conftest`` configures one
-        for every agents test)."""
-        from utk_curio.backend import config
-
-        monkeypatch.setattr(config, "DEFAULT_LLM_API_KEY", "")
+        """Take away the suite's stand-in operator endpoint, and its key with it
+        (``conftest`` offers one for every agents test)."""
+        llm_deployment.withdraw(monkeypatch)
 
     @staticmethod
     def _no_deployment_base_url(monkeypatch):
-        """Resolve to plain OpenAI rather than the suite's custom endpoint."""
-        from utk_curio.backend import config
-
-        monkeypatch.setattr(config, "DEFAULT_LLM_BASE_URL", "")
-
-    @staticmethod
-    def _no_deployment_model(monkeypatch):
-        """Ship the real default: an operator key with no model named.
-
-        ``conftest`` pins ``DEFAULT_LLM_MODEL`` to a stand-in for every test in
-        this package. ``CURIO_DEFAULT_LLM_MODEL`` ships empty while an operator
-        may well set the key, and the listing must still reach that endpoint.
-        """
-        from utk_curio.backend import config
-
-        monkeypatch.setattr(config, "DEFAULT_LLM_MODEL", "")
+        """No operator endpoint at all, so nothing but what is typed is asked."""
+        llm_deployment.withdraw(monkeypatch)
 
     @staticmethod
     def _fake_openai(monkeypatch, *, models=(), raises=None):
@@ -789,30 +776,82 @@ class TestProviderModels:
         assert res.status_code == 200
         assert res.get_json()["models"] == ["gemma4"]
 
-    def test_a_deployment_key_is_not_lost_when_no_default_model_is_set(
+    def test_this_curio_install_answers_with_its_endpoints_models_and_asks_no_one(
         self, client, user_and_token, monkeypatch
     ):
-        """A model is what this screen is for, so it cannot gate asking (#241).
+        """The one list that is an allowlist: the models the operator's endpoint
+        file lists for the endpoint asked about by name. No SDK is reached
+        (``_no_real_calls`` fails a test that reaches one), and nothing is
+        recorded as remembered."""
+        from utk_curio.backend.app.agents.repositories import model_catalog
 
-        ``CURIO_DEFAULT_LLM_MODEL`` ships empty, and an operator who deploys a
-        key and leaves the model to their users offers This Curio install: the
-        listing asks that endpoint with its own key.
-        """
-        self._no_deployment_model(monkeypatch)
-        seen = self._fake_openai(monkeypatch, models=["gemma4"])
+        llm_deployment.offer(
+            monkeypatch,
+            llm_deployment.endpoint("Gateway", models=("model-a", "model-b")),
+            llm_deployment.endpoint("Second", base_url="https://second.example.test/v1",
+                                    api_key="second-fake-key", models=("model-b", "model-c")),
+        )
+        user, token = user_and_token
+
+        for name, models in (("Gateway", ["model-a", "model-b"]), ("Second", ["model-b", "model-c"])):
+            res = client.post(self.URL, headers=_auth(token),
+                              json={"endpoint": "deployment", "endpointName": name})
+            assert res.status_code == 200, res.get_json()
+            assert res.get_json() == {
+                "models": models, "listable": True, "source": "deployment",
+                "remembered": [], "rememberedAt": None, "warning": None,
+            }
+            assert "example.test" not in res.get_data(as_text=True)
+        refused = client.post(self.URL, headers=_auth(token),
+                              json={"endpoint": "deployment", "endpointName": "Elsewhere"})
+        assert refused.status_code == 400
+        assert refused.get_json()["error"] == (
+            "This Curio install has no endpoint 'Elsewhere'; it offers "
+            "Gateway: model-a, model-b; Second: model-b, model-c."
+        )
+        assert model_catalog.remembered_models(
+            _user_dir_key(user), "openai_compatible", "http://127.0.0.1:9/v1",
+        ) == ([], None)
+
+    def test_without_an_endpoint_file_there_is_no_this_curio_install_to_ask(
+        self, client, user_and_token, monkeypatch
+    ):
+        llm_deployment.withdraw(monkeypatch)
         _, token = user_and_token
 
-        res = client.post(
-            self.URL,
-            headers=_auth(token),
-            json={"endpoint": "deployment"},
-        )
+        res = client.post(self.URL, headers=_auth(token),
+                          json={"endpoint": "deployment", "endpointName": "Test gateway"})
 
-        assert res.status_code == 200, res.get_json()
-        assert res.get_json()["models"] == ["gemma4"]
-        # The deployment's credentials were used, not discarded.
-        assert seen["api_key"] == "test-key"
-        assert seen["base_url"] == "http://127.0.0.1:9/v1"
+        assert res.status_code == 400
+        assert res.get_json()["error"] == "this Curio install offers no endpoint of its own"
+
+    def test_a_failed_listing_does_not_name_this_curios_endpoints(
+        self, client, user_and_token, monkeypatch
+    ):
+        """An endpoint a user typed can fail with text naming the operator's
+        (a proxy in front of both, say): neither its URL nor its key is left."""
+        llm_deployment.offer(
+            monkeypatch,
+            llm_deployment.TEST_ENDPOINT,
+            llm_deployment.endpoint("Second", base_url="https://second.example.test/v1",
+                                    api_key="second-fake-key-0001"),
+        )
+        self._fake_openai(monkeypatch, raises=RuntimeError(
+            "Connection error: HTTPConnectionPool(host='127.0.0.1', port=9): "
+            "Max retries exceeded with url: http://127.0.0.1:9/v1/models via second.example.test "
+            "with test-key and second-fake-key-0001"
+        ))
+        _, token = user_and_token
+
+        res = client.post(self.URL, headers=_auth(token), json={
+            "apiType": "openai_compatible", "baseUrl": "https://own.example.org/v1", "apiKey": "sk-typed-0001",
+        })
+
+        assert res.status_code == 400
+        error = res.get_json()["error"]
+        assert "Could not list models: Connection error" in error
+        for value in ("127.0.0.1:9", "second.example.test", "test-key", "second-fake-key-0001"):
+            assert value not in error, error
 
     def test_a_key_saved_for_one_provider_is_not_lent_to_another(
         self, client, db, user_and_token, monkeypatch

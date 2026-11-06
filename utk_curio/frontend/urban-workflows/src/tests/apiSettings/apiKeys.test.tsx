@@ -35,7 +35,7 @@ jest.mock("../../api/llmConfigsApi", () => ({
       Promise.resolve({
         configs: [],
         default: null,
-        deployment: { label: "Deployment default", endpointOffered: false, apiType: null, baseUrlHost: null, model: null },
+        deployment: { label: "Deployment default", endpointOffered: false, apiType: null, model: null, endpoints: [] },
         active: { source: null, error: "No LLM configuration answers this run." },
         editable: mockLlmEditable,
         reason: mockLlmEditable ? null : "LLM configurations are not available to guests on this Curio.",
