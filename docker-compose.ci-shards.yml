@@ -5,7 +5,8 @@
 # The GPU: a device request that the host's NVIDIA Container Toolkit answers
 # with the GPU and the driver's libcuda.so.1, which the image's CUDA, the
 # libraries its torch build brings, runs on (the Dockerfile). test-gpu runs utk_curio/sandbox/tests/
-# test_cuda_mlp.py and test_cuda_torch.py in the container with it. A daemon without the toolkit
+# test_cuda_mlp.py, test_cuda_torch.py and test_cuda_isolated.py in the container with it, and the
+# examples whose nodes run torch run on it there. A daemon without the toolkit
 # refuses to start the container at all, so every runner of test-gpu needs it:
 # utk's and utk-desktop-01's own Docker, and the Docker inside each arcade GPU
 # runner (uic-evl/evl-github-runners). compute is CUDA; utility is NVML and

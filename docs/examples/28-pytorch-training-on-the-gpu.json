@@ -1,0 +1,92 @@
+{
+  "dataflow": {
+    "categories": {
+      "complexity": [
+        "Advanced"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "training-pictures",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 215,
+        "content": "# Draws 960 labeled pictures, as example 27 draws them: 900 to train on and 60\n# held out, a third of each circles, squares and triangles.\nimport base64\nimport io\n\nimport numpy as np\nimport pandas as pd\nfrom PIL import Image\n\nSHAPES = [\"circle\", \"square\", \"triangle\"]\nSIZE = 64\n\n\ndef draw(shape, rng):\n    \"\"\"One SIZE x SIZE picture of *shape*, at a random size, place, turn and color.\"\"\"\n    radius = rng.uniform(13, 24)\n    centre = rng.uniform(radius + 2, SIZE - radius - 2, size=2)\n    turn = rng.uniform(0, 2 * np.pi)\n    y, x = np.mgrid[0:SIZE, 0:SIZE] + 0.5\n    dx, dy = x - centre[0], y - centre[1]\n    if shape == \"circle\":\n        inside = dx ** 2 + dy ** 2 <= radius ** 2\n    else:\n        # A square or a triangle in that circle: inside the half-plane of every side.\n        sides = 4 if shape == \"square\" else 3\n        apothem = radius * np.cos(np.pi / sides)\n        angles = turn + 2 * np.pi * np.arange(sides) / sides\n        inside = np.all([dx * np.cos(a) + dy * np.sin(a) <= apothem for a in angles], axis=0)\n    ground = rng.uniform(0.85, 1.0, size=3)\n    color = rng.uniform(0.05, 0.7, size=3)\n    return (np.where(inside[..., None], color, ground) * 255).astype(np.uint8)\n\n\ndef as_data_uri(picture):\n    \"\"\"A PNG data: URI, which Simple View shows as it is.\"\"\"\n    png = io.BytesIO()\n    Image.fromarray(picture).save(png, format=\"PNG\")\n    return \"data:image/png;base64,\" + base64.b64encode(png.getvalue()).decode()\n\n\nrng = np.random.default_rng(28)\nshapes = [SHAPES[i % len(SHAPES)] for i in range(960)]\nreturn pd.DataFrame({\n    \"picture\": [f\"P{i + 1:03d}\" for i in range(len(shapes))],\n    \"shape\": shapes,\n    \"split\": [\"train\"] * 900 + [\"held out\"] * 60,\n    \"image\": [as_data_uri(draw(shape, rng)) for shape in shapes],\n})\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw 960 labeled pictures of circles, squares and triangles: 900 to train on, 60 held out.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "training-run",
+        "type": "curio.builtin/computation-analysis",
+        "x": 645,
+        "y": 215,
+        "content": "import os\n\n# Before CUDA starts, so cuBLAS repeats its sums in the same order on every run.\nos.environ[\"CUBLAS_WORKSPACE_CONFIG\"] = \":4096:8\"\n\nimport base64\nimport io\n\nimport numpy as np\nimport pandas as pd\nimport torch\nfrom PIL import Image\n\n# The same numbers on every run: seeded, deterministic kernels only, and full\n# float32 precision (no TF32), so every GPU rounds them alike.\ntorch.manual_seed(28)\ntorch.use_deterministic_algorithms(True)\ntorch.backends.fp32_precision = \"ieee\"\ntorch.backends.cudnn.benchmark = False\ndevice = \"cuda\" if torch.cuda.is_available() else \"cpu\"\n\nSHAPES = [\"circle\", \"square\", \"triangle\"]\nEPOCHS = 20\nBATCH = 30\n\n\nclass TinyCNN(torch.nn.Module):\n    \"\"\"Four strided 3 x 3 convolutions, each feature's largest value anywhere in\n    the picture (a corner, a curve), and one linear layer.\"\"\"\n\n    def __init__(self):\n        super().__init__()\n        self.features = torch.nn.Sequential(\n            torch.nn.Conv2d(3, 16, 3, stride=2, padding=1), torch.nn.ReLU(),\n            torch.nn.Conv2d(16, 32, 3, stride=2, padding=1), torch.nn.ReLU(),\n            torch.nn.Conv2d(32, 32, 3, stride=2, padding=1), torch.nn.ReLU(),\n            torch.nn.Conv2d(32, 32, 3, stride=2, padding=1), torch.nn.ReLU(),\n        )\n        self.classify = torch.nn.Linear(32, len(SHAPES))\n\n    def forward(self, pictures):\n        return self.classify(self.features(pictures - 0.5).amax(dim=(2, 3)))\n\n\ndef pixels(uri):\n    \"\"\"A data: URI's picture as 3 x 64 x 64 numbers from 0 to 1.\"\"\"\n    png = base64.b64decode(uri.split(\",\", 1)[1])\n    rgb = np.asarray(Image.open(io.BytesIO(png)).convert(\"RGB\"), dtype=np.float32) / 255\n    return rgb.transpose(2, 0, 1)\n\n\ndef tensors(frame):\n    \"\"\"A frame's pictures, in float64, and the index of each one's shape, on the device.\"\"\"\n    images = torch.from_numpy(np.stack([pixels(uri) for uri in frame[\"image\"]])).double()\n    labels = torch.tensor([SHAPES.index(shape) for shape in frame[\"shape\"]])\n    return images.to(device), labels.to(device)\n\n\ndef accuracy(model, images, labels):\n    with torch.no_grad():\n        return (model(images).argmax(dim=1) == labels).float().mean().item()\n\n\ntrain_images, train_labels = tensors(input_0[input_0[\"split\"] == \"train\"])\nheld_images, held_labels = tensors(input_0[input_0[\"split\"] == \"held out\"])\n\n# Made on the CPU, from the seed, and the batches drawn there too, so the\n# network starts and trains alike on every device. In float64: each GPU sums\n# in its own order, and in float32 those last bits grow, epoch after epoch,\n# into the three decimals shown.\nmodel = TinyCNN().double().to(device)\noptimizer = torch.optim.Adam(model.parameters(), lr=0.005)\nshuffle = torch.Generator().manual_seed(28)\n\nhistory = []\nfor epoch in range(1, EPOCHS + 1):\n    model.train()\n    total = 0.0\n    for batch in torch.randperm(len(train_labels), generator=shuffle).split(BATCH):\n        batch = batch.to(device)\n        loss = torch.nn.functional.cross_entropy(model(train_images[batch]), train_labels[batch])\n        optimizer.zero_grad()\n        loss.backward()\n        optimizer.step()\n        total += loss.item() * len(batch)\n    model.eval()\n    history.append({\n        \"epoch\": epoch,\n        # Three decimals, so every GPU shows the same numbers.\n        \"loss\": round(total / len(train_labels), 3),\n        \"train_accuracy\": round(accuracy(model, train_images, train_labels), 3),\n        \"held_out_accuracy\": round(accuracy(model, held_images, held_labels), 3),\n        \"device\": device,\n    })\nprint(f\"Ran on {device}.\")\n\nreturn pd.DataFrame(history)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Train the tiny network from scratch in PyTorch, on the GPU when there is one, and measure its loss and accuracy after each epoch.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "training-table",
+        "type": "curio.builtin/vis-simple",
+        "x": 1290,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show the loss and the accuracy after each epoch, and the device the training ran on.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "training-curves",
+        "type": "curio.builtin/vis-vega",
+        "x": 1290,
+        "y": 430,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"The training loss and the accuracy on both sets after each epoch.\",\n  \"transform\": [\n    {\n      \"fold\": [\n        \"loss\",\n        \"train_accuracy\",\n        \"held_out_accuracy\"\n      ],\n      \"as\": [\n        \"measure\",\n        \"value\"\n      ]\n    }\n  ],\n  \"mark\": {\n    \"type\": \"line\",\n    \"point\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"epoch\",\n      \"type\": \"quantitative\",\n      \"title\": \"Epoch\",\n      \"axis\": {\n        \"tickMinStep\": 1\n      }\n    },\n    \"y\": {\n      \"field\": \"value\",\n      \"type\": \"quantitative\",\n      \"title\": null\n    },\n    \"color\": {\n      \"field\": \"measure\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"sort\": [\n        \"loss\",\n        \"train_accuracy\",\n        \"held_out_accuracy\"\n      ]\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"epoch\"\n      },\n      {\n        \"field\": \"measure\"\n      },\n      {\n        \"field\": \"value\",\n        \"format\": \".3f\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart the loss and the accuracy on both sets by epoch.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-training-picturesout-training-runin",
+        "source": "training-pictures",
+        "sourceHandle": "out",
+        "target": "training-run",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-training-runout-training-tablein",
+        "source": "training-run",
+        "sourceHandle": "out",
+        "target": "training-table",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-training-runout-training-curvesin",
+        "source": "training-run",
+        "sourceHandle": "out",
+        "target": "training-curves",
+        "targetHandle": "in"
+      }
+    ],
+    "name": "PyTorch: training on the GPU",
+    "description": "The tiny shape network of example 27 trained from scratch in PyTorch, on the GPU when there is one, for twenty epochs: its loss and its accuracy on the training and held-out pictures, epoch by epoch.",
+    "task": "Train a small convolutional network on the GPU and chart how it learns.",
+    "timestamp": 0,
+    "provenance_id": "pytorch-training-on-the-gpu",
+    "packages": []
+  }
+}

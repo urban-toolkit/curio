@@ -151,6 +151,13 @@ WORKFLOW_FILES = [
     # One node fed by several others, in every kind of node that takes several
     # inputs, one input a tuple (#819).
     "docs/examples/26-several-inputs.json",
+    # PyTorch on the GPU: a node of each runs torch, so test-gpu runs them, in
+    # the container that has the GPU (runner_split.py), and the isolated stack
+    # runs 27 to 29 too (ISOLATED_WORKFLOWS in docker-compose.yml).
+    "docs/examples/27-pytorch-shape-classifier.json",
+    "docs/examples/28-pytorch-training-on-the-gpu.json",
+    "docs/examples/29-pytorch-street-photos.json",
+    "docs/examples/30-pytorch-sidewalk-clusters.json",
 ]
 
 
@@ -287,8 +294,8 @@ def pytest_itemcollected(item):
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",
-        "webgpu: the browser runs WebGPU, so CI runs it on the utk GPU runner "
-        "(set automatically, see runner_split.py)",
+        "webgpu: the browser runs WebGPU, or the dataflow's node code runs torch, "
+        "so CI runs it on the utk GPU runner (set automatically, see runner_split.py)",
     )
     config.addinivalue_line(
         "markers",
@@ -339,6 +346,23 @@ class _OnlyWorkflows:
         if dropped:
             config.hook.pytest_deselected(items=dropped)
             items[:] = kept
+
+
+def pytest_terminal_summary(terminalreporter):
+    """List the devices the dataflows' torch nodes ran on, as each
+    ``test_node_execution`` recorded them (``torch_devices``), so the job's log
+    says where they ran. The reports carry them from the xdist workers."""
+    lines = sorted({
+        value
+        for reports in terminalreporter.stats.values()
+        for report in reports
+        for name, value in (getattr(report, "user_properties", None) or ())
+        if name == "torch_devices"
+    })
+    if lines:
+        terminalreporter.write_sep("-", "devices the torch nodes ran on")
+        for line in lines:
+            terminalreporter.write_line(line)
 
 
 def pytest_collection_modifyitems(config, items):

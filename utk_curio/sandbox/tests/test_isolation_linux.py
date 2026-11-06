@@ -534,6 +534,73 @@ def test_outbound_network_is_denied(isolated):
 
 
 @needs_seccomp
+@pytest.mark.parametrize("family", ["AF_INET", "AF_INET6", "AF_NETLINK", "AF_PACKET"])
+def test_a_socket_of_every_other_family_is_denied(isolated, family):
+    """Only the local family, AF_UNIX, is open: every other reaches a network."""
+    result = run_isolated(
+        isolated,
+        f"    import socket\n    return str(socket.socket(socket.{family}, socket.SOCK_DGRAM))\n",
+    )
+    assert result["output"]["path"] == "", f"an isolated node created an {family} socket"
+
+
+@needs_seccomp
+def test_a_local_socket_may_listen_but_never_connect_or_accept(isolated):
+    """CUDA's driver binds and listens on a local socket when it starts, so a
+    child may do that; but it may not connect a socket or accept on one, so no
+    socket carries anything into or out of it."""
+    result = run_isolated(
+        isolated,
+        "    import os\n"
+        "    import socket\n"
+        "    seen = {}\n"
+        "    address = '\\0curio-isolation-probe-' + str(os.getpid())\n"
+        "    listener = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)\n"
+        "    listener.bind(address)\n"
+        "    listener.listen(1)\n"
+        "    listener.setblocking(False)\n"
+        "    seen['listens'] = True\n"
+        "    caller = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)\n"
+        "    for name, call in (('connect', lambda: caller.connect(address)),\n"
+        "                       ('accept', listener.accept)):\n"
+        "        try:\n"
+        "            call()\n"
+        "            seen[name] = 'allowed'\n"
+        "        except OSError as error:\n"
+        "            seen[name] = type(error).__name__\n"
+        "    return seen\n",
+    )
+    assert result["stderr"] == "", result["stderr"]
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    assert load_from_duckdb(result["output"]["path"]) == {
+        "listens": True, "connect": "PermissionError", "accept": "PermissionError",
+    }
+
+
+@needs_seccomp
+def test_a_local_socket_does_not_reach_the_zygote(isolated_dropped):
+    """The execution account makes a local socket, and cannot connect it to
+    the zygote's."""
+    result = run_isolated(
+        isolated_dropped,
+        "    import socket\n"
+        "    local = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\n"
+        "    try:\n"
+        f"        local.connect({os.environ['CURIO_EXEC_SOCKET']!r})\n"
+        "    except PermissionError:\n"
+        "        return 'refused'\n"
+        "    return 'connected'\n",
+    )
+    assert result["stderr"] == "", result["stderr"]
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    assert load_from_duckdb(result["output"]["path"]) == "refused", "a node reached the zygote"
+
+
+@needs_seccomp
 def test_ptrace_is_denied(isolated):
     result = run_isolated(
         isolated,
