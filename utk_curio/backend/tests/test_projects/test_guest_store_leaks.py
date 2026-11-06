@@ -10,9 +10,10 @@ projects. These tests sign two visitors, A and B, in to that account, as
   projects are refused (``capabilities.catalog_entry_refusal``), as a hosted
   guest's import or removal of an agent is;
 - a node's output A adds to an example is saved under A's own copy of it
-  (``projects/visitor_copies.py``), listed for A alone, and dropped with the
-  copy when the server starts; one that names no node is refused, as it
-  would be saved under no dataflow.
+  (``projects/visitor_copies.py``), listed for A alone, loaded by A's node
+  code alone (``curio_load_data``), and dropped with the copy when the
+  server starts; one that names no node is refused, as it would be saved
+  under no dataflow.
 
 Each ends with the example's spec and manifest, and every file of the guest
 dataset store, byte for byte as they were. Without ``--deploy`` the shared
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import base64
 import json
+from pathlib import Path
 
 import pytest
 
@@ -31,9 +33,11 @@ from utk_curio.backend.app.common.user_storage import GUEST_KEY
 from utk_curio.backend.app.projects import storage
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import auth_headers
 from utk_curio.backend.tests.test_projects.test_guest_copy_leaks import (  # noqa: F401  (fixtures)
+    CODE,
     SHIPPED,
     VISITOR_A,
     VISITOR_B,
+    _as_a_play_posts,
     _computed_in_the_store,
     _copy_of,
     _digests,
@@ -210,6 +214,58 @@ def test_a_hosted_guests_added_output_is_theirs_alone(client, example, sandbox):
 
     # It goes with A's copy when the server starts.
     assert visitor_copies.drop_all() == 1
+    assert _computed_in_the_store() == []
+    assert _digests(example) == before
+
+
+def _loads(client, token, project_id, sandbox, *dataset_ids) -> tuple[dict, dict]:
+    """The visitor signed in as *token* plays node b of *project_id* with
+    code that loads each of *dataset_ids* (``curio_load_data``), posted as a
+    play posts it: the datasets the sandbox is then handed, ``{id: path}``,
+    and how it reads each, ``{id: format}``."""
+    code = "\n".join(["# node b", *(f'frame = curio_load_data("{i}")' for i in dataset_ids), "return frame"])
+    resp = client.post("/processPythonCode", data=json.dumps({
+        "code": _as_a_play_posts(code), "nodeType": f"{CODE}@1",
+        "nodeId": "b", "dataflowId": project_id, "input": "", "saveOutputDataset": True,
+    }), headers=auth_headers(token))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    sent = sandbox["runs"]["b"]
+    return dict(sent["dataset_paths"]), dict(sent["dataset_formats"])
+
+
+def test_a_hosted_guests_added_output_loads_in_their_node_code_alone(client, example, datasets, sandbox):
+    """Node code names a dataset by its id (``curio_load_data``), which a
+    play resolves to its file before the sandbox runs the code, from the
+    dataset index first: the id of A's added output resolves for A's code
+    alone, and the upload every guest reads for both."""
+    from utk_curio.backend.app.projects import visitor_copies
+
+    uploaded = datasets
+    for token in (VISITOR_A, VISITOR_B):
+        _listing(client, token, dataflowId=example)
+    before = _digests(example)
+    made = sandbox["artifacts"]["a"]
+    _play(client, VISITOR_A, example, "a")
+    live = next(item for item in _listing(client, VISITOR_A, dataflowId=example, liveOutputs=_live("a", made))
+                if item.get("producerNodeId") == "a")
+    added = client.post(f"/api/dataflows/{example}/datasets/install",
+                        data=json.dumps({"datasetId": live["id"], "sourceItem": live, "nodeTitle": "a"}),
+                        headers=auth_headers(VISITOR_A))
+    assert added.status_code == 200, added.get_data(as_text=True)
+    mine = added.get_json()["id"]
+
+    # A's node code loads both.
+    paths, formats = _loads(client, VISITOR_A, example, sandbox, mine, uploaded)
+    assert set(paths) == set(formats) == {mine, uploaded}
+    assert all(Path(path).is_file() for path in paths.values())
+    # B's, naming the same ids, gets the upload and none of A's output.
+    paths, formats = _loads(client, VISITOR_B, example, sandbox, mine, uploaded)
+    assert (list(paths), list(formats)) == ([uploaded], [uploaded])
+
+    # It goes with A's copy when the server starts, as does the copy B's
+    # play made.
+    assert _copy_made(VISITOR_A, example) and _copy_made(VISITOR_B, example)
+    assert visitor_copies.drop_all() == 2
     assert _computed_in_the_store() == []
     assert _digests(example) == before
 
