@@ -18,6 +18,7 @@ from utk_curio.backend.app.projects import concurrency
 from utk_curio.backend.app.projects import repositories as repo
 from utk_curio.backend.app.projects import scenarios
 from utk_curio.backend.app.projects import storage
+from utk_curio.backend.app.projects import visitor_copies
 from utk_curio.backend.app.projects.shipped import shipped_dataflows
 from utk_curio.backend.app.projects.schemas import (
     OutputRef,
@@ -1477,7 +1478,7 @@ def forget_saved_output(user, project_id: str, node_id: str) -> bool:
     return dropped
 
 
-def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
+def mutate_dataflow_datasets(user, project_id: str, mutate, *, cleanup: bool = False) -> Optional[dict]:
     """The dataset endpoints' writer for ``spec.dataflow.datasets`` (dev/81/82).
 
     Atomic read-modify-write: *mutate* receives the current refs under the
@@ -1492,9 +1493,19 @@ def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
     outputs/name/description only. Returns the resulting spec, or ``None``
     when the project has no spec on disk.
 
+    A hosted guest's change is made to their own copy of the dataflow
+    (``visitor_copies.py``), made on this first write, and writes no row: the
+    dataflow and its row stay as every other guest opens them. *cleanup* is
+    a write for another of the account's actions, a deleted dataset's refs
+    cleared out of every dataflow that held it, which writes the dataflow
+    itself, as :func:`update_project`'s *cleanup* does.
     """
     project = repo.get_for_user(project_id, user.id)
     ukey = _user_dir_key(user)
+    own = project_id if cleanup else visitor_copies.for_request(user, project_id, make=True)
+    if own != project_id:
+        mutated = storage.mutate_dataflow_datasets(ukey, own, mutate)
+        return mutated[0] if mutated is not None else None
     result = storage.mutate_dataflow_datasets(ukey, project_id, mutate)
     if result is None:
         return None
@@ -1586,7 +1597,9 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
     """The owner's dataflow, its spec and the outputs it opens with: its saved
     outputs, or, with *last_results*, as its canvas left them, each node its
     runs ran showing its newest kept result where one matches the saved
-    dataflow (``runs/reopen.py``)."""
+    dataflow (``runs/reopen.py``). A hosted guest who has a copy of the
+    dataflow of their own (``visitor_copies.py``) opens that copy, with the
+    results their plays kept on it."""
     from utk_curio.backend.app.datasets.seed import (
         ensure_dataflow_datasets_installed,
     )
@@ -1613,21 +1626,27 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
     # it (#909).
     repo.touch_last_opened(project_id, user.id)
     db.session.commit()
+    own = visitor_copies.canvas_spec(user, project_id)
+    opened = own if own is not None else spec
     shown = readable
     if last_results:
         from utk_curio.backend.app.runs.reopen import last_results as kept_results
 
         try:
-            shown = kept_results(user, ukey, project_id, spec, readable)
+            shown = kept_results(
+                user, ukey, project_id, opened, readable,
+                kept_on=visitor_copies.for_request(user, project_id, make=False) if own is not None else None,
+            )
         except Exception:  # noqa: BLE001 - a dataflow always opens, with its saved outputs at least
             logger.exception("could not find the kept results of dataflow %s", project_id)
+    detail = _to_detail(
+        project, spec=spec, outputs=readable,
+        spec_revision=storage.spec_revision(ukey, project_id),
+        categories=_categories(user, project_id, opened),
+    )
     return {
-        "project": _to_detail(
-            project, spec=spec, outputs=readable,
-            spec_revision=storage.spec_revision(ukey, project_id),
-            categories=_categories(user, project_id, spec),
-        ),
-        "spec": spec,
+        "project": visitor_copies.with_spec(detail, own) if own is not None else detail,
+        "spec": opened,
         "outputs": [_output_ref_dict(r) for r in shown],
     }
 
@@ -2015,6 +2034,37 @@ def rename_project(user, project_id: str, new_name: str) -> ProjectSummary:
     return _to_summary(
         project, spec_revision=storage.spec_revision(_user_dir_key(user), project_id)
     )
+
+
+def _renames_only(data: ProjectUpdate) -> bool:
+    """Whether the PUT *data* names the dataflow and changes nothing else, as
+    the canvas title's rename sends it."""
+    return (
+        isinstance(data.name, str) and bool(data.name.strip())
+        and data.spec is None and data.outputs is None and data.description is None
+        and data.thumbnail_accent is None and data.categories is None and data.history is None
+    )
+
+
+def rename_for_visitor(user, project_id: str, data: ProjectUpdate) -> Optional[ProjectDetail]:
+    """A hosted guest's rename of a dataflow their account owns: their own
+    copy's name (``visitor_copies.rename``), answered with the dataflow as
+    their canvas opens it. The row, which every guest's gallery lists, keeps
+    its name. ``None`` for any other PUT, and for anyone else, whose save
+    :func:`update_project` makes or refuses."""
+    if not _renames_only(data):
+        return None
+    spec = visitor_copies.rename(user, project_id, data.name.strip())
+    if spec is None:
+        return None
+    project = repo.get_for_user(project_id, user.id)
+    ukey = _user_dir_key(user)
+    detail = _to_detail(
+        project, spec=spec, outputs=_output_refs_from_manifest(storage.read_manifest(ukey, project_id)),
+        spec_revision=storage.spec_revision(ukey, project_id),
+        categories=_categories(user, project_id, spec),
+    )
+    return visitor_copies.with_spec(detail, spec)
 
 
 #: What anyone but the owner and the editors the owner invited is told who
