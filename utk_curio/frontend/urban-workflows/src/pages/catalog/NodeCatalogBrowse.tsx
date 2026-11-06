@@ -322,22 +322,24 @@ export const NodeCatalogBrowse: React.FC<NodeCatalogBrowseProps> = ({
             }}
           >
             {actionError}
-            <span>
-              {loadFailed ? (
-                <button
-                  type="button"
-                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}
-                  aria-label="Retry"
-                  data-tooltip="Retry"
-                  onClick={() => {
-                    // A load that fails again brings the banner back.
-                    dismissActionError();
-                    retryLoad();
-                  }}
-                >
-                  ↻
-                </button>
-              ) : null}
+            {/* A failed load offers Retry, not a dismiss that would leave a page
+                with neither its packages nor a word on why. */}
+            {loadFailed ? (
+              <button
+                type="button"
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}
+                aria-label="Retry"
+                data-tooltip="Retry"
+                onClick={() => {
+                  // The page says it is loading; a load that fails again
+                  // brings the banner back.
+                  dismissActionError();
+                  retryLoad();
+                }}
+              >
+                ↻
+              </button>
+            ) : (
               <button
                 type="button"
                 style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}
@@ -345,7 +347,7 @@ export const NodeCatalogBrowse: React.FC<NodeCatalogBrowseProps> = ({
               >
                 ×
               </button>
-            </span>
+            )}
           </div>
         ) : null}
 

@@ -281,10 +281,27 @@ describe("the Node Catalog page", () => {
     expect(await screen.findByText("Couldn't load catalog: [Errno 24] Too many open files")).toBeInTheDocument();
     expect(screen.queryByText("No packages match the current filters.")).toBeNull();
     expect(screen.queryByText("Loading packages…")).toBeNull();
+    // No dismiss: it would leave neither packages nor a word on why.
+    expect(screen.queryByRole("button", { name: "×" })).toBeNull();
 
+    let answer: (value: unknown) => void = () => undefined;
+    mockApi.catalog.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(screen.getByText("Loading packages…")).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't load catalog/)).toBeNull();
+
+    await act(async () => answer({ packages: [builtinPackage(), rasterizationPackage()], families: [], catalogCollisions: [] }));
     await gridCard("curio.rasterization@1");
     expect(screen.queryByText(/Couldn't load catalog/)).toBeNull();
+    expect(screen.queryByText("Loading packages…")).toBeNull();
+  });
+
+  test("once its list came, a search that matches nothing says no package matches", async () => {
+    renderPage("/catalog/nodes");
+    await gridCard("curio.rasterization@1");
+    fireEvent.change(screen.getByPlaceholderText("Search packages…"), { target: { value: "nothing is called this" } });
+    expect(screen.getByText("No packages match the current filters.")).toBeInTheDocument();
+    expect(screen.queryByText("Loading packages…")).toBeNull();
   });
 });
 

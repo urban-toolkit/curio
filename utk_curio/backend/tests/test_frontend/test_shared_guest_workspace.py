@@ -134,11 +134,8 @@ def test_a_guest_whose_first_listing_fails_still_gets_the_dataflows(app_frontend
     list request, as stable failed some of its requests in the days its backend
     ran out of open files. The projects page drew the failed list as an empty
     gallery and never asked again, so the guest saw no dataflow until a reload.
-    It now asks again, and the guest's dataflows come without a reload."""
-    require_project_page()
-    if not _auth_enabled() or not _allow_guest_login():
-        pytest.skip("Needs sign-in with guest login, where the guest button signs in")
-
+    It now asks again, and the guest's dataflows come without a reload. Without
+    sign-in the shared guest signs in by itself, and the page is the same."""
     failed: list[str] = []
 
     def fail_the_first_listings(route) -> None:

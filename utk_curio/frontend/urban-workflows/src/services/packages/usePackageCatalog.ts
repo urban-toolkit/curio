@@ -86,8 +86,8 @@ export interface PackageCatalogState {
   /** The last listing failed (its reason is in `actionError`). Until one
    *  arrives, a page says the load failed, not that nothing matches. */
   loadFailed: boolean;
-  /** List again, as the page's load does: a failure sets `loadFailed` and
-   *  `actionError`, an answer clears `loadFailed`. */
+  /** List again, as the page's load does: `loadFailed` is cleared while it
+   *  asks, and a failure sets it and `actionError` again. */
   retryLoad: () => void;
   busy: boolean;
   publishingPackageKey: string | null;
@@ -248,8 +248,10 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     setLoaded(true);
   }, [scope.kind, projectId, beforeReload, onProjectLockfile]);
 
-  // A failed load keeps the rows already listed, and `loaded` as it was.
+  // A failed load keeps the rows already listed, and `loaded` as it was. While
+  // it asks again a page with none says it is loading, not that it failed.
   const retryLoad = useCallback(() => {
+    setLoadFailed(false);
     void reload().then(
       () => setLoadFailed(false),
       (err) => {
