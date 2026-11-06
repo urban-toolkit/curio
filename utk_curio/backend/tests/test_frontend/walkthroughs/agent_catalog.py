@@ -46,22 +46,31 @@ def open_agent_drawer(ctx: Ctx):
     return dialog
 
 
-def remove_one_from_all_projects(ctx: Ctx) -> str:
-    """Take one agent the account has by default out of all its projects,
-    through the API, and return its coordinate: one no other agent requires,
-    which Remove from all projects takes out at once. A new dataflow then
-    starts without it, so its card is the one that offers Add."""
+def _session_token(ctx: Ctx) -> str:
     token = ctx.page.evaluate(
         "() => (document.cookie.match(/(?:^|; )session_token=([^;]*)/) || [])[1] || ''"
     )
-    assert token, "no session cookie; the scene cannot remove an agent"
-    cards = api_json(f"{ctx.backend}/api/agents/catalog", token)["items"]
+    assert token, "no session cookie; the scene cannot read the account's agents"
+    return token
+
+
+def free_default_agent(ctx: Ctx) -> str:
+    """The coordinate of an agent the account has by default that no other
+    agent requires: Remove takes it out on its own."""
+    cards = api_json(f"{ctx.backend}/api/agents/catalog", _session_token(ctx))["items"]
     required = {r["coord"] for card in cards for r in card.get("requiresAgents") or []}
-    coord = next(
+    return next(
         card["dirName"] for card in cards if card.get("imported") and card["dirName"] not in required
     )
+
+
+def remove_one_from_all_projects(ctx: Ctx) -> str:
+    """Take :func:`free_default_agent` out of all the account's projects,
+    through the API, and return its coordinate. A new dataflow then starts
+    without it, so its card is the one that offers Add."""
+    coord = free_default_agent(ctx)
     # Remove from all projects walks every dataflow the account has.
-    api_json(f"{ctx.backend}/api/agents/imports/{coord}", token, method="DELETE", timeout=60.0)
+    api_json(f"{ctx.backend}/api/agents/imports/{coord}", _session_token(ctx), method="DELETE", timeout=60.0)
     return coord
 
 
@@ -186,8 +195,8 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
     slug="agent-catalog-account-agent-on-an-unsaved-dataflow",
     refs=[190, 199],
     title="An agent you already have, on a dataflow you have not saved",
-    premise="Add an agent to every project, then open the Agent Catalog on a new dataflow.",
-    note="The sibling scene covers a fresh account, where every card offers Add. "
+    premise="Open the Agent Catalog on a new dataflow, with an agent every project has.",
+    note="The sibling scene covers an agent the account does not hold, whose card offers Add. "
          "An account that already holds the agent takes the other branch: "
          "`inThisDataflow` counts it as present, so the card renders Remove - and "
          "Remove was still gated on `hasProject`, which is null until the first "
@@ -203,25 +212,16 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
 def agent_catalog_account_agent_on_an_unsaved_dataflow(ctx: Ctx) -> None:
     page = ctx.page
 
-    # Put the agent in the ACCOUNT first, through the UI. "Add to all projects"
-    # on the catalog page posts /api/agents/imports, which is what sets
-    # `imported` - the flag the drawer then reads to decide Add versus Remove.
-    ctx.say("Add an agent to every project", "An account-level decision, made on the catalog page.")
+    # The agent is in the ACCOUNT already: every catalog agent is in all its
+    # projects from the start, which sets `imported`, the flag the drawer reads
+    # to decide Add versus Remove. The scene takes one no other agent
+    # requires, so Remove takes it out of the new dataflow on its own.
+    ctx.say("An agent in every project", "Every catalog agent is in all your projects from the start.")
     page.goto(f"{ctx.frontend}/catalog/agents")
     page.wait_for_load_state("domcontentloaded")
     browse_drawer = page.locator(BROWSE_DRAWER_ROOT)
     browse_drawer.wait_for(state="visible", timeout=30000)
-
-    add_to_all = browse_drawer.get_by_role("button", name="Add to all projects")
-    if add_to_all.count():
-        ctx.click(add_to_all.first)
-        browse_drawer.get_by_role(
-            "button", name="Remove from all projects"
-        ).first.wait_for(state="visible", timeout=30000)
-    coord = page.locator("article[data-agent-coord]").first.get_attribute(
-        "data-agent-coord"
-    )
-    assert coord, "no agent card to read a coordinate from"
+    coord = free_default_agent(ctx)
 
     # Now a dataflow that has never been saved.
     ctx.say("A brand-new dataflow", "Nothing has saved it yet.")
