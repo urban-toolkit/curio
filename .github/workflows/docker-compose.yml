@@ -185,6 +185,14 @@ permissions:
 env:
   CURIO_CI_REPEAT: ${{ (!inputs.remint && inputs.repeat) || '1' }}
 
+# A new push to a PR cancels the PR's older run, see "Concurrency" below.
+concurrency:
+  group: >-
+    ${{ github.event_name == 'pull_request' && github.event.action != 'labeled'
+    && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number)
+    || format('{0}-run-{1}', github.workflow, github.run_id) }}
+  cancel-in-progress: true
+
 # Where the jobs run:
 #
 #   * CPU jobs: GitHub-hosted ubuntu-latest while the organization's hosted
@@ -220,7 +228,17 @@ env:
 # stack tears it down at its end with stop-stack, which also removes the images
 # and build cache CI jobs leave on that daemon.
 #
-# Concurrency is set on the GPU jobs, not on the run: a GPU runner has one GPU
+# Concurrency. A PR's runs share one group with cancel-in-progress, so a new
+# push cancels the PR's older run, whose result no longer says anything about
+# what would merge. A cancelled self-hosted job may leave its stack behind;
+# the next job on that runner removes it first (`&reclaim`). Every other run is
+# a group of its own and is never cancelled this way: main's pushes, the
+# dispatches (re-mints, before-runs, the Weekly flake hunt's repeat-10 run),
+# the schedule, and a `labeled` run, which carries only the stress job and must
+# not cancel the run of the push it labels. GitHub applies the group to a
+# re-run too: re-running an older run of a PR cancels the PR's newer one.
+#
+# Inside a run, the GPU jobs have groups of their own: a GPU runner has one GPU
 # and a fixed set of CI ports, so two of its jobs must never execute at once,
 # while CPU jobs each get a runner of their own. Keyed per ref, not repo-wide:
 # GitHub keeps only ONE job pending per group, so a repo-wide group let each
