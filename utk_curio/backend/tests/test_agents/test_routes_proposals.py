@@ -2417,12 +2417,7 @@ class TestNewNodeTypesInADraft:
 
         monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
         monkeypatch.setattr(backend_runtime, "per_user_node_envs", lambda: True)
-        # A hosted guest runs on the deployment's GUEST_LLM_* endpoint, not the
-        # DEFAULT_LLM_* one the conftest configures.
-        monkeypatch.setattr(config, "GUEST_LLM_API_TYPE", "openai_compatible")
-        monkeypatch.setattr(config, "GUEST_LLM_BASE_URL", "http://127.0.0.1:9/v1")
-        monkeypatch.setattr(config, "GUEST_LLM_MODEL", "test-model")
-        monkeypatch.setattr(config, "GUEST_LLM_API_KEY", "test-key")
+        # A hosted guest runs on the Deployment default, the conftest's endpoint.
         asked: list = []
         monkeypatch.setattr(pip_runner, "install_python_deps",
                             lambda deps, on_line=None: asked.append(dict(deps)))

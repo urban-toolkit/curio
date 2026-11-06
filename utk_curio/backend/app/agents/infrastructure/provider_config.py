@@ -5,28 +5,33 @@ and it needs only the storage key, so it works in job threads, which have no
 request. The fallback order:
 
 - A **hosted guest** (a guest on an instance launched with ``--deploy``) runs
-  on the guest configuration, ``GUEST_LLM_*``, for every agent. Every visitor
-  shares that account, so it never opens a configurations file.
+  on the guest configuration, the Deployment default's endpoint and model, for
+  every agent. Every visitor shares that account, so it never opens a
+  configurations file.
 - An **internal** agent (a built-in that runs only as a delegate) always runs
   on its caller's configuration.
 - Any other agent runs on the configuration **chosen for it** in API Settings.
 - With no choice, a **delegated** agent (``caller`` given) runs on its
   caller's configuration, and an attached one on the account's **default
-  configuration**, else the **Deployment default** (``CURIO_DEFAULT_LLM_*``,
-  offered when the operator set a model), else the run is refused.
+  configuration**, else the **Deployment default** (the first model of the
+  first endpoint in the operator's endpoint file, ``config.DEFAULT_LLM_ENDPOINTS``),
+  else the run is refused.
 - A reference that does not resolve (a choice or a default naming no
-  configuration, a Deployment default or This Curio install endpoint the
-  deployment withdrew, an unreadable file) is refused. It never falls back to
-  another configuration.
+  configuration, a Deployment default the deployment withdrew, a This Curio
+  install configuration whose endpoint the file no longer has or whose model
+  that endpoint no longer lists, an unreadable file) is refused. It never falls
+  back to another configuration.
+
+No page ever sees the host of one of this Curio's endpoints (``shown_host``).
 
 The deployment is offered only **whole**. There is no per-field inheritance: a
 configuration of the user's own never borrows the operator's key or URL, and
-the operator's endpoint is reachable only as the Deployment default or as a
-This Curio install configuration, which takes the deployment's type, URL and
-key with a model the user picks.
+the operator's endpoints are reachable only as the Deployment default or as a
+This Curio install configuration, which names one endpoint of the file and one
+of its models, and takes that endpoint's type, URL and key.
 
 Without ``--deploy`` the shared guest is the one local user: it owns its
-configurations like any account, and its deployment is ``GUEST_LLM_*``.
+configurations like any account, and its Deployment default is everyone's.
 """
 
 from __future__ import annotations
@@ -71,36 +76,48 @@ def is_hosted_guest(user_key: str, *, guest: bool | None = None) -> bool:
     return _is_guest(user_key, guest) and not _settings().CURIO_NO_AUTH
 
 
-def deployment_endpoint(user_key: str, *, guest: bool | None = None) -> tuple[str, str, str] | None:
-    """``(api_type, base_url, api_key)`` of the deployment's own endpoint as this
-    caller may use it, read at call time, or None when the operator configured
-    none. A guest's is ``GUEST_LLM_*`` and needs its key."""
-    cfg = _settings()
-    if _is_guest(user_key, guest):
-        api_type, base_url, api_key = cfg.GUEST_LLM_API_TYPE, cfg.GUEST_LLM_BASE_URL, cfg.GUEST_LLM_API_KEY
-        if not api_key:
-            return None
-    else:
-        api_type, base_url, api_key = cfg.DEFAULT_LLM_API_TYPE, cfg.DEFAULT_LLM_BASE_URL, cfg.DEFAULT_LLM_API_KEY
-        if not (api_key or base_url):
-            return None
-    return (api_type or "openai_compatible", base_url or "", api_key or "")
+def deployment_endpoints() -> tuple:
+    """This Curio's own endpoints (``llm_endpoint.Endpoint``), read at call
+    time; empty when the operator named no endpoint file."""
+    return tuple(_settings().DEFAULT_LLM_ENDPOINTS or ())
+
+
+def deployment_offered() -> bool:
+    """Whether users may add a This Curio install configuration."""
+    return bool(deployment_endpoints())
+
+
+def deployment_endpoint(name: str):
+    """The endpoint of the file named *name*, or None."""
+    return next((endpoint for endpoint in deployment_endpoints() if endpoint.name == name), None)
+
+
+def offered_refusal(endpoint_name: str, model: str) -> str | None:
+    """Why a This Curio install configuration may not run *model* on the
+    endpoint named *endpoint_name*, or None. One sentence for a save and a
+    run alike, naming what is offered."""
+    return llm_configs.offered_model_refusal(endpoint_name, model, deployment_endpoints())
+
+
+def _on_endpoint(endpoint, model: str, **fields) -> ProviderConfig:
+    return ProviderConfig(
+        api_key=endpoint.api_key, api_type=endpoint.api_type, base_url=endpoint.base_url,
+        model=model, on_deployment=True, **fields,
+    )
 
 
 def deployment_config(user_key: str, *, guest: bool | None = None) -> ProviderConfig | None:
-    """The Deployment default: the deployment's endpoint with the model the
-    operator set, or None when there is no such endpoint or no model."""
-    cfg = _settings()
-    is_guest = _is_guest(user_key, guest)
-    model = cfg.GUEST_LLM_MODEL if is_guest else cfg.DEFAULT_LLM_MODEL
-    endpoint = deployment_endpoint(user_key, guest=guest)
-    if endpoint is None or not model:
+    """The Deployment default: the first endpoint of the file with its first
+    model, or None when the operator named no endpoint file. A hosted guest
+    answers with it as the guest configuration."""
+    endpoints = deployment_endpoints()
+    if not endpoints:
         return None
-    api_type, base_url, api_key = endpoint
-    return ProviderConfig(
-        api_key=api_key, api_type=api_type, base_url=base_url, model=model,
-        label=GUEST_LABEL if is_guest and is_hosted_guest(user_key, guest=guest) else DEPLOYMENT_LABEL,
-        source=SOURCE_GUEST if is_hosted_guest(user_key, guest=guest) else SOURCE_DEPLOYMENT,
+    hosted = is_hosted_guest(user_key, guest=guest)
+    return _on_endpoint(
+        endpoints[0], endpoints[0].models[0],
+        label=GUEST_LABEL if hosted else DEPLOYMENT_LABEL,
+        source=SOURCE_GUEST if hosted else SOURCE_DEPLOYMENT,
     )
 
 
@@ -108,21 +125,23 @@ def build_config(user_key: str, config_id: str, record: dict, *, source: str,
                  guest: bool | None = None, agent_id: str | None = None) -> ProviderConfig:
     """The ProviderConfig one stored configuration answers with."""
     label = record.get("label") or ""
+    model = record.get("model") or ""
     if record.get("endpoint") == llm_configs.ENDPOINT_DEPLOYMENT:
-        endpoint = deployment_endpoint(user_key, guest=guest)
-        if endpoint is None:
+        if not deployment_offered():
             raise ProviderConfigError(
                 f"The configuration {label!r} uses this Curio install's endpoint, which it no "
                 "longer offers. Choose another configuration in API Settings.",
                 agent_id=agent_id,
             )
-        api_type, base_url, api_key = endpoint
-    else:
-        api_type = record.get("apiType") or "openai_compatible"
-        base_url = record.get("baseUrl") or ""
-        api_key = record.get("apiKey") or ""
+        name = record.get("endpointName") or ""
+        refusal = offered_refusal(name, model)
+        if refusal:
+            raise ProviderConfigError(refusal, agent_id=agent_id)
+        return _on_endpoint(deployment_endpoint(name), model,
+                            config_id=config_id, label=label, source=source)
     return ProviderConfig(
-        api_key=api_key, api_type=api_type, base_url=base_url, model=record.get("model") or "",
+        api_key=record.get("apiKey") or "", api_type=record.get("apiType") or "openai_compatible",
+        base_url=record.get("baseUrl") or "", model=model,
         config_id=config_id, label=label, source=source,
     )
 
@@ -195,25 +214,32 @@ def resolve_llm(user_key: str, agent_id: str | None = None, *,
     return config
 
 
+def shown_host(config: ProviderConfig) -> str:
+    """What a page may see of the endpoint *config* runs on: the host of a
+    configuration of the user's own, and nothing of this Curio's endpoint."""
+    if config.on_deployment:
+        return ""
+    return llm_configs.base_url_host(config.base_url, config.api_type)
+
+
 def llm_pin(config: ProviderConfig) -> dict:
-    """What a run records about the configuration that answered it: never the key."""
+    """What a run records about the configuration that answered it: never the
+    key, and never the host of this Curio's own endpoint."""
     return {
         "configId": config.config_id,
         "label": config.label,
-        "baseUrlHost": llm_configs.base_url_host(config.base_url, config.api_type),
+        "baseUrlHost": shown_host(config),
         "source": config.source,
     }
 
 
 def redact_error(text: object, config: ProviderConfig | None) -> str:
-    """Provider error text with the call's own key taken out, for anything
-    persisted, streamed, logged or returned."""
-    from utk_curio.common.redaction import redact
+    """Provider error text without the call's own key and without this
+    Curio's endpoint (``providers.redacted_text``), for anything persisted,
+    streamed, logged or returned."""
+    from utk_curio.backend.app.agents.infrastructure.providers import redacted_text
 
-    message = str(text)
-    if config is None or not config.api_key:
-        return message
-    return redact(message, {"llm-api-key": config.api_key}) or message
+    return redacted_text(text, config)
 
 
 def storage_key(user) -> str:
@@ -223,14 +249,17 @@ def storage_key(user) -> str:
 
 
 def _deployment_payload(user_key: str, guest: bool) -> dict:
-    endpoint = deployment_endpoint(user_key, guest=guest)
+    """What a page is told of this Curio's endpoints: their names and models,
+    never a URL, a host or a key."""
     config = deployment_config(user_key, guest=guest)
     return {
         "label": config.label if config else DEPLOYMENT_LABEL,
-        "endpointOffered": endpoint is not None,
-        "apiType": endpoint[0] if endpoint else None,
-        "baseUrlHost": llm_configs.base_url_host(endpoint[1], endpoint[0]) if endpoint else None,
+        "endpointOffered": deployment_offered(),
+        "apiType": config.api_type if config else None,
         "model": config.model if config else None,
+        "endpoints": [
+            {"name": endpoint.name, "models": list(endpoint.models)} for endpoint in deployment_endpoints()
+        ],
     }
 
 
@@ -238,7 +267,7 @@ def _answers(config: ProviderConfig) -> dict:
     return {
         "source": config.source, "configId": config.config_id,
         "label": config.label, "model": config.model, "apiType": config.api_type,
-        "baseUrlHost": llm_configs.base_url_host(config.base_url, config.api_type),
+        "baseUrlHost": shown_host(config),
     }
 
 

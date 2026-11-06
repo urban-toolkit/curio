@@ -289,7 +289,7 @@ To add an LLM configuration:
 2. Open **API Settings** from the top bar (on the canvas it opens on the right).
 3. On the **API keys** tab, click **Add configuration**.
 4. In **Kind**, choose **Language model**.
-5. Type a **Label**, choose the **Provider**, paste the **API key**, and type the **Model** (the provider's default model is shown in grey), or click **Fetch models** and pick one. **Custom** also asks for the **Base URL**.
+5. Type a **Label**, choose the **Provider**, paste the **API key**, and type the **Model** (the provider's default model is shown in grey), or click **Fetch models** and pick one. **Custom** also asks for the **Base URL**. **This Curio install**, when this Curio offers it, takes no key: pick the **Model** from its list, where each of this Curio's endpoints lists its models.
 6. Click **Add configuration**. The configuration's row shows in the list, with **saved** in its **Key** column when you gave a key.
 
 Configurations and choices belong to your account and apply to all of your projects; the fields, the row actions and which configuration answers a run are in [AGENT-CATALOG.md part 4](AGENT-CATALOG.md#4-llm-configurations).
@@ -361,27 +361,32 @@ leaves your browser. Dismiss it if the value is not a key.
 
 On a Curio started with `--deploy`, guests cannot add LLM configurations: every guest answers with the **guest configuration** the operator sets. They cannot save data source or node code keys either, and **Add key for** and **Save as API key** do not appear for them. Without `--deploy`, Curio signs you in as the shared guest, which adds configurations and saves its tokens in API Settings like any account; they are shared by everyone using that Curio, and the guest configuration is its Deployment default.
 
-The guest configuration's provider, endpoint and model are `curio.py` flags: `--guest-llm-provider` (`openai_compatible`, `anthropic` or `gemini`), `--guest-llm-base-url` (empty for the provider's own endpoint) and `--guest-llm-model`. Its key is `GUEST_LLM_API_KEY` in **`utk_curio/backend/.env`**.
+The guest configuration is the Deployment default: the first model of the first endpoint in the file `--llm-endpoint-file` names (see the [deployment guide](DEPLOYMENT.md#llm-configurations)). Without that file, guests get no AI, and agents refuse guest runs and say so.
 
-Each one that is not set takes the deployment's value (see the [deployment guide](DEPLOYMENT.md#llm-configurations)). A guest configuration needs both a key and a model; without either, agents refuse guest runs and say so.
+**Example:** a file with an OpenAI-compatible gateway, a local Ollama server (it takes any key, so give it a placeholder) and Anthropic, here `llm-endpoints`, readable by its owner only (`chmod 600 llm-endpoints`):
 
-**Examples**, each with its key in `utk_curio/backend/.env`:
+```ini
+[Lab gateway]
+base_url=https://llm.example.org/v1
+api_key=sk-proj-abc123...
+models=gpt-4o-mini,gpt-4o
 
-OpenAI (`GUEST_LLM_API_KEY=sk-proj-abc123...`):
-```bash
-python curio.py start --deploy --guest-llm-model gpt-4o-mini
+[Local Ollama]
+base_url=http://localhost:11434/v1
+api_key=ollama
+models=llama3.2
+
+[Anthropic]
+provider=anthropic
+api_key=sk-ant-...
+models=claude-haiku-4-5
 ```
 
-Local Ollama server (it takes any key, so give it a placeholder: `GUEST_LLM_API_KEY=ollama`):
 ```bash
-python curio.py start --deploy --guest-llm-provider openai_compatible \
-  --guest-llm-base-url http://localhost:11434/v1 --guest-llm-model llama3.2
+python curio.py start --deploy --llm-endpoint-file llm-endpoints
 ```
 
-Anthropic Claude (`GUEST_LLM_API_KEY=sk-ant-...`):
-```bash
-python curio.py start --deploy --guest-llm-provider anthropic --guest-llm-model claude-haiku-4-5
-```
+Guests then answer on `gpt-4o-mini` at the lab gateway, and signed-in users can pick any of the five models as **This Curio install**.
 
 ## The Tools panel
 

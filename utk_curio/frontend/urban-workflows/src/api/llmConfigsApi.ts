@@ -18,22 +18,32 @@ export interface LlmConfig {
   endpoint: "own" | "deployment";
   apiType: string;
   baseUrl: string;
+  /** Empty for This Curio install: its endpoint's host stays on the server. */
   baseUrlHost: string;
+  /** For This Curio install, which of this Curio's endpoints it runs on; else empty. */
+  endpointName: string;
   hasApiKey: boolean;
   model: string;
   createdAt: number | null;
   updatedAt: number | null;
 }
 
-/** What this Curio offers of its own. */
+/** One of this Curio's own endpoints: its name and its models, never its URL or key. */
+export interface LlmDeploymentEndpoint {
+  name: string;
+  models: string[];
+}
+
+/** What this Curio offers of its own. Its endpoints' URLs and keys never leave the server. */
 export interface LlmDeployment {
   label: string;
   /** This Curio install can be chosen as a configuration's endpoint. */
   endpointOffered: boolean;
   apiType: string | null;
-  baseUrlHost: string | null;
   /** The Deployment default's model, or null when there is no Deployment default. */
   model: string | null;
+  /** This Curio's endpoints, in the operator's order: a This Curio install configuration takes one and one of its models. */
+  endpoints: LlmDeploymentEndpoint[];
 }
 
 /** What answers a run now. */
@@ -43,6 +53,7 @@ export interface LlmActive {
   label?: string;
   model?: string;
   apiType?: string;
+  /** Empty when it runs on this Curio's own endpoint. */
   baseUrlHost?: string;
   error?: string;
 }
@@ -83,6 +94,8 @@ export interface LlmListing {
 export interface LlmConfigInput {
   label?: string;
   endpoint?: "own" | "deployment";
+  /** This Curio install: which of this Curio's endpoints. */
+  endpointName?: string;
   apiType?: string;
   baseUrl?: string;
   /** Write-only. Blank on an update keeps the stored key. */
@@ -95,7 +108,8 @@ export interface LlmConfigInput {
 export interface ModelListing {
   models: string[];
   listable: boolean;
-  source?: "live" | "remembered";
+  /** `deployment`: the models one of this Curio's endpoints lists. */
+  source?: "live" | "remembered" | "deployment";
   remembered?: string[];
   rememberedAt?: string | null;
   warning?: string | null;
@@ -145,13 +159,14 @@ export const llmConfigsApi = {
   /**
    * The models an endpoint serves, for the editor's Model field. Posted with
    * what is on screen. A stored key is used only when `configId` names the
-   * configuration being edited and the endpoint is still its own, or when
-   * `endpoint` is `"deployment"` (This Curio install); with neither, no key is
-   * borrowed.
+   * configuration being edited and the endpoint is still its own; with none,
+   * no key is borrowed. `endpoint: "deployment"` with `endpointName` answers
+   * with the models that endpoint of this Curio lists, asking no one.
    */
   models(input: {
     configId?: string;
     endpoint?: "deployment";
+    endpointName?: string;
     apiType?: string;
     baseUrl?: string;
     apiKey?: string;

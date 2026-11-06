@@ -37,8 +37,10 @@ def llm_listing(user) -> dict:
         default = store.default_id(user_key)
         for entry in configs:
             if entry["endpoint"] == llm_configs.ENDPOINT_DEPLOYMENT:
-                entry["apiType"] = deployment["apiType"] or ""
-                entry["baseUrlHost"] = deployment["baseUrlHost"] or ""
+                # Its endpoint's provider kind, never its host: that stays on the server.
+                endpoint = agents_provider_config.deployment_endpoint(entry["endpointName"])
+                entry["apiType"] = endpoint.api_type if endpoint else ""
+                entry["baseUrlHost"] = ""
         stored = store.choices(user_key)
         agents = []
         for row in agents_catalog.choosable_agents(user_key):
