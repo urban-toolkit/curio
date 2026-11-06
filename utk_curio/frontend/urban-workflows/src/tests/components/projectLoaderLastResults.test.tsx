@@ -80,7 +80,7 @@ describe("what a dataflow opens with", () => {
     renderLoader();
 
     await waitFor(() => expect(mockAttachLatestRun).toHaveBeenCalled());
-    expect(mockLoadProject).toHaveBeenCalledWith(ROUTE_ID, { lastResults: true });
+    expect(mockLoadProject).toHaveBeenCalledWith(ROUTE_ID, { lastResults: true, signal: expect.any(AbortSignal) });
     expect(mockLoadTrill).toHaveBeenCalledWith(SPEC, undefined, undefined, {
       load: "1700000000000_deadbeef",
       count: "1700000000001_feedf00d",
@@ -100,7 +100,7 @@ describe("what a dataflow opens with", () => {
     renderLoader(true);
 
     await waitFor(() => expect(mockLoadTrill).toHaveBeenCalled());
-    expect(mockLoadProject).toHaveBeenCalledWith(ROUTE_ID, { lastResults: false });
+    expect(mockLoadProject).toHaveBeenCalledWith(ROUTE_ID, { lastResults: false, signal: expect.any(AbortSignal) });
     expect(mockAttachLatestRun).not.toHaveBeenCalled();
   });
 });

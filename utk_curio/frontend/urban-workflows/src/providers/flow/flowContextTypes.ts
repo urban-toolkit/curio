@@ -2,6 +2,7 @@
 // both contexts and provides their values.
 import type React from "react";
 import type { Connection, Edge, EdgeChange, Node, NodeChange, NodeRemoveChange } from "reactflow";
+import type { LoadOptions } from "../../api/projectsApi";
 import type { InstallSyncOutcome, PendingInstall } from "../../services/datasetCatalog/datasetCatalogTypes";
 import type { DataflowCategories, HandCategories } from "../../utils/dataflowCategories";
 import type { NotebookPane } from "../../utils/notebookLayout";
@@ -155,11 +156,12 @@ export interface FlowContextProps {
     /** The same, a moment from now: after a pin, a scenario or a node's Save
      *  output switched (`useDashboardPinSave`). */
     recordOutputsSoon?: () => void;
-    /** Open the owner's dataflow; with `lastResults`, with the results its canvas was left with. */
-    loadProject: (id: string, options?: { lastResults?: boolean }) => Promise<any>;
+    /** Open the owner's dataflow; with `lastResults`, with the results its canvas was left with.
+     *  Its `signal` aborts it once the page has left the dataflow: it then sets nothing. */
+    loadProject: (id: string, options?: LoadOptions) => Promise<any>;
     /** Open another account's dataflow from its link; with `lastResults`, an
      *  editor the owner invited gets the results his own canvas was left with. */
-    loadSharedProject: (id: string, options?: { lastResults?: boolean }) => Promise<any>;
+    loadSharedProject: (id: string, options?: LoadOptions) => Promise<any>;
     discardProject: () => void;
     markDirty: () => void;
     markNodeExecuted: (nodeId: string) => void;
