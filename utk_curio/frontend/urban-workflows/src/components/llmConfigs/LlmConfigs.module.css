@@ -51,13 +51,6 @@
   margin-bottom: 8px;
 }
 
-.table caption {
-  text-align: left;
-  color: var(--curio-text-muted);
-  font-size: var(--curio-font-size-sm);
-  padding-bottom: 4px;
-}
-
 .table th,
 .table td {
   text-align: left;
