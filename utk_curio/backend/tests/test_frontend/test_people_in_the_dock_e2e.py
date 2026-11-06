@@ -69,7 +69,7 @@ def _spec() -> dict:
         "dataflow": {
             "name": "Who is here",
             "nodes": [{
-                "id": NODE, "type": "curio.builtin/computation-analysis", "x": 0, "y": 0,
+                "id": NODE, "type": "curio.builtin/python-computation", "x": 0, "y": 0,
                 "content": "trees = 12\n", "title": LABEL,
             }],
             "edges": [],

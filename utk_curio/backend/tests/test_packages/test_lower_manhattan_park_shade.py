@@ -66,7 +66,7 @@ MODEL_PACKAGE = REPO / "packages" / "model.scout.deep-umbra@1"
 MODEL_ID = "model.scout.deep-umbra"
 
 AUTARK = "curio.builtin/autk-grammar"
-PYTHON = "curio.builtin/computation-analysis"
+PYTHON = "curio.builtin/python-computation"
 PARAMETER = "curio.builtin/parameter"
 INTERACTION = "curio.builtin/edit-features"
 COMPARE = "curio.builtin/compare-scenarios"

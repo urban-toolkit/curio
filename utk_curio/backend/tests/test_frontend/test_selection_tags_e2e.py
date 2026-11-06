@@ -79,7 +79,7 @@ LOADER_ID = "tag-loader"
 SCATTER_ID = "tag-scatter"
 COUNTER_ID = "tag-counter"
 READER_ID = "tag-reader"
-NODE_TYPE = "curio.builtin/computation-analysis"
+NODE_TYPE = "curio.builtin/python-computation"
 
 LOADER_CODE = (
     "import pandas as pd\n"

@@ -71,14 +71,14 @@ def test_a_box_renamed_or_recolored_is_what_the_chips_write_next():
 
 def test_a_node_of_a_type_written_the_old_way_is_named_as_a_saved_node_is_named():
     """An untitled input from no box whose node holds its type the old way
-    (``COMPUTATION_ANALYSIS``) is named by its template's label, looked up by
+    (``PYTHON_COMPUTATION``) is named by its template's label, looked up by
     the canonical template id as ``node_names.saved_node_label`` looks it up for
     the node's computed dataset and a run's steps."""
     from utk_curio.backend.app.execution.node_names import saved_node_label
     from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
 
-    labels = {"curio.builtin/computation-analysis": "Python Computation"}
-    saved = {"id": "py", "type": "COMPUTATION_ANALYSIS", "content": "return 1"}
+    labels = {"curio.builtin/python-computation": "Python Computation"}
+    saved = {"id": "py", "type": "PYTHON_COMPUTATION", "content": "return 1"}
     dataflow = {
         "nodes": [saved, {"id": "chart", "type": "curio.builtin/vis-vega", "content": '{"sort": [!! scenario order !!]}'}],
         "edges": [{"id": "e-py", "source": "py", "target": "chart", "sourceHandle": "out", "targetHandle": "in"}],

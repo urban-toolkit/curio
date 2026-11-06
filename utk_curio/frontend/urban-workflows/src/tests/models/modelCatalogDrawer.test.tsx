@@ -264,7 +264,7 @@ describe("the canvas Model Catalog drawer", () => {
     mockNodes = [{
       id: "n1",
       data: {
-        nodeType: "curio.builtin/computation-analysis@1",
+        nodeType: "curio.builtin/python-computation@1",
         code: 'model = curio_load_model("model.curio.ddrnet23-slim")\nreturn 1',
       },
     }];

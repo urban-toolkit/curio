@@ -79,7 +79,7 @@ import { registerPackageTemplates } from '../../registry/packagesClient';
 import { clearPackageNodes, tryGetNodeDescriptor } from '../../registry/nodeRegistry';
 
 const LOADER = 'curio.builtin/data-loading@1';
-const PYTHON = 'curio.builtin/computation-analysis@1';
+const PYTHON = 'curio.builtin/python-computation@1';
 const RASTERIZE = 'curio.rasterization/rasterize-buildings@1';
 const CALCULATOR = 'curio.rasterization/raster-calculator@1';
 const SHADOW = 'model.scout.deep-umbra/accumulated-shadow@1';

@@ -46,7 +46,7 @@ jest.mock("../../components/agents/attach/NodeAgentBadges", () => ({ NodeAgentBa
 jest.mock("../../components/nodes/NodeOutcomeStrip", () => ({ NodeOutcomeStrip: () => null }));
 jest.mock("../../registry/nodeRegistry", () => {
   const descriptor = {
-    id: "curio.builtin/computation-analysis",
+    id: "curio.builtin/python-computation",
     hasCode: true,
     hasGrammar: false,
     hasWidgets: true,
@@ -102,7 +102,7 @@ jest.mock("../../providers/CollaborationProvider", () => ({
 
 import UniversalNode from "../../components/UniversalNode";
 
-const PYTHON = "curio.builtin/computation-analysis";
+const PYTHON = "curio.builtin/python-computation";
 const REASON = 'No data yet: The node feeding this one, "Load parcels", failed. Open it to see the error.';
 
 function data(extra: Record<string, unknown> = {}) {

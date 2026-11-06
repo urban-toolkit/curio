@@ -93,8 +93,8 @@ jest.mock("../../registry/nodeRegistry", () => {
       id: "curio.builtin/data-loading", hasCode: true, hasGrammar: false, hasWidgets: true,
       opensOnControls: true, adapter: adapter(),
     },
-    "curio.builtin/computation-analysis": {
-      id: "curio.builtin/computation-analysis", hasCode: true, hasGrammar: false, hasWidgets: true,
+    "curio.builtin/python-computation": {
+      id: "curio.builtin/python-computation", hasCode: true, hasGrammar: false, hasWidgets: true,
       adapter: adapter(),
     },
     "curio.builtin/vis-vega": {
@@ -297,7 +297,7 @@ const LOADER = {
   defaultCode: "data = curio_load_data([!! data !!])\nreturn data", widgets: [DATA],
 };
 const PYTHON = {
-  nodeId: "rows", nodeType: "curio.builtin/computation-analysis",
+  nodeId: "rows", nodeType: "curio.builtin/python-computation",
   defaultCode: "n = [!! rows !!]\nreturn input_0[:n]", widgets: [ROWS, LIMIT],
 };
 const CHART = {
@@ -537,7 +537,7 @@ describe("what the agent changed, marked as it lands", () => {
     const provider = new DataflowDocProvider("project-1", { canWrite: true });
     dataflowToDoc({
       name: "",
-      nodes: [{ id: "rows", type: "curio.builtin/computation-analysis", x: 0, y: 0, content: CODE }],
+      nodes: [{ id: "rows", type: "curio.builtin/python-computation", x: 0, y: 0, content: CODE }],
       edges: [],
     }, provider.doc, "doc-1");
     provider.synced = true;
@@ -629,7 +629,7 @@ describe("what the agent changed, marked until it lets go of the node", () => {
     const provider = new DataflowDocProvider("project-1", { canWrite: true });
     dataflowToDoc({
       name: "",
-      nodes: [{ id: "rows", type: "curio.builtin/computation-analysis", x: 0, y: 0, content: CODE }],
+      nodes: [{ id: "rows", type: "curio.builtin/python-computation", x: 0, y: 0, content: CODE }],
       edges: [],
     }, provider.doc, "doc-1");
     provider.synced = true;

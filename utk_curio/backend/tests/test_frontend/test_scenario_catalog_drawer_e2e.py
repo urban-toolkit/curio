@@ -52,7 +52,7 @@ CANVAS_NODE = "groups-canvas-node"
 
 def _node(node_id: str, x: int) -> dict:
     return {
-        "id": node_id, "type": "curio.builtin/computation-analysis", "x": x, "y": 0,
+        "id": node_id, "type": "curio.builtin/python-computation", "x": x, "y": 0,
         "content": "return 1", "in": "DEFAULT", "out": "DEFAULT", "goal": "",
         "metadata": {"keywords": []},
     }

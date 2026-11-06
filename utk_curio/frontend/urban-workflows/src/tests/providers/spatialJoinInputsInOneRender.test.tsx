@@ -264,7 +264,7 @@ async function openJoin(points: { id: string; type: string }, polygons: { id: st
 /** Example 10's route: a Simple View's points and the Python Computation's polygons. */
 const ROUTE = {
   points: { id: 'view', type: 'curio.builtin/vis-simple' },
-  polygons: { id: 'transform', type: 'curio.builtin/computation-analysis' },
+  polygons: { id: 'transform', type: 'curio.builtin/python-computation' },
 };
 
 /** What the join answers when a run asks it, as Run All asks it. */

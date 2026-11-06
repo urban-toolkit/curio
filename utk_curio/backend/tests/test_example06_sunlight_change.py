@@ -44,7 +44,7 @@ EXAMPLE = REPO / "docs" / "examples" / "06-back-bay-road-sunlight.json"
 LOADER = "whatif-data"
 #: The Sunlight change node, which keeps the id of the Compare node it replaced.
 CHANGE = "whatif-compare-difference"
-PYTHON_TYPE = "curio.builtin/computation-analysis"
+PYTHON_TYPE = "curio.builtin/python-computation"
 ROADS = "table_osm_roads"
 #: The column each road's OpenStreetMap id comes in, as an Autark node hands it on.
 OSM_ID = "osm_id"

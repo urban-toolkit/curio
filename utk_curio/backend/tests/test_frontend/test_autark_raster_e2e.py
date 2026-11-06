@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from .utils import FrontendPage
 
 MAP_TYPE = "curio.builtin/autk-grammar"
-PYTHON_TYPE = "curio.builtin/computation-analysis"
+PYTHON_TYPE = "curio.builtin/python-computation"
 
 MAP_SPEC = {"map": {"layerRefs": [{"dataRef": "input_0", "getFnv": "band_1"}]}}
 

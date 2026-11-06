@@ -18,7 +18,7 @@
     "nodes": [
       {
         "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true

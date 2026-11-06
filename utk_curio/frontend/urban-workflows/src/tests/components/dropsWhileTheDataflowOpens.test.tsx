@@ -184,7 +184,7 @@ if (!(global as any).DOMMatrixReadOnly) {
   (global as any).DOMMatrixReadOnly = class { m22 = 1; constructor() {} };
 }
 
-const TILE = "curio.builtin/computation-analysis";
+const TILE = "curio.builtin/python-computation";
 const LOADED = { spec: { dataflow: { name: "Bus plan", nodes: [], edges: [] } }, outputs: [] };
 
 /** A load the test lets land, or fail, when it chooses. */

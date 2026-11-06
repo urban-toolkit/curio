@@ -18,7 +18,7 @@ from utk_curio.backend.tests.test_agents import test_source_grounding_routes as 
 DL = "curio.builtin/data-loading"
 POOL = "curio.builtin/data-pool"
 VIEW = "curio.builtin/vis-simple"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 
 #: A loader, the Data Pool and the Simple View as curio.builtin@1 declares
 #: them, each with its behavior, and a code node.
@@ -36,7 +36,7 @@ TEMPLATES = [
      "description": "Displays incoming data: a table, or a card per row when the frame carries images.",
      "inputPorts": [{"types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "1"}],
      "outputPorts": [{"types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "1"}]},
-    {"id": "computation-analysis", "label": "Computation Analysis", "category": "computation",
+    {"id": "python-computation", "label": "Python Computation", "category": "computation",
      "engine": "python", "editor": "code", "description": "Run python analysis code.",
      "inputPorts": [{"types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "[1,n]"}],
      "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},
@@ -278,7 +278,7 @@ class TestAPoolAndViewAnAgentAdds:
         helper, card, _, [refused] = self._run(client, user, token, alice_project, monkeypatch, reply)
         assert card is None, "a code node with a view's image column landed"
         assert (
-            "params.simpleVis: a Computation Analysis node has no image column; "
+            "params.simpleVis: a Python Computation node has no image column; "
             "only a Simple View node takes simpleVis"
         ) in refused, refused
         assert [n["id"] for n in helper._spec_nodes(user, alice_project)] == ["n1"]

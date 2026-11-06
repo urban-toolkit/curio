@@ -536,7 +536,7 @@ def run(rows: int = 200_000, cycles: int = 5, variants=(), sandbox_root: Path = 
             record(0, "calibrate", f"loader {index}")
         before = sampler.rss()
         sampler.take_peak()
-        outputs.append(_exec(sandbox.url, _TRANSFORM_CODE, "COMPUTATION_ANALYSIS",
+        outputs.append(_exec(sandbox.url, _TRANSFORM_CODE, "PYTHON_COMPUTATION",
                              outputs[0]["path"], outputs[0]["dataType"]))
         cost = sampler.take_peak() - before
         if cost > report.unit:
@@ -565,7 +565,7 @@ def run(rows: int = 200_000, cycles: int = 5, variants=(), sandbox_root: Path = 
 
                     loaded = list(pool.map(load, datasets))
                 cycle_peak = record(cycle, "level 0", f"{LOADERS} loaders")
-                transformed = _exec(sandbox.url, _TRANSFORM_CODE, "COMPUTATION_ANALYSIS",
+                transformed = _exec(sandbox.url, _TRANSFORM_CODE, "PYTHON_COMPUTATION",
                                     loaded[0]["path"], loaded[0]["dataType"])
                 cycle_peak = max(cycle_peak, record(cycle, "level 1", "transform"))
                 list(pool.map(lambda out: _fetch(sandbox.url, out["path"], as_json),

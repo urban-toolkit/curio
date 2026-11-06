@@ -73,7 +73,7 @@ def _save_a_node_output(backend_url: str, token: str, node_id: str, dataflow_id:
         payload={
             # A body, indented, as the sandbox runs a node's code.
             "code": "    import pandas as pd\n    return pd.DataFrame({'n': [1, 2, 3]})\n",
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "nodeId": node_id,
             "dataflowId": dataflow_id,
             "input": {"path": "", "dataType": ""},

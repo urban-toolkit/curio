@@ -38,7 +38,7 @@ RS = "agent.curio.researcher@1"
 PLANNER = "agent.curio.dataflow-planner@1"
 CORE = ["compatibility", "node-control", "nodes"]
 VEGA = "curio.builtin/vis-vega"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 #: The owner's what-if (11-03): its words are ones ``scenarios`` names in its ``curio-asks``.
 WHAT_IF = "What if the speed limit dropped to 20?"
 

@@ -8,7 +8,7 @@
     "nodes": [
       {
         "id": "5b0c2f1e-8a43-4d6e-9f21-3c7a1d9e4b60",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 0,
         "y": 215,
         "content": "import pandas as pd\n\nbuildings = pd.DataFrame({\n    'building': ['Library', 'Market', 'Station', 'School', 'Tower', 'Hall'],\n    'height_m': [12.0, 18.0, 25.0, 9.0, 60.0, 30.0],\n})\nbuildings.metadata = {'name': 'Buildings'}\nreturn buildings\n",
@@ -18,7 +18,7 @@
       },
       {
         "id": "a1e7c3d2-6b5f-4e8a-9c10-2f3d4e5a6b71",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 645,
         "y": 0,
         "content": "import math\n\nbuildings = [!! input_0 !!].copy()\n# The sun stands 35 degrees above the horizon, so a shadow is the height over tan(35).\nbuildings['height_m'] = buildings['height_m'] * [!! height_factor !!]\nbuildings['shadow_m'] = (buildings['height_m'] / math.tan(math.radians(35))).round(1)\nbuildings.metadata = {'name': 'Shadow lengths'}\nreturn buildings\n",
@@ -53,7 +53,7 @@
       },
       {
         "id": "d4a8b2c6-1e9f-4a3d-8b72-6c1e0f9a8b93",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 645,
         "y": 430,
         "content": "import math\n\nbuildings = [!! input_0 !!].copy()\n# The sun stands 35 degrees above the horizon, so a shadow is the height over tan(35).\nbuildings['height_m'] = buildings['height_m'] * [!! height_factor !!]\nbuildings['shadow_m'] = (buildings['height_m'] / math.tan(math.radians(35))).round(1)\nbuildings.metadata = {'name': 'Shadow lengths'}\nreturn buildings\n",
@@ -97,7 +97,7 @@
       },
       {
         "id": "f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1935,
         "y": 215,
         "content": "import pandas as pd\n\nreal = [!! input_0 !!]\ntaller = [!! input_1 !!]\ncomparison = pd.DataFrame({\n    'scenario': ['Real heights', 'Twice as tall'],\n    'mean_shadow_m': [round(real['shadow_m'].mean(), 1), round(taller['shadow_m'].mean(), 1)],\n})\ncomparison.metadata = {'name': 'Mean shadow per scenario'}\nreturn comparison\n",

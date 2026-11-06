@@ -181,7 +181,7 @@ describe('onConnect with a missing endpoint (#195)', () => {
   test('an edge whose source is not on the canvas is dropped too', async () => {
     renderFlow();
     await flush();
-    await addNodes([makeNode('b', 'curio.builtin/computation-analysis@1')]);
+    await addNodes([makeNode('b', 'curio.builtin/python-computation@1')]);
 
     await connect('ghost-source', 'b', 'in', true);
 
@@ -202,7 +202,7 @@ describe('onConnect with a missing endpoint (#195)', () => {
     await flush();
     await addNodes([
       makeNode('a', 'curio.builtin/data-loading@1'),
-      makeNode('b', 'curio.builtin/computation-analysis@1'),
+      makeNode('b', 'curio.builtin/python-computation@1'),
     ]);
 
     await connect('a', 'b');

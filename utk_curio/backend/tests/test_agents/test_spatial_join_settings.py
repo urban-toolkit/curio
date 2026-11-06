@@ -100,8 +100,8 @@ def test_only_a_template_with_the_joins_behavior_takes_a_setting():
     assert settings.template_problem("spatial-join", "Spatial Join", "w") is None
     # A package's own template that names the join's behavior takes it too.
     assert settings.template_problem("spatial-join", "Overlay", "w") is None
-    assert settings.template_problem(None, "Computation Analysis", "params.spatialJoin") == (
-        "params.spatialJoin: a Computation Analysis node has no operation or output; "
+    assert settings.template_problem(None, "Python Computation", "params.spatialJoin") == (
+        "params.spatialJoin: a Python Computation node has no operation or output; "
         "only a Spatial Join node takes spatialJoin"
     )
 

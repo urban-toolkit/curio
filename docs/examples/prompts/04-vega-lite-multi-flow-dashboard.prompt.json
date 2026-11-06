@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/04-vega-lite-multi-flow-dashboard.json",
-    "sha256": "1b8fc53283f5b1f8a0a97dbf22ccedf5c0e7d2c3cb87a358b3bcfe68bc39f58b",
+    "sha256": "60572575e415a2fd470d787efdce4d02ac1bd51e8372f3013c35106f68ca1fb7",
     "walkthrough": "docs/examples/04-vega-lite-multi-flow-dashboard.md"
   },
   "prompt": "Build me a red-light violations dashboard from the Chicago red-light violations table in the Data Catalog. Load it once and branch it into six independent stories, each ending in its own Vega-Lite view: a seasonal trend over time; a monthly heatmap paired with a linked daily trend; a stacked area chart by season and year; the top three intersections per year; camera count against compliance; and a spatial brush linked to a top-N bar chart. Three of those views need two prepared tables combined into one input before the chart can read them, and a couple of the branches need a Python computation step rather than a plain transformation.",
@@ -20,98 +20,98 @@
     "nodes": [
       {
         "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis2",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis3",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis4",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis5",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis6",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis7",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis8",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis9",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis10",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis11",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis12",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis13",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis14",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true

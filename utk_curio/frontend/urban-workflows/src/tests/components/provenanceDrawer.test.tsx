@@ -312,12 +312,12 @@ describe("a node's runs in the drawer, from its Provenance pill", () => {
   });
 
   test("a rename made while it is open shows at once: the node has one name, its title (#1248)", async () => {
-    mockNodes = [{ id: "n1", data: { nodeType: "curio.builtin/computation-analysis", title: "Heat index" } }];
+    mockNodes = [{ id: "n1", data: { nodeType: "curio.builtin/python-computation", title: "Heat index" } }];
     const { rerender } = await openRuns();
     const dialog = screen.getByRole("dialog", { name: "Node provenance" });
     expect(within(dialog).getByText("Runs of Heat index")).toBeInTheDocument();
 
-    mockNodes = [{ id: "n1", data: { nodeType: "curio.builtin/computation-analysis", title: "Heat stress" } }];
+    mockNodes = [{ id: "n1", data: { nodeType: "curio.builtin/python-computation", title: "Heat stress" } }];
     rerender(tree());
     expect(within(dialog).getByText("Runs of Heat stress")).toBeInTheDocument();
     expect(within(dialog).queryByText("Runs of Heat index")).toBeNull();

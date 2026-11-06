@@ -22,7 +22,7 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     store_sandbox_artifact_at,
 )
 
-NODE_TYPE = "curio.builtin/computation-analysis"
+NODE_TYPE = "curio.builtin/python-computation"
 
 
 def _node(node_id: str, content: str, **fields) -> dict:

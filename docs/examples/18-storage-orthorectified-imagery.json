@@ -50,7 +50,7 @@
       },
       {
         "id": "orthos-2024",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 662,
         "y": 430,
         "content": "tiles = input_0\n\nreturn tiles[tiles[\"year\"] == 2024]\n",
@@ -76,7 +76,7 @@
       },
       {
         "id": "orthos-bands",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1970,
         "y": 430,
         "content": "import pandas as pd\n\nmosaic = input_0\npixels = mosaic.read()\n\nreturn pd.DataFrame({\n    \"band\": [f\"band {i + 1}\" for i in range(mosaic.count)],\n    \"mean\": [round(float(band.mean()), 2) for band in pixels],\n    \"width\": mosaic.width,\n    \"height\": mosaic.height,\n})\n",

@@ -3,25 +3,25 @@
   "cases": [
     {
       "name": "toggle unset, default off",
-      "node": {"nodeType": "curio.builtin/computation-analysis"},
+      "node": {"nodeType": "curio.builtin/python-computation"},
       "defaultSave": false, "dashboardSource": false,
       "onRun": false, "recorded": false
     },
     {
       "name": "toggle unset, default on",
-      "node": {"nodeType": "curio.builtin/computation-analysis"},
+      "node": {"nodeType": "curio.builtin/python-computation"},
       "defaultSave": true, "dashboardSource": false,
       "onRun": true, "recorded": true
     },
     {
       "name": "toggle on beats default off",
-      "node": {"nodeType": "curio.builtin/computation-analysis", "saveOutputDataset": true},
+      "node": {"nodeType": "curio.builtin/python-computation", "saveOutputDataset": true},
       "defaultSave": false, "dashboardSource": false,
       "onRun": true, "recorded": true
     },
     {
       "name": "toggle off beats default on",
-      "node": {"nodeType": "curio.builtin/computation-analysis", "saveOutputDataset": false},
+      "node": {"nodeType": "curio.builtin/python-computation", "saveOutputDataset": false},
       "defaultSave": true, "dashboardSource": false,
       "onRun": false, "recorded": false
     },

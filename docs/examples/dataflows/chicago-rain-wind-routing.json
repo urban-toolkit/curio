@@ -120,7 +120,7 @@
       },
       {
         "id": "7b3f9d2a-5e8c-4b17-9d4a-1e6f3c8b2a05",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1400,
         "y": 0,
         "content": "# Weather Routing returns (routes, metrics): SCOUT's two routes, the fastest\n# and the one its weather weights favor. This scenario keeps one of them,\n# a line the map draws in the scenario's color.\nroutes = input_0[0]\nreturn routes[routes[\"weight_type\"] == \"fastest-route\"]\n",
@@ -134,7 +134,7 @@
       },
       {
         "id": "c4a8e1f7-3d6b-4c92-b5e0-8a2d7f1c4b36",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1400,
         "y": 420,
         "content": "# Weather Routing returns (routes, metrics): the metrics of this scenario's\n# route, its distance, duration and exposures, which the charts draw in the\n# scenario's color.\nmetrics = input_0[1]\nreturn metrics[metrics[\"route\"] == \"fastest-route\"]\n",
@@ -148,7 +148,7 @@
       },
       {
         "id": "3a6c2e8f-7d1b-4f45-a9c3-6b8e0d2f5a74",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1400,
         "y": 1100,
         "content": "# Weather Routing returns (routes, metrics): SCOUT's two routes, the fastest\n# and the one its weather weights favor. This scenario keeps one of them,\n# a line the map draws in the scenario's color.\nroutes = input_0[0]\nreturn routes[routes[\"weight_type\"] == \"weighted-route\"]\n",
@@ -165,7 +165,7 @@
       },
       {
         "id": "e9b5d3a1-2f8c-4a76-8e1d-4c7b9f0a6e23",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1400,
         "y": 1520,
         "content": "# Weather Routing returns (routes, metrics): the metrics of this scenario's\n# route, its distance, duration and exposures, which the charts draw in the\n# scenario's color.\nmetrics = input_0[1]\nreturn metrics[metrics[\"route\"] == \"weighted-route\"]\n",

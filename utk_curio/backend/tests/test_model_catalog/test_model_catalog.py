@@ -471,7 +471,7 @@ class TestANodeReachesIt:
 
         monkeypatch.setattr(node_exec, "sandbox_request", fake_call)
         client.post("/processPythonCode", headers=auth, json={
-            "code": f'model = curio_load_model("{DDRNET}")\nreturn 1', "nodeType": "COMPUTATION_ANALYSIS",
+            "code": f'model = curio_load_model("{DDRNET}")\nreturn 1', "nodeType": "PYTHON_COMPUTATION",
             "input": "",
         })
         assert sent.get("models") == {DDRNET: str((PACKAGES / f"{DDRNET}@1").resolve())}
@@ -490,7 +490,7 @@ class TestANodeReachesIt:
         monkeypatch.setattr(node_exec, "sandbox_request",
                             lambda method, path, **kw: sent.update(json.loads(kw["data"])) or Response())
         client.post("/processPythonCode", headers=auth, json={
-            "code": "return 1", "nodeType": "COMPUTATION_ANALYSIS", "input": "",
+            "code": "return 1", "nodeType": "PYTHON_COMPUTATION", "input": "",
         })
         assert "models" not in sent
 

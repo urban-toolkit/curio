@@ -7,19 +7,19 @@ import { initialNodeTitle, isNoteType, savedNodeTitle } from "../../utils/nodeTi
 jest.mock("../../registry/nodeRegistry", () => ({
   tryGetNodeDescriptor: (type: string) =>
     ({
-      "curio.builtin/computation-analysis": { label: "Python Computation" },
+      "curio.builtin/python-computation": { label: "Python Computation" },
       "curio.builtin/note": { label: "Note" },
     } as Record<string, { label: string }>)[type.replace(/@[0-9]+$/, "")],
 }));
 
 describe("initialNodeTitle", () => {
   test("a given title is kept, trimmed", () => {
-    expect(initialNodeTitle("curio.builtin/computation-analysis", "  Clean parcels ")).toBe("Clean parcels");
+    expect(initialNodeTitle("curio.builtin/python-computation", "  Clean parcels ")).toBe("Clean parcels");
   });
 
   test("without one, the template's label", () => {
-    expect(initialNodeTitle("curio.builtin/computation-analysis@1")).toBe("Python Computation");
-    expect(initialNodeTitle("curio.builtin/computation-analysis", "   ")).toBe("Python Computation");
+    expect(initialNodeTitle("curio.builtin/python-computation@1")).toBe("Python Computation");
+    expect(initialNodeTitle("curio.builtin/python-computation", "   ")).toBe("Python Computation");
   });
 
   test("a note starts with no title, its heading being its author's", () => {

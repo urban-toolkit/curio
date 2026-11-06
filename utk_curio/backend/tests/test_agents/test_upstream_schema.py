@@ -117,7 +117,7 @@ class TestTheWalkThroughAPool:
                 {"id": "b", "type": "curio.builtin/data-loading", "goal": "Boundaries"},
                 {"id": "p", "type": "curio.builtin/data-loading", "goal": "Population"},
                 {"id": "m", "type": "curio.builtin/data-pool", "goal": "Pool"},
-                {"id": "a", "type": "curio.builtin/computation-analysis", "goal": "Density"},
+                {"id": "a", "type": "curio.builtin/python-computation", "goal": "Density"},
             ],
             "edges": [
                 {"id": "e0", "source": "b", "target": "m", "targetHandle": "in"},
@@ -133,7 +133,7 @@ class TestTheWalkThroughAPool:
             "nodes": [
                 {"id": "b", "type": "curio.builtin/data-loading", "goal": "Boundaries"},
                 {"id": "p", "type": "curio.builtin/data-loading", "goal": "Population"},
-                {"id": "a", "type": "curio.builtin/computation-analysis", "goal": "Density"},
+                {"id": "a", "type": "curio.builtin/python-computation", "goal": "Density"},
             ],
             "edges": [
                 {"id": "e0", "source": "p", "target": "a", "targetHandle": "in_1"},
@@ -193,7 +193,7 @@ class TestTheWalkThroughAPool:
     def test_a_direct_upstream_needs_no_arg_index(self):
         spec = {"dataflow": {
             "nodes": [{"id": "b", "type": "curio.builtin/data-loading", "goal": "Boundaries"},
-                      {"id": "a", "type": "curio.builtin/computation-analysis", "goal": "D"}],
+                      {"id": "a", "type": "curio.builtin/python-computation", "goal": "D"}],
             "edges": [{"id": "e", "source": "b", "target": "a", "targetHandle": "in"}],
         }}
         rows = session._upstream_outputs_for(spec, "a", self._wave_outputs())
@@ -212,7 +212,7 @@ class TestTheWalkThroughAPool:
             edges.append({"id": f"e{i}", "source": prev, "target": f"m{i}",
                           "targetHandle": "in"})
             prev = f"m{i}"
-        nodes.append({"id": "a", "type": "curio.builtin/computation-analysis", "goal": "A"})
+        nodes.append({"id": "a", "type": "curio.builtin/python-computation", "goal": "A"})
         edges.append({"id": "ez", "source": prev, "target": "a", "targetHandle": "in"})
         wave = {"src": {"nodeId": "src", "goal": "S", "outputDataType": "dataframe",
                         "wave": 1, "output": {"path": "art-s"}}}

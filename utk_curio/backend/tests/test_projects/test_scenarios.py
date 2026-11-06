@@ -44,7 +44,7 @@ def _scenarios():
 
 
 def _nodes(*ids):
-    return [{"id": i, "type": "curio.builtin/computation-analysis", "content": "", "x": 0, "y": 0} for i in ids]
+    return [{"id": i, "type": "curio.builtin/python-computation", "content": "", "x": 0, "y": 0} for i in ids]
 
 
 def _spec(nodes=("a", "b"), scenarios=None):

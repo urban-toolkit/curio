@@ -41,7 +41,7 @@ class TestTemplateContentKind:
             tid: pkg_services.template_content_kind(t) for tid, t in _templates().items()
         }
         assert kinds["data-loading"] == "code"
-        assert kinds["computation-analysis"] == "code"
+        assert kinds["python-computation"] == "code"
         assert kinds["js-computation"] == "code"
         assert kinds["data-summary"] == "code"
         # Its code writes the file its Download button saves.
@@ -66,7 +66,7 @@ class TestTemplateContentKind:
         # Transformation's code runs in Python Computation (#1327).
         assert set(kinds) == {
             "data-loading", "data-export", "data-pool",
-            "computation-analysis", "data-summary", "js-computation",
+            "python-computation", "data-summary", "js-computation",
             "vis-vega", "vis-simple", "autk-grammar", "spatial-join",
             "edit-features", "note",
         }

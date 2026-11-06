@@ -157,7 +157,7 @@ describe("a code node's run is filed with the kinds it read and returned", () =>
   }
 
   test("a Python node that read a table and returned a GeoDataFrame", async () => {
-    const run = await runCodeNode(PythonInterpreter, "curio.builtin/computation-analysis@1", {
+    const run = await runCodeNode(PythonInterpreter, "curio.builtin/python-computation@1", {
       stdout: [], stderr: "", input: INPUT, output: { path: "art-out", dataType: "geodataframe" },
     });
 
@@ -175,7 +175,7 @@ describe("a code node's run is filed with the kinds it read and returned", () =>
   });
 
   test("a run that wrote a warning and returned a table returned the table", async () => {
-    const run = await runCodeNode(PythonInterpreter, "curio.builtin/computation-analysis@1", {
+    const run = await runCodeNode(PythonInterpreter, "curio.builtin/python-computation@1", {
       stdout: [],
       stderr: "FutureWarning: the default of observed=False is deprecated",
       input: INPUT,
@@ -186,7 +186,7 @@ describe("a code node's run is filed with the kinds it read and returned", () =>
   });
 
   test("a run that failed returned an error", async () => {
-    const run = await runCodeNode(PythonInterpreter, "curio.builtin/computation-analysis@1", {
+    const run = await runCodeNode(PythonInterpreter, "curio.builtin/python-computation@1", {
       stdout: [],
       stderr: "Traceback (most recent call last):\nKeyError: 'pop'",
       input: INPUT,

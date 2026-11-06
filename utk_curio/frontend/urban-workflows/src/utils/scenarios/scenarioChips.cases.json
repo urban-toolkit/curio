@@ -9,7 +9,7 @@
         "nodes": [
           {
             "id": "base",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
@@ -17,7 +17,7 @@
           },
           {
             "id": "tall",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
@@ -25,7 +25,7 @@
           },
           {
             "id": "survey",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
@@ -90,7 +90,7 @@
         "nodes": [
           {
             "id": "roads",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
@@ -98,7 +98,7 @@
           },
           {
             "id": "fast",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
@@ -106,7 +106,7 @@
           },
           {
             "id": "weather",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
@@ -172,7 +172,7 @@
         "nodes": [
           {
             "id": "survey",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
@@ -183,7 +183,7 @@
           },
           {
             "id": "base",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
@@ -191,7 +191,7 @@
           },
           {
             "id": "roof",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
@@ -263,7 +263,7 @@
         "nodes": [
           {
             "id": "wd",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
@@ -271,7 +271,7 @@
           },
           {
             "id": "we",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
@@ -313,7 +313,7 @@
         "nodes": [
           {
             "id": "a",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
@@ -321,7 +321,7 @@
           },
           {
             "id": "base",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
@@ -329,7 +329,7 @@
           },
           {
             "id": "b",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
@@ -384,21 +384,21 @@
       "grammar": "vega-lite",
       "node": "chart",
       "labels": {
-        "curio.builtin/computation-analysis": "Python Computation"
+        "curio.builtin/js-computation": "JS Computation"
       },
       "dataflow": {
         "nodes": [
           {
             "id": "base",
-            "type": "curio.builtin/computation-analysis",
+            "type": "curio.builtin/python-computation",
             "x": 0,
             "y": 0,
             "content": "return input_0\n",
             "title": "Shade"
           },
           {
-            "id": "py",
-            "type": "curio.builtin/computation-analysis@1",
+            "id": "js",
+            "type": "curio.builtin/js-computation@1",
             "x": 0,
             "y": 0,
             "content": "return input_0\n"
@@ -420,8 +420,8 @@
             "targetHandle": "in"
           },
           {
-            "id": "e-py-chart",
-            "source": "py",
+            "id": "e-js-chart",
+            "source": "js",
             "target": "chart",
             "sourceHandle": "out",
             "targetHandle": "in_1"
@@ -438,7 +438,7 @@
           }
         ]
       },
-      "expected": "{\"data\": {\"name\": \"inputs\"}, \"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"sort\": [\"Baseline\", \"Python Computation\"]}, \"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": {\"domain\": [\"Baseline\", \"Python Computation\"], \"range\": [\"#2a9d8f\", \"#8a8f98\"]}}}}"
+      "expected": "{\"data\": {\"name\": \"inputs\"}, \"mark\": \"bar\", \"encoding\": {\"x\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"sort\": [\"Baseline\", \"JS Computation\"]}, \"color\": {\"field\": \"scenario_name\", \"type\": \"nominal\", \"scale\": {\"domain\": [\"Baseline\", \"JS Computation\"], \"range\": [\"#2a9d8f\", \"#8a8f98\"]}}}}"
     }
   ]
 }

@@ -68,7 +68,7 @@ def _file(tmp_path) -> str:
         "dataflow": {
             "name": NAME,
             "nodes": [{
-                "id": NODE, "type": "curio.builtin/computation-analysis", "x": 0, "y": 0,
+                "id": NODE, "type": "curio.builtin/python-computation", "x": 0, "y": 0,
                 "content": "return 3", "in": "DEFAULT", "out": "DEFAULT", "goal": "",
             }],
             "edges": [],

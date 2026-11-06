@@ -12,7 +12,7 @@ PID = "proj-ctx"
 
 def _spec(n_chain=3, extra_edges=(), datasets=()):
     nodes = [
-        {"id": f"n{i}", "type": "curio.builtin/computation-analysis",
+        {"id": f"n{i}", "type": "curio.builtin/python-computation",
          "goal": f"step {i}", "content": f"code{i}()" if i != 1 else ""}
         for i in range(n_chain)
     ]
@@ -69,7 +69,7 @@ class TestComposeNodeContext:
             {"name": "factor", "type": "number", "label": "Factor", "default": 1, "value": 2},
         ]}
         spec["dataflow"]["nodes"].append({
-            "id": "v", "type": "curio.builtin/computation-analysis@1", "goal": "Season",
+            "id": "v", "type": "curio.builtin/python-computation@1", "goal": "Season",
             "content": "return [!! season !!]",
             "metadata": {"widgets": [
                 {"name": "season", "type": "choice", "default": "winter",

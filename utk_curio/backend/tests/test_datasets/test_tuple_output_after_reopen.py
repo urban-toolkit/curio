@@ -74,7 +74,7 @@ def _output(node_id: str, art_id: str, data_type: str) -> dict:
         "filename": art_id,
         "data_type": data_type,
         "node_name": "Python Computation",
-        "node_type": "curio.builtin/computation-analysis",
+        "node_type": "curio.builtin/python-computation",
     }
 
 
@@ -291,7 +291,7 @@ def test_a_python_node_downstream_indexes_the_tuple(client, user_and_token):
     )
 
     result = execute_code(
-        code, str(inputs), "curio.builtin/computation-analysis", "outputs",
+        code, str(inputs), "curio.builtin/python-computation", "outputs",
         session_id=LATER, save_dataset=False, input_slots=[0, 1],
         saved_paths=_saved(user, project_id, zones_id, utci_id),
     )
@@ -590,7 +590,7 @@ def test_a_python_node_downstream_uses_the_list_or_the_dict(client, user_and_tok
     code, returned = USED_AS[container]
 
     result = execute_code(
-        textwrap.indent(code, "    "), art_id, "curio.builtin/computation-analysis", container.__name__,
+        textwrap.indent(code, "    "), art_id, "curio.builtin/python-computation", container.__name__,
         session_id=LATER, save_dataset=False, saved_paths=_saved(user, project_id, art_id),
     )
 

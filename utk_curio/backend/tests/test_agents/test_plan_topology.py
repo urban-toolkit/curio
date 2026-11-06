@@ -20,8 +20,8 @@ EXISTING = [
 ]
 TYPES = {
     "load": "curio.builtin/data-loading@1",
-    "xform": "curio.builtin/computation-analysis@1",
-    "combine": "curio.builtin/computation-analysis@1",
+    "xform": "curio.builtin/python-computation@1",
+    "combine": "curio.builtin/python-computation@1",
     "pool": "curio.builtin/data-pool@1",
     "vis": "curio.builtin/vis-vega@1",
 }
@@ -88,7 +88,7 @@ class TestNetDataEdges:
 #: The roster rows the interaction rule reads, as available_templates gives them.
 ROSTER = {
     "curio.builtin/data-loading": {"category": "data"},
-    "curio.builtin/computation-analysis": {"category": "computation"},
+    "curio.builtin/python-computation": {"category": "computation"},
     "curio.builtin/data-pool": {"category": "data", "bidirectional": True},
     "curio.builtin/vis-vega": {"category": "vis_grammar", "bidirectional": True},
     "curio.builtin/vis-simple": {"category": "vis_simple", "bidirectional": True},
@@ -113,7 +113,7 @@ class TestInteractionEdgeErrors:
             "what it receives (autk-grammar, vis-vega), or links a view "
             "(autk-grammar, vis-simple, vis-vega) or a data-pool to a data-pool"
         )
-        assert "'combine' is computation-analysis" in err
+        assert "'combine' is python-computation" in err
         assert "use a data edge, or end the interaction edge at a view that highlights or at a data-pool" in err
 
     def test_two_visualizations_linked_directly_when_one_highlights(self):

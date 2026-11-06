@@ -132,7 +132,7 @@ def test_an_isolated_child_reads_the_staged_model(model, scratch):
             "    folder = curio_load_model('model.example.tiny').folder\n"
             "    return open(os.path.join(folder, 'files', 'm.data'), 'rb').read().decode()\n"
         ),
-        "node_type": "curio.builtin/computation-analysis", "data_type": "",
+        "node_type": "curio.builtin/python-computation", "data_type": "",
         "scratch_dir": str(scratch), "input": {"kind": "none"}, "dataset_paths": {},
         "models": staged, "session_imports": [], "limits": {},
     }

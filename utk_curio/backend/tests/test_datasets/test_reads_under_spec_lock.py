@@ -72,7 +72,7 @@ def owner_id(file_db_app):
 def _spec() -> dict:
     """A producer feeding a chart pinned to the dashboard."""
     return {"dataflow": {"name": "Reads under lock", "nodes": [
-        {"id": PRODUCER, "type": "curio.builtin/computation-analysis", "content": "return rows"},
+        {"id": PRODUCER, "type": "curio.builtin/python-computation", "content": "return rows"},
         {"id": CHART, "type": "curio.builtin/vis-vega", "content": "{}", "dashboardPinned": True},
     ], "edges": [{"id": f"{PRODUCER}-{CHART}", "source": PRODUCER, "target": CHART}]}}
 

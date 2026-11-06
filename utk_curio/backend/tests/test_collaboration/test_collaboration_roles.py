@@ -219,7 +219,7 @@ def test_without_deploy_the_shared_guests_tab_syncs_its_dataflows_doc_and_what_i
         project_id = make_project(guest)
         ukey = _user_dir_key(guest)
         storage.write_spec(ukey, project_id, {"dataflow": {"name": "Local", "nodes": [
-            {"id": "loader", "type": "curio.builtin/computation-analysis", "x": 0, "y": 0, "content": "x = 1\n"},
+            {"id": "loader", "type": "curio.builtin/python-computation", "x": 0, "y": 0, "content": "x = 1\n"},
         ], "edges": []}})
     tab = synced_tab(application, token, project_id)
 

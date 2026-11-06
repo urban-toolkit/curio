@@ -111,7 +111,7 @@ DIVERGING = {"interpolateRdBu", "interpolateRdYlBu"}
 COMPARE_TYPE = "curio.builtin/compare-scenarios"
 DOTS_TYPE = "curio.vega-lite/dots-with-a-range"
 CALCULATOR_TYPE = "curio.rasterization/raster-calculator"
-PYTHON_TYPE = "curio.builtin/computation-analysis"
+PYTHON_TYPE = "curio.builtin/python-computation"
 MAP_EDITS_TYPE = "curio.builtin/edit-features"
 #: The chart, which keeps the id of the Compare Scenarios node it replaced, as
 #: each change does.

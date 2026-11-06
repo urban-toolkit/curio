@@ -54,7 +54,7 @@ jest.mock("../../services/nodeRuntimeReport", () => ({
 import { useNodeState } from "../../hook/useNodeState";
 
 const NODE = "runs-node";
-const NODE_TYPE = "curio.builtin/computation-analysis" as any;
+const NODE_TYPE = "curio.builtin/python-computation" as any;
 const SECOND = "return 2\n";
 const THIRD = "return 3\n";
 const RESULT = { code: "success", content: "Saved to file: art" };

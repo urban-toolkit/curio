@@ -74,7 +74,7 @@ def _spec() -> dict:
     return {"dataflow": {
         "name": "Resized chip", "task": "", "timestamp": 1789193389280, "provenance_id": "Resized chip",
         "nodes": [{
-            "id": NODE_ID, "type": "curio.builtin/computation-analysis", "x": 0, "y": 150,
+            "id": NODE_ID, "type": "curio.builtin/python-computation", "x": 0, "y": 150,
             "content": "return 1\n", "in": "DEFAULT", "out": "DEFAULT", "goal": "",
             "metadata": {"keywords": []}, "title": "Load streets",
         }],

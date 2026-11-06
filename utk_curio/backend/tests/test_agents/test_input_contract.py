@@ -19,7 +19,7 @@ MULTI_INPUT_SPEC = {
             {"id": "b", "type": "curio.builtin/data-loading",
              "goal": "Chicago Community Boundaries"},
             {"id": "p", "type": "curio.builtin/data-loading", "goal": "Population Data"},
-            {"id": "a", "type": "curio.builtin/computation-analysis",
+            {"id": "a", "type": "curio.builtin/python-computation",
              "goal": "Calculate Density"},
         ],
         # Listed and named against circle order on purpose: circle "in" (0)
@@ -396,7 +396,7 @@ class TestTheGateInTheLoop:
                 {"id": "p", "type": "curio.builtin/data-loading", "goal": "Population",
                  "content": "return 2"},
                 {"id": "pool", "type": "curio.builtin/data-pool", "goal": "Pool", "content": ""},
-                {"id": "t", "type": "curio.builtin/computation-analysis", "goal": "Densities",
+                {"id": "t", "type": "curio.builtin/python-computation", "goal": "Densities",
                  "content": ""},
             ],
             # Both loaders into a pool, the pool into the node: the node's one
@@ -484,7 +484,7 @@ class TestTheGateInTheLoop:
             "name": "wf", "task": "t",
             "nodes": [
                 {"id": "b", "type": "curio.builtin/data-loading", "goal": "B", "content": "return 1"},
-                {"id": "t", "type": "curio.builtin/computation-analysis", "goal": "T", "content": ""},
+                {"id": "t", "type": "curio.builtin/python-computation", "goal": "T", "content": ""},
             ],
             "edges": [{"id": "e", "source": "b", "target": "t", "targetHandle": "in"}],
         }}

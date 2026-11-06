@@ -132,7 +132,7 @@ import { inputSlotOf } from "../../utils/inputSlots";
 const PROJECT_ID = "6a1d2c3b-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
 const SOURCE = "p-heights";
 /** Python Computation: one input port that grows a circle per edge. */
-const COMPUTATION = "curio.builtin/computation-analysis@1";
+const COMPUTATION = "curio.builtin/python-computation@1";
 
 beforeAll(() => {
   const descriptor: NodeDescriptor = {

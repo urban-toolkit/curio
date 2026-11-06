@@ -53,10 +53,10 @@ def _nodes() -> list[dict]:
          "metadata": {"simpleVis": {"imageColumn": "image_url"}}},
         {"id": "join", "type": "curio.builtin/spatial-join", "title": "Trees in parks", "content": "",
          "x": 800, "y": 0, "metadata": {"spatialJoin": {"output": "counts"}}},
-        {"id": "chart", "type": "curio.builtin/computation-analysis", "title": "Shadow by tract",
+        {"id": "chart", "type": "curio.builtin/python-computation", "title": "Shadow by tract",
          "content": "return input_0.groupby('tract')['shadow'].agg([!! combine !!])", "x": 1200, "y": 0,
          "metadata": {"widgets": [dict(COMBINE), dict(THRESHOLD)]}},
-        {"id": "season", "type": "curio.builtin/computation-analysis", "title": "Season",
+        {"id": "season", "type": "curio.builtin/python-computation", "title": "Season",
          "content": "return [!! season !!]", "x": 1600, "y": 0, "metadata": {"widgets": [dict(SEASON)]}},
     ]
 

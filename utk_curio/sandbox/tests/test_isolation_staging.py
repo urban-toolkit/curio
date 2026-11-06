@@ -190,7 +190,7 @@ def _run_and_persist(code, scratch, *, session_id=None, input_spec=None):
     """Run node code in-process and file its output away, as the parent would."""
     request = {
         "code": code,
-        "node_type": "curio.builtin/computation-analysis",
+        "node_type": "curio.builtin/python-computation",
         "data_type": "",
         "scratch_dir": str(scratch),
         "input": input_spec or {"kind": "none"},

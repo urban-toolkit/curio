@@ -106,7 +106,7 @@ def _spec() -> dict:
             "provenance_id": "Scenarios",
             "nodes": [
                 node(LOADER, "curio.builtin/data-loading", 0, LOADER_CODE),
-                node(SCALE, "curio.builtin/computation-analysis", 645, SCALE_CODE),
+                node(SCALE, "curio.builtin/python-computation", 645, SCALE_CODE),
                 node(MAP, "curio.builtin/autk-grammar", 1290, MAP_CONTENT),
             ],
             "edges": [

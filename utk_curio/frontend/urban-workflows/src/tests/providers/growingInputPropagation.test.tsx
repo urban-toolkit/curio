@@ -1,7 +1,7 @@
 /**
  * Several inputs reaching one node through its circles (#662), with the
  * versioned dispatcher ids a palette drag stores (dev/64:
- * `curio.builtin/computation-analysis@1`).
+ * `curio.builtin/python-computation@1`).
  *
  * A node whose one input port takes several edges holds a value per circle in
  * `data.inputSlots`, and reads them as one value in `data.input`: the value
@@ -84,7 +84,7 @@ import { registerNode } from '../../registry/nodeRegistry';
 import type { NodeDescriptor } from '../../registry/types';
 
 /** Python Computation as the shipped manifest declares its input: `[1,n]`. */
-const GROWING = 'curio.builtin/computation-analysis@1';
+const GROWING = 'curio.builtin/python-computation@1';
 
 beforeAll(() => {
   const descriptor: NodeDescriptor = {

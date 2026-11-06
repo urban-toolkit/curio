@@ -229,7 +229,7 @@ describe.each(FORMS)('growing node input plumbing: %s', (_label, poolType) => {
     renderFlow();
     await addNodes([
       node('src-a', NodeType.DATA_LOADING),
-      node('plain', NodeType.COMPUTATION_ANALYSIS),
+      node('plain', NodeType.PYTHON_COMPUTATION),
     ]);
     await act(async () => {
       api.onEdgesChange([

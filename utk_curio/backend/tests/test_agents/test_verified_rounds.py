@@ -33,7 +33,8 @@ REPO = Path(__file__).resolve().parents[4]
 KEY = "4242"
 PID = "p-rounds"
 DL = "curio.builtin/data-loading"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
+JS = "curio.builtin/js-computation"
 VEGA = "curio.builtin/vis-vega"
 NOAA = "https://api.noaa.gov/climate/v1/data"
 #: A content builder's one-line answer in place of code, on a node that loads no data.
@@ -673,7 +674,7 @@ class TestScenarioChipsInTheCheck:
         shutil.copytree(builtin, user_packages_dir(KEY) / builtin.name, dirs_exist_ok=True)
         with app.test_request_context():
             roster = {row["id"]: row.get("label") for row in packages_service.available_templates(KEY, PID)}
-        assert roster.get(CA) == "Python Computation", roster
+        assert roster.get(JS) == "JS Computation", roster
 
         checked: list = []
         real = document_validation.validate
@@ -685,8 +686,8 @@ class TestScenarioChipsInTheCheck:
         monkeypatch.setattr(document_validation, "validate", spy)
         chart = {"id": "chart", "type": VEGA, "goal": "compare the sources", "content": ""}
         spec = {"dataflow": {
-            "nodes": [{"id": "py", "type": f"{CA}@1", "content": "return input_0"}, chart],
-            "edges": [{"id": "e-py", "source": "py", "target": "chart", "sourceHandle": "out", "targetHandle": "in"}],
+            "nodes": [{"id": "js", "type": f"{JS}@1", "content": "return input_0"}, chart],
+            "edges": [{"id": "e-js", "source": "js", "target": "chart", "sourceHandle": "out", "targetHandle": "in"}],
             "name": "wf", "task": "compare",
         }}
         # As the Vega-Lite package's charts write it: the dataset its inputs are stacked in, by its chip.
@@ -696,8 +697,8 @@ class TestScenarioChipsInTheCheck:
         )
         _rounds(app, chart, replies=[reply], exec_fn=_Exec(), spec=spec)
         assert checked, "the loop checked no document"
-        # The built-in Python node's label (packages/curio.builtin@1), not "Computation Analysis".
-        assert json.loads(checked[0])["encoding"]["x"]["sort"] == ["Python Computation"]
+        # The built-in JS node's label (packages/curio.builtin@1), not its type in words, "Js Computation".
+        assert json.loads(checked[0])["encoding"]["x"]["sort"] == ["JS Computation"]
         assert json.loads(checked[0])["data"] == {"name": "inputs"}
 
 
@@ -918,7 +919,7 @@ TEMPLATES = [
     {"id": "data-loading", "label": "Data Loading", "category": "data", "engine": "python",
      "editor": "code", "description": "Load data.", "inputPorts": [],
      "outputPorts": [{"types": ["DATAFRAME"], "cardinality": "1"}]},
-    {"id": "computation-analysis", "label": "Computation Analysis", "category": "computation",
+    {"id": "python-computation", "label": "Python Computation", "category": "computation",
      "engine": "python", "editor": "code", "description": "Analyze.",
      "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
      "outputPorts": [{"types": ["JSON"], "cardinality": "1"}]},

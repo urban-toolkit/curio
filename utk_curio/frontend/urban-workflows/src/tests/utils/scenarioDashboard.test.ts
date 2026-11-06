@@ -20,7 +20,7 @@ function node(id: string, at: { x: number; y: number }, extra: Record<string, un
     id,
     type: "__curioUniversalNode",
     position: at,
-    data: { nodeId: id, nodeType: NodeType.COMPUTATION_ANALYSIS, code: "return input_0", ...extra },
+    data: { nodeId: id, nodeType: NodeType.PYTHON_COMPUTATION, code: "return input_0", ...extra },
   } as any;
 }
 

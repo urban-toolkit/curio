@@ -9,7 +9,7 @@ import { normalizeSelections } from "../utils/references/selectionTags";
 
 const node = (id: string, data: Record<string, unknown> = {}) => ({
   id,
-  type: "curio.builtin/computation-analysis",
+  type: "curio.builtin/python-computation",
   position: { x: 0, y: 0 },
   data: { nodeId: id, code: "return [!! selection picked !!]", ...data },
 });

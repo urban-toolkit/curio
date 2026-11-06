@@ -121,7 +121,7 @@ describe('source reaching WidgetsEditor on load', () => {
     render(
       <NodeEditor
         {...(baseProps as any)}
-        nodeType={'curio.builtin/computation-analysis'}
+        nodeType={'curio.builtin/python-computation'}
         code={true}
         grammar={false}
         widgets={true}

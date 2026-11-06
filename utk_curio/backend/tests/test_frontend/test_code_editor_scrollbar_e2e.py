@@ -53,7 +53,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-PYTHON_TYPE = "curio.builtin/computation-analysis"
+PYTHON_TYPE = "curio.builtin/python-computation"
 VEGA_TYPE = "curio.builtin/vis-vega"
 
 #: One line far longer than a node's editor is wide.

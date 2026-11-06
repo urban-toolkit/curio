@@ -183,7 +183,7 @@ describe('onConnect fan-in guard (dev/67-3, DEC-051)', () => {
     await addNodes([
       makeNode('a', 'curio.builtin/data-loading@1'),
       makeNode('b', 'curio.builtin/data-loading@1'),
-      makeNode('c', 'curio.builtin/computation-analysis@1'),
+      makeNode('c', 'curio.builtin/python-computation@1'),
     ]);
     await connect('a', 'c');
     expect(api.edges).toHaveLength(1);
@@ -233,7 +233,7 @@ describe('onConnect fan-in guard (dev/67-3, DEC-051)', () => {
       await addNodes([
         makeNode('a', 'curio.builtin/data-loading@1'),
         makeNode('b', 'curio.builtin/data-loading@1'),
-        makeNode('c', 'curio.builtin/computation-analysis@1'),
+        makeNode('c', 'curio.builtin/python-computation@1'),
       ]);
       await connect('a', 'c', 'in', true);
       await connect('b', 'c', 'in', true); // persisted duplicate on load

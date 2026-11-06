@@ -1998,7 +1998,7 @@ class TestReuseLadder:
         # A Researcher creating a CODE node: no default.
         att_id, _ = self._setup(
             client, user=user, token=token, project_id=alice_project,
-            monkeypatch=monkeypatch, replies=[self._create_req("curio.builtin/computation-analysis"), "done"],
+            monkeypatch=monkeypatch, replies=[self._create_req("curio.builtin/python-computation"), "done"],
         )
         def _landed_node(response):
             [landed] = [c for c in response.get_json().get("changes") or [] if c["tool"] == "node.create"]
@@ -2544,7 +2544,7 @@ class TestSnapshotCostAndCoherence:
         helper = TestDataflowPlanMint()
         user, token = user_and_token
         nodes = [
-            {"ref": f"n{i}", "nodeType": "curio.builtin/computation-analysis",
+            {"ref": f"n{i}", "nodeType": "curio.builtin/python-computation",
              "title": f"Step {i}", "intent": "work"}
             for i in range(size)
         ]
@@ -2778,9 +2778,9 @@ class TestPlanToolRequestForm:
             "goal": "heat analysis",
             "nodes": [
                 {"ref": "a",
-                 "nodeType": "data-loading" if bad_type else "curio.builtin/computation-analysis",
+                 "nodeType": "data-loading" if bad_type else "curio.builtin/python-computation",
                  "title": "Load", "intent": "load the data"},
-                {"ref": "b", "nodeType": "curio.builtin/computation-analysis",
+                {"ref": "b", "nodeType": "curio.builtin/python-computation",
                  "title": "Analyze", "intent": "compute stats"},
             ],
             "edges": [{"from": "a", "to": "b"}],
@@ -2819,7 +2819,7 @@ class TestPlanToolRequestForm:
 
         user, token = user_and_token
         plan = {"goal": "big", "nodes": [
-            {"ref": f"n{i}", "nodeType": "curio.builtin/computation-analysis",
+            {"ref": f"n{i}", "nodeType": "curio.builtin/python-computation",
              "title": f"Step {i}", "intent": "y" * 200}
             for i in range(40)
         ], "edges": []}
@@ -2879,7 +2879,7 @@ class TestToolRequestRecovery:
         import json as _json
 
         block = _json.dumps({"toolRequest": {"tool": "node.create", "params": {
-            "nodeType": "curio.builtin/computation-analysis", "content": content}}})
+            "nodeType": "curio.builtin/python-computation", "content": content}}})
         return f"Here is the node.\n\n```json\n{block}\n```\n\n{trailing}"
 
     def _run(self, client, user, token, project, monkeypatch, replies):
@@ -2910,7 +2910,7 @@ class TestToolRequestRecovery:
 
         user, token = user_and_token
         block = _json.dumps({"toolRequest": {"tool": "node.create", "params": {
-            "nodeType": "curio.builtin/computation-analysis", "content": "print(1)"}}})
+            "nodeType": "curio.builtin/python-computation", "content": "print(1)"}}})
         reply = f"Adding it.\n\n```curio.v1\n{block}\n```\n\nDone."
         r, _, _, _ = self._run(client, user, token, alice_project, monkeypatch,
                                replies=[reply, "Added."])
@@ -3079,9 +3079,9 @@ class TestFenceAgnosticPlanRecognition:
             "goal": "heat analysis",
             "nodes": [
                 {"ref": "a",
-                 "nodeType": "data-loading" if bad_type else "curio.builtin/computation-analysis",
+                 "nodeType": "data-loading" if bad_type else "curio.builtin/python-computation",
                  "title": "Load", "intent": "load the data"},
-                {"ref": "b", "nodeType": "curio.builtin/computation-analysis",
+                {"ref": "b", "nodeType": "curio.builtin/python-computation",
                  "title": "Analyze", "intent": "compute stats"},
             ],
             "edges": [{"from": "a", "to": "b"}],

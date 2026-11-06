@@ -87,7 +87,7 @@ import type { UserData } from '../../utils/authApi';
 import type { Run, RunEvent } from '../../services/runs/runsApi';
 
 const PROJECT_ID = 'run-end-save';
-const NODE_TYPE = 'curio.builtin/computation-analysis';
+const NODE_TYPE = 'curio.builtin/python-computation';
 const DICT = 'json-output-b-dict';
 const SCALAR = 'json-output-a-scalar';
 /** Each node's output as its run's reply names it: an artifact id. */

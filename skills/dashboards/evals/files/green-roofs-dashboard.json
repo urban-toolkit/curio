@@ -18,7 +18,7 @@
       },
       {
         "id": "roofs-top-zips",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 700,
         "y": 300,
         "content": "roofs = [!! input_0 !!]\n\n# Only the zip codes that start with the prefix, when one is set\nprefix = [!! zip_prefix !!]\nif prefix:\n    roofs = roofs[roofs['zip'].astype(str).str.startswith(prefix)]\n\n# The zip codes with the most vegetated square feet\ntop = roofs.groupby('zip')['VEGETATED_SQFT'].sum().reset_index()\ntop = top.sort_values(by='VEGETATED_SQFT', ascending=False).head([!! top_n !!])\nreturn top\n",

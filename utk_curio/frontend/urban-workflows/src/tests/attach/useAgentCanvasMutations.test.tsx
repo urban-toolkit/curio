@@ -78,7 +78,7 @@ const Host: React.FC = () => {
 
 const NODE = {
   id: "server-minted-id",
-  type: "curio.builtin/computation-analysis",
+  type: "curio.builtin/python-computation",
   content: "print('new')",
   goal: "sum it",
   x: 500,
@@ -120,7 +120,7 @@ describe("a landed change: the doc brings it to a canvas it binds; a canvas no d
   const PLAN = {
     kind: "graph-created" as const,
     planId: "landed-plan",
-    nodes: [{ id: "ga", type: "curio.builtin/computation-analysis", content: "", goal: "Load", x: 500, y: 60 }],
+    nodes: [{ id: "ga", type: "curio.builtin/python-computation", content: "", goal: "Load", x: 500, y: 60 }],
     edges: [{ id: "e1", source: "ga", target: "old" }],
     removedNodeIds: ["victim"],
     removedEdgeIds: ["e0"],
@@ -177,10 +177,10 @@ describe("a landed change: the doc brings it to a canvas it binds; a canvas no d
       notifyAgentChangesLanded(PLAN);
     });
     expect(mockCreateCodeNode).toHaveBeenCalledWith(
-      "curio.builtin/computation-analysis", expect.objectContaining({ nodeId: "server-minted-id" }),
+      "curio.builtin/python-computation", expect.objectContaining({ nodeId: "server-minted-id" }),
     );
     expect(mockCreateCodeNode).toHaveBeenCalledWith(
-      "curio.builtin/computation-analysis", expect.objectContaining({ nodeId: "ga" }),
+      "curio.builtin/python-computation", expect.objectContaining({ nodeId: "ga" }),
     );
     expect(mockApplyNodeSettings).toHaveBeenCalledWith("pool", { widgets: { k: 1 } });
     expect(mockApplyReviewedRemovals).toHaveBeenCalledWith(["victim"], ["e0"]);
@@ -203,7 +203,7 @@ describe("useAgentCanvasMutations (the apply→canvas bridge, dev/48 §3.3 + dev
   it("node-created inserts through the existing factory with the SERVER id", () => {
     render(<Host />);
     act(() => notifyAgentCanvasMutation({ kind: "node-created", node: NODE }));
-    expect(mockCreateCodeNode).toHaveBeenCalledWith("curio.builtin/computation-analysis", {
+    expect(mockCreateCodeNode).toHaveBeenCalledWith("curio.builtin/python-computation", {
       nodeId: "server-minted-id",
       code: "print('new')",
       goal: "sum it",
@@ -294,8 +294,8 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
     kind: "graph-created" as const,
     planId: "plan-1",
     nodes: [
-      { id: "ga", type: "curio.builtin/computation-analysis", content: "", goal: "Load — l", x: 500, y: 60 },
-      { id: "gb", type: "curio.builtin/computation-analysis", content: "", goal: "Analyze — a", x: 920, y: 60 },
+      { id: "ga", type: "curio.builtin/python-computation", content: "", goal: "Load — l", x: 500, y: 60 },
+      { id: "gb", type: "curio.builtin/python-computation", content: "", goal: "Analyze — a", x: 920, y: 60 },
     ],
     edges: [{ id: "e1", source: "ga", target: "gb" }],
   };
@@ -307,7 +307,7 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
       act(() => notifyAgentCanvasMutation(GRAPH));
       expect(mockCreateCodeNode).toHaveBeenCalledTimes(2);
       expect(mockCreateCodeNode).toHaveBeenCalledWith(
-        "curio.builtin/computation-analysis",
+        "curio.builtin/python-computation",
         expect.objectContaining({ nodeId: "ga", position: { x: 500, y: 60 } }),
       );
       const changes = mockOnEdgesChange.mock.calls[0][0];
@@ -403,7 +403,7 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
     act(() => notifyAgentCanvasMutation({ ...GRAPH, planId: "plan-2" }));
     expect(mockCreateCodeNode).toHaveBeenCalledTimes(1);
     expect(mockCreateCodeNode).toHaveBeenCalledWith(
-      "curio.builtin/computation-analysis",
+      "curio.builtin/python-computation",
       expect.objectContaining({ nodeId: "gb" }),
     );
   });
@@ -412,7 +412,7 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
 describe("#662: a plan's widgets, copies and scenarios reach the live canvas", () => {
   const COPY = {
     id: "copy-id",
-    type: "curio.builtin/computation-analysis",
+    type: "curio.builtin/python-computation",
     content: "",
     goal: "Shadows: shadow lengths",
     x: 500,
@@ -431,7 +431,7 @@ describe("#662: a plan's widgets, copies and scenarios reach the live canvas", (
     render(<Host />);
     act(() => notifyAgentCanvasMutation({ kind: "node-created", node: COPY }));
     expect(mockCreateCodeNode).toHaveBeenCalledWith(
-      "curio.builtin/computation-analysis",
+      "curio.builtin/python-computation",
       expect.objectContaining({
         nodeId: "copy-id",
         widgets: [{ name: "height_factor", type: "number", default: 1, value: 2 }],
@@ -543,7 +543,7 @@ describe("graph-created removals (dev/59)", () => {
     kind: "graph-created" as const,
     planId: "rev-1",
     nodes: [
-      { id: "new-a", type: "curio.builtin/computation-analysis", content: "", goal: "New — n", x: 500, y: 60 },
+      { id: "new-a", type: "curio.builtin/python-computation", content: "", goal: "New — n", x: 500, y: 60 },
     ],
     edges: [{ id: "e-new", source: "new-a", target: "cleaner" }],
     removedNodeIds: ["old-loader"],

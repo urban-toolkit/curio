@@ -124,7 +124,7 @@ const DATA_LOADING = 'curio.builtin/data-loading';
 const DATA_POOL = 'curio.builtin/data-pool';
 const VEGA = 'curio.builtin/vis-vega';
 /** Python Computation: one input port that grows a circle per edge. */
-const COMPUTATION = 'curio.builtin/computation-analysis';
+const COMPUTATION = 'curio.builtin/python-computation';
 
 // The node a load restores, and the nodes below it.
 /** A frame, saved. */

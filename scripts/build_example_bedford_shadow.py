@@ -934,7 +934,7 @@ def scenario_nodes(scenario: dict, top: int) -> list[dict]:
     copied = (lambda key: None) if scenario is SCENARIOS[0] else (lambda key: original + key)
     which = scenario["name"][0].lower() + scenario["name"][1:]
     return [
-        node(p + "tower", "curio.builtin/computation-analysis", 2 * c, top, PREPARE,
+        node(p + "tower", "curio.builtin/python-computation", 2 * c, top, PREPARE,
              "Draw this scenario's buildings into a heights grid on the ground cells, with Block 1259's open cells "
              "as the spots the block step reads.", title="Prepare buildings for the GPU", copied=copied("tower")),
         node(p + "sun-rays", "curio.builtin/autk-grammar", 3 * c, top, cells_pass(),
@@ -947,16 +947,16 @@ def scenario_nodes(scenario: dict, top: int) -> list[dict]:
              f"On the GPU, for every day of {YEAR}, find the minutes a roof keeps the sun from Block 1259's open "
              "ground over the day's window, on average.", title="Cast sun rays on Block 1259 through the year",
              copied=copied("year-rays")),
-        node(p + "shadow-cells", "curio.builtin/computation-analysis", 4 * c, top, READ_CELLS,
+        node(p + "shadow-cells", "curio.builtin/python-computation", 4 * c, top, READ_CELLS,
              "Keep each open-ground cell's minutes in shadow and their share of the day's window.",
              title="Read shadow per cell", copied=copied("shadow-cells")),
-        node(p + "block-steps", "curio.builtin/computation-analysis", 4 * c, top + ROW, READ_STEPS,
+        node(p + "block-steps", "curio.builtin/python-computation", 4 * c, top + ROW, READ_STEPS,
              "Keep the share of Block 1259's open ground in shadow at each step, with its time.",
              title="Read shadow on the block per step", copied=copied("block-steps")),
-        node(p + "block-days", "curio.builtin/computation-analysis", 4 * c, top + 2 * ROW, READ_DAYS,
+        node(p + "block-days", "curio.builtin/python-computation", 4 * c, top + 2 * ROW, READ_DAYS,
              "Add up each day's time in shadow on Block 1259's open ground, a row per day of the year.",
              title="Read shadow on the block per day", copied=copied("block-days")),
-        node(p + "shadow-shown", "curio.builtin/computation-analysis", 5 * c, top, SHOWN,
+        node(p + "shadow-shown", "curio.builtin/python-computation", 5 * c, top, SHOWN,
              "Gather the cells in shadow into classes of the share of the day's window for the map.",
              title="Keep shaded cells for the map",
              copied=copied("shadow-shown")),
@@ -984,21 +984,21 @@ def build() -> dict:
              title="Load Block 1259 outline"),
         node("streets", "curio.builtin/data-loading", 0, 2 * ROW, STREETS,
              "Load NYC's street centerlines around the site, each drawn as wide as its roadway.", title="Load streets"),
-        node("year-steps", "curio.builtin/computation-analysis", c, -ROW,
+        node("year-steps", "curio.builtin/python-computation", c, -ROW,
              year_steps_code(round(site.y, 4), round(site.x, 4)),
              f"For every day of {YEAR}, count from 1.5 hours after sunrise to 1.5 hours before sunset in New York "
              f"time, in {STEP_MIN}-minute steps, with the sun's direction and height at each.",
              title="List the year's sun steps"),
-        node("steps", "curio.builtin/computation-analysis", c, 0, steps_code(round(site.y, 4), round(site.x, 4)),
+        node("steps", "curio.builtin/python-computation", c, 0, steps_code(round(site.y, 4), round(site.x, 4)),
              "For the day picked, an equinox or a solstice of 2027, count from 1.5 hours after sunrise to 1.5 hours "
              f"before sunset in New York time, in {STEP_MIN}-minute steps, with the sun's direction and height at "
              "each.", title="List the day's sun steps",
              widgets=[{"name": "day", "type": "choice", "label": "Day", "default": DAY,
                        "options": {"choices": list(DAYS), "display": "radio"}}]),
-        node("ground", "curio.builtin/computation-analysis", c, ROW, GROUND,
+        node("ground", "curio.builtin/python-computation", c, ROW, GROUND,
              f"Cover the area with {CELL_M} m cells and keep the open ground, the cells outside every existing "
              "building, marking the ones on Block 1259.", title="Make open-ground grid"),
-        node("map-area", "curio.builtin/computation-analysis", c, 2 * ROW, MAP_AREA,
+        node("map-area", "curio.builtin/python-computation", c, 2 * ROW, MAP_AREA,
              "Make the box around every building that the maps load first, so Autark keeps their layers whole.",
              title="Map extent (keeps layers whole)"),
         # 2. The scenarios: without the proposed building above, with it below.
@@ -1009,10 +1009,10 @@ def build() -> dict:
              "Commit edits.", title="Add proposed tower (1550 Bedford Ave)"),
         *scenario_nodes(with_building, 3 * ROW),
         # 3. The comparison, on the right.
-        node("added", "curio.builtin/computation-analysis", 7 * c + 400, 0, ADDED,
+        node("added", "curio.builtin/python-computation", 7 * c + 400, 0, ADDED,
              "Subtract each open-ground cell's minutes in shadow without the proposed building from its minutes "
              "with it.", title="Shade the tower adds"),
-        node("added-shown", "curio.builtin/computation-analysis", 8 * c + 400, 0, ADDED_SHOWN,
+        node("added-shown", "curio.builtin/python-computation", 8 * c + 400, 0, ADDED_SHOWN,
              "Keep the cells the proposed building shades and set the map's color scale.",
              title="Keep added shade for the map"),
         node("added-map", "curio.builtin/autk-grammar", 9 * c + 400, -ROW,
@@ -1025,7 +1025,7 @@ def build() -> dict:
         node("year-plot", "curio.builtin/vis-vega", 8 * c + 400, 2 * ROW + ROW // 2, year_plot(),
              f"Plot Block 1259's open ground's time in shadow on each day of {YEAR}, a line per scenario.",
              title=f"Plot: shadow on Block 1259 each day of {YEAR}", size=(980, 500)),
-        node("compare", "curio.builtin/computation-analysis", 7 * c + 400, 4 * ROW, COMPARE,
+        node("compare", "curio.builtin/python-computation", 7 * c + 400, 4 * ROW, COMPARE,
              "Average the shade the proposed building adds to Block 1259's open ground a day over each month, with "
              "the standard deviation.", title="Compare the scenarios by month"),
         node("summary-view", "curio.builtin/vis-simple", 8 * c + 400, 4 * ROW, "",

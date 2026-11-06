@@ -51,7 +51,7 @@ USER = "4343"
 PROJECT = "p-gate"
 NB = "agent.curio.node-builder@1"
 DL = "curio.builtin/data-loading"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 JS = "curio.builtin/js-computation"
 VEGA = "curio.builtin/vis-vega"
 RASTER_CALCULATOR = "curio.rasterization/raster-calculator"
@@ -97,7 +97,7 @@ Gives a key's value.
 TEMPLATES = [
     grounding_routes.TEMPLATES[0],
     {
-        "id": "computation-analysis", "label": "Python Computation", "category": "computation",
+        "id": "python-computation", "label": "Python Computation", "category": "computation",
         "engine": "python", "editor": "code", "description": "Run Python code.",
         "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
         "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],

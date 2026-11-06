@@ -94,7 +94,7 @@ NODE_CODE = "MARKER_PKG_CONFIG_ROUNDTRIP = 7 * 6\nreturn [MARKER_PKG_CONFIG_ROUN
 KIND_LABEL = "Configured Kind"
 KIND_DESCRIPTION = "Kind description typed into the Node settings modal."
 
-# The seeded node is curio.builtin/computation-analysis, whose descriptor ships
+# The seeded node is curio.builtin/python-computation, whose descriptor ships
 # exactly one input and one output port, both "[1,n]" over six types. So the
 # modal opens with one row in each section, and the edits below are: rewrite row
 # 0 of each, then append a second input row. Every type list differs from the
@@ -148,7 +148,7 @@ def _spec() -> dict:
             "nodes": [
                 {
                     "id": NODE_ID,
-                    "type": "curio.builtin/computation-analysis",
+                    "type": "curio.builtin/python-computation",
                     "x": 420,
                     "y": 300,
                     "content": NODE_CODE,

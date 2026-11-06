@@ -218,7 +218,7 @@ class TestNodeCodeReachesIt:
         produced = execute_js_code(f"return {json.dumps(records())};", "", "AUTK_GRAMMAR", "", save_dataset=False)
         assert produced["stderr"] == "", produced["stderr"]
         output = produced["output"]
-        result = execute_code(self.CODE, output["path"], "curio.builtin/computation-analysis", output["dataType"],
+        result = execute_code(self.CODE, output["path"], "curio.builtin/python-computation", output["dataType"],
                               save_dataset=False)
         assert result["stderr"] == "", result["stderr"]
         assert load_from_duckdb(result["output"]["path"]) == "2 3395 table_osm_roads"
@@ -230,7 +230,7 @@ class TestNodeCodeReachesIt:
         produced = execute_js_code(f"return {json.dumps(records())};", "", "AUTK_GRAMMAR", "", save_dataset=False)
         output = produced["output"]
         result = execute_code("    return curio_layer(input_0, \"table_osm_water\", 0)\n", output["path"],
-                              "curio.builtin/computation-analysis", output["dataType"], save_dataset=False)
+                              "curio.builtin/python-computation", output["dataType"], save_dataset=False)
         assert (
             "[!! input_0:table_osm_water !!]: input_0 has no layer table_osm_water. "
             "Its layers are table_osm_roads, table_osm_buildings."
@@ -244,7 +244,7 @@ class TestNodeCodeReachesIt:
         (scratch / "layers.json").write_text(json.dumps(records()), encoding="utf-8")
         request = {
             "code": code,
-            "node_type": "curio.builtin/computation-analysis", "data_type": "",
+            "node_type": "curio.builtin/python-computation", "data_type": "",
             "scratch_dir": str(scratch), "input": {"kind": "json", "file": "layers.json"},
             "input_slots": [0], "session_imports": [], "limits": {},
         }

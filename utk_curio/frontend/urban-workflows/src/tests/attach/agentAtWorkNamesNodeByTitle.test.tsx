@@ -13,7 +13,7 @@ import { useAgentAtWorkText } from "../../components/agents/attach/PeopleHere";
 import { registerNode } from "../../registry/nodeRegistry";
 import type { NodeDescriptor } from "../../registry/types";
 
-const PYTHON = "curio.builtin/computation-analysis@1";
+const PYTHON = "curio.builtin/python-computation@1";
 
 /** A Python node renamed "Shade per park", as the canvas holds it. */
 const NODES = [

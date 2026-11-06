@@ -73,7 +73,7 @@ jest.mock("../../../hook/usePackageBackendRun", () => ({
 import CodeEditor from "../../../components/editing/CodeEditor";
 import { clearCurrentProject, setCurrentProject } from "../../../registry/projectPackagesStore";
 
-const PYTHON = "curio.builtin/computation-analysis";
+const PYTHON = "curio.builtin/python-computation";
 const CODE = 'trees = curio_load_data("imported.xstreet-trees")\nreturn trees';
 const ALICES = "alices-dataflow";
 

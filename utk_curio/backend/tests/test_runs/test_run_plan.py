@@ -65,7 +65,7 @@ def test_ancestors_follow_data_edges_only():
 
 
 @pytest.mark.parametrize("node_type, content, role", [
-    ("curio.builtin/computation-analysis", "", "run"),
+    ("curio.builtin/python-computation", "", "run"),
     ("curio.builtin/data-loading@1", "", "run"),
     ("curio.builtin/js-computation", "", "run"),
     ("curio.builtin/data-pool", "", "forward"),

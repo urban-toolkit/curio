@@ -34,7 +34,7 @@
         "The answer writes a dataflow plan with a node of type curio.rasterization/raster-calculator.",
         "The plan wires both scenarios' Flood depth rasters into that node, one data edge each.",
         "The node's intent says it divides the NbS scenario's depth by the No NbS one's, cell by cell.",
-        "The plan adds no curio.builtin/computation-analysis node to do the raster math."
+        "The plan adds no curio.builtin/python-computation node to do the raster math."
       ]
     }
   ],

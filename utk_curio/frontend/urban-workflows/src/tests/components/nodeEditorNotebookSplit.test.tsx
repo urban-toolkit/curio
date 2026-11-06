@@ -176,7 +176,7 @@ describe("other nodes shown as notebook cells", () => {
 
   test("a code node keeps its Code pill in the page, which the e2e helpers click", () => {
     const { container } = mount(true, {
-      ...props(), nodeType: "curio.builtin/computation-analysis", code: true, grammar: false, outputId: undefined,
+      ...props(), nodeType: "curio.builtin/python-computation", code: true, grammar: false, outputId: undefined,
     });
     expect(container.querySelector('.nav-link[data-rr-ui-event-key="code"]')).not.toBeNull();
   });

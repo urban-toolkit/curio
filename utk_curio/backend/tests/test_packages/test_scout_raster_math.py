@@ -49,7 +49,7 @@ FLOOD = REPO / "docs" / "examples" / "dataflows" / "quad-cities-flood-vulnerabil
 #: The flood dataflow's node that averages each period's depth, in each scenario.
 AVERAGE = "Average depth by period"
 #: A node of no package, which a run hands no package's modules.
-PLAIN = "curio.builtin/computation-analysis"
+PLAIN = "curio.builtin/python-computation"
 #: What left core for the package. Curio's own code defines none of them.
 MOVED = (
     "curio_raster_calculate", "curio_raster_statistics", "raster_calculate", "raster_statistics",

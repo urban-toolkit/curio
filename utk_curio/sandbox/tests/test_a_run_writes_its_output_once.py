@@ -60,7 +60,7 @@ class ARunWritesItsOutputOnceTestCase(unittest.TestCase):
                 "    ",
             ),
             "file_path": "",
-            "nodeType": "COMPUTATION_ANALYSIS",
+            "nodeType": "PYTHON_COMPUTATION",
             "dataType": "",
             "session_id": "session-a",
             "save_dataset": True,

@@ -83,8 +83,8 @@ const LINKED = {
     { id: "roads", type: "curio.builtin/data-loading", data: { title: "Roads" } },
     { id: "buildings", type: "curio.builtin/data-loading", data: { title: "Buildings" } },
     { id: MAP, type: "curio.builtin/autk-grammar", data: { title: "Downtown Chicago layers" } },
-    { id: "count", type: "curio.builtin/computation-analysis", data: {} },
-    { id: "model", type: "curio.builtin/computation-analysis", data: {} },
+    { id: "count", type: "curio.builtin/python-computation", data: {} },
+    { id: "model", type: "curio.builtin/python-computation", data: {} },
     { id: "chart", type: "curio.builtin/vis-vega", data: {} },
   ],
   edges: [

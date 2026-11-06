@@ -60,7 +60,7 @@ USER_NAME = "UI Gallery User"
 # fixture behind "does a catalog package match its canvas node".
 CATEGORY_NODES = [
     ("gallery-data", "curio.builtin/data-loading", 240, 140),
-    ("gallery-computation", "curio.builtin/computation-analysis", 240, 340),
+    ("gallery-computation", "curio.builtin/python-computation", 240, 340),
     ("gallery-vis", "curio.builtin/vis-vega", 240, 540),
 ]
 

@@ -122,8 +122,8 @@ const node = (id: string, nodeType: string, extra: Record<string, unknown> = {})
   data: { nodeId: id, nodeType, ...extra },
 });
 const NODES = [
-  node("tall", "curio.builtin/computation-analysis@1", { title: "Shade" }),
-  node("base", "curio.builtin/computation-analysis@1", { title: "Shade" }),
+  node("tall", "curio.builtin/python-computation@1", { title: "Shade" }),
+  node("base", "curio.builtin/python-computation@1", { title: "Shade" }),
   node("chart", "curio.builtin/vis-vega@1"),
 ];
 const EDGES = [

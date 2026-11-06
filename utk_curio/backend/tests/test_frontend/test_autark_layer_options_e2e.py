@@ -59,7 +59,7 @@ if TYPE_CHECKING:
 
 MAP_TYPE = "curio.builtin/autk-grammar"
 JS_TYPE = "curio.builtin/js-computation"
-PYTHON_TYPE = "curio.builtin/computation-analysis"
+PYTHON_TYPE = "curio.builtin/python-computation"
 CLOSEUP_STEM = "autark-layer-options"
 
 #: Columns of the raster: cell (row, col) holds col.

@@ -39,7 +39,7 @@ FRAMES = "canvas-cursors"
 OWNER, WATCHER = "cursor_owner_e2e", "cursor_watcher_e2e"
 OWNER_NAME, WATCHER_NAME = "Cursor Owner", "Cursor Watcher"
 NODE = "cursor-node"
-TYPE = "curio.builtin/computation-analysis"
+TYPE = "curio.builtin/python-computation"
 #: The view each tab starts from: the node on the left, bare canvas to its right.
 START_VIEW = {"x": 160, "y": 140, "zoom": 0.6}
 #: How far a drawn cursor's tip may be from the point the other tab's pointer is on.

@@ -80,7 +80,7 @@ import { UserContext } from '../../providers/userContext';
 import type { UserData } from '../../utils/authApi';
 
 const PROJECT_ID = 'commented-reopen';
-const NODE_TYPE = 'curio.builtin/computation-analysis';
+const NODE_TYPE = 'curio.builtin/python-computation';
 const DISCUSSED = 'discussed-node';
 const PLAIN = 'plain-node';
 /** A renamed header, saved beside the comments, which the load keeps. */

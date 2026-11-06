@@ -83,12 +83,12 @@ describe("summarizeNodeInput", () => {
   // second widget on the reader instead of setting the multiplier's.
   it("names the widgets of a node wired in, which set what it hands on", () => {
     const feeders = [
-      { id: "mult", type: "curio.builtin/computation-analysis", widgets: ["number_multiplier"] },
+      { id: "mult", type: "curio.builtin/python-computation", widgets: ["number_multiplier"] },
       { id: "loader", type: "curio.builtin/data-loading" },
     ];
     expect(summarizeNodeInput({ in: "DEFAULT" }, feeders)).toBe(
       "waiting for input (declared: DEFAULT): wired from node mult " +
-        "(curio.builtin/computation-analysis; widgets number_multiplier), which has not run; " +
+        "(curio.builtin/python-computation; widgets number_multiplier), which has not run; " +
         "node loader (curio.builtin/data-loading), which has not run",
     );
   });
@@ -98,7 +98,7 @@ describe("summarizeNodeInput", () => {
       { id: "loader", type: "curio.builtin/data-loading", data: { output: { code: "success" } } },
       {
         id: "mult",
-        type: "curio.builtin/computation-analysis",
+        type: "curio.builtin/python-computation",
         widgets: ["number_multiplier"],
         data: { output: { code: "success" } },
       },
@@ -106,7 +106,7 @@ describe("summarizeNodeInput", () => {
     const arrived = { input: [{ dataType: "dataframe", path: "art-1" }, { dataType: "dict", path: "art-2" }] };
     expect(summarizeNodeInput(arrived, feeders)).toBe(
       "MULTIPLE (2 slots): [0] dataframe from artifact art-1; [1] dict from artifact art-2: " +
-        "wired from node mult (curio.builtin/computation-analysis; widgets number_multiplier), which ran",
+        "wired from node mult (curio.builtin/python-computation; widgets number_multiplier), which ran",
     );
   });
 

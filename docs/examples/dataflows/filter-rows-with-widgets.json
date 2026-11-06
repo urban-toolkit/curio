@@ -22,7 +22,7 @@
       },
       {
         "id": "filter-rows",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 620,
         "y": 200,
         "content": "import operator\n\n# The three widgets: the column, the comparison and the threshold.\ncolumn = [!! column !!]\nkeep = [!! keep !!]\nthreshold = [!! threshold !!]\n\ncompare = {\">\": operator.gt, \">=\": operator.ge, \"<\": operator.lt, \"<=\": operator.le}[keep]\nreturn input_0[compare(input_0[column], threshold)]\n",
@@ -84,7 +84,7 @@
       },
       {
         "id": "print-rows",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1240,
         "y": 420,
         "content": "# The filtered rows arrive here as input_0.\nprint(input_0)\n\nreturn input_0\n",

@@ -78,7 +78,7 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-ANALYSIS_TYPE = "curio.builtin/computation-analysis"
+ANALYSIS_TYPE = "curio.builtin/python-computation"
 #: What the node's header shows, its template's label: the name both computed
 #: datasets carry, whether the canvas saved them or a run on the server did (#775).
 ANALYSIS_LABEL = "Python Computation"

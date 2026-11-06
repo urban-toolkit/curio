@@ -1228,13 +1228,13 @@ class TestChatContentReviewMint:
         routes.TestNodeCreate()._write_builtin_package(_user_dir_key(user))
         pid = _project(client, token)
         create = "```curio.v1\n" + json.dumps({"toolRequest": {"tool": "node.create", "params": {
-            "nodeType": "curio.builtin/computation-analysis", "content": "return input_0.describe()",
+            "nodeType": "curio.builtin/python-computation", "content": "return input_0.describe()",
         }}}) + "\n```"
         _, calls = _setup(
             client, token, pid, monkeypatch,
             replies=[
                 _delegate_tail(inputs=json.dumps({
-                    "intent": "summarize what n1 returns", "nodeType": "curio.builtin/computation-analysis",
+                    "intent": "summarize what n1 returns", "nodeType": "curio.builtin/python-computation",
                 })),
                 "return input_0.describe()",
                 create,

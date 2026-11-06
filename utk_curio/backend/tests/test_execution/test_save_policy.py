@@ -76,7 +76,7 @@ def test_the_default_comes_from_the_launch_setting(monkeypatch):
     from utk_curio.backend import config
     from utk_curio.backend.app.execution import save_policy
 
-    node = {"id": "n", "type": "curio.builtin/computation-analysis"}
+    node = {"id": "n", "type": "curio.builtin/python-computation"}
     monkeypatch.setattr(config, "CURIO_DEFAULT_SAVE_NODE_OUTPUT", True)
     assert save_policy.should_save_output_on_run(node) is True
     monkeypatch.setattr(config, "CURIO_DEFAULT_SAVE_NODE_OUTPUT", False)

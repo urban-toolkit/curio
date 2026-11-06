@@ -43,7 +43,7 @@ const api = runsApi as jest.Mocked<typeof runsApi>;
 
 function step(nodeId: string, fields: Partial<RunStep> = {}): RunStep {
   return {
-    nodeId, label: nodeId, nodeType: "curio.builtin/computation-analysis", level: 0,
+    nodeId, label: nodeId, nodeType: "curio.builtin/python-computation", level: 0,
     role: "run", status: "pending", startedAt: null, finishedAt: null, durationMs: null,
     outputPath: null, outputType: null, installedDatasetId: null, codeSha256: null,
     stdoutTail: null, stderrTail: null, skipReason: null, ...fields,

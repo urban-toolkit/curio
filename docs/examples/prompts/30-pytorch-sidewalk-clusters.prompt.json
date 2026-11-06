@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/30-pytorch-sidewalk-clusters.json",
-    "sha256": "eb6ea648f5d5f2400f8915f73ff7ecd71c3f55be76730b679b39a047fc033567",
+    "sha256": "e06f61b4344e8c97a912d6bc6b345bd90e0e271f956b0bf8f896cc8a78ac7b6a",
     "walkthrough": "docs/examples/30-pytorch-sidewalk-clusters.md"
   },
   "prompt": "Load all of Project Sidewalk's Chicago sidewalk labels from the Data Catalog and group them by place into eight clusters with k-means in PyTorch, on the GPU when there is one: positions in metres, k-means++ starts drawn from a seeded generator, steps until no label changes cluster, clusters numbered from the largest, and the device it ran on. Chart how many labels of each type each cluster holds. Gather the labels into squares of a kilometre, each in the cluster most of its labels are in, and map the squares coloured by that cluster on an Autark map.",
@@ -26,21 +26,21 @@
       },
       {
         "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis2",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis3",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true

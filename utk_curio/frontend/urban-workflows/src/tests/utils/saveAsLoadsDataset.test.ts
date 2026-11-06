@@ -58,7 +58,7 @@ test("a copy of Data Loading in a new package declares loadsDataset", () => {
 });
 
 test("a copy of a node whose template declares no loader declares nothing", () => {
-  mockDesc = builtinDescriptor("computation-analysis", { inputPorts: [DATAFRAME] });
+  mockDesc = builtinDescriptor("python-computation", { inputPorts: [DATAFRAME] });
   const [template] = savedTemplates({ kind: "new" });
   expect(template).not.toHaveProperty("loadsDataset");
 });
@@ -76,9 +76,9 @@ test("saving into an installed package keeps the flag of its loader", () => {
     license: "MIT", permissions: [], dependencies: { packages: {}, python: {}, js: {} },
     templates: [loader], dirName: "me.loaders@1", lineage: null, familyKey: "me.loaders@1", channel: "stable",
   } as unknown as PackagePayload;
-  mockDesc = builtinDescriptor("computation-analysis", { inputPorts: [DATAFRAME] });
+  mockDesc = builtinDescriptor("python-computation", { inputPorts: [DATAFRAME] });
 
   const byId = Object.fromEntries(savedTemplates({ kind: "installed", package: target }).map((t) => [t.id, t]));
   expect(byId["fetch-parcels"].loadsDataset).toBe(true);
-  expect(byId["computation-analysis"]).not.toHaveProperty("loadsDataset");
+  expect(byId["python-computation"]).not.toHaveProperty("loadsDataset");
 });

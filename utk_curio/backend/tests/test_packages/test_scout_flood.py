@@ -88,7 +88,7 @@ PACKAGE_MODULES = {CALCULATOR: {"root": str(CALCULATOR_STARTER.parent), "names":
 PARAMETER = "curio.builtin/parameter"
 COMPARE = "curio.builtin/compare-scenarios"
 MAP = "curio.builtin/autk-grammar"
-PYTHON = "curio.builtin/computation-analysis"
+PYTHON = "curio.builtin/python-computation"
 #: The Python steps over the tracts, the riverside tracts and each scenario's
 #: Tract depth, which :func:`_kind` tells from the other Python nodes by title.
 TRANSFORMATION = "tract step"

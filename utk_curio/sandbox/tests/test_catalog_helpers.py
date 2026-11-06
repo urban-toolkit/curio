@@ -474,7 +474,7 @@ def test_an_isolated_node_reads_a_netcdf_file_and_runs_a_model(tmp_path):
             '    (answer,) = session.run(None, {session.get_inputs()[0].name: rain.astype(np.float32)})\n'
             '    return ",".join(str(float(v)) for v in answer[0])\n'
         ),
-        "node_type": "curio.builtin/computation-analysis", "data_type": "",
+        "node_type": "curio.builtin/python-computation", "data_type": "",
         "scratch_dir": str(scratch), "input": {"kind": "none"},
         "dataset_paths": staging.stage_dataset_paths(
             {"imported.xmodel": str(model), "imported.xweather": str(weather)}, scratch,
@@ -508,7 +508,7 @@ def test_an_isolated_node_loads_by_format(tmp_path):
     staged = staging.stage_dataset_paths({"imported.xabc": str(path)}, scratch)
     request = {
         "code": '    return int(curio_load_data("imported.xabc")["a"].iloc[0])\n',
-        "node_type": "curio.builtin/computation-analysis", "data_type": "",
+        "node_type": "curio.builtin/python-computation", "data_type": "",
         "scratch_dir": str(scratch), "input": {"kind": "none"},
         "dataset_paths": staged, "dataset_formats": {"imported.xabc": {"format": "csv"}},
         "session_imports": [], "limits": {},
@@ -566,7 +566,7 @@ def test_an_isolated_node_reads_one_part_of_a_staged_bundle(tmp_path):
 
     def run(code):
         return child.run_node({
-            "code": code, "node_type": "curio.builtin/computation-analysis", "data_type": "",
+            "code": code, "node_type": "curio.builtin/python-computation", "data_type": "",
             "scratch_dir": str(scratch), "input": {"kind": "none"},
             "dataset_paths": staged, "dataset_formats": {"data.x.bundle": {"format": "bundle"}},
             "session_imports": [], "limits": {},
@@ -604,7 +604,7 @@ def test_an_isolated_node_reads_a_shipped_dataset_as_in_process(tmp_path):
             f'    frame = curio_load_data("{dataset_id}")\n'
             '    return ",".join(sorted({type(v).__name__ for v in frame["tags"]}))\n'
         ),
-        "node_type": "curio.builtin/computation-analysis", "data_type": "",
+        "node_type": "curio.builtin/python-computation", "data_type": "",
         "scratch_dir": str(scratch), "input": {"kind": "none"},
         "dataset_paths": staging.stage_dataset_paths({dataset_id: str(source)}, scratch),
         "dataset_formats": {dataset_id: {"format": "parquet"}},

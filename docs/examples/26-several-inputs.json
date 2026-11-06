@@ -88,7 +88,7 @@
       },
       {
         "id": "several-summary",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 645,
         "y": 473,
         "title": "Summarize",
@@ -102,7 +102,7 @@
       },
       {
         "id": "several-join",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1290,
         "y": 473,
         "title": "Join three inputs",
@@ -116,7 +116,7 @@
       },
       {
         "id": "several-transform",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 1935,
         "y": 215,
         "title": "Name the readings",

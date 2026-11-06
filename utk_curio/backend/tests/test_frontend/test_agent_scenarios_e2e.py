@@ -53,7 +53,7 @@ from .utils import (
 USERNAME = "agent_scenarios_e2e_user"
 DFB_COORD = "agent.curio.dataflow-builder@1"
 DFB_NAME = "Dataflow Builder"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 
 FACTOR = {"name": "height_factor", "type": "number", "label": "Height factor", "default": 1,
           "options": {"min": 0.5, "max": 4, "step": 0.5}}

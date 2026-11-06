@@ -241,13 +241,13 @@ def test_a_dropped_node_of_either_template_opens_with_its_starter(tmp_curio):
 
 def test_both_nodes_run_and_are_checked_as_python_code_nodes():
     """A template with the ``code`` behavior, Python and a code editor is a
-    Computation Analysis node to the runner's offline tables and to the e2e
+    Python Computation node to the runner's offline tables and to the e2e
     suite (``workflow_spec``), which plays it, reads its editor and compares
     its output with a run of its own: both of the package's nodes."""
     from utk_curio.backend.app.execution.workflow_spec import classify_node, normalize_type
 
     for node_type in (CALCULATOR_TYPE, NODE_TYPE):
-        assert normalize_type(f"{node_type}@1") == "COMPUTATION_ANALYSIS", node_type
+        assert normalize_type(f"{node_type}@1") == "PYTHON_COMPUTATION", node_type
         assert classify_node(normalize_type(node_type)) == "code", node_type
 
 

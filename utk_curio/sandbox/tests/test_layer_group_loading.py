@@ -194,7 +194,7 @@ def _isolated(code, scratch, paths):
     from utk_curio.sandbox.util import staging
 
     return child.run_node({
-        "code": code, "node_type": "curio.builtin/computation-analysis", "data_type": "",
+        "code": code, "node_type": "curio.builtin/python-computation", "data_type": "",
         "scratch_dir": str(scratch), "input": {"kind": "none"},
         "dataset_paths": staging.stage_dataset_paths(paths, scratch), "dataset_formats": FORMATS,
         "session_imports": [], "limits": {},

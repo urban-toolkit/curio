@@ -21,7 +21,7 @@ import pytest
 from utk_curio.backend.tests._support.agent_routes import _auth
 
 LOADER = "curio.builtin/data-loading"
-COMPUTATION = "curio.builtin/computation-analysis"
+COMPUTATION = "curio.builtin/python-computation"
 STARTER = "data = curio_load_data([!! data !!])\nreturn data\n"
 ATTACHMENT = "att-run-node"
 

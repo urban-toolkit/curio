@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/05-vega-lite-multi-view-drilldown.json",
-    "sha256": "859ed53e9fd87238113700acf0bc103c982301a4b11100ea035930134f6337bf",
+    "sha256": "726cd05776d6d3d8d3b69380d9dc52bdffa1d332a497edbe992c69d389929929",
     "walkthrough": "docs/examples/05-vega-lite-multi-view-drilldown.md"
   },
   "prompt": "I want a drill-down over the Chicago 2010 building energy usage table in the Data Catalog, along five independent axes. Each axis should load the data for itself, prepare it, and end in its own Vega-Lite view: energy split by building type; community-level ranking with a scatter; the monthly kilowatt-hour trend by community; a monthly bar chart with a brushable filter; and energy use by building age against the number of stories. Some axes need more than one preparation step before the charts, and one of them ends in several faceted views rather than a single chart.",
@@ -20,91 +20,91 @@
     "nodes": [
       {
         "ref": "analysis1",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis2",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis3",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis4",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis5",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis6",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis7",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis8",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis9",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis10",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis11",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis12",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true
       },
       {
         "ref": "analysis13",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "role": "analysis",
         "executable": true,
         "hasContent": true

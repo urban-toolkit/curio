@@ -369,7 +369,7 @@ class TestRequestEncoding(unittest.TestCase):
     def test_request_round_trips(self):
         request = protocol.build_exec_request(
             code="    return 1\n",
-            node_type="curio.builtin/computation-analysis",
+            node_type="curio.builtin/python-computation",
             data_type="",
             scratch_dir="/tmp/scratch",
             input_spec={"kind": "none"},

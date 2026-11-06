@@ -82,7 +82,7 @@ jest.mock("../../../hook/usePackageBackendRun", () => ({
 import CodeEditor from "../../../components/editing/CodeEditor";
 import { runKeyOf } from "../../../utils/references/runKeys";
 
-const PYTHON = "curio.builtin/computation-analysis";
+const PYTHON = "curio.builtin/python-computation";
 const CODE = "sp = input_0['sp_units']\nreturn sp";
 
 /** The upstream node, failed: wired into n1 and marked errored. */

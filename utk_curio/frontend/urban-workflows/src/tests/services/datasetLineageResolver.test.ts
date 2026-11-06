@@ -476,11 +476,11 @@ describe("selectDatasetUpstreamLineage", () => {
       }),
       nodes: [
         canvasNode({ nodeId: "producer-1" }),
-        canvasNode({ nodeId: "feeder-1", nodeType: "COMPUTATION_ANALYSIS" }),
+        canvasNode({ nodeId: "feeder-1", nodeType: "PYTHON_COMPUTATION" }),
       ],
     });
     expect(upstream.inputNodes).toEqual([
-      { nodeId: "feeder-1", nodeName: "Computation Analysis", nodeType: "COMPUTATION_ANALYSIS" },
+      { nodeId: "feeder-1", nodeName: "Python Computation", nodeType: "PYTHON_COMPUTATION" },
     ]);
   });
 
@@ -629,13 +629,13 @@ describe("formatting helpers", () => {
 
   it("drops the package path and version from a qualified node type", () => {
     // What the canvas actually stores for a builtin node. Printed raw the badge
-    // read "CURIO.BUILTIN/COMPUTATION ANALYSIS@1" - the package and the version
+    // read "CURIO.BUILTIN/PYTHON COMPUTATION@1" - the package and the version
     // are addressing detail, and the type is the only part worth showing.
-    expect(formatNodeTypeLabel("curio.builtin/computation-analysis@1")).toBe(
-      "Computation Analysis",
+    expect(formatNodeTypeLabel("curio.builtin/python-computation@1")).toBe(
+      "Python Computation",
     );
-    expect(formatNodeTypeLabel("curio.builtin/computation-analysis")).toBe(
-      "Computation Analysis",
+    expect(formatNodeTypeLabel("curio.builtin/python-computation")).toBe(
+      "Python Computation",
     );
     expect(formatNodeTypeLabel("acme.geo/spatial_join@12")).toBe("Spatial Join");
   });
@@ -675,7 +675,7 @@ describe("lineageNodesFromDataflowUsage (canvas-less fallback)", () => {
         dataflowName: "Flow One",
         nodeCount: 2,
         nodes: [
-          { nodeId: "node-a", nodeType: "COMPUTATION_ANALYSIS" },
+          { nodeId: "node-a", nodeType: "PYTHON_COMPUTATION" },
           { nodeId: "node-b", nodeType: "VIS_VEGA" },
         ],
       },
@@ -684,7 +684,7 @@ describe("lineageNodesFromDataflowUsage (canvas-less fallback)", () => {
     expect(nodes).toHaveLength(2);
     expect(nodes[0]).toMatchObject({
       nodeId: "node-a",
-      nodeType: "COMPUTATION_ANALYSIS",
+      nodeType: "PYTHON_COMPUTATION",
       dataflowId: "flow-1",
       dataflowName: "Flow One",
       usageType: "input",
@@ -707,7 +707,7 @@ describe("lineageNodesFromDataflowUsage (canvas-less fallback)", () => {
         dataflowName: "Flow One",
         nodeCount: 2,
         nodes: [
-          { nodeId: "node-a", nodeType: "COMPUTATION_ANALYSIS" },
+          { nodeId: "node-a", nodeType: "PYTHON_COMPUTATION" },
           { nodeId: "node-b", nodeType: "VIS_VEGA" },
         ],
       },

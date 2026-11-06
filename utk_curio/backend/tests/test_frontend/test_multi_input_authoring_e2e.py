@@ -4,7 +4,7 @@ The fan-in a user builds by hand: three Python nodes dragged off the tool rail,
 two of them wired into the third, which reads each input through a chip. That
 matters because #159 was specific to how a node was created:
 
-  * a palette drag stores the versioned canonical id (``.../computation-analysis@1``)
+  * a palette drag stores the versioned canonical id (``.../python-computation@1``)
   * the Jupyter converter and legacy trills store the bare id
 
 #159 was a canvas check that compared the bare id with ``===``, so a
@@ -49,8 +49,8 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-ANALYSIS_TILE = "#tile-computation-analysis"
-ANALYSIS_TYPE = "curio.builtin/computation-analysis"
+ANALYSIS_TILE = "#tile-python-computation"
+ANALYSIS_TYPE = "curio.builtin/python-computation"
 
 # Node geometry: 525x350 at zoom 1 in a 1280x720 viewport, so columns need to be
 # ~600px apart or a later node's body covers an earlier one's handle and the

@@ -66,7 +66,7 @@
       },
       {
         "id": "1cbd2725-458f-4617-86cd-2fd9d190f908",
-        "type": "curio.builtin/computation-analysis",
+        "type": "curio.builtin/python-computation",
         "x": 645,
         "y": 750,
         "content": "# Each Spatial Join adds these polygons' columns to every photo it pairs\n# with one, and the charts read `neighborhood`. Chicago's file calls it\n# `pri_neigh`.\nimport geopandas as gpd\n\ngdf = input_0.rename(columns={\"pri_neigh\": \"neighborhood\"})\n# __dict__, not plain assignment: pandas warns about creating a column via\n# a new attribute name, and that warning lands in this node's output with\n# an absolute site-packages path. NOT gdf.attrs, and do not just delete the\n# line: the sandbox reads this name (sandbox/util/parsers.py) and both of\n# those drop it silently from the emitted FeatureCollection.\ngdf.__dict__[\"metadata\"] = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",

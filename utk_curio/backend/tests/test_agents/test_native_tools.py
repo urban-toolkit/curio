@@ -46,12 +46,12 @@ def _protocol(name: str) -> str:
 NB = "agent.curio.node-builder@1"
 DFB = "agent.curio.dataflow-builder@1"
 DF = "agent.curio.dataset-finder@1"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 AUTK = "curio.builtin/autk-grammar"
 
 TEMPLATES = [
     {
-        "id": "computation-analysis", "label": "Computation Analysis",
+        "id": "python-computation", "label": "Python Computation",
         "category": "computation", "engine": "python", "editor": "code",
         "description": "Run python analysis code.",
         "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
@@ -72,7 +72,7 @@ BROKEN_DELEGATION = (
     "    df['b'] = pd.to_numeric(df['b'], errors='coerce') * float(mult)\\r\\n\\r\\n"
     "df.metadata = {'name': 'Multiplied Numbers'}\\r\\nreturn df\\r\\n\"}, "
     "\"intent\": \"Modify the node to multiply column 'b' by 25 instead of using a multiplier from the input.\", "
-    "\"nodeType\": \"curio.builtin/computation-analysis\"}}\n```"
+    "\"nodeType\": \"curio.builtin/python-computation\"}}\n```"
 )
 
 
@@ -1176,7 +1176,7 @@ HISTOGRAM = {"plot": {
 }}
 #: What a call that gives a code node a JSON object as its content is told.
 CODE_GIVEN_AN_OBJECT = (
-    "refused: params.content is a JSON object, but a Computation Analysis node holds python code: "
+    "refused: params.content is a JSON object, but a Python Computation node holds python code: "
     "send the code itself in params.content, as one string. Only a chart's or a map's node takes "
     "a JSON document as its content."
 )

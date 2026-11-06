@@ -42,7 +42,7 @@ COMPARISON_DIR = "curio.vega-lite@1"
 COMPARISON = REPO_ROOT / "packages" / COMPARISON_DIR
 
 LOAD = "curio.builtin/data-loading"
-KEEP = "curio.builtin/computation-analysis"
+KEEP = "curio.builtin/python-computation"
 
 STORMS = ["10-year storm", "50-year storm", "100-year storm"]
 

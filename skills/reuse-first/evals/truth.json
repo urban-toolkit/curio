@@ -4,7 +4,7 @@
     {
       "case": 1,
       "assertions": [
-        "The answer makes one node.create whose nodeType is curio.builtin/computation-analysis.",
+        "The answer makes one node.create whose nodeType is curio.builtin/python-computation.",
         "The answer proposes no package: no package.install and no package.draft.apply.",
         "The answer does not say a new node type or package has to be written for this.",
         "The code it writes computes, for each zip code, the share of roofs whose VEGETATED_SQFT is above 10,000."
@@ -45,7 +45,7 @@
                 "goal": "For each zip code, the share of its green roofs with more than 10,000 square feet of vegetation.",
                 "id": "66b159de-9abb-466d-bb56-83cc938f00b3",
                 "title": "Share of large green roofs",
-                "type": "curio.builtin/computation-analysis"
+                "type": "curio.builtin/python-computation"
               }
             ]
           }
@@ -56,11 +56,11 @@
             "kind": "node",
             "summary": "Created a new Python Computation node · Share of large green roofs",
             "lines": [
-              "Python Computation · curio.builtin/computation-analysis",
+              "Python Computation · curio.builtin/python-computation",
               "node 66b159de-9abb-466d-bb56-83cc938f00b3"
             ],
             "nodeId": "66b159de-9abb-466d-bb56-83cc938f00b3",
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "undo": true
           }
         ],
@@ -71,7 +71,7 @@
           "tool": "node.create",
           "status": "applied",
           "arguments": {
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "title": "Share of large green roofs",
             "goal": "For each zip code, the share of its green roofs with more than 10,000 square feet of vegetation.",
             "content": "# For each zip code, the share of its green roofs with more than 10,000 square\n# feet of vegetation.\nroofs = input_0\nlarge = roofs['VEGETATED_SQFT'] > 10000\nshare = large.groupby(roofs['zip']).mean().reset_index(name='share_over_10000_sqft')\nreturn share\n"

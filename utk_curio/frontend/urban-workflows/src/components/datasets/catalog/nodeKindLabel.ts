@@ -6,7 +6,7 @@ import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";
 /**
  * A node's kind as the palette names it: its template's label when the
  * registry holds the template, else its type in words. A template id is not
- * always its label: `computation-analysis` is Python Computation.
+ * always its label: `edit-features` is Map Editor.
  */
 export function nodeKindLabel(nodeType: string | null | undefined): string {
   return (nodeType && tryGetNodeDescriptor(nodeType)?.label) || formatNodeTypeLabel(nodeType ?? undefined);

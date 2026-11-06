@@ -28,7 +28,7 @@ from utk_curio.backend.app.runs.models import KeptStepOutput, naive_utc_now
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import auth_headers
 from utk_curio.common.kept_sessions import is_kept_session, new_session_id
 
-CODE = "curio.builtin/computation-analysis"
+CODE = "curio.builtin/python-computation"
 TOKENS = {"bob": "bob-token-for-kept-runs", "carol": "carol-token-for-kept-runs"}
 
 

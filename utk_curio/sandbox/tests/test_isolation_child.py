@@ -52,7 +52,7 @@ def request(code, scratch, **extra):
     """Build an exec request the way the supervisor would."""
     payload = {
         "code": code,
-        "node_type": "curio.builtin/computation-analysis",
+        "node_type": "curio.builtin/python-computation",
         "data_type": "",
         "scratch_dir": str(scratch),
         "input": {"kind": "none"},
@@ -562,7 +562,7 @@ class TestNoInputMessage(ChildTestCase):
         in_process = worker.execute_code(
             code,
             file_path='',
-            node_type='COMPUTATION_ANALYSIS',
+            node_type='PYTHON_COMPUTATION',
             data_type='',
             session_id=None,
         )

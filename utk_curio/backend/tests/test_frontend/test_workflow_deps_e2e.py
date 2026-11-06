@@ -67,7 +67,7 @@ def _dataflow_declaring(pkg_dir: str) -> dict:
             "nodes": [
                 {
                     "id": "declared-deps-node",
-                    "type": "curio.builtin/computation-analysis",
+                    "type": "curio.builtin/python-computation",
                     "x": 400,
                     "y": 300,
                     "content": "return [1]",

@@ -39,7 +39,7 @@ pytestmark = pytest.mark.usefixtures("scripted")
 
 NB = "agent.curio.node-builder@1"
 DF = "agent.curio.dataset-finder@1"
-CA = "curio.builtin/computation-analysis"
+CA = "curio.builtin/python-computation"
 #: The tool a delegation is a call of, natively and as the grader is shown it.
 DELEGATE = "delegate"
 SKILL = "catalogs"

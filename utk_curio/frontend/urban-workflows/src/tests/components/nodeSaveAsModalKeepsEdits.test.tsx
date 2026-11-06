@@ -49,12 +49,12 @@ jest.mock("../../registry", () => ({
 }));
 jest.mock("../../registry/nodeRegistry", () => ({
   tryGetNodeDescriptor: () => ({
-    id: "curio.builtin/computation-analysis",
+    id: "curio.builtin/python-computation",
     label: "Python Computation",
   }),
 }));
 jest.mock("../../utils/flowNodeCanonicalType", () => ({
-  getFlowNodeCanonicalType: () => "curio.builtin/computation-analysis",
+  getFlowNodeCanonicalType: () => "curio.builtin/python-computation",
 }));
 
 import { NodeSaveAsModal } from "../../components/packages/editing/NodeSaveAsModal";
@@ -86,7 +86,7 @@ beforeEach(() => {
   mockRegistry.types = [];
   mockRegistry.listeners.clear();
   mockStore.nodeInternals = new Map([
-    [NODE_ID, { id: NODE_ID, type: "curio.builtin/computation-analysis", data: { nodeType: "curio.builtin/computation-analysis" } }],
+    [NODE_ID, { id: NODE_ID, type: "curio.builtin/python-computation", data: { nodeType: "curio.builtin/python-computation" } }],
   ]);
 });
 

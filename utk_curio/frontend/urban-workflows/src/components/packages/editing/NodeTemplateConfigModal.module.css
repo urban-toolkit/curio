@@ -148,7 +148,7 @@
 }
 
 /* Two columns, so a port declaring all six types is three rows rather than six
-   -- computation-analysis declares six. */
+   -- python-computation declares six. */
 .typeGrid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

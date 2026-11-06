@@ -55,7 +55,7 @@
     {"name": "the built-in Data Loading node", "type": "curio.builtin/data-loading@1", "passThrough": false, "nonProducing": false, "loadsData": true},
     {"name": "the built-in Data Export node", "type": "curio.builtin/data-export@1", "passThrough": false, "nonProducing": true, "loadsData": false},
     {"name": "a built-in Data Export no template answers for", "type": "curio.builtin/data-export@7", "passThrough": false, "nonProducing": true, "loadsData": false},
-    {"name": "the built-in Python Computation node", "type": "curio.builtin/computation-analysis@1", "passThrough": false, "nonProducing": false, "loadsData": false},
+    {"name": "the built-in Python Computation node", "type": "curio.builtin/python-computation@1", "passThrough": false, "nonProducing": false, "loadsData": false},
     {"name": "a built-in Data Pool no template answers for", "type": "curio.builtin/data-pool@7", "passThrough": true, "nonProducing": false, "loadsData": false},
     {"name": "a built-in Simple View no template answers for", "type": "curio.builtin/vis-simple@7", "passThrough": true, "nonProducing": true, "loadsData": false},
     {"name": "a built-in Autark node no template answers for, with a spec that draws", "type": "curio.builtin/autk-grammar@7", "content": "{\"map\": {\"layerRefs\": []}}", "passThrough": true, "nonProducing": false, "loadsData": false},

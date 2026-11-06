@@ -77,7 +77,7 @@ function renderPythonNode(inputSlots: unknown[], setOutputCallback = jest.fn()) 
         setOutputCallback,
         data: { nodeId: "t", inputSlots, outputCallback: jest.fn() },
         output: { code: "", content: "" },
-        nodeType: "curio.builtin/computation-analysis",
+        nodeType: "curio.builtin/python-computation",
         readOnly: false,
         code: true,
         grammar: false,

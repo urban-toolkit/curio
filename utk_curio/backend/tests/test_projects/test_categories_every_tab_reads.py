@@ -18,7 +18,7 @@ import pytest
 
 BOB_TOKEN = "bob-token-for-categories-tests"
 CAROL_TOKEN = "carol-token-for-categories-tests"
-NODE_TYPE = "curio.builtin/computation-analysis"
+NODE_TYPE = "curio.builtin/python-computation"
 
 
 def _auth(token: str) -> dict:

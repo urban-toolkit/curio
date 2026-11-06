@@ -1,6 +1,6 @@
 """#180: a Python Computation output with no artifact FILE must still install.
 
-``curio.builtin/computation-analysis`` declares its output ports as
+``curio.builtin/python-computation`` declares its output ports as
 ``[DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER]``, but only the first two
 and RASTER ever write a file under ``artifacts/``. A scalar, a ``None``, or a
 list/dict holding DataFrames lives entirely in the DuckDB ``artifacts`` row, so
@@ -51,7 +51,7 @@ def _install(art_id, *, node_id="py-1", data_type=None, node_name="Python Comput
         data_type=data_type,
         node_name=node_name,
         dataflow_id=DATAFLOW,
-        node_type="curio.builtin/computation-analysis",
+        node_type="curio.builtin/python-computation",
     )
 
 

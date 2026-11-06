@@ -341,7 +341,7 @@ def test_the_wired_circles_ride_to_the_sandbox_as_input_slots(app, client, user_
 
     for route, code in (("/processPythonCode", "    return input_3\n"), ("/processJavaScriptCode", "return input_3;")):
         body = {
-            "code": code, "nodeType": "curio.builtin/computation-analysis", "nodeId": "slots-node",
+            "code": code, "nodeType": "curio.builtin/python-computation", "nodeId": "slots-node",
             "dataflowId": project_id, "input": {"path": "", "dataType": "outputs"},
             "saveOutputDataset": False, "inputSlots": [0, 3],
         }

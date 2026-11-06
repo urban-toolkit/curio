@@ -112,7 +112,7 @@ def _spec() -> dict:
             "nodes": [
                 node(LOADER, "curio.builtin/data-loading", 0, 0, GRID_LOADER),
                 node(MAP, "curio.builtin/autk-grammar", 645, 400, MAP_ON_INPUT),
-                node(CODE, "curio.builtin/computation-analysis", 1290, 800, ""),
+                node(CODE, "curio.builtin/python-computation", 1290, 800, ""),
             ],
             "edges": [{
                 "id": f"reactflow__edge-{LOADER}out-{MAP}in",

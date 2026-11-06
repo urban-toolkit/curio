@@ -98,11 +98,11 @@ const Bridge: React.FC = () => {
 function makeNode(id: string, label: string = `Node ${id}`) {
   return {
     id,
-    type: 'curio.builtin/computation-analysis',
+    type: 'curio.builtin/python-computation',
     position: { x: 0, y: 0 },
     data: {
       nodeId: id,
-      nodeType: 'curio.builtin/computation-analysis',
+      nodeType: 'curio.builtin/python-computation',
       title: label,
       output: { code: '', content: '' },
     },

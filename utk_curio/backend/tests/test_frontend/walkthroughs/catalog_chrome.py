@@ -178,7 +178,7 @@ def _save_riverside_projects(page, backend: str) -> None:
     )
     for name, scenarios in RIVERSIDE_PROJECTS.items():
         nodes = [
-            {"id": f"n{i}", "type": "curio.builtin/computation-analysis@1",
+            {"id": f"n{i}", "type": "curio.builtin/python-computation@1",
              "content": "return 1", "x": 300 * i, "y": 0}
             for i in range(len(scenarios))
         ]

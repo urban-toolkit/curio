@@ -28,7 +28,7 @@ const ZIPS = {
 
 const pythonNode = {
   nodeId: "n1",
-  nodeType: "curio.builtin/computation-analysis@1",
+  nodeType: "curio.builtin/python-computation@1",
   code: "return input_0\n",
   saveOutputDataset: true,
 };

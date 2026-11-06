@@ -94,7 +94,7 @@ class TestAvailableTemplates:
     def test_builtin_plus_lockfile_only(self, user_and_token, alice_project, tmp_curio):
         user, _ = user_and_token
         key = projects_services._user_dir_key(user)
-        _write_package(key, "curio.builtin", 1, [_template("computation-analysis", "Computation")])
+        _write_package(key, "curio.builtin", 1, [_template("python-computation", "Computation")])
         _write_package(key, "ai.test.locked", 1, [_template("locked-kind", "Locked")])
         _write_package(key, "ai.test.storeonly", 1, [_template("store-kind", "StoreOnly")])
         _lockfile_add(key, alice_project, "ai.test.locked@1")
@@ -102,7 +102,7 @@ class TestAvailableTemplates:
         ids = {t["id"] for t in packages_services.available_templates(key, alice_project)}
         # Builtin is always in scope; a store-installed package NOT in the
         # project lockfile is not (dev/48 permitted scope).
-        assert ids == {"curio.builtin/computation-analysis", "ai.test.locked/locked-kind"}
+        assert ids == {"curio.builtin/python-computation", "ai.test.locked/locked-kind"}
 
     def test_authorable_flag_from_manifest(self, user_and_token, alice_project, tmp_curio):
         user, _ = user_and_token
@@ -175,7 +175,7 @@ class TestInputArity:
         key = projects_services._user_dir_key(user)
         _write_package(key, "curio.builtin", 1, [
             _template("data-loading", "Load", input_ports=[]),
-            _template("computation-analysis", "Compute",
+            _template("python-computation", "Compute",
                       input_ports=[{"types": ["DATAFRAME"], "cardinality": "[1,n]"}]),
             _template("pair-in", "Pair In",
                       input_ports=[{"types": ["DATAFRAME"], "cardinality": "[1,2]"}]),
@@ -200,7 +200,7 @@ class TestInputArity:
         by_id = self._templates(user_and_token, alice_project, tmp_curio)
         assert by_id["curio.builtin/data-loading"]["maxIncomingEdges"] == 0
         # A single port takes its declared maximum: each edge gets a circle.
-        assert by_id["curio.builtin/computation-analysis"]["maxIncomingEdges"] is None
+        assert by_id["curio.builtin/python-computation"]["maxIncomingEdges"] is None
         assert by_id["curio.builtin/pair-in"]["maxIncomingEdges"] == 2
         assert by_id["curio.builtin/vis-vega"]["maxIncomingEdges"] == 1
         assert by_id["curio.builtin/spatial-join"]["maxIncomingEdges"] == 2
@@ -224,7 +224,7 @@ class TestInputArity:
 
     def test_declared_cardinality_survives_as_metadata(self, user_and_token, alice_project, tmp_curio):
         by_id = self._templates(user_and_token, alice_project, tmp_curio)
-        assert by_id["curio.builtin/computation-analysis"]["inputs"] == [
+        assert by_id["curio.builtin/python-computation"]["inputs"] == [
             {"types": ["DATAFRAME"], "min": 1, "max": None},
         ]
         assert by_id["curio.builtin/spatial-join"]["inputs"] == [
@@ -247,7 +247,7 @@ class TestInstalledTemplatesNotInProject:
     ):
         user, _ = user_and_token
         key = projects_services._user_dir_key(user)
-        _write_package(key, "curio.builtin", 1, [_template("computation-analysis", "Computation")])
+        _write_package(key, "curio.builtin", 1, [_template("python-computation", "Computation")])
         _write_package(key, "ai.test.locked", 1, [_template("locked-kind", "Locked")])
         _write_package(key, "ai.test.storeonly", 1, [_template("store-kind", "StoreOnly")])
         _lockfile_add(key, alice_project, "ai.test.locked@1")
@@ -264,7 +264,7 @@ class TestInstalledTemplatesNotInProject:
     ):
         user, _ = user_and_token
         key = projects_services._user_dir_key(user)
-        _write_package(key, "curio.builtin", 1, [_template("computation-analysis", "Computation")])
+        _write_package(key, "curio.builtin", 1, [_template("python-computation", "Computation")])
         _write_package(key, "ai.test.locked", 1, [_template("locked-kind", "Locked")])
         _lockfile_add(key, alice_project, "ai.test.locked@1")
 

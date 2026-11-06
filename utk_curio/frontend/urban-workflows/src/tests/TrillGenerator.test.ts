@@ -152,7 +152,7 @@ describe("TrillGenerator node appearance (dev/89)", () => {
           // to the pre-dev/89 shape (no metadata key at all).
           type: "CURIO_UNIVERSAL_NODE",
           position: { x: 5, y: 5 },
-          data: { nodeId: "plain-1", nodeType: "curio.builtin/computation-analysis" },
+          data: { nodeId: "plain-1", nodeType: "curio.builtin/python-computation" },
         },
       ],
       [],
@@ -182,7 +182,7 @@ describe("TrillGenerator node header (#412)", () => {
           position: { x: 0, y: 0 },
           data: {
             nodeId: "renamed-1",
-            nodeType: "curio.builtin/computation-analysis",
+            nodeType: "curio.builtin/python-computation",
             title: "  Clean the parcels ",
           },
         },
@@ -193,7 +193,7 @@ describe("TrillGenerator node header (#412)", () => {
           position: { x: 5, y: 5 },
           data: {
             nodeId: "blank-1",
-            nodeType: "curio.builtin/computation-analysis",
+            nodeType: "curio.builtin/python-computation",
             title: "   ",
           },
         },
@@ -235,7 +235,7 @@ describe("TrillGenerator node header (#412)", () => {
           position: { x: 0, y: 0 },
           data: {
             nodeId: "configured-1",
-            nodeType: "curio.builtin/computation-analysis",
+            nodeType: "curio.builtin/python-computation",
             code: "return input_0.dropna()",
             title: "Clean the parcels",
             packageTemplateConfig: config,
@@ -245,7 +245,7 @@ describe("TrillGenerator node header (#412)", () => {
           // Never opened the modal: nothing is written.
           type: "CURIO_UNIVERSAL_NODE",
           position: { x: 5, y: 5 },
-          data: { nodeId: "plain-1", nodeType: "curio.builtin/computation-analysis" },
+          data: { nodeId: "plain-1", nodeType: "curio.builtin/python-computation" },
         },
       ],
       [],
@@ -302,7 +302,7 @@ describe("TrillGenerator writes no node comments", () => {
           position: { x: 0, y: 0 },
           data: {
             nodeId: "discussed-1",
-            nodeType: "curio.builtin/computation-analysis",
+            nodeType: "curio.builtin/python-computation",
             comments,
           },
         },
@@ -311,7 +311,7 @@ describe("TrillGenerator writes no node comments", () => {
           position: { x: 5, y: 5 },
           data: {
             nodeId: "renamed-1",
-            nodeType: "curio.builtin/computation-analysis",
+            nodeType: "curio.builtin/python-computation",
             title: "Clean the parcels",
             comments,
           },

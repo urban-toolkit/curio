@@ -8,7 +8,7 @@ KEY = "4242"
 PID = "p-validate"
 
 
-def _node(node_id, node_type="curio.builtin/computation-analysis", content="x()", goal=None):
+def _node(node_id, node_type="curio.builtin/python-computation", content="x()", goal=None):
     return {"id": node_id, "type": node_type, "content": content,
             "goal": goal or f"goal {node_id}"}
 
@@ -137,7 +137,7 @@ class TestValidateCandidate:
         result = validation.validate_candidate(
             KEY, PID, spec, "t", "return None",
             exec_fn=_exec({"None": ("art-null", "null")}),
-            available_templates={"curio.builtin/computation-analysis": {"inputs": []}},
+            available_templates={"curio.builtin/python-computation": {"inputs": []}},
         )
         assert result["verdict"] == "pass"
 

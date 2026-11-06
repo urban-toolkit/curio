@@ -40,7 +40,7 @@ describe('PythonInterpreter', () => {
             '',
             [],
             callback,
-            NodeType.COMPUTATION_ANALYSIS,
+            NodeType.PYTHON_COMPUTATION,
             'node-1',
             'workflow-1',
             mockNodeExecProv,
@@ -89,7 +89,7 @@ describe('PythonInterpreter', () => {
             '',
             [],
             jest.fn(),
-            NodeType.COMPUTATION_ANALYSIS,
+            NodeType.PYTHON_COMPUTATION,
             'node-1',
             'workflow-1',
             mockNodeExecProv,
@@ -110,7 +110,7 @@ describe('PythonInterpreter', () => {
         };
         (global.fetch as jest.Mock).mockResolvedValueOnce(reply).mockResolvedValueOnce(reply);
         const send = interpreter.interpretCode.bind(interpreter) as (...args: unknown[]) => void;
-        const args = ['return input_3', 'return input_3', '', [], jest.fn(), NodeType.COMPUTATION_ANALYSIS,
+        const args = ['return input_3', 'return input_3', '', [], jest.fn(), NodeType.PYTHON_COMPUTATION,
             'node-1', 'workflow-1', mockNodeExecProv, 'flow-1', false, 'Node'];
 
         send(...args, [0, 3]);

@@ -53,7 +53,7 @@ const node = (id: string) => ({
   id,
   type: "universal",
   position: { x: 0, y: 0 },
-  data: { nodeType: "curio.builtin/computation-analysis@1", title: id },
+  data: { nodeType: "curio.builtin/python-computation@1", title: id },
 });
 
 // load → heights → existing ─┐

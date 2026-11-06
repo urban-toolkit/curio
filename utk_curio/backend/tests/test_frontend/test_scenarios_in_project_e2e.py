@@ -95,8 +95,8 @@ def _spec() -> dict:
             "provenance_id": DATAFLOW,
             "nodes": [
                 node(LOADER, "curio.builtin/data-loading", 400, 340, LOADER_CODE),
-                node(SCALE, "curio.builtin/computation-analysis", 1045, 340, SCALE_CODE),
-                node(TOTAL, "curio.builtin/computation-analysis", 1045, 840, TOTAL_CODE),
+                node(SCALE, "curio.builtin/python-computation", 1045, 340, SCALE_CODE),
+                node(TOTAL, "curio.builtin/python-computation", 1045, 840, TOTAL_CODE),
             ],
             "edges": [
                 {"id": "e-load-scale", "source": LOADER, "target": SCALE,

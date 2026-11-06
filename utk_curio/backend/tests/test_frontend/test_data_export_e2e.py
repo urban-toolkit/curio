@@ -109,7 +109,7 @@ def _download_button(page, export: str):
 def _chain(page, code: str) -> tuple[str, str]:
     """A Python node holding *code*, wired into a fresh Data Export node that
     holds its starter."""
-    source = drag_builtin_to_canvas(page, "#tile-computation-analysis", at=(170, 200))
+    source = drag_builtin_to_canvas(page, "#tile-python-computation", at=(170, 200))
     set_node_code(page, source, code)
     export = drag_builtin_to_canvas(page, "#tile-data-export", at=(760, 220))
     wait_for_node_code(page, export, STARTER)

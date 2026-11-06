@@ -23,7 +23,7 @@ VISITOR_B = "hosted-guest-visitor-b"
 COORD = "agent.curio.node-builder@1"
 CREATE = (
     '```curio.v1\n{"toolRequest": {"tool": "node.create", "params": '
-    '{"nodeType": "curio.builtin/computation-analysis", "content": "print(\'mine\')"}}}\n```'
+    '{"nodeType": "curio.builtin/python-computation", "content": "print(\'mine\')"}}}\n```'
 )
 WRITE = (
     '```curio.v1\n{"toolRequest": {"tool": "node.content.write", "params": '
@@ -50,7 +50,7 @@ def shared_example(client, db, tmp_curio, monkeypatch):
     created = client.post(
         "/api/projects",
         json={"name": "Example", "spec": {"dataflow": {
-            "nodes": [{"id": "n1", "type": "curio.builtin/computation-analysis",
+            "nodes": [{"id": "n1", "type": "curio.builtin/python-computation",
                        "content": "print(1)", "x": 100, "y": 60}],
             "edges": [], "packages": []}}, "outputs": []},
         headers=_auth(VISITOR_A),

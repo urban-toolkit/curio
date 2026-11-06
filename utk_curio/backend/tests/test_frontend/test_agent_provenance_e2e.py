@@ -71,7 +71,7 @@ def _spec() -> dict:
             "timestamp": 1789193389280,
             "provenance_id": "An agent's change in a node's history",
             "nodes": [{
-                "id": YEARS, "type": "curio.builtin/computation-analysis", "x": 0, "y": 0,
+                "id": YEARS, "type": "curio.builtin/python-computation", "x": 0, "y": 0,
                 "content": BEFORE, "title": "Years", "in": "DEFAULT", "out": "DEFAULT",
                 "goal": "Keep every year",
                 "metadata": {"keywords": []},

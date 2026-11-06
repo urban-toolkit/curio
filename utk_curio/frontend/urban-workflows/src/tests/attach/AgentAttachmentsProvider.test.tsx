@@ -551,7 +551,7 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
   afterEach(() => unsubscribe());
 
   it("a change that landed during a reply reaches the canvas from its stream event, marked landed", async () => {
-    const canvas = { kind: "node-created", node: { id: "nid", type: "curio.builtin/computation-analysis", content: "c", x: 1, y: 2 } };
+    const canvas = { kind: "node-created", node: { id: "nid", type: "curio.builtin/python-computation", content: "c", x: 1, y: 2 } };
     api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
       onEvent?.("change", { changeId: "c1", attachmentId: "a1", tool: "node.create", canvas });
       onDelta("added");
@@ -893,7 +893,7 @@ describe("AgentAttachmentsProvider lines that stay under a reply (#447, #243)", 
             summary: "Created a new Python node",
             preview: "print(1)",
             status: "applied",
-            lines: ["Python · COMPUTATION_ANALYSIS", "node n1"],
+            lines: ["Python · PYTHON_COMPUTATION", "node n1"],
           },
         ],
       } as never;

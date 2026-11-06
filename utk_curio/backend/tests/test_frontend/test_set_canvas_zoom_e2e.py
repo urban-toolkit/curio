@@ -135,7 +135,7 @@ def test_set_canvas_zoom_returns_once_the_canvas_shows_the_zoom(
         project_name="Canvas zoom",
         project_spec={"dataflow": {
             "name": "Canvas zoom", "task": "", "edges": [], "nodes": [{
-                "id": NODE, "type": "curio.builtin/computation-analysis", "x": AT[0], "y": AT[1],
+                "id": NODE, "type": "curio.builtin/python-computation", "x": AT[0], "y": AT[1],
                 "content": "return 1\n", "in": "DEFAULT", "out": "DEFAULT", "goal": "",
                 "metadata": {"keywords": []},
             }],

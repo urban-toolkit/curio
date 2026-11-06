@@ -19,7 +19,7 @@ function node(id: string, extra: Record<string, unknown> = {}) {
   return {
     id,
     type: "__curioUniversalNode",
-    data: { nodeId: id, nodeType: "curio.builtin/computation-analysis@1", ...extra },
+    data: { nodeId: id, nodeType: "curio.builtin/python-computation@1", ...extra },
   } as any;
 }
 
@@ -69,7 +69,7 @@ describe("inputScenarios", () => {
     const { nodes, edges, scenarios } = twoBoxes();
     const plain = node("plain");
     const inputs = inputScenarios(CHART, [...nodes, plain], [...edges, edge("plain", CHART, "in_2")], scenarios);
-    expect(inputs[2].label).toEqual({ name: "curio.builtin/computation-analysis@1", color: NO_SCENARIO_COLOR });
+    expect(inputs[2].label).toEqual({ name: "curio.builtin/python-computation@1", color: NO_SCENARIO_COLOR });
   });
 
   test("an interaction edge is not an input, and a member deleted since the save labels nothing", () => {

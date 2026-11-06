@@ -85,7 +85,7 @@ def _add(user, pip_packages) -> None:
 def _run(client, auth):
     return client.post("/processPythonCode", headers=auth, json={
         "code": f'model = curio_load_model("{MODEL_ID}")\nreturn 1',
-        "nodeType": "COMPUTATION_ANALYSIS",
+        "nodeType": "PYTHON_COMPUTATION",
         "input": "",
     })
 

@@ -18,7 +18,7 @@ def _create(client, token, name="Updated"):
     resp = client.post("/api/projects", data=json.dumps({
         "name": name,
         "spec": {"dataflow": {"name": name, "nodes": [
-            {"id": "a", "type": "curio.builtin/computation-analysis", "x": 0, "y": 0, "content": "return 1"},
+            {"id": "a", "type": "curio.builtin/python-computation", "x": 0, "y": 0, "content": "return 1"},
         ], "edges": []}},
         "outputs": [],
     }), headers=_auth(token))

@@ -57,7 +57,7 @@ if TYPE_CHECKING:
 DATAFLOW = Path(REPO_ROOT) / "docs" / "examples" / "dataflows" / "chicago-rain-wind-routing.json"
 PACKAGE_DIR = "model.scout.weather-gnn@1"
 ROUTING_TYPE = "model.scout.weather-gnn/weather-routing"
-PYTHON_TYPE = "curio.builtin/computation-analysis"
+PYTHON_TYPE = "curio.builtin/python-computation"
 #: Where the origin moves: State and Jackson in the Loop, inside SCOUT's box,
 #: about 2.9 km south-east of SCOUT's origin.
 MOVED_ORIGIN = {"lat": 41.8781, "lon": -87.6278}

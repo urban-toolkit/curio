@@ -203,7 +203,7 @@ class TestContentClassToolBudgets:
 
     def test_node_create_content_gets_the_proposal_budget(self):
         body = self._request("node.create", {
-            "nodeType": "curio.builtin/computation-analysis",
+            "nodeType": "curio.builtin/python-computation",
             "content": "x" * 20000, "title": "Loader", "goal": "load a CSV"})
         assert len(body.encode()) > content.TAIL_MAX_BYTES
         (part,) = content.parse_parts(body)
@@ -307,7 +307,7 @@ class TestContentClassToolBudgets:
     def test_the_reported_leak_is_gone_end_to_end(self):
         # Issue #245's exact shape: prose, then the request block.
         body = self._request("node.create", {
-            "nodeType": "curio.builtin/computation-analysis", "content": "x" * 20000})
+            "nodeType": "curio.builtin/python-computation", "content": "x" * 20000})
         visible, parts = content.extract_content("I will add that node.\n\n"
                                                  f"```curio.v1\n{body}\n```")
         assert parts and parts[0]["tool"] == "node.create"
@@ -455,11 +455,11 @@ class TestProposalPart:
         part = content.make_proposal_part(
             proposal_id="p2",
             tool="node.create",
-            summary="Create a new Computation Analysis node",
+            summary="Create a new Python Computation node",
             preview="print('hi')",
-            pins={"nodeType": "curio.builtin/computation-analysis"},
+            pins={"nodeType": "curio.builtin/python-computation"},
         )
-        assert part["pins"] == {"nodeType": "curio.builtin/computation-analysis"}
+        assert part["pins"] == {"nodeType": "curio.builtin/python-computation"}
 
 
 class TestExtractContent:
@@ -841,7 +841,7 @@ class TestDataflowPlanPart:
 
     def _plan(self, n_nodes=3, with_edges=True, **over):
         nodes = [
-            {"ref": f"n{i}", "nodeType": "curio.builtin/computation-analysis",
+            {"ref": f"n{i}", "nodeType": "curio.builtin/python-computation",
              "title": f"Step {i}", "intent": f"does step {i}"}
             for i in range(n_nodes)
         ]
@@ -1154,7 +1154,7 @@ class TestDataflowPlanRevisionGrammar:
         plan = {
             "goal": "revise",
             "nodes": [
-                {"ref": "a", "nodeType": "curio.builtin/computation-analysis",
+                {"ref": "a", "nodeType": "curio.builtin/python-computation",
                  "title": "New", "intent": "does new things"},
             ],
             "edges": [],
@@ -1181,7 +1181,7 @@ class TestDataflowPlanRevisionGrammar:
         # dev/67-3: toHandle is optional shape — additive plans byte-identical.
         plan = {"goal": "g", "nodes": [
             {"ref": "a", "nodeType": "t", "title": "A", "intent": "i"},
-            {"ref": "m", "nodeType": "curio.builtin/computation-analysis", "title": "M", "intent": "i"},
+            {"ref": "m", "nodeType": "curio.builtin/python-computation", "title": "M", "intent": "i"},
         ], "edges": [
             {"from": "a", "to": "m", "toHandle": "in_2"},
         ]}

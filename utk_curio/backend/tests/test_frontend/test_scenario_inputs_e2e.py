@@ -163,8 +163,8 @@ def _spec() -> dict:
             "provenance_id": "Scenario inputs",
             "nodes": [
                 node(LOAD, "curio.builtin/data-loading", 0, 0, LOAD_CODE, "Roads"),
-                node(BASE, "curio.builtin/computation-analysis", 700, 0, SHADE_CODE, "Shade", _factor(1)),
-                node(TALL, "curio.builtin/computation-analysis", 700, 500, SHADE_CODE, "Shade",
+                node(BASE, "curio.builtin/python-computation", 700, 0, SHADE_CODE, "Shade", _factor(1)),
+                node(TALL, "curio.builtin/python-computation", 700, 500, SHADE_CODE, "Shade",
                      {**_factor(2), "copiedFrom": [BASE]}),
                 node(CHART, CHART_TYPE, 1400, 0, CHART_SPEC, "Sunlight", dashboardPinned=True),
                 node(OWN, CHART_TYPE, 1400, 600, OWN_SPEC, "Own colors"),

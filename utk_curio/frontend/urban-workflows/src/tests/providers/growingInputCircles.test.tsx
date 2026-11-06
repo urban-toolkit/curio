@@ -130,7 +130,7 @@ function descriptor(id: string, inputCardinality: string | null): NodeDescriptor
 
 beforeAll(() => {
   registerNode(descriptor('curio.builtin/data-loading@1', null));
-  registerNode(descriptor('curio.builtin/computation-analysis@1', '[1,n]'));
+  registerNode(descriptor('curio.builtin/python-computation@1', '[1,n]'));
   registerNode(descriptor('acme.steps/two-inputs@1', '[1,2]'));
   registerNode(descriptor('curio.builtin/data-summary@1', '1'));
 });
@@ -273,7 +273,7 @@ afterEach(() => {
   mockLoaded.current = null;
 });
 
-async function fanIn(target = 'curio.builtin/computation-analysis@1', code = '') {
+async function fanIn(target = 'curio.builtin/python-computation@1', code = '') {
   renderFlow();
   await flush();
   await addNodes([
@@ -348,7 +348,7 @@ describe('deleting an edge closes the gap', () => {
 
   test('later edges move up a circle, their values follow, and the chips are renumbered', async () => {
     bindToDoc();
-    await fanIn('curio.builtin/computation-analysis@1', CODE);
+    await fanIn('curio.builtin/python-computation@1', CODE);
     await connect('a', 't');
     await connect('b', 't');
     await connect('c', 't');
@@ -377,7 +377,7 @@ describe('deleting an edge closes the gap', () => {
   });
 
   test('deleting two edges at once keeps every chip on its input', async () => {
-    await fanIn('curio.builtin/computation-analysis@1', CODE);
+    await fanIn('curio.builtin/python-computation@1', CODE);
     await connect('a', 't');
     await connect('b', 't');
     await connect('c', 't');
@@ -388,7 +388,7 @@ describe('deleting an edge closes the gap', () => {
 
   test('the last edge goes without rewriting code that names no later input', async () => {
     bindToDoc();
-    await fanIn('curio.builtin/computation-analysis@1', 'x = [!! input_0 !!]');
+    await fanIn('curio.builtin/python-computation@1', 'x = [!! input_0 !!]');
     await connect('a', 't');
     await connect('b', 't');
     expect(docCode('t')).toBe('x = [!! input_0 !!]');
@@ -406,7 +406,7 @@ describe('deleting an edge, with inputs read as input_k', () => {
 
   test('later circles move up, and their chips and typed names follow', async () => {
     await fanIn(
-      'curio.builtin/computation-analysis@1',
+      'curio.builtin/python-computation@1',
       'x = input_0\ny = [!! input_1.area !!] + input_1\nz = [!! input_2 !!]  # input_2',
     );
     await connect('a', 't');
@@ -418,7 +418,7 @@ describe('deleting an edge, with inputs read as input_k', () => {
   });
 
   test("a typed name inside an f-string's braces follows its circle, and the f-string's text stays", async () => {
-    await fanIn('curio.builtin/computation-analysis@1', 'x = input_0\nmsg = f"input_2 has {len(input_2)} rows"');
+    await fanIn('curio.builtin/python-computation@1', 'x = input_0\nmsg = f"input_2 has {len(input_2)} rows"');
     await connect('a', 't');
     await connect('b', 't');
     await connect('c', 't');
@@ -428,7 +428,7 @@ describe('deleting an edge, with inputs read as input_k', () => {
 
   test("a node's only edge goes without rewriting the input it names, so the next edge is read by it", async () => {
     const code = 'gdf = input_0.copy()\nx = [!! input_0 !!]';
-    await fanIn('curio.builtin/computation-analysis@1', code);
+    await fanIn('curio.builtin/python-computation@1', code);
     await connect('a', 't');
     await deleteEdges([api.edges.find((e: any) => e.source === 'a')!.id]);
     expect(dataOf('t').code).toBe(code);
@@ -443,7 +443,7 @@ describe('deleting an edge, with inputs read as input_k', () => {
 
   test('the last of several edges goes without rewriting, so the next edge on its circle is read by it', async () => {
     const code = 'a = input_0\nb = [!! input_1 !!]';
-    await fanIn('curio.builtin/computation-analysis@1', code);
+    await fanIn('curio.builtin/python-computation@1', code);
     await connect('a', 't');
     await connect('b', 't');
     await deleteEdges([api.edges.find((e: any) => e.source === 'b')!.id]);

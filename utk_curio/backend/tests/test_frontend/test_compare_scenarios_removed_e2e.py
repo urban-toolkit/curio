@@ -56,7 +56,7 @@ NOWHERE = "cmp-gone-nowhere"
 PAIR_LOADER = "cmp-gone-pair-loader"
 PAIR_PYTHON = "cmp-gone-pair-python"
 LOADING_TYPE = "curio.builtin/data-loading"
-PYTHON_TYPE = "curio.builtin/computation-analysis"
+PYTHON_TYPE = "curio.builtin/python-computation"
 VEGA_TYPE = "curio.builtin/vis-vega"
 #: How long Run All may take on this small dataflow: well under the ten
 #: minutes a level waits for a node that never reports before it moves on.

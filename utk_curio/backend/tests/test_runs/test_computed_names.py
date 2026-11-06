@@ -21,9 +21,11 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import store_sa
 
 #: (node type as a palette drop saves it, renamed header, the name its header shows)
 NODES = [
-    pytest.param("curio.builtin/computation-analysis@1", None, "Python Computation", id="python-computation"),
+    pytest.param("curio.builtin/python-computation@1", None, "Python Computation", id="python-computation"),
+    # Its label, not its type in words ("Js Computation").
+    pytest.param("curio.builtin/js-computation@1", None, "JS Computation", id="js-computation"),
     pytest.param("curio.builtin/data-loading@1", None, "Data Loading", id="data-loading"),
-    pytest.param("curio.builtin/computation-analysis@1", "Dict output", "Dict output", id="renamed-header"),
+    pytest.param("curio.builtin/python-computation@1", "Dict output", "Dict output", id="renamed-header"),
 ]
 
 NODE_ID = "named-node"

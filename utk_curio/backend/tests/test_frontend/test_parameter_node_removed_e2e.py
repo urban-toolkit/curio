@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 
 #: The type a saved Parameter node carries.
 PARAMETER_TYPE = "curio.builtin/parameter"
-PYTHON_TYPE = "curio.builtin/computation-analysis"
+PYTHON_TYPE = "curio.builtin/python-computation"
 PROJECT = "Parameter node removed e2e"
 
 PARAMETER = "prm-gone-parameter"

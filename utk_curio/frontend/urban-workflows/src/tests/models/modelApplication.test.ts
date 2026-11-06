@@ -260,7 +260,7 @@ describe("the saved dataflow says which model a node runs", () => {
 
   test("modelRefs is saved at metadata.modelRefs, and only when set", () => {
     const applied = applyModelToNodeData(
-      { nodeId: "seg-1", nodeType: "curio.builtin/computation-analysis", code: 'curio_load_model("x")' },
+      { nodeId: "seg-1", nodeType: "curio.builtin/python-computation", code: 'curio_load_model("x")' },
       importedModelPackage(),
     );
     const spec = TrillGenerator.generateTrill(
@@ -269,7 +269,7 @@ describe("the saved dataflow says which model a node runs", () => {
         {
           type: "CURIO_UNIVERSAL_NODE",
           position: { x: 5, y: 5 },
-          data: { nodeId: "plain-1", nodeType: "curio.builtin/computation-analysis" },
+          data: { nodeId: "plain-1", nodeType: "curio.builtin/python-computation" },
         },
       ],
       [],

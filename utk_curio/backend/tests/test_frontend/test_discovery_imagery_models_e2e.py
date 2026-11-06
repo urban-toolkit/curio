@@ -79,7 +79,7 @@ def _spec(example: bool) -> dict:
         with open(EXAMPLE, encoding="utf-8") as fh:
             return json.load(fh)
     return {"dataflow": {"name": "Imagery", "task": "", "edges": [], "nodes": [{
-        "id": "imagery-node", "type": "curio.builtin/computation-analysis", "x": 420, "y": 300,
+        "id": "imagery-node", "type": "curio.builtin/python-computation", "x": 420, "y": 300,
         "content": "return [1]", "in": "DEFAULT", "out": "DEFAULT", "goal": "",
         "metadata": {"keywords": []},
     }]}}

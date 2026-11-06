@@ -55,7 +55,7 @@ if TYPE_CHECKING:
 DIST = os.path.join(REPO_ROOT, "utk_curio", "frontend", "urban-workflows", "dist")
 
 MAP_TYPE = "curio.builtin/autk-grammar"
-PYTHON_TYPE = "curio.builtin/computation-analysis"
+PYTHON_TYPE = "curio.builtin/python-computation"
 RASTER = "dash-raster"
 MAP = "dash-raster-map"
 

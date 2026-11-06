@@ -119,7 +119,7 @@ def _between_a_producer_and_a_chart(node_type: str, content: str = "") -> dict:
     """``py`` -> *node_type* -> a pinned Vega-Lite chart."""
     return spec_of(
         [
-            node("py", "curio.builtin/computation-analysis@1"),
+            node("py", "curio.builtin/python-computation@1"),
             node("middle", node_type, content),
             node("chart", "curio.builtin/vis-vega@1", "{}", dashboardPinned=True),
         ],
@@ -136,7 +136,7 @@ def _consumers(spec: dict) -> list[str]:
 def _loading(loader_type: str) -> dict:
     """A node of *loader_type* that names the dataset in its code, and a node after it."""
     return spec_of(
-        [node("loader", loader_type, LOADS_IT), node("after", "curio.builtin/computation-analysis@1")],
+        [node("loader", loader_type, LOADS_IT), node("after", "curio.builtin/python-computation@1")],
         [edge("loader", "after")],
     )
 
@@ -320,7 +320,7 @@ def test_the_committed_packages_hold_a_loader_and_other_nodes():
     # Guards the walk below: an empty or one-sided list would pass vacuously.
     node_types = _shipped_node_types()
     assert "curio.builtin/data-loading@1" in node_types
-    assert "curio.builtin/computation-analysis@1" in node_types
+    assert "curio.builtin/python-computation@1" in node_types
 
 
 @pytest.mark.parametrize("node_type", [*_shipped_node_types(), "DATA_LOADING"])

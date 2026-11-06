@@ -190,7 +190,7 @@
                   ]
                 },
                 "title": "Scaled b",
-                "type": "curio.builtin/computation-analysis"
+                "type": "curio.builtin/python-computation"
               },
               {
                 "content": "",
@@ -225,7 +225,7 @@
                   ]
                 },
                 "title": "Scaled b",
-                "type": "curio.builtin/computation-analysis"
+                "type": "curio.builtin/python-computation"
               },
               {
                 "content": "",
@@ -334,7 +334,7 @@
               "+5 nodes · +6 connections · +2 scenarios",
               "5 pending for Build & validate or Solve",
               "agents attached: Node Builder ×5",
-              "no Dataset Finder: does not attach to computation-analysis nodes",
+              "no Dataset Finder: does not attach to python-computation nodes",
               "Topology: acyclic."
             ],
             "undo": true
@@ -351,7 +351,7 @@
             "nodes": [
               {
                 "ref": "scaled",
-                "nodeType": "curio.builtin/computation-analysis",
+                "nodeType": "curio.builtin/python-computation",
                 "title": "Scaled b",
                 "intent": "Multiply column b of the loaded table by the factor widget.",
                 "widgets": [
@@ -432,7 +432,7 @@
         3,
         4
       ],
-      "reply": "Here is the plan for the two scenarios and the chart that compares them:\n\n```json\n{\n  \"goal\": \"Compare the bar chart as it is with a version where every b value is doubled.\",\n  \"nodes\": [\n    {\n      \"ref\": \"scaled\",\n      \"nodeType\": \"curio.builtin/computation-analysis\",\n      \"title\": \"Scaled b\",\n      \"intent\": \"Multiply column b of the loaded table by the factor widget.\",\n      \"widgets\": [\n        {\n          \"name\": \"factor\",\n          \"type\": \"number\",\n          \"label\": \"Factor\",\n          \"default\": 1\n        }\n      ]\n    },\n    {\n      \"ref\": \"chart\",\n      \"nodeType\": \"curio.builtin/vis-vega\",\n      \"title\": \"Bar chart\",\n      \"intent\": \"One bar per a, its height b.\"\n    },\n    {\n      \"ref\": \"both\",\n      \"nodeType\": \"curio.builtin/vis-vega\",\n      \"title\": \"Both versions\",\n      \"intent\": \"Show both scenarios' bars side by side, b as it is and b doubled, each in its scenario's color.\"\n    }\n  ],\n  \"edges\": [\n    {\n      \"from\": \"8d428948-f5e4-485b-9812-51a4212678a7\",\n      \"to\": \"scaled\"\n    },\n    {\n      \"from\": \"scaled\",\n      \"to\": \"chart\"\n    },\n    {\n      \"from\": \"scaled\",\n      \"to\": \"both\"\n    },\n    {\n      \"from\": \"scaled_doubled\",\n      \"to\": \"both\"\n    }\n  ],\n  \"scenarios\": [\n    {\n      \"name\": \"As it is\",\n      \"nodes\": [\n        \"scaled\",\n        \"chart\"\n      ],\n      \"description\": \"b as the table holds it.\"\n    },\n    {\n      \"name\": \"b doubled\",\n      \"duplicateOf\": \"As it is\",\n      \"copies\": {\n        \"scaled\": \"scaled_doubled\",\n        \"chart\": \"chart_doubled\"\n      },\n      \"values\": {\n        \"scaled_doubled\": {\n          \"factor\": 2\n        }\n      }\n    }\n  ]\n}\n```",
+      "reply": "Here is the plan for the two scenarios and the chart that compares them:\n\n```json\n{\n  \"goal\": \"Compare the bar chart as it is with a version where every b value is doubled.\",\n  \"nodes\": [\n    {\n      \"ref\": \"scaled\",\n      \"nodeType\": \"curio.builtin/python-computation\",\n      \"title\": \"Scaled b\",\n      \"intent\": \"Multiply column b of the loaded table by the factor widget.\",\n      \"widgets\": [\n        {\n          \"name\": \"factor\",\n          \"type\": \"number\",\n          \"label\": \"Factor\",\n          \"default\": 1\n        }\n      ]\n    },\n    {\n      \"ref\": \"chart\",\n      \"nodeType\": \"curio.builtin/vis-vega\",\n      \"title\": \"Bar chart\",\n      \"intent\": \"One bar per a, its height b.\"\n    },\n    {\n      \"ref\": \"both\",\n      \"nodeType\": \"curio.builtin/vis-vega\",\n      \"title\": \"Both versions\",\n      \"intent\": \"Show both scenarios' bars side by side, b as it is and b doubled, each in its scenario's color.\"\n    }\n  ],\n  \"edges\": [\n    {\n      \"from\": \"8d428948-f5e4-485b-9812-51a4212678a7\",\n      \"to\": \"scaled\"\n    },\n    {\n      \"from\": \"scaled\",\n      \"to\": \"chart\"\n    },\n    {\n      \"from\": \"scaled\",\n      \"to\": \"both\"\n    },\n    {\n      \"from\": \"scaled_doubled\",\n      \"to\": \"both\"\n    }\n  ],\n  \"scenarios\": [\n    {\n      \"name\": \"As it is\",\n      \"nodes\": [\n        \"scaled\",\n        \"chart\"\n      ],\n      \"description\": \"b as the table holds it.\"\n    },\n    {\n      \"name\": \"b doubled\",\n      \"duplicateOf\": \"As it is\",\n      \"copies\": {\n        \"scaled\": \"scaled_doubled\",\n        \"chart\": \"chart_doubled\"\n      },\n      \"values\": {\n        \"scaled_doubled\": {\n          \"factor\": 2\n        }\n      }\n    }\n  ]\n}\n```",
       "changes": {
         "changed": {},
         "cards": [],
@@ -488,7 +488,7 @@
             "changed": [
               {
                 "id": "f6c0d4e8-3a1b-4c5f-8d94-8e3a2b1cadb5",
-                "type": "curio.builtin/computation-analysis",
+                "type": "curio.builtin/python-computation",
                 "changes": {
                   "content": {
                     "before": "import pandas as pd\n\nreal = [!! input_0 !!]\ntaller = [!! input_1 !!]\ncomparison = pd.DataFrame({\n    'scenario': ['Real heights', 'Twice as tall'],\n    'mean_shadow_m': [round(real['shadow_m'].mean(), 1), round(taller['shadow_m'].mean(), 1)],\n})\ncomparison.metadata = {'name': 'Mean shadow per scenario'}\nreturn comparison\n",

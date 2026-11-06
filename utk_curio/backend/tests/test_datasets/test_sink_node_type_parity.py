@@ -50,8 +50,8 @@ def test_a_data_export_is_a_sink_by_the_behavior_its_template_declares():
 
 
 @pytest.mark.parametrize("node_type", [
-    "curio.builtin/computation-analysis",
-    "curio.builtin/computation-analysis@1",
+    "curio.builtin/python-computation",
+    "curio.builtin/python-computation@1",
     "curio.rasterization/raster-calculator@1",
     None,
     "",

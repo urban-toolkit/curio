@@ -8,8 +8,8 @@ import type { ScenarioDetails, ScenarioRow } from "../../services/scenarioCatalo
 export const HEAT_PREVIEW: GraphPreview = {
   nodes: [
     { id: "load", type: "curio.builtin/data-loading@1", category: "data", x: 0, y: 0 },
-    { id: "year", type: "curio.builtin/computation-analysis@1", category: "computation", x: 0, y: 200 },
-    { id: "filter", type: "curio.builtin/computation-analysis@1", category: "computation", x: 300, y: 100 },
+    { id: "year", type: "curio.builtin/python-computation@1", category: "computation", x: 0, y: 200 },
+    { id: "filter", type: "curio.builtin/python-computation@1", category: "computation", x: 300, y: 100 },
     { id: "chart", type: "curio.builtin/vis-vega@1", category: "vis_grammar", x: 600, y: 100 },
   ],
   edges: [
@@ -87,7 +87,7 @@ export function heatDetails(row: ScenarioRow = heatScenario()): ScenarioDetails 
     levers: [
       {
         id: "year",
-        type: "curio.builtin/computation-analysis@1",
+        type: "curio.builtin/python-computation@1",
         results: [
           {
             datasetId: "d-year",
@@ -102,7 +102,7 @@ export function heatDetails(row: ScenarioRow = heatScenario()): ScenarioDetails 
       },
       {
         id: "filter",
-        type: "curio.builtin/computation-analysis@1",
+        type: "curio.builtin/python-computation@1",
         label: "Filter roofs",
         results: [],
       },
