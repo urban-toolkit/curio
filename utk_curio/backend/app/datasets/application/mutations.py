@@ -1410,7 +1410,9 @@ class CatalogMutations:
         #
         # Placed AFTER the 404 above on purpose: ``delete_dataset`` cascades
         # through here and re-raises a 403, so gating before the lookup would
-        # stop a guest deleting a dataset of their own that was never published.
+        # stop the local guest (a Curio without ``--deploy``) deleting a dataset
+        # of their own that was never published. A hosted guest's delete is
+        # refused before it reaches here (``_refuse_hosted_guest``).
         self._assert_can_manage_shared_catalog("unpublish")
 
         # Ownership gate (security): only the user who published this dataset may
