@@ -180,11 +180,21 @@ jobs:
           # node's budget is 24576 MB, where torch imports and reaches CUDA:
           # under the default 4096 a node cannot even map torch's CUDA
           # libraries.
+          #
+          # The ports are published on loopback only, as DEPLOYMENT.md's site
+          # file has them: Caddy on this host reaches them there, and no client
+          # can reach the backend past Caddy, where it could set its own
+          # X-Forwarded-For (`--proxy-hops 1` trusts it) or hold a connection
+          # that never sends a request. The open-files limit is Docker's
+          # default soft limit of 1024 raised: stable's backend ran out of it
+          # on 11-06.
           cat > docker-compose.site.yml <<'SITE'
           services:
             curio:
               container_name: curio-dev
-              ports: !override ["5012:5002", "8090:8080"]
+              ports: !override ["127.0.0.1:5012:5002", "127.0.0.1:8090:8080"]
+              ulimits:
+                nofile: {soft: 65536, hard: 65536}
           SITE
           printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s]\n' "$llm_args" >> docker-compose.site.yml
           if [ -n "$llm_args" ]; then
@@ -383,7 +393,8 @@ jobs:
             # and host ports from docker-compose.site.yml, as curio-dev does.
             # The name and ports read the same variables v0.16.0's compose
             # file did. The backend is /api on whichever host serves the page,
-            # and each node's budget is curio-dev's.
+            # and each node's budget is curio-dev's, as are the loopback ports
+            # and the open-files limit.
             compose_version="$(docker compose version --short)"
             if [ "$(printf '%s\n' 2.24.4 "$compose_version" | sort -V | head -n1)" != 2.24.4 ]; then
               echo "::error::Docker Compose $compose_version is older than 2.24.4, which docker-compose.site.yml needs"
@@ -399,7 +410,9 @@ jobs:
           services:
             curio:
               container_name: ${CURIO_CONTAINER_NAME:-curio}
-              ports: !override ["${CURIO_PORT_5002:-5002}:5002", "${CURIO_PORT_8080:-8080}:8080"]
+              ports: !override ["127.0.0.1:${CURIO_PORT_5002:-5002}:5002", "127.0.0.1:${CURIO_PORT_8080:-8080}:8080"]
+              ulimits:
+                nofile: {soft: 65536, hard: 65536}
           SITE
             printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s]\n' "$llm_args" >> docker-compose.site.yml
             if [ -n "$llm_args" ]; then
