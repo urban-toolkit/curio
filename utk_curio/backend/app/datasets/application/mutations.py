@@ -1177,12 +1177,18 @@ class CatalogMutations:
         # live inside it), not just this dataflow's ref. Do this AFTER persisting
         # the ref removal so ``dataset_usage`` reflects it, then only delete when
         # no OTHER dataflow (or node binding) still references the dataset — a
-        # dataset shared by another project must survive.
+        # dataset shared by another project must survive. A hosted guest's
+        # removal takes the dataset out of their own copy of the dataflow alone,
+        # and deletes nothing from the store every guest reads: another guest's
+        # copy, which no usage counts, may list it.
+        from utk_curio.backend.app.projects import visitor_copies
+
         if (
             delete_orphaned_import
             and removed_ref
             and self.user is not None
             and removed_ref.get("origin") not in ("computed", "source_node")
+            and not visitor_copies.copies_for(self.user)
         ):
             dir_name = removed_ref.get("dirName")
             if dir_name and str(dir_name).startswith("imported."):

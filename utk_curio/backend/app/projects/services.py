@@ -1478,7 +1478,7 @@ def forget_saved_output(user, project_id: str, node_id: str) -> bool:
     return dropped
 
 
-def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
+def mutate_dataflow_datasets(user, project_id: str, mutate, *, cleanup: bool = False) -> Optional[dict]:
     """The dataset endpoints' writer for ``spec.dataflow.datasets`` (dev/81/82).
 
     Atomic read-modify-write: *mutate* receives the current refs under the
@@ -1493,9 +1493,19 @@ def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
     outputs/name/description only. Returns the resulting spec, or ``None``
     when the project has no spec on disk.
 
+    A hosted guest's change is made to their own copy of the dataflow
+    (``visitor_copies.py``), made on this first write, and writes no row: the
+    dataflow and its row stay as every other guest opens them. *cleanup* is
+    a write for another of the account's actions, a deleted dataset's refs
+    cleared out of every dataflow that held it, which writes the dataflow
+    itself, as :func:`update_project`'s *cleanup* does.
     """
     project = repo.get_for_user(project_id, user.id)
     ukey = _user_dir_key(user)
+    own = project_id if cleanup else visitor_copies.for_request(user, project_id, make=True)
+    if own != project_id:
+        mutated = storage.mutate_dataflow_datasets(ukey, own, mutate)
+        return mutated[0] if mutated is not None else None
     result = storage.mutate_dataflow_datasets(ukey, project_id, mutate)
     if result is None:
         return None
