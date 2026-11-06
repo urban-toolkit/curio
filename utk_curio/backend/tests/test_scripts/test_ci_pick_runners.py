@@ -213,6 +213,17 @@ def test_cpu_jobs_past_hosted_and_arcade_go_to_a_free_desktop_and_then_wait_on_a
     assert [chosen[k] for k in CPU] == ["hosted", "arcade", "desktop", "desktop", "arcade"]
 
 
+def test_build_image_never_takes_a_desktop_and_waits_on_arcade_instead():
+    # build-image fetches the image's layer cache from GitHub's Actions cache,
+    # which took utk-desktop-02 past build-image's 45 minute limit (11-06).
+    chosen = picker.assign_cpu(CPU, 0, free_arcade=0, free_desktop=2)
+    assert [chosen[k] for k in CPU] == ["arcade", "desktop", "desktop", "arcade", "arcade"]
+    # Hosted and arcade still come first for it, as for every job.
+    assert picker.assign_cpu(["build-image"], 1, free_arcade=0, free_desktop=2) == {"build-image": "hosted"}
+    assert picker.assign_cpu(["build-image"], 0, free_arcade=1, free_desktop=2) == {"build-image": "arcade"}
+    assert picker.NOT_ON_DESKTOPS == frozenset({"build-image"})
+
+
 def test_the_gpu_job_goes_to_a_desktop_only_when_arcade_and_utk_are_busy():
     keys = ["a", "b", "c", "d"]
     chosen = picker.assign_gpu(keys, 1, free_utk=1, free_desktop_gpu=1)
@@ -289,10 +300,10 @@ def test_with_hosted_and_arcade_full_the_desktops_take_the_next_jobs():
     jobs = _full_hosted_and_arcade() + [_arcade_gpu() for _ in range(picker.GPU_RUNNERS)] + [_utk()]
     chosen, how = picker.pick(CPU, GPU, "auto", "auto", lambda: jobs)
     # arcade's GPU runners and utk-gpu are busy, so test-gpu takes
-    # utk-desktop-01, and utk-desktop-02 takes the first CPU job; the rest
-    # wait on arcade.
+    # utk-desktop-01, and utk-desktop-02 takes the first CPU job but
+    # build-image, which never takes a desktop; the rest wait on arcade.
     assert chosen["test-gpu"] == "desktop-gpu"
-    assert [chosen[k] for k in CPU] == ["desktop", "arcade", "arcade", "arcade", "arcade"]
+    assert [chosen[k] for k in CPU] == ["arcade", "desktop", "arcade", "arcade", "arcade"]
     assert any("hosted limit" in line and "2 of 2" in line for line in how)
     assert any(line.startswith("CPU jobs") and "then the desktops, 2 of 2 free" in line for line in how)
     assert any(line.startswith("GPU jobs") and "then the desktops, 1 of 1 free" in line for line in how)
