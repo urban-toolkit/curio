@@ -1348,6 +1348,10 @@ def scene_agent_catalog(ctx: Ctx) -> None:
         (AGENT_EXPLAINER, AGENT_CONNECTION, AGENT_FINDER, AGENT_BUILDER),
         project_id=_dataflow_id(page),
     )
+    # The rail's agent palette read the lockfile when the dataflow opened. It
+    # reads it again on the signal the drawer sends after an Add, so its count
+    # starts from none here and each Add below raises it.
+    page.evaluate("() => window.dispatchEvent(new Event('curio:agent-catalog-refresh'))")
     drawer = _open_agent_drawer(ctx)
     tour.say(
         "Nodes, data - and agents",
