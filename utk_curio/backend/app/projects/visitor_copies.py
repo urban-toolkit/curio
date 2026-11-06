@@ -22,7 +22,10 @@ What the guest does to the dataflow themselves lands there too: a play's
 output is kept on the copy and its outcome recorded in the copy's runtime
 journal (``execution/node_exec.py``), a Data Catalog Add or Remove changes the
 copy's datasets (``services.mutate_dataflow_datasets``), and a rename names the
-copy (:func:`rename`). Each makes the copy when there is none.
+copy (:func:`rename`). Each makes the copy when there is none. A node's output
+the guest adds to the dataflow is saved in the account's store under the
+copy's id (``computed.<copy>.<node>``), which every guest's Data Catalog reads,
+so it lists for that guest alone (:func:`lists_for`).
 """
 from __future__ import annotations
 
@@ -150,6 +153,26 @@ def with_spec(detail, spec: dict):
     return dataclasses.replace(detail, **fields)
 
 
+def is_copy(project_id: Optional[str]) -> bool:
+    """Whether *project_id* names a hosted guest's copy of a dataflow."""
+    if not project_id:
+        return False
+    try:
+        return (storage.project_dir(GUEST_KEY, project_id) / VISITOR_FILE).is_file()
+    except (OSError, ValueError):
+        return False
+
+
+def lists_for(dataflow_id: Optional[str], sign_in: Optional[str] = None) -> bool:
+    """Whether a dataset the dataflow *dataflow_id* made, in the guest
+    account's store, lists for the visitor signed in as *sign_in*, the
+    request's sign-in when it is not given: one a hosted guest's copy made is
+    that guest's alone, as the copy is; any other is every guest's."""
+    if not is_copy(dataflow_id):
+        return True
+    return is_own_copy(sign_in or _sign_in(), dataflow_id)
+
+
 def is_own_copy(sign_in: Optional[str], own: str) -> bool:
     """Whether *own* is the copy the visitor signed in as *sign_in* works on:
     a copy (its ``visitor.json``) of the dataflow whose id makes *own* with
@@ -190,8 +213,9 @@ def rename(user, project_id: str, name: str) -> Optional[dict]:
 
 def drop_all() -> int:
     """Drop every copy the hosted guests worked on, with the outputs their
-    plays kept on it; how many. The server does when it starts, as it puts
-    the shared examples back."""
+    plays kept on it and the node outputs they added to it as datasets; how
+    many. The server does when it starts, as it puts the shared examples
+    back."""
     from utk_curio.backend.app.common.user_storage import user_key_segment, users_base
     from utk_curio.backend.app.runs import kept
 
@@ -201,12 +225,26 @@ def drop_all() -> int:
         return 0
     if not projects.is_dir():
         return 0
+    copies = [folder.name for folder in projects.iterdir() if folder.is_dir() and (folder / VISITOR_FILE).is_file()]
+    # Their datasets go first, while each copy still names them its own: a
+    # copy one of whose datasets stays is kept for the next start, so that
+    # dataset never lists for another guest (:func:`lists_for`).
+    try:
+        from utk_curio.backend.app.datasets.repositories.user_store import drop_dataflow_outputs
+
+        staying = drop_dataflow_outputs(GUEST_KEY, copies)
+    except Exception:  # noqa: BLE001 - the copies then stay, with their datasets, for the next start
+        logger.warning("could not drop the datasets of %d hosted guest copies", len(copies), exc_info=True)
+        staying = set(copies)
+    if staying:
+        logger.warning("%d hosted guest copies stay until the next start, with datasets that could not go", len(staying))
     dropped = []
-    for folder in projects.iterdir():
-        if folder.is_dir() and (folder / VISITOR_FILE).is_file():
-            dataflow_docs.close(folder.name)
-            storage.delete_tree(GUEST_KEY, folder.name)
-            dropped.append(folder.name)
+    for own in copies:
+        if own in staying:
+            continue
+        dataflow_docs.close(own)
+        storage.delete_tree(GUEST_KEY, own)
+        dropped.append(own)
     try:
         kept.forget_dataflows(dropped)
     except Exception:  # noqa: BLE001 - the copies go either way, and their kept outputs at the end of their days

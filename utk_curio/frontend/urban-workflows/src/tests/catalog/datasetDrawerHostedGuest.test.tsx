@@ -5,6 +5,10 @@
  * a guest cannot save one, so each tells it to sign in rather than doing
  * nothing. On a dataflow it has, its actions go on as before; the local shared
  * guest and a signed-in account keep today's behavior.
+ *
+ * Its Delete tells it to sign in on any dataflow, and asks and sends nothing:
+ * the dataset is in the one store every guest reads. Its Remove from project
+ * deletes nothing from that store either, so the question never says it does.
  */
 import React from "react";
 import { renderHook, act } from "@testing-library/react";
@@ -150,6 +154,21 @@ async function publish(result: DrawerResult) {
   });
 }
 
+/** Press Delete on the upload, which may ask first. */
+async function pressDelete(result: DrawerResult) {
+  await act(async () => {
+    await result.current.onDelete(INSTALLED as never);
+  });
+}
+
+/** Press Remove on the upload; the question it asks. */
+async function pressRemove(result: DrawerResult) {
+  await act(async () => {
+    await result.current.onUninstall(INSTALLED as never);
+  });
+  return result.current.confirmAction;
+}
+
 function signInToasts(): string[] {
   return mockShowToast.mock.calls
     .map((call: unknown[]) => String(call[0]))
@@ -160,6 +179,7 @@ let installSpy: jest.SpyInstance;
 let uninstallSpy: jest.SpyInstance;
 let publishSpy: jest.SpyInstance;
 let usageSpy: jest.SpyInstance;
+let deleteSpy: jest.SpyInstance;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -167,6 +187,9 @@ beforeEach(() => {
   uninstallSpy = jest.spyOn(datasetCatalogApi, "uninstallFromDataflow").mockResolvedValue({ id: DATASET.id } as never);
   publishSpy = jest.spyOn(datasetCatalogApi, "publishDataset").mockResolvedValue(INSTALLED as never);
   usageSpy = jest.spyOn(datasetCatalogApi, "datasetUsage").mockResolvedValue([] as never);
+  deleteSpy = jest
+    .spyOn(datasetCatalogApi, "deleteDataset")
+    .mockResolvedValue({ id: INSTALLED.id, deleted: true, removedFrom: [], failedDirs: [] } as never);
 });
 
 afterEach(() => {
@@ -174,6 +197,7 @@ afterEach(() => {
   uninstallSpy.mockRestore();
   publishSpy.mockRestore();
   usageSpy.mockRestore();
+  deleteSpy.mockRestore();
 });
 
 describe("a hosted guest", () => {
@@ -236,6 +260,33 @@ describe("a hosted guest", () => {
       expect(uninstallSpy).toHaveBeenCalledWith("flow-1", DATASET.id);
       expect(signInToasts()).toEqual([]);
     });
+
+    it("is not told its Remove deletes the upload, which stays in the store every guest reads", async () => {
+      const { result } = renderDrawerAs(HOSTED_GUEST);
+
+      const asked = await pressRemove(result);
+
+      expect(asked?.confirmLabel).toBe("Remove");
+      expect(asked?.body).not.toContain("also deleted");
+    });
+  });
+
+  describe("on any dataflow", () => {
+    it.each([
+      ["one it never saved", null],
+      ["one it has", "flow-1"],
+    ])("is told to sign in when it deletes a dataset, on %s, and nothing is asked or sent", async (_where, id) => {
+      mockProjectId = id;
+      mockEnsureProjectId.mockResolvedValue(id);
+      const { result } = renderDrawerAs(HOSTED_GUEST);
+
+      await pressDelete(result);
+
+      expect(mockShowToast).toHaveBeenCalledWith("Sign in to delete datasets.", "warning");
+      expect(result.current.confirmAction).toBeNull();
+      expect(usageSpy).not.toHaveBeenCalled();
+      expect(deleteSpy).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -275,6 +326,31 @@ describe.each([
 
       expect(publishSpy).toHaveBeenCalledWith(DATASET.id, expect.objectContaining({ dataflowId: "flow-new" }));
       expect(signInToasts()).toEqual([]);
+    });
+  });
+
+  describe("on a dataflow it has", () => {
+    beforeEach(() => {
+      mockProjectId = "flow-1";
+      mockEnsureProjectId.mockResolvedValue("flow-1");
+    });
+
+    it("deletes a dataset once it confirms", async () => {
+      const { result } = renderDrawerAs(value);
+
+      await pressDelete(result);
+      await confirm(result);
+
+      expect(deleteSpy).toHaveBeenCalledWith(INSTALLED.id);
+      expect(signInToasts()).toEqual([]);
+    });
+
+    it("is told that its Remove deletes an upload no other dataflow uses", async () => {
+      const { result } = renderDrawerAs(value);
+
+      const asked = await pressRemove(result);
+
+      expect(asked?.confirmLabel).toBe("Remove and delete");
     });
   });
 

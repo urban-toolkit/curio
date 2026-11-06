@@ -17,13 +17,19 @@ workflow and source node without a project reference. A computed dataset that
 IS installed in the open dataflow also appears via the installed repository and
 the computed indexer; ``dedupe_items`` merges the rows by id (the richer
 account/installed row wins, and installed-marking flips ``installed=True``).
+
+Every hosted guest reads the guest account's store, so a node output one of
+them added to their own copy of a dataflow (``projects/visitor_copies.py``)
+lists for that guest alone, and goes with the copy (:func:`drop_dataflow_outputs`).
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+import shutil
+from typing import Any, Iterable
 
+from utk_curio.backend.app.common.user_storage import GUEST_KEY
 from utk_curio.backend.app.datasets.domain.catalog_item import item_from_manifest
 from utk_curio.backend.app.datasets.repositories import index as index_repo
 
@@ -63,8 +69,30 @@ _COMPUTED_DIR_PREFIX = "computed."
 class UserDatasetRepository:
     """Lists account-level *imported* and *computed* datasets from the user store."""
 
-    def __init__(self, user: Any | None):
+    def __init__(self, user: Any | None, *, sign_in: str | None = None):
+        """*sign_in*, for a store listed for a request: the caller's, the
+        request's own when not given, which tells a hosted guest's own copy
+        from another's (:meth:`_lists`)."""
         self.user = user
+        self.sign_in = sign_in
+
+    def _lists(self, user_key: str, manifest: Any) -> bool:
+        """Whether the dataset of the store of *user_key* that *manifest*
+        describes lists for this caller: in the guest account's store, one a
+        hosted guest's copy of a dataflow made lists for that guest alone
+        (``visitor_copies.lists_for``)."""
+        if user_key != GUEST_KEY:
+            return True
+        from utk_curio.backend.app.projects import visitor_copies
+
+        return visitor_copies.lists_for(manifest.producer_dataflow_id, self.sign_in)
+
+    def lists_row(self, user_key: str, row: Any) -> bool:
+        """:meth:`_lists` for the dataset of the store of *user_key* whose
+        index row is *row*."""
+        if user_key != GUEST_KEY:
+            return True
+        return self._lists(user_key, index_repo.manifest_from_row(row))
 
     def find_by_discovery_resource(
         self,
@@ -204,7 +232,7 @@ class UserDatasetRepository:
             else:
                 continue
             manifest = _manifest_for(dataset_root, rows.get(name))
-            if manifest is None:
+            if manifest is None or not self._lists(user_key, manifest):
                 continue
             items.append(item_from_manifest(manifest, dataset_root, origin=origin))
         return items
@@ -239,10 +267,37 @@ class UserDatasetRepository:
             if not dataset_root.name.startswith(prefix):
                 continue
             manifest = _manifest_for(dataset_root, rows.get(dataset_root.name))
-            if manifest is None:
+            if manifest is None or not self._lists(user_key, manifest):
                 continue
             items.append(item_from_manifest(manifest, dataset_root, origin="computed"))
         return items
+
+
+def drop_dataflow_outputs(user_key: str, dataflow_ids: Iterable[str]) -> set[str]:
+    """Delete the node outputs the dataflows *dataflow_ids* saved to the store
+    of *user_key*, the folders their install names ``computed.<dataflow>.<node>``,
+    each with its index row. The dataflows one of whose folders could not be
+    deleted, which the caller keeps until it tries again."""
+    from utk_curio.backend.app.datasets.infrastructure.storage import list_user_datasets
+    from utk_curio.backend.app.datasets.install.installer import (
+        dataflow_segment_from_computed_id,
+        sanitize_node_id_segment,
+    )
+
+    by_segment = {sanitize_node_id_segment(dataflow_id): dataflow_id for dataflow_id in dataflow_ids if dataflow_id}
+    staying: set[str] = set()
+    if not by_segment:
+        return staying
+    for dataset_root in list_user_datasets(user_key):
+        dataflow_id = by_segment.get(dataflow_segment_from_computed_id(dataset_root.name) or "")
+        if dataflow_id is None:
+            continue
+        shutil.rmtree(dataset_root, ignore_errors=True)
+        if dataset_root.exists():
+            staying.add(dataflow_id)
+            continue
+        index_repo.safe_forget(user_key, dataset_root.name)
+    return staying
 
 
 def _whole(discovered: dict[str, Any]) -> bool:
