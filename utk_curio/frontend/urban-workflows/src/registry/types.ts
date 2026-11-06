@@ -190,6 +190,11 @@ export interface NodeBehaviorResult {
    * Download button.
    */
   controlsComponent?: React.ReactNode;
+  /**
+   * Widgets whose control `controlsComponent` draws itself, which get no row
+   * of their own among the widgets' controls: Data Export's Part dropdown.
+   */
+  ownWidgets?: readonly string[];
   /** Replace `nodeState.setOutput`, used when output state is managed locally (DataPool). */
   setOutputCallbackOverride?: any;
   outputOverride?: ICodeData;

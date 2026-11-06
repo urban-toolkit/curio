@@ -131,7 +131,8 @@ def parseInput(parsed_json):
     elif data_type == 'list':
         return parse_list(data_type, data_value)
     elif data_type == 'dataframe':
-        return parse_dataframe(data_value)
+        # With the part label its envelope carries beside its rows (parseOutput).
+        return restore_table_metadata(parse_dataframe(data_value), parsed_json.get('metadata'))
     elif data_type == 'geodataframe':
         return parse_geodataframe(data_value)
     elif data_type == 'raster':
@@ -314,6 +315,12 @@ def parseOutput(output):
         json_output['dataType'] = 'dataframe'
         json_output['schema'] = _frame_schema(output)
         json_output['columns'] = _frame_columns(output)
+        # The label of the bundle part it was read from, which a plain table
+        # keeps alone (codec.kept_table_metadata), beside its rows: Data
+        # Export's Part dropdown names the part by it.
+        kept_table = kept_table_metadata(output)
+        if kept_table:
+            json_output['metadata'] = kept_table
     elif is_geospatial_frame(output):
         gdf = fix_json_strings(output)
         # `is_geospatial_frame` guarantees an active column, so `.to_json()`,
