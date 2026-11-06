@@ -97,7 +97,7 @@ import {
 } from "../../../components/tooltip/vegaTooltip";
 import { useVega } from "../../../hook/useVega";
 import { vegaLiteAdapter } from "../../../adapters/vegaLiteAdapter";
-import { DurationHistogram } from "../../../pages/monitor/MonitorCharts";
+import { DurationHistogram, LinesOverTime } from "../../../pages/monitor/MonitorCharts";
 
 /** A Vega tooltip handler: what a view calls with its scenegraph handler, the event, the item and its tooltip. */
 type Handler = (handler: { element(): Element | null }, event: unknown, item: unknown, value: unknown) => void;
@@ -236,6 +236,23 @@ describe("every Vega view Curio builds uses it", () => {
       />,
     );
     expectCuriosHandler("MonitorCharts");
+  });
+
+  test("the monitor page's lines over time (MonitorCharts)", () => {
+    render(
+      <LinesOverTime
+        rows={[
+          { t: 0, line: "gemma4 (Curio)", tokens: 120 },
+          { t: 3600000, line: "gemma4 (Curio)", tokens: 0 },
+        ]}
+        timeField="t"
+        valueField="tokens"
+        seriesField="line"
+        valueTitle="input tokens"
+        label="Input tokens per hour by model, last 7 days"
+      />,
+    );
+    expectCuriosHandler("MonitorCharts lines");
   });
 });
 
