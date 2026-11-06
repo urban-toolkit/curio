@@ -87,6 +87,13 @@ class UserDatasetRepository:
 
         return visitor_copies.lists_for(manifest.producer_dataflow_id, self.sign_in)
 
+    def lists_row(self, user_key: str, row: Any) -> bool:
+        """:meth:`_lists` for the dataset of the store of *user_key* whose
+        index row is *row*."""
+        if user_key != GUEST_KEY:
+            return True
+        return self._lists(user_key, index_repo.manifest_from_row(row))
+
     def find_by_discovery_resource(
         self,
         source_id: str,
