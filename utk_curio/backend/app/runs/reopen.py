@@ -52,13 +52,17 @@ def _datasets_by_node(codes: dict, project_id: str, owner) -> dict:
 
 def last_results(
     owner, user_key: str, project_id: str, spec: dict, saved: list, *, editor=None, editor_key=None,
+    kept_on=None,
 ) -> list:
     """The outputs *project_id* opens with for its owner, as ``OutputRef``s:
     *saved*, each node that the owner's runs kept a result for under its key
     showing the newest such result instead. With *editor*, an editor the
     owner invited whose store is *editor_key*, the results his runs kept
     stand in, keyed as his runs keep them; the dataflow is planned from the
-    owner's store (*user_key*), as his runs plan it."""
+    owner's store (*user_key*), as his runs plan it. With *kept_on*, a hosted
+    guest's own copy of the dataflow (``projects/visitor_copies.py``), the
+    results their plays kept on it stand in, keyed as those plays key them:
+    with the dataflow's datasets."""
     from utk_curio.backend.app.execution.node_names import template_labels
     from utk_curio.backend.app.execution.run_engine import (
         PlanError,
@@ -72,7 +76,7 @@ def last_results(
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
     if editor is None:
-        entries = kept.owner_outputs_by_key(project_id)
+        entries = kept.owner_outputs_by_key(kept_on or project_id)
         keyer, keyer_key = owner, user_key
     else:
         entries = kept.editor_outputs_by_key(project_id, getattr(editor, "id", None))

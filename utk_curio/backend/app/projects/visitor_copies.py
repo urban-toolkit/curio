@@ -17,17 +17,26 @@ and later turns included, and the guest's canvas of the dataflow opens it
 no row in the account's list of dataflows, so no gallery shows it. The copies
 go when the server starts (:func:`drop_all`), as the shared examples are put
 back then.
+
+What the guest does to the dataflow themselves lands there too: a play's
+output is kept on the copy and its outcome recorded in the copy's runtime
+journal (``execution/node_exec.py``), a Data Catalog Add or Remove changes the
+copy's datasets (``services.mutate_dataflow_datasets``), and a rename names the
+copy (:func:`rename`). Each makes the copy when there is none.
 """
 from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 import uuid
 from typing import Optional
 
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.common.user_storage import GUEST_KEY
 from utk_curio.backend.app.projects import storage
+
+logger = logging.getLogger(__name__)
 
 #: Beside a copy's spec: the dataflow it copies.
 VISITOR_FILE = "visitor.json"
@@ -36,7 +45,7 @@ VISITOR_FILE = "visitor.json"
 _NAMESPACE = uuid.UUID("5d3c2a4e-7f1b-4c8e-9a6d-2b0e8f4c1a37")
 
 
-def _copies_for(user) -> bool:
+def copies_for(user) -> bool:
     """Whether *user*'s agents work on copies: a hosted guest, whose account
     is the shared guest's."""
     from utk_curio.backend.app.projects.services import _user_dir_key
@@ -46,9 +55,14 @@ def _copies_for(user) -> bool:
 
 
 def _sign_in() -> Optional[str]:
-    """The token of the request's sign-in, which names one visitor."""
+    """The token of the request's sign-in, which names one visitor; None
+    outside a request."""
+    from flask import has_request_context
+
     from utk_curio.backend.app.users.dependencies import get_current_session
 
+    if not has_request_context():
+        return None
     session = get_current_session()
     return session.token if session is not None else None
 
@@ -83,14 +97,15 @@ def _make(project_id: str, own: str) -> None:
         dataflow_docs.create(GUEST_KEY, own, copied, dataflow_docs.by_curio(GUEST_KEY, "copy"))
 
 
-def for_request(user, project_id: str, *, make: bool = True) -> str:
+def for_request(user, project_id: str, *, make: bool = True, sign_in: Optional[str] = None) -> str:
     """The dataflow the request's agents work on: *project_id* itself, or,
     for a hosted guest, the guest's own copy of it, made now when *make* and
     there is none. A read that finds no copy reads *project_id*: the guest's
-    agents have not written it."""
-    if not _copies_for(user):
+    agents have not written it. *sign_in* names the visitor, the request's
+    sign-in when it is not given."""
+    if not copies_for(user):
         return project_id
-    sign_in = _sign_in()
+    sign_in = sign_in or _sign_in()
     if not sign_in:
         return project_id
     own = copy_id(sign_in, project_id)
@@ -108,7 +123,7 @@ def canvas_spec(user, project_id: str) -> Optional[dict]:
     guest's agents have a copy of it: the copy as it is now, as the canvas
     reads a dataflow, without its history. ``None`` for anyone else, and for
     a guest whose agents never wrote it."""
-    if not _copies_for(user):
+    if not copies_for(user):
         return None
     sign_in = _sign_in()
     own = copy_id(sign_in, project_id) if sign_in else None
@@ -124,16 +139,61 @@ def canvas_spec(user, project_id: str) -> Optional[dict]:
 
 
 def with_spec(detail, spec: dict):
-    """The dataflow's *detail* as the copy's *spec* gives it."""
+    """The dataflow's *detail* as the copy's *spec* gives it: its spec, its
+    scenarios and its name."""
     from utk_curio.backend.app.projects import scenarios
 
-    return dataclasses.replace(detail, spec=spec, scenarios=scenarios.scenario_summaries(spec))
+    named = (spec.get("dataflow") or {}).get("name") if isinstance(spec, dict) else None
+    fields = {"spec": spec, "scenarios": scenarios.scenario_summaries(spec)}
+    if isinstance(named, str) and named:
+        fields["name"] = named
+    return dataclasses.replace(detail, **fields)
+
+
+def is_own_copy(sign_in: Optional[str], own: str) -> bool:
+    """Whether *own* is the copy the visitor signed in as *sign_in* works on:
+    a copy (its ``visitor.json``) of the dataflow whose id makes *own* with
+    that sign-in."""
+    if not sign_in or not own:
+        return False
+    try:
+        copied = json.loads((storage.project_dir(GUEST_KEY, own) / VISITOR_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    source = copied.get("copies") if isinstance(copied, dict) else None
+    return isinstance(source, str) and copy_id(sign_in, source) == own
+
+
+def rename(user, project_id: str, name: str) -> Optional[dict]:
+    """Name the hosted guest's own copy of *project_id*, a dataflow the
+    account owns, *name*: its ``dataflow.name``, the copy made now when there
+    is none. The dataflow's row keeps its name, which every guest's gallery
+    lists. The copy's spec as the guest's canvas opens it, or ``None`` for
+    anyone else, and for a dataflow the account does not own."""
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.extensions import db
+
+    if not copies_for(user):
+        return None
+    project = db.session.get(Project, project_id)
+    if project is None or project.user_id != getattr(user, "id", None):
+        return None
+    own = for_request(user, project_id, make=True)
+    if own == project_id:
+        return None
+    with dataflow_docs.writing(GUEST_KEY, own, dataflow_docs.person(GUEST_KEY, "rename")) as spec:
+        dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+        if isinstance(dataflow, dict):
+            dataflow["name"] = name
+    return canvas_spec(user, project_id)
 
 
 def drop_all() -> int:
-    """Drop every copy the hosted guests' agents worked on; how many. The
-    server does when it starts, as it puts the shared examples back."""
+    """Drop every copy the hosted guests worked on, with the outputs their
+    plays kept on it; how many. The server does when it starts, as it puts
+    the shared examples back."""
     from utk_curio.backend.app.common.user_storage import user_key_segment, users_base
+    from utk_curio.backend.app.runs import kept
 
     try:
         projects = users_base() / user_key_segment(GUEST_KEY) / "projects"
@@ -141,10 +201,14 @@ def drop_all() -> int:
         return 0
     if not projects.is_dir():
         return 0
-    dropped = 0
+    dropped = []
     for folder in projects.iterdir():
         if folder.is_dir() and (folder / VISITOR_FILE).is_file():
             dataflow_docs.close(folder.name)
             storage.delete_tree(GUEST_KEY, folder.name)
-            dropped += 1
-    return dropped
+            dropped.append(folder.name)
+    try:
+        kept.forget_dataflows(dropped)
+    except Exception:  # noqa: BLE001 - the copies go either way, and their kept outputs at the end of their days
+        logger.warning("could not forget the outputs kept on %d hosted guest copies", len(dropped), exc_info=True)
+    return len(dropped)

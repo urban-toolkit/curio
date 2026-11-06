@@ -18,6 +18,7 @@ from utk_curio.backend.app.projects import concurrency
 from utk_curio.backend.app.projects import repositories as repo
 from utk_curio.backend.app.projects import scenarios
 from utk_curio.backend.app.projects import storage
+from utk_curio.backend.app.projects import visitor_copies
 from utk_curio.backend.app.projects.shipped import shipped_dataflows
 from utk_curio.backend.app.projects.schemas import (
     OutputRef,
@@ -1586,7 +1587,9 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
     """The owner's dataflow, its spec and the outputs it opens with: its saved
     outputs, or, with *last_results*, as its canvas left them, each node its
     runs ran showing its newest kept result where one matches the saved
-    dataflow (``runs/reopen.py``)."""
+    dataflow (``runs/reopen.py``). A hosted guest who has a copy of the
+    dataflow of their own (``visitor_copies.py``) opens that copy, with the
+    results their plays kept on it."""
     from utk_curio.backend.app.datasets.seed import (
         ensure_dataflow_datasets_installed,
     )
@@ -1613,21 +1616,27 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
     # it (#909).
     repo.touch_last_opened(project_id, user.id)
     db.session.commit()
+    own = visitor_copies.canvas_spec(user, project_id)
+    opened = own if own is not None else spec
     shown = readable
     if last_results:
         from utk_curio.backend.app.runs.reopen import last_results as kept_results
 
         try:
-            shown = kept_results(user, ukey, project_id, spec, readable)
+            shown = kept_results(
+                user, ukey, project_id, opened, readable,
+                kept_on=visitor_copies.for_request(user, project_id, make=False) if own is not None else None,
+            )
         except Exception:  # noqa: BLE001 - a dataflow always opens, with its saved outputs at least
             logger.exception("could not find the kept results of dataflow %s", project_id)
+    detail = _to_detail(
+        project, spec=spec, outputs=readable,
+        spec_revision=storage.spec_revision(ukey, project_id),
+        categories=_categories(user, project_id, opened),
+    )
     return {
-        "project": _to_detail(
-            project, spec=spec, outputs=readable,
-            spec_revision=storage.spec_revision(ukey, project_id),
-            categories=_categories(user, project_id, spec),
-        ),
-        "spec": spec,
+        "project": visitor_copies.with_spec(detail, own) if own is not None else detail,
+        "spec": opened,
         "outputs": [_output_ref_dict(r) for r in shown],
     }
 

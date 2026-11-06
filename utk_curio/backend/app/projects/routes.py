@@ -221,7 +221,8 @@ def list_projects():
 def get_project(project_id: str):
     """The dataflow, its spec and its outputs: the saved ones, or, with
     ``?results=last``, the results its canvas was left with, as a canvas
-    opens it (``services.load_project``)."""
+    opens it (``services.load_project``). A hosted guest's canvas opens
+    their own copy, once they have one (visitor_copies.py)."""
     try:
         result = services.load_project(
             g.user, project_id, last_results=request.args.get("results") == "last",
@@ -231,15 +232,9 @@ def get_project(project_id: str):
     except ProjectError as exc:
         return _error(str(exc), exc.status)
 
-    # A hosted guest's canvas opens the copy its agents work on, once they
-    # have written one (visitor_copies.py).
-    project, spec = result["project"], result["spec"]
-    own = visitor_copies.canvas_spec(g.user, project_id)
-    if own is not None:
-        project, spec = visitor_copies.with_spec(project, own), own
     return jsonify({
-        "project": asdict(project),
-        "spec": spec,
+        "project": asdict(result["project"]),
+        "spec": result["spec"],
         "outputs": result["outputs"],
     }), 200
 
@@ -333,9 +328,10 @@ def _output_read(project_id: str):
     read from the file its owner's store holds, in place.
 
     The session is the caller's, but for the read of an output the caller's
-    runs of this dataflow kept (``runs/kept.py``): the owner's, or an invited
-    editor's own, which is read under the session that made it, from any
-    sign-in. No one reads another's kept output here."""
+    runs of this dataflow kept (``runs/kept.py``): the owner's, an invited
+    editor's own, or a hosted guest's, kept on their own copy of it
+    (visitor_copies.py), which is read under the session that made it. No one
+    reads another's kept output here."""
     from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.app.runs import kept
     from utk_curio.backend.extensions import db
@@ -350,7 +346,7 @@ def _output_read(project_id: str):
     saved_path = saved.path if saved is not None else None
     user_id = getattr(g.user, "id", None)
     if project.user_id == user_id:
-        entry = kept.owner_entry(project_id, file_name)
+        entry = kept.owner_entry(visitor_copies.for_request(g.user, project_id, make=False), file_name)
     else:
         entry = kept.editor_entry(project_id, user_id, file_name)
     if entry is not None:
