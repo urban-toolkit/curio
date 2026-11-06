@@ -211,6 +211,29 @@ def test_everything_a_hosted_guest_does_stays_in_its_own_copy(client, example, d
     landed = solved.get_json()["appliedContents"]
     assert len(landed) == 2, solved.get_json()
 
+    # The Agent Catalog marks what A's copy holds for A, and what the example
+    # holds for B.
+    def _installed(token: str) -> set:
+        listed = client.get(f"/api/agents/catalog?projectId={example}", headers=_auth(token))
+        assert listed.status_code == 200, listed.get_data(as_text=True)
+        return {row["dirName"] for row in listed.get_json()["items"] if row["installedInProject"]}
+
+    assert NODE_BUILDER in _installed(VISITOR_A)
+    assert NODE_BUILDER not in _installed(VISITOR_B)
+    lockfile = client.get(f"/api/packages/projects/{example}", headers=_auth(VISITOR_A))
+    assert lockfile.status_code == 200, lockfile.get_data(as_text=True)
+
+    # What would write the example itself, which every guest opens, is refused.
+    for refused in (
+        client.post(f"/api/packages/projects/{example}/install", json={"dirName": "curio.builtin@1"},
+                    headers=_auth(VISITOR_A)),
+        client.delete(f"/api/packages/projects/{example}/curio.builtin@1", headers=_auth(VISITOR_A)),
+        client.post(f"/api/scenarios/{example}/s1/copy", json={"targetProjectId": example, "outputs": []},
+                    headers=_auth(VISITOR_A)),
+        client.post(f"/api/projects/{example}/history/saved", headers=_auth(VISITOR_A)),
+    ):
+        assert refused.status_code == 403, (refused.request.path, refused.get_data(as_text=True))
+
     # A's copy holds all of it.
     mine = _open(client, VISITOR_A, example)
     assert mine["project"]["name"] == "Mine"

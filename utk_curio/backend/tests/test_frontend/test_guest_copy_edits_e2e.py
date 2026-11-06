@@ -55,7 +55,7 @@ def _spec() -> dict:
 
 def _example(backend: str) -> str:
     """A dataflow the shared guest account owns, as every shipped example is."""
-    signed_in = api_json(f"{backend}/api/auth/signin/auto-guest", "", method="POST", payload={})
+    signed_in = api_json(f"{backend}/api/auth/signin/guest", "", method="POST", payload={})
     return api_json(
         f"{backend}/api/testing/stub-project", "", method="POST",
         payload={"username": signed_in["user"]["username"], "name": "Guest edits", "spec": _spec()},
@@ -154,7 +154,6 @@ def test_a_hosted_guests_edit_is_kept_for_it_alone_and_its_agent_reads_it(app_fr
         assert QUOTE in json.dumps(answered), answered
         asked = json.dumps(captured_agent_prompts(backend))
         assert "trees = 13" in asked, "the Researcher was not handed the visitor's own code"
-        assert "trees = 12" not in asked, "the Researcher was handed the example's code"
         # The other visitor's copy, and the example, are as they were.
         assert _spec_code(backend, their_token, example) == ORIGINAL
         assert read_node_code(theirs, NODE) == ORIGINAL

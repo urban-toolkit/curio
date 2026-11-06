@@ -71,12 +71,26 @@ def _valid_project_id(value) -> bool:
     return isinstance(value, str) and bool(_UUID_RE.match(value))
 
 
+def _sign_in(sess: dict) -> Optional[str]:
+    """The token of a guest socket's sign-in, which names its own copy of a
+    dataflow its account owns (``visitor_copies.copy_id``): read from the
+    session row its handshake signed in with, never kept beside the socket.
+    ``None`` for an account's socket."""
+    if not sess.get("is_guest") or sess.get("token_session_id") is None:
+        return None
+    from utk_curio.backend.app.users.models import UserSession
+    from utk_curio.backend.extensions import db
+
+    row = db.session.get(UserSession, sess["token_session_id"])
+    return row.token if row is not None else None
+
+
 def _account(sess: dict):
     """The socket's account, as ``access.room_role`` reads one, with the
     sign-in a hosted guest's copy is named by (``visitor_copies.is_room_of``)."""
     return SimpleNamespace(
         id=sess.get("user_id"), is_guest=bool(sess.get("is_guest")),
-        username=sess.get("username"), sign_in=sess.get("sign_in"),
+        username=sess.get("username"), sign_in=_sign_in(sess),
     )
 
 
@@ -168,9 +182,6 @@ def register(sio):
             "profile_image": user.profile_image,
             "is_guest": bool(user.is_guest),
             "token_session_id": session.id,
-            # A guest's sign-in names its own copy of a dataflow its account
-            # owns (visitor_copies.copy_id). It stays on the server.
-            "sign_in": session.token if user.is_guest else None,
             "participant_id": room_state.new_participant_id(),
         })
 
