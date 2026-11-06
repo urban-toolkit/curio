@@ -175,6 +175,10 @@ def test_a_hosted_guests_added_output_is_theirs_alone(client, example, sandbox):
     from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
     from utk_curio.backend.app.projects import visitor_copies
 
+    # Each visitor's Data Catalog lists the store once, as their canvases do,
+    # before anything is measured.
+    for token in (VISITOR_A, VISITOR_B):
+        _listing(client, token, dataflowId=example)
     before = _digests(example)
     made = sandbox["artifacts"]["a"]
     _play(client, VISITOR_A, example, "a")
