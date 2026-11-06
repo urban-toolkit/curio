@@ -90,6 +90,24 @@ run's e2e JUnit, `e2e.xml` in the `ci-inputs-test-gpu` and
 `python scripts/e2e_durations.py <e2e.xml> ...`, when the CI report's spread
 line warns; a test missing from it is priced at the median recorded test.
 
+A filtered run of the Full stack build (a re-mint's `remint_filter`, or its
+`tests` input) starts only the parts that hold a selected test. Its
+build-image job collects the suite once with `CURIO_LIST_PARTS=<file>`
+(`tests/parts.py`), which writes each job's share, split as each part splits
+it, and runs nothing. test-gpu lists its own share that way before it starts
+its stack, and with none stops there. To run a few tests on CI, a before-run
+among them:
+
+```
+gh workflow run docker-compose.yml --ref <branch> \
+  -f tests='utk_curio/backend/tests/test_frontend/test_x_e2e.py::test_y utk_curio/frontend/urban-workflows/src/tests/x.test.ts'
+```
+
+`tests` takes space-separated pytest node ids or paths under
+`utk_curio/backend/tests` or `utk_curio/sandbox/tests`, and Jest test files
+(`scripts/ci_selected_tests.py`); `scripts/test.sh` reads it as `CURIO_TESTS`.
+The CI report then checks that every selected test ran.
+
 With `--use-existing`, pairs 1..N-1 must already be running on the ports
 `python -m utk_curio.backend.tests.shards K` prints (that is what CI does,
 inside its one container).
@@ -366,7 +384,9 @@ A normal dispatch of a branch with no PR keeps candidates too, the same way a
 PR run does.
 
 A re-mint run is the e2e suite alone, under `--remint-baselines`, on the GPU share
-and the CPU parts alike, each re-minting the baselines it compares: each
+and the CPU parts alike (with a filter, only the parts that hold a test it
+selects start, and the run fails when it selects none), each re-minting the
+baselines it compares: each
 capture is compared with its committed baseline, and when its screen changed
 the capture is written over the baseline; a missing baseline is minted. Then:
 

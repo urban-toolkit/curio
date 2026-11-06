@@ -21,7 +21,9 @@ rather than fail for exactly that.
 The check needs every job's results: a job that sent none would make every
 test only it runs look unrun. So each <job> named on the command line must
 have its ci-inputs-<job> results, or nothing is checked (a re-mint run, a
-scheduled run, or a job that died before uploading).
+scheduled run, or a job that died before uploading). A filtered run, which
+starts only the jobs that hold a selected test, is checked by
+scripts/ci_selected_tests.py instead.
 
 --compare reads two runs' downloaded ci-inputs-* folders (main's run and a
 PR's run, say; issue-audit/backlog-triage-v15/fetch_run.sh downloads one) and

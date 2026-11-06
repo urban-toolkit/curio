@@ -27,12 +27,18 @@
 #   --e2e-only          Run only the E2E suite
 #   --unit-only         Run only backend, sandbox, and frontend unit tests (no E2E)
 #   --allure-dir DIR    Write Allure results to DIR (passed to E2E pytest)
-#   --allow-empty       Count an E2E run that selects no test (pytest's exit 5) as passed
+#   --allow-empty       Count a pytest suite that selects no test (pytest's exit 5)
+#                       as passed
 #   --parallel N        Run the E2E suite on N pytest-xdist workers, each against
 #                       its own backend+sandbox pair (one shared frontend).
 #                       N=auto picks min(4, cores/4). Default 1, or $CURIO_E2E_PARALLEL.
 #                       With --use-existing, pairs 1..N-1 must already be running
 #                       on the ports `python -m utk_curio.backend.tests.shards K` prints.
+#
+# CURIO_TESTS, when set, is a space-separated list of pytest node ids or paths
+# and Jest test files, from the repository root (the Full stack build's `tests`
+# input): each suite runs only the ones in its folder, and does not run when it
+# has none (scripts/ci_selected_tests.py).
 #
 # Ports: the stack this script boots binds BACKEND_PORT / SANDBOX_PORT /
 # FRONTEND_PORT from the environment (defaults 5002 / 2000 / 8080), so a
@@ -71,7 +77,7 @@ while [[ $# -gt 0 ]]; do
     --allow-empty)   ALLOW_EMPTY=1;        shift ;;
     --parallel)      PARALLEL="$2";        shift 2 ;;
     --help|-h)
-      sed -n '2,39p' "$0"
+      sed -n '2,45p' "$0"
       exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -147,6 +153,35 @@ record() {
     RESULTS+=("  FAIL  $label")
     OVERALL=1
   fi
+}
+
+# A pytest suite's exit: with --allow-empty, pytest's 5 (nothing selected, as
+# when a CI re-mint filter names only tests the other runner owns) passes.
+record_pytest() {
+  local label=$1 rc=$2
+  (( ALLOW_EMPTY == 1 && rc == 5 )) && rc=0
+  record "$label" "$rc"
+}
+
+# CURIO_TESTS: this suite's words, into TARGETS (scripts/ci_selected_tests.py
+# checks every word and refuses one that no suite holds). Returns 1, after
+# recording the suite as skipped, when CURIO_TESTS names none of its tests.
+TARGETS=()
+selected_targets() {
+  local suite=$1 label=$2 listed line
+  TARGETS=()
+  listed=$(python "$REPO_ROOT/scripts/ci_selected_tests.py" targets "$suite")
+  die "the selected tests (CURIO_TESTS)" $?
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && TARGETS+=("$line")
+  done <<< "$listed"
+  if (( ${#TARGETS[@]} == 0 )); then
+    echo ""
+    echo "==> $label: CURIO_TESTS names none of them, so they do not run."
+    RESULTS+=("  SKIP  $label (not in CURIO_TESTS)")
+    return 1
+  fi
+  echo "==> $label: only ${TARGETS[*]} (CURIO_TESTS)"
 }
 
 wait_for_port() {
@@ -393,12 +428,16 @@ fi
 # 4. Backend unit tests
 # ---------------------------------------------------------------------------
 if [[ $RUN_BACKEND -eq 1 ]]; then
-  echo ""
-  echo "==> Running backend unit tests..."
-  PYTHONPATH="$REPO_ROOT" python -m pytest \
-    "$REPO_ROOT/utk_curio/backend/tests/" -v \
-    --ignore="$REPO_ROOT/utk_curio/backend/tests/test_frontend"
-  record "Backend unit tests" $?
+  BACKEND_TARGETS=("$REPO_ROOT/utk_curio/backend/tests/")
+  if [[ -z "${CURIO_TESTS:-}" ]] || selected_targets backend "Backend unit tests"; then
+    [[ -n "${CURIO_TESTS:-}" ]] && BACKEND_TARGETS=("${TARGETS[@]/#/$REPO_ROOT/}")
+    echo ""
+    echo "==> Running backend unit tests..."
+    PYTHONPATH="$REPO_ROOT" python -m pytest \
+      "${BACKEND_TARGETS[@]}" -v \
+      --ignore="$REPO_ROOT/utk_curio/backend/tests/test_frontend"
+    record_pytest "Backend unit tests" $?
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -415,18 +454,27 @@ if [[ $RUN_SANDBOX -eq 1 ]]; then
   # precisely to be run here on Linux, plus test_isolation_staging.py and
   # test_json_artifact_writer.py. pytest runs TestCase classes too, so
   # nothing is lost by switching.
-  PYTHONPATH="$REPO_ROOT" python -m pytest "$REPO_ROOT/utk_curio/sandbox/tests" -v
-  record "Sandbox unit tests" $?
+  SANDBOX_TARGETS=("$REPO_ROOT/utk_curio/sandbox/tests")
+  if [[ -z "${CURIO_TESTS:-}" ]] || selected_targets sandbox "Sandbox unit tests"; then
+    [[ -n "${CURIO_TESTS:-}" ]] && SANDBOX_TARGETS=("${TARGETS[@]/#/$REPO_ROOT/}")
+    PYTHONPATH="$REPO_ROOT" python -m pytest "${SANDBOX_TARGETS[@]}" -v
+    record_pytest "Sandbox unit tests" $?
+  fi
 fi
 
 # ---------------------------------------------------------------------------
 # 6. Jest frontend unit tests
 # ---------------------------------------------------------------------------
 if [[ $RUN_JEST -eq 1 ]]; then
-  echo ""
-  echo "==> Running Jest frontend unit tests..."
-  (cd "$REPO_ROOT/utk_curio/frontend/urban-workflows" && npm test -- --watchAll=false)
-  record "Jest frontend unit tests" $?
+  if [[ -z "${CURIO_TESTS:-}" ]]; then
+    echo ""
+    echo "==> Running Jest frontend unit tests..."
+    (cd "$REPO_ROOT/utk_curio/frontend/urban-workflows" && npm test -- --watchAll=false)
+    record "Jest frontend unit tests" $?
+  elif selected_targets jest "Jest frontend unit tests"; then
+    (cd "$REPO_ROOT/utk_curio/frontend/urban-workflows" && npm test -- --watchAll=false --runTestsByPath "${TARGETS[@]}")
+    record "Jest frontend unit tests" $?
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -462,13 +510,14 @@ if [[ $RUN_E2E -eq 1 ]]; then
   echo "==> Running E2E tests..."
   cd "$REPO_ROOT/utk_curio/backend"
   die "cd to utk_curio/backend" $?
-  # CURIO_E2E_TARGETS narrows the run to specific files (smoke runs); default is the suite.
-  env $E2E_ENV python -m pytest ${CURIO_E2E_TARGETS:-tests/test_frontend/} $PYTEST_ARGS
-  rc=$?
-  # pytest's 5: nothing was selected, as when a CI re-mint filter names only
-  # tests the other runner owns.
-  (( ALLOW_EMPTY == 1 && rc == 5 )) && rc=0
-  record "E2E tests" $rc
+  if [[ -z "${CURIO_TESTS:-}" ]]; then
+    # CURIO_E2E_TARGETS narrows the run to specific files (smoke runs); default is the suite.
+    env $E2E_ENV python -m pytest ${CURIO_E2E_TARGETS:-tests/test_frontend/} $PYTEST_ARGS
+    record_pytest "E2E tests" $?
+  elif selected_targets e2e "E2E tests"; then
+    env $E2E_ENV python -m pytest "${TARGETS[@]/#/$REPO_ROOT/}" $PYTEST_ARGS
+    record_pytest "E2E tests" $?
+  fi
 fi
 
 exit $OVERALL
