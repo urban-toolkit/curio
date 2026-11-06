@@ -5,7 +5,7 @@ import re
 
 from playwright.sync_api import expect
 
-from ..utils import accept_confirm_dialog
+from ..utils import accept_confirm_dialog, api_json
 from .framework import Ctx, walkthrough
 
 
@@ -46,6 +46,25 @@ def open_agent_drawer(ctx: Ctx):
     return dialog
 
 
+def remove_one_from_all_projects(ctx: Ctx) -> str:
+    """Take one agent the account has by default out of all its projects,
+    through the API, and return its coordinate: one no other agent requires,
+    which Remove from all projects takes out at once. A new dataflow then
+    starts without it, so its card is the one that offers Add."""
+    token = ctx.page.evaluate(
+        "() => (document.cookie.match(/(?:^|; )session_token=([^;]*)/) || [])[1] || ''"
+    )
+    assert token, "no session cookie; the scene cannot remove an agent"
+    cards = api_json(f"{ctx.backend}/api/agents/catalog", token)["items"]
+    required = {r["coord"] for card in cards for r in card.get("requiresAgents") or []}
+    coord = next(
+        card["dirName"] for card in cards if card.get("imported") and card["dirName"] not in required
+    )
+    # Remove from all projects walks every dataflow the account has.
+    api_json(f"{ctx.backend}/api/agents/imports/{coord}", token, method="DELETE", timeout=60.0)
+    return coord
+
+
 def fits_on_one_line(button) -> dict:
     """Whether a button's label stays inside its box.
 
@@ -77,6 +96,10 @@ def fits_on_one_line(button) -> dict:
 )
 def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
     page = ctx.page
+
+    # Every new dataflow starts with the agents Curio adds by default, so one
+    # is taken out of all the account's projects first: its card offers Add.
+    coord = remove_one_from_all_projects(ctx)
 
     # The harness seeds a SAVED project, and on one of those the button was
     # never disabled - so this journey has to leave it. `/dataflow/new` is the
@@ -119,7 +142,8 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
         "what the confirmation and the save indicator already say"
     )
 
-    add = dialog.get_by_role("button", name="Add to project").first
+    card = dialog.locator(f'article[data-agent-coord="{coord}"]')
+    add = card.get_by_role("button", name="Add to project")
     add.wait_for(state="visible", timeout=15000)
     assert add.is_enabled(), (
         "Add to project is disabled on an unsaved dataflow - the drawer is "
@@ -137,7 +161,7 @@ def agent_catalog_adding_to_an_unsaved_dataflow(ctx: Ctx) -> None:
     # The confirm button sat over a card, which would stay hovered.
     page.mouse.move(0, 400)
 
-    installed = dialog.get_by_role("button", name="Remove from project").first
+    installed = card.get_by_role("button", name="Remove from project")
     installed.wait_for(state="visible", timeout=30000)
 
     # The save really happened: the route carries a project id now.

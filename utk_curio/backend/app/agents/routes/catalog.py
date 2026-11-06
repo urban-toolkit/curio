@@ -211,7 +211,7 @@ def list_provider_models():
 @require_auth
 def list_imports():
     """Optional ``?projectId=`` marks which imports are installed in that
-    project (memo dev/47 — the lockfile is the one source of truth). The
+    project (memo dev/47: the lockfile is the one source of truth). The
     account gets the agents Curio adds by default first
     (``seed_default_agents``)."""
     agents_services.seed_default_agents(_user_dir_key(g.user), g.user)

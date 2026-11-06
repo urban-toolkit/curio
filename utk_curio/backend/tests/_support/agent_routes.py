@@ -13,6 +13,41 @@ def _auth(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
+def _dependents_first(coords: list[str]) -> list[str]:
+    """*coords* with each agent before the agents it requires, the order
+    Remove from all projects accepts them in while a dataflow holds them all."""
+    from utk_curio.backend.app.agents.domain import builtin
+
+    remaining, ordered = list(coords), []
+    while remaining:
+        required = {
+            agent_id for coord in remaining
+            for agent_id in builtin.get_builtin_manifest(coord).requires_agents
+        }
+        free = [coord for coord in remaining if coord.split("@", 1)[0] not in required] or remaining[:1]
+        ordered += free
+        remaining = [coord for coord in remaining if coord not in free]
+    return ordered
+
+
+def _remove_default_agents(client, token) -> None:
+    """Take every agent Curio adds by default out of all the account's
+    projects, through Remove from all projects, after the listing that adds
+    them; the account then adds only the agents a test adds."""
+    from utk_curio.backend.app.agents.service import default_agent_coords
+
+    defaults = default_agent_coords()
+    listed = client.get("/api/agents/imports", headers=_auth(token))
+    assert listed.status_code == 200, listed.get_data(as_text=True)
+    held = {card["dirName"] for card in listed.get_json()["agents"]}
+    assert set(defaults) <= held, f"the account's first listing holds {sorted(held)}, not {defaults}"
+    for coord in _dependents_first(defaults):
+        removed = client.delete(f"/api/agents/imports/{coord}", headers=_auth(token))
+        assert removed.status_code == 200, removed.get_data(as_text=True)
+    left = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
+    assert [card["dirName"] for card in left] == [], "a removed default agent came back"
+
+
 def _block_closure_repair(monkeypatch):
     """dev/126 (``DEC-080``): stand in for the one state the repair cannot fix
     — a required agent that is visible nowhere, where ``install_in_project``

@@ -1747,6 +1747,9 @@ Agents are AI assistants you attach to your dataflow. The catalog lists four:
 - **Dataflow Builder**: plans a whole dataflow, then solves its nodes.
 - **Dataset Finder**: finds datasets in the Data Catalog and in portals.
 
+Every dataflow you have or make starts with all four, in the left Tools panel's
+**Agent Catalog** dropdown.
+
 What each does in chat, the tools it uses, the modes other agents ask it for
 and the skills it reads are in [AGENT-CATALOG.md](AGENT-CATALOG.md#the-agents).
 In an agent's details you add a skill to it or remove one, for your account.
@@ -1758,7 +1761,8 @@ There are two scopes:
 
 - **`/catalog/agents`**, the **Agent Catalog** page, is your **account**.
   **Add to all projects** there adds an agent to every dataflow you have, and
-  to every new one.
+  to every new one; **Remove from all projects** takes one out of them all,
+  and it stays out.
 - **The Agent Catalog drawer**, opened on the canvas from the **Agent
   Catalog** button in the top bar or the **Agent Catalog** dropdown in the left Tools panel, adds an
   agent to **this dataflow**.

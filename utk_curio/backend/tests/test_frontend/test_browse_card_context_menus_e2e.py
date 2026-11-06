@@ -28,7 +28,7 @@ from .utils import (
 #: the menu's primary action is the way in rather than the update.
 PACKAGE_NAME = "Urban Heat Vulnerability Index"
 
-#: A built-in from the roster, listed without ever being imported.
+#: A built-in from the roster, in every account by default.
 AGENT_NAME = "Researcher"
 
 
@@ -92,8 +92,9 @@ def test_an_agent_card_opens_an_app_menu_on_right_click(
 
     card.click(button="right")
     menu = _menu(page, "Agent actions")
+    # What the drawer offers for an agent in all the account's projects.
     expect(menu.get_by_role("menuitem")).to_have_text(
-        ["Add to all projects", "View details"], timeout=10000
+        ["Remove from all projects", "View details"], timeout=10000
     )
 
 

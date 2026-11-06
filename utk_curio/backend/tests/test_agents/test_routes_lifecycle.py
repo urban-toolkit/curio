@@ -6,7 +6,9 @@ install materializes."""
 from __future__ import annotations
 
 import json
+import shutil
 
+from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.repositories import storage
 from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -72,6 +74,7 @@ class TestProjectInstall:
         user, token = user_and_token
         from utk_curio.backend.app.projects import storage as projects_storage
 
+        imports_before = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
         writes = []
         real = projects_storage.write_spec
         monkeypatch.setattr(
@@ -90,7 +93,7 @@ class TestProjectInstall:
         assert len(writes) == 1  # atomic: root + closure in one spec write
         # The dependency's bytes are materialized (AC-5) — no import row added.
         assert storage.load_installed_agent_definition(_user_dir_key(user), self.NB) is not None
-        assert client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"] == []
+        assert client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"] == imports_before
 
     def test_reinstall_with_satisfied_closure_is_idempotent(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
@@ -177,16 +180,25 @@ class TestProjectInstall:
         installed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()["agents"]
         assert installed[0]["requiresAgents"] == []
 
-    def test_install_is_explicit_not_auto_import(self, client, user_and_token, tmp_curio, alice_project):
-        # Installing into a project must NOT add the agent to My Imports (no chaining).
-        user, token = user_and_token
+    def test_install_is_explicit_not_auto_import(self, client, new_account_and_token, tmp_curio):
+        # Installing into a project must NOT add the agent to My Imports (no
+        # chaining): they stay the agents the account had, its defaults.
+        user, token = new_account_and_token
         coord = _write_def(user)
-        client.post(
-            f"/api/agents/projects/{alice_project}/install",
+        body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []}
+        project_id = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
+        imports_before = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
+        assert [a["dirName"] for a in imports_before] == sorted(
+            m.dir_name for m in builtin.list_builtin_manifests() if m.catalog.listed
+        )
+        r = client.post(
+            f"/api/agents/projects/{project_id}/install",
             json={"coord": coord},
             headers=_auth(token),
         )
-        assert client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"] == []
+        assert r.status_code == 201, r.get_data(as_text=True)
+        assert coord in r.get_json()["agents"]
+        assert client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"] == imports_before
 
 
 class TestMaterialize:
@@ -196,7 +208,9 @@ class TestMaterialize:
 
         user, token = user_and_token
         coord = "agent.curio.dataset-finder@1"
-        # Not in the store before install (it's a built-in resolved from the roster).
+        # Not in the store before install (it's a built-in resolved from the
+        # roster): the copy the account's default agents left is taken away.
+        shutil.rmtree(storage.agent_definition_dir(_user_dir_key(user), coord), ignore_errors=True)
         assert storage.load_installed_agent_definition(_user_dir_key(user), coord) is None
         client.post(
             f"/api/agents/projects/{alice_project}/install",

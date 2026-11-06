@@ -257,20 +257,29 @@ def seed_project_with_imported_agents(user_key: str, project_id: str, *, user=No
     The "future" half of "all your projects, present and future"; the walk above
     is the "present" half. Best-effort: a stale import must degrade to "that
     agent is missing here", never to "the project could not be created".
+
+    An import an earlier one brought in as part of its ``requiresAgents``
+    closure is not installed again: that install materialized and wrote the
+    whole closure, the import's own closure among it.
     """
     seed_default_agents(user_key, user)
     try:
         coords = imports.load_imported_agents(user_key)
     except Exception:  # noqa: BLE001
         return
+    brought_in: set[str] = set()
     for coord in sorted(coords):
+        if coord in brought_in:
+            continue
         try:
-            install_in_project(user_key, project_id, coord)
+            installed = install_in_project(user_key, project_id, coord)
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 "seed imported agent %s into project %s failed: %s",
                 coord, project_id, exc,
             )
+            continue
+        brought_in.update((installed or {}).get("required") or ())
 
 
 def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
