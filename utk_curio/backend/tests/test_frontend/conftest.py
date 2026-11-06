@@ -8,6 +8,7 @@ from utk_curio.backend.tests import parts
 
 from . import comparisons, diagnostics, early_guards, runner_split
 from .utils import REPO_ROOT, start_catalog_calendar, stop_catalog_calendar
+from .utils import screenshots
 from .fixtures import _clean_db
 
 
@@ -347,17 +348,24 @@ def pytest_collection_modifyitems(config, items):
 # Failure diagnostics
 # ------------------------------------------------------------------ #
 
-@pytest.hookimpl(hookwrapper=True)
+@pytest.hookimpl(wrapper=True)
 def pytest_runtest_call(item):
     """Start the test's trace chunk, once its page exists (see diagnostics.py).
 
     Also names the test its screenshot comparisons are recorded under
-    (comparisons.py), since the capture helper is not handed its item.
+    (comparisons.py), since the capture helper is not handed its item, and,
+    on a CI run that keeps candidate baselines, fails the test at its end for
+    every frame over its budget or without a baseline
+    (screenshots.frame_failures_at_the_end), so its later frames are captured
+    too.
     """
     diagnostics.start_trace_chunk(item)
     comparisons.current_nodeid = item.nodeid
-    yield
-    comparisons.current_nodeid = None
+    try:
+        with screenshots.frame_failures_at_the_end():
+            return (yield)
+    finally:
+        comparisons.current_nodeid = None
 
 
 @pytest.hookimpl(hookwrapper=True)

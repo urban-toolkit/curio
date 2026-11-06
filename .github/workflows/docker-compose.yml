@@ -126,7 +126,10 @@ on:
       # A re-mint run: e2e only, and every screenshot whose screen changed is
       # written over its baseline. Review the frames on the run's
       # curio-ci-report.html, then commit its reminted-baselines artifact.
-      # This is the only way baselines are made (see the test_frontend README).
+      # Every other run keeps the same frames as candidates, in its
+      # candidate-baselines artifact; a re-mint is still the way for
+      # remint_force, remint_gpu_kind, and a frame a run left out (see the
+      # test_frontend README).
       remint:
         description: 'Re-mint the screenshot baselines (e2e only; artifact reminted-baselines)'
         type: boolean
@@ -490,6 +493,12 @@ jobs:
       # and difference images (tests/test_frontend/comparisons.py), for the CI
       # report page the ci-report job builds.
       CURIO_E2E_COMPARE_DIR: ${{ github.workspace }}/ci-report/comparisons
+      # On every run but a re-mint: the captures a re-mint would write (frames
+      # that moved and held still, and new ones), for review on the report
+      # page; a failed frame fails its test at the test's end, so its later
+      # frames are captured too (utils/screenshots.py candidate_dir). Inside
+      # ci-report/, so they reach the CI report inputs.
+      CURIO_E2E_CANDIDATE_DIR: ${{ !inputs.remint && format('{0}/ci-report/candidate-baselines', github.workspace) || '' }}
       # "1" on a re-mint dispatch, which runs the e2e suite alone with
       # --remint-baselines; the filter narrows it with -k. Read by the steps
       # below from the environment, never spliced into a script: the filter is
@@ -1116,6 +1125,7 @@ jobs:
       CURIO_E2E_FAILURE_DIR: ${{ github.workspace }}/ci-report/failures
       CURIO_E2E_TRACE: "1"
       CURIO_E2E_COMPARE_DIR: ${{ github.workspace }}/ci-report/comparisons
+      CURIO_E2E_CANDIDATE_DIR: ${{ !inputs.remint && format('{0}/ci-report/candidate-baselines', github.workspace) || '' }}
       CURIO_REMINT: ${{ inputs.remint && '1' || '' }}
       CURIO_REMINT_FILTER: ${{ inputs.remint_filter }}
       CURIO_REMINT_FORCE: ${{ inputs.remint_force }}
@@ -1942,7 +1952,8 @@ jobs:
   # suite's results with the failures, and every screenshot comparison, from
   # every runner alike. Uploaded unzipped, so its entry in the run's
   # artifact list opens in the browser. On a re-mint it also merges the e2e
-  # jobs' baselines into one reminted-baselines artifact to review and commit.
+  # jobs' baselines into one reminted-baselines artifact to review and commit,
+  # and on any other run their candidates into candidate-baselines.
   #
   # And it checks that the split lost nothing a run could still lose. That
   # every test is collected on exactly one runner is a unit test
@@ -1982,9 +1993,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p merged/comparisons merged/failures merged/reminted-baselines
+          mkdir -p merged/comparisons merged/failures merged/reminted-baselines merged/candidate-baselines
           for dir in inputs/*/; do
-            for part in comparisons failures reminted-baselines; do
+            for part in comparisons failures reminted-baselines candidate-baselines; do
               if [ -d "$dir$part" ]; then cp -r "$dir$part/." "merged/$part/"; fi
             done
           done
@@ -2014,6 +2025,19 @@ jobs:
           path: merged/reminted-baselines/
           if-no-files-found: warn
           retention-days: 7
+
+      # Every other run's candidates, the frames a re-mint would write, under
+      # their baselines' names: review them on the report page and commit the
+      # approved ones, with no re-mint dispatch. None, no artifact.
+      - name: 📤 Upload the candidate baselines
+        if: always() && !inputs.remint
+        uses: actions/upload-artifact@v6
+        with:
+          name: candidate-baselines
+          path: merged/candidate-baselines/
+          if-no-files-found: ignore
+          retention-days: 7
+          overwrite: true
 
       # continue-on-error: the page reports on the run, it must never be the
       # reason the run is red. The PR fields come in through env, never inline
