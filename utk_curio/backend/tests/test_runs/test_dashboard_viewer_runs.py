@@ -76,7 +76,9 @@ class FakeSandbox:
     """Runs a node as an artifact named after it; describes and forgets the
     sessions it is asked about, and stores a page's result as ``page-<n>``.
     *hold* keeps the named nodes running; *outputs* gives a node's output
-    instead, ``(path, dataType)`` from a callable."""
+    instead, ``(path, dataType)`` from a callable. *store_takes_s* is how long
+    a store takes: one given less time is stored all the same, and its caller
+    gets the timeout ``sandbox_request`` raises."""
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -86,6 +88,7 @@ class FakeSandbox:
         self.stored = []
         self.hold = set()
         self.outputs = {}
+        self.store_takes_s = 0
         self.gate = threading.Event()
         self.started = threading.Event()
 
@@ -109,6 +112,13 @@ class FakeSandbox:
                 self.stored.append(body)
                 path_out = f"page-{len(self.stored)}"
                 self.made[body["sessionId"]] = path_out
+            if kwargs["timeout"] < self.store_takes_s:
+                from utk_curio.backend.app.execution.sandbox_client import SandboxTransportError
+
+                raise SandboxTransportError({
+                    "error": "sandbox_timeout",
+                    "message": f"The sandbox did not respond within {kwargs['timeout']}s on {path}.",
+                }, 504)
             return Reply({"output": {"path": path_out, "dataType": "dict"}})
         node_id = body["code"].split("# node ", 1)[1].split("\n", 1)[0]
         self.started.set()
@@ -1096,6 +1106,35 @@ class TestTheStepsLeftToThePage:
         assert entry.private_to == kept.digest(started["token"])
         # Read with no token, as another page would, it is not found.
         assert client.get(f"/api/projects/{gpu}/dashboard/outputs/get?fileName=page-1").status_code == 404
+
+    def test_a_result_the_sandbox_takes_35_s_to_store_is_kept(self, client, gpu, sandbox):
+        """On a loaded runner (run 42237534188, 11-06 15:11) the sandbox took 20
+        to 35 s to store each GPU step's result of a Crown Heights dashboard,
+        and the backend gave each store 30 s: the slowest were lost, and their
+        page ended its run. A page's result gets the time the canvas's
+        results get (``/storeOutput``)."""
+        from utk_curio.backend.app.runs.models import KeptStepOutput
+
+        sandbox.store_takes_s = 35
+        started = _month(client, gpu)
+        sent = _keep_step(client, gpu, started["runId"], started["token"])
+
+        assert sent.status_code == 200, sent.get_data(as_text=True)
+        path = sent.get_json()["output"]["path"]
+        assert KeptStepOutput.query.filter_by(project_id=gpu, output_path=path).count() == 1
+
+    def test_a_store_that_runs_out_of_time_answers_the_sandboxs_status_and_words(self, client, gpu, sandbox):
+        """The page puts a failed keep's ``error`` on the node, so it carries
+        the sandbox's words, under the sandbox's 504 rather than a 500."""
+        from utk_curio.backend.app.runs.models import KeptStepOutput
+
+        sandbox.store_takes_s = 10 ** 6
+        started = _month(client, gpu)
+        sent = _keep_step(client, gpu, started["runId"], started["token"])
+
+        assert sent.status_code == 504, sent.get_data(as_text=True)
+        assert sent.get_json()["error"].startswith("The sandbox did not respond within")
+        assert KeptStepOutput.query.filter_by(project_id=gpu).count() == 0
 
     def test_a_page_sends_only_what_its_run_left_to_it(self, client, gpu, sandbox, monkeypatch):
         from utk_curio.backend.app.runs import kept, viewer
