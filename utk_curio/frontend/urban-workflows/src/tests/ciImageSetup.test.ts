@@ -65,7 +65,13 @@ describe("CI's image and the deploy's", () => {
         const onTheRunner = Array.from(jobs()).filter(
             ([, job]) => /scripts\/test\.sh[^\n]*--skip-setup/.test(job) && !/exec -T[^\n]*\\\n[\s\S]*?scripts\/test\.sh/.test(job),
         );
-        expect(onTheRunner.map(([name]) => name).sort()).toEqual(["e2e-desktop", "test-gpu", "test-isolated"]);
+        // build-image lists a filtered run's selected e2e tests the way the e2e jobs collect them.
+        expect(onTheRunner.map(([name]) => name).sort()).toEqual([
+            "build-image",
+            "e2e-desktop",
+            "test-gpu",
+            "test-isolated",
+        ]);
         const without = onTheRunner
             .filter(([, job]) => !/runner-env: "true"|uses: \.\/\.github\/actions\/image-env/.test(job))
             .map(([name]) => name);

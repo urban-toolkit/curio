@@ -11,9 +11,6 @@ export function isHostedGuest(user: UserData | null, enableUserAuth: boolean): b
   return Boolean(user?.is_guest) && enableUserAuth;
 }
 
-/** What a hosted guest is told where a key would be saved. */
-export const HOSTED_GUEST_KEYS_NOTE = "Personal keys cannot be saved on a shared guest account.";
-
 /**
  * What a hosted guest is told when it does something that needs a saved
  * dataflow, on one it never saved: such a guest cannot save it, so only an
