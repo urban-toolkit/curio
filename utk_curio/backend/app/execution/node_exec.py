@@ -51,6 +51,10 @@ class NodeRun:
     # The wired circles, in circle order: the value on circle k is the code's
     # input_k (sandbox/util/input_names.py).
     input_slots: tuple[int, ...] | None = None
+    # The dataflow whose kept outputs the run reads as its dataflow's, when
+    # they are not *dataflow_id*'s: a hosted guest's own copy of it, which a
+    # dashboard viewer's step on that guest's dashboard runs (runs/viewer.py).
+    kept_on: str | None = None
 
     @classmethod
     def from_request_json(cls, body: dict) -> "NodeRun":
@@ -204,8 +208,10 @@ def _foreign_wrapped(dataflow_id: str | None, wrapped: list[str] | None, saved_i
     """Whether a run in a kept session of its own, a dashboard viewer's step
     (``runs/viewer.py``), would read an output that is not its dataflow's
     through a wrapper among its inputs: one *wrapped* names that is neither
-    a saved output of the dataflow nor held by any of its kept outputs
-    (``kept.project_entry``). Such a session reads what any kept run made,
+    a saved output of the dataflow nor held by any output kept on
+    *dataflow_id* (``kept.project_entry``), the dataflow the step keeps on: a
+    hosted guest's own copy on that guest's dashboard (``NodeRun.kept_on``).
+    Such a session reads what any kept run made,
     and has no other session to run in. A wrapper the sandbox could not
     describe (*wrapped* None) is not held against the step: the dataflow's
     owner wrote the code, and cannot make the sandbox leave a question
@@ -749,9 +755,11 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         }, 200
     # A hosted guest's play keeps what it makes on their own copy of the
     # dataflow, made before anything is written (the spec lock comes before
-    # the database, #909); every other run keeps on its dataflow.
+    # the database, #909); a viewer's step on that guest's dashboard reads
+    # what is kept on the copy (``run.kept_on``); every other run keeps on its
+    # dataflow.
     visitor = _hosted_guests_play(user, session_token, run)
-    kept_on = run.dataflow_id if visitor is None else visitor.copy
+    kept_on = (run.kept_on or run.dataflow_id) if visitor is None else visitor.copy
     names = input_names(input_ref)
     saved_inputs = resolve_saved_inputs(names, run.dataflow_id)
     # What a wrapper among the inputs names is read for the run too, so it is
@@ -769,7 +777,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         }
         from utk_curio.common.kept_sessions import is_kept_session
 
-        if is_kept_session(session_token) and _foreign_wrapped(run.dataflow_id, wrapped, saved_inputs):
+        if is_kept_session(session_token) and _foreign_wrapped(kept_on, wrapped, saved_inputs):
             return {
                 'stdout': [], 'stderr': FOREIGN_WRAPPER_MESSAGE, 'input': input_ref,
                 'output': {'path': '', 'dataType': 'str'},

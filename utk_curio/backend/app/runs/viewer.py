@@ -26,6 +26,15 @@ request for a run already going joins it. Kept outputs go after their time or
 past their budget, with their artifacts, by the sweep ``kept.py`` describes;
 a run sweeps at its end, and at the first start after a restart.
 
+A hosted guest's dashboard of a dataflow their account owns, an example, is
+their own copy's once they have one (``projects/visitor_copies.py``,
+``dashboard_copy``): a run of it plans the copy, the dataflow's saved outputs
+standing in only for the nodes the copy makes as the dataflow does
+(:func:`made_as_saved`); its steps read the guest's own datasets, as the
+guest's plays do, the request's sign-in served on their threads; and what it
+keeps is kept on the copy, under a dashboard of its own, which no other
+visitor's dashboard reads or joins.
+
 A step only a browser runs (an Autark compute node, a Spatial Join) is the
 page's. The run ends asking for it (``needs_canvas``), as a canvas's run on
 the server does, or ends ``succeeded`` when only a tile reads it; either way
@@ -240,17 +249,60 @@ def _reached(saved_parsed, overlaid_parsed) -> set:
             continue
         if _resolved_code(overlaid_parsed, node) != _resolved_code(saved_parsed, before):
             changed.add(node.id)
+    return _with_below(overlaid_parsed, changed)
+
+
+def _with_below(parsed, nodes) -> set:
+    """*nodes*, and every node of *parsed* below one of them."""
     below: dict = {}
-    for node in overlaid_parsed.nodes:
-        for upstream in overlaid_parsed.upstream_nodes(node.id):
+    for node in parsed.nodes:
+        for upstream in parsed.upstream_nodes(node.id):
             below.setdefault(upstream, set()).add(node.id)
-    reached, frontier = set(changed), list(changed)
+    reached, frontier = set(nodes), list(nodes)
     while frontier:
         for child in below.get(frontier.pop(), ()):
             if child not in reached:
                 reached.add(child)
                 frontier.append(child)
     return reached
+
+
+def _made_by(parsed, node) -> str:
+    """What makes *node*'s output in *parsed*, as one text: its type, its code
+    as written and as a run sends it (its widgets written in), its widgets, and
+    the nodes it reads, by circle."""
+    return canonical([
+        node.raw_type, node.content, _resolved_code(parsed, node), node.widgets,
+        parsed.upstream_nodes(node.id), parsed.input_slots(node.id),
+    ])
+
+
+def made_as_saved(user_key: str, project_id: str, spec: dict, copy_spec: dict) -> set:
+    """The nodes of *copy_spec*, a hosted guest's own copy of the dataflow
+    *project_id* (``projects/visitor_copies.py``), whose saved output the
+    dataflow's still is: each node the copy makes as *spec*, the dataflow,
+    makes it (:func:`_made_by`), and every node above it does too. A node the
+    copy changed or added, and every node below one, is not among them: the
+    copy's dashboard runs it on the copy, rather than show what the dataflow's
+    code made. Empty when either cannot be read as a dataflow."""
+    from utk_curio.backend.app.execution.node_names import template_labels
+    from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
+    from utk_curio.backend.app.packages.service import roster_templates
+
+    try:
+        templates = roster_templates(user_key, project_id)
+        labels = template_labels(user_key, project_id)
+        saved = parse_workflow_dict(spec, templates=templates, labels=labels)
+        copied = parse_workflow_dict(copy_spec, templates=templates, labels=labels)
+        before = {node.id: node for node in saved.nodes}
+        changed = {
+            node.id for node in copied.nodes
+            if node.id not in before or _made_by(copied, node) != _made_by(saved, before[node.id])
+        }
+        return {node.id for node in copied.nodes} - _with_below(copied, changed)
+    except Exception:  # noqa: BLE001 - no saved output stands in then: the copy's dashboard runs what it shows
+        log.warning("could not compare a hosted guest's copy with dataflow %s", project_id, exc_info=True)
+        return set()
 
 
 # ---------------------------------------------------------------------------
@@ -304,14 +356,18 @@ def start_viewer_run(
 
     Answers ``{"runId", "token", "joined", "nodeIds"}``, the token being what
     the tab follows the run with; ``runId`` is None when nothing needs to run
-    (the values are the saved ones and every tile has its saved output)."""
+    (the values are the saved ones and every tile has its saved output).
+
+    A hosted guest who has their own copy of the dataflow runs the copy
+    (``visitor_copies.dashboard_copy``), with the saved outputs that hold for
+    it (:func:`made_as_saved`), and keeps what the run makes on the copy."""
     from flask import current_app
 
     from utk_curio.backend.app.execution.node_names import template_labels
     from utk_curio.backend.app.execution.run_engine import PlanError
     from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
     from utk_curio.backend.app.packages.service import roster_templates
-    from utk_curio.backend.app.projects import storage
+    from utk_curio.backend.app.projects import storage, visitor_copies
     from utk_curio.backend.app.projects.dashboard_payload import dashboard_source_node_ids
     from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.app.projects.services import _owner_user_dir_key
@@ -327,13 +383,22 @@ def start_viewer_run(
     spec, saved = _saved_state(user_key, project_id)
     if spec is None:
         raise RunError("Dashboard not found.", 404)
+    # The dataflow the run plans and keeps on, and the visitor it serves on
+    # its threads: a hosted guest's own copy, and that guest.
+    kept_on, sign_in = project_id, None
+    own = visitor_copies.dashboard_copy(project_id)
+    own_spec = visitor_copies.spec_of(own) if own is not None else None
+    if own_spec is not None:
+        holding = made_as_saved(user_key, project_id, spec, own_spec)
+        spec, saved = own_spec, [ref for ref in saved if ref.node_id in holding]
+        kept_on, sign_in = own, visitor_copies.current_sign_in()
 
     controls = dashboard_controls(spec)
     problems = _check_values(controls, values if values is not None else {})
     if problems:
         raise RunError(" ".join(problems), 422, problems=problems)
     overlaid = _with_values(spec, values or {})
-    tab = _tab_outputs(project_id, browser_outputs, token) if browser_outputs else {}
+    tab = _tab_outputs(kept_on, browser_outputs, token) if browser_outputs else {}
 
     templates = roster_templates(user_key, project_id)
     labels = template_labels(user_key, project_id)
@@ -366,9 +431,11 @@ def start_viewer_run(
         raise RunError(str(exc), 422) from exc
 
     _forget_finished_runs()
-    dashboard = f"dashboard:{project_id}"
+    # A hosted guest's copy is a dashboard of its own: no other visitor's
+    # start joins its runs, nor counts against its live ones.
+    dashboard = f"dashboard:{kept_on}"
     run_key = hashlib.sha256(canonical({
-        "revision": storage.spec_revision(user_key, project_id),
+        "revision": storage.spec_revision(user_key, kept_on),
         "values": _control_values(dashboard_controls(overlaid)),
         "targets": targets,
         "tab": sorted((node_id, output.get("path")) for node_id, output in tab.items()),
@@ -395,11 +462,14 @@ def start_viewer_run(
     app = current_app._get_current_object()
     events = _run_events(
         app, project_id, project.user_id, plan, user_key,
+        kept_on=kept_on, sign_in=sign_in,
         private_to=digest(token) if tab else None, tainted=_below(plan, tab),
     )
     browser_steps = [node_id for node_id, step in plan.steps.items() if step.role == "browser"]
     with _RUNS_LOCK:
-        _RUNS[run_id] = {"projectId": project_id, "token": token, "browserSteps": browser_steps}
+        _RUNS[run_id] = {
+            "projectId": project_id, "keptOn": kept_on, "token": token, "browserSteps": browser_steps,
+        }
     try:
         REGISTRY.start(
             user_key=dashboard, project_id=project_id, key=run_key,
@@ -434,17 +504,28 @@ def _forget_finished_runs() -> None:
 
 def _run_events(
     app, project_id: str, owner_id: int, plan, user_key: str,
-    *, private_to: Optional[str] = None, tainted: frozenset = frozenset(),
+    *, kept_on: Optional[str] = None, sign_in: Optional[str] = None,
+    private_to: Optional[str] = None, tainted: frozenset = frozenset(),
 ) -> Iterator[tuple[str, dict]]:
     """The run's thread: drive the engine with :func:`execute`, keep what
     each step makes, pass each event on as a viewer receives it. A step in
     *tainted* is built on what a page sent: what it makes is kept for that
-    page alone (*private_to*)."""
+    page alone (*private_to*).
+
+    What the run keeps is kept on *kept_on*, a hosted guest's own copy of
+    the dataflow on that guest's dashboard, else the dataflow. Each step runs
+    as the dataflow's own (its saved outputs, its owner's store) and is
+    served the guest signed in as *sign_in*, on its thread, so it reads that
+    guest's datasets as the guest's plays do (``visitor_copies.serving``)."""
+    from contextlib import nullcontext
+
     from utk_curio.backend.app.execution import node_exec
     from utk_curio.backend.app.execution.run_engine import run_events
+    from utk_curio.backend.app.projects import visitor_copies
     from utk_curio.backend.app.users.connection_keys import secret_names
     from utk_curio.backend.app.users.models import User
 
+    kept_on = kept_on or project_id
     packages = packages_fingerprint(user_key)
 
     def execute(step, code, input_ref):
@@ -458,7 +539,7 @@ def _run_events(
             datasets=datasets_read(call.code, project_id, owner),
         )
         private = private_to if step.node_id in tainted else None
-        kept = kept_output(project_id, key, private)
+        kept = kept_output(kept_on, key, private)
         if kept is not None:
             output, ids = kept
             return {"stdout": [], "stderr": "", "output": output, "artifactIds": ids}
@@ -469,19 +550,22 @@ def _run_events(
             # journal (``record_runtime_outcome``) and installs nothing.
             node_id=None, input=call.input, dataflow_id=project_id, node_name=step.label,
             save_output_dataset=False, input_slots=call.slots,
+            kept_on=kept_on if kept_on != project_id else None,
         )
         run_node = node_exec.execute_js_node if call.engine == "javascript" else node_exec.execute_python_node
         with _SLOTS:
             reply, _status = run_node(owner, session_id, node_run)
         output = reply.get("output") if isinstance(reply.get("output"), dict) else {}
         if output.get("path"):
-            return {**reply, "artifactIds": keep(project_id, step.node_id, key, session_id, output, private)}
+            return {**reply, "artifactIds": keep(kept_on, step.node_id, key, session_id, output, private)}
         forget_sessions([session_id])
         return reply
 
     def wrap(fn):
+        # The engine runs each step on a thread of its pool, which holds no
+        # request and none of this thread's context.
         def in_context():
-            with app.app_context():
+            with app.app_context(), (visitor_copies.serving(sign_in) if sign_in else nullcontext()):
                 return fn()
         return in_context
 
@@ -500,6 +584,23 @@ def _known_run(project_id: str, run_id: str, token: Optional[str]) -> dict:
     if not token or not secrets.compare_digest(str(token), known["token"]):
         raise RunError("This run is not yours to follow.", 403)
     return known
+
+
+def dashboard_output(project_id: str, file_name: str, token: Optional[str]):
+    """The kept output a read on *project_id*'s dashboard names, if the caller
+    may read it (``kept.readable_output``): for a hosted guest who has their
+    own copy of the dataflow, one kept on the copy, which their dashboard's
+    runs keep on (``visitor_copies.dashboard_copy``), else one kept on the
+    dataflow, as for anyone else."""
+    from utk_curio.backend.app.projects import visitor_copies
+
+    own = visitor_copies.dashboard_copy(project_id)
+    if own is not None:
+        try:
+            return readable_output(own, file_name, token)
+        except RunError:
+            pass
+    return readable_output(project_id, file_name, token)
 
 
 def follow(project_id: str, run_id: str, token: Optional[str]) -> Iterator[tuple[str, dict]]:
@@ -569,7 +670,9 @@ def keep_tab_result(project_id: str, run_id: str, node_id: str, token: Optional[
     key = hashlib.sha256(canonical({
         "page": private_to, "run": run_id, "node": node_id, "path": output["path"],
     }).encode("utf-8")).hexdigest()
-    return {"output": output, "artifactIds": keep(project_id, node_id, key, session_id, output, private_to)}
+    # On the dataflow the run keeps on: a hosted guest's copy, on theirs.
+    kept_on = known.get("keptOn") or project_id
+    return {"output": output, "artifactIds": keep(kept_on, node_id, key, session_id, output, private_to)}
 
 
 def _tab_outputs(project_id: str, browser_outputs, token: Optional[str]) -> dict:

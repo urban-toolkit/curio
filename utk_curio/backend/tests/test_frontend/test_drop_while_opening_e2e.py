@@ -1,4 +1,7 @@
-"""Playwright E2E: a file dropped while a dataflow's link opens lands once it has.
+"""Playwright E2E: what is dropped while a dataflow opens lands once it has.
+
+Each test holds the tab's read of the dataflow at the network until its drop
+is made, so the drop comes while the dataflow opens on every run.
 
 alice owns a dataflow with one node and invited bob to edit it. bob opens its
 link. His tab asks for the dataflow, and the dataflow's room names his tab its
@@ -12,6 +15,17 @@ while the dataflow opens on every run. While it opens, the title says so;
 once it is in, his file goes his way, as a drop made then would: into his own
 Data Catalog, with alice asked to add it, and a Data Loading node of it on
 his canvas, beside alice's node, and in the dataflow the server keeps.
+
+An owner drops a Data Loading node on her empty dataflow while it opens, as
+``test_data_pool_hscroll_e2e`` does on a slow runner. The load asked for its
+fit even when it brought no node, and that fit runs a frame after the load,
+after the kept drop has made its node, so it framed that node alone: the
+canvas moved and zoomed onto it, and the Data Pool dropped next, 610 px to the
+right, landed on top of it and covered its output handle (#1377's run
+42326757917). Now the node stays where it was dropped, the view as it was, and
+the next node lands beside it. The page's animation frames are held from just
+before the load until the dropped node is on the canvas, so the fit's frame
+comes after that node on every run, as it did there.
 
 Run::
 
@@ -30,12 +44,20 @@ from .test_computed_json_output_e2e import _record_toasts
 from .test_data_loading_drop_e2e import _drop_file
 from .utils import (
     CANVAS_DROP_TARGET,
+    _DRAG_TO_CANVAS_JS,
     api_json,
     canvas_nodes,
     close_after_routes,
+    close_tools_palette,
+    connect_nodes,
     dataset_widget_state,
+    drag_builtin_to_canvas,
+    end_routes,
+    open_tools_palette,
+    require_owner_view,
     require_project_page,
     require_user_auth,
+    settled_viewport,
     stub_db_login,
     stub_db_user,
 )
@@ -55,6 +77,57 @@ LOADER = "curio.builtin/data-loading"
 BUS_STOPS = "stop_id,routes\n1,22\n2,29\n3,36\n"
 #: What refused a drop while the dataflow opened.
 STILL_OPENING = "still opening"
+
+#: The owner's empty dataflow, and the nodes the hscroll test drops on it, at
+#: its offsets: 610 px apart at the zoom the canvas opens at, so the facing
+#: handles of both are in sight.
+EMPTY = "Empty plan"
+LOADING_TILE = "#tile-data-loading"
+POOL_TILE = "#tile-data-pool"
+FIRST_DROP = (150, 150)
+NEXT_DROP = (760, 150)
+
+#: The page's animation frames, held: a request waits until the test lets the
+#: frames go, then gets its frame, in order. The load's fit asks for one as the
+#: load lands, and the node a drop made while the dataflow opened is made just
+#: after it, so held until that node is on the canvas, the fit's frame comes
+#: after the node on every run.
+_HOLD_FRAMES_JS = r"""() => {
+    const ask = window.requestAnimationFrame;
+    const cancel = window.cancelAnimationFrame;
+    const held = new Map();
+    let next = 0;
+    window.__curioFramesRan = 0;
+    window.requestAnimationFrame = (callback) => {
+        next -= 1;
+        held.set(next, callback);
+        return next;
+    };
+    window.cancelAnimationFrame = (id) => {
+        if (!held.delete(id)) cancel.call(window, id);
+    };
+    window.__curioLetFramesGo = () => {
+        window.requestAnimationFrame = ask;
+        window.cancelAnimationFrame = cancel;
+        const callbacks = [...held.values()];
+        held.clear();
+        for (const callback of callbacks) {
+            ask.call(window, (time) => {
+                try { callback(time); } finally { window.__curioFramesRan += 1; }
+            });
+        }
+        return callbacks.length;
+    };
+}"""
+
+#: Lets held frames go, if any are held, and says how many requests it handed back.
+_LET_FRAMES_GO_JS = "() => (window.__curioLetFramesGo ? window.__curioLetFramesGo() : 0)"
+
+#: Whether React Flow has measured the node.
+_MEASURED_JS = """(id) => {
+    const node = window.__curio_reactFlow.getNode(id);
+    return !!node && node.width > 0 && node.height > 0;
+}"""
 
 
 def _spec() -> dict:
@@ -77,6 +150,21 @@ def _held_load(page, project_id: str) -> list:
         held.append(route)
 
     page.route(re.compile(rf".*/api/projects/{project_id}/shared(\?.*)?$"), hold)
+    return held
+
+
+def _held_owner_load(page, project_id: str) -> list:
+    """Hold the owner's canvas's read of her dataflow
+    (``GET /api/projects/<id>?results=last``) until the test lets it go."""
+    held: list = []
+
+    def hold(route) -> None:
+        if route.request.method == "GET" and not held:
+            held.append(route)
+        else:
+            route.continue_()
+
+    page.route(re.compile(rf".*/api/projects/{project_id}\?results=last$"), hold)
     return held
 
 
@@ -176,3 +264,91 @@ def test_a_file_dropped_while_the_link_opens_lands_once_the_dataflow_is_in(
         "alice is asked for that dataset, by bob": True,
         "refused as still opening": [],
     }, f"his nodes load {his_datasets}, alice is asked for {asked_for}; bob's tab said {told}"
+
+
+def test_a_node_dropped_while_an_empty_dataflow_opens_stays_where_it_was_dropped(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_project_page()
+    require_user_auth()
+    base = app_frontend.base_url
+    page.emulate_media(reduced_motion="reduce")
+    login = stub_db_login(
+        page, frontend_url=base, backend_url=current_server,
+        username="opening_owner_drop_e2e", name="Olive", project_name=EMPTY,
+    )
+    project_id = login["project"]["id"]
+    held = _held_owner_load(page, project_id)
+    try:
+        page.goto(f"{base}/dataflow/{project_id}", timeout=120000)
+        page.locator(CANVAS_DROP_TARGET).wait_for(state="visible", timeout=60000)
+        asked = _within(page, 60, lambda: len(held), lambda count: count > 0)
+        assert asked, "the owner's tab never asked for the dataflow its link names"
+        view_before = settled_viewport(page)
+
+        # She drops a Data Loading node while the dataflow opens.
+        open_tools_palette(page, "builtin")
+        tile = page.locator(LOADING_TILE)
+        tile.wait_for(state="visible", timeout=15000)
+        pane = page.locator(CANVAS_DROP_TARGET).bounding_box()
+        assert pane, f"{CANVAS_DROP_TARGET} has no layout box"
+        dropped = page.evaluate(_DRAG_TO_CANVAS_JS, {
+            "source": tile.element_handle(),
+            "targetSelector": CANVAS_DROP_TARGET,
+            "clientX": pane["x"] + FIRST_DROP[0],
+            "clientY": pane["y"] + FIRST_DROP[1],
+        })
+        assert dropped == "ok", f"drag to canvas failed: {dropped}"
+        made_while_opening = len(canvas_nodes(page))
+
+        # The dataflow comes in, and the node her drop was kept for is made.
+        # No wait here may need a frame while frames are held.
+        page.evaluate(_HOLD_FRAMES_JS)
+        held[0].continue_()
+        page.wait_for_function(
+            "() => window.__curio_reactFlow.getNodes().length > 0",
+            polling=100, timeout=60000,
+        )
+        handed_back = page.evaluate(_LET_FRAMES_GO_JS)
+        page.wait_for_function(
+            "(n) => window.__curioFramesRan >= n", arg=handed_back, polling=100, timeout=30000,
+        )
+        made = canvas_nodes(page)
+        assert len(made) == 1, f"her one drop made {made}"
+        loading = made[0]["id"]
+        page.wait_for_function(_MEASURED_JS, arg=loading, polling=100, timeout=30000)
+        close_tools_palette(page, "builtin")
+        view_after = settled_viewport(page)
+        require_owner_view(page)
+
+        # She drops a Data Pool 610 px to the right and connects the two.
+        pool = drag_builtin_to_canvas(page, POOL_TILE, at=NEXT_DROP)
+        try:
+            connect_nodes(page, loading, pool)
+            connected = True
+        except AssertionError as exc:  # said in the test's words
+            connected = str(exc).split(". Space")[0]
+    finally:
+        try:
+            page.evaluate(_LET_FRAMES_GO_JS)
+        except Exception:  # noqa: BLE001 - the page may be gone
+            pass
+        # A load still held (the test failed before letting it go) goes on,
+        # so taking the routes off waits for nothing.
+        for route in held:
+            try:
+                route.continue_()
+            except Exception:  # noqa: BLE001 - already let go
+                pass
+        end_routes(page)
+
+    seen = {
+        "nodes on the canvas while the dataflow opened": made_while_opening,
+        "the view once her node is in": view_after,
+        "the next node connects to it": connected,
+    }
+    assert seen == {
+        "nodes on the canvas while the dataflow opened": 0,
+        "the view once her node is in": view_before,
+        "the next node connects to it": True,
+    }, f"the view was {view_before} when she dropped her node"
