@@ -321,6 +321,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--model-weights-dir", default=None, metavar="PATH",
+        help=(
+            "Directory the weights of model packages that fetch them are read "
+            "from, in place: <PATH>/<package id>@<major>/, as "
+            "scripts/fetch_model_weights.py --into PATH writes them (sets "
+            "CURIO_MODEL_WEIGHTS_DIR). Without it, each package's own folder. "
+            "Every account must be able to read it: isolated nodes read it."
+        ),
+    )
+    parser.add_argument(
         "--save-node-outputs", action=argparse.BooleanOptionalAction, default=None,
         help=(
             "Whether a new node's 'Save output dataset' toggle starts on (sets "
@@ -471,6 +481,7 @@ def main():
         backend_url=args.backend_url,
         discovery_root=args.discovery_root,
         packages_root=args.packages_root,
+        model_weights_dir=args.model_weights_dir,
         save_node_outputs=args.save_node_outputs,
         solve_max_attempts=args.solve_max_attempts,
         solve_node_budget=args.solve_node_budget,

@@ -746,9 +746,11 @@ def run_node(request, namespace_factory):
                 formats=request.get("dataset_formats") or {},
                 collections=request.get("collections") or {},
                 media_dir=request.get("media_dir"),
-                # The staged model folders, under the scratch directory.
+                # The staged model folders, under the scratch directory, and
+                # the fetched weights read in place, absolute.
                 models=request.get("models") or {},
                 model_base=scratch_dir,
+                model_weights=request.get("model_weights") or {},
                 # A file a node returns must sit in scratch, flat-named: the
                 # parent moves it into the artifact store from there.
                 output_dir=scratch_dir,

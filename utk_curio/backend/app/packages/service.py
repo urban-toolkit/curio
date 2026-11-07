@@ -105,6 +105,7 @@ from utk_curio.backend.app.packages.application.model_packages import (
     list_model_packages,
     model_default_cell,
     resolve_model_dirs,
+    resolve_model_weights,
 )
 from utk_curio.backend.app.packages.application.model_downloads import (
     downloaded_model_ids,
@@ -255,6 +256,7 @@ __all__ = [
     "list_model_packages",
     "model_default_cell",
     "resolve_model_dirs",
+    "resolve_model_weights",
     "install_downloaded_model",
     "install_downloaded_model_deps",
     "downloaded_model_ids",

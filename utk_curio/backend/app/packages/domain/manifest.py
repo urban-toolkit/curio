@@ -647,7 +647,7 @@ def package_manifest_from_dict(raw: object, *, manifest_path: Path, dir_name: st
         created_at_ms=created_at_ms,
         behavior_script=behavior_script,
         backend=backend,
-        download_on_first_use=_parse_download_on_first_use(raw, kind, where=str(manifest_path)),
+        download_on_first_use=_parse_download_on_first_use(raw, model, kind, where=str(manifest_path)),
         kind=kind,
         model=model,
         dataflow_categories=dataflow_categories,
@@ -678,10 +678,12 @@ def _parse_kind_and_model(raw: dict, *, where: str) -> tuple[str, ModelBlock | N
         raise ManifestError(f"{where}.model: {exc}") from exc
 
 
-def _parse_download_on_first_use(raw: dict, kind: str, *, where: str) -> tuple[str, ...]:
+def _parse_download_on_first_use(raw: dict, model: ModelBlock | None, kind: str, *, where: str) -> tuple[str, ...]:
     """The optional ``downloadOnFirstUse`` (``domain/download_on_first_use.py``).
     Only a model package names one, and only paths under ``models/``: the
-    weights a node's first ``curio_load_model`` downloads on a pip install."""
+    weights a node's first ``curio_load_model`` downloads on a pip install. A
+    package whose weights its operator fetches (``model.fetch``) names none:
+    they are in neither git nor the pip package."""
     field = f"{where}.{DOWNLOAD_ON_FIRST_USE}"
     try:
         paths = clean_download_on_first_use(raw.get(DOWNLOAD_ON_FIRST_USE), where=field)
@@ -691,6 +693,10 @@ def _parse_download_on_first_use(raw: dict, kind: str, *, where: str) -> tuple[s
         raise ManifestError(
             f"{field}: only a model package (kind 'model') names files to download on first use, "
             f"its weights under {MODELS_DIR}/"
+        )
+    if paths and model is not None and model.fetch is not None:
+        raise ManifestError(
+            f"{field}: a package whose weights its operator fetches (model.fetch) names none to download on first use"
         )
     for path in paths:
         if path.split("/")[0] != MODELS_DIR or "/" not in path:

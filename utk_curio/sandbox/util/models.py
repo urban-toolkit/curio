@@ -12,6 +12,13 @@ isolation it is staged into the child's scratch directory first
 The folder's ``manifest.json`` is a model package's (kind ``model``, its
 ``model`` block naming the weights under ``models/``); :func:`model_spec` also
 reads a flat manifest that names them itself.
+
+A model package whose operator fetches its weights (its model block's
+``fetch``) may have none on this Curio: a fresh clone, CI, a pip install, or a
+server nobody fetched them on. The backend still names its folder, and
+``curio_load_model`` stops with :data:`NOT_FETCHED`. Weights fetched under
+``--model-weights-dir`` come in a folder of their own, which the backend names
+beside the model's and every run reads where it is, isolated or not.
 """
 
 from __future__ import annotations
@@ -30,6 +37,29 @@ MISSING_MODEL = (
     "which needs this machine to reach raw.githubusercontent.com, and "
     "a clone of https://github.com/urban-toolkit/curio holds them in packages/."
 )
+
+#: What ``curio_load_model`` says of a model whose operator fetches its
+#: weights when this Curio does not have them.
+NOT_FETCHED = (
+    "The weights of model '{model_id}' are not on this Curio. Whoever runs this Curio fetches them "
+    "once, with: python scripts/fetch_model_weights.py {model_id}"
+)
+
+#: The model type whose labels are text prompts: its node loads the model's
+#: checkpoint itself.
+CONCEPT_SEGMENTATION = "concept-segmentation"
+
+
+def missing_fetched_files(root, spec: dict) -> list[str]:
+    """The files *spec*'s ``fetch`` lists (:func:`model_spec`) that its entry
+    under *root* lacks; none for a model whose weights ship with it."""
+    fetch = spec.get("fetch") if isinstance(spec, dict) else None
+    listed = fetch.get("files") if isinstance(fetch, dict) else None
+    if not isinstance(listed, list):
+        return []
+    entry = os.path.join(str(root), str(spec.get("entry") or ""))
+    paths = [str(item.get("path") or "") for item in listed if isinstance(item, dict)]
+    return [path for path in paths if not path or not os.path.isfile(os.path.join(entry, path))]
 
 
 def model_spec(manifest: dict) -> dict:

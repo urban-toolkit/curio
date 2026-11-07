@@ -521,10 +521,11 @@ def _catalog_dataset_paths(code: str) -> dict[str, str]:
 
 
 def _catalog_resolution(code: str, username: str | None = None, node_type: str | None = None) -> dict:
-    """``{"paths", "formats", "collections", "mediaDir", "models", "packageModules"}`` for
-    *code*, as the backend resolves them for ``/processPythonCode``, as *username* when
-    given; see ``_catalog_dataset_paths``. ``packageModules`` are what the node of
-    *node_type* may import from its package.
+    """``{"paths", "formats", "collections", "mediaDir", "models", "modelWeights",
+    "packageModules"}`` for *code*, as the backend resolves them for
+    ``/processPythonCode``, as *username* when given; see ``_catalog_dataset_paths``.
+    ``modelWeights`` are the fetched weights a model reads in place, and
+    ``packageModules`` what the node of *node_type* may import from its package.
 
     Asked for every node, not only one that names a dataset: ``mediaDir`` is
     where a node downstream of a collection writes the files it derives.
@@ -571,6 +572,7 @@ def _catalog_resolution(code: str, username: str | None = None, node_type: str |
         "collections": answer.get("collections") or {},
         "mediaDir": answer.get("mediaDir"),
         "models": answer.get("models") or {},
+        "modelWeights": answer.get("modelWeights") or {},
         "packageModules": answer.get("packageModules"),
     }
 
@@ -679,6 +681,8 @@ def execute_workflow_programmatically(
                 "collections": resolution["collections"],
                 "media_dir": resolution["mediaDir"],
                 "models": resolution["models"],
+                **({"model_weights": resolution["modelWeights"]}
+                   if resolution.get("modelWeights") else {}),
                 **({"package_modules": resolution["packageModules"]}
                    if resolution["packageModules"] else {}),
                 # The wired circles, as the backend's runner sends them: each
