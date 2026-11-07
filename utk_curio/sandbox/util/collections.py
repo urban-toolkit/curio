@@ -175,13 +175,15 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
             output_names.append(name)
         return os.path.join(folder, name)
 
-    def curio_export(data, name=""):
+    def curio_export(data, name="", part=None):
         """Write *data* to a file of this node's (``curio_output_file``) and
         return the file's name: a table as CSV, a GeoDataFrame as GeoJSON, a
-        raster as GeoTIFF, anything else as JSON (``util/exports.py``)."""
+        raster as GeoTIFF, a tuple, list or dict that holds a table or a
+        raster as one zip of its parts, anything else as JSON. *part* writes
+        the one part its label, key or position names (``util/exports.py``)."""
         from utk_curio.sandbox.util.exports import export
 
-        return export(data, name, curio_output_file)
+        return export(data, name, curio_output_file, part)
 
     return {
         "curio_load_collection": curio_load_collection,

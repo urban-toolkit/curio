@@ -138,22 +138,6 @@ ID_CONTAINER_KINDS = frozenset({"list_of_ids", "dict_of_ids"})
 #: gives the parts back in it (``catalog_helpers.bundle_container``).
 BUNDLE_CONTAINERS = {"outputs": "tuple", "list_of_ids": "list", "dict_of_ids": "dict"}
 
-def _part_label(index: int, kind: str) -> str:
-    names = {
-        "raster": "Raster",
-        "dataframe": "Table",
-        "geodataframe": "Geo table",
-        "list": "Array",
-        "dict": "Object",
-        "str": "Text",
-        "int": "Number",
-        "float": "Number",
-        "bool": "Flag",
-        "null": "Empty",
-    }
-    base = names.get(kind, kind.replace("_", " ").title())
-    return f"{base} · part {index + 1}"
-
 
 def _resolve_artifact_source(art_id: str, kind: str, value_str: str | None) -> Path | None:
     from utk_curio.backend.app.datasets.infrastructure.output_paths import resolve_shared_output_path
@@ -305,8 +289,12 @@ def resolve_output_bundle_parts(parent_art_id: str) -> list[BundlePart]:
     else:
         return []
 
-    # Keep a ``dict_of_ids``' keys as part labels so a dict of DataFrames
-    # installs with the names the user gave it, rather than "Table - part 1".
+    # Each part's label as a zip of the parts names it (bundle_zip.part_label):
+    # the label of the bundle part a frame was read from, a ``dict_of_ids``'
+    # key, so a dict of DataFrames installs with the names the user gave it,
+    # a frame's layer name, else its kind and place ("Table · part 1").
+    from utk_curio.sandbox.util.bundle_zip import part_label
+
     if isinstance(decoded, dict):
         named_children = [(str(key), value) for key, value in decoded.items()]
     elif isinstance(decoded, list):
@@ -331,7 +319,7 @@ def resolve_output_bundle_parts(parent_art_id: str) -> list[BundlePart]:
                 artifact_id=str(child_id),
                 kind=kind,
                 format=fmt,
-                label=child_name or _layer_of(meta_json).get("layerName") or _part_label(index, kind),
+                label=part_label(index, kind, key=child_name, metadata=_frame_meta(meta_json)[0]),
                 source_path=src,
                 meta_json=meta_json,
                 key=child_name,

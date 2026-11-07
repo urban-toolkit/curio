@@ -436,11 +436,17 @@ _OUTPUT_FILE_CALL_RE = re.compile(
 )
 #: ``curio_export(input_0, "trees.csv")`` writes the file its name names
 #: (sandbox/util/exports.py): the name, its second argument or ``name=``, is
-#: skipped as ``curio_output_file``'s is. The regex scan takes a first
-#: argument with no call in it, as ``input_0``.
+#: skipped as ``curio_output_file``'s is, and so is ``part=`` (its third),
+#: which names a part of the input, not a file. The regex scan takes a first
+#: argument with no call in it, as ``input_0``, and a name or a part that is a
+#: widget's chip (``[!! file_name !!]``).
 EXPORT_CALL = "curio_export"
+_EXPORT_NAME = r"""[fFrRbBuU]{0,2}(?P<q>["'])(?:\\.|(?!(?P=q))[^\\\n])*(?P=q)"""
+_EXPORT_PART = _EXPORT_NAME.replace("<q>", "<p>").replace("=q)", "=p)")
+_WIDGET_CHIP = r"\[!![^\n]*?!!\]"
 _EXPORT_CALL_RE = re.compile(
-    r"""\bcurio_export\([^()\n]*?,\s*(?:name\s*=\s*)?[fFrRbBuU]{0,2}(?P<q>["'])(?:\\.|(?!(?P=q))[^\\\n])*(?P=q)\s*\)"""
+    r"\bcurio_export\([^()\n]*?,\s*(?:name\s*=\s*)?(?:" + _EXPORT_NAME + "|" + _WIDGET_CHIP + ")"
+    + r"(?:\s*,\s*(?:part\s*=\s*)?(?:" + _EXPORT_PART + "|" + _WIDGET_CHIP + r"|-?\d+))?\s*\)"
 )
 
 
@@ -509,8 +515,9 @@ def _scan_python(code: str, loaders: frozenset[str]) -> list[SourceRef] | None:
             if isinstance(name, (ast.Constant, ast.JoinedStr)):
                 call_ids.add(id(name))
         elif isinstance(node, ast.Call) and _call_name(node) == EXPORT_CALL:
-            # So does ``curio_export(input_0, "trees.csv")``'s name.
-            names = node.args[1:2] + [k.value for k in node.keywords if k.arg == "name"]
+            # So does ``curio_export(input_0, "trees.csv")``'s name, and its
+            # ``part=`` names a part of its input.
+            names = node.args[1:3] + [k.value for k in node.keywords if k.arg in ("name", "part")]
             for name in names:
                 if isinstance(name, (ast.Constant, ast.JoinedStr)):
                     call_ids.add(id(name))
