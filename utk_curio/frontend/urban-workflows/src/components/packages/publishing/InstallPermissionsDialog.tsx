@@ -18,6 +18,12 @@ export interface InstallPermissionsDialogProps {
   confirmLabel?: string;
   /** The confirm button's label while the action runs. */
   busyLabel?: string;
+  /**
+   * The add waits for the dataflow's id: the Node Catalog drawer's Add while
+   * the dataflow is still opening. The review says so and its confirm stays
+   * off until the id comes; Cancel still works.
+   */
+  waitingForDataflow?: boolean;
 }
 
 export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> = ({
@@ -28,6 +34,7 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
   onConfirm,
   confirmLabel = "Add to project",
   busyLabel = "Adding…",
+  waitingForDataflow = false,
 }) => {
   const hasConflicts = conflicts.length > 0;
   // The packages it names in `dependencies.packages` are added with it.
@@ -122,6 +129,10 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
           </div>
         )}
 
+        {waitingForDataflow && (
+          <p className={styles.waitingNote}>Waiting for this dataflow to open.</p>
+        )}
+
         <div className={styles.footer}>
           <button type="button" className={styles.ghostButton} onClick={onCancel} disabled={busy}>
             Cancel
@@ -130,7 +141,7 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
             type="button"
             className={styles.actionButton}
             onClick={onConfirm}
-            disabled={busy || hasConflicts}
+            disabled={busy || hasConflicts || waitingForDataflow}
           >
             {busy ? busyLabel : confirmLabel}
           </button>
