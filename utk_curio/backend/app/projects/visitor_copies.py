@@ -199,11 +199,15 @@ def for_request(user, project_id: str, *, make: bool = True, sign_in: Optional[s
     for a hosted guest, the guest's own copy of it, made now when *make* and
     there is none. A read that finds no copy reads *project_id*: the guest's
     agents have not written it. *sign_in* names the visitor, the request's
-    sign-in when it is not given."""
+    sign-in when it is not given. A *project_id* that is that visitor's own
+    copy already, as an agent's tool names it, is that copy itself, never a
+    copy of it."""
     if not copies_for(user):
         return project_id
     sign_in = sign_in or _sign_in()
     if not sign_in:
+        return project_id
+    if is_own_copy(sign_in, project_id):
         return project_id
     own = copy_id(sign_in, project_id)
     if not _has_copy(own):

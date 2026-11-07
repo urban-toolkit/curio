@@ -268,3 +268,30 @@ def test_an_agents_change_to_a_copy_not_made_yet_reaches_the_tab_that_holds_its_
     assert _code(tab.dataflow()) == "x = 2\n"
     assert tab.doc_id == held and dataflow_docs.doc_id_of(own) == held
     assert guests.example_bytes() == before
+
+
+def test_a_guests_copy_named_by_its_own_id_is_that_copy_never_a_copy_of_it(guests):
+    """An agent's tool names the guest's copy by its id, and a node output it
+    adds to the dataflow lands on the dataflow that id names
+    (``InstalledDatasetRepository.lands_on``): the copy itself, with no copy
+    of the copy made."""
+    from flask import g
+
+    from utk_curio.backend import config
+    from utk_curio.backend.app.common.user_storage import GUEST_KEY
+    from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
+    from utk_curio.backend.app.projects import storage, visitor_copies
+    from utk_curio.backend.app.users.models import User
+
+    guest = User.query.filter_by(username=config.CURIO_SHARED_GUEST_USERNAME).one()
+    own = visitor_copies.for_request(guest, guests.example, make=True, sign_in=guests.tokens["A"])
+    assert own == guests.own("A")
+    nested = visitor_copies.copy_id(guests.tokens["A"], own)
+
+    assert visitor_copies.for_request(guest, own, make=True, sign_in=guests.tokens["A"]) == own
+    with guests.application.test_request_context(headers={"Authorization": f"Bearer {guests.tokens['A']}"}):
+        g.user = guest
+        assert InstalledDatasetRepository(guest).lands_on(own) == own
+        assert InstalledDatasetRepository(guest).lands_on(guests.example) == own
+
+    assert not storage.project_dir(GUEST_KEY, nested).exists()
