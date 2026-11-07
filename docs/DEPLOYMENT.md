@@ -456,7 +456,13 @@ It shows:
   reported only as "configured" or "none", never as their value.
 - **Hardware** - CPU model and core count, memory, swap, load average (raw and
   per core), and the resident memory of the backend and sandbox processes. The
-  hostname is not reported.
+  hostname is not reported. Under it, **Open files** charts the files,
+  sockets and pipes the backend and the sandbox hold open, sampled every hour
+  from the backend's start, against their limit as a dashed line (one per
+  server when the two differ), on a log scale. A sample above 80% of a
+  server's limit adds an entry to Recent errors, and the next one comes only
+  after that server's count has fallen below 70%. Past its limit, each file or
+  connection a server opens fails with `[Errno 24] Too many open files`.
 - **Execution** - node runs since launch, failures, a duration histogram, how
   many isolated slots are busy, and a tally of how child processes died
   (timeout, OOM, CPU limit, refused confinement).
@@ -478,12 +484,13 @@ to paste into an issue; "Download" saves the same thing as JSON.
 
 Every figure is since the process started, which is why uptime is on the page,
 and a restart resets them. The LLM tokens are also written to
-`.curio/monitor/llm-tokens.json` as they are counted. That file holds at most
-the last 90 days, and a restart starts it over.
+`.curio/monitor/llm-tokens.json` as they are counted, and the open-files
+samples to `.curio/monitor/open-files.json`. Each file holds at most the last
+90 days, and a restart starts it over.
 
 ### What the page exposes, and who can read it
 
-**`/monitor` and its five routes are public and unauthenticated**, like
+**`/monitor` and its six routes are public and unauthenticated**, like
 `/version`. On a deployment, anyone who can reach the URL can read them.
 
 The statistics are aggregates: no route reports a username, an email address,

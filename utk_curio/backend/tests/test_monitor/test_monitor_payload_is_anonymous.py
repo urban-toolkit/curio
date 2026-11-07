@@ -1,6 +1,7 @@
 """Nothing on the aggregate routes may name a person.
 
-`/api/monitor` is public. It reports on accounts, sessions, sign-in attempts
+`/api/monitor` is public, as are `/api/monitor/storage`, `/api/monitor/llm`
+and `/api/monitor/open-files`. It reports on accounts, sessions, sign-in attempts
 and storage, and every one of those has an identifier sitting next to the
 number. This suite is what stands between "14 accounts" and "14 accounts, one
 of them alice@lab.edu".
@@ -241,3 +242,42 @@ def test_the_llm_payload_names_models_and_nobody(client):
 
     walk(body, "$")
     assert not offenders, f"free text or an address reached the LLM payload: {offenders}"
+
+
+def test_the_open_files_payload_is_timestamps_and_numbers(client, monkeypatch):
+    """The fourth aggregate route: each server's open files and limit, every
+    hour. The servers are its keys, so every string in it is a timestamp, and
+    every other value a number or null."""
+    # Imported here, so a tree without the sampler fails this test alone.
+    from utk_curio.backend.app.monitor import open_files, routes
+
+    open_files.reset()
+    monkeypatch.setattr(routes, "_sandbox_monitor", lambda: {"open_files": 96, "open_files_limit": 1024})
+    open_files.sample()
+    monkeypatch.setattr(routes, "_sandbox_monitor", lambda: None)
+    open_files.sample()
+
+    body = client.get("/api/monitor/open-files").get_json()
+    # Not vacuous: both samples are there, the sandbox's counts in the first.
+    assert len(body["samples"]) == 2
+    assert body["samples"][0]["sandbox"] == {"open": 96, "limit": 1024}
+    assert body["samples"][1]["sandbox"] is None
+
+    offenders = []
+
+    def walk(node, path):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                walk(value, f"{path}.{key}")
+        elif isinstance(node, list):
+            for i, value in enumerate(node):
+                walk(value, f"{path}[{i}]")
+        elif isinstance(node, str):
+            if not ISO_Z.match(node):
+                offenders.append((path, node))
+        elif node is not None and (isinstance(node, bool) or not isinstance(node, (int, float))):
+            offenders.append((path, node))
+
+    walk(body, "$")
+    open_files.reset()
+    assert not offenders, f"something other than a timestamp or a number reached the open-files payload: {offenders}"
