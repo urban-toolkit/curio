@@ -107,6 +107,8 @@ def validate_candidate(
     templates: dict | None = None,
     acting_user=None,
     keep_stdout: bool = False,
+    collections: dict | None = None,
+    media_dir: str | None = None,
 ) -> dict:
     """Run the dataflow through *node_id* with the candidate overlaid and
     return ``{"verdict", "evidence"}`` (see module docstring). dev/115:
@@ -117,7 +119,14 @@ def validate_candidate(
     the request: validation runs on a thread of its own, where the account's
     collections and added models cannot be found without it. With
     *keep_stdout*, a pass also holds ``stdout``, the target's whole output,
-    for a check that reads what the run printed."""
+    for a check that reads what the run printed.
+
+    *collections* and *media_dir* are the collections the run reads and
+    where it writes what it derives, as the caller looked them up: a Solve
+    looks them up on the thread that starts the attempt, since the thread
+    that runs it holds no app context and serves no sign-in
+    (``VerifiedRounds._round_collections``). Without *collections* they are
+    looked up here, as Play's and an agent's Run node's are."""
     from utk_curio.backend.app.discovery.application.exec_collections import (
         resolve_spec_collections,
     )
@@ -130,15 +139,16 @@ def validate_candidate(
          if isinstance(n, dict) and n.get("id") == node_id),
         {},
     )
-    # The candidate as the run writes it, with the node's widgets. Under the
-    # key of the account the run is for, as Play's and an agent's Run node's:
-    # what it derives goes to that account's media folder, and the dataflow's
-    # collections are read from the store that holds them.
-    collections, media_dir = resolve_spec_collections(
-        spec_dict, node_exec.exec_user_key(acting_user) or exec_user_key or user_key,
-        node_run_code({**node, "content": candidate_content}),
-        user=acting_user, dataflow_id=project_id,
-    )
+    if collections is None:
+        # The candidate as the run writes it, with the node's widgets. Under
+        # the key of the account the run is for, as Play's and an agent's Run
+        # node's: what it derives goes to that account's media folder, and
+        # the dataflow's collections are read from the store that holds them.
+        collections, media_dir = resolve_spec_collections(
+            spec_dict, node_exec.exec_user_key(acting_user) or exec_user_key or user_key,
+            node_run_code({**node, "content": candidate_content}),
+            user=acting_user, dataflow_id=project_id,
+        )
     report = runner.run_through_node(
         user_key, project_id, spec_dict, node_id,
         candidate_content=candidate_content,

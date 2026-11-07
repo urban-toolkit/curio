@@ -28,7 +28,7 @@ from utk_curio.backend.app.agents.application.proposals import mint as agents_mi
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.agents.domain import document_validation
-from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+from utk_curio.backend.app.datasets.domain.code_refs import collection_ids_in_code, dataset_ids_in_code
 from utk_curio.backend.app.datasets.domain.constants import is_layer_group_id, layer_group_kind
 from utk_curio.backend.app.datasets.domain.layer_group import group_base_title, ids_read, layer_group_formats
 from utk_curio.backend.app.collaboration import dataflow_docs
@@ -183,6 +183,108 @@ def _exec_dataset_paths(project_id: str, *codes: str, formats: dict | None = Non
             project_id, exc_info=True,
         )
         return {}
+
+
+def _collections_key(user_key: str, user=None) -> str:
+    """The key a run's collections are looked up under: that of *user*, the
+    account that asked (``node_exec.exec_user_key``), as Play's and an
+    agent's Run node's, so what the run derives goes to that account's media
+    folder and the dataflow's collections are read from the store that holds
+    them; *user_key*, the dataflow's store, for a run no account asked for."""
+    from utk_curio.backend.app.execution.node_exec import exec_user_key
+
+    return exec_user_key(user) or user_key
+
+
+def _resolve_catalog_collections(project_id: str, user_key: str, catalog_ids: dict, user=None) -> dict:
+    """The collections twin of :func:`_resolve_catalog_execution_paths`:
+    ``{datasetId: entry | None}`` over *catalog_ids*, a Solve's grounding
+    base's, which say each dataset's format. Resolved ONCE, in the request
+    that starts the Solve, as *user* (else the request's account) under its
+    key (:func:`_collections_key`): the job's threads hold no request, and
+    the thread each attempt runs on holds no app context and serves no
+    sign-in. Each of the first 64 collections gets the entry a run hands the
+    sandbox, or None when the account reads no such collection; every other
+    id gets None, so a run that names it looks nothing up
+    (:func:`_collection_topup`). Fail-open: a collection left out is looked
+    up when a run names it."""
+    if not catalog_ids:
+        return {}
+    if user is None:
+        user = agents_askers.person()
+    mapping: dict = {
+        str(i): None for i, ref in catalog_ids.items() if getattr(ref, "format", "") != "collection"
+    }
+    collections = [str(i) for i, ref in catalog_ids.items() if getattr(ref, "format", "") == "collection"][:64]
+    if not collections:
+        return mapping
+    try:
+        from utk_curio.backend.app.discovery.application.exec_collections import resolve_collections
+
+        found = resolve_collections(collections, _collections_key(user_key, user), user=user, dataflow_id=project_id)
+    except Exception:  # noqa: BLE001 - an unresolved collection fails loudly IN the sandbox
+        log.warning("Could not resolve the collections of project %s", project_id, exc_info=True)
+        return mapping
+    mapping.update({dataset_id: found.get(dataset_id) for dataset_id in collections})
+    return mapping
+
+
+def _collection_topup(project_id: str, user_key: str, user_obj, mapping: dict, ids: list) -> dict:
+    """The collections twin of :func:`_dataset_path_topup`: look up, as
+    *user_obj* under its key, the ids *mapping* holds no answer for, such as
+    a collection added while the Solve runs, and keep each answer in it, None
+    for an id that is no collection the account reads. It runs on the thread
+    that starts a run's attempt, which a Solve gives the app's context and
+    the asker's sign-in. A miss is kept too, unlike a dataset path's: every
+    ``curio_load_data`` id may name a collection, so an id costs one lookup
+    per session, not one per attempt."""
+    missing = [i for i in ids if i and i not in mapping]
+    if not missing:
+        return mapping
+    try:
+        from utk_curio.backend.app.discovery.application.exec_collections import resolve_collections
+
+        found = resolve_collections(missing, _collections_key(user_key, user_obj), user=user_obj, dataflow_id=project_id)
+    except Exception:  # noqa: BLE001 - an unresolved collection fails loudly IN the sandbox
+        log.warning("Could not top up the collections of project %s", project_id, exc_info=True)
+        return mapping
+    for dataset_id in missing:
+        mapping[dataset_id] = found.get(dataset_id)
+    return mapping
+
+
+def _session_collections(
+    project_id: str, user_key: str, user_obj, mapping: dict, codes: list,
+) -> tuple[dict, str | None]:
+    """The collections twin of :func:`_session_dataset_paths`: ``(collections,
+    media_dir)`` for a run's attempt. The collections *codes* read come from
+    the mapping the Solve's request resolved (:func:`_resolve_catalog_collections`),
+    topped up for an id that read did not find (:func:`_collection_topup`);
+    *media_dir* is the media folder of the account that asked. The ids are
+    those ``resolve_spec_collections`` finds in the same codes, within the
+    same cap."""
+    from utk_curio.backend.app.discovery.application.exec_collections import media_dir_for
+
+    ids = collection_ids_in_code("\n".join(str(code or "") for code in codes))
+    if ids:
+        _collection_topup(project_id, user_key, user_obj, mapping, ids)
+    found = {dataset_id: mapping[dataset_id] for dataset_id in ids if mapping.get(dataset_id)}
+    return found, media_dir_for(_collections_key(user_key, user_obj))
+
+
+def _exec_collections(project_id: str, user_key: str, *codes: str) -> tuple[dict, str | None]:
+    """The collections twin of :func:`_exec_dataset_paths`: ``(collections,
+    media_dir)`` for *codes*, looked up as the request's account under its
+    key (:func:`_collections_key`). Needs the request context, which a
+    validate-node stream holds where each attempt starts; the thread the
+    attempt runs on is handed them."""
+    from utk_curio.backend.app.discovery.application.exec_collections import resolve_exec_collections
+
+    user = agents_askers.person()
+    return resolve_exec_collections(
+        "\n".join(str(code or "") for code in codes), _collections_key(user_key, user),
+        user=user, dataflow_id=project_id,
+    )
 
 
 def _ungrounded_remedy(attachment_id: str | None = None, *, name: str | None = None) -> str:
