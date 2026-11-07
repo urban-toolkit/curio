@@ -179,17 +179,17 @@ def _chmod_tree(root: Path, *, file_mode: int, dir_mode: int) -> None:
             try:
                 os.chmod(entry, win_mode)
             except OSError:
-                pass
+                pass  # an entry that cannot be changed keeps its mode; the rest still get theirs
         return
     for entry in sorted(root.rglob("*"), reverse=True):
         try:
             entry.chmod(file_mode if entry.is_file() else dir_mode)
         except OSError:
-            pass
+            pass  # as above
     try:
         root.chmod(dir_mode)
     except OSError:
-        pass
+        pass  # as above
 
 
 class BuildIsolationUnavailable(RuntimeError):

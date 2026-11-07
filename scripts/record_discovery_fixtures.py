@@ -297,7 +297,6 @@ class ServiceRecordingTransport(RecordingTransport):
 def record_services(slug_filter: str | None, index: dict) -> None:
     import os
     import tempfile
-    from urllib.parse import urlsplit
 
     from utk_curio.backend.app.discovery.domain import parameters as P
     from utk_curio.backend.app.discovery.infrastructure.transport import CredentialedTransport
@@ -313,9 +312,8 @@ def record_services(slug_filter: str | None, index: dict) -> None:
             continue
         print(f"\n==  {manifest.name}  ({plan['slug']})")
         credential = f"{manifest.auth.header_name}:{manifest.auth.value_prefix or ''}{token}"
-        transport = CredentialedTransport(
-            ServiceRecordingTransport(plan["slug"], index), credential,
-            hosts=(urlsplit(manifest.provider.base_url).hostname,),
+        transport = CredentialedTransport.for_source(
+            ServiceRecordingTransport(plan["slug"], index), credential, manifest
         )
         service = build_service(manifest, transport)
         for resource_id, raw in plan["asks"]:

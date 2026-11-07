@@ -310,6 +310,15 @@ class CredentialedTransport:
         self._credential = credential
         self._origins = frozenset(o for o in map(url_origin, origins) if o)
 
+    @classmethod
+    def for_source(cls, inner: DiscoveryTransport, credential: str | None, manifest):
+        """*inner* with *credential* bound to *manifest*'s own origin, its base
+        URL, or *inner* itself when there is no credential. The service and
+        the scripts that ask a source with a key of their own bind it here."""
+        if credential is None:
+            return inner
+        return cls(inner, credential, origins=(manifest.provider.base_url,))
+
     # Exposed for tests that assert on what was requested; carries no secret.
     @property
     def calls(self):
