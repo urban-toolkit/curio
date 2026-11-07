@@ -110,13 +110,14 @@ on:
   # that does move it (the stress harness, the sandbox, the queue, anything
   # concurrency-shaped), label the PR `stress`.
   #
-  # 08:00 UTC is 3 AM in Chicago during CDT; cron has no notion of DST, so it
-  # becomes 2 AM local once CST starts. Mon/Wed/Fri rather than `*/2` in the
+  # 3 AM in Chicago all year: GitHub reads the cron in the timezone below,
+  # daylight saving included. Mon/Wed/Fri rather than `*/2` in the
   # day-of-month field, which restarts its count every month and so would fire
   # on the 31st and the 1st back to back. Note that GitHub disables scheduled
   # workflows after 60 days with no repository activity.
   schedule:
-    - cron: '0 8 * * 1,3,5'
+    - cron: '0 3 * * 1,3,5'
+      timezone: 'America/Chicago'
   workflow_dispatch:  # Run manually from the Actions tab or: gh workflow run docker-compose.yml
     inputs:
       stress:

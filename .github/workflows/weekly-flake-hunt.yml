@@ -12,12 +12,14 @@ name: Weekly flake hunt
 # report page, its flaky tests and its suite table. This run ends red when the
 # Full stack build did not pass or found a flaky test.
 #
-# 08:00 UTC is 3 AM in Chicago during CDT and 2 AM once CST starts, the quiet
-# hours the Full stack build's own schedule uses. Run this by hand from the
-# Actions tab to start the same run now.
+# 3 AM in Chicago all year (GitHub reads the cron in the timezone below,
+# daylight saving included), the quiet hours the Full stack build's own
+# schedule uses. Run this by hand from the Actions tab to start the same run
+# now.
 on:
   schedule:
-    - cron: '0 8 * * 6'
+    - cron: '0 3 * * 6'
+      timezone: 'America/Chicago'
   workflow_dispatch:
 
 permissions:
