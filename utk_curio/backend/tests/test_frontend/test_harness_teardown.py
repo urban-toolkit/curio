@@ -48,6 +48,7 @@ def _fixture_body() -> ast.FunctionDef:
         if isinstance(node, ast.FunctionDef) and node.name == "curio_servers":
             return node
     pytest.fail("curio_servers is gone from fixtures.py; this file needs updating")
+    return None
 
 
 def _called_name(node: ast.Call) -> str:
