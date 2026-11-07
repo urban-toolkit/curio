@@ -50,16 +50,25 @@ jobs:
       contents: read
     steps:
       # A Full stack build job on this runner can leave root-owned files in the
-      # workspace, which the checkout cannot remove (as the stacks' reclaim
-      # step in docker-compose.yml hands them back).
-      - name: 🧹 Reclaim root-owned files
-        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+      # workspace, which the checkout cannot remove, and a job's sparse checkout
+      # stays in the workspace's .git/config for the next job's checkout. As the
+      # stacks' reclaim step in docker-compose.yml, this hands the files back
+      # and forgets the sparse checkout. The checkout itself is whole: a sparse
+      # one here, on 11-07, cut every later job on arcade-cpu-05 back to this
+      # one script.
+      - name: 🧹 Reclaim root-owned files, forget a sparse checkout
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+          if [ -d .git ]; then
+            git config --local --unset-all core.sparseCheckout || true
+            git config --local --unset-all core.sparseCheckoutCone || true
+            rm -f .git/info/sparse-checkout
+          fi
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
-        with:
-          sparse-checkout: scripts/ci_weekly_report.py
-          sparse-checkout-cone-mode: false
 
       - name: 📋 Wait for the run and write the week's report
         env:
