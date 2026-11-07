@@ -14,6 +14,11 @@ services:
     # Bring the container back up automatically after a host reboot or daemon
     # restart, but respect a manual `docker stop`.
     restart: unless-stopped
+    # Docker's init as PID 1, which reaps every process the container
+    # inherits. Without it PID 1 is the launcher, which never reaps one: a
+    # node's child killed when the execution zygote died, or a process a
+    # killed node had started, stayed a zombie until the container restarted.
+    init: true
     # The host's GPU, asked for as test-gpu's docker-compose.ci-shards.yml
     # asks: the host's NVIDIA Container Toolkit hands the container the GPU
     # and the driver's libcuda.so.1, which the image's torch runs node code
