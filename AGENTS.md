@@ -142,7 +142,8 @@ Code Quality: GitHub's CodeQL code quality analysis runs on every push to main a
 
 - `scripts/test.sh`: boots and runs each suite; CI calls it and `curio test` wraps it.
 - `scripts/clean.sh`: removes build artifacts and runtime data. `scripts/kill-curio.sh`: kills leftover Curio server processes.
-- `scripts/new_package.py`: scaffolds a node package. `scripts/regen_integrity.py`: rewrites a package's `integrity.json`.
+- `scripts/new_package.py`: scaffolds a node package. `scripts/regen_integrity.py`: rewrites a package's `integrity.json`, leaving out a fetched model's weights.
+- `scripts/fetch_model_weights.py <package id> [--into <dir>]`: downloads the weights a model package's `model.fetch` names (`packages/domain/model_fetch.py`) from Hugging Face, with `HF_TOKEN`, into its entry folder or into `<dir>/<id>@<major>/`, which `--model-weights-dir` reads in place. Standard library only, so it runs with the host's Python.
 - `scripts/ci_requirements.py`: writes `scripts/ci-requirements.txt`, the libraries `curio.py setup --with-examples` installs from the manifests, which CI's image installs before its source; rerun it after changing a manifest's Python dependencies or the packages an example declares (`test_ci_requirements.py` fails on a stale list).
 - `scripts/sync_autk_schema.py`: vendors the Autark grammar schema; `--check` compares it with the release.
 - `scripts/validate_trill.py`: validates dataflow JSON against `docs/schemas/trill.v1.json`.

@@ -16,7 +16,8 @@ downloads each file from ``https://huggingface.co/<repo>/resolve/<revision>/
 the folder ``curio.py start --model-weights-dir <dir>`` reads them from.
 
 - The token is read from ``HF_TOKEN`` alone. It goes to Hugging Face's own
-  host, never to a host it redirects to, and is never printed or written.
+  host, never to the host it redirects a large file to, and is never printed
+  or written.
 - Each file streams to a temporary file beside its place, is checked against
   the digest the manifest names (``sha256``, or ``gitSha1``, the git blob hash
   of a file that is not in Git LFS), is made readable by every account, and
@@ -44,6 +45,8 @@ import urllib.request
 from pathlib import Path
 
 HUGGING_FACE = "https://huggingface.co"
+#: The one host the token is sent to.
+HUGGING_FACE_HOST = "huggingface.co"
 #: The one place the token is read from.
 TOKEN_VARIABLE = "HF_TOKEN"
 CHUNK = 1024 * 1024
@@ -190,6 +193,25 @@ def _request(url: str, credential: str) -> urllib.request.Request:
     return request
 
 
+class TokenOnHuggingFace(urllib.request.HTTPRedirectHandler):
+    """Follows a redirect as urllib does, and sends the token again only when
+    it leads back to Hugging Face's own host, never to the host that serves
+    its large files."""
+
+    def __init__(self, credential: str):
+        super().__init__()
+        self._credential = credential
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if (
+            redirected is not None and self._credential
+            and urllib.parse.urlsplit(redirected.full_url).hostname == HUGGING_FACE_HOST
+        ):
+            redirected.add_unredirected_header("Authorization", f"Bearer {self._credential}")
+        return redirected
+
+
 def _download(opener, url: str, credential: str, target: Path, item, fetch, token_given: bool) -> int:
     """Stream *url* into a temporary file beside *target*, check it against
     *item*'s digest, and move it into place. Returns its size."""
@@ -275,7 +297,7 @@ def main(argv=None, *, opener=None, environ=None, shipped_root=None, out=None, e
     entry = root / str(model["entry"])
     credential = str(environ.get(TOKEN_VARIABLE) or "").strip()
     token_given = TOKEN_VARIABLE in environ
-    opener = opener or urllib.request.build_opener()
+    opener = opener or urllib.request.build_opener(TokenOnHuggingFace(credential))
 
     print(f"{package_id}@{major}: {len(fetch.files)} files of {fetch.huggingface} at {fetch.revision}, "
           f"into {entry}", file=out)

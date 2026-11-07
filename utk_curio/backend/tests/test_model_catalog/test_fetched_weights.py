@@ -443,7 +443,7 @@ def _refused(raised, refused: str) -> None:
     assert "2 GiB" in message and "scripts/fetch_model_weights.py" in message, message
 
 
-def test_export_refuses_it_from_the_account_and_from_the_catalog_saying_why(catalog, tmp_curio):
+def test_export_refuses_it_from_the_account_and_from_the_catalog_saying_why(catalog):
     """Even with its weights at hand, in the catalog's folder: nothing is
     zipped."""
     from utk_curio.backend.app.packages.application.store_install import (

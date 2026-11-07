@@ -84,9 +84,18 @@ export interface PackageDependencies {
  *  the Node Catalog. */
 export type PackageKind = "node" | "model";
 
+/** Weights a model package ships without, which whoever runs Curio fetches
+ *  (`scripts/fetch_model_weights.py`): files of a Hugging Face repository at
+ *  one commit, each with its digest. */
+export interface ModelFetchPayload {
+  huggingface: string;
+  revision: string;
+  files: Array<{ path: string; sha256?: string; gitSha1?: string }>;
+}
+
 /** How a model package's weights run: its manifest's `model` block. */
 export interface ModelBlockPayload {
-  type: "semantic-segmentation" | "image-to-image" | "node-regression";
+  type: "semantic-segmentation" | "image-to-image" | "node-regression" | "concept-segmentation";
   runtime: "onnx" | "transformers";
   /** The weights under `models/`. */
   entry: string;
@@ -107,9 +116,13 @@ export interface ModelBlockPayload {
   licenseFile?: string;
   homepage?: string;
   discoverySource?: Record<string, unknown>;
+  fetch?: ModelFetchPayload;
   /** Listings only: a pip install has left the weights out and no node has
    *  fetched them yet, so the first run downloads them. */
   downloadsOnFirstUse?: boolean;
+  /** Listings only: whoever runs this Curio has not fetched the weights
+   *  `fetch` names, so a node that loads the model stops, saying how. */
+  weightsNotFetched?: boolean;
 }
 
 export interface PackagePayload {
