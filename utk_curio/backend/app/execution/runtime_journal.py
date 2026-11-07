@@ -144,7 +144,6 @@ def record_execution(
     try:
         out = output if isinstance(output, dict) else {}
         if status in STATUSES:
-            ok = status == STATUS_OK
             recorded_status = status
         else:
             # dev/138: the predicate is the artifact AND a type to read it by.

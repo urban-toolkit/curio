@@ -576,7 +576,7 @@ def _ground_catalog_lanes(parts: list, listing) -> None:
             continue
         if rows is None:
             rows = listing()
-        lanes["catalog"], _dropped = _grounded_catalog_rows(lanes["catalog"], rows)
+        lanes["catalog"], _ = _grounded_catalog_rows(lanes["catalog"], rows)
         if not any(lanes.get(lane) for lane in ("catalog", "external")):
             parts[index] = {**_NO_CANDIDATES_CARD, "lines": list(_NO_CANDIDATES_CARD["lines"])}
 
