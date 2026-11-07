@@ -725,16 +725,14 @@ export function MainCanvas() {
                             : "the canvas";
                 // For a node target, the server holds the (possibly freshly-added)
                 // node before the attach is checked against the dataflow:
-                // otherwise the attach 400s. See attachAgentOnDrop.
+                // otherwise the attach 400s. A dataflow not saved yet is made
+                // first, a hosted guest's as an account's. See attachAgentOnDrop.
                 attachAgentOnDrop({
                     projectId: agentsDataflow,
                     target,
                     agentCoord,
                     keepDataflow: ensureProjectId,
                     attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
-                    // A hosted guest's drop on a canvas with no dataflow says
-                    // to sign in.
-                    hostedGuest,
                     // An invited editor's tab makes no dataflow: it waits for the
                     // server to have what the editor changed, then attaches.
                     savesHere: viewerMode !== "shared",
@@ -745,15 +743,14 @@ export function MainCanvas() {
                         markDirty();
                         showToast(`Agent attached to ${where}.`, "success");
                     })
-                    // A refusal says how to show itself (the sign-in note is a warning).
-                    .catch((e: any) => showToast(e?.message || "Attach failed.", e?.toastVariant ?? "error"));
+                    .catch((e: any) => showToast(e?.message || "Attach failed.", "error"));
                 return;
             }
             case "node":
                 revealCreated(createCodeNode(drop.type, { position: drop.position }));
                 markDirty();
         }
-    }, [createLoaderFor, askTheOwner, importDataFile, dropPackageCard, showToast, dropScenario, revealNodes, agentsDataflow, ensureProjectId, hostedGuest, viewerMode, whenChangesKept, markDirty, revealCreated, createCodeNode]);
+    }, [createLoaderFor, askTheOwner, importDataFile, dropPackageCard, showToast, dropScenario, revealNodes, agentsDataflow, ensureProjectId, viewerMode, whenChangesKept, markDirty, revealCreated, createCodeNode]);
 
     // Where drops kept while the dataflow opened go, once it is in and its
     // nodes are framed: each at the point of the window it was dropped on, in

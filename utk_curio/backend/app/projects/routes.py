@@ -99,9 +99,10 @@ def update_project(project_id: str):
         return _error(str(exc))
 
     try:
-        # A hosted guest's rename names their own copy (visitor_copies.py);
-        # update_project refuses their other saves.
-        detail = services.rename_for_visitor(g.user, project_id, data)
+        # A hosted guest's rename names their own copy (visitor_copies.py),
+        # and renames or categorizes their own new dataflow; update_project
+        # refuses their other saves.
+        detail = services.update_for_visitor(g.user, project_id, data)
         if detail is None:
             detail = services.update_project(g.user, project_id, data, sign_in=get_current_token())
     except NotFoundError:
@@ -227,7 +228,8 @@ def get_project(project_id: str):
     """The dataflow, its spec and its outputs: the saved ones, or, with
     ``?results=last``, the results its canvas was left with, as a canvas
     opens it (``services.load_project``). A hosted guest's canvas opens
-    their own copy, once they have one (visitor_copies.py)."""
+    their own copy, once they have one (visitor_copies.py), and their own
+    new dataflow, which is not found for anyone else."""
     try:
         result = services.load_project(
             g.user, project_id, last_results=request.args.get("results") == "last",
@@ -336,7 +338,8 @@ def _output_read(project_id: str):
     runs of this dataflow kept (``runs/kept.py``): the owner's, an invited
     editor's own, or a hosted guest's, kept on their own copy of it
     (visitor_copies.py), which is read under the session that made it. No one
-    reads another's kept output here."""
+    reads another's kept output here. A hosted guest's own new dataflow has
+    no saved output, and its plays keep theirs on it."""
     from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.app.runs import kept
     from utk_curio.backend.extensions import db
@@ -345,6 +348,9 @@ def _output_read(project_id: str):
     if not file_name:
         return None, None, None, ("No artifact id specified", 400)
     project = db.session.get(Project, project_id)
+    if project is None and visitor_copies.own_new(g.user, project_id) is not None:
+        entry = kept.owner_entry(project_id, file_name)
+        return file_name, (entry.session_id if entry is not None else get_current_token()), None, None
     if project is None:
         return None, None, None, _error("Project not found", 404)
     saved = services.saved_output_of(project_id, file_name)

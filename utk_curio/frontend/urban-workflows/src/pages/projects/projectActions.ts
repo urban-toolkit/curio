@@ -26,10 +26,13 @@ export interface ProjectAction {
   destructive?: boolean;
 }
 
-/** The one property of a project that changes what may be done to it. */
+/** What changes what may be done to a project. */
 export interface ProjectActionState {
   /** Seeded from ``docs/examples/`` - Curio put it there, the user did not. */
   isExample?: boolean;
+  /** A hosted guest's own new dataflow, which the server drops when it
+   *  starts again: no one deletes it before. */
+  keptForVisit?: boolean;
 }
 
 /**
@@ -52,6 +55,8 @@ export interface ProjectActionState {
  * notice there is no way back: since #270 the per-account marker means a
  * deleted example is never seeded again, so the mis-click was permanent. The
  * server refuses the same request, for the callers that never see this list.
+ * A hosted guest's own new dataflow offers no Delete either: the server drops
+ * it when it starts again.
  */
 export function projectActions(state: ProjectActionState = {}): ProjectAction[] {
   return [
@@ -61,7 +66,7 @@ export function projectActions(state: ProjectActionState = {}): ProjectAction[] 
     { id: "rename", label: "Rename" },
     { id: "categories", label: "Edit categories" },
     { id: "duplicate", label: "Duplicate" },
-    ...(state.isExample
+    ...(state.isExample || state.keptForVisit
       ? []
       : [{ id: "delete" as const, label: "Delete", destructive: true }]),
   ];

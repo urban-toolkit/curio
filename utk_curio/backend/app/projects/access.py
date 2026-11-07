@@ -107,10 +107,14 @@ def joins_room(user, project) -> bool:
     """Whether *user* joins *project*'s room at all: everyone does but a hosted
     guest on a dataflow a guest owns (an example, or a guest's copy of one),
     who joins only the room of its own copy (``visitor_copies.room_for``):
-    never another guest's, and never the dataflow's own room."""
+    never another guest's, and never the dataflow's own room. A hosted
+    guest's own new dataflow is its room alone, which no one else joins,
+    an account neither."""
     from utk_curio.backend.app.projects import visitor_copies
     from utk_curio.backend.app.users.capabilities import is_hosted_guest
 
+    if isinstance(project, visitor_copies.Copy) and project.new:
+        return visitor_copies.is_room_of(getattr(user, "sign_in", None), project)
     owner = getattr(project, "owner", None)
     if not (is_hosted_guest(user) and owner is not None and owner.is_guest):
         return True

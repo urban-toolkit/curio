@@ -50,12 +50,19 @@ def project_summaries(user) -> list:
 def owned_project(user, project_id: str) -> tuple[Any, dict, bool]:
     """``(row, spec, is_example)`` for one of the account's projects: for a
     hosted guest, the spec of its own copy of it, once it has one
-    (``projects/visitor_copies.py``). Another account's project, or one whose
-    spec is gone, is not found."""
+    (``projects/visitor_copies.py``), and its own new dataflow, read as a
+    row. Another account's project, another guest's new dataflow, or one
+    whose spec is gone, is not found."""
     from utk_curio.backend.app.projects import repositories, storage, visitor_copies
     from utk_curio.backend.app.projects.seed import is_example_project
     from utk_curio.backend.app.projects.services import _user_dir_key
 
+    own = visitor_copies.own_new(user, project_id)
+    if own is not None:
+        spec = storage.read_spec(_user_dir_key(user), project_id)
+        if spec is None:
+            raise ProjectNotFound(project_id)
+        return visitor_copies.new_row(own, spec), spec, False
     try:
         row = repositories.get_for_user(project_id, user.id)
     except repositories.NotFoundError as exc:

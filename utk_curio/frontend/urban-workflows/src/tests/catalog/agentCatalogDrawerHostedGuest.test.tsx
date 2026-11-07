@@ -1,11 +1,10 @@
 /**
- * The Agent Catalog drawer's Add and Remove on a dataflow a hosted guest never
- * saved (`isHostedGuest`: a guest on a Curio started with --deploy). Both act
- * on a saved dataflow, and such a guest cannot save one, so the drawer tells
- * it to sign in, in place of "Couldn't save this dataflow, so nothing was
- * added to it.", which talks about a save it cannot make. On a dataflow it
- * has, the drawer acts on it as before; the local shared guest and a
- * signed-in account keep today's behavior.
+ * The Agent Catalog drawer's Add and Remove on a dataflow not saved yet. Both
+ * act on a dataflow the server holds, so the dataflow is made first
+ * (`onEnsureProject`): an account's, and a hosted guest's own (`isHostedGuest`:
+ * a guest on a Curio started with --deploy), kept until the server starts
+ * again. No one is told to sign in. On a dataflow it has, the drawer acts on
+ * it at once.
  *
  * The harness is AgentCatalogDrawer.test.tsx's.
  */
@@ -145,33 +144,6 @@ beforeEach(() => {
   api.uninstallFromProject.mockResolvedValue({ agents: [] } as any);
 });
 
-describe("a hosted guest, on a dataflow it never saved", () => {
-  // No id comes back for it, since a guest's save is skipped.
-  const neverSaved = () => jest.fn().mockResolvedValue(null);
-
-  it("is told to sign in when it adds an agent, and nothing is added", async () => {
-    renderDrawerAs(HOSTED_GUEST, null, neverSaved());
-    await waitFor(() => expect(screen.getByText("my-explainer")).toBeInTheDocument());
-
-    await clickAndConfirm("Add to project", "Add to project");
-
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Sign in to add agents."));
-    expect(screen.getByRole("alert")).not.toHaveTextContent(/save/i);
-    expect(api.installToProject).not.toHaveBeenCalled();
-  });
-
-  it("is told to sign in when it removes an agent, and nothing is removed", async () => {
-    anAgentTheAccountHas();
-    renderDrawerAs(HOSTED_GUEST, null, neverSaved());
-    await waitFor(() => expect(screen.getByText("my-explainer")).toBeInTheDocument());
-
-    await clickAndConfirm("Remove from project", "Remove");
-
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Sign in to remove agents."));
-    expect(api.uninstallFromProject).not.toHaveBeenCalled();
-  });
-});
-
 describe("a hosted guest, on a dataflow it has", () => {
   it("adds an agent to it, as before", async () => {
     const onEnsureProject = jest.fn();
@@ -189,6 +161,7 @@ describe("a hosted guest, on a dataflow it has", () => {
 });
 
 describe.each([
+  ["a hosted guest", HOSTED_GUEST],
   ["the local shared guest", LOCAL_GUEST],
   ["a signed-in account", SIGNED_IN_USER],
 ])("%s, on a dataflow never saved", (_who, value) => {
@@ -202,6 +175,24 @@ describe.each([
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("created-1", "agent.test.my-explainer@1"),
     );
+    expect(onEnsureProject).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(mockShowToast.mock.calls.map((call) => String(call[0])).filter((m) => /sign in/i.test(m))).toEqual([]);
+  });
+
+  it("removes an agent once the save has created the dataflow", async () => {
+    anAgentTheAccountHas();
+    const onEnsureProject = jest.fn().mockResolvedValue("created-1");
+    renderDrawerAs(value, null, onEnsureProject);
+    await waitFor(() => expect(screen.getByText("my-explainer")).toBeInTheDocument());
+
+    await clickAndConfirm("Remove from project", "Remove");
+
+    await waitFor(() =>
+      expect(api.uninstallFromProject).toHaveBeenCalledWith("created-1", "agent.test.my-explainer@1"),
+    );
+    expect(onEnsureProject).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("is told the save failed, not to sign in, when it could not be saved", async () => {

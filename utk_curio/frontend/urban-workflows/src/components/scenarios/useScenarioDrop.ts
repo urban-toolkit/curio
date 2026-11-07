@@ -117,16 +117,16 @@ export function useScenarioDrop() {
 
   return useCallback(
     async (payload: ScenarioDragPayload, at: { x: number; y: number }): Promise<DroppedScenario | null> => {
+      // A hosted guest adds no scenario: a drop runs the scenario's context on
+      // the server, which a guest's runs never do. It is told to sign in
+      // before anything is made, a dataflow included.
+      if (hostedGuest) {
+        showToast(hostedGuestSignInNote("add scenarios"), "warning");
+        return null;
+      }
       const target = await ensureProjectId();
       if (!target) {
-        // A hosted guest gets no id for a dataflow it never saved, and cannot
-        // save one, so it is told to sign in rather than to save first.
-        showToast(
-          hostedGuest
-            ? hostedGuestSignInNote("add scenarios")
-            : "Save this dataflow first, then drag the scenario again.",
-          "warning",
-        );
+        showToast("Save this dataflow first, then drag the scenario again.", "warning");
         return null;
       }
       const from = { projectId: payload.projectId, setId: payload.setId, scenarioId: payload.scenarioId, name: payload.name };
