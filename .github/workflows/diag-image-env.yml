@@ -1,0 +1,155 @@
+name: Diag image-env in place
+
+# One-off probe on an arcade CPU runner: can a job use the CI image's
+# site-packages in place (a read-only bind mount) instead of copying 8.8 GB?
+on:
+  push:
+    branches: [diag/image-env-in-place]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted, arcade, cpu]
+    timeout-minutes: 25
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Probe
+        shell: bash
+        run: |
+          set -uo pipefail
+          section() { echo; echo "=== $*"; }
+          wbytes() { awk '{for (i = 2; i <= NF; i++) if ($i ~ /^wbytes=/) { split($i, a, "="); s += a[2] }} END { printf "%d\n", s }' /sys/fs/cgroup/io.stat 2>/dev/null || echo 0; }
+          ms() { date +%s%3N; }
+          mounts() { wc -l < /proc/self/mountinfo; }
+          pyprobe="$RUNNER_TEMP/pw_probe.py"
+          printf '%s\n' \
+            'import os, sys' \
+            'import playwright, pytest' \
+            'from playwright.sync_api import sync_playwright' \
+            'print("playwright", playwright.__file__, "realpath", os.path.realpath(playwright.__file__))' \
+            'with sync_playwright() as p:' \
+            '    b = p.chromium.launch(channel="chrome")' \
+            '    page = b.new_page()' \
+            '    page.set_content("<title>in place</title><h1>ok</h1>")' \
+            '    print("chrome page title:", page.title())' \
+            '    b.close()' > "$pyprobe"
+
+          section facts
+          id; uname -r; nproc
+          if sudo -n true 2> /dev/null; then echo "sudo: yes"; else echo "sudo: no"; fi
+          docker info --format 'driver={{.Driver}} version={{.ServerVersion}} root={{.DockerRootDir}}'
+          docker info --format '{{json .DriverStatus}}'
+          for p in / "$HOME" "$RUNNER_TEMP" /var/lib/docker; do findmnt -o TARGET,SOURCE,FSTYPE,PROPAGATION -T "$p" | tail -1; done
+          cat /proc/sys/kernel/yama/ptrace_scope 2> /dev/null || echo "no yama"
+          cat /proc/self/cgroup
+          ls -la /sys/fs/cgroup/io.stat 2>&1
+          head -3 /sys/fs/cgroup/io.stat 2>&1
+          echo "wbytes now: $(wbytes)"
+          df -h / "$HOME" "$RUNNER_TEMP" /var/lib/docker
+          docker image ls --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.Size}}'
+          docker run --rm alpine sh -c 'command -v nsenter; nsenter --help 2>&1 | head -2' || true
+
+          section image
+          img=$(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -m1 '^ghcr.io/urban-toolkit/curio-ci:' || true)
+          if [ -z "$img" ]; then
+            img=ghcr.io/urban-toolkit/curio-ci:fdeb91a74fb50ba4a2c2e878f0756a5e7a967ee4
+            docker pull --quiet "$img"
+          fi
+          echo "image: $img"
+          docker run --rm --entrypoint sh "$img" -c 'mount --version | head -1; command -v nsenter; find /usr/local/lib/python3.12/site-packages | wc -l; find /usr/local/lib/python3.12/site-packages ! -perm -o=r | head -5; find /usr/local/lib/python3.12/site-packages -perm -o=w ! -type l | head -5'
+
+          section "A: a privileged helper binds its site-packages onto a runner folder (rshared)"
+          dirA="$HOME/curio-image-python/probe-a"
+          rm -rf "$dirA"; python -m venv --without-pip "$dirA"
+          siteA="$dirA/lib/python3.12/site-packages"
+          before_mounts=$(mounts); w0=$(wbytes); t0=$(ms)
+          cidA=$(docker run -d --rm --privileged --network none --log-driver none \
+            --label curio-ci.image-python=probe \
+            --mount "type=bind,source=$siteA,target=/mnt/site,bind-propagation=rshared" \
+            --entrypoint bash "$img" -c 'mount --bind -o ro /usr/local/lib/python3.12/site-packages /mnt/site && exec sleep infinity')
+          echo "helper A: $cidA"
+          for _ in $(seq 1 100); do mountpoint -q "$siteA" && break; sleep 0.1; done
+          t1=$(ms)
+          findmnt -o TARGET,FSTYPE,OPTIONS,PROPAGATION "$siteA" || echo "A: NOT MOUNTED in the runner"
+          echo "A: mount visible after $((t1 - t0)) ms; runner mounts $before_mounts -> $(mounts)"
+          "$dirA/bin/python" -c 'import playwright, pytest; print("A: import ok")'
+          "$dirA/bin/python" "$pyprobe" || echo "A: playwright launch FAILED"
+          touch "$siteA/probe-write" 2>&1 || echo "A: write refused, as expected"
+          echo "A: wbytes during A: $(( $(wbytes) - w0 ))"
+          docker exec "$cidA" umount -l /mnt/site; echo "A: umount in helper exit $?"
+          sleep 1
+          if mountpoint -q "$siteA"; then echo "A: STILL MOUNTED in the runner after the helper's umount"; else echo "A: unmounted in the runner"; fi
+          docker rm -f "$cidA" > /dev/null; sleep 2
+          echo "A: runner mounts after release: $(mounts) (before: $before_mounts)"
+          grep -c curio-image-python /proc/self/mountinfo || true
+
+          section "A stale: helper killed while mounted"
+          cidS=$(docker run -d --rm --privileged --network none --log-driver none \
+            --label curio-ci.image-python=probe \
+            --mount "type=bind,source=$siteA,target=/mnt/site,bind-propagation=rshared" \
+            --entrypoint bash "$img" -c 'mount --bind -o ro /usr/local/lib/python3.12/site-packages /mnt/site && exec sleep infinity')
+          for _ in $(seq 1 100); do mountpoint -q "$siteA" && break; sleep 0.1; done
+          docker kill "$cidS" > /dev/null; sleep 3
+          if mountpoint -q "$siteA"; then echo "stale: still mounted after SIGKILL"; else echo "stale: gone with the helper"; fi
+          docker run --rm --privileged --pid=host --network none alpine nsenter -t 1 -m -- umount -l "$siteA"; echo "stale: alpine nsenter umount exit $?"
+          if mountpoint -q "$siteA"; then
+            docker run --rm --privileged --pid=host --network none --entrypoint nsenter "$img" -t 1 -m -- umount -l "$siteA"; echo "stale: image nsenter umount exit $?"
+          fi
+          if mountpoint -q "$siteA"; then echo "stale: STILL MOUNTED"; else echo "stale: cleaned"; fi
+          echo "runner mounts now: $(mounts) (before A: $before_mounts)"
+          rm -rf "$dirA"
+
+          section "B: nsenter binds the helper's MergedDir"
+          dirB="$HOME/curio-image-python/probe-b"
+          rm -rf "$dirB"; python -m venv --without-pip "$dirB"
+          siteB="$dirB/lib/python3.12/site-packages"
+          before_mounts=$(mounts); t0=$(ms)
+          cidB=$(docker run -d --rm --read-only --network none --log-driver none --label curio-ci.image-python=probe --entrypoint sleep "$img" infinity)
+          docker inspect -f '{{json .GraphDriver}}' "$cidB"
+          merged=$(docker inspect -f '{{.GraphDriver.Data.MergedDir}}' "$cidB" 2> /dev/null || true)
+          echo "merged: $merged"
+          if [ -n "$merged" ] && [ "$merged" != "<no value>" ]; then
+            docker run --rm --privileged --pid=host --network none --entrypoint nsenter "$img" -t 1 -m -- \
+              mount --bind -o ro "$merged/usr/local/lib/python3.12/site-packages" "$siteB"; echo "B: mount exit $?"
+            t1=$(ms); echo "B: took $((t1 - t0)) ms"
+            findmnt -o TARGET,FSTYPE,OPTIONS,PROPAGATION "$siteB" || echo "B: NOT MOUNTED"
+            "$dirB/bin/python" -c 'import playwright, pytest; print("B: import ok")'
+            "$dirB/bin/python" "$pyprobe" || echo "B: playwright launch FAILED"
+            docker run --rm --privileged --pid=host --network none --entrypoint nsenter "$img" -t 1 -m -- umount "$siteB"; echo "B: umount exit $?"
+          else
+            echo "B: no MergedDir"
+          fi
+          docker rm -f "$cidB" > /dev/null; sleep 2
+          echo "B: runner mounts after: $(mounts) (before: $before_mounts)"
+          rm -rf "$dirB"
+
+          section "copy, as image-env does it today"
+          venvC="$RUNNER_TEMP/probe-copy"; rm -rf "$venvC"; python -m venv --without-pip "$venvC"
+          siteC="$venvC/lib/python3.12/site-packages"; rmdir "$siteC"
+          w0=$(wbytes); t0=$(ms)
+          cid=$(docker create "$img")
+          docker cp "$cid:/usr/local/lib/python3.12/site-packages" "$siteC"
+          docker rm -f "$cid" > /dev/null
+          t1=$(ms); w1=$(wbytes)
+          echo "copy: $((t1 - t0)) ms, $(du -sb "$siteC" | cut -f1) bytes in $(find "$siteC" | wc -l) entries"
+          sleep 40; w2=$(wbytes)
+          echo "copy: wbytes during the copy $((w1 - w0)), with writeback 40 s later $((w2 - w0))"
+          t0=$(ms); rm -rf "$venvC"; echo "delete: $(( $(ms) - t0 )) ms"
+          sleep 20; echo "delete: wbytes since the copy's writeback $(( $(wbytes) - w2 ))"
+
+          section "end"
+          docker ps -a --filter label=curio-ci.image-python --format '{{.ID}} {{.Status}}'
+          grep -c curio-image-python /proc/self/mountinfo || true
+          rm -rf "$HOME/curio-image-python"
