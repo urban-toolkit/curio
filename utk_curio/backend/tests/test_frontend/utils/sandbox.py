@@ -8,7 +8,6 @@ import math
 import re
 import textwrap
 from pathlib import Path
-# import zlib
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
 
@@ -39,30 +38,6 @@ def get_shared_data_dir() -> str:
     lod_dir = (launch_dir / Path(shared_disk_path)).resolve()
     return str(lod_dir)
 
-
-# ---------------------------------------------------------------------------
-# .data file helpers (zlib-compressed JSON, same format as parsers.py)
-# ---------------------------------------------------------------------------
-
-# def load_dot_data(path: str) -> dict:
-#     """Read a ``.data`` file (zlib-compressed JSON) and return the parsed dict."""
-#     with open(path, "rb") as f:
-#         return json.loads(zlib.decompress(f.read()).decode("utf-8"))
-
-
-# def save_dot_data(path: str, data: dict) -> None:
-#     """Write *data* as zlib-compressed JSON to *path*."""
-#     os.makedirs(os.path.dirname(path), exist_ok=True)
-#     compressed = zlib.compress(json.dumps(data, ensure_ascii=False).encode("utf-8"))
-#     with open(path, "wb") as f:
-#         f.write(compressed)
-
-
-# def strip_volatile_keys(data: dict) -> dict:
-#     """Return a shallow copy of *data* without per-run metadata (``filename``)."""
-#     stripped = {**data}
-#     stripped.pop("filename", None)
-#     return stripped
 
 # ---------------------------------------------------------------------------
 # DuckDB artifact helpers
