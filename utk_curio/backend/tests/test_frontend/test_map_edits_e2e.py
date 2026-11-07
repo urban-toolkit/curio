@@ -1241,6 +1241,11 @@ def test_each_change_is_an_entry_in_the_node_provenance_and_putting_one_back_res
     head = item.locator("button").first
     if head.get_attribute("aria-expanded") != "true":
         head.click()
+    # It holds the code its own change made, though its note can reach the
+    # server after the two changes that followed it.
+    shown = item.locator("pre")
+    expect(shown).to_have_count(1)
+    assert _edits_of(shown.inner_text())[0] == [set_height], f"the first entry holds:\n{shown.inner_text()}"
     keep_drawing(page, _map(MAP_2))
     item.get_by_role("button", name="Put this code back in the node", exact=True).click()
     expect(item).to_have_attribute("data-provenance-current", "true")

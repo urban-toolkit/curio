@@ -1463,13 +1463,22 @@ def _typing_before_a_run(entry, state: _State, key: tuple[str, str], left: Optio
     if typing.end <= at:
         _close(entry, key)
         return
+    _split_typing(entry, state, key, at, code)
+
+
+def _split_typing(entry, state: _State, key: tuple[str, str], at: int, code: str, **point) -> Optional[dict]:
+    """End the typing under way (*key*) at *at*, where the node held *code*:
+    what came before is its point (*point*, the kind and label :func:`_close`
+    takes), and the rest stays under way from *code*."""
+    typing = state.typing[key]
     rest = _Typing(typing.node, typing.by, typing.sid, typing.doc, typing.day, at, parent=_sha(code))
     rest.end, rest.last = typing.end, typing.last
     rest.left = {digest: offset for digest, offset in typing.left.items() if offset >= at}
-    _close(entry, key, end=at, code=code)
+    made = _close(entry, key, end=at, code=code, **point)
     state.typing[key] = rest
     _left(state.left.setdefault(typing.node, {}), rest.parent, (typing.doc, typing.day, at), LEFT_KEPT)
     state.retime()
+    return made
 
 
 def _left_by_an_entry(state: _State, node: str, left: Optional[tuple]) -> Optional[int]:
@@ -1508,15 +1517,30 @@ def _ends_by(place: Optional[tuple], left: tuple) -> bool:
     return (place[1], place[3]) <= (left[1], left[2])
 
 
-def note_edit(user_key: str, project_id: str, by: dict, node_id: str, label: str) -> dict:
+def note_edit(user_key: str, project_id: str, by: dict, node_id: str, label: str, *,
+              code: Optional[str] = None) -> dict:
     """An edit made in the node *node_id*'s body (a Map Editor's), named
     *label*: the point the person's typing in the node would have been, under
-    the edit's name, so one action is one entry."""
+    the edit's name, so one action is one entry.
+
+    An edit's note comes once the server holds every change the person's tab
+    sent, so their next edits may have reached the doc first. With *code*,
+    the code the edit made, it takes its place where the node's code last
+    left that code (:func:`_where_left`), as a run's does: the typing under
+    way that went on past that place is split there, what came before is the
+    edit's point, and the rest stays under way for the next edits' notes."""
     with _held(user_key, project_id) as entry:
-        if _code_in(entry.doc, node_id) is None:
+        held = _code_in(entry.doc, node_id)
+        if held is None:
             raise HistoryError(f"The dataflow has no node {node_id!r}.", 404)
         state = _state(entry)
         key = (node_id, _account(by))
+        typing = state.typing.get(key)
+        if code is not None and code != held and typing is not None:
+            left = _where_left(entry, state, key, node_id, code)
+            if left is not None and (typing.doc, typing.day) == left[:2] and typing.start < left[2] < typing.end:
+                typing.by = by
+                return _split_typing(entry, state, key, left[2], code, kind=EDIT, label=label or "Edit")
         if key not in state.typing:
             doc_id, day, end = dataflow_docs.log_end(entry)
             state.typing[key] = _Typing(node_id, by, None, doc_id, day, end,

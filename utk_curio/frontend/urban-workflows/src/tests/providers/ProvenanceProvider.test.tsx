@@ -234,7 +234,7 @@ describe('on a canvas whose history the server keeps', () => {
         expect(result.current.provenanceGraphNodes).toEqual({});
     });
 
-    it("sends an edit made in a node's body under its label, and an agent's change not at all", async () => {
+    it("sends an edit made in a node's body under its label with the code it made, and an agent's change not at all", async () => {
         const { result } = renderHook(() => useProvenanceContext(), { wrapper });
         act(() => setServerHistory(server()));
         act(() => {
@@ -242,7 +242,7 @@ describe('on a canvas whose history the server keeps', () => {
             result.current.agentEditProv('py-1', 'x = 2', 'Node Builder', 'x = 1');
         });
         await waitFor(() => expect(noteEdit).toHaveBeenCalledTimes(1));
-        expect(noteEdit).toHaveBeenCalledWith('proj', 'edit-1', 'Remove building_id 12');
+        expect(noteEdit).toHaveBeenCalledWith('proj', 'edit-1', 'Remove building_id 12', 'code 1');
         expect(noteRun).not.toHaveBeenCalled();
         expect(result.current.provenanceGraphNodes).toEqual({});
     });

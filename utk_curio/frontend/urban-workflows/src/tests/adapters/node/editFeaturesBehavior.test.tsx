@@ -380,12 +380,12 @@ describe("on a dataflow whose history the server keeps", () => {
     act(() => setServerHistory(null));
   });
 
-  test("a change is sent to the server, named by what it changed, after the node's code reached the doc; nothing is filed here", async () => {
+  test("a change is sent to the server, named by what it changed, with the code it made, after the node's code reached the doc; nothing is filed here", async () => {
     const { entries: filed } = mountLive(LOG, LINKED);
     await screen.findByTestId("interaction-connected");
     fireEvent.click(screen.getByLabelText("Use edit 1"));
     await waitFor(() => expect(noteEdit).toHaveBeenCalledWith(
-      "proj", NODE, "Switch off: Remove building_id 119 in table_osm_buildings",
+      "proj", NODE, "Switch off: Remove building_id 119 in table_osm_buildings", editFeaturesCode(OFF, 2),
     ));
     expect(whenKept.mock.invocationCallOrder[0]).toBeLessThan(noteEdit.mock.invocationCallOrder[0]);
     expect(filed()).toHaveLength(0);

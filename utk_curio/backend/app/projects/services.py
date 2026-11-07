@@ -2798,13 +2798,15 @@ def record_run(user, project_id: str, node_id: str, body: dict) -> dict:
     ))
 
 
-def record_edit(user, project_id: str, node_id: str, label) -> dict:
-    """An edit *user* made in the node's body (a Map Editor's), named *label*."""
+def record_edit(user, project_id: str, node_id: str, body: dict) -> dict:
+    """An edit *user* made in the node's body (a Map Editor's), named by its
+    ``label``, which made the ``code`` it names."""
     from utk_curio.backend.app.collaboration import history
 
     own, ukey = _history_to_change(user, project_id)
+    code = body.get("code") if isinstance(body.get("code"), str) else None
     return _history_errors(lambda: history.note_edit(
-        ukey, own, _history_person(user), node_id, str(label or "").strip() or "Edit",
+        ukey, own, _history_person(user), node_id, str(body.get("label") or "").strip() or "Edit", code=code,
     ))
 
 
