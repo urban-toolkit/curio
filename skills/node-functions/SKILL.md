@@ -50,13 +50,13 @@ Reads a collection's index, one row per file: where this node can open the file 
 
 Engines: python.
 
-Gives where to write a file derived from one file of a collection, such as a video's frame, a video made from a video (an overlay), a recording's clip or a photo's overlay, as the row of a collection's file of its kind, which Simple View shows, and plays when it is a video or a clip: its `file_id`, `dataset_id`, `kind`, `path`, whose folder exists, `thumbnail`, `image_url` and `audio_url`; the node writes the file at `path` itself, a video with PyAV.
+Gives where to write a file derived from one file of a collection, as its row, with a collection row's columns for its kind and a `path` whose folder exists; the node writes the file.
 
 - `dataset_id`: the collection's id, as a row of `curio_load_collection` holds it.
 - `file_id`: the file's id, as that row holds it.
-- `t_ms`: the time in the file the derived file is taken at, or a video made from it starts at, in milliseconds from 0; 0 for a photo or a table.
-- `ext`: what is derived, by its extension: from a video, `jpg` for a frame (when it is None), `mp4` for a video, which browsers play when it is H.264 in `yuv420p`, `png` for the overlay of its frame at `t_ms`, and `parquet` for a table of what the node found in it, whose row links nothing and which later nodes read by its `path`; from a recording, `wav` for a clip; from an image or a frame, `png` for an overlay; any other is refused.
-- `kind`: the kind of the file it is derived from, as its row's `kind` holds it: `"video"`, `"audio"`, `"image"` or `"frame"`.
+- `t_ms`: the time in the file it is taken at, in milliseconds; 0 for a photo.
+- `ext`: `jpg` for a video's frame (None), `mp4` for a video of it (H.264, `yuv420p`), `parquet` for a table of it, whose row links no media, `png` for an overlay, `wav` for a clip; any but a kind's first adds `.<ext>` to `file_id`.
+- `kind`: the kind of the file it comes from: `"video"`, `"audio"`, `"image"` or `"frame"`.
 - `tag`: 1 to 32 lowercase letters and digits that tell two derived files of one file and time apart, such as the model that drew an overlay.
 
 ### curio_output_file(name)
