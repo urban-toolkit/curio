@@ -202,7 +202,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
     const nodeEditProv = (nodeId: string, code: string, label: string, before?: string) => {
         const server = serverHistory();
         if (server) {
-            if (server.reads()) send(server, "An edit", () => historyApi.noteEdit(server.projectId, nodeId, label));
+            if (server.reads()) send(server, "An edit", () => historyApi.noteEdit(server.projectId, nodeId, label, code));
             return;
         }
         const at = formatDate(new Date());

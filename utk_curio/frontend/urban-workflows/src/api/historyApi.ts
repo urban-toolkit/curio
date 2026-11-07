@@ -101,9 +101,11 @@ export const historyApi = {
     return apiFetch(`${node(projectId, nodeId)}/runs`, post(run));
   },
 
-  /** An edit made in the node's body (a Map Editor's), named *label*. */
-  noteEdit(projectId: string, nodeId: string, label: string): Promise<unknown> {
-    return apiFetch(`${node(projectId, nodeId)}/edits`, post({ label }));
+  /** An edit made in the node's body (a Map Editor's), named *label*, which
+   *  made *code*: the note may come after the next edits reached the server,
+   *  which places it by that code. */
+  noteEdit(projectId: string, nodeId: string, label: string, code: string): Promise<unknown> {
+    return apiFetch(`${node(projectId, nodeId)}/edits`, post({ label, code }));
   },
 
   /** Put *code* in the node, only if it still holds *from*. */

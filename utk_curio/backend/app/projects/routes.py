@@ -551,9 +551,9 @@ def post_node_run(project_id: str, node_id: str):
 @projects_bp.route("/<project_id>/history/nodes/<node_id>/edits", methods=["POST"])
 @require_auth
 def post_node_edit(project_id: str, node_id: str):
-    """An edit made in the node's body: ``{label}``."""
+    """An edit made in the node's body: ``{label, code}``, *code* the code it made."""
     body = request.get_json(silent=True) or {}
-    return _history_answer(lambda: services.record_edit(g.user, project_id, node_id, body.get("label")), 201)
+    return _history_answer(lambda: services.record_edit(g.user, project_id, node_id, body), 201)
 
 
 @projects_bp.route("/<project_id>/history/nodes/<node_id>/code", methods=["POST"])
