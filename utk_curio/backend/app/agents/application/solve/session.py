@@ -8,6 +8,7 @@ and import order between siblings cannot matter.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
@@ -56,7 +57,7 @@ def _reconcile_solve_session(user_key: str, project_id: str, spec: dict, record:
     dataflow_docs.write(user_key, project_id, spec, dataflow_docs.by_curio(user_key, "solve"))
     session_id = record.get("sessionId")
     if isinstance(session_id, str):
-        try:
+        with contextlib.suppress(Exception):
             pending = sum(
                 1 for status in (session.get("nodeRuns") or {}).values()
                 if status in ("pending", "failed")
@@ -77,8 +78,6 @@ def _reconcile_solve_session(user_key: str, project_id: str, spec: dict, record:
                     }],
                 )],
             )
-        except Exception:
-            pass
     return True
 
 

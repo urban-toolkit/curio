@@ -18,6 +18,7 @@ executions holds exactly as much as one serving a hundred. That is what makes
 from __future__ import annotations
 
 import collections
+import contextlib
 import threading
 import time
 
@@ -59,7 +60,7 @@ def record_execution(*, language: str, node_type=None, ok: bool,
     made this distinction worth writing down.
     """
     global _total, _ok, _error, _python, _javascript, _last_at
-    try:
+    with contextlib.suppress(Exception):
         with _LOCK:
             _total += 1
             if ok:
@@ -75,29 +76,23 @@ def record_execution(*, language: str, node_type=None, ok: bool,
             if duration_ms is not None:
                 _durations.append(float(duration_ms))
             _last_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    except Exception:
-        pass
 
 
 class _InFlight:
     def __enter__(self):
         global _in_flight
-        try:
+        with contextlib.suppress(Exception):
             with _LOCK:
                 _in_flight += 1
-        except Exception:
-            pass
         return self
 
     def __exit__(self, exc_type, exc, tb):
         global _in_flight
-        try:
+        with contextlib.suppress(Exception):
             with _LOCK:
                 # Clamped: a negative gauge would send someone hunting a bug in
                 # the wrong process.
                 _in_flight = max(0, _in_flight - 1)
-        except Exception:
-            pass
         return False
 
 

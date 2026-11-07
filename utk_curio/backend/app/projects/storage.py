@@ -22,7 +22,7 @@ import logging
 import os
 import shutil
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -146,10 +146,8 @@ def _write_json_atomically(path: Path, payload: dict) -> None:
         # A crash between write and replace would otherwise leave the temp
         # behind; replace() has already consumed it on the happy path.
         if tmp.exists():
-            try:
+            with suppress(OSError):
                 tmp.unlink()
-            except OSError:
-                pass
 
 
 SPEC_FILE = "spec.trill.json"
@@ -535,10 +533,8 @@ def _write_section(folder: Path, key: str, value) -> None:
 
 
 def _drop_section(folder: Path, key: str) -> None:
-    try:
+    with suppress(FileNotFoundError):
         _log_path(folder, key).unlink()
-    except FileNotFoundError:
-        pass
 
 
 def _append(path: Path, committed: int, records: list) -> None:
@@ -574,10 +570,8 @@ def _rewrite(path: Path, records: list) -> None:
         os.replace(tmp, path)
     finally:
         if tmp.exists():
-            try:
+            with suppress(OSError):
                 tmp.unlink()
-            except OSError:
-                pass
     _flush_folder(path.parent)
     if made:
         _flush_folder(path.parent.parent)
@@ -594,7 +588,7 @@ def _flush_folder(folder: Path) -> None:
     try:
         os.fsync(descriptor)
     except OSError:
-        pass
+        pass  # a folder that cannot be flushed: the swap stands, as where it cannot be opened
     finally:
         os.close(descriptor)
 

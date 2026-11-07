@@ -23,6 +23,7 @@ row again.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -117,10 +118,8 @@ class History:
                 json.dump(doc, handle, separators=(",", ":"))
             os.replace(temporary, path)
         except BaseException:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(temporary)
-            except OSError:
-                pass
             raise
 
 

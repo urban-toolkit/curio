@@ -33,6 +33,7 @@ a flooder can do is drown out other browser reports.
 from __future__ import annotations
 
 import collections
+import contextlib
 import threading
 import time
 
@@ -68,7 +69,7 @@ def record(source: str, *, summary: str, detail: str = "",
     execution must never fail over its bookkeeping.
     """
     global _seq
-    try:
+    with contextlib.suppress(Exception):
         target = _client if source == "client" else _server
         summary_text = str(summary or "").strip()[:SUMMARY_CHARS] or "Error"
         detail_text = str(detail or "")[:DETAIL_CHARS]
@@ -95,18 +96,14 @@ def record(source: str, *, summary: str, detail: str = "",
                 "context": dict(context or {}),
                 "count": 1,
             })
-    except Exception:
-        pass
 
 
 def record_dropped_client() -> None:
     """Count one browser report refused by the rate limiter or a size cap."""
     global _dropped_client
-    try:
+    with contextlib.suppress(Exception):
         with _LOCK:
             _dropped_client += 1
-    except Exception:
-        pass
 
 
 def summarise_traceback(text: str) -> str:

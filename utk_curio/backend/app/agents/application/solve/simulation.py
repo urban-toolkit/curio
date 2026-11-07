@@ -8,6 +8,7 @@ and import order between siblings cannot matter.
 
 from __future__ import annotations
 
+import contextlib
 import threading
 import time as _time
 import uuid
@@ -310,7 +311,7 @@ class SimulationDriver:
 
     def _clear_in_flight(self) -> None:
         _SIMULATE_CANCEL_EVENTS.pop(self.simulate_execution_id, None)
-        try:
+        with contextlib.suppress(Exception):
             spec, record, session, _ = self._fresh()
             session.pop("simulatingSince", None)
             session.pop("simulateExecutionId", None)
@@ -318,8 +319,6 @@ class SimulationDriver:
             session.pop("currentRef", None)
             record["builderSession"] = session
             self._write(spec)
-        except Exception:
-            pass
 
     # ── the actions ──────────────────────────────────────────────────────────
     def _validate(self, ref):

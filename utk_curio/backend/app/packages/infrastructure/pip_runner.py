@@ -28,6 +28,7 @@ Design choices:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -1025,10 +1026,8 @@ def _remove_one_distribution(dist_info: Path, root: Path, is_within) -> bool:
                 continue
             if not is_within(resolved, root):
                 continue           # a "../../" row never escapes the tree
-            try:
+            with contextlib.suppress(OSError, IsADirectoryError):
                 resolved.unlink()
-            except (OSError, IsADirectoryError):
-                pass
     shutil.rmtree(dist_info, ignore_errors=True)
     return read_record
 

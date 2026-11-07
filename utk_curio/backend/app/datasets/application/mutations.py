@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import shutil
 from copy import deepcopy
@@ -806,10 +807,8 @@ class CatalogMutations:
             return None
         folders = []
         if self.user is not None:
-            try:
+            with contextlib.suppress(OSError, ValueError):
                 folders.append(dataset_dir(self._paths._user_key(), dir_name))
-            except (OSError, ValueError):
-                pass
         folders.append(catalog_root() / dir_name)
         for folder in folders:
             try:

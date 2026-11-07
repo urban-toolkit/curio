@@ -5,6 +5,7 @@ Memo dev/143, B2.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import logging
@@ -89,10 +90,8 @@ def publish_package_archive_to_catalog_dir(
         stream: IO[bytes] = io.BytesIO(archive)
     else:
         stream = archive
-        try:
+        with contextlib.suppress(AttributeError, OSError):
             stream.seek(0)
-        except (AttributeError, OSError):
-            pass
 
     staging_root = Path(tempfile.mkdtemp(prefix="curio-publish-"))
     staging_alive: Path | None = staging_root

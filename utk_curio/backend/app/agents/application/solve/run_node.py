@@ -8,6 +8,7 @@ and import order between siblings cannot matter.
 
 from __future__ import annotations
 
+import contextlib
 import queue as _queue
 import threading
 import time as _time
@@ -229,7 +230,7 @@ def _run_node_events(
         }
     finally:
         # Disconnect-safe: the in-flight guard never wedges the attachment.
-        try:
+        with contextlib.suppress(Exception):
             cleanup_spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
             cleanup_record = agents_spec_reads._record_or_404(cleanup_spec, attachment_id)
             cleanup_session = cleanup_record.get("builderSession") or {}
@@ -239,5 +240,3 @@ def _run_node_events(
                     user_key, project_id, cleanup_spec,
                     agents_spec_reads._agent_actor(user_key, cleanup_spec, attachment_id, "run"),
                 )
-        except Exception:
-            pass

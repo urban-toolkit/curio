@@ -8,6 +8,7 @@ and import order between siblings cannot matter.
 
 from __future__ import annotations
 
+import contextlib
 import time
 import uuid
 
@@ -579,7 +580,7 @@ def _not_fixed(label: str, outcome: dict, done: dict) -> str:
 def _append_solve_turn(user_key, project_id, attachment_id, session_id, coord, config, execution_id,
                        started, text, card_kind, card, parts, outcome, verdict) -> None:
     """The agent turn that carries the verdict, the card and the parts, with the execution record."""
-    try:
+    with contextlib.suppress(Exception):
         sessions.append_turns(
             user_key, project_id, session_id, attachment_id,
             [sessions.make_turn(
@@ -594,5 +595,3 @@ def _append_solve_turn(user_key, project_id, attachment_id, session_id, coord, c
                 ),
             )],
         )
-    except Exception:
-        pass

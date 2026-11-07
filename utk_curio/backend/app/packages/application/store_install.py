@@ -235,10 +235,8 @@ def install_package_from_archive(
         stream: IO[bytes] = io.BytesIO(archive)
     else:
         stream = archive
-        try:
+        with contextlib.suppress(AttributeError, OSError):
             stream.seek(0)
-        except (AttributeError, OSError):
-            pass
 
     try:
         zf = zipfile.ZipFile(stream, mode="r")

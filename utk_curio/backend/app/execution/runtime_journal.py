@@ -34,6 +34,7 @@ artifact path, and nothing downstream treats it as one.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import re
@@ -386,7 +387,7 @@ def failure_matches(failure: dict | None, content: object) -> bool:
 def status_map(user_key: str, project_id: str) -> dict[str, dict]:
     """``{nodeId: {status, updatedAt}}`` for the dataflow.read projection."""
     out: dict[str, dict] = {}
-    try:
+    with contextlib.suppress(Exception):
         directory = projects_storage.project_dir(user_key, project_id) / "runtime"
         if not directory.is_dir():
             return out
@@ -409,6 +410,4 @@ def status_map(user_key: str, project_id: str) -> dict[str, dict]:
                         ORIGIN_VALIDATION if data.get("validation") else ORIGIN_SANDBOX
                     ),
                 }
-    except Exception:
-        pass
     return out

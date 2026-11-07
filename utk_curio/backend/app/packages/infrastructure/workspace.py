@@ -35,6 +35,7 @@ portably on macOS, so the boundary is per-phase policy, stated honestly.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import shutil
@@ -531,21 +532,17 @@ def _kill_group(proc: subprocess.Popen, win_job: object | None = None) -> None:
     is the equivalent: every process in the job dies, including ones started
     after the job was assigned.
     """
-    try:
+    with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
         if _IS_POSIX:
             os.killpg(proc.pid, signal.SIGKILL)
             return
         if win_job is not None:
-            try:
+            with contextlib.suppress(Exception):
                 import ctypes
                 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
                 if kernel32.TerminateJobObject(win_job, 1):
                     return
-            except Exception:
-                pass
         proc.kill()
-    except (ProcessLookupError, PermissionError, OSError):
-        pass
 
 
 def run_worker(
@@ -620,11 +617,9 @@ def run_worker(
     if win_job is not None:
         # KILL_ON_JOB_CLOSE means this also reaps anything still running, so a
         # build can never leak a process past its own result.
-        try:
+        with contextlib.suppress(Exception):
             import ctypes
             ctypes.WinDLL("kernel32", use_last_error=True).CloseHandle(win_job)
-        except Exception:
-            pass
 
     return WorkerResult(
         status=status,
@@ -682,11 +677,9 @@ def destroy_workspace(workspace: BuildWorkspace) -> None:
     _chmod_tree(workspace.root, file_mode=0o644, dir_mode=0o755)
 
     def _onerror(_func, path, _exc):
-        try:
+        with contextlib.suppress(OSError):
             os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
             os.unlink(path)
-        except OSError:
-            pass
 
     shutil.rmtree(workspace.root, onerror=_onerror)
 

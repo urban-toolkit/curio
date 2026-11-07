@@ -8,6 +8,7 @@ and import order between siblings cannot matter.
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 
 from utk_curio.backend.app.agents.application import source_grounding
@@ -320,10 +321,8 @@ def _new_template_code(request, template: dict) -> list[tuple[str, str, str]]:
     pieces: list[tuple[str, str, str]] = []
     source = request.files.get(parsed.source or "")
     if source is not None:
-        try:
+        with contextlib.suppress(UnicodeDecodeError):
             pieces.append((agent_text.message("mint.new-template-where-source", source=parsed.source), source.decode("utf-8"), parsed.engine))
-        except UnicodeDecodeError:
-            pass
     for index, node in enumerate(request.nodes):
         if node.template_id == parsed.template_id and node.content:
             pieces.append((f"nodes[{index}].content", node.content, parsed.engine))
