@@ -228,9 +228,9 @@ repository in the Discovery Catalog. The manifest format is in
   cached under `.curio/users/<key>/media-cache/`, and a storage row's sample
   thumbnails under `.curio/discovery-cache/`. Deleting a collection removes
   its caches, never the source's files. With isolation on, the cached files
-  and the frames, clips and mosaics nodes derive are in the account's work
-  directory, which other accounts' node code can read: the execution account
-  is shared (see the [security checklist](#security-checklist)).
+  and the frames, videos, clips, tables and mosaics nodes derive are in the
+  account's work directory, which other accounts' node code can read: the
+  execution account is shared (see the [security checklist](#security-checklist)).
 - **Libraries.** Probing and thumbnails use `av` (PyAV) and `rasterio`, which
   are dependencies of `curio.builtin@1`. Curio installs them when it starts,
   and so does `python curio.py setup`.
