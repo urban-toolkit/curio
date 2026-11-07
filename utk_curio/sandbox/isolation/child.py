@@ -53,6 +53,7 @@ import os
 import sys
 
 from utk_curio.common.redaction import redact
+from utk_curio.sandbox.isolation import seccomp_filter
 from utk_curio.sandbox.util import input_names
 from utk_curio.sandbox.util.secrets import make_curio_secret, shape_secrets
 from utk_curio.sandbox.util.user_code import compile_user_code
@@ -91,14 +92,10 @@ class ChildSetupError(RuntimeError):
 
 def _set_no_new_privs():
     """prctl(PR_SET_NO_NEW_PRIVS, 1). Required before installing seccomp."""
-    import ctypes
-
-    PR_SET_NO_NEW_PRIVS = 38
-    libc = ctypes.CDLL("libc.so.6", use_errno=True)
-    if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
-        raise ChildSetupError(
-            f"prctl(PR_SET_NO_NEW_PRIVS) failed: {os.strerror(ctypes.get_errno())}"
-        )
+    try:
+        seccomp_filter.set_no_new_privs()
+    except OSError as exc:
+        raise ChildSetupError(str(exc)) from exc
 
 
 def _install_seccomp_filter(*, required):
@@ -155,22 +152,16 @@ def _install_seccomp_filter(*, required):
         "init_module", "finit_module", "delete_module",
         # Raw kernel surfaces with a poor security history.
         "bpf", "perf_event_open", "userfaultfd", "kexec_load",
-        # Leaving the child's process group. glibc's setpgrp is setpgid(0, 0).
-        "setsid", "setpgid",
+        # Leaving the child's process group: setsid and setpgid, which a
+        # JavaScript run's Node is denied too (seccomp_filter.py).
+        *seccomp_filter.LEAVING_THE_GROUP,
     )
 
-    # EPERM rather than killing the process, so the failure surfaces as a
-    # normal Python OSError with a traceback pointing at the user's line.
-    # A killed child would just look like a mysterious crash.
+    # Each denied with EPERM, so the failure surfaces as a normal Python
+    # OSError at the user's line (seccomp_filter.denying).
     import socket
 
-    filter_ = seccomp.SyscallFilter(defaction=seccomp.ALLOW)
-    for name in DENIED:
-        try:
-            filter_.add_rule(seccomp.ERRNO(1), name)  # 1 == EPERM
-        except (ValueError, OSError):
-            # Syscall unknown on this architecture; nothing to block.
-            continue
+    filter_ = seccomp_filter.denying(seccomp, DENIED)
     # A socket of any family but AF_UNIX, the first argument of socket().
     filter_.add_rule(seccomp.ERRNO(1), "socket", seccomp.Arg(0, seccomp.NE, socket.AF_UNIX))
     filter_.load()

@@ -22,6 +22,7 @@ connection guard in util/db.py, not by a lock of its own.
 import collections
 import contextlib
 import os
+import sys
 import threading
 import time
 
@@ -855,9 +856,14 @@ JS_OUTPUT_GRACE_SECONDS = 5
 #: Windows has neither: a kill reaches Node alone, and a read just waits.
 _IS_POSIX = os.name == 'posix'
 
+#: Linux: no process Node starts can leave Node's process group, which a
+#: seccomp filter denies it (:func:`_node_command`).
+_IS_LINUX = sys.platform.startswith('linux')
+
 #: The variable that marks a run's processes: Node's environment holds it,
-#: with a value of the run's own, and every process Node starts inherits it,
-#: also one that leaves Node's process group.
+#: with a value of the run's own, and every process Node starts inherits it
+#: unless it is given an environment of its own. Off Linux it finds one that
+#: left Node's process group.
 _RUN_MARK = 'CURIO_JS_RUN'
 
 #: How often a reader waiting on a quiet pipe looks whether to stop.
@@ -981,9 +987,11 @@ def _kill_node(proc, mark, since):
     how many processes carrying the run's *mark* were killed.
 
     On POSIX: every process started since *since* whose environment carries
-    *mark* (every process Node starts inherits it, in Node's process group or
-    out of it: ``detached: true`` calls setsid), then the group, for one that
-    stayed in it without the mark. On Windows, Node alone.
+    *mark* (every process Node starts inherits it unless given an environment
+    of its own; off Linux, one that left Node's process group still carries
+    it: ``detached: true`` calls setsid), then the group, which on Linux holds
+    every process Node started, marked or not (:func:`_node_command`). On
+    Windows, Node alone.
     """
     import signal
 
@@ -1006,6 +1014,41 @@ def _joined(threads, seconds):
     for thread in threads:
         thread.join(max(0.0, deadline - time.monotonic()))
     return not any(thread.is_alive() for thread in threads)
+
+
+def _node_command(env):
+    """The command that starts Node for one run, *env* its environment.
+
+    On Linux, Node starts through the exec wrapper of
+    ``isolation/seccomp_filter.py``, the isolated child's filter code: Popen's
+    ``start_new_session`` makes the wrapper a session and process group
+    leader, and the wrapper denies setsid and setpgid with EPERM to itself and
+    to every process it starts, then execs Node, which keeps its pid. So no
+    process Node starts can leave Node's process group, which the run kills
+    when Node exits (:func:`_end_node_run`), whatever its environment. libuv's
+    ``detached: true`` ignores the EPERM its setsid gets, so a detached child
+    still starts, in that group. ``tests/test_js_run_kills_at_return.py``
+    guards it; never weaken, skip or remove its tests.
+
+    Under ``CURIO_ISOLATION=fork`` a run whose filter cannot be installed
+    does not start Node and fails, saying why, as an isolated child that
+    cannot confine itself does; otherwise Node then runs without it. Node is
+    found on *env*'s PATH, as Popen finds it, so a missing Node raises
+    FileNotFoundError here, as Popen does. Off Linux, Node starts as it is.
+    """
+    import errno
+    import shutil
+
+    if not _IS_LINUX:
+        return ['node', '--input-type=commonjs']
+    node = shutil.which('node', path=os.pathsep.join(os.get_exec_path(env)))
+    if node is None:
+        raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), 'node')
+    from utk_curio.sandbox.isolation import mode, seccomp_filter
+
+    requested = mode.mode_from_environment()[0].strip().lower()
+    return seccomp_filter.exec_command(
+        [node, '--input-type=commonjs'], required=requested == mode.FORK)
 
 
 def _end_node_run(proc, threads, stop, node_type, mark, since):
@@ -1176,17 +1219,19 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
         t_start = time.perf_counter()
 
         # A session of its own (POSIX), so a kill of its group reaches every
-        # process Node starts, not Node alone; and the run's mark, which finds
-        # those that leave the group. psutil reads a process's start to the
-        # second at worst (Linux counts from the boot second), hence the 2 s.
+        # process Node starts, not Node alone, and on Linux none can leave it
+        # (_node_command); and the run's mark, which finds, off Linux, those
+        # that leave the group. psutil reads a process's start to the second
+        # at worst (Linux counts from the boot second), hence the 2 s.
         mark = secrets.token_hex(16)
         since = time.time() - 2
+        env = {**node_env_vars, _RUN_MARK: mark}
         proc = subprocess.Popen(
-            ['node', '--input-type=commonjs'],
+            _node_command(env),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding='utf-8', errors='replace', cwd=cwd,
-            env={**node_env_vars, _RUN_MARK: mark}, start_new_session=_IS_POSIX,
+            env=env, start_new_session=_IS_POSIX,
         )
 
         stdout_lines: list[str] = []
