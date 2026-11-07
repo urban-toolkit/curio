@@ -44,6 +44,7 @@ from utk_curio.backend.tests.test_projects.test_guest_copy_leaks import (
     _digests,
     _open,
 )
+from utk_curio.backend.tests.test_projects.test_guest_store_leaks import _listing
 from utk_curio.backend.tests.test_runs.test_dashboard_viewer_runs import FakeSandbox, _wait
 
 CODE = "curio.builtin/python-computation"
@@ -410,6 +411,11 @@ def test_another_guests_start_never_joins_a_hosted_guests_run(client, dashboard,
 def test_a_hosted_guests_own_upload_reaches_their_dashboards_runs_alone(client, dashboard, sandbox):
     example, _saved = dashboard
     uploaded = _import(client, VISITOR_A)
+    # Each visitor's Data Catalog lists the store once, as their canvases do,
+    # before anything is measured: a store's first listing marks it (as
+    # test_guest_store_leaks.py's tests measure).
+    for token in (VISITOR_A, VISITOR_B):
+        _listing(client, token, dataflowId=example)
     before = _example(example)
     reading = f'# node shade\nrows = curio_load_data("{uploaded}")\nreturn [!! period !!]'
     # B's copy names A's upload too, which B's runs must not read.
