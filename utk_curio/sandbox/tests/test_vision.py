@@ -109,6 +109,29 @@ def test_each_photo_gets_an_overlay_served_by_id(photos):
         assert url == f"/api/datasets/{SAMPLE}/media/{file_id}@0-{model}?variant=original"
 
 
+def test_a_frame_sampled_from_a_video_gets_its_overlay_beside_the_video(photos, tmp_path):
+    """Sample Video Frames names each frame by its video and time,
+    ``<videoId>@<t_ms>``, which is no file of the collection: the node
+    stopped with "not a collection file". The overlay is the video's, at the
+    frame's time; a frame that carries a tag of its own gets none."""
+    import hashlib
+
+    frame, helpers = photos
+    derive = helpers["curio_derived_file"]
+    video = "e" * 16
+    rows = []
+    for t_ms, tag in ((2000, None), (4000, "other")):
+        sampled = derive(SAMPLE, video, t_ms, tag=tag)
+        shutil.copyfile(frame["path"].iloc[0], sampled["path"])
+        rows.append({"dataset_id": SAMPLE, "file_id": sampled["file_id"], "kind": "frame", "path": sampled["path"]})
+    out = make_curio_segment(derive)(pd.DataFrame(rows), _loaded(DDRNET), STREET)
+    model = hashlib.sha1(DDRNET.name.encode("utf-8")).hexdigest()[:12]
+    assert out["overlay_url"].iloc[0] == f"/api/datasets/{SAMPLE}/media/{video}@2000-{model}.png?variant=original"
+    assert (tmp_path / "media" / "overlays" / SAMPLE / video / f"2000-{model}.png").is_file()
+    assert pd.isna(out["overlay_url"].iloc[1])
+    assert out["segment_error"].isna().all() and out["dominant_class"].isin(STREET).all()
+
+
 def test_the_results_lead_the_row(photos):
     """A card's caption is the row's first columns, so what the model found
     has to come before the collection's own file columns."""

@@ -135,6 +135,77 @@ class TestTheHelpers(unittest.TestCase):
         with self.assertRaises(ValueError):
             derive("../c1", "a" * 16, 1)
 
+    def test_a_video_made_from_a_video_has_a_folder_and_an_id_of_its_own(self):
+        """An overlay MP4 a node writes from a video, as Track Objects will:
+        its row is a video's, which Simple View plays from its ids, and its id
+        is not the frame's at the same time and tag."""
+        media = self.tmp / "media"
+        derive = self.helpers({}, str(media))["curio_derived_file"]
+        row = derive("c1", "b" * 16, 0, "mp4", tag="sam3")
+        self.assertEqual(Path(row["path"]), media / "videos" / "c1" / ("b" * 16) / "0-sam3.mp4")
+        self.assertTrue(Path(row["path"]).parent.is_dir())
+        # A collection's video's columns: its image is its thumbnail, a poster.
+        thumb = f"/api/datasets/c1/media/{'b' * 16}@0-sam3.mp4?variant=thumb"
+        self.assertEqual(
+            {k: row[k] for k in ("file_id", "dataset_id", "kind", "thumbnail", "image_url", "audio_url")},
+            {"file_id": f"{'b' * 16}@0-sam3.mp4", "dataset_id": "c1", "kind": "video",
+             "thumbnail": thumb, "image_url": thumb, "audio_url": None},
+        )
+        frame = derive("c1", "b" * 16, 0, tag="sam3")
+        self.assertEqual((frame["file_id"], frame["kind"]), (f"{'b' * 16}@0-sam3", "frame"))
+        self.assertEqual(Path(frame["path"]), media / "frames" / "c1" / ("b" * 16) / "0-sam3.jpg")
+
+    def test_a_table_found_in_a_video_has_a_path_and_no_media_url(self):
+        """What Track Objects keeps of a video's tracks: a Parquet that later
+        nodes read by its path, and that the media route serves nothing of."""
+        media = self.tmp / "media"
+        row = self.helpers({}, str(media))["curio_derived_file"]("c1", "b" * 16, 0, "parquet", tag="sam3")
+        self.assertEqual(Path(row["path"]), media / "tables" / "c1" / ("b" * 16) / "0-sam3.parquet")
+        self.assertTrue(Path(row["path"]).parent.is_dir())
+        self.assertEqual(
+            {k: row[k] for k in ("file_id", "dataset_id", "kind", "thumbnail", "image_url", "audio_url")},
+            {"file_id": f"{'b' * 16}@0-sam3.parquet", "dataset_id": "c1", "kind": "table",
+             "thumbnail": None, "image_url": None, "audio_url": None},
+        )
+
+    def test_every_derived_row_has_a_collection_rows_locator_columns(self):
+        """So a derived row put over its file's row (``{**video, **overlay}``)
+        leaves none of the file's own addresses behind."""
+        derive = self.helpers({}, str(self.tmp / "media"))["curio_derived_file"]
+        columns = {"file_id", "dataset_id", "kind", "path", "thumbnail", "image_url", "audio_url"}
+        for kind, ext in (("video", None), ("video", "mp4"), ("video", "png"), ("video", "parquet"),
+                          ("audio", None), ("image", None), ("frame", None)):
+            with self.subTest(kind=kind, ext=ext):
+                self.assertEqual(set(derive("c1", "b" * 16, 0, ext, kind=kind, tag="m1")), columns)
+
+    def test_an_overlay_of_a_sequences_frame_goes_where_a_photos_does(self):
+        """Image Segmentation names any image's overlay with kind image; a
+        frames collection's file is kind frame, which the media route reads."""
+        derive = self.helpers({}, str(self.tmp / "media"))["curio_derived_file"]
+        as_image = derive("c1", "d" * 16, 0, "png", kind="image", tag="m1")
+        as_frame = derive("c1", "d" * 16, 0, "png", kind="frame", tag="m1")
+        self.assertEqual((as_frame["path"], as_frame["file_id"]), (as_image["path"], as_image["file_id"]))
+
+    def test_what_the_media_route_would_never_find_is_refused_and_nothing_is_made(self):
+        """A file a kind does not derive (``DERIVED``), or at a time no id
+        holds, would be written and never served: its row's links would fail."""
+        media = self.tmp / "media"
+        derive = self.helpers({}, str(media))["curio_derived_file"]
+        refused = {
+            "a video made from a recording": lambda: derive("c1", "c" * 16, 0, "mp4", kind="audio"),
+            "a video made from a photo": lambda: derive("c1", "a" * 16, 0, "mp4", kind="image"),
+            "a format no kind derives": lambda: derive("c1", "b" * 16, 0, "txt"),
+            "a frame's format, upper case": lambda: derive("c1", "b" * 16, 0, "JPG"),
+            "a kind nothing is derived from": lambda: derive("c1", "b" * 16, 0, kind="raster"),
+            "a time before the file starts": lambda: derive("c1", "b" * 16, -1, "mp4", tag="sam3"),
+            "a time longer than an id holds": lambda: derive("c1", "b" * 16, 10**12, "mp4", tag="sam3"),
+            "a video's tag that is no tag": lambda: derive("c1", "b" * 16, 0, "mp4", tag="SAM3"),
+        }
+        for case, call in refused.items():
+            with self.subTest(case), self.assertRaises(ValueError):
+                call()
+        self.assertFalse(media.exists())
+
     def test_without_a_media_directory_there_is_nowhere_to_write(self):
         with self.assertRaisesRegex(RuntimeError, "curio_load_collection"):
             self.helpers({}, None)["curio_derived_file"]("c1", "a" * 16, 1)

@@ -485,13 +485,18 @@ class TestAddingACollection:
         )
         assert thumb.status_code == 200
         cache = media_dirs.media_cache_dir(user_key, dataset["id"])
-        derived = media_dirs.media_work_dir(user_key, "frames", dataset["id"])
-        (derived / "0.jpg").write_bytes(b"x")
+        # A frame, a video made from a video and a table found in one,
+        # each where curio_derived_file keeps it.
+        made = {"frames": "0.jpg", "videos": "0-sam3.mp4", "tables": "0-sam3.parquet"}
+        derived = {folder: media_dirs.media_work_dir(user_key, folder, dataset["id"]) for folder in made}
+        for folder, name in made.items():
+            (derived[folder] / name).write_bytes(b"x")
         assert any(cache.iterdir())
 
         removed = client.delete(f"/api/datasets/{dataset['id']}", headers=auth)
         assert removed.status_code == 200
-        assert not cache.exists() and not derived.exists()
+        assert not cache.exists()
+        assert [name for name, folder in derived.items() if folder.exists()] == []
         root = SHIPPED_ROOT.parent / "docs" / "examples" / "data" / "storage"
         assert all((root / relpath).is_file() for relpath in index["relpath"])
 
