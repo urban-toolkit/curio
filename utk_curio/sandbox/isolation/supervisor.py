@@ -19,7 +19,9 @@ not here. Two reasons:
   child, that pid cannot be recycled, so the signal is guaranteed to reach the
   intended process. This module used to ``killpg`` a pid it did not own, which
   races pid reuse; inside a container that could have signalled the backend or
-  the zygote itself. There is deliberately no kill path left in this file.
+  the zygote itself. Its one kill now is the process group of a run whose
+  zygote died mid-run, at once (``ZygoteClient.run`` says why no other process
+  can be hit).
 """
 
 import contextlib
@@ -151,7 +153,16 @@ class ZygoteClient:
         recycled and a kill is guaranteed to hit the right process; a kill from
         this process would race pid reuse and could signal something unrelated.
         The socket read below is therefore only a backstop for a zygote that has
-        stopped responding altogether, and it deliberately kills nothing.
+        stopped responding altogether, and its timeout kills nothing.
+
+        This process kills in one case only: the connection ends before the
+        status, so the zygote died mid-run. The kernel kills the child with the
+        zygote (``child._die_with_the_zygote``), but not what node code
+        started: that setting is cleared at each fork, so such a process would
+        run on for nobody. The child called ``setsid``, so its pid from the
+        handshake is its process group's id, and the whole group is killed at
+        once. While any member of the group lives, the kernel gives that id to
+        no new process, so the kill cannot reach another group.
         """
         connection = self._connect()
         try:
@@ -178,6 +189,7 @@ class ZygoteClient:
                 ) from exc
 
             if status is None:
+                _stop_a_dead_zygotes_run(handshake["pid"])
                 raise IsolatedExecutionError(
                     "the zygote closed the connection before reporting the child"
                 )
@@ -191,6 +203,33 @@ class ZygoteClient:
                 connection.close()
             except OSError:
                 pass
+
+
+def _stop_a_dead_zygotes_run(pid):
+    """SIGKILL the process group of child *pid*, whose zygote died mid-run.
+
+    Only ``killpg``, never a ``kill`` of the pid alone: the child is dead or
+    dying, and once reaped, its pid alone is free for any new process, while
+    the group's id is not as long as a member lives (``ZygoteClient.run``). A
+    group that is already gone, or a zygote that died before the child's
+    ``setsid``, leaves nothing to kill; such a child stops at its own check
+    before any node code runs. Never 0 or 1, which ``killpg`` reads as this
+    process's own group and as every process, nor this process's own group.
+    """
+    if isinstance(pid, bool) or pid <= 1 or pid == os.getpgrp():
+        return
+    try:
+        os.killpg(pid, SIGKILL)
+    except ProcessLookupError:
+        outcome = "nothing of its process group was left"
+    except OSError as exc:
+        outcome = f"its process group could not be stopped: {exc}"
+    else:
+        outcome = "its process group was stopped"
+    print(
+        f"[isolation] the execution zygote died while child {pid} ran; {outcome}",
+        file=sys.stderr, flush=True,
+    )
 
 
 def _read_json_line(connection, *, timeout):
