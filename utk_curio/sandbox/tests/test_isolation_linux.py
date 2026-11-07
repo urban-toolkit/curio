@@ -1482,6 +1482,145 @@ def test_the_zygote_is_replaced_if_it_dies(isolated):
     assert run_isolated(isolated, "    return 1\n")["stderr"] == ""
 
 
+def _ask_and_hang_up(socket_path, line):
+    """Send *line* to the zygote as a caller that has stopped waiting for it.
+
+    ``ZygoteClient.run`` waits ``connect_timeout`` (10 s) for the zygote's
+    first answer and hangs up when that runs out. This caller shuts its
+    reading half before it asks, so the answer finds no reader whatever the
+    timing: the zygote's send breaks as it does on a caller already gone.
+    Returns once nothing holds the zygote's end of the connection any more,
+    or after 10 s.
+    """
+    import select
+    import socket
+
+    caller = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        caller.connect(socket_path)
+        caller.shutdown(socket.SHUT_RD)
+        caller.sendall(line)
+        let_go = select.poll()
+        let_go.register(caller, select.POLLHUP)
+        let_go.poll(10_000)
+    finally:
+        caller.close()
+
+
+def _children_of(pid):
+    """The pids whose parent is *pid*, read from /proc (no procps in the image)."""
+    children = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/status") as handle:
+                parent = next(
+                    (line.split()[1] for line in handle if line.startswith("PPid:")), None
+                )
+        except OSError:
+            continue
+        if parent == str(pid):
+            children.append(int(entry))
+    return children
+
+
+def test_the_zygote_survives_a_caller_that_hangs_up_before_its_pid(isolated):
+    """The zygote exited when its pid went to a caller that had hung up.
+
+    The broken pipe left its accept loop, so every isolated run after it
+    failed with "could not reach the execution zygote" until the stack
+    restarted. The failed answer now closes that one connection, and the same
+    zygote serves the next run. The child it forked for that caller is
+    stopped: nothing will read its result.
+    """
+    from utk_curio.sandbox.isolation import lifecycle, protocol, supervisor
+    from utk_curio.sandbox.util.parsers import _shared_data_dir
+
+    zygote = lifecycle._process
+    # A child that sleeps for two minutes, with a deadline as long, so only
+    # the zygote stopping it ends it within the test.
+    request = protocol.build_exec_request(
+        code="    import time\n    time.sleep(120)\n    return 1\n",
+        node_type="curio.builtin/python-computation",
+        data_type="",
+        scratch_dir=supervisor.make_scratch_dir(
+            str(_shared_data_dir()), exec_uid=isolated.exec_uid
+        ),
+        input_spec=dict(protocol.INPUT_NONE),
+        limits=isolated.limits,
+        wall_timeout=120,
+    )
+    _ask_and_hang_up(isolated.socket_path, protocol.encode_request(request) + b"\n")
+
+    following = run_isolated(isolated, "    return 1\n")
+    assert following["stderr"] == "", following["stderr"]
+    assert zygote.poll() is None, f"the zygote exited with {zygote.returncode}"
+    assert lifecycle._process is zygote, "the zygote was replaced, not kept"
+
+    give_up = time.monotonic() + 10
+    while _children_of(zygote.pid) and time.monotonic() < give_up:
+        time.sleep(0.1)
+    assert not _children_of(zygote.pid), (
+        "the child forked for the caller that hung up is still running, for nobody"
+    )
+
+
+def test_the_zygote_survives_a_caller_that_hangs_up_before_its_error(isolated):
+    """The same for the error a malformed request is answered with, which
+    forks nothing: the zygote exited on that answer too."""
+    from utk_curio.sandbox.isolation import lifecycle
+
+    zygote = lifecycle._process
+    _ask_and_hang_up(isolated.socket_path, b"this is not a request\n")
+
+    following = run_isolated(isolated, "    return 1\n")
+    assert following["stderr"] == "", following["stderr"]
+    assert zygote.poll() is None, f"the zygote exited with {zygote.returncode}"
+    assert lifecycle._process is zygote, "the zygote was replaced, not kept"
+
+
+def test_a_run_after_the_zygote_died_starts_it_again(isolated, monkeypatch):
+    """Nothing started a zygote that had died again.
+
+    Only the sandbox's first isolated run starts it, and the runner that run
+    resolved is kept (``api._isolated_runner``). So after a death every Python
+    node failed with "could not reach the execution zygote" until the stack
+    restarted. A run that finds it gone now starts it again, as it was first
+    started. ``test_the_zygote_is_replaced_if_it_dies`` calls
+    ``ensure_running`` itself; this goes through ``/exec``, as the backend
+    does.
+    """
+    import json
+
+    from utk_curio.sandbox.app import api, app
+    from utk_curio.sandbox.isolation import lifecycle, runner
+
+    monkeypatch.setattr(api, "_isolation_state", (runner.execute_isolated, isolated))
+
+    def run():
+        resp = app.test_client().post("/exec", json={
+            "code": "    return 1\n", "file_path": "",
+            "nodeType": "curio.builtin/python-computation", "dataType": "",
+            "session_id": "session-zygote-restart", "save_dataset": False,
+        })
+        reply = json.loads(resp.get_data(as_text=True))
+        resp.close()
+        return reply
+
+    first = run()
+    assert first["stderr"] == "", first["stderr"]
+
+    dead = lifecycle._process
+    dead.kill()
+    dead.wait(timeout=10)
+
+    after = run()
+    assert after["stderr"] == "", after["stderr"]
+    assert after["output"]["path"], after
+    assert lifecycle.is_running() and lifecycle._process is not dead
+
+
 def test_concurrent_executions_do_not_collide(isolated):
     """Parallelism was an explicit design choice; artifacts must stay distinct."""
     from concurrent.futures import ThreadPoolExecutor
