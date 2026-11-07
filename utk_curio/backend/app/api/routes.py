@@ -103,6 +103,7 @@ def _relay_sandbox_reply(resp, *, label, file_name, t0, error_prefix=None):
 
 
 from utk_curio.backend.app.users.dependencies import require_auth, get_current_token
+from utk_curio.backend.app.projects.repositories import NotFoundError
 import os
 import time
 
@@ -532,8 +533,13 @@ def report_node_runtime():
         return jsonify({'error': 'authentication required'}), 401
     user_key = _user_dir_key(user)
     if visitor_copies.copies_for(user):
-        own = visitor_copies.for_request(user, dataflow_id, make=False)
-        if own == dataflow_id:
+        # A hosted guest's record is kept on its own copy, or its own new
+        # dataflow, never on a dataflow every guest opens.
+        try:
+            own = visitor_copies.for_request(user, dataflow_id, make=False)
+        except NotFoundError:
+            return '', 204
+        if not visitor_copies.is_own_copy(visitor_copies.current_sign_in(), own):
             return '', 204
         dataflow_id = own
     try:
@@ -575,7 +581,8 @@ def read_node_runtime():
     Read-only, the caller's own storage key, and an empty answer (never a 404)
     when the node has no record: "nothing recorded" is a normal state, and the
     node body must not render an error because of it. A hosted guest reads
-    their own copy's records, once they have a copy (``projects/visitor_copies.py``).
+    their own copy's records, once they have a copy (``projects/visitor_copies.py``),
+    and their own new dataflow's; another guest's are no record.
     """
     from utk_curio.backend.app.execution import runtime_journal
     from utk_curio.backend.app.projects import visitor_copies
@@ -589,7 +596,10 @@ def read_node_runtime():
     if user is None:
         return jsonify({'error': 'authentication required'}), 401
     user_key = _user_dir_key(user)
-    dataflow_id = visitor_copies.for_request(user, dataflow_id, make=False)
+    try:
+        dataflow_id = visitor_copies.for_request(user, dataflow_id, make=False)
+    except NotFoundError:
+        return jsonify({'nodeId': node_id, 'run': None, 'render': None}), 200
     return jsonify({
         'nodeId': node_id,
         'run': runtime_journal.read_record(user_key, dataflow_id, node_id),

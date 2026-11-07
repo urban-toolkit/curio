@@ -3,12 +3,11 @@ import { render, screen, waitFor, fireEvent, act } from "@testing-library/react"
 import "@testing-library/jest-dom";
 
 /**
- * Save as package node on a dataflow a hosted guest never saved
- * (`isHostedGuest`: a guest on a Curio started with --deploy). The package
- * goes into the dataflow's lockfile, which needs a saved dataflow, and such a
- * guest cannot save one: it is told to sign in before anything is made. On a
- * dataflow it has, the save goes on as before; the local shared guest and a
- * signed-in account keep today's behavior.
+ * Save as package node for a hosted guest (`isHostedGuest`: a guest on a Curio
+ * started with --deploy). The package would go into the store every guest
+ * shares, which the server refuses a guest, so the guest is told to sign in
+ * before anything is made, on any dataflow: no dataflow is made for it either.
+ * The local shared guest and a signed-in account keep today's behavior.
  *
  * The harness is nodeSaveAsProjectScope.test.tsx's.
  */
@@ -150,26 +149,20 @@ function signInToasts(): string[] {
 }
 
 describe("a hosted guest", () => {
-  test("is told to sign in when it saves a node as a package on a dataflow it never saved", async () => {
-    // Never saved: no id comes back, since a guest's save is skipped.
-    mockEnsureProjectId.mockResolvedValue(null);
+  test.each([
+    ["it never saved, whose save would make one", "created-project-id"],
+    ["it has", "p1"],
+  ])("is told to sign in when it saves a node as a package on a dataflow %s, and nothing is made", async (_where, id) => {
+    mockEnsureProjectId.mockResolvedValue(id);
 
     await saveAs(HOSTED_GUEST);
 
     await waitFor(() =>
       expect(mockShowToast).toHaveBeenCalledWith("Sign in to save nodes as packages.", "warning"),
     );
+    expect(mockEnsureProjectId).not.toHaveBeenCalled();
     expect(mockFactoryInstall).not.toHaveBeenCalled();
     expect(mockInstallToProject).not.toHaveBeenCalled();
-  });
-
-  test("saves a node as a package into a dataflow it has, as before", async () => {
-    mockEnsureProjectId.mockResolvedValue("p1");
-
-    await saveAs(HOSTED_GUEST);
-
-    await waitFor(() => expect(mockInstallToProject).toHaveBeenCalledWith("p1", "my.pkg@1"));
-    expect(signInToasts()).toEqual([]);
   });
 });
 

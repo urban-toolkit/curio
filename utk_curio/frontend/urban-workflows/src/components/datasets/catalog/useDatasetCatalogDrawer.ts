@@ -184,17 +184,9 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   const tabComputedCount =
     catalogItems.length > 0 ? computedCount : (catalog.facets.origin.computed ?? 0);
 
-  // The dataflow an action writes to, saved first if it never was. A hosted
-  // guest gets no id for a dataflow it never saved, since it cannot save one,
-  // so it is told to sign in rather than the action doing nothing.
-  const dataflowIdFor = useCallback(
-    async (action: string): Promise<string | null> => {
-      const id = await ensureProjectId();
-      if (!id && hostedGuest) showToast(hostedGuestSignInNote(action), "warning");
-      return id;
-    },
-    [ensureProjectId, hostedGuest, showToast],
-  );
+  // The dataflow an action writes to, made first if it never was saved: an
+  // account's, and a hosted guest's own, kept until the server starts again.
+  const dataflowIdFor = useCallback((): Promise<string | null> => ensureProjectId(), [ensureProjectId]);
 
   const performInstall = useCallback(
     async (dataset: DatasetCatalogItem) => {
@@ -207,7 +199,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         }
         return;
       }
-      const id = await dataflowIdFor("add datasets");
+      const id = await dataflowIdFor();
       if (!id) return;
       setBusyId(dataset.id);
       beginPendingInstall({
@@ -276,7 +268,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   const performUninstall = useCallback(
     async (dataset: DatasetCatalogItem) => {
       // An editor's tab saves no dataflow: it removes from the one it opened.
-      const id = askTheOwner ? dataflowId : await dataflowIdFor("remove datasets");
+      const id = askTheOwner ? dataflowId : await dataflowIdFor();
       if (!id) return;
       setBusyId(dataset.id);
       try {
@@ -412,7 +404,13 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
 
   const onPublish = useCallback(
     async (datasetId: string) => {
-      const id = await dataflowIdFor("publish datasets");
+      // A hosted guest publishes nothing to the Data Catalog every account
+      // reads: it is told to sign in before any dataflow is made for it.
+      if (hostedGuest) {
+        showToast(hostedGuestSignInNote("publish datasets"), "warning");
+        return;
+      }
+      const id = await dataflowIdFor();
       if (!id) return;
       setPublishingId(datasetId);
       try {
@@ -449,7 +447,7 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
         setPublishingId(null);
       }
     },
-    [dataflowIdFor, liveOutputs, setDataflowDatasets, showToast, openDetails],
+    [hostedGuest, dataflowIdFor, liveOutputs, setDataflowDatasets, showToast, openDetails],
   );
 
   const performUnpublish = useCallback(

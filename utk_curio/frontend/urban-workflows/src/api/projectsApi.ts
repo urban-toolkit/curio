@@ -59,6 +59,9 @@ export interface ProjectSummary {
   /** The dataflow's scenarios (#662), as `projects/scenarios.py` lists them.
    *  Absent on older responses. */
   scenarios?: Array<Pick<Scenario, "id" | "name" | "color" | "description" | "nodes">>;
+  /** A hosted guest's own new dataflow, kept until the server starts again,
+   *  which no account saves (`visitor_copies.new_dataflow`). */
+  kept_for_visit?: boolean;
 }
 
 /** A computed output the backend could not auto-install on a save (e.g. its

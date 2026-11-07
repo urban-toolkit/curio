@@ -43,17 +43,30 @@ syncs the copy's doc (``collaboration/dataflow_docs.py``). A room opens the
 doc of a copy not made yet from the dataflow as it is, in memory, and the
 guest's first change there makes the copy (:func:`make`), so a visitor who
 only looks makes none.
+
+A hosted guest's File > New is a dataflow of its own (:func:`new_dataflow`),
+made on the first action that needs one, as an account's is, and kept with
+everything done to it until the server starts again. Its id is made as a
+copy's is, from the sign-in and, in place of a dataflow's id, a new one
+(``new:<uuid>``), which its ``visitor.json`` holds: one rule tells a visitor's
+own copy or new dataflow from another visitor's (:func:`is_own_copy`). It has
+no row either, so each visitor's gallery lists the new dataflows it made from
+a list kept under a digest of its sign-in (:func:`new_dataflows`).
 """
 from __future__ import annotations
 
 import dataclasses
 import json
 import logging
+import os
 import re
+import shutil
 import threading
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from utk_curio.backend.app.collaboration import dataflow_docs
@@ -65,8 +78,19 @@ logger = logging.getLogger(__name__)
 #: Beside a copy's spec: the dataflow it copies.
 VISITOR_FILE = "visitor.json"
 
+#: What a hosted guest's own new dataflow's ``visitor.json`` names in place of
+#: a dataflow it copies: ``new:`` and a new id (:func:`new_dataflow`).
+NEW = "new:"
+
+#: Beside the guest account's dataflows: each visitor's list of the new
+#: dataflows it made (:func:`_index`).
+_INDEXES = "visitors"
+
 #: The namespace of the copies' ids.
 _NAMESPACE = uuid.UUID("5d3c2a4e-7f1b-4c8e-9a6d-2b0e8f4c1a37")
+
+#: One writer of the visitors' lists at a time.
+_index_lock = threading.Lock()
 
 #: The sign-in of the visitor a run on a thread of its own serves, which a
 #: request that started it handed it (:func:`serving`).
@@ -181,7 +205,10 @@ def _has_copy(own: str) -> bool:
 
 def _make(project_id: str, own: str) -> None:
     """Copy the dataflow *project_id*, as it is now and without its history,
-    as *own*, once."""
+    as *own*, once. A visitor's copy or new dataflow is never copied: it is
+    that visitor's alone, and a new dataflow copies none."""
+    if project_id.startswith(NEW) or is_copy(project_id):
+        return
     with storage.spec_write_lock(GUEST_KEY, own):
         if _has_copy(own):
             return
@@ -202,8 +229,10 @@ def for_request(user, project_id: str, *, make: bool = True, sign_in: Optional[s
     there is none. A read that finds no copy reads *project_id*: the guest's
     agents have not written it. *sign_in* names the visitor, the request's
     sign-in when it is not given. A *project_id* that is that visitor's own
-    copy already, as an agent's tool names it, is that copy itself, never a
-    copy of it."""
+    copy already, as an agent's tool names it, or its own new dataflow, is
+    that dataflow itself, never a copy of it. Another visitor's copy or new
+    dataflow is not found (``NotFoundError``): it is never read, written or
+    copied for this one."""
     if not copies_for(user):
         return project_id
     sign_in = sign_in or _sign_in()
@@ -211,6 +240,10 @@ def for_request(user, project_id: str, *, make: bool = True, sign_in: Optional[s
         return project_id
     if is_own_copy(sign_in, project_id):
         return project_id
+    if is_copy(project_id):
+        from utk_curio.backend.app.projects.repositories import NotFoundError
+
+        raise NotFoundError(f"Project {project_id} not found")
     own = copy_id(sign_in, project_id)
     if not _has_copy(own):
         if not make:
@@ -236,8 +269,9 @@ def canvas_spec(user, project_id: str) -> Optional[dict]:
 
 
 def spec_of(own: str) -> Optional[dict]:
-    """The copy *own* as it is now, as a canvas or a dashboard reads a
-    dataflow: without its history, with the packages its lockfile gives."""
+    """*own*, a visitor's copy or new dataflow, as it is now, as a canvas or
+    a dashboard reads a dataflow: without its history, with the packages its
+    lockfile gives. ``None`` when it has no spec."""
     from utk_curio.backend.app.projects.services import _with_effective_packages
 
     spec = dataflow_docs.read(GUEST_KEY, own)
@@ -273,6 +307,21 @@ def dashboard_copy(project_id: str) -> Optional[str]:
     return own if own != project_id else None
 
 
+def dashboard_new(project_id: str) -> Optional["Copy"]:
+    """The new dataflow *project_id* of the hosted guest who asks for its
+    dashboard, read as a row (:func:`own_new`): that dashboard shows and runs
+    it for them alone. ``None`` for anyone else, a visitor who sends no
+    sign-in among them, and for any other dataflow. A dashboard's routes need
+    no sign-in, so the request's is read here, when it sends one."""
+    from flask import has_request_context
+
+    from utk_curio.backend.app.users.dependencies import get_current_user
+
+    if not project_id or not has_request_context():
+        return None
+    return own_new(get_current_user(), project_id)
+
+
 def with_spec(detail, spec: dict):
     """The dataflow's *detail* as the copy's *spec* gives it: its spec, its
     scenarios and its name."""
@@ -286,13 +335,34 @@ def with_spec(detail, spec: dict):
 
 
 def is_copy(project_id: Optional[str]) -> bool:
-    """Whether *project_id* names a hosted guest's copy of a dataflow."""
+    """Whether *project_id* names a hosted guest's copy of a dataflow, or
+    a hosted guest's own new dataflow: anything with a ``visitor.json``."""
     if not project_id:
         return False
     try:
         return (storage.project_dir(GUEST_KEY, project_id) / VISITOR_FILE).is_file()
     except (OSError, ValueError):
         return False
+
+
+def _copied(own: Optional[str]) -> Optional[str]:
+    """What the ``visitor.json`` of *own* names: the dataflow it copies, or
+    ``new:<uuid>`` for a visitor's new dataflow. ``None`` with no such file."""
+    if not own:
+        return None
+    try:
+        copied = json.loads((storage.project_dir(GUEST_KEY, own) / VISITOR_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    source = copied.get("copies") if isinstance(copied, dict) else None
+    return source if isinstance(source, str) and source else None
+
+
+def is_new(project_id: Optional[str]) -> bool:
+    """Whether *project_id* names a hosted guest's own new dataflow, made by
+    File > New (:func:`new_dataflow`), not a copy of one."""
+    source = _copied(project_id)
+    return source is not None and source.startswith(NEW)
 
 
 def a_visitors(dataflow_id: Optional[str], name: Optional[str] = None) -> bool:
@@ -318,17 +388,14 @@ def lists_for(dataflow_id: Optional[str], sign_in: Optional[str] = None, *, name
 
 
 def is_own_copy(sign_in: Optional[str], own: str) -> bool:
-    """Whether *own* is the copy the visitor signed in as *sign_in* works on:
-    a copy (its ``visitor.json``) of the dataflow whose id makes *own* with
-    that sign-in."""
+    """Whether *own* is the copy the visitor signed in as *sign_in* works on,
+    or its own new dataflow: what its ``visitor.json`` names, a dataflow it
+    copies or ``new:<uuid>``, makes *own* with that sign-in (:func:`copy_id`).
+    The one rule for both: no sign-in is kept anywhere."""
     if not sign_in or not own:
         return False
-    try:
-        copied = json.loads((storage.project_dir(GUEST_KEY, own) / VISITOR_FILE).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return False
-    source = copied.get("copies") if isinstance(copied, dict) else None
-    return isinstance(source, str) and copy_id(sign_in, source) == own
+    source = _copied(own)
+    return source is not None and copy_id(sign_in, source) == own
 
 
 def rename(user, project_id: str, name: str) -> Optional[dict]:
@@ -356,10 +423,12 @@ def rename(user, project_id: str, name: str) -> Optional[dict]:
 
 
 def drop_all() -> int:
-    """Drop every copy the hosted guests worked on, with the outputs their
-    plays kept on it and the node outputs they added to it as datasets; how
-    many. The files they uploaded and the datasets they downloaded go too.
-    The server does when it starts, as it puts the shared examples back."""
+    """Drop every copy the hosted guests worked on, and every new dataflow
+    they made, with the outputs their plays kept on it and the node outputs
+    they added to it as datasets; how many. The files they uploaded and the
+    datasets they downloaded go too, and so do the visitors' lists of their
+    new dataflows. The server does when it starts, as it puts the shared
+    examples back."""
     from utk_curio.backend.app.common.user_storage import user_key_segment, users_base
     from utk_curio.backend.app.runs import kept
 
@@ -373,6 +442,13 @@ def drop_all() -> int:
             logger.warning("%d hosted guest uploads stay until the next start", len(left))
     except Exception:  # noqa: BLE001 - a start goes on; they go at the next one
         logger.warning("could not drop the hosted guests' uploads", exc_info=True)
+    # First, so a new dataflow that stays until the next start is listed in
+    # no gallery meanwhile.
+    try:
+        with _index_lock:
+            shutil.rmtree(_indexes(), ignore_errors=True)
+    except (OSError, ValueError):
+        logger.warning("could not drop the hosted guests' lists of their new dataflows", exc_info=True)
     try:
         projects = users_base() / user_key_segment(GUEST_KEY) / "projects"
     except (OSError, ValueError):
@@ -420,42 +496,61 @@ _rooms_lock = threading.Lock()
 
 @dataclasses.dataclass(frozen=True)
 class Copy:
-    """A hosted guest's copy of a dataflow, read as the room reads a
-    dataflow's row (``collaboration/events.py``): it has no row, so its owner
-    is the account that owns the dataflow it copies, the shared guest's, and
-    its one member is the sign-in its id names (:func:`is_room_of`)."""
+    """A hosted guest's copy of a dataflow, or its own new dataflow, read as
+    the room reads a dataflow's row (``collaboration/events.py``): it has no
+    row, so its owner is the account that owns the dataflow it copies, the
+    shared guest's, and its one member is the sign-in its id names
+    (:func:`is_room_of`)."""
 
     #: The copy's id (:func:`copy_id`).
     id: str
-    #: The dataflow it copies.
+    #: The dataflow it copies, or ``new:<uuid>`` for a new dataflow.
     copies: str
     #: Its owner, the account that owns the dataflow it copies.
     user_id: int
     owner: object
 
+    @property
+    def new(self) -> bool:
+        """Whether it is a visitor's own new dataflow, which copies none."""
+        return self.copies.startswith(NEW)
+
 
 def _source(own: str) -> Optional[str]:
-    """The dataflow the copy *own* copies: its ``visitor.json`` says, or, for
-    a copy not made yet, the room that opened it (:func:`room_for`)."""
-    try:
-        copied = json.loads((storage.project_dir(GUEST_KEY, own) / VISITOR_FILE).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        copied = None
-    source = copied.get("copies") if isinstance(copied, dict) else None
-    if isinstance(source, str) and source:
+    """The dataflow the copy *own* copies, or ``new:<uuid>`` for a new
+    dataflow: its ``visitor.json`` says, or, for a copy not made yet, the
+    room that opened it (:func:`room_for`)."""
+    source = _copied(own)
+    if source is not None:
         return source
     with _rooms_lock:
         return _rooms.get(own)
 
 
+def _guest_account():
+    """The shared guest's account, which every hosted guest signs in to and
+    which owns their new dataflows. Read, never made: ``None`` with none."""
+    from utk_curio.backend.app.users.repositories import user_by_username
+    from utk_curio.backend.config import CURIO_SHARED_GUEST_USERNAME
+
+    user = user_by_username(CURIO_SHARED_GUEST_USERNAME)
+    return user if user is not None and user.is_guest else None
+
+
 def as_row(own: str) -> Optional[Copy]:
     """The copy *own* as the room reads a dataflow's row (:class:`Copy`), or
     ``None`` when *own* is no copy a room or a request made, or the dataflow
-    it copies is gone."""
+    it copies is gone. A visitor's new dataflow is owned by the shared
+    guest's account, and is one only once it has its spec."""
     from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.extensions import db
 
     source = _source(own)
+    if source is not None and source.startswith(NEW):
+        account = _guest_account() if _has_copy(own) else None
+        if account is None:
+            return None
+        return Copy(id=own, copies=source, user_id=account.id, owner=account)
     project = db.session.get(Project, source) if source else None
     if project is None:
         return None
@@ -500,10 +595,170 @@ def make(own: str) -> bool:
 def own_copy_source(user, project_id: str) -> Optional[str]:
     """The dataflow *project_id* copies, when *project_id* is the copy the
     request's visitor works on (a hosted guest's own, by its sign-in): an
-    agent's tool names the copy by its id. ``None`` for anything else."""
+    agent's tool names the copy by its id. For the visitor's own new
+    dataflow, ``new:<uuid>``. ``None`` for anything else."""
     if not copies_for(user):
         return None
     sign_in = _sign_in()
     if not is_own_copy(sign_in, project_id):
         return None
     return _source(project_id)
+
+
+# ---------------------------------------------------------------------------
+# A visitor's own new dataflow: File > New
+# ---------------------------------------------------------------------------
+
+#: What a new dataflow whose spec names it nothing is called.
+UNNAMED = "Untitled dataflow"
+
+
+def _indexes() -> Path:
+    """The folder of the visitors' lists of the new dataflows each made,
+    beside the guest account's dataflows."""
+    from utk_curio.backend.app.common.user_storage import user_key_segment, users_base
+
+    return users_base() / user_key_segment(GUEST_KEY) / _INDEXES
+
+
+def _index(sign_in: str) -> Path:
+    """The list of the new dataflows the visitor signed in as *sign_in* made,
+    named by a digest of the sign-in, never the sign-in itself."""
+    return _indexes() / f"{uuid.uuid5(_NAMESPACE, f'{sign_in}:dataflows').hex}.json"
+
+
+def _listed(sign_in: str) -> list[str]:
+    """The ids the visitor's list holds, oldest first."""
+    try:
+        held = json.loads(_index(sign_in).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    ids = held.get("dataflows") if isinstance(held, dict) else None
+    return [own for own in ids if isinstance(own, str)] if isinstance(ids, list) else []
+
+
+def _list(sign_in: str, own: str) -> None:
+    """Add *own* to the visitor's list, written whole, so a reader never
+    sees half of it."""
+    with _index_lock:
+        listed = _listed(sign_in)
+        if own in listed:
+            return
+        path = _index(sign_in)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+        try:
+            tmp.write_text(json.dumps({"dataflows": [*listed, own]}), encoding="utf-8")
+            os.replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
+
+
+def new_dataflow(user, spec: dict, *, sign_in: Optional[str] = None) -> Optional[str]:
+    """Make a new dataflow of the hosted guest signed in as *sign_in*, else
+    the request's, from *spec*, as a create makes a dataflow
+    (``dataflow_docs.create``), and list it for that guest
+    (:func:`new_dataflows`); its id. The id is made from the sign-in and
+    ``new:<uuid>`` (:func:`copy_id`), which its ``visitor.json`` holds,
+    written before the spec: so it goes when the server starts
+    (:func:`drop_all`), as the copies do, and no start reads it as one of
+    the account's dataflows. ``None`` for anyone else, and with no sign-in."""
+    if not copies_for(user):
+        return None
+    sign_in = sign_in or _sign_in()
+    if not sign_in:
+        return None
+    made = f"{NEW}{uuid.uuid4()}"
+    own = copy_id(sign_in, made)
+    with storage.spec_write_lock(GUEST_KEY, own):
+        folder = storage.project_dir(GUEST_KEY, own)
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / VISITOR_FILE).write_text(json.dumps({"copies": made}), encoding="utf-8")
+        dataflow_docs.create(GUEST_KEY, own, spec, dataflow_docs.person(GUEST_KEY, "create"))
+    _list(sign_in, own)
+    return own
+
+
+def new_dataflows(user, *, sign_in: Optional[str] = None) -> list[str]:
+    """The new dataflows the hosted guest signed in as *sign_in*, else the
+    request's, made and still has, newest first. None for anyone else."""
+    if not copies_for(user):
+        return []
+    sign_in = sign_in or _sign_in()
+    if not sign_in:
+        return []
+    return [own for own in reversed(_listed(sign_in)) if is_own_copy(sign_in, own) and _has_copy(own)]
+
+
+def own_new(user, project_id: Optional[str], *, sign_in: Optional[str] = None) -> Optional[Copy]:
+    """The new dataflow *project_id* of the hosted guest signed in as
+    *sign_in*, else the request's or the run's, read as the room reads a
+    dataflow's row (:class:`Copy`). ``None`` for another visitor's, for a
+    copy of a dataflow, for anyone but a hosted guest, and for anything
+    else: a route that finds no row and no ``own_new`` says not found."""
+    if not project_id or not copies_for(user):
+        return None
+    sign_in = sign_in or _sign_in()
+    if not is_new(project_id) or not is_own_copy(sign_in, project_id):
+        return None
+    return as_row(project_id)
+
+
+@dataclasses.dataclass(frozen=True)
+class NewDataflow:
+    """A visitor's new dataflow, read as a dataflow's row is
+    (``projects.models.Project``) by what lists it, opens it and answers its
+    create: named and described by its spec, made when its ``visitor.json``
+    was written, never opened by a row."""
+
+    id: str
+    user_id: int
+    owner: object
+    name: str
+    slug: str
+    description: Optional[str]
+    created_at: Optional[datetime]
+    folder_path: str
+    thumbnail_accent: str = "peach"
+    spec_revision: int = 0
+    last_opened_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+def new_row(row: Copy, spec: Optional[dict]) -> NewDataflow:
+    """*row*, a visitor's new dataflow (:func:`own_new`), as a dataflow's row
+    reads, by its spec as it is now, *spec*."""
+    from utk_curio.backend.app.projects.schemas import _slugify
+
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    dataflow = dataflow if isinstance(dataflow, dict) else {}
+    named = dataflow.get("name")
+    name = named.strip() if isinstance(named, str) and named.strip() else UNNAMED
+    described = dataflow.get("description")
+    folder = storage.project_dir(GUEST_KEY, row.id)
+    try:
+        made = datetime.fromtimestamp((folder / VISITOR_FILE).stat().st_mtime, tz=timezone.utc)
+    except OSError:
+        made = None
+    return NewDataflow(
+        id=row.id, user_id=row.user_id, owner=row.owner, name=name, slug=_slugify(name),
+        description=described if isinstance(described, str) and described else None,
+        created_at=made, folder_path=str(folder),
+    )
+
+
+def copy_name(user, project_id: str, *, sign_in: Optional[str] = None) -> Optional[str]:
+    """The name the hosted guest signed in as *sign_in*, else the request's,
+    gave its own copy of *project_id*, a dataflow every guest opens: its
+    ``dataflow.name``. ``None`` with no copy, or one with no name."""
+    if not copies_for(user):
+        return None
+    sign_in = sign_in or _sign_in()
+    if not sign_in:
+        return None
+    own = copy_id(sign_in, project_id)
+    if not _has_copy(own):
+        return None
+    spec = dataflow_docs.read(GUEST_KEY, own)
+    named = (spec.get("dataflow") or {}).get("name") if isinstance(spec, dict) else None
+    return named if isinstance(named, str) and named.strip() else None

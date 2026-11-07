@@ -25,7 +25,9 @@ account owns (an example every hosted guest opens) is its join to the room of
 its own copy of it (``visitor_copies.room_for``), which it owns: the join
 answers with the copy's id (``projectId``), which every later event of the
 socket names. The copy is made on the guest's first change in its doc, not
-here. A hosted guest joins no other guest's copy (``access.joins_room``).
+here. A hosted guest joins no other guest's copy (``access.joins_room``). A
+hosted guest's own new dataflow (File > New) has a room of its own, its id's,
+which only that guest joins: to anyone else it is an unknown dataflow.
 
 Each socket is one participant, with an id of its own that its join answers
 with: two tabs of one account, or two hosted guests on the one guest account,
@@ -229,6 +231,9 @@ def register(sio):
         # A hosted guest on a dataflow its account owns joins its own copy's room.
         project = visitor_copies.room_for(account, project, account.sign_in) or project
         if not access.joins_room(account, project):
+            # A guest's new dataflow is its own: to anyone else, it is none.
+            if isinstance(project, visitor_copies.Copy) and project.new:
+                return {"ok": False, "error": "unknown_project"}
             return {"ok": False, "error": "guest_owned", "message": GUEST_OWNED_REFUSAL}
         role = access.room_role(account, project)
         project_id = project.id

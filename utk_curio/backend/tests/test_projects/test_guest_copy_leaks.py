@@ -413,3 +413,91 @@ def test_a_hosted_guests_results_go_with_the_copies_when_the_server_starts(clien
     assert renamed.status_code == 200, renamed.get_data(as_text=True)
     assert _results(client, VISITOR_A, example) == {}
     assert _digests(example) == before
+
+
+def test_another_guest_never_copies_a_guests_copy(client, example, sandbox):
+    """A's copy, named by its id, is no dataflow of B's: B's requests neither
+    copy it for B nor read it as theirs."""
+    from utk_curio.backend.app.projects import visitor_copies
+    from utk_curio.backend.app.projects.repositories import NotFoundError
+    from utk_curio.backend.app.users.repositories import user_by_username
+
+    _play(client, VISITOR_A, example, "a")
+    a_copy = _copy_of(VISITOR_A, example)
+    assert visitor_copies.is_copy(a_copy), "A's play made no copy, so this proves nothing"
+    guest = user_by_username(config.CURIO_SHARED_GUEST_USERNAME)
+
+    for make in (True, False):
+        with pytest.raises(NotFoundError):
+            visitor_copies.for_request(guest, a_copy, make=make, sign_in=VISITOR_B)
+    assert not visitor_copies.is_copy(visitor_copies.copy_id(VISITOR_B, a_copy))
+    # B's own copy of the example is made for B as before.
+    own = visitor_copies.for_request(guest, example, make=True, sign_in=VISITOR_B)
+    assert own == _copy_of(VISITOR_B, example)
+
+
+def test_another_guest_reads_no_record_of_a_guests_copy(client, example, sandbox):
+    """B, naming A's copy by its id, reads none of the runtime journal A's
+    node bodies and agents read, and writes nothing to it."""
+    _play(client, VISITOR_A, example, "a")
+    reported = client.post("/nodeRuntime", data=json.dumps({
+        "dataflowId": example, "nodeId": "a", "status": "error", "message": "A's chart failed",
+    }), headers=auth_headers(VISITOR_A))
+    assert reported.status_code == 204, reported.get_data(as_text=True)
+    a_copy = _copy_of(VISITOR_A, example)
+
+    def recorded(token, dataflow_id):
+        resp = client.get("/nodeRuntime", query_string={"dataflowId": dataflow_id, "nodeId": "a"},
+                          headers=auth_headers(token))
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        return resp.get_json()
+
+    mine = recorded(VISITOR_A, example)
+    assert mine["run"]["status"] == "ok"
+    assert mine["render"]["stderrTail"] == "A's chart failed"
+    theirs = recorded(VISITOR_B, a_copy)
+    assert (theirs["run"], theirs["render"]) == (None, None)
+    written = client.post("/nodeRuntime", data=json.dumps({
+        "dataflowId": a_copy, "nodeId": "a", "status": "error", "message": "B's chart failed",
+    }), headers=auth_headers(VISITOR_B))
+    assert written.status_code == 204, written.get_data(as_text=True)
+    assert recorded(VISITOR_A, example)["render"]["stderrTail"] == "A's chart failed"
+
+
+def test_another_guests_play_naming_a_guests_copy_writes_nothing_of_theirs(client, example, sandbox):
+    """B's play that names A's copy by its id keeps nothing on it, records
+    nothing in its journal, and adds no dataset to the store under its id,
+    which A's Data Catalog lists."""
+    from utk_curio.backend.app.execution import runtime_journal
+
+    made_a = sandbox["artifacts"]["a"]
+    _play(client, VISITOR_A, example, "a")
+    a_copy = _copy_of(VISITOR_A, example)
+    assert runtime_journal.read_record(GUEST_KEY, a_copy, "a")["status"] == "ok"
+
+    reply = _play(client, VISITOR_B, a_copy, "b")
+
+    assert runtime_journal.read_record(GUEST_KEY, a_copy, "b") is None
+    assert reply["installedDataset"] is None
+    assert _computed_in_the_store() == []
+    assert _results(client, VISITOR_A, example) == {"a": made_a}
+
+
+def test_no_one_reads_a_guests_results_through_a_dashboard_naming_its_copy(client, example, sandbox):
+    """A's results are read on A's own dashboard of the example, never
+    through the dashboard's output routes naming A's copy by its id, by B or
+    by a visitor who sends no sign-in."""
+    made_a = sandbox["artifacts"]["a"]
+    _play(client, VISITOR_A, example, "a")
+    a_copy = _copy_of(VISITOR_A, example)
+
+    mine = client.get(f"/api/projects/{example}/dashboard/outputs/get", query_string={"fileName": made_a},
+                      headers=auth_headers(VISITOR_A))
+    assert mine.status_code == 200, mine.get_data(as_text=True)
+    assert is_kept_session(sandbox["reads"][-1]["sessionId"])
+    reads = len(sandbox["reads"])
+    for headers in (auth_headers(VISITOR_B), {}):
+        resp = client.get(f"/api/projects/{a_copy}/dashboard/outputs/get", query_string={"fileName": made_a},
+                          headers=headers)
+        assert resp.status_code == 404, resp.get_data(as_text=True)
+    assert len(sandbox["reads"]) == reads

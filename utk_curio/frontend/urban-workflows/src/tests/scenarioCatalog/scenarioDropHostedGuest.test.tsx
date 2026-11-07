@@ -1,10 +1,10 @@
 /**
- * A scenario dropped on a dataflow a hosted guest never saved (`isHostedGuest`:
- * a guest on a Curio started with --deploy). The drop copies into the open
- * dataflow, so it needs a saved one, and such a guest cannot save: it is told
- * to sign in, not to "save this dataflow first", which it cannot do. On a
- * dataflow it has, its drop goes on; the local shared guest and a signed-in
- * account keep today's behavior.
+ * A scenario dropped by a hosted guest (`isHostedGuest`: a guest on a Curio
+ * started with --deploy). The drop runs the scenario's context on the server,
+ * which a guest's runs never do, and the server refuses a guest's copy: the
+ * guest is told to sign in, not to "save this dataflow first", before
+ * anything is made, on any dataflow, so no dataflow is made for it either.
+ * The local shared guest and a signed-in account keep today's behavior.
  */
 import React from "react";
 import { act, renderHook } from "@testing-library/react";
@@ -141,25 +141,20 @@ beforeEach(() => {
 });
 
 describe("a hosted guest", () => {
-  it("is told to sign in when it drops a scenario on a dataflow it never saved", async () => {
-    // Never saved: no id comes back, since a guest's save is skipped.
-    mockFlow.ensureProjectId.mockResolvedValue(null);
+  it.each([
+    ["it never saved, whose save would make one", "made-for-it"],
+    ["it has", "target"],
+  ])("is told to sign in when it drops a scenario on a dataflow %s, and nothing is made or asked", async (_where, id) => {
+    mockFlow.ensureProjectId.mockResolvedValue(id);
 
     const dropped = await dropAs(HOSTED_GUEST);
 
     expect(dropped).toBeNull();
     expect(mockShowToast).toHaveBeenCalledWith("Sign in to add scenarios.", "warning");
     expect(toastsShown()).not.toContain(SAVE_FIRST);
+    expect(mockFlow.ensureProjectId).not.toHaveBeenCalled();
     expect(catalog.getCopyPlan).not.toHaveBeenCalled();
-  });
-
-  it("drops a scenario on a dataflow it has, as before", async () => {
-    mockFlow.ensureProjectId.mockResolvedValue("target");
-
-    await dropAs(HOSTED_GUEST);
-
-    expect(catalog.getCopyPlan).toHaveBeenCalledWith(PAYLOAD, "target", []);
-    expect(toastsShown().filter((message) => message.startsWith("Sign in"))).toEqual([]);
+    expect(catalog.copyInto).not.toHaveBeenCalled();
   });
 });
 
