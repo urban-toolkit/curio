@@ -336,7 +336,7 @@ class Zygote:
             return
 
         try:
-            pid = self._fork_child(request)
+            pid = self._fork_child(request, selector, connection)
         except OSError as exc:
             _reply(connection, {"error": f"fork failed: {exc}"})
             connection.close()
@@ -369,7 +369,7 @@ class Zygote:
                 file=sys.stderr, flush=True,
             )
 
-    def _fork_child(self, request):
+    def _fork_child(self, request, selector, connection):
         from utk_curio.sandbox.isolation import child
 
         pid = os.fork()
@@ -379,13 +379,22 @@ class Zygote:
         # ---- child ----
         # Nothing here may raise past child.main: it calls os._exit in every
         # path, so control never returns to the accept loop in this process.
+        #
+        # The listener and the zygote's end of every caller's connection are
+        # closed first, by name: this child's own caller's (*connection*),
+        # those accepted and not read yet (in the selector), and those of the
+        # children still running. Node code must never write to a caller, and
+        # a caller must read end-of-file once the zygote is gone, not once
+        # this child is.
         try:
-            self._listener.close()
+            waiting = [key.fileobj for key in selector.get_map().values()
+                       if key.data == "connection"]
         except Exception:
-            pass
-        for state in self._pending.values():
+            waiting = []
+        running = [state["connection"] for state in self._pending.values()]
+        for sock in (self._listener, connection, *waiting, *running):
             try:
-                state["connection"].close()
+                sock.close()
             except Exception:
                 pass
 
