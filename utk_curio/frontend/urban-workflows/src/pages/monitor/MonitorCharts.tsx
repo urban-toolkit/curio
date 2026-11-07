@@ -214,10 +214,35 @@ export function powersOfTen(values: number[]): number[] {
   return out;
 }
 
+const DAY_MS = 86_400_000;
+
+/**
+ * How the time axis labels a span of more than a day: the day and the hour.
+ * Vega's own labels name the hour alone except at midnight, so a few days
+ * ticked at 06 AM and 06 PM never say which day.
+ */
+export const DAYS_AXIS_FORMAT = "%b %-d, %H:%M";
+
+/** How long the time axis spans: its domain when given, else the rows' times. */
+function timeSpanOf(rows: Record<string, unknown>[], timeField: string, timeDomain?: [number, number]): number {
+  if (timeDomain) return timeDomain[1] - timeDomain[0];
+  let first = Infinity;
+  let last = -Infinity;
+  for (const row of rows) {
+    const t = Number(row[timeField]);
+    if (Number.isFinite(t)) {
+      first = Math.min(first, t);
+      last = Math.max(last, t);
+    }
+  }
+  return last > first ? last - first : 0;
+}
+
 /**
  * The Vega-Lite spec of `LinesOverTime`: time on x, the value on y, a 2px
  * line per series, the legend under the plot, and a tooltip with the series,
- * the time and the value.
+ * the time and the value. Over more than a day, the time axis names each
+ * label's day as well as its hour.
  */
 export function linesOverTimeSpec({
   rows,
@@ -238,6 +263,7 @@ export function linesOverTimeSpec({
   // Vega thins an axis's values down to its tick count, so a log axis counts
   // every power of ten it ticks.
   const decades = logY ? powersOfTen(rows.map((row) => Number(row[valueField]))) : [];
+  const days = timeSpanOf(rows, timeField, timeDomain) > DAY_MS;
   const ink = { labelColor: AXIS_INK, titleColor: AXIS_INK, domainColor: GRID_INK,
                 tickColor: GRID_INK, gridColor: GRID_INK };
   const encoding: Record<string, unknown> = {
@@ -245,7 +271,7 @@ export function linesOverTimeSpec({
       field: timeField,
       type: "temporal",
       title: null,
-      axis: { ...ink, labelFlush: true },
+      axis: { ...ink, labelFlush: true, ...(days ? { format: DAYS_AXIS_FORMAT } : {}) },
       ...(timeDomain ? { scale: { domain: timeDomain } } : {}),
     },
     y: {
