@@ -17,7 +17,6 @@ import uuid
 
 from utk_curio.backend.app.agents.application import delegation
 from utk_curio.backend.app.agents.application import source_grounding
-from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.application.errors import AgentServiceError
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import upstream_schema

@@ -11,7 +11,6 @@ from __future__ import annotations
 import os as _os
 
 from utk_curio.backend.app.agents.domain import content
-from utk_curio.backend.app.agents.domain import agent_text
 
 
 # Solve concurrency (dev/52, DEC-048): the dev/15 manifest's

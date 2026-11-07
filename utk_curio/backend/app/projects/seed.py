@@ -22,10 +22,7 @@ from utk_curio.backend.app.projects.services import (
     seed_spec_with_agents,
 )
 from utk_curio.backend.app.projects.shipped import (  # noqa: F401 - re-exported
-    SOURCE_EXAMPLE,
     SOURCE_TEST,
-    SOURCE_USE_CASE,
-    ShippedDataflow,
     examples_dir,
     shipped_dataflows,
 )
