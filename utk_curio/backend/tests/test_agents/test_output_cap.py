@@ -32,7 +32,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from utk_curio.backend import config
 from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.app.agents.infrastructure.providers import ChatTurn, ProviderConfig
 from utk_curio.backend.app.projects.services import _user_dir_key

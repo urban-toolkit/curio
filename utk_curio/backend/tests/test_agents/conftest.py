@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from utk_curio.backend import config
 from utk_curio.backend.app.agents.infrastructure import agent_jobs
 from utk_curio.backend.tests._support.agent_routes import _auth, _record_defaults_removed
 from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401

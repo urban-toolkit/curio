@@ -7,8 +7,6 @@ for the caller's session, so a reopen reads the one file the Data Catalog
 keeps. A name the dataflow did not save, or another dataflow's, is never
 named.
 """
-import json
-
 from utk_curio.backend.app.projects import storage
 from utk_curio.backend.app.projects.schemas import OutputRef
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import auth_headers, create_project

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 
-from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents import test_routes_proposals as routes
 from utk_curio.backend.tests.test_agents import test_source_grounding_routes as grounding_routes
 
