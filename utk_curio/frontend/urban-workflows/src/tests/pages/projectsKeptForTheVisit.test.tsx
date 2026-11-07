@@ -3,8 +3,9 @@
  * the server lists them (`kept_for_visit`), each marked Kept for this visit,
  * with the one Curio tooltip saying only an account saves a dataflow. The
  * server drops them when it starts again, so neither the drawer nor the
- * right-click menu offers to delete one. The harness is
- * projectsPageChrome.test.tsx's.
+ * right-click menu offers to delete one. A hosted guest saves no dataflow, so
+ * its Duplicate, of either kind of card, says to sign in before anything is
+ * sent. The harness is projectsPageChrome.test.tsx's.
  */
 import React from "react";
 import { render, act, screen, fireEvent, within } from "@testing-library/react";
@@ -12,18 +13,33 @@ import { MemoryRouter } from "react-router-dom";
 import { getAllByTooltip, queryAllByTooltip } from "../_support/tooltips";
 
 const mockList = jest.fn();
+const mockDuplicate = jest.fn();
+const mockShowToast = jest.fn();
+/** A guest with sign-in on: a hosted guest, unless a test signs in an account. */
+const GUEST = { name: "Guest", is_guest: true };
+let mockUser: { name: string; is_guest: boolean } = GUEST;
+
+function mockSignedIn() {
+  return { user: mockUser, signout: jest.fn(), enableUserAuth: true };
+}
 
 jest.mock("../../providers/UserProvider", () => ({
-  useUserContext: () => ({ user: { name: "Guest", is_guest: true }, signout: jest.fn(), enableUserAuth: true }),
+  useUserContext: () => mockSignedIn(),
+}));
+// What `useHostedGuest` reads: the same user, so the page knows a hosted guest
+// as the app does.
+jest.mock("../../providers/userContext", () => ({
+  ...jest.requireActual("../../providers/userContext"),
+  useUserContext: () => mockSignedIn(),
 }));
 jest.mock("../../providers/ToastProvider", () => ({
-  useToastContext: () => ({ showToast: jest.fn() }),
+  useToastContext: () => ({ showToast: mockShowToast }),
 }));
 jest.mock("../../api/projectsApi", () => ({
   projectsApi: {
     list: (...args: unknown[]) => mockList(...args),
     update: jest.fn(),
-    duplicate: jest.fn(),
+    duplicate: (...args: unknown[]) => mockDuplicate(...args),
     delete: jest.fn(),
     create: jest.fn(),
   },
@@ -37,6 +53,7 @@ import { projectActions } from "../../pages/projects/projectActions";
 
 const KEPT = "Kept for this visit";
 const SIGN_IN_TO_SAVE = "Sign in to save dataflows.";
+const SIGN_IN_TO_DUPLICATE = "Sign in to duplicate dataflows.";
 
 function row(id: string, name: string, over: Record<string, unknown> = {}) {
   return {
@@ -78,8 +95,12 @@ function card(container: HTMLElement, id: string): HTMLElement {
 }
 
 beforeEach(() => {
+  mockUser = GUEST;
   mockList.mockReset();
   mockList.mockResolvedValue(LISTED);
+  mockDuplicate.mockReset();
+  mockDuplicate.mockResolvedValue({ id: "copy" });
+  mockShowToast.mockReset();
 });
 
 describe("a hosted guest's gallery", () => {
@@ -122,6 +143,46 @@ describe("a hosted guest's gallery", () => {
     });
     expect(queryByRole("menuitem", { name: "Delete" })).toBeNull();
     expect(screen.getByRole("menuitem", { name: "Rename" })).toBeTruthy();
+  });
+});
+
+describe("a hosted guest's Duplicate", () => {
+  test("says to sign in before anything is sent, for its own dataflow and for an example", async () => {
+    const { container, getByRole } = await renderPage();
+
+    // The drawer is open on the guest's own dataflow; the example's card
+    // offers Duplicate in its right-click menu.
+    await act(async () => {
+      fireEvent.click(getByRole("button", { name: "Duplicate" }));
+    });
+    await act(async () => {
+      fireEvent.contextMenu(card(container, "ex1"));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate" }));
+    });
+
+    // One note for each, shown as the other sign-in notes are.
+    expect(mockShowToast.mock.calls.filter(([, variant]) => variant === "warning")).toEqual([
+      [SIGN_IN_TO_DUPLICATE, "warning"],
+      [SIGN_IN_TO_DUPLICATE, "warning"],
+    ]);
+    expect(mockDuplicate).not.toHaveBeenCalled();
+  });
+
+  test("is an account's Duplicate as before: it is sent", async () => {
+    mockUser = { name: "Ana", is_guest: false };
+    const { container } = await renderPage();
+
+    await act(async () => {
+      fireEvent.contextMenu(card(container, "ex1"));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate" }));
+    });
+
+    expect(mockDuplicate).toHaveBeenCalledWith("ex1");
+    expect(mockShowToast).not.toHaveBeenCalledWith(SIGN_IN_TO_DUPLICATE, "warning");
   });
 });
 

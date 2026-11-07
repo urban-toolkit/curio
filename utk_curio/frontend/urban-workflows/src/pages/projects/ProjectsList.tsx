@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { permanentDeletionNotice } from "../../services/retentionCopy";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
 import { GUEST_KEPT_LABEL, GUEST_KEPT_TOOLTIP } from "../../components/apiSettings/keptForTheVisit";
+import { hostedGuestSignInNote, useHostedGuest } from "../../components/apiSettings/useHostedGuest";
 import { projectsApi, ProjectSummary } from "../../api/projectsApi";
 import { useToastContext } from "../../providers/ToastProvider";
 import { projectActions, type ProjectActionId } from "./projectActions";
@@ -116,6 +117,7 @@ function categoryInfoRows(project: ProjectSummary) {
 const ProjectsList: React.FC = () => {
   const navigate = useNavigate();
   const { showToast } = useToastContext();
+  const hostedGuest = useHostedGuest();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [listState, setListState] = useState<ListState>({ status: "loading" });
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -277,6 +279,13 @@ const ProjectsList: React.FC = () => {
   };
 
   const handleDuplicate = async (project: ProjectSummary) => {
+    // A hosted guest saves no dataflow: its Duplicate, of an example or of
+    // its own dataflow kept for the visit, is refused here, before anything
+    // is sent, as its Save a copy is on the canvas.
+    if (hostedGuest) {
+      showToast(hostedGuestSignInNote("duplicate dataflows"), "warning");
+      return;
+    }
     try {
       await projectsApi.duplicate(project.id);
       loadProjects();
