@@ -607,6 +607,52 @@ def test_typing_that_goes_on_past_a_runs_start_is_split_at_the_code_the_run_ran(
     assert entries["current"] == 5
 
 
+def _edits_of(room):
+    """The note of an edit alice made in the node's body (a Map Editor's), as
+    her tab sends it once the server holds her changes: its label and the code
+    it made."""
+    edits = f"/api/projects/{room.project_id}/history/nodes/loader/edits"
+
+    def edit(label: str, code: str) -> None:
+        answer = _http(room).post(edits, headers=_auth(room), data=json.dumps({"label": label, "code": code}))
+        assert answer.status_code == 201, answer.get_json()
+
+    return edit
+
+
+def test_edits_whose_notes_come_after_the_next_edits_each_keep_the_code_they_made(kept):
+    """A Map Editor edit is noted once the server holds every change the tab
+    sent, so on a slow server alice's next edits reach the doc before the
+    first one's note. Each entry holds the code its own edit made, on one
+    line: putting the first back gives the node the first edit's code, not
+    the last's."""
+    from utk_curio.backend.app.collaboration import history
+
+    alice = _synced(kept, "alice")
+    run = _runs_of(kept)
+    edit = _edits_of(kept)
+
+    run("x = 1\n")
+    alice.edit(_type("# height\n"))
+    alice.edit(_type("# name\n"))
+    alice.edit(_type("# remove\n"))
+    # The three notes come only now.
+    edit("Set height", "# height\nx = 1\n")
+    edit("Set name", "# name\n# height\nx = 1\n")
+    edit("Remove", "# remove\n# name\n# height\nx = 1\n")
+    entries = history.entries(kept.owner_key, kept.project_id, "loader")
+    assert [(e["id"], e["parentId"], e.get("label"), e["code"]) for e in entries["entries"]] == [
+        (1, None, None, "x = 1\n"),
+        (2, 1, "Set height", "# height\nx = 1\n"),
+        (3, 2, "Set name", "# name\n# height\nx = 1\n"),
+        (4, 3, "Remove", "# remove\n# name\n# height\nx = 1\n"),
+    ], entries["entries"]
+    assert [e.get("before") for e in entries["entries"]] == [
+        None, "x = 1\n", "# height\nx = 1\n", "# name\n# height\nx = 1\n",
+    ]
+    assert entries["current"] == 4
+
+
 def test_a_run_whose_note_comes_after_another_run_of_its_code_follows_that_run(kept):
     """Two runs of the code the node loaded with, the second's note late,
     with alice's typing after both under way: the second run follows the
