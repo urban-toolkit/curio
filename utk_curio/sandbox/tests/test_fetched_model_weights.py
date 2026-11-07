@@ -197,6 +197,7 @@ def test_an_isolated_child_reads_them_in_place(package, weights, scratch):
 
 
 def test_the_request_carries_them_absolute_and_unstaged(scratch, weights):
+    """Over the wire to the zygote, which hands the child the request whole."""
     from utk_curio.sandbox.isolation import protocol
 
     request = protocol.build_exec_request(
@@ -205,6 +206,8 @@ def test_the_request_carries_them_absolute_and_unstaged(scratch, weights):
     )
     assert request["models"] == {MODEL_ID: "model_0"}
     assert request["model_weights"] == {MODEL_ID: str(weights)}
+    received = protocol.decode_request(protocol.encode_request(request))
+    assert received["model_weights"] == {MODEL_ID: str(weights)}
 
 
 # ---------------------------------------------------------------------------
