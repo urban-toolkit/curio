@@ -32,7 +32,8 @@ pool (2.0 opens it on first use only), and numpy's OpenBLAS starts one too.
 OpenBLAS tears its pool down before every fork; DuckDB does not, which is why
 ``warm_up`` closes that connection before the first fork. See
 :func:`_release_import_time_duckdb`. ``warm_up`` also imports pyseccomp, which
-every child installs its seccomp filter with: libc and libseccomp loaded
+every child installs its seccomp filter with, and ``ctypes.util``, which a
+child had once it imported pyseccomp itself: libc and libseccomp loaded
 through ctypes, and no thread, open file or process left behind. See
 :func:`_import_pyseccomp`.
 
@@ -249,13 +250,21 @@ def _import_pyseccomp():
     started (``seccomp_filter.import_pyseccomp``), and leaves no thread or
     open file behind, so a child forked after it inherits nothing in flight.
 
+    ``ctypes.util`` is imported first, for real. A child's own import of
+    pyseccomp imported it, so node code that calls ``ctypes.util`` after a
+    bare ``import ctypes`` found it there; this keeps it so. The modules it
+    imports are this process's already, and pyseccomp's import then puts it
+    back as it found it.
+
     Where pyseccomp or libseccomp is missing, the import fails here and each
     child tries it again and fails as it would have without this: the zygote
     starts as it did.
     """
-    from utk_curio.sandbox.isolation import seccomp_filter
-
     try:
+        import ctypes.util  # noqa: F401 - for the children, as they had it
+
+        from utk_curio.sandbox.isolation import seccomp_filter
+
         seccomp_filter.import_pyseccomp()
     except Exception:  # noqa: BLE001 - each child tries again and says why
         pass

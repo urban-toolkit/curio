@@ -197,6 +197,39 @@ def test_an_isolated_child_installs_its_filter_with_the_pyseccomp_its_zygote_imp
     assert started == [], f"the child started a process before it ran the node: {started}"
 
 
+def test_an_isolated_nodes_code_finds_ctypes_util_imported_as_it_did(tmp_path, monkeypatch):
+    """A guard, not a repro. When each child imported pyseccomp itself, the
+    import imported ``ctypes.util``, so node code that calls ``ctypes.util``
+    after a bare ``import ctypes`` ran under isolation. The zygote, which now
+    imports pyseccomp for its children, imports ``ctypes.util`` with it, so
+    such code still runs."""
+    from utk_curio.sandbox.isolation import lifecycle, runner
+    from utk_curio.sandbox.util.db import init_db, release_connection
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+    monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path / "data"))
+    monkeypatch.setenv("CURIO_EXEC_SOCKET", str(tmp_path / "zygote.sock"))
+    monkeypatch.setenv("CURIO_EXEC_TIMEOUT", "20")
+    monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", "256")
+    release_connection()
+    init_db()
+    config = runner.IsolationConfig.from_environment()
+    lifecycle.ensure_running(config, exec_user=None, require_seccomp=True)
+    try:
+        result = runner.execute_isolated(
+            "    import ctypes\n    return ctypes.util.__name__\n",
+            "", "curio.builtin/python-computation", "",
+            save_dataset=False, config=config,
+        )
+    finally:
+        lifecycle.shutdown()
+        release_connection()
+
+    assert result["stderr"] == "", f"node code found no ctypes.util after a bare import ctypes: {result['stderr']}"
+    assert load_from_duckdb(result["output"]["path"]) == "ctypes.util"
+
+
 #: Loads ``seccomp_filter.py`` from its path, as the wrapper runs it, and
 #: imports pyseccomp through it in a fresh interpreter: with sonames that
 #: load nothing (``--sonames-load-nothing``) or as they are; with
