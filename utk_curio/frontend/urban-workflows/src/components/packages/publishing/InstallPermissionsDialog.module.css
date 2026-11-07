@@ -110,6 +110,13 @@
     margin-top: 8px;
 }
 
+/* An add whose dataflow is still opening says so above its buttons. */
+.waitingNote {
+    margin: 0;
+    font-size: var(--curio-font-size-md);
+    color: var(--curio-text-secondary);
+}
+
 .footer {
     display: flex;
     justify-content: flex-end;
