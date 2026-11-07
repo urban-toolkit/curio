@@ -611,6 +611,7 @@ jobs:
             e2e-desktop-6 e2e-desktop-7 e2e-desktop-8 e2e-desktop-9 e2e-desktop-10 \
             e2e-desktop-11 e2e-desktop-12 e2e-desktop-13 e2e-desktop-14 \
             unit-backend-1 unit-backend-2 unit-backend-3 unit-backend-4 unit-backend-5 \
+            unit-backend-6 \
             test-exec-user
 
   test-gpu:
@@ -1248,7 +1249,7 @@ jobs:
 
   # The Python unit suites need the image but neither a GPU nor a browser, so
   # they run here, beside test-gpu, instead of adding nine minutes to it. The
-  # backend suite, the longest of them, runs as five balanced parts
+  # backend suite, the longest of them, runs as six balanced parts
   # (CURIO_UNIT_PART; tests/parts.py and unit_durations.json). The count is
   # BACKEND_UNIT_PARTS in parts.py, and ciParts.test.ts holds the entries
   # below, pick-runners' keys and ci-report's job list to it.
@@ -1267,11 +1268,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: backend-1, suite: backend, part: "1/5" }
-          - { name: backend-2, suite: backend, part: "2/5" }
-          - { name: backend-3, suite: backend, part: "3/5" }
-          - { name: backend-4, suite: backend, part: "4/5" }
-          - { name: backend-5, suite: backend, part: "5/5" }
+          - { name: backend-1, suite: backend, part: "1/6" }
+          - { name: backend-2, suite: backend, part: "2/6" }
+          - { name: backend-3, suite: backend, part: "3/6" }
+          - { name: backend-4, suite: backend, part: "4/6" }
+          - { name: backend-5, suite: backend, part: "5/6" }
+          - { name: backend-6, suite: backend, part: "6/6" }
           - { name: sandbox, suite: sandbox, part: "" }
     env:
       CURIO_CI_FRESH_STACK: curio-ci
@@ -1308,11 +1310,11 @@ jobs:
       # --skip-setup: the image's build already ran curio.py setup.
       - name: 🧪 Run the ${{ matrix.name }} unit tests
         if: env.CURIO_CI_HOLDS == 'true'
-        # A part holds a fifth of the suite's test time. One of four parts took
-        # about 14 minutes on an arcade runner on 11-06, and past 25 at load
-        # 420 to 680 on 192 CPUs (run 42255921921); a fifth leaves that load
-        # room. The limit is for a hang, so it fails here rather than holding
-        # the job until its own timeout.
+        # A part holds a sixth of the suite's test time: 72.8 minutes on arcade
+        # runners on 11-06, so about 12 a part, and 21 at the 1.7 times arcade
+        # slowed at load 420 to 680 on 192 CPUs (run 42255921921, where one of
+        # four parts ran past 25). The limit is for a hang, so it fails here
+        # rather than holding the job until its own timeout.
         timeout-minutes: ${{ inputs.repeat > 1 && 340 || 25 }}
         run: |
           # A tests run whose collection failed may hold none here; ci-report
@@ -2422,7 +2424,7 @@ jobs:
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          python3 scripts/ci_never_run.py inputs unit-backend-{1..5} unit-sandbox \
+          python3 scripts/ci_never_run.py inputs unit-backend-{1..6} unit-sandbox \
             test-gpu test-isolated test-exec-user preview-runner e2e-desktop-{1..14}
 
       # A run that tested its whole tree green, not a re-mint, not a tests run

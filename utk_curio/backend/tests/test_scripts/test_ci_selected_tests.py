@@ -115,7 +115,7 @@ def test_the_jobs_that_hold_a_selected_test(tmp_path):
 
 def test_a_failed_collection_starts_every_part_of_the_selected_suites_and_no_other():
     """A misspelled test name fails the collection: its suite's parts run, no other suite's."""
-    assert selected.whole_suites([UNIT]) == [f"unit-backend-{k}" for k in range(1, 6)]
+    assert selected.whole_suites([UNIT]) == [f"unit-backend-{k}" for k in range(1, 7)]
     e2e_parts = sorted(f"e2e-desktop-{k}" for k in range(1, 15))
     assert selected.whole_suites([], remint_filter="test_x") == e2e_parts
     assert selected.whole_suites([E2E, SANDBOX, JEST]) == sorted([*e2e_parts, "jest", "unit-sandbox"])
@@ -153,7 +153,7 @@ def test_a_filtered_run_whose_selected_tests_ran_passes(tmp_path):
     _job(inputs, "unit-backend-2", _case("tests.test_suite_parts.PartsTest", "test_a_part_is_k_of_n"))
     _job(inputs, "unit-sandbox", _case("utk_curio.sandbox.tests.test_codec.TestCodec", "test_round_trip"))
     _jest(inputs, "split")
-    listed = {**{f"unit-backend-{k}": [] for k in (1, 3, 4, 5)}, "unit-backend-2": [UNIT_KEY]}
+    listed = {**{f"unit-backend-{k}": [] for k in (1, 3, 4, 5, 6)}, "unit-backend-2": [UNIT_KEY]}
     errors, notes = selected.check(inputs, listed, [UNIT, SANDBOX, JEST])
     assert errors == []
     assert "3 test(s) ran, in jest, unit-backend-2, unit-sandbox" in notes
@@ -215,7 +215,7 @@ def test_without_a_listing_it_checks_what_ran_and_says_so(tmp_path):
 def test_check_reads_the_downloaded_listing_and_fails_the_run(tmp_path, capsys, monkeypatch):
     inputs = tmp_path / "inputs"
     _job(inputs, "unit-backend-1", _case("tests.test_suite_parts.PartsTest", "test_a_part_is_k_of_n"))
-    listing = _listing(tmp_path / "selected", {f"unit-backend-{k}": [UNIT_KEY] if k == 1 else [] for k in range(1, 6)})
+    listing = _listing(tmp_path / "selected", {f"unit-backend-{k}": [UNIT_KEY] if k == 1 else [] for k in range(1, 7)})
     monkeypatch.setenv("CURIO_TESTS", UNIT)
     assert selected.main(["check", str(inputs), str(listing)]) == 0
     assert "OK: every selected test ran" in capsys.readouterr().out
