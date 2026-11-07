@@ -5,12 +5,15 @@ dataflows. Without sign-in that guest is the one local user and saves: a
 dataflow one session saves is listed in the other. With sign-in, a hosted
 guest saves nothing: the server refuses with the words the page shows, and the
 two sessions list the same dataflows, the examples the shared guest owns.
+
+A guest whose first listing the server fails still gets the dataflows (#1274).
 """
 
 from __future__ import annotations
 
 import json
 from urllib.error import HTTPError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
@@ -20,6 +23,7 @@ from .utils import (
     allow_guest_login_env,
     api_json,
     auth_enabled_env,
+    close_after_routes,
     project_card,
     require_project_page,
     wait_for_projects_page,
@@ -119,3 +123,50 @@ def test_guest_workspace_shared_across_sessions(app_frontend, current_server, br
     finally:
         first_context.close()
         second_context.close()
+
+
+# How many of the page's first list requests the server fails.
+FAILED_LISTINGS = 2
+
+
+def test_a_guest_whose_first_listing_fails_still_gets_the_dataflows(app_frontend, current_server, browser):
+    """#1274: "Continue as Guest" on a fresh browser while the server fails the
+    list request, as stable failed some of its requests in the days its backend
+    ran out of open files. The projects page drew the failed list as an empty
+    gallery and never asked again, so the guest saw no dataflow until a reload.
+    It now asks again, and the guest's dataflows come without a reload. Without
+    sign-in the shared guest signs in by itself, and the page is the same."""
+    failed: list[str] = []
+
+    def fail_the_first_listings(route) -> None:
+        if route.request.method == "GET" and len(failed) < FAILED_LISTINGS:
+            failed.append(route.request.url)
+            route.fulfill(
+                status=500,
+                content_type="application/json",
+                body=json.dumps({"error": "[Errno 24] Too many open files"}),
+            )
+        else:
+            route.continue_()
+
+    context = browser.new_context()
+    try:
+        page = context.new_page()
+        page.route(
+            lambda url: urlparse(url).path.rstrip("/").endswith("/api/projects"),
+            fail_the_first_listings,
+        )
+        _enter_guest_workspace(page, app_frontend.base_url)
+        names = [name for _id, name in _listed(current_server, _session_token(page))]
+        assert names, "the shared guest lists no dataflow, so the page would have none to show"
+
+        try:
+            project_card(page, names[0]).first.wait_for(timeout=20000)
+        except Exception as exc:
+            raise AssertionError(
+                f"after the server failed {len(failed)} list request(s), the projects page showed "
+                f"no dataflow within 20 s, though the guest has {len(names)}"
+            ) from exc
+        assert failed, "the server failed no list request, so this proves nothing"
+    finally:
+        close_after_routes(context)

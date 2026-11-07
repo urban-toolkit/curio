@@ -669,7 +669,9 @@ class CatalogListing:
         inside an allowed read root. ``data_file`` comes from a manifest on disk
         and is not containment-checked when it is written, so the
         ``_contained_path`` guard is applied here too - never skipped just
-        because the row came from the index.
+        because the row came from the index. And as the listing does, a hosted
+        guest's own dataset in the guest account's store resolves for that
+        guest alone (``UserDatasetRepository._lists``).
         """
         from utk_curio.backend.app.datasets.repositories import index as index_repo
 
@@ -690,7 +692,7 @@ class CatalogListing:
         pending: list[str] = []
         for dataset_id in dataset_ids:
             row = rows.get(dataset_id)
-            if row is None:
+            if row is None or not self.user_store.lists_row(user_key, row):
                 pending.append(dataset_id)
                 continue
             try:

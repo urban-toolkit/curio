@@ -6,7 +6,7 @@
  * 401 and nothing else. A check that was aborted because the page navigated
  * away, that could not connect, or that met a server error says nothing about
  * the session, so the token must survive it for the next load. With sign-in
- * on, the load asks again after each of `SESSION_CHECK_WAITS_MS` before it
+ * on, the load asks again after each of `ASK_AGAIN_WAITS_MS` before it
  * shows the sign-in form: a browser drops every request in flight when the
  * machine's network changes (`net::ERR_NETWORK_CHANGED`), and one dropped
  * check showed a signed-in owner the sign-in form on CI. A check whose
@@ -24,7 +24,8 @@ jest.mock("../../registry/packageRegistryBootstrap", () => ({
   refreshPackageRegistry: jest.fn(() => Promise.resolve()),
 }));
 
-import UserProvider, { SESSION_CHECK_WAITS_MS, useUserContext } from "../../providers/UserProvider";
+import UserProvider, { useUserContext } from "../../providers/UserProvider";
+import { ASK_AGAIN_WAITS_MS as SESSION_CHECK_WAITS_MS } from "../../utils/askAgain";
 
 const COOKIE = "session_token";
 const SHARED = "guest_shared";

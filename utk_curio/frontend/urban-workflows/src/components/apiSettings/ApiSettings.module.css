@@ -57,12 +57,6 @@
   margin-top: 2px;
 }
 
-.guestNotice {
-  color: var(--curio-text-secondary);
-  font-size: var(--curio-font-size-lg);
-  margin-bottom: 8px;
-}
-
 /* The local shared guest: everyone on this Curio uses the one account. */
 .sharedNote {
   margin: 0 0 10px;

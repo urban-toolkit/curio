@@ -18,6 +18,7 @@ from utk_curio.backend.app.projects import concurrency
 from utk_curio.backend.app.projects import repositories as repo
 from utk_curio.backend.app.projects import scenarios
 from utk_curio.backend.app.projects import storage
+from utk_curio.backend.app.projects import visitor_copies
 from utk_curio.backend.app.projects.shipped import shipped_dataflows
 from utk_curio.backend.app.projects.schemas import (
     OutputRef,
@@ -921,6 +922,41 @@ def _seed_dataset_defaults(user, ukey: str, project_id: str, spec: dict) -> dict
     return storage.read_spec(ukey, project_id) or spec
 
 
+def seed_default_agents(user) -> None:
+    """Add the agents Curio adds to every account that *user*'s account does
+    not have yet, in its imports and in every dataflow it has
+    (``agents.service.seed_default_agents``). Never raises."""
+    from utk_curio.backend.app.agents.service import seed_default_agents as seed_agents
+
+    seed_agents(_user_dir_key(user), user)
+
+
+def agents_for_new_dataflows(user) -> list:
+    """The agents a dataflow *user*'s account makes starts with: its imports
+    with their closures, the agents Curio adds by default among them, which
+    are added to the account first (``agents.service.agents_for_new_dataflows``).
+    Adding those takes the spec lock of every dataflow the account has, so a
+    caller asks before it holds any lock or uncommitted write (#909).
+    Best-effort: a dataflow is never refused for its agents."""
+    try:
+        from utk_curio.backend.app.agents.service import agents_for_new_dataflows as agents_for
+
+        return agents_for(_user_dir_key(user), user=user)
+    except Exception:  # noqa: BLE001 - never block a dataflow on its agents
+        logger.warning("The agents of a new dataflow could not be read", exc_info=True)
+        return []
+
+
+def seed_spec_with_agents(spec, agents: list):
+    """*spec*, a dataflow not written yet, with *agents*
+    (:func:`agents_for_new_dataflows`) in its lockfile beside those it lists,
+    so it is made with them in its first write
+    (``agents.service.seed_spec_with_imported_agents``)."""
+    from utk_curio.backend.app.agents.service import seed_spec_with_imported_agents
+
+    return seed_spec_with_imported_agents(spec, agents)
+
+
 def _saved_outputs_to_copy(data: ProjectCreate) -> tuple:
     """``(the copied dataflow's id and its owner's key, {node id: output
     name})``: the outputs the dataflow *data* copies (``copy_of``) saved,
@@ -1007,6 +1043,12 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     # First-time real users have no per-user package store yet; seed builtin
     # so the new dataflow's palette isn't empty.
     ensure_user_packages_initialized(ukey)
+    # And the agents it is made with: the account's, the ones every account
+    # has by default among them. Asked before this request writes anything:
+    # adding those defaults installs them into each dataflow the account has,
+    # under that dataflow's spec lock, which no thread may wait for holding an
+    # uncommitted write (#909).
+    agents = agents_for_new_dataflows(user)
 
     project = repo.upsert_project(
         user_id=user.id,
@@ -1024,6 +1066,9 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     # package palette starts populated. Caller can override by passing a
     # spec that already declares packages.
     data.spec = seed_spec_with_defaults(ukey, data.spec)
+    # And the account's agents beside any the spec lists, so its agents palette
+    # starts populated too, in the same first write.
+    data.spec = seed_spec_with_agents(data.spec, agents)
     # A spec that does not name itself is a spec the canvas reloads with an
     # undefined workflow name; fill what the client left out (never overwrite).
     _ensure_dataflow_identity(data.spec, data.name)
@@ -1069,16 +1114,8 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     # the real install within a release. Best-effort: a stale default must never
     # stop a project from being created.
     effective_spec = _seed_dataset_defaults(user, ukey, project_id, effective_spec)
-    # And the account's imported agents, for the same reason: the agents palette
-    # reads the PROJECT lockfile, so an account-level import that never reaches
-    # a lockfile is invisible on the canvas however the catalog labels it.
-    try:
-        from utk_curio.backend.app.agents.service import seed_project_with_imported_agents
-
-        seed_project_with_imported_agents(ukey, project_id)
-        effective_spec = storage.read_spec(ukey, project_id) or effective_spec
-    except Exception:  # noqa: BLE001 - never block project creation on a seed
-        logger.warning("agent seed for project %s failed", project_id, exc_info=True)
+    # The answer carries the spec as it is on disk.
+    effective_spec = storage.read_spec(ukey, project_id) or effective_spec
 
     # Record only outputs the reload path can restore from a durable source
     # (installed dataset / legacy copy). Writing the raw client list would let a
@@ -1477,7 +1514,7 @@ def forget_saved_output(user, project_id: str, node_id: str) -> bool:
     return dropped
 
 
-def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
+def mutate_dataflow_datasets(user, project_id: str, mutate, *, cleanup: bool = False) -> Optional[dict]:
     """The dataset endpoints' writer for ``spec.dataflow.datasets`` (dev/81/82).
 
     Atomic read-modify-write: *mutate* receives the current refs under the
@@ -1492,9 +1529,19 @@ def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
     outputs/name/description only. Returns the resulting spec, or ``None``
     when the project has no spec on disk.
 
+    A hosted guest's change is made to their own copy of the dataflow
+    (``visitor_copies.py``), made on this first write, and writes no row: the
+    dataflow and its row stay as every other guest opens them. *cleanup* is
+    a write for another of the account's actions, a deleted dataset's refs
+    cleared out of every dataflow that held it, which writes the dataflow
+    itself, as :func:`update_project`'s *cleanup* does.
     """
     project = repo.get_for_user(project_id, user.id)
     ukey = _user_dir_key(user)
+    own = project_id if cleanup else visitor_copies.for_request(user, project_id, make=True)
+    if own != project_id:
+        mutated = storage.mutate_dataflow_datasets(ukey, own, mutate)
+        return mutated[0] if mutated is not None else None
     result = storage.mutate_dataflow_datasets(ukey, project_id, mutate)
     if result is None:
         return None
@@ -1586,7 +1633,9 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
     """The owner's dataflow, its spec and the outputs it opens with: its saved
     outputs, or, with *last_results*, as its canvas left them, each node its
     runs ran showing its newest kept result where one matches the saved
-    dataflow (``runs/reopen.py``)."""
+    dataflow (``runs/reopen.py``). A hosted guest who has a copy of the
+    dataflow of their own (``visitor_copies.py``) opens that copy, with the
+    results their plays kept on it."""
     from utk_curio.backend.app.datasets.seed import (
         ensure_dataflow_datasets_installed,
     )
@@ -1613,21 +1662,27 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
     # it (#909).
     repo.touch_last_opened(project_id, user.id)
     db.session.commit()
+    own = visitor_copies.canvas_spec(user, project_id)
+    opened = own if own is not None else spec
     shown = readable
     if last_results:
         from utk_curio.backend.app.runs.reopen import last_results as kept_results
 
         try:
-            shown = kept_results(user, ukey, project_id, spec, readable)
+            shown = kept_results(
+                user, ukey, project_id, opened, readable,
+                kept_on=visitor_copies.for_request(user, project_id, make=False) if own is not None else None,
+            )
         except Exception:  # noqa: BLE001 - a dataflow always opens, with its saved outputs at least
             logger.exception("could not find the kept results of dataflow %s", project_id)
+    detail = _to_detail(
+        project, spec=spec, outputs=readable,
+        spec_revision=storage.spec_revision(ukey, project_id),
+        categories=_categories(user, project_id, opened),
+    )
     return {
-        "project": _to_detail(
-            project, spec=spec, outputs=readable,
-            spec_revision=storage.spec_revision(ukey, project_id),
-            categories=_categories(user, project_id, spec),
-        ),
-        "spec": spec,
+        "project": visitor_copies.with_spec(detail, own) if own is not None else detail,
+        "spec": opened,
         "outputs": [_output_ref_dict(r) for r in shown],
     }
 
@@ -2015,6 +2070,37 @@ def rename_project(user, project_id: str, new_name: str) -> ProjectSummary:
     return _to_summary(
         project, spec_revision=storage.spec_revision(_user_dir_key(user), project_id)
     )
+
+
+def _renames_only(data: ProjectUpdate) -> bool:
+    """Whether the PUT *data* names the dataflow and changes nothing else, as
+    the canvas title's rename sends it."""
+    return (
+        isinstance(data.name, str) and bool(data.name.strip())
+        and data.spec is None and data.outputs is None and data.description is None
+        and data.thumbnail_accent is None and data.categories is None and data.history is None
+    )
+
+
+def rename_for_visitor(user, project_id: str, data: ProjectUpdate) -> Optional[ProjectDetail]:
+    """A hosted guest's rename of a dataflow their account owns: their own
+    copy's name (``visitor_copies.rename``), answered with the dataflow as
+    their canvas opens it. The row, which every guest's gallery lists, keeps
+    its name. ``None`` for any other PUT, and for anyone else, whose save
+    :func:`update_project` makes or refuses."""
+    if not _renames_only(data):
+        return None
+    spec = visitor_copies.rename(user, project_id, data.name.strip())
+    if spec is None:
+        return None
+    project = repo.get_for_user(project_id, user.id)
+    ukey = _user_dir_key(user)
+    detail = _to_detail(
+        project, spec=spec, outputs=_output_refs_from_manifest(storage.read_manifest(ukey, project_id)),
+        spec_revision=storage.spec_revision(ukey, project_id),
+        categories=_categories(user, project_id, spec),
+    )
+    return visitor_copies.with_spec(detail, spec)
 
 
 #: What anyone but the owner and the editors the owner invited is told who

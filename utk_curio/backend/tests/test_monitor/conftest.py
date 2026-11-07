@@ -27,15 +27,22 @@ def app():
 
 
 @pytest.fixture(autouse=True)
-def clean_monitor_state():
-    """Counters and error windows are module globals, so they leak across tests."""
-    from utk_curio.backend.app.monitor import counters, errors, routes, storage
+def clean_monitor_state(tmp_path, monkeypatch):
+    """Counters and error windows are module globals, so they leak across tests.
 
-    for module in (counters, errors, storage):
+    The hourly histories are written to disk too, so each test gets a folder
+    of its own for their files. It is apart from the tree ``state_root`` hands
+    the storage walk, whose store counts it must not change.
+    """
+    from utk_curio.backend.app.monitor import counters, errors, history, llm_tokens, routes, storage
+
+    histories = tmp_path / "monitor"
+    monkeypatch.setattr(history, "_folder", lambda: histories)
+    for module in (counters, errors, llm_tokens, storage):
         module.reset()
     routes.reset_rate_limit()
     yield
-    for module in (counters, errors, storage):
+    for module in (counters, errors, llm_tokens, storage):
         module.reset()
     routes.reset_rate_limit()
 

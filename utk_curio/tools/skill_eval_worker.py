@@ -131,11 +131,13 @@ GRADER_TASK_SECTION = "grader-task"
 #: (gemma4 on vLLM) spends most of the cap thinking: a whole grade of five
 #: results is under about 600 tokens, yet checks that follow ids from node to
 #: edge to scenario kept gemma4's grader going past 2,048 tokens in nine tries
-#: of twelve (scenarios' case 2, 11-03). The cap is twice a run's own
-#: (``turns.policy.DEPLOYMENT_MAX_OUTPUT_TOKENS``), which gemma4's own turns
-#: were seen to spend whole on thinking: the grader may think as long as a
-#: run's whole turn and still write its grade.
-GRADER_MAX_TOKENS = 8192
+#: of twelve (scenarios' case 2, 11-03). Qwen3.8-27B, the benchmark's grader
+#: since 11-04, then thought past 8,192 tokens on one grade of each of the
+#: 11-05 runs (node-functions' case 2 in the baseline, map-edits' case 4 on
+#: #1330), each of them a run left in an error. So the cap is four times a
+#: run's own (``turns.policy.DEPLOYMENT_MAX_OUTPUT_TOKENS``): the grader may
+#: think three times as long as a run's whole turn and still write its grade.
+GRADER_MAX_TOKENS = 16384
 GRADER_ATTEMPTS = 3
 #: The variable that names one grader for every model measured, on the same endpoint.
 ENV_GRADER = "CURIO_EVAL_GRADER_MODEL"

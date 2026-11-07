@@ -87,21 +87,33 @@ describe("canvas catalog drawer parity", () => {
     },
   );
 
-  test.each(CANVAS_DRAWERS.filter((drawer) => !drawer.endsWith("HeaderDrawer.tsx")))(
-    "%s marks its panel as a modal dialog",
+  // #1352: a pinned drawer stays open while the canvas, the palette and the
+  // top bar keep working, so its panel is a dialog that is not modal then;
+  // unpinned, the scrim covers the page and the panel is a modal dialog. One
+  // helper gives the root `data-pinned` and the panel `aria-modal` for every
+  // drawer, and no drawer writes either itself. A suite of each drawer
+  // renders it pinned and unpinned: the Agent drawer's own, the header
+  // drawers', the Model drawer's (Node and Model), the editor's data request
+  // review (Data), drawers over Define (Scenario) and the Discovery drawer's
+  // pin.
+  test.each(CANVAS_DRAWERS)(
+    "%s is a dialog whose pinned and modal attributes come from the shared helper",
     (drawer) => {
       const source = read(drawer);
       expect(source).toContain('role="dialog"');
-      expect(source).toContain('aria-modal="true"');
+      expect(source).toMatch(/\bpinnedDrawer\(pinned\b/);
+      expect(source).toContain("{...pin.root}");
+      expect(source).toContain("{...pin.panel}");
+      expect(source).not.toMatch(/aria-modal\s*=/);
+      expect(source).not.toContain("data-pinned");
     },
   );
 
-  test("a header drawer's panel is a modal dialog, but Define scenario's beside the canvas", () => {
+  test("a header drawer's panel is a modal dialog unpinned, but Define scenario's beside the canvas never", () => {
     // Beside the canvas the page around the panel stays usable, so the panel
-    // is a dialog that is not modal.
+    // is a dialog that is not modal; Define scenario has no pin.
     const source = read("components/layout/HeaderDrawer.tsx");
-    expect(source).toContain('role="dialog"');
-    expect(source).toContain('aria-modal={beside ? undefined : "true"}');
+    expect(source).toContain("pinnedDrawer(pinned, { modal: !beside })");
   });
 
   // #197: every confirmation is an in-app ConfirmDialog now. A native
@@ -153,6 +165,19 @@ describe("canvas catalog drawer parity", () => {
     expect(css).toMatch(
       /\.overlayRoot\[data-dragging="true"\]\s*>\s*\.drawer\s*\{\s*pointer-events:\s*auto;\s*\}/,
     );
+  });
+
+  // #1352: pinned, the drawer's scrim no longer covers the page. The root and
+  // the scrim let the pointer through to the canvas, the palette and the top
+  // bar, the scrim is not drawn, and the panel keeps the pointer only while it
+  // is presented, so a pinned drawer sliding away takes no click.
+  test("the shell's stylesheet holds the rule that lets the pointer past a pinned drawer", () => {
+    const css = read("components/packages/publishing/CatalogDrawerShell.module.css");
+    expect(css).toMatch(/\.overlayRoot\[data-pinned="true"\]\s*\{\s*pointer-events:\s*none;\s*\}/);
+    expect(css).toMatch(
+      /\.overlayRootPresented\[data-pinned="true"\]\s*>\s*\.drawer\s*\{\s*pointer-events:\s*auto;\s*\}/,
+    );
+    expect(css).toMatch(/\.overlayRoot\[data-pinned="true"\]\s*>\s*\.scrim\s*\{\s*opacity:\s*0;\s*\}/);
   });
 
   test.each(TABBED_DRAWERS)("%s draws its In project tab in the shared tab strip", (drawer) => {

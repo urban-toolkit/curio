@@ -323,8 +323,10 @@ export function useDatasetCatalogDrawer(presented: boolean) {
    */
   const uninstallAlsoDeletes = useCallback(
     async (dataset: DatasetCatalogItem): Promise<boolean> => {
-      // An editor's removal deletes nothing from any store.
-      if (askTheOwner) return false;
+      // An editor's removal deletes nothing from any store, and neither does
+      // a hosted guest's, which changes their own copy of the dataflow: the
+      // upload stays in the store every guest reads.
+      if (askTheOwner || hostedGuest) return false;
       const dirName = String(dataset.dirName ?? "");
       if (!dirName.startsWith("imported.")) return false;
       if (dataset.origin === "computed" || dataset.origin === "source_node") return false;
@@ -342,7 +344,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         return false;
       }
     },
-    [askTheOwner],
+    [askTheOwner, hostedGuest],
   );
 
   // #197 gave the other two catalogs a confirmation for this and left the Data
@@ -538,6 +540,12 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
 
   const onDelete = useCallback(
     async (dataset: DatasetCatalogItem) => {
+      // The dataset is in the one store every hosted guest reads, so such a
+      // guest is told to sign in, and nothing is asked or sent.
+      if (hostedGuest) {
+        showToast(hostedGuestSignInNote("delete datasets"), "warning");
+        return;
+      }
       const title = datasetDisplayTitle(dataset);
       // Delete strips the dataset's references per DATA FLOW (across all
       // projects), so warn with the affected-dataflow count fetched up front —
@@ -601,7 +609,7 @@ The dataset stays in your Data Catalog and in any other dataflow using it.`) +
         run: () => performDelete(dataset),
       });
     },
-    [performDelete],
+    [performDelete, hostedGuest, showToast],
   );
 
   // The shared pathway, which the Data Catalog PAGE header calls too. It used

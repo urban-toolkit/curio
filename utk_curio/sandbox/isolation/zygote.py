@@ -46,6 +46,11 @@ while the child is unreaped its pid cannot be recycled, so a kill is guaranteed
 to hit the right process. The parent's own socket read is only a liveness
 backstop and kills nothing. One connection per execution is what makes
 concurrent executions work without any threads on this side.
+
+A caller can hang up before its answer comes: ``ZygoteClient`` gives up on the
+pid after ``connect_timeout``. The answer that fails then closes that one
+connection, and the loop serves the others; a child whose caller never learned
+its pid is stopped, since nothing will read its result.
 """
 
 import argparse
@@ -288,11 +293,6 @@ class Zygote:
         Done here rather than in the sandbox because this process is the child's
         parent: it has not reaped the child, so the pid is still reserved and
         cannot have been recycled. A kill from anywhere else races pid reuse.
-
-        The child called ``setsid``, so its pid is also its process group id and
-        ``killpg`` reaches anything it spawned. ``kill`` as well, for the narrow
-        window between ``fork`` and the child reaching ``setsid``, where no
-        process group with that id exists yet.
         """
         import time as _time
 
@@ -303,11 +303,7 @@ class Zygote:
                 continue
             state["killed"] = True
             state["timed_out"] = True
-            for killer, target in ((os.killpg, pid), (os.kill, pid)):
-                try:
-                    killer(target, signal.SIGKILL)
-                except (ProcessLookupError, OSError):
-                    continue
+            _kill_group(pid)
 
     def _accept(self, selector):
         try:
@@ -335,14 +331,14 @@ class Zygote:
         try:
             request = json.loads(line)
         except ValueError as exc:
-            _send(connection, {"error": f"malformed request: {exc}"})
+            _reply(connection, {"error": f"malformed request: {exc}"})
             connection.close()
             return
 
         try:
-            pid = self._fork_child(request)
+            pid = self._fork_child(request, selector, connection)
         except OSError as exc:
-            _send(connection, {"error": f"fork failed: {exc}"})
+            _reply(connection, {"error": f"fork failed: {exc}"})
             connection.close()
             return
 
@@ -353,17 +349,32 @@ class Zygote:
         if isinstance(wall_timeout, (int, float)) and wall_timeout > 0:
             deadline = _time.monotonic() + wall_timeout
 
-        _send(connection, {"pid": pid})
-        self._pending[pid] = {
+        # Pending before the answer, so the child is reaped whatever it does.
+        state = {
             "connection": connection,
             "deadline": deadline,
             "killed": False,
             "timed_out": False,
         }
+        self._pending[pid] = state
+        if not _reply(connection, {"pid": pid}):
+            # The caller hung up before it learned the pid, so nothing will
+            # read this child's result: stop it now.
+            connection.close()
+            state["killed"] = True
+            _kill_group(pid)
+            print(
+                f"[zygote] the caller of child {pid} hung up before its pid "
+                "came; the child was stopped",
+                file=sys.stderr, flush=True,
+            )
 
-    def _fork_child(self, request):
+    def _fork_child(self, request, selector, connection):
         from utk_curio.sandbox.isolation import child
 
+        # Read before the fork: the child, once its life is tied to this
+        # process's, checks that this is still its parent.
+        zygote_pid = os.getpid()
         pid = os.fork()
         if pid != 0:
             return pid
@@ -371,13 +382,22 @@ class Zygote:
         # ---- child ----
         # Nothing here may raise past child.main: it calls os._exit in every
         # path, so control never returns to the accept loop in this process.
+        #
+        # The listener and the zygote's end of every caller's connection are
+        # closed first, by name: this child's own caller's (*connection*),
+        # those accepted and not read yet (in the selector), and those of the
+        # children still running. Node code must never write to a caller, and
+        # a caller must read end-of-file once the zygote is gone, not once
+        # this child is.
         try:
-            self._listener.close()
+            waiting = [key.fileobj for key in selector.get_map().values()
+                       if key.data == "connection"]
         except Exception:
-            pass
-        for state in self._pending.values():
+            waiting = []
+        running = [state["connection"] for state in self._pending.values()]
+        for sock in (self._listener, connection, *waiting, *running):
             try:
-                state["connection"].close()
+                sock.close()
             except Exception:
                 pass
 
@@ -395,6 +415,7 @@ class Zygote:
             uid=self.uid,
             gid=self.gid,
             require_seccomp=self.require_seccomp,
+            zygote_pid=zygote_pid,
         )
         os._exit(70)  # unreachable; child.main always exits
 
@@ -446,6 +467,36 @@ def _read_line(connection):
 
 def _send(connection, payload):
     connection.sendall(json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n")
+
+
+def _reply(connection, payload):
+    """Send *payload* to a caller; False when the caller has hung up.
+
+    A send to a closed connection fails (a broken pipe, or a reset). That ends
+    this one exchange and nothing else: raised, it left the accept loop, the
+    zygote exited, and every isolated run after it failed with "could not
+    reach the execution zygote" until the stack restarted.
+    """
+    try:
+        _send(connection, payload)
+    except OSError:
+        return False
+    return True
+
+
+def _kill_group(pid):
+    """SIGKILL the child *pid* and anything it spawned.
+
+    The child calls ``setsid``, so its pid is also its process group id and
+    ``killpg`` reaches anything it spawned. ``kill`` as well, for the narrow
+    window between ``fork`` and the child reaching ``setsid``, where no
+    process group with that id exists yet.
+    """
+    for killer, target in ((os.killpg, pid), (os.kill, pid)):
+        try:
+            killer(target, signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            continue
 
 
 def _resolve_execution_identity(user):

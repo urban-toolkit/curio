@@ -18,20 +18,24 @@ SCRIPTED_MODEL = "scripted"
 SCRIPTED_LABEL = "Scripted"
 
 
-def use_scripted_llm(backend_url: str, token: str) -> dict:
+def use_scripted_llm(backend_url: str, token: str, *, model: str = SCRIPTED_MODEL,
+                     label: str = SCRIPTED_LABEL) -> dict:
     """Make a scripted LLM configuration this user's default, and return it.
 
     Goes through the real API Settings routes (``/api/agents/llm``) rather than a
     test-only shortcut, so the resolution path under test is the production one.
+    *model* and *label* name a configuration of the test's own, for a test that
+    tells its calls apart from every other test's by their model (the monitor's
+    LLM tokens).
     """
     listing = api_json(f"{backend_url}/api/agents/llm", token)
     config = next(
-        (c for c in listing["configs"] if c["label"] == SCRIPTED_LABEL), None
+        (c for c in listing["configs"] if c["label"] == label), None
     ) or api_json(
         f"{backend_url}/api/agents/llm/configs", token, method="POST",
-        payload={"label": SCRIPTED_LABEL, "apiType": "testing", "model": SCRIPTED_MODEL},
+        payload={"label": label, "apiType": "testing", "model": model},
     )["config"]
-    assert config["apiType"] == "testing" and config["model"] == SCRIPTED_MODEL, config
+    assert config["apiType"] == "testing" and config["model"] == model, config
     chosen = api_json(
         f"{backend_url}/api/agents/llm/default", token, method="PUT",
         payload={"configId": config["id"]},

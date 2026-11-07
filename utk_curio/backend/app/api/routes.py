@@ -504,6 +504,9 @@ def report_node_runtime():
     - the caller's own storage key is used, so a report can only ever touch
       that user's own project directory, and the project must already exist
       (a bogus id is a no-op, never a new directory);
+    - a hosted guest's report goes to their own copy of the dataflow
+      (``projects/visitor_copies.py``), and nowhere while they have none: the
+      dataflow is every guest's, and a render makes no copy;
     - ``status`` is an allowlist and ``message`` is bounded on arrival;
     - **no artifact path is accepted** — a client cannot mint one, so nothing
       downstream can mistake a reported record for a stored artifact;
@@ -512,6 +515,7 @@ def report_node_runtime():
     """
     from utk_curio.backend.app.execution import runtime_journal
     from utk_curio.backend.app.projects import storage as projects_storage
+    from utk_curio.backend.app.projects import visitor_copies
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     body = request.get_json(silent=True) or {}
@@ -530,6 +534,11 @@ def report_node_runtime():
     if user is None:
         return jsonify({'error': 'authentication required'}), 401
     user_key = _user_dir_key(user)
+    if visitor_copies.copies_for(user):
+        own = visitor_copies.for_request(user, dataflow_id, make=False)
+        if own == dataflow_id:
+            return '', 204
+        dataflow_id = own
     try:
         exists = projects_storage.project_dir(user_key, dataflow_id).is_dir()
     except Exception:
@@ -568,9 +577,11 @@ def read_node_runtime():
 
     Read-only, the caller's own storage key, and an empty answer (never a 404)
     when the node has no record: "nothing recorded" is a normal state, and the
-    node body must not render an error because of it.
+    node body must not render an error because of it. A hosted guest reads
+    their own copy's records, once they have a copy (``projects/visitor_copies.py``).
     """
     from utk_curio.backend.app.execution import runtime_journal
+    from utk_curio.backend.app.projects import visitor_copies
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     node_id = (request.args.get('nodeId') or '').strip()
@@ -581,6 +592,7 @@ def read_node_runtime():
     if user is None:
         return jsonify({'error': 'authentication required'}), 401
     user_key = _user_dir_key(user)
+    dataflow_id = visitor_copies.for_request(user, dataflow_id, make=False)
     return jsonify({
         'nodeId': node_id,
         'run': runtime_journal.read_record(user_key, dataflow_id, node_id),

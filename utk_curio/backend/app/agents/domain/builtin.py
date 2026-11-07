@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from functools import lru_cache
 from pathlib import Path
 
@@ -35,6 +36,7 @@ from utk_curio.backend.app.agents.domain.manifest import (
     AgentManifest,
     AgentManifestError,
     PromptAsset,
+    coord_order,
     load_agent_manifest,
     parse_agent_manifest,
 )
@@ -154,6 +156,21 @@ def is_internal(coord: object) -> bool:
         return False
     m = get_builtin_manifest(shipped_coord)
     return not m.catalog.listed and major in ("", str(m.major))
+
+
+def is_shipped(coord: object) -> bool:
+    """Whether *coord* is an agent Curio ships, at the major it ships it. The
+    copy an install puts in an account's store is still Curio's; an agent of
+    the same id at another major is the account's own."""
+    return _entry(str(coord or "")) is not None
+
+
+def answering_order(coords: Iterable[str]) -> list[str]:
+    """*coords*, agents a dataflow holds, in the order they answer for a job
+    several of them declare: the account's own agents first (those it
+    imported or published), then the agents Curio ships, each group by id
+    (``coord_order``)."""
+    return sorted(coords, key=lambda coord: (is_shipped(coord), coord_order(coord)))
 
 
 def gets_worked_examples(coord: str, capability: str | None = None) -> bool:

@@ -1,6 +1,10 @@
 import os
+
+from werkzeug.serving import WSGIRequestHandler
+
 from utk_curio.backend.app import create_app
 from utk_curio.backend.config import CURIO_SEED_EXAMPLES
+from utk_curio.common.request_deadline import RequestHeadDeadline
 
 app = create_app()
 
@@ -17,6 +21,7 @@ with app.app_context():
         from utk_curio.backend.app.projects.services import (
             _user_dir_key,
             reconcile_guest_projects,
+            seed_default_agents,
         )
         guest = _shared_guest_user()
         # The hosted guests' copies go, as their examples are put back.
@@ -27,6 +32,9 @@ with app.app_context():
         n = reconcile_guest_projects(guest)
         if n:
             app.logger.info("Reconciled %d guest project(s) from filesystem", n)
+        # The agents every account has by default, before the examples are put
+        # back, so each example gets them, and every guest's copy of one too.
+        seed_default_agents(guest)
         if CURIO_SEED_EXAMPLES:
             from utk_curio.backend.app.projects.seed import seed_example_projects
             s = seed_example_projects(guest)
@@ -74,15 +82,22 @@ def _run_kwargs():
     }
 
 
+class RequestHandler(RequestHeadDeadline, WSGIRequestHandler):
+    """Werkzeug's request handler, which closes a connection that sends no
+    request within ``request_start_timeout`` seconds (``RequestHeadDeadline``)."""
+
+
 def _socketio_run_kwargs():
-    """What ``socketio.run`` is handed: ``_run_kwargs``, and the reloader's
+    """What ``socketio.run`` is handed: ``_run_kwargs``, the reloader's
     exclusions, which Flask-SocketIO passes on to Werkzeug's reloader only as
-    ``reloader_options``. Without them a package install, which writes under
-    ``.curio/`` and ``site-packages/``, restarts a dev backend mid-request.
+    ``reloader_options``, and the request handler. Without the exclusions a
+    package install, which writes under ``.curio/`` and ``site-packages/``,
+    restarts a dev backend mid-request.
 
     The Werkzeug server is the one Flask-SocketIO's threading mode runs on (a
     thread per request and per WebSocket); ``allow_unsafe_werkzeug`` lets it
     start without a terminal, as the launcher and the Docker image start it.
+    Flask-SocketIO hands ``request_handler`` on to Werkzeug's ``run_simple``.
     """
     return {
         'allow_unsafe_werkzeug': True,
@@ -90,6 +105,7 @@ def _socketio_run_kwargs():
             'exclude_patterns': RELOADER_EXCLUDE_PATTERNS,
             'reloader_type': DEFAULT_RELOADER_TYPE,
         },
+        'request_handler': RequestHandler,
         **_run_kwargs(),
     }
 

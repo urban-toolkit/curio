@@ -15,7 +15,7 @@ import type { LlmListingState } from "./useLlmListing";
  * this Curio's own endpoints and the account's configurations, which are
  * added and edited on the API keys tab.
  *
- * A guest on a hosted Curio sees the guest configuration and nothing to choose.
+ * A guest on a hosted Curio sees why there is nothing to choose.
  */
 export const AgentConfigTab: React.FC<{
   llm: LlmListingState;
@@ -46,15 +46,7 @@ export const AgentConfigTab: React.FC<{
     return (
       <div className={styles.tabBody}data-testid="agent-config-tab">
         <p className={llmStyles.note} role="note">{listing.reason}</p>
-        <p className={llmStyles.active}>
-          {active.source ? (
-            <>
-              Guests use <strong>{active.model}</strong> on this Curio&apos;s endpoint.
-            </>
-          ) : (
-            active.error
-          )}
-        </p>
+        {active.source ? null : <p className={llmStyles.active}>{active.error}</p>}
       </div>
     );
   }

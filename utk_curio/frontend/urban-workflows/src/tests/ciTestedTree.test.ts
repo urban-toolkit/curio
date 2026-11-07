@@ -74,11 +74,13 @@ describe("main's run of a tree a run already tested green", () => {
         expect(condition(jobBlock("test-gpu-stress"), 4)).not.toContain("'push'");
     });
 
-    test("only a run with every job green and nothing re-minted names its tree", () => {
+    test("only a run with every job green, nothing re-minted and no tests input names its tree", () => {
         const named = condition(step("ci-report", "Name the tree this run tested green"), 8);
         for (const part of [
             "success()",
             "!inputs.remint",
+            // A tests run runs only the tests it names (ciFilteredRuns.test.ts).
+            "!inputs.tests",
             "!contains(needs.*.result, 'failure')",
             "!contains(needs.*.result, 'cancelled')",
             "!contains(needs.*.result, 'skipped')",

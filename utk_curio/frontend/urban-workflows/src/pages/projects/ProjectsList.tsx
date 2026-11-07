@@ -28,6 +28,9 @@ import DataflowCategoriesDialog from "../../components/projects/DataflowCategori
 import { UNREADABLE_FILE_MESSAGE } from "../../utils/dataflowImport";
 import { backendUrl } from "../../utils/backendUrl";
 import { countLabel } from "../../utils/countLabel";
+import { askAgain } from "../../utils/askAgain";
+import { mayPassAgain } from "../../utils/authApi";
+import { reportHandledError } from "../../utils/clientErrorReporter";
 import {
   FACET_SECTIONS,
   OWNER_YOURS,
@@ -43,6 +46,16 @@ import {
 type ViewMode = "grid" | "list";
 /** Mirrors the sorts projectsApi and `list_for_user` already implement. */
 type ProjectSort = "last_opened" | "name" | "created";
+
+/**
+ * Where the list stands. Before its first answer the page is `loading`, not an
+ * empty account, and a list whose every try failed is `failed`, with the
+ * server's reason: the page used to draw both as "No projects yet" (#1274).
+ */
+type ListState =
+  | { status: "loading" }
+  | { status: "ready" }
+  | { status: "failed"; reason: string };
 
 const SORT_OPTIONS: { value: ProjectSort; label: string }[] = [
   { value: "last_opened", label: "Sort: Recent activity" },
@@ -93,6 +106,7 @@ const ProjectsList: React.FC = () => {
   const navigate = useNavigate();
   const { showToast } = useToastContext();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [listState, setListState] = useState<ListState>({ status: "loading" });
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [sort, setSort] = useState<ProjectSort>("last_opened");
   const [search, setSearch] = useState("");
@@ -115,19 +129,44 @@ const ProjectsList: React.FC = () => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const importNotebookRef = useRef<HTMLInputElement>(null);
 
+  // The newest list request. An older one that answers late is dropped, and
+  // one the page left behind stops asking.
+  const listRequest = useRef(0);
+  useEffect(() => () => {
+    listRequest.current += 1;
+  }, []);
+
   // One request. There used to be a "Recent" tab fetched alongside this one,
   // but it returned the same projects in the same order — its only filter was
   // on ``archived_at``, which no scope varied and #261 removed (#286).
+  //
+  // A request that got no answer or a server error is asked again (#1274): a
+  // server out of open files fails some requests while others pass. A list
+  // that still fails keeps the rows already shown, and says why.
   const loadProjects = useCallback(async () => {
-    const rows = await projectsApi
-      .list({ sort })
-      .catch(() => [] as ProjectSummary[]);
-    setProjects(rows);
+    const request = ++listRequest.current;
+    const stale = () => request !== listRequest.current;
+    try {
+      const rows = await askAgain("The dataflow list", () => projectsApi.list({ sort }), mayPassAgain, stale);
+      if (stale()) return;
+      setProjects(rows);
+      setListState({ status: "ready" });
+    } catch (err) {
+      if (stale()) return;
+      const reason = (err as Error | null)?.message || "the server did not answer";
+      setListState({ status: "failed", reason });
+      reportHandledError(`Couldn't load your dataflows: ${reason}`, (err as Error | null)?.stack ?? "");
+    }
   }, [sort]);
 
   useEffect(() => {
-    loadProjects();
+    void loadProjects();
   }, [loadProjects]);
+
+  const retryList = () => {
+    setListState({ status: "loading" });
+    void loadProjects();
+  };
 
   // What the search box leaves; the rail counts and filters within it.
   const searched = useMemo(() => {
@@ -427,17 +466,40 @@ const ProjectsList: React.FC = () => {
             </button>
           </CatalogPageHeader>
 
-          {filtered.length === 0 ? (
-            <div className={browseStyles.empty}>
-              {/* `search.trim()`, matching the needle above: a whitespace-only box
-                  is not a filter, so an empty account must not be told its
-                  projects were filtered out (#231). */}
-              {filtering && projects.length > 0
-                ? "No dataflows match the current filters."
-                : search.trim()
-                  ? "No projects match that search."
-                  : "No projects yet. Create a new dataflow!"}
+          {listState.status === "failed" ? (
+            <div className={browseStyles.browseBanner} role="alert">
+              <span>Couldn't load your dataflows: {listState.reason}</span>
+              <button
+                type="button"
+                className={browseStyles.browseBannerDismiss}
+                aria-label="Retry"
+                data-tooltip="Retry"
+                onClick={retryList}
+              >
+                ↻
+              </button>
             </div>
+          ) : null}
+
+          {filtered.length === 0 ? (
+            // Only a list that answered can say there is nothing: before then
+            // the page is loading, and a failed one says so above.
+            listState.status === "ready" || projects.length > 0 ? (
+              <div className={browseStyles.empty}>
+                {/* `search.trim()`, matching the needle above: a whitespace-only box
+                    is not a filter, so an empty account must not be told its
+                    projects were filtered out (#231). */}
+                {filtering && projects.length > 0
+                  ? "No dataflows match the current filters."
+                  : search.trim()
+                    ? "No projects match that search."
+                    : "No projects yet. Create a new dataflow!"}
+              </div>
+            ) : listState.status === "loading" ? (
+              <div className={browseStyles.empty} aria-busy="true">
+                Loading dataflows…
+              </div>
+            ) : null
           ) : (
             <div className={styles.cardScroll} data-curio-projects-scroll="true">
               <div className={viewMode === "grid" ? styles.cardGrid : styles.cardList}>

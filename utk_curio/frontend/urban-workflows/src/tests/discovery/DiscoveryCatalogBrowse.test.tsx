@@ -253,6 +253,15 @@ describe('DiscoveryCatalogBrowse', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 
+  test('a failed load does not say the deployment has no sources', async () => {
+    apiFetch.mockRejectedValue(new Error('backend is down'));
+    renderPage();
+    expect(await screen.findByText('backend is down')).toBeInTheDocument();
+    expect(
+      screen.queryByText('This deployment has no Discovery Catalog sources configured.')
+    ).toBeNull();
+  });
+
   test('it asks the backend to filter rather than filtering locally', async () => {
     // One implementation of "does this match", so the chips and the search box
     // cannot disagree with each other.

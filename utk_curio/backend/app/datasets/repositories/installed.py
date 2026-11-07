@@ -66,12 +66,14 @@ class InstalledDatasetRepository:
         her store counts only when she put it in the dataflow herself
         (``collaboration.owner_uses``): one an editor's change wrote names
         nothing of hers. A ref with no folder is read only within the read
-        roots (``CatalogListing._ref_paths_in_the_read_roots``)."""
-        from utk_curio.backend.app.projects import storage
+        roots (``CatalogListing._ref_paths_in_the_read_roots``). A hosted
+        guest's are those of their own copy of the dataflow, once they have
+        one (``projects/visitor_copies.py``)."""
+        from utk_curio.backend.app.projects import storage, visitor_copies
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         project, store_key = self._dataflow_store(dataflow_id)
-        spec = storage.read_spec(store_key, project.id) or {}
+        spec = storage.read_spec(store_key, visitor_copies.for_request(self.user, project.id, make=False)) or {}
         dataflow = spec.get("dataflow") if isinstance(spec, dict) else {}
         refs = dataflow.get("datasets", []) if isinstance(dataflow, dict) else []
         refs = [r for r in refs if isinstance(r, dict)]
@@ -246,7 +248,8 @@ class InstalledDatasetRepository:
 
         changed = False
 
-        # 1. The refs list, through the section writer.
+        # 1. The refs list, through the section writer: a cleanup of the
+        # dataflow itself, as the bindings' below is.
         hit: list[bool] = []
 
         def _drop(refs: list[dict[str, Any]], _hit: list[bool] = hit):
@@ -259,7 +262,7 @@ class InstalledDatasetRepository:
             _hit.append(True)
             return kept
 
-        self.mutate_refs(dataflow_id, _drop)
+        self.mutate_refs(dataflow_id, _drop, cleanup=True)
         if hit:
             changed = True
 
@@ -299,7 +302,18 @@ class InstalledDatasetRepository:
 
         return changed
 
-    def mutate_refs(self, dataflow_id: str, mutate) -> dict[str, Any]:
+    def lands_on(self, dataflow_id: str) -> str:
+        """The dataflow a change to *dataflow_id*'s datasets is written to, as
+        :meth:`mutate_refs` writes it: *dataflow_id* itself, or a hosted
+        guest's own copy of it, made now (``projects/visitor_copies.py``)."""
+        from utk_curio.backend.app.projects import visitor_copies
+
+        if not visitor_copies.copies_for(self.user):
+            return dataflow_id
+        project, _store_key = self._dataflow_store(dataflow_id)
+        return visitor_copies.for_request(self.user, project.id, make=True)
+
+    def mutate_refs(self, dataflow_id: str, mutate, *, cleanup: bool = False) -> dict[str, Any]:
         """Atomically read-modify-write this dataflow's refs (dev/82).
 
         *mutate* receives the current refs under the per-project spec lock and
@@ -307,12 +321,14 @@ class InstalledDatasetRepository:
         section writer (dev/81 Fix 2) - NOT an update_project round-trip: that
         path carries the on-disk datasets section forward on every client save
         (backend ownership) and would undo these refs. The callback must be a
-        pure list transform (it runs while the spec lock is held)."""
+        pure list transform (it runs while the spec lock is held). A hosted
+        guest's change is their own copy's, but a *cleanup*'s
+        (``projects.services.mutate_dataflow_datasets``)."""
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
         from utk_curio.backend.app.projects import services as project_services
 
-        spec = project_services.mutate_dataflow_datasets(self.user, dataflow_id, mutate)
+        spec = project_services.mutate_dataflow_datasets(self.user, dataflow_id, mutate, cleanup=cleanup)
         if spec is None:
             raise DatasetCatalogError("Dataflow not found", 404)
         return spec

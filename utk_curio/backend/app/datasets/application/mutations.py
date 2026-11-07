@@ -255,6 +255,7 @@ class CatalogMutations:
                 source_updated_at=source_updated_at,
                 source_encoding=source_encoding,
                 discovery_source=discovery_source,
+                visitor=self._visitor(),
             )
         except InstallerError as exc:
             raise DatasetCatalogError(str(exc)) from exc
@@ -318,6 +319,7 @@ class CatalogMutations:
                 discovery_source=discovery_source,
                 description=description,
                 collection=collection,
+                visitor=self._visitor(),
             )
         except InstallerError as exc:
             raise DatasetCatalogError(str(exc)) from exc
@@ -940,9 +942,11 @@ class CatalogMutations:
                             path_ref=str(item.get("uri") or "")[len("curio://outputs/"):],
                             data_type=item.get("dataType"),
                             node_name=resolved_title,
-                            # Namespace by the installing dataflow so the promoted
-                            # id matches the account-level dataset's id.
-                            dataflow_id=dataflow_id,
+                            # Namespace by the dataflow it lands on so the
+                            # promoted id matches the account-level dataset's
+                            # id: a hosted guest's own copy of the installing
+                            # dataflow, whose outputs list for that guest alone.
+                            dataflow_id=self.installed.lands_on(dataflow_id),
                             node_type=item.get("producerNodeType"),
                         )
                     except InstallerError as exc:
@@ -961,6 +965,9 @@ class CatalogMutations:
                         resolve_installed_data_path,
                     )
 
+                    # An output that names no node is saved under no
+                    # dataflow, so a hosted guest's would list for every guest.
+                    self._refuse_hosted_guest("add outputs that name no node")
                     file_bytes = data_path.read_bytes()
                     try:
                         result = install_computed_file(
@@ -1058,10 +1065,12 @@ class CatalogMutations:
 
         Best-effort per project, like its package peer: one project with a
         malformed spec must not abort the other nineteen. Returns
-        ``{"datasets": [...], "projects": [{"id", "ok", "error?"}]}``.
+        ``{"datasets": [...], "projects": [{"id", "ok", "error?"}]}``. A
+        hosted guest is refused (:meth:`_refuse_hosted_guest`).
         """
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
+        self._refuse_hosted_guest("add datasets to all projects")
         from utk_curio.backend.app.datasets import defaults as dataset_defaults
         from utk_curio.backend.app.projects import repositories as projects_repo
 
@@ -1098,10 +1107,12 @@ class CatalogMutations:
         chose, and nothing else silently depends on it.
 
         Uninstall is per-project detach only - it never deletes the dataset
-        itself, which stays in the account catalog.
+        itself, which stays in the account catalog. A hosted guest is refused
+        (:meth:`_refuse_hosted_guest`).
         """
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
+        self._refuse_hosted_guest("remove datasets from all projects")
         from utk_curio.backend.app.datasets import defaults as dataset_defaults
         from utk_curio.backend.app.projects import repositories as projects_repo
 
@@ -1221,12 +1232,18 @@ class CatalogMutations:
         # live inside it), not just this dataflow's ref. Do this AFTER persisting
         # the ref removal so ``dataset_usage`` reflects it, then only delete when
         # no OTHER dataflow (or node binding) still references the dataset — a
-        # dataset shared by another project must survive.
+        # dataset shared by another project must survive. A hosted guest's
+        # removal takes the dataset out of their own copy of the dataflow alone,
+        # and deletes nothing from the store every guest reads: another guest's
+        # copy, which no usage counts, may list it.
+        from utk_curio.backend.app.projects import visitor_copies
+
         if (
             delete_orphaned_import
             and removed_ref
             and self.user is not None
             and removed_ref.get("origin") not in ("computed", "source_node")
+            and not visitor_copies.copies_for(self.user)
         ):
             dir_name = removed_ref.get("dirName")
             if dir_name and str(dir_name).startswith("imported."):
@@ -1300,6 +1317,37 @@ class CatalogMutations:
             index_repo.safe_forget(user_key, dir_name)
         except Exception:  # noqa: BLE001
             pass
+
+    def _visitor(self) -> str | None:
+        """What a hosted guest's upload or download is named after in the
+        store every guest reads (``visitor_copies.visitor_of``), so it lists
+        for that guest alone; None for anyone else. A hosted guest whose
+        sign-in neither the request nor its run knows is refused, rather than
+        given a dataset every guest would list."""
+        from utk_curio.backend.app.projects import visitor_copies
+
+        if not visitor_copies.copies_for(self.user):
+            return None
+        visitor = visitor_copies.visitor_of(self._paths.sign_in)
+        if visitor is None:
+            raise DatasetCatalogError(
+                "Curio could not tell which guest's visit this dataset belongs to, so it was not added.",
+                403,
+            )
+        return visitor
+
+    def _refuse_hosted_guest(self, action: str) -> None:
+        """Refuse *action*, such as "delete datasets", to a hosted guest, with
+        a 403 (``capabilities.catalog_entry_refusal``): every guest shares one
+        account, whose dataset store every guest reads and whose list for all
+        projects every guest's dataflows start with. Asked before anything is
+        written; without ``--deploy`` the shared guest is the one local user,
+        which may."""
+        from utk_curio.backend.app.users.capabilities import catalog_entry_refusal
+
+        refusal = catalog_entry_refusal(self.user, action)
+        if refusal:
+            raise DatasetCatalogError(refusal, 403)
 
     def _assert_can_manage_shared_catalog(self, verb: str) -> None:
         """Raise 403 unless the caller is an account that may write shared state.
@@ -1426,7 +1474,9 @@ class CatalogMutations:
         #
         # Placed AFTER the 404 above on purpose: ``delete_dataset`` cascades
         # through here and re-raises a 403, so gating before the lookup would
-        # stop a guest deleting a dataset of their own that was never published.
+        # stop the local guest (a Curio without ``--deploy``) deleting a dataset
+        # of their own that was never published. A hosted guest's delete is
+        # refused before it reaches here (``_refuse_hosted_guest``).
         self._assert_can_manage_shared_catalog("unpublish")
 
         # Ownership gate (security): only the user who published this dataset may
@@ -1491,9 +1541,11 @@ class CatalogMutations:
         The single path that deletes the account asset (uninstall keeps it).
         Cascades: unpublish from the hub if published → remove the dataset's ref
         from every dataflow that references it → delete the account-store folder.
+        A hosted guest is refused (:meth:`_refuse_hosted_guest`).
         """
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
+        self._refuse_hosted_guest("delete datasets")
         from utk_curio.backend.app.datasets.infrastructure.storage import (
             list_user_datasets,
         )

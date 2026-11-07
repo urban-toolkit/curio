@@ -83,6 +83,12 @@ export interface PackageCatalogState {
   defaults: Set<string>;
   /** The listing has arrived at least once, so an empty one means empty. */
   loaded: boolean;
+  /** The last listing failed (its reason is in `actionError`). Until one
+   *  arrives, a page says the load failed, not that nothing matches. */
+  loadFailed: boolean;
+  /** List again, as the page's load does: `loadFailed` is cleared while it
+   *  asks, and a failure sets it and `actionError` again. */
+  retryLoad: () => void;
   busy: boolean;
   publishingPackageKey: string | null;
   cardActionDir: string | null;
@@ -165,6 +171,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
   const [allInstalled, setInstalled] = useState<PackagePayload[]>([]);
   const [defaults, setDefaults] = useState<Set<string>>(new Set());
   const [loaded, setLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [publishingPackageKey, setPublishingPackageKey] = useState<string | null>(null);
@@ -241,15 +248,25 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     setLoaded(true);
   }, [scope.kind, projectId, beforeReload, onProjectLockfile]);
 
-  useEffect(() => {
-    void reload().catch((err) => reportActionError("Couldn't load catalog", err));
+  // A failed load keeps the rows already listed, and `loaded` as it was. While
+  // it asks again a page with none says it is loading, not that it failed.
+  const retryLoad = useCallback(() => {
+    setLoadFailed(false);
+    void reload().then(
+      () => setLoadFailed(false),
+      (err) => {
+        setLoadFailed(true);
+        reportActionError("Couldn't load catalog", err);
+      },
+    );
   }, [reload, reportActionError]);
 
+  useEffect(() => {
+    retryLoad();
+  }, [retryLoad]);
+
   // A package added elsewhere (a Discovery download) reaches the listing too.
-  const reloadOnRefresh = useCallback(() => {
-    void reload().catch((err) => reportActionError("Couldn't load catalog", err));
-  }, [reload, reportActionError]);
-  usePackageCatalogRefresh(reloadOnRefresh);
+  usePackageCatalogRefresh(retryLoad);
 
   const catalog = useMemo(
     () => allCatalog.filter((p) => packageKindOf(p) === packageKind),
@@ -565,7 +582,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
   return useMemo(
     () => ({
       catalog, installed, kindOfDir, installedByDir, catalogByDir, catalogPublishedDirs, catalogPublishAllowed, defaults,
-      loaded, busy, publishingPackageKey, cardActionDir, actionError, restartNoticeText,
+      loaded, loadFailed, retryLoad, busy, publishingPackageKey, cardActionDir, actionError, restartNoticeText,
       lastInstallSummary, installCandidate, installMode, conflictReport, effectiveProjectId,
       ensureProjectId: ensureSavedProjectId,
       reload, reportActionError, dismissActionError, dismissInstallSummary, dismissRestartNotice,
@@ -573,7 +590,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
       unpublish, exportArchive,
     }),
     [catalog, installed, kindOfDir, installedByDir, catalogByDir, catalogPublishedDirs, catalogPublishAllowed, defaults,
-     loaded, busy, publishingPackageKey, cardActionDir, actionError, restartNoticeText,
+     loaded, loadFailed, retryLoad, busy, publishingPackageKey, cardActionDir, actionError, restartNoticeText,
      lastInstallSummary, installCandidate, installMode, conflictReport, effectiveProjectId, ensureSavedProjectId,
      reload, reportActionError, dismissActionError, dismissInstallSummary, dismissRestartNotice,
      probeInstall, probeUpdate, confirmInstall, cancelInstall, uninstallFromProject, removeFromAccount, publish,

@@ -582,7 +582,8 @@ edited"), an agent's change ("Node Builder, asked by Ana"), each
 - The versions are listed in the order they were made, on a line that leads to
   the newest. Versions made from an earlier one you went back to fold under the
   version they left from; click the fold to show them.
-- The pin keeps the drawer open when you click outside it or press Escape.
+- A pinned drawer stays open while the canvas and the top bar keep working, and
+  Escape leaves it open.
 
 Click a version to open it: its thumbnail, when it was recorded and by whom,
 and its nodes and connections. **Put this version on the canvas** goes back to
@@ -1715,7 +1716,7 @@ Datasets have their own catalog, built on the same model as the Node Catalog: a 
 
 Three surfaces manage datasets:
 
-- The **Data Catalog drawer** inside the canvas. Open it from the **Data Catalog** button in the top bar, or from the **Data Catalog** dropdown in the left Tools panel via **Browse Data Catalog +**. Add datasets to the open dataflow, import files from your machine, or delete.
+- The **Data Catalog drawer** inside the canvas. Open it from the **Data Catalog** button in the top bar, or from the **Data Catalog** dropdown in the left Tools panel via **Browse Data Catalog +**. Add datasets to the open dataflow, import files from your machine, or delete. Pinned, the drawer stays open while the canvas and the top bar keep working.
 - The **Data Catalog** dropdown in the Tools panel, listing the datasets added to the open dataflow and, under **Saved outputs**, the outputs its nodes saved. Drag one onto the canvas to create a Data Loading node that loads it, or onto a node to load it there.
 
 A file from your computer, dropped on the canvas or on a Data Loading node, or picked with a Data Loading node's **Choose file**, is imported into your account and added to the open dataflow, then loaded as a dataset dragged there is.
@@ -1761,6 +1762,9 @@ Agents are AI assistants you attach to your dataflow. The catalog lists four:
 - **Dataflow Builder**: plans a whole dataflow, then solves its nodes.
 - **Dataset Finder**: finds datasets in the Data Catalog and in portals.
 
+Every dataflow you have or make starts with all four, in the left Tools panel's
+**Agent Catalog** dropdown.
+
 What each does in chat, the tools it uses, the modes other agents ask it for
 and the skills it reads are in [AGENT-CATALOG.md](AGENT-CATALOG.md#the-agents).
 In an agent's details you add a skill to it or remove one, for your account.
@@ -1772,7 +1776,8 @@ There are two scopes:
 
 - **`/catalog/agents`**, the **Agent Catalog** page, is your **account**.
   **Add to all projects** there adds an agent to every dataflow you have, and
-  to every new one.
+  to every new one; **Remove from all projects** takes one out of them all,
+  and it stays out.
 - **The Agent Catalog drawer**, opened on the canvas from the **Agent
   Catalog** button in the top bar or the **Agent Catalog** dropdown in the left Tools panel, adds an
   agent to **this dataflow**.

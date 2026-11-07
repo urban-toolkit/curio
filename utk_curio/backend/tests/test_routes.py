@@ -19,6 +19,7 @@ def test_app_routes(app):
         "/api/monitor/storage",
         "/api/monitor/errors",
         "/api/monitor/errors/client",
+        "/api/monitor/llm",
     ]
 
     expected_app_routes = [
@@ -33,6 +34,7 @@ def test_app_routes(app):
         "monitor.monitor_storage_route",
         "monitor.monitor_errors_route",
         "monitor.monitor_client_error_route",
+        "monitor.monitor_llm_route",
     ]
 
     with app.app_context():
