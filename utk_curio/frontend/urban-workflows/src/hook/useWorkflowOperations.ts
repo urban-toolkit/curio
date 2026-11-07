@@ -733,7 +733,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         if (provenance) {
             recordLoadProvenance();
         }
-    }
+    };
 
     const updateDefaultCode = useCallback((nodeId: string, content: string) => {
         console.log("updateDefaultCode");
@@ -746,21 +746,21 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         const { nodeToKeywords, edgeToKeywords } = extractKeywordMaps(trill_spec);
         setNodes((prevNodes: Node[]) => updateNodesByMap(prevNodes, nodeToKeywords, 'keywords'));
         setEdges((prevEdges: Edge[]) => updateEdgesByMap(prevEdges, edgeToKeywords, 'keywords'));
-    }
+    };
 
     // Given a trill specification update the goal property of the associated nodes
     const updateSubtasks = (trill_spec: any) => {
         console.log("updateSubtasks");
         const nodeToGoal = extractNodeFieldMap(trill_spec, 'goal');
         setNodes((prevNodes: Node[]) => updateNodesByMap(prevNodes, nodeToGoal, 'goal'));
-    }
+    };
 
     // Given a trill specification update the warnings property of the associated nodes
     const updateWarnings = (trill_spec: any) => {
         console.log("updateWarnings");
         const nodeToWarning = extractNodeFieldMap(trill_spec, 'warnings');
         setNodes((prevNodes: Node[]) => updateNodesByMap(prevNodes, nodeToWarning, 'warnings'));
-    }
+    };
 
     // ---------------------------------------------------------------------------
     // Canvas Management
@@ -802,7 +802,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setDashboardPins({});
         setSuggestionsLeft(0);
         setPackages([]);
-    }
+    };
 
     // Removes nodes together with their edges. Shared by a reviewed plan apply
     // (dev/62, DEC-049) and the node header's Delete node button. Bookkeeping
@@ -883,7 +883,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 )
             );
         }
-    }
+    };
 
     // Accept the suggestion for adding a specific node
     const acceptSuggestion = useCallback((nodeId: string) => {
@@ -958,7 +958,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 data: { ...edge.data, keywordHighlighted: isHighlighted(edge.data?.keywords) },
             }))
         );
-    }
+    };
 
     // Erase all nodes and edges that are workflow suggestions
     const eraseWorkflowSuggestions = () => {
@@ -977,7 +977,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         );
 
         setSuggestionsLeft(0);
-    }
+    };
 
     // ---------------------------------------------------------------------------
     // Project Operations

@@ -294,7 +294,7 @@ export const NodeContainer = ({
             }
         }
 
-    }, [data.output, data.input])
+    }, [data.output, data.input]);
 
     // View > Minimize Nodes and Expand Nodes fold or open every node. Only a
     // press does: a node that mounts, as on a load, keeps the fold it was saved
@@ -304,7 +304,7 @@ export const NodeContainer = ({
         if (allMinimizedSeen.current === allMinimized) return;
         allMinimizedSeen.current = allMinimized;
         setMinimized(allMinimized > 0);
-    }, [allMinimized])
+    }, [allMinimized]);
 
     useEffect(() => {
         if (!noContent) {
