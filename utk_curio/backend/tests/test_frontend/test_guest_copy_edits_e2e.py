@@ -6,6 +6,10 @@ bound to its own copy's doc: what it types is kept for that visit, survives a
 reload, reaches its agents, and never reaches another visitor. The example
 here is a dataflow the shared guest account owns, as a shipped one is, and
 the language model is scripted.
+
+On a stack without sign-in (CI's test-isolated job) the shared guest is the
+one local user, which owns that dataflow: no copy is made, and its edit is the
+dataflow's own, which every tab opens.
 """
 
 from __future__ import annotations
@@ -53,13 +57,17 @@ def _spec() -> dict:
     }
 
 
-def _example(backend: str) -> str:
-    """A dataflow the shared guest account owns, as every shipped example is."""
-    signed_in = api_json(f"{backend}/api/auth/signin/guest", "", method="POST", payload={})
-    return api_json(
+def _example(backend: str, hosted: bool) -> tuple[str, str]:
+    """A dataflow the shared guest account owns, as every shipped example is,
+    and the token of the sign-in that asked for it: a hosted guest's with
+    sign-in, the local guest's without."""
+    route = "signin/guest" if hosted else "signin/auto-guest"
+    signed_in = api_json(f"{backend}/api/auth/{route}", "", method="POST", payload={})
+    example = api_json(
         f"{backend}/api/testing/stub-project", "", method="POST",
         payload={"username": signed_in["user"]["username"], "name": "Guest edits", "spec": _spec()},
     )["id"]
+    return example, signed_in["token"]
 
 
 def _session_token(page) -> str:
@@ -71,15 +79,15 @@ def _session_token(page) -> str:
 
 def _open(page, base: str, example: str) -> None:
     """Open the example's link, which signs a browser with no account in to the
-    shared guest account, and wait until its tab owns its own copy's room and
-    the canvas is bound to that doc."""
+    shared guest account, and wait until its tab owns the room it joined (a
+    hosted guest's, its own copy's) and the canvas is bound to that doc."""
     page.goto(f"{base}/dataflow/{example}", timeout=120000)
     node_locator(page, NODE).wait_for(timeout=30000)
     try:
         page.locator('[data-curio-room-role="owner"]').wait_for(state="attached", timeout=30000)
         page.wait_for_function("() => !!window.__curio_awareness", timeout=30000)
     except Exception as exc:  # noqa: BLE001 - said in the test's words
-        raise AssertionError("the guest's tab never owned its own copy's room, with its doc bound") from exc
+        raise AssertionError("the guest's tab never owned the room it joined, with its doc bound") from exc
 
 
 def _spec_code(backend: str, token: str, example: str) -> str:
@@ -103,19 +111,47 @@ def _drop_on_the_node(page, coord: str) -> None:
     close_tools_palette(page, "agents")
 
 
+def _the_local_guests_edit_is_the_dataflows_own(browser, contexts, mine, base, backend, example, token) -> None:
+    """Without sign-in the shared guest is the one local user and owns the
+    dataflow: the edit is the dataflow's own, which a reload and another
+    browser open, and the bar says Saved, never Kept for this visit."""
+    save_state = mine.locator("[data-curio-save-state]")
+    expect(save_state).to_have_text("Saved")
+    expect(save_state).not_to_have_attribute("data-tooltip", "Sign in to save dataflows.")
+    mine.reload()
+    node_locator(mine, NODE).wait_for(timeout=30000)
+    wait_for_node_code(mine, NODE, EDITED)
+    assert _spec_code(backend, token, example) == EDITED
+    contexts.append(browser.new_context(viewport={"width": 1280, "height": 768}))
+    another = contexts[-1].new_page()
+    _open(another, base, example)
+    wait_for_node_code(another, NODE, EDITED)
+
+
 def test_a_hosted_guests_edit_is_kept_for_it_alone_and_its_agent_reads_it(app_frontend, current_server, browser):
-    assert auth_enabled_env(), "this stack has no sign-in, so it has no hosted guest"
-    assert allow_guest_login_env(), "this stack turns guest login off, so it has no hosted guest"
+    """With sign-in, a browser with no account is a hosted guest: its edit of
+    an example is kept in its own copy, which a reload opens, another guest
+    never sees, and its agent reads. Without sign-in the shared guest is the
+    one local user: its edit is the dataflow's own
+    (:func:`_the_local_guests_edit_is_the_dataflows_own`)."""
+    hosted = auth_enabled_env()
+    if hosted:
+        assert allow_guest_login_env(), "this stack turns guest login off, so it has no hosted guest"
     base, backend = app_frontend.base_url, current_server
-    example = _example(backend)
+    example, made_by = _example(backend, hosted)
     contexts = []
     try:
-        # A visitor changes the node's code: it is kept for its visit.
+        # A visitor changes the node's code.
         contexts.append(browser.new_context(viewport={"width": 1280, "height": 768}))
         mine = contexts[-1].new_page()
         _open(mine, base, example)
         set_node_code(mine, NODE, EDITED)
         wait_for_changes_kept(mine)
+        if not hosted:
+            _the_local_guests_edit_is_the_dataflows_own(browser, contexts, mine, base, backend, example, made_by)
+            return
+
+        # A hosted guest's change is kept for its visit.
         expect(mine.locator("[data-curio-save-state]")).to_have_text("Kept for this visit")
         expect(mine.locator("[data-curio-save-state]")).to_have_attribute("data-tooltip", "Sign in to save dataflows.")
 
