@@ -593,6 +593,79 @@ def test_ptrace_is_denied(isolated):
         assert load_from_duckdb(result["output"]["path"]) != 0, "ptrace succeeded"
 
 
+#: Node code that tries each way out of its run's process group, each in a
+#: fresh process of its own, so one that got out cannot spoil the next, and
+#: returns what each got. The node's own process leads its group and its
+#: session (``child.confine``), and the kernel refuses both calls to such a
+#: process, so every try is made in a process the node starts.
+_TRIES_TO_LEAVE_ITS_GROUP = r'''
+    import os, subprocess
+    run_group = os.getpgid(0)
+
+    def tried(leave, double_fork=False):
+        read_end, write_end = os.pipe()
+        first = os.fork()
+        if first == 0:
+            try:
+                os.close(read_end)
+                if double_fork and os.fork() != 0:
+                    os._exit(0)
+                try:
+                    leave()
+                    outcome = "allowed"
+                except OSError as error:
+                    outcome = type(error).__name__
+                where = "in" if os.getpgid(0) == run_group else "out of"
+                os.write(write_end, f"{outcome}, {where} the run's group".encode())
+            finally:
+                os._exit(0)
+        os.close(write_end)
+        os.waitpid(first, 0)
+        with os.fdopen(read_end, "rb") as reading:
+            return reading.read().decode()
+
+    seen = {
+        "os.setsid() after a double fork": tried(os.setsid, double_fork=True),
+        "os.setpgid(0, 0)": tried(lambda: os.setpgid(0, 0)),
+        "os.setpgrp()": tried(os.setpgrp),
+    }
+    for keyword, value in (("start_new_session", True), ("process_group", 0)):
+        try:
+            subprocess.Popen(["true"], **{keyword: value}).wait()
+            seen[f"Popen({keyword}={value})"] = "allowed"
+        except OSError as error:
+            seen[f"Popen({keyword}={value})"] = type(error).__name__
+    return seen
+'''
+
+
+@needs_seccomp
+def test_a_process_a_node_starts_cannot_leave_its_runs_process_group(isolated):
+    """The zygote's deadline kill and the kill of a dead zygote's run reach a
+    run's processes through its process group. A process the node started
+    that left the group, as a daemon does with a double fork and ``setsid``,
+    escaped both and ran on for nobody.
+
+    Each way out must fail with PermissionError, and leave the process in the
+    run's group: ``setsid`` in the grandchild of a double fork, ``setpgid``,
+    glibc's ``setpgrp`` (``setpgid(0, 0)``), and ``subprocess.Popen`` asked
+    for a session or a process group of its own.
+    """
+    result = run_isolated(isolated, _TRIES_TO_LEAVE_ITS_GROUP)
+    assert result["output"]["path"], result["stderr"][:2000]
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    seen = load_from_duckdb(result["output"]["path"])
+    assert seen == {
+        "os.setsid() after a double fork": "PermissionError, in the run's group",
+        "os.setpgid(0, 0)": "PermissionError, in the run's group",
+        "os.setpgrp()": "PermissionError, in the run's group",
+        "Popen(start_new_session=True)": "PermissionError",
+        "Popen(process_group=0)": "PermissionError",
+    }, f"a process the node started could leave its run's process group: {seen}"
+
+
 def test_the_child_actually_runs_as_the_execution_user(isolated_dropped):
     """The privilege drop is the foundation the filesystem tests rest on."""
     result = run_isolated(isolated_dropped, "    return os.getuid()\n")
@@ -1376,6 +1449,68 @@ def test_a_spawned_grandchild_does_not_survive_the_timeout(isolated, workspace):
     while _alive(grandchild) and time.monotonic() < give_up:
         time.sleep(0.05)
     assert not _alive(grandchild), f"grandchild {grandchild} outlived the killed node"
+
+
+#: A process that tries to leave its run's process group, as a daemon does,
+#: and runs on whatever it got: it names its pid and what it got in the file
+#: ``argv[1]`` names, then sleeps for two minutes. ``argv[2]`` is the run's
+#: group. Written beside the file, then renamed, so a reader never sees half.
+_TRIES_TO_LEAVE_THEN_SLEEPS = r'''
+import os, sys, time
+try:
+    os.setsid()
+    outcome = "allowed"
+except OSError as error:
+    outcome = type(error).__name__
+where = "in" if os.getpgid(0) == int(sys.argv[2]) else "out of"
+with open(sys.argv[1] + ".part", "w") as handle:
+    handle.write(f"{os.getpid()} {outcome}, {where} the run's group")
+os.replace(sys.argv[1] + ".part", sys.argv[1])
+time.sleep(120)
+'''
+
+
+@needs_seccomp
+def test_a_process_that_tried_to_leave_its_run_dies_at_the_deadline(isolated, workspace):
+    """A process the node starts tries to leave its run's process group and
+    sleeps for two minutes; the node waits for its report, then sleeps past
+    its deadline. At the deadline the zygote kills the run's group, so that
+    process must die with the node. One that got out ran on for nobody."""
+    import copy
+    import signal
+
+    # Short, to keep the test quick, and long enough that the process has
+    # reported before the deadline comes.
+    config = copy.copy(isolated)
+    config.wall_timeout = 10
+    report = workspace / "leaver.txt"
+    code = (
+        "    import os, subprocess, sys, time\n"
+        f"    subprocess.Popen([sys.executable, '-c', {_TRIES_TO_LEAVE_THEN_SLEEPS!r},\n"
+        f"                      {str(report)!r}, str(os.getpgid(0))])\n"
+        f"    while not os.path.exists({str(report)!r}):\n"
+        "        time.sleep(0.05)\n"
+        "    time.sleep(120)\n"
+        "    return 1\n"
+    )
+    result = run_isolated(config, code)
+    assert report.exists(), (
+        f"the process the node started never reported: {result['stderr'][:300]}"
+    )
+    pid_text, got = report.read_text().split(" ", 1)
+    pid = int(pid_text)
+    try:
+        assert "stopped after" in result["stderr"], result["stderr"][:300]
+        give_up = time.monotonic() + 5
+        while _alive(pid) and time.monotonic() < give_up:
+            time.sleep(0.05)
+        assert not _alive(pid), (
+            f"process {pid}, which the node started, outlived its run's "
+            f"{config.wall_timeout}s deadline; its os.setsid() was {got}"
+        )
+    finally:
+        if _alive(pid):
+            os.kill(pid, signal.SIGKILL)
 
 
 # ---------------------------------------------------------------------------
