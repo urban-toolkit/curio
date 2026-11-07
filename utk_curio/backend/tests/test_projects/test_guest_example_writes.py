@@ -1,13 +1,17 @@
-"""What would write an example every hosted guest opens is refused to a hosted
-guest, and leaves the example as it was.
+"""A hosted guest's package add or removal on an example lands in its own copy
+of it, and its scenario drop into an example is refused: either way the
+example stays as it was.
 
 Every hosted guest (a guest on a Curio started with ``--deploy``) signs in to
 the one shared guest account, which owns the examples, so a write a guest
-makes to an example reaches every other guest who opens it. The page refuses
-a guest's package add and scenario drop before it sends one; these tests send
-them as a request would, as visitor A, with visitor B reading the example
-after. Each example is set up as the local guest sets one up, with sign-in
-off, as ``test_guest_copy_leaks.py`` does.
+makes to an example reaches every other guest who opens it. A package added
+to or removed from the dataflow is an edit to it, kept in the guest's own copy
+(``projects/visitor_copies.py``), and it prunes nothing from the store every
+guest reads. A scenario drop needs a run on the server, which a hosted guest
+does not get, so it is refused, as the page refuses it before it sends one.
+These tests send them as a request would, as visitor A, with visitor B reading
+the example after. Each example is set up as the local guest sets one up,
+with sign-in off, as ``test_guest_copy_leaks.py`` does.
 """
 from __future__ import annotations
 
@@ -17,10 +21,13 @@ import json
 import pandas as pd
 
 from utk_curio.backend import config
+from utk_curio.backend.app.common.user_storage import GUEST_KEY
+from utk_curio.backend.app.projects import storage
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import auth_headers, store_sandbox_artifact
 from utk_curio.backend.tests.test_projects.test_guest_copy_leaks import (  # noqa: F401 - fixtures
     VISITOR_A,
     VISITOR_B,
+    _copy_of,
     _digests,
     app,
     example,
@@ -43,6 +50,10 @@ def _install(client, token, project_id):
                        headers=auth_headers(token))
 
 
+def _remove(client, token, project_id):
+    return client.delete(f"/api/packages/projects/{project_id}/{PACKAGE}", headers=auth_headers(token))
+
+
 def _lockfile(client, token, project_id) -> list[str]:
     """The packages the dataflow's lockfile names, as *token*'s visitor reads it."""
     read = client.get(f"/api/packages/projects/{project_id}", headers=auth_headers(token))
@@ -50,7 +61,22 @@ def _lockfile(client, token, project_id) -> list[str]:
     return read.get_json()["packages"]
 
 
-def test_a_hosted_guests_package_install_into_an_example_is_refused_and_changes_nothing(
+def _in_the_copy(token, project_id) -> list[str] | None:
+    """The packages the lockfile of *token*'s visitor's own copy of the
+    dataflow names, as written on disk; None while that visitor has no copy."""
+    spec = storage.read_spec(GUEST_KEY, _copy_of(token, project_id))
+    return None if spec is None else list(spec["dataflow"].get("packages") or [])
+
+
+def _in_the_store() -> bool:
+    """Whether the guest account's package store, which every guest reads,
+    holds the package."""
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+
+    return package_dir(GUEST_KEY, PACKAGE).is_dir()
+
+
+def test_a_hosted_guests_package_install_into_an_example_lands_in_its_own_copy(
     client, example, monkeypatch,
 ):
     # The package is in the guest account's store: the local guest added it
@@ -62,14 +88,18 @@ def test_a_hosted_guests_package_install_into_an_example_is_refused_and_changes_
     monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
     before = _digests(example)
 
-    refused = _install(client, VISITOR_A, example)
+    installed = _install(client, VISITOR_A, example)
 
-    assert refused.status_code == 403, refused.get_data(as_text=True)
-    assert _digests(example) == before
+    assert installed.status_code == 201, installed.get_data(as_text=True)
+    assert PACKAGE in installed.get_json()["packages"]
+    copied = _in_the_copy(VISITOR_A, example)
+    assert copied is not None and PACKAGE in copied, f"A's own copy of the example names {copied}"
+    assert PACKAGE in _lockfile(client, VISITOR_A, example)
     assert PACKAGE not in _lockfile(client, VISITOR_B, example)
+    assert _digests(example) == before
 
 
-def test_a_hosted_guests_package_removal_from_an_example_is_refused_and_changes_nothing(
+def test_a_hosted_guests_package_removal_from_an_example_lands_in_its_own_copy(
     client, example, monkeypatch,
 ):
     # The example names the package: the local guest added it.
@@ -79,11 +109,45 @@ def test_a_hosted_guests_package_removal_from_an_example_is_refused_and_changes_
     monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
     before = _digests(example)
 
-    refused = client.delete(f"/api/packages/projects/{example}/{PACKAGE}", headers=auth_headers(VISITOR_A))
+    removed = _remove(client, VISITOR_A, example)
 
-    assert refused.status_code == 403, refused.get_data(as_text=True)
-    assert _digests(example) == before
+    assert removed.status_code == 200, removed.get_data(as_text=True)
+    assert PACKAGE not in removed.get_json()["packages"]
+    copied = _in_the_copy(VISITOR_A, example)
+    assert copied is not None and PACKAGE not in copied, f"A's own copy of the example names {copied}"
+    assert PACKAGE not in _lockfile(client, VISITOR_A, example)
     assert PACKAGE in _lockfile(client, VISITOR_B, example)
+    assert _digests(example) == before
+    assert _in_the_store(), "A's removal took the package out of the store every guest reads"
+
+
+def test_a_hosted_guests_package_removal_prunes_nothing_from_the_store_every_guest_reads(
+    client, example, monkeypatch,
+):
+    from utk_curio.backend.app.packages.repositories import defaults
+
+    # The package is in the guest account's store and in its list for all
+    # projects, and no dataflow names it: the local guest added it to the
+    # account alone.
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+    stored = client.post("/api/packages/catalog/install", data=json.dumps({"dirName": PACKAGE}),
+                         headers=auth_headers(VISITOR_A))
+    assert stored.status_code == 201, stored.get_data(as_text=True)
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+    defaults.add_to_defaults(GUEST_KEY, PACKAGE)
+    before = _digests(example)
+
+    added = _install(client, VISITOR_A, example)
+    assert added.status_code == 201, added.get_data(as_text=True)
+    removed = _remove(client, VISITOR_A, example)
+
+    assert removed.status_code == 200, removed.get_data(as_text=True)
+    answer = removed.get_json()
+    assert (answer["pruned"], answer["removedFromDefaults"]) == ([], []), answer
+    assert _in_the_store(), "A's removal took the package out of the store every guest reads"
+    assert PACKAGE in defaults.load_defaults(GUEST_KEY), "A's removal took the package out of every guest's defaults"
+    assert PACKAGE not in _lockfile(client, VISITOR_B, example)
+    assert _digests(example) == before
 
 
 def _node(node_id, kind="python-computation", content="return input_0", x=0):
