@@ -455,6 +455,7 @@ class Zygote:
             zygote_pid=zygote_pid,
         )
         os._exit(70)  # unreachable; child.main always exits
+        return None
 
     def _reap_children(self):
         """Report every child that has exited since the last pass.
