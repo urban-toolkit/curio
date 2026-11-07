@@ -18,7 +18,7 @@
  * whose dataflow the load said it was, and the role the room named.
  */
 import React from "react";
-import { act, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, createEvent, fireEvent, render, waitFor } from "@testing-library/react";
 import { ReactFlowProvider } from "reactflow";
 
 jest.mock("vega", () => ({}), { virtual: true });
@@ -247,8 +247,14 @@ function drawCanvas() {
   return { view, target };
 }
 
+/** A drop at (300, 200) of the window. jsdom has no DragEvent, so the drop is
+ *  a plain Event, which keeps no pointer: the point is set on it here, as a
+ *  browser's drop carries it, or the canvas reads it as NaN. */
 function drop(target: HTMLElement, dataTransfer: unknown) {
-  fireEvent.drop(target, { dataTransfer, clientX: 300, clientY: 200 });
+  const event = createEvent.drop(target, { dataTransfer });
+  Object.defineProperty(event, "clientX", { value: 300 });
+  Object.defineProperty(event, "clientY", { value: 200 });
+  fireEvent(target, event);
 }
 
 /** What the canvas made of the drops so far: copies, since a mock's list of
