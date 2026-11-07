@@ -169,14 +169,27 @@ class TestTheHelpers(unittest.TestCase):
         )
 
     def test_every_derived_row_has_a_collection_rows_locator_columns(self):
-        """So a derived row put over its file's row (``{**video, **overlay}``)
-        leaves none of the file's own addresses behind."""
+        """Each derived row says what it is (``kind``) and whose it is
+        (``dataset_id``), as a collection's row does, so Simple View plays a
+        video's row by its ids, and a derived row put over its file's row
+        (``{**video, **overlay}``) leaves none of the file's own addresses
+        behind. One assertion over every type, so each counts in this test."""
         derive = self.helpers({}, str(self.tmp / "media"))["curio_derived_file"]
-        columns = {"file_id", "dataset_id", "kind", "path", "thumbnail", "image_url", "audio_url"}
-        for kind, ext in (("video", None), ("video", "mp4"), ("video", "png"), ("video", "parquet"),
-                          ("audio", None), ("image", None), ("frame", None)):
-            with self.subTest(kind=kind, ext=ext):
-                self.assertEqual(set(derive("c1", "b" * 16, 0, ext, kind=kind, tag="m1")), columns)
+        columns = sorted(("file_id", "dataset_id", "kind", "path", "thumbnail", "image_url", "audio_url"))
+        made = {
+            (kind, ext): derive("c1", "b" * 16, 0, ext, kind=kind, tag="m1")
+            for kind, ext in (("video", None), ("video", "mp4"), ("video", "png"), ("video", "parquet"),
+                              ("audio", None), ("image", None), ("frame", None))
+        }
+        self.assertEqual(
+            {made_as: (sorted(row), row.get("kind"), row.get("dataset_id")) for made_as, row in made.items()},
+            {
+                ("video", None): (columns, "frame", "c1"), ("video", "mp4"): (columns, "video", "c1"),
+                ("video", "png"): (columns, "image", "c1"), ("video", "parquet"): (columns, "table", "c1"),
+                ("audio", None): (columns, "audio", "c1"), ("image", None): (columns, "image", "c1"),
+                ("frame", None): (columns, "image", "c1"),
+            },
+        )
 
     def test_an_overlay_of_a_sequences_frame_goes_where_a_photos_does(self):
         """Image Segmentation names any image's overlay with kind image; a
@@ -188,10 +201,11 @@ class TestTheHelpers(unittest.TestCase):
 
     def test_what_the_media_route_would_never_find_is_refused_and_nothing_is_made(self):
         """A file a kind does not derive (``DERIVED``), or at a time no id
-        holds, would be written and never served: its row's links would fail."""
+        holds, would be written and never served: its row's links would fail.
+        One assertion over every case, so each counts in this test."""
         media = self.tmp / "media"
         derive = self.helpers({}, str(media))["curio_derived_file"]
-        refused = {
+        cases = {
             "a video made from a recording": lambda: derive("c1", "c" * 16, 0, "mp4", kind="audio"),
             "a video made from a photo": lambda: derive("c1", "a" * 16, 0, "mp4", kind="image"),
             "a format no kind derives": lambda: derive("c1", "b" * 16, 0, "txt"),
@@ -201,9 +215,13 @@ class TestTheHelpers(unittest.TestCase):
             "a time longer than an id holds": lambda: derive("c1", "b" * 16, 10**12, "mp4", tag="sam3"),
             "a video's tag that is no tag": lambda: derive("c1", "b" * 16, 0, "mp4", tag="SAM3"),
         }
-        for case, call in refused.items():
-            with self.subTest(case), self.assertRaises(ValueError):
-                call()
+        outcomes = {}
+        for case, call in cases.items():
+            try:
+                outcomes[case] = f"named {call()['path']}"
+            except ValueError:
+                outcomes[case] = "refused"
+        self.assertEqual(outcomes, {case: "refused" for case in cases})
         self.assertFalse(media.exists())
 
     def test_without_a_media_directory_there_is_nowhere_to_write(self):
