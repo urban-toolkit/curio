@@ -70,6 +70,27 @@ function projectHook(overrides: Partial<Parameters<typeof usePackageCatalog>[0]>
   return { ...hook, showToast, refreshRegistry, onInstalledToProject, onProjectLockfile, beforeReload };
 }
 
+/** An answer the test gives when it chooses: a dataflow's id, a conflict probe's. */
+interface Held<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (err: unknown) => void;
+}
+
+function held<T>(): Held<T> {
+  let resolve: (value: T) => void = () => undefined;
+  let reject: (err: unknown) => void = () => undefined;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+type ResolveAnswer = Awaited<ReturnType<typeof packagesApi.resolve>>;
+const NO_CONFLICTS: ResolveAnswer = { lockfile: { installedPackages: [], pythonDeps: {}, jsDeps: {} }, conflicts: [] };
+const GAMMA = pkg("ai.test.gamma");
+
 describe("usePackageCatalog — listing", () => {
   it("project scope lists the catalog, the store and the capabilities, marks store rows installed, and hands the lockfile back with the token captured before the fetch", async () => {
     const h = projectHook();
@@ -213,6 +234,200 @@ describe("usePackageCatalog: a card dropped on the canvas (drop-to-Add)", () => 
     await act(() => h.result.current.probeInstall(CATALOG[1], { onAdded }));
     expect(h.result.current.installCandidate).toBeNull();
     expect(onAdded).not.toHaveBeenCalled();
+  });
+});
+
+describe("usePackageCatalog: an Add while the dataflow is still opening", () => {
+  /** A dataflow with no id yet: each save-first call waits for the id the test gives it. */
+  async function openingHook() {
+    const ids: Held<string | null>[] = [];
+    const onEnsureProject = jest.fn(() => {
+      const id = held<string | null>();
+      ids.push(id);
+      return id.promise;
+    });
+    const h = projectHook({ scope: { kind: "project", projectId: null }, onEnsureProject });
+    await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
+    return { ...h, ids };
+  }
+
+  it("shows its review at once, waiting, with the confirm refused; once the id comes the conflicts are asked and the add goes", async () => {
+    const h = await openingHook();
+    let opened: Promise<void> = Promise.resolve();
+    act(() => {
+      opened = h.result.current.probeInstall(CATALOG[1]);
+    });
+    expect(h.result.current.installCandidate?.dirName).toBe("ai.test.beta@1");
+    expect(h.result.current.waitingForProject).toBe(true);
+    expect(api.resolve).not.toHaveBeenCalled();
+    await act(() => h.result.current.confirmInstall());
+    expect(api.installToProject).not.toHaveBeenCalled();
+
+    await act(async () => {
+      h.ids[0].resolve("p-new");
+      await opened;
+    });
+    expect(h.result.current.waitingForProject).toBe(false);
+    expect(api.resolve).toHaveBeenCalledWith(["ai.test.alpha@1", "ai.test.beta@1"]);
+    expect(h.result.current.conflictReport).toEqual([]);
+    await act(() => h.result.current.confirmInstall());
+    expect(api.installToProject).toHaveBeenCalledWith("p-new", "ai.test.beta@1");
+  });
+
+  it("a second Add while the first waits replaces its review, and the first's never comes back", async () => {
+    const h = await openingHook();
+    const betaAdded = jest.fn();
+    const gammaAdded = jest.fn();
+    let first: Promise<void> = Promise.resolve();
+    let second: Promise<void> = Promise.resolve();
+    act(() => {
+      first = h.result.current.probeInstall(CATALOG[1], { onAdded: betaAdded });
+    });
+    act(() => {
+      second = h.result.current.probeInstall(GAMMA, { onAdded: gammaAdded });
+    });
+
+    // One open answers both waits in turn: the first Add's comes first.
+    await act(async () => {
+      h.ids[0].resolve("p-new");
+      await first;
+    });
+    expect(h.result.current.installCandidate?.dirName).toBe("ai.test.gamma@1");
+    expect(h.result.current.waitingForProject).toBe(true);
+    expect(api.resolve).not.toHaveBeenCalled();
+
+    await act(async () => {
+      h.ids[1].resolve("p-new");
+      await second;
+    });
+    expect(h.result.current.installCandidate?.dirName).toBe("ai.test.gamma@1");
+    expect(h.result.current.waitingForProject).toBe(false);
+    expect(api.resolve.mock.calls).toEqual([[["ai.test.alpha@1", "ai.test.gamma@1"]]]);
+
+    await act(() => h.result.current.confirmInstall());
+    expect(api.installToProject.mock.calls).toEqual([["p-new", "ai.test.gamma@1"]]);
+    expect(gammaAdded).toHaveBeenCalledTimes(1);
+    expect(betaAdded).not.toHaveBeenCalled();
+  });
+
+  it("a first Add whose wait ends with no id leaves a later Add's review, and its node, alone", async () => {
+    const h = await openingHook();
+    const gammaAdded = jest.fn();
+    let first: Promise<void> = Promise.resolve();
+    let second: Promise<void> = Promise.resolve();
+    act(() => {
+      first = h.result.current.probeInstall(CATALOG[1]);
+    });
+    act(() => {
+      second = h.result.current.probeInstall(GAMMA, { onAdded: gammaAdded });
+    });
+
+    await act(async () => {
+      h.ids[0].resolve(null);
+      await first;
+    });
+    await act(async () => {
+      h.ids[1].resolve("p-new");
+      await second;
+    });
+    expect(h.result.current.installCandidate?.dirName).toBe("ai.test.gamma@1");
+    await act(() => h.result.current.confirmInstall());
+    expect(api.installToProject).toHaveBeenCalledWith("p-new", "ai.test.gamma@1");
+    expect(gammaAdded).toHaveBeenCalledTimes(1);
+  });
+
+  it("Cancel during the wait ends it: the id that comes later reopens nothing", async () => {
+    const h = await openingHook();
+    const onAdded = jest.fn();
+    let opened: Promise<void> = Promise.resolve();
+    act(() => {
+      opened = h.result.current.probeInstall(CATALOG[1], { onAdded });
+    });
+    act(() => h.result.current.cancelInstall());
+
+    await act(async () => {
+      h.ids[0].resolve("p-new");
+      await opened;
+    });
+    expect(h.result.current.installCandidate).toBeNull();
+    expect(h.result.current.waitingForProject).toBe(false);
+    expect(api.resolve).not.toHaveBeenCalled();
+    await act(() => h.result.current.confirmInstall());
+    expect(api.installToProject).not.toHaveBeenCalled();
+    expect(onAdded).not.toHaveBeenCalled();
+  });
+});
+
+describe("usePackageCatalog: a conflict probe that answers after its review has gone", () => {
+  it("brings the conflicts of a package no longer shown to nobody", async () => {
+    const h = projectHook();
+    await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
+    const betaProbe = held<ResolveAnswer>();
+    const gammaProbe = held<ResolveAnswer>();
+    api.resolve.mockReturnValueOnce(betaProbe.promise).mockReturnValueOnce(gammaProbe.promise);
+    let first: Promise<void> = Promise.resolve();
+    let second: Promise<void> = Promise.resolve();
+    act(() => {
+      first = h.result.current.probeInstall(CATALOG[1]);
+    });
+    await waitFor(() => expect(api.resolve).toHaveBeenCalledTimes(1));
+    act(() => {
+      second = h.result.current.probeInstall(GAMMA);
+    });
+    await waitFor(() => expect(api.resolve).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      betaProbe.resolve({ ...NO_CONFLICTS, conflicts: [{ package: "numpy", ranges: [] }] });
+      await first;
+    });
+    expect(h.result.current.installCandidate?.dirName).toBe("ai.test.gamma@1");
+    expect(h.result.current.conflictReport).toBeNull();
+
+    await act(async () => {
+      gammaProbe.resolve(NO_CONFLICTS);
+      await second;
+    });
+    expect(h.result.current.conflictReport).toEqual([]);
+  });
+
+  it("closes no other package's review and raises no banner when it fails", async () => {
+    const h = projectHook();
+    await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
+    const betaProbe = held<ResolveAnswer>();
+    api.resolve.mockReturnValueOnce(betaProbe.promise);
+    let first: Promise<void> = Promise.resolve();
+    act(() => {
+      first = h.result.current.probeInstall(CATALOG[1]);
+    });
+    await waitFor(() => expect(api.resolve).toHaveBeenCalledTimes(1));
+    await act(() => h.result.current.probeInstall(GAMMA));
+
+    await act(async () => {
+      betaProbe.reject(Object.assign(new Error("down"), { status: 500 }));
+      await first;
+    });
+    expect(h.result.current.installCandidate?.dirName).toBe("ai.test.gamma@1");
+    expect(h.result.current.actionError).toBeNull();
+  });
+
+  it("changes nothing once the review was cancelled, not even a failure's banner", async () => {
+    const h = projectHook();
+    await waitFor(() => expect(h.result.current.installed).toHaveLength(1));
+    const probe = held<ResolveAnswer>();
+    api.resolve.mockReturnValueOnce(probe.promise);
+    let opened: Promise<void> = Promise.resolve();
+    act(() => {
+      opened = h.result.current.probeInstall(CATALOG[1]);
+    });
+    await waitFor(() => expect(api.resolve).toHaveBeenCalledTimes(1));
+    act(() => h.result.current.cancelInstall());
+
+    await act(async () => {
+      probe.reject(Object.assign(new Error("down"), { status: 500 }));
+      await opened;
+    });
+    expect(h.result.current.installCandidate).toBeNull();
+    expect(h.result.current.actionError).toBeNull();
   });
 });
 
