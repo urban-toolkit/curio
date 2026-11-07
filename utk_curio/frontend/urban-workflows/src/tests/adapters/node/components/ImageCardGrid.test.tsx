@@ -268,9 +268,14 @@ describe('ImageCardGrid', () => {
       fireEvent.loadedMetadata(element);
     }
 
-    it.each(['video', 'audio'] as const)(
-      'a %s still playing when a range fails after its link lapsed plays on from there on a fresh link',
-      async (kind) => {
+    const KINDS = [
+      { kind: 'video' as const, file: 'a video' },
+      { kind: 'audio' as const, file: 'a recording' },
+    ];
+
+    it.each(KINDS)(
+      '$file still playing when a range fails after its link lapsed plays on from there on a fresh link',
+      async ({ kind }) => {
         const element = await playCard(kind);
         element.playbackRate = 1.5;
         element.currentTime = 683.2;
@@ -290,9 +295,9 @@ describe('ImageCardGrid', () => {
       },
     );
 
-    it.each(['video', 'audio'] as const)(
-      'a %s paused past its link\'s life stays paused where a seek took it, on a fresh link',
-      async (kind) => {
+    it.each(KINDS)(
+      '$file paused past its link\'s life stays paused where a seek took it, on a fresh link',
+      async ({ kind }) => {
         const element = await playCard(kind);
         element.currentTime = 42;
         fireEvent.timeUpdate(element);
