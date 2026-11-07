@@ -845,15 +845,20 @@ _SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__'
 #: ``subprocess.TimeoutExpired``.
 JS_TIMEOUT_SECONDS = 3000
 
-#: How long Node's output may stay open after Node exits. A process Node
-#: started holds it open as long as it lives; past this, that process is
-#: killed with Node's process group, and the run ends and frees its slot.
+#: How long Node's pipes may stay open once Node and every process it started
+#: have been killed. Only a process the kills missed can hold them; past this,
+#: their readers stop, and the run ends and frees its slot.
 JS_OUTPUT_GRACE_SECONDS = 5
 
 #: POSIX: Node runs in a session of its own, so a kill of its process group
 #: reaches every process it started, and a selector can wait on its pipes.
 #: Windows has neither: a kill reaches Node alone, and a read just waits.
 _IS_POSIX = os.name == 'posix'
+
+#: The variable that marks a run's processes: Node's environment holds it,
+#: with a value of the run's own, and every process Node starts inherits it,
+#: also one that leaves Node's process group.
+_RUN_MARK = 'CURIO_JS_RUN'
 
 #: How often a reader waiting on a quiet pipe looks whether to stop.
 _PIPE_POLL_SECONDS = 0.1
@@ -915,18 +920,84 @@ def _read_node_pipe(pipe, keep, stop):
             pipe.close()
 
 
-def _kill_node(proc):
-    """Kill Node, and on POSIX every process still in its group: all it
-    started, but one that left the group (``detached: true``)."""
+def _wait_for_node(proc, timeout):
+    """Wait up to *timeout* for Node to exit, and raise
+    ``subprocess.TimeoutExpired`` past it, as ``Popen.wait`` does.
+
+    Where ``os.waitid`` is (Linux), Node is left unreaped: until it is reaped
+    its pid, which is its process group's id, names no other process, so the
+    kill of that group reaches this run's processes alone. Elsewhere
+    ``Popen.wait`` reaps it.
+    """
+    import subprocess
+
+    if not (_IS_POSIX and hasattr(os, 'waitid') and proc.pid > 0):
+        proc.wait(timeout=timeout)
+        return
+    deadline = time.monotonic() + timeout
+    delay = 0.0005
+    while True:
+        try:
+            if os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None:
+                return
+        except ChildProcessError:  # reaped already
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(proc.args, timeout)
+        time.sleep(min(delay, remaining))
+        delay = min(delay * 2, 0.05)
+
+
+def _kill_marked(mark, since):
+    """Kill every process started since *since* whose environment carries
+    the run's *mark*, and return how many. A process can start another
+    before it is killed, so this looks again until a look finds none, five
+    looks at most."""
+    try:
+        import psutil
+    except ImportError:  # a broken install: the group kill still runs
+        return 0
+
+    killed = 0
+    for _ in range(5):
+        found = 0
+        for process in psutil.process_iter():
+            try:
+                if process.create_time() < since or process.environ().get(_RUN_MARK) != mark:
+                    continue
+                process.kill()
+                found += 1
+            except (psutil.Error, OSError):
+                continue
+        killed += found
+        if not found:
+            break
+    return killed
+
+
+def _kill_node(proc, mark, since):
+    """Kill Node, if it still runs, with every process it started, and return
+    how many processes carrying the run's *mark* were killed.
+
+    On POSIX: every process started since *since* whose environment carries
+    *mark* (every process Node starts inherits it, in Node's process group or
+    out of it: ``detached: true`` calls setsid), then the group, for one that
+    stayed in it without the mark. On Windows, Node alone.
+    """
     import signal
 
+    killed = 0
     # A pid of 0 would name the sandbox's own group.
     if _IS_POSIX and proc.pid > 0:
-        # A group outlives Node while any process is in it, so after Node has
-        # been reaped its id still names what Node left.
+        killed = _kill_marked(mark, since)
+        # Node is unreaped here where _wait_for_node leaves it so, and a group
+        # outlives Node while any process is in it: either way the group's id
+        # names what this run started.
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(proc.pid, signal.SIGKILL)
     proc.kill()
+    return killed
 
 
 def _joined(threads, seconds):
@@ -937,28 +1008,30 @@ def _joined(threads, seconds):
     return not any(thread.is_alive() for thread in threads)
 
 
-def _end_node_run(proc, threads, stop, node_type, *, killed=False):
-    """Bound what is left of a Node run once Node has exited or been killed.
+def _end_node_run(proc, threads, stop, node_type, mark, since):
+    """End a Node run once Node has exited, or reached its timeout.
 
-    The threads on Node's stdin, stdout and stderr get
-    ``JS_OUTPUT_GRACE_SECONDS`` to reach the pipes' end. A process Node
-    started can hold its output open after Node has gone: then, unless Node
-    was just killed with its group, the group is killed, and the threads get
-    the grace again. Readers still waiting are told to stop. One that cannot
-    stop (on Windows, a read under a process the kill did not reach) is left
-    behind: the run ends anyway, and frees its slot.
+    Owner rule, 11-07, never to change and with no option to turn it off:
+    every process a JavaScript node starts ends when the node returns. So
+    first Node, if it still runs, is killed with every process it started
+    (:func:`_kill_node`). Then Node is reaped and its pipes read out: their
+    threads get ``JS_OUTPUT_GRACE_SECONDS`` to reach the pipes' end, readers
+    still waiting are told to stop, and one that cannot stop (on Windows, a
+    read under a process the kill did not reach) is left behind. The run
+    ends anyway, and frees its slot. ``tests/test_js_run_kills_at_return.py``
+    guards the rule; never weaken, skip or remove its tests.
     """
+    import subprocess
     import sys
 
+    killed = _kill_node(proc, mark, since)
+    if killed:
+        print(f"[execJs] Node.js ended; killed {killed} process(es) it started  node={node_type}",
+              file=sys.__stderr__, flush=True)
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        proc.wait(timeout=JS_OUTPUT_GRACE_SECONDS)
     if _joined(threads, JS_OUTPUT_GRACE_SECONDS):
         return
-    if not killed:
-        print(f"[execJs] Node.js exited, but a process it started still holds its output "
-              f"after {JS_OUTPUT_GRACE_SECONDS} s; killing it  node={node_type}",
-              file=sys.__stderr__, flush=True)
-        _kill_node(proc)
-        if _joined(threads, JS_OUTPUT_GRACE_SECONDS):
-            return
     stop.set()
     if not _joined(threads, 1):
         print(f"[execJs] left a pipe of Node.js open: a process it started still holds it  "
@@ -979,14 +1052,14 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
     ``(result_json, user_log_lines, stderr_lines)``: the
     text of the result line, or None when Node printed none. A missing Node
     raises, as ``subprocess`` does. Node runs at most ``JS_TIMEOUT_SECONDS``:
-    past it, it is killed with every process it started, and this raises
-    ``subprocess.TimeoutExpired``. A process Node started that still holds
-    its output ``JS_OUTPUT_GRACE_SECONDS`` after Node exits is killed too, so
-    a run always ends and gives its slot back.
+    past it, it is killed, and this raises ``subprocess.TimeoutExpired``.
+    Every process Node started is killed when Node exits, or at that timeout
+    (:func:`_end_node_run`), so a run always ends and gives its slot back.
     """
     import json
     import pathlib
     import re
+    import secrets
     import subprocess
     import sys as _sys
     import threading
@@ -1103,13 +1176,17 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
         t_start = time.perf_counter()
 
         # A session of its own (POSIX), so a kill of its group reaches every
-        # process Node starts, not Node alone.
+        # process Node starts, not Node alone; and the run's mark, which finds
+        # those that leave the group. psutil reads a process's start to the
+        # second at worst (Linux counts from the boot second), hence the 2 s.
+        mark = secrets.token_hex(16)
+        since = time.time() - 2
         proc = subprocess.Popen(
             ['node', '--input-type=commonjs'],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding='utf-8', errors='replace', cwd=cwd,
-            env=node_env_vars, start_new_session=_IS_POSIX,
+            env={**node_env_vars, _RUN_MARK: mark}, start_new_session=_IS_POSIX,
         )
 
         stdout_lines: list[str] = []
@@ -1143,16 +1220,13 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
             thread.start()
 
         try:
-            proc.wait(timeout=JS_TIMEOUT_SECONDS)
+            _wait_for_node(proc, JS_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             print(f"[execJs] Node.js ran past {JS_TIMEOUT_SECONDS} s; killing it with every "
                   f"process it started  node={node_type}", file=_sys.__stderr__, flush=True)
-            _kill_node(proc)
-            with contextlib.suppress(subprocess.TimeoutExpired):
-                proc.wait(timeout=JS_OUTPUT_GRACE_SECONDS)
-            _end_node_run(proc, threads, stop, node_type, killed=True)
+            _end_node_run(proc, threads, stop, node_type, mark, since)
             raise
-        _end_node_run(proc, threads, stop, node_type)
+        _end_node_run(proc, threads, stop, node_type, mark, since)
 
         print(f"[execJs] Node.js finished  total={time.perf_counter()-t_start:.3f}s  "
               f"exit={proc.returncode}  node={node_type}",
