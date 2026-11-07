@@ -1018,7 +1018,7 @@ def test_each_scenario_averages_its_depth_over_each_tracts_land_and_in_each_peri
         assert "\nregion = input_2\n" in part["by period"]["content"], scenario
         assert part["by period"]["metadata"]["widgets"] == part["choose"]["metadata"]["widgets"], scenario
     for name in ("tract depth", "by period"):
-        (code,) = {part[name]["content"] for part in parts.values()}
+        (_,) = {part[name]["content"] for part in parts.values()}
         assert parts["nbs"][name]["metadata"]["copiedFrom"] == [parts["no-nbs"][name]["id"]], name
         assert "copiedFrom" not in parts["no-nbs"][name]["metadata"], name
     by_period = parts["no-nbs"]["by period"]
