@@ -35,6 +35,13 @@ fit and lands at the point of the window it was dropped on, in the view the
 canvas then shows: the far one there, the one in the middle just below the
 node it would have covered, as the canvas moves a node off another.
 
+The drop helpers wait for a dataflow that takes long to open. A drop made
+while it opens makes its node only once the load is in, and the load takes as
+long as the server takes: 24 s on arcade during a host stall (#1391's run
+42342733844), where ``drag_builtin_to_canvas`` gave the node 15 s from the drop
+and failed with "Drop produced no node". Here the page holds its load until
+20 s after the drop, and the helper still returns the node.
+
 Run::
 
     CURIO_E2E_USE_EXISTING=1 pytest \\
@@ -69,6 +76,7 @@ from .utils import (
     settled_viewport,
     stub_db_login,
     stub_db_user,
+    stub_login_and_enter_workflow,
 )
 
 if TYPE_CHECKING:
@@ -495,3 +503,66 @@ def test_nodes_dropped_while_a_dataflow_opens_land_under_the_pointer_in_its_view
         "her nodes on the dataflow's node": [],
         "where her nodes landed": ["under the pointer", "just below a node"],
     }, f"the canvas holds {boxes}; under her drops: {under}"
+
+
+#: How long the page holds its dataflow's load after the first drop: longer
+#: than the 15 s a drop helper gives the node, as arcade's 24 s was.
+SLOW_LOAD_MS = 20000
+
+#: The page's load of its dataflow (``GET /api/projects/<id>?results=last``),
+#: held in the page until SLOW_LOAD_MS after the first drop on it: a server
+#: that answers late, whenever the test drops. Held here, not with
+#: ``page.route``, which this thread could not let go while the drop helper
+#: it calls is waiting.
+_SLOW_LOAD_JS = r"""(() => {
+    const realFetch = window.fetch.bind(window);
+    const load = /\/api\/projects\/[0-9a-f-]{36}\?results=last$/;
+    let letGo;
+    const goes = new Promise((resolve) => { letGo = resolve; });
+    let dropped = false;
+    window.addEventListener("drop", () => {
+        if (dropped) return;
+        dropped = true;
+        setTimeout(letGo, %d);
+    }, true);
+    window.__curioHeldLoads = 0;
+    window.fetch = (input, init) => {
+        const url = typeof input === "string" ? input : (input && input.url) || "";
+        if (!load.test(url)) return realFetch(input, init);
+        window.__curioHeldLoads += 1;
+        return goes.then(() => realFetch(input, init));
+    };
+})();""" % SLOW_LOAD_MS
+
+
+def test_a_drop_helper_waits_for_a_dataflow_that_opens_slowly(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    page.add_init_script(_SLOW_LOAD_JS)
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Slow Opener",
+        username="opening_slow_e2e",
+        project_name="Slow plan",
+    )
+    require_owner_view(page)
+
+    # Dropped while the dataflow opens, its node is made once the load lands,
+    # SLOW_LOAD_MS after the drop.
+    loading = drag_builtin_to_canvas(page, LOADING_TILE, at=FIRST_DROP)
+
+    seen = {
+        "loads the page held": page.evaluate("() => window.__curioHeldLoads"),
+        "the canvas title": page.locator(TITLE).inner_text(),
+        "nodes": [node["id"] for node in canvas_nodes(page)],
+    }
+    assert seen == {
+        "loads the page held": 1,
+        "the canvas title": "Slow plan",
+        "nodes": [loading],
+    }
