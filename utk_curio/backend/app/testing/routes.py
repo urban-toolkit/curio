@@ -351,7 +351,8 @@ def _clear_test_user_stores() -> list[str]:
 
 
 def _job_name(job) -> str:
-    """An agent job as a reset names it: its kind and execution id."""
+    """A job as a reset names it: its kind and id, an agent job's execution
+    id or a run's id."""
     return f"{job.kind} {job.job_id}"
 
 
@@ -363,6 +364,50 @@ def _wait_for_jobs(jobs: list, timeout: float) -> list[str]:
         if job.thread is not None:
             job.thread.join(max(deadline - time.monotonic(), 0.0))
     return sorted(_job_name(job) for job in jobs if job.live)
+
+
+def _runs_going(known: list) -> list:
+    """*known*, and every other run this process holds that is still going: a
+    dataflow's run is stopped as the user's Stop stops it
+    (``runs/service.stop_runs``), so it starts no node after those it runs; a
+    dashboard viewer's run, which has no stop, is only waited for."""
+    from utk_curio.backend.app.runs import service as runs_service
+    from utk_curio.backend.app.runs import viewer as viewer_runs
+
+    found = {job.job_id: job for job in known}
+    for job in runs_service.stop_runs() + viewer_runs.REGISTRY.live_jobs():
+        found.setdefault(job.job_id, job)
+    return list(found.values())
+
+
+def _still_going(job) -> str:
+    """A run a reset found still going, as its refusal names it: its kind, id
+    and dataflow, and for a dataflow's run the nodes it runs."""
+    name = f"{_job_name(job)} of dataflow {job.project_id}"
+    if job.kind != "run":
+        return name
+    try:
+        from utk_curio.backend.app.runs.models import DataflowRunStep
+
+        running = DataflowRunStep.query.filter_by(run_id=job.job_id, status="running").all()
+    except Exception:  # noqa: BLE001 - the refusal names the run either way
+        running = []
+    if running:
+        name += ", running " + ", ".join(f"{step.label or step.node_id} ({step.node_id})" for step in running)
+    return name
+
+
+def _wait_for_runs(runs: list, timeout: float) -> list[str]:
+    """Wait up to *timeout* seconds for *runs* to end, and name those still
+    going (:func:`_still_going`). A run's thread ends only once each node it
+    sent has come back from the sandbox, so a run that ended runs nothing
+    there any more."""
+    _wait_for_jobs(runs, timeout)
+    for job in runs:
+        if job.kind == "run" and not job.live:
+            # A run that ended between the look and the stop leaves its flag.
+            run_jobs.drop_cancel_flag(job.job_id)
+    return sorted(_still_going(job) for job in runs if job.live)
 
 
 @testing_bp.route("/reset-db", methods=["POST"])
@@ -398,10 +443,23 @@ def reset_db():
     ask withdrawn, every running turn stopped. One still running after the
     wait is named in ``agent_jobs_still_running``.
 
+    Runs on the server are stopped before all of that, as the user's Stop
+    does, and before a hold is released: a test can end with its run going,
+    and the node it runs would hold the sandbox into the next test while its
+    steps were written into the emptied tables. A dashboard viewer's run has
+    no stop and is only waited for. Each is waited for within the same bound,
+    and nothing is reset under one: a run still going after the wait is
+    named, with the nodes it runs, in ``runs_still_going`` and in an error in
+    the log, and the answer is 409 with nothing deleted. The next reset stops
+    and waits for it again.
+
     Response: ``{"truncated": [...], "stores_cleared": [...], "waited_for":
     [...], "waited_seconds": n, "still_running": [...], "agent_jobs": [...],
-    "agent_jobs_still_running": [...]}``, each request named by its method and
-    path, each agent job by its kind and execution id.
+    "agent_jobs_still_running": [...], "runs": [...], "runs_still_going":
+    []}``, each request named by its method and path, each agent job by its
+    kind and execution id, each run by its kind and id. A 409 has the same
+    shape with an ``error`` and the runs still going, and no ``truncated`` or
+    ``stores_cleared``.
     """
     body = request.get_json(silent=True) or {}
     requested = body.get("tables")
@@ -426,6 +484,9 @@ def reset_db():
     in_flight = current_app.extensions.get(_IN_FLIGHT) or InFlightRequests()
     waited_for = in_flight.close()
     try:
+        # Stopped before the hold goes, so a run the last test left going
+        # starts no node after those it runs, a held one included.
+        runs = _runs_going([])
         # A hold a failed test left standing would stop the next test's runs,
         # and a held run's stream would hold this reset for the whole wait.
         run_jobs.set_hold(False)
@@ -439,11 +500,16 @@ def reset_db():
         if stopped_jobs:
             log.info("reset-db stops %d agent job(s): %s",
                      len(stopped_jobs), ", ".join(map(_job_name, stopped_jobs)))
+        if runs:
+            log.info("reset-db stops %d run(s): %s", len(runs), ", ".join(map(_job_name, runs)))
         started = time.monotonic()
         still_running = in_flight.drain(RESET_WAIT_SECONDS)
+        # And a run a request in flight started after the door closed.
+        runs = _runs_going(runs)
         jobs_still_running = _wait_for_jobs(
             stopped_jobs, RESET_WAIT_SECONDS - (time.monotonic() - started),
         )
+        runs_still_going = _wait_for_runs(runs, RESET_WAIT_SECONDS - (time.monotonic() - started))
         waited_seconds = round(time.monotonic() - started, 3)
         if still_running:
             log.warning("reset-db waited %.1f s and resets under %d request(s) still running: %s",
@@ -453,6 +519,24 @@ def reset_db():
         if jobs_still_running:
             log.warning("reset-db waited %.1f s and resets under %d agent job(s) still running: %s",
                         waited_seconds, len(jobs_still_running), ", ".join(jobs_still_running))
+        run_names = sorted(map(_job_name, runs))
+        if runs_still_going:
+            # Never under a live run: its next write would land in the next
+            # test's tables, and its node would hold the next test's sandbox.
+            going = "; ".join(runs_still_going)
+            log.error("reset-db did not reset: %d run(s) still going after %.1f s: %s",
+                      len(runs_still_going), waited_seconds, going)
+            return jsonify({
+                "error": (f"Did not reset: {len(runs_still_going)} run(s) still going "
+                          f"after {waited_seconds:.1f} s: {going}"),
+                "waited_for": waited_for,
+                "waited_seconds": waited_seconds,
+                "still_running": still_running,
+                "agent_jobs": sorted(map(_job_name, stopped_jobs)),
+                "agent_jobs_still_running": jobs_still_running,
+                "runs": run_names,
+                "runs_still_going": runs_still_going,
+            }), 409
 
         truncated = []
         for table in tables:
@@ -480,6 +564,8 @@ def reset_db():
         "still_running": still_running,
         "agent_jobs": sorted(map(_job_name, stopped_jobs)),
         "agent_jobs_still_running": jobs_still_running,
+        "runs": run_names,
+        "runs_still_going": [],
     }), 200
 
 
