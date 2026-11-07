@@ -275,7 +275,7 @@ def widget_literal(value, language: str) -> str:
             return "True" if value else "False"
         return "true" if value else "false"
     if isinstance(value, (int, float)):
-        if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
+        if isinstance(value, float) and not math.isfinite(value):
             return "None" if language == "python" else "null"
         return js_number(value)
     if isinstance(value, str):
@@ -432,7 +432,7 @@ def _escape_for(text: str, context: tuple, language: str) -> str:
 
 
 def _contexts(code: str, refs: list, language: str) -> list:
-    """Where each reference sits: ``("code",)``, ``("comment",)`` or ``("string", quote)``."""
+    """Where each reference sits: ``("code", "")``, ``("comment", "")`` or ``("string", quote)``."""
     contexts: list = []
     state = "code"
     quote = ""
@@ -442,7 +442,7 @@ def _contexts(code: str, refs: list, language: str) -> list:
     def current():
         if state == "string":
             return ("string", quote)
-        return ("code",) if state == "code" else ("comment",)
+        return ("code", "") if state == "code" else ("comment", "")
 
     while i < len(code) or r < len(refs):
         if r < len(refs) and i >= refs[r].start():
@@ -1005,7 +1005,7 @@ DATE_FALLBACK = "1970-01-01"
 
 
 def _finite(x) -> bool:
-    return isinstance(x, (int, float)) and not isinstance(x, bool) and x == x and x not in (float("inf"), float("-inf"))
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and (not isinstance(x, float) or math.isfinite(x))
 
 
 def _choices(options: dict) -> list:

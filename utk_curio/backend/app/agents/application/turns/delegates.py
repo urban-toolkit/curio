@@ -8,6 +8,7 @@ and import order between siblings cannot matter.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import json as _json
 import re as _re2
@@ -301,7 +302,7 @@ def _run_delegate_traced(
     # Without a name, the id's last segment: my-helper for agent.acme.my-helper.
     parent_label = parent_name or parent_coord.split("@", 1)[0].rsplit(".", 1)[-1]
     if isinstance(home_session_id, str):
-        try:
+        with contextlib.suppress(Exception):
             sessions.append_turns(
                 user_key, project_id, home_session_id, home_attachment_id,
                 [sessions.make_turn(
@@ -310,8 +311,6 @@ def _run_delegate_traced(
                     f"{_delegation_task_text(capability, inputs)}",
                 )],
             )
-        except Exception:
-            pass
     started = time.monotonic()
     status, text, child = delegation.run_delegate(
         user_key, project_id, coord, capability, inputs, config,
@@ -324,7 +323,7 @@ def _run_delegate_traced(
         uses_skills=peer.use_skills if peer is not None else None,
     )
     if isinstance(home_session_id, str):
-        try:
+        with contextlib.suppress(Exception):
             lines = [f"{capability} · {status}"]
             verification = (inputs or {}).get("verification")
             if isinstance(verification, dict):
@@ -349,8 +348,6 @@ def _run_delegate_traced(
                     }],
                 )],
             )
-        except Exception:
-            pass
     return status, text, child, home_attachment_id
 
 
@@ -436,7 +433,7 @@ def _mint_content_review_from_delegate(
     home_att, home_sess = parent_attachment_id, parent_session_id
     home_name = None
     node_label = node_id
-    try:
+    with contextlib.suppress(Exception):
         fresh_spec = projects_storage.read_spec(user_key, project_id)
         home, _ = _delegation_home(
             fresh_spec or {}, delegate_coord or "", "node.content.generate", {},
@@ -450,8 +447,6 @@ def _mint_content_review_from_delegate(
             if isinstance(node, dict) and node.get("id") == node_id:
                 node_label = (node.get("goal") or node_id)[:60]
                 break
-    except Exception:
-        pass
     # dev/114: the mint's grounding gate reads the PARENT run's evidence
     # (current message and the one before it, verified rows, probe cache, grants) — the home
     # session alone would not know what the user just typed.
@@ -489,7 +484,7 @@ def _mint_content_review_from_delegate(
         # stamped before the turn is written so the persisted part has it.
         part["validation"] = dict(validation)
     if isinstance(home_sess, str) and (local_turn or home_att != parent_attachment_id):
-        try:
+        with contextlib.suppress(Exception):
             sessions.append_turns(
                 user_key, project_id, home_sess, home_att,
                 [sessions.make_turn(
@@ -498,8 +493,6 @@ def _mint_content_review_from_delegate(
                     content=[part],
                 )],
             )
-        except Exception:
-            pass
     where = (
         agent_text.message("delegate.content-minted-here")
         if home_att == parent_attachment_id
@@ -708,7 +701,7 @@ _NOTES_DEFAULT_COLORS = ("yellow", "green")
 
 
 #: dev/105 A2: a node header is a short line — bounded like the goal.
-_NODE_TITLE_MAX_CHARS = 120
+NODE_TITLE_MAX_CHARS = 120
 
 
 def _notes_agent_run(loop_ctx: dict) -> bool:

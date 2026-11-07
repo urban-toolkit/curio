@@ -18,6 +18,7 @@ and ``check_widget_value``, the twins of ``checkWidgetDef`` and
 from __future__ import annotations
 
 import json
+import math
 
 from utk_curio.backend.app.execution.code_references import (
     check_widget_def,
@@ -44,7 +45,10 @@ _UNITS_MAX_CHARS = 16
 
 
 def _number(value: object) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and value == value
+    return (
+        isinstance(value, (int, float)) and not isinstance(value, bool)
+        and not (isinstance(value, float) and math.isnan(value))
+    )
 
 
 def _size_problem(value: object, where: str) -> str | None:

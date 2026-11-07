@@ -16,6 +16,7 @@ migration.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
@@ -170,10 +171,8 @@ def _set_part_status(user_key: str, project_id: str, session_id: str, kind: str,
         return False
     path = _session_path(user_key, project_id, session_id)
     data = {}
-    try:
+    with contextlib.suppress(OSError, json.JSONDecodeError):
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        pass
     attachment_id = data.get("attachmentId") if isinstance(data, dict) else None
     path.write_text(
         json.dumps(

@@ -21,6 +21,7 @@ self-heals.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import json
 import logging
@@ -310,11 +311,9 @@ def migrate_computed_dataset_ids(user_key: str) -> int:
             os.rename(dataset_root, dest)
         except OSError:
             logger.warning("Could not rename %s → %s", dir_name, new_dir_name, exc_info=True)
-            try:
+            with contextlib.suppress(OSError):
                 if sidecar.is_file():
                     sidecar.unlink()
-            except OSError:
-                pass
             continue
 
         try:

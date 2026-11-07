@@ -333,7 +333,7 @@ class SolveBatch:
                 self.weak_passes.pop(node_id, None)
             fresh["attempts"] = (
                 list(previous["attempts"]) + list(fresh["attempts"])
-            )[-agents_budgets._MAX_TRAIL_ATTEMPTS:]
+            )[-agents_budgets.MAX_TRAIL_ATTEMPTS:]
             if (
                 fresh.get("status") == "failed"
                 and previous.get("status") == "failed"
@@ -905,7 +905,7 @@ class SolveBatch:
         lines = lines[:24]
         # dev/127: every attempt, in the transcript, per node that has a
         # trail — the card's lines cannot carry code, so the trail is its
-        # own part. Bounded: the first _MAX_ATTEMPT_PARTS nodes, then a
+        # own part. Bounded: the first MAX_ATTEMPT_PARTS nodes, then a
         # line naming the rest (each still reachable from its own chat).
         attempt_parts: list = []
         trailed = [
@@ -913,7 +913,7 @@ class SolveBatch:
             if (outcome or {}).get("attempts")
             and (outcome or {}).get("status") in ("failed", "pending", "skipped")
         ]
-        for nid, outcome in trailed[:agents_budgets._MAX_ATTEMPT_PARTS]:
+        for nid, outcome in trailed[:agents_budgets.MAX_ATTEMPT_PARTS]:
             node = self.nodes_by_id.get(nid) or {}
             part = agents_rounds._solve_attempts_part(
                 self.current.get("spec") or self.spec, nid,
@@ -921,9 +921,9 @@ class SolveBatch:
             )
             if part is not None:
                 attempt_parts.append(part)
-        if len(trailed) > agents_budgets._MAX_ATTEMPT_PARTS:
+        if len(trailed) > agents_budgets.MAX_ATTEMPT_PARTS:
             lines.append(
-                f"{len(trailed) - agents_budgets._MAX_ATTEMPT_PARTS} more node(s) have attempt trails; "
+                f"{len(trailed) - agents_budgets.MAX_ATTEMPT_PARTS} more node(s) have attempt trails; "
                 "open each node's agent to read them"
             )
         if cancelled:
@@ -1051,7 +1051,7 @@ class SolveBatch:
         six solved, three left, exited in thirteen seconds)."""
         while True:
             self.pass_no += 1
-            if self.pass_no > agents_budgets._SOLVE_MAX_PASSES:
+            if self.pass_no > agents_budgets.SOLVE_MAX_PASSES:
                 self.ended_by = "budget"
                 break
             if self.should_stop():
@@ -1133,7 +1133,7 @@ class SolveBatch:
             if self.pass_no == 1
             or (
                 not agents_rounds._awaits_user_action(self.results.get(nid))
-                and self.weak_passes.get(nid, 0) < agents_budgets._MAX_WEAK_PASSES
+                and self.weak_passes.get(nid, 0) < agents_budgets.MAX_WEAK_PASSES
             )
             or self.attempted_signature.get(nid) != agents_session._blocker_signature(
                 pass_spec, nid, user_key=self.user_key,
@@ -1158,7 +1158,7 @@ class SolveBatch:
             "secondsLeft": self._session_time_left(),
         }
 
-        pool = ThreadPoolExecutor(max_workers=agents_budgets._SOLVE_MAX_WORKERS)
+        pool = ThreadPoolExecutor(max_workers=agents_budgets.SOLVE_MAX_WORKERS)
         # A pool's thread starts with no app context and serves no visitor:
         # each node is solved in a context of the job's app, for the visitor
         # the job serves, both taken here on the job's thread, so what its run
@@ -1238,7 +1238,7 @@ class SolveBatch:
                 # shows "verifying" and each round's verdict.
                 progress = dict(text)
                 kind = progress.pop("kind", "")
-                event_name = agents_session._SOLVE_PROGRESS_EVENTS.get(kind)
+                event_name = agents_session.SOLVE_PROGRESS_EVENTS.get(kind)
                 if event_name:
                     yield event_name, {"nodeId": node_id, **progress}
                 continue

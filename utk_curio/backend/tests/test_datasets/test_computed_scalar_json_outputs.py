@@ -226,7 +226,7 @@ def test_scalar_dataset_reloads_as_the_producer_value(app, value, data_type):
 
 def test_json_dataset_downloads_with_a_json_extension(app):
     from utk_curio.backend.app.datasets.application.export import (
-        _DOWNLOAD_MIMETYPES,
+        DOWNLOAD_MIMETYPES,
         _download_extension,
     )
 
@@ -234,7 +234,7 @@ def test_json_dataset_downloads_with_a_json_extension(app):
 
     extension = _download_extension(_data_path(), "json")
     assert extension == ".json"
-    assert _DOWNLOAD_MIMETYPES[extension] == "application/json"
+    assert DOWNLOAD_MIMETYPES[extension] == "application/json"
 
 
 # -- Group 4: the str mis-resolution ----------------------------------------

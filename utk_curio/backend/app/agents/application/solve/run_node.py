@@ -8,6 +8,7 @@ and import order between siblings cannot matter.
 
 from __future__ import annotations
 
+import contextlib
 import queue as _queue
 import threading
 import time as _time
@@ -70,7 +71,7 @@ def run_node_stream(
     if node is None:
         raise AgentServiceError(f"node {node_id!r} not found in the saved spec", 404)
     now = _time.time()
-    if session.get("runningSince") and now - float(session.get("runningSince") or 0) < agents_budgets._VALIDATE_STALE_SECONDS:
+    if session.get("runningSince") and now - float(session.get("runningSince") or 0) < agents_budgets.VALIDATE_STALE_SECONDS:
         raise AgentServiceError("a run is already in progress for this attachment", 409)
     session["runningSince"] = now
     record["builderSession"] = session
@@ -229,7 +230,7 @@ def _run_node_events(
         }
     finally:
         # Disconnect-safe: the in-flight guard never wedges the attachment.
-        try:
+        with contextlib.suppress(Exception):
             cleanup_spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
             cleanup_record = agents_spec_reads._record_or_404(cleanup_spec, attachment_id)
             cleanup_session = cleanup_record.get("builderSession") or {}
@@ -239,5 +240,3 @@ def _run_node_events(
                     user_key, project_id, cleanup_spec,
                     agents_spec_reads._agent_actor(user_key, cleanup_spec, attachment_id, "run"),
                 )
-        except Exception:
-            pass

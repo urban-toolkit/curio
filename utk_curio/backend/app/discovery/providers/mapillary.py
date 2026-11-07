@@ -439,4 +439,4 @@ class MapillaryService:
         return LoadedLayer(layer="map-features", path=path, features=len(features))
 
 
-__all__ = ["MapillaryService", "ImageSet", "DownloadedImage", "cells", "quarters", "host_allowed"]
+__all__ = ["MapillaryService", "ImageSet", "DownloadedImage", "PARAMETER_IDS", "cells", "quarters", "host_allowed"]

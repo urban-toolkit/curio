@@ -430,7 +430,7 @@ def _link_secret() -> bytes:
             try:
                 os.link(tmp, path)
             except FileExistsError:
-                pass
+                pass  # another worker's link came first, and its key serves both
             except OSError:
                 # A filesystem without hard links: renamed into place instead.
                 if not path.exists():

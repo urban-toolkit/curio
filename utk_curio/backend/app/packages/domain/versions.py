@@ -172,16 +172,11 @@ def merge_python_deps(
         for pkg, raw_range in deps.items():
             try:
                 rng = parse_range(raw_range)
-            except ResolverError as exc:
-                # Treat unparseable constraints as an explicit conflict
-                # rather than crashing the whole resolve.
-                conflict = DepConflict(
-                    package=pkg, ranges=((package_dir_name, raw_range),)
-                )
+            except ResolverError:
+                # A range this grammar cannot read, such as pip's ``~=4.30``,
+                # takes part here as any version; pip gets the manifest's own
+                # spec when it installs (``packages/application/provisioning.py``).
                 by_pkg.setdefault(pkg, []).append((package_dir_name, Range(lo=(0, 0, 0), hi=None)))
-                # Attach the parse error to the conflict report later;
-                # keep going so we surface every issue.
-                _ = exc
                 continue
             by_pkg.setdefault(pkg, []).append((package_dir_name, rng))
 

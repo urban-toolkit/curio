@@ -229,7 +229,7 @@ class VerifiedRounds:
         loop_ctx = dict(shared)
         loop_ctx["_probe_cache"] = shared.setdefault("_probe_cache", {})
         loop_ctx["_verified_urls"] = shared.setdefault("_verified_urls", {})
-        loop_ctx["_egress_budget"] = egress.CallBudget(agents_budgets._LOOP_EGRESS_CALLS)
+        loop_ctx["_egress_budget"] = egress.CallBudget(agents_budgets.LOOP_EGRESS_CALLS)
         return loop_ctx
 
     def _grounding_context(self, grounding_base):
@@ -405,7 +405,7 @@ class VerifiedRounds:
         }
         self.attempts.append({
             "round": self.rounds_used, "verdict": "fail", "kind": "generation-error",
-            "detail": (text or "")[:agents_budgets._ATTEMPT_DETAIL_CHARS],
+            "detail": (text or "")[:agents_budgets.ATTEMPT_DETAIL_CHARS],
         })
         self.stopped_by = "generation"
 
@@ -424,7 +424,7 @@ class VerifiedRounds:
         attempt = {
             "round": self.rounds_used, "contentSha256": agents_rounds._content_sha(self.candidate),
             "verdict": "fail", "kind": kind,
-            "detail": refusal[:agents_budgets._ATTEMPT_DETAIL_CHARS],
+            "detail": refusal[:agents_budgets.ATTEMPT_DETAIL_CHARS],
             "source": source or ("current content" if self.use_current else "generated"),
             **agents_rounds._attempt_code_field(self.candidate, prose=prose),
         }
@@ -564,7 +564,7 @@ class VerifiedRounds:
             "repeated-attempt", detail, trace="repeated the previous attempt", source="generated",
         )
         self.repeats += 1
-        if self.repeats >= agents_budgets._MAX_REPEATED_ATTEMPTS:
+        if self.repeats >= agents_budgets.MAX_REPEATED_ATTEMPTS:
             # dev/129: a repeat no longer ends the loop — the owner asked
             # for as many retries as the budget affords. It ESCALATES: the
             # next round is told how many times it has repeated itself and
@@ -573,8 +573,8 @@ class VerifiedRounds:
             # stuck model cannot spend fifteen minutes of provider calls.
             detail = agent_text.message("solve.repeated-attempt-escalated", repeats=self.repeats, detail=detail)
             self.previous_error = detail
-            self.attempts[-1]["detail"] = detail[:agents_budgets._ATTEMPT_DETAIL_CHARS]
-            if self.repeats >= agents_budgets._MAX_REPEATED_ATTEMPTS_HARD:
+            self.attempts[-1]["detail"] = detail[:agents_budgets.ATTEMPT_DETAIL_CHARS]
+            if self.repeats >= agents_budgets.MAX_REPEATED_ATTEMPTS_HARD:
                 self.stopped_by = "repeat"
                 return BREAK
         self.previous_attempt = self.candidate
@@ -847,7 +847,7 @@ class VerifiedRounds:
                     "round": self.rounds_used,
                     "contentSha256": agents_rounds._content_sha(self.candidate),
                     "verdict": "fail", "kind": contracts.EMPTY_RENDER_KIND,
-                    "detail": refusal[:agents_budgets._ATTEMPT_DETAIL_CHARS],
+                    "detail": refusal[:agents_budgets.ATTEMPT_DETAIL_CHARS],
                     "source": "current content",
                     **agents_rounds._attempt_code_field(self.candidate),
                 }],
@@ -987,9 +987,9 @@ class VerifiedRounds:
             "source": "current content" if self.use_current else "generated",
         }
         if round_evidence.get("detail"):
-            attempt["detail"] = str(round_evidence["detail"])[:agents_budgets._ATTEMPT_DETAIL_CHARS]
+            attempt["detail"] = str(round_evidence["detail"])[:agents_budgets.ATTEMPT_DETAIL_CHARS]
         if round_evidence.get("stderrTail"):
-            attempt["stderrTail"] = str(round_evidence["stderrTail"])[-agents_budgets._ATTEMPT_STDERR_CHARS:]
+            attempt["stderrTail"] = str(round_evidence["stderrTail"])[-agents_budgets.ATTEMPT_STDERR_CHARS:]
         if round_evidence.get("outputDataType"):
             attempt["outputDataType"] = round_evidence["outputDataType"]
         if round_evidence.get("durationMs") is not None:

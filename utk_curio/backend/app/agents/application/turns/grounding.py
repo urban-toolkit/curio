@@ -505,7 +505,7 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
     budget = (
         _run_egress_budget(loop_ctx)
         if loop_ctx is not None
-        else egress.CallBudget(agents_budgets._RUN_EGRESS_CALLS)
+        else egress.CallBudget(agents_budgets.RUN_EGRESS_CALLS)
     )
     roster = agents_roster._LazyRoster()
     for part in parts:
@@ -576,7 +576,7 @@ def _ground_catalog_lanes(parts: list, listing) -> None:
             continue
         if rows is None:
             rows = listing()
-        lanes["catalog"], _dropped = _grounded_catalog_rows(lanes["catalog"], rows)
+        lanes["catalog"], _ = _grounded_catalog_rows(lanes["catalog"], rows)
         if not any(lanes.get(lane) for lane in ("catalog", "external")):
             parts[index] = {**_NO_CANDIDATES_CARD, "lines": list(_NO_CANDIDATES_CARD["lines"])}
 
@@ -587,7 +587,7 @@ def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":
     gate's probes, so ``MAX_CALLS_PER_RUN`` means the run's total."""
     budget = loop_ctx.get("_egress_budget")
     if budget is None:
-        budget = egress.CallBudget(int(loop_ctx.get("_egress_limit") or agents_budgets._RUN_EGRESS_CALLS))
+        budget = egress.CallBudget(int(loop_ctx.get("_egress_limit") or agents_budgets.RUN_EGRESS_CALLS))
         loop_ctx["_egress_budget"] = budget
     return budget
 

@@ -6,6 +6,7 @@ parse, call and serialize and carry no rules; every function keeps its body.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
@@ -119,11 +120,9 @@ def package_payload(manifest: PackageManifest, *, package_mtime_path: Path | Non
         # Surface README contents (capped) so the metadata editor can pre-populate.
         readme_path = package_mtime_path / "README.md"
         if readme_path.is_file():
-            try:
+            with contextlib.suppress(OSError):
                 raw = readme_path.read_text(encoding="utf-8")
                 payload["readme"] = raw[:README_MAX_BYTES]
-            except OSError:
-                pass
     return payload
 
 

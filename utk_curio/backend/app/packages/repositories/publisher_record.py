@@ -30,6 +30,7 @@ with the deployment.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -96,7 +97,5 @@ def is_publisher(catalog_root: Path, dir_name: str, user_key: str) -> bool:
 
 def forget_publisher(catalog_root: Path, dir_name: str) -> None:
     """Drop the record, for when the package leaves the catalog."""
-    try:
+    with contextlib.suppress(OSError):
         _record_path(catalog_root, dir_name).unlink(missing_ok=True)
-    except OSError:
-        pass

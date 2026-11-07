@@ -162,6 +162,7 @@ def retry_on_write_conflict(apply_changes, attempts: int = _WRITE_CONFLICT_ATTEM
             # Jittered, so two racing writers do not line up again on the retry.
             time.sleep(delay + random.uniform(0, delay))
             delay *= 2
+    return None
 
 
 def commit_with_retry(apply_changes, attempts: int = _WRITE_CONFLICT_ATTEMPTS):

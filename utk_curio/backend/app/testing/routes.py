@@ -30,6 +30,7 @@ left running before it deletes their user.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 import shutil
@@ -540,11 +541,9 @@ def reset_db():
 
         truncated = []
         for table in tables:
-            try:
+            with contextlib.suppress(Exception):
                 db.session.execute(db.text(f'DELETE FROM "{table}"'))
                 truncated.append(table)
-            except Exception:
-                pass
         db.session.commit()
 
         stores_cleared = []

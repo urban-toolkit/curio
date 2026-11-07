@@ -232,4 +232,4 @@ class GoogleStreetViewService:
         return found
 
 
-__all__ = ["GoogleStreetViewService", "grid"]
+__all__ = ["GoogleStreetViewService", "PARAMETER_IDS", "grid"]

@@ -47,13 +47,6 @@ _URL_RE = re.compile(r"[?&]service=wfs\b", re.IGNORECASE)
 #: published this morning is findable this afternoon.
 CAPABILITIES_TTL_S = 15 * 60
 
-_NS = {
-    "wfs": "http://www.opengis.net/wfs/2.0",
-    "wfs1": "http://www.opengis.net/wfs",
-    "ows": "http://www.opengis.net/ows/1.1",
-    "xsd": "http://www.w3.org/2001/XMLSchema",
-}
-
 
 #: The verify.py refinement contract: what this family is called, and
 #: whether its metadata is text rather than JSON.

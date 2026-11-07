@@ -42,18 +42,20 @@ class DiscoveryProvider(Protocol):
     type: ClassVar[str]
     resource_id_re: ClassVar[re.Pattern]
 
-    def __init__(self, manifest: DiscoverySourceManifest, transport: DiscoveryTransport) -> None: ...
+    def __init__(self, manifest: DiscoverySourceManifest, transport: DiscoveryTransport) -> None:
+        """A provider for *manifest*'s source, asking its portal through *transport*."""
 
-    def search(self, query: SearchQuery) -> SearchPage: ...
+    def search(self, query: SearchQuery) -> SearchPage:
+        """One page of the source's resources that match *query*."""
 
-    def describe(self, resource_id: str) -> DiscoveryResourceDetail: ...
+    def describe(self, resource_id: str) -> DiscoveryResourceDetail:
+        """The details of the resource *resource_id*."""
 
     def download_url(
         self, resource_id: str, fmt: str | None, *, values: dict | None = None
     ) -> DownloadTarget:
         """*values* are the answers to the parameters the manifest declares, already
         checked; a provider reads only the ids it lists in ``PARAMETER_IDS``."""
-        ...
 
 
 class BaseProvider:

@@ -16,6 +16,7 @@ area's ``maxAreaKm2`` as a box is: their box comes from the place search.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import signal
@@ -188,10 +189,8 @@ class AutarkOsmService:
                     if message and stage is not None:
                         stage(message)
                 elif line.startswith(_RESULT):
-                    try:
+                    with contextlib.suppress(ValueError):
                         result.update(json.loads(line[len(_RESULT):]))
-                    except ValueError:
-                        pass
 
         def _read_stderr() -> None:
             for line in proc.stderr:
@@ -202,11 +201,9 @@ class AutarkOsmService:
                    threading.Thread(target=_read_stderr, daemon=True)]
         for reader in readers:
             reader.start()
-        try:
+        with contextlib.suppress(BrokenPipeError):
             proc.stdin.write(json.dumps(request))
             proc.stdin.close()
-        except BrokenPipeError:
-            pass
 
         started = time.monotonic()
         try:

@@ -158,7 +158,7 @@ import re
 import threading
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, NamedTuple, Optional
@@ -403,10 +403,8 @@ def _write_atomically(path: Path, data: bytes) -> None:
         os.replace(tmp, path)
     finally:
         if tmp.exists():
-            try:
+            with suppress(OSError):
                 tmp.unlink()
-            except OSError:
-                pass
 
 
 def _records(data: bytes) -> list[tuple[int, bytes]]:
@@ -1322,6 +1320,9 @@ class Live(dict):
     changed since and leaves alone what anyone else changed meanwhile. It holds
     no history: no writer writes one, and storage keeps it as it is."""
 
+    #: It compares as the spec it holds; what it remembers takes no part.
+    __eq__ = dict.__eq__
+
     def __init__(self, spec: dict, *, user_key: str, project_id: str):
         super().__init__(spec)
         self.user_key = str(user_key)
@@ -1376,14 +1377,12 @@ def live(user_key: str, project_id: str) -> Optional[Live]:
         return None
     spec = file.spec
     if _open_entry(project_id, user_key) is not None or _behind(user_key, project_id):
-        try:
+        with suppress(_NoDataflow, doc_mapping.DocMappingError):
             with _held(project_id, user_key) as entry:
                 now = _spec_file(entry)
                 if isinstance(now.spec, dict):
                     _catch_up(entry, now)
                     spec = _as_read(now.spec, entry)
-        except (_NoDataflow, doc_mapping.DocMappingError):
-            pass
     return Live(_writable(spec), user_key=user_key, project_id=project_id)
 
 
@@ -1505,7 +1504,7 @@ def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
     if _made_from_its_doc(user_key, project_id, spec, actor):
         return Live(mine, user_key=user_key, project_id=project_id)
     if _open_entry(project_id, user_key) is not None and doc_mapping.mappable(doc_mapping.owned(_dataflow_of(mine))):
-        try:
+        with suppress(_NoDataflow, doc_mapping.DocMappingError):
             with _held(project_id, user_key) as entry:
                 file = _spec_file(entry)
                 if isinstance(file.spec, dict):
@@ -1522,8 +1521,6 @@ def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
                     })
                     _made_anew(user_key, project_id, actor)
                     return Live(mine, user_key=user_key, project_id=project_id)
-        except (_NoDataflow, doc_mapping.DocMappingError):
-            pass
     entry = _open_entry(project_id)
     if entry is not None:
         _discard(entry)
@@ -1596,10 +1593,8 @@ def _member(source, name: str):
 def _drop_pointer(user_key: str, project_id: str) -> None:
     """Forget where the dataflow's log is, so its doc is built anew from
     ``spec.trill.json`` when it next opens. The log stays where it is."""
-    try:
+    with suppress(FileNotFoundError, ValueError):
         (storage.project_dir(user_key, project_id) / POINTER_FILE).unlink()
-    except (FileNotFoundError, ValueError):
-        pass
 
 
 def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,

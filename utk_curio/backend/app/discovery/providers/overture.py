@@ -183,4 +183,4 @@ class OvertureService:
         return files
 
 
-__all__ = ["OvertureService", "STAC_BASE", "MAX_JOB_BYTES"]
+__all__ = ["OvertureService", "STAC_BASE", "MAX_JOB_BYTES", "PARAMETER_IDS"]
