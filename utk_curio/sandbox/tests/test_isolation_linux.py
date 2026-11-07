@@ -32,6 +32,7 @@ reported as an ordinary node error, at HTTP 200, never as a crash or a hang.
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 
