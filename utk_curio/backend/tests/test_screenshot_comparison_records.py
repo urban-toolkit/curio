@@ -197,7 +197,8 @@ def test_a_reminted_baseline_is_recorded_with_the_one_it_replaced(dirs, monkeypa
     # The baseline as it was, byte for byte, although the file now holds the new one.
     assert (folder / "expected.png").read_bytes() == old_bytes
     assert baseline.read_bytes() != old_bytes
-    assert Image.open(folder / "created.png").convert("RGB").tobytes() == new.tobytes()
+    created = Image.open(folder / "created.png").convert("RGB").tobytes()
+    assert created == new.tobytes()
 
 
 def test_a_baseline_named_by_force_is_recorded_as_requested(dirs, monkeypatch):
@@ -292,7 +293,8 @@ def test_a_new_gpu_kind_baseline_is_recorded_against_the_default_one(dirs, monke
         "screenshot_scene_step.utk-gpu.png", "utk-gpu", "screenshot_scene_step.png")
     assert (record["mismatched"], record["ratio"]) == (29, 0.29)
     assert (folder / "expected.png").read_bytes() == before
-    assert Image.open(folder / "created.png").convert("RGB").tobytes() == new.tobytes()
+    created = Image.open(folder / "created.png").convert("RGB").tobytes()
+    assert created == new.tobytes()
     assert default.read_bytes() == before
 
 
