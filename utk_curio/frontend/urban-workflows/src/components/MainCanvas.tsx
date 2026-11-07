@@ -714,7 +714,8 @@ export function MainCanvas() {
                             : "the canvas";
                 // For a node target, the server holds the (possibly freshly-added)
                 // node before the attach is checked against the dataflow:
-                // otherwise the attach 400s. See attachAgentOnDrop.
+                // otherwise the attach 400s. A dataflow not saved yet is made
+                // first, a hosted guest's as an account's. See attachAgentOnDrop.
                 attachAgentOnDrop({
                     projectId: agentsDataflow,
                     target,
@@ -731,8 +732,7 @@ export function MainCanvas() {
                         markDirty();
                         showToast(`Agent attached to ${where}.`, "success");
                     })
-                    // A refusal says how to show itself (the sign-in note is a warning).
-                    .catch((e: any) => showToast(e?.message || "Attach failed.", e?.toastVariant ?? "error"));
+                    .catch((e: any) => showToast(e?.message || "Attach failed.", "error"));
                 return;
             }
             case "node":

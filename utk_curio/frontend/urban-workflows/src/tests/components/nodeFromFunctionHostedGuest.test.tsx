@@ -3,12 +3,12 @@ import { render, screen, waitFor, fireEvent, within, act } from "@testing-librar
 import "@testing-library/jest-dom";
 
 /**
- * New node from a Python function on a dataflow a hosted guest never saved
- * (`isHostedGuest`: a guest on a Curio started with --deploy). The node's
- * package goes into the dataflow's lockfile, which needs a saved dataflow, and
- * such a guest cannot save one: it is told to sign in before anything is
- * written. On a dataflow it has, the node is made as before; the local shared
- * guest and a signed-in account keep today's behavior.
+ * New node from a Python function for a hosted guest (`isHostedGuest`: a guest
+ * on a Curio started with --deploy). The node's package would go into the
+ * store every guest shares, which the server refuses a guest, so the guest is
+ * told to sign in before anything is written, on any dataflow: no dataflow is
+ * made for it either. The local shared guest and a signed-in account keep
+ * today's behavior.
  *
  * The harness is nodeFromFunctionModal.test.tsx's.
  */
@@ -177,27 +177,21 @@ function signInToasts(): string[] {
 }
 
 describe("a hosted guest", () => {
-  test("is told to sign in when it makes a node from a function on a dataflow it never saved", async () => {
-    // Never saved: no id comes back, since a guest's save is skipped.
-    mockEnsureProjectId.mockResolvedValue(null);
+  test.each([
+    ["it never saved, whose save would make one", "project-new"],
+    ["it has", "project-1"],
+  ])("is told to sign in when it makes a node from a function on a dataflow %s, and nothing is written", async (_where, id) => {
+    mockEnsureProjectId.mockResolvedValue(id);
 
     await createAs(HOSTED_GUEST);
 
     await waitFor(() =>
       expect(mockShowToast).toHaveBeenCalledWith("Sign in to make nodes from Python functions.", "warning"),
     );
+    expect(mockEnsureProjectId).not.toHaveBeenCalled();
     expect(mockFunctionTemplate).not.toHaveBeenCalled();
     expect(mockFactoryInstall).not.toHaveBeenCalled();
-  });
-
-  test("makes the node into a dataflow it has, as before", async () => {
-    mockEnsureProjectId.mockResolvedValue("project-1");
-
-    await createAs(HOSTED_GUEST);
-
-    await waitFor(() => expect(mockInstallToProject).toHaveBeenCalled());
-    expect(mockInstallToProject.mock.calls[0][0]).toBe("project-1");
-    expect(signInToasts()).toEqual([]);
+    expect(mockInstallToProject).not.toHaveBeenCalled();
   });
 });
 
