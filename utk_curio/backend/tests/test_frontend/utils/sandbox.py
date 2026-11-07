@@ -599,6 +599,22 @@ def _catalog_resolution(code: str, username: str | None = None, node_type: str |
     }
 
 
+#: How long past the sandbox's limit for a node the ground-truth call still
+#: waits for its answer: the supervisor's backstop grace (30 s), and more.
+_PAST_THE_NODE_LIMIT_S = 60
+
+
+def _node_limit_s() -> int:
+    """How long the sandbox lets a node run, read as ``isolation/runner.py``
+    reads it: ``CURIO_EXEC_TIMEOUT``, else the sandbox's default."""
+    from utk_curio.sandbox.isolation.supervisor import DEFAULT_WALL_TIMEOUT_SECONDS
+
+    try:
+        return int(os.environ.get("CURIO_EXEC_TIMEOUT", DEFAULT_WALL_TIMEOUT_SECONDS))
+    except (TypeError, ValueError):
+        return DEFAULT_WALL_TIMEOUT_SECONDS
+
+
 def execute_workflow_programmatically(
     spec, seed: int = 42, username: str | None = None
 ) -> dict[str, dict]:
@@ -695,7 +711,11 @@ def execute_workflow_programmatically(
                    if spec.input_slots(node.id) else {}),
             },
             headers=sandbox_auth_header(),
-            timeout=120,
+            # The sandbox sends nothing while a node runs and ends it at its
+            # own limit. A shorter wait gave up on example 28's training on a
+            # loaded runner and left it running beside the next test's nodes
+            # (run 42230248452).
+            timeout=_node_limit_s() + _PAST_THE_NODE_LIMIT_S,
         )
         _explain_sandbox_auth_failure(resp, '/exec')
         resp.raise_for_status()
