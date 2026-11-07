@@ -8,11 +8,12 @@ outlived Node kept them open, and the run waited for their end with no bound,
 after Node exited or after the timeout had killed Node alone. All that time it
 kept its slot, and enough such runs left no slot for any JavaScript node.
 
-Node now runs in a process group of its own. When its output is still open
-``JS_OUTPUT_GRACE_SECONDS`` after it exits, or when it reaches
-``JS_TIMEOUT_SECONDS``, the run kills that group and returns. The tests make
-both bounds short with ``raising=False``: a checkout without them keeps its
-own, so there the run still never returns, and the test fails on that.
+Node now runs in a process group of its own. When Node exits, or when it
+reaches ``JS_TIMEOUT_SECONDS``, the run kills every process Node started (the
+owner's rule, guarded by ``test_js_run_kills_at_return.py``), gives the pipes
+``JS_OUTPUT_GRACE_SECONDS`` to end, and returns. The tests make both bounds
+short with ``raising=False``: a checkout without them keeps its own, so there
+the run still never returns, and the test fails on that.
 
 Each test's Node starts a child that holds Node's stdout and stderr for ten
 minutes and writes both pids to a file, so the test can tell whether the run
@@ -150,8 +151,8 @@ def pids(tmp_path):
 
 def test_a_run_whose_child_holds_its_output_returns_and_frees_its_slot(js_slot, pids, tmp_path, monkeypatch):
     """Node returns 7 and exits while its child holds Node's stdout and
-    stderr. Once the grace is over the run kills the child with Node's group
-    and returns 7, its slot is free, and the next JavaScript node runs."""
+    stderr. The run kills the child and returns 7, its slot is free, and the
+    next JavaScript node runs."""
     from utk_curio.sandbox.app import worker
 
     monkeypatch.setattr(worker, "JS_OUTPUT_GRACE_SECONDS", GRACE, raising=False)
