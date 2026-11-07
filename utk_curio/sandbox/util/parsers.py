@@ -680,10 +680,6 @@ def load_from_duckdb(art_id, session_id=None):
             result = _read_json_artifact(v_str) if v_str else json.loads(v_json)
         elif kind == 'dict':
             result = _read_json_artifact(v_str) if v_str else json.loads(v_json)
-        # elif kind == 'dataframe':
-        #     result = pd.read_parquet(io.BytesIO(blob))
-        # elif kind == 'geodataframe':
-        #     result = gpd.read_parquet(io.BytesIO(blob))
         elif kind == 'dataframe':
             result = pd.read_parquet(_parquet_source(v_str, blob))
             frame_meta, encoded_object_columns = _parse_parquet_meta(v_json)
