@@ -1,4 +1,4 @@
-"""The version grammar the resolver locks: a deliberately narrow subset of semver constraints (``^`` / ``~`` / comparators / ranges), range intersection, and the conflict-aware merge of per-package dependency maps. Pure.
+"""The version grammar the resolver locks: a deliberately narrow subset of semver constraints (``^`` / ``~`` / pip's ``~=`` / comparators / ranges), range intersection, and the conflict-aware merge of per-package dependency maps. Pure.
 
 Domain layer of the packages package (memo dev/143, B2): cut from ``resolver.py``
 by responsibility; every function keeps its name and body.
@@ -87,6 +87,7 @@ def parse_range(raw: str) -> Range:
 
     * ``"*"``                         — any version (``[0.0.0, +inf)``)
     * ``"^1.2.3"``                     — ``[1.2.3, 2.0.0)`` (npm-style caret)
+    * ``"~=1.4"`` / ``"~=1.4.5"``      pip's compatible release (PEP 440): ``[1.4.0, 2.0.0)`` / ``[1.4.5, 1.5.0)``; ``"~=1"`` raises
     * ``"~1.2.3"`` / ``"~1.2"``        — ``[1.2.3, 1.3.0)`` (tilde patch)
     * ``"==1.2.3"`` / ``"1.2.3"``      — exact version (treated as a one-bump range)
     * ``">=1.2"`` / ``"<2.0"`` / ``">1.0"`` / ``"<=1.5"`` / multi-clause ``">=1.0,<2.0"``
@@ -103,6 +104,19 @@ def parse_range(raw: str) -> Range:
     if s.startswith("^"):
         v = parse_version(s[1:])
         return Range(lo=v, hi=_bump_major(v))
+    if s.startswith("~="):
+        # pip's compatible release (PEP 440): the last part given may rise, so
+        # ``~=X.Y`` is ``>=X.Y,<X+1`` and ``~=X.Y.Z`` is ``>=X.Y.Z,<X.(Y+1)``.
+        # The parts are counted in the text before any pre-release or build
+        # tail, as parse_version fills in 0s.
+        body = s[2:].strip()
+        v = parse_version(body)
+        parts = re.split(r"[-+]", body, maxsplit=1)[0].count(".") + 1
+        if parts < 2:
+            raise ResolverError(
+                f"compatible release {raw!r} needs at least two version parts, as in '~=1.4'"
+            )
+        return Range(lo=v, hi=_bump_major(v) if parts == 2 else _bump_minor(v))
     if s.startswith("~"):
         v = parse_version(s[1:])
         return Range(lo=v, hi=_bump_minor(v))
@@ -173,9 +187,10 @@ def merge_python_deps(
             try:
                 rng = parse_range(raw_range)
             except ResolverError:
-                # A range this grammar cannot read, such as pip's ``~=4.30``,
-                # takes part here as any version; pip gets the manifest's own
-                # spec when it installs (``packages/application/provisioning.py``).
+                # A range this grammar cannot read, such as pip's ``!=2.0``,
+                # takes part here as any version. An Apply hands pip the
+                # manifest's own spec (``packages/application/provisioning.py``),
+                # but the launcher installs this merge, where it adds nothing.
                 by_pkg.setdefault(pkg, []).append((package_dir_name, Range(lo=(0, 0, 0), hi=None)))
                 continue
             by_pkg.setdefault(pkg, []).append((package_dir_name, rng))
