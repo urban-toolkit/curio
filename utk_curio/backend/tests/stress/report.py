@@ -387,10 +387,10 @@ def _three(track: dict, unit: str = "") -> str:
 def _tabs_table(tiers: list[dict]) -> list[str]:
     if not any(tier.get("sockets") for tier in tiers):
         return []
-    lines = ["", "Tabs: each user's tab of its room's shared dataflow, typing in a "
-                 "node's code and dragging the node. Sync is an update's time "
-                 "from its tab to every other tab of the room; the doc is what "
-                 "a tab joining at the end downloads.", ""]
+    lines = ["", ("Tabs: each user's tab of its room's shared dataflow, typing in a "
+                  "node's code and dragging the node. Sync is an update's time "
+                  "from its tab to every other tab of the room; the doc is what "
+                  "a tab joining at the end downloads."), ""]
     lines.append("| Tier | Rooms | Tabs | Updates | Sync p50 | Sync p95 | Sync max "
                  "| Doc a tab downloads | Unsynced | Diverged rooms |")
     lines.append("| ---: | ----: | ---: | ------: | -------: | -------: | -------: "
@@ -448,9 +448,9 @@ def _cpu_table(tiers: list[dict]) -> list[str]:
     if not any((tier.get("backend") or {}).get("cpu") or (tier.get("harness") or {}).get("cpu")
                for tier in tiers):
         return []
-    lines = ["", "CPU over each tier, user plus system: the seconds the backend's process "
-                 "and the harness's processes (every user's calls and tab) ran, and the cores that "
-                 "kept busy over the tier and at most over one reading.", ""]
+    lines = ["", ("CPU over each tier, user plus system: the seconds the backend's process "
+                  "and the harness's processes (every user's calls and tab) ran, and the cores that "
+                  "kept busy over the tier and at most over one reading."), ""]
     lines.append("| Tier | Backend CPU | Backend cores (tier / peak) | Harness CPU | Harness cores (tier / peak) |")
     lines.append("| ---: | ----------: | --------------------------: | ----------: | --------------------------: |")
     for tier in tiers:
