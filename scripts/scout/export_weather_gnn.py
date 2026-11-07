@@ -121,7 +121,7 @@ def build_model(torch, module, state):
     hidden = state["conv1.lin_l.weight"].shape[0]
     out_channels = state["lin.weight"].shape[0]
     model = module.NodeRegressor(in_channels, hidden_channels=hidden, out_channels=out_channels)
-    missing, unexpected = model.load_state_dict(state, strict=True)
+    model.load_state_dict(state, strict=True)
     model.eval()
     return model, (in_channels, hidden, out_channels)
 
