@@ -23,10 +23,13 @@ before the step that drops it:
 4. ``setgid``/``setuid``    drop to the unprivileged execution user. Groups must
                        be dropped *before* the uid, or the process keeps its
                        supplementary groups forever.
-5. ``setrlimit``       memory, CPU, processes, file size. Applied after the uid
+5. ``PR_SET_PDEATHSIG``  the kernel kills the child when the zygote dies,
+                       since nothing else would then end it or read its
+                       result. After the uid drop, which clears it.
+6. ``setrlimit``       memory, CPU, processes, file size. Applied after the uid
                        drop so the child cannot raise its own soft limits back
                        to the (higher) hard limits.
-6. ``chdir``           into the launch directory, so relative paths in node
+7. ``chdir``           into the launch directory, so relative paths in node
                        code resolve the way they do in-process. Writes are
                        bounded by ownership, not by cwd: that tree is
                        root-owned and this process is no longer root.
@@ -180,6 +183,35 @@ def _drop_privileges(uid, gid):
     return True
 
 
+def _die_with_the_zygote(zygote_pid):
+    """Have the kernel SIGKILL this child when the zygote dies.
+
+    The zygote is all that ends a child at its deadline and the one reader of
+    its result, so a child it left behind ran on for nobody.
+
+    ``PR_SET_PDEATHSIG``, armed after ``_drop_privileges``: a change of uid or
+    gid clears it, and the seccomp denylist leaves ``prctl`` open. The signal
+    comes when the thread that forked ends, not the process; the zygote forks
+    on its main thread, in its accept loop, which ends only with the zygote. A
+    zygote that died before this ran sends nothing, so a child that finds
+    another parent stops here.
+    """
+    import ctypes
+    import signal
+
+    PR_SET_PDEATHSIG = 1
+    libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    if libc.prctl(PR_SET_PDEATHSIG, int(signal.SIGKILL), 0, 0, 0) != 0:
+        raise ChildSetupError(
+            f"prctl(PR_SET_PDEATHSIG) failed: {os.strerror(ctypes.get_errno())}"
+        )
+    if os.getppid() != zygote_pid:
+        raise ChildSetupError(
+            "the zygote exited before this child started, so nothing would "
+            "read its result"
+        )
+
+
 def _address_space_baseline_bytes():
     """Virtual address space this process already occupies, or None.
 
@@ -326,7 +358,7 @@ def _apply_rlimits(limits):
 
 
 def confine(*, limits, uid=None, gid=None, scratch_dir, require_seccomp,
-            work_dir=None, overlay_dir=None, keep_fds=()):
+            work_dir=None, overlay_dir=None, keep_fds=(), zygote_pid=None):
     """Apply every confinement step, in the order the module docstring sets out.
 
     Raises :class:`ChildSetupError` if any step fails. The caller must treat
@@ -355,11 +387,16 @@ def confine(*, limits, uid=None, gid=None, scratch_dir, require_seccomp,
 
     ``keep_fds`` is retained in the signature for callers that pass it, and is
     now unused.
+
+    ``zygote_pid``, the zygote's pid as it was before the fork, ties the
+    child's life to the zygote's (:func:`_die_with_the_zygote`).
     """
     os.setsid()
     _set_no_new_privs()
     seccomp_active = _install_seccomp_filter(required=require_seccomp)
     _drop_privileges(uid, gid)
+    if zygote_pid is not None:
+        _die_with_the_zygote(zygote_pid)
     _apply_rlimits(limits)
     # *work_dir*, not *scratch_dir*. Node code addresses its inputs by paths
     # relative to the launch directory -- the bundled examples all do
@@ -846,7 +883,8 @@ def point_numba_at_scratch(scratch_dir):
         config.CACHE_DIR = folder
 
 
-def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=False):
+def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=False,
+         zygote_pid=None):
     """Full child lifecycle: confine, run, write, exit. Never returns.
 
     Uses ``os._exit`` so no ``atexit`` handler inherited from the parent runs in
@@ -876,6 +914,7 @@ def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=Fals
             require_seccomp=require_seccomp,
             work_dir=request.get("work_dir"),
             overlay_dir=request.get("overlay_dir"),
+            zygote_pid=zygote_pid,
         )
         point_numba_at_scratch(scratch_dir)
     except BaseException:

@@ -372,6 +372,9 @@ class Zygote:
     def _fork_child(self, request, selector, connection):
         from utk_curio.sandbox.isolation import child
 
+        # Read before the fork: the child, once its life is tied to this
+        # process's, checks that this is still its parent.
+        zygote_pid = os.getpid()
         pid = os.fork()
         if pid != 0:
             return pid
@@ -412,6 +415,7 @@ class Zygote:
             uid=self.uid,
             gid=self.gid,
             require_seccomp=self.require_seccomp,
+            zygote_pid=zygote_pid,
         )
         os._exit(70)  # unreachable; child.main always exits
 
