@@ -6,6 +6,8 @@ other tab of its room, the updates that never were, the backend's threads and
 memory before, at the peak of and after the tier, and the doc files the
 tier's shared dataflows left on disk. A number the run could not take reads as
 not measured, never as a zero, and the wire is named, as the artifacts' is.
+A tier of shared canvases also says what their members added, the locks they
+took and left, the owners' runs on the server and their saves read back.
 Names are imported in each test, so a checkout without them fails test by test.
 """
 
@@ -219,6 +221,81 @@ class TheReportNamesTheTabsWireTest(unittest.TestCase):
         self.assertNotIn("tabs over", _markdown(_tier()).splitlines()[0])
 
 
+def _canvas(**overrides):
+    canvas = {
+        "example": "01.json", "nodes_added": 10, "edges_added": 10,
+        "locks": {"taken": 4, "refused": 6, "released": 4, "held_at_end": [], "tabs_showing_locks": 0},
+        "server_run": {"run_id": "r", "status": "succeeded", "seconds": 40.0, "steps": 16, "not_done": [],
+                       "followed_to_the_end": True},
+        "saved": {"measured": True, "problem": None, "lacks": []},
+    }
+    canvas.update(overrides)
+    return _room(canvas=canvas)
+
+
+class SharedCanvasesTest(unittest.TestCase):
+    """A tier of shared canvases: what its members added, the locks they
+    took and left, the owners' runs on the server and their saves read back.
+    A number not taken reads as not read or not measured, never as a zero."""
+
+    def test_the_canvases_add_up_per_tier(self):
+        from utk_curio.backend.tests.stress.report import canvas_summary
+
+        canvas = canvas_summary([
+            _canvas(),
+            _canvas(example="11.json", server_run={"status": "needs_canvas", "seconds": 80.0, "steps": 13,
+                                                   "not_done": ["mine (run) ended error"]},
+                    saved={"measured": True, "problem": None, "lacks": ["b's node n"]}),
+            _room(room=2),
+        ])
+        self.assertEqual((canvas["rooms"], canvas["examples"]), (2, ["01.json", "11.json"]))
+        self.assertEqual((canvas["nodes_added"], canvas["edges_added"]), (20, 20))
+        self.assertEqual(canvas["locks"], {"taken": 8, "refused": 12, "released": 8, "held_at_end": 0,
+                                           "rooms_read": 2, "tabs_showing_locks": 0})
+        runs = canvas["server_runs"]
+        self.assertEqual((runs["count"], runs["statuses"], runs["steps"], runs["not_done"]),
+                         (2, {"succeeded": 1, "needs_canvas": 1}, 29, 1))
+        self.assertEqual((runs["seconds"]["p50"], runs["seconds"]["max"]), (40.0, 80.0))
+        self.assertEqual(canvas["saved"], {"read": 2, "not_measured": [], "lacks": 1})
+
+    def test_a_tier_with_no_shared_canvas_has_no_canvas_section(self):
+        from utk_curio.backend.tests.stress.report import canvas_summary
+
+        self.assertIsNone(canvas_summary([_room()]))
+        self.assertIsNone(canvas_summary([]))
+        self.assertNotIn("Shared canvases", _markdown(_tier()))
+        self.assertNotIn("shared canvases", _markdown(_tier()).splitlines()[0])
+
+    def test_locks_not_read_and_saves_not_measured_say_so(self):
+        from utk_curio.backend.tests.stress.report import canvas_summary
+
+        locks = {"taken": 1, "refused": 0, "released": 1, "held_at_end": None, "tabs_showing_locks": 0}
+        canvas = canvas_summary([_canvas(locks=locks, server_run=None,
+                                         saved={"measured": False, "problem": "no probe", "lacks": []})])
+        self.assertIsNone(canvas["locks"]["held_at_end"])
+        self.assertEqual(canvas["saved"], {"read": 0, "not_measured": ["no probe"], "lacks": 0})
+        self.assertIsNone(canvas["server_runs"]["seconds"])
+        row = next(line for line in _markdown(_tier(canvas=canvas)).splitlines() if line.startswith("| 5 | 1 |"))
+        self.assertIn("| not read |", row)
+        self.assertIn("| no run | no run | no run |", row)
+        self.assertIn("0 of 1 (not measured: no probe)", row)
+
+    def test_the_canvas_section_shows_each_tier_and_the_title_names_it(self):
+        from utk_curio.backend.tests.stress.report import canvas_summary
+
+        rendered = _markdown(_tier(canvas=canvas_summary([_canvas()])))
+        self.assertIn("shared canvases", rendered.splitlines()[0])
+        self.assertIn("Shared canvases: every member of a room works on its one dataflow.", rendered)
+        row = next(line for line in rendered.splitlines() if line.startswith("| 5 | 1 |"))
+        self.assertEqual(row, "| 5 | 1 | 10 | 10 | 4 | 6 | 0 | 40.0 s | 40.0 s | 40.0 s | 0 | 1 of 1 | 0 |")
+
+    def test_the_report_says_its_rooms_were_shared_canvases(self):
+        from utk_curio.backend.tests.stress.report import build_report
+
+        self.assertTrue(build_report("x", "u", [_tier()], shared_canvas=True)["shared_canvas"])
+        self.assertFalse(build_report("x", "u", [_tier()])["shared_canvas"])
+
+
 class TheTabsFailuresAreFailuresTest(unittest.TestCase):
     def test_a_tabs_failure_kinds_are_counted_and_fail_the_tier(self):
         from utk_curio.backend.tests.stress.driver import FAILURE_KINDS, Sample, UserResult
@@ -235,6 +312,28 @@ class TheTabsFailuresAreFailuresTest(unittest.TestCase):
         tier = tier_summary(5, [result], 1.0, "burst")
         self.assertEqual(tier["failures_by_kind"], {"socket": 1, "unsynced": 1, "diverged": 1})
         self.assertTrue(build_report("x", "u", [tier])["failed"])
+
+    def test_a_shared_canvass_failure_kinds_are_counted_and_fail_the_tier(self):
+        """A lock held at the end, a step of the owner's run on the server not
+        done, and a save that lacks a member's work."""
+        from utk_curio.backend.tests.stress.driver import FAILURE_KINDS, Sample, UserResult
+        from utk_curio.backend.tests.stress.report import build_report, markdown, tier_summary
+
+        for kind in ("locked", "server_run", "unsaved"):
+            self.assertIn(kind, FAILURE_KINDS)
+        result = UserResult(user="owner", example="11.json", started_at=0.0)
+        result.samples += [
+            Sample("socket locks", None, None, 0.0, False, "the server still held 1 lock(s)", "locked"),
+            Sample("/api/projects/:id/runs", "", 200, 0.0, False, "1 of its 13 steps did not end done",
+                   "server_run"),
+            Sample("saved dataflow", "", 200, 0.0, False, "the dataflow its save wrote lacks 1 thing(s)",
+                   "unsaved"),
+        ]
+        tier = tier_summary(100, [result], 1.0, "burst")
+        self.assertEqual(tier["failures_by_kind"], {"locked": 1, "server_run": 1, "unsaved": 1})
+        report = build_report("x", "u", [tier], shared_canvas=True)
+        self.assertTrue(report["failed"])
+        self.assertIn("(unsaved): the dataflow its save wrote lacks 1 thing(s)", markdown(report))
 
 
 if __name__ == "__main__":
