@@ -101,6 +101,8 @@ class TestRetryWiring(unittest.TestCase):
                 self.stdout = _io.StringIO(stdout)
                 self.stderr = _io.StringIO(stderr)
                 self.returncode = returncode
+                # A process has a pid; 0 names none the run may signal.
+                self.pid = 0
 
             def wait(self, timeout=None):
                 return self.returncode
