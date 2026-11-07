@@ -3,8 +3,8 @@
 ``scripts/ci_pick_runners.py`` runs as the first job of the Full stack build, and
 again as build-image's last step for the jobs that wait on the image. It
 writes the ``runs-on`` of the CPU jobs (GitHub-hosted first, then arcade, then
-the utk-desktop runners) and the GPU job (the arcade GPU pool first, then utk,
-then utk-desktop-01 or -03, never utk-desktop-02). A wrong answer sends jobs to a pool
+utk-desktop-03, -02 and -01 in that order) and the GPU job (the arcade GPU pool
+first, then utk, then utk-desktop-03, then -01, never utk-desktop-02). A wrong answer sends jobs to a pool
 that is full or down, and a crash would stop the whole run, so these feed it
 job lists shaped like the GitHub jobs API's.
 """
@@ -64,6 +64,11 @@ def _desktop(status="in_progress", age_s=0, runner="utk-desktop-02"):
 
 def _desktop_gpu(status="in_progress", age_s=0, runner="utk-desktop-01"):
     return _job(status, ["self-hosted", "utk-desktop", "gpu"], runner if status == "in_progress" else None, age_s)
+
+
+def _on(desktop, status="in_progress", age_s=0):
+    """A job a pick sent to one desktop, by its name."""
+    return _job(status, ["self-hosted", desktop], desktop if status == "in_progress" else None, age_s)
 
 
 def _full_hosted_and_arcade():
@@ -127,7 +132,7 @@ def test_a_skill_evals_job_holds_its_arcade_runner_as_any_job_does():
     jobs = ([_hosted("queued", age_s=picker.HOSTED_FULL_AFTER_S + 30)]
             + [_arcade() for _ in range(picker.CPU_RUNNERS - len(CPU))] + evals)
     chosen, _ = picker.pick(CPU, GPU, "auto", "auto", lambda: jobs)
-    assert [chosen[key] for key in CPU] == ["arcade"] * (len(CPU) - 1) + ["desktop"]
+    assert [chosen[key] for key in CPU] == ["arcade"] * (len(CPU) - 1) + ["utk-desktop-03"]
 
 
 def test_a_queued_job_counts_against_the_pool_its_labels_ask_for():
@@ -207,39 +212,42 @@ def test_an_api_failure_still_picks_hosted_first():
     assert any("502" in line for line in how)
 
 
-def test_cpu_jobs_past_hosted_and_arcade_go_to_a_free_desktop_and_then_wait_on_arcade():
-    chosen = picker.assign_cpu(CPU, 1, free_arcade=1, free_desktop=2)
-    assert [chosen[k] for k in CPU] == ["hosted", "arcade", "desktop", "desktop", "arcade"]
+def test_cpu_jobs_past_hosted_and_arcade_take_the_free_desktops_in_order_and_then_wait_on_arcade():
+    chosen = picker.assign_cpu(CPU, 1, free_arcade=1, free_desktops=["utk-desktop-03", "utk-desktop-01"])
+    assert [chosen[k] for k in CPU] == ["hosted", "arcade", "utk-desktop-03", "utk-desktop-01", "arcade"]
 
 
 def test_build_image_never_takes_a_desktop_and_waits_on_arcade_instead():
     # build-image fetches the image's layer cache from GitHub's Actions cache,
     # which took utk-desktop-02 past build-image's 45 minute limit (11-06).
-    chosen = picker.assign_cpu(CPU, 0, free_arcade=0, free_desktop=2)
-    assert [chosen[k] for k in CPU] == ["arcade", "desktop", "desktop", "arcade", "arcade"]
+    free = list(picker.CPU_DESKTOPS)
+    chosen = picker.assign_cpu(CPU, 0, free_arcade=0, free_desktops=free)
+    assert [chosen[k] for k in CPU] == ["arcade", "utk-desktop-03", "utk-desktop-02", "utk-desktop-01", "arcade"]
     # Hosted and arcade still come first for it, as for every job.
-    assert picker.assign_cpu(["build-image"], 1, free_arcade=0, free_desktop=2) == {"build-image": "hosted"}
-    assert picker.assign_cpu(["build-image"], 0, free_arcade=1, free_desktop=2) == {"build-image": "arcade"}
+    assert picker.assign_cpu(["build-image"], 1, free_arcade=0, free_desktops=free) == {"build-image": "hosted"}
+    assert picker.assign_cpu(["build-image"], 0, free_arcade=1, free_desktops=free) == {"build-image": "arcade"}
     assert picker.NOT_ON_DESKTOPS == frozenset({"build-image"})
 
 
 def test_the_gpu_job_goes_to_a_desktop_only_when_arcade_and_utk_are_busy():
-    keys = ["a", "b", "c", "d"]
-    chosen = picker.assign_gpu(keys, 1, free_utk=1, free_desktop_gpu=1)
-    assert [chosen[k] for k in keys] == ["arcade-gpu", "utk", "desktop-gpu", "utk"]
+    keys = ["a", "b", "c", "d", "e"]
+    chosen = picker.assign_gpu(keys, 1, free_utk=1, free_desktops=["utk-desktop-03", "utk-desktop-01"])
+    assert [chosen[k] for k in keys] == ["arcade-gpu", "utk", "utk-desktop-03", "utk-desktop-01", "utk"]
     # With the desktops busy as well, the job waits on utk, as before.
-    assert picker.assign_gpu(GPU, 0, free_utk=0, free_desktop_gpu=0) == {"test-gpu": "utk"}
+    assert picker.assign_gpu(GPU, 0, free_utk=0, free_desktops=[]) == {"test-gpu": "utk"}
 
 
-def test_test_gpu_asks_for_arcade_utk_or_a_gpu_desktop_never_utk_desktop_02():
-    # Every desktop carries utk-desktop and its own name; utk-desktop-01 and -03
-    # carry gpu, utk-desktop-02 cpu, so the GPU job asks for utk-desktop and gpu.
-    assert picker.GPU_DESKTOPS == ("utk-desktop-01", "utk-desktop-03")
-    assert "utk-desktop-02" not in picker.GPU_DESKTOPS
-    assert (picker.DESKTOP_GPU_RUNNERS, picker.DESKTOP_RUNNERS) == (2, 3)
-    # test-gpu's concurrency group (docker-compose.yml) is named by the second
-    # label, the machine or the desktops, so runs on different GPU pools never
-    # wait for or evict each other.
+def test_the_desktops_order_and_test_gpu_never_on_utk_desktop_02():
+    # CPU jobs take utk-desktop-03, -02, then -01, and the GPU job -03, then -01
+    # (owner, 11-07). utk-desktop-02 carries cpu, not gpu.
+    assert picker.CPU_DESKTOPS == ("utk-desktop-03", "utk-desktop-02", "utk-desktop-01")
+    assert picker.GPU_DESKTOPS == ("utk-desktop-03", "utk-desktop-01")
+    # GitHub sends a job to any idle runner that has its labels, so a job picked
+    # for a desktop asks for that desktop by name. test-gpu's concurrency group
+    # (docker-compose.yml) is named by the second label, the machine, so runs on
+    # different GPU runners never wait for or evict each other.
+    for desktop in picker.CPU_DESKTOPS:
+        assert picker.RUNS_ON[desktop] == ["self-hosted", desktop]
     assert [picker.RUNS_ON[place] for place in picker.GPU_POOLS.values()] == [
         ["self-hosted", "arcade", "gpu"], ["self-hosted", "utk", "gpu"], ["self-hosted", "utk-desktop", "gpu"]]
 
@@ -249,95 +257,109 @@ def test_forced_desktop_pools_take_every_job():
     assert picker.assign_gpu(GPU, picker.GPU_RUNNERS, "desktop") == {"test-gpu": "desktop-gpu"}
 
 
-def test_desktop_jobs_are_counted_against_the_desktops_not_arcade():
-    jobs = [_desktop(), _desktop("queued"), _desktop_gpu(),
+def test_desktop_jobs_are_counted_against_their_desktop_not_arcade():
+    jobs = [_on("utk-desktop-03"), _on("utk-desktop-02", "queued"),
+            # A dispatch's job for any desktop: once it runs, its runner places it.
+            _desktop(runner="utk-desktop-01"), _desktop_gpu(runner="utk-desktop-03"),
             # A job's labels can be missing; the runner's name still places it.
             _job("in_progress", [], "utk-desktop-02")]
     counts = picker.busy(jobs, NOW)
-    assert (counts["desktop"], counts["desktop-gpu"], counts["arcade"], counts["utk"]) == (3, 1, 0, 0)
-    assert counts["desktop_stuck"] is False
+    assert [counts[desktop] for desktop in picker.CPU_DESKTOPS] == [2, 2, 1]
+    assert (counts["desktop"], counts["desktop-gpu"], counts["arcade"], counts["utk"]) == (0, 0, 0, 0)
+    assert counts["desktops_off"] == ()
+    # Queued for any desktop, a dispatch's job counts against all of them.
+    counts = picker.busy([_desktop("queued"), _desktop_gpu("queued")], NOW)
+    assert (counts["desktop"], counts["desktop-gpu"]) == (1, 1)
 
 
-def test_each_desktop_takes_one_job_and_only_01_and_03_the_gpu_job():
+def test_each_desktop_takes_one_job_and_only_03_and_01_the_gpu_job():
     def room(jobs):
-        return picker.desktop_room(picker.busy(jobs, NOW))
+        return picker.free_desktops(picker.busy(jobs, NOW))
 
-    assert room([]) == (3, 2)
-    # A CPU job on utk-desktop-02 leaves utk-desktop-01 and -03 for either kind.
-    assert room([_desktop()]) == (2, 2)
-    # A CPU job on utk-desktop-01 leaves the GPU job utk-desktop-03 only.
-    assert room([_desktop(runner="utk-desktop-01")]) == (2, 1)
-    # CPU jobs on both leave the GPU job no desktop, and utk-desktop-02 for a CPU job.
-    assert room([_desktop(runner="utk-desktop-01"), _desktop(runner="utk-desktop-03")]) == (1, 0)
-    # A queued one has no desktop yet; it is taken to fill utk-desktop-02 first,
-    # and the next ones to hold the GPU desktops.
-    assert room([_desktop("queued")]) == (2, 2)
-    assert room([_desktop("queued"), _desktop("queued")]) == (1, 1)
-    assert room([_desktop("queued")] * 3) == (0, 0)
-    # Two CPU jobs leave one desktop; three hold them all.
-    assert room([_desktop(), _desktop(runner="utk-desktop-01")]) == (1, 1)
-    assert room([_desktop(), _desktop(runner="utk-desktop-01"), _desktop(runner="utk-desktop-03")]) == (0, 0)
-    # The GPU job holds utk-desktop-01: utk-desktop-03 takes either kind,
-    # utk-desktop-02 a CPU job only.
-    assert room([_desktop_gpu()]) == (2, 1)
-    assert room([_desktop_gpu(), _desktop()]) == (1, 1)
-    # GPU jobs on both GPU desktops leave utk-desktop-02, for a CPU job only.
-    assert room([_desktop_gpu(), _desktop_gpu(runner="utk-desktop-03")]) == (1, 0)
-    assert room([_desktop_gpu(), _desktop_gpu(runner="utk-desktop-03"), _desktop()]) == (0, 0)
-
-
-def test_the_desktops_are_stuck_only_while_one_should_be_free():
-    queued = _desktop("queued", age_s=picker.STUCK_AFTER_S + 60)
-    # One desktop runs a job, yet the queued one waits: the others are asleep or off.
-    assert picker.busy([_desktop(), queued], NOW)["desktop_stuck"] is True
-    assert picker.desktop_room(picker.busy([_desktop(), queued], NOW)) == (0, 0)
-    # Two of three run a job: the third should have taken it.
-    assert picker.busy([_desktop(), _desktop_gpu(), queued], NOW)["desktop_stuck"] is True
-    # All three run a job: the queued one is just waiting its turn.
-    all_busy = [_desktop(), _desktop_gpu(), _desktop_gpu(runner="utk-desktop-03"), queued]
-    assert picker.busy(all_busy, NOW)["desktop_stuck"] is False
-    # The GPU job takes only utk-desktop-01 and -03: queued that long while one
-    # of them runs nothing, they are not taking jobs; with both busy the job
-    # waits its turn, whatever utk-desktop-02 runs.
-    queued_gpu = _desktop_gpu("queued", age_s=picker.STUCK_AFTER_S + 60)
-    assert picker.busy([_desktop(runner="utk-desktop-02"), queued_gpu], NOW)["desktop_stuck"] is True
-    assert picker.busy([_desktop(runner="utk-desktop-01"), queued_gpu], NOW)["desktop_stuck"] is True
-    gpu_desktops_busy = [_desktop(runner="utk-desktop-01"), _desktop(runner="utk-desktop-03"), queued_gpu]
-    assert picker.busy(gpu_desktops_busy, NOW)["desktop_stuck"] is False
-    all_busy = gpu_desktops_busy + [_desktop(runner="utk-desktop-02")]
-    assert picker.busy(all_busy, NOW)["desktop_stuck"] is False
-    assert picker.busy([queued_gpu], NOW)["desktop_stuck"] is True
+    assert room([]) == (["utk-desktop-03", "utk-desktop-02", "utk-desktop-01"], ["utk-desktop-03", "utk-desktop-01"])
+    # A job on utk-desktop-03, of either kind, leaves -02 and -01 for CPU jobs
+    # and -01 for the GPU job; one queued for it by name holds it as well.
+    assert room([_on("utk-desktop-03")]) == (["utk-desktop-02", "utk-desktop-01"], ["utk-desktop-01"])
+    assert room([_on("utk-desktop-03", "queued")]) == (["utk-desktop-02", "utk-desktop-01"], ["utk-desktop-01"])
+    # A CPU job on utk-desktop-02 leaves the GPU job both of its desktops.
+    assert room([_on("utk-desktop-02")]) == (["utk-desktop-03", "utk-desktop-01"],
+                                             ["utk-desktop-03", "utk-desktop-01"])
+    # Jobs on -03 and -01 leave -02, for a CPU job only; three hold them all.
+    assert room([_on("utk-desktop-03"), _on("utk-desktop-01")]) == (["utk-desktop-02"], [])
+    assert room([_on(desktop) for desktop in picker.CPU_DESKTOPS]) == ([], [])
+    # A dispatch's job running on a desktop holds that desktop.
+    assert room([_desktop_gpu(runner="utk-desktop-01")]) == (["utk-desktop-03", "utk-desktop-02"],
+                                                             ["utk-desktop-03"])
+    # One queued for any desktop has none yet: it is taken to hold the first
+    # free one it can take, in its kind's order.
+    assert room([_desktop("queued")]) == (["utk-desktop-02", "utk-desktop-01"], ["utk-desktop-01"])
+    assert room([_desktop_gpu("queued")]) == (["utk-desktop-02", "utk-desktop-01"], ["utk-desktop-01"])
+    assert room([_on("utk-desktop-03"), _desktop_gpu("queued")]) == (["utk-desktop-02"], [])
+    assert room([_desktop_gpu("queued"), _desktop("queued")]) == (["utk-desktop-01"], ["utk-desktop-01"])
+    assert room([_desktop("queued")] * 3) == ([], [])
 
 
-def test_with_hosted_and_arcade_full_the_desktops_take_the_next_jobs():
+def test_a_desktop_is_off_only_while_a_job_it_could_take_waits_too_long_and_it_runs_nothing():
+    late = picker.STUCK_AFTER_S + 60
+
+    def off(jobs):
+        return picker.busy(jobs, NOW)["desktops_off"]
+
+    # Queued that long for utk-desktop-03 while it runs nothing: -03 is asleep or off, and only -03.
+    assert off([_on("utk-desktop-03", "queued", age_s=late)]) == ("utk-desktop-03",)
+    assert off([_on("utk-desktop-03", "queued", age_s=picker.STUCK_AFTER_S - 60)]) == ()
+    # -03 runs a job: the queued one is just waiting its turn.
+    assert off([_on("utk-desktop-03"), _on("utk-desktop-03", "queued", age_s=late)]) == ()
+    # Queued that long for any desktop: each one that runs nothing should have taken it.
+    assert off([_on("utk-desktop-03"), _desktop("queued", age_s=late)]) == ("utk-desktop-02", "utk-desktop-01")
+    assert off([_on(desktop) for desktop in picker.CPU_DESKTOPS] + [_desktop("queued", age_s=late)]) == ()
+    # For any GPU desktop: only -03 and -01 could take it, whatever -02 runs.
+    assert off([_desktop_gpu("queued", age_s=late)]) == ("utk-desktop-03", "utk-desktop-01")
+    assert off([_on("utk-desktop-03"), _on("utk-desktop-01"), _desktop_gpu("queued", age_s=late)]) == ()
+    # An off desktop is not free; utk-desktop-02 still takes CPU jobs.
+    assert picker.free_desktops(picker.busy([_desktop_gpu("queued", age_s=late)], NOW)) == (["utk-desktop-02"], [])
+
+
+def test_with_hosted_and_arcade_full_the_desktops_take_the_next_jobs_in_order():
     jobs = _full_hosted_and_arcade() + [_arcade_gpu() for _ in range(picker.GPU_RUNNERS)] + [_utk()]
     chosen, how = picker.pick(CPU, GPU, "auto", "auto", lambda: jobs)
-    # arcade's GPU runners and utk-gpu are busy, so test-gpu takes a GPU
-    # desktop, and the other two desktops take the first two CPU jobs but
+    # arcade's GPU runners and utk-gpu are busy, so test-gpu takes
+    # utk-desktop-03, and -02 then -01 take the first two CPU jobs but
     # build-image, which never takes a desktop; the rest wait on arcade.
-    assert chosen["test-gpu"] == "desktop-gpu"
-    assert [chosen[k] for k in CPU] == ["arcade", "desktop", "desktop", "arcade", "arcade"]
-    assert any("hosted limit" in line and "3 of 3" in line for line in how)
-    assert any(line.startswith("CPU jobs") and "then the desktops, 3 of 3 free" in line for line in how)
-    assert any(line.startswith("GPU jobs") and "then the desktops, 2 of 2 free" in line for line in how)
+    assert chosen["test-gpu"] == "utk-desktop-03"
+    assert [chosen[k] for k in CPU] == ["arcade", "utk-desktop-02", "utk-desktop-01", "arcade", "arcade"]
+    assert any(line.startswith("CPU jobs") and "hosted limit" in line
+               and "in the order utk-desktop-03, utk-desktop-02, utk-desktop-01, "
+                   "free: utk-desktop-03, utk-desktop-02, utk-desktop-01" in line for line in how)
+    assert any(line.startswith("GPU jobs")
+               and "in the order utk-desktop-03, utk-desktop-01, free: utk-desktop-03, utk-desktop-01" in line
+               for line in how)
 
 
-def test_with_utk_desktop_01_busy_the_gpu_job_takes_utk_desktop_03():
-    jobs = ([_arcade_gpu() for _ in range(picker.GPU_RUNNERS)] + [_utk()]
-            + [_desktop(runner="utk-desktop-01")])
+def test_with_no_gpu_job_on_a_desktop_cpu_jobs_take_utk_desktop_03_first():
+    chosen, _ = picker.pick(CPU, [], "auto", "auto", _full_hosted_and_arcade)
+    assert [chosen[k] for k in CPU] == ["arcade", "utk-desktop-03", "utk-desktop-02", "utk-desktop-01", "arcade"]
+    # With -03 running a job, they take -02, then -01.
+    jobs = _full_hosted_and_arcade() + [_on("utk-desktop-03")]
+    chosen, _ = picker.pick(CPU, [], "auto", "auto", lambda: jobs)
+    assert [chosen[k] for k in CPU] == ["arcade", "utk-desktop-02", "utk-desktop-01", "arcade", "arcade"]
+
+
+def test_with_utk_desktop_03_busy_the_gpu_job_takes_utk_desktop_01():
+    jobs = [_arcade_gpu() for _ in range(picker.GPU_RUNNERS)] + [_utk()] + [_on("utk-desktop-03")]
     chosen, how = picker.pick(CPU, GPU, "auto", "auto", lambda: jobs)
-    assert chosen["test-gpu"] == "desktop-gpu"
-    assert any(line.startswith("GPU jobs") and "then the desktops, 1 of 2 free" in line for line in how)
+    assert chosen["test-gpu"] == "utk-desktop-01"
+    assert any(line.startswith("GPU jobs") and line.endswith("free: utk-desktop-01") for line in how)
 
 
 def test_with_both_gpu_desktops_busy_the_gpu_job_waits_on_utk_and_never_takes_utk_desktop_02():
     jobs = ([_arcade_gpu() for _ in range(picker.GPU_RUNNERS)] + [_utk()]
-            + [_desktop(runner="utk-desktop-01"), _desktop_gpu(runner="utk-desktop-03")])
+            + [_on("utk-desktop-03"), _desktop_gpu(runner="utk-desktop-01")])
     chosen, how = picker.pick(CPU, GPU, "auto", "auto", lambda: jobs)
     assert chosen["test-gpu"] == "utk"
-    assert any(line.startswith("GPU jobs") and "then the desktops, 0 of 2 free" in line for line in how)
+    assert any(line.startswith("GPU jobs") and line.endswith("free: none") for line in how)
     # utk-desktop-02 runs nothing, and is free for a CPU job only.
-    assert any(line.startswith("CPU jobs") and "then the desktops, 1 of 3 free" in line for line in how)
+    assert any(line.startswith("CPU jobs") and line.endswith("free: utk-desktop-02") for line in how)
 
 
 def test_with_utk_gpu_free_the_gpu_job_goes_there_and_not_to_a_desktop():
@@ -346,11 +368,17 @@ def test_with_utk_gpu_free_the_gpu_job_goes_there_and_not_to_a_desktop():
     assert chosen["test-gpu"] == "utk"
 
 
-def test_stuck_desktops_get_no_jobs():
-    jobs = _full_hosted_and_arcade() + [_desktop("queued", age_s=picker.STUCK_AFTER_S + 60)]
+def test_a_desktop_not_taking_jobs_gets_none_and_the_others_still_do():
+    late = picker.STUCK_AFTER_S + 60
+    jobs = _full_hosted_and_arcade() + [_on("utk-desktop-03", "queued", age_s=late)]
+    chosen, how = picker.pick(CPU, [], "auto", "auto", lambda: jobs)
+    assert [chosen[k] for k in CPU] == ["arcade", "utk-desktop-02", "utk-desktop-01", "arcade", "arcade"]
+    assert any(line.startswith("No job goes to utk-desktop-03:") for line in how)
+    # A job for any desktop queued that long while none runs a job: none takes one.
+    jobs = _full_hosted_and_arcade() + [_desktop("queued", age_s=late)]
     chosen, how = picker.pick(CPU, [], "auto", "auto", lambda: jobs)
     assert {chosen[k] for k in CPU} == {"arcade"}
-    assert any(line.startswith("No job goes to the desktops") for line in how)
+    assert any(line.startswith("No job goes to utk-desktop-03, utk-desktop-02, utk-desktop-01:") for line in how)
 
 
 def test_main_writes_the_desktops_runs_on_values(tmp_path, monkeypatch):
@@ -362,6 +390,21 @@ def test_main_writes_the_desktops_runs_on_values(tmp_path, monkeypatch):
     runners = json.loads(out.read_text().strip().removeprefix("runners="))
     assert runners == {"test-gpu": ["self-hosted", "utk-desktop", "gpu"],
                        **{k: ["self-hosted", "utk-desktop"] for k in CPU}}
+
+
+def test_main_writes_a_desktop_s_name_for_each_job_picked_for_it(tmp_path, monkeypatch):
+    jobs = _full_hosted_and_arcade() + [_arcade_gpu() for _ in range(picker.GPU_RUNNERS)] + [_utk()]
+    monkeypatch.setattr(picker, "active_jobs", lambda *a: jobs)
+    monkeypatch.delenv("CURIO_CI_POOL", raising=False)
+    monkeypatch.delenv("CURIO_CI_GPU_POOL", raising=False)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "urban-toolkit/curio")
+    monkeypatch.setenv("GITHUB_TOKEN", "unused")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "out"))
+    assert picker.main(["ci_pick_runners.py", "--gpu", "test-gpu", "jest", "e2e-desktop-1"]) == 0
+    runners = json.loads((tmp_path / "out").read_text().strip().removeprefix("runners="))
+    assert runners == {"test-gpu": ["self-hosted", "utk-desktop-03"],
+                       "jest": ["self-hosted", "utk-desktop-02"],
+                       "e2e-desktop-1": ["self-hosted", "utk-desktop-01"]}
 
 
 def test_main_writes_runs_on_values_for_every_key(tmp_path, monkeypatch):
