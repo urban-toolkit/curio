@@ -10,9 +10,10 @@ runs under CUDA's minor-version compatibility.
 
 Kernels the device runs: CUDA runs a cubin built for sm_XY on any device of
 compute capability X.Z with Z >= Y, so the wheel's sm_86 serves utk-desktop-03's
-RTX 4080 (sm_89), which the cu129 wheels build no cubin of their own for; and the
-driver compiles PTX (compute_XY) for any newer device. A cubin with a feature
-suffix (sm_90a) runs on its own architecture only.
+RTX 4080 (sm_89), which the cu129 wheels build no cubin of their own for. A cubin
+with a feature suffix (sm_90a) runs on its own architecture only. PTX does not
+count: under minor-version compatibility (arcade) the driver cannot compile a
+newer toolkit's PTX, so the device needs a cubin.
 
 Marked ``cuda``: test-gpu runs it in its container with ``-m cuda``, beside
 ``test_cuda_mlp.py``. Without a usable GPU it fails, never skips.
@@ -34,20 +35,18 @@ NO_GPU = (
 
 
 def kernels_for(major, minor, arch_list):
-    """The entries of torch's arch list that a device of this compute capability runs."""
+    """The cubins in torch's arch list that a device of this compute capability runs."""
     runs = []
     for arch in arch_list:
         kind, _, number = arch.partition("_")
         digits = number.rstrip("abcdefghijklmnopqrstuvwxyz")
-        if len(digits) < 2 or not digits.isdigit():
+        if kind != "sm" or len(digits) < 2 or not digits.isdigit():
             continue
         built = (int(digits[:-1]), int(digits[-1]))
         if digits != number:
             fits = built == (major, minor)
-        elif kind == "sm":
-            fits = built[0] == major and built[1] <= minor
         else:
-            fits = kind == "compute" and built <= (major, minor)
+            fits = built[0] == major and built[1] <= minor
         if fits:
             runs.append(arch)
     return runs
