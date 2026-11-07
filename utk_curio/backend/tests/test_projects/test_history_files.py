@@ -15,6 +15,7 @@ without them and each test fails on its own.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 import sys
@@ -648,10 +649,8 @@ def test_two_writers_that_do_not_hold_the_spec_lock_add_an_entry_once(tmp_curio,
         # before either adds to it. A writer kept out by the lock never comes,
         # and the wait ends after a second.
         if threading.current_thread().name.startswith("writer"):
-            try:
+            with contextlib.suppress(threading.BrokenBarrierError):
                 both_read.wait()
-            except threading.BrokenBarrierError:
-                pass
         return real(data, section)
 
     monkeypatch.setattr(storage, "_replay", replay)
@@ -689,10 +688,8 @@ def test_two_writes_of_one_spec_at_once_both_land(tmp_curio, monkeypatch):
         # temporary file before either swaps it in. A writer kept out by the
         # lock never comes, and the wait ends after a second.
         if threading.current_thread().name.startswith("writer") and str(target).endswith("spec.trill.json"):
-            try:
+            with contextlib.suppress(threading.BrokenBarrierError):
                 both_swap.wait()
-            except threading.BrokenBarrierError:
-                pass
         return real(source, target)
 
     monkeypatch.setattr(storage.os, "replace", replace)

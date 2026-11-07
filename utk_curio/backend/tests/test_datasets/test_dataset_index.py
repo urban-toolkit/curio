@@ -7,6 +7,7 @@ and nothing it does may hide or invent a dataset.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import types
 
@@ -403,10 +404,8 @@ def test_concurrent_reconciles_converge_without_duplicating_rows(file_db_app, mo
     def list_once_both_have_read(user_key):
         # Reconcile reads the rows, then lists the store dirs to add what the
         # rows lack.
-        try:
+        with contextlib.suppress(threading.BrokenBarrierError):
             both_have_read.wait(timeout=3)
-        except threading.BrokenBarrierError:
-            pass
         return real_list_user_datasets(user_key)
 
     monkeypatch.setattr(index_repo, "list_user_datasets", list_once_both_have_read)
