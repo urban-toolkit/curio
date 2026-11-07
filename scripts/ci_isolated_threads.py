@@ -5,7 +5,9 @@ An arcade CPU runner shows all 192 CPUs of a machine its 44 runners share, so
 on run 42230248452 example 28's training, at load 490 to 574, ran until the
 sandbox stopped it at 300 s. The job hands its stack the runner's share,
 ``CURIO_CI_LIBRARY_THREADS``, as ``OMP_NUM_THREADS``. This runs a node in an
-isolated child of that stack and fails unless torch there uses that many.
+isolated child of that stack and fails unless the child got that count and
+torch there uses no more. Torch may use fewer: its x86 build sizes its pool
+through MKL, which counts physical cores, 2 on a 4-CPU hosted runner.
 """
 from __future__ import annotations
 
@@ -55,8 +57,11 @@ def main() -> int:
     if not wanted:
         print("::error::the job handed its stack no library thread count (CURIO_CI_LIBRARY_THREADS)")
         return 1
-    if seen["omp"] != wanted or seen["torch"] != int(wanted):
-        print(f"::error::torch in an isolated child uses {seen['torch']} threads, not the job's {wanted}")
+    if seen["omp"] != wanted:
+        print(f"::error::an isolated child got OMP_NUM_THREADS={seen['omp']}, not the job's {wanted}")
+        return 1
+    if seen["torch"] > int(wanted):
+        print(f"::error::torch in an isolated child uses {seen['torch']} threads, more than the job's {wanted}")
         return 1
     return 0
 
