@@ -396,7 +396,7 @@ def test_later_changes_add_a_point_at_most_and_never_write_the_history_again(cli
         "categories set", lambda: _put(client, token, project_id, {"categories": {"city": ["Chicago"]}}),
     )
     no_point(
-        "a dataset write", lambda: storage.mutate_dataflow_datasets(user_key, project_id, lambda refs: list(refs)),
+        "a dataset write", lambda: storage.mutate_dataflow_datasets(user_key, project_id, list),
     )
 
 
