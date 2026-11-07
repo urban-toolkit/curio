@@ -29,6 +29,36 @@ from .screenshots import park_pointer
 
 CANVAS_DROP_TARGET = ".curio-canvas-drop-target"
 
+#: The canvas title's heading, and what it reads while the dataflow the route
+#: names is opening (``projectLoadState.ts``'s ``OPENING_TITLE``).
+CANVAS_TITLE_HEADING = "[data-curio-canvas-title] h1"
+OPENING_TITLE = "Opening dataflow…"
+
+#: How long a dataflow may take to open. Its load is one request, answered when
+#: the server can: arcade answered one in 24 s during a host stall (#1391's run
+#: 42342733844), and the suite gives a load 60 s elsewhere.
+DATAFLOW_OPEN_TIMEOUT_MS = 60000
+
+
+def wait_for_dataflow_open(page, *, timeout: float = DATAFLOW_OPEN_TIMEOUT_MS) -> None:
+    """Wait while the canvas title says the dataflow its route names is still
+    opening.
+
+    A drop made meanwhile is kept and made only once the load is in
+    (``useDropsWhileOpening``, #1253), so its node comes as late as the server
+    answers the load. A helper that waits for that node waits for this first,
+    then gives the node its own time. On another account's dataflow the canvas
+    also waits for the room to name the tab's role (up to 15 s), and on one
+    that has nodes for their first fit (#1392): those waits are the node's.
+    """
+    try:
+        expect(page.locator(CANVAS_TITLE_HEADING)).not_to_have_text(OPENING_TITLE, timeout=timeout)
+    except AssertionError:
+        raise AssertionError(
+            f"the dataflow never opened within {timeout / 1000:.0f} s: the canvas title still "
+            f"read {OPENING_TITLE!r}, so a drop made while it opened was kept and made no node"
+        ) from None
+
 # One HTML5 drag, start to finish, on the elements the app actually listens to.
 #
 # ``dragstart`` has to be fired on the SOURCE, not just the drop constructed by
@@ -553,6 +583,10 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
 
     Ids are ``uuid4`` and assigned inside ``createCodeNode``, so the only way to
     learn the new one is to diff the canvas before and after.
+
+    A drop made while the dataflow opens is kept and made once it is in, so
+    this waits for it to open (``wait_for_dataflow_open``), then gives the
+    node *timeout*.
     """
     before = {node["id"] for node in canvas_nodes(page)}
 
@@ -586,6 +620,8 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
     )
     assert result == "ok", f"drag to canvas failed: {result}"
 
+    # A drop made while the dataflow opens makes its node once the load is in.
+    wait_for_dataflow_open(page)
     try:
         page.wait_for_function(
             "(n) => window.__curio_reactFlow.getNodes().length > n",
@@ -761,6 +797,8 @@ def drag_to_canvas_with_the_mouse(page, grip, *, at: tuple[float, float],
     drop = drag_with_the_mouse_onto_canvas(page, grip, at=at, timeout=timeout)
     target = drop["target"]
 
+    # A drop made while the dataflow opens makes its node once the load is in.
+    wait_for_dataflow_open(page)
     try:
         page.wait_for_function(
             "(n) => window.__curio_reactFlow.getNodes().length > n",

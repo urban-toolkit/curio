@@ -60,6 +60,8 @@ from .test_computed_json_output_e2e import _record_toasts
 from .test_data_loading_drop_e2e import _drop_file
 from .utils import (
     CANVAS_DROP_TARGET,
+    CANVAS_TITLE_HEADING,
+    OPENING_TITLE,
     _DRAG_TO_CANVAS_JS,
     api_json,
     canvas_nodes,
@@ -85,9 +87,6 @@ if TYPE_CHECKING:
 OWNER = "opening_owner_e2e"
 EDITOR = "opening_editor_e2e"
 NAME = "Bus plan"
-TITLE = "[data-curio-canvas-title] h1"
-#: What the title says while the dataflow is opening.
-OPENING = "Opening dataflow…"
 #: alice's node, and the node bob's file makes.
 LOADED = "curio.builtin/python-computation"
 LOADER = "curio.builtin/data-loading"
@@ -276,7 +275,7 @@ def test_a_file_dropped_while_the_link_opens_lands_once_the_dataflow_is_in(
         except Exception as exc:  # noqa: BLE001 - said in the test's words
             raise AssertionError("the dataflow's room never named bob's tab its editor") from exc
         _record_toasts(page)
-        title_while_opening = page.locator(TITLE).inner_text()
+        title_while_opening = page.locator(CANVAS_TITLE_HEADING).inner_text()
 
         # He drops a file of his on the canvas while the dataflow opens.
         _drop_file(page, CANVAS_DROP_TARGET, "bus_stops.csv", BUS_STOPS, at=(760, 300))
@@ -284,7 +283,7 @@ def test_a_file_dropped_while_the_link_opens_lands_once_the_dataflow_is_in(
         # The dataflow comes in.
         held.pop(0).continue_()
         try:
-            expect(page.locator(TITLE)).to_have_text(NAME, timeout=60000)
+            expect(page.locator(CANVAS_TITLE_HEADING)).to_have_text(NAME, timeout=60000)
         except AssertionError as exc:
             raise AssertionError("bob's tab never loaded the dataflow its link names") from exc
         on_his_canvas = _within(
@@ -316,7 +315,7 @@ def test_a_file_dropped_while_the_link_opens_lands_once_the_dataflow_is_in(
         "refused as still opening": [toast for toast in told if STILL_OPENING in toast],
     }
     assert seen == {
-        "title while the dataflow opened": OPENING,
+        "title while the dataflow opened": OPENING_TITLE,
         "on bob's canvas": sorted([LOADED, LOADER]),
         "in the dataflow": sorted([LOADED, LOADER]),
         "his node loads a dataset he imported": ["imported"],
@@ -558,7 +557,7 @@ def test_a_drop_helper_waits_for_a_dataflow_that_opens_slowly(
 
     seen = {
         "loads the page held": page.evaluate("() => window.__curioHeldLoads"),
-        "the canvas title": page.locator(TITLE).inner_text(),
+        "the canvas title": page.locator(CANVAS_TITLE_HEADING).inner_text(),
         "nodes": [node["id"] for node in canvas_nodes(page)],
     }
     assert seen == {
