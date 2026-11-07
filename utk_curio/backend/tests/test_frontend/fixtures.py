@@ -1,3 +1,4 @@
+import contextlib
 import os
 import sys
 import json
@@ -112,22 +113,18 @@ def _terminate_process_tree(process: "subprocess.Popen", *, timeout: float = 10.
             os.killpg(os.getpgid(process.pid), SIGINT)
             process.wait(timeout=timeout / 2)
         except (ProcessLookupError, PermissionError):
-            pass
+            pass  # nothing left to signal; the root is reaped below
         except subprocess.TimeoutExpired:
-            try:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(os.getpgid(process.pid), SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
 
     # Reap the root itself so it doesn't linger as a zombie.
     try:
         process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         process.kill()
-        try:
+        with contextlib.suppress(subprocess.TimeoutExpired):
             process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            pass
 
 
 def _free_port(port: int, *, raise_on_failure: bool, total_timeout: float = 10.0) -> None:

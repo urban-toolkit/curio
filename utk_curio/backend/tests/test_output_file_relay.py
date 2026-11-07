@@ -8,8 +8,7 @@ which the node shows. The sandbox's own checks are in
 ``sandbox/tests/test_data_export_files.py``.
 """
 
-import unittest
-from unittest import mock
+import unittest.mock
 
 from utk_curio.backend.app import create_app
 from utk_curio.backend.app.api import routes
@@ -52,14 +51,14 @@ class OutputFileRelayTest(unittest.TestCase):
             # answers it for this sign-in.
             (routes, "_read_session", lambda file_name: f"session-reading-{file_name}"),
         ):
-            patched = mock.patch.object(target, name, value)
+            patched = unittest.mock.patch.object(target, name, value)
             patched.start()
             self.addCleanup(patched.stop)
         # /output-file is behind require_auth, which resolves a user before the
         # route body runs; this suite is about the relay, so stand one in.
         from utk_curio.backend.app.users import dependencies
 
-        patched = mock.patch.object(dependencies, "get_current_user", lambda *a, **k: mock.Mock(id=1))
+        patched = unittest.mock.patch.object(dependencies, "get_current_user", lambda *a, **k: unittest.mock.Mock(id=1))
         patched.start()
         self.addCleanup(patched.stop)
 

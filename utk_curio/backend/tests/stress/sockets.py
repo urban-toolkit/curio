@@ -45,7 +45,7 @@ import json
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional
 from urllib.parse import urlsplit
 
@@ -863,7 +863,7 @@ def run_tab(user, room: Room, *, backend_url: str, namespace: str, pacing,
             tab.digest()  # the doc's size, all the same
         user.dataflow_done.wait()
     except TabFailed:
-        pass
+        pass  # what happened is already recorded
     except Exception as exc:  # noqa: BLE001 - a crashed tab is a finding too
         record("socket tab", 0.0, False, f"{type(exc).__name__}: {exc}", "socket")
     finally:

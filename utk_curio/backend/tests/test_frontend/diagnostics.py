@@ -25,6 +25,7 @@ Each file is also attached to the Allure report. Everything here is best
 effort: a diagnostic that fails must never replace the test's own failure.
 """
 
+import contextlib
 import os
 import re
 
@@ -83,10 +84,8 @@ def start_tracing(context):
 def stop_tracing(context):
     if getattr(context, "_curio_tracing", False):
         context._curio_tracing = False
-        try:
+        with contextlib.suppress(Exception):
             context.tracing.stop()
-        except Exception:
-            pass
 
 
 def page_for(item):
@@ -282,10 +281,8 @@ def _attach(path):
         ".png": allure.attachment_type.PNG,
         ".txt": allure.attachment_type.TEXT,
     }.get(os.path.splitext(name)[1])
-    try:
+    with contextlib.suppress(Exception):
         if kind is None:
             allure.attach.file(path, name=name, extension=name.rsplit(".", 1)[-1])
         else:
             allure.attach.file(path, name=name, attachment_type=kind)
-    except Exception:
-        pass

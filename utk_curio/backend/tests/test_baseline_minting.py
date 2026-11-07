@@ -207,7 +207,8 @@ class TestWithTheFlag:
         monkeypatch.setattr(e2e_utils, "_capture_full_page", lambda page: _painted())
         path = _save()
         assert os.path.isfile(path)
-        assert Image.open(path).size == (8, 8)
+        size = Image.open(path).size
+        assert size == (8, 8)
 
     def test_it_still_refuses_a_blank_capture(self, expected_dir, monkeypatch):
         # The flag says "I meant to create one", not "write whatever you saw".
@@ -269,7 +270,8 @@ class TestRemint:
         new = _painted_at(*[(x, 20) for x in range(40)])  # a whole new row
         left = self._captures(monkeypatch, new, new.copy())
         assert _save() == str(path)
-        assert Image.open(path).convert("RGB").tobytes() == new.tobytes()
+        reminted = Image.open(path).convert("RGB").tobytes()
+        assert reminted == new.tobytes()
         assert left == []  # captured twice: the re-mint, and the check that it held
 
     def test_an_unchanged_screen_keeps_its_baseline_byte_for_byte(self, expected_dir, monkeypatch):
@@ -297,7 +299,8 @@ class TestRemint:
         new = _painted_at((1, 1), (30, 30))  # 1 pixel of 1,600, under the floor
         self._captures(monkeypatch, new, new.copy())
         _save()
-        assert Image.open(path).convert("RGB").tobytes() == new.tobytes()
+        reminted = Image.open(path).convert("RGB").tobytes()
+        assert reminted == new.tobytes()
 
     def test_force_names_only_the_baselines_it_matches(self, expected_dir, monkeypatch):
         monkeypatch.setattr(e2e_utils, "REMINT_MIN_RATIO", 0.001)
@@ -324,7 +327,8 @@ class TestRemint:
         new = _painted_at(*[(x, 20) for x in range(40)])
         self._captures(monkeypatch, new, new.copy())
         _save()
-        assert Image.open(path).convert("RGB").tobytes() == new.tobytes()
+        reminted = Image.open(path).convert("RGB").tobytes()
+        assert reminted == new.tobytes()
 
     def test_a_change_over_the_budget_is_reminted_not_failed(self, expected_dir, monkeypatch):
         # Showing what changed is the point of a re-mint; the review decides.
@@ -333,7 +337,8 @@ class TestRemint:
         new.putpixel((5, 5), (255, 255, 255))
         self._captures(monkeypatch, new, new.copy())
         _save()
-        assert Image.open(path).convert("RGB").tobytes() == new.tobytes()
+        reminted = Image.open(path).convert("RGB").tobytes()
+        assert reminted == new.tobytes()
 
     def test_a_screen_still_changing_puts_the_old_baseline_back(self, expected_dir, monkeypatch):
         path = self._baseline(expected_dir, _painted_at((1, 1)))

@@ -13,6 +13,7 @@ above the app, so it narrates without changing what is being demonstrated.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -390,10 +391,8 @@ class Tour:
     # -- pointing ---------------------------------------------------------
 
     def _box(self, locator):
-        try:
+        with contextlib.suppress(Exception):
             locator.wait_for(state="visible", timeout=10000)
-        except Exception:
-            pass
         return locator.bounding_box()
 
     def focus(self, locator, *, hold: float = 900, ring: bool = True):
@@ -497,10 +496,8 @@ def finalize_video(page, *, stem: str = "curio-feature-tour") -> dict[str, str]:
     if os.path.exists(destination):
         os.remove(destination)
     video.save_as(destination)
-    try:
+    with contextlib.suppress(Exception):
         video.delete()
-    except Exception:
-        pass
 
     written = {"webm": destination}
     ffmpeg = _h264_ffmpeg()

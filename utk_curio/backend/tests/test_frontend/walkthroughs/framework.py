@@ -20,16 +20,33 @@ class Narrator(Protocol):
     so a walkthrough reads identically in both modes.
     """
 
-    def chapter(self, kicker: str, title: str, sub: str = "", hold: float | None = None) -> None: ...
-    def say(self, title: str, sub: str = "", hold: float | None = None) -> None: ...
-    def beat(self, ms: float = 700) -> None: ...
-    def focus(self, locator, *, hold: float = 900, ring: bool = True): ...
-    def point_at(self, x: float, y: float, *, hold: float = 600) -> None: ...
+    def chapter(self, kicker: str, title: str, sub: str = "", hold: float | None = None) -> None:
+        """Open a chapter: its kicker, title and subtitle."""
+
+    def say(self, title: str, sub: str = "", hold: float | None = None) -> None:
+        """Show a caption, held long enough to be read."""
+
+    def beat(self, ms: float = 700) -> None:
+        """Pause for about *ms* milliseconds."""
+
+    def focus(self, locator, *, hold: float = 900, ring: bool = True):
+        """Point at *locator* and ring it; None when it never shows."""
+
+    def point_at(self, x: float, y: float, *, hold: float = 600) -> None:
+        """Point at the page point (*x*, *y*)."""
+
     def click(self, locator, *, force: bool = False, dispatch: bool = False,
-              hold: float = 700, ring: bool = True) -> None: ...
-    def type_into(self, locator, text: str, *, delay: float = 55) -> None: ...
-    def scroll(self, dy: float, *, steps: int = 6, hold: float = 90) -> None: ...
-    def hush(self) -> None: ...
+              hold: float = 700, ring: bool = True) -> None:
+        """Point at *locator*, then click it."""
+
+    def type_into(self, locator, text: str, *, delay: float = 55) -> None:
+        """Fill *locator* with *text*."""
+
+    def scroll(self, dy: float, *, steps: int = 6, hold: float = 90) -> None:
+        """Wheel-scroll the page by *dy*."""
+
+    def hush(self) -> None:
+        """Hide the caption and the ring."""
 
 
 class SilentNarrator:
@@ -107,13 +124,13 @@ class Ctx:
     #: Pins an intermediate state as its own screenshot baseline. Supplied by
     #: the baseline suite; a no-op while recording, where the video already
     #: carries the whole journey.
-    snapshot: Callable[..., None] = lambda label, **kw: None
+    snapshot: Callable[..., None] = field(default=lambda label, **kw: None)
     #: Pins one node, up close, as its own baseline. Also a no-op while recording.
-    node_snapshot: Callable[[str, str], None] = lambda label, node_id: None
+    node_snapshot: Callable[[str, str], None] = field(default=lambda label, node_id: None)
     #: Notes where a part of the video starts or ends, as seconds into the
     #: recording. Supplied by the video runner, which saves the marks beside
     #: the video so a clip can be cut from them; a no-op in the baseline suite.
-    mark: Callable[[str, str], None] = lambda name, event: None
+    mark: Callable[[str, str], None] = field(default=lambda name, event: None)
 
     def capture_node(self, label: str, node_id: str) -> None:
         """Pin one node, framed up close, as a baseline called *label*.

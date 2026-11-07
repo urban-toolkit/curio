@@ -654,7 +654,8 @@ def test_examples_that_load_catalog_data_declare_it_in_the_spec():
     it the dataset is never copied into the user's store either.
     """
     for path in _example_json_paths():
-        spec = json.load(open(path, encoding="utf-8"))
+        with open(path, encoding="utf-8") as handle:
+            spec = json.load(handle)
         dataflow = spec["dataflow"]
         used = set()
         for node in dataflow["nodes"]:
@@ -701,7 +702,8 @@ def test_declared_dataset_refs_have_the_shape_the_backend_writes():
         "installedAt",
     }
     for path in _example_json_paths():
-        spec = json.load(open(path, encoding="utf-8"))
+        with open(path, encoding="utf-8") as handle:
+            spec = json.load(handle)
         for ref in spec["dataflow"].get("datasets") or []:
             name = os.path.basename(path)
             assert set(ref) == expected_keys, f"{name}: {sorted(ref)}"
@@ -735,7 +737,8 @@ def test_example_nodes_do_not_fetch_external_urls():
     entry with a reason.
     """
     for path in _example_json_paths():
-        spec = json.load(open(path, encoding="utf-8"))
+        with open(path, encoding="utf-8") as handle:
+            spec = json.load(handle)
         for node in spec["dataflow"]["nodes"]:
             urls = sorted({
                 url
@@ -760,7 +763,8 @@ def test_examples_declared_datasets_exist_in_the_catalog():
     """
     datasets_dir = os.path.join(REPO_ROOT, "datasets")
     for path in _example_json_paths():
-        spec = json.load(open(path, encoding="utf-8"))
+        with open(path, encoding="utf-8") as handle:
+            spec = json.load(handle)
         for ref in spec["dataflow"].get("datasets") or []:
             root = os.path.join(datasets_dir, ref["dirName"])
             manifest_path = os.path.join(root, "manifest.json")
@@ -768,7 +772,8 @@ def test_examples_declared_datasets_exist_in_the_catalog():
                 f"{os.path.basename(path)} declares {ref['dirName']} but "
                 f"{manifest_path} does not exist"
             )
-            manifest = json.load(open(manifest_path, encoding="utf-8"))
+            with open(manifest_path, encoding="utf-8") as handle:
+                manifest = json.load(handle)
             assert manifest["id"] == ref["datasetId"], (
                 f"{ref['dirName']}/manifest.json id {manifest['id']!r} != "
                 f"ref datasetId {ref['datasetId']!r}"

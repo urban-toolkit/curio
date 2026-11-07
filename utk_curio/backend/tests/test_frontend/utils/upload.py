@@ -1,5 +1,6 @@
 """Load a dataflow file through the File menu."""
 
+import contextlib
 import re
 
 from playwright.sync_api import Error as PlaywrightError
@@ -35,10 +36,8 @@ def upload_workflow(
     )
     page.wait_for_load_state("domcontentloaded")
 
-    try:
+    with contextlib.suppress(PlaywrightError):
         page.wait_for_load_state("networkidle", timeout=30000)
-    except PlaywrightError:
-        pass
 
     file_menu_btn = page.get_by_role("button", name=re.compile("File"))
     file_menu_btn.wait_for(state="visible", timeout=60000)

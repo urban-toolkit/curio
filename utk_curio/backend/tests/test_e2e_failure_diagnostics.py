@@ -88,10 +88,12 @@ def test_a_failure_leaves_screenshot_node_states_and_browser_log():
 
     names = sorted(os.path.basename(p) for p in written)
     assert names == ["browser-log.txt", "nodes.txt", "screenshot.png"]
-    nodes = open(next(p for p in written if p.endswith("nodes.txt"))).read()
+    with open(next(p for p in written if p.endswith("nodes.txt"))) as handle:
+        nodes = handle.read()
     assert "whatif-pool  status=-" in nodes and "Data Pool No data" in nodes
     assert "whatif-data  status=done" in nodes
-    log = open(next(p for p in written if p.endswith("browser-log.txt"))).read()
+    with open(next(p for p in written if p.endswith("browser-log.txt"))) as handle:
+        log = handle.read()
     assert "[error] boom  (bundle.js:7)" in log
     assert "[pageerror] TypeError: x is undefined" in log
 
@@ -122,7 +124,9 @@ def test_a_hung_page_skips_the_node_query():
     assert written == []
     errors_file = os.path.join(diagnostics.failure_dir(_item().nodeid),
                                "diagnostics-errors.txt")
-    assert "did not respond" in open(errors_file).read()
+    with open(errors_file) as handle:
+        errors = handle.read()
+    assert "did not respond" in errors
 
 
 def test_a_failing_diagnostic_never_raises():
@@ -219,7 +223,8 @@ def test_a_test_on_any_page_leaves_its_browser_log():
     handlers["pageerror"](RuntimeError("bad state"))
     written = diagnostics.finish(item, failed=True)
 
-    log = open(next(p for p in written if p.endswith("browser-log.txt"))).read()
+    with open(next(p for p in written if p.endswith("browser-log.txt"))) as handle:
+        log = handle.read()
     assert "boom" in log and "bad state" in log
 
 

@@ -24,6 +24,7 @@ Run::
 """
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import TYPE_CHECKING
 
@@ -139,7 +140,7 @@ _CHIP_TITLE_JS = """([id, title]) => {
 
 def _drawn_once_settled(page, expected: dict) -> dict:
     """What the canvas draws, once it draws *expected* or twenty seconds pass."""
-    try:
+    with contextlib.suppress(PlaywrightTimeoutError):
         page.wait_for_function(
             f"([ids, chip, expected]) => {{ const drawn = ({_DRAWN_JS})([ids, chip]);"
             " return ids.every((id) => drawn[id] === expected[id]); }",
@@ -147,8 +148,6 @@ def _drawn_once_settled(page, expected: dict) -> dict:
             polling=100,
             timeout=20000,
         )
-    except PlaywrightTimeoutError:
-        pass
     return page.evaluate(_DRAWN_JS, [NODE_IDS, CHIP])
 
 

@@ -181,4 +181,4 @@ def debug_log(location: str, message: str, data: dict = None, hypothesis_id: str
         with open(log_path, "a") as f:
             f.write(json.dumps(entry) + "\n")
     except Exception:
-        pass
+        pass  # best effort: a debug entry must never fail a test

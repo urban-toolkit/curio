@@ -5,7 +5,7 @@ frame nodes for a capture, and the browser log kept beside the baselines.
 import os
 import json
 import traceback
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from io import BytesIO
 from typing import NamedTuple
 
@@ -85,14 +85,12 @@ def dump_browser_log(
     payload = "\n".join(lines) + "\n"
     with open(log_path, "w", encoding="utf-8") as f:
         f.write(payload)
-    try:
+    with suppress(Exception):
         allure.attach(
             payload,
             name=f"screenshot_{stem}_{test_name}_browser_log.txt",
             attachment_type=allure.attachment_type.TEXT,
         )
-    except Exception:
-        pass
     return log_path
 
 

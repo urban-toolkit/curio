@@ -134,7 +134,8 @@ class Example:
         self.path = os.path.join(EXAMPLES_DIR, relpath)
         if not os.path.exists(self.path):
             raise FileNotFoundError(self.path)
-        self.spec_json = json.loads(open(self.path, encoding="utf-8").read())
+        with open(self.path, encoding="utf-8") as handle:
+            self.spec_json = json.loads(handle.read())
         self.workflow = parse_workflow(self.path)
         self.autk_code = compile_autk_data(self.path)
 
