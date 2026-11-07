@@ -155,6 +155,9 @@ def _written(folder: Path) -> dict:
 class _Reads(dict):
     """A manifest that notes each key the parser reads from it."""
 
+    #: It compares as the manifest it holds; the keys it noted take no part.
+    __eq__ = dict.__eq__
+
     def __init__(self, raw: dict):
         super().__init__(raw)
         self.read: set[str] = set()
