@@ -67,7 +67,7 @@ jobs:
       run: python scripts/check_dist_sizes.py dist
 
     - name: 🚀 Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@v1.14.0
+      uses: pypa/gh-action-pypi-publish@v1.14.3
       with:
         password: ${{ secrets.PYPI_API_TOKEN }}
 
