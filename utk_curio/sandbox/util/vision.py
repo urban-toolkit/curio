@@ -13,9 +13,10 @@ model:
 
 For every image the result has, for each class asked for, its share of all
 the image's pixels, in percent; ``dominant_class`` and ``dominant_pct``, the
-largest of those; and, for an image from a collection, an ``overlay_url``: the
-photo with each pixel tinted by its class, written beside the collection so
-Simple View shows it, under a name that holds the photo and the model.
+largest of those; and, for an image from a collection or a frame a node
+sampled from one of its videos, an ``overlay_url``: the photo with each pixel
+tinted by its class, written beside the collection so Simple View shows it,
+under a name that holds the photo and the model.
 """
 
 from __future__ import annotations
@@ -150,6 +151,24 @@ def palette(labels):
     return colours
 
 
+def _overlay_source(row):
+    """``(file_id, t_ms, kind)``, as ``curio_derived_file`` takes them, of
+    the file an overlay of *row*'s image is derived from: a collection's image
+    or frame itself, or, for a frame a node sampled from a video
+    (``<videoId>@<t_ms>``), that video at that time. None for any other
+    derived file, which gets no overlay."""
+    from utk_curio.sandbox.util.collections import DERIVED_ID_RE
+
+    file_id = str(row["file_id"])
+    sampled = DERIVED_ID_RE.match(file_id)
+    if sampled is None:
+        return file_id, 0, "image"
+    video, t_ms, tag, ext = sampled.groups()
+    if row.get("kind") == "frame" and tag is None and ext is None:
+        return video, int(t_ms), "video"
+    return None
+
+
 def make_curio_segment(curio_derived_file=None):
     """``curio_segment`` for one execution; *curio_derived_file* is where an
     overlay is written (None writes none)."""
@@ -222,9 +241,11 @@ def make_curio_segment(curio_derived_file=None):
             errors.append(None)
             url = None
             can_write = curio_derived_file is not None and row.get("dataset_id") and row.get("file_id")
-            if overlays and can_write:
+            source = _overlay_source(row) if overlays and can_write else None
+            if source is not None:
+                file_id, t_ms, kind = source
                 mask = Image.fromarray(colours[ids.astype(np.int64)]).resize(image.size, Image.NEAREST)
-                derived = curio_derived_file(row["dataset_id"], row["file_id"], 0, "png", kind="image", tag=tag)
+                derived = curio_derived_file(row["dataset_id"], file_id, t_ms, "png", kind=kind, tag=tag)
                 Image.blend(image, mask, OVERLAY_ALPHA).save(derived["path"])
                 url = derived.get("image_url")
             overlay_urls.append(url)

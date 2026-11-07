@@ -6,11 +6,12 @@ Two places, for two readers:
   and serves. Only the backend reads them, so they sit in the user's own store,
   ``.curio/users/<key>/media-cache/<datasetId>/``.
 - ``media_work_dir``: files a node must read or write as well as the backend,
-  a bucket collection's cached objects and the frames or audio windows a node
-  extracts. Under fork isolation a node runs as the execution user and
-  ``.curio/users`` is closed to it, so these sit in the user's execution
-  scratch, ``.curio/exec-scratch/users/<key>/media/``, the one place an
-  isolated node may write. With isolation off they sit in the user's store.
+  a bucket collection's cached objects and the files a node derives from a
+  collection's files (frames, videos, audio windows, overlays). Under fork
+  isolation a node runs as the execution user and ``.curio/users`` is closed
+  to it, so these sit in the user's execution scratch,
+  ``.curio/exec-scratch/users/<key>/media/``, the one place an isolated node
+  may write. With isolation off they sit in the user's store.
 """
 
 from __future__ import annotations
@@ -52,7 +53,7 @@ def media_cache_dir(user_key: str, dataset_id: str) -> Path:
 
 def forget_media(user_key: str, dataset_id: str) -> None:
     """Remove what Curio made from one dataset's files: its thumbnails, its
-    cached bucket files, and the frames and clips nodes derived from it.
+    cached bucket files, and the files nodes derived from it.
 
     Never the files themselves, which are the source's.
     """
@@ -63,7 +64,8 @@ def forget_media(user_key: str, dataset_id: str) -> None:
     segment = _dataset_segment(dataset_id)
     key = user_key_segment(user_key)
     folders = [users_base() / key / "media-cache" / segment, media_work_root(user_key) / "objects" / segment]
-    folders += [media_work_root(user_key) / folder / segment for folder, _ext, _kind in DERIVED.values()]
+    derived = sorted({folder for types in DERIVED.values() for folder, _kind in types.values()})
+    folders += [media_work_root(user_key) / folder / segment for folder in derived]
     for folder in folders:
         shutil.rmtree(folder, ignore_errors=True)
 
