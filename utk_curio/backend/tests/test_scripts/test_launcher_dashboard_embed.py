@@ -25,6 +25,11 @@ reached says nothing about the dashboard, so that page is the ordinary one.
 
 And only a real navigation should pay for it. A HEAD, or a URL that cannot be a
 project id, must not send the backend off to read every artifact behind a tile.
+
+A page is asked for with the sign-in of the visitor who opens it, which the
+page keeps in its cookie: a hosted guest's dashboard of an example is their
+own copy of it (``projects/visitor_copies.py``), which the backend builds for
+that sign-in alone, so that page is theirs alone too.
 """
 from __future__ import annotations
 
@@ -58,11 +63,14 @@ class _StubBackend:
         self.payload = payload
         self.status = status
         self.paths = []
+        #: The sign-in each ask came with, its Authorization header.
+        self.signed = []
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
                 outer.paths.append(self.path)
+                outer.signed.append(self.headers.get("Authorization"))
                 # Whatever the status, as the backend answers: a refusal is a
                 # JSON body too.
                 body = b"" if outer.payload is None else json.dumps(outer.payload).encode("utf-8")
@@ -94,11 +102,11 @@ class _StubBackend:
         return f"http://127.0.0.1:{self.port}"
 
 
-def _start_spa(tmp_path, backend_url: str) -> str:
-    """The page server on *tmp_path*'s dist. It binds the port it is given,
-    which another process may take between our pick and its bind: then its
-    thread ends, and another port is tried. One that answers is ours only if
-    it serves this dist's own probe file."""
+def _start_spa(tmp_path, backend_url: str, base_path: str = "") -> str:
+    """The page server on *tmp_path*'s dist, under *base_path*. It binds the
+    port it is given, which another process may take between our pick and its
+    bind: then its thread ends, and another port is tried. One that answers is
+    ours only if it serves this dist's own probe file."""
     dist = tmp_path / "dist"
     dist.mkdir(exist_ok=True)
     (dist / "index.html").write_text(INDEX_BODY, encoding="utf-8")
@@ -108,7 +116,7 @@ def _start_spa(tmp_path, backend_url: str) -> str:
         port = _free_port()
         thread = threading.Thread(
             target=run_spa_static_server,
-            args=(str(dist), port, "", backend_url),
+            args=(str(dist), port, base_path, backend_url),
             daemon=True,
         )
         thread.start()
@@ -131,6 +139,14 @@ def _get(base: str, path: str, method: str = "GET") -> str:
     )
     with urllib.request.urlopen(request, timeout=10) as response:
         return response.read().decode("utf-8")
+
+
+def _served(base: str, path: str, cookie: str = "") -> tuple[str, dict]:
+    """The page a browser holding *cookie* navigates to, and its headers."""
+    headers = {"Accept": HTML_ACCEPT, **({"Cookie": cookie} if cookie else {})}
+    request = urllib.request.Request(f"{base}{path}", headers=headers)
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return response.read().decode("utf-8"), dict(response.headers)
 
 
 def _embedded(html: str):
@@ -354,3 +370,41 @@ def test_without_a_backend_url_the_page_is_unchanged(tmp_path):
 
     assert _embedded(html) is None
     assert html == INDEX_BODY
+
+
+def test_a_dashboard_page_is_asked_for_with_the_visitors_sign_in(tmp_path):
+    # A hosted guest's dashboard of an example is their own copy's, which the
+    # backend builds for their sign-in alone. The page server asks with the
+    # sign-in the page keeps in its cookie (authApi.ts's tokenCookie), and the
+    # page is that visitor's own, so no cache on the way keeps it for another.
+    with _StubBackend(PAYLOAD) as backend:
+        spa = _start_spa(tmp_path, backend.url)
+
+        html, headers = _served(spa, f"/dashboard/{DASHBOARD_ID}", cookie="theme=dark; session_token=visitor-a")
+
+        assert _embedded(html) == PAYLOAD
+        assert backend.signed == ["Bearer visitor-a"]
+        assert "private" in headers["Cache-Control"]
+
+
+def test_under_a_base_path_the_sign_in_is_that_paths_cookie(tmp_path):
+    # Two instances on one host (/app and /app-dev) keep their sign-ins in two
+    # cookies, each named after its base path.
+    with _StubBackend(PAYLOAD) as backend:
+        spa = _start_spa(tmp_path, backend.url, base_path="/app-dev")
+
+        _served(spa, f"/app-dev/dashboard/{DASHBOARD_ID}",
+                cookie="session_token=another-instances; session_token_app-dev=visitor-a")
+
+        assert backend.signed == ["Bearer visitor-a"]
+
+
+def test_a_visitor_with_no_sign_in_gets_the_page_asked_for_with_none(tmp_path):
+    with _StubBackend(PAYLOAD) as backend:
+        spa = _start_spa(tmp_path, backend.url)
+
+        html, headers = _served(spa, f"/dashboard/{DASHBOARD_ID}", cookie="theme=dark")
+
+        assert _embedded(html) == PAYLOAD
+        assert backend.signed == [None]
+        assert "private" not in headers["Cache-Control"]
