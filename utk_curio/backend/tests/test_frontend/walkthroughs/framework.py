@@ -20,16 +20,33 @@ class Narrator(Protocol):
     so a walkthrough reads identically in both modes.
     """
 
-    def chapter(self, kicker: str, title: str, sub: str = "", hold: float | None = None) -> None: ...
-    def say(self, title: str, sub: str = "", hold: float | None = None) -> None: ...
-    def beat(self, ms: float = 700) -> None: ...
-    def focus(self, locator, *, hold: float = 900, ring: bool = True): ...
-    def point_at(self, x: float, y: float, *, hold: float = 600) -> None: ...
+    def chapter(self, kicker: str, title: str, sub: str = "", hold: float | None = None) -> None:
+        """Open a chapter: its kicker, title and subtitle."""
+
+    def say(self, title: str, sub: str = "", hold: float | None = None) -> None:
+        """Show a caption, held long enough to be read."""
+
+    def beat(self, ms: float = 700) -> None:
+        """Pause for about *ms* milliseconds."""
+
+    def focus(self, locator, *, hold: float = 900, ring: bool = True):
+        """Point at *locator* and ring it; None when it never shows."""
+
+    def point_at(self, x: float, y: float, *, hold: float = 600) -> None:
+        """Point at the page point (*x*, *y*)."""
+
     def click(self, locator, *, force: bool = False, dispatch: bool = False,
-              hold: float = 700, ring: bool = True) -> None: ...
-    def type_into(self, locator, text: str, *, delay: float = 55) -> None: ...
-    def scroll(self, dy: float, *, steps: int = 6, hold: float = 90) -> None: ...
-    def hush(self) -> None: ...
+              hold: float = 700, ring: bool = True) -> None:
+        """Point at *locator*, then click it."""
+
+    def type_into(self, locator, text: str, *, delay: float = 55) -> None:
+        """Fill *locator* with *text*."""
+
+    def scroll(self, dy: float, *, steps: int = 6, hold: float = 90) -> None:
+        """Wheel-scroll the page by *dy*."""
+
+    def hush(self) -> None:
+        """Hide the caption and the ring."""
 
 
 class SilentNarrator:
