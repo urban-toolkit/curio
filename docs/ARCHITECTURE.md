@@ -1436,14 +1436,26 @@ driver starts, it binds and listens on an abstract local socket
 (`cuda-uvmfd-<namespace>-<pid>`) and fails with error 304 when it cannot. With
 `connect` and `accept` denied, no socket carries anything into or out of a child.
 
+The denylist also holds `setsid` and `setpgid` (glibc's `setpgrp` is
+`setpgid(0, 0)`), and every process a child starts inherits the filter, so none
+can leave the child's process group. Every kill of a run is a `killpg` of that
+group, so it reaches every process a node started: the zygote's at the
+child's deadline, the zygote's when the child exits, before it reaps it, and
+the sandbox's when a zygote dies mid-run. So every process a node starts ends
+when the node does, whether it returns, raises or reaches its deadline. The
+child's own `setsid` comes before the filter.
+Starting a process in a session or process group of its own, as
+`subprocess.Popen(start_new_session=True)` does, fails with `PermissionError`.
+
 > [!IMPORTANT]
 > **Implementation status.** The confinement code runs in CI. Three jobs cover
 > it, and each covers a different half:
 >
 > - `unit` runs `tests/test_isolation_linux.py` in the sandbox suite on Linux: the
 >   fork, the seccomp filter (sockets of every family but `AF_UNIX`, connecting,
->   accepting and ptrace denied), the rlimits,
->   the deadline kill, session scoping across the boundary, and the zygote
+>   accepting, ptrace and leaving the process group denied), the rlimits,
+>   the deadline kill, the kill of what a node started when it ends, session
+>   scoping across the boundary, and the zygote
 >   holding no DuckDB handle. This is where the *boundary* is demonstrated.
 > - `test-isolated` boots a second stack with `CURIO_ISOLATION=fork` and runs
 >   the Python-node workflows against it. This is where *ordinary nodes still
@@ -2712,7 +2724,7 @@ The server keeps one Yjs doc per open dataflow: a pycrdt `Doc` and an `Awareness
   - It is checked when a tab starts, on a read and before each write.
 - **A doc is built anew from Trill**, with a new id and a new log, in two cases: when its state is lost (no `ydoc.json`, or a checkpoint that does not read), and when no tab holds it and its state has grown past four times a doc built anew and past 256 KiB (`GROWN_TOO_LARGE`, `REBUILD_FLOOR_BYTES`). The old log stays, readable, and a tab holding the old doc reloads.
 - A doc leaves memory 60 s after its last tab (`CLOSE_AFTER_S`), written first, and a doc whose dataflow is deleted is dropped unwritten.
-- Locks, in this order: the spec lock, the doc's lock, then the module's own; storage's history lock and a doc's queue of messages are leaves, and the doc's thread takes only the doc's lock and the module's own. The spec lock is never asked for while a doc's lock is held, and the writing thread touches no database. No holder of a doc's lock touches the database, so a thread holding a database write may wait for one: the PUT writes its row before its spec, and a create comes before its row is committed (#909).
+- Locks, in this order: the spec lock, the doc's lock, then the module's own; storage's history lock and a doc's queue of messages are leaves, and the doc's thread takes only the doc's lock and the module's own. The spec lock is never asked for while a doc's lock is held, and the writing thread touches no database. No holder of a doc's lock touches the database, so a thread holding a database write may wait for one: the PUT writes its row before its spec, and a create comes before its row is committed (#909). A read of a dataflow waits for its spec lock and its doc's lock, so a history point made under them is in `points.jsonl` for every reader at once and reaches the disk once its thread holds neither (`storage.sync_when_free`): on a strained disk one sync takes seconds, and no read waits for it. A sync that fails then fails what asked for the point (File > Save, a run's note), as it did under the locks; a change's own point is logged, as `history.recorded` logs any history it cannot write, since the change has reached every tab.
 
 **Writers.** Every backend writer of a dataflow goes through its doc, so only `dataflow_docs.py` writes `spec.trill.json` (`test_collaboration/test_doc_writers.py` holds it), and a tab in the room gets each change as it lands:
 
@@ -2909,7 +2921,7 @@ A run executes the saved dataflow on a thread of the backend, so it goes on whet
 - **Jobs.** [`common/job_registry.py`](../utk_curio/backend/app/common/job_registry.py) holds live jobs in this process: one per dataflow and account, two per account (`runs/jobs.py`), keyed by attachment for agent jobs (`agents/infrastructure/agent_jobs.py`), and one chat turn per attachment, capping no account ([A chat turn](#a-chat-turn)). A follower replays a job's events and then tails them; leaving only stops following. What follows a job's end (`on_finish`), such as the next turn of its attachment, runs once the job is no longer live.
 - **Restarts.** A run another backend process left queued or running becomes `interrupted` when this one starts, and when a run is read. Nothing runs again by itself.
 - **Cancel.** Nothing new starts once a run is cancelled; the node already running finishes and its output is dropped.
-- **Test rig.** `/api/testing/run-hold` holds every run before each node it executes (`runs/jobs.py::hold_point`), so a browser test acts while a run goes; outside a test rig the hold point returns at once.
+- **Test rig.** `/api/testing/run-hold` holds every run before each node it executes (`runs/jobs.py::hold_point`), so a browser test acts while a run goes; outside a test rig the hold point returns at once. `/api/testing/reset-db` first cancels every run still going (`service.stop_runs`) and waits for it, and for a dashboard viewer's runs, within its 30 s bound: a run's thread ends only once each node it sent has come back from the sandbox. While a run is still going after that, the reset answers 409, naming the run and the nodes it runs, and resets nothing.
 
 **The canvas.** [`providers/flow/useServerRun.ts`](../utk_curio/frontend/urban-workflows/src/providers/flow/useServerRun.ts) is what Run All, a node's play and Ctrl+Enter call for whoever edits the dataflow, its owner and the editors the owner invited (`runsOnServer` in `FlowProvider.tsx`, from `canvasRole`); hosted guests, watchers and `--no-project` keep `usePlayAll` as their whole run.
 

@@ -35,6 +35,15 @@ fit and lands at the point of the window it was dropped on, in the view the
 canvas then shows: the far one there, the one in the middle just below the
 node it would have covered, as the canvas moves a node off another.
 
+The drop helpers wait for a dataflow that takes long to open. A drop made
+while it opens makes its node only once the load is in, and the load takes as
+long as the server takes: 24 s on arcade during a host stall (#1391's run
+42342733844), where ``drag_builtin_to_canvas`` gave the node 15 s from the drop
+and failed with "Drop produced no node". Here the page holds its load until
+20 s after the drop, and the helper still returns the node. On a dataflow
+that has nodes, it returns the node the drop made, not one the load brought:
+those reach the canvas first.
+
 Run::
 
     CURIO_E2E_USE_EXISTING=1 pytest \\
@@ -53,6 +62,8 @@ from .test_computed_json_output_e2e import _record_toasts
 from .test_data_loading_drop_e2e import _drop_file
 from .utils import (
     CANVAS_DROP_TARGET,
+    CANVAS_TITLE_HEADING,
+    OPENING_TITLE,
     _DRAG_TO_CANVAS_JS,
     api_json,
     canvas_nodes,
@@ -69,6 +80,7 @@ from .utils import (
     settled_viewport,
     stub_db_login,
     stub_db_user,
+    stub_login_and_enter_workflow,
 )
 
 if TYPE_CHECKING:
@@ -77,9 +89,6 @@ if TYPE_CHECKING:
 OWNER = "opening_owner_e2e"
 EDITOR = "opening_editor_e2e"
 NAME = "Bus plan"
-TITLE = "[data-curio-canvas-title] h1"
-#: What the title says while the dataflow is opening.
-OPENING = "Opening dataflow…"
 #: alice's node, and the node bob's file makes.
 LOADED = "curio.builtin/python-computation"
 LOADER = "curio.builtin/data-loading"
@@ -268,7 +277,7 @@ def test_a_file_dropped_while_the_link_opens_lands_once_the_dataflow_is_in(
         except Exception as exc:  # noqa: BLE001 - said in the test's words
             raise AssertionError("the dataflow's room never named bob's tab its editor") from exc
         _record_toasts(page)
-        title_while_opening = page.locator(TITLE).inner_text()
+        title_while_opening = page.locator(CANVAS_TITLE_HEADING).inner_text()
 
         # He drops a file of his on the canvas while the dataflow opens.
         _drop_file(page, CANVAS_DROP_TARGET, "bus_stops.csv", BUS_STOPS, at=(760, 300))
@@ -276,7 +285,7 @@ def test_a_file_dropped_while_the_link_opens_lands_once_the_dataflow_is_in(
         # The dataflow comes in.
         held.pop(0).continue_()
         try:
-            expect(page.locator(TITLE)).to_have_text(NAME, timeout=60000)
+            expect(page.locator(CANVAS_TITLE_HEADING)).to_have_text(NAME, timeout=60000)
         except AssertionError as exc:
             raise AssertionError("bob's tab never loaded the dataflow its link names") from exc
         on_his_canvas = _within(
@@ -308,7 +317,7 @@ def test_a_file_dropped_while_the_link_opens_lands_once_the_dataflow_is_in(
         "refused as still opening": [toast for toast in told if STILL_OPENING in toast],
     }
     assert seen == {
-        "title while the dataflow opened": OPENING,
+        "title while the dataflow opened": OPENING_TITLE,
         "on bob's canvas": sorted([LOADED, LOADER]),
         "in the dataflow": sorted([LOADED, LOADER]),
         "his node loads a dataset he imported": ["imported"],
@@ -495,3 +504,105 @@ def test_nodes_dropped_while_a_dataflow_opens_land_under_the_pointer_in_its_view
         "her nodes on the dataflow's node": [],
         "where her nodes landed": ["under the pointer", "just below a node"],
     }, f"the canvas holds {boxes}; under her drops: {under}"
+
+
+#: How long the page holds its dataflow's load after the first drop: longer
+#: than the 15 s a drop helper gives the node, as arcade's 24 s was.
+SLOW_LOAD_MS = 20000
+
+#: The page's load of its dataflow (``GET /api/projects/<id>?results=last``),
+#: held in the page until SLOW_LOAD_MS after the first drop on it: a server
+#: that answers late, whenever the test drops. Held here, not with
+#: ``page.route``, which this thread could not let go while the drop helper
+#: it calls is waiting.
+_SLOW_LOAD_JS = r"""(() => {
+    const realFetch = window.fetch.bind(window);
+    const load = /\/api\/projects\/[0-9a-f-]{36}\?results=last$/;
+    let letGo;
+    const goes = new Promise((resolve) => { letGo = resolve; });
+    let dropped = false;
+    window.addEventListener("drop", () => {
+        if (dropped) return;
+        dropped = true;
+        setTimeout(letGo, %d);
+    }, true);
+    window.__curioHeldLoads = 0;
+    window.fetch = (input, init) => {
+        const url = typeof input === "string" ? input : (input && input.url) || "";
+        if (!load.test(url)) return realFetch(input, init);
+        window.__curioHeldLoads += 1;
+        return goes.then(() => realFetch(input, init));
+    };
+})();""" % SLOW_LOAD_MS
+
+
+def test_a_drop_helper_waits_for_a_dataflow_that_opens_slowly(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    page.add_init_script(_SLOW_LOAD_JS)
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Slow Opener",
+        username="opening_slow_e2e",
+        project_name="Slow plan",
+    )
+    require_owner_view(page)
+
+    # Dropped while the dataflow opens, its node is made once the load lands,
+    # SLOW_LOAD_MS after the drop.
+    loading = drag_builtin_to_canvas(page, LOADING_TILE, at=FIRST_DROP)
+
+    seen = {
+        "loads the page held": page.evaluate("() => window.__curioHeldLoads"),
+        "the canvas title": page.locator(CANVAS_TITLE_HEADING).inner_text(),
+        "nodes": [node["id"] for node in canvas_nodes(page)],
+    }
+    assert seen == {
+        "loads the page held": 1,
+        "the canvas title": "Slow plan",
+        "nodes": [loading],
+    }
+
+
+def test_a_drop_helper_returns_the_dropped_node_not_one_the_load_brings(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    page.add_init_script(_SLOW_LOAD_JS)
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Slow Opener",
+        username="opening_slow_nodes_e2e",
+        project_name=WITH_A_NODE,
+        project_spec=_with_a_node_spec(),
+    )
+    require_owner_view(page)
+
+    # Dropped while the dataflow opens, the Data Loading node is made once the
+    # load has put the dataflow's own node on the canvas, and after its fit.
+    dropped = drag_builtin_to_canvas(page, LOADING_TILE, at=FIRST_DROP)
+
+    # By kind: a tile makes its node under the versioned id
+    # (``curio.builtin/data-loading@1``), the spec names it without.
+    types = {node["id"]: (node["nodeType"] or "").split("@")[0] for node in canvas_nodes(page)}
+    seen = {
+        "loads the page held": page.evaluate("() => window.__curioHeldLoads"),
+        "the dataflow's own node was returned": dropped == ITS_NODE,
+        "the returned node is": types.get(dropped),
+        "nodes on the canvas": sorted(types.values()),
+    }
+    assert seen == {
+        "loads the page held": 1,
+        "the dataflow's own node was returned": False,
+        "the returned node is": LOADER,
+        "nodes on the canvas": sorted([LOADED, LOADER]),
+    }
