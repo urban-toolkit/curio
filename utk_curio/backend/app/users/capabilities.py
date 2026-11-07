@@ -199,9 +199,8 @@ def run_refusal(user) -> str | None:
         return None
     if getattr(user, "is_guest", False):
         return (
-            "Guests on this Curio run their dataflows in the browser, because a guest "
-            "cannot save a dataflow. Their agents run the guest's own copy on the server. "
-            "Sign in with an account to run dataflows on the server."
+            "Guests on this Curio run dataflows in the browser, and their agents run each "
+            "guest's own copy on the server. Sign in with an account to run dataflows on the server."
         )
     return None
 
