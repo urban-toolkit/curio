@@ -183,11 +183,15 @@ def catalog_entry_refusal(user, action: str) -> str | None:
 
 
 def run_refusal(user) -> str | None:
-    """Why *user* may not run a dataflow on the server, or ``None``.
+    """Why *user* may not start a run of a dataflow on the server (Run All,
+    a run of stale nodes), or ``None``.
 
-    A run on the server runs the saved dataflow and records its outputs in it,
-    so it needs the right to save one. A hosted guest has none and runs in the
-    browser; without ``--deploy`` the shared guest is the one local user.
+    Such a run runs the saved dataflow and records its outputs in it, so it
+    needs the right to save one. A hosted guest has none: its own runs stay
+    in the browser. Its agents' Solve and their runs of a node are not such
+    runs: they run the guest's own copy of the dataflow on the server
+    (``projects/visitor_copies.py``). Without ``--deploy`` the shared guest
+    is the one local user.
     """
     from utk_curio.backend import config
 
@@ -195,8 +199,8 @@ def run_refusal(user) -> str | None:
         return None
     if getattr(user, "is_guest", False):
         return (
-            "Runs on the server are not available to guests on this Curio, because "
-            "a guest cannot save a dataflow. Sign in with an account to use them."
+            "Guests on this Curio run dataflows in the browser, and their agents run each "
+            "guest's own copy on the server. Sign in with an account to run dataflows on the server."
         )
     return None
 

@@ -19,8 +19,14 @@
  * is read from its own entry there, so a change the owner makes to the
  * editors reaches it with the list (``roles_changed``). Every "is this me?"
  * compares participant ids (``collab/participants.ts``). A join the server
- * refuses (a hosted guest's to an example) closes the socket for that
- * dataflow, and its canvas stays its own, bound to no doc.
+ * refuses closes the socket for that dataflow, and its canvas stays its own,
+ * bound to no doc.
+ *
+ * The join also answers with the id the room's events name (``projectId``):
+ * the dataflow's, or, for a hosted guest on an example, its own copy's, whose
+ * room it owns. The tab's events name that id, and the room's events that
+ * name it reach the rest of the page as the dataflow's, which the canvas
+ * opened.
  *
  * Once joined, the tab syncs the dataflow's doc, which ``DataflowDocContext``
  * hands the canvas. A change of the tab's role, either way, and a doc the
@@ -154,6 +160,16 @@ function activityWho(user: Partial<CollabUser>): Record<string, unknown> {
     return who;
 }
 
+/** *payload*, a room's event, as the page reads it: one that names the room's
+ *  id (*roomId*), a hosted guest's own copy, names the dataflow the canvas
+ *  opened (*projectId*) instead. Any other is handed on as it came. */
+export function asTheDataflows(payload: unknown, roomId: string | undefined, projectId: string | undefined): unknown {
+    if (!roomId || !projectId || roomId === projectId) return payload;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+    const named = payload as Record<string, unknown>;
+    return named.projectId === roomId ? { ...named, projectId } : payload;
+}
+
 /** An agent at work's join and leave in the room, as the server sends and
  *  records them (``agent_peers.JOINED_EVENT`` and ``LEFT_EVENT``). */
 const AGENT_EVENTS = ["agent_joined", "agent_left"] as const;
@@ -261,6 +277,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     // is read against.
     const usersRef = useRef<CollabUser[]>([]);
     const projectIdRef = useRef<string | undefined>(getCurrentProjectId());
+    // The id the room's events name, once the join answered: the dataflow's,
+    // or a hosted guest's own copy's.
+    const roomIdRef = useRef<string | undefined>(undefined);
     // The dataflow whose room refused this tab: no socket is opened for it
     // again until another dataflow opens.
     const refusedProjectRef = useRef<string | undefined>(undefined);
@@ -298,30 +317,34 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     /** Start the dataflow's doc on *socket*, joined to *projectId*'s room, as a
      *  tab with *role*: the doc the tab holds, synced again, unless *fresh*
-     *  or the tab's role changed whether it writes (`writesDoc`). */
-    const startDoc = useCallback((socket: Socket, projectId: string, role: RoomRole | null, fresh = false) => {
+     *  or the tab's role changed whether it writes (`writesDoc`). *roomId* is
+     *  the id the room's events name (the join's `projectId`). */
+    const startDoc = useCallback((
+        socket: Socket, projectId: string, role: RoomRole | null, fresh = false, roomId: string = projectId,
+    ) => {
         const prior = docProviderRef.current;
         const writes = writesDoc(role);
-        if (!fresh && prior && prior.projectId === projectId && prior.canWrite === writes) {
+        if (!fresh && prior && prior.projectId === projectId && prior.roomId === roomId && prior.canWrite === writes) {
             prior.attach(socket);
             return;
         }
         dropDoc();
         const provider: DataflowDocProvider = new DataflowDocProvider(projectId, {
             canWrite: writes,
+            roomId,
             onSynced: () => {
                 if (docProviderRef.current === provider) setDocBinding({ provider, synced: true });
             },
             // The server holds another doc: this tab starts again from it.
             onReload: () => {
                 if (docProviderRef.current !== provider || socketRef.current !== socket) return;
-                startDoc(socket, projectId, role, true);
+                startDoc(socket, projectId, role, true, roomId);
             },
             // The tab watches now: what it did not send is dropped, and its doc
             // is the server's again.
             onReadOnly: () => {
                 if (docProviderRef.current !== provider || socketRef.current !== socket) return;
-                startDoc(socket, projectId, "watcher", true);
+                startDoc(socket, projectId, "watcher", true, roomId);
             },
         });
         docProviderRef.current = provider;
@@ -334,6 +357,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         const provider = docProviderRef.current;
         socketRef.current = null;
         docProviderRef.current = null;
+        roomIdRef.current = undefined;
         setDocBinding(null);
         retire(s, provider);
         setConnected(false);
@@ -357,6 +381,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                         error?: string;
                         participant_id?: string;
                         role?: RoomRole;
+                        /** The id the room's events name: the dataflow's, or
+                         *  a hosted guest's own copy's. */
+                        projectId?: string;
                         snapshot?: {
                             users: CollabUser[];
                             locks: Record<string, NodeLock>;
@@ -364,12 +391,14 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                         };
                     }) => {
                         if (ack && ack.ok && ack.snapshot) {
+                            const roomId = typeof ack.projectId === "string" && ack.projectId ? ack.projectId : projectId;
+                            if (socketRef.current === socket) roomIdRef.current = roomId;
                             setParticipantId(ack.participant_id ?? null);
                             setUsers(ack.snapshot.users);
                             setLockedNodes(ack.snapshot.locks);
                             setActivity(ack.snapshot.activity);
                             if (socketRef.current === socket) {
-                                startDoc(socket, projectId, ack.role ?? null);
+                                startDoc(socket, projectId, ack.role ?? null, false, roomId);
                             }
                         } else if (ack && ack.ok === false && socketRef.current === socket) {
                             // Refused: this tab is not in the room, so it keeps
@@ -470,14 +499,17 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                 }));
             });
 
-            // Fan-out to consumer-registered handlers.
+            // Fan-out to consumer-registered handlers. An event that names a
+            // hosted guest's own copy reaches them as the dataflow's, which
+            // the canvas opened.
             for (const ev of REMOTE_EVENTS) {
                 socket.on(ev, (payload: unknown) => {
                     const handlers = remoteHandlersRef.current.get(ev);
                     if (!handlers) return;
+                    const shown = asTheDataflows(payload, roomIdRef.current, projectIdRef.current);
                     for (const h of handlers) {
                         try {
-                            h(payload);
+                            h(shown);
                         } catch {
                             /* never let a consumer break the dispatch loop */
                         }
@@ -546,7 +578,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         const provider = docProviderRef.current;
         const socket = socketRef.current;
         if (!provider || !socket || !role) return;
-        if (provider.canWrite !== writesDoc(role)) startDoc(socket, provider.projectId, role, true);
+        if (provider.canWrite !== writesDoc(role)) startDoc(socket, provider.projectId, role, true, provider.roomId);
     }, [role, startDoc]);
 
     useEffect(() => {
@@ -589,7 +621,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     const _emit = useCallback(
         (event: string, payload: Record<string, unknown>) => {
             const s = socketRef.current;
-            const projectId = projectIdRef.current;
+            const projectId = roomIdRef.current ?? projectIdRef.current;
             if (!s || !s.connected || !projectId) return;
             s.emit(event, { projectId, ...payload });
         },

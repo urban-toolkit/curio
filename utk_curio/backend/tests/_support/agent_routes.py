@@ -20,10 +20,17 @@ def _record_defaults_removed(user) -> None:
     adds only the agents a test adds. Written to the imports file directly,
     since every agents test starts here; ``test_default_agents.py`` takes
     them out through the routes."""
+    _record_defaults_removed_under(_user_dir_key(user))
+
+
+def _record_defaults_removed_under(user_key: str) -> None:
+    """:func:`_record_defaults_removed` for the account stored under
+    *user_key*, for a test that writes it before the account's row is made,
+    as the shared guest's is."""
     from utk_curio.backend.app.agents.repositories import imports
     from utk_curio.backend.app.agents.service import default_agent_coords
 
-    imports.save_imported_agents(_user_dir_key(user), [], seeded=default_agent_coords())
+    imports.save_imported_agents(user_key, [], seeded=default_agent_coords())
 
 
 def _block_closure_repair(monkeypatch):

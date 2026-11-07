@@ -79,17 +79,28 @@ def _dataflow(project_id: str, *, make: bool = True) -> Dataflow:
     )
 
 
-def _driven_dataflow_key(project_id: str | None) -> str | None:
-    """The storage key of the dataflow *project_id* names, its owner's, when
-    the request's account drives its agents; None when no dataflow is named,
-    or for one the account does not drive. A listing that marks what is in a
-    dataflow reads it there."""
+def _driven_dataflow(project_id: str | None) -> Dataflow | None:
+    """The dataflow *project_id* names, when the request's account drives its
+    agents: its owner's storage key, and the dataflow itself or a hosted
+    guest's own copy of it, made or not (:func:`_dataflow`, which reads
+    without making one). None when no dataflow is named, or for one the
+    account does not drive. A listing that marks what is in a dataflow reads
+    it there."""
     if not project_id:
         return None
     try:
-        return _dataflow(project_id, make=False).key
+        return _dataflow(project_id, make=False)
     except (NotFoundError, AgentServiceError):
         return None
+
+
+def _listing_dataflow(project_id: str | None) -> tuple[str | None, str | None]:
+    """The dataflow a listing marks what is in, and the storage key it is
+    read under: the one the request's account drives (:func:`_driven_dataflow`),
+    a hosted guest's own copy of it once made, else *project_id* under the
+    account's own key."""
+    flow = _driven_dataflow(project_id)
+    return (flow.project_id, flow.key) if flow is not None else (project_id, None)
 
 
 def _provider_error(exc: ProviderConfigError):

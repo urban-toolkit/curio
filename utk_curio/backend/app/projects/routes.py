@@ -156,9 +156,10 @@ def get_categories(project_id: str):
     """The dataflow's categories as it is now, for every tab that opens it:
     the owner's, an invited editor's and a watcher's, as the shared read
     serves the dataflow to anyone who opens its link. No save answers them
-    any more, so its tabs ask again as it changes."""
+    any more, so its tabs ask again as it changes. A hosted guest's are its
+    own copy's (visitor_copies.py)."""
     try:
-        categories = services.dataflow_categories(project_id)
+        categories = services.dataflow_categories(project_id, user=g.user)
     except NotFoundError:
         return _error("Project not found", 404)
     return jsonify({"categories": categories}), 200
