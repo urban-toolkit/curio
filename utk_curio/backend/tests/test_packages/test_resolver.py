@@ -370,3 +370,58 @@ def test_an_empty_range_means_any_version():
     ])
     assert conflicts == []
     assert merged["numpy"] == ">=1.26.0"
+
+
+# ---------------------------------------------------------------------------
+# pip's compatible release, ``~=`` (PEP 440)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "raw,expected_lo,expected_hi",
+    [
+        ("~=4.30",  (4, 30, 0), (5, 0, 0)),
+        ("~=1.4.5", (1, 4, 5), (1, 5, 0)),
+    ],
+    ids=["two-parts", "three-parts"],
+)
+def test_parse_range_reads_a_compatible_release(raw, expected_lo, expected_hi):
+    """``~=X.Y`` is ``>=X.Y, ==X.*`` and ``~=X.Y.Z`` is ``>=X.Y.Z, ==X.Y.*``.
+
+    The last part given may rise, so the ceiling is one past the part before
+    it: ``~=4.30`` stops below 5.0.0 and ``~=1.4.5`` below 1.5.0.
+    """
+    rng = parse_range(raw)
+    assert rng.lo == expected_lo
+    assert rng.hi == expected_hi
+
+
+def test_a_compatible_release_of_one_part_is_refused():
+    """PEP 440 forbids ``~=1``: it has no part before the last to hold."""
+    with pytest.raises(ResolverError):
+        parse_range("~=1")
+
+
+def test_a_compatible_release_conflicts_with_a_floor_above_its_ceiling():
+    """``~=1.4`` stops below 2.0.0, so it cannot meet ``>=2.0``.
+
+    Read as any version, it let the two merge to ``>=2.0.0``: the package that
+    asked for 1.x got 2.x, and no conflict was said anywhere.
+    """
+    merged, conflicts = merge_python_deps([
+        ("a@1", {"x": "~=1.4"}),
+        ("b@1", {"x": ">=2.0"}),
+    ])
+    assert "x" not in merged
+    assert [c.package for c in conflicts] == ["x"]
+    assert dict(conflicts[0].ranges) == {"a@1": ">=1.4.0,<2.0.0", "b@1": ">=2.0.0"}
+
+
+def test_a_compatible_release_keeps_its_ceiling_in_the_merge():
+    """``~=4.30`` and ``>=4.31`` meet at ``>=4.31.0,<5.0.0``: the floor rises,
+    and the ceiling the compatible release sets stays in the lockfile."""
+    merged, conflicts = merge_python_deps([
+        ("a@1", {"x": "~=4.30"}),
+        ("b@1", {"x": ">=4.31"}),
+    ])
+    assert conflicts == []
+    assert merged["x"] == ">=4.31.0,<5.0.0"
