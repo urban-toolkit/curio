@@ -73,9 +73,11 @@ TAB_CLOSE_TIMEOUT_S = 600
 # On a shared canvas, how long the room's owner follows its run of the
 # dataflow on the server. The run's stream says nothing while a node runs, so
 # one read may wait as long as a node's own ceiling, with a margin; the whole
-# run as long as a user's session (run.USER_DEADLINE_S), a judgement.
+# run half a user's session (run.USER_DEADLINE_S), a judgement, so a run that
+# never ends is reported with its steps before the harness gives up on the
+# room's users.
 RUN_READ_TIMEOUT_S = PY_TIMEOUT_S + 60
-RUN_TIMEOUT_S = 20 * 60
+RUN_TIMEOUT_S = 10 * 60
 
 #: The key of a solo baseline's digest of the node a member of a shared canvas
 #: adds, whose id differs for every member (``sockets.member_node``).
@@ -239,6 +241,18 @@ class UserFailed(Exception):
 # it would cost if it did.
 ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
 
+# What the Arrow route's 415 says for an artifact whose kind is no table, a
+# list or a dict (``parsers.open_tabular_arrow_from_duckdb``), which the canvas
+# then reads as JSON (``services/api.ts``). Its other 415, a geodataframe asked
+# for without the WKB opt-in below, stays a failure: it is how the backend's
+# dropped opt-in was caught.
+NOT_TABULAR = "only supports tabular kinds"
+
+
+def not_tabular(resp) -> bool:
+    """Whether *resp*, a 415 from the Arrow route, says the artifact is no table."""
+    return NOT_TABULAR in resp.text
+
 # Geometry rides as WKB on the Arrow path, so the sandbox refuses a
 # geodataframe unless the client says it can take it. The harness digests the
 # response bytes rather than decoding them, so accepting WKB is honest: what
@@ -358,11 +372,14 @@ class VirtualUser:
         accept: str | None = None,
         raw: bool = False,
         extra_headers: dict | None = None,
+        also: dict | None = None,
     ) -> dict:
         """Make one call, record a Sample, and raise UserFailed on anything bad.
 
         ``path`` is also the label the report groups by, so per-call values
-        (artifact ids, project ids) belong in ``params``, not in it.
+        (artifact ids, project ids) belong in ``params``, not in it. *also*
+        maps a status outside *expect* to a test of the response that, when
+        it holds, makes that answer an expected one too.
         """
         expected = (expect,) if isinstance(expect, int) else expect
         url = f"{self.backend_url}{path_url or path}"
@@ -385,7 +402,8 @@ class VirtualUser:
             self._record(path, node_id, None, started, False, str(exc)[:500], "transport")
             raise UserFailed(f"{path} transport error")
 
-        if resp.status_code not in expected:
+        test = (also or {}).get(resp.status_code)
+        if resp.status_code not in expected and not (test is not None and test(resp)):
             self._record(path, node_id, resp.status_code, started, False,
                          resp.text[:500], "http_error")
             raise UserFailed(f"{path} returned {resp.status_code}")
@@ -932,7 +950,7 @@ class VirtualUser:
             "GET", path, params={"fileName": ref["path"]}, path_url=path_url,
             node_id=node.id, timeout=ARTIFACT_TIMEOUT_S,
             accept=ARROW_IPC_MIME, raw=True,
-            extra_headers=ARROW_GEOMETRY_HEADERS, expect=(200, 415),
+            extra_headers=ARROW_GEOMETRY_HEADERS, also={415: not_tabular},
         )
         if response.get("status") == 415:
             # A kind the Arrow route does not serve (a list, a dict), which the

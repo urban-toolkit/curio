@@ -661,6 +661,63 @@ class TheOwnersRunAndSaveTest(unittest.TestCase):
                  "edges": {"ea": ["load", "na"]}}
         self.assertEqual(saved_lacks(whole, {"a": ("na", "ea", "load")}, {"a": ("load", "# a typed\n")}), [])
 
+    def _reads(self, *answers):
+        """A user whose node ``n`` made a list, and the Accept header of each
+        read of it, the backend answering with *answers* (status, body)."""
+        import requests
+
+        from utk_curio.backend.tests.stress.driver import VirtualUser
+
+        user = VirtualUser("http://backend", "u", "e.json", {}, None, {})
+        user.project_id = "p"
+        user.result.outputs["n"] = {"path": "art1", "dataType": "list"}
+        replies, accepts = [], []
+        for status, body in answers:
+            reply = requests.Response()
+            reply.status_code, reply._content, reply.encoding = status, body, "utf-8"
+            replies.append(reply)
+
+        class Session:
+            def request(self, _method, _url, **kwargs):
+                accepts.append((kwargs.get("headers") or {}).get("Accept"))
+                return replies[len(accepts) - 1]
+
+        user.session = Session()
+        return user, accepts
+
+    def test_an_output_that_is_no_table_is_read_as_json_as_the_canvas_does(self):
+        from types import SimpleNamespace
+
+        from utk_curio.backend.tests.stress.driver import ARROW_IPC_MIME, json_artifact_hash
+
+        body = b'{"data": [{"name": "roads"}], "dataType": "list", "filename": "art1"}'
+        user, accepts = self._reads(
+            (415, b'{"error": "not_acceptable", "message": "Arrow IPC only supports tabular kinds; '
+                  b"got 'list'; re-request without the Arrow Accept header.\"}"),
+            (200, body),
+        )
+        user._compare_to_baseline(SimpleNamespace(id="n"))
+        self.assertEqual(accepts, [ARROW_IPC_MIME, None])
+        self.assertEqual(user.result.hashes["n"], json_artifact_hash(body))
+        self.assertEqual(user.result.failures, [])
+
+    def test_a_geodataframe_refused_for_its_geometry_is_still_a_failure(self):
+        """That 415 is how the backend's dropped WKB opt-in was caught: no
+        JSON read hides it."""
+        from types import SimpleNamespace
+
+        from utk_curio.backend.tests.stress.driver import UserFailed
+
+        user, accepts = self._reads(
+            (415, b'{"error": "not_acceptable", "message": "Arrow IPC serves geodataframe geometry as WKB; '
+                  b'send X-Curio-Accept-Geometry: wkb to accept it"}'),
+        )
+        with self.assertRaises(UserFailed):
+            user._compare_to_baseline(SimpleNamespace(id="n"))
+        self.assertEqual(len(accepts), 1)
+        [failure] = user.result.failures
+        self.assertEqual((failure.status, failure.kind), (415, "http_error"))
+
     def test_a_json_output_is_compared_without_its_per_run_name(self):
         """What the Arrow route answers 415 (a list, a dict) is read as JSON,
         as the canvas reads it: two runs' outputs differ by their name only."""
