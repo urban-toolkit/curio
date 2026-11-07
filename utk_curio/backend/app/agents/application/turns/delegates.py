@@ -701,7 +701,7 @@ _NOTES_DEFAULT_COLORS = ("yellow", "green")
 
 
 #: dev/105 A2: a node header is a short line — bounded like the goal.
-_NODE_TITLE_MAX_CHARS = 120
+NODE_TITLE_MAX_CHARS = 120
 
 
 def _notes_agent_run(loop_ctx: dict) -> bool:

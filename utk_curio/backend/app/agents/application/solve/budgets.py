@@ -16,7 +16,7 @@ from utk_curio.backend.app.agents.domain import agent_text
 
 # Solve concurrency (dev/52, DEC-048): the dev/15 manifest's
 # maxParallelChildren — a runtime constant until policy demands tuning.
-_SOLVE_MAX_WORKERS = 3
+SOLVE_MAX_WORKERS = 3
 
 
 # A hard-crashed solve leaves the transient "solving" phase behind; a marker
@@ -24,17 +24,17 @@ _SOLVE_MAX_WORKERS = 3
 #: dev/118: measured from ``solvingSince``, which every wave boundary
 #: refreshes — so "stale" means "no wave completed for 15 minutes", not "the
 #: batch started 15 minutes ago".
-_SOLVE_STALE_SECONDS = 15 * 60
+SOLVE_STALE_SECONDS = 15 * 60
 
 
 # dev/67-9 (DEC-054): the Simulation Mode driver — one transition function,
 # step and auto cannot diverge; every state persists before it is emitted.
-_SIMULATE_STALE_SECONDS = 15 * 60
+SIMULATE_STALE_SECONDS = 15 * 60
 
 
 # An auto run is bounded by construction: every action either advances one
 # ref's state machine or pauses — this cap is a runaway backstop only.
-_SIMULATE_MAX_ACTIONS = 500
+SIMULATE_MAX_ACTIONS = 500
 
 
 # dev/67-7: bounded self-correction — an initial generation plus corrective
@@ -125,10 +125,10 @@ MAX_SOLVE_ATTEMPTS = 40
 
 #: dev/127: how far the walk looks through nodes that produced no artifact of
 #: their own (a data pool, a simple view) before giving up.
-_UPSTREAM_WALK_MAX_DEPTH = 4
+UPSTREAM_WALK_MAX_DEPTH = 4
 
 
-_UPSTREAM_ROWS_MAX = 12
+UPSTREAM_ROWS_MAX = 12
 
 
 #: dev/115 F6 closure (2026-09-09): a run's egress budget describes what the
@@ -136,7 +136,7 @@ _UPSTREAM_ROWS_MAX = 12
 #: each allowed one redirect (a normal answer, not a cost the user should read
 #: as "refused — budget spent"). ``egress.MAX_CALLS_PER_RUN`` stays the bound
 #: on the MODEL's own web.fetch/web.search calls, a different budget.
-_RUN_EGRESS_CALLS = content._CANDIDATES_MAX_ROWS_PER_LANE * 2
+RUN_EGRESS_CALLS = content._CANDIDATES_MAX_ROWS_PER_LANE * 2
 
 
 #: dev/118 (DEC-075): a Solve batch's wall-clock budget. Every node may cost
@@ -168,7 +168,7 @@ DEFAULT_SOLVE_SESSION_WAIT_S = 10
 
 
 #: A hard bound on passes, so a clock that misbehaves cannot spin forever.
-_SOLVE_MAX_PASSES = 200
+SOLVE_MAX_PASSES = 200
 
 
 def solve_session_wait_s() -> int:
@@ -180,27 +180,27 @@ def solve_session_wait_s() -> int:
 #: dev/116: the verified loop's own egress budget — per failed round up to five
 #: real requests (the gate's probe, the composed request and its redirect, the
 #: keyed probe), over the first round plus the corrections, with slack.
-_LOOP_EGRESS_CALLS = 4 * DEFAULT_SOLVE_ATTEMPTS + 2
+LOOP_EGRESS_CALLS = 4 * DEFAULT_SOLVE_ATTEMPTS + 2
 
 
-_VALIDATE_STALE_SECONDS = 15 * 60
+VALIDATE_STALE_SECONDS = 15 * 60
 
 
 #: dev/115: how many URLs a failed round probes for the correction's evidence.
-_CORRECTION_URL_PROBES = 2
+CORRECTION_URL_PROBES = 2
 
 
 #: dev/115: bounded attempt-trail fields (the card renders them inert).
-_ATTEMPT_DETAIL_CHARS = 300
+ATTEMPT_DETAIL_CHARS = 300
 
 
-_ATTEMPT_STDERR_CHARS = 1200
+ATTEMPT_STDERR_CHARS = 1200
 
 
 #: dev/127: the candidate a failed round actually ran, kept ON the attempt so
 #: the transcript can show what was tried. Bounded — a trail is a record, not
 #: a copy of the project (a five-round trail costs tens of KB, not MB).
-_ATTEMPT_CODE_CHARS = 4000
+ATTEMPT_CODE_CHARS = 4000
 
 
 #: dev/127: how many repeated candidates before the correction ESCALATES.
@@ -208,16 +208,16 @@ _ATTEMPT_CODE_CHARS = 4000
 #: keeps the loop going (the owner's "as many retries as possible") but makes
 #: each repeat louder, and stops only at the hard count — a stuck model must
 #: not spend a quarter hour of provider calls on copies.
-_MAX_REPEATED_ATTEMPTS = 2
+MAX_REPEATED_ATTEMPTS = 2
 
 
-_MAX_REPEATED_ATTEMPTS_HARD = 8
+MAX_REPEATED_ATTEMPTS_HARD = 8
 
 
 #: dev/127: how many nodes' attempt trails ride ONE Solve turn. Beyond this the
 #: card names how many were elided; each is still readable in its own node's
 #: agent chat.
-_MAX_ATTEMPT_PARTS = 8
+MAX_ATTEMPT_PARTS = 8
 
 
 #: How many consecutive repeat-only passes a node gets before the session
@@ -225,12 +225,12 @@ _MAX_ATTEMPT_PARTS = 8
 #: failed, so another pass would spend a provider call to learn the same
 #: thing. Its diagnosis and trail stay; the session moves on to what can
 #: progress (and ends "blocked" when nothing can).
-_MAX_WEAK_PASSES = 3
+MAX_WEAK_PASSES = 3
 
 
 #: How many attempt rows one node's trail keeps across a whole session. The
 #: transcript part shows the last few (dev/127's cap); this is the record.
-_MAX_TRAIL_ATTEMPTS = 40
+MAX_TRAIL_ATTEMPTS = 40
 
 
-_PROSE_DECLINE_MAX_CHARS = 400
+PROSE_DECLINE_MAX_CHARS = 400

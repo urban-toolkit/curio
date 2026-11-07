@@ -207,7 +207,7 @@ class TestTheWalkThroughAPool:
         nodes = [{"id": "src", "type": "curio.builtin/data-loading", "goal": "S"}]
         edges = []
         prev = "src"
-        for i in range(_DEEP := budgets._UPSTREAM_WALK_MAX_DEPTH + 3):
+        for i in range(_DEEP := budgets.UPSTREAM_WALK_MAX_DEPTH + 3):
             nodes.append({"id": f"m{i}", "type": "curio.builtin/data-pool", "goal": f"M{i}"})
             edges.append({"id": f"e{i}", "source": prev, "target": f"m{i}",
                           "targetHandle": "in"})

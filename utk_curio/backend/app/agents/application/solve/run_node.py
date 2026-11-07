@@ -71,7 +71,7 @@ def run_node_stream(
     if node is None:
         raise AgentServiceError(f"node {node_id!r} not found in the saved spec", 404)
     now = _time.time()
-    if session.get("runningSince") and now - float(session.get("runningSince") or 0) < agents_budgets._VALIDATE_STALE_SECONDS:
+    if session.get("runningSince") and now - float(session.get("runningSince") or 0) < agents_budgets.VALIDATE_STALE_SECONDS:
         raise AgentServiceError("a run is already in progress for this attachment", 409)
     session["runningSince"] = now
     record["builderSession"] = session

@@ -74,7 +74,7 @@ def validate_node_stream(
     if node is None:
         raise AgentServiceError(f"node {node_id!r} not found in the saved spec", 404)
     now = _time.time()
-    if session.get("validatingSince") and now - float(session.get("validatingSince") or 0) < agents_budgets._VALIDATE_STALE_SECONDS:
+    if session.get("validatingSince") and now - float(session.get("validatingSince") or 0) < agents_budgets.VALIDATE_STALE_SECONDS:
         raise AgentServiceError("a validation is already running for this attachment", 409)
     manifest = agents_catalog._resolve_definition(user_key, record.get("coord", ""))
     resolution = delegation.resolve(

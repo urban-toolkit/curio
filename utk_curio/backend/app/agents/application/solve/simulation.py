@@ -117,7 +117,7 @@ def simulate_stream(
             "the plan is complete: nothing to build", 409
         )
     now = _time.time()
-    if session.get("simulatingSince") and now - float(session.get("simulatingSince") or 0) < agents_budgets._SIMULATE_STALE_SECONDS:
+    if session.get("simulatingSince") and now - float(session.get("simulatingSince") or 0) < agents_budgets.SIMULATE_STALE_SECONDS:
         raise AgentServiceError("a simulation is already running for this attachment", 409)
     agents_session._check_delegate_llms(
         user_key, project_id, agents_catalog._resolve_definition(user_key, record.get("coord", "")), config,
@@ -259,7 +259,7 @@ class SimulationDriver:
             yield "simulate_started", {
                 "executionId": self.simulate_execution_id, "mode": self.mode,
             }
-            for _ in range(agents_budgets._SIMULATE_MAX_ACTIONS):
+            for _ in range(agents_budgets.SIMULATE_MAX_ACTIONS):
                 if self._cancelled():
                     done = {"status": "cancelled", "mode": self.mode}
                     break

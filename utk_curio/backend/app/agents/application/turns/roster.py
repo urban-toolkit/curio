@@ -48,7 +48,7 @@ _TEMPLATES_BLOCK_DESC_CHARS = 140
 # duplicate client-composed roster — the one that spelled ids VERSIONED while
 # this one spelled them unversioned, and listed palette templates the project
 # could not actually instantiate.
-_ROSTER_GRANTS = frozenset({
+ROSTER_GRANTS = frozenset({
     "node.create", "dataflow.plan.write", "package.install", "package.draft.apply",
 })
 

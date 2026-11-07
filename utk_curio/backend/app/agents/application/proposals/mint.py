@@ -936,7 +936,7 @@ def _mint_node_create(
     # used to drop this param while the prompt asked for it — the second
     # live test's notes were all headed "Note".
     title = params.get("title")
-    title = title.strip()[:agents_delegates._NODE_TITLE_MAX_CHARS] if isinstance(title, str) and title.strip() else None
+    title = title.strip()[:agents_delegates.NODE_TITLE_MAX_CHARS] if isinstance(title, str) and title.strip() else None
     # dev/89 (additive): optional appearance, normalized by the ONE shared
     # utility — an invalid or inaccessible color refuses at mint, loudly.
     from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE

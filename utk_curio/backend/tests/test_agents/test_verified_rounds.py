@@ -1177,7 +1177,7 @@ class TestVerifiedSolve:
         # bounded by turns instead (conftest.py), here at one for pass 1, which
         # exhausts its rounds, and one for each weak pass the session allows
         # after it, so the trail below spans passes.
-        _bound_session_by_passes(monkeypatch, 1 + budgets._MAX_WEAK_PASSES)
+        _bound_session_by_passes(monkeypatch, 1 + budgets.MAX_WEAK_PASSES)
         body = self._solve(client, token, ctx, verify=True)
         load = body["results"][ctx["load"]]
         assert load["status"] == "failed" and load["verdict"] == "fail" and load["rounds"] == 3, (
@@ -1926,7 +1926,7 @@ class TestRunEgressBudget:
         from utk_curio.backend.app.agents.infrastructure import egress
 
         rows = content._CANDIDATES_MAX_ROWS_PER_LANE
-        assert budgets._RUN_EGRESS_CALLS == rows * 2
+        assert budgets.RUN_EGRESS_CALLS == rows * 2
         calls: list[str] = []
 
         def _request(method, url, **kw):
@@ -1997,7 +1997,7 @@ class TestAttemptTrailCarriesTheCodeAndTheBound:
         )
         assert outcome["stoppedBy"] == "repeat"
         kinds = [a["kind"] for a in outcome["attempts"]]
-        assert kinds.count("repeated-attempt") == budgets._MAX_REPEATED_ATTEMPTS_HARD
+        assert kinds.count("repeated-attempt") == budgets.MAX_REPEATED_ATTEMPTS_HARD
         assert len(exec_fn.calls) == 1  # a repeat is never run again
         # The correction gets louder rather than the loop getting shorter.
         escalated = [

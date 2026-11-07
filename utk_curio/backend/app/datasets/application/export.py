@@ -277,7 +277,7 @@ def _dataset_consumer_nodes_in_spec(
     return [{"nodeId": nid, "nodeType": node_type_by_id.get(nid)} for nid in consumer_ids]
 
 
-_DOWNLOAD_MIMETYPES: dict[str, str] = {
+DOWNLOAD_MIMETYPES: dict[str, str] = {
     ".csv": "text/csv",
     ".json": "application/json",
     ".geojson": "application/geo+json",

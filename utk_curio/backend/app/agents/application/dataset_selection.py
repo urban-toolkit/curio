@@ -103,7 +103,7 @@ def record_dataset_selection(
     # Re-probe the external picks: the card may be minutes or days old, and the
     # record must carry what is true NOW (the row keeps its own mint-time
     # verdict in the transcript either way).
-    budget = egress.CallBudget(agents_budgets._RUN_EGRESS_CALLS)
+    budget = egress.CallBudget(agents_budgets.RUN_EGRESS_CALLS)
     roster = agents_roster._LazyRoster()
     for row in rows:
         if row["lane"] != "external":

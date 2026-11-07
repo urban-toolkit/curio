@@ -244,7 +244,7 @@ def solve_attachment_stream(
     if not session.get("appliedPlanId"):
         raise AgentServiceError("nothing to solve — apply a plan first", 409)
     now = _time.time()
-    if session.get("phase") == "solving" and now - float(session.get("solvingSince") or 0) < agents_budgets._SOLVE_STALE_SECONDS:
+    if session.get("phase") == "solving" and now - float(session.get("solvingSince") or 0) < agents_budgets.SOLVE_STALE_SECONDS:
         raise AgentServiceError("a solve is already running for this plan", 409)
     try:
         # dev/115: refuse BEFORE persisting any in-flight state.
@@ -465,7 +465,7 @@ def _upstream_outputs_for(
         return row
 
     def _walk(target: str, circle: int | None, arg_index: int | None, depth: int) -> list[dict]:
-        if depth > agents_budgets._UPSTREAM_WALK_MAX_DEPTH:
+        if depth > agents_budgets.UPSTREAM_WALK_MAX_DEPTH:
             return []
         try:
             ups = graph.upstream_nodes(target)
@@ -490,7 +490,7 @@ def _upstream_outputs_for(
                 rows.extend(_walk(up, here, item, depth + 1))
         return rows
 
-    return _walk(node_id, None, None, 0)[:agents_budgets._UPSTREAM_ROWS_MAX]
+    return _walk(node_id, None, None, 0)[:agents_budgets.UPSTREAM_ROWS_MAX]
 
 
 _VANISHED_INPUT_MARKERS = (
@@ -628,7 +628,7 @@ def _artifact_summary_fn():
 
 
 #: dev/115: the verified loop's progress, relayed on the Solve stream.
-_SOLVE_PROGRESS_EVENTS = {
+SOLVE_PROGRESS_EVENTS = {
     "generation_round": "node_round",
     "node_executed": "node_executed",
     "round_verdict": "node_verdict",

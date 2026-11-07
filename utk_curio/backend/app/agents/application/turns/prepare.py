@@ -228,7 +228,7 @@ def _roster_blocks(user_key: str, project_id: str, manifest, granted: list) -> l
     # client-side roster be retired: an authoring agent especially needs to see
     # what already exists, since not seeing it is how one weather question
     # produced two near-identical note packages.
-    if not agents_roster._ROSTER_GRANTS.isdisjoint(granted):
+    if not agents_roster.ROSTER_GRANTS.isdisjoint(granted):
         # dev/99 R1.1: ONE snapshot feeds both halves of the roster. Fetching
         # them separately left the two lists able to describe different
         # instants — a package could appear as "not enlisted" in one and be
