@@ -285,10 +285,11 @@ def release_node_execution(page) -> int:
 SERVER_PART_GOING = ("queued", "running")
 
 
-def wait_for_server_part_to_end(backend_url: str, token: str, project_id: str, *,
+def wait_for_server_part_to_end(page, token: str, project_id: str, *,
                                 timeout_ms: int) -> dict:
-    """Wait until the newest run of *project_id* has ended its part on the
-    server, and return its record (``GET /api/runs/<id>``, with its steps).
+    """Wait until the newest run of *project_id*, the dataflow open on *page*,
+    has ended its part on the server, and return its record
+    (``GET /api/runs/<id>``, with its steps).
 
     A signed-in owner's Run All runs on the server, and the page plays the
     nodes only a browser runs, an Autark node among them, once every node the
@@ -296,7 +297,10 @@ def wait_for_server_part_to_end(backend_url: str, token: str, project_id: str, *
     however long the nodes before it take, so this is what to wait for before
     timing what the node does when asked. A read the backend is slow to answer
     is read again until *timeout_ms*; the failure names the steps still going.
+    Between reads it waits on the page's clock, as the waits above do, so the
+    page's route handlers keep running.
     """
+    backend_url = backend_url_of(page)
     deadline = time.monotonic() + timeout_ms / 1000
     record: dict = {}
     seen = "no run of the dataflow yet"
@@ -322,7 +326,7 @@ def wait_for_server_part_to_end(backend_url: str, token: str, project_id: str, *
                 f"the run's part on the server did not end within {timeout_ms} ms ({seen}); "
                 f"its steps still going: {going or 'none read'}"
             )
-        time.sleep(0.5)
+        page.wait_for_timeout(500)
 
 
 # ---------------------------------------------------------------------------

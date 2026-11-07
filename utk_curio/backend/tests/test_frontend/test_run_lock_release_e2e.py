@@ -120,7 +120,6 @@ def dataflow_without_webgpu(app_frontend, current_server, page):
     return {
         "autark": _autark_id(spec),
         "independent": independent_id,
-        "backend": current_server,
         "token": session["token"],
         "project": session["project"]["id"],
     }
@@ -150,7 +149,6 @@ def map_after_a_slow_node_without_webgpu(app_frontend, current_server, page):
     session = _open_without_webgpu(page, app_frontend, current_server, spec, username="runlock271slow")
     return {
         "autark": autark_id,
-        "backend": current_server,
         "token": session["token"],
         "project": session["project"]["id"],
     }
@@ -191,9 +189,7 @@ def _run_all_until_the_autark_node_refuses(page, dataflow: dict) -> None:
     # over the Milan raster took 17 s on a quiet utk-desktop-01 and 106 s on a
     # loaded one (run 42334009628), so it gets the run's budget, and the
     # node's minute starts when the node can first answer.
-    wait_for_server_part_to_end(
-        dataflow["backend"], dataflow["token"], dataflow["project"], timeout_ms=RUN_BUDGET_MS,
-    )
+    wait_for_server_part_to_end(page, dataflow["token"], dataflow["project"], timeout_ms=RUN_BUDGET_MS)
     autark = page.locator(f'.react-flow__node[data-id="{dataflow["autark"]}"]')
     alert = autark.locator('[role="alert"]').first
     expect(alert).to_be_visible(timeout=60000)
