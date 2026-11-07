@@ -1320,6 +1320,9 @@ class Live(dict):
     changed since and leaves alone what anyone else changed meanwhile. It holds
     no history: no writer writes one, and storage keeps it as it is."""
 
+    #: It compares as the spec it holds; what it remembers takes no part.
+    __eq__ = dict.__eq__
+
     def __init__(self, spec: dict, *, user_key: str, project_id: str):
         super().__init__(spec)
         self.user_key = str(user_key)
