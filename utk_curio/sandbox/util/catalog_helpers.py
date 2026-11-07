@@ -3,7 +3,8 @@
 ``curio_load_data("<id>")``
     A Data Catalog dataset, read the way its format is read: a table, a
     GeoDataFrame, a raster, a JSON document, the parts of a multi-output result
-    in the tuple, list or dict its node returned,
+    in the tuple, list or dict its node returned (each table its part's label
+    in ``metadata["partLabel"]``),
     a collection's index, an onnxruntime session for an ONNX model, or an
     xarray Dataset for a NetCDF file. A layer group (an OSM extract or a
     GeoPackage of several layers) is a dict of its layers by name, each read
@@ -102,7 +103,8 @@ def _read_parquet(path: str):
                     lambda value: json.loads(value) if isinstance(value, str) and value else value
                 )
         if isinstance(meta.get("frame_metadata"), dict):
-            frame.metadata = dict(meta["frame_metadata"])
+            # In ``__dict__``: an attribute set on a table names a column.
+            frame.__dict__["metadata"] = dict(meta["frame_metadata"])
     return frame
 
 
@@ -160,10 +162,31 @@ def bundle_container(spec: dict, parts: list[dict]) -> Callable[[list], Any]:
     )
 
 
+def with_part_label(value, part: dict):
+    """*value*, a part of a bundle, with the label ``bundle.json`` gives
+    *part* in its ``metadata`` (``codec.PART_LABEL``) when it is a table or a
+    GeoDataFrame, beside what the metadata holds: its layer's name and type
+    stay as they are. A zip of the parts names each file after its label
+    (``bundle_zip``); a raster or a value has nowhere to carry one. A label
+    that is the frame's own layer name adds nothing: a zip names the part
+    after that name all the same (``bundle_zip.part_label``)."""
+    from utk_curio.sandbox.util.codec import PART_LABEL, detect_kind
+
+    label = part.get("label")
+    if not isinstance(label, str) or not label or detect_kind(value) not in ("dataframe", "geodataframe"):
+        return value
+    held = value.__dict__.get("metadata")
+    held = held if isinstance(held, dict) else {}
+    if held.get("name") != label:
+        value.__dict__["metadata"] = {**held, PART_LABEL: label}
+    return value
+
+
 def _read_bundle(path: str):
     """A multi-output result: ``data/bundle.json`` and ``data/parts/*``, in
     the container the producing node returned (:func:`bundle_container`), so
-    the node's output is the same value the producing node emitted."""
+    the node's output is the same value the producing node emitted, each
+    frame with its part's label (:func:`with_part_label`)."""
     base = os.path.dirname(os.path.dirname(path))
     with open(path, encoding="utf-8") as handle:
         spec = json.load(handle)
@@ -172,7 +195,7 @@ def _read_bundle(path: str):
     items = []
     for part in parts:
         file_path = os.path.join(base, part["file"]) if part.get("file") else None
-        items.append(read_bundle_part(file_path, part))
+        items.append(with_part_label(read_bundle_part(file_path, part), part))
     return rebuild(items)
 
 

@@ -169,6 +169,14 @@ class CatalogMutations:
             )
 
         if suffix in ZIPPED_SHAPEFILE_SUFFIXES:
+            # A zip with bundle.json at its top is one Curio exported: a bundle.
+            from utk_curio.backend.app.datasets.install.bundle_zip import holds_bundle
+
+            if holds_bundle(file_bytes):
+                return self._import_bundle_zip(
+                    file_bytes, filename, title=title, source_updated_at=source_updated_at,
+                    discovery_source=provenance,
+                )
             return self._import_zipped_shapefile(
                 file_bytes, filename, title=title, source_updated_at=source_updated_at,
                 discovery_source=provenance,
@@ -488,6 +496,42 @@ class CatalogMutations:
         primary = items[0]
         primary["importedDatasetCount"] = len(items)
         return primary
+
+    def _import_bundle_zip(
+        self,
+        zip_bytes: bytes,
+        filename: str,
+        *,
+        title: str | None = None,
+        source_updated_at: str | None = None,
+        discovery_source: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Import a zip a bundle's Export wrote, ``bundle.json`` at its top,
+        as a bundle of the same parts (``install/bundle_zip.py``)."""
+        import tempfile
+
+        from utk_curio.backend.app.datasets.install import bundle_zip
+        from utk_curio.backend.app.datasets.install.installer import InstallerError
+        from utk_curio.backend.app.datasets.infrastructure.catalog_utils import title_from_filename
+
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / "archive.zip"
+            archive.write_bytes(zip_bytes)
+            try:
+                result = bundle_zip.install(
+                    self._paths._user_key(),
+                    archive,
+                    title=title.strip() if title and title.strip() else title_from_filename(filename),
+                    source_updated_at=source_updated_at,
+                    discovery_source=discovery_source,
+                )
+            except bundle_zip.BundleZipRefused as exc:
+                raise DatasetCatalogError(
+                    f"{filename} cannot be imported as a bundle: {str(exc).rstrip('.')}."
+                ) from exc
+            except InstallerError as exc:
+                raise DatasetCatalogError(str(exc)) from exc
+        return self._finish_imported(result, "bundle")
 
     def _import_zipped_shapefile(
         self,

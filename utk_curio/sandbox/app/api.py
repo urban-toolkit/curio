@@ -4,6 +4,7 @@ import json
 import sys
 import geopandas as gpd
 import pandas as pd
+from utk_curio.common import open_files
 from utk_curio.sandbox import metrics, run_place
 from utk_curio.sandbox.app import app
 from utk_curio.sandbox.app.auth import require_sandbox_token
@@ -229,6 +230,11 @@ def monitor():
     # This process's own resident memory. It is the one running node code, so
     # it is the number an operator chasing an OOM actually wants.
     payload['rss_bytes'] = metrics.process_rss_bytes()
+
+    # This process's open files and its soft limit on them (None where
+    # unknown), which the backend samples every hour
+    # (backend/app/monitor/open_files.py).
+    payload['open_files'], payload['open_files_limit'] = open_files.in_use()
 
     # Contention on the process-wide execution lock, per call site. A slot
     # queue and a lock queue look identical from the outside -- both are a

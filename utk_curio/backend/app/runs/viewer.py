@@ -65,10 +65,9 @@ from typing import Iterator, Optional
 
 from utk_curio.backend.app.common.address_limiter import AddressLimiter
 from utk_curio.backend.app.common.job_registry import JobRefused, JobRegistry
-from utk_curio.backend.app.execution.sandbox_client import sandbox_request
+from utk_curio.backend.app.execution.sandbox_client import SANDBOX_STORE_TIMEOUT, sandbox_request
 from utk_curio.backend.app.runs import jobs
 from utk_curio.backend.app.runs.kept import (
-    SANDBOX_SESSIONS_TIMEOUT,
     call_key,
     canonical,
     datasets_read,
@@ -651,9 +650,12 @@ def keep_tab_result(project_id: str, run_id: str, node_id: str, token: Optional[
     if problem:
         raise RunError(problem, 422)
     session_id = new_session_id()
+    # The canvas's store of what a page made (``/storeOutput``) has as long: on
+    # a loaded runner a dashboard's GPU results took up to 35 s each to store,
+    # which the 30 s budget of a sessions call lost (run 42237534188).
     response = sandbox_request(
         "post", "/artifact-sessions/store",
-        label="/artifact-sessions/store", timeout=SANDBOX_SESSIONS_TIMEOUT,
+        label="/artifact-sessions/store", timeout=SANDBOX_STORE_TIMEOUT,
         data=json.dumps({"sessionId": session_id, "value": value, "nodeType": "dashboard-tab"}),
         headers={"Content-Type": "application/json"},
     )

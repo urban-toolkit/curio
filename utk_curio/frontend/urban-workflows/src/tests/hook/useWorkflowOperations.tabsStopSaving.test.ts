@@ -377,13 +377,23 @@ describe("a canvas bound to no doc, with a dataflow", () => {
     expect(docBridge.whenBound).not.toHaveBeenCalled();
   });
 
-  it("acts at once for a hosted guest, whose canvas of an example never binds", async () => {
-    // Its room refuses it, so a wait for the bind would hold Save as package
-    // node, New node from a Python function and the rest for nothing.
+  it("acts on the server's copy only once it has bound for a hosted guest too, whose canvas of an example binds to its own copy's doc", async () => {
+    // The room of the guest's own copy takes it: what it changed before the
+    // bind goes in with the bind, so a drop or a record waits for it, as an
+    // account's does.
     mockUserContext = { user: { id: 1, username: "guest_shared", is_guest: true }, enableUserAuth: true };
-    const docBridge = bridge(false);
-    docBridge.whenBound.mockImplementation(() => new Promise<boolean>(() => {}));
-    const deps = makeDeps(docBridge);
+    const before = bridge(false);
+    const after = bridge(true);
+    let bind!: () => void;
+    before.whenBound.mockImplementation(
+      () => new Promise<boolean>((resolve) => {
+        bind = () => {
+          deps.docBridgeRef.current = after;
+          resolve(true);
+        };
+      }),
+    );
+    const deps = makeDeps(before);
     const { result } = renderHook(() => useWorkflowOperations(deps));
     await loadedProject(result);
     act(() => {
@@ -391,11 +401,26 @@ describe("a canvas bound to no doc, with a dataflow", () => {
     });
     expect(result.current.projectDirty).toBe(true);
 
-    await act(async () => {
-      await expect(result.current.ensureProjectId()).resolves.toBe("proj-1");
+    let id: unknown = "waiting";
+    act(() => {
+      void result.current.ensureProjectId().then((answer: unknown) => {
+        id = answer;
+      });
     });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(id).toBe("waiting");
+    expect(before.whenBound).toHaveBeenCalledTimes(1);
 
-    expect(docBridge.whenBound).not.toHaveBeenCalled();
+    await act(async () => {
+      bind();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(id).toBe("proj-1");
+    expect(after.whenKept).toHaveBeenCalled();
+    expect(projectsApi.update).not.toHaveBeenCalled();
+    expect(projectsApi.create).not.toHaveBeenCalled();
   });
 });
 

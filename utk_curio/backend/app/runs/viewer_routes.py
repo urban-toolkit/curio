@@ -12,6 +12,7 @@ import json
 
 from flask import Blueprint, Response, jsonify, request, stream_with_context
 
+from utk_curio.backend.app.execution.sandbox_client import SandboxTransportError
 from utk_curio.backend.app.runs import viewer
 from utk_curio.backend.app.runs.service import RunError
 
@@ -60,6 +61,9 @@ def keep_step(project_id: str, run_id: str, node_id: str):
         result = viewer.keep_tab_result(project_id, run_id, node_id, _token(), body.get("value"))
     except RunError as exc:
         return _error(exc)
+    except SandboxTransportError as exc:
+        # The sandbox's status, with its words where the page reads an error.
+        return jsonify({"error": exc.payload.get("message") or str(exc)}), exc.status
     return jsonify(result)
 
 

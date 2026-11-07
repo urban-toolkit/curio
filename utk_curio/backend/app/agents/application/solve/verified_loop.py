@@ -85,6 +85,7 @@ class VerifiedRounds:
         extra_inputs: dict | None = None,
         delegate_runner=None,
         dataset_paths_fn=None,
+        collections_fn=None,
         exec_user_key: str | None = None,
         secrets_fn=None,
         prior_outputs_fn=None,
@@ -105,6 +106,7 @@ class VerifiedRounds:
         self.start_from_current = start_from_current
         self.extra_inputs = extra_inputs
         self.dataset_paths_fn = dataset_paths_fn
+        self.collections_fn = collections_fn
         self.exec_user_key = exec_user_key
         # #485: the account's User row, captured in the request; validation
         # runs on a thread of its own, where the request's user is gone.
@@ -160,6 +162,8 @@ class VerifiedRounds:
         self.reuse_retried = False
         self.dataset_paths = None
         self.dataset_formats = None
+        self.collections = None
+        self.media_dir = None
         self.secrets = None
         # The whole output of the round's run, which only the skipped edits
         # check reads: never part of a verdict, an attempt or an event.
@@ -579,6 +583,17 @@ class VerifiedRounds:
 
     # ── stage: the sandbox ──────────────────────────────────────────────────
 
+    def _round_codes(self) -> list[str]:
+        """The candidate's code and that of each node of the spec, as the run
+        writes each node's code: a dataset widget's id is in no literal call
+        before (node_run_code)."""
+        slice_codes = [
+            node_run_code(n)
+            for n in ((self.spec.get("dataflow") or {}).get("nodes") or [])
+            if isinstance(n, dict)
+        ]
+        return [node_run_code({**self.node, "content": self.candidate}), *slice_codes]
+
     def _round_dataset_paths(self):
         """``(paths, formats)`` of the datasets the candidate and its slice
         read: *dataset_paths_fn* gives the paths and fills the formats, such
@@ -586,19 +601,26 @@ class VerifiedRounds:
         if self.dataset_paths_fn is None:
             return None, None
         try:
-            # As the run writes each node's code: a dataset widget's id is in
-            # no literal call before (node_run_code).
-            slice_codes = [
-                node_run_code(n)
-                for n in ((self.spec.get("dataflow") or {}).get("nodes") or [])
-                if isinstance(n, dict)
-            ]
-            candidate = node_run_code({**self.node, "content": self.candidate})
             formats: dict = {}
-            paths = self.dataset_paths_fn([candidate, *slice_codes], formats) or None
+            paths = self.dataset_paths_fn(self._round_codes(), formats) or None
             return paths, formats or None
         except Exception:
             return None, None
+
+    def _round_collections(self):
+        """``(collections, media_dir)`` of the collections the candidate and
+        its slice read, from *collections_fn*, on this thread, the one that
+        starts the attempt: the thread that runs it (:meth:`_validate_with`)
+        holds no app context and serves no sign-in, so it is handed them and
+        asks no database. ``(None, None)`` without *collections_fn*: the run
+        looks them up itself (``validation.validate_candidate``)."""
+        if self.collections_fn is None:
+            return None, None
+        try:
+            collections, media_dir = self.collections_fn(self._round_codes())
+            return dict(collections or {}), media_dir
+        except Exception:
+            return {}, None
 
     def _round_secrets(self):
         # dev/116: the connection keys THIS candidate names, resolved per round
@@ -620,7 +642,7 @@ class VerifiedRounds:
         except Exception:
             return None
 
-    def _validate_with(self, prior, candidate_text, paths, formats, secret_values):
+    def _validate_with(self, prior, candidate_text, paths, formats, secret_values, collections, media_dir):
         progress_queue: _queue.Queue = _queue.Queue()
 
         def _run_validation():
@@ -637,6 +659,8 @@ class VerifiedRounds:
                     templates=self.loop_templates,
                     acting_user=self.acting_user,
                     keep_stdout=True,
+                    collections=collections,
+                    media_dir=media_dir,
                     progress=lambda nid, i, total: progress_queue.put(
                         ("progress", nid, i, total)
                     ),
@@ -660,21 +684,24 @@ class VerifiedRounds:
             return item[1]
 
     def _validate(self):
-        """The candidate runs with ITS dataset paths, connection keys and the
-        batch's prior outputs; a vanished reused input re-runs the slice whole,
-        once, silently."""
+        """The candidate runs with ITS dataset paths, collections, connection
+        keys and the batch's prior outputs; a vanished reused input re-runs
+        the slice whole, once, silently."""
         self.dataset_paths, self.dataset_formats = self._round_dataset_paths()
+        self.collections, self.media_dir = self._round_collections()
         self.secrets = self._round_secrets()
         prior_outputs = self._round_prior_outputs()
         candidate = self.candidate
         self.verdict_result = yield from self._validate_with(
-            prior_outputs, candidate, self.dataset_paths, self.dataset_formats, self.secrets)
+            prior_outputs, candidate, self.dataset_paths, self.dataset_formats, self.secrets,
+            self.collections, self.media_dir)
         self.reuse_retried = False
         if prior_outputs and agents_session._looks_like_a_vanished_reused_input(self.verdict_result):
             # A reused artifact is gone (the sandbox store moved on): that is
             # not the candidate's fault. Once, silently, the slice runs whole.
             self.verdict_result = yield from self._validate_with(
-                None, candidate, self.dataset_paths, self.dataset_formats, self.secrets)
+                None, candidate, self.dataset_paths, self.dataset_formats, self.secrets,
+                self.collections, self.media_dir)
             self.reuse_retried = True
         self.round_stdout = self.verdict_result.pop("stdout", None)
         return None

@@ -13,13 +13,15 @@ interface Asked {
   runId: string;
   token: string;
   nodeIds: Set<string>;
+  /** The steps that ran here but whose result the run could not keep. */
+  notKept: Set<string>;
 }
 
 let asked: Asked | null = null;
 
 /** The run *runId* leaves *nodeIds* to this page. */
 export function askPage(projectId: string, runId: string, token: string, nodeIds: Iterable<string>): void {
-  asked = { projectId, runId, token, nodeIds: new Set(nodeIds) };
+  asked = { projectId, runId, token, nodeIds: new Set(nodeIds), notKept: new Set() };
 }
 
 /** No step is this page's to run for a viewer's run any more. */
@@ -32,6 +34,11 @@ export function askedOfPage(nodeId: string): boolean {
   return !!asked && asked.nodeIds.has(nodeId);
 }
 
+/** Whether *nodeId* ran here and the run could not keep what it made. */
+export function pageResultNotKept(nodeId: string): boolean {
+  return !!asked && asked.notKept.has(nodeId);
+}
+
 /**
  * Send what the page made of *nodeId* to the run that asked for it. The
  * output it answers is read, as the run's other outputs are, on the
@@ -42,7 +49,10 @@ export async function keepPageResult(nodeId: string, value: unknown): Promise<{ 
   if (!run || !run.nodeIds.has(nodeId)) {
     throw new Error("No run of this dashboard asked the page for this node.");
   }
-  const kept = await dashboardRunsApi.keepStep(run.projectId, run.runId, run.token, nodeId, value);
+  const kept = await dashboardRunsApi.keepStep(run.projectId, run.runId, run.token, nodeId, value).catch((error) => {
+    run.notKept.add(nodeId);
+    throw error;
+  });
   rememberDashboardRunFiles(run.projectId, run.token, [kept.output.path, ...(kept.artifactIds ?? [])]);
   return kept.output;
 }

@@ -252,13 +252,17 @@ class TestOutputFiles:
     def test_the_name_a_data_export_writes_is_not_a_source(self):
         """``curio_export(input_0, "trees.csv")`` writes the file its name
         names (a Data Export node's code): its name, by position or as
-        ``name=``, is skipped in both scanners as ``curio_output_file``'s is."""
+        ``name=``, is skipped in both scanners as ``curio_output_file``'s is,
+        and so is its ``part=``, which names a part of its input, not a file."""
         for code in (
             'return curio_export(input_0, "trees.csv")',
             "return curio_export(input_0, name='trees.geojson')",
             'return curio_export(input_0, f"trees-{year}.csv")',
             'return curio_export(input_0, "trees.csv")\nx = (1',  # syntax error, regex
             "return curio_export(input_0, name='trees.geojson')\nx = (1",  # syntax error, regex
+            'return curio_export(input_0, "layers", part="trees.geojson")',
+            'return curio_export(input_0, "layers", part="trees.geojson")\nx = (1',  # syntax error, regex
+            "return curio_export(input_0, [!! file_name !!], part='trees.geojson')",  # chips, regex
         ):
             verdict = sg.check_grounding(code, "python", _ctx())
             assert verdict.ok, (code, verdict.violations)

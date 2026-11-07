@@ -2,9 +2,11 @@
  * The room says who this tab is (`CollaborationProvider`): its join answers
  * with the tab's participant id, and the tab's role is its own entry's in the
  * room's list, so a change the owner makes to the editors reaches it with the
- * list. A join the room refuses (a hosted guest's to an example) closes the
- * socket, and none opens again for that dataflow. The room's Activity is what
- * the join brought, then each join, leave and change of role as it comes.
+ * list. A join the room refuses (a hosted guest's to another guest's copy)
+ * closes the socket, and none opens again for that dataflow. A hosted guest's
+ * join to an example is to its own copy's room, whose id its events name. The
+ * room's Activity is what the join brought, then each join, leave and change
+ * of role as it comes.
  */
 import React from "react";
 import { act, render, waitFor } from "@testing-library/react";
@@ -154,6 +156,34 @@ test("a refused join closes the socket, and no other opens for that dataflow", a
   mockProjectId = "project-2";
   act(() => mockStoreListeners.forEach((listener) => listener()));
   expect(mockIo).toHaveBeenCalledTimes(2);
+});
+
+test("a hosted guest's join to an example is to its own copy's room: its events name the copy, and the room's that name it reach the page as the dataflow's", async () => {
+  const socket = await joined();
+  joinAnswer(socket, {
+    ok: true, participant_id: "p-5", role: "owner", projectId: "copy-1",
+    snapshot: { users: [{ user_id: 3, username: "guest_shared", participant_id: "p-5", role: "owner" }], locks: {}, activity: [] },
+  });
+
+  // It owns its copy, and the doc it syncs names the copy.
+  expect(seen.role).toBe("owner");
+  const syncs = socket.emits.filter((e) => e.event === "yjs");
+  expect(syncs.length).toBeGreaterThan(0);
+  expect(syncs.map((e) => e.payload.projectId)).toEqual(syncs.map(() => "copy-1"));
+  // So does a lock it takes.
+  act(() => seen.lockNode("n1"));
+  expect(socket.emits.filter((e) => e.event === "node_lock").map((e) => e.payload)).toEqual([
+    { projectId: "copy-1", nodeId: "n1" },
+  ]);
+  // What the room says of the copy reaches the page as the dataflow's; an
+  // event of anything else, as it came.
+  const heard: unknown[] = [];
+  act(() => {
+    seen.onRemote("history_changed", (payload) => heard.push(payload));
+  });
+  fire(socket, "history_changed", { projectId: "copy-1" });
+  fire(socket, "history_changed", { projectId: "elsewhere" });
+  expect(heard).toEqual([{ projectId: "project-1" }, { projectId: "elsewhere" }]);
 });
 
 // Someone else, who joins as a watcher with two tabs.

@@ -19,7 +19,8 @@ refused.
 Only the owner manages the list, and no guest does: the shared guest owns the
 examples every hosted guest opens, so a check on ownership alone would let any
 visitor invite editors to them. A guest is never an editor either, and a
-hosted guest only watches.
+hosted guest watches every room but one: that of its own copy of a dataflow
+the guest account owns (``visitor_copies.py``), which it owns.
 """
 from __future__ import annotations
 
@@ -65,12 +66,19 @@ def room_role(user, project) -> str:
 
     *user* is an account, or anything with its ``id`` and ``is_guest``. A
     hosted guest watches whatever it opens (``capabilities.is_hosted_guest``):
-    every visitor shares its account, which owns the examples. Without
+    every visitor shares its account, which owns the examples. It owns one
+    room alone, that of its own copy of a dataflow its account owns, which
+    the room reads as a ``visitor_copies.Copy``: the guest's sign-in
+    (*user*'s ``sign_in``) names it (``visitor_copies.is_room_of``). Without
     ``--deploy`` the shared guest is the one local user and owns its dataflows.
     """
+    from utk_curio.backend.app.projects import visitor_copies
     from utk_curio.backend.app.users.capabilities import is_hosted_guest
 
     user_id = getattr(user, "id", None)
+    if isinstance(project, visitor_copies.Copy):
+        mine = user_id is not None and project.user_id == user_id
+        return OWNER if mine and visitor_copies.is_room_of(getattr(user, "sign_in", None), project) else WATCHER
     if user_id is None or project is None or is_hosted_guest(user):
         return WATCHER
     if project.user_id == user_id:
@@ -97,12 +105,16 @@ def agents_role(user, project) -> str:
 
 def joins_room(user, project) -> bool:
     """Whether *user* joins *project*'s room at all: everyone does but a hosted
-    guest on a dataflow a guest owns (an example), whose canvas of it stays
-    its own."""
+    guest on a dataflow a guest owns (an example, or a guest's copy of one),
+    who joins only the room of its own copy (``visitor_copies.room_for``):
+    never another guest's, and never the dataflow's own room."""
+    from utk_curio.backend.app.projects import visitor_copies
     from utk_curio.backend.app.users.capabilities import is_hosted_guest
 
     owner = getattr(project, "owner", None)
-    return not (is_hosted_guest(user) and owner is not None and owner.is_guest)
+    if not (is_hosted_guest(user) and owner is not None and owner.is_guest):
+        return True
+    return visitor_copies.is_room_of(getattr(user, "sign_in", None), project)
 
 
 def _entry(row) -> dict:

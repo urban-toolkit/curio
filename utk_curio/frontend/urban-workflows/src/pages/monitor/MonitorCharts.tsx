@@ -187,12 +187,69 @@ export interface LinesOverTimeOptions {
   logY?: boolean;
   /** The series drawn dashed, as a limit is. */
   dashed?: string[];
+  /** A dot on each point: a line of one point draws nothing else. */
+  points?: boolean;
+}
+
+/**
+ * Each power of ten from the one at or below the least positive value to the
+ * one at or above the greatest: a log axis's ticks. Left to itself, Vega
+ * ticks every multiple in between when the axis spans fewer decades than its
+ * tick count, and the grid fills with lines.
+ */
+export function powersOfTen(values: number[]): number[] {
+  let least = Infinity;
+  let most = -Infinity;
+  for (const value of values) {
+    if (value > 0) {
+      least = Math.min(least, value);
+      most = Math.max(most, value);
+    }
+  }
+  if (!(least <= most)) return [];
+  const out: number[] = [];
+  for (let power = Math.floor(Math.log10(least)); power <= Math.ceil(Math.log10(most)); power += 1) {
+    out.push(10 ** power);
+  }
+  return out;
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * How the time axis labels a span of more than a day: the day and the hour.
+ * Vega's own labels name the hour alone except at midnight, so a few days
+ * ticked at 06 AM and 06 PM never say which day.
+ */
+export const DAYS_AXIS_FORMAT = "%b %-d, %H:%M";
+
+/**
+ * A tick for every 150 pixels of such an axis, room for a label of the day
+ * and the hour: at Vega's own count of one tick per 40 pixels it hides most
+ * of the labels and keeps a grid line for each.
+ */
+const DAYS_TICK_COUNT = { expr: "ceil(width / 150)" };
+
+/** How long the time axis spans: its domain when given, else the rows' times. */
+function timeSpanOf(rows: Record<string, unknown>[], timeField: string, timeDomain?: [number, number]): number {
+  if (timeDomain) return timeDomain[1] - timeDomain[0];
+  let first = Infinity;
+  let last = -Infinity;
+  for (const row of rows) {
+    const t = Number(row[timeField]);
+    if (Number.isFinite(t)) {
+      first = Math.min(first, t);
+      last = Math.max(last, t);
+    }
+  }
+  return last > first ? last - first : 0;
 }
 
 /**
  * The Vega-Lite spec of `LinesOverTime`: time on x, the value on y, a 2px
  * line per series, the legend under the plot, and a tooltip with the series,
- * the time and the value.
+ * the time and the value. Over more than a day, the time axis names each
+ * label's day as well as its hour.
  */
 export function linesOverTimeSpec({
   rows,
@@ -206,9 +263,14 @@ export function linesOverTimeSpec({
   colors,
   logY = false,
   dashed = [],
+  points = false,
 }: LinesOverTimeOptions) {
   const series = colors?.domain ?? [...new Set(rows.map((row) => String(row[seriesField])))];
   const range = colors?.range ?? CATEGORICAL.slice(0, series.length);
+  // Vega thins an axis's values down to its tick count, so a log axis counts
+  // every power of ten it ticks.
+  const decades = logY ? powersOfTen(rows.map((row) => Number(row[valueField]))) : [];
+  const days = timeSpanOf(rows, timeField, timeDomain) > DAY_MS;
   const ink = { labelColor: AXIS_INK, titleColor: AXIS_INK, domainColor: GRID_INK,
                 tickColor: GRID_INK, gridColor: GRID_INK };
   const encoding: Record<string, unknown> = {
@@ -216,14 +278,20 @@ export function linesOverTimeSpec({
       field: timeField,
       type: "temporal",
       title: null,
-      axis: { ...ink, labelFlush: true },
+      axis: {
+        ...ink, labelFlush: true,
+        ...(days ? { format: DAYS_AXIS_FORMAT, tickCount: DAYS_TICK_COUNT } : {}),
+      },
       ...(timeDomain ? { scale: { domain: timeDomain } } : {}),
     },
     y: {
       field: valueField,
       type: "quantitative",
       title: valueTitle,
-      axis: { ...ink, domain: false, tickCount: 4, format: "~s" },
+      axis: {
+        ...ink, domain: false, tickCount: 4, format: "~s",
+        ...(logY ? { values: decades, tickCount: decades.length } : {}),
+      },
       ...(logY ? { scale: { type: "log" } } : {}),
     },
     color: {
@@ -241,17 +309,25 @@ export function linesOverTimeSpec({
     ],
   };
   if (dashed.length > 0) {
+    // No legend of its own: Vega-Lite merges it into the colour's, on the same
+    // field, whose symbols then draw the dash. A legend of null here conflicts
+    // with the colour's in that merge, which Vega-Lite warns of in the console.
     encoding.strokeDash = {
       field: seriesField,
       type: "nominal",
-      legend: null,
       scale: { domain: series, range: series.map((name) => (dashed.includes(name) ? [6, 4] : [1, 0])) },
     };
   }
   return {
     $schema: "https://vega.github.io/schema/vega-lite/v5.json",
     data: { values: rows },
-    mark: { type: "line", strokeWidth: 2, strokeCap: "round", strokeJoin: "round" },
+    mark: {
+      type: "line",
+      strokeWidth: 2,
+      strokeCap: "round",
+      strokeJoin: "round",
+      ...(points ? { point: { filled: true, size: 64 } } : {}),
+    },
     encoding,
     config: { background: null, view: { stroke: null }, font: "Rubik, sans-serif" },
   };
@@ -277,6 +353,7 @@ export const LinesOverTime: React.FC<LinesOverTimeOptions & { label: string; hei
   colors,
   logY,
   dashed,
+  points,
 }) => {
   const first = timeDomain?.[0];
   const last = timeDomain?.[1];
@@ -285,9 +362,10 @@ export const LinesOverTime: React.FC<LinesOverTimeOptions & { label: string; hei
       linesOverTimeSpec({
         rows, timeField, valueField, seriesField, valueTitle, seriesTitle, timeFormat,
         timeDomain: first != null && last != null ? [first, last] : undefined,
-        colors, logY, dashed,
+        colors, logY, dashed, points,
       }),
-    [rows, timeField, valueField, seriesField, valueTitle, seriesTitle, timeFormat, first, last, colors, logY, dashed]
+    [rows, timeField, valueField, seriesField, valueTitle, seriesTitle, timeFormat, first, last, colors, logY,
+     dashed, points]
   );
   return <VegaChart spec={spec} height={height} label={label} />;
 };

@@ -161,6 +161,9 @@ def _validate_events(
                 dataset_paths_fn=lambda codes, formats: agents_grounding._exec_dataset_paths(
                     project_id, *codes, formats=formats,
                 ),
+                # Looked up in the request the stream holds, and handed to the
+                # thread each attempt runs on.
+                collections_fn=lambda codes: agents_grounding._exec_collections(project_id, user_key, *codes),
                 exec_user_key=user_key,
                 acting_user=acting_user,
                 secrets_fn=agents_grounding._exec_secrets_resolver(

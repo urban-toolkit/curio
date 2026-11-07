@@ -1,6 +1,6 @@
 import os
 
-from werkzeug.serving import WSGIRequestHandler
+from werkzeug.serving import WSGIRequestHandler, is_running_from_reloader
 
 from utk_curio.backend.app import create_app
 from utk_curio.backend.config import CURIO_SEED_EXAMPLES
@@ -120,9 +120,18 @@ def serve():
         "[backend]", "so its threads stay idle in this process", import_first=True,
     )
 
+    run_kwargs = _socketio_run_kwargs()
+    # The hourly sample of both servers' open files, from now, in the process
+    # that serves. Under the reloader this function also runs in the process
+    # that only watches the files, which serves nothing.
+    if not run_kwargs["use_reloader"] or is_running_from_reloader():
+        from utk_curio.backend.app.monitor import open_files as monitor_open_files
+
+        monitor_open_files.start_sampler(app)
+
     # The app's own SocketIO server (extensions.init_socketio), which
     # Flask-SocketIO keeps on the app.
-    app.extensions["socketio"].run(app, **_socketio_run_kwargs())
+    app.extensions["socketio"].run(app, **run_kwargs)
 
 
 if __name__ == '__main__':

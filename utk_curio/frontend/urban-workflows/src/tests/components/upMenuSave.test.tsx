@@ -67,6 +67,8 @@ jest.mock("../../registry/projectPackagesStore", () => ({ getCurrentProjectPacka
 
 import UpMenu from "../../components/menus/top/UpMenu";
 import { SAVING_SHOWN_AFTER_MS } from "../../providers/flow/useSaveState";
+import { UserContext } from "../../providers/userContext";
+import type { UserData } from "../../utils/authApi";
 
 function flow(over: Record<string, unknown> = {}) {
   return {
@@ -280,6 +282,68 @@ describe("the save status of a dataflow bound to its doc", () => {
     renderMenu();
 
     expect(state()).toBe("saved");
+  });
+});
+
+/** The shared guest account every visitor signs in to. */
+const GUEST: UserData = {
+  id: 1, username: "guest_shared", name: "Guest", email: null, profile_image: null, type: null, is_guest: true,
+};
+
+/** The bar as a hosted guest sees it: a guest, with sign-in on (`isHostedGuest`). */
+function renderAsAHostedGuest() {
+  const hosted: React.ContextType<typeof UserContext> = {
+    user: GUEST, loading: false, isAuthenticated: true, enableUserAuth: true, skipProjectPage: false,
+    allowGuest: true, sharedGuestUsername: "guest_shared", isSharedGuest: true,
+    signup: async () => null, signin: async () => null, signinGuest: async () => null, signout: async () => {},
+    updateProfile: async () => {}, updateTokens: async () => {}, saveUserType: async () => {}, logout: () => {},
+  };
+  return render(
+    <UserContext.Provider value={hosted}>
+      <MemoryRouter initialEntries={["/dataflow/p1"]}>
+        <UpMenu />
+      </MemoryRouter>
+    </UserContext.Provider>,
+  );
+}
+
+describe("the save status of a hosted guest's canvas, bound to its own copy's doc", () => {
+  test("reads Kept for this visit once the server has every change, and its tooltip says to sign in to save", () => {
+    const doc = boundDoc();
+    mockFlow = flow({ boundDoc: doc.provider, projectSavedAt: null });
+    renderAsAHostedGuest();
+
+    expect(state()).toBe("saved");
+    expect(pending()).toBe("false");
+    expect(saveStatus().textContent).toBe("Kept for this visit");
+    expect(saveStatus().getAttribute("data-tooltip")).toBe("Sign in to save dataflows.");
+    expect(saveStatus().hasAttribute("title")).toBe(false);
+  });
+
+  test("reads Saving... while a change waits for the server, then Kept for this visit", async () => {
+    jest.useFakeTimers();
+    const doc = boundDoc();
+    mockFlow = flow({ boundDoc: doc.provider });
+    renderAsAHostedGuest();
+
+    act(() => { doc.change(); });
+    act(() => { jest.advanceTimersByTime(SAVING_SHOWN_AFTER_MS); });
+    expect(state()).toBe("saving");
+    expect(saveStatus().textContent).toBe("Saving...");
+    expect(saveStatus().getAttribute("data-tooltip")).toBe("Sign in to save dataflows.");
+
+    await act(async () => { doc.keep(); });
+    expect(state()).toBe("saved");
+    expect(saveStatus().textContent).toBe("Kept for this visit");
+  });
+
+  test("an account's bar reads Saved where a hosted guest's reads Kept for this visit", () => {
+    const doc = boundDoc();
+    mockFlow = flow({ boundDoc: doc.provider });
+    renderMenu();
+
+    expect(saveStatus().textContent).toBe("Saved");
+    expect(saveStatus().getAttribute("data-tooltip")).toMatch(/click to save$/);
   });
 });
 

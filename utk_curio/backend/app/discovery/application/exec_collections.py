@@ -36,40 +36,58 @@ def resolve_exec_collections(
     if not user_key:
         return {}, None
     try:
-        from utk_curio.backend.app.discovery.application import cache_collection
-        from utk_curio.backend.app.discovery.infrastructure import media_dirs, storage
-        from utk_curio.backend.app.discovery.service import DiscoveryService
-
-        # Every node gets the directory, not only one that loads a collection:
-        # a node downstream of a Data Loading node writes the frames or the
-        # mosaic, and never names the collection itself.
-        media_dir = str(media_dirs.media_work_root(user_key))
+        media_dir = media_dir_for(user_key)
         ids = collection_ids_in_code(code, limit=MAX_DATASET_IDS)
         if not ids:
             return {}, media_dir
-
-        service = DiscoveryService(user_key, user=user, dataflow_id=dataflow_id)
-        out = {}
-        for dataset_id in ids:
-            try:
-                item, manifest = service.collection(dataset_id)
-            except Exception:  # noqa: BLE001 - one missing collection is its node's error
-                continue
-            entry = {"kind": (item.get("collection") or {}).get("kind")}
-            if manifest.provider.type == "folder":
-                entry["root"] = str(storage.storage_root(manifest))
-            else:
-                # The cached copies are where the collection's store keeps
-                # them; a store other than the run's is read, never made into.
-                store_key = service.collection_store(item)
-                entry["objects"] = str(
-                    cache_collection.objects_dir(store_key, dataset_id, create=store_key == user_key)
-                )
-            out[dataset_id] = entry
-        return out, media_dir
+        return resolve_collections(ids, user_key, user=user, dataflow_id=dataflow_id), media_dir
     except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
         print(f"[exec] collection resolution failed: {e}", flush=True)
         return {}, None
+
+
+def media_dir_for(user_key: str | None) -> str | None:
+    """Where a node run under *user_key* writes the frames, clips and
+    overlays it derives; None with no key. Every node gets it, not only one
+    that loads a collection: a node downstream of a Data Loading node writes
+    the frames or the mosaic, and never names the collection itself."""
+    if not user_key:
+        return None
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
+
+    return str(media_dirs.media_work_root(user_key))
+
+
+def resolve_collections(
+    ids: list[str], user_key: str, *, user=None, dataflow_id: str | None = None,
+) -> dict:
+    """``{datasetId: {root, objects, kind}}`` for each of *ids* that is a
+    collection, as :func:`resolve_exec_collections` gives it to a run under
+    *user_key*. An id that is no collection the account reads is left out.
+    One lookup per id, through the Data Catalog, which asks the database."""
+    from utk_curio.backend.app.discovery.application import cache_collection
+    from utk_curio.backend.app.discovery.infrastructure import storage
+    from utk_curio.backend.app.discovery.service import DiscoveryService
+
+    service = DiscoveryService(user_key, user=user, dataflow_id=dataflow_id)
+    out = {}
+    for dataset_id in ids:
+        try:
+            item, manifest = service.collection(dataset_id)
+        except Exception:  # noqa: BLE001 - one missing collection is its node's error
+            continue
+        entry = {"kind": (item.get("collection") or {}).get("kind")}
+        if manifest.provider.type == "folder":
+            entry["root"] = str(storage.storage_root(manifest))
+        else:
+            # The cached copies are where the collection's store keeps
+            # them; a store other than the run's is read, never made into.
+            store_key = service.collection_store(item)
+            entry["objects"] = str(
+                cache_collection.objects_dir(store_key, dataset_id, create=store_key == user_key)
+            )
+        out[dataset_id] = entry
+    return out
 
 
 def resolve_spec_collections(

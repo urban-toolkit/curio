@@ -59,7 +59,8 @@ class ProtocolError(ValueError):
 #                                      outputs, "refs" holds each one's spec,
 #                                      by its place in the wrapper
 #   {"kind": "dataframe", "file": "in_0.parquet",
-#    "encoded_object_columns": [...]}
+#    "encoded_object_columns": [...], "frame_metadata": {"partLabel": ...}}
+#                                      the label only when it has one
 #   {"kind": "geodataframe", "file": "in_0.parquet",
 #    "encoded_object_columns": [...], "frame_metadata": {...}}
 #   {"kind": "raster", "file": "in_0.tif"}

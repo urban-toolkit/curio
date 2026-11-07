@@ -304,10 +304,14 @@ def solve_attachment_stream(
         session_id = record.get("sessionId")
         # dev/115: everything that needs the REQUEST context is resolved here, as
         # the job thread holds no ``g``: the batch's grounding base (catalog refs,
-        # mission + plan texts) and the sandbox's dataset-path mapping.
+        # mission + plan texts), the sandbox's dataset-path mapping and collections.
         solve_ground = agents_grounding._solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
         solve_dataset_paths = (
             agents_grounding._resolve_catalog_execution_paths(project_id, list(solve_ground.get("catalog_ids") or {}))
+            if verify else {}
+        )
+        solve_collections = (
+            agents_grounding._resolve_catalog_collections(project_id, user_key, solve_ground.get("catalog_ids") or {})
             if verify else {}
         )
         # dev/126: and the Data Catalog rows the discovery delegate is handed.
@@ -320,7 +324,7 @@ def solve_attachment_stream(
             user_key, project_id, attachment_id, config, targets, nodes_by_id,
             manifest, coord, session_id, solve_execution_id, stop,
             spec=spec, verify=verify,
-            grounding_base=solve_ground, dataset_paths=solve_dataset_paths,
+            grounding_base=solve_ground, dataset_paths=solve_dataset_paths, collections=solve_collections,
             catalog_rows=solve_catalog_rows, acting_user=solve_user,
             retry_of=retry_of if isinstance(retry_of, str) else None,
             # Who asked, as the room names them, read here: the job's thread holds no request.
@@ -355,6 +359,7 @@ def _solve_events(
     verify: bool = True,
     grounding_base: dict | None = None,
     dataset_paths: dict | None = None,
+    collections: dict | None = None,
     retry_of: str | None = None,
     catalog_rows: list | None = None,
     acting_user=None,
@@ -369,8 +374,8 @@ def _solve_events(
         user_key, project_id, attachment_id, config, targets, nodes_by_id, manifest, coord,
         session_id, solve_execution_id, stop,
         spec=spec, verify=verify,
-        grounding_base=grounding_base, dataset_paths=dataset_paths, retry_of=retry_of,
-        catalog_rows=catalog_rows, acting_user=acting_user, room_asker=room_asker,
+        grounding_base=grounding_base, dataset_paths=dataset_paths, collections=collections,
+        retry_of=retry_of, catalog_rows=catalog_rows, acting_user=acting_user, room_asker=room_asker,
     )
     yield from batch.events()
 

@@ -33,6 +33,47 @@ describe("encodeLiveOutputsParam", () => {
   });
 });
 
+describe("datasetCatalogApi.downloadDataset (a bundle's zip)", () => {
+  let saved: string[] = [];
+  const createObjectURL = URL.createObjectURL;
+  const revokeObjectURL = URL.revokeObjectURL;
+
+  beforeEach(() => {
+    saved = [];
+    URL.createObjectURL = jest.fn(() => "blob:export");
+    URL.revokeObjectURL = jest.fn();
+    jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      saved.push(this.download);
+    });
+  });
+
+  afterEach(() => {
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+    jest.restoreAllMocks();
+  });
+
+  function respond(type: string, disposition: string | null) {
+    (global as any).fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      blob: async () => new Blob(["PK"], { type }),
+      headers: { get: (name: string) => (name.toLowerCase() === "content-disposition" ? disposition : null) },
+    });
+  }
+
+  test("saves under the server's name, and a zip it names no file for still ends in .zip", async () => {
+    respond("application/zip", 'attachment; filename="Chicago Loop Layers.zip"');
+    await datasetCatalogApi.downloadDataset("data.curio.chicago-loop-layers", { format: "bundle" });
+    // By the zip's type, then by the bundle's format when the type says nothing.
+    respond("application/zip", null);
+    await datasetCatalogApi.downloadDataset("computed.flow.n1", { format: "bundle" });
+    respond("application/octet-stream", null);
+    await datasetCatalogApi.downloadDataset("computed.flow.n2", { format: "bundle" });
+
+    expect(saved).toEqual(["Chicago Loop Layers.zip", "computed_flow_n1.zip", "computed_flow_n2.zip"]);
+  });
+});
+
 describe("datasetCatalogApi.importDataset (source file date)", () => {
   const okJson = { id: "imported.x1", origin: "imported" };
 

@@ -184,7 +184,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   const {
     installed, catalogByDir, catalog, catalogPublishedDirs, busy, cardActionDir, actionError, restartNoticeText,
-    installCandidate, installMode, conflictReport, effectiveProjectId, ensureProjectId, kindOfDir,
+    installCandidate, installMode, conflictReport, waitingForProject, effectiveProjectId, ensureProjectId, kindOfDir,
     reload, reportActionError, dismissActionError, dismissRestartNotice,
     probeInstall: onInstall,
     probeUpdate: onUpdate,
@@ -668,6 +668,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           pkg={installCandidate}
           conflicts={conflictReport ?? []}
           busy={anyBusy}
+          waitingForDataflow={waitingForProject}
           onCancel={cancelInstall}
           onConfirm={() => void confirmCatalogInstall()}
           confirmLabel={installMode === "update" ? "Update" : undefined}

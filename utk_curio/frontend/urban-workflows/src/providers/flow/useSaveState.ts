@@ -7,9 +7,10 @@
  * this tab made, Saving... while some are on their way, and Offline while the
  * tab cannot reach the server and changes wait in it. Saving... and Offline
  * show only once a change has waited a moment, so typing does not make the
- * bar flicker. A canvas bound to no doc (a dataflow not saved yet, a hosted
- * guest's own canvas, the dashboard) reads Unsaved while it holds changes no
- * one keeps.
+ * bar flicker. A canvas bound to no doc (a dataflow not saved yet, the
+ * dashboard) reads Unsaved while it holds changes no one keeps. A hosted
+ * guest's canvas of an example is bound to its own copy's doc, as an
+ * account's is to its dataflow's.
  *
  * Closing or reloading the tab asks while changes wait: nothing is kept in the
  * browser across a reload.

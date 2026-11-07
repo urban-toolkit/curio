@@ -24,6 +24,8 @@ const DATASET_FORMAT_EXTENSIONS: Record<string, string> = {
   shp: ".shp",
   onnx: ".onnx",
   netcdf: ".nc",
+  // A bundle exports as one zip of its parts.
+  bundle: ".zip",
 };
 
 /** MIME type → extension, used as a last-resort fallback for the export name. */
@@ -34,6 +36,7 @@ const MIME_EXTENSIONS: Record<string, string> = {
   "application/vnd.apache.parquet": ".parquet",
   "image/tiff": ".tif",
   "application/x-netcdf": ".nc",
+  "application/zip": ".zip",
 };
 
 /** Dispatched after a node auto-installs a computed dataset so open drawers reload. */
@@ -310,7 +313,8 @@ export const datasetCatalogApi = {
 
   /**
    * Export the dataset's serialized data file. Streams the raw file (parquet
-   * stays parquet, csv stays csv, etc.) and triggers a browser download.
+   * stays parquet, csv stays csv, etc.) and triggers a browser download. A
+   * bundle or a layer group downloads as one zip of its parts.
    */
   async downloadDataset(
     datasetId: string,

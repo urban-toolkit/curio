@@ -721,7 +721,8 @@ export function MainCanvas() {
                     agentCoord,
                     keepDataflow: ensureProjectId,
                     attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
-                    // A hosted guest's drop that would save says to sign in.
+                    // A hosted guest's drop on a canvas with no dataflow says
+                    // to sign in.
                     hostedGuest,
                     // An invited editor's tab makes no dataflow: it waits for the
                     // server to have what the editor changed, then attaches.

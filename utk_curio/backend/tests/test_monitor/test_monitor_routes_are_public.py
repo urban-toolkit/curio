@@ -14,7 +14,7 @@ which is why they get a test rather than a comment.
 
 import pytest
 
-ROUTES = ("/api/monitor", "/api/monitor/errors", "/api/monitor/llm")
+ROUTES = ("/api/monitor", "/api/monitor/errors", "/api/monitor/llm", "/api/monitor/open-files")
 
 
 @pytest.mark.parametrize("route", ROUTES)

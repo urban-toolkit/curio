@@ -101,6 +101,10 @@ export interface PackageCatalogState {
   /** Whether the open review adds the candidate or updates the store copy to it. */
   installMode: "add" | "update";
   conflictReport: ResolveConflict[] | null;
+  /** Project scope: the open review is an add still waiting for the dataflow's
+   *  id (a dataflow still opening, or one saved first). Until it comes the
+   *  conflicts are not asked and `confirmInstall` refuses. */
+  waitingForProject: boolean;
   /** Project scope: the dataflow's id, or the one an auto-save just minted before the prop caught up. */
   effectiveProjectId: string | null;
   /** Project scope: the dataflow's id, saving it first if it has none; `null` (already reported) when the save is refused. */
@@ -182,6 +186,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
   const [installCandidate, setInstallCandidate] = useState<PackagePayload | null>(null);
   const [installMode, setInstallMode] = useState<"add" | "update">("add");
   const [conflictReport, setConflictReport] = useState<ResolveConflict[] | null>(null);
+  const [waitingForProject, setWaitingForProject] = useState(false);
   const installedByDirRef = useRef<Map<string, PackagePayload>>(new Map());
   // When an action auto-saves a brand-new dataflow, the React state update for
   // `projectId` doesn't always make it into `confirmInstall`'s closure before
@@ -190,6 +195,10 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
   const savedProjectIdRef = useRef<string | null>(null);
   // What runs once the reviewed candidate is added: a dropped card's node.
   const onAddedRef = useRef<(() => void) | null>(null);
+  // Each review opened takes the next ticket, and Cancel takes one too, so an
+  // answer that comes back for a review no longer shown (its dataflow's id,
+  // its conflicts) changes nothing.
+  const reviewTicketRef = useRef(0);
 
   /** Pulls the friendliest message off an unknown error and surfaces it as a banner. */
   const reportActionError = useCallback((label: string, err: unknown) => {
@@ -308,23 +317,34 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
 
   const openReview = useCallback(
     async (pkg: PackagePayload, mode: "add" | "update") => {
+      const ticket = ++reviewTicketRef.current;
+      const shown = () => reviewTicketRef.current === ticket;
+      // The review shows at once, in place of any other. An add to a dataflow
+      // that has no id yet (still opening, or never saved) waits for it there,
+      // and says so; its conflicts are asked once the id has come.
+      setInstallMode(mode);
+      setInstallCandidate(pkg);
+      setConflictReport(null);
+      setWaitingForProject(scope.kind === "project" && mode === "add" && !projectId);
       if (scope.kind === "project" && mode === "add") {
-        if ((await ensureSavedProjectId("Couldn't save dataflow before adding", "add")) === null) {
+        const id = await ensureSavedProjectId("Couldn't save dataflow before adding", "add");
+        if (!shown()) return;
+        setWaitingForProject(false);
+        if (id === null) {
           onAddedRef.current = null;
+          setInstallCandidate(null);
           return;
         }
       }
-      setInstallMode(mode);
-      setInstallCandidate(pkg);
       try {
         // An update's candidate is already in the store, so it is in the
         // store's rows. Every kind: a model's libraries can conflict with a
         // node package's.
         const dirs = allInstalled.map((p) => p.dirName);
-        setConflictReport(
-          await probeInstallConflicts(mode === "update" ? dirs : [...dirs, pkg.dirName]),
-        );
+        const conflicts = await probeInstallConflicts(mode === "update" ? dirs : [...dirs, pkg.dirName]);
+        if (shown()) setConflictReport(conflicts);
       } catch (err) {
+        if (!shown()) return;
         // A probe that failed for any reason but a conflict report: no review
         // to show, and the banner says why, as for a package the add needs
         // that neither the account nor the catalog has.
@@ -333,7 +353,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
         reportActionError(`Couldn't ${mode === "update" ? "update" : "add"} ${pkg.name}`, err);
       }
     },
-    [scope.kind, allInstalled, ensureSavedProjectId, reportActionError],
+    [scope.kind, projectId, allInstalled, ensureSavedProjectId, reportActionError],
   );
   const probeInstall = useCallback(
     (pkg: PackagePayload, options?: { onAdded?: () => void }) => {
@@ -348,7 +368,8 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
   }, [openReview]);
 
   const confirmInstall = useCallback(async () => {
-    if (!installCandidate) return;
+    // An add still waiting for the dataflow's id has nowhere to go yet.
+    if (!installCandidate || waitingForProject) return;
     if (installMode === "update") {
       // Lockfiles name only `<id>@<major>`, so replacing the one store copy
       // updates every project that uses it. A plain install of a package
@@ -458,7 +479,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     } finally {
       setBusy(false);
     }
-  }, [installCandidate, installMode, scope.kind, projectId, onInstalledToProject, refreshRegistry, reload, reportActionError, showToast]);
+  }, [installCandidate, installMode, waitingForProject, scope.kind, projectId, onInstalledToProject, refreshRegistry, reload, reportActionError, showToast]);
 
   const uninstallFromProject = useCallback(async (pkg: PackagePayload) => {
     if (scope.kind !== "project") return;
@@ -567,9 +588,13 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
   }, [reportActionError]);
 
   const cancelInstall = useCallback(() => {
+    // A wait for the dataflow's id or for the conflicts ends here too: what it
+    // answers later reopens nothing.
+    reviewTicketRef.current += 1;
     onAddedRef.current = null;
     setInstallCandidate(null);
     setConflictReport(null);
+    setWaitingForProject(false);
   }, []);
   const dismissActionError = useCallback(() => setActionError(null), []);
   const dismissInstallSummary = useCallback(() => setLastInstallSummary(null), []);
@@ -583,7 +608,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     () => ({
       catalog, installed, kindOfDir, installedByDir, catalogByDir, catalogPublishedDirs, catalogPublishAllowed, defaults,
       loaded, loadFailed, retryLoad, busy, publishingPackageKey, cardActionDir, actionError, restartNoticeText,
-      lastInstallSummary, installCandidate, installMode, conflictReport, effectiveProjectId,
+      lastInstallSummary, installCandidate, installMode, conflictReport, waitingForProject, effectiveProjectId,
       ensureProjectId: ensureSavedProjectId,
       reload, reportActionError, dismissActionError, dismissInstallSummary, dismissRestartNotice,
       probeInstall, probeUpdate, confirmInstall, cancelInstall, uninstallFromProject, removeFromAccount, publish,
@@ -591,7 +616,7 @@ export function usePackageCatalog(options: UsePackageCatalogOptions): PackageCat
     }),
     [catalog, installed, kindOfDir, installedByDir, catalogByDir, catalogPublishedDirs, catalogPublishAllowed, defaults,
      loaded, loadFailed, retryLoad, busy, publishingPackageKey, cardActionDir, actionError, restartNoticeText,
-     lastInstallSummary, installCandidate, installMode, conflictReport, effectiveProjectId, ensureSavedProjectId,
+     lastInstallSummary, installCandidate, installMode, conflictReport, waitingForProject, effectiveProjectId, ensureSavedProjectId,
      reload, reportActionError, dismissActionError, dismissInstallSummary, dismissRestartNotice,
      probeInstall, probeUpdate, confirmInstall, cancelInstall, uninstallFromProject, removeFromAccount, publish,
      unpublish, exportArchive],
