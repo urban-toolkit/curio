@@ -129,6 +129,9 @@ class ProjectSummary:
     #: The spec's scenarios, ``{id, name, color, description?, nodes}`` each -
     #: see ``projects/scenarios.py``.
     scenarios: list = field(default_factory=list)
+    #: A hosted guest's own new dataflow, kept until the server starts again
+    #: (``visitor_copies.new_dataflow``), which no account saves.
+    kept_for_visit: bool = False
 
 
 @dataclass

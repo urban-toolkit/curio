@@ -62,10 +62,21 @@ def _dataflow(project_id: str, *, make: bool = True) -> Dataflow:
     dataflow among them, and a dataflow that does not exist is not found. A
     hosted guest's agents work on its own copy of the dataflow, made when
     *make* and there is none: a route that writes makes it, one that only
-    reads does not."""
+    reads does not. A hosted guest's own new dataflow, which has no row, is
+    its own (``visitor_copies.own_new``), and not found for anyone else."""
     project = db.session.get(Project, project_id)
     if project is None:
-        raise NotFoundError(f"Project {project_id} not found")
+        own = visitor_copies.own_new(g.user, project_id)
+        if own is None:
+            raise NotFoundError(f"Project {project_id} not found")
+        account = own.owner
+        return Dataflow(
+            project_id=own.id,
+            key=_owner_user_dir_key(own),
+            role=access.OWNER,
+            owner_name=(account.name or account.username) if account is not None else "the owner",
+            guest=True,
+        )
     role = access.agents_role(g.user, project)
     if role not in access.EDIT_ROLES:
         raise AgentServiceError(access.AGENTS_WATCHER_REFUSAL, 403)

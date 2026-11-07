@@ -978,6 +978,135 @@ def _history_to_copy(user, data: ProjectCreate) -> Optional[tuple]:
     return _owner_user_dir_key(project), project.id
 
 
+def _new_dataflow_spec(ukey: str, data: ProjectCreate) -> None:
+    """*data*'s spec as a new dataflow is made with, set in place: an
+    account's create and a hosted guest's alike (:func:`save_project`)."""
+    from utk_curio.backend.app.packages.service import seed_spec_with_defaults
+
+    # New project: merge per-user defaults into the spec's lockfile so the
+    # package palette starts populated. Caller can override by passing a
+    # spec that already declares packages.
+    data.spec = seed_spec_with_defaults(ukey, data.spec)
+    # A spec that does not name itself is a spec the canvas reloads with an
+    # undefined workflow name; fill what the client left out (never overwrite).
+    _ensure_dataflow_identity(data.spec, data.name)
+    # Then the dataflow takes the name its row is made under, before its doc
+    # is built from it. The canvas titles a dataflow with the spec's name and
+    # the Projects page lists the row's, so a create whose spec names another
+    # (Duplicate's "X (copy)", Save a copy, a notebook named after its file)
+    # opened under the name it was copied from until a save renamed it.
+    _sync_dataflow_name(data.spec, data.name)
+    _normalize_spec_categories(data.spec)
+    scenarios.normalize_spec_scenarios(data.spec)
+    _drop_live_output_refs(data.spec)
+
+
+def _add_imported_agents(ukey: str, project_id: str) -> Optional[dict]:
+    """Install the account's imported agents into the new dataflow
+    *project_id*, for an account's create and a hosted guest's alike: the
+    agents palette reads the PROJECT lockfile, so an account-level import
+    that never reaches a lockfile is invisible on the canvas however the
+    catalog labels it. The spec as it is then, or ``None`` when the seed
+    failed, which never blocks a create."""
+    try:
+        from utk_curio.backend.app.agents.service import seed_project_with_imported_agents
+
+        seed_project_with_imported_agents(ukey, project_id)
+        return storage.read_spec(ukey, project_id)
+    except Exception:  # noqa: BLE001 - never block project creation on a seed
+        logger.warning("agent seed for project %s failed", project_id, exc_info=True)
+        return None
+
+
+def _visitors_create(user, data: ProjectCreate, *, sign_in: Optional[str], history_from) -> Optional[str]:
+    """The sign-in of the hosted guest whose create *data* is File > New: a
+    dataflow of its own, which copies no dataflow (``copy_of``) and carries
+    no history (*history_from*). ``None`` for anyone else, for Save a copy
+    and Duplicate, which are saves a hosted guest may not make, and with no
+    sign-in."""
+    if not visitor_copies.copies_for(user) or data.copy_of or history_from is not None:
+        return None
+    return sign_in or visitor_copies.current_sign_in()
+
+
+def _create_for_visitor(user, data: ProjectCreate, sign_in: str) -> ProjectDetail:
+    """A hosted guest's File > New: a dataflow of its own, kept until the
+    server starts again (``visitor_copies.new_dataflow``), made from *data*
+    as an account's create makes one, with the account's packages and
+    agents, and answered as a create is. It has no row, so only its guest's
+    gallery lists it. The outputs the create sends are not installed, and
+    the account's default datasets are not added: the guests' store and its
+    Data Catalog are every guest's."""
+    from utk_curio.backend.app.packages.service import ensure_user_packages_initialized
+
+    ukey = _user_dir_key(user)
+    ensure_user_packages_initialized(ukey)
+    _new_dataflow_spec(ukey, data)
+    own = visitor_copies.new_dataflow(user, data.spec, sign_in=sign_in)
+    if own is None:
+        raise ProjectError(GUEST_SAVE_REFUSAL, 403)
+    _add_imported_agents(ukey, own)
+    return _kept_detail(user, own, sign_in=sign_in)
+
+
+def _kept_row(user, own: str, *, sign_in: Optional[str] = None):
+    """``(row, spec)``: the hosted guest's own new dataflow *own* as a
+    dataflow's row reads (``visitor_copies.new_row``), and its spec as a
+    canvas opens it. ``None`` for anything else."""
+    row = visitor_copies.own_new(user, own, sign_in=sign_in)
+    spec = visitor_copies.opened(own) if row is not None else None
+    if spec is None:
+        return None
+    return visitor_copies.new_row(row, spec), spec
+
+
+def _kept_summary(user, row, spec, *, sources=None, lookup=None) -> ProjectSummary:
+    """A hosted guest's own new dataflow, *row* with its spec *spec*
+    (:func:`_kept_row`), as the gallery lists a dataflow, marked as kept for
+    the visit."""
+    import dataclasses
+
+    from utk_curio.backend.app.projects.categories import ManifestLookup
+
+    ukey = _user_dir_key(user)
+    summary = _to_summary(
+        row, graph_preview=_extract_graph_preview(spec, lookup or ManifestLookup(ukey)),
+        spec_revision=storage.spec_revision(ukey, row.id),
+        categories=_categories(user, row.id, spec, sources=sources, lookup=lookup),
+        scenario_list=scenarios.scenario_summaries(spec),
+    )
+    return dataclasses.replace(summary, kept_for_visit=True)
+
+
+def _kept_detail(user, own: str, *, sign_in: Optional[str] = None, outputs=None) -> ProjectDetail:
+    """The hosted guest's own new dataflow *own* as a load, a create and a
+    PUT answer with a dataflow, marked as kept for the visit, with
+    *outputs*. Another visitor's, or none, is not found."""
+    import dataclasses
+
+    found = _kept_row(user, own, sign_in=sign_in)
+    if found is None:
+        raise repo.NotFoundError(f"Project {own} not found")
+    row, spec = found
+    detail = _to_detail(
+        row, spec=spec, outputs=outputs,
+        spec_revision=storage.spec_revision(_user_dir_key(user), own),
+        categories=_categories(user, own, spec),
+    )
+    return dataclasses.replace(detail, kept_for_visit=True)
+
+
+def _kept_summaries(user, *, sources=None, lookup=None) -> List[ProjectSummary]:
+    """The hosted guest's own new dataflows, newest first, as the gallery
+    lists them (``visitor_copies.new_dataflows``). None for anyone else."""
+    summaries = []
+    for own in visitor_copies.new_dataflows(user):
+        found = _kept_row(user, own)
+        if found is not None:
+            summaries.append(_kept_summary(user, *found, sources=sources, lookup=lookup))
+    return summaries
+
+
 def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
                  history_from: Optional[tuple] = None) -> ProjectDetail:
     """Create a dataflow from *data*. *sign_in*: the caller's, for a save a
@@ -991,13 +1120,18 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     The new dataflow keeps the history it carries, imported when its doc
     first opens, or, copying a dataflow whose history *user* may read
     (*history_from*, ``(owner's key, dataflow id)``, or the one Save a copy
-    names), that dataflow's history (``history.copy_history``)."""
-    from utk_curio.backend.app.collaboration import history
-    from utk_curio.backend.app.packages.service import (
-        ensure_user_packages_initialized,
-        seed_spec_with_defaults,
-    )
+    names), that dataflow's history (``history.copy_history``).
 
+    A hosted guest's create is its File > New, a dataflow of its own with
+    no row (:func:`_create_for_visitor`); its Save a copy and Duplicate are
+    refused, as its other saves are (:func:`_assert_guest_can_save`)."""
+    from utk_curio.backend.app.collaboration import history
+    from utk_curio.backend.app.packages.service import ensure_user_packages_initialized
+
+    # A hosted guest's File > New is a dataflow of its own, kept for its visit.
+    visitor = _visitors_create(user, data, sign_in=sign_in, history_from=history_from)
+    if visitor is not None:
+        return _create_for_visitor(user, data, visitor)
     _assert_guest_can_save(user)
     history_from = history_from or _history_to_copy(user, data)
     copied_from, to_copy = _saved_outputs_to_copy(data)
@@ -1021,22 +1155,7 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     # save rewrites the row after its create, so the create writes it right.
     project.folder_path = str(storage.project_dir(ukey, project_id))
 
-    # New project: merge per-user defaults into the spec's lockfile so the
-    # package palette starts populated. Caller can override by passing a
-    # spec that already declares packages.
-    data.spec = seed_spec_with_defaults(ukey, data.spec)
-    # A spec that does not name itself is a spec the canvas reloads with an
-    # undefined workflow name; fill what the client left out (never overwrite).
-    _ensure_dataflow_identity(data.spec, data.name)
-    # Then the dataflow takes the name its row is made under, before its doc
-    # is built from it. The canvas titles a dataflow with the spec's name and
-    # the Projects page lists the row's, so a create whose spec names another
-    # (Duplicate's "X (copy)", Save a copy, a notebook named after its file)
-    # opened under the name it was copied from until a save renamed it.
-    _sync_dataflow_name(data.spec, data.name)
-    _normalize_spec_categories(data.spec)
-    scenarios.normalize_spec_scenarios(data.spec)
-    _drop_live_output_refs(data.spec)
+    _new_dataflow_spec(ukey, data)
 
     actor = dataflow_docs.person(ukey, "create")
     created = dataflow_docs.create(ukey, project_id, data.spec, actor)
@@ -1070,16 +1189,7 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     # the real install within a release. Best-effort: a stale default must never
     # stop a project from being created.
     effective_spec = _seed_dataset_defaults(user, ukey, project_id, effective_spec)
-    # And the account's imported agents, for the same reason: the agents palette
-    # reads the PROJECT lockfile, so an account-level import that never reaches
-    # a lockfile is invisible on the canvas however the catalog labels it.
-    try:
-        from utk_curio.backend.app.agents.service import seed_project_with_imported_agents
-
-        seed_project_with_imported_agents(ukey, project_id)
-        effective_spec = storage.read_spec(ukey, project_id) or effective_spec
-    except Exception:  # noqa: BLE001 - never block project creation on a seed
-        logger.warning("agent seed for project %s failed", project_id, exc_info=True)
+    effective_spec = _add_imported_agents(ukey, project_id) or effective_spec
 
     # Record only outputs the reload path can restore from a durable source
     # (installed dataset / legacy copy). Writing the raw client list would let a
@@ -1604,12 +1714,15 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
     runs ran showing its newest kept result where one matches the saved
     dataflow (``runs/reopen.py``). A hosted guest who has a copy of the
     dataflow of their own (``visitor_copies.py``) opens that copy, with the
-    results their plays kept on it."""
+    results their plays kept on it, and opens its own new dataflow
+    (:func:`_load_kept`); another visitor's is not found."""
     from utk_curio.backend.app.datasets.seed import (
         ensure_dataflow_datasets_installed,
     )
     from utk_curio.backend.app.packages.service import ensure_user_packages_initialized
 
+    if visitor_copies.own_new(user, project_id) is not None:
+        return _load_kept(user, project_id, last_results=last_results)
     project = repo.get_for_user(project_id, user.id)
 
     ukey = _user_dir_key(user)
@@ -1654,6 +1767,26 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
         "spec": opened,
         "outputs": [_output_ref_dict(r) for r in shown],
     }
+
+
+def _load_kept(user, own: str, *, last_results: bool) -> dict:
+    """A hosted guest's own new dataflow *own* as its canvas opens it
+    (:func:`load_project`): as it is now, with no saved output, and with
+    *last_results* the results its plays kept on it (``runs/reopen.py``)."""
+    from utk_curio.backend.app.packages.service import ensure_user_packages_initialized
+
+    ukey = _user_dir_key(user)
+    ensure_user_packages_initialized(ukey)
+    detail = _kept_detail(user, own)
+    shown: list = []
+    if last_results:
+        from utk_curio.backend.app.runs.reopen import last_results as kept_results
+
+        try:
+            shown = kept_results(user, ukey, own, detail.spec, [], kept_on=own)
+        except Exception:  # noqa: BLE001 - a dataflow always opens, with no output at least
+            logger.exception("could not find the kept results of dataflow %s", own)
+    return {"project": detail, "spec": detail.spec, "outputs": [_output_ref_dict(r) for r in shown]}
 
 
 # ---------------------------------------------------------------------------
@@ -1997,6 +2130,8 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
         shipped_sources,
     )
 
+    import dataclasses
+
     ensure_user_examples_seeded(user)
     projects = repo.list_for_user(user.id, sort=sort)
     # Once for the whole listing: the map is read off ``docs/examples/``, and
@@ -2005,7 +2140,9 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
     sources = shipped_sources(user)
     ukey = _user_dir_key(user)
     lookup = ManifestLookup(ukey)
-    summaries = []
+    # A hosted guest's own new dataflows, which have no rows, come first.
+    summaries = _kept_summaries(user, sources=sources, lookup=lookup)
+    sign_in = visitor_copies.current_sign_in() if visitor_copies.copies_for(user) else None
     dropped_stale_row = False
     for p in projects:
         spec = storage.read_spec(ukey, p.id)
@@ -2015,13 +2152,17 @@ def list_projects(user, sort: str = "last_opened") -> List[ProjectSummary]:
             repo.delete_project_row(p.id, user.id)
             dropped_stale_row = True
             continue
-        summaries.append(_to_summary(
+        summary = _to_summary(
             p, graph_preview=_extract_graph_preview(spec, lookup),
             spec_revision=storage.spec_revision(ukey, p.id),
             is_example=p.id in sources,
             categories=_categories(user, p.id, spec, sources=sources, lookup=lookup),
             scenario_list=scenarios.scenario_summaries(spec),
-        ))
+        )
+        # A hosted guest's card of a dataflow every guest opens is named as
+        # the guest named its own copy of it (``visitor_copies.rename``).
+        named = visitor_copies.copy_name(user, p.id, sign_in=sign_in) if sign_in else None
+        summaries.append(dataclasses.replace(summary, name=named) if named else summary)
     if dropped_stale_row:
         db.session.commit()
     return summaries
@@ -2070,6 +2211,51 @@ def rename_for_visitor(user, project_id: str, data: ProjectUpdate) -> Optional[P
         categories=_categories(user, project_id, spec),
     )
     return visitor_copies.with_spec(detail, spec)
+
+
+def update_for_visitor(user, project_id: str, data: ProjectUpdate) -> Optional[ProjectDetail]:
+    """A hosted guest's PUT of a dataflow it works on: its own new
+    dataflow's name or categories (:func:`_change_kept`), or the name of its
+    own copy of a dataflow its account owns (:func:`rename_for_visitor`). A
+    dataflow with no row that is not the guest's own is not found
+    (``NotFoundError``), before anything refuses it. ``None`` for anyone
+    else, and for any other PUT, which :func:`update_project` makes or
+    refuses."""
+    from utk_curio.backend.app.projects.models import Project
+
+    if not visitor_copies.copies_for(user):
+        return None
+    if visitor_copies.own_new(user, project_id) is not None:
+        return _change_kept(user, project_id, data)
+    if db.session.get(Project, project_id) is None:
+        raise repo.NotFoundError(f"Project {project_id} not found")
+    return rename_for_visitor(user, project_id, data)
+
+
+def _change_kept(user, own: str, data: ProjectUpdate) -> ProjectDetail:
+    """A hosted guest's PUT of its own new dataflow *own*: its name (the
+    canvas title's rename, the gallery's), its categories (the gallery's
+    Edit categories), or both, written as an account's PUT writes them, into
+    its doc. Anything else a PUT sends is a save, which a hosted guest may
+    not make (:data:`GUEST_SAVE_REFUSAL`)."""
+    name = data.name.strip() if isinstance(data.name, str) else ""
+    saves = (
+        data.spec is not None or data.outputs is not None or data.description is not None
+        or data.thumbnail_accent is not None or data.history is not None
+    )
+    if saves or not (name or data.categories is not None):
+        raise ProjectError(GUEST_SAVE_REFUSAL, 403)
+    ukey = _user_dir_key(user)
+    actor = dataflow_docs.person(ukey, "rename" if name else "categories")
+    with dataflow_docs.writing(ukey, own, actor) as spec:
+        dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+        if isinstance(dataflow, dict):
+            if name:
+                _sync_dataflow_name(spec, name)
+            if data.categories is not None:
+                dataflow["categories"] = data.categories
+                _normalize_spec_categories(spec)
+    return _kept_detail(user, own)
 
 
 #: What anyone but the owner and the editors the owner invited is told who
@@ -2188,6 +2374,10 @@ def reconcile_guest_projects(user) -> int:
     imported = 0
     for entry in projects_dir.iterdir():
         if not entry.is_dir():
+            continue
+        if (entry / visitor_copies.VISITOR_FILE).is_file():
+            # A hosted guest's copy or new dataflow, which no row lists: one
+            # the start could not drop stays until the next start drops it.
             continue
         project_id = entry.name
         try:
@@ -2347,13 +2537,16 @@ def _history_of(user, project_id: str, *, clears: bool = False, make: bool = Fal
     A hosted guest's history of a dataflow its account owns is its own copy's
     (``visitor_copies.py``), whose room it owns: a change to it makes the copy
     when there is none (*make*), and a read of a copy not made yet is ``None``
-    for the dataflow, which has none of its own yet. Any other dataflow's
-    history a hosted guest only watches."""
+    for the dataflow, which has none of its own yet. The history of a hosted
+    guest's own new dataflow is that dataflow's, whose room it owns. Any
+    other dataflow's history a hosted guest only watches."""
     from utk_curio.backend.app.projects import access
     from utk_curio.backend.app.projects.models import Project
 
     project = db.session.get(Project, project_id)
     if project is None:
+        if visitor_copies.own_new(user, project_id) is not None:
+            return project_id, _user_dir_key(user), access.OWNER
         raise repo.NotFoundError(f"Project {project_id} not found")
     if visitor_copies.copies_for(user) and project.user_id == user.id:
         own = visitor_copies.for_request(user, project_id, make=make)
@@ -2514,7 +2707,10 @@ def dataflow_categories(project_id: str, *, user=None) -> dict:
     them: every tab of it asks again as it changes, the owner's, an invited
     editor's and a watcher's, as anyone who opens its link reads it
     (:func:`_opened_by_link`). A hosted guest's canvas (*user*) shows those
-    of its own copy, once it has one (``visitor_copies.py``)."""
+    of its own copy, once it has one (``visitor_copies.py``), and those of
+    its own new dataflow, which no one else opens."""
+    if user is not None and visitor_copies.own_new(user, project_id) is not None:
+        return _categories(user, project_id, visitor_copies.opened(project_id))
     project, ukey = _opened_by_link(project_id)
     shown = visitor_copies.for_request(user, project_id, make=False) if user is not None else project_id
     spec = _without_history(_with_effective_packages(dataflow_docs.read(ukey, shown), ukey, shown))
