@@ -6,7 +6,7 @@
     "sources/weather-routing.py": "e9a6438c5117ea0bcf9b983f9b6f5eabf47d4c602eb42efae076ad685940364d",
     "sources/weather_routing/__init__.py": "cb2635fea19287f3757f8a7c4715cc868e0eb8f84d59131a506425d2cc688097",
     "sources/weather_routing/calculate_isochrones.py": "378f50e3412f4823b06b457bf2322818a3eb4120a618ef3c54544be6f3e471f0",
-    "sources/weather_routing/road_graph.py": "8d116e606797f03c46783cf10084a1e80d3ad0061075e782b3fefc94fbe130bc",
+    "sources/weather_routing/road_graph.py": "03f033386be20e213bbb3a532128e700311dfdfca14cbed93e0df8689ae3592f",
     "sources/weather_routing/weather_routing.py": "d3fcb868923d1f831c79105d86285374f1251636f517af3ef6801b02dfbe3534",
     "sources/weather_routing/weight_calculation.py": "be02848fe4fdac921c5909c6ded971537f341b9fa71698e4b06a3222a45f5a42"
   }

@@ -550,6 +550,74 @@ def test_an_empty_layer_says_why(tmp_path):
             m.roads.road_graph(_layer([]))
 
 
+@pytest.mark.parametrize("dtype, named", [("string", "yes"), ("Int64", 50), ("boolean", True)])
+def test_a_tag_held_as_pd_na_reads_as_no_tag(tmp_path, dtype, named):
+    """pandas' nullable dtypes hold ``pd.NA`` where a road names no tag, and a
+    row read as a Series (``iloc``) keeps it: it reads as no tag, as None and
+    NaN do, though ``pd.NA != pd.NA`` is ``pd.NA``, whose truth value raises."""
+    import pandas as pd
+
+    layer = pd.DataFrame({"oneway": pd.array([named, None], dtype=dtype)})
+    named_row, unnamed_row = layer.iloc[0], layer.iloc[1]
+    assert unnamed_row["oneway"] is pd.NA
+    with scout_routing(tmp_path) as m:
+        assert m.roads._value(unnamed_row, "oneway") is None
+        assert m.roads._value({"oneway": pd.NA}, "oneway") is None
+        assert m.roads._value(named_row, "oneway") == named
+
+
+@pytest.mark.parametrize("dtype, named", [("object", "yes"), ("str", "yes"), ("float64", 50.0)])
+def test_a_tag_held_as_none_or_nan_reads_as_no_tag(tmp_path, dtype, named):
+    """The rows road_graph reads (``to_dict("records")``) hold None where a
+    road names no tag, or NaN in a float column or pandas' default string
+    dtype."""
+    import pandas as pd
+
+    unnamed_row = pd.DataFrame({"oneway": pd.Series([named, None], dtype=dtype)}).to_dict("records")[1]
+    with scout_routing(tmp_path) as m:
+        assert m.roads._value(unnamed_row, "oneway") is None
+
+
+def test_a_tag_a_road_names_reads_as_it_is(tmp_path):
+    """A tag a road names comes back as it is, even "", 0 or False, which
+    road_graph's own fallbacks then read."""
+    with scout_routing(tmp_path) as m:
+        for value in ("yes", "-1", "", "30 mph", 50, 0, 2.5, True, False, ["residential", "tertiary"]):
+            assert m.roads._value({"highway": value}, "highway") is value
+
+
+def test_a_layer_whose_tags_are_nullable_columns_builds_as_one_holding_none(tmp_path):
+    """A roads layer whose tag columns are pandas' nullable dtypes, with
+    ``pd.NA`` where a road names no tag, builds the graph the same layer
+    holding None builds: a road with no oneway runs both ways, one with no
+    highway is unclassified, and one with no maxspeed has none."""
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import LineString
+
+    a, b, c = (-87.63, 41.88), (-87.629, 41.88), (-87.628, 41.88)
+    # The residential road beside the one-way one keeps both of its ends reachable.
+    lines = [[a, b], [a, (-87.6295, 41.8805), b], [b, c]]
+    tags = {"oneway": ["yes", None, None], "highway": ["secondary", "residential", None], "maxspeed": [50, None, None]}
+
+    def layer(dtypes):
+        return gpd.GeoDataFrame({tag: pd.Series(values, dtype=dtypes[tag]) for tag, values in tags.items()},
+                                geometry=[LineString(line) for line in lines], crs="EPSG:4326")
+
+    nullable = layer({"oneway": "string", "highway": "string", "maxspeed": "Int64"})
+    assert all(nullable.loc[2, tag] is pd.NA for tag in tags)
+    with scout_routing(tmp_path) as m:
+        G, bounds = m.roads.road_graph(nullable)
+        expected, expected_bounds = m.roads.road_graph(layer(dict.fromkeys(tags, object)))
+    assert list(G.edges(keys=True, data=True)) == list(expected.edges(keys=True, data=True))
+    assert bounds == expected_bounds
+    at = {n: (data["x"], data["y"]) for n, data in G.nodes(data=True)}
+    edges = {(at[u], at[v]): data for u, v, data in G.edges(data=True)}
+    assert edges[(a, b)]["maxspeed"] == "50" and (b, a) not in edges
+    assert edges[(b, c)]["highway"] == edges[(c, b)]["highway"] == "unclassified"
+    assert "maxspeed" not in edges[(b, c)]
+
+
 # ---------------------------------------------------------------------------
 # The template and the datasets
 # ---------------------------------------------------------------------------

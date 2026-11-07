@@ -26,6 +26,7 @@ latitude, else EPSG:3395, the CRS Autark keeps its layers in.
 
 import networkx as nx
 import osmnx as ox
+import pandas as pd
 
 #: ``oneway`` values that keep a line to the direction it is drawn in, and to the other.
 ONEWAY_ALONG = frozenset({"yes", "true", "1"})
@@ -51,9 +52,11 @@ def _lines(geometry):
 
 
 def _value(row, column):
+    """*row*'s *column*, or None where it holds none: None, NaN, NaT, or pd.NA,
+    which pandas' nullable dtypes hold. An array or a list is a value."""
     value = row.get(column)
     try:
-        missing = value is None or value != value  # None or NaN
+        missing = value is None or (pd.api.types.is_scalar(value) and bool(pd.isna(value)))
     except (TypeError, ValueError):
         missing = False
     return None if missing else value
