@@ -124,13 +124,13 @@ class Ctx:
     #: Pins an intermediate state as its own screenshot baseline. Supplied by
     #: the baseline suite; a no-op while recording, where the video already
     #: carries the whole journey.
-    snapshot: Callable[..., None] = lambda label, **kw: None
+    snapshot: Callable[..., None] = field(default=lambda label, **kw: None)
     #: Pins one node, up close, as its own baseline. Also a no-op while recording.
-    node_snapshot: Callable[[str, str], None] = lambda label, node_id: None
+    node_snapshot: Callable[[str, str], None] = field(default=lambda label, node_id: None)
     #: Notes where a part of the video starts or ends, as seconds into the
     #: recording. Supplied by the video runner, which saves the marks beside
     #: the video so a clip can be cut from them; a no-op in the baseline suite.
-    mark: Callable[[str, str], None] = lambda name, event: None
+    mark: Callable[[str, str], None] = field(default=lambda name, event: None)
 
     def capture_node(self, label: str, node_id: str) -> None:
         """Pin one node, framed up close, as a baseline called *label*.
