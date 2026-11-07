@@ -279,7 +279,8 @@ def test_a_writer_writes_the_spec_it_was_handed_and_nothing_when_it_changed_noth
 
     spec = live(room.owner_key, room.project_id)
     before = room.revision()
-    assert write(room.owner_key, room.project_id, spec, person(room.owner_key, "save")).wrote is False
+    written = write(room.owner_key, room.project_id, spec, person(room.owner_key, "save"))
+    assert written.wrote is False
     assert room.revision() == before
     with pytest.raises(TypeError):
         write(room.owner_key, room.project_id, dict(spec), person(room.owner_key, "save"))

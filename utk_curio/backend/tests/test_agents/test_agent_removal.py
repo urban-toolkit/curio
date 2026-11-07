@@ -115,7 +115,8 @@ def test_an_agent_one_dataflow_keeps_stays_in_all_projects_and_says_why(client, 
     assert DF in _agents_of(client, token, builder)
 
     for coord in (DFB, NB):
-        assert client.delete(f"/api/agents/projects/{builder}/{coord}", headers=_auth(token)).status_code == 200
+        removed = client.delete(f"/api/agents/projects/{builder}/{coord}", headers=_auth(token))
+        assert removed.status_code == 200
     resp = client.delete(f"/api/agents/imports/{DF}", headers=_auth(token))
     assert resp.status_code == 200, resp.get_data(as_text=True)
     assert DF not in imports.load_imported_agents(key)

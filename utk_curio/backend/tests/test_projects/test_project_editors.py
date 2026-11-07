@@ -108,8 +108,9 @@ def test_the_editor_routes_answer_the_owner_alone(client, db, dataflow):
 
     assert client.get(f"/api/projects/{project_id}/editors", headers=_auth(bob_token)).status_code == 404
     assert _invite(client, project_id, bob_token, "carol").status_code == 404
-    assert client.delete(f"/api/projects/{project_id}/editors/{bob.id}",
-                         headers=_auth(bob_token)).status_code == 404
+    refused = client.delete(f"/api/projects/{project_id}/editors/{bob.id}",
+                            headers=_auth(bob_token))
+    assert refused.status_code == 404
     listed = client.get(f"/api/projects/{project_id}/editors", headers=_auth(token)).get_json()
     assert [e["username"] for e in listed["editors"]] == ["bob"]
     assert client.get(f"/api/projects/{project_id}/editors").status_code == 401
@@ -167,7 +168,8 @@ def test_deleting_a_dataflow_deletes_its_editors(client, db, dataflow):
     assert _invite(client, project_id, token, "bob").status_code == 201
     assert ProjectEditor.query.filter_by(project_id=project_id).count() == 1
 
-    assert client.delete(f"/api/projects/{project_id}", headers=_auth(token)).status_code == 204
+    removed = client.delete(f"/api/projects/{project_id}", headers=_auth(token))
+    assert removed.status_code == 204
 
     assert ProjectEditor.query.filter_by(project_id=project_id).count() == 0
 

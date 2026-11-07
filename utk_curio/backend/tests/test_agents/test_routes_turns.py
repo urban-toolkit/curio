@@ -170,7 +170,8 @@ class TestStreamRun:
         assert handed
         done_name, done_payload = events[3]
         assert done_name == "done"
-        assert done_payload.pop("durationMs") >= 0
+        duration = done_payload.pop("durationMs")
+        assert duration >= 0
         assert done_payload == {
             "reply": "hello", "executionId": execution_id, "usage": None, "content": [],
             "skills": {"handed": handed},
@@ -448,7 +449,8 @@ class TestExecutionRecords:
         done_name, done_payload = events[-1]
         assert done_name == "done"
         # dev/80: done carries the SAME duration the persisted record keeps.
-        assert done_payload.pop("durationMs") == execution["durationMs"]
+        duration = done_payload.pop("durationMs")
+        assert duration == execution["durationMs"]
         assert done_payload == {
             "reply": "hello",
             "executionId": execution["executionId"],

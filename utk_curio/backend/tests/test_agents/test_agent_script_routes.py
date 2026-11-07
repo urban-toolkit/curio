@@ -37,7 +37,8 @@ class TestGuards:
         monkeypatch.setattr(testing_provider, "enabled", lambda: False)
         assert client.get(SCRIPT_URL).status_code == 404
         assert client.post(SCRIPT_URL, json={"replies": []}).status_code == 404
-        assert client.delete(SCRIPT_URL).status_code == 404
+        deleted = client.delete(SCRIPT_URL)
+        assert deleted.status_code == 404
 
     def test_404_outside_dev(self, client, monkeypatch):
         """The blueprint-level production guard still applies on top."""
@@ -200,6 +201,7 @@ class TestReset:
     def test_delete_clears_queue_and_capture(self, client):
         client.post(SCRIPT_URL, json={"replies": ["queued"]})
         testing_provider.run_scripted_completion([{"role": "user", "content": "x"}])
-        assert client.delete(SCRIPT_URL).get_json() == {"pending": 0}
+        cleared = client.delete(SCRIPT_URL).get_json()
+        assert cleared == {"pending": 0}
         body = client.get(SCRIPT_URL).get_json()
         assert body == {"pending": 0, "captured": [], "calls": [], "offered": []}

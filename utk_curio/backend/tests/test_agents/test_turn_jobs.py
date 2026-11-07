@@ -348,13 +348,16 @@ def test_only_whoever_asked_withdraws_a_waiting_ask(flow, monkeypatch):
     assert (r2.status_code, r2.get_json().get("state")) == (202, "waiting"), r2.get_data(as_text=True)
 
     path = f"/api/agents/projects/{flow.project}/attachments/{flow.att}/turns/{two}"
-    assert flow.client.delete(path, headers=_auth(ALICE)).status_code == 403
-    assert flow.client.delete(path, headers=_auth(CAROL)).status_code == 403
+    refused = flow.client.delete(path, headers=_auth(ALICE))
+    assert refused.status_code == 403
+    refused = flow.client.delete(path, headers=_auth(CAROL))
+    assert refused.status_code == 403
     withdrawn = flow.client.delete(path, headers=_auth(BOB))
     assert withdrawn.status_code == 200, withdrawn.get_data(as_text=True)
     assert withdrawn.get_json()["withdrawn"] is True
     assert [a["askId"] for a in _session(flow, ALICE)["asks"]] == [one]
-    assert flow.client.delete(path, headers=_auth(BOB)).status_code == 409
+    again = flow.client.delete(path, headers=_auth(BOB))
+    assert again.status_code == 409
 
     first.go.set()
     assert _end(flow, ALICE, one)["event"] == "done"

@@ -161,7 +161,8 @@ def test_a_write_that_leaves_the_attachments_as_they_were_tells_no_one(flow, tab
     for node in spec["dataflow"]["nodes"]:
         if node["id"] == "sum":
             node["content"] = "return input_0 * 2"
-    assert dataflow_docs.write(ukey, flow.project, spec, dataflow_docs.person(ukey, "edit")).wrote
+    written = dataflow_docs.write(ukey, flow.project, spec, dataflow_docs.person(ukey, "edit"))
+    assert written.wrote
 
     assert _heard(tabs) == {"alice": [], "bob": [], "carol": []}
 

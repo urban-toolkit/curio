@@ -408,7 +408,8 @@ def _agents_change(app, flow, who: str, edit) -> None:
         spec = dataflow_docs.live(flow.key, flow.pid)
         edit(spec["dataflow"])
         actor = spec_reads._agent_actor(flow.key, spec, ATTACHMENT, "plan")
-        assert dataflow_docs.write(flow.key, flow.pid, spec, actor).wrote
+        written = dataflow_docs.write(flow.key, flow.pid, spec, actor)
+        assert written.wrote
 
 
 def _owners_model(client, flow) -> None:
