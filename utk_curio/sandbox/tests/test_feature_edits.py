@@ -17,10 +17,9 @@ from __future__ import annotations
 import json
 import os
 import textwrap
-import unittest
+import unittest.mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import mock
 
 import geopandas as gpd
 import pytest
@@ -246,10 +245,10 @@ class TestRefusedAreas:
         ], **BUILDINGS)
         printed = [line for line in capsys.readouterr().out.split("\n") if line]
         assert [line for line in printed if REFUSED_AREA_LINE.fullmatch(line)] == [
-            "Map Editor: layer table_osm_buildings: the geometry would make the outline of building_id 2, 3 cross "
-            "itself, an area the map cannot draw; the geometry skips them.",
-            "Map Editor: layer table_osm_buildings: the add would make the outline of building_id 9 cross itself, "
-            "an area the map cannot draw; the add skips it.",
+            ("Map Editor: layer table_osm_buildings: the geometry would make the outline of building_id 2, 3 cross "
+             "itself, an area the map cannot draw; the geometry skips them."),
+            ("Map Editor: layer table_osm_buildings: the add would make the outline of building_id 9 cross itself, "
+             "an area the map cannot draw; the add skips it."),
         ], printed
         assert [line for line in printed if UNKNOWN_IDS_LINE.fullmatch(line)] == [
             "Map Editor: layer table_osm_buildings has no feature with building_id 999; the remove skips it.",
@@ -780,7 +779,7 @@ class ExecAppliesTheEditsTestCase(unittest.TestCase):
         self.client = app.test_client()
         self._tmp = TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        env = mock.patch.dict(os.environ, {
+        env = unittest.mock.patch.dict(os.environ, {
             "CURIO_LAUNCH_CWD": self._tmp.name,
             "CURIO_SHARED_DATA": "./.curio/data/",
             "CURIO_ISOLATION": "off",

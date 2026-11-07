@@ -16,6 +16,7 @@ the top of ``zygote.py``. A fork of the Flask process would inherit its threads
 and its DuckDB handle, which is exactly what this is meant to avoid.
 """
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -308,11 +309,9 @@ def _drain_in_background(process):
     """
 
     def _drain():
-        try:
+        with contextlib.suppress(Exception):
             for line in process.stdout:
                 print(f"[zygote] {line.rstrip()}", file=sys.stderr, flush=True)
-        except Exception:
-            pass
 
     thread = threading.Thread(target=_drain, name="zygote-stdout", daemon=True)
     thread.start()
@@ -323,10 +322,8 @@ def _terminate(process):
         process.terminate()
         process.wait(timeout=5)
     except Exception:
-        try:
+        with contextlib.suppress(Exception):
             process.kill()
-        except Exception:
-            pass
 
 
 def shutdown():

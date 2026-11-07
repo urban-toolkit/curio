@@ -1,6 +1,7 @@
 """Starting the frontend, backend and sandbox servers, the database they use,
 and freeing their ports."""
 
+import contextlib
 import os
 import platform
 import subprocess
@@ -177,10 +178,8 @@ def prepare_backend_database():
             # WAL sidecars too: a stale -wal next to a fresh file is ignored by
             # SQLite but confuses anyone reading the directory.
             for suffix in ("", "-wal", "-shm"):
-                try:
+                with contextlib.suppress(FileNotFoundError):
                     os.remove(test_sqla + suffix)
-                except FileNotFoundError:
-                    pass
 
         # `flask db upgrade` is idempotent — alembic skips already-applied
         # revisions. Running it on every startup avoids the "schema is
@@ -284,7 +283,7 @@ def _kill_port(port: int) -> None:
                 # Brief pause to let the kernel release the port after SIGKILL.
                 time.sleep(0.2)
     except subprocess.CalledProcessError:
-        pass
+        pass  # lsof exits 1 when nothing listens on the port: nothing to free
     except Exception as e:
         log_warning(f"[Backend] Could not check port {port}: {e}")
 

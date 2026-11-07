@@ -9,8 +9,7 @@ a browser to call any of it.
 """
 
 import os
-import unittest
-from unittest import mock
+import unittest.mock
 
 from utk_curio.sandbox.app import app
 from utk_curio.sandbox.app import auth
@@ -53,7 +52,7 @@ class SandboxAuthTestCase(unittest.TestCase):
 class TestGuardedRoutes(SandboxAuthTestCase):
 
     def test_rejects_a_caller_with_no_token(self):
-        with mock.patch.dict(os.environ, {auth.TOKEN_ENV: TOKEN}):
+        with unittest.mock.patch.dict(os.environ, {auth.TOKEN_ENV: TOKEN}):
             for method, path, kwargs in GUARDED:
                 with self.subTest(path=path):
                     response = getattr(self.client, method)(path, **kwargs)
@@ -63,7 +62,7 @@ class TestGuardedRoutes(SandboxAuthTestCase):
                     )
 
     def test_rejects_a_wrong_token(self):
-        with mock.patch.dict(os.environ, {auth.TOKEN_ENV: TOKEN}):
+        with unittest.mock.patch.dict(os.environ, {auth.TOKEN_ENV: TOKEN}):
             for method, path, kwargs in GUARDED:
                 with self.subTest(path=path):
                     response = getattr(self.client, method)(
@@ -77,7 +76,7 @@ class TestGuardedRoutes(SandboxAuthTestCase):
         This is the cheap, deterministic way to assert the constant-time
         comparison is wired correctly; timing it would be flaky.
         """
-        with mock.patch.dict(os.environ, {auth.TOKEN_ENV: TOKEN}):
+        with unittest.mock.patch.dict(os.environ, {auth.TOKEN_ENV: TOKEN}):
             response = self.client.post(
                 "/exec",
                 headers={auth.TOKEN_HEADER: "x"},
@@ -94,7 +93,7 @@ class TestGuardedRoutes(SandboxAuthTestCase):
         legitimate 500. Either way the request was authenticated, which is
         what this pins.
         """
-        with mock.patch.dict(os.environ, {auth.TOKEN_ENV: TOKEN}):
+        with unittest.mock.patch.dict(os.environ, {auth.TOKEN_ENV: TOKEN}):
             for method, path, kwargs in GUARDED:
                 with self.subTest(path=path):
                     response = getattr(self.client, method)(
@@ -109,9 +108,9 @@ class TestUnauthenticatedFallback(SandboxAuthTestCase):
 
     def test_absent_token_permits(self):
         """Local dev and the unit suites have no launcher to mint a token."""
-        with mock.patch.dict(os.environ, {}, clear=False):
+        with unittest.mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop(auth.TOKEN_ENV, None)
-            with mock.patch.object(auth, "_warn_once") as warn:
+            with unittest.mock.patch.object(auth, "_warn_once") as warn:
                 for _ in range(3):
                     response = self.client.get(
                         "/get", query_string={"fileName": "does-not-exist"}
@@ -122,7 +121,7 @@ class TestUnauthenticatedFallback(SandboxAuthTestCase):
     def test_the_unauthenticated_warning_is_printed_only_once(self):
         """Every guarded request calls it; the operator should see one line."""
         auth._warned = False
-        with mock.patch("builtins.print") as printed:
+        with unittest.mock.patch("builtins.print") as printed:
             auth._warn_once()
             auth._warn_once()
             auth._warn_once()
@@ -130,7 +129,7 @@ class TestUnauthenticatedFallback(SandboxAuthTestCase):
         self.assertTrue(auth._warned)
 
     def test_blank_token_counts_as_unset(self):
-        with mock.patch.dict(os.environ, {auth.TOKEN_ENV: "   "}):
+        with unittest.mock.patch.dict(os.environ, {auth.TOKEN_ENV: "   "}):
             self.assertIsNone(auth.get_expected_token())
 
 
@@ -138,19 +137,19 @@ class TestStartupGuard(SandboxAuthTestCase):
     """A hosted instance must not boot with execution routes unguarded."""
 
     def test_hosted_without_a_token_refuses_to_start(self):
-        with mock.patch.dict(os.environ, {"CURIO_NO_AUTH": "0"}):
+        with unittest.mock.patch.dict(os.environ, {"CURIO_NO_AUTH": "0"}):
             os.environ.pop(auth.TOKEN_ENV, None)
             with self.assertRaises(RuntimeError) as caught:
                 auth.require_startup_token()
         self.assertIn(auth.TOKEN_ENV, str(caught.exception))
 
     def test_hosted_with_a_token_starts(self):
-        with mock.patch.dict(os.environ, {"CURIO_NO_AUTH": "0",
-                                          auth.TOKEN_ENV: TOKEN}):
+        with unittest.mock.patch.dict(os.environ, {"CURIO_NO_AUTH": "0",
+                                                   auth.TOKEN_ENV: TOKEN}):
             auth.require_startup_token()  # must not raise
 
     def test_local_without_a_token_starts(self):
-        with mock.patch.dict(os.environ, {"CURIO_NO_AUTH": "1"}):
+        with unittest.mock.patch.dict(os.environ, {"CURIO_NO_AUTH": "1"}):
             os.environ.pop(auth.TOKEN_ENV, None)
             auth.require_startup_token()  # must not raise
 
@@ -158,7 +157,7 @@ class TestStartupGuard(SandboxAuthTestCase):
         for value, expected in (("0", True), ("false", True), ("off", True),
                                 ("1", False), ("true", False)):
             with self.subTest(value=value):
-                with mock.patch.dict(os.environ, {"CURIO_NO_AUTH": value}):
+                with unittest.mock.patch.dict(os.environ, {"CURIO_NO_AUTH": value}):
                     self.assertEqual(auth.hosted_mode(), expected)
 
 
@@ -178,7 +177,7 @@ class TestNoCorsHeaders(SandboxAuthTestCase):
                 self.assertNotIn("Access-Control-Allow-Methods", response.headers)
 
     def test_guarded_routes_carry_no_cors_header(self):
-        with mock.patch.dict(os.environ, {auth.TOKEN_ENV: TOKEN}):
+        with unittest.mock.patch.dict(os.environ, {auth.TOKEN_ENV: TOKEN}):
             response = self.client.post("/exec", json={})
         self.assertNotIn("Access-Control-Allow-Origin", response.headers)
 

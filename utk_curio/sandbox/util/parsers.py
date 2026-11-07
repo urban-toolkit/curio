@@ -2,7 +2,6 @@ import geopandas as gpd
 import pandas as pd
 import contextlib
 import json
-import math
 import re
 import zlib
 import os
@@ -16,7 +15,6 @@ from pathlib import Path
 
 #DuckDB imports:
 import io
-import duckdb
 from utk_curio.common.kept_sessions import is_kept_session
 from utk_curio.sandbox.util.db import get_connection, get_read_connection, init_db
 # Value <-> bytes conversion lives in codec.py, which deliberately has no access
@@ -682,10 +680,6 @@ def load_from_duckdb(art_id, session_id=None):
             result = _read_json_artifact(v_str) if v_str else json.loads(v_json)
         elif kind == 'dict':
             result = _read_json_artifact(v_str) if v_str else json.loads(v_json)
-        # elif kind == 'dataframe':
-        #     result = pd.read_parquet(io.BytesIO(blob))
-        # elif kind == 'geodataframe':
-        #     result = gpd.read_parquet(io.BytesIO(blob))
         elif kind == 'dataframe':
             result = pd.read_parquet(_parquet_source(v_str, blob))
             frame_meta, encoded_object_columns = _parse_parquet_meta(v_json)
@@ -1188,10 +1182,8 @@ def describe_session_artifacts(session_ids) -> dict:
         size = (blob_bytes or 0) + (json_bytes or 0) + folder_bytes(str(art_id))
         path = _stored_file(kind, value_str)
         if path is not None:
-            try:
+            with contextlib.suppress(OSError):
                 size += path.stat().st_size
-            except OSError:
-                pass
         elif isinstance(value_str, str):
             size += len(value_str.encode("utf-8"))
         entry = described.setdefault(session_id, {"bytes": 0, "ids": []})
@@ -1231,10 +1223,8 @@ def forget_session_artifacts(session_ids) -> int:
     for art_id, _session_id, kind, value_str, _blob, _json in rows:
         path = _stored_file(kind, value_str)
         if path is not None:
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 path.unlink()
-            except FileNotFoundError:
-                pass
         if str(art_id) not in named:
             forget_run_output(str(art_id))
     return len(rows)

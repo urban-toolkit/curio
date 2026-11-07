@@ -21,7 +21,7 @@ Run:  pytest utk_curio/sandbox/tests/test_isolation_user_overlay_dir.py -v
 import os
 import stat
 import sys
-import unittest
+import unittest.mock
 
 from utk_curio.sandbox.isolation import supervisor
 
@@ -128,7 +128,6 @@ class TestTheBackendAndTheSandboxAgree(unittest.TestCase):
 
     def test_the_two_spellings_are_the_same_directory(self):
         import tempfile
-        from unittest import mock
 
         from utk_curio.backend.app.packages.infrastructure import backend_runtime as rt
 
@@ -140,7 +139,7 @@ class TestTheBackendAndTheSandboxAgree(unittest.TestCase):
         # a run that collects both suites wrote its DuckDB and its parquet
         # artifacts into the developer's real store, which the backend conftest
         # is explicit about never clobbering.
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+        with tempfile.TemporaryDirectory() as tmp, unittest.mock.patch.dict(
             os.environ,
             {"CURIO_LAUNCH_CWD": tmp, "CURIO_SHARED_DATA": "./.curio/data/"},
         ):

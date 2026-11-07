@@ -18,11 +18,10 @@ import os
 import sys
 import tempfile
 import types
-import unittest
+import unittest.mock
 import uuid
 import warnings
 from pathlib import Path
-from unittest import mock
 
 import geopandas as gpd
 import pandas as pd
@@ -586,7 +585,7 @@ class TestNumbaCachesInTheScratchDirectory(unittest.TestCase):
     def setUp(self):
         # Whether or not this process has imported numba, a test sees no numba
         # config unless it plants one, and a real one keeps its CACHE_DIR.
-        for patch in (mock.patch.dict(sys.modules), mock.patch.dict(os.environ)):
+        for patch in (unittest.mock.patch.dict(sys.modules), unittest.mock.patch.dict(os.environ)):
             patch.start()
             self.addCleanup(patch.stop)
         sys.modules.pop("numba.core.config", None)
@@ -613,10 +612,10 @@ class TestNumbaCachesInTheScratchDirectory(unittest.TestCase):
             seen.append(os.environ.get("NUMBA_CACHE_DIR"))
             return {"ok": True, "stdout": [], "stderr": "", "output": None, "imports": []}
 
-        with mock.patch.object(child, "confine"), \
-                mock.patch.object(child, "run_node", side_effect=run_node), \
-                mock.patch.object(child, "write_result"), \
-                mock.patch.object(child.os, "_exit", side_effect=SystemExit):
+        with unittest.mock.patch.object(child, "confine"), \
+                unittest.mock.patch.object(child, "run_node", side_effect=run_node), \
+                unittest.mock.patch.object(child, "write_result"), \
+                unittest.mock.patch.object(child.os, "_exit", side_effect=SystemExit):
             with self.assertRaises(SystemExit):
                 child.main({"scratch_dir": self.scratch, "code": ""}, dict)
         self.assertEqual(seen, [self.cache_dir])

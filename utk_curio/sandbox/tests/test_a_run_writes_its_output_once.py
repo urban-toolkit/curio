@@ -16,10 +16,9 @@ node's.
 import json
 import os
 import textwrap
-import unittest
+import unittest.mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import mock
 
 from utk_curio.sandbox.app import app
 from utk_curio.sandbox.util.db import init_db, is_store_file, release_connection
@@ -31,7 +30,7 @@ class ARunWritesItsOutputOnceTestCase(unittest.TestCase):
         self.client = app.test_client()
         self._tmp = TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        env = mock.patch.dict(os.environ, {
+        env = unittest.mock.patch.dict(os.environ, {
             "CURIO_LAUNCH_CWD": self._tmp.name,
             "CURIO_SHARED_DATA": "./.curio/data/",
             "CURIO_ISOLATION": "off",
@@ -80,7 +79,7 @@ class ARunWritesItsOutputOnceTestCase(unittest.TestCase):
 
         records = [{"name": "a", "n": 1, "tags": ["x"]}, {"name": "b", "n": 2, "tags": ["y", "z"]}]
         ran = (json.dumps({"success": True, "value": records, "logs": []}), [], [])
-        with mock.patch.object(worker, "run_js_script", return_value=ran):
+        with unittest.mock.patch.object(worker, "run_js_script", return_value=ran):
             result = worker.execute_js_code(
                 "return rows;", "", "JS_COMPUTATION", "",
                 launch_dir=self._tmp.name, session_id="session-a", save_dataset=True,

@@ -68,6 +68,7 @@ its pid is stopped, since nothing will read its result.
 """
 
 import argparse
+import contextlib
 import errno
 import json
 import os
@@ -122,7 +123,6 @@ def build_namespace_template():
     import mmap
     import time
     import zlib
-    from pathlib import Path
 
     import duckdb
     import geopandas as gpd
@@ -155,7 +155,7 @@ def build_namespace_template():
         "wkt": wkt,
         "math": math,
         "datetime": datetime,
-        "Path": Path,
+        "Path": _pathlib.Path,
         "duckdb": duckdb,
         "detect_kind": detect_kind,
         "checkIOType": checkIOType,
@@ -513,10 +513,8 @@ class Zygote:
             waiting = []
         running = [state["connection"] for state in self._pending.values()]
         for sock in (self._listener, connection, *waiting, *running):
-            try:
+            with contextlib.suppress(Exception):
                 sock.close()
-            except Exception:
-                pass
         # Then the pidfds the zygote watches the running children through,
         # and last the selector, whose epoll this child shares with the
         # zygote: node code could wait on another run's child through its
@@ -524,14 +522,10 @@ class Zygote:
         # would then never sleep.
         for state in self._pending.values():
             if "pidfd" in state:
-                try:
+                with contextlib.suppress(OSError):
                     os.close(state["pidfd"])
-                except OSError:
-                    pass
-        try:
+        with contextlib.suppress(Exception):
             selector.close()
-        except Exception:
-            pass
 
         template = self.namespace_template
 
@@ -550,6 +544,7 @@ class Zygote:
             zygote_pid=zygote_pid,
         )
         os._exit(70)  # unreachable; child.main always exits
+        return None
 
     def _reap_children(self):
         """Report every child that has exited since the last pass.
@@ -602,7 +597,7 @@ class Zygote:
             try:
                 _send(connection, payload)
             except OSError:
-                pass
+                pass  # the caller hung up; the child is reaped all the same
             finally:
                 connection.close()
 
@@ -699,12 +694,10 @@ def main(argv=None):
     try:
         zygote.serve_forever()
     except KeyboardInterrupt:
-        pass
+        pass  # Ctrl-C stops the zygote as a normal exit; its socket goes below
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(args.socket)
-        except OSError:
-            pass
     return 0
 
 

@@ -20,6 +20,7 @@ minutes and writes both pids to a file, so the test can tell whether the run
 killed them, and kills whatever is left when it ends.
 """
 
+import contextlib
 import json
 import os
 import signal
@@ -97,10 +98,8 @@ class _Pids:
     def kill_the_rest(self):
         for pid in self.read().values():
             if _running(pid):
-                try:
+                with contextlib.suppress(OSError):
                     os.kill(pid, signal.SIGKILL)
-                except OSError:
-                    pass
 
 
 class _Run:

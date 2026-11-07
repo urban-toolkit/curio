@@ -525,6 +525,7 @@ def read_call_args(text: str, start: int, call: str, names) -> tuple[list, dict]
             return chr(int(digits, 8))
         pos -= 2
         fail("a text goes on past its line" if c in ("\n", "\r") else f"\\{c or ''} is not an escape the node reads")
+        return None
 
     def string() -> str:
         nonlocal pos
@@ -626,6 +627,7 @@ def read_call_args(text: str, start: int, call: str, names) -> tuple[list, dict]
         if name is not None:
             fail(f"{name} is not a value written out")
         fail("the call is not closed" if c is None else f"{c} does not start a value the node reads")
+        return None
 
     positional: list[Literal] = []
     keywords: dict[str, Literal] = {}

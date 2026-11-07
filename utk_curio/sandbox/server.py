@@ -1,5 +1,6 @@
 from utk_curio.sandbox.app import app
 import atexit
+import contextlib
 import os
 import signal
 import sys
@@ -34,10 +35,8 @@ def _kill_descendants() -> None:
     if not children:
         return
     for child in children:
-        try:
+        with contextlib.suppress(psutil.NoSuchProcess):
             child.kill()
-        except psutil.NoSuchProcess:
-            pass
     psutil.wait_procs(children, timeout=2)
 
 

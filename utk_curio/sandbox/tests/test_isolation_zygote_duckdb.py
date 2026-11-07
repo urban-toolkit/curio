@@ -19,9 +19,8 @@ import subprocess
 import sys
 import textwrap
 import types
-import unittest
+import unittest.mock
 from contextlib import redirect_stderr
-from unittest import mock
 
 from utk_curio.sandbox.isolation import zygote
 from utk_curio.sandbox.util import duckdb_threads
@@ -135,8 +134,8 @@ class _ProcClosingAPool:
 class ReleaseImportTimeDuckdbTest(unittest.TestCase):
     def _release(self, module, names=(None, None)):
         stderr = io.StringIO()
-        with mock.patch.dict(sys.modules, {"duckdb": module}), \
-                mock.patch.object(zygote, "_thread_names", side_effect=list(names)), \
+        with unittest.mock.patch.dict(sys.modules, {"duckdb": module}), \
+                unittest.mock.patch.object(zygote, "_thread_names", side_effect=list(names)), \
                 redirect_stderr(stderr):
             zygote._release_import_time_duckdb()
         return stderr.getvalue()
@@ -167,8 +166,8 @@ class ReleaseImportTimeDuckdbTest(unittest.TestCase):
         self.assertIn("could not close DuckDB's import-time connection", log)
 
     def test_does_nothing_when_duckdb_was_never_imported(self):
-        with mock.patch.dict(sys.modules), \
-                mock.patch.object(zygote, "_thread_names") as thread_names:
+        with unittest.mock.patch.dict(sys.modules), \
+                unittest.mock.patch.object(zygote, "_thread_names") as thread_names:
             sys.modules.pop("duckdb", None)
             zygote._release_import_time_duckdb()
         thread_names.assert_not_called()
@@ -183,7 +182,7 @@ class ReleaseImportTimeDuckdbTest(unittest.TestCase):
         for version in ("2.0.0", "2.1.0", "3.0.0.dev12"):
             module = _duckdb_that_opens_on_first_use(version)
             stderr = io.StringIO()
-            with mock.patch.dict(sys.modules, {"duckdb": module}), redirect_stderr(stderr):
+            with unittest.mock.patch.dict(sys.modules, {"duckdb": module}), redirect_stderr(stderr):
                 duckdb_threads.release_default_connection(
                     "[sandbox]", "so its threads stay idle", names=lambda: None)
             self.assertEqual(
@@ -250,9 +249,9 @@ class ReleaseImportTimeDuckdbTest(unittest.TestCase):
         connection = _FakeConnection()
         proc = _ProcClosingAPool(connection)
         stderr = io.StringIO()
-        with mock.patch.dict(sys.modules, {"duckdb": _fake_duckdb(connection)}), \
-                mock.patch("os.listdir", proc.listdir), \
-                mock.patch("builtins.open", proc.open), \
+        with unittest.mock.patch.dict(sys.modules, {"duckdb": _fake_duckdb(connection)}), \
+                unittest.mock.patch("os.listdir", proc.listdir), \
+                unittest.mock.patch("builtins.open", proc.open), \
                 redirect_stderr(stderr):
             zygote._release_import_time_duckdb()
         self.assertIn(
@@ -348,10 +347,10 @@ class WarmUpTest(unittest.TestCase):
             calls.append("imports")
             return {}
 
-        with mock.patch.object(zygote, "build_namespace_template",
-                               side_effect=imports), \
-                mock.patch.object(zygote, "_release_import_time_duckdb",
-                                  side_effect=lambda: calls.append("release")):
+        with unittest.mock.patch.object(zygote, "build_namespace_template",
+                                        side_effect=imports), \
+                unittest.mock.patch.object(zygote, "_release_import_time_duckdb",
+                                           side_effect=lambda: calls.append("release")):
             zygote.Zygote("unused.sock").warm_up()
         self.assertEqual(calls, ["imports", "release"])
 
@@ -364,7 +363,7 @@ class ThreadReportTest(unittest.TestCase):
         )
 
     def test_thread_names_is_none_without_proc(self):
-        with mock.patch.object(zygote.os, "listdir", side_effect=FileNotFoundError):
+        with unittest.mock.patch.object(zygote.os, "listdir", side_effect=FileNotFoundError):
             self.assertIsNone(zygote._thread_names())
 
     @unittest.skipUnless(os.path.isdir("/proc/self/task"), "needs /proc")

@@ -16,7 +16,7 @@ import re
 
 import duckdb
 import sys
-import unittest
+import unittest.mock
 
 import geopandas as gpd
 import numpy as np
@@ -319,7 +319,6 @@ class TestParquetWriterFootprint(unittest.TestCase):
     def _captured_config(self, frame=None):
         import tempfile
         from pathlib import Path
-        from unittest import mock
 
         seen = {}
         real_connect = duckdb.connect
@@ -330,7 +329,7 @@ class TestParquetWriterFootprint(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "out.parquet"
-            with mock.patch.object(duckdb, "connect", spy):
+            with unittest.mock.patch.object(duckdb, "connect", spy):
                 codec._write_dataframe_parquet(
                     frame if frame is not None else pd.DataFrame({"a": [1, 2, 3]}), path
                 )
@@ -354,9 +353,8 @@ class TestParquetWriterFootprint(unittest.TestCase):
         is the path that actually runs under RLIMIT_AS.
         """
         import os
-        from unittest import mock
 
-        with mock.patch.dict(os.environ, {"CURIO_EXEC_MEMORY_MB": "128"}):
+        with unittest.mock.patch.dict(os.environ, {"CURIO_EXEC_MEMORY_MB": "128"}):
             config = self._captured_config()
         self.assertEqual(config.get("memory_limit"), "64MB")
         self.assertEqual(config.get("threads"), 1)
@@ -392,8 +390,8 @@ class TestStoreIndependence(unittest.TestCase):
 
         result = subprocess.run(
             [sys.executable, "-c",
-             "import sys; import utk_curio.sandbox.util.codec; "
-             "print('utk_curio.sandbox.util.db' in sys.modules)"],
+             ("import sys; import utk_curio.sandbox.util.codec; "
+              "print('utk_curio.sandbox.util.db' in sys.modules)")],
             capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -18,10 +18,9 @@ import base64
 import json
 import math
 import os
-import unittest
+import unittest.mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import mock
 
 REPO = Path(__file__).resolve().parents[3]
 CASES_FILE = REPO / "utk_curio" / "frontend" / "urban-workflows" / "src" / "utils" / "raster" / "rasterWire.cases.json"
@@ -64,7 +63,7 @@ class StoreTestCase(unittest.TestCase):
         self._tmp = TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
-        env = mock.patch.dict(os.environ, {
+        env = unittest.mock.patch.dict(os.environ, {
             "CURIO_LAUNCH_CWD": self._tmp.name,
             "CURIO_SHARED_DATA": "./.curio/data/",
         })
@@ -160,7 +159,7 @@ class TheEnvelopeTest(unittest.TestCase):
             listed[1].close()
 
     def test_no_folder_is_asked_for_when_there_is_no_raster(self):
-        asked = mock.Mock(side_effect=AssertionError("asked for a folder"))
+        asked = unittest.mock.Mock(side_effect=AssertionError("asked for a folder"))
         value = [{"a": 1}, 2]
         self.assertIs(rasters().rasters_for_python(value, asked), value)
         asked.assert_not_called()

@@ -79,6 +79,7 @@ def _load(names, why):
         except OSError as error:
             errors.append(str(error))
     pytest.fail(f"cannot load {names[0]}: {why} ({'; '.join(errors)})")
+    return None
 
 
 def _nvrtc():

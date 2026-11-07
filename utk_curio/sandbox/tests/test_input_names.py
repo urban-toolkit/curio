@@ -15,9 +15,8 @@ import os
 import shutil
 import tempfile
 import textwrap
-import unittest
+import unittest.mock
 from pathlib import Path
-from unittest import mock
 
 _OLD_NAME = "which Curio no longer defines"
 _OLD_CHIP = "names an input the old way"
@@ -177,7 +176,7 @@ class TestThroughTheExecRoute(unittest.TestCase):
         self.client = app.test_client()
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        env = mock.patch.dict(os.environ, {"CURIO_LAUNCH_CWD": self._tmp.name, "CURIO_ISOLATION": "off"})
+        env = unittest.mock.patch.dict(os.environ, {"CURIO_LAUNCH_CWD": self._tmp.name, "CURIO_ISOLATION": "off"})
         env.start()
         self.addCleanup(env.stop)
         release_connection()

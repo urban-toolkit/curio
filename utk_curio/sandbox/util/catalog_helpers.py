@@ -342,7 +342,7 @@ class CurioModel:
         if self._runner is None:
             from utk_curio.sandbox.util.vision import load_runner
 
-            self._runner, _manifest = load_runner(self.folder)
+            self._runner, _ = load_runner(self.folder)
         return self._runner
 
     def run(self, feeds: dict) -> list:
