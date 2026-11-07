@@ -223,6 +223,7 @@ def init_socketio(app):
         engineio_logger=False,
     )
     _whole_messages(socketio.server)
+    _disconnects_apart(socketio.server.eio)
     return socketio
 
 
@@ -234,8 +235,15 @@ def init_socketio(app):
 # packets, which the client's parser takes as a broken stream: socket.io-client
 # closes the connection on it. So every send to a client takes the client's lock,
 # and whoever puts a message of several packets holds it across them
-# (emit_whole). A thread holding one client's lock never waits for another's, so
-# no two sends can wait for each other.
+# (emit_whole). A thread holding a client's lock puts that client's packets and
+# waits for no other lock, so no two sends can wait for each other, and a relay
+# may wait for one under a doc's lock (dataflow_docs._relay). One thing more runs
+# under it, engineio's: a send that finds the client's ping overdue closes the
+# client (Socket.send, check_ping_timeout) and runs its disconnect on the sending
+# thread. The collaboration's disconnect waits for the lock of each doc the tab
+# synced (dataflow_docs.leave), which such a relay holds while it waits for this
+# client's lock, so the two would wait for each other for good: that disconnect
+# runs on a thread of its own (_disconnects_apart).
 _CLIENT_LOCKS = tuple(threading.Lock() for _ in range(64))
 _holding = threading.local()
 
@@ -272,6 +280,31 @@ def _whole_messages(server) -> None:
 
     server._send_packet = locked_send_packet
     server._send_eio_packet = locked_send_eio_packet
+
+
+def _disconnects_apart(eio_server) -> None:
+    """Make a disconnect that *eio_server*, an ``engineio.Server``, triggers
+    while this thread holds a client's sends (:func:`whole_sends`), a send's
+    close of a client whose ping is overdue, run on a thread of its own.
+
+    The thread starts at once, and the send goes on with engineio's close,
+    which marks the client closed, and returns, letting the lock go. On its
+    own thread the disconnect takes locks in the order a relay does, a doc's
+    lock and under it the other tabs' send locks (``dataflow_docs.leave``),
+    and its emits take each member's lock, which under the held send they
+    skipped. python-socketio drops the socket's environ only once its
+    disconnect is over, so Flask-SocketIO builds the handler's request,
+    ``request.sid`` among it, as it did. Every other event, and a disconnect
+    triggered anywhere else (a client's own close, read on its socket's
+    thread; engineio's own checks of overdue pings), runs where it did."""
+    trigger_event = eio_server._trigger_event
+
+    def trigger_event_apart(event, *args, **kwargs):
+        if event == "disconnect" and getattr(_holding, "held", False):
+            kwargs["run_async"] = True
+        return trigger_event(event, *args, **kwargs)
+
+    eio_server._trigger_event = trigger_event_apart
 
 
 def emit_whole(socketio, event: str, data, *, namespace: str, to: str, skip_sid=None) -> None:
