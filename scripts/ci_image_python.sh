@@ -127,7 +127,7 @@ in_place() {
 # The way every runner took them before: the image's site-packages copied into
 # a virtual environment under RUNNER_TEMP.
 copy() {
-  local image=$1 venv site cid started
+  local image=$1 venv site started
   started=$(date +%s)
   venv="$RUNNER_TEMP/curio-image-python"
   rm -rf "$venv"
@@ -135,9 +135,12 @@ copy() {
   site="$venv/lib/python3.12/site-packages"
   # docker cp copies a folder into one that already exists, one level down.
   rmdir "$site"
-  cid="$(docker create "$image")"
-  trap 'docker rm -f "$cid" > /dev/null 2>&1 || true' EXIT
-  docker cp "$cid:$SITE_IN_IMAGE" "$site"
+  # Not local: when the copy fails, the trap runs after this function is gone.
+  COPY_CONTAINER="$(docker create "$image")"
+  trap 'docker rm -f "${COPY_CONTAINER:-}" > /dev/null 2>&1 || true' EXIT
+  docker cp "$COPY_CONTAINER:$SITE_IN_IMAGE" "$site"
+  docker rm -f "$COPY_CONTAINER" > /dev/null 2>&1 || true
+  trap - EXIT
   "$venv/bin/python" -c 'import playwright, pytest'
   echo "$venv/bin" >> "$GITHUB_PATH"
   echo "Copied $(du -sh "$site" | cut -f1) of packages in $(( $(date +%s) - started )) s"
