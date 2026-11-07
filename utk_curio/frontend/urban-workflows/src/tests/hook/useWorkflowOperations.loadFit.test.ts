@@ -8,6 +8,11 @@
  * chart's rightmost bar sat at x=1311 in a 1280-wide window in CI). The fit now
  * waits for the package registry while a node has no descriptor, within a
  * bound, because without a session the registry never loads.
+ *
+ * A load that brings no node frames nothing. A node dropped while the dataflow
+ * opens is made once the load is in, before the fit's frame
+ * (useDropsWhileOpening), and the fit of an empty load framed it: the canvas
+ * zoomed onto it, and the next node dropped beside it landed on top of it.
  */
 import { faCircle } from "@fortawesome/free-solid-svg-icons";
 import { renderHook, act } from "@testing-library/react";
@@ -203,4 +208,32 @@ test("the wait has a bound, for a canvas whose registry never loads", async () =
 
   advance(400);
   expect(mockFitViewWithMenuOffset).toHaveBeenCalled();
+});
+
+test("an empty load frames no node dropped while it opened", async () => {
+  registerNode(descriptor(CHART));
+  // Frames come when the test says, so the drop can land before the first.
+  const frames: FrameRequestCallback[] = [];
+  const inline = (global as any).requestAnimationFrame;
+  (global as any).requestAnimationFrame = (cb: FrameRequestCallback) => {
+    frames.push(cb);
+    return frames.length;
+  };
+  try {
+    const { result } = render();
+    mockFlowNodes = [];
+    await act(async () => {
+      await result.current.loadParsedTrill("wf", "", [], [], false, false, [], "", []);
+      await Promise.resolve();
+    });
+    // The node kept while the dataflow opened is made, then a frame comes.
+    mockFlowNodes = [chartNode("dropped")];
+    act(() => {
+      frames.splice(0).forEach((cb) => cb(0));
+    });
+    advance(LOAD_FIT_REGISTRY_WAIT_MS);
+    expect(mockFitViewWithMenuOffset).not.toHaveBeenCalled();
+  } finally {
+    (global as any).requestAnimationFrame = inline;
+  }
 });
