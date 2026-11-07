@@ -949,7 +949,6 @@ def test_the_crown_heights_dashboard_link_dev_shares_works_on_this_deployment_to
     require_user_auth()
     ids = _ids()
     colors = _colors()
-    page_steps = sorted(ids[key] for key in PAGE_STEPS)
     # No one ran the shipped copy, so its run on open makes the year too.
     open_steps = sorted(ids[key] for key in (*PAGE_STEPS, *YEAR_STEPS))
 
