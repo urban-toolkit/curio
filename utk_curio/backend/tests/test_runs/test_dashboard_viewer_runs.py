@@ -1134,7 +1134,8 @@ class TestTheStepsLeftToThePage:
 
         assert sent.status_code == 504, sent.get_data(as_text=True)
         assert sent.get_json()["error"].startswith("The sandbox did not respond within")
-        assert KeptStepOutput.query.filter_by(project_id=gpu).count() == 0
+        # Nothing is kept for the page's step (the run keeps Grid's own output).
+        assert KeptStepOutput.query.filter_by(project_id=gpu, node_id="gpu").count() == 0
 
     def test_a_page_sends_only_what_its_run_left_to_it(self, client, gpu, sandbox, monkeypatch):
         from utk_curio.backend.app.runs import kept, viewer
