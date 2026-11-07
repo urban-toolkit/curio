@@ -229,11 +229,19 @@ def test_a_node_error_is_reported_not_raised(isolated):
 
 
 def test_the_child_runs_in_its_own_session(isolated):
-    """setsid is what makes killpg able to reap grandchildren."""
+    """setsid is what makes killpg able to reap grandchildren: the child's pid
+    is its session's id and its process group's."""
     result = run_isolated(
-        isolated, "    return 'same' if os.getpid() == os.getpgid(0) else 'different'\n"
+        isolated,
+        "    return 'same' if os.getpid() == os.getsid(0) == os.getpgid(0) else 'different'\n",
     )
     assert result["stderr"] == "", result["stderr"]
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    assert load_from_duckdb(result["output"]["path"]) == "same", (
+        "the child does not lead both its own session and its own process group"
+    )
 
 
 def test_each_execution_gets_a_fresh_process(isolated):
