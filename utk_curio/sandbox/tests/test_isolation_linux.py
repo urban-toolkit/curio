@@ -1514,6 +1514,180 @@ def test_a_process_that_tried_to_leave_its_run_dies_at_the_deadline(isolated, wo
 
 
 # ---------------------------------------------------------------------------
+# Every process a node starts ends when the node does
+# ---------------------------------------------------------------------------
+
+#: A process that closes its input and output, then sleeps for two minutes.
+_CLOSES_ITS_OUTPUT = "import os, time\nos.closerange(0, 3)\ntime.sleep(120)\n"
+
+#: A process that tries to leave its run's process group, writes what it got,
+#: closes its output, then sleeps for two minutes.
+_TRIES_TO_LEAVE_AND_SAYS = r'''
+import os, time
+try:
+    os.setsid()
+    outcome = "allowed"
+except OSError as error:
+    outcome = type(error).__name__
+os.write(1, outcome.encode())
+os.close(1)
+time.sleep(120)
+'''
+
+
+def _starts_every_kind_of_process(record_file, then):
+    """Node code that starts a process of every kind, each meant to sleep for
+    two minutes, then runs *then*:
+
+    - a ``subprocess.Popen``;
+    - the grandchild of a double fork;
+    - a ``multiprocessing.Process``, forked;
+    - a process that closed its output, which looks finished to anything
+      that waits for its output to end;
+    - a process that tried to leave the run's process group.
+
+    Before *then*, it writes to *record_file*, as JSON, each one's pid by kind
+    and whether each was running then, so a process that never ran cannot
+    pass for one that was stopped. It reads the last two's output to its end
+    before it starts the next, so each has done what it says by then.
+    """
+    part = f"{record_file}.part"
+    return (
+        "    import json, multiprocessing, os, subprocess, sys, time\n"
+        "    started = {'subprocess.Popen': subprocess.Popen(['sleep', '120']).pid}\n"
+        "    read_end, write_end = os.pipe()\n"
+        "    first = os.fork()\n"
+        "    if first == 0:\n"
+        "        try:\n"
+        "            os.close(read_end)\n"
+        "            if os.fork() == 0:\n"
+        "                os.write(write_end, str(os.getpid()).encode())\n"
+        "                os.close(write_end)\n"
+        "                time.sleep(120)\n"
+        "        finally:\n"
+        "            os._exit(0)\n"
+        "    os.close(write_end)\n"
+        "    os.waitpid(first, 0)\n"
+        "    with os.fdopen(read_end, 'rb') as reading:\n"
+        "        started['the grandchild of a double fork'] = int(reading.read())\n"
+        "    forked = multiprocessing.get_context('fork').Process(target=time.sleep, args=(120,))\n"
+        "    forked.start()\n"
+        "    started['multiprocessing.Process'] = forked.pid\n"
+        "    python = [sys.executable, '-I', '-S', '-c']\n"
+        f"    quiet = subprocess.Popen(python + [{_CLOSES_ITS_OUTPUT!r}],\n"
+        "                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)\n"
+        "    quiet.stdout.read()\n"
+        "    quiet.stderr.read()\n"
+        "    started['a process that closed its output'] = quiet.pid\n"
+        f"    leaver = subprocess.Popen(python + [{_TRIES_TO_LEAVE_AND_SAYS!r}],\n"
+        "                              stdout=subprocess.PIPE)\n"
+        "    tried = leaver.stdout.read().decode()\n"
+        "    started['a process that tried to leave its group (' + tried + ')'] = leaver.pid\n"
+        "    def running(pid):\n"
+        "        try:\n"
+        "            with open('/proc/%d/status' % pid) as status:\n"
+        "                states = [line.split()[1] for line in status if line.startswith('State:')]\n"
+        "        except OSError:\n"
+        "            return False\n"
+        "        return bool(states) and states[0] not in ('Z', 'X')\n"
+        "    record = {'started': started,\n"
+        "              'running': {kind: running(pid) for kind, pid in started.items()}}\n"
+        f"    with open({part!r}, 'w') as handle:\n"
+        "        json.dump(record, handle)\n"
+        f"    os.replace({part!r}, {str(record_file)!r})\n"
+    ) + then
+
+
+def _still_running(started, *, within):
+    """Those of *started* (kind to pid) still running after up to *within*
+    seconds."""
+    give_up = time.monotonic() + within
+    while True:
+        running = {kind: pid for kind, pid in started.items() if _alive(pid)}
+        if not running or time.monotonic() >= give_up:
+            return running
+        time.sleep(0.05)
+
+
+def _what_a_node_leaves_running(config, workspace, then):
+    """Run node code that starts a process of every kind, then runs *then*.
+
+    Returns the run's result, the record the node wrote, and the processes it
+    started that still run 5 s after the run ended. Kills what is left, so a
+    failure leaves nothing running.
+    """
+    import json
+    import signal
+
+    record_file = workspace / "started.json"
+    result = run_isolated(config, _starts_every_kind_of_process(record_file, then))
+    assert record_file.exists(), (
+        f"the node did not start its processes: {result['stderr'][:2000]}"
+    )
+    record = json.loads(record_file.read_text())
+    try:
+        return result, record, _still_running(record["started"], within=5)
+    finally:
+        for pid in record["started"].values():
+            if _alive(pid):
+                os.kill(pid, signal.SIGKILL)
+
+
+def _every_kind_ran(record):
+    assert len(record["started"]) == 5 and all(record["running"].values()), (
+        f"not every process the node started was running when it ended: {record}"
+    )
+
+
+# Owner rule, 11-07: every process a node starts ends when the node returns.
+# Never weaken, skip or remove these tests.
+def test_every_process_a_node_starts_ends_when_the_node_returns(isolated, workspace):
+    """A node that returns leaves nothing it started running: the zygote
+    kills the run's process group before it reaps the child."""
+    result, record, running = _what_a_node_leaves_running(
+        isolated, workspace, then="    return 1\n"
+    )
+    assert result["output"]["path"], f"the node did not return: {result['stderr'][:2000]}"
+    _every_kind_ran(record)
+    assert not running, f"the node returned and left these running: {running}"
+
+
+# Owner rule, 11-07: every process a node starts ends when the node returns.
+# Never weaken, skip or remove these tests.
+def test_every_process_a_node_starts_ends_when_the_node_raises(isolated, workspace):
+    """A node that raises leaves nothing it started running."""
+    result, record, running = _what_a_node_leaves_running(
+        isolated, workspace,
+        then="    raise RuntimeError('this node fails after starting its processes')\n",
+    )
+    assert "this node fails after starting its processes" in result["stderr"], (
+        result["stderr"][:2000]
+    )
+    _every_kind_ran(record)
+    assert not running, f"the node raised and left these running: {running}"
+
+
+# Owner rule, 11-07: every process a node starts ends when the node returns.
+# Never weaken, skip or remove these tests.
+def test_every_process_a_node_starts_ends_when_the_node_times_out(isolated, workspace):
+    """A node stopped at its deadline leaves nothing it started running: the
+    deadline kill reaches the run's process group, which no process the node
+    starts can leave."""
+    import copy
+
+    # Short, to keep the test quick, and long enough that every process has
+    # started before the deadline comes.
+    config = copy.copy(isolated)
+    config.wall_timeout = 10
+    result, record, running = _what_a_node_leaves_running(
+        config, workspace, then="    time.sleep(120)\n    return 1\n"
+    )
+    assert "stopped after" in result["stderr"], result["stderr"][:2000]
+    _every_kind_ran(record)
+    assert not running, f"the node timed out and left these running: {running}"
+
+
+# ---------------------------------------------------------------------------
 # Zygote lifecycle
 # ---------------------------------------------------------------------------
 
