@@ -6,8 +6,9 @@ examples. Visitor A here does on an example everything a guest's canvas and
 agents do: A changes a node's code through the room, plays a node, adds and
 removes datasets, renames the dataflow, reads its categories and history, asks
 an agent that reads the dataflow and searches the Data Catalog, applies a
-Dataset Finder's install, and has an agent plan nodes and Solve them. All of it
-lands on A's own copy, and the agents read the copy as A's canvas shows it.
+Dataset Finder's install, has an agent plan nodes and Solve them, and adds and
+removes a package the guests' store holds. All of it lands on A's own copy,
+and the agents read the copy as A's canvas shows it.
 Visitor B then opens the example as it ships, and the example's spec,
 manifest and kept outputs, and the guest account's dataset store, are byte
 for byte what they were. The language model is scripted. Each test imports
@@ -21,6 +22,7 @@ import json
 
 from pycrdt import Map
 
+from utk_curio.backend import config
 from utk_curio.backend.app.common.user_storage import GUEST_KEY
 from utk_curio.backend.tests._support.agent_routes import _auth
 from utk_curio.backend.tests.test_agents import test_routes_proposals
@@ -122,10 +124,18 @@ def test_everything_a_hosted_guest_does_stays_in_its_own_copy(client, example, d
     from utk_curio.backend.app.agents.application import spec_reads
     from utk_curio.backend.app.agents.application.proposals import store
     from utk_curio.backend.app.agents.domain import content
+    from utk_curio.backend.app.packages.repositories.store import package_dir
     from utk_curio.backend.app.projects import visitor_copies
     from utk_curio.backend.app.users.models import User
+    from utk_curio.backend.tests.test_projects.test_guest_example_writes import PACKAGE, _lockfile
 
     uploaded = datasets
+    # A package the guests' store holds, which no dataflow names: the local
+    # guest added it to the account.
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+    stored = client.post("/api/packages/catalog/install", json={"dirName": PACKAGE}, headers=_auth(VISITOR_A))
+    assert stored.status_code == 201, stored.get_data(as_text=True)
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
     before, kept_before = _digests(example), _kept_on(example)
     as_shipped = _open(client, VISITOR_B, example)["spec"]
     test_routes_proposals.TestNodeCreate()._write_builtin_package(GUEST_KEY)
@@ -222,14 +232,22 @@ def test_everything_a_hosted_guest_does_stays_in_its_own_copy(client, example, d
 
     assert NODE_BUILDER in _installed(VISITOR_A)
     assert NODE_BUILDER not in _installed(VISITOR_B)
-    lockfile = client.get(f"/api/packages/projects/{example}", headers=_auth(VISITOR_A))
-    assert lockfile.status_code == 200, lockfile.get_data(as_text=True)
+
+    # A adds a package the guests' store holds to the dataflow and takes it
+    # out again: both land on A's copy, and the store keeps the package.
+    added = client.post(f"/api/packages/projects/{example}/install", json={"dirName": PACKAGE},
+                        headers=_auth(VISITOR_A))
+    assert added.status_code == 201, added.get_data(as_text=True)
+    assert PACKAGE in _lockfile(client, VISITOR_A, example)
+    assert PACKAGE not in _lockfile(client, VISITOR_B, example)
+    removed = client.delete(f"/api/packages/projects/{example}/{PACKAGE}", headers=_auth(VISITOR_A))
+    assert removed.status_code == 200, removed.get_data(as_text=True)
+    assert removed.get_json()["pruned"] == [], removed.get_json()
+    assert PACKAGE not in _lockfile(client, VISITOR_A, example)
+    assert package_dir(GUEST_KEY, PACKAGE).is_dir()
 
     # What would write the example itself, which every guest opens, is refused.
     for refused in (
-        client.post(f"/api/packages/projects/{example}/install", json={"dirName": "curio.builtin@1"},
-                    headers=_auth(VISITOR_A)),
-        client.delete(f"/api/packages/projects/{example}/curio.builtin@1", headers=_auth(VISITOR_A)),
         client.post(f"/api/scenarios/{example}/s1/copy", json={"targetProjectId": example, "outputs": []},
                     headers=_auth(VISITOR_A)),
         client.post(f"/api/projects/{example}/history/saved", headers=_auth(VISITOR_A)),
