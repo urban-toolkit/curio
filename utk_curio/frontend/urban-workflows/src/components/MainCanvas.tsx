@@ -195,6 +195,19 @@ export function MainCanvas() {
         [nodes, edges, scenarios, scenarioSets, highlightedScenario, scenarioPreview, notebookOn],
     );
 
+    // The boxes collapsed scenarios and collapsed shared groups are drawn as,
+    // beside React Flow's nodes, in canvas units.
+    const collapsedBoxes = useMemo(() => [
+        ...scenarioView.boxes.map((box) => ({
+            id: box.scenario.id, x: box.x, y: box.y, width: BOX_WIDTH, height: boxLayout(box).height,
+        })),
+        ...(scenarioView.groups ?? [])
+            .filter((group) => group.collapsed)
+            .map((group) => ({
+                id: group.key, x: group.x, y: group.y, width: BOX_WIDTH, height: groupBoxLayout(group).height,
+            })),
+    ], [scenarioView.boxes, scenarioView.groups]);
+
     // How far the viewport may pan, tracking the nodes rather than a fixed box
     // (#234). Two memos on purpose: React Flow re-applies `translateExtent`
     // through an effect keyed on the value's IDENTITY, so handing it a fresh
@@ -204,25 +217,19 @@ export function MainCanvas() {
     // actually crosses a boundary. A collapsed box, a scenario's or a shared
     // group's, counts as a node.
     const [extentMinX, extentMinY, extentMaxX, extentMaxY] = useMemo(() => {
-        const asNode = (id: string, x: number, y: number, height: number) => ({
+        const boxes = collapsedBoxes.map(({ id, x, y, width, height }) => ({
             id,
             position: { x, y },
             positionAbsolute: { x, y },
-            width: BOX_WIDTH,
+            width,
             height,
             data: {},
-        });
-        const boxes = [
-            ...scenarioView.boxes.map((box) => asNode(box.scenario.id, box.x, box.y, boxLayout(box).height)),
-            ...(scenarioView.groups ?? [])
-                .filter((group) => group.collapsed)
-                .map((group) => asNode(group.key, group.x, group.y, groupBoxLayout(group).height)),
-        ];
+        }));
         const [[minX, minY], [maxX, maxY]] = computeTranslateExtent(
             boxes.length > 0 ? [...nodes, ...boxes] : nodes,
         );
         return [minX, minY, maxX, maxY];
-    }, [nodes, scenarioView.boxes, scenarioView.groups]);
+    }, [nodes, collapsedBoxes]);
     const translateExtent = useMemo(
         () =>
             [
@@ -752,15 +759,16 @@ export function MainCanvas() {
     // nodes are framed: each at the point of the window it was dropped on, in
     // the view the canvas shows now. It was dropped over a canvas that showed
     // none of the dataflow, so a drop that makes a node moves clear of the
-    // nodes on the canvas and of those the drops before it make, as a
-    // dataflow's own nodes are moved apart when it opens: down or right,
-    // whichever is shorter (clearSpotFor). A scenario's boxes are laid out
-    // where it goes, as on any drop.
+    // nodes on the canvas, of the boxes of its collapsed scenarios and shared
+    // groups, and of the nodes the drops before it make, as a dataflow's own
+    // nodes are moved apart when it opens: down or right, whichever is shorter
+    // (clearSpotFor). A scenario's boxes are laid out where it goes, as on
+    // any drop.
     const placeKeptDrops = useCallback((kept: CanvasDrop[]): CanvasDrop[] => {
         const taken: PositionedNode[] = [...reactFlow.getNodes()];
         const clearOfTaken = (at: XYPosition, nodeType: string | undefined): XYPosition => {
             const node = { type: CURIO_UNIVERSAL_NODE_TYPE, data: { nodeType } };
-            const position = clearSpotFor(node, dropPosition(at), taken);
+            const position = clearSpotFor(node, dropPosition(at), taken, { boxes: collapsedBoxes });
             taken.push({ ...node, position });
             return position;
         };
@@ -784,7 +792,7 @@ export function MainCanvas() {
                     return drop;
             }
         });
-    }, [reactFlow, dropPosition]);
+    }, [reactFlow, dropPosition, collapsedBoxes]);
 
     // While the dataflow the route names is still opening, a drop waits for
     // it, then is made by the canvas it opened as: the load would replace

@@ -202,10 +202,17 @@ export function deoverlapNodes<T extends PositionedNode>(
     });
 }
 
+export interface ClearSpotOptions extends DeoverlapOptions {
+    /** What the canvas draws beside its nodes that a node must not cover, in
+     *  canvas units: the box of a collapsed scenario or shared group. */
+    boxes?: readonly { x: number; y: number; width: number; height: number }[];
+}
+
 /**
- * Where *node*, asked for at *position*, goes so that it clears *nodes*, which
- * stay where they are: *position* itself when nothing is in the way, else the
- * spot `deoverlapNodes` pushes a node to, down or right, whichever is shorter.
+ * Where *node*, asked for at *position*, goes so that it clears *nodes* and
+ * *boxes*, which stay where they are: *position* itself when nothing is in the
+ * way, else the spot `deoverlapNodes` pushes a node to, down or right,
+ * whichever is shorter.
  *
  * For a node made where the canvas could not be seen: a drop made while a
  * dataflow opened lands once the dataflow's nodes are in (useDropsWhileOpening).
@@ -214,15 +221,16 @@ export function clearSpotFor(
     node: MeasurableNode,
     position: { x: number; y: number },
     nodes: readonly PositionedNode[],
-    options: DeoverlapOptions = {},
+    options: ClearSpotOptions = {},
 ): { x: number; y: number } {
     const {
         gutterX = NODE_GUTTER_X,
         gutterY = NODE_GUTTER_Y,
         measure = resolveNodeBoxSize,
+        boxes = [],
     } = options;
 
-    const placed: Box[] = [];
+    const placed: Box[] = boxes.map((box) => ({ x: box.x, y: box.y, w: box.width, h: box.height }));
     for (const other of nodes) {
         const box = boxOf(other, measure);
         if (box) placed.push(box);
