@@ -155,9 +155,6 @@ def resolve_pkg_entry_url(specifier, root_node_modules):
     URL, ``node:`` builtin), for a package that isn't installed under
     ``root_node_modules``, or for an entry that escapes it.
     """
-    import json
-    import pathlib
-
     # Only bare specifiers (not relative / absolute / URL / node: builtin).
     if not specifier or specifier[0] in './' or ':' in specifier:
         return None
