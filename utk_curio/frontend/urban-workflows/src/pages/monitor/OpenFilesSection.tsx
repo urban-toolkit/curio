@@ -6,9 +6,6 @@ import { LinesOverTime } from "./MonitorCharts";
 import { openFilesLines, SERVERS } from "./openFilesSeries";
 import styles from "./MonitorPage.module.css";
 
-/** A dot on each sample while they are few enough to tell apart: two days of hours. */
-const DOTS_UP_TO = 48;
-
 /**
  * The chart's span: from the first sample to now, and at least to the hour
  * after the first sample, when the next one comes.
@@ -38,6 +35,8 @@ export const OpenFilesSection: React.FC<{ payload: MonitorOpenFilesPayload | nul
   } else if (!lines?.counted) {
     body = <p className={styles.empty}>This platform cannot list a process's open files.</p>;
   } else {
+    // The first hour after a start holds one sample, and a line of one point
+    // draws nothing but its dot.
     body = (
       <LinesOverTime
         rows={lines.points}
@@ -50,7 +49,7 @@ export const OpenFilesSection: React.FC<{ payload: MonitorOpenFilesPayload | nul
         colors={lines.colors}
         logY
         dashed={lines.dashed}
-        points={samples.length <= DOTS_UP_TO}
+        points={samples.length === 1}
         label="Open files of the backend and the sandbox, every hour, against their limits"
       />
     );

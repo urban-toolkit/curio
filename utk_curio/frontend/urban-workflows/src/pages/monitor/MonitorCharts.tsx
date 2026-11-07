@@ -187,8 +187,31 @@ export interface LinesOverTimeOptions {
   logY?: boolean;
   /** The series drawn dashed, as a limit is. */
   dashed?: string[];
-  /** A dot on each point, for a chart of few: a line of one point draws nothing else. */
+  /** A dot on each point: a line of one point draws nothing else. */
   points?: boolean;
+}
+
+/**
+ * Each power of ten from the one at or below the least positive value to the
+ * one at or above the greatest: a log axis's ticks. Left to itself, Vega
+ * ticks every multiple in between when the axis spans fewer decades than its
+ * tick count, and the grid fills with lines.
+ */
+export function powersOfTen(values: number[]): number[] {
+  let least = Infinity;
+  let most = -Infinity;
+  for (const value of values) {
+    if (value > 0) {
+      least = Math.min(least, value);
+      most = Math.max(most, value);
+    }
+  }
+  if (!(least <= most)) return [];
+  const out: number[] = [];
+  for (let power = Math.floor(Math.log10(least)); power <= Math.ceil(Math.log10(most)); power += 1) {
+    out.push(10 ** power);
+  }
+  return out;
 }
 
 /**
@@ -212,6 +235,9 @@ export function linesOverTimeSpec({
 }: LinesOverTimeOptions) {
   const series = colors?.domain ?? [...new Set(rows.map((row) => String(row[seriesField])))];
   const range = colors?.range ?? CATEGORICAL.slice(0, series.length);
+  // Vega thins an axis's values down to its tick count, so a log axis counts
+  // every power of ten it ticks.
+  const decades = logY ? powersOfTen(rows.map((row) => Number(row[valueField]))) : [];
   const ink = { labelColor: AXIS_INK, titleColor: AXIS_INK, domainColor: GRID_INK,
                 tickColor: GRID_INK, gridColor: GRID_INK };
   const encoding: Record<string, unknown> = {
@@ -226,7 +252,10 @@ export function linesOverTimeSpec({
       field: valueField,
       type: "quantitative",
       title: valueTitle,
-      axis: { ...ink, domain: false, tickCount: 4, format: "~s" },
+      axis: {
+        ...ink, domain: false, tickCount: 4, format: "~s",
+        ...(logY ? { values: decades, tickCount: decades.length } : {}),
+      },
       ...(logY ? { scale: { type: "log" } } : {}),
     },
     color: {
@@ -244,10 +273,12 @@ export function linesOverTimeSpec({
     ],
   };
   if (dashed.length > 0) {
+    // No legend of its own: Vega-Lite merges it into the colour's, on the same
+    // field, whose symbols then draw the dash. A legend of null here conflicts
+    // with the colour's in that merge, which Vega-Lite warns of in the console.
     encoding.strokeDash = {
       field: seriesField,
       type: "nominal",
-      legend: null,
       scale: { domain: series, range: series.map((name) => (dashed.includes(name) ? [6, 4] : [1, 0])) },
     };
   }
