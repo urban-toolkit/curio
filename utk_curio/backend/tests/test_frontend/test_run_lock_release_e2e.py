@@ -20,6 +20,7 @@ second Run All starts.
 """
 from __future__ import annotations
 
+import copy
 import re
 
 import pytest
@@ -41,6 +42,7 @@ from .utils import (
     wait_for_held_node_execution,
     wait_for_node_done,
     wait_for_run_all_to_end,
+    wait_for_server_part_to_end,
     watch_run_all,
 )
 from .walkthroughs import load_example_spec
@@ -49,25 +51,45 @@ from .walkthroughs import load_example_spec
 # of it - so "another independent node" means what the report means.
 EXAMPLE = "09-heterogeneous-data-linked-views.json"
 INDEPENDENT_PREFIX = "4b7c2234"
+#: The Python node that hands example 09's map its census tracts.
+MAP_FEEDER_PREFIX = "3cc268ee"
 
 NOTIFICATIONS = "Notifications"
 RUN_IN_PROGRESS = re.compile("already in progress", re.I)
 
+#: What this test gives a run: its part on the server, from the data loads'
+#: release, and then its end.
+RUN_BUDGET_MS = 180000
 
-@pytest.fixture
-def dataflow_without_webgpu(app_frontend, current_server, page):
-    """Example 09 open on a canvas whose browser has no WebGPU."""
+#: How long the node before the map takes in the slow case: past the minute
+#: the map's refusal once had from the release, as example 09's UTCI over the
+#: Milan raster took on a loaded utk-desktop-01 (106 s, run 42334009628).
+SLOW_FEEDER_S = 61
+
+#: The slow case's Python node: the census tracts, each with the ``mean`` the
+#: map colours by, handed on after ``SLOW_FEEDER_S`` seconds.
+SLOW_FEEDER_CODE = f"""import time
+
+gdf = input_0.copy()
+time.sleep({SLOW_FEEDER_S})
+gdf["mean"] = 0.0
+return gdf
+"""
+
+
+def _open_without_webgpu(page, app_frontend, current_server, spec: dict, *, username: str) -> dict:
+    """*spec* open on a canvas whose browser has no WebGPU, for a signed-in
+    owner: a Run All runs on the server. Returns the ``stub-login`` session."""
     require_project_page()
     require_user_auth()
     page.emulate_media(reduced_motion="reduce")
 
-    spec = load_example_spec(EXAMPLE)
-    stub_login_and_enter_workflow(
+    session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
         name="Run lock",
-        username="runlock271",
+        username=username,
         project_name="Run lock release",
         project_spec=spec,
     )
@@ -81,27 +103,71 @@ def dataflow_without_webgpu(app_frontend, current_server, page):
         "() => Object.defineProperty(navigator, 'gpu',"
         " { configurable: true, value: undefined })"
     )
+    return session
 
+
+def _autark_id(spec: dict) -> str:
+    return next(n["id"] for n in spec["dataflow"]["nodes"] if n["type"] == "curio.builtin/autk-grammar")
+
+
+@pytest.fixture
+def dataflow_without_webgpu(app_frontend, current_server, page):
+    """Example 09 open on a canvas whose browser has no WebGPU."""
+    spec = load_example_spec(EXAMPLE)
+    session = _open_without_webgpu(page, app_frontend, current_server, spec, username="runlock271")
     nodes = spec["dataflow"]["nodes"]
-    autark_id = next(n["id"] for n in nodes if n["type"] == "curio.builtin/autk-grammar")
     independent_id = next(n["id"] for n in nodes if n["id"].startswith(INDEPENDENT_PREFIX))
-    return {"autark": autark_id, "independent": independent_id}
+    return {
+        "autark": _autark_id(spec),
+        "independent": independent_id,
+        "token": session["token"],
+        "project": session["project"]["id"],
+    }
 
 
-def test_a_webgpu_failure_does_not_lock_the_canvas(page, dataflow_without_webgpu):
-    autark_id = dataflow_without_webgpu["autark"]
-    independent_id = dataflow_without_webgpu["independent"]
+@pytest.fixture
+def map_after_a_slow_node_without_webgpu(app_frontend, current_server, page):
+    """Example 09's map fed by its census load through a Python node that
+    takes ``SLOW_FEEDER_S`` seconds, open on a canvas whose browser has no
+    WebGPU: the nodes before the map take longer than a minute, and nothing
+    else in the dataflow does."""
+    spec = load_example_spec(EXAMPLE)
+    flow = spec["dataflow"]
+    census = next(n for n in flow["nodes"] if n["id"].startswith(INDEPENDENT_PREFIX))
+    feeder = copy.deepcopy(next(n for n in flow["nodes"] if n["id"].startswith(MAP_FEEDER_PREFIX)))
+    feeder["content"] = SLOW_FEEDER_CODE
+    autark_id = _autark_id(spec)
+    autark = next(n for n in flow["nodes"] if n["id"] == autark_id)
+    flow["nodes"] = [census, feeder, autark]
+    flow["edges"] = [
+        {
+            "id": f"reactflow__edge-{census['id']}out-{feeder['id']}in",
+            "source": census["id"], "target": feeder["id"],
+        },
+        next(e for e in flow["edges"] if e["source"] == feeder["id"] and e["target"] == autark_id),
+    ]
+    session = _open_without_webgpu(page, app_frontend, current_server, spec, username="runlock271slow")
+    return {
+        "autark": autark_id,
+        "token": session["token"],
+        "project": session["project"]["id"],
+    }
 
+
+def _run_all_until_the_autark_node_refuses(page, dataflow: dict) -> None:
+    """Steps 2 and 3: Run All is in flight, and the Autark node refuses and
+    says why."""
     # One button in two states (Run All / Cancel run), so the locator matches
     # either name and the assertions read the state off data-run-active. A
     # locator written for one name stops matching the moment the run changes
     # state, and a click on it then waits out its whole budget.
     run_all = run_all_button(page)
 
-    # Step 2: run everything. The node executions are held first: this level is
-    # three data-loading nodes, one POST each, and the only thing keeping the
-    # button on "Cancel run" is that those POSTs have not answered yet. Held,
-    # the in-flight state is a fact; unheld, it is a race with a loaded runner.
+    # Step 2: run everything. The node executions are held first: the first
+    # level is data-loading nodes (three in example 09), one execution each,
+    # and the only thing keeping the button on "Cancel run" is that those have
+    # not answered yet. Held, the in-flight state is a fact; unheld, it is a
+    # race with a loaded runner.
     expect(run_all).to_be_visible(timeout=30000)
     hold_node_execution(page)
     watch_run_all(page)
@@ -115,14 +181,30 @@ def test_a_webgpu_failure_does_not_lock_the_canvas(page, dataflow_without_webgpu
 
     # Step 3: the Autark node refuses, and says why. Reporting is what releases
     # its level - a node that stays silent is the wedge.
-    autark = page.locator(f'.react-flow__node[data-id="{autark_id}"]')
+    #
+    # It is asked only once the nodes before it have run. A signed-in owner's
+    # Run All runs on the server, and the page plays the nodes only a browser
+    # runs, this one among them, once the server's part has ended
+    # (useServerRun.ts, finish). That part is example 09's Python: its UTCI
+    # over the Milan raster took 17 s on a quiet utk-desktop-01 and 106 s on a
+    # loaded one (run 42334009628), so it gets the run's budget, and the
+    # node's minute starts when the node can first answer.
+    wait_for_server_part_to_end(page, dataflow["token"], dataflow["project"], timeout_ms=RUN_BUDGET_MS)
+    autark = page.locator(f'.react-flow__node[data-id="{dataflow["autark"]}"]')
     alert = autark.locator('[role="alert"]').first
     expect(alert).to_be_visible(timeout=60000)
     expect(alert).to_contain_text(re.compile("WebGPU", re.I))
 
+
+def test_a_webgpu_failure_does_not_lock_the_canvas(page, dataflow_without_webgpu):
+    independent_id = dataflow_without_webgpu["independent"]
+    run_all = run_all_button(page)
+
+    _run_all_until_the_autark_node_refuses(page, dataflow_without_webgpu)
+
     # The claim of #271: the run ends on its own. Generous, because the level
     # also carries data-loading nodes that fetch real files on a loaded runner.
-    wait_for_run_all_to_end(page, timeout_ms=180000)
+    wait_for_run_all_to_end(page, timeout_ms=RUN_BUDGET_MS)
     expect(run_all).to_have_attribute("aria-label", "Run all nodes")
 
     # Step 4a: "attempt to execute other independent nodes". Its badge already
@@ -173,3 +255,15 @@ def test_a_webgpu_failure_does_not_lock_the_canvas(page, dataflow_without_webgpu
         )
     finally:
         release_node_execution(page)
+
+
+def test_a_webgpu_failure_is_told_however_long_the_nodes_before_it_take(
+    page, map_after_a_slow_node_without_webgpu,
+):
+    """The map's refusal does not depend on how long the nodes before it take:
+    here a Python node takes over a minute, as example 09's UTCI over the Milan
+    raster did on a loaded runner, and the map still says WebGPU is missing,
+    and the run still ends on its own."""
+    _run_all_until_the_autark_node_refuses(page, map_after_a_slow_node_without_webgpu)
+    wait_for_run_all_to_end(page, timeout_ms=RUN_BUDGET_MS)
+    expect(run_all_button(page)).to_have_attribute("aria-label", "Run all nodes")
