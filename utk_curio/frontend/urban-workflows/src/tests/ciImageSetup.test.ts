@@ -17,6 +17,14 @@
  * arcade runner removes images only once CURIO_CI_OWN_IMAGE says the job has
  * one of its own. So every such job must say so: start-stack after its pull,
  * or the job after it builds its image.
+ *
+ * On an arcade runner those packages are the image's own folder, mounted in
+ * place by a helper container (scripts/ci_image_python.sh, tested in the
+ * backend suite): copied, they were 9.4 GB of disk writes per job, and a run
+ * starts up to 15 such jobs at once on arcade's one disk. The helper holds its
+ * image and the mount holds its files, so every job that takes them on a
+ * self-hosted runner lets them go, and stop-stack does so before the image
+ * cleanup.
  */
 import { read } from "./_support/workflowPaths";
 
@@ -76,6 +84,52 @@ describe("CI's image and the deploy's", () => {
             .filter(([, job]) => !/runner-env: "true"|uses: \.\/\.github\/actions\/image-env/.test(job))
             .map(([name]) => name);
         expect(without).toEqual([]);
+    });
+});
+
+describe("The image's Python packages on the runner", () => {
+    const IMAGE_ENV = ".github/actions/image-env/action.yml";
+    const STOP_STACK = ".github/actions/stop-stack/action.yml";
+
+    test("image-env takes them through the script, which mounts them in place on arcade", () => {
+        const action = read(IMAGE_ENV);
+        expect(action).toContain('run: bash "$GITHUB_WORKSPACE/scripts/ci_image_python.sh" take "$IMAGE"');
+        expect(action).not.toContain("docker cp");
+        const script = read("scripts/ci_image_python.sh");
+        expect(script).toContain("--mount \"type=bind,source=$site,target=/mnt/site,bind-propagation=rshared\"");
+        expect(script).toContain("mount --bind -o ro $SITE_IN_IMAGE /mnt/site");
+    });
+
+    test("stop-stack lets them go before it removes images", () => {
+        const text = read(STOP_STACK);
+        const release = text.indexOf('bash "$GITHUB_WORKSPACE/scripts/ci_image_python.sh" release');
+        expect(release).toBeGreaterThan(-1);
+        expect(release).toBeLessThan(text.indexOf('bash "$GITHUB_WORKSPACE/scripts/ci_image_cleanup.sh" "$PROJECT"'));
+    });
+
+    test("every job that takes them on a self-hosted runner lets them go, whatever its steps did", () => {
+        const taking = Array.from(jobs()).filter(([, job]) =>
+            /runner-env: "true"|uses: \.\/\.github\/actions\/image-env/.test(job),
+        );
+        expect(taking.map(([name]) => name).sort()).toEqual([
+            "build-image",
+            "e2e-desktop",
+            "test-desktop-stress",
+            "test-gpu",
+            "test-gpu-stress",
+            "test-isolated",
+        ]);
+        // test-desktop-stress runs on a fresh GitHub-hosted runner, which copies them.
+        const selfHosted = taking.filter(([, job]) => !/^ {4}runs-on: ubuntu-latest$/m.test(job));
+        expect(selfHosted.map(([name]) => name)).not.toContain("test-desktop-stress");
+        const holding = selfHosted
+            .filter(
+                ([, job]) =>
+                    !/uses: \.\/\.github\/actions\/stop-stack\n {8}if: always\(\)/.test(job) &&
+                    !/if: always\(\)[^\n]*\n {8}run: bash scripts\/ci_image_python\.sh release$/m.test(job),
+            )
+            .map(([name]) => name);
+        expect(holding).toEqual([]);
     });
 });
 
