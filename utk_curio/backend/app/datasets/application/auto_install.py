@@ -105,10 +105,13 @@ def auto_install_node_output(
             reason=f"sink node ({node_type}) - output is not a dataset",
         )
 
+    # Computed dataset ids are dataflow-namespaced (``computed.<dataflow>.<node>``).
     # Persisting without a dataflow id would mint the legacy un-namespaced
     # ``computed.<node>`` id, permanently duplicating the namespaced dataset the
-    # (auto-)save writes moments later (#166). The live output still appears in
-    # the catalog via the computed indexer; the next dataflow save persists it.
+    # (auto-)save writes moments later (#166), and colliding across dataflows
+    # that reuse a node id. The live output still appears in the catalog via the
+    # computed indexer; the next dataflow save persists it
+    # (``_auto_install_computed_outputs``), so nothing is lost.
     if not dataflow_id:
         return _diagnostic(
             "skipped", node_id=node_id, data_type=data_type,
@@ -116,20 +119,6 @@ def auto_install_node_output(
                 "dataflow not saved yet - the output will be saved as a "
                 "computed dataset on the next dataflow save"
             ),
-        )
-
-    # Computed dataset ids are dataflow-namespaced (``computed.<dataflow>.<node>``).
-    # Without a dataflow id the installer would fall back to the legacy
-    # un-namespaced ``computed.<node>@1`` dir, which collides across dataflows
-    # that reuse a node id and re-poisons the catalog with legacy-format dirs.
-    # Skip instead: the client persists the project right after a producing run
-    # (create-on-first-save), and the save-time installer
-    # (``_auto_install_computed_outputs``) then saves the properly namespaced
-    # dataset from the output refs — nothing is lost.
-    if not dataflow_id:
-        return _diagnostic(
-            "skipped", node_id=node_id, data_type=data_type,
-            reason="dataflow not saved yet — the dataset is saved on the first project save",
         )
 
     #   * a bundle (``dataType == "outputs"``) is keyed by the parent artifact
