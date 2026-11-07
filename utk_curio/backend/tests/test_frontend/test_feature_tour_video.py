@@ -66,7 +66,7 @@ import re
 import sys
 import time
 import traceback
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -338,7 +338,7 @@ def _load_provider() -> tuple[str, str, str]:
         with open(PROVIDER_FILE, encoding="utf-8") as handle:
             data = json.load(handle) or {}
     except FileNotFoundError:
-        pass
+        pass  # no local file: the env and the defaults apply
     except (OSError, ValueError) as exc:
         _log(f"[tour] ignoring unreadable {PROVIDER_FILE}: {exc}")
     return (
@@ -1701,11 +1701,9 @@ def scene_provenance(ctx: Ctx) -> None:
     for label in ("Close", "close"):
         button = page.get_by_role("button", name=label, exact=True)
         if button.count():
-            try:
+            with suppress(Exception):
                 button.first.click(timeout=2500)
                 break
-            except Exception:
-                pass
 
 
 def scene_interaction(ctx: Ctx) -> None:
@@ -3052,10 +3050,8 @@ def _warm_up(browser, frontend: str) -> None:
     try:
         page.goto(f"{frontend}/auth/signin", timeout=120000)
         page.wait_for_load_state("domcontentloaded")
-        try:
+        with suppress(Exception):
             page.get_by_text("Sign in", exact=False).first.wait_for(timeout=60000)
-        except Exception:
-            pass
     finally:
         context.close()
 
@@ -3070,10 +3066,8 @@ def test_record_feature_tour(frontend_server: str, current_server: str, browser)
     # pattern, in a directory this test owns.
     for stale in os.listdir(raw_dir):
         if stale.startswith("page@") and stale.endswith(".webm"):
-            try:
+            with suppress(OSError):
                 os.remove(os.path.join(raw_dir, stale))
-            except OSError:
-                pass
 
     _warm_up(browser, frontend_server)
 
@@ -3144,15 +3138,11 @@ def test_record_feature_tour(frontend_server: str, current_server: str, browser)
             _log(f"[tour] scene {name} FAILED:\n{traceback.format_exc()}")
             # A still of the moment it broke localises the failure much faster
             # than the locator message on its own.
-            try:
+            with suppress(Exception):
                 page.screenshot(path=os.path.join(out_dir(), f"failed-{name}.png"))
-            except Exception:
-                pass
-            try:
+            with suppress(Exception):
                 tour.hush()
                 page.keyboard.press("Escape")
-            except Exception:
-                pass
 
     page.close()
     context.close()

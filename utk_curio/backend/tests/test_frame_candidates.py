@@ -16,6 +16,7 @@ records of a held frame: CI's reports and tools read it.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -411,11 +412,9 @@ class TestTheSameJudgmentAsAReMint:
         monkeypatch.setenv(e2e_utils.CANDIDATE_DIR_ENV, str(candidates))
         _captures(monkeypatch, *[make() for make in makers])
         _boxes(monkeypatch, boxes)
-        try:
+        with contextlib.suppress(AssertionError):
             with e2e_utils.frame_failures_at_the_end():
                 _save()
-        except AssertionError:
-            pass
         if remint:
             after = (expected / NAME).read_bytes()
             return None if after == before else after

@@ -28,6 +28,7 @@ journey closes, to paste beside the video.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import time
@@ -107,7 +108,7 @@ def _warm_up(browser, frontend: str) -> None:
         page.goto(f"{frontend}/auth/signin", timeout=120000)
         page.wait_for_load_state("domcontentloaded")
     except Exception:
-        pass
+        pass  # best effort: a failed warm-up costs only its time
     finally:
         context.close()
 
@@ -201,11 +202,9 @@ def test_record_walkthrough(walk: Walkthrough, app_frontend, current_server, bro
         # Keep the take. A recording that ends early still shows where it broke,
         # and a still of the moment localises it faster than the locator message.
         failure = traceback.format_exc()
-        try:
+        with contextlib.suppress(Exception):
             narrator.hush()
             page.screenshot(path=os.path.join(OUT_DIR, f"failed-{walk.slug}.png"))
-        except Exception:
-            pass
     finally:
         page.close()
         # finalize_video writes to tour.out_dir(). Point that at our directory

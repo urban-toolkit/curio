@@ -9,6 +9,7 @@ could hit. Nothing talks to the sandbox directly.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import random
@@ -517,19 +518,15 @@ class VirtualUser:
         """
         if self.start_gate is None:
             return
-        try:
+        with contextlib.suppress(threading.BrokenBarrierError, RuntimeError):
             self.start_gate.wait(timeout=START_GATE_TIMEOUT_S)
-        except (threading.BrokenBarrierError, RuntimeError):
-            pass
 
     def _release_start_gate(self) -> None:
         """Let the others through after failing before the gate."""
         if self.start_gate is None:
             return
-        try:
+        with contextlib.suppress(RuntimeError):
             self.start_gate.abort()
-        except RuntimeError:
-            pass
 
     # -- node execution ---------------------------------------------------
 

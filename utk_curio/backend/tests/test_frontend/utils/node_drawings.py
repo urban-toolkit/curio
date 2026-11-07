@@ -2,6 +2,7 @@
 Autark map or plot and its legend, an empty state.
 """
 
+import contextlib
 import json
 import time
 from io import BytesIO
@@ -74,7 +75,7 @@ def assert_vega_canvas_rendered(
     )
 
     if not expect_blank:
-        try:
+        with contextlib.suppress(PlaywrightTimeoutError):
             page.wait_for_function(
                 "(containerId) => {"
                 f" const probe = {VEGA_CANVAS_PROBE_JS};"
@@ -86,8 +87,6 @@ def assert_vega_canvas_rendered(
                 timeout=timeout,
                 polling=500,
             )
-        except PlaywrightTimeoutError:
-            pass
 
     info = page.evaluate(VEGA_CANVAS_PROBE_JS, container_id)
     assert info is not None, (

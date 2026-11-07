@@ -3,6 +3,7 @@ webfont, no node running, and the server holding the tab's last change. Also a
 viewport that has landed after a move.
 """
 
+import contextlib
 import time
 
 import allure
@@ -406,10 +407,8 @@ def _wait_for_no_node_running(page: Page, *, timeout_ms: int = NODE_SETTLE_TIMEO
         if running:
             note = f"{report_as}: still running when the wait began: {running}"
             print(note)
-            try:
+            with contextlib.suppress(Exception):
                 allure.attach(note, name=report_as, attachment_type=allure.attachment_type.TEXT)
-            except Exception:
-                pass
     page.evaluate("() => { window.__curioIdleSamples = 0; }")
     try:
         page.wait_for_function(_NO_NODE_RUNNING_JS, arg=3, polling=150, timeout=timeout_ms)

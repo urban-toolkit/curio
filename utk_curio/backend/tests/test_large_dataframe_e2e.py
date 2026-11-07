@@ -23,6 +23,7 @@ the test environment (e.g. CI without geopandas / rasterio installed).
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import socket
@@ -66,12 +67,10 @@ def _free_port() -> int:
 def _wait_for_live(port: int, proc: subprocess.Popen, deadline: float) -> bool:
     """Poll the sandbox /live endpoint until it responds 200 or the deadline passes."""
     while time.time() < deadline:
-        try:
+        with contextlib.suppress(requests.RequestException):
             r = requests.get(f"http://127.0.0.1:{port}/live", timeout=2)
             if r.status_code == 200:
                 return True
-        except requests.RequestException:
-            pass
         if proc.poll() is not None:
             return False
         time.sleep(0.5)
@@ -361,10 +360,8 @@ class TestLargeDataFrameE2E(unittest.TestCase):
             # this is the Windows TerminateProcess path that the watchdog
             # exists to handle.
             proc.kill()
-            try:
+            with contextlib.suppress(subprocess.TimeoutExpired):
                 proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                pass
 
             # Watchdog polls os.getppid() every 1s, so give it a generous
             # margin before declaring failure.
@@ -391,10 +388,8 @@ class TestLargeDataFrameE2E(unittest.TestCase):
             # if the assertion above failed, in which case we don't want to
             # leak processes onto the host).
             for pid in worker_pids if 'worker_pids' in dir() else []:
-                try:
+                with contextlib.suppress(psutil.NoSuchProcess):
                     psutil.Process(pid).kill()
-                except psutil.NoSuchProcess:
-                    pass
 
     def test_full_get_returns_complete_payload(self):
         """The /get path returns the *entire* DataFrame.

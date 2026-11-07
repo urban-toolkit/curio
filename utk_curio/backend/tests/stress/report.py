@@ -10,6 +10,7 @@ threads, memory and doc files on disk.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from dataclasses import asdict
@@ -320,36 +321,26 @@ def peak_container_stats(stats_log: str | None) -> dict | None:
                     continue
                 if parts[0] == "HOST":
                     # HOST|load1|load5|load15|cores
-                    try:
+                    with contextlib.suppress(ValueError):
                         peak_load = max(peak_load, float(parts[1]))
-                    except ValueError:
-                        pass
                     if len(parts) >= 5:
-                        try:
+                        with contextlib.suppress(ValueError):
                             host_cores = int(parts[4])
-                        except ValueError:
-                            pass
                     continue
                 if len(parts) >= 4 and parts[1].endswith("%"):
-                    try:
+                    with contextlib.suppress(ValueError):
                         cpu = float(parts[1][:-1])
                         peak_cpu = max(peak_cpu, cpu)
                         cpu_samples.append(cpu)
-                    except ValueError:
-                        pass
                     parts = [parts[0]] + parts[2:]  # fall through as name|mem|pids
                 raw_mem = parts[1].split("/")[0].strip().lower()
                 for unit, factor in units.items():
                     if raw_mem.endswith(unit):
-                        try:
+                        with contextlib.suppress(ValueError):
                             peak_mib = max(peak_mib, float(raw_mem[: -len(unit)]) * factor)
-                        except ValueError:
-                            pass
                         break
-                try:
+                with contextlib.suppress(ValueError):
                     peak_pids = max(peak_pids, int(parts[2]))
-                except ValueError:
-                    pass
     except OSError:
         return None
     if peak_mib == 0.0 and peak_pids == 0:

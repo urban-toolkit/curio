@@ -42,6 +42,7 @@ Run::
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import uuid
@@ -1860,7 +1861,7 @@ def _tiles_settle(page, node_id: str, *, at=None, away_from=None) -> dict:
     """The tiles' positions once *node_id* is *at* a place, or *away_from* one
     (React Flow takes a move a render later). On a timeout the caller's
     assertion says what the positions were."""
-    try:
+    with contextlib.suppress(PlaywrightTimeoutError):
         page.wait_for_function(
             """([id, at, away]) => {
                 const node = window.__curio_reactFlow.getNode(id);
@@ -1871,8 +1872,6 @@ def _tiles_settle(page, node_id: str, *, at=None, away_from=None) -> dict:
             arg=[node_id, at, away_from],
             timeout=10000,
         )
-    except PlaywrightTimeoutError:
-        pass
     return page.evaluate(_TILE_POSITIONS_JS)
 
 

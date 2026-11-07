@@ -31,6 +31,7 @@ Run::
 """
 from __future__ import annotations
 
+import contextlib
 import re
 import time
 import urllib.error
@@ -298,13 +299,11 @@ def test_installing_from_the_node_panel_then_rerunning_succeeds(
     library_teardown(token, REAL_LIB)
 
     # Self-healing pre-clean, so a leaked earlier run cannot make this vacuous.
-    try:
+    with contextlib.suppress(urllib.error.HTTPError):
         api_json(
             f"{current_server}/api/packages/libraries/python/{REAL_LIB}",
             token, method="DELETE", timeout=300.0,
         )
-    except urllib.error.HTTPError:
-        pass
 
     body = _run_the_node(page, token, project_id)
     if not body.get("missingModule"):
