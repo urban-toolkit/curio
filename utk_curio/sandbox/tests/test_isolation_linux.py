@@ -1621,40 +1621,31 @@ def test_a_run_after_the_zygote_died_starts_it_again(isolated, monkeypatch):
     assert lifecycle.is_running() and lifecycle._process is not dead
 
 
-def test_the_callers_of_a_dead_zygote_read_end_of_file_while_its_child_runs(isolated):
-    """A child kept the zygote's end of the connections it was forked with:
-    its own caller's, and that of any caller accepted and not read yet.
-
-    Node code could write to those callers, and once the zygote died they
-    read nothing until the child ended: a run in flight waited out its whole
-    deadline instead of failing at once. The child closes them as it starts,
-    so both read end-of-file the moment the zygote is gone, while the child
-    still sleeps.
-    """
+def _ask_for_a_sleeping_child(config):
+    """Ask the zygote for a node that sleeps for two minutes, on a connection
+    left open. Returns the connection and the child's pid once the node's
+    code runs, so the child's confinement is over."""
     import json
-    import signal
     import socket
 
-    from utk_curio.sandbox.isolation import lifecycle, protocol, supervisor
+    from utk_curio.sandbox.isolation import protocol, supervisor
     from utk_curio.sandbox.util.parsers import _shared_data_dir
 
-    # Accepted before the child is forked (the zygote accepts in order), and
-    # never asks for anything.
-    waiting = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    waiting.connect(isolated.socket_path)
-    caller = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    caller.connect(isolated.socket_path)
+    scratch_dir = supervisor.make_scratch_dir(
+        str(_shared_data_dir()), exec_uid=config.exec_uid
+    )
     request = protocol.build_exec_request(
-        code="    import time\n    time.sleep(120)\n    return 1\n",
+        # The node runs in its scratch directory, and leaves a mark there.
+        code="    import time\n    open('running', 'w').close()\n    time.sleep(120)\n    return 1\n",
         node_type="curio.builtin/python-computation",
         data_type="",
-        scratch_dir=supervisor.make_scratch_dir(
-            str(_shared_data_dir()), exec_uid=isolated.exec_uid
-        ),
+        scratch_dir=scratch_dir,
         input_spec=dict(protocol.INPUT_NONE),
-        limits=isolated.limits,
+        limits=config.limits,
         wall_timeout=120,
     )
+    caller = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    caller.connect(config.socket_path)
     caller.sendall(protocol.encode_request(request) + b"\n")
     caller.settimeout(30)
     answer = b""
@@ -1663,33 +1654,87 @@ def test_the_callers_of_a_dead_zygote_read_end_of_file_while_its_child_runs(isol
         assert chunk, f"the zygote closed the connection before the pid: {answer!r}"
         answer += chunk
     pid = json.loads(answer)["pid"]
+    running = os.path.join(scratch_dir, "running")
+    give_up = time.monotonic() + 60
+    while not os.path.exists(running) and time.monotonic() < give_up:
+        time.sleep(0.05)
+    assert os.path.exists(running), f"the node of child {pid} never started"
+    return caller, pid
+
+
+def _sockets_of(pid):
+    """The sockets *pid* holds open past its standard streams, which a child
+    shares with the zygote on purpose, as /proc names them."""
+    fd_dir = f"/proc/{pid}/fd"
+    sockets = set()
+    for entry in os.listdir(fd_dir):
+        if int(entry) < 3:
+            continue
+        try:
+            target = os.readlink(os.path.join(fd_dir, entry))
+        except OSError:
+            continue
+        if target.startswith("socket:"):
+            sockets.add(target)
+    return sockets
+
+
+def _alive(pid):
+    """Whether *pid* still runs: neither gone nor a zombie."""
+    try:
+        with open(f"/proc/{pid}/status") as handle:
+            for line in handle:
+                if line.startswith("State:"):
+                    return line.split()[1] not in ("Z", "X")
+    except OSError:
+        pass
+    return False
+
+
+def test_a_running_child_holds_none_of_the_zygotes_connections(isolated):
+    """A child kept the zygote's end of the connections it was forked with:
+    its own caller's, and that of any caller accepted and not read yet.
+
+    Node code could read and write on them: another run's request, connection
+    keys included, or a made-up answer to it. And once the zygote died, those
+    callers read nothing until the child ended. The child now closes them
+    before its node runs, so it shares no socket with the zygote.
+    """
+    import socket
+
+    from utk_curio.sandbox.isolation import lifecycle
+
+    # Accepted before the child is forked (the zygote accepts in order), and
+    # never asks for anything.
+    waiting = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    waiting.connect(isolated.socket_path)
+    caller, pid = _ask_for_a_sleeping_child(isolated)
+    try:
+        shared = _sockets_of(lifecycle._process.pid) & _sockets_of(pid)
+        assert not shared, (
+            f"child {pid} holds the zygote's end of {len(shared)} of its "
+            f"connections: {sorted(shared)}"
+        )
+    finally:
+        waiting.close()
+        caller.close()
+
+
+def test_a_child_dies_with_its_zygote(isolated):
+    """A child outlived a zygote that died: nothing enforced its deadline any
+    more, and nothing would read its result, so it ran on for nobody. The
+    kernel now kills it with the zygote (``PR_SET_PDEATHSIG``)."""
+    from utk_curio.sandbox.isolation import lifecycle
+
+    caller, pid = _ask_for_a_sleeping_child(isolated)
     try:
         lifecycle._process.kill()
         lifecycle._process.wait(timeout=10)
-
-        held = []
-        for whose, connection in (("its own caller's", caller),
-                                  ("a caller's it was not forked for", waiting)):
-            connection.settimeout(5)
-            try:
-                ended = connection.recv(1) == b""
-            except ConnectionResetError:
-                ended = True
-            except socket.timeout:
-                ended = False
-            if not ended:
-                held.append(whose)
-        assert not held, (
-            f"the zygote is dead and its child {pid} still holds the zygote's "
-            f"end of {' and '.join(held)} connection"
-        )
+        give_up = time.monotonic() + 5
+        while _alive(pid) and time.monotonic() < give_up:
+            time.sleep(0.05)
+        assert not _alive(pid), f"the zygote is dead and its child {pid} still runs, for nobody"
     finally:
-        for killer in (os.killpg, os.kill):
-            try:
-                killer(pid, signal.SIGKILL)
-            except OSError:
-                pass
-        waiting.close()
         caller.close()
 
 
