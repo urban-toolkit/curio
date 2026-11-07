@@ -31,7 +31,7 @@ import {
 } from "../../../services/datasetCatalog";
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
-import { addDatasetToDataflow, dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
+import { addDatasetToDataflow } from "./dataflowDatasetRef";
 import { useAskTheOwner } from "../useAskTheOwner";
 import { permanentDeletionNotice } from "../../../services/retentionCopy";
 import { codeOnlyDataflows, codeOnlyWarning } from "../../../services/codeOnlyUsage";

@@ -34,7 +34,6 @@ import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
 import { prepareDashboardNodes } from "../utils/dashboardLayout";
 import { savedSourceNodeIds } from "../utils/scenarios/scenarioParts";
 import { scenarioDashboard } from "../utils/scenarios/scenarioDashboard";
-import { notifyAgentDockRefresh } from "../services/agents";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
 import type { InstallSyncOutcome, PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
