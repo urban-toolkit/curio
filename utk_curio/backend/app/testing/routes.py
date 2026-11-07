@@ -605,7 +605,15 @@ def stub_project():
       * ``description`` / ``thumbnail_accent`` – optional pass-throughs.
 
     Response: ``ProjectSummary``-shaped JSON for the newly created row.
+
+    The shared guest account on a Curio with sign-in is the one every hosted
+    guest signs in to, whose saves are refused
+    (``services._assert_guest_can_save``): its dataflows are the examples the
+    server seeds. So its project is seeded as an example is
+    (:func:`_seeded_as_an_example`), and a test gets an example of its own.
     """
+    from utk_curio.backend.app.users.capabilities import is_hosted_guest
+
     body = request.get_json(silent=True) or {}
     username = (body.get("username") or "").strip()
     if not username:
@@ -617,13 +625,14 @@ def stub_project():
 
     name = body.get("name") or "StubbedWorkflow"
     spec = body.get("spec") or _empty_spec()
-    data = ProjectCreate(
-        name=name,
-        spec=spec,
-        description=body.get("description"),
-        thumbnail_accent=body.get("thumbnail_accent") or "peach",
-    )
-    detail = project_services.save_project(user, data)
+    description = body.get("description")
+    accent = body.get("thumbnail_accent") or "peach"
+    if is_hosted_guest(user):
+        detail = _seeded_as_an_example(user, name, spec, description=description, accent=accent)
+    else:
+        detail = project_services.save_project(
+            user, ProjectCreate(name=name, spec=spec, description=description, thumbnail_accent=accent),
+        )
     return (
         jsonify(
             {
@@ -636,6 +645,29 @@ def stub_project():
         ),
         201,
     )
+
+
+def _seeded_as_an_example(user, name: str, spec: dict, *, description, accent: str):
+    """A dataflow of *user*, the account every hosted guest signs in to, made
+    as ``projects/seed.py`` seeds each shipped example there: its row, its doc
+    made by Curio, and its manifest. Its row."""
+    from utk_curio.backend.app.collaboration import dataflow_docs
+    from utk_curio.backend.app.packages.service import ensure_user_packages_initialized
+    from utk_curio.backend.app.projects import repositories as project_repo
+    from utk_curio.backend.app.projects import storage
+
+    ukey = project_services._user_dir_key(user)
+    ensure_user_packages_initialized(ukey)
+    project = project_repo.upsert_project(
+        user_id=user.id, name=name, folder_path="", description=description, thumbnail_accent=accent,
+    )
+    project.folder_path = str(storage.project_dir(ukey, project.id))
+    dataflow_docs.create(ukey, project.id, spec, dataflow_docs.by_curio(ukey, "seed"))
+    db.session.commit()
+    storage.write_manifest(
+        ukey, project.id, project.spec_revision, [], name=name, description=description, thumbnail_accent=accent,
+    )
+    return project
 
 
 # ── scripted agent turns (see app/agents/testing_provider.py) ────────────────
