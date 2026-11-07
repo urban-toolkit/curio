@@ -22,7 +22,9 @@ What the guest does to the dataflow themselves lands there too: a play's
 output is kept on the copy and its outcome recorded in the copy's runtime
 journal (``execution/node_exec.py``), a Data Catalog Add or Remove changes the
 copy's datasets (``services.mutate_dataflow_datasets``), and a rename names the
-copy (:func:`rename`). Each makes the copy when there is none. A node's output
+copy (:func:`rename`). Each makes the copy when there is none. The guest's
+dashboard of the dataflow shows and runs the copy once there is one
+(:func:`dashboard_copy`, ``runs/viewer.py``), and makes none. A node's output
 the guest adds to the dataflow is saved in the account's store under the
 copy's id (``computed.<copy>.<node>``), which every guest's Data Catalog reads,
 so it lists for that guest alone (:func:`lists_for`).
@@ -210,14 +212,20 @@ def for_request(user, project_id: str, *, make: bool = True, sign_in: Optional[s
 def canvas_spec(user, project_id: str) -> Optional[dict]:
     """The spec a hosted guest's canvas of *project_id* opens with, when the
     guest's agents have a copy of it: the copy as it is now, as the canvas
-    reads a dataflow, without its history. ``None`` for anyone else, and for
-    a guest whose agents never wrote it."""
+    reads a dataflow, without its history (:func:`spec_of`). ``None`` for
+    anyone else, and for a guest whose agents never wrote it."""
     if not copies_for(user):
         return None
     sign_in = _sign_in()
     own = copy_id(sign_in, project_id) if sign_in else None
     if own is None or not _has_copy(own):
         return None
+    return spec_of(own)
+
+
+def spec_of(own: str) -> Optional[dict]:
+    """The copy *own* as it is now, as a canvas or a dashboard reads a
+    dataflow: without its history, with the packages its lockfile gives."""
     from utk_curio.backend.app.projects.services import _with_effective_packages
 
     spec = dataflow_docs.read(GUEST_KEY, own)
@@ -225,6 +233,32 @@ def canvas_spec(user, project_id: str) -> Optional[dict]:
         return None
     shown = {key: value for key, value in spec.items() if key not in storage.HISTORY_KEYS}
     return _with_effective_packages(shown, GUEST_KEY, own)
+
+
+def dashboard_copy(project_id: str) -> Optional[str]:
+    """The copy the dashboard of *project_id* shows and runs for the visitor
+    who asks: a hosted guest's own copy of a dataflow their account owns, once
+    they have one. None is made here: a visitor who only looks makes none.
+    ``None`` for anyone else: a guest with no copy, every other visitor of the
+    dashboard's link, an account, and anyone on a Curio started without
+    ``--deploy``. A dashboard's routes need no sign-in, so the request's is
+    read here, when it sends one."""
+    from flask import has_request_context
+
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.users.dependencies import get_current_user
+    from utk_curio.backend.extensions import db
+
+    if not project_id or not has_request_context():
+        return None
+    user = get_current_user()
+    if not copies_for(user):
+        return None
+    project = db.session.get(Project, project_id)
+    if project is None or project.user_id != getattr(user, "id", None):
+        return None
+    own = for_request(user, project_id, make=False)
+    return own if own != project_id else None
 
 
 def with_spec(detail, spec: dict):

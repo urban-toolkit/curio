@@ -1639,6 +1639,14 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
             )
         except Exception:  # noqa: BLE001 - a dataflow always opens, with its saved outputs at least
             logger.exception("could not find the kept results of dataflow %s", project_id)
+    elif own is not None:
+        # A dashboard that loads its own data (no ``results=last``) shows a
+        # hosted guest's copy with the saved outputs that hold for it, as the
+        # page built for them does (:func:`_as_the_visitors_copy`).
+        from utk_curio.backend.app.runs.viewer import made_as_saved
+
+        holding = made_as_saved(ukey, project_id, spec, own)
+        shown = [ref for ref in readable if ref.node_id in holding]
     detail = _to_detail(
         project, spec=spec, outputs=readable,
         spec_revision=storage.spec_revision(ukey, project_id),
@@ -1917,6 +1925,38 @@ def _dashboard_behavior_scripts(user_key: str, packages: List[dict]) -> dict:
     return out
 
 
+def _as_the_visitors_copy(project_id: str, loaded: dict) -> dict:
+    """*loaded*, the dataflow as anyone who opens its link reads it
+    (:func:`load_shared_project`), as the dashboard of the visitor who asks
+    shows it. A hosted guest who has their own copy of the dataflow
+    (``visitor_copies.dashboard_copy``) gets the copy's spec and name, with
+    the dataflow's saved outputs that hold for the copy alone
+    (``runs/viewer.made_as_saved``): one the copy's change reaches was made
+    by code the copy no longer holds, and the page runs that node instead.
+    Anyone else gets *loaded* itself."""
+    from utk_curio.backend.app.agents.repositories.project_agents import strip_agent_state
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.runs.viewer import made_as_saved
+
+    own = visitor_copies.dashboard_copy(project_id)
+    spec = visitor_copies.spec_of(own) if own is not None else None
+    project = db.session.get(Project, project_id) if spec is not None else None
+    if project is None:
+        return loaded
+    holding = made_as_saved(_owner_user_dir_key(project), project_id, loaded["spec"], spec)
+
+    def held(refs) -> list:
+        return [ref for ref in refs if ref.get("node_id") in holding]
+
+    return {
+        **loaded,
+        "project": visitor_copies.with_spec(loaded["project"], spec),
+        "spec": strip_agent_state(spec),
+        "outputs": held(loaded["outputs"]),
+        "missing_outputs": held(loaded.get("missing_outputs", ())),
+    }
+
+
 def build_standalone_dashboard(
     project_id: str,
     *,
@@ -1938,6 +1978,9 @@ def build_standalone_dashboard(
 
     Each saved output is read in place, from the file its owner's store
     holds, named just before the read (:func:`saved_output_of`).
+
+    A hosted guest who has their own copy of the dataflow gets the copy's
+    page (:func:`_as_the_visitors_copy`), built for their sign-in alone.
     """
     from utk_curio.backend.app.projects.dashboard_payload import (
         DEFAULT_PAYLOAD_LIMIT_BYTES,
@@ -1946,7 +1989,7 @@ def build_standalone_dashboard(
     from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
-    loaded = load_shared_project(project_id)
+    loaded = _as_the_visitors_copy(project_id, load_shared_project(project_id))
     detail = loaded["project"]
     # The dataflow's nodes are what the owner's packages declare.
     project = db.session.get(Project, project_id)

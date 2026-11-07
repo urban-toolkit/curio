@@ -4,6 +4,7 @@ import json
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from html import escape as html_escape
@@ -33,6 +34,23 @@ DASHBOARD_PATH_RE = re.compile(
     r"^/dashboard/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/?$"
 )
+
+
+def sign_in_cookie(base_path: str) -> str:
+    """The cookie a page under *base_path* keeps its visitor's sign-in in, as
+    ``authApi.ts``'s ``tokenCookie`` names it: after the base path, so two
+    instances on one host (``/app`` and ``/app-dev``) keep two sign-ins."""
+    return "session_token" + base_path.replace("/", "_")
+
+
+def _cookie(header, name: str) -> str:
+    """The value of the cookie *name* in a request's ``Cookie`` *header*, or
+    "". Read by hand: one malformed cookie of another site's must not hide it."""
+    for part in (header or "").split(";"):
+        key, sep, value = part.strip().partition("=")
+        if sep and key.strip() == name:
+            return urllib.parse.unquote(value.strip())
+    return ""
 
 
 def _refused_page(project_id: str, answer: urllib.error.HTTPError) -> dict:
@@ -94,7 +112,10 @@ def run_spa_static_server(directory: str, port: int, base_path: str = "", backen
     served too.
 
     A dashboard's page is served with its data, which this server asks the
-    backend for itself (``_payload_backend``).
+    backend for itself (``_payload_backend``), with the sign-in of the
+    visitor who opens it (:func:`sign_in_cookie`): a hosted guest's dashboard
+    of an example is their own copy of it, which the backend builds for that
+    sign-in alone (``projects/visitor_copies.py``).
     """
 
     dist_dir = os.path.abspath(directory)
@@ -102,6 +123,7 @@ def run_spa_static_server(directory: str, port: int, base_path: str = "", backen
     base_tag = f'<base href="{base_path}/">'
     backend_tag = f'<meta name="curio-backend-url" content="{html_escape(backend_url)}">' if backend_url else ""
     payload_backend = _payload_backend(backend_url)
+    token_cookie = sign_in_cookie(base_path)
 
     def index_html(extra_head: str = "") -> bytes:
         with open(index_file, encoding="utf-8") as fh:
@@ -120,14 +142,15 @@ def run_spa_static_server(directory: str, port: int, base_path: str = "", backen
                 html = tags + html
         return html.encode("utf-8")
 
-    def dashboard_payload_tag(project_id: str) -> str:
+    def dashboard_payload_tag(project_id: str, sign_in: str = "") -> str:
         """A dashboard's spec and rows, or why it has none, inlined so the page
         fetches nothing.
 
         The whole point of the page is that it stands on its own, so the
         fetching happens here, once, on the server, instead of a dozen times in
         the browser. This process has no database, so it asks the backend for
-        the assembled payload, at ``payload_backend``.
+        the assembled payload, at ``payload_backend``, as the visitor signed in
+        as *sign_in* (no one when it is empty), as the page's own requests ask.
 
         A dashboard the backend refuses to build (``DASHBOARD_REFUSALS``)
         carries the backend's reason in its place, and the page says why and
@@ -138,11 +161,12 @@ def run_spa_static_server(directory: str, port: int, base_path: str = "", backen
         """
         if not payload_backend:
             return ""
+        asked = urllib.request.Request(
+            f"{payload_backend}/api/projects/{project_id}/dashboard",
+            headers={"Authorization": f"Bearer {sign_in}"} if sign_in else {},
+        )
         try:
-            with urllib.request.urlopen(
-                f"{payload_backend}/api/projects/{project_id}/dashboard",
-                timeout=DASHBOARD_EMBED_TIMEOUT,
-            ) as resp:
+            with urllib.request.urlopen(asked, timeout=DASHBOARD_EMBED_TIMEOUT) as resp:
                 if resp.status != 200:
                     return ""
                 payload = resp.read().decode("utf-8")
@@ -197,16 +221,20 @@ def run_spa_static_server(directory: str, port: int, base_path: str = "", backen
             # Only a real navigation gets the payload. A HEAD, or any other
             # probe, would pay the assembly cost for a body nobody reads.
             extra = ""
+            sign_in = ""
             if with_body:
                 path = self.path.partition("?")[0].split("#", 1)[0]
                 match = DASHBOARD_PATH_RE.match(path)
                 if match:
-                    extra = dashboard_payload_tag(match.group(1))
+                    sign_in = _cookie(self.headers.get("Cookie"), token_cookie)
+                    extra = dashboard_payload_tag(match.group(1), sign_in)
             body = index_html(extra)
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-cache")
+            # A page built for a sign-in can be that visitor's own: no cache on
+            # the way keeps it for anyone else.
+            self.send_header("Cache-Control", "private, no-cache" if sign_in else "no-cache")
             self.end_headers()
             if with_body:
                 self.wfile.write(body)

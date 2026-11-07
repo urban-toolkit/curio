@@ -12,7 +12,7 @@ import json
 
 from flask import Blueprint, Response, jsonify, request, stream_with_context
 
-from utk_curio.backend.app.runs import kept, viewer
+from utk_curio.backend.app.runs import viewer
 from utk_curio.backend.app.runs.service import RunError
 
 dashboard_runs_bp = Blueprint("dashboard_runs_api", __name__)
@@ -83,9 +83,11 @@ def stream(project_id: str, run_id: str):
 
 
 def _kept(project_id: str):
-    """The kept output a read names, or the error to answer."""
+    """The kept output a read names, or the error to answer: a hosted guest's
+    are those their dashboard's runs kept on their own copy of the dataflow
+    (``viewer.dashboard_output``)."""
     try:
-        return kept.readable_output(project_id, request.args.get("fileName") or "", _token()), None
+        return viewer.dashboard_output(project_id, request.args.get("fileName") or "", _token()), None
     except RunError as exc:
         return None, _error(exc)
 
