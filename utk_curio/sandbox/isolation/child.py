@@ -112,10 +112,11 @@ def _install_seccomp_filter(*, required):
     claim to be a full sandbox.
 
     Every process node code starts inherits the filter, so none can leave the
-    child's process group (``setsid``, ``setpgid``): the zygote's deadline kill
-    and the kill of a dead zygote's run are a ``killpg`` of that group, and a
-    process outside it would run on for nobody. The child's own ``setsid``
-    comes before the filter, in :func:`confine`.
+    child's process group (``setsid``, ``setpgid``): every kill of a run, at
+    its deadline, when the child exits and when a zygote dies mid-run, is a
+    ``killpg`` of that group, and a process outside it would run on for
+    nobody. The child's own ``setsid`` comes before the filter, in
+    :func:`confine`.
 
     Network denial is why hosting requires Linux. ``unshare(CLONE_NEWNET)``
     would be stronger but needs CAP_SYS_ADMIN, which Docker does not grant by
