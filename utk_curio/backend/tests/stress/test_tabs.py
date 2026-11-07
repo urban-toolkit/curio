@@ -333,20 +333,29 @@ class _Link:
         return self.answers.pop(0)
 
 
-def _tab(name, answers=(), flow=None):
-    """*name*'s tab holding *flow* (:data:`_FLOW`) as the server sent it,
-    on a stand-in socket; the samples it records."""
+def _server_doc(flow=None) -> bytes:
+    """The room's doc holding *flow* (:data:`_FLOW`), as the server sends it
+    whole to each tab that syncs: one history, which every tab of the room
+    then shares."""
+    from utk_curio.backend.app.collaboration import doc_mapping
+
+    server = doc_mapping.new_doc()
+    doc_mapping.dataflow_to_doc(flow or _FLOW, server, doc_id="d")
+    return server.get_update()
+
+
+def _tab(name, answers=(), flow=None, doc=None):
+    """*name*'s tab holding *doc*, a room's doc as the server sent it (a doc
+    of its own holding *flow*, by default), on a stand-in socket; the samples
+    it records."""
     from pycrdt import create_update_message
 
-    from utk_curio.backend.app.collaboration import doc_mapping
     from utk_curio.backend.tests.stress.sockets import SyncLedger, Tab
 
     samples = []
     tab = Tab(name, "p", SyncLedger(),
               lambda label, seconds, ok, error=None, kind=None: samples.append((label, ok, error, kind)))
-    server = doc_mapping.new_doc()
-    doc_mapping.dataflow_to_doc(flow or _FLOW, server, doc_id="d")
-    tab.receive({"projectId": "p", "message": create_update_message(server.get_update())})
+    tab.receive({"projectId": "p", "message": create_update_message(doc or _server_doc(flow))})
     tab.link = _Link(answers)
     return tab, samples
 
@@ -381,12 +390,16 @@ class AMembersNodeTest(unittest.TestCase):
         self.assertTrue(all(ok for _label, ok, _error, _kind in samples), samples)
 
     def test_two_members_adding_at_once_end_with_the_same_doc(self):
-        """Each tab writes the nodes' order again, as the canvas does: the
-        order the docs agree on holds both nodes once."""
-        from utk_curio.backend.tests.stress.sockets import member_node
+        """Each tab writes the nodes' order again, as the canvas does: once
+        each holds every update, the order the docs agree on holds both nodes
+        once. Both tabs synced the room's one doc first, as every tab does
+        from the server; an update can only be applied where the history it
+        builds on is."""
+        from utk_curio.backend.tests.stress.sockets import member_node, state_vector
 
-        a, _ = _tab("a")
-        b, _ = _tab("b")
+        room = _server_doc()
+        a, _ = _tab("a", doc=room)
+        b, _ = _tab("b", doc=room)
         node_a, edge_a = member_node({"id": "loader", "x": 10, "y": 20}, 1)
         node_b, edge_b = member_node({"id": "loader", "x": 10, "y": 20}, 2)
         a.add_node(node_a, edge_a)
@@ -395,8 +408,10 @@ class AMembersNodeTest(unittest.TestCase):
         for sender, receiver in ((a, b), (b, a)):
             for message in sender.link.sent:
                 receiver.receive({"projectId": "p", "message": message})
+        self.assertEqual(state_vector(a.doc), state_vector(b.doc), "each tab holds every update")
         self.assertEqual(a.digest(), b.digest())
         ids = [n["id"] for n in a.dataflow()["nodes"]]
+        self.assertEqual(ids, [n["id"] for n in b.dataflow()["nodes"]])
         self.assertEqual(sorted(ids[2:]), sorted([node_a["id"], node_b["id"]]))
         self.assertEqual(len(ids), len(set(ids)))
 
