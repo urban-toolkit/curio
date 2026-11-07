@@ -44,7 +44,7 @@ from pathlib import Path
 #: The parts CI runs each suite in: e2e-desktop's matrix and the unit job's
 #: backend entries in .github/workflows/docker-compose.yml.
 E2E_DESKTOP_PARTS = 14
-BACKEND_UNIT_PARTS = 4
+BACKEND_UNIT_PARTS = 5
 
 #: The file a collection lists every CI job's tests in, instead of running them.
 LIST_PARTS = "CURIO_LIST_PARTS"
