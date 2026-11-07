@@ -743,8 +743,12 @@ fails in milliseconds instead.
 Other things that surprise people here:
 
 - **"Installed" in a drawer means the project lockfile**, not the user store. A
-  fresh project therefore always offers `Add to project`, even though
-  `.curio/users/*/packages/` persists across runs.
+  fresh project's Node and Data drawers therefore offer `Add to project`, even
+  though `.curio/users/*/packages/` persists across runs. Its Agent Catalog
+  drawer offers `Remove from project` on every card: each new dataflow starts
+  with the four agents, so a test about adding one first takes it out through
+  the API (`DELETE /api/agents/projects/<id>/<coord>`, or
+  `DELETE /api/agents/imports/<coord>` for all projects).
 - `curio.builtin@*` is always treated as installed and offers **no** buttons: it
   ships with every instance and can be neither uninstalled nor published.
 - **Export is palette-only** and gated to (user store ∩ project lockfile) minus

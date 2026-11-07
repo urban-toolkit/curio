@@ -1,7 +1,6 @@
 """Playwright E2E: verify project ownership isolation."""
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import expect
@@ -9,6 +8,7 @@ from playwright.sync_api import expect
 from .utils import (
     project_card,
     require_project_page,
+    save_dataflow,
     signup_and_enter_new_workflow,
     signup_e2e_user,
     wait_for_projects_page,
@@ -27,11 +27,9 @@ def test_project_not_visible_to_other_user(app_frontend: "FrontendPage", page):
         page, base, name="Owner A", username="ownera",
     )
 
-    file_btn = page.get_by_role("button", name=re.compile("File"))
-    file_btn.wait_for(state="visible", timeout=15000)
-    file_btn.click(force=True)
-    page.get_by_role("button", name="Save dataflow", exact=True).click()
-    page.wait_for_timeout(2000)
+    # To the save's answer, not a fixed wait: a list read before the save
+    # lands holds no card, and the projects page does not read it again.
+    save_dataflow(page)
 
     # Positive control first: the save landed on A's own list, so the absence
     # asserted below for B is about ownership and not about a save that never

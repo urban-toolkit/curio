@@ -47,7 +47,7 @@ Agents build with Curio's own nodes, [functions](../skills/node-functions/SKILL.
 
 An agent uses only what you have: the code it writes reads your Data Catalog's datasets, runs the models you added and uses the keys you saved, calling only the functions and importing only the modules its node gets.
 
-**Seven agents ship with Curio.** Four of them are the catalog: **Researcher**, **Node Builder**, **Dataflow Builder** and **Dataset Finder**. This guide uses four words for what an agent does and knows:
+**Seven agents ship with Curio.** Four of them are the catalog: **Researcher**, **Node Builder**, **Dataflow Builder** and **Dataset Finder**. Every account has these four in all its dataflows from the start, the examples and every new dataflow among them. This guide uses four words for what an agent does and knows:
 
 - **In chat:** what you can ask an agent where you dropped it.
 - **Tools:** the actions an agent takes during a chat, such as reading the dataflow, searching the web, adding a node or asking to install a package. A change to your dataflow lands at once, as your own edit does, and you can undo it from the chat; an install waits for your review.
@@ -97,7 +97,7 @@ An agent's manifest names its skills ([`skills`](#6-the-manifest)). An agent of 
 - A message you type goes to the agent's chat instruction, and the model follows its rules: in the same call that answers you, it decides what you asked for and which tools to use.
 - A mode runs only when another agent, Solve or the agent itself asks for it, as a separate call with no tools.
 - Curio picks the file from what the call is for; the model does not.
-- Curio finds the agent for a task by the capability its manifest declares, never by its name or id (see [Capabilities](#capabilities)). An agent of your own that declares what a shipped one does is picked where the shipped one would be.
+- Curio finds the agent for a task by the capability its manifest declares, never by its name or id (see [Capabilities](#capabilities)). An agent of your own that declares what a shipped one does is picked where the shipped one would be, though an agent that asks for one of its own modes runs it itself.
 
 Each agent's prompts, by the key its manifest gives them:
 
@@ -199,10 +199,10 @@ Agent state lives in files under `.curio/` and inside each project's spec; the a
 | **Shipped agents**, the seven Curio ships | `agents/<agentId>@<major>/` beside `utk_curio/` (`utk_curio/_shipped/agents/` in a pip install), each a `manifest.json` and `prompts/` | Nothing: Curio reads them. Adding one to a project copies it into your definition store. |
 | **Shared catalog**, published agents | `.curio/agents-catalog/<agentId>@<major>/` | **Publish** adds one; **Unpublish** removes it. |
 | **Definition store**, the agents themselves | `.curio/users/<user-key>/agents/<agentId>@<major>/` (`manifest.json` and `prompts/`) | **Import agent** adds one; adding a built-in or published agent copies it here. |
-| **Per-user list**, the agents in all your projects | `.curio/users/<user-key>/imported-agents.json` | **Add to all projects** and **Import agent** add an entry; **Remove from all projects** drops it. |
+| **Per-user list**, the agents in all your projects | `.curio/users/<user-key>/imported-agents.json` | Curio adds each catalog agent it ships, once, so every account starts with them. **Add to all projects** and **Import agent** add an entry; **Remove from all projects** drops it, and Curio does not add it back. |
 | **Catalog settings**, values you own | `.curio/users/<user-key>/catalog-settings.json` | **Settings** on `/catalog/agents` saves a setting you changed; **Restore default** removes it. See [Catalog settings](#catalog-settings). |
 | **Agent skills**, the skills you changed on an agent | `.curio/users/<user-key>/agent-skills.json`, by agent id, so one change covers every version of the agent and every project | **Add skill** and **Remove** in an agent's details change its entry; **Restore** removes it. See [Skills](#skills). |
-| **Per-dataflow lockfile**, the agents one dataflow has | `dataflow.agents` in the project's `spec.trill.json` | **Add to project** and **Remove from project** in the drawer. **Add to all projects** and **Remove from all projects** change every project. |
+| **Per-dataflow lockfile**, the agents one dataflow has | `dataflow.agents` in the project's `spec.trill.json` | A new dataflow starts with the agents in your per-user list. **Add to project** and **Remove from project** in the drawer. **Add to all projects** and **Remove from all projects** change every project. |
 | **Attachments**, an agent's instances bound to a target | `dataflow.agentAttachments` in the project's `spec.trill.json` | Attaching (dragging an agent onto a node, a connection, or the canvas) creates one. **Detach** deletes it and its transcript, and **Remove from project** deletes every attachment of that agent. |
 | **Usage record** | `.curio/users/<user-key>/agents/ledger/<date>.jsonl` | Every run appends to it. It is not editable and not shown in the interface. |
 
@@ -223,7 +223,7 @@ There are three places you work with agents, and as with the Data Catalog they a
 
 - **The `/catalog/agents` page** is the account-level library. Reach it from **Agent Catalog** in the top bar of `/projects` and every catalog page. It lists the built-in agents, every published one, and the ones you imported yourself. Filter by status (**All agents**, **In all projects**) and by category, search, and read an agent's full details. **Add to all projects**, **Publish**, **Unpublish**, **Settings** and **Import agent** live here. You cannot add an agent to just one dataflow from this page: the drawer does that. The skills the agents read are on the [Skill Catalog](SKILL-CATALOG.md) page, **Skill Catalog** beside it in the top bar.
 - **The Agent Catalog drawer**, inside the canvas, is the working surface. Open it from the **Agent Catalog** button in the top bar, or from the left Tools panel's **Agent Catalog** dropdown and **Browse Agent Catalog +**. Its tabs are **Browse all** (the default) and **In project**, and everything scoped to the open dataflow happens here, including **Import agent** in its footer.
-- **The Agent palette**, the **Agent Catalog** dropdown in the left Tools panel, holds the agents already added to this dataflow, ready to drag onto a node, a connection, or the canvas. It sits below the **Node Catalog** and **Data Catalog** dropdowns.
+- **The Agent palette**, the **Agent Catalog** dropdown in the left Tools panel, holds the agents this dataflow has, the four catalog agents from the start, ready to drag onto a node, a connection, or the canvas. It sits below the **Node Catalog** and **Data Catalog** dropdowns.
 
 **View details**, on any agent card and beside each agent in the palette, opens the agent's details window. Its first four sections are named by the four words defined in [The agents](#the-agents): **In chat**; **Tools**, which lists what the agent reads before what it changes and what it proposes to install; **Modes (who asks)**, each mode with the agents, or Solve, that ask for it, and the mode's capability ids beneath it; and **Skills**, the core skills first, then its own and those its chat, a mode of it or a call another agent asks it for always holds, with **Add skill**, **Remove** and **Restore** (see [Skills](#skills)); a skill's name opens the skill's details over the agent's. **Agent info** gives its identifier, version, category, publisher, what it attaches to and the model it runs on. **Prompts** shows each prompt file, labeled by when it runs: every call, a message you type, or the mode that reads it. **Requires** names the agents it cannot work without, and **Export** saves the agent as one file.
 
@@ -234,7 +234,7 @@ There are three places you work with agents, and as with the Data Catalog they a
 | **Add to project** | Drawer | This dataflow's lockfile, plus any agent it requires | The agent appears in this dataflow's **Agent Catalog** palette, ready to drag. |
 | **Remove from project** | Drawer | This dataflow's lockfile and that agent's attachments | It leaves this dataflow's palette, and its attachments and their transcripts are deleted; the definition is **kept**. Refused while another added agent requires it. |
 | **Add to all projects** | `/catalog/agents`, in the right-hand drawer or the right-click menu | Your per-user list and every project's lockfile | The agent is added to every dataflow you have, and new projects start with it. |
-| **Remove from all projects** | `/catalog/agents`, in the right-hand drawer or the right-click menu | Your per-user list, every project's lockfile, and the agent's attachments | The agent leaves every dataflow, its attachments and their transcripts deleted. The definition stays on disk. While another agent requires it in one of your dataflows, nothing is removed: the agent stays in all your projects, and the message names those dataflows and the agents that require it. |
+| **Remove from all projects** | `/catalog/agents`, in the right-hand drawer or the right-click menu | Your per-user list, every project's lockfile, and the agent's attachments | The agent leaves every dataflow, its attachments and their transcripts deleted, and new projects start without it; Curio does not add it back. The definition stays on disk. While another agent requires it in one of your dataflows, nothing is removed: the agent stays in all your projects, and the message names those dataflows and the agents that require it. |
 | **Import agent** | Drawer footer, or the `/catalog/agents` header | Definition store and your per-user list | Your own `manifest.json` and prompt files are registered as a definition. It is not added to your existing dataflows and not published. |
 | **Publish** | `/catalog/agents` drawer, for your own imports only | Shared catalog | Every user on this install can browse the agent. |
 | **Unpublish** | `/catalog/agents` drawer | Shared catalog | It leaves the shared catalog. Other users who added it keep their copy. |
@@ -248,9 +248,11 @@ Nothing in this table deletes an agent definition from disk. A skill's own actio
 
 ### Workflows
 
-**I want to use an agent in my dataflow.** Open the dataflow, then click **Agent Catalog** in the top bar. Find the agent and click **Add to project**. It now appears in the left Tools panel's **Agent Catalog** dropdown. Drag it onto a node, a connection, or empty canvas to attach it, then click its badge (or its avatar in the dock) to open its chat panel.
+**I want to use an agent in my dataflow.** Open the dataflow: the four catalog agents are in the left Tools panel's **Agent Catalog** dropdown. Drag one onto a node, a connection, or empty canvas to attach it, then click its badge (or its avatar in the dock) to open its chat panel. For an agent the dataflow does not have, such as one you removed or imported, click **Agent Catalog** in the top bar, find the agent and click **Add to project**; it then appears in the dropdown.
 
 **I want an agent in all my projects, present and future.** On `/catalog/agents`, click the agent's card and then **Add to all projects** in the drawer. It is added to every dataflow you have, and every project you create from then on starts with it.
+
+**I want an agent out of all my projects.** On `/catalog/agents`, click the agent's card and then **Remove from all projects** in the drawer. It leaves every dataflow you have, every project you create from then on starts without it, and Curio does not add it back.
 
 **I want to browse without opening a dataflow.** Go to `/projects` and pick **Agent Catalog** in the top bar. Filter by status or category in the left rail, and click **View details** on a card to read everything about it.
 
@@ -314,7 +316,7 @@ A reply of Node Builder or Dataflow Builder that carries no change and no review
 
 An agent may require others: the agents a task of its own runs without asking the model, such as the Node Builder and the Dataset Finder that the Dataflow Builder's Solve runs. The drawer says so before you click: the button reads **Add to project (+2 required)**, and its tooltip names what else will be added. Adding brings in all of them at once. A required agent that ships with Curio is added at its shipped version; one of your own at the highest version in your imports or the catalog.
 
-The task itself goes to the agent in the dataflow that declares its capability: the one the requiring agent's `delegatesTo` names first, else any other that declares it and that `delegatesTo` does not name. So an agent of your own that requires your own copies of the Node Builder and the Dataset Finder runs them.
+The task itself goes to the agent in the dataflow that declares its capability: the one the requiring agent's `delegatesTo` names first, unless that one ships with Curio and an agent of your own in the dataflow declares the capability too, which then takes it; else any other that declares it and that `delegatesTo` does not name. So an agent of your own that requires your own copies of the Node Builder and the Dataset Finder runs them, and so does an agent Curio ships while the dataflow holds your copies beside its own.
 
 The reverse holds too. Removing an agent that another added agent requires is refused, with a message naming the agent that needs it, so a dataflow never holds a broken reference.
 
@@ -373,7 +375,7 @@ An agent knows which nodes are tiles of the dataflow's [dashboard](USAGE.md#dash
 
 ### Finding data in portals
 
-The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVERY-CATALOG.md) as well as your own datasets, and propose downloading one. Nothing is downloaded until you apply the proposal. See [DISCOVERY-CATALOG.md part 6](DISCOVERY-CATALOG.md#6-the-dataset-finder). In any agent's chat, the **From your Data Catalog** lane of a candidates card lists only datasets your Data Catalog holds, installed or not as the Data Catalog shows them, and a card left with no dataset says so. Confirming a row reads it from your Data Catalog again. Solve and the other agents ask whichever agent in the dataflow declares `dataset.discover`, so an agent of your own that declares it, with the same tools, searches in its place.
+The **Dataset Finder** can search the portals in the [Discovery Catalog](DISCOVERY-CATALOG.md) as well as your own datasets, and propose downloading one. Nothing is downloaded until you apply the proposal. See [DISCOVERY-CATALOG.md part 6](DISCOVERY-CATALOG.md#6-the-dataset-finder). In any agent's chat, the **From your Data Catalog** lane of a candidates card lists only datasets your Data Catalog holds, installed or not as the Data Catalog shows them, and a card left with no dataset says so. Confirming a row reads it from your Data Catalog again. Solve and the other agents ask the agent in the dataflow that declares `dataset.discover`, yours before Curio's, so an agent of your own that declares it, with the same tools, searches in its place.
 
 ---
 
@@ -520,7 +522,7 @@ A minimal, complete manifest:
 | `tools` | | Typed, allowlisted tool **requirements**, not a permission grant. A chat that lists skills holds **skill.read** whatever this names. |
 | `skills` | | The [skills](SKILL-CATALOG.md#what-ships-with-curio) the agent's calls may hold, by name: skills Curio ships and [your own](#add-skills-and-agents). Its chat lists those its preamble does not hold and loads one when a task needs it; its modes are handed the ones their task needs. Without this field, every skill Curio ships; an empty list, none, and then its chat lists no skills and holds no skill.read. |
 | `settingsDefaults` | | Non-secret seed suggestions. |
-| `catalog` | | `{ listed, order }`, set by the agents Curio ships only: `listed` is `true` for a catalog agent and `false` for a helper, and `order` is the agent's place in the order the lists of who asks follow. No other key is accepted, and an import that sets it is refused. |
+| `catalog` | | `{ listed, order }`, set by the agents Curio ships only: `listed` is `true` for a catalog agent and `false` for a helper, and `order` is the agent's place in the order the lists of who asks follow. A catalog agent is also in every account's projects by default. No other key is accepted, and an import that sets it is refused. |
 | `workedExamples` | | `true` gives a run of the agent's instruction worked examples, the shipped dataflows closest to its task. A mode says so for itself, with `workedExamples` on its capability. Read for the agents Curio ships. |
 
 ### Capabilities
@@ -544,7 +546,7 @@ Curio finds the agent for each of its own tasks by the capability it declares:
 | `dataflow.orchestrate` | plan a dataflow; its chat has the **Solve** strip, and API Settings lists the agents its Solve runs |
 | `node.build` | build nodes on the canvas; its chat says when a reply changed nothing on it |
 
-When several agents in the dataflow declare a capability, the one the asking agent's `delegatesTo` names first is picked. When none of those is in the dataflow, an agent in it that `delegatesTo` does not name at all takes the capability, so adding an agent of your own lets the others hand it that work. An agent `delegatesTo` names takes only the capabilities its entry names.
+When several agents in the dataflow declare a capability, one you imported or published answers before one Curio ships, and of yours, the first by id. The asking agent's `delegatesTo` says whom it asks first: an agent of yours that an entry names answers as named, and an agent Curio ships that an entry names answers unless one of yours in the dataflow declares the capability. When none of those is in the dataflow, an agent in it that `delegatesTo` does not name at all takes the capability, so adding an agent of your own lets the others hand it that work. An agent `delegatesTo` names takes only the capabilities its entry names, and an agent that asks for one of its own modes runs it itself.
 
 ### Modes
 

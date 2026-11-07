@@ -140,12 +140,13 @@ def _isolation_active_label():
     through the confined path".
 
     The two can disagree, and nothing used to report it. The zygote is started
-    lazily, on the first ``/exec`` (``_isolation_runner`` below is the only
-    caller of ``lifecycle.ensure_running`` in the tree; ``server.py`` hardens
-    at boot but starts nothing). A spawn that fails is not fatal by design -
-    the node still has to run - so the sandbox degrades to in-process and
-    caches that for the life of the process, while the resolved label goes on
-    saying ``fork``.
+    lazily, on the first ``/exec`` (``_isolated_runner`` below), and a later
+    run that finds it exited starts it again
+    (``_restart_the_zygote_if_it_died``); ``server.py`` hardens at boot but
+    starts nothing. A first spawn that fails is not fatal by design - the
+    node still has to run - so the sandbox degrades to in-process and caches
+    that for the life of the process, while the resolved label goes on saying
+    ``fork``.
 
     - ``pending``: no node has executed yet, so there is nothing to report.
     - ``fork``: executions are being dispatched to the zygote.
@@ -525,6 +526,35 @@ def _isolated_runner():
         )
         _isolation_state = (runner.execute_isolated, config)
         return _isolation_state
+
+
+def _restart_the_zygote_if_it_died():
+    """Start the execution zygote again when it has exited since it started.
+
+    Only the first isolated run starts it, and the runner that run resolved
+    is kept, so a zygote that died used to stay dead: every isolated run
+    after it failed with "could not reach the execution zygote" until the
+    sandbox restarted. Each isolated run asks first, on its own thread, while
+    its reply keeps the backend's connection busy through the new zygote's
+    imports.
+
+    A start that fails is logged, never raised, and never sends node code to
+    this process: this run then fails as it would have, and the next one
+    tries again.
+    """
+    from utk_curio.sandbox.isolation import lifecycle
+
+    try:
+        lifecycle.restart_if_exited()
+    except Exception as exc:  # noqa: BLE001 - this run reports the zygote missing
+        print(
+            f"[isolation] could not restart the execution zygote: {exc}",
+            file=sys.__stderr__, flush=True,
+        )
+        metrics.record_error(
+            summary="Could not restart the execution zygote",
+            detail=f"{exc}\n\nIsolated node runs fail until it starts.",
+        )
 
 
 @app.route('/artifact-meta', methods=['GET'])
@@ -990,6 +1020,7 @@ def exec():
     def run():
         if isolated is not None:
             run_isolated, config = isolated
+            _restart_the_zygote_if_it_died()
             # launch_dir is passed to both paths in the same position: it is the
             # child's working directory, so node code addressing a file relatively
             # finds it where the in-process path would.

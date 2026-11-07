@@ -922,6 +922,41 @@ def _seed_dataset_defaults(user, ukey: str, project_id: str, spec: dict) -> dict
     return storage.read_spec(ukey, project_id) or spec
 
 
+def seed_default_agents(user) -> None:
+    """Add the agents Curio adds to every account that *user*'s account does
+    not have yet, in its imports and in every dataflow it has
+    (``agents.service.seed_default_agents``). Never raises."""
+    from utk_curio.backend.app.agents.service import seed_default_agents as seed_agents
+
+    seed_agents(_user_dir_key(user), user)
+
+
+def agents_for_new_dataflows(user) -> list:
+    """The agents a dataflow *user*'s account makes starts with: its imports
+    with their closures, the agents Curio adds by default among them, which
+    are added to the account first (``agents.service.agents_for_new_dataflows``).
+    Adding those takes the spec lock of every dataflow the account has, so a
+    caller asks before it holds any lock or uncommitted write (#909).
+    Best-effort: a dataflow is never refused for its agents."""
+    try:
+        from utk_curio.backend.app.agents.service import agents_for_new_dataflows as agents_for
+
+        return agents_for(_user_dir_key(user), user=user)
+    except Exception:  # noqa: BLE001 - never block a dataflow on its agents
+        logger.warning("The agents of a new dataflow could not be read", exc_info=True)
+        return []
+
+
+def seed_spec_with_agents(spec, agents: list):
+    """*spec*, a dataflow not written yet, with *agents*
+    (:func:`agents_for_new_dataflows`) in its lockfile beside those it lists,
+    so it is made with them in its first write
+    (``agents.service.seed_spec_with_imported_agents``)."""
+    from utk_curio.backend.app.agents.service import seed_spec_with_imported_agents
+
+    return seed_spec_with_imported_agents(spec, agents)
+
+
 def _saved_outputs_to_copy(data: ProjectCreate) -> tuple:
     """``(the copied dataflow's id and its owner's key, {node id: output
     name})``: the outputs the dataflow *data* copies (``copy_of``) saved,
@@ -1008,6 +1043,12 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     # First-time real users have no per-user package store yet; seed builtin
     # so the new dataflow's palette isn't empty.
     ensure_user_packages_initialized(ukey)
+    # And the agents it is made with: the account's, the ones every account
+    # has by default among them. Asked before this request writes anything:
+    # adding those defaults installs them into each dataflow the account has,
+    # under that dataflow's spec lock, which no thread may wait for holding an
+    # uncommitted write (#909).
+    agents = agents_for_new_dataflows(user)
 
     project = repo.upsert_project(
         user_id=user.id,
@@ -1025,6 +1066,9 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     # package palette starts populated. Caller can override by passing a
     # spec that already declares packages.
     data.spec = seed_spec_with_defaults(ukey, data.spec)
+    # And the account's agents beside any the spec lists, so its agents palette
+    # starts populated too, in the same first write.
+    data.spec = seed_spec_with_agents(data.spec, agents)
     # A spec that does not name itself is a spec the canvas reloads with an
     # undefined workflow name; fill what the client left out (never overwrite).
     _ensure_dataflow_identity(data.spec, data.name)
@@ -1070,16 +1114,8 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     # the real install within a release. Best-effort: a stale default must never
     # stop a project from being created.
     effective_spec = _seed_dataset_defaults(user, ukey, project_id, effective_spec)
-    # And the account's imported agents, for the same reason: the agents palette
-    # reads the PROJECT lockfile, so an account-level import that never reaches
-    # a lockfile is invisible on the canvas however the catalog labels it.
-    try:
-        from utk_curio.backend.app.agents.service import seed_project_with_imported_agents
-
-        seed_project_with_imported_agents(ukey, project_id)
-        effective_spec = storage.read_spec(ukey, project_id) or effective_spec
-    except Exception:  # noqa: BLE001 - never block project creation on a seed
-        logger.warning("agent seed for project %s failed", project_id, exc_info=True)
+    # The answer carries the spec as it is on disk.
+    effective_spec = storage.read_spec(ukey, project_id) or effective_spec
 
     # Record only outputs the reload path can restore from a durable source
     # (installed dataset / legacy copy). Writing the raw client list would let a

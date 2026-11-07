@@ -135,6 +135,44 @@ def ensure_node_only_agent(backend_url: str, token: str) -> str:
     return NODE_ONLY_AGENT
 
 
+def take_agents_out(
+    backend_url: str,
+    token: str,
+    coords,
+    *,
+    project_id: str | None = None,
+    timeout: float = HTTP_TIMEOUT_S,
+) -> list[str]:
+    """Take each agent of *coords* out of the dataflow *project_id* through the
+    API, as Remove from project does, or, with no *project_id*, out of all the
+    account's projects, as Remove from all projects does. Every account and
+    every dataflow starts with the agents Curio adds by default, so a scene
+    about adding one takes it out first.
+
+    Each agent goes before the agents it requires (the catalog's
+    ``requiresAgents``), the only order either Remove accepts. The catalog is
+    read first, which also gives the account its default agents, so none of
+    them comes back later. Returns the coordinates in the order they went."""
+    cards = {
+        card["dirName"]: card
+        for card in api_json(f"{backend_url}/api/agents/catalog", token)["items"]
+    }
+
+    def requires(coord: str) -> set[str]:
+        return {row["coord"] for row in (cards.get(coord) or {}).get("requiresAgents") or []}
+
+    remaining, order = set(coords), []
+    while remaining:
+        required = set().union(*(requires(coord) for coord in remaining))
+        free = sorted(remaining - required) or sorted(remaining)[:1]
+        order += free
+        remaining -= set(free)
+    where = f"projects/{project_id}" if project_id else "imports"
+    for coord in order:
+        api_json(f"{backend_url}/api/agents/{where}/{coord}", token, method="DELETE", timeout=timeout)
+    return order
+
+
 def install_session_cookie(page, frontend_url: str, token: str) -> None:
     """Install *token* as the ``session_token`` cookie on *page*'s context.
 

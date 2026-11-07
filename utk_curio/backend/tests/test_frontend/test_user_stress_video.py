@@ -83,6 +83,7 @@ from .utils import (
     set_canvas_zoom,
     set_node_code,
     signup_e2e_user,
+    take_agents_out,
     wait_for_node_settled,
     wait_for_projects_page,
 )
@@ -1724,9 +1725,22 @@ class TestSessionExtending:
                 "() => (document.cookie.match(/(?:^|; )session_token=([^;]*)/) || [])[1] || ''"
             )
             project_id = page.url.rstrip("/").rsplit("/", 1)[-1]
-            api_json(
+            # Every dataflow starts with the agents Curio adds by default, so
+            # the two cards are taken out of this one through the API before
+            # the drawer shows them: each then offers Add.
+            take_agents_out(
+                s.backend, token, (AGENT_CONNECTION, AGENT_BUILDER), project_id=project_id,
+            )
+            node_agent = ensure_node_only_agent(s.backend, token)
+            # An install of an agent the dataflow already holds adds nothing
+            # (its "installed" comes back empty), so the check is the lockfile
+            # the install answers with.
+            lockfile = api_json(
                 f"{s.backend}/api/agents/projects/{project_id}/install", token,
-                method="POST", payload={"coord": ensure_node_only_agent(s.backend, token)},
+                method="POST", payload={"coord": node_agent},
+            )["agents"]
+            assert node_agent in lockfile, (
+                f"{node_agent} is not in the dataflow after its install: {lockfile}"
             )
             drawer = _open_agent_drawer(ctx)
             for coord in (AGENT_CONNECTION, AGENT_BUILDER):

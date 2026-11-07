@@ -6,6 +6,7 @@ of ``routes.py`` by resource, bodies verbatim, registered on the one ``agents_bp
 
 from __future__ import annotations
 
+from flask import g
 from flask import jsonify
 from flask import request
 
@@ -16,6 +17,7 @@ from utk_curio.backend.app.agents.routes.common import _svc_error
 from utk_curio.backend.app.agents.routes.common import agents_bp
 from utk_curio.backend.app.agents.service import AgentServiceError
 from utk_curio.backend.app.projects import repositories as projects_repo
+from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.app.users.dependencies import require_auth
 
 
@@ -23,6 +25,9 @@ from utk_curio.backend.app.users.dependencies import require_auth
 @agents_bp.route("/projects/<project_id>", methods=["GET"])
 @require_auth
 def list_project_agents(project_id: str):
+    """The agents in the dataflow's lockfile, after the request's account gets
+    the agents Curio adds by default (``seed_default_agents``)."""
+    agents_services.seed_default_agents(_user_dir_key(g.user), g.user)
     try:
         flow = _dataflow(project_id, make=False)
         agents = agents_services.list_installed_in_project(flow.key, flow.project_id)
