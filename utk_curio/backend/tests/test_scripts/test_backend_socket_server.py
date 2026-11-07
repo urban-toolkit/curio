@@ -9,8 +9,7 @@ middle of a request.
 """
 
 import runpy
-import unittest
-from unittest import mock
+import unittest.mock
 
 
 class BackendSocketServerTest(unittest.TestCase):
@@ -31,10 +30,10 @@ class BackendSocketServerTest(unittest.TestCase):
         def serving(app, *args, **kwargs):
             seen["flask"] = kwargs
 
-        with mock.patch.object(SocketIO, "run", through_socketio), \
-                mock.patch("flask.Flask.run", serving), \
-                mock.patch("utk_curio.sandbox.util.duckdb_threads.release_default_connection",
-                           lambda *args, **kwargs: None):
+        with unittest.mock.patch.object(SocketIO, "run", through_socketio), \
+                unittest.mock.patch("flask.Flask.run", serving), \
+                unittest.mock.patch("utk_curio.sandbox.util.duckdb_threads.release_default_connection",
+                                    lambda *args, **kwargs: None):
             runpy.run_module("utk_curio.backend.server", run_name="__main__")
 
         self.assertIn("socketio", seen, "the backend serves without Socket.IO")
