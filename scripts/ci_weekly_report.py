@@ -55,6 +55,7 @@ class Api:
                 if attempt == 2:
                     raise
                 time.sleep(10)
+        return None
 
     def bytes(self, path: str) -> bytes:
         """An artifact's zip. The API answers with a redirect to storage, which
