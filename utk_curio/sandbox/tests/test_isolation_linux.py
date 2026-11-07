@@ -81,27 +81,6 @@ def _memory_bytes(text):
     return float(m.group(1)) * scale
 
 
-def _all_process_cmdlines():
-    """Every visible process's command line, read from /proc.
-
-    ``ps`` is not installed in the image (no procps), which is why this reads
-    /proc directly instead. Names come from argv, so a process started with
-    ``exec -a <marker>`` is findable by that marker.
-    """
-    cmdlines = []
-    for entry in os.listdir("/proc"):
-        if not entry.isdigit():
-            continue
-        try:
-            with open(f"/proc/{entry}/cmdline", "rb") as handle:
-                cmdlines.append(
-                    handle.read().replace(b"\x00", b" ").decode("utf-8", "replace")
-                )
-        except OSError:
-            continue
-    return cmdlines
-
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -1374,24 +1353,29 @@ def test_an_infinite_loop_is_killed_and_the_sandbox_survives(isolated):
     assert following["stderr"] == "", following["stderr"]
 
 
-def test_a_spawned_grandchild_does_not_survive_the_timeout(isolated):
+def test_a_spawned_grandchild_does_not_survive_the_timeout(isolated, workspace):
     """proc.kill() on the child alone would leave this running.
 
     The child calls setsid and the zygote kills the whole process group, which
     is the only way to be sure. The zygote does the killing rather than the
     sandbox because it is the child's parent, so the pid cannot have been
     recycled underneath it.
+
+    The node starts ``sleep`` itself and names its pid. Launched as
+    ``sh -c 'exec -a <marker> sleep 300'``, it never ran: the image's
+    ``/bin/sh`` is dash, whose ``exec`` takes no options, so the test found
+    no process with the marker whatever the kill reached.
     """
-    marker = "curio-isolation-grandchild-marker"
-    run_isolated(
-        isolated,
-        "    import subprocess\n"
-        f"    subprocess.Popen(['sh', '-c', 'exec -a {marker} sleep 300'])\n"
-        "    while True:\n        pass\n",
+    pid_file = workspace / "grandchild.pid"
+    result = run_isolated(
+        isolated, _starts_a_process(pid_file, then="    while True:\n        pass\n")
     )
-    time.sleep(2)
-    survivors = [line for line in _all_process_cmdlines() if marker in line]
-    assert not survivors, f"a grandchild outlived the killed node: {survivors}"
+    assert pid_file.exists(), f"the node never started its process: {result['stderr'][:300]}"
+    grandchild = int(pid_file.read_text())
+    give_up = time.monotonic() + 5
+    while _alive(grandchild) and time.monotonic() < give_up:
+        time.sleep(0.05)
+    assert not _alive(grandchild), f"grandchild {grandchild} outlived the killed node"
 
 
 # ---------------------------------------------------------------------------
