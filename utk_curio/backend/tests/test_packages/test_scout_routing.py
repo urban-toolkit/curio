@@ -580,9 +580,10 @@ def test_a_tag_held_as_none_or_nan_reads_as_no_tag(tmp_path, dtype, named):
 
 def test_a_tag_a_road_names_reads_as_it_is(tmp_path):
     """A tag a road names comes back as it is, even "", 0 or False, which
-    road_graph's own fallbacks then read."""
+    road_graph's own fallbacks then read. A tag holding several values reads
+    as OpenStreetMap writes one (the tests below)."""
     with scout_routing(tmp_path) as m:
-        for value in ("yes", "-1", "", "30 mph", 50, 0, 2.5, True, False, ["residential", "tertiary"]):
+        for value in ("yes", "-1", "", "30 mph", 50, 0, 2.5, True, False):
             assert m.roads._value({"highway": value}, "highway") is value
 
 
@@ -616,6 +617,116 @@ def test_a_layer_whose_tags_are_nullable_columns_builds_as_one_holding_none(tmp_
     assert edges[(a, b)]["maxspeed"] == "50" and (b, a) not in edges
     assert edges[(b, c)]["highway"] == edges[(c, b)]["highway"] == "unclassified"
     assert "maxspeed" not in edges[(b, c)]
+
+
+def _held(holder, values):
+    """*values* as a road's tag holds several: in a list, a tuple, or a numpy
+    array, as a list column read back from GeoParquet holds them."""
+    import numpy as np
+
+    return {"list": list, "tuple": tuple, "array": lambda items: np.array(items, dtype=object)}[holder](values)
+
+
+def _read(roads, value, tag="highway"):
+    """``(type, value)``: what road_graph reads from a road whose *tag* holds
+    *value*. The type comes first, so a value read back as an array fails the
+    comparison instead of raising in it."""
+    read = roads._value({tag: value}, tag)
+    return type(read).__name__, read
+
+
+def _edges_by_points(G):
+    """*G*'s edges' data, by the points each edge runs from and to."""
+    at = {n: (data["x"], data["y"]) for n, data in G.nodes(data=True)}
+    return {(at[u], at[v]): data for u, v, data in G.edges(data=True)}
+
+
+@pytest.mark.parametrize("holder", ["list", "tuple", "array"])
+def test_a_tag_holding_several_values_reads_as_openstreetmap_writes_one(tmp_path, holder):
+    """A tag a road holds several values in reads as OpenStreetMap writes such
+    a tag: its values joined with ``;``, whether they come in a list, a tuple
+    or a numpy array."""
+    with scout_routing(tmp_path) as m:
+        assert _read(m.roads, _held(holder, ["primary", "secondary"])) == ("str", "primary;secondary")
+        assert _read(m.roads, _held(holder, ["primary", "secondary", "tertiary"])) == (
+            "str", "primary;secondary;tertiary")
+        assert _read(m.roads, _held(holder, [50, 30]), "maxspeed") == ("str", "50;30")
+        assert _read(m.roads, _held(holder, ["yes", "no"]), "oneway") == ("str", "yes;no")
+
+
+@pytest.mark.parametrize("holder", ["list", "tuple", "array"])
+def test_a_tag_holding_several_values_leaves_out_the_missing_ones(tmp_path, holder):
+    """None, NaN and pd.NA among a tag's values are left out, and a tag left
+    with one value reads as that value, as a tag holding only it does."""
+    import pandas as pd
+
+    with scout_routing(tmp_path) as m:
+        assert _read(m.roads, _held(holder, [None, "primary", float("nan"), pd.NA, "secondary"])) == (
+            "str", "primary;secondary")
+        assert _read(m.roads, _held(holder, ["primary", None])) == ("str", "primary")
+        assert _read(m.roads, _held(holder, [pd.NA, 50]), "maxspeed") == ("int", 50)
+
+
+@pytest.mark.parametrize("holder", ["list", "tuple", "array"])
+def test_a_tag_holding_no_values_reads_as_no_tag(tmp_path, holder):
+    """A tag holding no values, or only missing ones, reads as no tag, as a
+    road without the tag does."""
+    import pandas as pd
+
+    with scout_routing(tmp_path) as m:
+        assert m.roads._value({"highway": _held(holder, [])}, "highway") is None
+        assert m.roads._value({"highway": _held(holder, [None, float("nan"), pd.NA])}, "highway") is None
+
+
+def test_a_layer_whose_tags_hold_several_values_builds_from_geoparquet(tmp_path):
+    """A roads layer whose tags are list columns, written to GeoParquet and read
+    back as node code reads a file, holds a numpy array in each tag. It builds,
+    each tag read as OpenStreetMap writes it: the road of two types is
+    ``primary;secondary``, and its oneway, ``yes;no``, is no word road_graph
+    knows, so it runs both ways; the road whose oneway holds only ``yes`` runs
+    one way."""
+    import geopandas as gpd
+    import numpy as np
+
+    a, b, mid = (-87.63, 41.88), (-87.629, 41.88), (-87.6295, 41.8805)
+    _layer([
+        {"line": [a, b], "highway": ["primary", "secondary"], "oneway": ["yes", "no"]},
+        {"line": [a, mid, b], "highway": ["residential"], "oneway": ["yes"]},
+    ]).to_parquet(tmp_path / "roads.parquet")
+    roads = gpd.read_parquet(tmp_path / "roads.parquet")
+    assert all(isinstance(row[tag], np.ndarray) for row in roads.to_dict("records") for tag in ("highway", "oneway"))
+    with scout_routing(tmp_path) as m:
+        G, _bounds = m.roads.road_graph(roads)
+    assert {points: data["highway"] for points, data in _edges_by_points(G).items()} == {
+        (a, b): "primary;secondary", (b, a): "primary;secondary", (a, mid): "residential", (mid, b): "residential",
+    }
+
+
+def test_a_maxspeed_holding_several_values_builds_as_one_osmnx_cannot_read(tmp_path):
+    """A road whose maxspeed holds several values, read back from GeoParquet,
+    builds: its maxspeed reads ``50;30``, from which osmnx reads no speed, as
+    from any maxspeed it does not know, so the road gets the speed it gets with
+    no maxspeed: here the residential road's, the one speed osmnx read. A
+    maxspeed holding one value reads as that value, ``40``."""
+    import geopandas as gpd
+
+    a, b, mid = (-87.63, 41.88), (-87.629, 41.88), (-87.6295, 41.8805)
+
+    def built(roads, maxspeed):
+        _layer([
+            {"line": [a, b], "highway": "secondary", "maxspeed": maxspeed},
+            {"line": [a, mid, b], "highway": "residential", "maxspeed": [40]},
+        ]).to_parquet(tmp_path / "roads.parquet")
+        G, _bounds = roads.road_graph(gpd.read_parquet(tmp_path / "roads.parquet"))
+        return _edges_by_points(G)
+
+    with scout_routing(tmp_path) as m:
+        several, unknown = built(m.roads, [50, 30]), built(m.roads, None)
+    assert several[(a, b)]["maxspeed"] == several[(b, a)]["maxspeed"] == "50;30"
+    assert several[(a, mid)]["maxspeed"] == "40" and "maxspeed" not in unknown[(a, b)]
+    assert {points: data["speed_kph"] for points, data in several.items()} == {
+        points: data["speed_kph"] for points, data in unknown.items()}
+    assert several[(a, b)]["speed_kph"] == several[(a, mid)]["speed_kph"] == pytest.approx(40)
 
 
 # ---------------------------------------------------------------------------
