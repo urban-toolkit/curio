@@ -477,14 +477,10 @@ class Zygote:
         pidfd = state.pop("pidfd", None)
         if pidfd is None:
             return
-        try:
+        with contextlib.suppress(KeyError, ValueError):
             self._selector.unregister(pidfd)
-        except (KeyError, ValueError):
-            pass
-        try:
+        with contextlib.suppress(OSError):
             os.close(pidfd)
-        except OSError:
-            pass
 
     def _fork_child(self, request, selector, connection):
         from utk_curio.sandbox.isolation import child
