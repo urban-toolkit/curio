@@ -52,7 +52,7 @@ def test_seeder_and_readers_share_the_one_lock_helper():
     helper. The private ``_SEED_LOCK_*`` constants dev/93 had in seed.py are
     gone, so there is nothing left to drift."""
     assert packages_seed.package_seed_lock is locks.package_seed_lock
-    assert locks.package_seed_lock is locks.package_seed_lock
+    assert agent_reads.package_seed_lock is locks.package_seed_lock
     assert not hasattr(packages_seed, "_SEED_LOCK_FILENAME")
     assert not hasattr(packages_seed, "_SEED_LOCK_NAMESPACE")
 
