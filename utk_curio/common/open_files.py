@@ -12,8 +12,6 @@ own, and the sandbox's ``/monitor`` reply carries the sandbox's
 (``backend/app/monitor/open_files.py``).
 """
 
-import os
-
 #: The soft limit the launcher asks for, within the hard limit.
 WANTED = 65536
 
@@ -61,13 +59,7 @@ def _count():
         import psutil
 
         return int(psutil.Process().num_fds())
-    except Exception:  # noqa: BLE001 - no psutil, or a platform it cannot count on
-        pass
-    try:
-        # Linux without psutil. The listing's own descriptor is among them, as
-        # it is in psutil's count.
-        return len(os.listdir("/proc/self/fd"))
-    except OSError:
+    except Exception:  # noqa: BLE001 - Windows has no num_fds
         return None
 
 
