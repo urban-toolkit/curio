@@ -14,7 +14,13 @@ from utk_curio.backend.app.packages.domain.package_closure import required_packa
 from utk_curio.backend.app.packages.domain.versions import ResolverError
 from utk_curio.backend.app.packages.repositories import catalog_dir as packages_catalog_dir
 from utk_curio.backend.app.packages.repositories.store import package_dir
-from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
+from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock as _shared_seed_lock
+
+
+def package_seed_lock(user_key):
+    """Before-run only: a reader with a lock helper of its own, which the lock test must catch."""
+    return _shared_seed_lock(user_key)
+
 from utk_curio.backend.app.packages.application import (
     function_nodes as packages_function_nodes,
     package_dependencies as packages_dependencies,
