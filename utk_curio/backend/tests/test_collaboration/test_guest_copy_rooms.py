@@ -81,10 +81,14 @@ class _Guests:
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
     def live(self, project_id: str):
+        """The dataflow of *project_id* as it is now, or None when it has no
+        spec: ``dataflow_docs.read`` gives the whole spec, whose ``dataflow``
+        holds the nodes."""
         from utk_curio.backend.app.collaboration import dataflow_docs
         from utk_curio.backend.app.common.user_storage import GUEST_KEY
 
-        return dataflow_docs.read(GUEST_KEY, project_id)
+        spec = dataflow_docs.read(GUEST_KEY, project_id)
+        return spec["dataflow"] if spec is not None else None
 
 
 @pytest.fixture()
