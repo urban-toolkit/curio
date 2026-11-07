@@ -93,10 +93,11 @@ def solve_node_stream(
     agents_acquire._settle_discovery_acquisitions(user_key, project_id)
     base = agents_grounding._solve_grounding_base(user_key, project_id, spec, {node_id: node}, [node_id])
     dataset_paths = agents_grounding._resolve_catalog_execution_paths(project_id, list(base.get("catalog_ids") or {}))
+    collections = agents_grounding._resolve_catalog_collections(project_id, user_key, base.get("catalog_ids") or {})
     events = _solve_node_events(
         user_key, project_id, attachment_id, config, spec, node, resolution,
         record.get("coord", ""), record.get("sessionId"), execution_id, exec_fn,
-        manifest=manifest, grounding_base=base, dataset_paths=dataset_paths,
+        manifest=manifest, grounding_base=base, dataset_paths=dataset_paths, collections=collections,
         catalog_rows=agents_grounding._catalog_rows_for_discovery(user_key, project_id),
         templates=templates,
         acting_user=agents_spec_reads._acting_user(),
@@ -127,6 +128,7 @@ def _solve_node_events(
     manifest,
     grounding_base: dict,
     dataset_paths: dict,
+    collections: dict | None = None,
     templates: dict | None = None,
     catalog_rows: list | None = None,
     acting_user=None,
@@ -140,7 +142,7 @@ def _solve_node_events(
         done = yield from _solved_node(
             user_key, project_id, attachment_id, config, spec, node, resolution, coord, session_id,
             execution_id, exec_fn, manifest=manifest, grounding_base=grounding_base,
-            dataset_paths=dataset_paths, templates=templates, catalog_rows=catalog_rows,
+            dataset_paths=dataset_paths, collections=collections, templates=templates, catalog_rows=catalog_rows,
             acting_user=acting_user, room_asker=room_asker, peer=peer,
         )
     for landed in done.pop("landed", None) or []:
@@ -164,6 +166,7 @@ def _solved_node(
     manifest,
     grounding_base: dict,
     dataset_paths: dict,
+    collections: dict | None = None,
     templates: dict | None = None,
     catalog_rows: list | None = None,
     acting_user=None,
@@ -196,7 +199,8 @@ def _solved_node(
         outcome = yield from _run_node_loop(
             user_key, project_id, attachment_id, config, spec, node, resolution, coord, session_id,
             execution_id, exec_fn, manifest=manifest, grounding_base=grounding_base,
-            dataset_paths=dataset_paths, catalog_rows=catalog_rows, acting_user=acting_user,
+            dataset_paths=dataset_paths, collections=collections, catalog_rows=catalog_rows,
+            acting_user=acting_user,
         )
     verdict = outcome["verdict"]
     attempts = outcome["attempts"]
@@ -255,10 +259,12 @@ def _not_executable_outcome(node: dict, label: str, kind: str) -> dict:
 def _run_node_loop(
     user_key, project_id, attachment_id, config, spec, node, resolution, coord, session_id,
     execution_id, exec_fn, *, manifest, grounding_base, dataset_paths, catalog_rows, acting_user,
+    collections=None,
 ):
     """The per-node Solve's rounds: the ONE verified-content loop, started from the node's current
     content, with the traced delegate runner (the trace lands in this node's own home)."""
     node_id = node.get("id")
+    collections = {} if collections is None else collections
     # The saved keys of whoever asked, as the request recorded them in the base.
     keys = agents_grounding._keys_of(grounding_base, user_key, acting_user)
     # The dataflow block of every round's content-mode run, with the datasets
@@ -298,6 +304,11 @@ def _run_node_loop(
         # Finder's own delegation both come through here.
         dataset_paths_fn=lambda codes, formats: agents_grounding._session_dataset_paths(
             project_id, acting_user, dataset_paths, codes, formats
+        ),
+        # The collections the request resolved, topped up the same way, on
+        # the job's thread, and handed to the thread each attempt runs on.
+        collections_fn=lambda codes: agents_grounding._session_collections(
+            project_id, user_key, acting_user, collections, codes
         ),
         # dev/133: an empty result is a failed round here too — the
         # per-node Solve is where the owner presses "solve this node".

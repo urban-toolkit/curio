@@ -105,6 +105,7 @@ class SolveBatch:
         verify: bool = True,
         grounding_base: dict | None = None,
         dataset_paths: dict | None = None,
+        collections: dict | None = None,
         retry_of: str | None = None,
         catalog_rows: list | None = None,
         acting_user=None,
@@ -179,6 +180,15 @@ class SolveBatch:
             dataset_paths if dataset_paths is not None
             else (agents_grounding._resolve_catalog_execution_paths(
                 project_id, list(self.solve_ground.get("catalog_ids") or {}))
+                  if verify else {})
+        )
+        # The Data Catalog's collections, which the request thread resolved
+        # too; each attempt takes those its code reads on its pool's thread
+        # (``grounding._session_collections``).
+        self.solve_collections = (
+            collections if collections is not None
+            else (agents_grounding._resolve_catalog_collections(
+                project_id, user_key, self.solve_ground.get("catalog_ids") or {}, user=acting_user)
                   if verify else {})
         )
         self.batch_templates = agents_roster._roster_templates(user_key, project_id)  # dev/119: ONE snapshot per batch
@@ -1419,6 +1429,11 @@ class SolveBatch:
             # installed since this session started.
             dataset_paths_fn=lambda codes, formats: agents_grounding._session_dataset_paths(
                 self.project_id, self.acting_user, self.solve_dataset_paths, codes, formats
+            ),
+            # The collections, from the batch's mapping, topped up the same
+            # way, and handed to the thread each attempt runs on.
+            collections_fn=lambda codes: agents_grounding._session_collections(
+                self.project_id, self.user_key, self.acting_user, self.solve_collections, codes
             ),
             # dev/133: the batch's memoized preview — one
             # description per artifact, reused by the emptiness
