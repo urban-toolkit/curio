@@ -50,6 +50,7 @@ from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.agents.domain import map_edits
 from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.common import job_registry
 from utk_curio.backend.app.agents.domain import node_context
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 from utk_curio.backend.app.agents.infrastructure import provider_config
@@ -1148,6 +1149,12 @@ class SolveBatch:
         }
 
         pool = ThreadPoolExecutor(max_workers=agents_budgets._SOLVE_MAX_WORKERS)
+        # A pool's thread starts with no app context and serves no visitor:
+        # each node is solved in a context of the job's app, for the visitor
+        # the job serves, both taken here on the job's thread, so what its run
+        # looks up in the database (the Data Catalog datasets its code names)
+        # answers as on the job's thread.
+        solve_one = job_registry.in_app_context(visitor_copies.carrying(self.solve_one))
         # dev/131 (owner correction): the waves are this PASS's targets
         # — a node parked on the user (or already solved) is not
         # re-dispatched, so its trail and its reason survive the pass
@@ -1173,8 +1180,7 @@ class SolveBatch:
                     continue
                 yield "solve_wave", {"wave": wave_no, "of": len(waves), "nodeIds": list(wave)}
                 for target in wave:
-                    # For the visitor the job serves, on the worker's thread too.
-                    pool.submit(visitor_copies.carrying(self.solve_one), target)
+                    pool.submit(solve_one, target)
                 yield from self._drain_wave(wave)
                 if wave_no < len(waves):
                     # dev/118: the wave boundary persists and heartbeats;
