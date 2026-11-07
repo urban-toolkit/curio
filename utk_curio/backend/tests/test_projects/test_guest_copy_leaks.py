@@ -481,3 +481,23 @@ def test_another_guests_play_naming_a_guests_copy_writes_nothing_of_theirs(clien
     assert reply["installedDataset"] is None
     assert _computed_in_the_store() == []
     assert _results(client, VISITOR_A, example) == {"a": made_a}
+
+
+def test_no_one_reads_a_guests_results_through_a_dashboard_naming_its_copy(client, example, sandbox):
+    """A's results are read on A's own dashboard of the example, never
+    through the dashboard's output routes naming A's copy by its id, by B or
+    by a visitor who sends no sign-in."""
+    made_a = sandbox["artifacts"]["a"]
+    _play(client, VISITOR_A, example, "a")
+    a_copy = _copy_of(VISITOR_A, example)
+
+    mine = client.get(f"/api/projects/{example}/dashboard/outputs/get", query_string={"fileName": made_a},
+                      headers=auth_headers(VISITOR_A))
+    assert mine.status_code == 200, mine.get_data(as_text=True)
+    assert is_kept_session(sandbox["reads"][-1]["sessionId"])
+    reads = len(sandbox["reads"])
+    for headers in (auth_headers(VISITOR_B), {}):
+        resp = client.get(f"/api/projects/{a_copy}/dashboard/outputs/get", query_string={"fileName": made_a},
+                          headers=headers)
+        assert resp.status_code == 404, resp.get_data(as_text=True)
+    assert len(sandbox["reads"]) == reads
