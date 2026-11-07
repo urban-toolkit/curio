@@ -58,7 +58,7 @@ describe("llmConfigsApi", () => {
     expect(JSON.parse(init.body)).toEqual({});
 
     await llmConfigsApi.duplicate("llm-00000000000a", { label: "Copy", model: "gpt-4o" });
-    [url, init] = mocked.mock.calls[1];
+    [, init] = mocked.mock.calls[1];
     expect(JSON.parse(init.body)).toEqual({ label: "Copy", model: "gpt-4o" });
   });
 
@@ -70,12 +70,12 @@ describe("llmConfigsApi", () => {
     expect(JSON.parse(init.body)).toEqual({ configId: "llm-00000000000a" });
 
     await llmConfigsApi.setDefault(null);
-    [url, init] = mocked.mock.calls[1];
+    [, init] = mocked.mock.calls[1];
     expect(JSON.parse(init.body)).toEqual({ configId: null });
 
     const pick = 'curio:["Lab: one / two","org/model-x"]';
     await llmConfigsApi.setDefault(pick);
-    [url, init] = mocked.mock.calls[2];
+    [, init] = mocked.mock.calls[2];
     expect(JSON.parse(init.body)).toEqual({ configId: pick });
   });
 
