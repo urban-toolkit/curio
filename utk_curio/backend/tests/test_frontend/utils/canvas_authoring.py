@@ -2,6 +2,7 @@
 
 import re
 import time
+from urllib.error import HTTPError
 from urllib.parse import urlparse
 
 from playwright.sync_api import (
@@ -9,8 +10,9 @@ from playwright.sync_api import (
     expect,
 )
 
+from .db_stubs import SESSION_COOKIE_NAME, api_json
 from .palettes import close_tools_palette, open_tools_palette, tools_palette_is_open
-from .run_all import wait_for_run_guard_released
+from .run_all import backend_url_of, wait_for_run_guard_released
 from .screenshots import park_pointer
 
 
@@ -58,6 +60,62 @@ def wait_for_dataflow_open(page, *, timeout: float = DATAFLOW_OPEN_TIMEOUT_MS) -
             f"the dataflow never opened within {timeout / 1000:.0f} s: the canvas title still "
             f"read {OPENING_TITLE!r}, so a drop made while it opened was kept and made no node"
         ) from None
+
+
+#: The dataflow a canvas route names, by its id.
+_DATAFLOW_ROUTE = re.compile(
+    r"/dataflow/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:/|$)"
+)
+
+#: Whether some node on the canvas has an id outside *ids*.
+_A_NODE_OUTSIDE_JS = "(ids) => window.__curio_reactFlow.getNodes().some((node) => !ids.includes(node.id))"
+
+
+def _dataflow_opening(page) -> bool:
+    """Whether the canvas title says the dataflow is still opening."""
+    title = page.locator(CANVAS_TITLE_HEADING)
+    return title.count() > 0 and title.first.inner_text() == OPENING_TITLE
+
+
+def _dataflow_node_ids(page) -> set:
+    """The ids of the nodes the server holds for the dataflow the page's route
+    names, read with the page's own sign-in the two ways its load reads them:
+    as the account's own dataflow, then by its link. Empty for a route that
+    names no saved dataflow, or one the account can read neither way, whose
+    load then fails and lets every kept drop go."""
+    match = _DATAFLOW_ROUTE.search(urlparse(page.url).path)
+    if match is None:
+        return set()
+    token = next(
+        (cookie["value"] for cookie in page.context.cookies() if cookie["name"] == SESSION_COOKIE_NAME),
+        "",
+    )
+    backend = backend_url_of(page)
+    for path in (f"/api/projects/{match.group(1)}", f"/api/projects/{match.group(1)}/shared"):
+        try:
+            answer = api_json(f"{backend}{path}", token, timeout=DATAFLOW_OPEN_TIMEOUT_MS / 1000)
+        except HTTPError as exc:
+            if exc.code in (401, 403, 404):
+                continue
+            raise
+        dataflow = (answer.get("spec") or {}).get("dataflow") or {}
+        return {
+            str(node["id"]) for node in dataflow.get("nodes") or []
+            if isinstance(node, dict) and node.get("id")
+        }
+    return set()
+
+
+def _not_the_drops(page) -> set:
+    """The ids of the nodes a drop made now cannot make: those on the canvas,
+    and, while the dataflow is still opening, those its load will put there,
+    as the server holds them. A drop made then is kept and made once the load
+    is in, so the load's nodes reach the canvas first: they are not the
+    drop's, whatever the moment the canvas is read."""
+    ids = {node["id"] for node in canvas_nodes(page)}
+    if _dataflow_opening(page):
+        ids |= _dataflow_node_ids(page)
+    return ids
 
 # One HTML5 drag, start to finish, on the elements the app actually listens to.
 #
@@ -586,9 +644,10 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
 
     A drop made while the dataflow opens is kept and made once it is in, so
     this waits for it to open (``wait_for_dataflow_open``), then gives the
-    node *timeout*.
+    node *timeout*. The nodes the load brings reach the canvas before it, and
+    are told apart by the dataflow the server holds (``_not_the_drops``).
     """
-    before = {node["id"] for node in canvas_nodes(page)}
+    before = _not_the_drops(page)
 
     # Wait for the drag SOURCE too, not just the drop target. A tile that is
     # attached but not yet interactive produces an empty dataTransfer payload,
@@ -623,11 +682,7 @@ def drag_to_canvas(page, source, *, at: tuple[float, float] | None = None,
     # A drop made while the dataflow opens makes its node once the load is in.
     wait_for_dataflow_open(page)
     try:
-        page.wait_for_function(
-            "(n) => window.__curio_reactFlow.getNodes().length > n",
-            arg=len(before),
-            timeout=timeout,
-        )
+        page.wait_for_function(_A_NODE_OUTSIDE_JS, arg=sorted(before), timeout=timeout)
     except PlaywrightTimeoutError:
         raise AssertionError(
             "Drop produced no node. Either the drag payload was empty (the "
@@ -793,18 +848,14 @@ def drag_to_canvas_with_the_mouse(page, grip, *, at: tuple[float, float],
     *at* is an offset from the pane's top-left corner, as for
     ``drag_to_canvas``. Fails with where the drop went when no node arrives.
     """
-    before = {node["id"] for node in canvas_nodes(page)}
+    before = _not_the_drops(page)
     drop = drag_with_the_mouse_onto_canvas(page, grip, at=at, timeout=timeout)
     target = drop["target"]
 
     # A drop made while the dataflow opens makes its node once the load is in.
     wait_for_dataflow_open(page)
     try:
-        page.wait_for_function(
-            "(n) => window.__curio_reactFlow.getNodes().length > n",
-            arg=len(before),
-            timeout=timeout,
-        )
+        page.wait_for_function(_A_NODE_OUTSIDE_JS, arg=sorted(before), timeout=timeout)
     except PlaywrightTimeoutError:
         seen = page.evaluate("() => window.__curioMouseDrag")
         dropped = f"landed on {seen['droppedOn']}" if seen["droppedOn"] else "was taken by no element"
