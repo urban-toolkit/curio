@@ -553,8 +553,8 @@ def markdown(models: list[ModelRun], problems: list[str], *, scope: dict, page_u
     if problems:
         lines += ["**Failed:**", ""] + [f"- {problem}" for problem in problems] + [""]
     else:
-        lines += ["**Passed:** every model answered, no run was left in an error, and no skill is shown worse "
-                  "than main's last run.", ""]
+        lines += [("**Passed:** every model answered, no run was left in an error, and no skill is shown worse "
+                   "than main's last run."), ""]
     lines += ["| Model | Probe | Runs | Errors | Tokens | Cost |", "|---|---|---|---|---|---|"]
     for run in models:
         lines.append(f"| `{run.model}` | {_probe(run)} | {run.runs} | {run.errors} | "
