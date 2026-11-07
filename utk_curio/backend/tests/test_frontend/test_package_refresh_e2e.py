@@ -77,12 +77,17 @@ def _install_from_the_node_catalog(page) -> None:
     expect(drawer).to_have_attribute("aria-hidden", "false", timeout=10000)
 
     card = page.locator(f'article[data-pkg-dir="{PKG_DIR}"]')
-    if card.count() == 0:
-        card = page.locator("article").filter(has_text=UI_TEST_PACKAGE_NAME).first
-    card.first.get_by_role("button", name=re.compile(r"^Add to project")).click()
-    page.get_by_role("dialog").last.get_by_role(
-        "button", name=re.compile(r"^(Add|Install)")
-    ).last.click()
+    expect(card).to_be_visible(timeout=30000)
+    card.get_by_role("button", name=re.compile(r"^Add to project")).click()
+    # Confirm in this package's own review. An Add made while the dataflow
+    # still opens shows its review once the open is in, up to 15 s later
+    # (PROJECT_LOAD_WAIT_MS); until then the last dialog on the page is the
+    # drawer, whose last Add is another package's (main's run 42323207500).
+    review = page.locator('[data-curio-add-review="true"]').filter(
+        has=page.get_by_role("heading", name=f'Add "{UI_TEST_PACKAGE_NAME}"')
+    )
+    expect(review).to_be_visible(timeout=20000)
+    review.get_by_role("button", name=re.compile(r"^(Add|Install)")).last.click()
     # The install copies the tree and pip-resolves; give it room.
     expect(
         page.locator(f'article[data-pkg-dir="{PKG_DIR}"]').first.get_by_role(
