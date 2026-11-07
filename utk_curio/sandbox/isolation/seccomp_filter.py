@@ -60,14 +60,17 @@ def import_pyseccomp():
     10 of the 22 ms the import took on CI. So while pyseccomp imports here,
     ``ctypes.util`` is a stand-in whose ``find_library`` loads a library's
     soname with ``ctypes.CDLL``, as the import then does, and gives that
-    name, the one ``ldconfig`` gives on glibc. A name it does not know, and
-    a soname that does not load (musl's C library is not ``libc.so.6``), go
-    to the real ``find_library``: imported then if it was not, and kept, as
-    the import would have kept it. The ``ctypes.util`` there was before is
-    put back as the import ends, whether it raised or not. That changes
-    ``sys.modules`` for the import's length, so only a process in which no
-    other thread runs Python calls this: the wrapper, the zygote as it warms
-    up, and a child the zygote forked.
+    name, the one ``ldconfig`` gives on glibc. The real ``ctypes.util``,
+    imported then if it was not and kept, as the import would have kept it,
+    answers the rest: a name the stand-in does not know, a soname that does
+    not load (musl's C library is not ``libc.so.6``), and any other
+    attribute of the stand-in (its module ``__getattr__``), so that a
+    pyseccomp whose import reads more than ``find_library`` still imports.
+    The ``ctypes.util`` there was before is put back as the import ends,
+    whether it raised or not. That changes ``sys.modules`` for the import's
+    length, so only a process in which no other thread runs Python calls
+    this: the wrapper, the zygote as it warms up, and a child the zygote
+    forked.
 
     A pyseccomp already imported is returned as it is, as the zygote's is in
     a child. Raises what the import raises: ImportError without pyseccomp,
@@ -82,8 +85,17 @@ def import_pyseccomp():
     real = sys.modules.get("ctypes.util")
     stand_in = types.ModuleType("ctypes.util")
 
-    def find_library(name):
+    def the_real():
         nonlocal real
+        if real is None:
+            import importlib
+
+            if sys.modules.get("ctypes.util") is stand_in:
+                del sys.modules["ctypes.util"]
+            real = importlib.import_module("ctypes.util")
+        return real
+
+    def find_library(name):
         soname = _SONAMES.get(name)
         if soname is not None:
             try:
@@ -92,14 +104,13 @@ def import_pyseccomp():
                 pass
             else:
                 return soname
-        if real is None:
-            import importlib
+        return the_real().find_library(name)
 
-            del sys.modules["ctypes.util"]
-            real = importlib.import_module("ctypes.util")
-        return real.find_library(name)
+    def real_attribute(name):
+        return getattr(the_real(), name)
 
     stand_in.find_library = find_library
+    stand_in.__getattr__ = real_attribute
     sys.modules["ctypes.util"] = stand_in
     ctypes.util = stand_in
     try:

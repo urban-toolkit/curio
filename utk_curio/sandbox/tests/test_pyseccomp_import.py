@@ -14,7 +14,8 @@ and the zygote imports pyseccomp before its first fork. The first two tests
 watch the real wrapper and a real zygote's child through an audit hook, which
 a ``sitecustomize`` on PYTHONPATH installs in the interpreters they start. The
 others import pyseccomp through the helper in fresh interpreters: where the
-sonames load and where they do not, and what ``ctypes.util`` is left as.
+sonames load and where they do not, where pyseccomp reads more of
+``ctypes.util``, and what ``ctypes.util`` is left as.
 """
 
 import importlib.util
@@ -320,6 +321,39 @@ def test_pyseccomp_loads_what_find_library_finds_and_ctypes_util_is_left_as_its_
     )
     assert outcome["ctypes.util"] == ctypes_util, f"ctypes.util after the import: {outcome}"
     assert outcome["asked"] == asked, f"what the real find_library was asked: {outcome}"
+
+
+#: A stand-in pyseccomp whose import, between its two ``find_library`` calls,
+#: reads an attribute of ``ctypes.util`` that pyseccomp 0.1.2 does not:
+#: ``test``, which ``ctypes.util`` has on every platform.
+_READS_MORE_OF_CTYPES_UTIL = (
+    "import ctypes\n"
+    "import ctypes.util\n"
+    "_libc = ctypes.CDLL(ctypes.util.find_library('c'))\n"
+    "TEST = ctypes.util.test\n"
+    "_libseccomp = ctypes.CDLL(ctypes.util.find_library('seccomp'))\n"
+)
+
+
+@pytest.mark.parametrize("arguments, ctypes_util", [
+    pytest.param([], "imported", id="ctypes-util-not-imported"),
+    pytest.param(["--ctypes-util-imported"], "as it was", id="ctypes-util-imported"),
+])
+def test_a_pyseccomp_whose_import_reads_more_of_ctypes_util_still_imports(tmp_path, arguments, ctypes_util):
+    """requirements.txt sets no upper bound on pyseccomp, and 0.1.2 reads
+    only ``find_library`` from ``ctypes.util``. A later one whose import
+    reads more, here a stand-in that reads ``ctypes.util.test``, gets the
+    real module's attribute and imports, and ``ctypes.util`` is left as the
+    plain import would leave it: the real module, imported then if it was
+    not."""
+    stand_in = tmp_path / "reads-more-of-ctypes-util"
+    stand_in.mkdir()
+    (stand_in / "pyseccomp.py").write_text(_READS_MORE_OF_CTYPES_UTIL, encoding="utf-8")
+    outcome = _through_the_helper("--stand-in", str(stand_in), *arguments)
+    assert outcome.get("loaded") == outcome["found"], (
+        f"pyseccomp did not import, or did not load the libraries the real find_library finds: {outcome}"
+    )
+    assert outcome["ctypes.util"] == ctypes_util, f"ctypes.util after the import: {outcome}"
 
 
 def test_ctypes_util_is_put_back_when_pyseccomp_cannot_be_imported(tmp_path):
