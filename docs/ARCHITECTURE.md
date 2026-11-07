@@ -1435,13 +1435,21 @@ driver starts, it binds and listens on an abstract local socket
 (`cuda-uvmfd-<namespace>-<pid>`) and fails with error 304 when it cannot. With
 `connect` and `accept` denied, no socket carries anything into or out of a child.
 
+The denylist also holds `setsid` and `setpgid` (glibc's `setpgrp` is
+`setpgid(0, 0)`), and every process a child starts inherits the filter, so none
+can leave the child's process group. The zygote's deadline kill and the kill of
+a dead zygote's run are both a `killpg` of that group, so they reach every
+process a node started. The child's own `setsid` comes before the filter.
+Starting a process in a session or process group of its own, as
+`subprocess.Popen(start_new_session=True)` does, fails with `PermissionError`.
+
 > [!IMPORTANT]
 > **Implementation status.** The confinement code runs in CI. Three jobs cover
 > it, and each covers a different half:
 >
 > - `unit` runs `tests/test_isolation_linux.py` in the sandbox suite on Linux: the
 >   fork, the seccomp filter (sockets of every family but `AF_UNIX`, connecting,
->   accepting and ptrace denied), the rlimits,
+>   accepting, ptrace and leaving the process group denied), the rlimits,
 >   the deadline kill, session scoping across the boundary, and the zygote
 >   holding no DuckDB handle. This is where the *boundary* is demonstrated.
 > - `test-isolated` boots a second stack with `CURIO_ISOLATION=fork` and runs
