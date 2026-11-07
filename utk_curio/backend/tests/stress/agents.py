@@ -497,19 +497,23 @@ class RoomAgents:
         """Every turn's work over, at most *timeout* in all: the users'
         results go to the main process only then, whole."""
         deadline = time.monotonic() + timeout
-        for turn in list(self.turns.values()):
+        with self._cond:
+            turns = list(self.turns.values())
+        for turn in turns:
             turn.over.wait(max(0.0, deadline - time.monotonic()))
 
     # -- the waits --------------------------------------------------------------
 
     def before_compare(self, user, tab) -> None:
         """Before the room's tabs compare their docs, in a room whose members
-        asked at once: the member's own turn over, then every member's, then
-        every landed write in its tab, so no write lands while they compare."""
+        asked at once: the member's own turn over, then every member's, a
+        member's that left the room among them, then every landed write in
+        its tab, so no write lands while they compare."""
         if not self.early:
             return
         self._wait_for_own(user)
         self.room.reach("turns ended", user.name, TURN_WAIT_S)
+        self.wait_over(TURN_WAIT_S)
         self._writes_in_tab(user, tab)
 
     def after_plays(self, user) -> None:
@@ -518,14 +522,15 @@ class RoomAgents:
 
     def before_the_run(self, user) -> None:
         """The owner, before it runs the dataflow on the server and saves it:
-        every member still in the room has asked and its turn is over, so the
-        run reads every agent's code and the save holds it."""
+        every member still in the room has asked, and every turn asked is
+        over, a member's that left the room among them, so the run reads
+        every agent's code and the save holds it."""
         deadline = time.monotonic() + TURN_WAIT_S
         with self._cond:
             while True:
-                waiting = [member for member in self.room.members if self.room.present(member)
-                           and member not in self.skipped
-                           and (member not in self.turns or not self.turns[member].over.is_set())]
+                waiting = sorted({member for member in self.room.members if self.room.present(member)
+                                  and member not in self.skipped and member not in self.turns}
+                                 | {turn.member for turn in self.turns.values() if not turn.over.is_set()})
                 left = deadline - time.monotonic()
                 if not waiting or left <= 0:
                     break
