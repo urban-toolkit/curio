@@ -62,6 +62,14 @@ jobs:
             docker ps -aq --filter "label=com.docker.compose.project=$project" | xargs -r docker rm -f
           done
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+          # As docker-compose.yml's reclaim step: a checkout of part of the tree
+          # an earlier job left on this runner would hold the next one to it.
+          if [ -f .git/config ]; then
+            echo "clearing any checkout of part of the tree an earlier job left"
+            git config --local --unset-all core.sparseCheckout || true
+            git config --local --unset-all core.sparseCheckoutCone || true
+            rm -f .git/info/sparse-checkout || true
+          fi
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6

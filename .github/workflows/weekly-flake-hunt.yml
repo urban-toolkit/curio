@@ -50,16 +50,27 @@ jobs:
       contents: read
     steps:
       # A Full stack build job on this runner can leave root-owned files in the
-      # workspace, which the checkout cannot remove (as the stacks' reclaim
-      # step in docker-compose.yml hands them back).
+      # workspace, which the checkout cannot remove, and an earlier checkout of
+      # part of the tree, which would hold this one to it (as the stacks'
+      # reclaim step in docker-compose.yml hands them back and clears it).
       - name: 🧹 Reclaim root-owned files
-        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+        shell: bash
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+          if [ -f .git/config ]; then
+            echo "clearing any checkout of part of the tree an earlier job left"
+            git config --local --unset-all core.sparseCheckout || true
+            git config --local --unset-all core.sparseCheckoutCone || true
+            rm -f .git/info/sparse-checkout || true
+          fi
 
+      # The whole tree, never part of it: a checkout of part of the tree on this
+      # runner sets core.sparseCheckout in its workspace's .git/config, which
+      # the next checkout's own disable does not clear, so every later job on
+      # the runner would check out this one file and fail at its first local
+      # action (11-07: arcade-cpu-05 failed every job at start-stack).
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
-        with:
-          sparse-checkout: scripts/ci_weekly_report.py
-          sparse-checkout-cone-mode: false
 
       - name: 📋 Wait for the run and write the week's report
         env:

@@ -388,8 +388,14 @@ jobs:
       # curio-ci* compose stack still on the daemon goes first, found by label,
       # which needs no compose file and leaves every other stack alone. Then a
       # throwaway root container hands the files containers wrote as root back
-      # to the runner user, which actions/checkout's clean needs. A local action
-      # could not do this: it is not on disk before checkout.
+      # to the runner user, which actions/checkout's clean needs. Last, a
+      # checkout of part of the tree an earlier job made here (non-cone mode)
+      # left core.sparseCheckout in the workspace's .git/config, which
+      # actions/checkout's own disable does not clear: it writes false into the
+      # worktree's config, then turns worktree config off. Every later checkout
+      # on the runner would hold those files alone and fail at its first local
+      # action (11-07: arcade-cpu-05, after the Weekly flake hunt's report). A
+      # local action could not do this: it is not on disk before checkout.
       - &reclaim
         name: 🧹 Remove stacks an earlier job left, reclaim root-owned files (self-hosted)
         if: runner.environment == 'self-hosted'
@@ -407,6 +413,12 @@ jobs:
           done
           echo "handing root-owned files back to the runner user"
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+          if [ -f .git/config ]; then
+            echo "clearing any checkout of part of the tree an earlier job left"
+            git config --local --unset-all core.sparseCheckout || true
+            git config --local --unset-all core.sparseCheckoutCone || true
+            rm -f .git/info/sparse-checkout || true
+          fi
 
       # Two commits deep, so the reuse step can compare this commit with its
       # first parent (main, on a PR's merge ref).
