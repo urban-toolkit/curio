@@ -40,7 +40,7 @@ export interface DeoverlapOptions {
     measure?: (node: MeasurableNode) => NodeBox;
 }
 
-type PositionedNode = MeasurableNode & {
+export type PositionedNode = MeasurableNode & {
     id?: unknown;
     position?: { x?: unknown; y?: unknown } | null;
 };
@@ -61,6 +61,51 @@ function gapY(a: Box, b: Box): number {
  */
 function conflicts(a: Box, b: Box, gutterX: number, gutterY: number): boolean {
     return gapX(a, b) < gutterX && gapY(a, b) < gutterY;
+}
+
+/** A node's box, or null when it has no usable position. */
+function boxOf(node: PositionedNode, measure: (node: MeasurableNode) => NodeBox): Box | null {
+    const position = node?.position;
+    const x = position?.x;
+    const y = position?.y;
+    // A node with no usable position is passed through untouched rather than
+    // parked at the origin, where it would shove everything else aside.
+    if (typeof x !== "number" || !Number.isFinite(x)) return null;
+    if (typeof y !== "number" || !Number.isFinite(y)) return null;
+    const { width, height } = measure(node);
+    return { x, y, w: width, h: height };
+}
+
+/**
+ * *home* pushed clear of every box in *placed*, which stay where they are: one
+ * obstacle at a time, down, or right when that is shorter or the drop would
+ * pass `MAX_COLUMN_DROP`, for at most *budget* pushes.
+ */
+function pushClear(home: Box, placed: readonly Box[], gutterX: number, gutterY: number, budget: number): Box {
+    const box: Box = { ...home };
+    let steps = 0;
+
+    for (;;) {
+        const obstacle = placed.find((other) => conflicts(box, other, gutterX, gutterY));
+        if (!obstacle || steps++ >= budget) break;
+
+        // Round away from the obstacle: that can only ever widen the gap, so
+        // a fractional authored coordinate does not re-trigger next time.
+        const downY = Math.ceil(obstacle.y + obstacle.h + gutterY);
+        const rightX = Math.ceil(obstacle.x + obstacle.w + gutterX);
+        const costDown = downY - box.y;
+        const costRight = rightX - box.x;
+
+        // Ties go down: default boxes are wider than tall, so a coincident
+        // cluster fans into a column, which is how a dataflow reads.
+        if (downY - home.y <= MAX_COLUMN_DROP && costDown <= costRight) {
+            box.y = downY;
+        } else {
+            box.x = rightX;
+        }
+    }
+
+    return box;
 }
 
 /**
@@ -107,17 +152,7 @@ export function deoverlapNodes<T extends PositionedNode>(
 
     if (!Array.isArray(nodes) || nodes.length < 2) return nodes;
 
-    const boxes: (Box | null)[] = nodes.map((node) => {
-        const position = node?.position;
-        const x = position?.x;
-        const y = position?.y;
-        // A node with no usable position is passed through untouched rather than
-        // parked at the origin, where it would shove everything else aside.
-        if (typeof x !== "number" || !Number.isFinite(x)) return null;
-        if (typeof y !== "number" || !Number.isFinite(y)) return null;
-        const { width, height } = measure(node);
-        return { x, y, w: width, h: height };
-    });
+    const boxes: (Box | null)[] = nodes.map((node) => boxOf(node, measure));
 
     const live: number[] = [];
     boxes.forEach((box, index) => {
@@ -153,30 +188,7 @@ export function deoverlapNodes<T extends PositionedNode>(
     const budget = 4 * live.length + 8;
 
     for (const index of order) {
-        const home = boxes[index]!;
-        const box: Box = { ...home };
-        let steps = 0;
-
-        for (;;) {
-            const obstacle = placed.find((other) => conflicts(box, other, gutterX, gutterY));
-            if (!obstacle || steps++ >= budget) break;
-
-            // Round away from the obstacle: that can only ever widen the gap, so
-            // a fractional authored coordinate does not re-trigger next time.
-            const downY = Math.ceil(obstacle.y + obstacle.h + gutterY);
-            const rightX = Math.ceil(obstacle.x + obstacle.w + gutterX);
-            const costDown = downY - box.y;
-            const costRight = rightX - box.x;
-
-            // Ties go down: default boxes are wider than tall, so a coincident
-            // cluster fans into a column, which is how a dataflow reads.
-            if (downY - home.y <= MAX_COLUMN_DROP && costDown <= costRight) {
-                box.y = downY;
-            } else {
-                box.x = rightX;
-            }
-        }
-
+        const box = pushClear(boxes[index]!, placed, gutterX, gutterY, budget);
         placed.push(box);
         resolved[index] = box;
     }
@@ -188,4 +200,35 @@ export function deoverlapNodes<T extends PositionedNode>(
         if (!box || !home || (box.x === home.x && box.y === home.y)) return node;
         return { ...node, position: { ...(node.position ?? {}), x: box.x, y: box.y } };
     });
+}
+
+/**
+ * Where *node*, asked for at *position*, goes so that it clears *nodes*, which
+ * stay where they are: *position* itself when nothing is in the way, else the
+ * spot `deoverlapNodes` pushes a node to, down or right, whichever is shorter.
+ *
+ * For a node made where the canvas could not be seen: a drop made while a
+ * dataflow opened lands once the dataflow's nodes are in (useDropsWhileOpening).
+ */
+export function clearSpotFor(
+    node: MeasurableNode,
+    position: { x: number; y: number },
+    nodes: readonly PositionedNode[],
+    options: DeoverlapOptions = {},
+): { x: number; y: number } {
+    const {
+        gutterX = NODE_GUTTER_X,
+        gutterY = NODE_GUTTER_Y,
+        measure = resolveNodeBoxSize,
+    } = options;
+
+    const placed: Box[] = [];
+    for (const other of nodes) {
+        const box = boxOf(other, measure);
+        if (box) placed.push(box);
+    }
+    const { width, height } = measure(node);
+    const home: Box = { x: position.x, y: position.y, w: width, h: height };
+    const box = pushClear(home, placed, gutterX, gutterY, 4 * (placed.length + 1) + 8);
+    return { x: box.x, y: box.y };
 }
