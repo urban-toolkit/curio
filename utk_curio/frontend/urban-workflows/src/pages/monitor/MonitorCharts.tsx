@@ -223,6 +223,13 @@ const DAY_MS = 86_400_000;
  */
 export const DAYS_AXIS_FORMAT = "%b %-d, %H:%M";
 
+/**
+ * A tick for every 150 pixels of such an axis, room for a label of the day
+ * and the hour: at Vega's own count of one tick per 40 pixels it hides most
+ * of the labels and keeps a grid line for each.
+ */
+const DAYS_TICK_COUNT = { expr: "ceil(width / 150)" };
+
 /** How long the time axis spans: its domain when given, else the rows' times. */
 function timeSpanOf(rows: Record<string, unknown>[], timeField: string, timeDomain?: [number, number]): number {
   if (timeDomain) return timeDomain[1] - timeDomain[0];
@@ -271,7 +278,10 @@ export function linesOverTimeSpec({
       field: timeField,
       type: "temporal",
       title: null,
-      axis: { ...ink, labelFlush: true, ...(days ? { format: DAYS_AXIS_FORMAT } : {}) },
+      axis: {
+        ...ink, labelFlush: true,
+        ...(days ? { format: DAYS_AXIS_FORMAT, tickCount: DAYS_TICK_COUNT } : {}),
+      },
       ...(timeDomain ? { scale: { domain: timeDomain } } : {}),
     },
     y: {
