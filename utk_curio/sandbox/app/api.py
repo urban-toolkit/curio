@@ -2,8 +2,6 @@ from flask import request, abort, jsonify, Response
 from functools import wraps
 import json
 import sys
-import geopandas as gpd
-import pandas as pd
 from utk_curio.common import open_files
 from utk_curio.sandbox import metrics, run_place
 from utk_curio.sandbox.app import app

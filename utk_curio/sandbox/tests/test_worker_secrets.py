@@ -4,7 +4,6 @@ The value reaches node code only through the injected callable: not through
 ``os.environ``, not through a namespace dict, and never back out in stdout or
 stderr un-redacted.
 """
-import os
 import unittest
 
 from utk_curio.sandbox.app.worker import _worker_init, execute_code

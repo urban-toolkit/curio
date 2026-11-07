@@ -2,7 +2,6 @@ import geopandas as gpd
 import pandas as pd
 import contextlib
 import json
-import math
 import re
 import zlib
 import os
@@ -16,7 +15,6 @@ from pathlib import Path
 
 #DuckDB imports:
 import io
-import duckdb
 from utk_curio.common.kept_sessions import is_kept_session
 from utk_curio.sandbox.util.db import get_connection, get_read_connection, init_db
 # Value <-> bytes conversion lives in codec.py, which deliberately has no access

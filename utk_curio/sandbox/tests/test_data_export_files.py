@@ -22,7 +22,6 @@ without them fails each test on its own.
 from __future__ import annotations
 
 import contextlib
-import itertools
 import json
 import os
 import secrets

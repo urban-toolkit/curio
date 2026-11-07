@@ -49,7 +49,6 @@ import os
 import sys
 import textwrap
 import unittest
-import weakref
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
