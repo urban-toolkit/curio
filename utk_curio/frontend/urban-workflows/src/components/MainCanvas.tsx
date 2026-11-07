@@ -111,18 +111,20 @@ import { CanvasScenarioLayers } from "./scenarios/CanvasScenarioLayers";
 import { useScenarioUi } from "./scenarios/scenarioUi";
 import { useProjectLoadState } from "./projectLoadState";
 import { useDropsWhileOpening } from "../hook/useDropsWhileOpening";
+import { clearSpotFor, type PositionedNode } from "../utils/deoverlapLayout";
 
 /** What a drop on the canvas carries, read while its event lasts: the browser
  *  keeps a drag's data only for its drop, and a card's own drag lets its
- *  payload go at its end. */
+ *  payload go at its end. `position` is where it goes on the canvas, and `at`
+ *  the point of the window it was dropped on. */
 type CanvasDrop =
-    | { kind: "dataset"; dataset: DatasetDragPayload; position: XYPosition }
-    | { kind: "files"; files: File[]; position: XYPosition }
+    | { kind: "dataset"; dataset: DatasetDragPayload; position: XYPosition; at: XYPosition }
+    | { kind: "files"; files: File[]; position: XYPosition; at: XYPosition }
     | { kind: "package"; dropped: PackageCardDrop }
     | { kind: "model"; model: ModelDragPayload }
-    | { kind: "scenario"; scenario: ScenarioDragPayload; position: XYPosition }
+    | { kind: "scenario"; scenario: ScenarioDragPayload; position: XYPosition; at: XYPosition }
     | { kind: "agent"; agentCoord: string; target: AgentDropTarget }
-    | { kind: "node"; type: NodeType; position: XYPosition };
+    | { kind: "node"; type: NodeType; position: XYPosition; at: XYPosition };
 
 const FILL_STYLE: React.CSSProperties = { width: "100%", height: "100%" };
 // The notebook is a white page, as a Jupyter notebook is, under its cells.
@@ -163,6 +165,7 @@ export function MainCanvas() {
         scenarioSets,
         packages: dataflowPackages,
         viewerMode,
+        loadFitPending,
         dataflowDoc,
         applyRemoveChanges,
     } = useFlowContext();
@@ -192,6 +195,19 @@ export function MainCanvas() {
         [nodes, edges, scenarios, scenarioSets, highlightedScenario, scenarioPreview, notebookOn],
     );
 
+    // The boxes collapsed scenarios and collapsed shared groups are drawn as,
+    // beside React Flow's nodes, in canvas units.
+    const collapsedBoxes = useMemo(() => [
+        ...scenarioView.boxes.map((box) => ({
+            id: box.scenario.id, x: box.x, y: box.y, width: BOX_WIDTH, height: boxLayout(box).height,
+        })),
+        ...(scenarioView.groups ?? [])
+            .filter((group) => group.collapsed)
+            .map((group) => ({
+                id: group.key, x: group.x, y: group.y, width: BOX_WIDTH, height: groupBoxLayout(group).height,
+            })),
+    ], [scenarioView.boxes, scenarioView.groups]);
+
     // How far the viewport may pan, tracking the nodes rather than a fixed box
     // (#234). Two memos on purpose: React Flow re-applies `translateExtent`
     // through an effect keyed on the value's IDENTITY, so handing it a fresh
@@ -201,25 +217,19 @@ export function MainCanvas() {
     // actually crosses a boundary. A collapsed box, a scenario's or a shared
     // group's, counts as a node.
     const [extentMinX, extentMinY, extentMaxX, extentMaxY] = useMemo(() => {
-        const asNode = (id: string, x: number, y: number, height: number) => ({
+        const boxes = collapsedBoxes.map(({ id, x, y, width, height }) => ({
             id,
             position: { x, y },
             positionAbsolute: { x, y },
-            width: BOX_WIDTH,
+            width,
             height,
             data: {},
-        });
-        const boxes = [
-            ...scenarioView.boxes.map((box) => asNode(box.scenario.id, box.x, box.y, boxLayout(box).height)),
-            ...(scenarioView.groups ?? [])
-                .filter((group) => group.collapsed)
-                .map((group) => asNode(group.key, group.x, group.y, groupBoxLayout(group).height)),
-        ];
+        }));
         const [[minX, minY], [maxX, maxY]] = computeTranslateExtent(
             boxes.length > 0 ? [...nodes, ...boxes] : nodes,
         );
         return [minX, minY, maxX, maxY];
-    }, [nodes, scenarioView.boxes, scenarioView.groups]);
+    }, [nodes, collapsedBoxes]);
     const translateExtent = useMemo(
         () =>
             [
@@ -322,13 +332,13 @@ export function MainCanvas() {
         };
     }, [loading, registerNotebookScroller, setNotebookPane]);
 
-    // Where a dropped node goes. On the canvas, under the pointer. In the
-    // notebook view the pointer is on a page, not on the canvas, so the node
-    // takes the next free canvas spot and its cell is scrolled into view.
+    // Where a node dropped at a point of the window goes. On the canvas, under
+    // the pointer. In the notebook view the pointer is on a page, not on the
+    // canvas, so the node takes the next free canvas spot and its cell is
+    // scrolled into view.
     const { getPosition } = usePosition();
     const dropPosition = useCallback(
-        (event: React.DragEvent) =>
-            notebookOn ? getPosition() : screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+        (at: XYPosition) => (notebookOn ? getPosition() : screenToFlowPosition(at)),
         [notebookOn, getPosition, screenToFlowPosition],
     );
     const revealCreated = useCallback((node: { id: string } | undefined | void) => {
@@ -621,16 +631,17 @@ export function MainCanvas() {
     // a node's tile.
     const readDrop = useCallback((event: React.DragEvent): CanvasDrop | null => {
         const data = event.dataTransfer;
+        const at = { x: event.clientX, y: event.clientY };
         if (hasDatasetDrag(data)) {
             event.preventDefault();
             event.stopPropagation();
             const dataset = readDatasetDragPayload(data);
-            return dataset ? { kind: "dataset", dataset, position: dropPosition(event) } : null;
+            return dataset ? { kind: "dataset", dataset, position: dropPosition(at), at } : null;
         }
         if (hasFileDrag(data)) {
             event.preventDefault();
             event.stopPropagation();
-            return { kind: "files", files: Array.from(data.files || []), position: dropPosition(event) };
+            return { kind: "files", files: Array.from(data.files || []), position: dropPosition(at), at };
         }
         if (hasPackageCardDrag(data)) {
             event.preventDefault();
@@ -638,7 +649,7 @@ export function MainCanvas() {
             const card = readPackageCardDragPayload(data);
             endPackageCardDrag();
             if (!card) return null;
-            return { kind: "package", dropped: { card, position: dropPosition(event), at: { x: event.clientX, y: event.clientY } } };
+            return { kind: "package", dropped: { card, position: dropPosition(at), at } };
         }
         if (hasModelDrag(data)) {
             event.preventDefault();
@@ -651,7 +662,7 @@ export function MainCanvas() {
             event.stopPropagation();
             const scenario = readScenarioDragPayload(data);
             endScenarioDrag();
-            return scenario ? { kind: "scenario", scenario, position: dropPosition(event) } : null;
+            return scenario ? { kind: "scenario", scenario, position: dropPosition(at), at } : null;
         }
         const agentCoord = readAgentDragCoord(data);
         if (agentCoord) {
@@ -673,7 +684,7 @@ export function MainCanvas() {
         }
         event.preventDefault();
         const type = data.getData("application/reactflow") as NodeType;
-        return type ? { kind: "node", type, position: dropPosition(event) } : null;
+        return type ? { kind: "node", type, position: dropPosition(at), at } : null;
     }, [dropPosition, reactFlow, screenToFlowPosition]);
 
     // What a drop makes on the canvas.
@@ -744,16 +755,58 @@ export function MainCanvas() {
         }
     }, [createLoaderFor, askTheOwner, importDataFile, dropPackageCard, showToast, dropScenario, revealNodes, agentsDataflow, ensureProjectId, hostedGuest, viewerMode, whenChangesKept, markDirty, revealCreated, createCodeNode]);
 
+    // Where drops kept while the dataflow opened go, once it is in and its
+    // nodes are framed: each at the point of the window it was dropped on, in
+    // the view the canvas shows now. It was dropped over a canvas that showed
+    // none of the dataflow, so a drop that makes a node moves clear of the
+    // nodes on the canvas, of the boxes of its collapsed scenarios and shared
+    // groups, and of the nodes the drops before it make, as a dataflow's own
+    // nodes are moved apart when it opens: down or right, whichever is shorter
+    // (clearSpotFor). A scenario's boxes are laid out where it goes, as on
+    // any drop.
+    const placeKeptDrops = useCallback((kept: CanvasDrop[]): CanvasDrop[] => {
+        const taken: PositionedNode[] = [...reactFlow.getNodes()];
+        const clearOfTaken = (at: XYPosition, nodeType: string | undefined): XYPosition => {
+            const node = { type: CURIO_UNIVERSAL_NODE_TYPE, data: { nodeType } };
+            const position = clearSpotFor(node, dropPosition(at), taken, { boxes: collapsedBoxes });
+            taken.push({ ...node, position });
+            return position;
+        };
+        return kept.map((drop): CanvasDrop => {
+            switch (drop.kind) {
+                case "node":
+                    return { ...drop, position: clearOfTaken(drop.at, drop.type) };
+                case "dataset":
+                case "files":
+                    return { ...drop, position: clearOfTaken(drop.at, NodeType.DATA_LOADING) };
+                case "package": {
+                    // A package of several nodes offers them in a menu, so the
+                    // node is not known yet: it is sized as a default node.
+                    const { card, at } = drop.dropped;
+                    const nodeType = card.nodes.length === 1 ? card.nodes[0].nodeType : undefined;
+                    return { ...drop, dropped: { ...drop.dropped, position: clearOfTaken(at, nodeType) } };
+                }
+                case "scenario":
+                    return { ...drop, position: dropPosition(drop.at) };
+                default:
+                    return drop;
+            }
+        });
+    }, [reactFlow, dropPosition, collapsedBoxes]);
+
     // While the dataflow the route names is still opening, a drop waits for
     // it, then is made by the canvas it opened as: the load would replace
     // what a drop made before it, and until the dataflow is in, the canvas
     // takes the owner's way, which refused an invited editor's file as the
-    // dataflow still opening. A canvas that opens read-only lets it go.
+    // dataflow still opening. A canvas that opens read-only lets it go. A
+    // load that brought nodes frames them first (`loadFitPending`), and what
+    // was kept is placed in that view (placeKeptDrops).
     const keepWhileOpening = useDropsWhileOpening<CanvasDrop>(
-        { load: loadState, viewerMode, roomRole },
+        { load: loadState, viewerMode, roomRole, framing: loadFitPending },
         (drop) => {
             if (graphEdits.drop) landDrop(drop);
         },
+        placeKeptDrops,
     );
 
     const handleDrop = useCallback((event: React.DragEvent) => {

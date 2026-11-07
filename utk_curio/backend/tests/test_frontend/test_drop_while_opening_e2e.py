@@ -27,6 +27,14 @@ the next node lands beside it. The page's animation frames are held from just
 before the load until the dropped node is on the canvas, so the fit's frame
 comes after that node on every run, as it did there.
 
+An owner drops two Data Loading nodes on her dataflow of one node while it
+opens. Her canvas shows none of the dataflow then, and each drop's place was
+read over it, so once the load framed the dataflow's node, her nodes were
+anywhere: one of them on top of the dataflow's node. Now each waits for that
+fit and lands at the point of the window it was dropped on, in the view the
+canvas then shows: the far one there, the one in the middle just below the
+node it would have covered, as the canvas moves a node off another.
+
 Run::
 
     CURIO_E2E_USE_EXISTING=1 pytest \\
@@ -34,6 +42,7 @@ Run::
 """
 from __future__ import annotations
 
+import math
 import re
 import time
 from typing import TYPE_CHECKING
@@ -129,6 +138,28 @@ _MEASURED_JS = """(id) => {
     return !!node && node.width > 0 && node.height > 0;
 }"""
 
+#: The owner's dataflow with one node, framed when it opens, and where she
+#: drops two Data Loading nodes while it opens (from the pane's top left): far
+#: right, where the framed node does not reach, then the middle of the canvas,
+#: where it is.
+WITH_A_NODE = "Plan with a node"
+ITS_NODE = "opening-placed"
+FAR_RIGHT_DROP = (1250, 100)
+MIDDLE_DROP = (640, 420)
+#: The clear space the canvas keeps between two nodes (`NODE_GUTTER_X`, `NODE_GUTTER_Y`).
+GUTTER = 8
+
+#: Every node on the canvas as React Flow holds it: its place and its measured size.
+_BOXES_JS = """() => window.__curio_reactFlow.getNodes().map((node) => ({
+    id: node.id, x: node.position.x, y: node.position.y, w: node.width || 0, h: node.height || 0,
+}))"""
+
+#: Whether React Flow has measured every node.
+_ALL_MEASURED_JS = "() => window.__curio_reactFlow.getNodes().every((node) => node.width > 0 && node.height > 0)"
+
+#: The point of the canvas under a point of the window, in the view the canvas shows now.
+_UNDER_JS = "([x, y]) => window.__curio_reactFlow.screenToFlowPosition({x, y})"
+
 
 def _spec() -> dict:
     return {
@@ -166,6 +197,26 @@ def _held_owner_load(page, project_id: str) -> list:
 
     page.route(re.compile(rf".*/api/projects/{project_id}\?results=last$"), hold)
     return held
+
+
+def _drop_tile(page, tile: str, at: tuple[float, float]) -> tuple[float, float]:
+    """Drop a tile of the open Built-in palette on the canvas at *at*, from the
+    pane's top left, as ``drag_to_canvas`` does, but wait for no node: a drop
+    made while the dataflow opens makes none until it is in. Returns the
+    point of the window it was dropped on."""
+    source = page.locator(tile)
+    source.wait_for(state="visible", timeout=15000)
+    pane = page.locator(CANVAS_DROP_TARGET).bounding_box()
+    assert pane, f"{CANVAS_DROP_TARGET} has no layout box"
+    point = (pane["x"] + at[0], pane["y"] + at[1])
+    dropped = page.evaluate(_DRAG_TO_CANVAS_JS, {
+        "source": source.element_handle(),
+        "targetSelector": CANVAS_DROP_TARGET,
+        "clientX": point[0],
+        "clientY": point[1],
+    })
+    assert dropped == "ok", f"drag to canvas failed: {dropped}"
+    return point
 
 
 def _within(page, seconds: float, read, done):
@@ -288,17 +339,7 @@ def test_a_node_dropped_while_an_empty_dataflow_opens_stays_where_it_was_dropped
 
         # She drops a Data Loading node while the dataflow opens.
         open_tools_palette(page, "builtin")
-        tile = page.locator(LOADING_TILE)
-        tile.wait_for(state="visible", timeout=15000)
-        pane = page.locator(CANVAS_DROP_TARGET).bounding_box()
-        assert pane, f"{CANVAS_DROP_TARGET} has no layout box"
-        dropped = page.evaluate(_DRAG_TO_CANVAS_JS, {
-            "source": tile.element_handle(),
-            "targetSelector": CANVAS_DROP_TARGET,
-            "clientX": pane["x"] + FIRST_DROP[0],
-            "clientY": pane["y"] + FIRST_DROP[1],
-        })
-        assert dropped == "ok", f"drag to canvas failed: {dropped}"
+        _drop_tile(page, LOADING_TILE, FIRST_DROP)
         made_while_opening = len(canvas_nodes(page))
 
         # The dataflow comes in, and the node her drop was kept for is made.
@@ -352,3 +393,105 @@ def test_a_node_dropped_while_an_empty_dataflow_opens_stays_where_it_was_dropped
         "the view once her node is in": view_before,
         "the next node connects to it": True,
     }, f"the view was {view_before} when she dropped her node"
+
+
+def _with_a_node_spec() -> dict:
+    return {
+        "name": WITH_A_NODE,
+        "dataflow": {
+            "name": WITH_A_NODE,
+            "nodes": [{"id": ITS_NODE, "type": LOADED, "x": 400, "y": 250, "content": "stops = 3\n"}],
+            "edges": [],
+        },
+    }
+
+
+def _overlap(a: dict, b: dict) -> bool:
+    """Whether two nodes' boxes share any of the canvas."""
+    return (a["x"] < b["x"] + b["w"] and b["x"] < a["x"] + a["w"]
+            and a["y"] < b["y"] + b["h"] and b["y"] < a["y"] + a["h"])
+
+
+def _where_it_landed(node: dict, under: dict, others: list) -> str:
+    """Where a node a drop made landed, against the point of the canvas under
+    the drop: there, or moved straight down or right just clear of one of
+    *others*, as the canvas moves a node off another."""
+    same_x = abs(node["x"] - under["x"]) <= 1
+    same_y = abs(node["y"] - under["y"]) <= 1
+    if same_x and same_y:
+        return "under the pointer"
+    if same_x and node["y"] > under["y"] and any(
+        abs(node["y"] - math.ceil(other["y"] + other["h"] + GUTTER)) <= 1 for other in others
+    ):
+        return "just below a node"
+    if same_y and node["x"] > under["x"] and any(
+        abs(node["x"] - math.ceil(other["x"] + other["w"] + GUTTER)) <= 1 for other in others
+    ):
+        return "just right of a node"
+    return f"at ({node['x']:.0f}, {node['y']:.0f}), with ({under['x']:.0f}, {under['y']:.0f}) under the pointer"
+
+
+def test_nodes_dropped_while_a_dataflow_opens_land_under_the_pointer_in_its_view_clear_of_its_node(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_project_page()
+    require_user_auth()
+    base = app_frontend.base_url
+    page.emulate_media(reduced_motion="reduce")
+    login = stub_db_login(
+        page, frontend_url=base, backend_url=current_server,
+        username="opening_owner_place_e2e", name="Olive",
+        project_name=WITH_A_NODE, project_spec=_with_a_node_spec(),
+    )
+    project_id = login["project"]["id"]
+    held = _held_owner_load(page, project_id)
+    try:
+        page.goto(f"{base}/dataflow/{project_id}", timeout=120000)
+        page.locator(CANVAS_DROP_TARGET).wait_for(state="visible", timeout=60000)
+        asked = _within(page, 60, lambda: len(held), lambda count: count > 0)
+        assert asked, "the owner's tab never asked for the dataflow its link names"
+
+        # While the dataflow opens, her canvas shows none of it. She drops a
+        # Data Loading node far right, then one in the middle of the canvas.
+        open_tools_palette(page, "builtin")
+        points = [_drop_tile(page, LOADING_TILE, at) for at in (FAR_RIGHT_DROP, MIDDLE_DROP)]
+        made_while_opening = len(canvas_nodes(page))
+        # The palette closes first, so the fit frames the node in the whole canvas.
+        close_tools_palette(page, "builtin")
+
+        # The dataflow comes in and its node is framed, then hers are made.
+        held[0].continue_()
+        require_owner_view(page)
+        page.wait_for_function("() => window.__curio_reactFlow.getNodes().length >= 3", timeout=60000)
+        page.wait_for_function(_ALL_MEASURED_JS, timeout=30000)
+        settled_viewport(page)
+        boxes = page.evaluate(_BOXES_JS)
+        under = [page.evaluate(_UNDER_JS, list(point)) for point in points]
+    finally:
+        # A load still held (the test failed before letting it go) goes on,
+        # so taking the routes off waits for nothing.
+        for route in held:
+            try:
+                route.continue_()
+            except Exception:  # noqa: BLE001 - already let go
+                pass
+        end_routes(page)
+
+    its = [box for box in boxes if box["id"] == ITS_NODE]
+    hers = [box for box in boxes if box["id"] != ITS_NODE]
+    assert (len(its), len(hers)) == (1, 2), f"the canvas holds {boxes}"
+    seen = {
+        "nodes on the canvas while the dataflow opened": made_while_opening,
+        "her nodes on the dataflow's node": [
+            index for index, node in enumerate(hers) if _overlap(node, its[0])
+        ],
+        "where her nodes landed": [
+            _where_it_landed(node, under[index], its + hers[:index])
+            for index, node in enumerate(hers)
+        ],
+    }
+    assert seen == {
+        "nodes on the canvas while the dataflow opened": 0,
+        "her nodes on the dataflow's node": [],
+        "where her nodes landed": ["under the pointer", "just below a node"],
+    }, f"the canvas holds {boxes}; under her drops: {under}"
