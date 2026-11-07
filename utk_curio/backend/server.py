@@ -21,6 +21,7 @@ with app.app_context():
         from utk_curio.backend.app.projects.services import (
             _user_dir_key,
             reconcile_guest_projects,
+            seed_default_agents,
         )
         guest = _shared_guest_user()
         # The hosted guests' copies go, as their examples are put back.
@@ -31,6 +32,9 @@ with app.app_context():
         n = reconcile_guest_projects(guest)
         if n:
             app.logger.info("Reconciled %d guest project(s) from filesystem", n)
+        # The agents every account has by default, before the examples are put
+        # back, so each example gets them, and every guest's copy of one too.
+        seed_default_agents(guest)
         if CURIO_SEED_EXAMPLES:
             from utk_curio.backend.app.projects.seed import seed_example_projects
             s = seed_example_projects(guest)
