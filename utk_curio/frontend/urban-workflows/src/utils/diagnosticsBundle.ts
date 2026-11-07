@@ -1,5 +1,5 @@
 /**
- * Turn the four monitor payloads into something a person can hand over.
+ * Turn the monitor's payloads into something a person can hand over.
  *
  * The point of the monitor page is that someone hitting a problem can share
  * what they are seeing without an operator in the loop. That means two
@@ -13,6 +13,8 @@ import type {
   MonitorErrorsPayload,
   MonitorLlmCounts,
   MonitorLlmPayload,
+  MonitorOpenFilesCounts,
+  MonitorOpenFilesPayload,
   MonitorPayload,
   MonitorStoragePayload,
 } from "../api/monitorApi";
@@ -25,6 +27,7 @@ export interface DiagnosticsInput {
   storage: MonitorStoragePayload | null;
   errors: MonitorErrorsPayload | null;
   llm?: MonitorLlmPayload | null;
+  openFiles?: MonitorOpenFilesPayload | null;
 }
 
 // One locale, so a count reads the same in every browser and in a test.
@@ -43,6 +46,14 @@ export function formatExactCount(count: number | null | undefined): string {
 
 function llmCounts(counts: MonitorLlmCounts): string {
   return `${formatExactCount(counts.inputTokens)} in · ${formatExactCount(counts.outputTokens)} out, ${formatExactCount(counts.requests)} requests`;
+}
+
+/** A server's part of an open-files sample: "backend 212 of 65,536". */
+export function formatOpenFiles(server: string, counts: MonitorOpenFilesCounts | null): string {
+  if (!counts) return `${server} not answering`;
+  if (counts.open == null) return `${server} not counted`;
+  const open = formatExactCount(counts.open);
+  return counts.limit == null ? `${server} ${open}` : `${server} ${open} of ${formatExactCount(counts.limit)}`;
 }
 
 export function formatBytes(bytes: number | null | undefined): string {
@@ -65,7 +76,7 @@ export function formatDuration(seconds: number | null | undefined): string {
   return `${(seconds / 86400).toFixed(1)}d`;
 }
 
-export function toMarkdown({ monitor, storage, errors, llm }: DiagnosticsInput): string {
+export function toMarkdown({ monitor, storage, errors, llm, openFiles }: DiagnosticsInput): string {
   const lines: string[] = ["## Curio diagnostics", ""];
 
   if (monitor) {
@@ -133,6 +144,15 @@ export function toMarkdown({ monitor, storage, errors, llm }: DiagnosticsInput):
     }
   }
 
+  const lastOpenFiles = openFiles?.samples[openFiles.samples.length - 1];
+  if (lastOpenFiles) {
+    lines.push(
+      "",
+      "### Open files",
+      `- ${formatOpenFiles("backend", lastOpenFiles.backend)} · ${formatOpenFiles("sandbox", lastOpenFiles.sandbox)}, sampled ${lastOpenFiles.at}`
+    );
+  }
+
   const list = errors?.errors ?? [];
   lines.push("", `### Recent errors (${list.length})`, "");
   if (list.length === 0) {
@@ -166,6 +186,7 @@ export function toJson(input: DiagnosticsInput): string {
       storage: input.storage,
       errors: input.errors,
       llm: input.llm ?? null,
+      openFiles: input.openFiles ?? null,
     },
     null,
     2

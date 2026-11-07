@@ -187,6 +187,8 @@ export interface LinesOverTimeOptions {
   logY?: boolean;
   /** The series drawn dashed, as a limit is. */
   dashed?: string[];
+  /** A dot on each point, for a chart of few: a line of one point draws nothing else. */
+  points?: boolean;
 }
 
 /**
@@ -206,6 +208,7 @@ export function linesOverTimeSpec({
   colors,
   logY = false,
   dashed = [],
+  points = false,
 }: LinesOverTimeOptions) {
   const series = colors?.domain ?? [...new Set(rows.map((row) => String(row[seriesField])))];
   const range = colors?.range ?? CATEGORICAL.slice(0, series.length);
@@ -251,7 +254,13 @@ export function linesOverTimeSpec({
   return {
     $schema: "https://vega.github.io/schema/vega-lite/v5.json",
     data: { values: rows },
-    mark: { type: "line", strokeWidth: 2, strokeCap: "round", strokeJoin: "round" },
+    mark: {
+      type: "line",
+      strokeWidth: 2,
+      strokeCap: "round",
+      strokeJoin: "round",
+      ...(points ? { point: { filled: true, size: 64 } } : {}),
+    },
     encoding,
     config: { background: null, view: { stroke: null }, font: "Rubik, sans-serif" },
   };
@@ -277,6 +286,7 @@ export const LinesOverTime: React.FC<LinesOverTimeOptions & { label: string; hei
   colors,
   logY,
   dashed,
+  points,
 }) => {
   const first = timeDomain?.[0];
   const last = timeDomain?.[1];
@@ -285,9 +295,10 @@ export const LinesOverTime: React.FC<LinesOverTimeOptions & { label: string; hei
       linesOverTimeSpec({
         rows, timeField, valueField, seriesField, valueTitle, seriesTitle, timeFormat,
         timeDomain: first != null && last != null ? [first, last] : undefined,
-        colors, logY, dashed,
+        colors, logY, dashed, points,
       }),
-    [rows, timeField, valueField, seriesField, valueTitle, seriesTitle, timeFormat, first, last, colors, logY, dashed]
+    [rows, timeField, valueField, seriesField, valueTitle, seriesTitle, timeFormat, first, last, colors, logY,
+     dashed, points]
   );
   return <VegaChart spec={spec} height={height} label={label} />;
 };

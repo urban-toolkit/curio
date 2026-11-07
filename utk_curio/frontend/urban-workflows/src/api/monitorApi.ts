@@ -1,14 +1,14 @@
 /**
  * The monitor page's backend calls.
  *
- * Four read routes plus one write. All are public and unauthenticated, but
+ * Five read routes plus one write. All are public and unauthenticated, but
  * they go through `apiFetch` anyway: it resolves the backend origin through
  * `backendUrl()` (which the e2e harness injects per browser context) and
  * throws an Error carrying `.status`, which is the convention every other
  * `src/api/*Api.ts` module follows. The Bearer token it attaches when a
  * session cookie happens to exist is harmless on a public route.
  *
- * The three aggregate payloads carry no identifiers by design, the LLM one
+ * The four aggregate payloads carry no identifiers by design, the LLM one
  * naming only models; the error log deliberately does. See
  * `utk_curio/backend/app/monitor/errors.py` and `llm_tokens.py`.
  */
@@ -206,6 +206,38 @@ export interface MonitorLlmPayload {
   models: MonitorLlmModel[];
 }
 
+/** One server's open files and its soft limit on them; null where unknown. */
+export interface MonitorOpenFilesCounts {
+  open: number | null;
+  limit: number | null;
+}
+
+/**
+ * One hourly sample (`at`, `YYYY-MM-DDTHH:MM:SSZ`) of both servers. The
+ * sandbox's part is null when it did not answer.
+ */
+export interface MonitorOpenFilesSample {
+  at: string;
+  backend: MonitorOpenFilesCounts | null;
+  sandbox: MonitorOpenFilesCounts | null;
+}
+
+/**
+ * `GET /api/monitor/open-files`: every sample since the backend started
+ * (`startedAt`), at most `maxDays` days, one each `intervalSeconds`. A sample
+ * above `warnAbovePercent` of a server's limit records an error, and another
+ * only once its count fell below `clearBelowPercent`.
+ */
+export interface MonitorOpenFilesPayload {
+  computedAt: string;
+  startedAt: string;
+  maxDays: number;
+  intervalSeconds: number;
+  warnAbovePercent: number;
+  clearBelowPercent: number;
+  samples: MonitorOpenFilesSample[];
+}
+
 export type MonitorErrorSource = "node" | "sandbox" | "backend" | "client";
 
 export interface MonitorError {
@@ -244,6 +276,10 @@ export function fetchMonitorErrors(
 
 export function fetchMonitorLlm(signal?: AbortSignal): Promise<MonitorLlmPayload> {
   return apiFetch<MonitorLlmPayload>("/api/monitor/llm", { signal });
+}
+
+export function fetchMonitorOpenFiles(signal?: AbortSignal): Promise<MonitorOpenFilesPayload> {
+  return apiFetch<MonitorOpenFilesPayload>("/api/monitor/open-files", { signal });
 }
 
 /**
