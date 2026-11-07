@@ -43,10 +43,13 @@ execution:
 
 This process enforces ``wall_timeout`` itself, because it is the child's parent:
 while the child is unreaped its pid cannot be recycled, so a kill is guaranteed
-to hit the right process. The parent's own socket read is only a liveness
-backstop. The parent kills only when this process died mid-run, and then only
-that run's process group (``ZygoteClient.run``). One connection per execution
-is what makes concurrent executions work without any threads on this side.
+to hit the right process. For the same reason it kills a child's process group
+once the child has exited, before it reaps it, so nothing a node started
+outlives the node (``_reap_children``). The parent's own socket read is only a
+liveness backstop. The parent kills only when this process died mid-run, and
+then only that run's process group (``ZygoteClient.run``). One connection per
+execution is what makes concurrent executions work without any threads on this
+side.
 
 A caller can hang up before its answer comes: ``ZygoteClient`` gives up on the
 pid after ``connect_timeout``. The answer that fails then closes that one
@@ -421,10 +424,20 @@ class Zygote:
         os._exit(70)  # unreachable; child.main always exits
 
     def _reap_children(self):
-        """Report every child that has exited since the last pass."""
+        """Report every child that has exited since the last pass.
+
+        Every process a node starts ends when the node does, whichever way it
+        ended: it returned, it raised, or its deadline killed it. So a child's
+        process group is killed before the child is reaped. ``WNOWAIT`` finds
+        an exited child without reaping it, and until the reap after the kill
+        its pid, which is its group's id, can go to no other process, so the
+        kill reaches that run alone. The owner's rule (11-07), with no way to
+        turn it off; ``test_every_process_a_node_starts_ends_when_the_node_*``
+        in ``sandbox/tests/test_isolation_linux.py`` guard it.
+        """
         while self._pending:
             try:
-                pid, status = os.waitpid(-1, os.WNOHANG)
+                exited = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT)
             except ChildProcessError:
                 self._pending.clear()
                 return
@@ -432,8 +445,14 @@ class Zygote:
                 if exc.errno == errno.EINTR:
                     continue
                 return
-            if pid == 0:
+            if exited is None:
                 return
+
+            _kill_group(exited.si_pid)
+            try:
+                pid, status = os.waitpid(exited.si_pid, 0)
+            except ChildProcessError:
+                continue
 
             state = self._pending.pop(pid, None)
             if state is None:
@@ -493,6 +512,10 @@ def _kill_group(pid):
     is installed, keeps in that group. ``kill`` as well, for the narrow
     window between ``fork`` and the child reaching ``setsid``, where no
     process group with that id exists yet.
+
+    Called at the child's deadline, when its caller hung up before its pid,
+    and once it has exited, before it is reaped (``_reap_children``). The
+    child is unreaped each time, so its pid can be no other process's.
     """
     for killer, target in ((os.killpg, pid), (os.kill, pid)):
         try:
