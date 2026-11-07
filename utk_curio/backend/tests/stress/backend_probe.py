@@ -17,11 +17,18 @@ JSON object:
   state root (``common/user_storage.curio_root``);
 * or ``error``, saying why it read nothing.
 
+Given ``--thread-stacks``, it asks the backend for every thread's stack
+instead (:func:`ask_for_stacks`): it sends SIGUSR1, which the backend answers
+by appending a dump to a file in its state folder (``backend/thread_stacks.py``),
+and prints ``pid``, ``path`` and ``stacks``, the dump, with ``problem`` when no
+whole dump came in time.
+
 The rest of the file is the harness's side: :class:`BackendProbe` runs the
 script, :func:`reading_now` stamps a reading with when it was taken and the
 harness's CPU seconds (``resource.getrusage``, its worker processes counted),
-and :class:`Sampler`
-takes one every second or so while a tier runs.
+:class:`Sampler` takes one every second or so while a tier runs, and
+:func:`save_thread_stacks` writes the backend's thread stacks into the report
+folder.
 """
 
 from __future__ import annotations
@@ -41,6 +48,11 @@ _PROJECT_ID = re.compile(r"^[0-9a-fA-F-]{36}$")
 
 #: How long one reading may take: a ``docker exec`` and a Python start.
 PROBE_TIMEOUT_S = 30.0
+
+#: The backend's file of thread stacks, in its state folder, and how long the
+#: probe waits for a dump to end there (``backend/thread_stacks.py``).
+STACKS_FILE = "backend-thread-stacks.txt"
+STACKS_WAIT_S = 20.0
 
 
 def is_backend(cmdline: list) -> bool:
@@ -113,17 +125,100 @@ def process_reading(process) -> dict:
                 "cpu_seconds": round(times.user + times.system, 3)}
 
 
+def stacks_file(environ: dict, cwd: str) -> Path:
+    """The backend's file of thread stacks, as ``thread_stacks.stacks_path``
+    finds it from the backend's environment."""
+    return state_roots(environ, cwd)[0] / STACKS_FILE
+
+
+def stacks_end_line(pid: int) -> str:
+    """The line that ends a whole dump of process *pid* (``thread_stacks.end_line``)."""
+    return f"=== end of the thread stacks of pid {pid} ==="
+
+
+def catches(pid: int, signum: int, status: str | None = None):
+    """Whether process *pid* handles signal *signum*, from the caught mask in
+    *status*, the text of ``/proc/<pid>/status`` (read when not given); None
+    where there is no such file."""
+    if status is None:
+        try:
+            status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
+        except OSError:
+            return None
+    for line in status.splitlines():
+        if line.startswith("SigCgt:"):
+            return bool(int(line.split()[1], 16) >> (signum - 1) & 1)
+    return None
+
+
+def ask_for_stacks(pid: int, path, wait_s: float = STACKS_WAIT_S) -> dict:
+    """Send process *pid* SIGUSR1 and wait for the dump of its thread stacks
+    it appends to *path* (``backend/thread_stacks.py``): ``pid``, ``path``
+    and ``stacks``, and ``problem`` when no whole dump came in *wait_s*
+    seconds; or ``error`` when it was not asked."""
+    import signal
+
+    path = Path(path)
+    signum = getattr(signal, "SIGUSR1", None)
+    if signum is None:
+        return {"error": "this system has no SIGUSR1 to ask with"}
+    if catches(pid, signum) is False:
+        # Not sent: SIGUSR1 ends a process that does not handle it.
+        return {"error": f"process {pid} does not handle SIGUSR1: a backend without thread stacks"}
+    start = path.stat().st_size if path.exists() else 0
+    try:
+        os.kill(pid, signum)
+    except OSError as exc:
+        return {"error": f"could not signal process {pid}: {exc}"}
+    end, text = stacks_end_line(pid), ""
+    deadline = time.monotonic() + wait_s
+    while True:
+        if path.exists():
+            with open(path, "rb") as dumped:
+                dumped.seek(start)
+                text = dumped.read().decode("utf-8", "replace")
+        if end in text:
+            return {"pid": pid, "path": str(path), "stacks": text[:text.index(end) + len(end)] + "\n"}
+        if time.monotonic() >= deadline:
+            return {"pid": pid, "path": str(path), "stacks": text,
+                    "problem": (f"no whole dump in {wait_s:g} s: the backend's main thread "
+                                "ran no Python in that time")}
+        time.sleep(0.1)
+
+
+def find_backend(psutil):
+    """The backend's pid here, or None."""
+    processes = []
+    for process in psutil.process_iter(["pid", "ppid", "cmdline"]):
+        info = process.info
+        processes.append((info.get("pid"), info.get("ppid"), info.get("cmdline") or []))
+    return pick_backend(processes, os.getpid())
+
+
+def thread_stacks_here() -> dict:
+    """The backend's thread stacks, asked for here (:func:`ask_for_stacks`)."""
+    try:
+        import psutil
+    except ImportError:
+        return {"error": "psutil is not installed where the probe runs"}
+    pid = find_backend(psutil)
+    if pid is None:
+        return {"error": "no process here serves -m backend.server"}
+    try:
+        backend = psutil.Process(pid)
+        environ, cwd = backend.environ(), backend.cwd()
+    except psutil.Error as exc:
+        return {"error": f"the backend (pid {pid}) could not be read: {type(exc).__name__}: {exc}"}
+    return ask_for_stacks(pid, stacks_file(environ, cwd))
+
+
 def read(project_ids: list) -> dict:
     """One reading of the backend, here."""
     try:
         import psutil
     except ImportError:
         return {"error": "psutil is not installed where the probe runs"}
-    processes = []
-    for process in psutil.process_iter(["pid", "ppid", "cmdline"]):
-        info = process.info
-        processes.append((info.get("pid"), info.get("ppid"), info.get("cmdline") or []))
-    pid = pick_backend(processes, os.getpid())
+    pid = find_backend(psutil)
     if pid is None:
         return {"error": "no process here serves -m backend.server"}
     try:
@@ -140,7 +235,7 @@ def read(project_ids: list) -> dict:
 
 def main(argv: list) -> None:
     try:
-        reading = read(argv)
+        reading = thread_stacks_here() if argv[:1] == ["--thread-stacks"] else read(argv)
     except Exception as exc:  # noqa: BLE001 - the harness reports it, never crashes on it
         reading = {"error": f"{type(exc).__name__}: {exc}"}
     sys.stdout.write(json.dumps(reading))
@@ -167,10 +262,18 @@ class BackendProbe:
 
     def read(self, project_ids=()) -> dict:
         """A reading; raises :class:`ProbeError` with the reason when there is none."""
+        return self._run(list(project_ids), self.timeout)
+
+    def thread_stacks(self) -> dict:
+        """The backend's dump of every thread's stack (:func:`ask_for_stacks`);
+        raises :class:`ProbeError` when it could not be asked."""
+        return self._run(["--thread-stacks"], self.timeout + STACKS_WAIT_S)
+
+    def _run(self, args: list, timeout: float) -> dict:
         try:
             done = subprocess.run(
-                [*self.command, "-c", self._source, *project_ids],
-                capture_output=True, text=True, timeout=self.timeout,
+                [*self.command, "-c", self._source, *args],
+                capture_output=True, text=True, timeout=timeout,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ProbeError(f"{type(exc).__name__}: {exc}") from exc
@@ -296,6 +399,30 @@ class Sampler:
             timeout = self.probe.timeout if self.probe is not None else PROBE_TIMEOUT_S
             self._thread.join(timeout=timeout + 5)
         return list(self.samples)
+
+
+def save_thread_stacks(probe, out_dir: str, name: str) -> tuple:
+    """Ask the backend through *probe* for every thread's stack and write
+    what came, or why nothing did, to ``<out_dir>/thread-stacks-<name>.txt``:
+    that path and a line for the log."""
+    asked = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    try:
+        answer = probe.thread_stacks()
+    except ProbeError as exc:
+        answer = {"problem": f"the probe could not ask: {exc}"}
+    problem = answer.get("problem")
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"thread-stacks-{name}.txt")
+    with open(path, "w", encoding="utf-8") as out:
+        out.write(f"The stress harness asked the backend for its thread stacks at {asked}"
+                  + (f" (pid {answer['pid']}, its file {answer['path']})" if "pid" in answer else "")
+                  + ".\n")
+        if problem:
+            out.write(f"Problem: {problem}\n")
+        out.write("\n" + answer.get("stacks", ""))
+    head = (answer.get("stacks") or "").partition("\n")[0].strip("= ")
+    line = f"asked the backend for its thread stacks, saved in {path}" + (f": {head}" if head else "")
+    return path, line + (f"; {problem}" if problem else "")
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 
@@ -209,6 +210,38 @@ class TheProbeRunsAsAScriptTest(unittest.TestCase):
         self.assertIn("no backend", str(raised.exception))
         with self.assertRaises(ProbeError):
             BackendProbe(["/nonexistent/python"]).read()
+
+
+class AskingForTheThreadStacksTest(unittest.TestCase):
+    """The ask itself, a backend answering it, is in
+    ``test_scripts/test_backend_thread_stacks.py``."""
+
+    def test_the_harness_asks_where_the_backend_runs_with_its_flag(self):
+        from utk_curio.backend.tests.stress.backend_probe import BackendProbe
+
+        # As above: this script answers, with what it was given after it.
+        stand_in = [sys.executable, "-I", "-c",
+                    "import json, sys; print(json.dumps({'args': sys.argv[1:]}))"]
+        answer = BackendProbe(stand_in).thread_stacks()
+        self.assertEqual(answer["args"][0], "-c")
+        self.assertEqual(answer["args"][2:], ["--thread-stacks"])
+
+    def test_a_process_that_does_not_handle_sigusr1_is_not_sent_it(self):
+        """SIGUSR1 ends a process that does not handle it, such as a backend
+        from before its thread stacks: Linux lists the signals a process
+        handles in ``/proc/<pid>/status``."""
+        from utk_curio.backend.tests.stress.backend_probe import ask_for_stacks, catches
+
+        usr1 = 10  # SIGUSR1 on Linux, where the mask is read
+        self.assertIs(catches(1, usr1, status="Name:\tpython\nSigCgt:\t0000000180000200\n"), True)
+        self.assertIs(catches(1, usr1, status="Name:\tpython\nSigCgt:\t0000000180004002\n"), False)
+        self.assertIsNone(catches(1, usr1, status="Name:\tpython\n"))
+        with unittest.mock.patch(
+            "utk_curio.backend.tests.stress.backend_probe.catches", lambda pid, signum: False
+        ), unittest.mock.patch("os.kill") as kill:
+            answer = ask_for_stacks(2 ** 22 + 7, "/nowhere/backend-thread-stacks.txt")
+        kill.assert_not_called()
+        self.assertIn("does not handle SIGUSR1", answer["error"])
 
 
 if __name__ == "__main__":
