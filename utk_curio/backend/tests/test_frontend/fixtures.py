@@ -516,7 +516,11 @@ def _reset_db_via_http(backend_url: str) -> None:
 
     The reset first waits, up to ``RESET_WAIT_SECONDS``, for the requests the
     last test's page left running, so the timeout covers that wait too.
+
+    A reset that did not reset (a run of the last test still going) fails the
+    test with the backend's reason: the run and the nodes it runs.
     """
+    from urllib.error import HTTPError
     from urllib.request import Request, urlopen
     import json as _json
 
@@ -528,8 +532,12 @@ def _reset_db_via_http(backend_url: str) -> None:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(req, timeout=RESET_WAIT_SECONDS + 30) as resp:  # noqa: S310
-        resp.read()
+    try:
+        with urlopen(req, timeout=RESET_WAIT_SECONDS + 30) as resp:  # noqa: S310
+            resp.read()
+    except HTTPError as exc:
+        reason = exc.read().decode("utf-8", "replace")[:2000]
+        raise RuntimeError(f"reset-db answered {exc.code}: {reason}") from exc
 
 
 def _e2e_backend_base_url() -> str:
