@@ -20,10 +20,9 @@ import json
 import os
 import secrets
 import time
-import unittest
+import unittest.mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import mock
 
 import pandas as pd
 
@@ -45,7 +44,7 @@ def made_at(*times):
     """Artifacts minted in this block are dated *times*, in turn; the last
     one for the rest."""
     stamps = itertools.chain(times, itertools.repeat(times[-1]))
-    with mock.patch.object(parsers, "_make_id", lambda: f"{next(stamps):013d}_{secrets.token_hex(4)}"):
+    with unittest.mock.patch.object(parsers, "_make_id", lambda: f"{next(stamps):013d}_{secrets.token_hex(4)}"):
         yield
 
 
@@ -59,7 +58,7 @@ class TheStoreSweepTestCase(unittest.TestCase):
         self.client = app.test_client()
         self._tmp = TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        env = mock.patch.dict(os.environ, {
+        env = unittest.mock.patch.dict(os.environ, {
             "CURIO_LAUNCH_CWD": self._tmp.name,
             "CURIO_SHARED_DATA": "./.curio/data/",
         })

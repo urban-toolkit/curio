@@ -19,11 +19,10 @@ name, and the tests pin both spellings.
 import json
 import os
 import shutil
-import unittest
+import unittest.mock
 import zlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import mock
 
 import geopandas as gpd
 import pandas as pd
@@ -41,7 +40,7 @@ class SavedOutputInPlaceTestCase(unittest.TestCase):
         self.client = app.test_client()
         self._tmp = TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        env = mock.patch.dict(os.environ, {
+        env = unittest.mock.patch.dict(os.environ, {
             "CURIO_LAUNCH_CWD": self._tmp.name,
             "CURIO_SHARED_DATA": "./.curio/data/",
         })

@@ -1,6 +1,6 @@
 import contextlib
 import shutil
-import unittest
+import unittest.mock
 import tempfile
 import os
 import sys
@@ -256,7 +256,6 @@ class TestSandbox(unittest.TestCase):
         and getLayer, which every autk-db has.
         """
         from pathlib import Path
-        from unittest import mock
 
         from utk_curio.cli import dependencies
         from utk_curio.sandbox.app.worker import execute_js_code, _worker_init
@@ -282,8 +281,8 @@ class TestSandbox(unittest.TestCase):
                 'FLASK_BACKEND_HOST': '127.0.0.1',
                 'FLASK_BACKEND_PORT': str(port),
             }
-            with mock.patch.dict(os.environ, env), \
-                    mock.patch.object(Path, 'home', lambda: Path(home)):
+            with unittest.mock.patch.dict(os.environ, env), \
+                    unittest.mock.patch.object(Path, 'home', lambda: Path(home)):
                 dependencies.seed_duckdb_extensions()
                 result = execute_js_code(
                     code, '', 'AUTK_GRAMMAR', '', launch_dir=_REPO_ROOT, session_id=None,

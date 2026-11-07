@@ -19,10 +19,9 @@ import sys
 import textwrap
 import threading
 import time
-import unittest
+import unittest.mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import mock
 
 from utk_curio.sandbox.app import api, app, worker
 from utk_curio.sandbox.util.db import init_db, release_connection
@@ -54,7 +53,7 @@ class LogLinesStayOutOfNodeStderrTestCase(unittest.TestCase):
     def setUp(self):
         self._tmp = TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        env = mock.patch.dict(os.environ, {
+        env = unittest.mock.patch.dict(os.environ, {
             "CURIO_LAUNCH_CWD": self._tmp.name,
             "CURIO_SHARED_DATA": "./.curio/data/",
             "CURIO_ISOLATION": "off",
@@ -73,7 +72,7 @@ class LogLinesStayOutOfNodeStderrTestCase(unittest.TestCase):
         # What node A's code waits on, in the namespace every node run starts from.
         self.entered = threading.Event()
         self.release = threading.Event()
-        gates = mock.patch.dict(worker._globals_cache, {
+        gates = unittest.mock.patch.dict(worker._globals_cache, {
             "node_a_entered": self.entered,
             "node_a_release": self.release,
         })
@@ -81,7 +80,7 @@ class LogLinesStayOutOfNodeStderrTestCase(unittest.TestCase):
         self.addCleanup(gates.stop)
         # The process's own stderr, where the sandbox's log lines belong.
         self.server_log = io.StringIO()
-        own_stderr = mock.patch.object(sys, "__stderr__", self.server_log)
+        own_stderr = unittest.mock.patch.object(sys, "__stderr__", self.server_log)
         own_stderr.start()
         self.addCleanup(own_stderr.stop)
 

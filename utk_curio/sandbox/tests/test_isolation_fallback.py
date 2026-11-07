@@ -11,8 +11,7 @@ decision table can be driven from any host.
 """
 
 import sys
-import unittest
-from unittest import mock
+import unittest.mock
 
 from utk_curio.sandbox.isolation import mode
 from utk_curio.sandbox.isolation.mode import IsolationUnavailable
@@ -204,13 +203,13 @@ class TestWarnOnce(unittest.TestCase):
         mode.reset_warning_state()
 
     def test_the_reason_is_printed_once_across_many_executions(self):
-        with mock.patch("builtins.print") as printed:
+        with unittest.mock.patch("builtins.print") as printed:
             for _ in range(5):
                 mode.warn_once("falling back")
         self.assertEqual(printed.call_count, 1)
 
     def test_an_empty_reason_prints_nothing(self):
-        with mock.patch("builtins.print") as printed:
+        with unittest.mock.patch("builtins.print") as printed:
             mode.warn_once(None)
             mode.warn_once("")
         self.assertEqual(printed.call_count, 0)
@@ -261,8 +260,8 @@ class TestExecStillWorksWhenIsolationIsUnavailable(unittest.TestCase):
     def test_requesting_fork_on_an_unsupported_platform_still_runs_the_node(self):
         if sys.platform.startswith("linux"):
             self.skipTest("this asserts the *unsupported* platform path")
-        with mock.patch.dict("os.environ", {"CURIO_ISOLATION": "fork",
-                                            "CURIO_NO_AUTH": "1"}):
+        with unittest.mock.patch.dict("os.environ", {"CURIO_ISOLATION": "fork",
+                                                     "CURIO_NO_AUTH": "1"}):
             response = self._post()
         self.assertEqual(response.status_code, 200, response.data)
         body = response.get_json()
@@ -270,7 +269,7 @@ class TestExecStillWorksWhenIsolationIsUnavailable(unittest.TestCase):
         self.assertEqual(body["output"]["dataType"], "int")
 
     def test_the_default_path_is_unaffected(self):
-        with mock.patch.dict("os.environ", {}, clear=False):
+        with unittest.mock.patch.dict("os.environ", {}, clear=False):
             import os as _os
 
             _os.environ.pop("CURIO_ISOLATION", None)
@@ -280,7 +279,7 @@ class TestExecStillWorksWhenIsolationIsUnavailable(unittest.TestCase):
 
     def test_an_invalid_mode_does_not_break_execution(self):
         """A typo in the flag must not take the sandbox down."""
-        with mock.patch.dict("os.environ", {"CURIO_ISOLATION": "nonsense"}):
+        with unittest.mock.patch.dict("os.environ", {"CURIO_ISOLATION": "nonsense"}):
             response = self._post()
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.get_json()["output"]["dataType"], "int")

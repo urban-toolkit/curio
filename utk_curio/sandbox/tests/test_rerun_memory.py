@@ -48,10 +48,9 @@ the per-request table.
 import os
 import sys
 import textwrap
-import unittest
+import unittest.mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import mock
 
 import pytest
 
@@ -109,7 +108,7 @@ class FinishedRunHoldsNothingTest(unittest.TestCase):
 
         self._tmp = TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        env = mock.patch.dict(os.environ, {
+        env = unittest.mock.patch.dict(os.environ, {
             "CURIO_LAUNCH_CWD": self._tmp.name,
             "CURIO_SHARED_DATA": "./.curio/data/",
         })

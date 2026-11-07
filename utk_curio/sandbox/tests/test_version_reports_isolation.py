@@ -21,8 +21,7 @@ Run:  pytest utk_curio/sandbox/tests/test_version_reports_isolation.py -v
 """
 
 import os
-import unittest
-from unittest import mock
+import unittest.mock
 
 from utk_curio.sandbox.app import api, app
 from utk_curio.sandbox.isolation import mode as isolation_mode
@@ -53,23 +52,23 @@ class VersionIsolationTestCase(unittest.TestCase):
 
     def test_auto_is_reported_as_off_not_as_auto(self):
         """The badge must not show a mode nobody is running in."""
-        with mock.patch.dict(os.environ, {isolation_mode.MODE_ENV: "auto"}):
+        with unittest.mock.patch.dict(os.environ, {isolation_mode.MODE_ENV: "auto"}):
             self.assertEqual(self._version()["isolation"], isolation_mode.OFF)
 
     def test_off_is_reported_as_off(self):
-        with mock.patch.dict(os.environ, {isolation_mode.MODE_ENV: "off"}):
+        with unittest.mock.patch.dict(os.environ, {isolation_mode.MODE_ENV: "off"}):
             self.assertEqual(self._version()["isolation"], isolation_mode.OFF)
 
     def test_fork_is_reported_only_when_it_resolved_to_fork(self):
         """A requested fork that degraded must not be reported as isolated."""
-        with mock.patch.object(
+        with unittest.mock.patch.object(
             isolation_mode, "resolve_from_environment",
             return_value=(isolation_mode.OFF, "degraded on this platform"),
         ):
             self.assertEqual(self._version()["isolation"], isolation_mode.OFF)
 
         api._resolved_isolation_label = None
-        with mock.patch.object(
+        with unittest.mock.patch.object(
             isolation_mode, "resolve_from_environment",
             return_value=(isolation_mode.FORK, None),
         ):
@@ -77,7 +76,7 @@ class VersionIsolationTestCase(unittest.TestCase):
 
     def test_an_unavailable_configuration_says_so(self):
         """Neither 'isolated' nor a bare 'off' would be honest here."""
-        with mock.patch.object(
+        with unittest.mock.patch.object(
             isolation_mode, "resolve_from_environment",
             side_effect=isolation_mode.IsolationUnavailable("no seccomp"),
         ):
@@ -85,7 +84,7 @@ class VersionIsolationTestCase(unittest.TestCase):
 
     def test_the_mode_is_resolved_once(self):
         """Every page load hits this route; resolution probes the platform."""
-        with mock.patch.object(
+        with unittest.mock.patch.object(
             isolation_mode, "resolve_from_environment",
             return_value=(isolation_mode.OFF, None),
         ) as resolve:
@@ -160,7 +159,7 @@ class ExecutionActuallyDidTestCase(unittest.TestCase):
         job must not mistake for success.
         """
         api._isolation_state = False
-        with mock.patch.object(api, "_isolation_label", lambda: "fork"):
+        with unittest.mock.patch.object(api, "_isolation_label", lambda: "fork"):
             body = self._version()
         self.assertEqual(body["isolation"], "fork")
         self.assertEqual(body["isolation_active"], "off")

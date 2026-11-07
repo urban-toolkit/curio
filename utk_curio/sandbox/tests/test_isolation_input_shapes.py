@@ -17,8 +17,7 @@ running Merge.json (now multi-input.json), which no unit test covered.
 Run:  pytest utk_curio/sandbox/tests/test_isolation_input_shapes.py -v
 """
 
-import unittest
-from unittest import mock
+import unittest.mock
 
 from utk_curio.sandbox.isolation import runner
 
@@ -63,8 +62,8 @@ class TestBuildInputSpec(unittest.TestCase):
         # entry is ignored whenever another test imported it first.
         from utk_curio.sandbox import util
 
-        self.staging = mock.MagicMock()
-        patcher = mock.patch.object(util, "staging", self.staging)
+        self.staging = unittest.mock.MagicMock()
+        patcher = unittest.mock.patch.object(util, "staging", self.staging)
         patcher.start()
         self.addCleanup(patcher.stop)
 

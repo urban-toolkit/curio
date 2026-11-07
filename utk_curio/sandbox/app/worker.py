@@ -353,7 +353,6 @@ def _worker_init():
     import shapely
     import duckdb
     import numpy as np
-    from pathlib import Path
     from shapely import wkt
 
     from utk_curio.sandbox.util.parsers import (
@@ -386,7 +385,7 @@ def _worker_init():
         'wkt': wkt,
         'math': math,
         'datetime': datetime,
-        'Path': Path,
+        'Path': _pathlib.Path,
         'duckdb': duckdb,
         'load_from_duckdb': load_from_duckdb,
         'save_to_duckdb': save_to_duckdb,

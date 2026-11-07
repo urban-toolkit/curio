@@ -115,7 +115,6 @@ def build_namespace_template():
     import mmap
     import time
     import zlib
-    from pathlib import Path
 
     import duckdb
     import geopandas as gpd
@@ -148,7 +147,7 @@ def build_namespace_template():
         "wkt": wkt,
         "math": math,
         "datetime": datetime,
-        "Path": Path,
+        "Path": _pathlib.Path,
         "duckdb": duckdb,
         "detect_kind": detect_kind,
         "checkIOType": checkIOType,

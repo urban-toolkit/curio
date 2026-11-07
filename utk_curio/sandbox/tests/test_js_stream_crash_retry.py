@@ -17,8 +17,7 @@ about what does NOT retry.
 Run:  pytest utk_curio/sandbox/tests/test_js_stream_crash_retry.py -v
 """
 
-import unittest
-from unittest import mock
+import unittest.mock
 
 from utk_curio.sandbox.app.worker import is_node_internal_stream_crash
 
@@ -123,9 +122,9 @@ class TestRetryWiring(unittest.TestCase):
         from utk_curio.sandbox.app import worker
         from utk_curio.sandbox.util import parsers
 
-        with mock.patch('subprocess.Popen', popen), \
-                mock.patch.object(parsers, 'save_to_duckdb', return_value='art-1'), \
-                mock.patch.object(parsers, 'detect_kind', return_value='int'):
+        with unittest.mock.patch('subprocess.Popen', popen), \
+                unittest.mock.patch.object(parsers, 'save_to_duckdb', return_value='art-1'), \
+                unittest.mock.patch.object(parsers, 'detect_kind', return_value='int'):
             return worker.execute_js_code(
                 code="return 1;",
                 file_path=None,

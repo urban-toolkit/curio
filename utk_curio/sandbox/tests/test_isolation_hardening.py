@@ -13,8 +13,7 @@ POSIX, and that part is marked.
 import os
 import stat
 import sys
-import unittest
-from unittest import mock
+import unittest.mock
 
 from utk_curio.sandbox.isolation import hardening, supervisor
 
@@ -119,7 +118,7 @@ class TestAudit(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             os.makedirs(os.path.join(tmp, "instance"))
-            with mock.patch.object(
+            with unittest.mock.patch.object(
                 hardening, "can_access", return_value=True
             ):
                 findings = hardening.audit(tmp, uid=1000, gid=1000)
