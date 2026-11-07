@@ -40,6 +40,7 @@ otherwise truncate the user out from under the browser between chapters.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -205,11 +206,9 @@ def _present_modules(names) -> set[str]:
     importlib.invalidate_caches()
     present = set()
     for name in names:
-        try:
+        with contextlib.suppress(ImportError, ValueError):
             if importlib.util.find_spec(name) is not None:
                 present.add(name)
-        except (ImportError, ValueError):
-            pass
     return present
 
 
@@ -225,7 +224,7 @@ def _load_provider() -> tuple[str, str, str]:
         with open(PROVIDER_FILE, encoding="utf-8") as handle:
             data = json.load(handle) or {}
     except FileNotFoundError:
-        pass
+        pass  # no local file: the env and the defaults apply
     except (OSError, ValueError) as exc:
         log(f"[stress] ignoring unreadable {PROVIDER_FILE}: {exc}")
     return (
@@ -2707,10 +2706,8 @@ class TestCurioStressTour:
         os.makedirs(raw_dir, exist_ok=True)
         for stale in os.listdir(raw_dir):
             if stale.startswith("page@") and stale.endswith(".webm"):
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(os.path.join(raw_dir, stale))
-                except OSError:
-                    pass
 
         context = browser.new_context(
             viewport=VIDEO_SIZE,

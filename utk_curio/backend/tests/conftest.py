@@ -10,6 +10,7 @@ E2E — starts against an empty database, and the dev
 ``urban_workflow.db`` file is never touched.
 """
 
+import contextlib
 import os
 import shutil
 import sys
@@ -82,10 +83,8 @@ _TEST_SQLA_DB = os.path.join(_TEST_DB_DIR, "urban_workflow_test.db")
 # connections we shouldn't yank.
 if _TEST_OWNED_DIR is not None:
     for _suffix in ("", "-wal", "-shm"):   # the DB and its WAL sidecars
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.remove(_TEST_SQLA_DB + _suffix)
-        except FileNotFoundError:
-            pass
 
 os.environ["CURIO_TESTING"] = "1"
 os.environ["CURIO_LAUNCH_CWD"] = _TEST_WORKSPACE

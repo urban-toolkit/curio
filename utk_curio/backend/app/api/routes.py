@@ -1,3 +1,4 @@
+import contextlib
 from pathlib import PurePosixPath
 
 from flask import request, abort, jsonify, g, Response, current_app
@@ -140,7 +141,7 @@ def version():
 
     isolation = 'unknown'
     isolation_active = 'unknown'
-    try:
+    with contextlib.suppress(SandboxTransportError, requests.RequestException, ValueError):
         response = sandbox_request(
             'get', '/version',
             label='/version', timeout=SANDBOX_VERSION_TIMEOUT,
@@ -152,8 +153,6 @@ def version():
             # the badge only downgrades on an explicit 'off', so a missing
             # field must not be read as evidence of a failed zygote.
             isolation_active = payload.get('isolation_active', 'unknown')
-    except (SandboxTransportError, requests.RequestException, ValueError):
-        pass
 
     return jsonify({
         'version': __version__,

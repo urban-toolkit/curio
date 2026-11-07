@@ -15,6 +15,7 @@ Two places, for two readers:
 
 from __future__ import annotations
 
+import contextlib
 import os
 from pathlib import Path
 
@@ -100,11 +101,9 @@ def grant_to_child(path: Path, *, up_to: Path | None = None) -> None:
         return
     current = Path(path)
     stop = Path(up_to) if up_to else current
-    try:
+    with contextlib.suppress(OSError):
         while True:
             os.chown(current, uid, -1)
             if current == stop or current.parent == current:
                 break
             current = current.parent
-    except OSError:
-        pass

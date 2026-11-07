@@ -23,6 +23,7 @@ Run::
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -397,12 +398,11 @@ def test_a_model_dropped_on_the_canvas_becomes_a_node_that_runs_it(
         {"modelSelector": model_row, "targetSelector": CANVAS_DROP_TARGET},
     )
     assert "error" not in dropped, dropped
-    try:
+    # On a timeout the assertion below says what the canvas holds.
+    with contextlib.suppress(PlaywrightTimeoutError):
         page.wait_for_function(
             "(n) => window.__curio_reactFlow.getNodes().length > n", arg=len(before), timeout=15000
         )
-    except PlaywrightTimeoutError:
-        pass
     added = [node for node in canvas_nodes(page) if node["id"] not in before]
     # Both halves at once: the browser keeps the drop only when the canvas
     # answers a copy drag with copy, and the drop must then make one node.

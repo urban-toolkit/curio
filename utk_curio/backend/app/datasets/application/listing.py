@@ -16,7 +16,7 @@ from utk_curio.backend.app.datasets.domain.catalog_item import loader_snippet
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import looks_like_generated_filename
 from utk_curio.backend.app.datasets.application.paths import PathResolver
 from utk_curio.backend.app.datasets.application.export import (
-    _DOWNLOAD_MIMETYPES,
+    DOWNLOAD_MIMETYPES,
     _dataset_consumer_nodes_in_spec,
     _dataset_producer_in_spec,
     _download_extension,
@@ -918,7 +918,7 @@ class CatalogListing:
         extension = _download_extension(path, fmt)
         return {
             "download_name": _download_name(title, extension),
-            "mimetype": _DOWNLOAD_MIMETYPES.get(extension),
+            "mimetype": DOWNLOAD_MIMETYPES.get(extension),
             "path": resolved,
         }
 

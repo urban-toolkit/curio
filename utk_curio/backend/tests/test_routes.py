@@ -1,3 +1,4 @@
+import contextlib
 import os
 
 import pytest
@@ -237,10 +238,8 @@ def test_file_route_never_serves_hidden_paths(app, launch_at_repo):
         import shutil
 
         shutil.rmtree(os.path.join(launch_at_repo, ".file-route-probe"), ignore_errors=True)
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.remove(os.path.join(launch_at_repo, "data", ".file-route-probe"))
-        except FileNotFoundError:
-            pass
 
 
 def test_file_route_never_serves_curio_stores(app, monkeypatch, launch_at_repo):

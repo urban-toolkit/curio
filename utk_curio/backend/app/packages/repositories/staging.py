@@ -191,13 +191,11 @@ def discard_artifact(user_key: str, digest: str) -> bool:
 
 def _staged_at(user_key: str, digest: str, artifact: Path) -> float:
     meta = _meta_path(user_key, digest)
-    try:
+    with contextlib.suppress(OSError, ValueError):
         payload = json.loads(meta.read_text(encoding="utf-8"))
         created = payload.get("createdAt")
         if isinstance(created, (int, float)):
             return float(created)
-    except (OSError, ValueError):
-        pass
     # Metadata missing/corrupt: fall back to the artifact's mtime so the
     # sweep still terminates the artifact eventually.
     try:

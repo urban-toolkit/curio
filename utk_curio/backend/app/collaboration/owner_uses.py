@@ -34,6 +34,7 @@ when it is first read (:func:`recorded`) or first changed (:func:`changed`).
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -189,10 +190,8 @@ def _write(path: Path, record: Record) -> None:
         logger.error("could not write %s", path, exc_info=True)
     finally:
         if tmp.exists():
-            try:
+            with contextlib.suppress(OSError):
                 tmp.unlink()
-            except OSError:
-                pass
 
 
 def recorded(user_key: str, project_id: str) -> Record:
@@ -255,7 +254,7 @@ def forget(user_key: str, project_id: str) -> None:
         try:
             _path(user_key, project_id).unlink()
         except FileNotFoundError:
-            pass
+            pass  # no record to drop
         except (OSError, ValueError):
             logger.warning("the record of what the owner put in dataflow %s could not be dropped", project_id,
                            exc_info=True)

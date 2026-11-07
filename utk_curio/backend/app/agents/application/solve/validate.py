@@ -8,6 +8,7 @@ and import order between siblings cannot matter.
 
 from __future__ import annotations
 
+import contextlib
 import time as _time
 import uuid
 
@@ -73,7 +74,7 @@ def validate_node_stream(
     if node is None:
         raise AgentServiceError(f"node {node_id!r} not found in the saved spec", 404)
     now = _time.time()
-    if session.get("validatingSince") and now - float(session.get("validatingSince") or 0) < agents_budgets._VALIDATE_STALE_SECONDS:
+    if session.get("validatingSince") and now - float(session.get("validatingSince") or 0) < agents_budgets.VALIDATE_STALE_SECONDS:
         raise AgentServiceError("a validation is already running for this attachment", 409)
     manifest = agents_catalog._resolve_definition(user_key, record.get("coord", ""))
     resolution = delegation.resolve(
@@ -212,7 +213,7 @@ def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_ses
                               *, parent_name: str) -> None:
     """The framing user turn at HOME: the agent named *parent_name* delegated this Solve."""
     if isinstance(home_session_id, str):
-        try:
+        with contextlib.suppress(Exception):
             sessions.append_turns(
                 user_key, project_id, home_session_id, home_attachment_id,
                 [sessions.make_turn(
@@ -221,8 +222,6 @@ def _announce_delegated_solve(user_key, project_id, home_attachment_id, home_ses
                     "execute through the dataflow, validate, self-correct.",
                 )],
             )
-        except Exception:
-            pass
 
 
 def _say_the_answer(user_key, project_id, attachment_id, session_id, home_attachment_id, home_session_id,
@@ -403,7 +402,7 @@ def _settle_node_state(user_key, project_id, attachment_id, ref, verdict: str) -
 
 def _clear_validating_guard(user_key, project_id, attachment_id) -> None:
     """Disconnect-safe: the in-flight guard never wedges the attachment."""
-    try:
+    with contextlib.suppress(Exception):
         cleanup_spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
         cleanup_record = agents_spec_reads._record_or_404(cleanup_spec, attachment_id)
         cleanup_session = cleanup_record.get("builderSession") or {}
@@ -413,5 +412,3 @@ def _clear_validating_guard(user_key, project_id, attachment_id) -> None:
                 user_key, project_id, cleanup_spec,
                 agents_spec_reads._agent_actor(user_key, cleanup_spec, attachment_id, "validate"),
             )
-    except Exception:
-        pass

@@ -18,7 +18,6 @@ a dict where the user expected a GeoDataFrame.
 
 from __future__ import annotations
 
-import json
 import os
 import posixpath
 import re

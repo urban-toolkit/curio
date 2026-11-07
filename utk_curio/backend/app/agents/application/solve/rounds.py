@@ -50,8 +50,8 @@ def _attempt_code_field(candidate: object, *, prose: bool = False) -> dict:
     if not text.strip():
         return {}
     field: dict = {}
-    if len(text) > agents_budgets._ATTEMPT_CODE_CHARS:
-        field["code"] = text[:agents_budgets._ATTEMPT_CODE_CHARS] + ("\n" + agent_text.message("solve.attempt-code-truncated"))
+    if len(text) > agents_budgets.ATTEMPT_CODE_CHARS:
+        field["code"] = text[:agents_budgets.ATTEMPT_CODE_CHARS] + ("\n" + agent_text.message("solve.attempt-code-truncated"))
         field["codeTruncated"] = True
     else:
         field["code"] = text
@@ -274,7 +274,7 @@ def _is_prose_decline(candidate: str) -> bool:
     """A short, single-line reply with no code shape: the content builder's
     sanctioned one-line answer rather than content."""
     text = (candidate or "").strip()
-    if not text or "\n" in text or len(text) > agents_budgets._PROSE_DECLINE_MAX_CHARS:
+    if not text or "\n" in text or len(text) > agents_budgets.PROSE_DECLINE_MAX_CHARS:
         return False
     return not any(marker in text for marker in _CODE_MARKERS)
 
@@ -348,7 +348,7 @@ def _correction_url_evidence(candidate: str, error_text: str, ctx) -> list[dict]
                 # parameter): probe ONLY with the value swapped in — a bare probe
                 # would send the placeholder text and answer nothing useful.
                 out.append(placeholder)
-                if len(out) >= agents_budgets._CORRECTION_URL_PROBES:
+                if len(out) >= agents_budgets.CORRECTION_URL_PROBES:
                     break
                 continue
         already_known = isinstance(known, dict) and url in known
@@ -372,7 +372,7 @@ def _correction_url_evidence(candidate: str, error_text: str, ctx) -> list[dict]
         if keyed:
             entry.update(keyed)
         out.append(entry)
-        if len(out) >= agents_budgets._CORRECTION_URL_PROBES:
+        if len(out) >= agents_budgets.CORRECTION_URL_PROBES:
             break
     return out
 
@@ -549,7 +549,7 @@ def _url_evidence_summary(url_evidence: list[dict]) -> str:
         elif verdict.get("detail"):
             bit += f": {verdict['detail']}"
         parts.append(bit)
-    return "; ".join(parts)[:agents_budgets._ATTEMPT_DETAIL_CHARS * 2]
+    return "; ".join(parts)[:agents_budgets.ATTEMPT_DETAIL_CHARS * 2]
 
 
 def _verified_content_rounds(

@@ -1,3 +1,4 @@
+import contextlib
 import os
 import re
 import json
@@ -243,10 +244,8 @@ def _assert_lever_map_drew(page, spec, node_id: str) -> None:
     assert len(maps) == 1, f"Map Editor node {node_id} feeds and is linked to the maps {maps}, not one"
     (map_id,) = maps
     body = page.locator(f'.react-flow__node[data-id="{node_id}"] [data-edit-body="{node_id}"]')
-    try:
+    with contextlib.suppress(PlaywrightTimeoutError):
         body.locator('[data-testid="interaction-layers"]').wait_for(state="attached", timeout=90000)
-    except PlaywrightTimeoutError:
-        pass
     linked_to = body.get_attribute("data-edit-map") if body.count() else None
     notices = body.locator("[data-curio-node-empty]").all_inner_texts()
     assert linked_to == map_id, f"Map Editor node {node_id} edits on {linked_to!r}, not the map it is linked to, {map_id}"
@@ -1257,11 +1256,9 @@ class TestWorkflowCanvas:
             # table and image modes → NodeEditor auto-switches to output tab;
             # text (passthrough) mode → no output tab at all.
             output_tab_visible = False
-            try:
+            with contextlib.suppress(Exception):
                 output_tab.first.wait_for(state="visible", timeout=10000)
                 output_tab_visible = True
-            except Exception:
-                pass
 
             if output_tab_visible:
                 # Ensure the tab is active.

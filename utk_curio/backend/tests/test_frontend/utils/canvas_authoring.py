@@ -1,5 +1,6 @@
 """Author a canvas by hand: drag a node in, connect it, give it code, run it."""
 
+import contextlib
 import re
 import time
 from urllib.error import HTTPError
@@ -921,12 +922,10 @@ def set_node_code(page, node_id: str, code: str, *, timeout: float = 15000) -> N
     # The pane stays mounted when inactive, so the editor exists either way,
     # but activating the tab keeps a failure legible in --headed runs.
     code_tab = node_el.locator('.nav-link[data-rr-ui-event-key="code"]').first
-    try:
+    with contextlib.suppress(PlaywrightTimeoutError):
         code_tab.wait_for(state="visible", timeout=2000)
         if "active" not in (code_tab.get_attribute("class") or ""):
             code_tab.dispatch_event("click")
-    except PlaywrightTimeoutError:
-        pass
     node_el.locator(".monaco-editor").first.wait_for(state="visible", timeout=timeout)
 
     deadline = time.time() + timeout / 1000
@@ -1217,14 +1216,12 @@ def read_node_error_text(node_el) -> str | None:
     We switch to the code tab so that area is in the
     layout, then read it.
     """
-    try:
+    with contextlib.suppress(Exception):
         attr = node_el.locator("[data-curio-node-error]").first
         if attr.count():
             text = attr.get_attribute("data-curio-node-error")
             if text and text.strip():
                 return text
-    except Exception:
-        pass
     try:
         code_tab = node_el.locator(
             '.nav-link[data-rr-ui-event-key="code"]'

@@ -19,6 +19,7 @@ manifest reusing its id is skipped.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import threading
@@ -118,11 +119,9 @@ def list_discovery_sources() -> list[Path]:
 
 def origin_of(path: Path) -> str:
     """``shipped`` or ``instance``: which root *path* was found under."""
-    try:
+    with contextlib.suppress(OSError):
         if is_within(Path(path), instance_root().resolve()):
             return INSTANCE
-    except OSError:
-        pass
     return SHIPPED
 
 

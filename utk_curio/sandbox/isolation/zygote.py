@@ -55,6 +55,12 @@ then only that run's process group (``ZygoteClient.run``). One connection per
 execution is what makes concurrent executions work without any threads on this
 side.
 
+It learns that a child has exited from a pidfd of the child, which its select
+watches beside the connections: the select returns as the child exits, and the
+child is reaped and reported then (``Zygote._watch``). Without a pidfd the loop
+finds the child at its next poll, every ``_REAP_POLL_SECONDS``, as it found
+every child before; deadlines are checked on that poll too.
+
 A caller can hang up before its answer comes: ``ZygoteClient`` gives up on the
 pid after ``connect_timeout``. The answer that fails then closes that one
 connection, and the loop serves the others; a child whose caller never learned
@@ -78,9 +84,11 @@ from utk_curio.sandbox.util.duckdb_threads import (  # noqa: F401  (_describe_th
 
 SOCKET_BACKLOG = 64
 
-# How long to block in the selector while children are outstanding. Only
-# affects how promptly an exited child is reaped and reported; the parent has
-# its own timeout, so this is not a correctness deadline.
+# How long to block in the selector while children are outstanding: how often
+# deadlines are checked, and how soon an exited child that has no pidfd
+# (``Zygote._watch``) is reaped and reported. A child with one wakes the select
+# as it exits. The parent has its own timeout, so this is not a correctness
+# deadline.
 _REAP_POLL_SECONDS = 0.05
 
 
@@ -282,6 +290,9 @@ class Zygote:
         # pid -> connection, so an exited child's status reaches the right caller.
         self._pending = {}
         self._listener = None
+        self._selector = None
+        # Whether a child got no pidfd yet; said once (_watch).
+        self._told_no_pidfd = False
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -311,6 +322,7 @@ class Zygote:
 
         selector = selectors.DefaultSelector()
         selector.register(self._listener, selectors.EVENT_READ, data="listener")
+        self._selector = selector
 
         # Announce readiness on stdout so the parent does not have to poll the
         # socket to know the (slow) imports finished.
@@ -318,13 +330,25 @@ class Zygote:
 
         while True:
             timeout = _REAP_POLL_SECONDS if self._pending else None
+            exited = []
             for key, _mask in selector.select(timeout=timeout):
                 if key.data == "listener":
                     self._accept(selector)
-                else:
+                elif key.data == "connection":
                     self._handle_request(selector, key.fileobj)
+                else:
+                    # A child's pidfd: the child has exited. It is reaped
+                    # below, with every other child that has.
+                    exited.append(key.data[1])
             self._enforce_deadlines()
             self._reap_children()
+            # A pidfd stays readable, so one whose child is still unreaped
+            # would wake the select at once, forever. The poll finds that
+            # child instead.
+            for pid in exited:
+                state = self._pending.get(pid)
+                if state is not None:
+                    self._unwatch(state)
 
     def _enforce_deadlines(self):
         """Kill any child that has outlived its wall-clock allowance.
@@ -396,6 +420,7 @@ class Zygote:
             "timed_out": False,
         }
         self._pending[pid] = state
+        self._watch(pid, state)
         if not _reply(connection, {"pid": pid}):
             # The caller hung up before it learned the pid, so nothing will
             # read this child's result: stop it now.
@@ -407,6 +432,59 @@ class Zygote:
                 "came; the child was stopped",
                 file=sys.stderr, flush=True,
             )
+
+    def _watch(self, pid, state):
+        """Have child *pid*'s exit wake the select, through a pidfd of it.
+
+        A pidfd is readable once its process has exited, so the select returns
+        as the child exits and ``_reap_children`` reaps and reports it then.
+        Without one the loop learned of an exit only at its next poll, and
+        every isolated run waited for it.
+
+        ``pidfd_open`` needs Linux 5.3, and a seccomp profile may refuse it.
+        Where it fails, for any reason, the child is left to the poll, as
+        every child was before, and that is said once.
+        """
+        import selectors
+
+        pidfd_open = getattr(os, "pidfd_open", None)
+        try:
+            if pidfd_open is None:
+                raise OSError(errno.ENOSYS, "this Python has no os.pidfd_open")
+            pidfd = pidfd_open(pid)
+        except OSError as exc:
+            if not self._told_no_pidfd:
+                self._told_no_pidfd = True
+                print(
+                    f"[zygote] no pidfd for child {pid} ({exc}); exited "
+                    f"children are found every {_REAP_POLL_SECONDS} s instead",
+                    file=sys.stderr, flush=True,
+                )
+            return
+        try:
+            self._selector.register(pidfd, selectors.EVENT_READ, data=("child", pid))
+        except (OSError, ValueError, KeyError):
+            os.close(pidfd)
+            return
+        state["pidfd"] = pidfd
+
+    def _unwatch(self, state):
+        """Stop watching a child through its pidfd, if it had one, and close it.
+
+        Unregistered before it is closed: a descriptor number the next accept
+        reuses must not still be in the selector.
+        """
+        pidfd = state.pop("pidfd", None)
+        if pidfd is None:
+            return
+        try:
+            self._selector.unregister(pidfd)
+        except (KeyError, ValueError):
+            pass
+        try:
+            os.close(pidfd)
+        except OSError:
+            pass
 
     def _fork_child(self, request, selector, connection):
         from utk_curio.sandbox.isolation import child
@@ -437,6 +515,17 @@ class Zygote:
         for sock in (self._listener, connection, *waiting, *running):
             with contextlib.suppress(Exception):
                 sock.close()
+        # Then the pidfds the zygote watches the running children through,
+        # and last the selector, whose epoll this child shares with the
+        # zygote: node code could wait on another run's child through its
+        # pidfd, and add descriptors of its own to the zygote's select, which
+        # would then never sleep.
+        for state in self._pending.values():
+            if "pidfd" in state:
+                with contextlib.suppress(OSError):
+                    os.close(state["pidfd"])
+        with contextlib.suppress(Exception):
+            selector.close()
 
         template = self.namespace_template
 
@@ -460,6 +549,9 @@ class Zygote:
     def _reap_children(self):
         """Report every child that has exited since the last pass.
 
+        A child's pidfd wakes the loop as the child exits (``_watch``), and is
+        closed once the child is reaped.
+
         Every process a node starts ends when the node does, whichever way it
         ended: it returned, it raised, or its deadline killed it. So a child's
         process group is killed before the child is reaped. ``WNOWAIT`` finds
@@ -473,6 +565,8 @@ class Zygote:
             try:
                 exited = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT)
             except ChildProcessError:
+                for state in self._pending.values():
+                    self._unwatch(state)
                 self._pending.clear()
                 return
             except OSError as exc:
@@ -491,6 +585,7 @@ class Zygote:
             state = self._pending.pop(pid, None)
             if state is None:
                 continue
+            self._unwatch(state)
             connection = state["connection"]
             if os.WIFSIGNALED(status):
                 payload = {"exit": None, "signal": os.WTERMSIG(status)}

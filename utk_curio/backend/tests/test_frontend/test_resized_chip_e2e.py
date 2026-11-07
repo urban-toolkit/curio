@@ -16,6 +16,7 @@ Run::
 """
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import TYPE_CHECKING
 
@@ -85,30 +86,26 @@ def _spec() -> dict:
 def _size_once(page, condition: str) -> dict:
     """The node's size once *condition* (JavaScript on its size, ``s``) holds,
     or twenty seconds pass."""
-    try:
+    with contextlib.suppress(PlaywrightTimeoutError):
         page.wait_for_function(
             f"(id) => {{ const s = ({_SIZE_JS})(id); return !!s && ({condition}); }}",
             arg=NODE_ID,
             polling=100,
             timeout=20000,
         )
-    except PlaywrightTimeoutError:
-        pass
     return page.evaluate(_SIZE_JS, NODE_ID)
 
 
 def _corner(page) -> dict:
     """The middle of the chip's corner once a press there lands on the corner,
     or twenty seconds pass: read with the hit, so the view cannot move between."""
-    try:
+    with contextlib.suppress(PlaywrightTimeoutError):
         page.wait_for_function(
             f"(id) => ({_CORNER_JS})(id).on",
             arg=NODE_ID,
             polling=100,
             timeout=20000,
         )
-    except PlaywrightTimeoutError:
-        pass
     return page.evaluate(_CORNER_JS, NODE_ID)
 
 

@@ -39,6 +39,7 @@ rather than raising.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import functools
 import hashlib
@@ -182,10 +183,8 @@ def _atomic_write(path: Path, body: str) -> None:
             f.write(body)
         os.replace(tmp_name, path)
     except Exception:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp_name)
-        except OSError:
-            pass
         raise
 
 

@@ -11,6 +11,7 @@ request.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from dataclasses import dataclass
@@ -505,15 +506,13 @@ def record_runtime_outcome(user, *, node_id, dataflow_id, code, stdout, stderr, 
 
     if not node_id or not dataflow_id or user is None:
         return
-    try:
+    with contextlib.suppress(Exception):
         runtime_journal.record_execution(
             _user_dir_key(user), dataflow_id, node_id,
             code=code, stdout=stdout, stderr=stderr, output=output,
             started_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             duration_ms=duration_ms,
         )
-    except Exception:
-        pass
 
 
 def execute_python_node(user, session_token: str | None, run: NodeRun) -> tuple[dict, int]:

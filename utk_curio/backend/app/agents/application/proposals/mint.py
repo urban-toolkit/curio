@@ -8,6 +8,7 @@ and import order between siblings cannot matter.
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 
 from utk_curio.backend.app.agents.application import source_grounding
@@ -320,10 +321,8 @@ def _new_template_code(request, template: dict) -> list[tuple[str, str, str]]:
     pieces: list[tuple[str, str, str]] = []
     source = request.files.get(parsed.source or "")
     if source is not None:
-        try:
+        with contextlib.suppress(UnicodeDecodeError):
             pieces.append((agent_text.message("mint.new-template-where-source", source=parsed.source), source.decode("utf-8"), parsed.engine))
-        except UnicodeDecodeError:
-            pass
     for index, node in enumerate(request.nodes):
         if node.template_id == parsed.template_id and node.content:
             pieces.append((f"nodes[{index}].content", node.content, parsed.engine))
@@ -937,7 +936,7 @@ def _mint_node_create(
     # used to drop this param while the prompt asked for it — the second
     # live test's notes were all headed "Note".
     title = params.get("title")
-    title = title.strip()[:agents_delegates._NODE_TITLE_MAX_CHARS] if isinstance(title, str) and title.strip() else None
+    title = title.strip()[:agents_delegates.NODE_TITLE_MAX_CHARS] if isinstance(title, str) and title.strip() else None
     # dev/89 (additive): optional appearance, normalized by the ONE shared
     # utility — an invalid or inaccessible color refuses at mint, loudly.
     from utk_curio.backend.app.packages.application.note_palette import NOTE_PALETTE

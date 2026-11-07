@@ -22,6 +22,7 @@ members, until it is deleted itself.
 from __future__ import annotations
 
 import copy
+import math
 import re
 from typing import Iterable
 
@@ -57,7 +58,10 @@ def next_scenario_color(colors: Iterable[str]) -> str:
 
 
 def _is_number(value: object) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and value == value
+    return (
+        isinstance(value, (int, float)) and not isinstance(value, bool)
+        and not (isinstance(value, float) and math.isnan(value))
+    )
 
 
 def _well_formed(entry: object) -> bool:

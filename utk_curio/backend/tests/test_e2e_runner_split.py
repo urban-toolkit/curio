@@ -12,10 +12,9 @@ import json
 import re
 import sys
 import tempfile
-import unittest
+import unittest.mock
 from collections import defaultdict
 from pathlib import Path
-from unittest import mock
 from types import SimpleNamespace
 
 from utk_curio.backend.tests import parts
@@ -134,9 +133,9 @@ class SelectionTest(unittest.TestCase):
 
     def setUp(self):
         patches = [
-            mock.patch.object(runner_split, "item_needs_webgpu", lambda i: i.gpu),
-            mock.patch.object(runner_split, "part_key", lambda i: i.group),
-            mock.patch.object(runner_split, "item_key", lambda i: i.nodeid),
+            unittest.mock.patch.object(runner_split, "item_needs_webgpu", lambda i: i.gpu),
+            unittest.mock.patch.object(runner_split, "part_key", lambda i: i.group),
+            unittest.mock.patch.object(runner_split, "item_key", lambda i: i.nodeid),
         ]
         for patch in patches:
             patch.start()

@@ -174,7 +174,7 @@ def _fetched(dir_name: str, shipped: Path) -> Path | None:
         rel = repo_path[len(prefix):]
         placed = left_out_files.fetch(repo_path, shipped / rel, expected_sha256=integrity.get(rel))
         folder = placed
-        for _part in PurePosixPath(rel).parts:
+        for _ in PurePosixPath(rel).parts:
             folder = folder.parent
     return folder
 

@@ -47,7 +47,6 @@ from utk_curio.backend.tests._support.ui_test_package import UI_TEST_NODE_LABEL,
 
 from .utils import (
     api_json,
-    canvas_nodes,
     dismiss_toasts,
     install_session_cookie,
     leave_agent_badge,

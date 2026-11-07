@@ -174,6 +174,7 @@ def create_app(config_class=config_class):
     def short_circuit_preflight():
         if request.method == "OPTIONS":
             return _apply_cors(make_response("", 204))
+        return None
 
     @app.after_request
     def add_cors_headers(response):

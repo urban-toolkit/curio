@@ -3,6 +3,7 @@ the provenance drawer, and counting what the canvas holds.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -217,10 +218,8 @@ def await_canvas_graph(page, want: dict, *, timeout: float = 20000) -> None:
     the dataflow's doc, a round trip after the click. Swallowing the timeout is
     deliberate, as in :func:`await_canvas_nodes`: the assertion that follows
     reports the counts."""
-    try:
+    with contextlib.suppress(PlaywrightTimeoutError):
         page.wait_for_function(_CANVAS_IS_JS, arg=want, polling=100, timeout=timeout)
-    except PlaywrightTimeoutError:
-        pass
 
 
 def await_provenance_history(page, *, timeout: float = 20000) -> dict:
@@ -311,10 +310,8 @@ def await_canvas_nodes(page, want: int, *, timeout: float = 15000) -> None:
     the timeout is deliberate: the assertion that follows reports the actual
     counts, which says far more than ``TimeoutError`` would.
     """
-    try:
+    with contextlib.suppress(PlaywrightTimeoutError):
         page.wait_for_function(_CANVAS_DRAWN_JS, arg=want, polling=100, timeout=timeout)
-    except PlaywrightTimeoutError:
-        pass
 
 
 def version_graph(version) -> dict:

@@ -178,7 +178,7 @@ class TestASessionPassCarriesTheErrorForward:
         # #729). The bound here lets pass 1 exhaust its rounds, the weak passes
         # the session allows, and one turn more, so it is the weak-pass limit
         # and not the turn bound that stops the spin below.
-        _bound_session_by_passes(monkeypatch, 1 + budgets._MAX_WEAK_PASSES + 1)
+        _bound_session_by_passes(monkeypatch, 1 + budgets.MAX_WEAK_PASSES + 1)
         # Every candidate fails at run time: pass 1 exhausts its rounds, and
         # later passes keep attempting — the owner's requirement — rather than
         # ending the session after one pass.
@@ -205,7 +205,7 @@ class TestASessionPassCarriesTheErrorForward:
         # And the spin is bounded: a builder repeating itself does not get the
         # whole budget (three repeat-only passes, then the session moves on).
         repeat_passes = sum(1 for k in kinds if k == "repeated-attempt")
-        assert repeat_passes <= 3 * budgets._MAX_WEAK_PASSES, (
+        assert repeat_passes <= 3 * budgets.MAX_WEAK_PASSES, (
             f"(round, kind) per attempt: {[(a.get('round'), a.get('kind')) for a in load['attempts']]}"
         )
         assert helper._node_content(ctx, ctx["load"]) == ""  # nothing failing was written

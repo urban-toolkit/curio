@@ -648,7 +648,7 @@ class TestProseIsARefusalNotAnUnchecked:
         from utk_curio.backend.app.agents.application.solve import budgets as services
 
         verdict = dv.validate(AUTK, "not controllable")
-        head = dv.refusal_text(AUTK, verdict)[:services._ATTEMPT_DETAIL_CHARS]
+        head = dv.refusal_text(AUTK, verdict)[:services.ATTEMPT_DETAIL_CHARS]
         assert '"layerRefs"' in head and '"dataRef"' in head
 
     def test_empty_content_is_refused_for_a_grammar_kind(self):

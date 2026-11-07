@@ -16,6 +16,7 @@ and ``agents.agent_skills``.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import tempfile
@@ -27,10 +28,8 @@ from utk_curio.backend.app.common.file_locks import exclusive_lock
 def ensure_private_dir(directory: Path) -> None:
     """Create *directory* if needed and make it 0700 (best effort on the mode)."""
     directory.mkdir(parents=True, exist_ok=True)
-    try:
+    with contextlib.suppress(OSError):
         os.chmod(directory, 0o700)
-    except OSError:
-        pass
 
 
 def locked(directory: Path, filename: str, *, namespace: str, key: str):
@@ -52,8 +51,6 @@ def write_json(path: Path, doc: dict) -> None:
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)
     except BaseException:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
         raise

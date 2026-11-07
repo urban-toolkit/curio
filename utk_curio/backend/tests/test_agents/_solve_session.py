@@ -22,12 +22,12 @@ UNSPENT_SESSION_S = 900
 def _bound_session_by_passes(monkeypatch, passes):
     """End every Solve session after *passes* turns of its loop, whatever the
     clock says. A turn makes a pass, finds nothing left, or waits for the user;
-    the loop's own bound on turns (``budgets._SOLVE_MAX_PASSES``) ends the
+    the loop's own bound on turns (``budgets.SOLVE_MAX_PASSES``) ends the
     session there, with ``endedBy: budget``. The session's time budget is one
     no runner spends, so every pass gets all its rounds, and the batch's own
     check of that budget stays in place for the tests about it."""
     monkeypatch.setenv("CURIO_SOLVE_SESSION_DEADLINE", str(UNSPENT_SESSION_S))
-    monkeypatch.setattr(budgets, "_SOLVE_MAX_PASSES", passes)
+    monkeypatch.setattr(budgets, "SOLVE_MAX_PASSES", passes)
 
 
 def _on_a_loaded_runner(monkeypatch, sandbox_run_s):
