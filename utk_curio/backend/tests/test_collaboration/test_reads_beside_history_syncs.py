@@ -18,10 +18,18 @@ until the test lets it go, and the read must answer meanwhile, with the
 dataflow as its doc holds it. The point still reaches the disk before its
 maker answers. The database is a file, as on a server, so each thread has its
 own connection.
+
+A sync the disk refuses fails what asked for the point, as it did when the
+sync ran under the locks: File > Save and a run's note answer an error. A
+change's own points are the exception they always were: ``history.recorded``
+logs a history it cannot write and never fails the change, so a tab's change
+whose point cannot reach the disk is still kept.
 """
 
 from __future__ import annotations
 
+import errno
+import json
 import os
 import threading
 
@@ -231,3 +239,84 @@ def test_opening_a_dataflow_does_not_wait_for_a_tabs_change_to_reach_the_disk(ke
     assert "error" not in edit, _outcome(edit)
     assert [ack.get("ok") for ack in edit["value"]] == [True], edit["value"]
     assert _newest_point(kept)["kind"] == "graph"
+
+
+# ---------------------------------------------------------------------------
+# A sync the disk refuses
+# ---------------------------------------------------------------------------
+
+def _failing_syncs(monkeypatch, name: str) -> list:
+    """Make each disk sync the thread called *name* makes fail, as on a disk
+    that takes no more writes; the descriptors it tried to sync."""
+    tried: list = []
+    real = os.fsync
+
+    def fsync(descriptor):
+        if threading.current_thread().name == name:
+            tried.append(descriptor)
+            raise OSError(errno.EIO, "Input/output error")
+        return real(descriptor)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    return tried
+
+
+def _on_its_own_thread(name: str, work) -> dict:
+    """Run *work* to its end on a thread called *name*; its outcome."""
+    threads: list = []
+    outcome = _start(threads, name, work)
+    for thread in threads:
+        thread.join(STEP_SECONDS + HOLD_SECONDS)
+    assert outcome["done"].is_set(), f"the {name} never ended"
+    return outcome
+
+
+#: What asks for a point and answers once it is on the disk: the route, and
+#: its body.
+POINT_ASKERS = {
+    "file-save": ("history/saved", None),
+    "a-runs-note": ("history/nodes/loader/runs", {
+        "code": "x = 1\n", "inputs": [], "outputs": ["DATAFRAME"],
+        "startTime": "2026-11-07T04:46:00Z", "endTime": "2026-11-07T04:46:01Z",
+    }),
+}
+
+
+@pytest.mark.parametrize("asker", sorted(POINT_ASKERS))
+def test_a_point_that_cannot_reach_the_disk_fails_the_request_that_asked_for_it(kept, monkeypatch, asker):
+    """File > Save's version and a run's note answer once their point is on
+    the disk. When the disk refuses the sync, the request answers an error,
+    as it did when the sync ran under the locks: the person is told it was
+    not kept."""
+    _synced(kept, "alice")
+    route, body = POINT_ASKERS[asker]
+    tried = _failing_syncs(monkeypatch, asker)
+
+    outcome = _on_its_own_thread(asker, lambda: kept.application.test_client().post(
+        f"/api/projects/{kept.project_id}/{route}", headers=_auth(kept),
+        **({} if body is None else {"data": json.dumps(body)}),
+    ))
+
+    assert tried, f"the {asker} never asked for its point to reach the disk"
+    assert "error" not in outcome, _outcome(outcome)
+    answer = outcome["value"]
+    assert answer.status_code >= 500, (
+        f"the {asker} answered {answer.status_code} though its point never reached the disk: "
+        + answer.get_data(as_text=True)
+    )
+
+
+def test_a_tabs_change_whose_point_cannot_reach_the_disk_is_still_kept(kept, monkeypatch):
+    """A change's own point is the one a history write may lose, as it always
+    was (``history.recorded``): the change has landed in the doc and gone to
+    every tab, so the tab's update is answered as kept, and the dataflow
+    holds the node."""
+    alice = _synced(kept, "alice")
+    tried = _failing_syncs(monkeypatch, "tab")
+
+    outcome = _on_its_own_thread("tab", lambda: alice.edit(_add_node("added")))
+
+    assert tried, "the tab's change never asked for its point to reach the disk"
+    assert "error" not in outcome, _outcome(outcome)
+    assert [ack.get("ok") for ack in outcome["value"]] == [True], outcome["value"]
+    assert "added" in _nodes(_opened(kept))
