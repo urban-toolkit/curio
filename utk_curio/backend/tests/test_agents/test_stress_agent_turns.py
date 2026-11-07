@@ -18,11 +18,17 @@ nothing queued; both tabs then hold both writes, the same doc as the server,
 were told both turns' ends, show no agent and no lock.
 
 The app runs on a SQLite file, as test_turn_jobs.py's does: the turns'
-threads and the test's requests use the database at once.
+threads and the test's requests use the database at once. Flask-SocketIO's
+test client is made for one thread: it puts a binary event (every doc update)
+back together from its parts in one slot every client shares, and reads what
+a client received by building its queue anew. So the fixture makes each emit
+whole, and each read of a client's queue, under one lock, as a real server's
+sockets each queue whole packets.
 """
 
 from __future__ import annotations
 
+import threading
 import time
 import uuid
 from types import SimpleNamespace
@@ -91,7 +97,19 @@ def canvas(tmp_curio, tmp_path, monkeypatch):
     # This app's SocketIO server, which tells the room of the agents too.
     monkeypatch.setattr(extensions, "socketio", None, raising=True)
     monkeypatch.setattr(dataflow_docs, "BACKGROUND", False, raising=True)
+    monkeypatch.setattr(agent_peers, "BACKGROUND", False, raising=True)
     application = create_app(FileTestConfig)
+    # Each emit whole, whichever thread makes it: the turns' threads tell the
+    # room while the test's tabs send and read (see the module's docstring).
+    sent = threading.RLock()
+    manager = application.extensions["socketio"].server.manager
+    emit = manager.emit
+
+    def whole(*args, **kwargs):
+        with sent:
+            return emit(*args, **kwargs)
+
+    monkeypatch.setattr(manager, "emit", whole)
     with application.app_context():
         db.create_all()
         room_state.reset_for_tests()
@@ -110,7 +128,7 @@ def canvas(tmp_curio, tmp_path, monkeypatch):
         _install(client, ALICE, project, NB)
         access.add_editor(people["alice"], project, "bob")
         try:
-            yield SimpleNamespace(app=application, client=client, project=project,
+            yield SimpleNamespace(app=application, client=client, project=project, sent=sent,
                                   owner_key=_user_dir_key(people["alice"]), **people)
         finally:
             _end_turns()
@@ -126,12 +144,14 @@ def canvas(tmp_curio, tmp_path, monkeypatch):
 class _TestLink:
     """A tab's socket on Flask-SocketIO's test client: an answer comes back
     with its emit, and what the server sent reaches the tab when pumped, the
-    room's events and the agents' too."""
+    room's events and the agents' too, read under the lock every emit takes
+    (*sent*)."""
 
     transport = "test client"
 
-    def __init__(self, client):
+    def __init__(self, client, sent):
         self.client = client
+        self.sent = sent
         self.on_yjs = None
         self.on_room = None
 
@@ -150,7 +170,9 @@ class _TestLink:
         return ack
 
     def pump(self):
-        for event in self.client.get_received(NAMESPACE):
+        with self.sent:
+            received = self.client.get_received(NAMESPACE)
+        for event in received:
             if event["name"] in ("yjs", "yjs_kept"):
                 self.on_yjs(event["args"][0])
             elif self.on_room is not None:
@@ -167,7 +189,7 @@ def _tab(canvas, name: str, token: str, ledger):
     socketio = canvas.app.extensions.get("socketio")
     client = socketio.test_client(canvas.app, namespace=NAMESPACE, auth={"token": token})
     assert client.is_connected(namespace=NAMESPACE)
-    link = _TestLink(client)
+    link = _TestLink(client, canvas.sent)
     failures = []
 
     def record(label, seconds, ok, error=None, kind=None):
@@ -197,7 +219,9 @@ def _pumped_until(tabs, ready, seconds: float = WAIT_S) -> None:
 def _done_reply(envelopes: list) -> str | None:
     """The reply the ``done`` of an ask's follow carries, as it ended."""
     for envelope in envelopes:
-        events = (envelope.get("data") or {}).get("events") or [] if envelope.get("event") == "snapshot" else [envelope]
+        events = [envelope]
+        if envelope.get("event") == "snapshot":
+            events = (envelope.get("data") or {}).get("events") or []
         for event in events:
             if event.get("event") == "done":
                 return (event.get("data") or {}).get("reply")
@@ -273,7 +297,9 @@ def test_two_members_agents_at_once_each_write_their_own_node_while_two_tabs_typ
             for envelope in envelopes:
                 turn.take(envelope)
             assert (turn.end, turn.write) == ("done", "applied"), f"{name}'s turn: {envelopes}"
-            assert _done_reply(envelopes) == DONE_REPLY, f"{name}'s turn took another reply than its own last"
+            reply = _done_reply(envelopes) or ""
+            assert reply.endswith(DONE_REPLY) and testing_provider.FALLBACK_REPLY not in reply, (
+                f"{name}'s turn took another reply than its own last: {reply!r}")
             ended.append(ask_id)
         assert testing_provider.pending() == 0, "a turn left a reply of its own attachment unasked"
 
