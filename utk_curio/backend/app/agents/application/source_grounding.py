@@ -205,6 +205,12 @@ class GroundingContext:
     catalog_paths: dict[str, CatalogRef] = field(default_factory=dict)
     #: dataset id → ref, for the portable ``curio_data_path("<id>")`` form.
     catalog_ids: dict[str, CatalogRef] = field(default_factory=dict)
+    #: For a catalog read before this judgment (a Solve's, when it started):
+    #: reads it again, ``(by path, by id)`` as the two maps above hold it, or
+    #: None when it cannot be read. Called when the code names a Data Catalog
+    #: id those maps do not hold (:func:`_read_catalog_for`). None reads
+    #: nothing.
+    read_catalog: Callable[[], tuple[dict, dict] | None] | None = None
     user_paths: set[str] = field(default_factory=set)
     verified_urls: dict[str, dict] = field(default_factory=dict)
     synthetic_requested: bool = False
@@ -1777,6 +1783,27 @@ def _import_refusals(code: object, ctx: GroundingContext) -> list[str]:
     return refusals
 
 
+def _read_catalog_for(refs: list[SourceRef], ctx: GroundingContext) -> None:
+    """When *refs* name a Data Catalog id *ctx* does not hold and *ctx* can
+    read its catalog again (``read_catalog``), *ctx* also holds what the
+    catalog lists now: a dataset added since it was read, by the Dataset
+    Finder's Apply or an install between two of a Solve's nodes, is judged as
+    one it held. A read that fails leaves *ctx* as it was."""
+    if ctx.read_catalog is None:
+        return
+    if all(ref.literal in ctx.catalog_ids for ref in refs if ref.kind == "catalog-id"):
+        return
+    try:
+        read = ctx.read_catalog()
+    except Exception:  # noqa: BLE001 - the catalog read before still judges
+        return
+    if not read:
+        return
+    by_path, by_id = read
+    ctx.catalog_paths = {**ctx.catalog_paths, **by_path}
+    ctx.catalog_ids = {**ctx.catalog_ids, **by_id}
+
+
 def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> GroundingVerdict:
     """The gate. Every path ref must be user- or catalog-known; every URL ref
     must be verified (session evidence or a probe now); every catalog item a
@@ -1800,6 +1827,7 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
         if call.kind in DATA_CATALOG_KINDS and call.item and (call.name, call.item) not in written:
             written.add((call.name, call.item))
             refs.append(SourceRef("catalog-id", call.item, call.line, call=call.name))
+    _read_catalog_for(refs, ctx)
     violations, source_refs, catalog_reads = _judge_refs(refs, ctx, functions)
     violations.extend(_unrequested_catalog_reads(catalog_reads, ctx))  # #411
     code_violations, key_violations, key_refs = _judge_calls(calls, ctx, functions)

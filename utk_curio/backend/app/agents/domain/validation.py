@@ -121,6 +121,7 @@ def validate_candidate(
     from utk_curio.backend.app.discovery.application.exec_collections import (
         resolve_spec_collections,
     )
+    from utk_curio.backend.app.execution import node_exec
     from utk_curio.backend.app.execution.code_references import node_run_code
 
     dataflow = (spec_dict or {}).get("dataflow") or {}
@@ -129,9 +130,13 @@ def validate_candidate(
          if isinstance(n, dict) and n.get("id") == node_id),
         {},
     )
-    # The candidate as the run writes it, with the node's widgets.
+    # The candidate as the run writes it, with the node's widgets. Under the
+    # key of the account the run is for, as Play's and an agent's Run node's:
+    # what it derives goes to that account's media folder, and the dataflow's
+    # collections are read from the store that holds them.
     collections, media_dir = resolve_spec_collections(
-        spec_dict, exec_user_key or user_key, node_run_code({**node, "content": candidate_content}),
+        spec_dict, node_exec.exec_user_key(acting_user) or exec_user_key or user_key,
+        node_run_code({**node, "content": candidate_content}),
         user=acting_user, dataflow_id=project_id,
     )
     report = runner.run_through_node(
