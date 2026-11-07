@@ -1362,9 +1362,9 @@ def test_a_spawned_grandchild_does_not_survive_the_timeout(isolated, workspace):
     recycled underneath it.
 
     The node starts ``sleep`` itself and names its pid. Launched as
-    ``sh -c 'exec -a <marker> sleep 300'``, it never ran: the image's
-    ``/bin/sh`` is dash, whose ``exec`` takes no options, so the test found
-    no process with the marker whatever the kill reached.
+    ``sh -c 'exec -a <marker> sleep 300'``, it could not start: the image's
+    ``/bin/sh`` is dash, whose ``exec`` takes no options (dash(1)), so the
+    test found no process with the marker whatever the kill reached.
     """
     pid_file = workspace / "grandchild.pid"
     result = run_isolated(
