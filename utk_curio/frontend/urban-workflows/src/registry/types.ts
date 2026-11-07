@@ -180,6 +180,12 @@ export interface NodeBehaviorResult {
   sendCodeOverride?: any;
   /** Replace the `setSendCodeCallback` wiring between NodeEditor and the play button. */
   setSendCodeCallbackOverride?: any;
+  /**
+   * For a node with no Play that hands its input on once it has read it (a
+   * Simple View): settles once no read is left, which a run waits for before
+   * it counts the node done.
+   */
+  untilHandedOn?: () => Promise<void>;
   /** When `true`, NodeContainer shows a loading spinner instead of the play button. */
   showLoading?: boolean;
   /** Custom React subtree rendered inside the NodeEditor content area. */
