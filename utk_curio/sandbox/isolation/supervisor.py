@@ -208,13 +208,13 @@ class ZygoteClient:
 def _stop_a_dead_zygotes_run(pid):
     """SIGKILL the process group of child *pid*, whose zygote died mid-run.
 
-    Only ``killpg``, never a ``kill`` of the pid alone: the child is dead or
-    dying, and once reaped, its pid alone is free for any new process, while
-    the group's id is not as long as a member lives (``ZygoteClient.run``). A
-    group that is already gone, or a zygote that died before the child's
-    ``setsid``, leaves nothing to kill; such a child stops at its own check
-    before any node code runs. Never 0 or 1, which ``killpg`` reads as this
-    process's own group and as every process, nor this process's own group.
+    Only ``killpg``: the group holds the child and everything it started, so
+    a ``kill`` of the pid alone adds nothing, and once the group is gone a new
+    process could hold that pid. A group that is already gone, or a zygote
+    that died before the child's ``setsid``, leaves nothing to kill; such a
+    child stops at its own check before any node code runs. Never 0 or 1,
+    which ``killpg`` reads as this process's own group and as every process,
+    nor this process's own group.
     """
     if isinstance(pid, bool) or pid <= 1 or pid == os.getpgrp():
         return
