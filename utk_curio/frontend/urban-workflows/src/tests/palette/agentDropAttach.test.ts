@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 
+import type { AgentDropTarget } from "../../services/agents";
 import { attachAgentOnDrop } from "../../utils/agentDropAttach";
 
 describe("attachAgentOnDrop", () => {
@@ -270,5 +271,41 @@ describe("attachAgentOnDrop for a hosted guest", () => {
     // The canvas shows a drop's failure with the kind the failure carries.
     const src = fs.readFileSync(path.resolve(__dirname, "../../components/MainCanvas.tsx"), "utf8");
     expect(src).toMatch(/"Attach failed\."\s*,\s*e\?\.toastVariant\s*\?\?\s*"error"/);
+  });
+});
+
+/**
+ * A drop on a canvas whose dataflow has no id yet, as File > New's canvas has
+ * until its first action that needs one: the dataflow is made first
+ * (`keepDataflow`, `ensureProjectId`), then the agent is attached to it, on a
+ * node, a connection or the canvas alike.
+ */
+describe("attachAgentOnDrop on a dataflow not saved yet", () => {
+  it.each([
+    ["a node", { kind: "node", targetId: "n1" }],
+    ["a connection", { kind: "connection", targetId: "e1" }],
+    ["the canvas", { kind: "canvas" }],
+  ])("makes the dataflow first when it drops on %s, then attaches to it", async (_where, target) => {
+    const calls: string[] = [];
+    const keepDataflow = jest.fn(async () => {
+      calls.push("keep");
+      return "proj-new";
+    });
+    const attach = jest.fn(async () => {
+      calls.push("attach");
+    });
+
+    await attachAgentOnDrop({
+      projectId: undefined,
+      target: target as AgentDropTarget,
+      agentCoord: "agent.test.x@1",
+      keepDataflow,
+      attach,
+    });
+
+    // The dataflow is made BEFORE the attach, which names it.
+    expect(calls).toEqual(["keep", "attach"]);
+    expect(keepDataflow).toHaveBeenCalledTimes(1);
+    expect(attach).toHaveBeenCalledWith("proj-new", "agent.test.x@1", target);
   });
 });

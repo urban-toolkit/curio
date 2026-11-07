@@ -185,3 +185,24 @@ def test_the_copies_go_when_the_server_starts(client, shared_example, monkeypatc
     assert set(_canvas_nodes(client, VISITOR_A, shared_example)) == {"n1"}
     assert _attachments(client, VISITOR_A, shared_example) == []
     assert storage.read_spec(GUEST_KEY, shared_example) is not None
+
+
+def test_another_guests_agent_listing_marks_nothing_of_a_guests_copy(client, shared_example):
+    """The Agent Catalog that B lists for A's copy, named by its id, reads
+    nothing of that copy's agents: it is no dataflow of B's."""
+    from utk_curio.backend.app.projects import visitor_copies
+
+    installed = client.post(f"/api/agents/projects/{shared_example}/install",
+                            json={"coord": COORD}, headers=_auth(VISITOR_A))
+    assert installed.status_code == 201, installed.get_data(as_text=True)
+    a_copy = visitor_copies.copy_id(VISITOR_A, shared_example)
+
+    def marked(token, project_id):
+        listed = client.get("/api/agents/catalog", query_string={"projectId": project_id},
+                            headers=_auth(token))
+        assert listed.status_code == 200, listed.get_data(as_text=True)
+        return {card["dirName"] for card in listed.get_json()["agents"] if card.get("installedInProject")}
+
+    # A's listing of the example marks the agent A's copy holds.
+    assert COORD in marked(VISITOR_A, shared_example)
+    assert marked(VISITOR_B, a_copy) == set()
