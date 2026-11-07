@@ -2133,6 +2133,354 @@ def test_the_socket_is_not_world_accessible(isolated):
 
 
 # ---------------------------------------------------------------------------
+# The zygote learns that a child exited as the child exits
+# ---------------------------------------------------------------------------
+
+#: The poll of a zygote started by ``polling_slowly``: far longer than any run
+#: here takes, so a run reported sooner was reported because its child exited,
+#: not because the zygote looked.
+SLOW_POLL_SECONDS = 15.0
+
+#: How soon after its node returns a run must be reported: the child's exit,
+#: the zygote's report and the output's store, with room for a loaded runner.
+#: Well under SLOW_POLL_SECONDS.
+REPORTED_WITHIN_SECONDS = 3.0
+
+
+def _zygote_started_with(workspace, monkeypatch, prelude):
+    """A zygote of the test's own, started as ``lifecycle.ensure_running``
+    starts one, but with *prelude* run first in its process. Returns the
+    process and the config that reaches it; stop it with :func:`_stop`."""
+    from utk_curio.sandbox.isolation import lifecycle, runner
+
+    socket_path = str(workspace / "own-zygote.sock")
+    monkeypatch.setenv("CURIO_EXEC_SOCKET", socket_path)
+    monkeypatch.setenv("CURIO_EXEC_TIMEOUT", "20")
+    monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", str(MEMORY_HEADROOM_MB))
+    monkeypatch.setenv("CURIO_EXEC_PARALLELISM", "4")
+    config = runner.IsolationConfig.from_environment()
+    command = [
+        sys.executable, "-u", "-c",
+        prelude
+        + "import sys\n"
+        "from utk_curio.sandbox.isolation import zygote\n"
+        "sys.exit(zygote.main(sys.argv[1:]))\n",
+        "--socket", socket_path,
+    ]
+    if HAS_PYSECCOMP:
+        command.append("--require-seccomp")
+    process = subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=None, text=True,
+        env=lifecycle.zygote_environment(config.limits), start_new_session=True,
+    )
+    try:
+        lifecycle._wait_for_ready(process, socket_path)
+    except BaseException:
+        _stop(process)
+        raise
+    return process, config
+
+
+def _stop(process):
+    """Stop a zygote of a test's own. The kernel stops its children with it
+    (``child._die_with_the_zygote``)."""
+    process.kill()
+    process.wait(timeout=10)
+
+
+@pytest.fixture
+def polling_slowly(workspace, monkeypatch):
+    """A zygote that polls for exited children every SLOW_POLL_SECONDS, not
+    every 50 ms, and the config that reaches it."""
+    process, config = _zygote_started_with(
+        workspace, monkeypatch,
+        "from utk_curio.sandbox.isolation import zygote\n"
+        f"zygote._REAP_POLL_SECONDS = {SLOW_POLL_SECONDS!r}\n",
+    )
+    try:
+        yield config
+    finally:
+        _stop(process)
+
+
+def test_a_run_is_reported_as_its_child_exits_not_at_the_zygotes_next_poll(polling_slowly):
+    """Nothing woke the zygote's select when a child exited, so it learned of
+    the exit only at its next poll, every 50 ms (``_REAP_POLL_SECONDS``).
+    Every isolated run waited for it: a run of ``return 1`` took about 57 ms
+    (run 42388636533). A pidfd of each child now wakes the select as the child
+    exits. Here the poll is SLOW_POLL_SECONDS, so the report must come well
+    before it."""
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    result = run_isolated(polling_slowly, "    return time.monotonic()\n")
+    reported = time.monotonic()
+    assert result["stderr"] == "", result["stderr"]
+    late = reported - load_from_duckdb(result["output"]["path"])
+    assert late < REPORTED_WITHIN_SECONDS, (
+        f"the run was reported {late:.1f} s after its node returned: at the "
+        f"zygote's next poll (every {SLOW_POLL_SECONDS:.0f} s here), not as "
+        "its child exited"
+    )
+
+
+def test_two_runs_at_once_are_each_reported_as_their_child_exits(polling_slowly, workspace):
+    """The pidfd of the child that exits wakes the select while the other
+    child runs on, and that one's wakes it when it exits in turn: neither run
+    waits for the poll."""
+    import threading
+
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    started = workspace / "slower-started"
+    slower = {}
+
+    def run_the_slower():
+        slower["result"] = run_isolated(
+            polling_slowly,
+            f"    open({str(started)!r}, 'w').close()\n"
+            "    time.sleep(2)\n"
+            "    return time.monotonic()\n",
+        )
+        slower["reported"] = time.monotonic()
+
+    thread = threading.Thread(target=run_the_slower, daemon=True)
+    thread.start()
+    give_up = time.monotonic() + 60
+    while not started.exists() and time.monotonic() < give_up:
+        time.sleep(0.02)
+    assert started.exists(), f"the slower node never started: {slower}"
+
+    quicker = run_isolated(polling_slowly, "    return time.monotonic()\n")
+    quicker_reported = time.monotonic()
+    thread.join(timeout=SLOW_POLL_SECONDS + 60)
+    assert not thread.is_alive(), "the slower run was never reported"
+
+    late = {}
+    for name, result, reported in (
+        ("the quicker run", quicker, quicker_reported),
+        ("the slower run", slower["result"], slower["reported"]),
+    ):
+        assert result["stderr"] == "", f"{name}: {result['stderr']}"
+        late[name] = round(reported - load_from_duckdb(result["output"]["path"]), 1)
+    assert all(seconds < REPORTED_WITHIN_SECONDS for seconds in late.values()), (
+        f"seconds from each node's return to its run's report: {late}. They "
+        f"came at the zygote's next poll (every {SLOW_POLL_SECONDS:.0f} s "
+        "here), not as each child exited"
+    )
+
+
+def _pidfds_of(pid):
+    """The pids *pid* holds a pidfd of, by descriptor. Read from the ``Pid:``
+    line of each descriptor's fdinfo, since a pidfd's link reads differently
+    across kernels."""
+    held = {}
+    fdinfo = f"/proc/{pid}/fdinfo"
+    for entry in os.listdir(fdinfo):
+        try:
+            with open(os.path.join(fdinfo, entry)) as handle:
+                for line in handle:
+                    if line.startswith("Pid:"):
+                        held[int(entry)] = int(line.split()[1])
+                        break
+        except (OSError, ValueError):
+            continue
+    return held
+
+
+def _watched_by_epolls_of(pid):
+    """The inodes of the files watched by the epoll instances *pid* holds,
+    from the ``tfd:`` lines of their fdinfo (each target's inode, in hex)."""
+    watched = set()
+    fdinfo = f"/proc/{pid}/fdinfo"
+    for entry in os.listdir(fdinfo):
+        try:
+            with open(os.path.join(fdinfo, entry)) as handle:
+                for line in handle:
+                    match = re.match(r"tfd:.*\bino:([0-9a-f]+)", line)
+                    if match:
+                        watched.add(int(match.group(1), 16))
+        except OSError:
+            continue
+    return watched
+
+
+def _socket_inodes(pid):
+    """The inodes of the sockets *pid* holds past its standard streams."""
+    return {int(target[len("socket:["):-1]) for target in _sockets_of(pid)}
+
+
+def _catches_or_ignores_sigchld(pid):
+    """Whether *pid* catches SIGCHLD, and whether it ignores it, from the
+    SigCgt and SigIgn masks of its status."""
+    import signal
+
+    bit = 1 << (signal.SIGCHLD - 1)
+    masks = {}
+    with open(f"/proc/{pid}/status") as handle:
+        for line in handle:
+            name, _, value = line.partition(":")
+            if name in ("SigCgt", "SigIgn"):
+                masks[name] = int(value.strip(), 16)
+    return bool(masks["SigCgt"] & bit), bool(masks["SigIgn"] & bit)
+
+
+def test_a_running_child_holds_nothing_of_the_zygotes_select(isolated):
+    """The zygote watches each running child through a pidfd, in the select
+    that watches its callers' connections. A child forked while another ran
+    would hold both:
+
+    - the select's epoll, which it shares with the zygote, so node code could
+      add descriptors of its own to the zygote's select, which would then
+      never sleep. Every child held it before pidfds came;
+    - the other child's pidfd, through which node code could wait on another
+      run's child.
+
+    Each child closes them after its fork, as it closes the connections. And
+    SIGCHLD is left to it as the zygote found it, neither caught nor ignored.
+    """
+    from utk_curio.sandbox.isolation import lifecycle
+
+    zygote = lifecycle._process.pid
+    first_caller, first = _ask_for_a_sleeping_child(isolated)
+    try:
+        second_caller, second = _ask_for_a_sleeping_child(isolated)
+        try:
+            sockets = _socket_inodes(zygote)
+            # The zygote's own select watches its listening socket, so the
+            # child's check below cannot pass for reading nothing.
+            assert _watched_by_epolls_of(zygote) & sockets, (
+                "no epoll instance of the zygote watches its sockets"
+            )
+            assert not _watched_by_epolls_of(second) & sockets, (
+                f"child {second} holds the zygote's select, which watches its sockets"
+            )
+            assert first in _pidfds_of(zygote).values(), (
+                f"the zygote holds no pidfd of its running child {first}"
+            )
+            assert not _pidfds_of(second), (
+                f"child {second} holds pidfds of {sorted(_pidfds_of(second).values())}"
+            )
+            assert _catches_or_ignores_sigchld(second) == (False, False), (
+                f"child {second} catches or ignores SIGCHLD"
+            )
+        finally:
+            second_caller.close()
+    finally:
+        first_caller.close()
+
+
+def test_the_zygote_holds_a_pidfd_of_each_running_child_and_none_once_its_run_ends(isolated):
+    """While a child runs, the zygote holds a pidfd of it, and of nothing
+    else. Once the run is reported, that pidfd is closed, however the run
+    ended: its node returned or raised, it reached its deadline, its child
+    was killed, or its caller hung up before the pid came. A pidfd left open
+    would be a descriptor lost per run, until the zygote ran out of them."""
+    import copy
+    import json
+    import signal
+
+    from utk_curio.sandbox.isolation import lifecycle, protocol, supervisor
+    from utk_curio.sandbox.util.parsers import _shared_data_dir
+
+    zygote = lifecycle._process.pid
+
+    def descriptors():
+        fd_dir = f"/proc/{zygote}/fd"
+        held = {}
+        for entry in os.listdir(fd_dir):
+            try:
+                held[int(entry)] = os.readlink(os.path.join(fd_dir, entry))
+            except OSError:
+                continue
+        return held
+
+    assert run_isolated(isolated, "    return 1\n")["stderr"] == ""
+    # The zygote closes a run's connection just after its report: idle, it
+    # holds one socket, its listening one.
+    give_up = time.monotonic() + 10
+    while len(_sockets_of(zygote)) != 1 and time.monotonic() < give_up:
+        time.sleep(0.05)
+    before = descriptors()
+
+    caller, child = _ask_for_a_sleeping_child(isolated)
+    try:
+        held = sorted(_pidfds_of(zygote).values())
+        assert held == [child], (
+            f"while child {child} runs, the zygote holds pidfds of {held}"
+        )
+        # Killed outright, as the kernel kills a child out of memory.
+        os.kill(child, signal.SIGKILL)
+        caller.settimeout(30)
+        answer = b""
+        while not answer.endswith(b"\n"):
+            chunk = caller.recv(256)
+            assert chunk, f"the zygote closed the connection before the status: {answer!r}"
+            answer += chunk
+        assert json.loads(answer)["signal"] == signal.SIGKILL, answer
+    finally:
+        caller.close()
+
+    assert run_isolated(isolated, "    return 1\n")["stderr"] == ""
+    raised = run_isolated(isolated, "    raise ValueError('boom')\n")
+    assert "ValueError" in raised["stderr"], raised["stderr"]
+    short = copy.copy(isolated)
+    short.wall_timeout = 1
+    timed_out = run_isolated(short, "    time.sleep(60)\n    return 1\n")
+    assert "stopped after" in timed_out["stderr"], timed_out["stderr"]
+    request = protocol.build_exec_request(
+        code="    import time\n    time.sleep(120)\n    return 1\n",
+        node_type="curio.builtin/python-computation",
+        data_type="",
+        scratch_dir=supervisor.make_scratch_dir(
+            str(_shared_data_dir()), exec_uid=isolated.exec_uid
+        ),
+        input_spec=dict(protocol.INPUT_NONE),
+        limits=isolated.limits,
+        wall_timeout=120,
+    )
+    _ask_and_hang_up(isolated.socket_path, protocol.encode_request(request) + b"\n")
+
+    give_up = time.monotonic() + 10
+    while (descriptors() != before or _children_of(zygote)) and time.monotonic() < give_up:
+        time.sleep(0.05)
+    held = sorted(_pidfds_of(zygote).values())
+    assert not held, f"with no child running, the zygote holds pidfds of {held}"
+    kept = {fd: target for fd, target in descriptors().items() if before.get(fd) != target}
+    assert not kept, f"the zygote kept descriptors of runs that ended: {kept}"
+
+
+#: How a zygote's process is left without pidfds.
+_WITHOUT_A_PIDFD = {
+    # A Python whose os has no pidfd_open.
+    "missing": "import os\ndel os.pidfd_open\n",
+    # A kernel without the call, or a seccomp profile that refuses it.
+    "refused": (
+        "import errno, os\n"
+        "def _refused(pid, flags=0):\n"
+        "    raise OSError(errno.ENOSYS, 'pidfd_open is refused here')\n"
+        "os.pidfd_open = _refused\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("pidfd_open", sorted(_WITHOUT_A_PIDFD))
+def test_runs_are_reported_where_the_zygote_gets_no_pidfd(workspace, monkeypatch, pidfd_open):
+    """Where a child gets no pidfd, the zygote finds it at its next poll, as
+    it found every child before, and its run is reported."""
+    process, config = _zygote_started_with(
+        workspace, monkeypatch, _WITHOUT_A_PIDFD[pidfd_open]
+    )
+    try:
+        returned = run_isolated(config, "    return 6 * 7\n")
+        assert returned["stderr"] == "", returned["stderr"]
+        raised = run_isolated(config, "    raise ValueError('boom')\n")
+        assert "ValueError" in raised["stderr"], raised["stderr"]
+        assert process.poll() is None, f"the zygote exited with {process.returncode}"
+    finally:
+        _stop(process)
+
+
+# ---------------------------------------------------------------------------
 # Session scoping still holds across the boundary
 # ---------------------------------------------------------------------------
 

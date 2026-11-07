@@ -388,10 +388,11 @@ def confine(*, limits, uid=None, gid=None, scratch_dir, require_seccomp,
     - The zygote is a separate process that never opens DuckDB, so there is no
       store handle in this descriptor table at all
       (``test_the_zygote_holds_no_duckdb_handle`` pins that).
-    - The zygote closes its listening socket and its end of every caller's
+    - The zygote closes its listening socket, its end of every caller's
       connection (the child's own, those accepted and not read yet, and
-      those of the children still running) in the child immediately after
-      the fork, by name, in ``Zygote._fork_child``.
+      those of the children still running), the pidfds it watches the
+      running children through, and its selector in the child immediately
+      after the fork, by name, in ``Zygote._fork_child``.
 
     ``keep_fds`` is retained in the signature for callers that pass it, and is
     now unused.
