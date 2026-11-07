@@ -943,6 +943,9 @@ def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=Fals
     try:
         manifest = run_node(request, namespace_factory)
         write_result(manifest, scratch_dir)
+    # Whatever escapes the run, a node's sys.exit() included, ends the child
+    # here: nothing below a fork may run the zygote's code.
+    # codeql[py/catch-base-exception]
     except BaseException:
         os._exit(4)
     os._exit(0)
