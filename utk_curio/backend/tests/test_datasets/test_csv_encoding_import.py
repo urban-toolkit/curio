@@ -59,12 +59,14 @@ class TestTheFileIsUsableAfterImport:
 
     def test_the_stored_bytes_are_valid_utf8(self, imported_latin1):
         item, _token = imported_latin1
-        raw = open(item["path"], "rb").read()
+        with open(item["path"], "rb") as handle:
+            raw = handle.read()
         raw.decode("utf-8")  # must not raise
 
     def test_the_characters_survived_the_transcode(self, imported_latin1):
         item, _token = imported_latin1
-        text = open(item["path"], encoding="utf-8").read()
+        with open(item["path"], encoding="utf-8") as handle:
+            text = handle.read()
         assert "Café" in text
         assert "Zürich" in text
 

@@ -563,7 +563,8 @@ class TestAnEmptyMapEditsNodeIsFilledOnlyWhenItsGoalNamesEdits:
         seen = []
         for path in sorted(glob.glob(str(shipped.path("docs") / "examples" / "**" / "*.json"), recursive=True)):
             try:
-                flow = json.load(open(path, encoding="utf-8")).get("dataflow")
+                with open(path, encoding="utf-8") as handle:
+                    flow = json.load(handle).get("dataflow")
             except (ValueError, AttributeError, UnicodeDecodeError):
                 continue
             for node in (flow or {}).get("nodes") or []:
