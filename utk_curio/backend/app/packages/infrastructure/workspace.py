@@ -365,7 +365,7 @@ _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
 def _win_job_structs():
     """Build the ctypes structs lazily so importing this module stays portable."""
     import ctypes
-    from ctypes import wintypes
+    import ctypes.wintypes as wintypes
 
     class _IoCounters(ctypes.Structure):
         _fields_ = [(n, ctypes.c_ulonglong) for n in (

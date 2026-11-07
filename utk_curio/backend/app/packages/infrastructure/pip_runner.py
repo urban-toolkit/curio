@@ -935,11 +935,11 @@ def _target_dist_infos(target_dir: Path, name: str) -> list[Path]:
     a surviving stale one makes :func:`import_failures_in` report a library as
     installed after it has been removed.
     """
-    import importlib.metadata as md
+    from importlib.metadata import distributions
 
     wanted = _canonical_dist_name(name)
     found: list[Path] = []
-    for dist in md.distributions(path=[str(target_dir)]):
+    for dist in distributions(path=[str(target_dir)]):
         try:
             dist_name = dist.metadata["Name"]
         except Exception:
