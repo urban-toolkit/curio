@@ -4,7 +4,6 @@ import json
 import os
 import re
 import urllib.error
-import urllib.parse
 import urllib.request
 
 from html import escape as html_escape
@@ -43,13 +42,19 @@ def sign_in_cookie(base_path: str) -> str:
     return "session_token" + base_path.replace("/", "_")
 
 
+# What a sign-in's token can be made of (``users/security.new_session_token``):
+# a value with any other character is no sign-in, and never reaches a header.
+_SIGN_IN_RE = re.compile(r"^[A-Za-z0-9._~+/=-]+$")
+
+
 def _cookie(header, name: str) -> str:
-    """The value of the cookie *name* in a request's ``Cookie`` *header*, or
-    "". Read by hand: one malformed cookie of another site's must not hide it."""
+    """The sign-in the cookie *name* holds in a request's ``Cookie`` *header*,
+    or "". Read by hand: a malformed cookie beside it must not hide it."""
     for part in (header or "").split(";"):
         key, sep, value = part.strip().partition("=")
         if sep and key.strip() == name:
-            return urllib.parse.unquote(value.strip())
+            value = value.strip()
+            return value if _SIGN_IN_RE.match(value) else ""
     return ""
 
 

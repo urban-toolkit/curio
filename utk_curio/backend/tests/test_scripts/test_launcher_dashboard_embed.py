@@ -400,11 +400,14 @@ def test_under_a_base_path_the_sign_in_is_that_paths_cookie(tmp_path):
 
 
 def test_a_visitor_with_no_sign_in_gets_the_page_asked_for_with_none(tmp_path):
+    # A value no sign-in's token can be is none either, and never reaches the
+    # header the backend is asked with.
     with _StubBackend(PAYLOAD) as backend:
         spa = _start_spa(tmp_path, backend.url)
 
         html, headers = _served(spa, f"/dashboard/{DASHBOARD_ID}", cookie="theme=dark")
+        _served(spa, f"/dashboard/{DASHBOARD_ID}", cookie="session_token=a%0d%0aX-Forged:%201")
 
         assert _embedded(html) == PAYLOAD
-        assert backend.signed == [None]
+        assert backend.signed == [None, None]
         assert "private" not in headers["Cache-Control"]
