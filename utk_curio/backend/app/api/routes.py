@@ -6,6 +6,7 @@ import requests
 
 from utk_curio.backend.app.execution import node_exec
 from utk_curio.backend.app.execution.sandbox_client import (
+    SANDBOX_STORE_TIMEOUT,
     SandboxTransportError,
     sandbox_request,
 )
@@ -451,10 +452,6 @@ def process_python_code():
         return node_exec.execute_python_node(g.user, get_current_token(), run)
     except SandboxTransportError as e:
         return jsonify(e.payload), e.status
-
-
-#: How long the sandbox may take to keep a node's rows (``/storeOutput``).
-SANDBOX_STORE_TIMEOUT = 120
 
 
 @bp.route('/storeOutput', methods=['POST'])

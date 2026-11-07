@@ -81,27 +81,6 @@ def _memory_bytes(text):
     return float(m.group(1)) * scale
 
 
-def _all_process_cmdlines():
-    """Every visible process's command line, read from /proc.
-
-    ``ps`` is not installed in the image (no procps), which is why this reads
-    /proc directly instead. Names come from argv, so a process started with
-    ``exec -a <marker>`` is findable by that marker.
-    """
-    cmdlines = []
-    for entry in os.listdir("/proc"):
-        if not entry.isdigit():
-            continue
-        try:
-            with open(f"/proc/{entry}/cmdline", "rb") as handle:
-                cmdlines.append(
-                    handle.read().replace(b"\x00", b" ").decode("utf-8", "replace")
-                )
-        except OSError:
-            continue
-    return cmdlines
-
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -1374,24 +1353,29 @@ def test_an_infinite_loop_is_killed_and_the_sandbox_survives(isolated):
     assert following["stderr"] == "", following["stderr"]
 
 
-def test_a_spawned_grandchild_does_not_survive_the_timeout(isolated):
+def test_a_spawned_grandchild_does_not_survive_the_timeout(isolated, workspace):
     """proc.kill() on the child alone would leave this running.
 
     The child calls setsid and the zygote kills the whole process group, which
     is the only way to be sure. The zygote does the killing rather than the
     sandbox because it is the child's parent, so the pid cannot have been
     recycled underneath it.
+
+    The node starts ``sleep`` itself and names its pid. Launched as
+    ``sh -c 'exec -a <marker> sleep 300'``, it could not start: the image's
+    ``/bin/sh`` is dash, whose ``exec`` takes no options (dash(1)), so the
+    test found no process with the marker whatever the kill reached.
     """
-    marker = "curio-isolation-grandchild-marker"
-    run_isolated(
-        isolated,
-        "    import subprocess\n"
-        f"    subprocess.Popen(['sh', '-c', 'exec -a {marker} sleep 300'])\n"
-        "    while True:\n        pass\n",
+    pid_file = workspace / "grandchild.pid"
+    result = run_isolated(
+        isolated, _starts_a_process(pid_file, then="    while True:\n        pass\n")
     )
-    time.sleep(2)
-    survivors = [line for line in _all_process_cmdlines() if marker in line]
-    assert not survivors, f"a grandchild outlived the killed node: {survivors}"
+    assert pid_file.exists(), f"the node never started its process: {result['stderr'][:300]}"
+    grandchild = int(pid_file.read_text())
+    give_up = time.monotonic() + 5
+    while _alive(grandchild) and time.monotonic() < give_up:
+        time.sleep(0.05)
+    assert not _alive(grandchild), f"grandchild {grandchild} outlived the killed node"
 
 
 # ---------------------------------------------------------------------------
@@ -1736,6 +1720,80 @@ def test_a_child_dies_with_its_zygote(isolated):
         assert not _alive(pid), f"the zygote is dead and its child {pid} still runs, for nobody"
     finally:
         caller.close()
+
+
+def _starts_a_process(pid_file, then):
+    """Node code that starts ``sleep 120``, writes its pid to *pid_file*, then
+    runs *then*.
+
+    ``Popen`` raises when the program cannot start, so a pid in the file is a
+    process that ran. Written beside the file, then renamed, so a reader never
+    sees half of it.
+    """
+    part = f"{pid_file}.part"
+    return (
+        "    import os, subprocess\n"
+        "    started = subprocess.Popen(['sleep', '120'])\n"
+        f"    with open({part!r}, 'w') as handle:\n"
+        "        handle.write(str(started.pid))\n"
+        f"    os.replace({part!r}, {str(pid_file)!r})\n"
+    ) + then
+
+
+def test_a_process_its_node_started_dies_with_the_zygote(isolated, workspace):
+    """A process that node code started outlived a zygote that died.
+
+    The kernel kills the child with the zygote (``PR_SET_PDEATHSIG``), but a
+    process the child starts loses that setting at its fork. So it ran on for
+    nobody, outside the sandbox's count of running nodes, until it ended. The
+    run, which reads end-of-file before its status, now kills the child's
+    process group.
+    """
+    import copy
+    import signal
+    import threading
+
+    from utk_curio.sandbox.isolation import lifecycle
+
+    # A deadline as long as the process's life, so the zygote's own deadline
+    # kill cannot end it within the test: only the kill this test is about can.
+    config = copy.copy(isolated)
+    config.wall_timeout = 120
+    pid_file = workspace / "started.pid"
+    code = _starts_a_process(
+        pid_file, then="    import time\n    time.sleep(120)\n    return 1\n"
+    )
+    replies = []
+    run = threading.Thread(
+        target=lambda: replies.append(run_isolated(config, code)), daemon=True
+    )
+    run.start()
+    started = None
+    try:
+        give_up = time.monotonic() + 60
+        while not pid_file.exists() and time.monotonic() < give_up:
+            time.sleep(0.05)
+        assert pid_file.exists(), f"the node never started its process: {replies}"
+        started = int(pid_file.read_text())
+        assert _alive(started), f"process {started} ended before the zygote died"
+        assert run.is_alive(), f"the run ended before the zygote died: {replies}"
+
+        lifecycle._process.kill()
+        lifecycle._process.wait(timeout=10)
+        give_up = time.monotonic() + 10
+        while _alive(started) and time.monotonic() < give_up:
+            time.sleep(0.05)
+        assert not _alive(started), (
+            f"the zygote is dead and process {started}, which its node started, "
+            "still runs, for nobody"
+        )
+
+        run.join(timeout=30)
+        assert not run.is_alive(), "the run did not end when its zygote died"
+        assert "before reporting the child" in replies[0]["stderr"], replies[0]
+    finally:
+        if started is not None and _alive(started):
+            os.kill(started, signal.SIGKILL)
 
 
 def test_concurrent_executions_do_not_collide(isolated):

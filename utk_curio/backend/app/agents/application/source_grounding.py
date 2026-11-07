@@ -205,6 +205,12 @@ class GroundingContext:
     catalog_paths: dict[str, CatalogRef] = field(default_factory=dict)
     #: dataset id → ref, for the portable ``curio_data_path("<id>")`` form.
     catalog_ids: dict[str, CatalogRef] = field(default_factory=dict)
+    #: For a catalog read before this judgment (a Solve's, when it started):
+    #: reads it again, ``(by path, by id)`` as the two maps above hold it, or
+    #: None when it cannot be read. Called when the code names a Data Catalog
+    #: id those maps do not hold (:func:`_read_catalog_for`). None reads
+    #: nothing.
+    read_catalog: Callable[[], tuple[dict, dict] | None] | None = None
     user_paths: set[str] = field(default_factory=set)
     verified_urls: dict[str, dict] = field(default_factory=dict)
     synthetic_requested: bool = False
@@ -436,11 +442,17 @@ _OUTPUT_FILE_CALL_RE = re.compile(
 )
 #: ``curio_export(input_0, "trees.csv")`` writes the file its name names
 #: (sandbox/util/exports.py): the name, its second argument or ``name=``, is
-#: skipped as ``curio_output_file``'s is. The regex scan takes a first
-#: argument with no call in it, as ``input_0``.
+#: skipped as ``curio_output_file``'s is, and so is ``part=`` (its third),
+#: which names a part of the input, not a file. The regex scan takes a first
+#: argument with no call in it, as ``input_0``, and a name or a part that is a
+#: widget's chip (``[!! file_name !!]``).
 EXPORT_CALL = "curio_export"
+_EXPORT_NAME = r"""[fFrRbBuU]{0,2}(?P<q>["'])(?:\\.|(?!(?P=q))[^\\\n])*(?P=q)"""
+_EXPORT_PART = _EXPORT_NAME.replace("<q>", "<p>").replace("=q)", "=p)")
+_WIDGET_CHIP = r"\[!![^\n]*?!!\]"
 _EXPORT_CALL_RE = re.compile(
-    r"""\bcurio_export\([^()\n]*?,\s*(?:name\s*=\s*)?[fFrRbBuU]{0,2}(?P<q>["'])(?:\\.|(?!(?P=q))[^\\\n])*(?P=q)\s*\)"""
+    r"\bcurio_export\([^()\n]*?,\s*(?:name\s*=\s*)?(?:" + _EXPORT_NAME + "|" + _WIDGET_CHIP + ")"
+    + r"(?:\s*,\s*(?:part\s*=\s*)?(?:" + _EXPORT_PART + "|" + _WIDGET_CHIP + r"|-?\d+))?\s*\)"
 )
 
 
@@ -509,8 +521,9 @@ def _scan_python(code: str, loaders: frozenset[str]) -> list[SourceRef] | None:
             if isinstance(name, (ast.Constant, ast.JoinedStr)):
                 call_ids.add(id(name))
         elif isinstance(node, ast.Call) and _call_name(node) == EXPORT_CALL:
-            # So does ``curio_export(input_0, "trees.csv")``'s name.
-            names = node.args[1:2] + [k.value for k in node.keywords if k.arg == "name"]
+            # So does ``curio_export(input_0, "trees.csv")``'s name, and its
+            # ``part=`` names a part of its input.
+            names = node.args[1:3] + [k.value for k in node.keywords if k.arg in ("name", "part")]
             for name in names:
                 if isinstance(name, (ast.Constant, ast.JoinedStr)):
                     call_ids.add(id(name))
@@ -1770,6 +1783,27 @@ def _import_refusals(code: object, ctx: GroundingContext) -> list[str]:
     return refusals
 
 
+def _read_catalog_for(refs: list[SourceRef], ctx: GroundingContext) -> None:
+    """When *refs* name a Data Catalog id *ctx* does not hold and *ctx* can
+    read its catalog again (``read_catalog``), *ctx* also holds what the
+    catalog lists now: a dataset added since it was read, by the Dataset
+    Finder's Apply or an install between two of a Solve's nodes, is judged as
+    one it held. A read that fails leaves *ctx* as it was."""
+    if ctx.read_catalog is None:
+        return
+    if all(ref.literal in ctx.catalog_ids for ref in refs if ref.kind == "catalog-id"):
+        return
+    try:
+        read = ctx.read_catalog()
+    except Exception:  # noqa: BLE001 - the catalog read before still judges
+        return
+    if not read:
+        return
+    by_path, by_id = read
+    ctx.catalog_paths = {**ctx.catalog_paths, **by_path}
+    ctx.catalog_ids = {**ctx.catalog_ids, **by_id}
+
+
 def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> GroundingVerdict:
     """The gate. Every path ref must be user- or catalog-known; every URL ref
     must be verified (session evidence or a probe now); every catalog item a
@@ -1793,6 +1827,7 @@ def check_grounding(code: object, engine: str | None, ctx: GroundingContext) -> 
         if call.kind in DATA_CATALOG_KINDS and call.item and (call.name, call.item) not in written:
             written.add((call.name, call.item))
             refs.append(SourceRef("catalog-id", call.item, call.line, call=call.name))
+    _read_catalog_for(refs, ctx)
     violations, source_refs, catalog_reads = _judge_refs(refs, ctx, functions)
     violations.extend(_unrequested_catalog_reads(catalog_reads, ctx))  # #411
     code_violations, key_violations, key_refs = _judge_calls(calls, ctx, functions)

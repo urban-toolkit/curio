@@ -16,13 +16,15 @@ A history holds at most :attr:`History.max_days` days of hours, counted back
 from its newest row's hour (:data:`MAX_DAYS` by default): once it spans more,
 its oldest hours go first. A row whose hour is not one is left out.
 
-Never raises, as the rest of the monitor never does. A write that fails keeps
-the change in the process, and the next change writes every row again.
+Never raises, as the rest of the monitor never does. A write that fails is
+logged and keeps the change in the process, and the next change writes every
+row again.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import tempfile
@@ -40,6 +42,8 @@ _AN_HOUR = re.compile(r"\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\
 
 _histories: dict[str, "History"] = {}
 _histories_lock = threading.Lock()
+
+log = logging.getLogger(__name__)
 
 
 class History:
@@ -77,7 +81,7 @@ class History:
                     self._rows = _within(self._rows, self.max_days)
                 finally:
                     self.version += 1
-                self._write()
+                self._write_or_log()
         except Exception:  # noqa: BLE001 - the monitor never fails its subject
             pass
 
@@ -88,9 +92,18 @@ class History:
                 self._rows = []
                 self.started_at = _now()
                 self.version += 1
-                self._write()
+                self._write_or_log()
         except Exception:  # noqa: BLE001 - a start never stops over the monitor
             pass
+
+    def _write_or_log(self) -> None:
+        """:meth:`_write`, logging a failure: the rows stay in the process,
+        and the next change writes them all again."""
+        try:
+            self._write()
+        except Exception as exc:  # noqa: BLE001 - the next change tries again
+            log.warning("Could not write the monitor history %s: %s. The next change writes it again.",
+                        self.name, exc)
 
     def _write(self) -> None:
         """The rows to the file, through a temporary file beside it and

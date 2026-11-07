@@ -11,14 +11,14 @@ import { MemoryRouter } from "react-router-dom";
 jest.mock("../../pages/monitor/MonitorCharts", () => ({
   DurationHistogram: () => <div data-testid="duration-chart" />,
   StoreSizeHistogram: () => <div data-testid="store-chart" />,
-  // What a line chart was handed: its name, and each line's tokens added up.
-  LinesOverTime: ({ label, rows, colors }: any) => (
+  // What a line chart was handed: its name, and each line's values added up.
+  LinesOverTime: ({ label, rows, colors, valueField }: any) => (
     <div data-testid="lines-chart" aria-label={label}>
       {colors.domain.map((line: string, index: number) => (
         <span key={line} data-color={colors.range[index]}>
           {`${line}: ${rows
             .filter((row: any) => row.line === line)
-            .reduce((sum: number, row: any) => sum + row.tokens, 0)} over ${
+            .reduce((sum: number, row: any) => sum + row[valueField], 0)} over ${
             rows.filter((row: any) => row.line === line).length
           } hours`}
         </span>
@@ -63,6 +63,7 @@ jest.mock("../../api/monitorApi", () => ({
   fetchMonitorStorage: jest.fn(),
   fetchMonitorErrors: jest.fn(),
   fetchMonitorLlm: jest.fn(),
+  fetchMonitorOpenFiles: jest.fn(),
   postClientError: jest.fn(),
 }));
 
@@ -70,6 +71,7 @@ import {
   fetchMonitor,
   fetchMonitorErrors,
   fetchMonitorLlm,
+  fetchMonitorOpenFiles,
   fetchMonitorStorage,
 } from "../../api/monitorApi";
 import MonitorPage from "../../pages/monitor/MonitorPage";
@@ -165,6 +167,21 @@ const llmPayload = {
   ],
 };
 
+/** No sample yet, as before the backend's first: the card draws no chart. */
+const noOpenFiles = {
+  computedAt: "2026-09-22T14:03:11Z", startedAt: "2026-09-22T14:03:00Z",
+  maxDays: 90, intervalSeconds: 3600, warnAbovePercent: 80, clearBelowPercent: 70,
+  samples: [],
+};
+
+const openFilesPayload = {
+  ...noOpenFiles,
+  samples: [
+    { at: "2026-09-22T12:03:05Z", backend: { open: 212, limit: 65536 }, sandbox: { open: 96, limit: 65536 } },
+    { at: "2026-09-22T13:03:05Z", backend: { open: 230, limit: 65536 }, sandbox: { open: 101, limit: 65536 } },
+  ],
+};
+
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={["/monitor"]}>
@@ -181,6 +198,7 @@ describe("MonitorPage", () => {
     (fetchMonitorStorage as jest.Mock).mockResolvedValue(storagePayload);
     (fetchMonitorErrors as jest.Mock).mockResolvedValue(errorsPayload);
     (fetchMonitorLlm as jest.Mock).mockResolvedValue(llmPayload);
+    (fetchMonitorOpenFiles as jest.Mock).mockResolvedValue(noOpenFiles);
   });
 
   test("renders every section", async () => {
@@ -216,6 +234,23 @@ describe("MonitorPage", () => {
     expect(tiles.getByText("1.5")).toBeInTheDocument();
     expect(tiles.getByText("0.19 per core")).toBeInTheDocument();
     expect(tiles.getByText("sandbox 200 MB")).toBeInTheDocument();
+  });
+
+  test("the hardware section charts each server's open files against their limit", async () => {
+    (fetchMonitorOpenFiles as jest.Mock).mockResolvedValue(openFilesPayload);
+    renderPage();
+    const hardware = (await screen.findByRole("heading", { name: "Hardware" })).closest("section") as HTMLElement;
+    expect(within(hardware).getByRole("heading", { name: "Open files" })).toBeInTheDocument();
+
+    const chart = await within(hardware).findByTestId("lines-chart");
+    expect(chart).toHaveAttribute(
+      "aria-label", "Open files of the backend and the sandbox, every hour, against their limits"
+    );
+    expect(within(chart).getByText("Backend: 442 over 2 hours")).toBeInTheDocument();
+    expect(within(chart).getByText("Sandbox: 197 over 2 hours")).toBeInTheDocument();
+    expect(within(chart).getByText("Limit: 131072 over 2 hours")).toBeInTheDocument();
+    // Read once as the page opens; the next read is 10 minutes later.
+    expect(fetchMonitorOpenFiles).toHaveBeenCalledTimes(1);
   });
 
   test("shows a last-updated stamp", async () => {

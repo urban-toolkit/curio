@@ -131,14 +131,7 @@ def _stage_saved_file(path, kind, scratch_dir, *, name, slot, in_bundle=False, r
         sidecar = path.with_name(path.name + codec.PARQUET_DECODE_SIDECAR_SUFFIX)
         meta_json = sidecar.read_text(encoding="utf-8") if sidecar.is_file() else None
         frame_metadata, encoded_object_columns = codec._parse_parquet_meta(meta_json)
-        spec = {
-            "kind": kind,
-            "file": target.name,
-            "encoded_object_columns": encoded_object_columns or [],
-        }
-        if kind == "geodataframe" and frame_metadata:
-            spec["frame_metadata"] = frame_metadata
-        return spec
+        return _frame_spec(kind, target.name, frame_metadata, encoded_object_columns)
     if kind == "raster" or path.suffix.lower() in _RASTER_SUFFIXES:
         target = scratch_dir / f"{slot}{path.suffix or '.tif'}"
         _link_or_copy(path, target)
@@ -157,6 +150,21 @@ def _stage_saved_file(path, kind, scratch_dir, *, name, slot, in_bundle=False, r
             return {"kind": "null"}
         return {"kind": kind, "value": bool(value) if kind == "bool" else value}
     raise KeyError(f"No artifact with id {name}")
+
+
+def _frame_spec(kind, file_name, frame_metadata, encoded_object_columns):
+    """The input spec of a staged frame: a geo table with the whole
+    ``metadata`` it was stored with, a plain table with its bundle part's
+    label alone (``codec.kept_table_metadata``)."""
+    spec = {
+        "kind": kind,
+        "file": file_name,
+        "encoded_object_columns": encoded_object_columns or [],
+    }
+    kept = frame_metadata if kind == "geodataframe" else codec.part_label_only(frame_metadata)
+    if kept:
+        spec["frame_metadata"] = kept
+    return spec
 
 
 def _stage_saved_bundle(bundle, scratch_dir, *, name, slot):
@@ -311,14 +319,7 @@ def _stage_row(art_id, scratch_dir, kind, v_int, v_float, v_str, v_json, blob, *
         else:
             raise StagingError(f"artifact {art_id} has no parquet payload")
         frame_metadata, encoded_object_columns = codec._parse_parquet_meta(v_json)
-        spec = {
-            "kind": kind,
-            "file": name,
-            "encoded_object_columns": encoded_object_columns or [],
-        }
-        if kind == "geodataframe" and frame_metadata:
-            spec["frame_metadata"] = frame_metadata
-        return spec
+        return _frame_spec(kind, name, frame_metadata, encoded_object_columns)
 
     if kind == "raster":
         source = Path(v_str)

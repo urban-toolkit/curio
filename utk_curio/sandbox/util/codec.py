@@ -198,6 +198,33 @@ def _parse_parquet_meta(meta_json):
     # Backward compatibility: older geodataframe rows stored only ``gdf.metadata``.
     return payload, []
 
+#: The key of a frame's ``metadata`` that holds the label of the bundle part it
+#: was read from (``catalog_helpers._read_bundle``), which a zip of the frames
+#: names their files after (``bundle_zip``). It names no layer: a layer's name
+#: is ``metadata["name"]`` alone.
+PART_LABEL = "partLabel"
+
+def part_label_only(metadata):
+    """``{"partLabel": <label>}`` of *metadata*, a frame's, or None when it
+    holds no part label."""
+    label = metadata.get(PART_LABEL) if isinstance(metadata, dict) else None
+    return {PART_LABEL: label} if isinstance(label, str) and label else None
+
+def kept_table_metadata(frame):
+    """What a plain table keeps of its ``metadata`` wherever it is stored: its
+    part label alone (a geo table keeps the whole of it, its layer's name and
+    type). Read from ``__dict__``: an attribute lookup would give a column
+    named ``metadata``."""
+    return part_label_only(getattr(frame, "__dict__", {}).get("metadata"))
+
+def restore_table_metadata(frame, frame_metadata):
+    """*frame*, a plain table read back, with the part label its stored
+    *frame_metadata* holds (:func:`kept_table_metadata`)."""
+    kept = part_label_only(frame_metadata)
+    if kept:
+        frame.__dict__["metadata"] = kept
+    return frame
+
 def _restore_frame_from_parquet(frame, encoded_object_columns, geometry_col=None):
     if encoded_object_columns:
         for col in encoded_object_columns:
@@ -365,13 +392,19 @@ NODE_CAN_RETURN = (
 )
 
 
+def named_type(value) -> str:
+    """What *value* is, by its library and class: ``a pandas DataFrame``,
+    ``an int``."""
+    kind = type(value)
+    library = (getattr(kind, "__module__", None) or "").split(".")[0]
+    name = kind.__name__ if library in ("", "builtins") or library.startswith("_") else f"{library} {kind.__name__}"
+    article = "an" if name[:1].lower() in "aeiox" else "a"
+    return f"{article} {name}"
+
+
 def cannot_hand_on(value) -> TypeError:
     """The error a node fails with when it returned *value*, which Curio
     cannot store (``detect_kind`` says ``unknown``), or a list, dict or tuple
     holding it: what *value* is, by its library and class, and what a node
     can return. In process and in the isolated child alike."""
-    kind = type(value)
-    library = (getattr(kind, "__module__", None) or "").split(".")[0]
-    name = kind.__name__ if library in ("", "builtins") or library.startswith("_") else f"{library} {kind.__name__}"
-    article = "an" if name[:1].lower() in "aeiox" else "a"
-    return TypeError(f"A node cannot hand on {article} {name}. Return {NODE_CAN_RETURN}.")
+    return TypeError(f"A node cannot hand on {named_type(value)}. Return {NODE_CAN_RETURN}.")

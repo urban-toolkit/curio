@@ -4,7 +4,8 @@
  *
  * The protocol is the server's (`collaboration/dataflow_docs.py`): y-protocols'
  * frames (sync 0, with step 1, step 2 and update 0 to 2; awareness 1) as bytes,
- * in the `message` of a `yjs` event, `{projectId, message}`.
+ * in the `message` of a `yjs` event, `{projectId, message}`. Its `projectId` is
+ * the room's (`roomId`): the dataflow's, or a hosted guest's own copy's.
  *
  * - Once the room has joined the tab, the tab sends sync step 1, naming the
  *   doc it holds. The server answers with step 2, with its own step 1 when the
@@ -66,6 +67,9 @@ export interface KeptMessage {
 export interface DocProviderOptions {
     /** Whether this tab's changes are sent: an owner's and an editor's are. */
     canWrite: boolean;
+    /** The id the room's events name, when it is not the dataflow's: a hosted
+     *  guest's own copy of it, which its join answered with. */
+    roomId?: string;
     /** The doc's id the tab last held, when it starts again on one. */
     docId?: string | null;
     /** The server holds another doc: start again with an empty one. */
@@ -97,7 +101,11 @@ function bytesOf(message: unknown): Uint8Array | null {
 export class DataflowDocProvider {
     readonly doc: Y.Doc;
     readonly awareness: awarenessProtocol.Awareness;
+    /** The dataflow the canvas opened. */
     readonly projectId: string;
+    /** The id this doc's messages name: the dataflow's, or a hosted guest's
+     *  own copy's (`DocProviderOptions.roomId`). */
+    readonly roomId: string;
     readonly canWrite: boolean;
     /** The id of the doc the server holds, once a sync named it. */
     docId: string | null;
@@ -120,6 +128,7 @@ export class DataflowDocProvider {
 
     constructor(projectId: string, options: DocProviderOptions) {
         this.projectId = projectId;
+        this.roomId = options.roomId || projectId;
         this.options = options;
         this.canWrite = options.canWrite;
         this.docId = options.docId ?? null;
@@ -218,7 +227,7 @@ export class DataflowDocProvider {
         encoding.writeVarUint(encoder, MESSAGE_SYNC);
         syncProtocol.writeSyncStep1(encoder, this.doc);
         const payload: Record<string, unknown> = {
-            projectId: this.projectId,
+            projectId: this.roomId,
             message: encoding.toUint8Array(encoder),
         };
         if (this.docId) payload.docId = this.docId;
@@ -255,7 +264,7 @@ export class DataflowDocProvider {
     }
 
     private onMessage = (payload: any): void => {
-        if (this.destroyed || !payload || payload.projectId !== this.projectId) return;
+        if (this.destroyed || !payload || payload.projectId !== this.roomId) return;
         const bytes = bytesOf(payload.message);
         if (!bytes || bytes.length === 0) return;
         const decoder = decoding.createDecoder(bytes);
@@ -275,7 +284,7 @@ export class DataflowDocProvider {
 
     /** The server applied a batch that held some of this tab's queued updates. */
     private onKept = (payload: KeptMessage): void => {
-        if (this.destroyed || !payload || payload.projectId !== this.projectId) return;
+        if (this.destroyed || !payload || payload.projectId !== this.roomId) return;
         const answered = Math.max(0, Number(payload.answered) || 0);
         this.inFlight = Math.max(0, this.inFlight - answered);
         const refused = payload.refused ?? {};
@@ -327,7 +336,7 @@ export class DataflowDocProvider {
         if (!socket) return;
         this.inFlight += 1;
         let answered = false;
-        socket.emit(DOC_EVENT, { projectId: this.projectId, message }, (ack: SyncAck) => {
+        socket.emit(DOC_EVENT, { projectId: this.roomId, message }, (ack: SyncAck) => {
             if (answered) return;
             answered = true;
             // Queued behind others: its yjs_kept message answers it.
@@ -356,7 +365,7 @@ export class DataflowDocProvider {
         const encoder = encoding.createEncoder();
         encoding.writeVarUint(encoder, MESSAGE_AWARENESS);
         encoding.writeVarUint8Array(encoder, update);
-        socket.emit(DOC_EVENT, { projectId: this.projectId, message: encoding.toUint8Array(encoder) });
+        socket.emit(DOC_EVENT, { projectId: this.roomId, message: encoding.toUint8Array(encoder) });
     }
 
     /** A dropped socket answers none of what it carried: those waits end. */

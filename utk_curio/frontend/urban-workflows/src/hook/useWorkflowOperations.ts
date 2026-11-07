@@ -698,6 +698,12 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // a dropped scenario's box is not a node, so the fit framed its
         // context alone and left the box out of view (#769).
         const fitsOnLoad = !presentation && fit !== false;
+        // A full load that puts no node on the canvas has nothing to frame.
+        // Its fit would run a frame after the load, and a node dropped while
+        // the dataflow opened is made in between (useDropsWhileOpening): that
+        // fit framed the dropped node alone, so the canvas moved and zoomed
+        // onto it, and the next node dropped beside it landed on top of it.
+        const fitsFullLoad = fitsOnLoad && addedNodes.length > 0;
 
         console.log("loadParsedTrill second");
         if (merge) {
@@ -717,7 +723,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 replayEdges(prevNodes);
                 setInteractions([]);
                 setDashboardPins(pins);
-                if (fitsOnLoad) setFitViewOnLoad(true);
+                if (fitsFullLoad) setFitViewOnLoad(true);
                 return prevNodes;
             });
         }
@@ -1229,16 +1235,17 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
      * made first, as its first save would make it, and a routed one still
      * loading is waited for (#340). Concurrent callers share one create.
      * Null when there is none to act on, with the reason said but for a
-     * hosted guest's, whose action tells it to sign in.
+     * hosted guest's, whose action tells it to sign in. A hosted guest's
+     * canvas of a dataflow it has (an example) binds to its own copy's doc
+     * and waits as an account's does.
      */
     const ensureProjectId = useCallback(async (): Promise<string | null> => {
         const kept = async () => {
             // A saved dataflow's canvas that changed before it bound holds
             // changes the server has only once the bind writes them: wait for
-            // it, for as long as File > Save does. A hosted guest's canvas of
-            // an example never binds (its room refuses it), and a shared view
-            // acts on no dataflow of its own, so neither waits.
-            const mayBind = !blockGuestSaves && viewerMode !== "shared";
+            // it, for as long as File > Save does. A shared view acts on no
+            // dataflow of its own, so it does not wait.
+            const mayBind = viewerMode !== "shared";
             if (mayBind && projectDirtyRef.current && !deps.docBridgeRef?.current?.bound()) {
                 await deps.docBridgeRef?.current?.whenBound();
             }

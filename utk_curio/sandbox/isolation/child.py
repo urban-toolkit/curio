@@ -25,7 +25,10 @@ before the step that drops it:
                        supplementary groups forever.
 5. ``PR_SET_PDEATHSIG``  the kernel kills the child when the zygote dies,
                        since nothing else would then end it or read its
-                       result. After the uid drop, which clears it.
+                       result. After the uid drop, which clears it. What
+                       node code starts loses it at its fork, so the
+                       sandbox kills the child's group then
+                       (``ZygoteClient.run``).
 6. ``setrlimit``       memory, CPU, processes, file size. Applied after the uid
                        drop so the child cannot raise its own soft limits back
                        to the (higher) hard limits.
@@ -489,9 +492,10 @@ def rebuild_input(spec, scratch_dir):
         from utk_curio.sandbox.util import codec
 
         frame = pd.read_parquet(os.path.join(scratch_dir, spec["file"]))
-        return codec._restore_frame_from_parquet(
+        frame = codec._restore_frame_from_parquet(
             frame, spec.get("encoded_object_columns") or []
         )
+        return codec.restore_table_metadata(frame, spec.get("frame_metadata"))
 
     if kind == "geodataframe":
         import geopandas as gpd
@@ -595,8 +599,12 @@ def serialize_output(value, scratch_dir, *, slot="out"):
         name = f"{slot}.parquet"
         prepared, encoded = codec._prepare_frame_for_parquet(value)
         codec._write_dataframe_parquet(prepared, os.path.join(scratch_dir, name))
-        return {"kind": kind, "file": name,
-                "meta": {"encoded_object_columns": encoded}}
+        meta = {"encoded_object_columns": encoded}
+        # A plain table keeps only its bundle part's label (codec.PART_LABEL).
+        frame_metadata = codec.kept_table_metadata(value)
+        if frame_metadata:
+            meta["frame_metadata"] = frame_metadata
+        return {"kind": kind, "file": name, "meta": meta}
 
     if kind == "raster":
         # Rasters are referenced by path. The child's raster already lives in

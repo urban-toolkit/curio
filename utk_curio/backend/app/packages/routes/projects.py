@@ -16,6 +16,9 @@ from utk_curio.backend.app.packages.routes.common import (
     _map_package_errors,
     opened_dataflow_packages,
     packages_bp,
+    project_read,
+    project_write,
+    prunes_the_store,
     require_project,
     user_key,
 )
@@ -41,9 +44,10 @@ def list_dataflow_packages(project_id: str):
 @require_auth
 @_map_package_errors
 def get_project_packages(project_id: str):
-    """``{"packages": [...dirNames]}`` for the project's lockfile."""
+    """``{"packages": [...dirNames]}`` for the project's lockfile: a hosted
+    guest's own copy's, once it has one."""
     require_project(project_id)
-    dirs = packages_project_packages.get_project_lockfile(user_key(), project_id)
+    dirs = packages_project_packages.get_project_lockfile(user_key(), project_read(project_id))
     return jsonify({"packages": sorted(dirs)}), 200
 
 
@@ -52,16 +56,26 @@ def get_project_packages(project_id: str):
 @_map_package_errors
 def install_to_project_route(project_id: str):
     """Install a catalog package into one project's lockfile. The payload carries
-    ``importErrors``: the install itself answers whether the libraries work."""
+    ``importErrors``: the install itself answers whether the libraries work.
+    A hosted guest's add lands on its own copy of the dataflow
+    (``project_write``); one of a package its store lacks is refused, as every
+    install of a hosted guest into the store is."""
     dir_name = requests.dir_name(request.get_json(silent=True) or {})
     require_project(project_id)
-    return jsonify(packages_project_packages.install_to_project(user_key(), project_id, dir_name)), 201
+    return jsonify(packages_project_packages.install_to_project(
+        user_key(), project_id, dir_name, lands_on=project_write,
+    )), 201
 
 
 @packages_bp.route("/projects/<project_id>/<dir_name>", methods=["DELETE"])
 @require_auth
 @_map_package_errors
 def uninstall_from_project_route(project_id: str, dir_name: str):
-    """Drop a package from one project's lockfile; auto-prune the user store."""
+    """Drop a package from one project's lockfile; auto-prune the user store.
+    A hosted guest's removal reads its own copy of the dataflow once it has
+    one, lands on that copy (``project_write``), and prunes nothing from the
+    store every guest reads (``prunes_the_store``)."""
     require_project(project_id)
-    return jsonify(packages_project_packages.uninstall_from_project(user_key(), project_id, dir_name)), 200
+    return jsonify(packages_project_packages.uninstall_from_project(
+        user_key(), project_read(project_id), dir_name, lands_on=project_write, prunes=prunes_the_store(),
+    )), 200

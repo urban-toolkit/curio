@@ -12,7 +12,7 @@ from flask import request
 
 from utk_curio.backend.app.agents import service as agents_services
 from utk_curio.backend.app.agents.repositories import catalog_settings
-from utk_curio.backend.app.agents.routes.common import _driven_dataflow_key
+from utk_curio.backend.app.agents.routes.common import _listing_dataflow
 from utk_curio.backend.app.agents.routes.common import _error
 from utk_curio.backend.app.agents.routes.common import _map_agent_errors
 from utk_curio.backend.app.agents.routes.common import _svc_error
@@ -47,10 +47,8 @@ def list_catalog():
     listing does (``seed_default_agents``).
     """
     agents_services.seed_default_agents(_user_dir_key(g.user), g.user)
-    project_id = request.args.get("projectId") or None
-    agents = agents_services.list_global_catalog(
-        _user_dir_key(g.user), project_id, spec_key=_driven_dataflow_key(project_id),
-    )
+    project_id, spec_key = _listing_dataflow(request.args.get("projectId") or None)
+    agents = agents_services.list_global_catalog(_user_dir_key(g.user), project_id, spec_key=spec_key)
     facets = agents_services.agent_catalog_facets(agents)
     return jsonify({"items": agents, "agents": agents, "facets": facets}), 200
 
@@ -215,11 +213,9 @@ def list_imports():
     account gets the agents Curio adds by default first
     (``seed_default_agents``)."""
     agents_services.seed_default_agents(_user_dir_key(g.user), g.user)
-    project_id = request.args.get("projectId") or None
+    project_id, spec_key = _listing_dataflow(request.args.get("projectId") or None)
     return (
-        jsonify({"agents": agents_services.list_my_imports(
-            _user_dir_key(g.user), project_id, spec_key=_driven_dataflow_key(project_id),
-        )}),
+        jsonify({"agents": agents_services.list_my_imports(_user_dir_key(g.user), project_id, spec_key=spec_key)}),
         200,
     )
 

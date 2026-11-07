@@ -1837,28 +1837,55 @@ class TestValidationKnowsTheAccount:
             f"under Solve while Play runs it: {payload.get('dataset_paths')}"
         )
 
-    def test_the_accounts_collection_is_resolved_on_the_validation_thread(
-        self, client, user_and_token, tmp_curio, monkeypatch
+    def test_the_accounts_collection_is_handed_to_the_validation_thread(
+        self, client, user_and_token, tmp_curio, tmp_path, monkeypatch
     ):
+        """A collection of the account's Data Catalog is looked up as the
+        account, under its key, before the attempt runs, and handed to the
+        thread the attempt runs on, which looks nothing up itself
+        (``grounding._session_collections``). The stub answers only a lookup
+        made as the account, and notes one made while an attempt runs."""
+        import threading
         from types import SimpleNamespace
 
+        from utk_curio.backend.app.agents.domain import validation
         from utk_curio.backend.app.discovery.domain.errors import ResourceNotFound
         from utk_curio.backend.app.discovery.service import DiscoveryService
+        from utk_curio.backend.tests.test_datasets.test_editor_datasets import _a_collection
+
+        user, token = user_and_token
+        running = threading.local()
+        on_an_attempt: list = []
+        handed: list = []
+        validate = validation.validate_candidate
 
         def _collection(service, dataset_id):
-            if service.user is None:
-                raise ResourceNotFound(f"no dataset {dataset_id!r} without an account")
+            if getattr(running, "attempt", False):
+                on_an_attempt.append(dataset_id)
+            if service.user is None or service.user_key != str(user.id):
+                raise ResourceNotFound(f"no dataset {dataset_id!r} without the account")
             return {"collection": {"kind": "images"}}, SimpleNamespace(provider=SimpleNamespace(type="s3"))
 
+        def _validating(*args, **kwargs):
+            handed.append(kwargs.get("collections"))
+            running.attempt = True
+            try:
+                return validate(*args, **kwargs)
+            finally:
+                running.attempt = False
+
         monkeypatch.setattr(DiscoveryService, "collection", _collection)
-        user, token = user_and_token
+        monkeypatch.setattr(validation, "validate_candidate", _validating)
+        collection = _a_collection(user, tmp_path)
         ctx = self._setup(client, user, token, monkeypatch,
-                          content='photos = curio_load_collection("{DATASET}")\nreturn photos')
+                          content=f'photos = curio_load_collection("{collection}")\nreturn photos')
         payload = self._validated_payload(client, token, ctx)
-        assert ctx["dataset_id"] in (payload.get("collections") or {}), (
-            "the collection was looked up without the account on the validation thread: "
+        assert collection in (payload.get("collections") or {}), (
+            "the collection did not reach the validation thread as the account's: "
             f"{payload.get('collections')}"
         )
+        assert collection in (handed[0] or {}), f"the attempt was handed the collections {handed[0]}"
+        assert on_an_attempt == [], f"an attempt looked collections up on its own thread: {on_an_attempt}"
 
     def test_a_model_the_account_added_resolves_on_the_validation_thread(
         self, client, user_and_token, tmp_curio, monkeypatch

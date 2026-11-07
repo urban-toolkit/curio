@@ -4,9 +4,11 @@ import {
   fetchMonitor,
   fetchMonitorErrors,
   fetchMonitorLlm,
+  fetchMonitorOpenFiles,
   fetchMonitorStorage,
   type MonitorErrorsPayload,
   type MonitorLlmPayload,
+  type MonitorOpenFilesPayload,
   type MonitorPayload,
   type MonitorStoragePayload,
 } from "../../api/monitorApi";
@@ -21,6 +23,7 @@ import {
 import ErrorLogPanel from "./ErrorLogPanel";
 import { LlmTokensSection } from "./LlmTokensSection";
 import { DurationHistogram, StoreSizeHistogram } from "./MonitorCharts";
+import { OpenFilesSection } from "./OpenFilesSection";
 import { Chip, Meter, StatTile } from "./StatTile";
 import styles from "./MonitorPage.module.css";
 
@@ -30,12 +33,15 @@ const FAST_POLL_MS = 5000;
 const STORAGE_POLL_MS = 60000;
 // Hourly rows: the backend holds the body 60s unless a request changed it.
 const LLM_POLL_MS = 60000;
+// A sample an hour: read when the page opens, then every 10 minutes.
+const OPEN_FILES_POLL_MS = 600000;
 
 /**
- * What the monitor shows: the toolbar, the deployment, hardware, execution,
- * LLM tokens, accounts and storage sections, and the recent errors. The
- * /monitor page and the canvas's Monitor drawer both render this, and it polls
- * only while it is mounted.
+ * What the monitor shows: the toolbar, the deployment, hardware (each
+ * server's open files over time among it), execution, LLM tokens, accounts
+ * and storage sections, and the recent errors. The /monitor page and the
+ * canvas's Monitor drawer both render this, and it polls only while it is
+ * mounted.
  */
 export const MonitorContent: React.FC = () => {
   const [paused, setPaused] = useState(false);
@@ -53,12 +59,18 @@ export const MonitorContent: React.FC = () => {
     paused
   );
   const llm = useMonitorPoll<MonitorLlmPayload>(fetchMonitorLlm, LLM_POLL_MS, paused);
+  const openFiles = useMonitorPoll<MonitorOpenFilesPayload>(
+    fetchMonitorOpenFiles,
+    OPEN_FILES_POLL_MS,
+    paused
+  );
 
   const bundle = {
     monitor: monitor.data,
     storage: storage.data,
     errors: errors.data,
     llm: llm.data,
+    openFiles: openFiles.data,
   };
 
   const onCopy = useCallback(async () => {
@@ -253,6 +265,7 @@ export const MonitorContent: React.FC = () => {
             </table>
           </div>
         </div>
+        <OpenFilesSection payload={openFiles.data} />
       </section>
 
       <section className={styles.section} aria-labelledby="mon-execution">

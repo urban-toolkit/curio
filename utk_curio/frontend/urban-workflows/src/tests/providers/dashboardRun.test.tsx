@@ -14,7 +14,8 @@
  * - a step only a browser runs is the page's: it runs the node, sends what it
  *   made, and starts the run again on that with the same values and token,
  *   also when only a tile reads it and the run ends succeeded; a node it
- *   cannot run leaves the nodes below saying so;
+ *   cannot run leaves the nodes below saying so, and so does one whose result
+ *   the server could not keep, in words of its own;
  * - several such steps, as two scenarios of two GPU steps leave four, are
  *   played together, each one's result is sent, and the run starts again once,
  *   after the last; one the page cannot run leaves the nodes below naming it.
@@ -399,6 +400,44 @@ describe("a step only a browser runs", () => {
         expect(outcomes.showSkipped).toHaveBeenCalledWith(
             "after", 'No data yet: "Cast sun rays on the GPU" could not run in this browser.',
         );
+    });
+
+    // The step ran; it is the server that could not keep what it made (on a
+    // loaded runner, run 42237534188, its store ran past the backend's 30 s).
+    const NOT_KEPT = new Error("The sandbox did not respond within 30s on /artifact-sessions/store.");
+    const RAN_NOT_KEPT = '"gpu" ran, but its result could not be kept. Change a control to run it again.';
+
+    test("rows the server could not keep leave the nodes below saying so, not that the step could not run", async () => {
+        const rows = { dataType: "geodataframe", data: { type: "FeatureCollection", features: [] } };
+        mockKeepStep.mockRejectedValue(NOT_KEPT);
+        const { hook, run, outcomes } = await aRunLeavingTheGpuStep((outputs, hooks) => {
+            outputs.push({ nodeId: "gpu", output: rows });
+            hooks.onNodeDone("gpu", { failed: false });
+            hooks.onFinish();
+        });
+
+        await act(async () => { run.emit(finished("needs_canvas")); });
+        await waitFor(() => expect(hook.result.current.active).toBe(false));
+
+        expect(hook.result.current.stopped).toBe(RAN_NOT_KEPT);
+        expect(outcomes.showSkipped).toHaveBeenCalledWith("after", `No data yet: ${RAN_NOT_KEPT}`);
+        expect(mockStart).toHaveBeenCalledTimes(1);
+    });
+
+    test("a node that sends its own result, which the server could not keep, is named the same way", async () => {
+        mockKeepStep.mockRejectedValue(NOT_KEPT);
+        const { hook, run } = await aRunLeavingTheGpuStep((_outputs, hooks) => {
+            // As an Autark node does (autkLayerMaterialize.ts): the send is part of its run.
+            keepPageResult("gpu", { dataType: "outputs", data: [] }).then(
+                () => hooks.onNodeDone("gpu", { failed: false }),
+                (error: Error) => hooks.onNodeDone("gpu", { failed: true, message: error.message }),
+            ).finally(() => hooks.onFinish());
+        });
+
+        await act(async () => { run.emit(finished("needs_canvas")); });
+        await waitFor(() => expect(hook.result.current.active).toBe(false));
+
+        expect(hook.result.current.stopped).toBe(RAN_NOT_KEPT);
     });
 
     test("the next start clears why the last run stopped", async () => {

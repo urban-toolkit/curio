@@ -44,8 +44,9 @@ execution:
 This process enforces ``wall_timeout`` itself, because it is the child's parent:
 while the child is unreaped its pid cannot be recycled, so a kill is guaranteed
 to hit the right process. The parent's own socket read is only a liveness
-backstop and kills nothing. One connection per execution is what makes
-concurrent executions work without any threads on this side.
+backstop. The parent kills only when this process died mid-run, and then only
+that run's process group (``ZygoteClient.run``). One connection per execution
+is what makes concurrent executions work without any threads on this side.
 
 A caller can hang up before its answer comes: ``ZygoteClient`` gives up on the
 pid after ``connect_timeout``. The answer that fails then closes that one

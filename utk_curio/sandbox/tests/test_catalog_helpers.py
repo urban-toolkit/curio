@@ -619,3 +619,164 @@ def test_an_isolated_node_reads_a_shipped_dataset_as_in_process(tmp_path):
     result = child.run_node(request, namespace)
     assert result["ok"], result["stderr"]
     assert result["output"]["value"].split(",") == in_process
+
+
+# -- a bundle's labels, carried to the nodes after it ------------------------
+
+CHICAGO = "data.curio.chicago-loop-layers"
+CHICAGO_LABELS = [
+    "Census tracts with CDC/ATSDR's Social Vulnerability Index 2020",
+    "CTA 'L' rail lines (City of Chicago)",
+    "Trees (OpenStreetMap)",
+    "CTA 'L' rail stations (City of Chicago)",
+]
+#: What a node after a bundle's load reports of each part it is handed.
+REPORT_LABELS = '    return "|".join(f"{type(part).__name__}:{part.metadata[\'partLabel\']}" for part in input_0)\n'
+
+
+def _chicago_bundle():
+    from pathlib import Path
+
+    return Path(__file__).resolve().parents[3] / "datasets" / f"{CHICAGO}@1" / "data" / "bundle.json"
+
+
+def _two_layers(root):
+    """A bundle of a table and a geo table whose sidecar names its layer."""
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    data = root / "data"
+    data.mkdir(parents=True)
+    pd.DataFrame({"tree": ["oak", "elm"]}).to_csv(data / "trees.csv", index=False)
+    gpd.GeoDataFrame({"name": ["Grand"]}, geometry=[Point(-87.63, 41.89)], crs="EPSG:4326").to_parquet(
+        data / "stations.parquet"
+    )
+    (data / "stations.parquet.decode.json").write_text(
+        json.dumps({"frame_metadata": {"name": "table_stations", "layerType": "points"}}), encoding="utf-8",
+    )
+    (root / "manifest.json").write_text("{}", encoding="utf-8")
+    (data / "bundle.json").write_text(json.dumps({"parts": [
+        {"index": 0, "label": "Trees", "kind": "dataframe", "format": "csv", "file": "data/trees.csv"},
+        {"index": 1, "label": "CTA stations", "kind": "geodataframe", "format": "parquet", "file": "data/stations.parquet"},
+    ]}), encoding="utf-8")
+    return data / "bundle.json"
+
+
+@pytest.fixture()
+def store(tmp_path, monkeypatch):
+    """A sandbox store of the test's own, in *tmp_path*."""
+    from utk_curio.sandbox.util.db import init_db, release_connection
+
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+    monkeypatch.setenv("CURIO_SHARED_DATA", "./.curio/data/")
+    (tmp_path / ".curio" / "data").mkdir(parents=True)
+    release_connection()
+    init_db()
+    yield tmp_path
+    release_connection()
+
+
+class TestPartLabels:
+    """Each frame of a loaded bundle carries its label as
+    ``metadata["partLabel"]``, which is no layer name: its ``name`` and
+    ``layerType`` stay as they were, and a layer chip finds no name in it.
+    The label goes with the frame to the node after it, through the store, in
+    process and isolated, a plain table's as a geo table's, and through the
+    canvas's envelope of a geo table."""
+
+    def test_each_frame_of_the_chicago_bundle_carries_its_label_and_no_layer_name(self):
+        from utk_curio.sandbox.util.catalog_helpers import read_dataset
+        from utk_curio.sandbox.util.input_layers import _name_of
+
+        layers = read_dataset(str(_chicago_bundle()), "bundle")
+        assert [frame.metadata for frame in layers] == [{"partLabel": label} for label in CHICAGO_LABELS]
+        assert [_name_of(frame) for frame in layers] == [None] * 4
+
+    def test_a_label_joins_the_metadata_a_part_was_saved_with(self, tmp_path):
+        load = _helpers({"d": _two_layers(tmp_path)}, {"d": {"format": "bundle"}})["curio_load_data"]
+        trees, stations = load("d")
+        assert trees.__dict__["metadata"] == {"partLabel": "Trees"}
+        assert stations.metadata == {"name": "table_stations", "layerType": "points", "partLabel": "CTA stations"}
+        # One part read on its own is that part, with no label.
+        assert "metadata" not in load("d", part="Trees").__dict__
+
+    def test_a_saved_tables_column_named_metadata_stays_when_its_metadata_is_restored(self, tmp_path):
+        """A saved table's sidecar can now hold its label, and its metadata
+        goes in the frame's ``__dict__``: set as an attribute, it took the
+        place of a column called ``metadata``."""
+        from utk_curio.sandbox.util.catalog_helpers import read_dataset
+        from utk_curio.sandbox.util.parsers import load_dataset_parquet
+
+        path = tmp_path / "notes.parquet"
+        pd.DataFrame({"metadata": ["kept", "too"], "n": [1, 2]}).to_parquet(path)
+        (tmp_path / "notes.parquet.decode.json").write_text(
+            json.dumps({"frame_metadata": {"partLabel": "Notes"}}), encoding="utf-8",
+        )
+        for frame in (read_dataset(str(path), "parquet"), load_dataset_parquet(path)):
+            assert list(frame["metadata"]) == ["kept", "too"]
+            assert frame.__dict__["metadata"] == {"partLabel": "Notes"}
+
+    def test_the_labels_reach_the_next_node_through_the_store_in_process(self, store):
+        from utk_curio.sandbox.app.worker import _worker_init, execute_code
+        from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+        _worker_init()
+        bundle = _two_layers(store / "data.x.layers@1")
+        loaded = execute_code(
+            '    return curio_load_data("data.x.layers")\n', "", "PYTHON_COMPUTATION", "",
+            save_dataset=False, dataset_paths={"data.x.layers": str(bundle)},
+            dataset_formats={"data.x.layers": {"format": "bundle"}},
+        )
+        assert loaded["stderr"] == "", loaded["stderr"]
+        # A node's one input that is a tuple is named "file", as the backend
+        # names it (node_exec.parse_input_ref): "outputs" is several circles.
+        reported = execute_code(
+            REPORT_LABELS, loaded["output"]["path"], "PYTHON_COMPUTATION", "file", save_dataset=False,
+        )
+        assert reported["stderr"] == "", reported["stderr"]
+        assert load_from_duckdb(reported["output"]["path"]) == "DataFrame:Trees|GeoDataFrame:CTA stations"
+
+    def test_the_labels_reach_the_next_node_through_the_store_isolated(self, store):
+        from utk_curio.sandbox.isolation import child, protocol
+        from utk_curio.sandbox.util import staging
+
+        bundle = _two_layers(store / "data.x.layers@1")
+        first = store / "scratch-load"
+        first.mkdir()
+        loaded = child.run_node({
+            "code": '    return curio_load_data("data.x.layers")\n',
+            "node_type": "curio.builtin/data-loading", "data_type": "", "scratch_dir": str(first),
+            "input": {"kind": "none"},
+            "dataset_paths": staging.stage_dataset_paths({"data.x.layers": str(bundle)}, first),
+            "dataset_formats": {"data.x.layers": {"format": "bundle"}}, "session_imports": [], "limits": {},
+        }, lambda: {"pd": pd})
+        assert loaded["ok"], loaded["stderr"]
+        manifest = protocol.parse_child_result(json.dumps(loaded).encode(), scratch_dir=str(first))
+        art_id = staging.persist_output(manifest["output"], node_id="load")
+
+        second = store / "scratch-report"
+        second.mkdir()
+        reported = child.run_node({
+            "code": REPORT_LABELS, "node_type": "curio.builtin/python-computation", "data_type": "file",
+            "scratch_dir": str(second), "input": staging.stage_input(art_id, second),
+            "dataset_paths": {}, "session_imports": [], "limits": {},
+        }, lambda: {"pd": pd})
+        assert reported["ok"], reported["stderr"]
+        assert reported["output"]["value"] == "DataFrame:Trees|GeoDataFrame:CTA stations"
+
+    def test_a_geo_tables_label_rides_the_canvas_envelope_beside_its_layer(self):
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        from utk_curio.sandbox.util.parsers import parseOutput
+        from utk_curio.sandbox.util.stored_inputs import read_stored
+
+        stations = gpd.GeoDataFrame({"name": ["Grand"]}, geometry=[Point(-87.63, 41.89)], crs="EPSG:4326")
+        stations.__dict__["metadata"] = {"partLabel": "CTA stations"}
+        envelope = parseOutput(stations)
+        assert envelope["data"]["metadata"] == {"partLabel": "CTA stations"}
+        assert read_stored(envelope).metadata == {"partLabel": "CTA stations"}
+        # An Autark node hands the layer on under a layer name of its own: the
+        # frame takes it and keeps its label.
+        layer = read_stored({**envelope, "layerName": "table_stations", "layerType": "points"})
+        assert layer.metadata == {"name": "table_stations", "layerType": "points", "partLabel": "CTA stations"}

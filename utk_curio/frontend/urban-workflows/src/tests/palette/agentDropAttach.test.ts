@@ -155,24 +155,54 @@ describe("attachAgentOnDrop", () => {
 
 /**
  * A hosted guest (`isHostedGuest`: a guest on a Curio started with --deploy)
- * cannot save the dataflow. A drop on a node or a connection needs the server
- * to hold the graph, on a saved dataflow too, and a drop on the canvas needs a
- * dataflow that was saved, so those drops tell it to sign in, before anything
- * is sent. A drop on the canvas of a dataflow it has attaches as before. The
- * deps are built as variables so the hostedGuest field type-checks before it
- * exists.
+ * cannot save a dataflow. On a dataflow it has (an example), its canvas is
+ * bound to its own copy's doc, which the attach reads: a drop on a node or a
+ * connection waits for the server to hold what it changed, then attaches, as
+ * an account's does, and a drop on the canvas attaches at once. A canvas with
+ * no dataflow makes none for it: every drop there tells it to sign in, before
+ * anything is sent. The deps are built as variables so the hostedGuest field
+ * type-checks before it exists.
  */
 describe("attachAgentOnDrop for a hosted guest", () => {
   const SIGN_IN = "Sign in to attach agents.";
 
   it.each([
     ["a node", { kind: "node", targetId: "n1" }],
-    ["a connection", { kind: "connection", edgeId: "e1" }],
-  ])("is told to sign in when it drops on %s, and nothing is sent or attached", async (_where, target) => {
+    ["a connection", { kind: "connection", targetId: "e1" }],
+  ])("waits for the server to hold what it changed when it drops on %s of a dataflow it has, then attaches", async (_where, target) => {
+    const calls: string[] = [];
+    const keepDataflow = jest.fn(async () => {
+      calls.push("keep");
+      return "proj-1";
+    });
+    const attach = jest.fn(async () => {
+      calls.push("attach");
+    });
+    const deps = {
+      projectId: "proj-1",
+      target: target as never,
+      agentCoord: "agent.test.x@1",
+      keepDataflow,
+      attach,
+      hostedGuest: true,
+    };
+
+    await attachAgentOnDrop(deps);
+
+    // The wait runs BEFORE attach, so the node is the server's when validated.
+    expect(calls).toEqual(["keep", "attach"]);
+    expect(keepDataflow).toHaveBeenCalledTimes(1);
+    expect(attach).toHaveBeenCalledWith("proj-1", "agent.test.x@1", target);
+  });
+
+  it.each([
+    ["a node", { kind: "node", targetId: "n1" }],
+    ["a connection", { kind: "connection", targetId: "e1" }],
+  ])("is told to sign in when it drops on %s of a canvas with no dataflow, and nothing is sent or attached", async (_where, target) => {
     const keepDataflow = jest.fn(async () => "proj-1");
     const attach = jest.fn(async () => undefined);
     const deps = {
-      projectId: "proj-1",
+      projectId: undefined,
       target: target as never,
       agentCoord: "agent.test.x@1",
       keepDataflow,
@@ -228,7 +258,7 @@ describe("attachAgentOnDrop for a hosted guest", () => {
 
   it("is a note, shown with the toast kind the other sign-in notes use", async () => {
     const deps = {
-      projectId: "proj-1",
+      projectId: undefined,
       target: { kind: "node", targetId: "n1" } as never,
       agentCoord: "agent.test.x@1",
       keepDataflow: jest.fn(async () => "proj-1"),

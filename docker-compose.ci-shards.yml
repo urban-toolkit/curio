@@ -8,7 +8,7 @@
 # test_cuda_mlp.py, test_cuda_torch.py and test_cuda_isolated.py in the container with it, and the
 # examples whose nodes run torch run on it there. A daemon without the toolkit
 # refuses to start the container at all, so every runner of test-gpu needs it:
-# utk's and utk-desktop-01's own Docker, and the Docker inside each arcade GPU
+# utk's, utk-desktop-01's and utk-desktop-03's own Docker, and the Docker inside each arcade GPU
 # runner (uic-evl/evl-github-runners). compute is CUDA; utility is NVML and
 # nvidia-smi.
 #

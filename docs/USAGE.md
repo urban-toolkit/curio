@@ -375,6 +375,8 @@ On a Curio started with `--deploy`, guests cannot add LLM configurations or pick
 
 The guest configuration is Curio's default: the first model of the first endpoint in the file `--llm-endpoint-file` names (see the [deployment guide](DEPLOYMENT.md#llm-configurations)). Without that file, guests get no AI, and agents refuse guest runs and say so.
 
+A guest on a Curio started with `--deploy` can change the examples. What a guest changes on an example, by hand or through its agents, is kept in that guest's own copy of it, which its agents read and no other guest sees. The top bar reads **Kept for this visit**. The copy lasts for that browser's sign-in, until a sign-out, an expired session or a restart of the server; **File > Save** and **Save a copy** ask the guest to sign in. A guest's own runs stay in the browser, and its agents' **Solve** and node runs run its copy on the server.
+
 **Example:** a file with an OpenAI-compatible gateway, a local Ollama server (it takes any key, so give it a placeholder) and Anthropic, here `llm-endpoints`, readable by its owner only (`chmod 600 llm-endpoints`):
 
 ```ini
@@ -433,18 +435,32 @@ box: drop a file or a Data Catalog dataset on the node, or click **Choose file**
 to pick a file, and its code, on the **Code** tab, loads it ([Data Catalog](#data-catalog)).
 
 A Data Export node opens on its **Widgets** tab, which holds only its
-**File name** and its **Download** button. Its code, on the **Code** tab,
-`return curio_export(input_0, [!! file_name !!])`, writes the data wired into
-it to a file: a table as CSV, a GeoDataFrame as GeoJSON or a raster as GeoTIFF.
-Once the node has run, the button names the file,
+**File name** and its **Download** button, and its **Part** dropdown when its
+input holds several parts. Its code, on the
+**Code** tab, `return curio_export(input_0, [!! file_name !!], part=[!! part !!])`,
+writes the data wired into it to a file: a table as CSV, a GeoDataFrame as
+GeoJSON or a raster as GeoTIFF. A bundle, or several values that hold a table
+or a raster (a node's tuple, list or dict), is one zip: a file per part, named
+after the part's label, and a `bundle.json`, the zip the Data Catalog's
+[Export](DATA-CATALOG.md#5-previews-schema-and-export) gives for the same
+parts. Once the node has run, the button names the file,
 and **Download** saves it. When the node's result is out of date,
 **Download** first runs the node and the nodes above it.
 
 - The file ends in its format's extension: **File name** `trees` gives
   `trees.csv` for a table, and `trees.csv` gives `trees.geojson` for a
-  GeoDataFrame.
+  GeoDataFrame. Several values give `trees.zip`.
 - With **File name** empty, the file is named after the node or dataset wired
   into it.
+- **Part** appears once the node above has run and its result holds several
+  parts. It lists **All parts**, then each part by the label its file has in
+  the zip (`Trees (OpenStreetMap)`); a long label is cut, and shows whole on
+  hover. Pick one part to write it alone, in its own format. A part picked
+  earlier that the input no longer holds stays shown, marked
+  *(not in the input)*, and the run stops naming it. In code, `part=` takes a
+  part's label, its key in a dict or its position from `0`.
+- A table or a raster inside a part, or a value JSON cannot hold, stops the
+  node with a message naming it.
 - To write another format, write it in the code to a file of the node's and
   return that file:
 
@@ -1867,7 +1883,7 @@ For the full guide, covering how a call holds its skills, your own skills and th
 
 ## Real-time collaboration
 
-Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. Each person's pointer shows on the others' canvases too, in their color with their name, and fades while it rests. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example stays its own.
+Every tab that opens a saved dataflow while signed in holds one shared copy of it, which the server keeps as each change is made. A change in one tab shows in every other tab that has the dataflow open: code and specs as they are typed, with each person's cursor, and nodes, connections, widgets, scenarios and drags at once. Each person's pointer shows on the others' canvases too, in their color with their name, and fades while it rests. A tab that opens the dataflow later finds every change. A hosted guest's canvas of an example is its own copy of it, which only that guest's tabs share (see [Guest users](#guest-users)).
 
 Who is here shows in the dock at the top of the canvas, beside the canvas agents: a chip for each other person, with their initials in their color. Hover one for their name, their role and the node they are editing, and click it to move your view to where they point on the canvas. The **Activity** button at the end of the row lists who joined, who left and whose role changed. A node someone is in shows their initials in its corner.
 

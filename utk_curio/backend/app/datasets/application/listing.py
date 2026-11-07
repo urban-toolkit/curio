@@ -851,17 +851,39 @@ class CatalogListing:
         Returns the absolute filesystem path plus a suggested attachment name
         and mimetype. The serialized file is streamed as-is, so a parquet
         dataset exports the parquet binary, a CSV exports the CSV, etc.
+
+        A dataset of several parts, a bundle, a live output of several parts
+        or a layer group, exports as one zip of its parts
+        (``bundle_export``), written to a folder of its own that the answer
+        names as ``cleanup``, for the route to remove once it is sent. A live
+        output is read only if the caller may read it, as a single one is.
         """
+        from utk_curio.backend.app.datasets.application import bundle_export
+
+        if is_layer_group_id(dataset_id):
+            members = self._layer_group_members(
+                dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs
+            )
+            if not members:
+                raise DatasetCatalogError("Dataset not found", 404)
+            title = build_layer_group_item(dataset_id, members).get("title") or dataset_id
+            return bundle_export.layer_group_zip(title, members, self._paths._resolve_item_path)
+
         item = deepcopy(self._owner.get_dataset(
             dataset_id,
             dataflow_id=dataflow_id,
             live_outputs=live_outputs,
         ))
+        live = self._live_output_of(item)
+        if live is not None:
+            zipped = bundle_export.live_bundle_zip(item.get("title") or dataset_id, live)
+            if zipped is not None:
+                return zipped
         if item.get("format") == "bundle":
-            raise DatasetCatalogError(
-                "Multi-part (bundle) datasets cannot be exported as a single file.",
-                400,
-            )
+            resolved = self._paths._resolve_item_path(item)
+            if not resolved or not Path(resolved).is_file():
+                raise DatasetCatalogError("Dataset file is not available for export.", 404)
+            return bundle_export.saved_bundle_zip(item.get("title") or dataset_id, resolved)
         if item.get("format") == "collection":
             raise DatasetCatalogError(
                 "A collection cannot be exported as a single file: its files stay in "
@@ -899,6 +921,22 @@ class CatalogListing:
             "mimetype": _DOWNLOAD_MIMETYPES.get(extension),
             "path": resolved,
         }
+
+    def _live_output_of(self, item: dict[str, Any]) -> str | None:
+        """The artifact id of the live output *item* is (``curio://outputs/``),
+        or None for any other item. One the caller may not read is not found,
+        as a single live file is (``PathResolver.readable_outputs``)."""
+        from utk_curio.backend.app.datasets.install.bundle import _bare_artifact_id
+
+        uri = str(item.get("uri") or "")
+        if not uri.startswith("curio://outputs/"):
+            return None
+        art_id = _bare_artifact_id(uri[len("curio://outputs/"):])
+        if art_id is None:
+            return None
+        if art_id not in self._paths.readable_outputs([art_id]):
+            raise DatasetCatalogError("Dataset file is not available for export.", 404)
+        return art_id
 
     def dataset_usage(
         self, dataset_id: str, *, include_code_refs: bool = True

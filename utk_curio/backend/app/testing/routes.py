@@ -557,11 +557,14 @@ def llm_deployment():
 
     For a test of what the page is told about Curio's own models (its
     endpoints' names and models, never a host or a key). Nothing is asked of
-    an endpoint: a test that sets them runs no agent on them.
+    an endpoint a file names: a test that sets them runs no agent on them.
 
     Body (POST): ``{"file": "<an endpoint file's text>"}``, read as the
-    launch reads the file (``llm_endpoint.parse_endpoints``). ``DELETE`` puts
-    the launch's endpoints back, as ``reset-db`` does.
+    launch reads the file (``llm_endpoint.parse_endpoints``), or
+    ``{"scripted": true}``: the scripted provider (``testing_provider.py``)
+    as this Curio's one endpoint, whose model a hosted guest's agents answer
+    with, as ``/agent-script`` scripts it. ``DELETE`` puts the launch's
+    endpoints back, as ``reset-db`` does.
     Response: ``{"endpoints": [{"name", "models"}]}``, what is now offered.
     """
     global _llm_deployment_saved
@@ -570,12 +573,16 @@ def llm_deployment():
 
     if request.method == "POST":
         body = request.get_json(silent=True) or {}
-        if not isinstance(body.get("file"), str):
+        if body.get("scripted") is True:
+            endpoints = (llm_endpoint.Endpoint(name="Scripted", api_type="testing", base_url="",
+                                               api_key="scripted", models=("scripted",)),)
+        elif not isinstance(body.get("file"), str):
             return jsonify({"error": "file must be an endpoint file's text"}), 400
-        try:
-            endpoints = llm_endpoint.parse_endpoints(body["file"], "the test's endpoint file")
-        except llm_endpoint.EndpointFileError as exc:
-            return jsonify({"error": str(exc)}), 400
+        else:
+            try:
+                endpoints = llm_endpoint.parse_endpoints(body["file"], "the test's endpoint file")
+            except llm_endpoint.EndpointFileError as exc:
+                return jsonify({"error": str(exc)}), 400
         if _llm_deployment_saved is None:
             _llm_deployment_saved = tuple(settings.DEFAULT_LLM_ENDPOINTS)
         settings.DEFAULT_LLM_ENDPOINTS = endpoints
@@ -598,7 +605,15 @@ def stub_project():
       * ``description`` / ``thumbnail_accent`` – optional pass-throughs.
 
     Response: ``ProjectSummary``-shaped JSON for the newly created row.
+
+    The shared guest account on a Curio with sign-in is the one every hosted
+    guest signs in to, whose saves are refused
+    (``services._assert_guest_can_save``): its dataflows are the examples the
+    server seeds. So its project is seeded as an example is
+    (:func:`_seeded_as_an_example`), and a test gets an example of its own.
     """
+    from utk_curio.backend.app.users.capabilities import is_hosted_guest
+
     body = request.get_json(silent=True) or {}
     username = (body.get("username") or "").strip()
     if not username:
@@ -610,13 +625,14 @@ def stub_project():
 
     name = body.get("name") or "StubbedWorkflow"
     spec = body.get("spec") or _empty_spec()
-    data = ProjectCreate(
-        name=name,
-        spec=spec,
-        description=body.get("description"),
-        thumbnail_accent=body.get("thumbnail_accent") or "peach",
-    )
-    detail = project_services.save_project(user, data)
+    description = body.get("description")
+    accent = body.get("thumbnail_accent") or "peach"
+    if is_hosted_guest(user):
+        detail = _seeded_as_an_example(user, name, spec, description=description, accent=accent)
+    else:
+        detail = project_services.save_project(
+            user, ProjectCreate(name=name, spec=spec, description=description, thumbnail_accent=accent),
+        )
     return (
         jsonify(
             {
@@ -629,6 +645,29 @@ def stub_project():
         ),
         201,
     )
+
+
+def _seeded_as_an_example(user, name: str, spec: dict, *, description, accent: str):
+    """A dataflow of *user*, the account every hosted guest signs in to, made
+    as ``projects/seed.py`` seeds each shipped example there: its row, its doc
+    made by Curio, and its manifest. Its row."""
+    from utk_curio.backend.app.collaboration import dataflow_docs
+    from utk_curio.backend.app.packages.service import ensure_user_packages_initialized
+    from utk_curio.backend.app.projects import repositories as project_repo
+    from utk_curio.backend.app.projects import storage
+
+    ukey = project_services._user_dir_key(user)
+    ensure_user_packages_initialized(ukey)
+    project = project_repo.upsert_project(
+        user_id=user.id, name=name, folder_path="", description=description, thumbnail_accent=accent,
+    )
+    project.folder_path = str(storage.project_dir(ukey, project.id))
+    dataflow_docs.create(ukey, project.id, spec, dataflow_docs.by_curio(ukey, "seed"))
+    db.session.commit()
+    storage.write_manifest(
+        ukey, project.id, project.spec_revision, [], name=name, description=description, thumbnail_accent=accent,
+    )
+    return project
 
 
 # ── scripted agent turns (see app/agents/testing_provider.py) ────────────────

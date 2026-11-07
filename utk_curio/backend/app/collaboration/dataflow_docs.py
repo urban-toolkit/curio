@@ -56,6 +56,13 @@ room (``join_session``, ``events.py``) takes part.
 * An agent at work is in the room too: the server writes its state under a
   client id no tab holds, and puts it back when the doc opens again
   (:func:`set_agent_state`, ``agent_peers.py``).
+* A hosted guest's room is that of its own copy of the dataflow
+  (``projects/visitor_copies.py``). A copy not made yet opens in memory, built
+  from the dataflow it copies as that is now, and nothing of it is written
+  while its tabs only look (:attr:`_OpenDoc.unmade`). The first update that
+  brings a change makes the copy (``visitor_copies.make``), and :func:`create`
+  makes this doc the copy's, its log starting from the doc its tabs hold, so
+  they sync on.
 
 **The log, the dataflow's one history.** Every change to the doc is appended to
 its update log the moment it lands, and the log is never emptied. It is kept
@@ -280,6 +287,11 @@ class _OpenDoc:
         #: log the spec was last written from.
         self.segment: Optional[str] = None
         self.folded: dict = {}
+        #: A hosted guest's copy not made yet: the spec of the dataflow it
+        #: copies, as the doc was built from it in memory, with no file, no
+        #: log and no history written (:func:`_load`). ``None`` once made, and
+        #: for every other dataflow.
+        self.unmade: Optional[dict] = None
         self.loaded = False
         self.closed = False
         #: The sockets that started a sync: sid -> participant.
@@ -707,10 +719,32 @@ def _built_anew(entry: _OpenDoc, dataflow: dict) -> None:
     _begin_log(entry)
 
 
+def _load_unmade(entry: _OpenDoc) -> None:
+    """Open a hosted guest's copy not made yet (:attr:`_OpenDoc.unmade`): its
+    doc built anew from the dataflow it copies, in memory alone. Its log, its
+    history's first points and its spec are written when the copy is made
+    (:func:`_made_from_its_doc`)."""
+    copied = entry.unmade
+    entry.revision, entry.base = 0, _owned(copied)
+    doc = doc_mapping.new_doc()
+    doc_mapping.dataflow_to_doc(_owned(_in_sets(copied)), doc, doc_id=uuid.uuid4().hex)
+    _attach(entry, doc)
+    entry.loaded = True
+    with _wake:
+        entry.idle_since = _clock()
+        _wake.notify_all()
+    _ensure_flusher()
+
+
 def _load(entry: _OpenDoc) -> None:
     """Open the doc from its log, or build it anew from the spec when its state
     is lost; then carry in a spec written outside it, and build anew one grown
     too large."""
+    if entry.unmade is not None:
+        if not _has_spec(entry.user_key, entry.project_id):
+            _load_unmade(entry)
+            return
+        entry.unmade = None  # made meanwhile: it opens as any dataflow
     folder = entry.folder()
     file = _spec_file(entry)
     if not isinstance(file.spec, dict):
@@ -778,10 +812,13 @@ def _built_anew_if_grown(entry: _OpenDoc) -> None:
 
 
 @contextmanager
-def _held(project_id: str, user_key: str) -> Iterator[_OpenDoc]:
+def _held(project_id: str, user_key: str, *, unmade: Optional[dict] = None) -> Iterator[_OpenDoc]:
     """The open doc of the dataflow, opened if it is not, with its lock held.
     A doc open under the same id for another account is not this dataflow's
-    (only tests reuse an id across accounts): it is dropped, writing nothing."""
+    (only tests reuse an id across accounts): it is dropped, writing nothing.
+    *unmade*, for a hosted guest's copy with no spec yet, is the spec of the
+    dataflow it copies, which a doc this opens is built from in memory
+    (:func:`_load_unmade`)."""
     user_key = str(user_key)
     while True:
         with _lock:
@@ -792,6 +829,7 @@ def _held(project_id: str, user_key: str) -> Iterator[_OpenDoc]:
                 entry = None
             if entry is None or entry.closed:
                 entry = _docs[project_id] = _OpenDoc(project_id, user_key)
+                entry.unmade = unmade
         with entry.lock:
             if entry.closed:
                 continue
@@ -1428,9 +1466,15 @@ def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
 
     No spec lock: a create writes before its dataflow's row is committed, and
     the example seeder holds its database write through its walk (#909); an
-    open doc's lock keeps the doc and the file whole."""
+    open doc's lock keeps the doc and the file whole.
+
+    A hosted guest's copy whose doc a room opened before the copy was made
+    (:attr:`_OpenDoc.unmade`) is made from that doc (:func:`_made_from_its_doc`),
+    so the tabs that hold it sync on."""
     user_key = str(user_key)
     mine = _writable(spec)
+    if _made_from_its_doc(user_key, project_id, spec, actor):
+        return Live(mine, user_key=user_key, project_id=project_id)
     if _open_entry(project_id, user_key) is not None and doc_mapping.mappable(doc_mapping.owned(_dataflow_of(mine))):
         try:
             with _held(project_id, user_key) as entry:
@@ -1459,7 +1503,43 @@ def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
     # write outside it and catches up to it (:func:`_catch_up`).
     _drop_pointer(user_key, project_id)
     _made_anew(user_key, project_id, actor)
+    # A room that opened the doc of a copy in memory meanwhile: its doc is
+    # this copy's, written from it.
+    _made_from_its_doc(user_key, project_id, spec, actor)
     return Live(mine, user_key=user_key, project_id=project_id)
+
+
+def _made_from_its_doc(user_key: str, project_id: str, spec: dict, actor: Actor) -> bool:
+    """Make the hosted guest's copy *project_id* from the doc a room opened of
+    it in memory (:attr:`_OpenDoc.unmade`), when one is open: its log starts
+    from the doc as its tabs hold it, its history's first points are that
+    dataflow, the doc takes what *spec*, the dataflow the copy copies as it is
+    now, changed since it was built (one transaction, relayed to its tabs),
+    and ``spec.trill.json`` is written from it. The doc keeps its id, so its
+    tabs sync on. Whether such a doc was open. Under the copy's spec lock, as
+    ``visitor_copies.make`` takes it, then the doc's."""
+    entry = _open_entry(project_id, user_key)
+    if entry is None:
+        return False
+    mine = _writable(spec)
+    with entry.lock:
+        if entry.closed or entry.unmade is None or not entry.loaded:
+            return False
+        entry.unmade = None
+        _begin_log(entry)
+        history.first_points(entry)
+        theirs = doc_mapping.owned(_dataflow_of(mine))
+        if doc_mapping.mappable(theirs):
+            _roll(entry)
+            with entry.doc.transaction(origin=actor):
+                doc_mapping.apply_dataflow(entry.doc, doc_mapping.doc_to_dataflow(entry.doc), theirs)
+            owner_uses.noted(entry, by_owner=_by_its_owner(user_key, actor))
+            _commit(entry, skip_sid=None, origin=actor)
+        _written(entry, storage.SpecFile(mine, 0), mine, history={
+            key: spec[key] for key in storage.HISTORY_KEYS if key in spec
+        })
+    _made_anew(user_key, project_id, actor)
+    return True
 
 
 def _made_anew(user_key: str, project_id: str, actor: Actor) -> None:
@@ -2036,6 +2116,18 @@ def _encoded_states(rows) -> bytes:
     return encoder.to_bytes()
 
 
+def _copied(project, user_key: str) -> Optional[dict]:
+    """For a hosted guest's copy with no spec and no open doc (``visitor_copies.Copy``):
+    the dataflow it copies as it is now, without its history, which its doc
+    is built from in memory. Read before any doc's lock is held. ``None`` for
+    any other dataflow."""
+    source = getattr(project, "copies", None)
+    if not source or _has_spec(user_key, project.id) or _open_entry(project.id, user_key) is not None:
+        return None
+    spec = read(user_key, source)
+    return _writable(spec) if isinstance(spec, dict) else None
+
+
 def _start(sid: str, me: dict, project_id: str, message: bytes, held_id) -> dict:
     """A tab's sync step 1."""
     from utk_curio.backend.app.projects.services import _owner_user_dir_key
@@ -2043,8 +2135,9 @@ def _start(sid: str, me: dict, project_id: str, message: bytes, held_id) -> dict
     project = _project(project_id)
     if project is None:
         return _refused("unknown_project")
+    user_key = _owner_user_dir_key(project)
     try:
-        with _held(project_id, _owner_user_dir_key(project)) as entry:
+        with _held(project_id, user_key, unmade=_copied(project, user_key)) as entry:
             if held_id is not None and held_id != entry.doc_id:
                 return _refused("reload", docId=entry.doc_id)
             _framed(message[2:])  # the tab's state, which step 2 answers
@@ -2091,13 +2184,66 @@ def _update(sid: str, me: dict, project_id: str, message: bytes) -> dict:
     entry = _synced(project_id, sid)
     if entry is None:
         return _refused("not_synced")
-    answers = _take(entry, _Queued(sid, me, _UPDATE, _framed(message[2:])))
+    data = _framed(message[2:])
+    if entry.unmade is not None:
+        # A hosted guest's copy not made yet: a tab that only looks sends
+        # updates that bring nothing, and makes nothing; its first change
+        # makes the copy, which it is then applied to.
+        changes = _brings_a_change(entry, data)
+        if changes is None:
+            return _refused("invalid_message")
+        if not changes:
+            return {"ok": True, "kept": {}}
+        if not _made_for_its_tabs(entry):
+            return _refused("unavailable")
+    answers = _take(entry, _Queued(sid, me, _UPDATE, data))
     if answers is None:
         return {"ok": True, "queued": True}
     answer = answers.get(sid) or _answer()
     if answer["refused"]:
         return _refused(next(iter(answer["refused"])))
     return {"ok": True, "kept": answer["kept"]}
+
+
+#: An update that brings nothing: no item and no deletion, as a tab answers
+#: the server's step 1 with when it holds nothing the server lacks.
+_EMPTY_UPDATE = b"\x00\x00"
+
+
+def _brings_a_change(entry: _OpenDoc, data: bytes) -> Optional[bool]:
+    """Whether the update *data* changes the open doc *entry*, a hosted
+    guest's copy not made yet: read on a doc of its own built from it, so
+    *entry*'s doc changes only once the copy is made. A tab's answer to the
+    server's step 1 carries every deletion its doc holds, which the server's
+    holds already: it brings no change. ``None`` for an update that does not
+    apply."""
+    if data == _EMPTY_UPDATE:
+        return False
+    scratch = doc_mapping.new_doc()
+    with entry.lock:
+        scratch.apply_update(entry.doc.get_update())
+    try:
+        clocks, before = _clocks(scratch), doc_mapping.doc_to_dataflow(scratch)
+        scratch.apply_update(data)
+        return _clocks(scratch) != clocks or not doc_mapping.same(before, doc_mapping.doc_to_dataflow(scratch))
+    except (ValueError, RuntimeError, IndexError, AssertionError, doc_mapping.DocMappingError):
+        logger.info("an update for dataflow %s does not apply", entry.project_id, exc_info=True)
+        return None
+
+
+def _made_for_its_tabs(entry: _OpenDoc) -> bool:
+    """Make the hosted guest's copy whose doc *entry* holds, not made yet, on
+    the first change a tab of it sends (``visitor_copies.make``): the copy's
+    files are written, and :func:`create` makes this doc the copy's, so its
+    tabs sync on. Whether it is made. Under no lock: the copy's spec lock
+    comes first."""
+    from utk_curio.backend.app.projects import visitor_copies
+
+    try:
+        visitor_copies.make(entry.project_id)
+    except Exception:  # noqa: BLE001 - the tab is told, and its change is not kept
+        logger.exception("dataflow %s: a hosted guest's copy could not be made", entry.project_id)
+    return entry.unmade is None and not entry.closed
 
 
 def _take(entry: _OpenDoc, item: _Queued) -> Optional[dict[str, dict]]:

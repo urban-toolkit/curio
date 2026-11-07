@@ -287,6 +287,7 @@ _DOWNLOAD_MIMETYPES: dict[str, str] = {
     ".shp": "application/octet-stream",
     ".onnx": "application/octet-stream",
     ".nc": "application/x-netcdf",
+    ".zip": "application/zip",
 }
 
 
