@@ -928,3 +928,17 @@ def test_the_recorded_corpus_is_where_the_tests_look():
 def test_the_mock_answers_are_written_from_their_module():
     """``fixtures/overpass/mock.json`` is what ``overpass_mock.py`` writes."""
     assert json.loads(overpass_mock.MOCK_FILE.read_text()) == overpass_mock.mock_document()
+
+
+def test_a_stop_without_process_groups_kills_the_loader(monkeypatch):
+    """Windows has no ``os.killpg``. A stop there (a cancel, or a download
+    past its time) kills the loader itself, where it raised AttributeError
+    in place of the stop's own error and left the loader running."""
+    calls = []
+    loader = SimpleNamespace(
+        pid=4242, kill=lambda: calls.append("kill"), wait=lambda timeout=None: calls.append("wait"),
+    )
+    # The provider's own view of os, as on Windows: no process groups.
+    monkeypatch.setattr(autark_osm, "os", SimpleNamespace(name="nt"))
+    autark_osm._kill_group(loader)
+    assert calls == ["kill", "wait"]

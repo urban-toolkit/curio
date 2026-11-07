@@ -160,6 +160,7 @@ export const FlowContext = createContext<FlowContextProps>({
     whenChangesKept: async () => true,
     nodeExecStatus: {},
     viewerMode: "owner",
+    loadFitPending: false,
     workflowCategories: {},
     serverCategories: {},
     scenarios: [],

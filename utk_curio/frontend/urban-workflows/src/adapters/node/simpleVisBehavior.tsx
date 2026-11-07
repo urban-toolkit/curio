@@ -133,6 +133,9 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // canvas, the owner's, whose collections the editor's runs load.
   const dataflowId = useAgentsDataflowId();
   const { showToast } = useToastContext();
+  // The read of the input that arrived last, until it ends: what a run that
+  // asks the view waits for (`untilHandedOn`, below).
+  const readingRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     const handleInput = async () => {
@@ -182,8 +185,26 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
       }
     };
 
-    handleInput();
+    readingRef.current = handleInput();
   }, [data.input]);
+
+  // The view has no Play, so a run that asks it waits for this instead: its
+  // rows on their way to the nodes it feeds. A run on the server ends with the
+  // step that makes the view's input, and the page asks the view in the render
+  // that brings it. Counted done then, the run asked the Spatial Join below
+  // before the rows landed, and the join had no input_0 to join.
+  const untilHandedOn = useCallback(async () => {
+    // A newer input that arrived meanwhile is read before the run goes on.
+    while (readingRef.current) {
+      const read = readingRef.current;
+      try {
+        await read;
+      } catch {
+        // A read that failed hands nothing on: nothing is left to wait for.
+      }
+      if (readingRef.current === read) readingRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof data.interactionsCallback === 'function') {
@@ -353,5 +374,6 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   return {
     contentComponent,
     setSendCodeCallbackOverride: (_: any) => {},
+    untilHandedOn,
   };
 };

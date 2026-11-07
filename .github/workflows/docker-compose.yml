@@ -586,6 +586,16 @@ jobs:
           path: ${{ runner.temp }}/ci-selected/
           retention-days: 7
 
+      # On an arcade runner the image's Python above is the image's own folder,
+      # mounted in place (scripts/ci_image_python.sh), and this job starts no
+      # stack whose stop-stack would let it go. It never holds up the pick
+      # below: a release that fails leaves the next job's take to finish it.
+      - name: 🧹 Let go of the image's Python
+        if: always() && steps.suites.outputs.e2e == 'true'
+        run: bash scripts/ci_image_python.sh release
+        continue-on-error: true
+        timeout-minutes: 2
+
       # The runners of the jobs that wait on the image, picked as they are
       # about to start, whether the image was built or reused: a pick made
       # when the run started is minutes old by now, and the hosted room it

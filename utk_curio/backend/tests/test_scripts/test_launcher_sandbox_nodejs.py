@@ -10,6 +10,7 @@ npm never runs here (``subprocess.run`` is replaced), Node never starts
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -230,8 +231,9 @@ class _Process:
     def __init__(self, args, kwargs, result):
         self.args, self.kwargs = args, kwargs
         self.stdin = _Stdin()
-        self.stdout = iter([result + "\n"])
-        self.stderr = iter([])
+        # Text files, as a real run's pipes are: read by line, then closed.
+        self.stdout = io.StringIO(result + "\n")
+        self.stderr = io.StringIO("")
         self.returncode = 0
         self.pid = 0
 

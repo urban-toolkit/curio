@@ -271,9 +271,14 @@ class AutarkOsmService:
 
 
 def _kill_group(proc: subprocess.Popen) -> None:
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
+    """Kill the loader with all it started. Windows has no process groups:
+    there, the loader alone."""
+    if hasattr(os, "killpg"):
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            proc.kill()
+    else:
         proc.kill()
     proc.wait()
 

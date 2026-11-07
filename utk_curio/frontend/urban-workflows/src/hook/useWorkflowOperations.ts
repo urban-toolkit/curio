@@ -1716,6 +1716,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         projectSavedAt,
         nodeExecStatus,
         viewerMode,
+        // A load that brought nodes frames them a frame or more after it
+        // lands; a drop made while the dataflow opened waits for that view.
+        loadFitPending: fitViewOnLoad,
 
         // Operations
         updateDataNode,

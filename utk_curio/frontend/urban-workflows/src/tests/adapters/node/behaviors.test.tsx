@@ -194,6 +194,7 @@ const BEHAVIOR_RESULT_KEYS: (keyof NodeBehaviorResult)[] = [
   'defaultValueOverride',
   'sendCodeOverride',
   'setSendCodeCallbackOverride',
+  'untilHandedOn',
   'showLoading',
   'contentComponent',
   'controlsComponent',

@@ -555,6 +555,20 @@ def cancel_run(user, run_id: str) -> DataflowRun:
     return run
 
 
+def stop_runs() -> list:
+    """Stop every run this process holds that is still going, as the user's
+    Stop does (:func:`cancel_run`), and return their jobs; for a test rig's
+    reset (``testing/routes.py``), which then waits for them. A test can end
+    with its run going: the node it runs would hold the sandbox into the next
+    test, and its steps would be written after the reset. A run stops before
+    its next node; the nodes already running finish."""
+    live = jobs.REGISTRY.live_jobs()
+    for job in live:
+        # Its thread may not have asked for its flag yet: it then gets this one.
+        jobs.cancel_flag(job.job_id).set()
+    return live
+
+
 def rerun(user, token: Optional[str], run_id: str) -> DataflowRun:
     """Run what *run_id* ran again: the whole dataflow, the same node, or the
     same nodes."""

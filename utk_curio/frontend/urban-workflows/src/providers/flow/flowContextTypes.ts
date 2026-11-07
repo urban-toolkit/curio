@@ -118,6 +118,9 @@ export interface FlowContextProps {
     whenChangesKept: () => Promise<boolean>;
     nodeExecStatus: Record<string, "stale" | "executed" | "errored">;
     viewerMode: "owner" | "shared";
+    /** True from a load that brought nodes until its fit of them has been set
+     *  (and while a later load's or merge's fit is pending). */
+    loadFitPending: boolean;
 
     /** The hand-set categories, saved with the dataflow. */
     workflowCategories: HandCategories;

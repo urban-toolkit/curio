@@ -20,6 +20,7 @@ import {
     MAX_COLUMN_DROP,
     NODE_GUTTER_X,
     NODE_GUTTER_Y,
+    clearSpotFor,
     deoverlapNodes,
 } from "../../utils/deoverlapLayout";
 
@@ -227,5 +228,57 @@ describe("deoverlapNodes", () => {
         // horizontal ones. Raising these relayouts arrangements someone chose.
         expect(NODE_GUTTER_X).toBe(8);
         expect(NODE_GUTTER_Y).toBe(8);
+    });
+});
+
+/**
+ * `clearSpotFor` places one node among nodes that stay put, by the rule
+ * `deoverlapNodes` moves a node by: a node dropped while a dataflow opened
+ * lands once the dataflow's nodes are in, and must not land on one.
+ */
+describe("clearSpotFor", () => {
+    test("a spot nothing is in the way of is kept", () => {
+        const spot = clearSpotFor(node("new", 0, 0), { x: 300, y: 0 }, [node("a", 0, 0)], { measure });
+
+        expect(spot).toEqual({ x: 300, y: 0 });
+    });
+
+    test("a spot on a node goes below it when that is the shorter way", () => {
+        // Down to 58 is 48 away, right to 108 is 68.
+        const spot = clearSpotFor(node("new", 0, 0), { x: 40, y: 10 }, [node("a", 0, 0)], { measure });
+
+        expect(spot).toEqual({ x: 40, y: BOX.height + NODE_GUTTER_Y });
+    });
+
+    test("and right of it when that is shorter", () => {
+        // Down to 58 is 58 away, right to 108 is 18.
+        const spot = clearSpotFor(node("new", 0, 0), { x: 90, y: 0 }, [node("a", 0, 0)], { measure });
+
+        expect(spot).toEqual({ x: BOX.width + NODE_GUTTER_X, y: 0 });
+    });
+
+    test("the nodes in place never move, and the spot clears every one of them", () => {
+        const placed = [node("a", 0, 0), node("b", 0, BOX.height + NODE_GUTTER_Y)];
+        const before = JSON.stringify(placed);
+
+        const spot = clearSpotFor(node("new", 0, 0), { x: 0, y: 0 }, placed, { measure });
+
+        expect({
+            spot,
+            placedAfter: JSON.stringify(placed),
+            separated: separated(boxesOf([...placed, { position: spot }])),
+        }).toEqual({
+            spot: { x: 0, y: 2 * (BOX.height + NODE_GUTTER_Y) },
+            placedAfter: before,
+            separated: true,
+        });
+    });
+
+    test("the spot is where deoverlapNodes puts a later node", () => {
+        const viaDeoverlap = deoverlapNodes([node("a", 0, 0), node("z", 40, 10)], { measure });
+
+        const spot = clearSpotFor(node("z", 0, 0), { x: 40, y: 10 }, [node("a", 0, 0)], { measure });
+
+        expect(spot).toEqual(viaDeoverlap[1].position);
     });
 });

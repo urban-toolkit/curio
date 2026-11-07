@@ -840,6 +840,130 @@ def is_node_internal_stream_crash(exit_code, stdout_lines, stderr_lines) -> bool
 # the browser bundle.
 _SANDBOX_BACKEND_URL_TOKEN = '__CURIO_BACKEND_URL__'
 
+#: The longest one Node.js run may take. Past it, Node is killed with every
+#: process it started (on Windows, Node alone), and the run raises
+#: ``subprocess.TimeoutExpired``.
+JS_TIMEOUT_SECONDS = 3000
+
+#: How long Node's output may stay open after Node exits. A process Node
+#: started holds it open as long as it lives; past this, that process is
+#: killed with Node's process group, and the run ends and frees its slot.
+JS_OUTPUT_GRACE_SECONDS = 5
+
+#: POSIX: Node runs in a session of its own, so a kill of its process group
+#: reaches every process it started, and a selector can wait on its pipes.
+#: Windows has neither: a kill reaches Node alone, and a read just waits.
+_IS_POSIX = os.name == 'posix'
+
+#: How often a reader waiting on a quiet pipe looks whether to stop.
+_PIPE_POLL_SECONDS = 0.1
+
+
+def _read_node_pipe(pipe, keep, stop):
+    """Hand *keep* each line of one of Node's pipes, without its newline,
+    until the pipe ends or *stop* is set, then close the pipe.
+
+    On POSIX it reads the pipe's descriptor only when a selector says
+    something came, so it is never inside a read: it sees *stop* while a
+    process Node started holds the pipe open and writes nothing, and no other
+    thread has to close the pipe under a read (that close would wait for the
+    read). Where a selector cannot wait on the pipe (Windows, or a pipe with
+    no descriptor) it reads lines, and a read waits for a line or the end.
+    """
+    import codecs
+    import io
+    import selectors
+
+    try:
+        fd = None
+        if _IS_POSIX:
+            with contextlib.suppress(AttributeError, OSError, ValueError):
+                fd = pipe.fileno()
+        if fd is None:
+            for line in pipe:
+                keep(line.rstrip('\n'))
+                if stop.is_set():
+                    break
+            return
+        # Read as the text pipe would: utf-8 with bad bytes replaced, and a
+        # line ended by \r\n or \r as by \n.
+        decoder = io.IncrementalNewlineDecoder(
+            codecs.getincrementaldecoder('utf-8')(errors='replace'), translate=True)
+        line = []
+        with getattr(selectors, 'PollSelector', selectors.SelectSelector)() as selector:
+            selector.register(fd, selectors.EVENT_READ)
+            while not stop.is_set():
+                if not selector.select(_PIPE_POLL_SECONDS):
+                    continue
+                try:
+                    data = os.read(fd, 65536)
+                except OSError:
+                    data = b''
+                *ends, rest = decoder.decode(data, final=not data).split('\n')
+                for end in ends:
+                    line.append(end)
+                    keep(''.join(line))
+                    line.clear()
+                if rest:
+                    line.append(rest)
+                if not data:
+                    break
+        if line:
+            keep(''.join(line))
+    finally:
+        with contextlib.suppress(OSError):
+            pipe.close()
+
+
+def _kill_node(proc):
+    """Kill Node, and on POSIX every process still in its group: all it
+    started, but one that left the group (``detached: true``)."""
+    import signal
+
+    # A pid of 0 would name the sandbox's own group.
+    if _IS_POSIX and proc.pid > 0:
+        # A group outlives Node while any process is in it, so after Node has
+        # been reaped its id still names what Node left.
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGKILL)
+    proc.kill()
+
+
+def _joined(threads, seconds):
+    """Join *threads*, *seconds* for all of them; True when every one ended."""
+    deadline = time.monotonic() + seconds
+    for thread in threads:
+        thread.join(max(0.0, deadline - time.monotonic()))
+    return not any(thread.is_alive() for thread in threads)
+
+
+def _end_node_run(proc, threads, stop, node_type, *, killed=False):
+    """Bound what is left of a Node run once Node has exited or been killed.
+
+    The threads on Node's stdin, stdout and stderr get
+    ``JS_OUTPUT_GRACE_SECONDS`` to reach the pipes' end. A process Node
+    started can hold its output open after Node has gone: then, unless Node
+    was just killed with its group, the group is killed, and the threads get
+    the grace again. Readers still waiting are told to stop. One that cannot
+    stop (on Windows, a read under a process the kill did not reach) is left
+    behind: the run ends anyway, and frees its slot.
+    """
+    import sys
+
+    if _joined(threads, JS_OUTPUT_GRACE_SECONDS):
+        return
+    if not killed:
+        print(f"[execJs] Node.js exited, but a process it started still holds its output "
+              f"after {JS_OUTPUT_GRACE_SECONDS} s; killing it  node={node_type}",
+              file=sys.__stderr__, flush=True)
+        _kill_node(proc)
+        if _joined(threads, JS_OUTPUT_GRACE_SECONDS):
+            return
+    stop.set()
+    if not _joined(threads, 1):
+        print(f"[execJs] left a pipe of Node.js open: a process it started still holds it  "
+              f"node={node_type}", file=sys.__stderr__, flush=True)
+
 
 def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
     """Run JavaScript in one Node.js subprocess, the way a JS node runs.
@@ -853,8 +977,12 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
 
     :func:`execute_js_code` runs Node through this. Returns
     ``(result_json, user_log_lines, stderr_lines)``: the
-    text of the result line, or None when Node printed none. A timeout or a
-    missing Node raises, as ``subprocess`` does.
+    text of the result line, or None when Node printed none. A missing Node
+    raises, as ``subprocess`` does. Node runs at most ``JS_TIMEOUT_SECONDS``:
+    past it, it is killed with every process it started, and this raises
+    ``subprocess.TimeoutExpired``. A process Node started that still holds
+    its output ``JS_OUTPUT_GRACE_SECONDS`` after Node exits is killed too, so
+    a run always ends and gives its slot back.
     """
     import json
     import pathlib
@@ -959,13 +1087,13 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
         slot = _js_slot()
         waited_at = time.perf_counter()
         slot.acquire()
-        queued = time.perf_counter() - waited_at
-        if queued > 1.0:
-            print(f"[execJs] waited {queued:.1f}s for a slot  node={node_type}",
-                  file=_sys.__stderr__, flush=True)
-        # The run has its place: its reply goes quiet until it ends (#889).
-        run_place.took_place()
         try:
+            queued = time.perf_counter() - waited_at
+            if queued > 1.0:
+                print(f"[execJs] waited {queued:.1f}s for a slot  node={node_type}",
+                      file=_sys.__stderr__, flush=True)
+            # The run has its place: its reply goes quiet until it ends (#889).
+            run_place.took_place()
             return _run_node_holding_slot()
         finally:
             slot.release()
@@ -974,50 +1102,57 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
         print(f"[execJs] starting Node.js  node={node_type}", file=_sys.__stderr__, flush=True)
         t_start = time.perf_counter()
 
+        # A session of its own (POSIX), so a kill of its group reaches every
+        # process Node starts, not Node alone.
         proc = subprocess.Popen(
             ['node', '--input-type=commonjs'],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding='utf-8', errors='replace', cwd=cwd,
-            env=node_env_vars,
+            env=node_env_vars, start_new_session=_IS_POSIX,
         )
 
         stdout_lines: list[str] = []
         stderr_lines: list[str] = []
 
-        def _stream(pipe, lines, label):
-            for line in pipe:
-                line = line.rstrip('\n')
+        def _keeper(lines, label):
+            def keep(line):
                 lines.append(line)
                 if not line.startswith('__CURIO_JSON_RESULT__'):
                     print(f"[execJs] {label}: {line}", file=_sys.__stderr__, flush=True)
+            return keep
 
         def _write_stdin(proc, data):
             try:
                 proc.stdin.write(data)
-                proc.stdin.close()
-            except BrokenPipeError:
+            except OSError:  # Node is gone: it crashed, or was killed
                 pass
+            finally:
+                with contextlib.suppress(OSError):
+                    proc.stdin.close()
 
-        t_in  = threading.Thread(target=_write_stdin, args=(proc, script), daemon=True)
-        t_out = threading.Thread(target=_stream, args=(proc.stdout, stdout_lines, 'stdout'), daemon=True)
-        t_err = threading.Thread(target=_stream, args=(proc.stderr, stderr_lines, 'stderr'), daemon=True)
-        t_in.start()
-        t_out.start()
-        t_err.start()
+        stop = threading.Event()
+        threads = (
+            threading.Thread(target=_write_stdin, args=(proc, script), daemon=True),
+            threading.Thread(target=_read_node_pipe, daemon=True,
+                             args=(proc.stdout, _keeper(stdout_lines, 'stdout'), stop)),
+            threading.Thread(target=_read_node_pipe, daemon=True,
+                             args=(proc.stderr, _keeper(stderr_lines, 'stderr'), stop)),
+        )
+        for thread in threads:
+            thread.start()
 
         try:
-            proc.wait(timeout=3000)
+            proc.wait(timeout=JS_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
-            proc.kill()
-            t_in.join()
-            t_out.join()
-            t_err.join()
+            print(f"[execJs] Node.js ran past {JS_TIMEOUT_SECONDS} s; killing it with every "
+                  f"process it started  node={node_type}", file=_sys.__stderr__, flush=True)
+            _kill_node(proc)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=JS_OUTPUT_GRACE_SECONDS)
+            _end_node_run(proc, threads, stop, node_type, killed=True)
             raise
-
-        t_in.join()
-        t_out.join()
-        t_err.join()
+        _end_node_run(proc, threads, stop, node_type)
 
         print(f"[execJs] Node.js finished  total={time.perf_counter()-t_start:.3f}s  "
               f"exit={proc.returncode}  node={node_type}",
@@ -1159,7 +1294,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         }
 
     except subprocess.TimeoutExpired:
-        return {'stdout': [], 'stderr': 'JavaScript execution timed out (3000 s)',
+        return {'stdout': [], 'stderr': f'JavaScript execution timed out ({JS_TIMEOUT_SECONDS} s)',
                 'output': {'path': '', 'dataType': 'str'}}
     except FileNotFoundError:
         return {'stdout': [], 'stderr': 'Node.js not found. Please install Node.js to use JS Computation nodes.',

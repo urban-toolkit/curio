@@ -187,6 +187,10 @@ from .palettes import (  # noqa: F401
 from .upload import upload_workflow  # noqa: F401
 from .canvas_authoring import (  # noqa: F401
     CANVAS_DROP_TARGET,
+    CANVAS_TITLE_HEADING,
+    OPENING_TITLE,
+    DATAFLOW_OPEN_TIMEOUT_MS,
+    wait_for_dataflow_open,
     _DRAG_TO_CANVAS_JS,
     edge_client_point,
     canvas_nodes,
@@ -242,6 +246,7 @@ from .run_all import (  # noqa: F401
     wait_for_held_node_execution,
     held_node_executions,
     release_node_execution,
+    wait_for_server_part_to_end,
     SandboxRuns,
 )
 from .node_drawings import (  # noqa: F401
