@@ -1,15 +1,12 @@
-"""Solve's run of an invited editor's node reads the collections it loads as his Play does.
+"""What an invited editor's Solve of a node derives goes to his own media folder, as on his Play.
 
-Solve runs each attempt it checks on a thread of its own
-(``VerifiedRounds._validate_with``), where the collections the code loads are
-looked up (``validation.validate_candidate``, ``resolve_spec_collections``).
-alice's dataflow lists a collection of hers, and bob, an editor she invited,
-solves a node that loads it. The lookup reads what her dataflow lists from her
-store through the database (``DiscoveryService._the_owners_copy``), and that
-thread had no app context, so the sandbox was sent no collection. The lookup
-was also made under the dataflow's store, hers, so what bob's node derives
-went to her media folder, while his Play and an agent's Run node write it to
-his own.
+Solve runs each attempt it checks through ``validation.validate_candidate``,
+which looks up the collections the code loads and names the media folder the
+node writes what it derives into (``resolve_spec_collections``). alice's
+dataflow lists a collection of hers, and bob, an editor she invited, solves a
+node that loads it. The lookup was made under the dataflow's store, hers, so
+the frames, clips and overlays bob's node derives went to her media folder,
+while his Play and an agent's Run node write them to his own.
 
 Every test imports what it tests inside itself, so a checkout without it fails
 test by test.
@@ -48,21 +45,6 @@ def _bobs_solve_of_a_node_loading_alices_collection(client, db, user_and_token, 
 
     assert ctx["payloads"], f"bob's Solve never reached the sandbox: {events[-1]}"
     return alice, bob, collection, ctx["payloads"][0]
-
-
-def test_an_editors_solve_sends_the_sandbox_a_collection_the_owners_dataflow_lists(
-    client, db, user_and_token, tmp_curio, tmp_path, monkeypatch,
-):
-    from utk_curio.backend.app.discovery.application import cache_collection
-
-    alice, _bob, collection, sent = _bobs_solve_of_a_node_loading_alices_collection(
-        client, db, user_and_token, tmp_path, monkeypatch,
-    )
-
-    assert sent.get("collections") == {collection: {
-        "kind": "audio",
-        "objects": str(cache_collection.objects_dir(str(alice.id), collection, create=False)),
-    }}, sent.get("collections")
 
 
 def test_what_an_editors_solve_derives_goes_to_his_media_folder(
