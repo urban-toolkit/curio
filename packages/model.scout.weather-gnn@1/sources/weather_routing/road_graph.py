@@ -25,6 +25,7 @@ latitude, else EPSG:3395, the CRS Autark keeps its layers in.
 """
 
 import networkx as nx
+import numpy as np
 import osmnx as ox
 import pandas as pd
 
@@ -51,15 +52,32 @@ def _lines(geometry):
     raise ValueError(f"A road must be a line, not a {geometry.geom_type}.")
 
 
+def _missing(value):
+    """Whether *value* is no value: None, NaN, NaT, or pd.NA, which pandas'
+    nullable dtypes hold. Anything else, an array or a list among them, is a
+    value."""
+    try:
+        return value is None or (pd.api.types.is_scalar(value) and bool(pd.isna(value)))
+    except (TypeError, ValueError):
+        return False
+
+
 def _value(row, column):
     """*row*'s *column*, or None where it holds none: None, NaN, NaT, or pd.NA,
-    which pandas' nullable dtypes hold. An array or a list is a value."""
+    which pandas' nullable dtypes hold. A tag holding several values, in a
+    list, a tuple or a numpy array (as a list column read from GeoParquet
+    holds them), reads as OpenStreetMap writes one: its values joined with
+    ``;``, such as ``primary;secondary``. Its missing values are left out; one
+    value left reads as itself, and none as no tag."""
     value = row.get(column)
-    try:
-        missing = value is None or (pd.api.types.is_scalar(value) and bool(pd.isna(value)))
-    except (TypeError, ValueError):
-        missing = False
-    return None if missing else value
+    if isinstance(value, np.ndarray):
+        value = value.ravel().tolist()
+    if isinstance(value, (list, tuple)):
+        values = [item for item in value if not _missing(item)]
+        if len(values) > 1:
+            return ";".join(str(item) for item in values)
+        return values[0] if values else None
+    return None if _missing(value) else value
 
 
 def in_longitude_latitude(roads):
