@@ -417,7 +417,7 @@ jobs:
             echo "forgetting a sparse checkout an earlier job left"
             git config --local --unset-all core.sparseCheckout || true
             git config --local --unset-all core.sparseCheckoutCone || true
-            rm -f .git/info/sparse-checkout
+            rm -f .git/info/sparse-checkout || true
           fi
 
       # Two commits deep, so the reuse step can compare this commit with its

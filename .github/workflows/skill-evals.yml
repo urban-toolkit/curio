@@ -67,7 +67,7 @@ jobs:
           if [ -d .git ]; then
             git config --local --unset-all core.sparseCheckout || true
             git config --local --unset-all core.sparseCheckoutCone || true
-            rm -f .git/info/sparse-checkout
+            rm -f .git/info/sparse-checkout || true
           fi
 
       - name: 📥 Checkout repository
