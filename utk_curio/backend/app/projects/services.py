@@ -2053,9 +2053,8 @@ def _dashboard_registry(project_id: str) -> dict:
     from utk_curio.backend.app.packages.application import catalog as packages_catalog
     from utk_curio.backend.app.packages.application import starters as packages_starters
     from utk_curio.backend.app.packages.application import seeding as packages_seeding
-    from utk_curio.backend.app.projects.models import Project
 
-    project = db.session.get(Project, project_id)
+    project = _dashboard_row(project_id)
     if project is None:
         return {"packages": [], "starters": []}
     ukey = _owner_user_dir_key(project)
@@ -2093,6 +2092,35 @@ def _dashboard_behavior_scripts(user_key: str, packages: List[dict]) -> dict:
         if text:
             out[f"{package.get('packageId')}@{package.get('major')}"] = text
     return out
+
+
+def _dashboard_row(project_id: str):
+    """The row of the dataflow whose dashboard is asked for, or, for the
+    hosted guest who asks, their own new dataflow read as one
+    (``visitor_copies.dashboard_new``). None for anything else."""
+    from utk_curio.backend.app.projects.models import Project
+
+    project = db.session.get(Project, project_id)
+    return project if project is not None else visitor_copies.dashboard_new(project_id)
+
+
+def _visitors_new_dataflow(project_id: str) -> Optional[dict]:
+    """The hosted guest's own new dataflow *project_id* as its dashboard shows
+    it to that guest alone (``visitor_copies.dashboard_new``), in the shape
+    :func:`load_shared_project` answers: as it is now, with no saved output,
+    so the page runs what its tiles show. None for anything else."""
+    from utk_curio.backend.app.agents.repositories.project_agents import strip_agent_state
+
+    own = visitor_copies.dashboard_new(project_id)
+    spec = visitor_copies.spec_of(project_id) if own is not None else None
+    if spec is None:
+        return None
+    return {
+        "project": visitor_copies.new_row(own, spec),
+        "spec": strip_agent_state(spec),
+        "outputs": [],
+        "missing_outputs": [],
+    }
 
 
 def _as_the_visitors_copy(project_id: str, loaded: dict) -> dict:
@@ -2152,19 +2180,22 @@ def build_standalone_dashboard(
     holds, named just before the read (:func:`saved_output_of`).
 
     A hosted guest who has their own copy of the dataflow gets the copy's
-    page (:func:`_as_the_visitors_copy`), built for their sign-in alone.
+    page (:func:`_as_the_visitors_copy`), built for their sign-in alone, and
+    the page of their own new dataflow is theirs alone too
+    (:func:`_visitors_new_dataflow`): for anyone else it is not found.
     """
     from utk_curio.backend.app.projects.dashboard_payload import (
         DEFAULT_PAYLOAD_LIMIT_BYTES,
         build_dashboard_payload,
     )
-    from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
 
-    loaded = _as_the_visitors_copy(project_id, load_shared_project(project_id))
+    loaded = _visitors_new_dataflow(project_id) or _as_the_visitors_copy(
+        project_id, load_shared_project(project_id),
+    )
     detail = loaded["project"]
     # The dataflow's nodes are what the owner's packages declare.
-    project = db.session.get(Project, project_id)
+    project = _dashboard_row(project_id)
     owner_key = _owner_user_dir_key(project) if project is not None else None
 
     def saved_path_of(filename: str):

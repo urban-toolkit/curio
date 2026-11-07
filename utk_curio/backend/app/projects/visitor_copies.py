@@ -307,6 +307,21 @@ def dashboard_copy(project_id: str) -> Optional[str]:
     return own if own != project_id else None
 
 
+def dashboard_new(project_id: str) -> Optional["Copy"]:
+    """The new dataflow *project_id* of the hosted guest who asks for its
+    dashboard, read as a row (:func:`own_new`): that dashboard shows and runs
+    it for them alone. ``None`` for anyone else, a visitor who sends no
+    sign-in among them, and for any other dataflow. A dashboard's routes need
+    no sign-in, so the request's is read here, when it sends one."""
+    from flask import has_request_context
+
+    from utk_curio.backend.app.users.dependencies import get_current_user
+
+    if not project_id or not has_request_context():
+        return None
+    return own_new(get_current_user(), project_id)
+
+
 def with_spec(detail, spec: dict):
     """The dataflow's *detail* as the copy's *spec* gives it: its spec, its
     scenarios and its name."""
