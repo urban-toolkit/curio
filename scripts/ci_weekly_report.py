@@ -5,8 +5,8 @@ then runs this. It finds every run the hunt started (a workflow_dispatch of
 docker-compose.yml on main, by github-actions[bot], created since the hunt
 began), waits for them to end, and writes one Markdown summary: for each run
 its link, attempts, result, length, jobs by outcome and CI report page, then
-the summary that run's ci-report wrote (its ci-summary artifact: the flaky
-tests and the suite table). It exits 1 when a run did not pass or found a
+the jobs that did not pass, each linked, and the summary that run's ci-report
+wrote (its ci-summary artifact: the flaky tests and the suite table). It exits 1 when a run did not pass or found a
 flaky test, so the hunt's own run is red that week.
 
     python3 scripts/ci_weekly_report.py --since <ISO time> --out <summary.md>
@@ -32,6 +32,8 @@ WORKFLOW = "docker-compose.yml"
 BOT = "github-actions[bot]"
 #: The header of the flaky-test table ci_report.py's render_summary writes.
 FLAKY_HEADER = "| Suite | Test | Passed in runs | Failed in runs |"
+#: Job outcomes the page does not name: every other job is listed under its run.
+PASSED = frozenset({"success", "skipped"})
 
 
 class Api:
@@ -112,13 +114,20 @@ def _hours(run: dict) -> str:
     return f"{(end - start).total_seconds() / 3600:.1f} h"
 
 
-def jobs_by_outcome(fetch, run_id) -> Counter:
-    outcomes, page = Counter(), 1
+def jobs_by_outcome(fetch, run_id) -> tuple[Counter, list[str]]:
+    """The run's jobs counted by outcome, and each job that did not pass as a linked name."""
+    outcomes, not_passed, page = Counter(), [], 1
     while True:
         jobs = fetch(f"actions/runs/{run_id}/jobs?filter=latest&per_page=100&page={page}").get("jobs", [])
-        outcomes.update(job.get("conclusion") or job.get("status") or "unknown" for job in jobs)
+        for job in jobs:
+            outcome = job.get("conclusion") or job.get("status") or "unknown"
+            outcomes[outcome] += 1
+            if outcome not in PASSED:
+                name = job.get("name", "unnamed job")
+                link = f"[{name}]({job['html_url']})" if job.get("html_url") else name
+                not_passed.append(f"{link} ({outcome})")
         if len(jobs) < 100:
-            return outcomes
+            return outcomes, not_passed
         page += 1
 
 
@@ -138,9 +147,10 @@ def run_section(fetch, fetch_bytes, run: dict) -> dict:
     pages = sorted((a for name, a in newest.items() if name.startswith("curio-ci-report")),
                    key=lambda a: a["created_at"])
     page = f"{run['html_url']}/artifacts/{pages[-1]['id']}" if pages else ""
+    outcomes, not_passed = jobs_by_outcome(fetch, run["id"])
     return {
         "run": run, "summary": summary, "page": page,
-        "jobs": jobs_by_outcome(fetch, run["id"]),
+        "jobs": outcomes, "not_passed": not_passed,
         "flaky": FLAKY_HEADER in summary,
         "passed": run.get("status") == "completed" and run.get("conclusion") == "success",
     }
@@ -160,6 +170,8 @@ def render(sections: list[dict], since: str) -> str:
                      f"| {_hours(run)} | {jobs} | {page} |")
     for section in sections:
         lines += ["", f"### Run {section['run']['id']}", ""]
+        if section["not_passed"]:
+            lines += ["**Jobs that did not pass:** " + ", ".join(section["not_passed"]), ""]
         lines.append(section["summary"].strip() or "No summary: the run's ci-report uploaded no ci-summary.")
     lines.append("")
     return "\n".join(lines)
