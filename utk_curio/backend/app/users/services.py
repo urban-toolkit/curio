@@ -97,6 +97,11 @@ def signup(data: SignUpIn) -> AuthOut:
         password_hash=security.hash_password(data.password),
         type="programmer",
     )
+    # The agents every account has by default, before its examples, so each
+    # example gets them as it is seeded. Never raises.
+    from utk_curio.backend.app.projects.services import seed_default_agents
+
+    seed_default_agents(user)
     # A new account lands on an empty gallery otherwise: the examples were
     # seeded to the shared guest only, and listing is a plain owner filter, so
     # under ``--deploy`` nobody with an account ever saw them (#200). Best-effort

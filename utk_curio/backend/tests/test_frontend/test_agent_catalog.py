@@ -42,6 +42,7 @@ from .utils import (
     require_user_auth,
     save_workflow_test_screenshot,
     require_owner_view,
+    stub_db_login,
     stub_login_and_enter_workflow,
 )
 
@@ -115,6 +116,50 @@ def _enter_dataflow(page, app_frontend, current_server, *, username, project):
     return result
 
 
+def _stub_dataflow(page, app_frontend, current_server, *, username, project):
+    """The account and its saved dataflow, as :func:`_enter_dataflow` makes
+    them, before the page opens it."""
+    page.emulate_media(reduced_motion="reduce")
+    return stub_db_login(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Agent Catalog User",
+        username=username,
+        project_name=project,
+        project_spec=_one_node_spec(),
+    )
+
+
+def _open_dataflow(page, app_frontend, result) -> None:
+    """Open the dataflow :func:`_stub_dataflow` made, as its owner."""
+    project_id = result["project"]["id"]
+    page.goto(f"{app_frontend.base_url}/dataflow/{project_id}")
+    page.wait_for_load_state("domcontentloaded")
+    page.wait_for_url(f"**/dataflow/{project_id}", timeout=15000)
+    require_owner_view(page)
+
+
+def _remove_from_project(current_server: str, token: str, project_id: str, coords: list[str]) -> None:
+    """Remove from project, through the API, each of *coords* in turn: every
+    dataflow starts with the agents Curio adds by default, so a test about
+    adding one takes it out first."""
+    for coord in coords:
+        api_json(f"{current_server}/api/agents/projects/{project_id}/{coord}", token, method="DELETE")
+
+
+def _dependents_first(rows: dict, coords: set) -> list[str]:
+    """*coords* with each agent before the agents it requires, by the
+    catalog's ``requiresAgents``: the order Remove from project accepts."""
+    remaining, ordered = set(coords), []
+    while remaining:
+        required = {r["coord"] for coord in remaining for r in rows[coord]["requiresAgents"]}
+        free = sorted(remaining - required) or sorted(remaining)[:1]
+        ordered += free
+        remaining -= set(free)
+    return ordered
+
+
 def _open_drawer_from_menu(page):
     """The top bar's Agent Catalog button."""
     # "Agent Catalog" also labels the palette trigger, whose accessible name
@@ -164,9 +209,11 @@ def test_drawer_lists_catalog_agents(
 
     drawer = _open_drawer_from_menu(page)
 
+    # Every dataflow starts with the agents Curio adds by default, so the
+    # card offers to take this one out.
     expect(_card(drawer, AGENT_COORD)).to_have_count(1, timeout=15000)
     expect(
-        _card(drawer, AGENT_COORD).get_by_role("button", name="Add to project")
+        _card(drawer, AGENT_COORD).get_by_role("button", name="Remove from project", exact=True)
     ).to_be_visible()
 
     # A wedged user store surfaces here as an error banner. Asserting its
@@ -219,12 +266,17 @@ def test_add_agent_propagates_to_palette(
 ):
     require_project_page()
     require_user_auth()
-    result = _enter_dataflow(
+    result = _stub_dataflow(
         page, app_frontend, current_server,
         username="agentcat_add", project="Agent Catalog Add",
     )
     token = result["token"]
     project_id = result["project"]["id"]
+    # The dataflow starts with the agent, as every one does: Remove from
+    # project takes it out before the page opens it, so what puts it back in
+    # below is the Add.
+    _remove_from_project(current_server, token, project_id, [AGENT_COORD])
+    _open_dataflow(page, app_frontend, result)
 
     # 1. Precondition from the API: this agent must need nothing else, or the
     #    install below would write more coordinates than the assertion expects.
@@ -236,6 +288,7 @@ def test_add_agent_propagates_to_palette(
     )
 
     lock_before = _installed_coords(current_server, token, project_id)
+    assert AGENT_COORD not in lock_before, sorted(lock_before)
 
     # 2. Open the palette FIRST and leave it mounted, then reach the drawer
     #    from the top bar. Opening the drawer does not change ToolsMenu's
@@ -249,6 +302,10 @@ def test_add_agent_propagates_to_palette(
     #    positioned against the dock like its two peers; it was below the fold
     #    while the panel still hung off its own trigger.)
     open_tools_palette(page, "agents")
+    # Not in the palette before the Add.
+    expect(
+        page.locator(f'#agents-palette [data-agent-coord="{AGENT_COORD}"]')
+    ).to_have_count(0, timeout=20000)
     drawer = _open_drawer_from_menu(page)
     card = _card(drawer, AGENT_COORD)
     expect(card).to_have_count(1, timeout=15000)
@@ -336,7 +393,7 @@ def test_requires_agents_closure_is_disclosed_and_installed(
     """
     require_project_page()
     require_user_auth()
-    result = _enter_dataflow(
+    result = _stub_dataflow(
         page, app_frontend, current_server,
         username="agentcat_closure", project="Agent Catalog Closure",
     )
@@ -350,6 +407,15 @@ def test_requires_agents_closure_is_disclosed_and_installed(
         f"{DEPENDENT_COORD} no longer requires {REQUIRED_ID} (requires {required}); "
         f"pick another dependent built-in or this test proves nothing."
     )
+    # The dataflow starts with the agent and all it requires, as every one
+    # does: Remove from project takes them out before the page opens it,
+    # dependents first, so the Add below is what writes the whole closure.
+    closure = {DEPENDENT_COORD, *(r["coord"] for r in row["requiresAgents"])}
+    rows = {a["dirName"]: a for a in catalog["items"]}
+    _remove_from_project(current_server, token, project_id, _dependents_first(rows, closure))
+    _open_dataflow(page, app_frontend, result)
+    lock_before = _installed_coords(current_server, token, project_id)
+    assert not closure & lock_before, sorted(lock_before)
 
     drawer = _open_drawer_from_menu(page)
     card = _card(drawer, DEPENDENT_COORD)
@@ -380,6 +446,9 @@ def test_requires_agents_closure_is_disclosed_and_installed(
     assert DEPENDENT_COORD in installed, sorted(installed)
     assert any(coord.startswith(REQUIRED_ID) for coord in installed), (
         f"the required {REQUIRED_ID} was not installed alongside it: {sorted(installed)}"
+    )
+    assert installed == lock_before | closure, (
+        f"lockfile went from {sorted(lock_before)} to {sorted(installed)}"
     )
 
 

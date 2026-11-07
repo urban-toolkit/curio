@@ -1155,10 +1155,12 @@ def _plan_node_agents(user_key: str | None, spec: dict, parent=None) -> list[dic
     Each is the agent *parent*, the agent whose plan it is, delegates that
     capability to among the dataflow's installed agents
     (``delegation.resolve_among``); with no parent, the first installed agent
-    that declares it. Which of them lives on a given node is its manifest's
-    node target, read when it is attached. Returns ``{"capability", "agentId",
-    "name", "installed"}`` per capability that some agent does; an agent that
-    is not installed is the visible one that would do it."""
+    that declares it, the account's own before Curio's
+    (``builtin.answering_order``). Which of them lives on a given node is its
+    manifest's node target, read when it is attached. Returns
+    ``{"capability", "agentId", "name", "installed"}`` per capability that
+    some agent does; an agent that is not installed is the visible one that
+    would do it."""
     installed = set(project_agents.project_agents(spec))
     agents: list[dict] = []
     for capability in content.SOLVE_CAPABILITIES:
