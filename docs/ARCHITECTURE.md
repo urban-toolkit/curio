@@ -1271,7 +1271,7 @@ When a user clicks the play button on a node, the following sequence occurs:
 
 **New node from a Python function.** `GET /api/packages/factory/functions` lists the public functions of every module in the account's store, read with `ast` and never imported ([`packages/domain/function_nodes.py`](../utk_curio/backend/app/packages/domain/function_nodes.py)), with the widget and use each parameter suggests. `POST /api/packages/factory/function-template` reads the module again and writes the template: its code imports the function and returns its call, with `[!! name !!]` for a widget and `[!! input_k !!]` for an input ([`packages/application/function_nodes.py`](../utk_curio/backend/app/packages/application/function_nodes.py)). The dialog (`NodeFromFunctionModal`) installs it the way Save as package node does: `PackageTargetPicker`, `buildTemplateInstallDraft` and `installDraftToProject`, through `/factory/install`. A template in another package than the function's names the function's package in `dependencies.packages`.
 
-**JavaScript execution detail:** `JS Computation` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed; the Node subprocess is per-request and fully isolated.
+**JavaScript execution detail:** `JS Computation` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which wraps the user code in an async function ([`util/js_wrapper.mjs`](../utk_curio/sandbox/util/js_wrapper.mjs)), pipes the script to one `node --input-type=commonjs` process on its stdin, reads the return value from the `__CURIO_JSON_RESULT__` line Node prints, and saves it to DuckDB. No separate Node.js server is needed: each run starts its own Node process, and every process Node starts ends when Node does ([Sandbox Isolation](#sandbox-isolation)).
 
 ### Render Outcomes
 
@@ -1446,6 +1446,25 @@ when the node does, whether it returns, raises or reaches its deadline. The
 child's own `setsid` comes before the filter.
 Starting a process in a session or process group of its own, as
 `subprocess.Popen(start_new_session=True)` does, fails with `PermissionError`.
+
+A JavaScript node's Node.js gets the same two denials on Linux, isolated or
+not, and so does every process it starts. The sandbox is threaded and cannot
+run code between `fork` and `exec`, so Node starts through an exec wrapper,
+[`isolation/seccomp_filter.py`](../utk_curio/sandbox/isolation/seccomp_filter.py)
+run as a script (`worker._node_command`), which holds the filter code the
+child uses. Popen's `start_new_session` makes the wrapper a session and process
+group leader; the wrapper sets `PR_SET_NO_NEW_PRIVS`, installs a filter that
+denies only `setsid` and `setpgid`, since Node needs its network, and execs
+Node, which keeps its pid. So no process Node starts can leave Node's process
+group, which the run kills when Node exits (`worker._end_node_run`), whether or
+not the process carries the run's mark (`CURIO_JS_RUN`, which a process started
+with an environment of its own lacks). `child_process.spawn` with
+`detached: true` still starts its child: libuv's child calls `setsid()` before
+its exec and ignores the result (`deps/uv/src/unix/process.c`), so the child
+stays in Node's group. Under `CURIO_ISOLATION=fork`, a run whose filter cannot
+be installed fails with the reason and Node does not start; otherwise Node runs
+without it. macOS and Windows have no such filter: on macOS the mark finds a
+process that left the group, and on Windows the kill reaches Node alone.
 
 > [!IMPORTANT]
 > **Implementation status.** The confinement code runs in CI. Three jobs cover

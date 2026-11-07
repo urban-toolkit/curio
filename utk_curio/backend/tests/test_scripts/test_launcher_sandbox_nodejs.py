@@ -77,7 +77,7 @@ def npm(monkeypatch):
         (package / "index.js").write_text("export const installed = true;\n", encoding="utf-8")
         return subprocess.CompletedProcess(cmd, 0)
 
-    monkeypatch.setattr(dependencies.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(dependencies.shutil, "which", lambda name, *a, **k: f"/usr/bin/{name}")
     monkeypatch.setattr(dependencies, "_read_node_version", lambda: (f"v{NODE_MAJOR}.0.0", NODE_MAJOR))
     monkeypatch.setattr(dependencies.subprocess, "run", run)
     monkeypatch.setattr(dependencies, "log_error", lambda message, *a, **k: record.errors.append(str(message)))
