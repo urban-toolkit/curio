@@ -20,11 +20,12 @@ from __future__ import annotations
 import hashlib
 import json
 
+import pytest
 from pycrdt import Map
 
 from utk_curio.backend import config
 from utk_curio.backend.app.common.user_storage import GUEST_KEY
-from utk_curio.backend.tests._support.agent_routes import _auth
+from utk_curio.backend.tests._support.agent_routes import _auth, _record_defaults_removed_under
 from utk_curio.backend.tests.test_agents import test_routes_proposals
 from utk_curio.backend.tests.test_projects.test_guest_copy_leaks import (  # noqa: F401 - fixtures
     SHIPPED,
@@ -46,6 +47,15 @@ DATAFLOW_BUILDER = "agent.curio.dataflow-builder@1"
 DATASET_FINDER = "agent.curio.dataset-finder@1"
 #: What A types into node a's code, through the room.
 MARK = "# A's own change\n"
+
+
+@pytest.fixture(autouse=True)
+def _defaults_removed(app):
+    """The shared guest account starts as Remove from all projects leaves the
+    agents Curio adds by default, as every agents test's account does, before
+    ``example`` makes its first dataflow: the example holds no agent, so each
+    one A installs is one the example lacks."""
+    _record_defaults_removed_under(GUEST_KEY)
 
 
 def _kept_on(project_id: str) -> str:
