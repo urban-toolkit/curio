@@ -84,14 +84,17 @@ describe("the Open files card", () => {
       domain: ["Backend", "Sandbox", "Limit"],
       range: [[1, 0], [1, 0], [6, 4]],
     });
-    expect(spec.encoding.y).toMatchObject({ field: "files", scale: { type: "log" } });
+    // Ticked at each power of ten, so a few hundred files and 65,536 both read.
+    expect(spec.encoding.y).toMatchObject({
+      field: "files", scale: { type: "log" }, axis: { values: [10, 100, 1000, 10000, 100000], tickCount: 5 },
+    });
     expect(valuesByLine(spec)).toEqual({ Backend: [212, 230], Sandbox: [96, 101], Limit: [65536, 65536] });
     // From the first sample to now.
     expect(spec.encoding.x.scale).toEqual({
       domain: [Date.parse("2026-11-06T15:20:07Z"), Date.parse("2026-11-06T17:02:00Z")],
     });
-    // Two samples are few: each has its dot.
-    expect(spec.mark.point).toBeTruthy();
+    // Two samples draw lines between them, with no dot on each.
+    expect(spec.mark.point).toBeUndefined();
 
     expect(screen.getByTestId("monitor-open-files-last")).toHaveTextContent(
       /backend 230 of 65,536 · sandbox 101 of 65,536\.$/
@@ -150,14 +153,16 @@ describe("the Open files card", () => {
     expect(screen.getByText("Loading…")).toBeInTheDocument();
   });
 
-  test("past two days of samples, draws the lines without a dot on each", () => {
-    const start = Date.parse("2026-11-01T00:20:07Z");
-    const samples = Array.from({ length: 49 }, (_, hour) =>
-      sample(new Date(start + hour * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z"), [200 + hour, 65536],
-             [90, 65536])
-    );
-    render(<OpenFilesSection payload={payload(samples)} />);
-    expect(drawnSpec().mark.point).toBeUndefined();
+  test("with one sample, the first hour after a start, draws each line's point as a dot", () => {
+    const one = payload([sample("2026-11-06T15:20:07Z", [212, 65536], [96, 65536])]);
+    render(<OpenFilesSection payload={{ ...one, computedAt: "2026-11-06T15:25:00Z" }} />);
+    const spec = drawnSpec();
+    expect(spec.mark.point).toBeTruthy();
+    expect(valuesByLine(spec)).toEqual({ Backend: [212], Sandbox: [96], Limit: [65536] });
+    // Up to the hour after the sample, when the next one comes.
+    expect(spec.encoding.x.scale).toEqual({
+      domain: [Date.parse("2026-11-06T15:20:07Z"), Date.parse("2026-11-06T16:20:07Z")],
+    });
   });
 });
 
