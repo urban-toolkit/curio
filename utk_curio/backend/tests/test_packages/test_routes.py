@@ -997,9 +997,10 @@ def test_patched_metadata_and_readme_survive_export_and_reupload(
 
     # Uninstall first: no UI path sets ``replace``, so a plain re-import is the
     # real shape of loading an exported package back in.
-    assert client.delete(
+    removed = client.delete(
         "/api/packages/ai.test.factory@1", headers=_auth(token)
-    ).status_code == 204
+    )
+    assert removed.status_code == 204
 
     reimported = client.post(
         "/api/packages/upload",

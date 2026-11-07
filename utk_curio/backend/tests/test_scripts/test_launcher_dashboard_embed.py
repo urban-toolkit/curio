@@ -33,6 +33,7 @@ that sign-in alone, so that page is theirs alone too.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import threading
 import urllib.request
@@ -124,13 +125,12 @@ def _start_spa(tmp_path, backend_url: str, base_path: str = "") -> str:
         for _ in range(100):
             if not thread.is_alive():
                 break
-            try:
+            with contextlib.suppress(OSError):
                 if urllib.request.urlopen(f"{url}/{probe}", timeout=1).read().decode("utf-8") == probe:
                     return url
-            except OSError:
-                pass
             threading.Event().wait(0.05)
     pytest.fail("run_spa_static_server never came up")
+    return None
 
 
 def _get(base: str, path: str, method: str = "GET") -> str:

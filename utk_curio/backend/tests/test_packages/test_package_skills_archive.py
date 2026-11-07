@@ -72,6 +72,7 @@ def _accepted(call):
     except InstallerError as exc:
         refused = str(exc)
     assert not refused, f"Curio refused a package that ships skills: {refused}"
+    return None
 
 
 def test_import_export_publish_and_add_keep_a_packages_skills(tmp_curio, tmp_path, monkeypatch, make_archive):
@@ -166,7 +167,9 @@ def test_a_shipped_package_ships_its_skill_its_integrity_map_covers_it_and_an_ad
     from utk_curio.backend.app.packages.repositories.store import package_dir
 
     package = REPO_ROOT / "packages" / dir_name
-    (folder,) = skill_folders(package)
+    folders = skill_folders(package)
+    assert len(folders) == 1, folders
+    folder = folders[0]
     assert (folder.name, skills.parse(folder).name) == (skill, skill)
     shipped = (folder / "SKILL.md").read_bytes()
     digest = hashlib.sha256(shipped).hexdigest()

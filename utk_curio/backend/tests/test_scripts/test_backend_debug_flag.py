@@ -14,8 +14,7 @@ can be exercised by starting one.
 
 import importlib
 import os
-import unittest
-from unittest import mock
+import unittest.mock
 
 
 def run_kwargs(**env):
@@ -26,7 +25,7 @@ def run_kwargs(**env):
     """
     from utk_curio.backend import server
 
-    with mock.patch.dict(os.environ, env, clear=False):
+    with unittest.mock.patch.dict(os.environ, env, clear=False):
         from utk_curio.backend import config
 
         importlib.reload(config)

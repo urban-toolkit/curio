@@ -20,6 +20,7 @@ the index must list every shipped dataflow exactly once.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 from collections import Counter
@@ -183,10 +184,8 @@ def _vega_specs(value):
         for child in value:
             yield from _vega_specs(child)
     elif isinstance(value, str) and value.lstrip().startswith("{"):
-        try:
+        with contextlib.suppress(ValueError):
             yield from _vega_specs(json.loads(value))
-        except ValueError:
-            pass
 
 
 def _dataflow(entry: examples.IndexEntry) -> dict:

@@ -188,7 +188,8 @@ class TestRoutes:
         assert r.status_code == 409 and "replace" in r.get_json()["error"]
         r = client.delete("/api/users/me/connection-keys/census", headers=_h(token))
         assert r.status_code == 200 and r.get_json() == {"deleted": "census"}
-        assert client.delete("/api/users/me/connection-keys/census", headers=_h(token)).status_code == 404
+        again = client.delete("/api/users/me/connection-keys/census", headers=_h(token))
+        assert again.status_code == 404
         assert client.get("/api/users/me/connection-keys", headers=_h(token)).get_json() == {"keys": []}
 
     def test_validation_errors_are_400_with_the_rule_named(self, client, user_and_token, tmp_curio):

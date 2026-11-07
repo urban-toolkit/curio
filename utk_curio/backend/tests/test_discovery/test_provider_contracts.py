@@ -57,6 +57,7 @@ def probe_json(url: str):
         # A WAF challenge, a maintenance page or a login wall all look exactly
         # like this. None of them is a contract change.
         pytest.skip(f"{url} did not answer JSON (content-type {result.content_type!r})")
+    return None
 
 
 def test_socrata_search_still_carries_resource_id_and_name():
@@ -221,6 +222,7 @@ def _keyed_probe_json(url: str, *, key: str, **kwargs):
         return json.loads(result.body)
     except ValueError:
         pytest.skip(f"{url} did not answer JSON")
+    return None
 
 
 def _key(name: str) -> str:

@@ -86,12 +86,12 @@ class TestWhoIsParkedOnTheUser:
 
 class TestTheLoopStartsFromTheCarriedError:
     def _run(self, app, carry):
-        from utk_curio.backend.tests.test_agents.test_verified_rounds import CA, _Exec, _rounds
+        import utk_curio.backend.tests.test_agents.test_verified_rounds as vr
 
-        node = {"id": "n1", "type": CA, "goal": "head of the frame", "content": ""}
-        return _rounds(
+        node = {"id": "n1", "type": vr.CA, "goal": "head of the frame", "content": ""}
+        return vr._rounds(
             app, node, replies=["df = input_0[0]\nreturn df.head()"],
-            exec_fn=_Exec(), carry_forward=carry,
+            exec_fn=vr._Exec(), carry_forward=carry,
         )
 
     def test_round_zero_is_a_correction_and_the_trail_says_so(self, app, tmp_curio):

@@ -22,8 +22,6 @@ from utk_curio.backend.app.packages.builder.promotion import (
 )
 from utk_curio.backend.app.packages.repositories.store import package_dir
 
-_DEPS = {"python": {}, "js": {}, "packages": {}}
-
 
 def _kind(template_id: str = "demo-kind") -> dict:
     return {

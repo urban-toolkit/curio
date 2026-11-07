@@ -251,7 +251,8 @@ class TestTheCatalog:
         folder = Path(resolve_model_dirs(key, [model_id])[model_id])
         assert folder == package_dir(key, f"{model_id}@1")
         assert (folder / "models" / "m.onnx").read_bytes() == b"onnx"
-        assert client.delete(f"/api/packages/{model_id}@1", headers=auth).status_code == 204
+        removed = client.delete(f"/api/packages/{model_id}@1", headers=auth)
+        assert removed.status_code == 204
         assert not folder.exists()
 
     def test_another_persons_download_is_not_theirs(self, app, db, shipped, user_and_token, tmp_path):

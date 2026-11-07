@@ -278,7 +278,8 @@ def test_a_doc_out_of_memory_opens_again_as_the_same_doc(room):
     alice.edit(_type("# kept\n"))
     doc_id = alice.doc_id
     alice.socket.disconnect(namespace=NAMESPACE)
-    assert room.docs.close(room.project_id) is True
+    closed = room.docs.close(room.project_id)
+    assert closed is True
     assert not room.docs.is_open(room.project_id)
     assert _code(room.on_disk()["dataflow"]) == "# kept\nx = 1\n", "a doc leaves memory written"
 
@@ -597,7 +598,8 @@ def test_a_doc_grown_too_large_is_built_anew_with_a_new_log(room, monkeypatch):
 
         tab.edit(taken_out)
     socket.disconnect(namespace=NAMESPACE)
-    assert room.docs.close(room.project_id) is True
+    closed = room.docs.close(room.project_id)
+    assert closed is True
 
     fresh = room.tab("alice")
     ack = fresh.sync()

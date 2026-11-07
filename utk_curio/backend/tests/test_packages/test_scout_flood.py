@@ -388,9 +388,9 @@ def run_scout(tmp_path, monkeypatch, region, period, chosen):
     top, left, bottom, right = region
     _scout_function()(f"{left!r}, {top!r}", f"{right!r}, {bottom!r}", "A", year=period, use_NBS_classes=list(chosen))
     with rasterio.open(folder / "data" / "served" / "raster" / "A.tif") as raster:
-        written = (dict(raster.profile), raster.read(1), raster.tags())
+        profile, cells, tags = dict(raster.profile), raster.read(1), raster.tags()
     metrics = (folder / "data" / "served" / "metric" / "A.csv").read_text(encoding="utf-8")
-    return (*written, metrics)
+    return profile, cells, tags, metrics
 
 
 def _scout_numbers(metrics: str) -> tuple[float, float]:
@@ -1018,7 +1018,7 @@ def test_each_scenario_averages_its_depth_over_each_tracts_land_and_in_each_peri
         assert "\nregion = input_2\n" in part["by period"]["content"], scenario
         assert part["by period"]["metadata"]["widgets"] == part["choose"]["metadata"]["widgets"], scenario
     for name in ("tract depth", "by period"):
-        (code,) = {part[name]["content"] for part in parts.values()}
+        (_,) = {part[name]["content"] for part in parts.values()}
         assert parts["nbs"][name]["metadata"]["copiedFrom"] == [parts["no-nbs"][name]["id"]], name
         assert "copiedFrom" not in parts["no-nbs"][name]["metadata"], name
     by_period = parts["no-nbs"]["by period"]

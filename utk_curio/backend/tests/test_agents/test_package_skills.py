@@ -496,7 +496,8 @@ def test_the_skill_catalog_lists_both_packages_skills_from_their_packages_and_no
         assert added.status_code == 400 and package in added.get_json()["error"], added.get_json()
         exported = client.get(f"/api/agents/skills/{folder.name}/export", headers=h)
         assert exported.status_code == 400 and package in exported.get_json()["error"], exported.get_data(as_text=True)
-        assert client.delete(f"/api/agents/skills/{folder.name}", headers=h).status_code == 404
+        removed = client.delete(f"/api/agents/skills/{folder.name}", headers=h)
+        assert removed.status_code == 404
         assert agent_skill_store.default_store().read(key) == {}
         rows = client.get(f"/api/agents/definitions/{DF}/skills", headers=h).get_json()
         assert folder.name not in [row["name"] for row in rows["skills"]]

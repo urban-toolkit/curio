@@ -91,7 +91,7 @@ class SleepingSandbox:
             status_code = 200
             text = ""
 
-            def json(_self):
+            def json(self):
                 return {"stdout": [f"ran {node_id}"], "stderr": "",
                         "output": {"path": f"art-{node_id}", "dataType": "dataframe"}}
 

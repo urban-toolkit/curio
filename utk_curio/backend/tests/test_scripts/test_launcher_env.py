@@ -157,11 +157,10 @@ def test_a_hosted_instance_that_cannot_isolate_refuses_at_launch(monkeypatch):
 @pytest.fixture
 def has_exec_account(monkeypatch):
     """A root launch on a host carrying the conventional execution account."""
-    import utk_curio.cli.environment as environment_mod
+    from utk_curio.cli.environment import DEFAULT_EXEC_USER
 
     monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
-    monkeypatch.setattr(environment_mod, "_discover_exec_user",
-                        lambda: environment_mod.DEFAULT_EXEC_USER)
+    monkeypatch.setattr("utk_curio.cli.environment._discover_exec_user", lambda: DEFAULT_EXEC_USER)
 
 
 def test_a_deployment_that_can_isolate_does(linux_host, has_exec_account):
@@ -402,7 +401,7 @@ def test_the_models_root_flag_is_gone_with_no_alias(tmp_path):
     folder is read any more."""
     import inspect
 
-    from utk_curio import main as launcher
+    import utk_curio.main as launcher
 
     assert "--models-root" not in inspect.getsource(launcher)
     assert "models_root" not in inspect.signature(set_environment_variables).parameters
@@ -417,7 +416,7 @@ def test_the_collab_flag_is_gone_with_no_alias(monkeypatch):
     for either of them, which argparse would take a unique prefix as."""
     import inspect
 
-    from utk_curio import main as launcher
+    import utk_curio.main as launcher
 
     assert "--collab" not in _parser_flags()
     assert {"--collab-origins", "--collab-namespace"} <= _parser_flags()
@@ -621,8 +620,6 @@ class TestAgentAndBuildFlags:
         key), or belonged to a different subsystem entirely. Adding one back
         should require editing this list.
         """
-        import re
-
         source = _launcher_source()
         # Read from source rather than by building the parser: the parser is
         # constructed inside main(), and TestVariablesThatStayEnvOnly below
@@ -704,7 +701,7 @@ def _endpoint_file(tmp_path, text=ENDPOINTS, mode=0o600):
 class TestTheOldLlmSettingsAreGone:
     @pytest.mark.parametrize("flag", REMOVED_LLM_FLAGS)
     def test_the_parser_refuses_each_old_flag(self, flag, monkeypatch, capsys):
-        from utk_curio import main as launcher
+        import utk_curio.main as launcher
 
         assert flag not in _parser_flags()
         # One token, so the value is not read as the start command's server.
@@ -887,7 +884,7 @@ class _NoThread:
 
 def _child_environments(monkeypatch):
     """The environment each server would start with, no process started."""
-    from utk_curio.cli import services
+    import utk_curio.cli.services as services
 
     started = {}
 

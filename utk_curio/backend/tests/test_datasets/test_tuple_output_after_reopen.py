@@ -529,7 +529,8 @@ def _answered_under_its_keys(stored: dict) -> dict:
         response = _sandbox().get("/get", query_string={"fileName": alone, "sessionId": EARLIER})
         assert response.status_code == 200, response.get_data(as_text=True)
         envelope = response.get_json()
-        assert envelope.pop("filename") == alone
+        filename = envelope.pop("filename")
+        assert filename == alone
         envelopes[key] = envelope
     return {"dataType": "dict", "data": envelopes}
 
@@ -556,7 +557,8 @@ def test_get_serves_a_dict_of_frames_under_its_keys(client, user_and_token, reop
     assert response.status_code == 200, response.get_data(as_text=True)[:300]
     body = response.get_json()
     assert body["dataType"] == "dict", body["dataType"]
-    assert body.pop("filename") == art_id
+    filename = body.pop("filename")
+    assert filename == art_id
     assert body == expected
 
 

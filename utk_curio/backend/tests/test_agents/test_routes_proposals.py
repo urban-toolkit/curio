@@ -869,10 +869,10 @@ class TestDataflowPlanMint:
         att_id, calls = self._setup(
             client, user, token, alice_project, monkeypatch,
             replies=[
-                '```curio.v1\n{"delegateRequest": {"capability": "dataset.discover", '
-                '"inputs": {"mission": "chicago population density"}}}\n```',
-                '{"datasetCandidates": {"lanes": {"external": [{"name": "Chicago portal", '
-                '"sourceType": "api", "url": "https://example.org/d.json"}], "catalog": []}}}',
+                ('```curio.v1\n{"delegateRequest": {"capability": "dataset.discover", '
+                 '"inputs": {"mission": "chicago population density"}}}\n```'),
+                ('{"datasetCandidates": {"lanes": {"external": [{"name": "Chicago portal", '
+                 '"sourceType": "api", "url": "https://example.org/d.json"}], "catalog": []}}}'),
                 "Here are the candidates.",
             ],
         )
@@ -907,8 +907,8 @@ class TestDataflowPlanMint:
         att_id, _ = self._setup(
             client, user, token, alice_project, monkeypatch,
             replies=[
-                '```curio.v1\n{"delegateRequest": {"capability": "research.verify", '
-                '"inputs": {"intent": "check the dataset id"}}}\n```',
+                ('```curio.v1\n{"delegateRequest": {"capability": "research.verify", '
+                 '"inputs": {"intent": "check the dataset id"}}}\n```'),
                 "I asked for an install.",
             ],
         )

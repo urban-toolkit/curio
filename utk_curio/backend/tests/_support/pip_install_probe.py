@@ -166,10 +166,8 @@ def _curio_test_script():
     said = io.StringIO()
     try:
         with contextlib.redirect_stderr(said), contextlib.redirect_stdout(io.StringIO()):
-            try:
+            with contextlib.suppress(SystemExit):
                 test_runner.run_tests([])
-            except SystemExit:
-                pass
     finally:
         subprocess.call, shutil.which = call, which
     if ran:

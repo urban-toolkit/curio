@@ -33,6 +33,7 @@ def _open_files():
         if os.path.isdir(folder):
             return len(os.listdir(folder))
     pytest.skip("this platform does not list a process's open files")
+    return None
 
 
 def _quick(handler):
@@ -159,6 +160,7 @@ def page_server(tmp_path, monkeypatch):
         except OSError:
             time.sleep(0.05)
     pytest.fail("run_spa_static_server never came up")
+    return None
 
 
 def test_the_page_server_closes_connections_that_send_no_request(page_server):

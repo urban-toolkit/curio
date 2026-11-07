@@ -192,7 +192,6 @@ def test_example_10s_model_package_is_declared_and_reaches_the_boot_install():
     package a shipped dataflow declares, and the examples' seeding puts it in
     each store, where its model runs from.
     """
-    import json
     from pathlib import Path
 
     from utk_curio.backend.app.packages.application import seeding

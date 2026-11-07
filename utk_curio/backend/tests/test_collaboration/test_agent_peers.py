@@ -266,7 +266,8 @@ def test_a_tab_that_starts_later_sees_the_agent_and_so_does_its_doc_opened_again
         clock = room.server_doc().awareness.meta[peer.client_id]["clock"]
 
         later.socket.disconnect(namespace=NAMESPACE)
-        assert room.docs.close(room.project_id), "the doc stayed in memory with no tab"
+        closed = room.docs.close(room.project_id)
+        assert closed, "the doc stayed in memory with no tab"
         again = room.tab("carol")
 
         assert again.others()[peer.client_id]["user"]["participant_id"] == peer.participant_id

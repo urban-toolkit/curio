@@ -1117,7 +1117,7 @@ def test_the_node_routes_scouts_example_over_the_examples_roads(workspace, examp
     """The shipped node, set as SCOUT's example, on the roads its Autark node
     loads: SCOUT's two routes, the fastest and the one its weather weights
     favor, each from SCOUT's origin to its destination, inside SCOUT's box."""
-    _art_id, (routes, metrics) = run_node(workspace, layers=example_layers, **_example_values())
+    _, (routes, metrics) = run_node(workspace, layers=example_layers, **_example_values())
     assert routes.crs.to_epsg() == 4326
     assert list(routes.columns) == ["weight_type", "route_index", "distance_m", "duration_minutes", "rain_exposure",
                                     "heat_exposure", "wind_exposure", "humidity_exposure", "geometry"]
@@ -1141,7 +1141,7 @@ def test_the_node_routes_scouts_example_over_the_examples_roads(workspace, examp
 @pytest.mark.parametrize("weighting", sorted(LOOP_ROUTES))
 def test_the_node_routes_over_the_loops_roads_with_custom_weights(workspace, weighting):
     rain, wind = LOOP_WEIGHTS[weighting]
-    _art_id, (routes, metrics) = run_node(workspace, mode="Custom weights", rain=rain, wind=wind)
+    _, (routes, metrics) = run_node(workspace, mode="Custom weights", rain=rain, wind=wind)
     assert routes.crs.to_epsg() == 4326
     assert list(routes.columns) == ["weight_type", "route_index", "distance_m", "duration_minutes", "rain_exposure",
                                     "heat_exposure", "wind_exposure", "humidity_exposure", "geometry"]
@@ -1161,7 +1161,7 @@ def test_the_node_routes_over_a_roads_frame_on_its_own_as_before(workspace):
     Loading hands roads on, is the layer the template's chip reads: the node
     routes over it as it did when its code read ``input_0`` alone, to the same routes."""
     rain, wind = LOOP_WEIGHTS["rain-first"]
-    _art_id, (routes, metrics) = run_node(workspace, frame=True, mode="Custom weights", rain=rain, wind=wind)
+    _, (routes, metrics) = run_node(workspace, frame=True, mode="Custom weights", rain=rain, wind=wind)
     assert routes.crs.to_epsg() == 4326
     _assert_rows(_rows(routes, metrics), LOOP_ROUTES["rain-first"])
 
@@ -1195,7 +1195,7 @@ def test_the_example_picks_each_part(workspace, example_layers):
 
 def test_each_widget_reaches_the_call(workspace):
     def run(**values):
-        _art_id, (routes, metrics) = run_node(workspace, **values)
+        _, (routes, metrics) = run_node(workspace, **values)
         return _rows(routes, metrics), routes.geometry.iloc[-1].coords[0]
 
     default, start = run()

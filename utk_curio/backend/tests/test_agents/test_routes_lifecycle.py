@@ -148,13 +148,17 @@ class TestProjectInstall:
         r = client.delete(f"/api/agents/projects/{alice_project}/{self.DF}", headers=_auth(token))
         assert "Node Builder" in r.get_json()["error"]
         # Parent first, then the dependencies — no cascade either way.
-        assert client.delete(f"/api/agents/projects/{alice_project}/{self.DFB}", headers=_auth(token)).status_code == 200
+        r = client.delete(f"/api/agents/projects/{alice_project}/{self.DFB}", headers=_auth(token))
+        assert r.status_code == 200
         listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
         assert sorted(a["dirName"] for a in listed["agents"]) == sorted(self.CLOSURE)
         # The Node Builder still requires the Dataset Finder: builder first.
-        assert client.delete(f"/api/agents/projects/{alice_project}/{self.DF}", headers=_auth(token)).status_code == 409
-        assert client.delete(f"/api/agents/projects/{alice_project}/{self.NB}", headers=_auth(token)).status_code == 200
-        assert client.delete(f"/api/agents/projects/{alice_project}/{self.DF}", headers=_auth(token)).status_code == 200
+        r = client.delete(f"/api/agents/projects/{alice_project}/{self.DF}", headers=_auth(token))
+        assert r.status_code == 409
+        r = client.delete(f"/api/agents/projects/{alice_project}/{self.NB}", headers=_auth(token))
+        assert r.status_code == 200
+        r = client.delete(f"/api/agents/projects/{alice_project}/{self.DF}", headers=_auth(token))
+        assert r.status_code == 200
         # Every member of the closure is gone, one by one.
         listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
         assert listed["agents"] == []

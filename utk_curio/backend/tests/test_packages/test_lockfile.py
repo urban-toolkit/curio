@@ -712,9 +712,10 @@ def test_uninstall_detaches_the_package_from_every_project(
     packages_services.install_to_project(user_key, alice_project, dir_name)
     assert dir_name in packages_services.get_project_lockfile(user_key, alice_project)
 
-    assert client.delete(
+    removed = client.delete(
         f"/api/packages/{dir_name}", headers=_auth(token),
-    ).status_code == 204
+    )
+    assert removed.status_code == 204
 
     assert dir_name not in packages_services.get_project_lockfile(
         user_key, alice_project,

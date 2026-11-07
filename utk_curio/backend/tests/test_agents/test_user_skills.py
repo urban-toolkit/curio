@@ -442,7 +442,8 @@ def test_removing_a_skill_takes_it_off_every_agent_so_a_later_one_of_its_name_jo
     assert not _kept(user).exists()
     choices = agent_skill_store.default_store().read(_user_dir_key(user))
     assert all(NAME not in choice.added and NAME not in choice.removed for choice in choices.values())
-    assert client.delete(f"/api/agents/skills/{NAME}", headers=_auth(token)).status_code == 404
+    again = client.delete(f"/api/agents/skills/{NAME}", headers=_auth(token))
+    assert again.status_code == 404
 
     assert _post(client, token, IMPORT, _form({"SKILL.md": _skill_md()})).status_code == 201
     assert NAME not in _names(client.get(_rows_url(DF), headers=_auth(token)).get_json())

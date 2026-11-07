@@ -79,7 +79,8 @@ def test_the_package_listing_carries_the_flag_the_canvas_reads():
 
     payload = package_payload(load_package_manifest(REPO_ROOT / "packages" / "curio.builtin@1"))
     flags = {template["templateId"]: template.get("loadsDataset") for template in payload["templates"]}
-    assert flags.pop("data-loading") is True
+    data_loading = flags.pop("data-loading")
+    assert data_loading is True
     assert flags and set(flags.values()) == {False}, flags
 
 

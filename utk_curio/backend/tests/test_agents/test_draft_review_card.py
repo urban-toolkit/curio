@@ -107,10 +107,10 @@ class TestDraftCardComposer:
     def test_preview_verdicts_and_skip_honesty(self):
         preview = {
             "status": "skipped",
-            "reasons": ["preview SKIPPED BY OPERATOR POLICY "
+            "reasons": [("preview SKIPPED BY OPERATOR POLICY "
                         "(CURIO_BUILD_PREVIEW_POLICY=skip; no pinned runner is "
                         "configured) — this custom behavior was NOT rendered "
-                        "before review", "r2", "r3", "r4"],
+                        "before review"), "r2", "r3", "r4"],
             "states": {}, "runnerVersion": "",
         }
         card = _draft_card_payload(_request(), _result(preview=preview))

@@ -208,7 +208,6 @@ class TestTheCorpusAnswersWhatTheAppAsks:
 
     def test_every_shipped_search_is_recorded_at_that_limit(self):
         """And the corpus on disk actually holds those recordings."""
-        import json
         from pathlib import Path
 
         from utk_curio.backend.app.discovery.service import DEFAULT_SEARCH_LIMIT

@@ -92,7 +92,8 @@ class TestTheFolderProvider:
 
     def test_a_byte_range_reads_part_of_a_file(self, tmp_path, discovery_dir):
         provider = self._provider(write_files(tmp_path / "f", {"a.csv": "0123456789"}), discovery_dir)
-        assert provider.open("a.csv", byte_range=(2, 5)).read() == b"234"
+        part = provider.open("a.csv", byte_range=(2, 5)).read()
+        assert part == b"234"
 
 
 class TestTheListing:
@@ -488,7 +489,8 @@ class TestAddingACollection:
         (derived / "0.jpg").write_bytes(b"x")
         assert any(cache.iterdir())
 
-        assert client.delete(f"/api/datasets/{dataset['id']}", headers=auth).status_code == 200
+        removed = client.delete(f"/api/datasets/{dataset['id']}", headers=auth)
+        assert removed.status_code == 200
         assert not cache.exists() and not derived.exists()
         root = SHIPPED_ROOT.parent / "docs" / "examples" / "data" / "storage"
         assert all((root / relpath).is_file() for relpath in index["relpath"])

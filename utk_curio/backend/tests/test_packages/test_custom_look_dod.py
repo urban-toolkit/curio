@@ -402,13 +402,13 @@ class TestCoolRoofsScenario:
         }]
         replies = [
             # Round 1: the Researcher searches the internet first.
-            '```curio.v1\n{"toolRequest": {"tool": "web.search", '
-            '"params": {"q": "cool roofs in Chicago"}}}\n```',
+            ('```curio.v1\n{"toolRequest": {"tool": "web.search", '
+             '"params": {"q": "cool roofs in Chicago"}}}\n```'),
             # Round 2: findings in hand, it delegates authoring with the look.
-            '```curio.v1\n{"delegateRequest": {"capability": "node.kind.author", '
-            '"inputs": {"look": "post-it note", "finding": '
-            '"Chicago: white roofs ran 18\\u00b0C cooler", '
-            '"source": "https://heat.test/cool-roofs"}}}\n```',
+            ('```curio.v1\n{"delegateRequest": {"capability": "node.kind.author", '
+             '"inputs": {"look": "post-it note", "finding": '
+             '"Chicago: white roofs ran 18\\u00b0C cooler", '
+             '"source": "https://heat.test/cool-roofs"}}}\n```'),
             # The CHILD (the Node Builder's writing mode) returns the draft with the note.
             "```json\n" + json.dumps(
                 {"packageDraft": _justified(_postit_scenario(roof_notes))}) + "\n```",
@@ -647,8 +647,8 @@ class TestReuseFirstNoteCreation:
 
         # Turn 1: install the notes package through the reviewed draft.
         script["replies"] = [
-            '```curio.v1\n{"delegateRequest": {"capability": "node.kind.author", '
-            '"inputs": {"look": "post-it"}}}\n```',
+            ('```curio.v1\n{"delegateRequest": {"capability": "node.kind.author", '
+             '"inputs": {"look": "post-it"}}}\n```'),
             json.dumps({"packageDraft": _justified(_postit_scenario())}),
             "Package proposed.",
         ]
@@ -666,10 +666,10 @@ class TestReuseFirstNoteCreation:
         # VERSIONED canonical id (what the spec itself carries) and
         # markdown-composed answer content.
         script["replies"] = [
-            '```curio.v1\n{"toolRequest": {"tool": "node.create", "params": '
-            '{"nodeType": "ai.agent.postit/postit-note@1", "content": '
-            '"**Finding:** 19\\u00b0C cooler on white roofs\\n- [source](https://heat.test/cool-roofs)", '
-            '"goal": "Cool roofs in Chicago"}}}\n```',
+            ('```curio.v1\n{"toolRequest": {"tool": "node.create", "params": '
+             '{"nodeType": "ai.agent.postit/postit-note@1", "content": '
+             '"**Finding:** 19\\u00b0C cooler on white roofs\\n- [source](https://heat.test/cool-roofs)", '
+             '"goal": "Cool roofs in Chicago"}}}\n```'),
             "Note placed.",
         ]
         script["calls"] = 0

@@ -795,7 +795,7 @@ def test_the_chart_stacks_the_three_scenarios_parks(ran):
     for scenario, name, _color, _key in SCENARIOS:
         held = [row for row in stacked if row["scenario"] == scenario]
         assert {row["scenario_name"] for row in held} == {name} and [row["park"] for row in held] == PARKS
-    assert [row["__input__"] for row in rows] == [circle for circle in range(3) for _park in PARKS]
+    assert [row["__input__"] for row in rows] == [circle for circle in range(3) for _ in PARKS]
     assert [{k: v for k, v in row.items() if k != "__input__"} for row in rows] == stacked
 
 
@@ -958,7 +958,7 @@ def test_the_chart_stacks_fixed_tables_as_compare_stacked_them(ran):
     tables = park_shade_inputs(PARKS)
     entries = [(scenario, name, _through_the_store(tables[scenario])) for scenario, name, _color, _key in SCENARIOS]
     rows = stack_inputs(entries)
-    assert [row["__input__"] for row in rows] == [circle for circle in range(3) for _park in PARKS]
+    assert [row["__input__"] for row in rows] == [circle for circle in range(3) for _ in PARKS]
     assert_rows_match([{k: v for k, v in row.items() if k != "__input__"} for row in rows], held,
                       what="the chart's rows")
     assert_rows_match(stacked_rows(entries), held, what="stacked_rows")

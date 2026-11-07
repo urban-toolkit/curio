@@ -13,8 +13,6 @@ Covers:
 """
 from __future__ import annotations
 
-import json
-
 from utk_curio.backend.app.datasets.application.export import (
     _producer_node_id_for,
     resolve_upstream_inputs,

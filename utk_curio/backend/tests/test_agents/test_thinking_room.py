@@ -21,13 +21,11 @@ a value (``_outcome``), so a checkout without the fix fails at an assertion.
 
 from __future__ import annotations
 
-import json
 import sys
 import types
 
 import pytest
 
-from utk_curio.backend import config
 from utk_curio.backend.app.agents.infrastructure import providers
 from utk_curio.backend.app.agents.infrastructure.providers import ChatTurn, ProviderConfig
 from utk_curio.backend.app.projects.services import _user_dir_key

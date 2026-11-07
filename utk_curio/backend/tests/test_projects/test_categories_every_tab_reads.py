@@ -117,7 +117,8 @@ def test_a_watcher_reads_them_as_anyone_who_opens_the_dataflows_link(client, sha
 
 def test_a_dataflow_that_is_gone_is_not_found(client, shared):
     project_id, owner_token = shared
-    assert client.delete(f"/api/projects/{project_id}", headers=_auth(owner_token)).status_code == 204
+    removed = client.delete(f"/api/projects/{project_id}", headers=_auth(owner_token))
+    assert removed.status_code == 204
 
     for token in (owner_token, BOB_TOKEN, CAROL_TOKEN):
         r = client.get(f"/api/projects/{project_id}/categories", headers=_auth(token))

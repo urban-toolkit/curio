@@ -3,8 +3,6 @@ manual rename precedence, clear-conversation semantics, and the sanitizer."""
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from utk_curio.backend.app.agents.application import attachments

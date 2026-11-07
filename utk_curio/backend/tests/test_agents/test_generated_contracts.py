@@ -414,8 +414,6 @@ class TestThePromptFacts:
         assert "{{include:" not in prompt_path("package_build_instruction.md").read_text(encoding="utf-8")
 
     def test_every_vega_lite_schema_url_is_the_one_the_frontend_writes(self):
-        import re
-
         assert contracts.render_template("{{vega.schema_url}}") == contracts.VEGA_SCHEMA_URL
         urls = re.findall(r"https://vega\.github\.io/schema/vega-lite/[^\"\\\s]+", prompt_text("default_preamble.md"))
         assert urls and set(urls) == {contracts.VEGA_SCHEMA_URL}
@@ -452,8 +450,6 @@ class TestThePromptFacts:
         assert text in prompt_text(f"{skill}/SKILL.md")
 
     def test_the_dtype_roles_are_the_table_in_order(self):
-        import re
-
         text = contracts.render_template("{{starter.dtype_roles}}")
         parts = text.split("; ")
         assert len(parts) == len(contracts.DTYPE_ROLES)
@@ -464,8 +460,6 @@ class TestThePromptFacts:
         assert text in prompt_text("vega-lite-starter/SKILL.md")
 
     def test_the_image_facts_are_the_tables(self):
-        import re
-
         columns = contracts.render_template("{{image.columns}}")
         assert re.findall(r'"([^"]+)"', columns) == list(contracts.IMAGE_COLUMNS)
         assert columns.endswith(f' or "{contracts.IMAGE_COLUMNS[-1]}"')
@@ -545,14 +539,10 @@ class TestTheAutarkRenderers:
 
 
 def _manifest() -> dict:
-    import json
-
     return json.loads((REPO_ROOT / contracts.BUILTIN_MANIFEST).read_text(encoding="utf-8"))
 
 
 def _trill() -> dict:
-    import json
-
     return json.loads((REPO_ROOT / contracts.TRILL_SCHEMA).read_text(encoding="utf-8"))
 
 
@@ -623,8 +613,6 @@ class TestThePreambleVocabulary:
             assert "curio.builtin/" not in text
 
     def test_no_prompt_names_a_node_by_its_legacy_name(self):
-        import re
-
         # Every page and prompt, as written and as an agent reads it.
         files = prompt_files("*.md")
         assert files
@@ -637,8 +625,6 @@ class TestThePreambleVocabulary:
 
 class TestTheTrillBlock:
     def test_it_is_the_schemas_shape_for_the_fields_agents_use(self):
-        import json
-
         block = json.loads(contracts.render_trill_block(_trill()))
         dataflow = block["properties"]["dataflow"]
         assert list(dataflow["properties"]) == list(contracts.TRILL_PROMPT_FIELDS["dataflowBase"])
@@ -653,8 +639,6 @@ class TestTheTrillBlock:
 
     def test_a_scenario_shows_what_an_agent_reads_and_writes(self):
         # #662: not where its box sits on the canvas or where it came from.
-        import json
-
         block = json.loads(contracts.render_trill_block(_trill()))
         scenario = block["properties"]["dataflow"]["properties"]["scenarios"]["items"]
         assert list(scenario["properties"]) == list(contracts.TRILL_PROMPT_FIELDS["scenario"])
@@ -663,8 +647,6 @@ class TestTheTrillBlock:
     def test_a_nodes_widgets_and_lineage_show_what_an_agent_writes(self):
         # #662: the widgets a node declares, in the schema's own shape, and the
         # lineage a copy carries.
-        import json
-
         from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
 
         block = json.loads(contracts.render_trill_block(_trill()))
@@ -678,8 +660,6 @@ class TestTheTrillBlock:
         assert metadata["properties"]["copiedFrom"] == {"type": "array", "items": {"type": "string"}}
 
     def test_it_carries_no_field_the_format_does_not_have(self):
-        import json
-
         text = contracts.render_trill_block(_trill())
         for phantom in ('"annotations"', '"Data"', '"warnings"'):
             assert phantom not in text, phantom
@@ -699,9 +679,6 @@ class TestTheTrillBlock:
         # block the preamble shows, and wire several inputs into one node the
         # way the preamble says to: each edge on its own input circle, "in",
         # "in_1", ... in connection order, with no Merge Flow between (#662).
-        import json
-        import re
-
         from jsonschema import Draft202012Validator
 
         from utk_curio.backend.app.agents.application.turns import examples

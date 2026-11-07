@@ -3,8 +3,6 @@ per-node, fail-open reads, and the `/process*Code` seam write."""
 
 from __future__ import annotations
 
-import json
-
 from utk_curio.backend.app.execution import runtime_journal
 from utk_curio.backend.app.projects import storage as projects_storage
 

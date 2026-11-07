@@ -11,8 +11,6 @@ endpoints stay the owner's and the editors' the owner invited.
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from utk_curio.backend.app.agents.repositories import project_agents
