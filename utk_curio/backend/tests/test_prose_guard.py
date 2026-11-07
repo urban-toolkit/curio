@@ -76,6 +76,8 @@ USERS = {
      "Isolation was requested but is unavailab"): "the sandbox's start-up report to the operator",
     ("utk_curio/sandbox/isolation/mode.py", "resolve_mode",
      "Node execution is NOT isolated: it runs "): "the sandbox's start-up report to the operator",
+    ("utk_curio/sandbox/isolation/seccomp_filter.py", "main",
+     "Curio did not start : it could not insta"): "a JavaScript node's error on Play",
     ("utk_curio/sandbox/isolation/supervisor.py", "describe_child_death",
      "This node was stopped after s. It is sti"): "a node's error on Play",
     ("utk_curio/sandbox/util/input_names.py", "<module>",
