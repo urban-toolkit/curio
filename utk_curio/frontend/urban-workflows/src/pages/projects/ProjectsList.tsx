@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom";
 import { permanentDeletionNotice } from "../../services/retentionCopy";
 import { CardContextMenu } from "../../components/catalog/CardContextMenu";
+import { GUEST_KEPT_LABEL, GUEST_KEPT_TOOLTIP } from "../../components/apiSettings/keptForTheVisit";
 import { projectsApi, ProjectSummary } from "../../api/projectsApi";
 import { useToastContext } from "../../providers/ToastProvider";
 import { projectActions, type ProjectActionId } from "./projectActions";
@@ -79,6 +80,16 @@ function nodeCount(project: ProjectSummary): number {
 
 function edgeCount(project: ProjectSummary): number {
   return project.graph_preview?.edges.length ?? 0;
+}
+
+/** The mark of a hosted guest's own new dataflow, which the server keeps
+ *  until it starts again; its tooltip says only an account saves one. */
+function KeptForTheVisit({ className }: { className: string }) {
+  return (
+    <span className={className} data-curio-kept-for-visit="true" data-tooltip={GUEST_KEPT_TOOLTIP}>
+      {GUEST_KEPT_LABEL}
+    </span>
+  );
 }
 
 /** What a card shows: where it came from and what it is about. */
@@ -533,9 +544,13 @@ const ProjectsList: React.FC = () => {
                       <CatalogItemStripHeader
                         kind="dataflow"
                         badge={
-                          <span className={browseStyles.stripBadgePopular}>
-                            Rev {p.spec_revision}
-                          </span>
+                          p.kept_for_visit ? (
+                            <KeptForTheVisit className={browseStyles.stripBadgePopular} />
+                          ) : (
+                            <span className={browseStyles.stripBadgePopular}>
+                              Rev {p.spec_revision}
+                            </span>
+                          )
                         }
                       />
                     </div>
@@ -580,9 +595,12 @@ const ProjectsList: React.FC = () => {
               }
               title={selected.name}
               badges={
-                <span className={browseStyles.drawerCategoryBadge}>
-                  Rev {selected.spec_revision}
-                </span>
+                <>
+                  {selected.kept_for_visit ? <KeptForTheVisit className={browseStyles.drawerCategoryBadge} /> : null}
+                  <span className={browseStyles.drawerCategoryBadge}>
+                    Rev {selected.spec_revision}
+                  </span>
+                </>
               }
               subtitle={selected.slug}
               metaLeft={
@@ -617,7 +635,7 @@ const ProjectsList: React.FC = () => {
                 // what may be done to a project again (#221). "Open" is the
                 // primary action above, so it is dropped here.
                 <div className={styles.detailButtonRow}>
-                  {projectActions({ isExample: selected.is_example })
+                  {projectActions({ isExample: selected.is_example, keptForVisit: selected.kept_for_visit })
                     .filter((action) => action.id !== "open")
                     .map((action) => (
                       <button
@@ -650,7 +668,10 @@ const ProjectsList: React.FC = () => {
           x={contextMenu.x}
           y={contextMenu.y}
           ariaLabel="Dataflow actions"
-          items={projectActions({ isExample: contextMenu.project.is_example })}
+          items={projectActions({
+            isExample: contextMenu.project.is_example,
+            keptForVisit: contextMenu.project.kept_for_visit,
+          })}
           onSelect={(id) =>
             runProjectAction(id as ProjectActionId, contextMenu.project)
           }
