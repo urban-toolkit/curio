@@ -245,10 +245,10 @@ class TestRefusedAreas:
         ], **BUILDINGS)
         printed = [line for line in capsys.readouterr().out.split("\n") if line]
         assert [line for line in printed if REFUSED_AREA_LINE.fullmatch(line)] == [
-            "Map Editor: layer table_osm_buildings: the geometry would make the outline of building_id 2, 3 cross "
-            "itself, an area the map cannot draw; the geometry skips them.",
-            "Map Editor: layer table_osm_buildings: the add would make the outline of building_id 9 cross itself, "
-            "an area the map cannot draw; the add skips it.",
+            ("Map Editor: layer table_osm_buildings: the geometry would make the outline of building_id 2, 3 cross "
+             "itself, an area the map cannot draw; the geometry skips them."),
+            ("Map Editor: layer table_osm_buildings: the add would make the outline of building_id 9 cross itself, "
+             "an area the map cannot draw; the add skips it."),
         ], printed
         assert [line for line in printed if UNKNOWN_IDS_LINE.fullmatch(line)] == [
             "Map Editor: layer table_osm_buildings has no feature with building_id 999; the remove skips it.",

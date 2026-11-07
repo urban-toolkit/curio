@@ -390,8 +390,8 @@ class TestStoreIndependence(unittest.TestCase):
 
         result = subprocess.run(
             [sys.executable, "-c",
-             "import sys; import utk_curio.sandbox.util.codec; "
-             "print('utk_curio.sandbox.util.db' in sys.modules)"],
+             ("import sys; import utk_curio.sandbox.util.codec; "
+              "print('utk_curio.sandbox.util.db' in sys.modules)")],
             capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)

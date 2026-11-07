@@ -299,8 +299,8 @@ def _report(folder: Path, chosen: list, meta: dict) -> dict:
         f"Model `{meta['model']}`. Runs of each query, and of each test case in each condition: {meta['runs']}. "
         "An evaluation report, not a gate.",
         "",
-        "| Skill | Triggers passed | Should trigger | Should not | Handed off | With skill | Without | Delta | Used "
-        "| Errors |",
+        ("| Skill | Triggers passed | Should trigger | Should not | Handed off | With skill | Without | Delta | Used "
+         "| Errors |"),
         "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for row in rows:

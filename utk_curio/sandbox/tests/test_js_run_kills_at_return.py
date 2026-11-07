@@ -104,14 +104,14 @@ _UNMARKED_HELPERS = [
     f"const PYTHON = {json.dumps(sys.executable)};",
     f"const LEAVES_BY_ITSELF = {json.dumps(_LEAVES_BY_ITSELF)};",
     "const UNMARKED = { PATH: process.env.PATH };",
-    "const carriesTheMark = (pid) => { try { return fs.readFileSync(`/proc/${pid}/environ`, 'latin1')"
-    ".split(String.fromCharCode(0)).some((entry) => entry.startsWith('CURIO_JS_RUN=')); } "
-    "catch (e) { return null; } };",
+    ("const carriesTheMark = (pid) => { try { return fs.readFileSync(`/proc/${pid}/environ`, 'latin1')"
+     ".split(String.fromCharCode(0)).some((entry) => entry.startsWith('CURIO_JS_RUN=')); } "
+     "catch (e) { return null; } };"),
     "const keepUnmarked = (name, pid) => { keep(name, pid); started[name].marked = carriesTheMark(pid); };",
-    "const leaving = (call) => new Promise((resolve) => { "
-    "const child = spawn(PYTHON, ['-I', '-S', '-c', LEAVES_BY_ITSELF.replace('CALL', call)], "
-    "{ stdio: ['ignore', 'pipe', 'ignore'], env: UNMARKED }); "
-    "child.stdout.resume(); child.stdout.on('close', () => resolve(child.pid)); });",
+    ("const leaving = (call) => new Promise((resolve) => { "
+     "const child = spawn(PYTHON, ['-I', '-S', '-c', LEAVES_BY_ITSELF.replace('CALL', call)], "
+     "{ stdio: ['ignore', 'pipe', 'ignore'], env: UNMARKED }); "
+     "child.stdout.resume(); child.stdout.on('close', () => resolve(child.pid)); });"),
 ]
 
 
