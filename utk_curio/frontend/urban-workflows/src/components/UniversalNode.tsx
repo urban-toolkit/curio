@@ -628,6 +628,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             floatCode={nodeState.setCode}
             contentComponent={behavior.contentComponent}
             controlsComponent={behavior.controlsComponent}
+            ownWidgets={behavior.ownWidgets}
           />
         ) : (
           // ``editor: "none"`` in the manifest means there's no tabbed editor

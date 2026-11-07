@@ -1,7 +1,7 @@
 """Which e2e tests need the utk runner, and how the rest split across runners.
 
 CI runs the e2e suite on two kinds of machine. A self-hosted GPU runner
-(``arcade-gpu-01..04``, ``utk-gpu`` or ``utk-desktop-01``; the share keeps the name
+(``arcade-gpu-01..04``, ``utk-gpu``, ``utk-desktop-01`` or ``-03``; the share keeps the name
 ``utk``) has an NVIDIA GPU and is the only place hardware WebGPU exists, and the
 only one whose curio container gets the GPU (``docker-compose.ci-shards.yml``); it
 is also one machine, so everything on it runs in series. The CPU runners (GitHub-hosted

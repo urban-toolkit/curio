@@ -119,6 +119,24 @@ class TestImportsRegistry:
         path.write_text("{not json", encoding="utf-8")
         assert imports.load_imported_agents(user_key) == set()
 
+    def test_a_file_without_the_seeded_record_has_had_none_seeded(self, user_key):
+        assert imports.load_seeded_agents(user_key) == set()
+        imports.add_imported_agent(user_key, "agent.test.my-explainer@1")
+        assert imports.load_seeded_agents(user_key) == set()
+        assert "seeded" not in json.loads(imports._imports_path(user_key).read_text(encoding="utf-8"))
+
+    def test_every_save_keeps_the_seeded_record(self, user_key):
+        imports.add_imported_agent(user_key, "agent.curio.researcher@1")
+        imports.record_seeded(user_key, ["agent.curio.researcher@1"])
+        imports.remove_imported_agent(user_key, "agent.curio.researcher@1")
+        imports.add_imported_agent(user_key, "agent.test.my-explainer@1")
+        imports.save_imported_agents(user_key, {"agent.test.my-explainer@1"})
+        assert imports.load_imported_agents(user_key) == {"agent.test.my-explainer@1"}
+        assert imports.load_seeded_agents(user_key) == {"agent.curio.researcher@1"}
+        imports.record_seeded(user_key, ["agent.curio.node-builder@1", "not a coordinate"])
+        assert imports.load_seeded_agents(user_key) == {"agent.curio.researcher@1", "agent.curio.node-builder@1"}
+        assert imports.load_imported_agents(user_key) == {"agent.test.my-explainer@1"}
+
 
 # ── project_agents: per-project lockfile ─────────────────────────────────────
 class TestProjectLockfile:

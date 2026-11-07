@@ -470,18 +470,20 @@ function dropExport(data: Record<string, unknown>) {
 describe('Curio\'s Data Export, as the repository ships it', () => {
   beforeEach(() => clearPackageNodes());
   const FILE_NAME = [{ name: 'file_name', type: 'text', label: 'File name', default: '' }];
+  // File name, then Part: empty writes every part, a label, key or position one.
+  const WIDGETS = [...FILE_NAME, { name: 'part', type: 'text', label: 'Part', default: '' }];
 
-  test('a fresh drop opens with the code that writes its input to the file File name names', () => {
+  test('a fresh drop opens with the code that writes its input, or the Part it names, to the file File name names', () => {
     const { offered, node } = dropExport({});
-    expect(readExportStarter()).toBe('return curio_export(input_0, [!! file_name !!])\n');
+    expect(readExportStarter()).toBe('return curio_export(input_0, [!! file_name !!], part=[!! part !!])\n');
     expect(offered).toContain(readExportStarter());
-    expect(node.widgets).toEqual(FILE_NAME);
+    expect(node.widgets).toEqual(WIDGETS);
   });
 
-  test('a node saved before it had code, with no code and no widgets, opens with its starter and File name', () => {
+  test('a node saved before it had code, with no code and no widgets, opens with its starter, File name and Part', () => {
     const { offered, node } = dropExport({ code: '' });
     expect(offered).toContain(readExportStarter());
-    expect(node.widgets).toEqual(FILE_NAME);
+    expect(node.widgets).toEqual(WIDGETS);
     // Once the editor has it, the node's code falls back to the starter, not
     // to the empty code it was saved with.
     expect(node.defaultCode).toBe(readExportStarter());

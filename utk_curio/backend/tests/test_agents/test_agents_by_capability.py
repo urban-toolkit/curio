@@ -556,3 +556,93 @@ class TestNamesComeFromManifests:
         manifest = catalog._resolve_definition(UKEY, coord)
         ctx = grounding._grounding_context(UKEY, "p", {"manifest": manifest}, node_type=DL, base=base)
         assert any("delegate the dataset.discover capability" in h for h in ctx.hints) is hinted
+
+
+class TestTheAccountsOwnAgentAnswersFirst:
+    """When a dataflow holds several agents that declare the same capability,
+    one the account imported or published answers before one Curio ships, and
+    of the account's own, the first by id: for Curio's own picks, for an agent
+    whose delegatesTo names none of them, and for one whose delegatesTo names
+    the agent Curio ships. An agent of the account's own that a delegatesTo
+    entry names is the one that entry asks."""
+
+    A_FINDER = "agent.test.a-finder@1"
+
+    def _install(self, client, token, project_id, *coords):
+        for coord in coords:
+            r = client.post(f"/api/agents/projects/{project_id}/install",
+                            json={"coord": coord}, headers=_auth(token))
+            assert r.status_code == 201, r.get_data(as_text=True)
+
+    def _finders(self, ukey, project_id) -> list[str]:
+        """The agent that finds the dataflow's datasets: for Curio's own task,
+        for a plan's node with no parent, for the Researcher, whose
+        delegatesTo names no agent that finds them, and for the Node Builder
+        and the Dataflow Builder, whose delegatesTo names the Dataset Finder
+        Curio ships."""
+        from utk_curio.backend.app.agents.application import delegation
+        from utk_curio.backend.app.agents.application import spec_reads
+
+        spec = projects_storage.read_spec(ukey, project_id)
+        installed = set(project_agents.project_agents(spec))
+        planned = next(
+            row for row in plans._plan_node_agents(ukey, spec) if row["capability"] == "dataset.discover"
+        )
+        researcher = builtin.get_builtin_manifest(RESEARCHER)
+        builders = [builtin.get_builtin_manifest(coord) for coord in (NB, DFB)]
+        for builder in builders:
+            assert builder.delegates(DF.split("@", 1)[0], "dataset.discover"), builder.agent_id
+        return [
+            spec_reads._installed_coord_declaring(spec, "dataset.discover", user_key=ukey),
+            next(coord for coord in installed if coord.split("@", 1)[0] == planned["agentId"]),
+            delegation.resolve_among(ukey, installed, researcher, "dataset.discover").coord,
+            *(delegation.resolve(ukey, project_id, builder, "dataset.discover").coord for builder in builders),
+        ]
+
+    def test_an_agent_of_the_accounts_own_answers_before_the_shipped_one(
+        self, client, user_and_token, tmp_curio, alice_project
+    ):
+        from utk_curio.backend.app.agents.repositories import storage
+
+        user, token = user_and_token
+        ukey = _user_dir_key(user)
+        _write_copy(ukey, DF, MY_FINDER, "My Finder")
+        self._install(client, token, alice_project, DF, MY_FINDER)
+        # The account's store holds a copy of the shipped finder: still Curio's.
+        assert storage.load_installed_agent_definition(ukey, DF) is not None
+        # The Node Builder's and the Dataflow Builder's ask, which names the
+        # shipped finder, reaches the account's own among them.
+        assert self._finders(ukey, alice_project) == [MY_FINDER] * 5
+        # Taken out of the dataflow, the account's own leaves the job to the shipped one.
+        r = client.delete(f"/api/agents/projects/{alice_project}/{MY_FINDER}", headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        assert self._finders(ukey, alice_project) == [DF] * 5
+
+    def test_of_the_accounts_own_the_first_by_id_answers(
+        self, client, user_and_token, tmp_curio, alice_project
+    ):
+        user, token = user_and_token
+        ukey = _user_dir_key(user)
+        _write_copy(ukey, DF, MY_FINDER, "My Finder")
+        _write_copy(ukey, DF, self.A_FINDER, "A Finder")
+        self._install(client, token, alice_project, MY_FINDER, DF, self.A_FINDER)
+        assert self._finders(ukey, alice_project) == [self.A_FINDER] * 5
+
+    def test_an_agent_of_the_accounts_own_its_delegates_to_names_answers_as_named(
+        self, client, user_and_token, tmp_curio, alice_project
+    ):
+        # My Builder's delegatesTo names My Finder, the account's own: it asks
+        # that one, though A Finder comes first by id and the shipped finder
+        # is in the dataflow too.
+        from utk_curio.backend.app.agents.application import catalog, delegation
+
+        user, token = user_and_token
+        ukey = _user_dir_key(user)
+        _write_copy(ukey, NB, MY_BUILDER, "My Builder")
+        _write_copy(ukey, DF, MY_FINDER, "My Finder")
+        _write_copy(ukey, DF, self.A_FINDER, "A Finder")
+        self._install(client, token, alice_project, MY_FINDER, DF, self.A_FINDER)
+        my_builder = catalog._resolve_definition(ukey, MY_BUILDER)
+        assert my_builder.delegates(MY_FINDER.split("@", 1)[0], "dataset.discover")
+        assert delegation.resolve(ukey, alice_project, my_builder, "dataset.discover").coord == MY_FINDER
+        assert self._finders(ukey, alice_project) == [self.A_FINDER] * 5

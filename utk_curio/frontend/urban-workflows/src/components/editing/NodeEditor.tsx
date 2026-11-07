@@ -124,6 +124,9 @@ type NodeEditorProps = {
      * Widgets tab and on a tile (registry/types,
      * NodeBehaviorResult.controlsComponent). */
     controlsComponent?: React.ReactNode;
+    /** Widgets whose control `controlsComponent` draws, which get no row of
+     * their own among the controls (NodeBehaviorResult.ownWidgets). */
+    ownWidgets?: readonly string[];
     disableWidgets?: boolean; // Added prop to freeze widget buttons
 };
 
@@ -146,6 +149,7 @@ function NodeEditor({
     customWidgetsCallback,
     contentComponent,
     controlsComponent,
+    ownWidgets,
     disableWidgets,
 }: NodeEditorProps) {
     const [userCode, setUserCode] = useState<string>(""); // python or grammar with marks unresolved
@@ -395,7 +399,12 @@ function NodeEditor({
     // widgets' controls, wherever those are shown: under its widgets' rows on
     // the Widgets tab, and under a tile's controls.
     const hasOwnControls = controlsComponent != undefined && controlsComponent !== false;
-    const tileControls = Boolean(dashboardOn) && ((widgetsTab && widgets.length > 0) || hasOwnControls);
+    // The widgets those controls draw themselves (Data Export's Part) get no
+    // row of their own.
+    const controlWidgets = ownWidgets?.length
+        ? widgets.filter((widget) => !ownWidgets.includes(widget.name))
+        : widgets;
+    const tileControls = Boolean(dashboardOn) && ((widgetsTab && controlWidgets.length > 0) || hasOwnControls);
     const controlsAboveOutput = tileControls && hasOutputPane;
     // A notebook cell shows its input and its output at once: the output pane
     // stays visible under the input tabs (Node.css), so a run, which would
@@ -770,9 +779,9 @@ function NodeEditor({
                             >
                                 {tileControls && !hasOutputPane ? (
                                     <Tab.Pane eventKey="controls" style={paneStyle}>
-                                        {widgetsTab && widgets.length > 0 ? (
+                                        {widgetsTab && controlWidgets.length > 0 ? (
                                             <WidgetValueControls
-                                                widgets={widgets}
+                                                widgets={controlWidgets}
                                                 dashboard
                                                 disabled={disableWidgets}
                                                 onCommit={commitValue}
@@ -825,7 +834,7 @@ function NodeEditor({
                                             // the tile's own pane holds them.
                                             dashboardOn ? null : (
                                                 <WidgetValueControls
-                                                    widgets={widgets}
+                                                    widgets={controlWidgets}
                                                     disabled={disableWidgets}
                                                     onCommit={commitValue}
                                                     controls={hasOwnControls ? controlsComponent : undefined}
@@ -909,7 +918,7 @@ function NodeEditor({
                                                 style={{ display: "flex", flexDirection: "column", height: "100%" }}
                                             >
                                                 <WidgetValueControls
-                                                    widgets={widgets}
+                                                    widgets={controlWidgets}
                                                     dashboard
                                                     disabled={disableWidgets}
                                                     onCommit={commitValue}

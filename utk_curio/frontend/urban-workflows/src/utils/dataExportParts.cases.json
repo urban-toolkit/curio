@@ -1,0 +1,157 @@
+{
+  "about": "The parts a Data Export node's input holds, as the canvas reads them from the input's envelope (utils/dataExportParts.ts) and as curio_export's zip labels them (sandbox/util/bundle_zip.py: parts_of, part_label). Each case gives the envelope as /get answers it, reduced to what the labels read: a container's dataType and its items; a geo table's data.metadata; a plain table's metadata; a raster's dataType; a value's dataType and data; an inline layer's layerName. labels is null for an input curio_export writes as one file. A case with parts is built in Python from them (container: tuple, list, dict by each part's key, or single), and parseOutput of it, reduced, is its envelope; an inline case is an envelope an Autark node hands on, read as stored_inputs.read_stored reads it.",
+  "cases": [
+    {
+      "name": "a tuple of a labelled table, a named geo table, a raster and a number",
+      "container": "tuple",
+      "parts": [
+        {"kind": "dataframe", "partLabel": "Trees"},
+        {"kind": "geodataframe", "name": "table_stations", "layerType": "points"},
+        {"kind": "raster"},
+        {"kind": "int", "value": 3}
+      ],
+      "envelope": {
+        "dataType": "outputs",
+        "data": [
+          {"dataType": "dataframe", "metadata": {"partLabel": "Trees"}},
+          {"dataType": "geodataframe", "data": {"metadata": {"name": "table_stations", "layerType": "points"}}},
+          {"dataType": "raster"},
+          {"dataType": "int", "data": 3}
+        ]
+      },
+      "labels": ["Trees", "table_stations", "Raster · part 3", "Number · part 4"]
+    },
+    {
+      "name": "a dict: a labelled geo table, a number and a table, each named by its key but the labelled one",
+      "container": "dict",
+      "parts": [
+        {"key": "roads", "kind": "geodataframe", "partLabel": "Roads (OSM)"},
+        {"key": "count", "kind": "int", "value": 2},
+        {"key": "lookup", "kind": "dataframe"}
+      ],
+      "envelope": {
+        "dataType": "dict",
+        "data": {
+          "roads": {"dataType": "geodataframe", "data": {"metadata": {"partLabel": "Roads (OSM)"}}},
+          "count": {"dataType": "int", "data": 2},
+          "lookup": {"dataType": "dataframe"}
+        }
+      },
+      "labels": ["Roads (OSM)", "count", "lookup"]
+    },
+    {
+      "name": "a list of two tables and one value of each kind, named by kind and place",
+      "container": "list",
+      "parts": [
+        {"kind": "dataframe"},
+        {"kind": "dataframe"},
+        {"kind": "float", "value": 1.5},
+        {"kind": "str", "value": "note"},
+        {"kind": "null"},
+        {"kind": "bool", "value": true}
+      ],
+      "envelope": {
+        "dataType": "list",
+        "data": [
+          {"dataType": "dataframe"},
+          {"dataType": "dataframe"},
+          {"dataType": "float", "data": 1.5},
+          {"dataType": "str", "data": "note"},
+          {"dataType": "", "data": ""},
+          {"dataType": "bool", "data": true}
+        ]
+      },
+      "labels": ["Table · part 1", "Table · part 2", "Number · part 3", "Text · part 4", "Empty · part 5", "Flag · part 6"]
+    },
+    {
+      "name": "the Chicago Loop Layers bundle, loaded whole: four geo tables by their labels",
+      "container": "tuple",
+      "parts": [
+        {"kind": "geodataframe", "partLabel": "Census tracts with CDC/ATSDR's Social Vulnerability Index 2020"},
+        {"kind": "geodataframe", "partLabel": "CTA 'L' rail lines (City of Chicago)"},
+        {"kind": "geodataframe", "partLabel": "Trees (OpenStreetMap)"},
+        {"kind": "geodataframe", "partLabel": "CTA 'L' rail stations (City of Chicago)"}
+      ],
+      "envelope": {
+        "dataType": "outputs",
+        "data": [
+          {"dataType": "geodataframe", "data": {"metadata": {"partLabel": "Census tracts with CDC/ATSDR's Social Vulnerability Index 2020"}}},
+          {"dataType": "geodataframe", "data": {"metadata": {"partLabel": "CTA 'L' rail lines (City of Chicago)"}}},
+          {"dataType": "geodataframe", "data": {"metadata": {"partLabel": "Trees (OpenStreetMap)"}}},
+          {"dataType": "geodataframe", "data": {"metadata": {"partLabel": "CTA 'L' rail stations (City of Chicago)"}}}
+        ]
+      },
+      "labels": [
+        "Census tracts with CDC/ATSDR's Social Vulnerability Index 2020",
+        "CTA 'L' rail lines (City of Chicago)",
+        "Trees (OpenStreetMap)",
+        "CTA 'L' rail stations (City of Chicago)"
+      ]
+    },
+    {
+      "name": "two tables that carry one label",
+      "container": "tuple",
+      "parts": [
+        {"kind": "dataframe", "partLabel": "Trees"},
+        {"kind": "dataframe", "partLabel": "Trees"}
+      ],
+      "envelope": {
+        "dataType": "outputs",
+        "data": [
+          {"dataType": "dataframe", "metadata": {"partLabel": "Trees"}},
+          {"dataType": "dataframe", "metadata": {"partLabel": "Trees"}}
+        ]
+      },
+      "labels": ["Trees", "Trees"]
+    },
+    {
+      "name": "an Autark node's two layers, inline: each named by its layer, a name of its own first",
+      "inline": true,
+      "envelope": {
+        "dataType": "outputs",
+        "data": [
+          {
+            "dataType": "geodataframe",
+            "layerName": "table_osm_roads",
+            "layerType": "roads",
+            "data": {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"id": 1}, "geometry": {"type": "Point", "coordinates": [0, 0]}}]}
+          },
+          {
+            "dataType": "geodataframe",
+            "layerName": "table_osm_buildings",
+            "data": {"type": "FeatureCollection", "metadata": {"name": "own"}, "features": [{"type": "Feature", "properties": {"id": 2}, "geometry": {"type": "Point", "coordinates": [1, 1]}}]}
+          }
+        ]
+      },
+      "labels": ["table_osm_roads", "own"]
+    },
+    {
+      "name": "one table: a file of its own",
+      "container": "single",
+      "parts": [{"kind": "dataframe", "partLabel": "Trees"}],
+      "envelope": {"dataType": "dataframe", "metadata": {"partLabel": "Trees"}},
+      "labels": null
+    },
+    {
+      "name": "one raster: a file of its own",
+      "container": "single",
+      "parts": [{"kind": "raster"}],
+      "envelope": {"dataType": "raster"},
+      "labels": null
+    },
+    {
+      "name": "a list of numbers: JSON",
+      "container": "list",
+      "parts": [{"kind": "int", "value": 1}, {"kind": "int", "value": 2}],
+      "envelope": {"dataType": "list", "data": [{"dataType": "int", "data": 1}, {"dataType": "int", "data": 2}]},
+      "labels": null
+    },
+    {
+      "name": "a dict of values: JSON",
+      "container": "dict",
+      "parts": [{"key": "a", "kind": "int", "value": 1}, {"key": "b", "kind": "str", "value": "x"}],
+      "envelope": {"dataType": "dict", "data": {"a": 1, "b": "x"}},
+      "labels": null
+    }
+  ]
+}

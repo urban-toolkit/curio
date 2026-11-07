@@ -5,8 +5,10 @@
  * output's artifact id. A node with no current result runs first, with the
  * nodes before it, and a run that fails hands out nothing.
  */
+import fs from 'fs';
+import path from 'path';
 import React from 'react';
-import { renderHook, render, act, waitFor } from '@testing-library/react';
+import { renderHook, render, act, waitFor, fireEvent } from '@testing-library/react';
 import type { NodeBehaviorHook, NodeBehaviorData, UseNodeStateReturn, NodeBehaviorResult } from '../../../registry/types';
 
 jest.setTimeout(15000);
@@ -53,8 +55,18 @@ jest.mock('reactflow', () => ({
 
 import { useDataExportBehavior } from '../../../adapters/node/dataExportBehavior';
 import { triggerBlobDownload } from '../../../services/packages/packagesBlobTransport';
-import { fetchData } from '../../../services/api';
+import { fetchData, fetchPreviewData } from '../../../services/api';
 import { runKeyOf } from '../../../utils/references/runKeys';
+import { registerNodeSettingWriter } from '../../../utils/nodeSettingsWriters';
+
+/** The parts of inputs, labelled as the zip labels them (utils/dataExportParts.cases.json). */
+interface PartsCase { name: string; container?: string; inline?: boolean; envelope: any; labels: string[] | null }
+const PARTS_CASES: PartsCase[] = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '../../../utils/dataExportParts.cases.json'), 'utf8'),
+).cases;
+const partsCase = (name: string) => PARTS_CASES.find((c) => c.name.startsWith(name))!;
+/** The data type an input of each container arrives with. */
+const INPUT_TYPES: Record<string, string> = { tuple: 'outputs', list: 'list', dict: 'dict' };
 
 function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
   return {
@@ -106,6 +118,7 @@ const BEHAVIOR_RESULT_KEYS: (keyof NodeBehaviorResult)[] = [
   'disablePlay',
   'dynamicHandles',
   'handlesOverride',
+  'ownWidgets',
 ];
 
 function assertValidBehaviorResult(result: NodeBehaviorResult) {
@@ -368,6 +381,146 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       await act(async () => { button.click(); });
       await waitFor(() => expect(controls(result).textContent).toContain('outside the folder of the run that made it'));
       expect(triggerBlobDownload).not.toHaveBeenCalled();
+    });
+
+    // -- Part: a dropdown of the parts of an input of several ------------------
+
+    describe('its Part dropdown', () => {
+      const STARTER = 'return curio_export(input_0, [!! file_name !!], part=[!! part !!])\n';
+      afterEach(() => {
+        (fetchPreviewData as jest.Mock).mockReset();
+        (fetchPreviewData as jest.Mock).mockResolvedValue({ data: {}, dataType: 'dataframe' });
+      });
+
+      /** The input's envelope, as `/get-preview` answers it for its artifact. */
+      function holds(envelope: unknown) {
+        (fetchPreviewData as jest.Mock).mockImplementation(async (asked: string) => (
+          asked === 'in' ? envelope : { data: {}, dataType: 'dataframe' }
+        ));
+      }
+
+      /** A wired Data Export node fed *input*, its Part widget holding *part*. */
+      function partNode(input: unknown, part = '') {
+        mockEdges = WIRED;
+        const data = makeMockData({
+          input: input as any,
+          widgets: [
+            { name: 'file_name', type: 'text', label: 'File name', default: '' },
+            { name: 'part', type: 'text', label: 'Part', default: '', value: part },
+          ],
+        } as any);
+        return mount(data, makeMockNodeState({ code: STARTER }));
+      }
+
+      const picker = (result: { current: NodeBehaviorResult }) =>
+        controls(result).querySelector('select[aria-label="Part"]') as HTMLSelectElement | null;
+      const optionsOf = (select: HTMLSelectElement) => Array.from(select.options);
+
+      test('draws its own Part, so the node shows no text box for it', async () => {
+        const result = await callBehavior(useDataExportBehavior);
+        expect(result.current.ownWidgets).toEqual(['part']);
+      });
+
+      test('shows no Part for one table, geo table or raster, unconnected, or before a result', async () => {
+        for (const dataType of ['dataframe', 'geodataframe', 'raster']) {
+          const { result, unmount } = partNode({ path: 'in', dataType });
+          expect(picker(result)).toBeNull();
+          unmount();
+          shown = null;
+        }
+        expect(fetchPreviewData).not.toHaveBeenCalled();
+
+        // Wired, but the node before it has no result yet.
+        const before = partNode('');
+        expect(picker(before.result)).toBeNull();
+        before.unmount();
+        shown = null;
+
+        // A list that holds no table or raster is written as JSON: no parts.
+        holds(partsCase('a list of numbers').envelope);
+        const json = partNode({ path: 'in', dataType: 'list' });
+        await waitFor(() => expect(fetchPreviewData).toHaveBeenCalledWith('in'));
+        await act(async () => {});
+        expect(picker(json.result)).toBeNull();
+        json.unmount();
+        shown = null;
+
+        // Unconnected: nothing feeds it, whatever its data still holds.
+        holds(partsCase('the Chicago Loop Layers').envelope);
+        const data = makeMockData({ input: { path: 'in', dataType: 'outputs' } as any });
+        mockEdges = [];
+        const { result } = mount(data, makeMockNodeState({ code: STARTER }));
+        await act(async () => {});
+        expect(picker(result)).toBeNull();
+      });
+
+      test.each(
+        PARTS_CASES.filter((c) => c.labels !== null).map((c) => [c.name, c] as const),
+      )('offers All parts, then each part by the label the zip names its file after: %s', async (_name, c) => {
+        holds(c.envelope);
+        // An Autark node's layers arrive inline; a node's output, by its artifact.
+        const input = c.inline ? c.envelope : { path: 'in', dataType: INPUT_TYPES[c.container!] };
+        const { result } = partNode(input);
+        await waitFor(() => expect(picker(result)).not.toBeNull());
+        const select = picker(result)!;
+        expect(optionsOf(select).map((o) => o.getAttribute('data-label') ?? o.textContent)).toEqual([
+          'All parts', ...c.labels!,
+        ]);
+        expect(optionsOf(select)[0].value).toBe('');
+        expect(select.value).toBe('');
+      });
+
+      test('All parts writes the empty value, and a pick its label, or its position when labels repeat', async () => {
+        const writes = jest.fn();
+        const off = registerNodeSettingWriter('node-1', 'widgets', writes);
+        try {
+          holds(partsCase('the Chicago Loop Layers').envelope);
+          const chicago = partNode({ path: 'in', dataType: 'outputs' });
+          await waitFor(() => expect(picker(chicago.result)).not.toBeNull());
+          fireEvent.change(picker(chicago.result)!, { target: { value: 'Trees (OpenStreetMap)' } });
+          expect(writes).toHaveBeenLastCalledWith({ part: 'Trees (OpenStreetMap)' });
+          expect(picker(chicago.result)!.value).toBe('Trees (OpenStreetMap)');
+          fireEvent.change(picker(chicago.result)!, { target: { value: '' } });
+          expect(writes).toHaveBeenLastCalledWith({ part: '' });
+          chicago.unmount();
+          shown = null;
+
+          holds(partsCase('two tables that carry one label').envelope);
+          const twice = partNode({ path: 'in', dataType: 'outputs' });
+          await waitFor(() => expect(picker(twice.result)).not.toBeNull());
+          expect(optionsOf(picker(twice.result)!).map((o) => o.value)).toEqual(['', '0', '1']);
+          fireEvent.change(picker(twice.result)!, { target: { value: '1' } });
+          expect(writes).toHaveBeenLastCalledWith({ part: '1' });
+        } finally {
+          off();
+        }
+      });
+
+      test('a saved part the input no longer holds stays selected, marked as not in the input', async () => {
+        holds(partsCase('the Chicago Loop Layers').envelope);
+        const { result } = partNode({ path: 'in', dataType: 'outputs' }, 'Roads');
+        await waitFor(() => expect(picker(result)).not.toBeNull());
+        const select = picker(result)!;
+        expect(select.value).toBe('Roads');
+        expect(select.getAttribute('data-stale')).toBe('true');
+        expect(optionsOf(select).find((o) => o.selected)!.textContent).toBe('Roads (not in the input)');
+        // A part the input holds, by its position, is no stale value.
+        const { result: byPosition } = partNode({ path: 'in', dataType: 'outputs' }, '2');
+        await waitFor(() => expect(picker(byPosition)?.value).toBe('Trees (OpenStreetMap)'));
+      });
+
+      test('a long label is cut in the list, and the whole of the chosen one shows on hover', async () => {
+        const census = "Census tracts with CDC/ATSDR's Social Vulnerability Index 2020";
+        holds(partsCase('the Chicago Loop Layers').envelope);
+        const { result } = partNode({ path: 'in', dataType: 'outputs' }, census);
+        await waitFor(() => expect(picker(result)).not.toBeNull());
+        const select = picker(result)!;
+        const option = optionsOf(select).find((o) => o.value === census)!;
+        expect(option.textContent!.length).toBeLessThan(census.length);
+        expect(option.textContent!.endsWith('…')).toBe(true);
+        expect(select.getAttribute('data-tooltip')).toBe(census);
+        expect(select.getAttribute('title')).toBeNull();
+      });
     });
 
 

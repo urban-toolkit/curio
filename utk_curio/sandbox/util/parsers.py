@@ -26,6 +26,7 @@ from utk_curio.sandbox.util.db import get_connection, get_read_connection, init_
 from utk_curio.sandbox.util.codec import (
     PARQUET_DECODE_SIDECAR_SUFFIX,
     PARQUET_ROW_GROUP_ROWS,
+    PART_LABEL,
     _decode_object_cell_from_parquet,
     _encode_object_cell_for_parquet,
     _is_missing_value,
@@ -41,7 +42,9 @@ from utk_curio.sandbox.util.codec import (
     cannot_hand_on,
     is_geospatial_frame,
     detect_kind,
+    kept_table_metadata,
     make_json_safe,
+    restore_table_metadata,
     safe_json_loads,
 )
 
@@ -102,9 +105,12 @@ def parse_geodataframe(data_value):
     # df['geometry'] = df['geometry'].apply(wkt.loads)
     # gdf = gpd.GeoDataFrame(df, geometry='geometry')
     gdf = gpd.GeoDataFrame.from_features(data_value["features"])
-    if 'metadata' in data_value and 'name' in data_value['metadata']:
-        gdf.__dict__['metadata'] = {'name': data_value['metadata']['name']}
-    
+    # Its layer's name, and the label of the bundle part it was read from.
+    sent = data_value.get('metadata')
+    kept = {key: sent[key] for key in ('name', PART_LABEL) if key in sent} if isinstance(sent, dict) else {}
+    if kept:
+        gdf.__dict__['metadata'] = kept
+
     return gdf
 
 def parse_raster(data_value):
@@ -125,7 +131,8 @@ def parseInput(parsed_json):
     elif data_type == 'list':
         return parse_list(data_type, data_value)
     elif data_type == 'dataframe':
-        return parse_dataframe(data_value)
+        # With the part label its envelope carries beside its rows (parseOutput).
+        return restore_table_metadata(parse_dataframe(data_value), parsed_json.get('metadata'))
     elif data_type == 'geodataframe':
         return parse_geodataframe(data_value)
     elif data_type == 'raster':
@@ -188,11 +195,10 @@ def load_dataset_parquet(path):
 
     frame_metadata, _encoded = _read_parquet_sidecar_meta(path)
     frame = restore_parquet_sidecar(frame, path, geometry_col=geometry_col)
-    if frame_metadata is not None:
-        try:
-            frame.metadata = frame_metadata
-        except Exception:  # noqa: BLE001 - metadata is best-effort
-            pass
+    if isinstance(frame_metadata, dict):
+        # In ``__dict__``: an attribute set on a table names a column, and
+        # would take the place of one called ``metadata``.
+        frame.__dict__['metadata'] = frame_metadata
 
     return frame
 
@@ -309,6 +315,12 @@ def parseOutput(output):
         json_output['dataType'] = 'dataframe'
         json_output['schema'] = _frame_schema(output)
         json_output['columns'] = _frame_columns(output)
+        # The label of the bundle part it was read from, which a plain table
+        # keeps alone (codec.kept_table_metadata), beside its rows: Data
+        # Export's Part dropdown names the part by it.
+        kept_table = kept_table_metadata(output)
+        if kept_table:
+            json_output['metadata'] = kept_table
     elif is_geospatial_frame(output):
         gdf = fix_json_strings(output)
         # `is_geospatial_frame` guarantees an active column, so `.to_json()`,
@@ -338,11 +350,12 @@ def parseOutput(output):
         # have to know which branch it is on to read them.
         json_output['schema'] = _frame_schema(output)
         json_output['columns'] = _frame_columns(output)
-        # The frame's own name and Autark layer type, as the Arrow path sends
-        # them in its X-Curio-Frame-Metadata header.
+        # The frame's own name and Autark layer type, and the label of the
+        # bundle part it was read from, as the Arrow path sends them in its
+        # X-Curio-Frame-Metadata header.
         frame_metadata = getattr(output, 'metadata', None)
         if isinstance(frame_metadata, dict):
-            kept = {key: frame_metadata[key] for key in ('name', 'layerType') if key in frame_metadata}
+            kept = {key: frame_metadata[key] for key in ('name', 'layerType', PART_LABEL) if key in frame_metadata}
             if kept:
                 json_output['data']['metadata'] = kept
     # A DatasetReader can only exist if user code already imported rasterio,
@@ -539,7 +552,9 @@ def save_to_duckdb(value, node_id=None, session_id=None, art_id=None):
             rel_path = _stored_artifact_rel_path(art_id)
             parquet_path = _resolve_stored_artifact_path(rel_path, create_parent=True)
             _write_dataframe_parquet(prepared, parquet_path)
+            # A plain table keeps only its bundle part's label (codec.PART_LABEL).
             meta_json = _serialize_parquet_meta(
+                frame_metadata=kept_table_metadata(value),
                 encoded_object_columns=encoded_object_columns,
             )
             con.execute(
@@ -673,8 +688,9 @@ def load_from_duckdb(art_id, session_id=None):
         #     result = gpd.read_parquet(io.BytesIO(blob))
         elif kind == 'dataframe':
             result = pd.read_parquet(_parquet_source(v_str, blob))
-            _, encoded_object_columns = _parse_parquet_meta(v_json)
+            frame_meta, encoded_object_columns = _parse_parquet_meta(v_json)
             result = _restore_frame_from_parquet(result, encoded_object_columns)
+            result = restore_table_metadata(result, frame_meta)
         elif kind == 'geodataframe':
             result = gpd.read_parquet(_parquet_source(v_str, blob))
             frame_meta, encoded_object_columns = _parse_parquet_meta(v_json)

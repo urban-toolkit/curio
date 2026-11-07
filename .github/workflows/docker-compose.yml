@@ -162,7 +162,7 @@ on:
         options: [auto, hosted, arcade, desktop]
         default: auto
       gpu_pool:
-        description: 'test-gpu: auto (arcade GPU runners first, then utk, then utk-desktop-01), arcade, utk, or desktop (utk-desktop-01)'
+        description: 'test-gpu: auto (arcade GPU runners first, then utk, then utk-desktop-01 or -03), arcade, utk, or desktop (utk-desktop-01 or -03)'
         type: choice
         options: [auto, arcade, utk, desktop]
         default: auto
@@ -213,19 +213,19 @@ concurrency:
 #   * CPU jobs: GitHub-hosted ubuntu-latest while the organization's hosted
 #     runners have room, the self-hosted arcade runners ([self-hosted, arcade,
 #     cpu], 40 of them) for the rest, and the utk-desktop runners
-#     (utk-desktop-01 and -02, [self-hosted, utk-desktop]) when arcade is full
+#     (utk-desktop-01 to -03, [self-hosted, utk-desktop]) when arcade is full
 #     too.
 #   * arcade-cpu-40 also carries skill-evals, the label of the skills' live
 #     evaluations (skill-evals.yml): one running there holds that CPU runner
 #     as any job does.
 #   * test-gpu: an arcade GPU runner (arcade-gpu-01..04, [self-hosted, arcade,
 #     gpu]) while one is free, then utk-gpu ([self-hosted, utk, gpu]), and
-#     utk-desktop-01 ([self-hosted, utk-desktop-01, gpu]) when utk-gpu is
+#     utk-desktop-01 or -03 ([self-hosted, utk-desktop, gpu]) when utk-gpu is
 #     busy too, with as many workers as the desktop holds. Never
 #     utk-desktop-02: its 12 GB hold one worker, 47 minutes.
 #   * A self-hosted runner's labels are its machine (arcade, utk,
-#     utk-desktop-01, utk-desktop-02; both desktops also carry utk-desktop)
-#     and its kind (cpu or gpu).
+#     utk-desktop-01 to -03; every desktop also carries utk-desktop) and its
+#     kind (cpu or gpu).
 #   * test-desktop-stress, unit (sandbox) and preview-runner: always
 #     ubuntu-latest. The first two measure a 4-core, 16 GB laptop.
 #   * test-gpu-stress: always utk-gpu.
@@ -629,7 +629,7 @@ jobs:
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['test-gpu'] }}
     timeout-minutes: ${{ inputs.repeat > 1 && 350 || 90 }}
     # One queue per ref and GPU pool, named by the pool's machine label
-    # (arcade, utk or utk-desktop-01), so a run on one pool never waits for,
+    # (arcade, utk or utk-desktop), so a run on one pool never waits for,
     # or evicts, a run on another.
     concurrency:
       group: gpu-ci-${{ github.ref }}-${{ fromJSON(needs.pick-runners.outputs.runners || '{"test-gpu":["","none"]}')['test-gpu'][1] }}${{ inputs.remint && '-remint' || '' }}
@@ -1092,8 +1092,8 @@ jobs:
           PYTEST_ADDOPTS: --junitxml=${{ github.workspace }}/ci-report/e2e{run}.xml
           # This runner's GPU model, for the frames that keep a baseline per
           # GPU kind (GPU_KINDS in utils/screenshots.py): the arcade runners
-          # share an H100, utk-gpu has an RTX PRO 6000, and utk-desktop-01 an
-          # RTX 3070, kind utk-desktop. Any
+          # share an H100, utk-gpu has an RTX PRO 6000, utk-desktop-01 an
+          # RTX 3070 and utk-desktop-03 an RTX 4080, kind utk-desktop. Any
           # other runner gets none, so its frames compare with their default
           # baselines.
           CURIO_E2E_GPU_KIND: ${{ startsWith(runner.name, 'arcade-gpu-') && 'arcade-gpu' || (runner.name == 'utk-gpu' && 'utk-gpu' || (startsWith(runner.name, 'utk-desktop-') && 'utk-desktop' || '')) }}

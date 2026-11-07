@@ -184,6 +184,20 @@ def _not_seeded_once(user_id: int, example_ids: list) -> dict:
     return {project_id: count for project_id, count in counts.items() if count != (1, 1)}
 
 
+def _without_the_default_agents(user_id: int, example_ids: list) -> dict:
+    """Each example whose agents are not the ones every account has by
+    default, with the agents it has."""
+    from utk_curio.backend.app.agents.repositories import project_agents
+    from utk_curio.backend.app.agents.service import default_agent_coords
+
+    wanted = sorted(default_agent_coords())
+    held = {
+        project_id: project_agents.project_agents(storage.read_spec(str(user_id), project_id))
+        for project_id in example_ids
+    }
+    return {project_id: agents for project_id, agents in held.items() if agents != wanted}
+
+
 def test_two_first_listings_seed_the_examples_once(
     file_db_app, user_id, squeezed_busy_timeout, monkeypatch, caplog,
 ):
@@ -219,6 +233,7 @@ def test_two_first_listings_seed_the_examples_once(
     assert sorted([first["value"][0], second["value"][0]]) == [0, len(examples)]
     assert second["done_at"] > released_at, "the second listing did not wait for the first"
     assert _not_seeded_once(user_id, examples) == {}
+    assert _without_the_default_agents(user_id, examples) == {}
 
 
 def test_a_first_listing_during_a_save_waits_for_the_database(
@@ -253,3 +268,4 @@ def test_a_first_listing_during_a_save_waits_for_the_database(
     # A later listing seeds nothing more and still shows every example.
     assert _seed_and_list(file_db_app, user_id) == (0, examples)
     assert _not_seeded_once(user_id, examples) == {}
+    assert _without_the_default_agents(user_id, examples) == {}

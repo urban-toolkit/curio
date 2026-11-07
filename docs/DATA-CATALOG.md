@@ -110,7 +110,7 @@ There are three places you work with datasets, and they are **not** interchangea
 
 **I want to use a catalog dataset in my dataflow.** Open the dataflow, then click **Data Catalog** in the top bar. Find the dataset and click **Add to project**. It now appears in the left Tools panel's **Data Catalog** dropdown. Drag it onto the canvas to get a Data Loading node that loads it ([part 3](#3-using-a-dataset-in-a-dataflow)).
 
-**I want to use a file from my computer.** Drop the file on the canvas or on a Data Loading node, or click a Data Loading node's **Choose file** and pick it (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.onnx`, `.nc`, `.pbf`, `.gpkg`, or a `.zip` holding one shapefile). Curio imports it into your account, adds it to the open dataflow and loads it. **Import dataset** in the drawer's footer only registers a file in your account: click **Add to project** on it to add it to the open dataflow.
+**I want to use a file from my computer.** Drop the file on the canvas or on a Data Loading node, or click a Data Loading node's **Choose file** and pick it (`.csv`, `.geojson`, `.json`, `.parquet`, `.tif`, `.tiff`, `.onnx`, `.nc`, `.pbf`, `.gpkg`, or a `.zip` holding one shapefile or a bundle Curio exported). Curio imports it into your account, adds it to the open dataflow and loads it. **Import dataset** in the drawer's footer only registers a file in your account: click **Add to project** on it to add it to the open dataflow.
 
 **I want a dataset from an open data portal.** Download it from the [Discovery Catalog](DISCOVERY-CATALOG.md). It lands here as an imported dataset.
 
@@ -263,9 +263,9 @@ computed.<dataflowId>.<nodeId>@1/
 
 Scalar parts (numbers, strings, booleans) are stored as `{"value": ...}`. `bundle.json` records the producing node's container as `container`: `tuple`, `list`, or `dict`, with each part of a dict under its `key`. The generated loader reads `bundle.json`, rebuilds each part, and returns the parts in that container, a dict with its keys in their order, so a downstream node sees exactly the shape the producing node returned. A `bundle.json` that records no `container` loads as a tuple. A table part keeps its `metadata`, the name and Autark layer type the producing node gave it (`gdf.metadata = {"name": "roads", "layerType": "roads"}`), and `bundle.json` lists them as each part's `layerName` and `layerType`. A single saved table keeps its `metadata` the same way.
 
-A dataset you ship can be a bundle too, when several files are one input: its files side by side in `data/`, under their own names, and `data/bundle.json` listing each as `{"index", "label", "kind", "format", "file"}` (`"file": "data/depth_2050.tif"`). A node reads one file of it with `curio_load_data("<datasetId>", part="<file>")`, or all of them, as a tuple in `index` order, with `curio_load_data("<datasetId>")`. Only a file inside the dataset's folder is a part.
+A dataset you ship can be a bundle too, when several files are one input: its files side by side in `data/`, under their own names, and `data/bundle.json` listing each as `{"index", "label", "kind", "format", "file"}` (`"file": "data/depth_2050.tif"`). A node reads one file of it with `curio_load_data("<datasetId>", part="<file>")`, or all of them, as a tuple in `index` order, with `curio_load_data("<datasetId>")`. Only a file inside the dataset's folder is a part. Read whole, each table carries its part's `label` in its `metadata` as `partLabel` (`{"partLabel": "Trees (OpenStreetMap)"}`), beside the name and layer type it keeps, and keeps it through the nodes after it; it names no layer.
 
-Previewing a bundle gives you a **tab per part**; a part with no rows is labelled *"Scalar or metadata part"*. A bundle **cannot be exported** as a single file, and its Export button is disabled.
+Previewing a bundle gives you a **tab per part**; a part with no rows is labelled *"Scalar or metadata part"*. A bundle exports as one zip (see [Export](#5-previews-schema-and-export)).
 
 ---
 
@@ -282,7 +282,18 @@ A dataset's details have four tabs: **Overview**, **Schema**, **Table Preview**,
 | `shp` | Not previewable. |
 | `collection` | The index, one row per file, below a strip of its first files. |
 
-**Export**, in the details, downloads the dataset as a file. A Parquet dataset is exported as **GeoJSON** for geo data or **CSV** for a plain table, matching what the preview showed. Bundles, multi-layer groups and collections cannot be exported.
+**Export**, in the details, downloads the dataset as a file. A Parquet dataset is exported as **GeoJSON** for geo data or **CSV** for a plain table, matching what the preview showed. Collections and groups of NetCDF variables cannot be exported.
+
+A bundle, a node's output of several parts and a multi-layer group (OSM, GeoPackage or GTFS) download as one **zip**, named after the dataset (`Chicago Loop Layers.zip`). It holds a file per part, named after the part's label, and a `bundle.json`:
+
+| Part | In the zip |
+|---|---|
+| Table | CSV |
+| Geo table | GeoJSON |
+| Raster | GeoTIFF |
+| Single value, list or dict | Kept in `bundle.json` as its `value` |
+
+`bundle.json` records `version` (1), the `container` the parts were in (`tuple`, `list` or `dict`; a group is a `dict` of its layers by name), and each part's `index`, its `key` in a dict, its `label`, its `kind`, and its `file` or its `value`. File names are made plain: `Trees (OpenStreetMap)` becomes `Trees_OpenStreetMap.geojson`, two labels that make one name take `_2`, and a label with no letters left takes `part_<n>`. A [Data Export](USAGE.md#inside-a-node) node fed the same parts writes the same zip.
 
 ---
 
@@ -302,6 +313,7 @@ A dataset's details have four tabs: **Overview**, **Schema**, **Table Preview**,
 | `.pbf`, `.osm.pbf` | **converted** (see below) |
 | `.gpkg` | **converted** (see below) |
 | `.zip` holding one shapefile | **converted** (see below) |
+| `.zip` with `bundle.json` at its top | `bundle` (see below) |
 
 Anything else is rejected with *"Unsupported dataset format"*.
 
@@ -339,6 +351,10 @@ A group whose layers all came from the Discovery Catalog, such as an OpenStreetM
 A shapefile is imported as a `.zip` holding its `.shp` with the `.dbf` and `.shx`, and its `.prj` and `.cpg` when there are. It becomes one GeoParquet dataset named after the zip, reprojected to EPSG:4326 when its `.prj` names another CRS. A zipped shapefile from the [Discovery Catalog](DISCOVERY-CATALOG.md) is read the same way.
 
 A `.shp` on its own is refused: *"A shapefile cannot be read from roads.shp alone. Zip roads.shp with its .dbf and .shx (and its .prj, when there is one) and import the .zip."* A zip missing the `.dbf` or `.shx` is refused too (*"'roads.shp' needs its .shx beside it in the archive"*), and so is a zip that holds no shapefile.
+
+### Bundle zips
+
+A zip with `bundle.json` at its top, one a bundle's [Export](#5-previews-schema-and-export) or a Data Export node wrote, imports as a `bundle` dataset named after the zip: the same parts, labels, keys and container, read back as the bundle was. `bundle.json` must describe exactly what the zip holds. A zip is refused, saying why (*"layers.zip cannot be imported as a bundle: it holds 'extra.csv', which bundle.json does not list."*), when a member's name leaves the zip or is a link, a part's file is in a folder, is missing or does not end in its kind's extension (`.csv`, `.geojson`, `.tif`), a file is not listed, or `bundle.json` is not one.
 
 ### NetCDF variables as one group
 
