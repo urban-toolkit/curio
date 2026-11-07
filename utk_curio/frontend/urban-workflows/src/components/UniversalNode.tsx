@@ -248,7 +248,11 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     if (current <= lastTriggerExecRef.current) return;
     lastTriggerExecRef.current = current;
     if (disablePlay || !sendCode) {
-      signalNodeExecDone(data.nodeId);
+      // A node with no Play that hands its input on once it has read it (a
+      // Simple View) is done for the run once the rows have gone on.
+      const handedOn = behavior.untilHandedOn;
+      if (handedOn) void handedOn().then(() => signalNodeExecDone(data.nodeId));
+      else signalNodeExecDone(data.nodeId);
       return;
     }
     setOutputCallback({ code: "exec", content: "" });

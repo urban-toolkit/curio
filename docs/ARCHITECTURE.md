@@ -910,6 +910,7 @@ The hook can return:
 |---|---|
 | `contentComponent` | Custom JSX to render inside the node's body (used when `editor: "none"`) |
 | `sendCodeOverride` | Replace the default HTTP execution with custom logic |
+| `untilHandedOn` | For a node with no Play that hands its input on once it has read it: what a run waits for before it counts the node done |
 | `defaultValueOverride` | Override the initial code shown in the editor |
 | `dynamicHandles` / `handlesOverride` | Add or replace connection handles at runtime |
 
