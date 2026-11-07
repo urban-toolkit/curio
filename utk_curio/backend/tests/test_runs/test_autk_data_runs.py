@@ -62,7 +62,7 @@ class LayerSandbox:
             status_code = 200
             text = ""
 
-            def json(_self):
+            def json(self):
                 return reply
 
         return Reply()

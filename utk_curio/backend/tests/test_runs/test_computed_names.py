@@ -86,7 +86,7 @@ def sandbox(monkeypatch, shared):
             status_code = 200
             text = ""
 
-            def json(_self):
+            def json(self):
                 return {"stdout": [], "stderr": "", "output": {"path": name, "dataType": "dict"}}
 
         return Reply()

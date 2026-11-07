@@ -414,7 +414,7 @@ class _Sandbox:
             status_code = 200
             text = ""
 
-            def json(_self):
+            def json(self):
                 return {"stdout": [], "stderr": "", "output": {"path": filename, "dataType": "dataframe"}}
 
         return Reply()
