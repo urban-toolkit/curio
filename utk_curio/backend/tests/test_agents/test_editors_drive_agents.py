@@ -470,8 +470,8 @@ def test_an_editors_agent_change_is_a_point_named_after_the_editor(client, peopl
     from utk_curio.backend.app.collaboration import dataflow_docs, history
 
     script.replies[:] = [
-        '```curio.v1\n{"toolRequest": {"tool": "node.content.write", '
-        '"params": {"nodeId": "n1", "content": "print(2)"}}}\n```',
+        ('```curio.v1\n{"toolRequest": {"tool": "node.content.write", '
+         '"params": {"nodeId": "n1", "content": "print(2)"}}}\n```'),
         "Written: the node prints two.",
     ]
     ran = _run(client, flow, BOB_TOKEN, "Print two instead.")

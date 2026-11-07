@@ -72,8 +72,8 @@ class TestAFetchableRowIsDelegated:
                 'import pandas as pd\nreturn pd.read_csv("invented.csv")',
                 'import pandas as pd\nreturn pd.read_csv("invented.csv")',
                 'import pandas as pd\nreturn pd.read_csv("invented.csv")',
-                'import geopandas as gpd\nreturn gpd.read_file('
-                '"https://data.example.org/areas.geojson")',
+                ('import geopandas as gpd\nreturn gpd.read_file('
+                 '"https://data.example.org/areas.geojson")'),
             ],
         )
         monkeypatch.setattr(
@@ -170,8 +170,8 @@ class TestTheBuildRunsOnTheBuildersConfiguration:
                 'import pandas as pd\nreturn pd.read_csv("invented.csv")',
                 'import pandas as pd\nreturn pd.read_csv("invented.csv")',
                 'import pandas as pd\nreturn pd.read_csv("invented.csv")',
-                'import geopandas as gpd\nreturn gpd.read_file('
-                '"https://data.example.org/areas.geojson")',
+                ('import geopandas as gpd\nreturn gpd.read_file('
+                 '"https://data.example.org/areas.geojson")'),
             ],
         )
         monkeypatch.setattr(

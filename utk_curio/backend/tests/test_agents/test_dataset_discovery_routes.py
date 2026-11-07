@@ -267,8 +267,8 @@ class TestConfirmedSourceReachesTheBuilder:
                 'import pandas as pd\nreturn pd.read_csv("invented.csv")',
                 'import pandas as pd\nreturn pd.read_csv("invented.csv")',
                 'import pandas as pd\nreturn pd.read_csv("invented.csv")',
-                "import pandas as pd\nreturn pd.read_json"
-                '("https://data.example.org/areas.geojson")',
+                ("import pandas as pd\nreturn pd.read_json"
+                 '("https://data.example.org/areas.geojson")'),
             ],
         )
         assert h.solve()["results"][h.load]["status"] == "pending"
