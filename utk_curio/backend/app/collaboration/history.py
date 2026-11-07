@@ -308,25 +308,57 @@ def _line(point: dict) -> bytes:
     return json.dumps(point, separators=(",", ":")).encode("ascii") + b"\n"
 
 
+#: Per thread: whether the points it adds now are a change's own, added as the
+#: change is recorded (:func:`recorded`).
+_recording = threading.local()
+
+
+@contextmanager
+def _a_changes_own_points():
+    """While a change's points are recorded (:func:`recorded`): one that
+    cannot reach the disk is logged, never the change's failure, since the
+    change has landed in the doc and gone to every tab. Any other point that
+    cannot reach the disk fails what asked for it."""
+    before = getattr(_recording, "on", False)
+    _recording.on = True
+    try:
+        yield
+    finally:
+        _recording.on = before
+
+
 def _append_points(user_key: str, project_id: str, points: list[dict]) -> None:
     """Add *points* at the end of the file, a line each, dropping what a write
-    cut short left after its last whole line."""
+    cut short left after its last whole line. Every reader has them once the
+    history lock is let go. The file reaches the disk after that, once this
+    thread holds no lock a read of the dataflow waits for, its doc's among
+    them (``storage.sync_when_free``): on a strained disk a sync takes
+    seconds, and a read waits for none. A sync that fails then fails what
+    asked for the points, as it did under the locks, but for a change's own
+    (:func:`recorded`), which is logged."""
     path = _points_path(_folder(user_key, project_id))
-    with storage.history_lock(user_key, project_id):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "ab+") as handle:
-            handle.seek(0, os.SEEK_END)
-            size = handle.tell()
-            if size:
-                handle.seek(max(0, size - 1))
-                if handle.read(1) != b"\n":
-                    handle.seek(0)
-                    data = handle.read()
-                    handle.truncate(data.rfind(b"\n") + 1)
-            handle.seek(0, os.SEEK_END)
-            handle.write(b"".join(_line(point) for point in points))
-            handle.flush()
-            os.fsync(handle.fileno())
+    written = None
+    try:
+        with storage.history_lock(user_key, project_id):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "ab+") as handle:
+                handle.seek(0, os.SEEK_END)
+                size = handle.tell()
+                if size:
+                    handle.seek(max(0, size - 1))
+                    if handle.read(1) != b"\n":
+                        handle.seek(0)
+                        data = handle.read()
+                        handle.truncate(data.rfind(b"\n") + 1)
+                handle.seek(0, os.SEEK_END)
+                handle.write(b"".join(_line(point) for point in points))
+                handle.flush()
+                written = os.dup(handle.fileno())
+    except BaseException:
+        if written is not None:
+            os.close(written)
+        raise
+    storage.sync_when_free(written, logged=getattr(_recording, "on", False))
 
 
 def _write_points(user_key: str, project_id: str, points: list[dict]) -> None:
@@ -598,8 +630,10 @@ def recorded(entry, changes: list[Change], *, point: Optional[dict] = None) -> N
     logged, in the order it took them, as the history's points: one point a
     transaction and its origin. A writer's own *point* names a change in place
     of the point its kind would make. Under the doc's lock. A history that
-    cannot be written never fails the change: it is logged and dropped. A
-    dataflow with no points gets its first, which hold the change."""
+    cannot be written never fails the change: it is logged and dropped, and
+    so is a point that cannot reach the disk once the locks are let go
+    (:func:`_a_changes_own_points`). A dataflow with no points gets its
+    first, which hold the change."""
     try:
         if _first_made(entry):
             return
@@ -608,7 +642,8 @@ def recorded(entry, changes: list[Change], *, point: Optional[dict] = None) -> N
         return
     for change in changes:
         try:
-            _record(entry, change, point)
+            with _a_changes_own_points():
+                _record(entry, change, point)
         except Exception:  # noqa: BLE001 - the change is the doc's already
             logger.exception("dataflow %s: a change could not be added to its history", entry.project_id)
 
