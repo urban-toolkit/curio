@@ -32,6 +32,7 @@ export const MODEL_TYPE_LABEL: Record<ModelBlockPayload["type"], string> = {
   "semantic-segmentation": "Semantic segmentation",
   "image-to-image": "Image to image",
   "node-regression": "Node regression",
+  "concept-segmentation": "Concept segmentation",
 };
 
 /** Dispatched after anything that changes the packages an account holds

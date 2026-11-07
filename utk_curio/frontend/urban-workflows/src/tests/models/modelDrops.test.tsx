@@ -23,7 +23,7 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 
-import { ddrnetPackage, deepUmbraPackage, importedModelPackage } from "../_support/modelPackages";
+import { ddrnetPackage, deepUmbraPackage, fetchedModelPackage, importedModelPackage } from "../_support/modelPackages";
 
 /** A source file under `src/`. */
 const read = (rel: string) => fs.readFileSync(path.join(__dirname, "..", "..", rel), "utf8");
@@ -262,6 +262,27 @@ describe("a model dropped on a node", () => {
     const deepUmbra = createModelDragPayload(deepUmbraPackage());
     expect(modelSwapRefusal(nodeModelType(segmentationNode, typeOf), deepUmbra)).toBe(
       "This node runs semantic segmentation models, and Deep Umbra (accumulated shadows) is an image to image model.",
+    );
+  });
+
+  test("of the concept segmentation type swaps only a model of that type", () => {
+    const prompted = createModelDragPayload(fetchedModelPackage());
+    const other = createModelDragPayload(
+      fetchedModelPackage({ packageId: "model.test.prompted-two", dirName: "model.test.prompted-two@1", name: "Second finder" }),
+    );
+    const conceptNode = { code: 'model = curio_load_model("model.test.prompted")\nreturn input_0\n' };
+    const conceptTypes = (id: string) => (id === "model.test.prompted" ? "concept-segmentation" : types[id]);
+
+    expect(nodeModelType(conceptNode, conceptTypes)).toBe("concept-segmentation");
+    expect(modelSwapRefusal("concept-segmentation", other)).toBeNull();
+    expect(applyModelToNodeData(conceptNode, other).code).toBe(
+      'model = curio_load_model("model.test.prompted-two")\nreturn input_0\n',
+    );
+    expect(modelSwapRefusal("concept-segmentation", createModelDragPayload(importedModelPackage()))).toBe(
+      "This node runs concept segmentation models, and SegFormer B0 (ADE20K) is a semantic segmentation model.",
+    );
+    expect(modelSwapRefusal(nodeModelType(segmentationNode, typeOf), prompted)).toBe(
+      "This node runs semantic segmentation models, and Prompted segmenter is a concept segmentation model.",
     );
   });
 

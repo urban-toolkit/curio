@@ -11,6 +11,8 @@ type (``application/starters.py``):
 - ``image-to-image`` and ``node-regression``: the model loaded by its id, then
   a ``model.run`` skeleton naming each array the model's graph takes, with its
   element type and shape, for the node's author to fill from ``input_0``.
+- ``concept-segmentation``: the model loaded by its id, with its prompts and
+  the folder of its checkpoint, for the node's author to run on ``input_0``.
 
 A model downloaded from the Discovery Catalog becomes a model package with one
 template, :func:`model_template`, the same node DDRNet23-Slim's package ships.
@@ -23,6 +25,9 @@ from typing import Iterable
 
 #: The model type whose node Curio writes in full.
 SEGMENTATION = "semantic-segmentation"
+#: The model type whose labels are text prompts, and whose node runs its
+#: checkpoint itself.
+CONCEPT_SEGMENTATION = "concept-segmentation"
 
 #: The node of a segmentation model package.
 _SEGMENTATION_TEMPLATE = {
@@ -72,6 +77,19 @@ def segmentation_cell(model_id: str) -> str:
     )
 
 
+def concept_cell(model_id: str) -> str:
+    """The cell of a ``concept-segmentation`` model's node: the model, its
+    prompts and where its checkpoint is, for the node's author to run."""
+    return (
+        f"{model_loader_line(model_id)}\n"
+        "prompts = model.labels  # what to find, one text prompt each\n"
+        "\n"
+        "# model.path is the model's checkpoint folder: load it with the library\n"
+        "# its package declares, and find each prompt's things in input_0.\n"
+        "return input_0\n"
+    )
+
+
 def _shape_text(shape) -> str:
     return "[" + ", ".join("?" if size is None else str(size) for size in shape) + "]"
 
@@ -102,8 +120,10 @@ def run_skeleton(model_id: str, inputs: Iterable | None) -> str:
 
 def default_cell(model_id: str, model_type: str, inputs: Iterable | None = None) -> str:
     """The cell a node of a model package of *model_type* opens with when its
-    template ships none: :func:`segmentation_cell`, else :func:`run_skeleton`
-    over the model's *inputs*."""
+    template ships none: :func:`segmentation_cell`, :func:`concept_cell`, else
+    :func:`run_skeleton` over the model's *inputs*."""
     if model_type == SEGMENTATION:
         return segmentation_cell(model_id)
+    if model_type == CONCEPT_SEGMENTATION:
+        return concept_cell(model_id)
     return run_skeleton(model_id, inputs)

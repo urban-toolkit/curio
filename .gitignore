@@ -55,6 +55,12 @@ docs/examples/dataflows/expected_outputs/*_actual.png
 # in the pip package; a checkout has every file and needs none.
 utk_curio/backend/app/datasets/infrastructure/left_out_files.record.json
 
+# The weights a model package's operator fetches (scripts/fetch_model_weights.py):
+# its entry, a folder directly under its models/. Weights that ship in git are
+# files there. And the folder docker-compose.deploy.yml mounts for them.
+/packages/*/models/*/
+/model-weights/
+
 # The E2E broken-library fixture publishes this into the shared catalog and
 # unpublishes it in teardown (test_broken_library_e2e.py). A run killed
 # mid-test leaves it behind; it is never a real catalog package, so it must
