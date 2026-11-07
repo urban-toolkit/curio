@@ -27,6 +27,8 @@ jest.mock("vega-lite", () => ({}), { virtual: true });
 const mockRouteId = "36363636-1111-4222-8333-000000000036";
 let mockFlow: any = null;
 let mockCollab: any = {};
+/** The collapsed scenarios' boxes the canvas draws (scenarioCanvasView). */
+let mockScenarioBoxes: any[] = [];
 const mockShowToast = jest.fn();
 const mockCreateCodeNode = jest.fn((_type: string, _options?: unknown) => ({ id: "dropped" }));
 const mockLoadTrill = jest.fn(() => ({ nodes: [], edges: [] }));
@@ -105,8 +107,8 @@ jest.mock("../../components/agents/attach/AgentDockOverlay", () => ({ AgentDockO
 jest.mock("../../components/agents/attach/AgentDock", () => ({ AgentDock: () => null }));
 jest.mock("../../components/scenarios/useScenarioDrop", () => ({ useScenarioDrop: () => jest.fn() }));
 jest.mock("../../components/scenarios/ScenarioLayers", () => ({
-  BOX_WIDTH: 0,
-  boxLayout: () => ({ height: 0 }),
+  BOX_WIDTH: 260,
+  boxLayout: (box: any) => ({ height: box.height }),
   scenarioLayersExtent: () => [],
 }));
 jest.mock("../../components/scenarios/CanvasScenarioLayers", () => ({ CanvasScenarioLayers: () => null }));
@@ -155,7 +157,7 @@ jest.mock("../../utils/agentDropHover", () => ({ clearAgentDropHover: jest.fn(),
 jest.mock("../../utils/agentDropAttach", () => ({ attachAgentOnDrop: jest.fn() }));
 jest.mock("../../utils/focusDatasetNodes", () => ({ frameNodesInView: jest.fn(), revealRectInView: jest.fn() }));
 jest.mock("../../utils/scenarios/scenarioCanvasView", () => ({
-  scenarioCanvasView: (nodes: unknown, edges: unknown) => ({ nodes, edges, boxes: [] }),
+  scenarioCanvasView: (nodes: unknown, edges: unknown) => ({ nodes, edges, boxes: mockScenarioBoxes }),
 }));
 jest.mock("../../utils/canvasExtent", () => ({
   computeTranslateExtent: () => [[-100000, -100000], [100000, 100000]],
@@ -275,6 +277,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   clearCurrentProject();
   mockCollab = {};
+  mockScenarioBoxes = [];
   mockFlow = {
     nodes: [],
     edges: [],
@@ -353,6 +356,30 @@ test("a node dropped while a dataflow with a node opens lands clear of that node
   // right of it 433, so it goes below, the canvas's gutter of 8 between them.
   expect(mockCreateCodeNode.mock.calls.map(([type, options]) => [type, (options as any)?.position])).toEqual([
     [TILE, { x: 300, y: 100 + 350 + 8 }],
+  ]);
+});
+
+test("a node dropped while a dataflow opens lands clear of a collapsed scenario's box there", async () => {
+  const load = heldLoad();
+  mockFlow.loadProject.mockReturnValue(load.promise);
+  const { target } = drawCanvas();
+  await waitFor(() => expect(mockFlow.loadProject).toHaveBeenCalled());
+
+  // Dropped at (300, 200) of a canvas at rest, where the load then draws a
+  // collapsed scenario's box: no node there, only the box.
+  drop(target, tileDrag());
+  mockFlow.scenarios = [{ id: "flooded" }];
+  mockScenarioBoxes = [{ scenario: { id: "flooded" }, x: 200, y: 100, rows: [], height: 120 }];
+  await act(async () => {
+    load.land(LOADED);
+  });
+  await waitFor(() => expect(mockLoadTrill).toHaveBeenCalled());
+  await settle();
+
+  // The box is 260 by 120: just below it is 28 away, just right of it 168,
+  // so the node goes below, the canvas's gutter of 8 between them.
+  expect(mockCreateCodeNode.mock.calls.map(([type, options]) => [type, (options as any)?.position])).toEqual([
+    [TILE, { x: 300, y: 100 + 120 + 8 }],
   ]);
 });
 
