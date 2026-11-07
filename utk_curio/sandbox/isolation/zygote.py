@@ -489,7 +489,8 @@ def _kill_group(pid):
     """SIGKILL the child *pid* and anything it spawned.
 
     The child calls ``setsid``, so its pid is also its process group id and
-    ``killpg`` reaches anything it spawned. ``kill`` as well, for the narrow
+    ``killpg`` reaches anything it spawned, which the seccomp filter, where it
+    is installed, keeps in that group. ``kill`` as well, for the narrow
     window between ``fork`` and the child reaching ``setsid``, where no
     process group with that id exists yet.
     """
