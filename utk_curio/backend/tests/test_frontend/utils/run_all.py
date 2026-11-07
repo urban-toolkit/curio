@@ -3,6 +3,7 @@
 import json
 import re
 import time
+from urllib.error import HTTPError, URLError
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
@@ -271,6 +272,57 @@ def release_node_execution(page) -> int:
     """Let every held execution go and stop holding. Returns how many were let go."""
     in_page = int(page.evaluate(_RELEASE_NODE_EXEC_JS))
     return in_page + hold_server_runs(backend_url_of(page), False)
+
+
+# ---------------------------------------------------------------------------
+# The server's part of a run
+# ---------------------------------------------------------------------------
+
+#: A run's statuses while the server still runs its part (``runs/models.py``,
+#: ``ACTIVE_RUN_STATUSES``). Past them the server has written how its part
+#: ended, and the page plays the nodes only a browser runs
+#: (``useServerRun.ts``, ``finish``).
+SERVER_PART_GOING = ("queued", "running")
+
+
+def wait_for_server_part_to_end(backend_url: str, token: str, project_id: str, *,
+                                timeout_ms: int) -> dict:
+    """Wait until the newest run of *project_id* has ended its part on the
+    server, and return its record (``GET /api/runs/<id>``, with its steps).
+
+    A signed-in owner's Run All runs on the server, and the page plays the
+    nodes only a browser runs, an Autark node among them, once every node the
+    server runs has its outcome. Such a node is asked nothing before that,
+    however long the nodes before it take, so this is what to wait for before
+    timing what the node does when asked. A read the backend is slow to answer
+    is read again until *timeout_ms*; the failure names the steps still going.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    record: dict = {}
+    seen = "no run of the dataflow yet"
+    while True:
+        try:
+            runs = api_json(f"{backend_url}/api/projects/{project_id}/runs?limit=1&mine=1", token)["runs"]
+            if runs:
+                record = api_json(f"{backend_url}/api/runs/{runs[0]['id']}", token)
+                if record["status"] not in SERVER_PART_GOING:
+                    return record
+                seen = f"run {record['id']} is {record['status']}"
+        except HTTPError:
+            raise
+        except (TimeoutError, URLError) as exc:
+            seen = f"the backend did not answer a read of the run: {exc}"
+        if time.monotonic() >= deadline:
+            going = [
+                f"{step.get('label') or step['nodeId']} ({step['nodeId']}) {step['status']}"
+                for step in record.get("steps") or []
+                if step["status"] in ("pending", "running")
+            ]
+            raise AssertionError(
+                f"the run's part on the server did not end within {timeout_ms} ms ({seen}); "
+                f"its steps still going: {going or 'none read'}"
+            )
+        time.sleep(0.5)
 
 
 # ---------------------------------------------------------------------------

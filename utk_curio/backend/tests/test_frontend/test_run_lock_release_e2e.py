@@ -42,6 +42,7 @@ from .utils import (
     wait_for_held_node_execution,
     wait_for_node_done,
     wait_for_run_all_to_end,
+    wait_for_server_part_to_end,
     watch_run_all,
 )
 from .walkthroughs import load_example_spec
@@ -56,7 +57,8 @@ MAP_FEEDER_PREFIX = "3cc268ee"
 NOTIFICATIONS = "Notifications"
 RUN_IN_PROGRESS = re.compile("already in progress", re.I)
 
-#: What this test gives a run on the server, from the data loads' release.
+#: What this test gives a run: its part on the server, from the data loads'
+#: release, and then its end.
 RUN_BUDGET_MS = 180000
 
 #: How long the node before the map takes in the slow case: past the minute
@@ -181,6 +183,17 @@ def _run_all_until_the_autark_node_refuses(page, dataflow: dict) -> None:
 
     # Step 3: the Autark node refuses, and says why. Reporting is what releases
     # its level - a node that stays silent is the wedge.
+    #
+    # It is asked only once the nodes before it have run. A signed-in owner's
+    # Run All runs on the server, and the page plays the nodes only a browser
+    # runs, this one among them, once the server's part has ended
+    # (useServerRun.ts, finish). That part is example 09's Python: its UTCI
+    # over the Milan raster took 17 s on a quiet utk-desktop-01 and 106 s on a
+    # loaded one (run 42334009628), so it gets the run's budget, and the
+    # node's minute starts when the node can first answer.
+    wait_for_server_part_to_end(
+        dataflow["backend"], dataflow["token"], dataflow["project"], timeout_ms=RUN_BUDGET_MS,
+    )
     autark = page.locator(f'.react-flow__node[data-id="{dataflow["autark"]}"]')
     alert = autark.locator('[role="alert"]').first
     expect(alert).to_be_visible(timeout=60000)
