@@ -1346,6 +1346,7 @@ instead of in-process. `utk_curio/sandbox/isolation/`:
 | `protocol.py` | The JSON manifest crossing the boundary, and the validation applied to anything a child returns |
 | `zygote.py` | A warm, single-threaded process that forks one child per execution |
 | `child.py` | The confinement steps and the node run itself |
+| `seccomp_filter.py` | The seccomp filter code a child and a JavaScript run's Node share, pyseccomp's import among it, and Node's exec wrapper on Linux |
 | `supervisor.py` | Parent side: scratch directories, the wall-clock deadline, process-group kill |
 | `runner.py` | One execution end to end |
 | `lifecycle.py` | Starting and replacing the zygote |

@@ -17,6 +17,11 @@ and a process group of its own; the wrapper installs the filter and execs
 Node, which keeps its pid, so Node leads them, and nothing it starts can
 leave them.
 
+Both import ``pyseccomp`` through :func:`import_pyseccomp`, which finds libc
+and libseccomp by soname, with neither ``ctypes.util`` nor a process: the
+wrapper on every JavaScript run, and the zygote once, before its first fork,
+so an isolated child finds it imported (``zygote._import_pyseccomp``).
+
 The top level imports only the standard library, so the wrapper starts on it
 and ``pyseccomp`` alone, wherever Curio is installed.
 """
@@ -38,6 +43,81 @@ REQUIRED = "--required"
 #: across ``exec``, so the wrapper puts them back to their defaults first, as
 #: ``subprocess`` does in a child before it execs (``restore_signals``).
 _IGNORED_BY_PYTHON = ("SIGPIPE", "SIGXFZ", "SIGXFSZ")
+
+#: The libraries pyseccomp's import asks ``ctypes.util.find_library`` for, by
+#: the name it asks with, and each one's soname on glibc: the C library, and
+#: libseccomp 2, the major version pyseccomp binds.
+_SONAMES = {"c": "libc.so.6", "seccomp": "libseccomp.so.2"}
+
+
+def import_pyseccomp():
+    """Import ``pyseccomp`` and return it, without ``ctypes.util``.
+
+    pyseccomp's import finds libc and libseccomp with
+    ``ctypes.util.find_library``. In a fresh interpreter, as the wrapper's
+    is, importing ``ctypes.util`` imports shutil, subprocess and tempfile,
+    and each ``find_library`` runs ``ldconfig -p`` in a subprocess: about
+    10 of the 22 ms the import took on CI. So while pyseccomp imports here,
+    ``ctypes.util`` is a stand-in whose ``find_library`` loads a library's
+    soname with ``ctypes.CDLL``, as the import then does, and gives that
+    name, the one ``ldconfig`` gives on glibc. A name it does not know, and
+    a soname that does not load (musl's C library is not ``libc.so.6``), go
+    to the real ``find_library``: imported then if it was not, and kept, as
+    the import would have kept it. The ``ctypes.util`` there was before is
+    put back as the import ends, whether it raised or not. That changes
+    ``sys.modules`` for the import's length, so only a process in which no
+    other thread runs Python calls this: the wrapper, the zygote as it warms
+    up, and a child the zygote forked.
+
+    A pyseccomp already imported is returned as it is, as the zygote's is in
+    a child. Raises what the import raises: ImportError without pyseccomp,
+    and pyseccomp's RuntimeError without libseccomp.
+    """
+    imported = sys.modules.get("pyseccomp")
+    if imported is not None:
+        return imported
+    import ctypes
+    import types
+
+    real = sys.modules.get("ctypes.util")
+    stand_in = types.ModuleType("ctypes.util")
+
+    def find_library(name):
+        nonlocal real
+        soname = _SONAMES.get(name)
+        if soname is not None:
+            try:
+                ctypes.CDLL(soname)
+            except OSError:
+                pass
+            else:
+                return soname
+        if real is None:
+            import importlib
+
+            del sys.modules["ctypes.util"]
+            real = importlib.import_module("ctypes.util")
+        return real.find_library(name)
+
+    stand_in.find_library = find_library
+    sys.modules["ctypes.util"] = stand_in
+    ctypes.util = stand_in
+    try:
+        import pyseccomp
+    finally:
+        _put_back(sys.modules, "ctypes.util", stand_in, real)
+        _put_back(vars(ctypes), "util", stand_in, real)
+    return pyseccomp
+
+
+def _put_back(names, name, stand_in, real):
+    """Where *names* still holds *stand_in* at *name*, *real* again, or
+    nothing when *real* is None."""
+    if names.get(name) is stand_in:
+        if real is None:
+            del names[name]
+        else:
+            names[name] = real
 
 
 def set_no_new_privs():
@@ -82,9 +162,7 @@ def exec_command(argv, *, required):
 def _deny_leaving_the_group():
     """Install the filter in this process. Whatever stops it is raised; a
     missing ``pyseccomp`` or libseccomp stops it before it changes anything."""
-    import pyseccomp
-
-    filter_ = denying(pyseccomp, LEAVING_THE_GROUP)
+    filter_ = denying(import_pyseccomp(), LEAVING_THE_GROUP)
     set_no_new_privs()
     filter_.load()
 

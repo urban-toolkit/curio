@@ -31,7 +31,10 @@ never opens the DuckDB store. What it imports is another matter: on DuckDB
 pool (2.0 opens it on first use only), and numpy's OpenBLAS starts one too.
 OpenBLAS tears its pool down before every fork; DuckDB does not, which is why
 ``warm_up`` closes that connection before the first fork. See
-:func:`_release_import_time_duckdb`.
+:func:`_release_import_time_duckdb`. ``warm_up`` also imports pyseccomp, which
+every child installs its seccomp filter with: libc and libseccomp loaded
+through ctypes, and no thread, open file or process left behind. See
+:func:`_import_pyseccomp`.
 
 Wire protocol, newline-delimited JSON over AF_UNIX, one connection per
 execution:
@@ -236,6 +239,28 @@ def _release_import_time_duckdb():
     )
 
 
+def _import_pyseccomp():
+    """Import pyseccomp before the first fork, so that no child imports it.
+
+    Every child installs its seccomp filter with pyseccomp
+    (``child._install_seccomp_filter``), and one that imported it after its
+    fork spent milliseconds of every run on the import. The import loads libc
+    and libseccomp through ctypes, finding them by soname with no process
+    started (``seccomp_filter.import_pyseccomp``), and leaves no thread or
+    open file behind, so a child forked after it inherits nothing in flight.
+
+    Where pyseccomp or libseccomp is missing, the import fails here and each
+    child tries it again and fails as it would have without this: the zygote
+    starts as it did.
+    """
+    from utk_curio.sandbox.isolation import seccomp_filter
+
+    try:
+        seccomp_filter.import_pyseccomp()
+    except Exception:  # noqa: BLE001 - each child tries again and says why
+        pass
+
+
 class Zygote:
     """Accept-and-fork loop. Single-threaded on purpose."""
 
@@ -269,6 +294,7 @@ class Zygote:
 
     def warm_up(self):
         self.namespace_template = build_namespace_template()
+        _import_pyseccomp()
         _release_import_time_duckdb()
 
     def serve_forever(self):

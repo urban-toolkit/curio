@@ -129,7 +129,9 @@ def _install_seccomp_filter(*, required):
     bind a local socket, but no socket carries anything into or out of it.
     """
     try:
-        import pyseccomp as seccomp
+        # The zygote's own import, made before it forked this child
+        # (zygote._import_pyseccomp), unless it failed there.
+        seccomp = seccomp_filter.import_pyseccomp()
     except ImportError as exc:
         if required:
             raise ChildSetupError(
