@@ -110,13 +110,14 @@ on:
   # that does move it (the stress harness, the sandbox, the queue, anything
   # concurrency-shaped), label the PR `stress`.
   #
-  # 08:00 UTC is 3 AM in Chicago during CDT; cron has no notion of DST, so it
-  # becomes 2 AM local once CST starts. Mon/Wed/Fri rather than `*/2` in the
+  # 3 AM in Chicago all year: GitHub reads the cron in the timezone below,
+  # daylight saving included. Mon/Wed/Fri rather than `*/2` in the
   # day-of-month field, which restarts its count every month and so would fire
   # on the 31st and the 1st back to back. Note that GitHub disables scheduled
   # workflows after 60 days with no repository activity.
   schedule:
-    - cron: '0 8 * * 1,3,5'
+    - cron: '0 3 * * 1,3,5'
+      timezone: 'America/Chicago'
   workflow_dispatch:  # Run manually from the Actions tab or: gh workflow run docker-compose.yml
     inputs:
       stress:
@@ -388,8 +389,14 @@ jobs:
       # curio-ci* compose stack still on the daemon goes first, found by label,
       # which needs no compose file and leaves every other stack alone. Then a
       # throwaway root container hands the files containers wrote as root back
-      # to the runner user, which actions/checkout's clean needs. A local action
-      # could not do this: it is not on disk before checkout.
+      # to the runner user, which actions/checkout's clean needs. Last it forgets
+      # a sparse checkout an earlier job made here: actions/checkout's
+      # `sparse-checkout-cone-mode: false` sets core.sparseCheckout in this
+      # workspace's .git/config, and a later checkout with no sparse list turns
+      # sparse off only in config.worktree, which it then stops reading, so the
+      # tree is cut back to the old list (11-07: after the Weekly flake hunt's
+      # report job, every job on arcade-cpu-05 found no start-stack action). A
+      # local action could not do this: it is not on disk before checkout.
       - &reclaim
         name: 🧹 Remove stacks an earlier job left, reclaim root-owned files (self-hosted)
         if: runner.environment == 'self-hosted'
@@ -407,6 +414,12 @@ jobs:
           done
           echo "handing root-owned files back to the runner user"
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+          if [ -d .git ]; then
+            echo "forgetting a sparse checkout an earlier job left"
+            git config --local --unset-all core.sparseCheckout || true
+            git config --local --unset-all core.sparseCheckoutCone || true
+            rm -f .git/info/sparse-checkout || true
+          fi
 
       # Two commits deep, so the reuse step can compare this commit with its
       # first parent (main, on a PR's merge ref).

@@ -12,12 +12,14 @@ name: Weekly flake hunt
 # report page, its flaky tests and its suite table. This run ends red when the
 # Full stack build did not pass or found a flaky test.
 #
-# 08:00 UTC is 3 AM in Chicago during CDT and 2 AM once CST starts, the quiet
-# hours the Full stack build's own schedule uses. Run this by hand from the
-# Actions tab to start the same run now.
+# 3 AM in Chicago all year (GitHub reads the cron in the timezone below,
+# daylight saving included), the quiet hours the Full stack build's own
+# schedule uses. Run this by hand from the Actions tab to start the same run
+# now.
 on:
   schedule:
-    - cron: '0 8 * * 6'
+    - cron: '0 3 * * 6'
+      timezone: 'America/Chicago'
   workflow_dispatch:
 
 permissions:
@@ -50,16 +52,25 @@ jobs:
       contents: read
     steps:
       # A Full stack build job on this runner can leave root-owned files in the
-      # workspace, which the checkout cannot remove (as the stacks' reclaim
-      # step in docker-compose.yml hands them back).
-      - name: 🧹 Reclaim root-owned files
-        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+      # workspace, which the checkout cannot remove, and a job's sparse checkout
+      # stays in the workspace's .git/config for the next job's checkout. As the
+      # stacks' reclaim step in docker-compose.yml, this hands the files back
+      # and forgets the sparse checkout. The checkout itself is whole: a sparse
+      # one here, on 11-07, cut every later job on arcade-cpu-05 back to this
+      # one script.
+      - name: 🧹 Reclaim root-owned files, forget a sparse checkout
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+          if [ -d .git ]; then
+            git config --local --unset-all core.sparseCheckout || true
+            git config --local --unset-all core.sparseCheckoutCone || true
+            rm -f .git/info/sparse-checkout || true
+          fi
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
-        with:
-          sparse-checkout: scripts/ci_weekly_report.py
-          sparse-checkout-cone-mode: false
 
       - name: 📋 Wait for the run and write the week's report
         env:

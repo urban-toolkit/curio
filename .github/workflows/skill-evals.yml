@@ -51,6 +51,8 @@ jobs:
       # As the Full stack build's `reclaim` step: a job cancelled before its
       # end can leave its container running, and its files root-owned. Its
       # container carries the compose project label of PROJECT, so this finds it.
+      # It also forgets a sparse checkout an earlier job left in the workspace's
+      # .git/config, which the checkout would apply again.
       - name: 🧹 Remove stacks an earlier job left, reclaim root-owned files
         working-directory: ${{ github.workspace }}
         shell: bash
@@ -62,6 +64,11 @@ jobs:
             docker ps -aq --filter "label=com.docker.compose.project=$project" | xargs -r docker rm -f
           done
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+          if [ -d .git ]; then
+            git config --local --unset-all core.sparseCheckout || true
+            git config --local --unset-all core.sparseCheckoutCone || true
+            rm -f .git/info/sparse-checkout || true
+          fi
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
