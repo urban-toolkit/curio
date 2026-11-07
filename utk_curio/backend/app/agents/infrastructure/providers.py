@@ -1145,6 +1145,7 @@ def _ask_for_stream(client, create_kwargs, first_chunk_s: float):
             if wait is None:
                 raise
         time.sleep(wait)
+    return None
 
 
 def _asked_wait(response, default: float) -> float:
