@@ -40,7 +40,9 @@ while it opens makes its node only once the load is in, and the load takes as
 long as the server takes: 24 s on arcade during a host stall (#1391's run
 42342733844), where ``drag_builtin_to_canvas`` gave the node 15 s from the drop
 and failed with "Drop produced no node". Here the page holds its load until
-20 s after the drop, and the helper still returns the node.
+20 s after the drop, and the helper still returns the node. On a dataflow
+that has nodes, it returns the node the drop made, not one the load brought:
+those reach the canvas first.
 
 Run::
 
@@ -564,4 +566,41 @@ def test_a_drop_helper_waits_for_a_dataflow_that_opens_slowly(
         "loads the page held": 1,
         "the canvas title": "Slow plan",
         "nodes": [loading],
+    }
+
+
+def test_a_drop_helper_returns_the_dropped_node_not_one_the_load_brings(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_project_page()
+    require_user_auth()
+    page.emulate_media(reduced_motion="reduce")
+    page.add_init_script(_SLOW_LOAD_JS)
+    stub_login_and_enter_workflow(
+        page,
+        frontend_url=app_frontend.base_url,
+        backend_url=current_server,
+        name="Slow Opener",
+        username="opening_slow_nodes_e2e",
+        project_name=WITH_A_NODE,
+        project_spec=_with_a_node_spec(),
+    )
+    require_owner_view(page)
+
+    # Dropped while the dataflow opens, the Data Loading node is made once the
+    # load has put the dataflow's own node on the canvas, and after its fit.
+    dropped = drag_builtin_to_canvas(page, LOADING_TILE, at=FIRST_DROP)
+
+    types = {node["id"]: node["nodeType"] for node in canvas_nodes(page)}
+    seen = {
+        "loads the page held": page.evaluate("() => window.__curioHeldLoads"),
+        "the dataflow's own node was returned": dropped == ITS_NODE,
+        "the returned node is": types.get(dropped),
+        "nodes on the canvas": sorted(types.values()),
+    }
+    assert seen == {
+        "loads the page held": 1,
+        "the dataflow's own node was returned": False,
+        "the returned node is": LOADER,
+        "nodes on the canvas": sorted([LOADED, LOADER]),
     }
