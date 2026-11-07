@@ -26,11 +26,17 @@ the dataflow as its tab holds it; the room's owner then runs it on the server
 and saves it (``sockets.py``, ``driver.VirtualUser.on_the_canvas``). The solo
 baseline runs each example with that node added, twice where it passes on the
 output of a node that is not Python, which no tier compared before.
+
+With ``--agents`` as well, every member also asks Node Builder to write its own
+node's code, on Curio's scripted model, which is Curio's default for the tier
+(``agents.py``): ten agents at work in each canvas while its people type,
+drag and play.
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import math
 import multiprocessing
@@ -48,6 +54,7 @@ import requests
 from ..test_frontend.workflow_spec import PY_CODE_TYPES, parse_workflow
 from . import report as reporting
 from . import sockets
+from .agents import TURN_WAIT_S, RoomAgents, on_the_scripted_model
 from .autk import compile_autk_data
 from .backend_probe import (
     BackendProbe, Sampler, reading_now, save_thread_stacks, track_worker, worker_finished,
@@ -310,6 +317,8 @@ def run_slice(job: dict, start_gate, register_gate, results_out) -> None:
             if shared:
                 example = example_of(room.index * room_size, room_size, examples, shared)
                 room.example, room.parent = example.relpath, example.canvas_parent
+            if job.get("agents"):
+                room.agents = RoomAgents(room)
         users = []
         for index in job["indices"]:
             example = example_of(index, room_size, examples, shared)
@@ -326,6 +335,9 @@ def run_slice(job: dict, start_gate, register_gate, results_out) -> None:
         with ThreadPoolExecutor(max_workers=len(users)) as pool:
             futures = [pool.submit(user.run) for user in users]
             results = [f.result(timeout=USER_DEADLINE_S) for f in futures]
+        for room in rooms.values():
+            if room.agents is not None:
+                room.agents.wait_over(TURN_WAIT_S)
         results_out.put({"slice": job["slice"], "results": results,
                          "rooms": [room.outcome() for room in rooms.values()],
                          "cpu_seconds": process_cpu_seconds()})
@@ -348,13 +360,16 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
              baselines: dict, register_concurrency: int,
              profile: str = "burst", label: str | None = None,
              room_size: int = 0, namespace: str | None = None,
-             shared_canvas: bool = False, probe_command: list | None = None) -> tuple[list, float, list]:
+             shared_canvas: bool = False, probe_command: list | None = None,
+             agents: bool = False) -> tuple[list, float, list]:
     """Run *tier* users, all doing their dataflow work at the same moment,
     and, in rooms of *room_size*, each with its tab of its room's dataflow;
     the results, the seconds it took, and each room's outcome
     (``sockets.Room.outcome``). With *shared_canvas*, every member works on
     its room's one dataflow, and the room's owner reads the file its save
-    wrote through *probe_command* (``backend_probe``), when there is one.
+    wrote through *probe_command* (``backend_probe``), when there is one;
+    with *agents* too, every member also asks its agent to write its node
+    (``agents.RoomAgents``).
 
     The users run in harness processes of their own (:func:`tier_slices`,
     :func:`run_slice`), whole rooms each, behind one start gate that spans
@@ -381,7 +396,7 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
         job = {"slice": number, "indices": indices, "names": names, "examples": examples,
                "baselines": baselines, "pacing": pacing, "room_size": room_size,
                "namespace": namespace, "backend_url": backend_url,
-               "shared_canvas": shared_canvas, "probe_command": probe_command}
+               "shared_canvas": shared_canvas, "probe_command": probe_command, "agents": agents}
         process = context.Process(target=run_slice, args=(job, start_gate, register_gate, results_out),
                                   name=f"stress-{label}-{number}", daemon=True)
         process.start()
@@ -488,6 +503,18 @@ def tier_lines(summary: dict) -> list[str]:
             + f"), {runs['not_done']} step(s) not done; {saved['read']} save(s) read back, "
             f"{saved['lacks']} thing(s) missing from them"
         )
+    agents = summary.get("agents")
+    if agents:
+        ends, writes, took = agents["ends"], agents["writes"], agents["turn_s"]
+        present = "not read" if agents["present_at_end"] is None else agents["present_at_end"]
+        lines.append(
+            f"{agents['asked']} agent turn(s) on the scripted model in {agents['rooms']} canvas(es): "
+            f"{ends['done']} done, {ends['error']} error, {ends['never']} never ended"
+            + (f", p50 {took['p50']} s, p95 {took['p95']} s, max {took['max']} s" if took else "")
+            + f"; writes {writes['landed']} landed, {writes['changed_meanwhile']} refused as changed meanwhile, "
+            f"{writes['refused']} refused otherwise, {writes['none']} never made; {agents['unsynced']} "
+            f"missing from a tab, {present} agent(s) in the room at the end"
+        )
     backend = summary.get("backend") or {}
     if backend.get("measured"):
         threads, rss = backend["threads"], backend["rss_mib"]
@@ -544,6 +571,11 @@ def main(argv: list[str] | None = None) -> int:
                              "types in, plays the dataflow as its tab holds it, "
                              "and the room's owner runs it on the server and "
                              "saves it")
+    parser.add_argument("--agents", action="store_true",
+                        help="with --shared-canvas, every member also asks "
+                             "Node Builder to write its own node's code, on "
+                             "Curio's scripted model, which is Curio's default "
+                             "for the tier (the stack needs --testing)")
     parser.add_argument("--probe", default="",
                         help="the command that runs Python where the backend "
                              "runs, to read its threads, memory and doc files, "
@@ -573,6 +605,9 @@ def main(argv: list[str] | None = None) -> int:
     room_size = max(0, args.room_size)
     if args.shared_canvas and not room_size:
         parser.error("--shared-canvas puts each room on one dataflow, so it needs a --room-size")
+    if args.agents and not args.shared_canvas:
+        parser.error("--agents has each member's agent write its own node of a shared canvas, "
+                     "so it needs --shared-canvas")
     examples = load_mix([m.strip() for m in args.mix.split(",") if m.strip()])
     if room_size:
         sockets.require_websocket_client()
@@ -583,7 +618,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[stress] run {args.run_id} against {backend_url}; "
           f"tiers {tiers}; profile {args.profile}; "
           + (f"rooms of {room_size} on {namespace}" if room_size else "no tabs")
-          + ("; each room one shared canvas" if args.shared_canvas else ""),
+          + ("; each room one shared canvas" if args.shared_canvas else "")
+          + ("; each member's agent at work on it" if args.agents else ""),
           flush=True)
 
     baselines = run_baseline(backend_url, args.run_id, examples, shared_canvas=args.shared_canvas)
@@ -595,12 +631,16 @@ def main(argv: list[str] | None = None) -> int:
         # Bracketing the tier, because the counters are cumulative since the
         # sandbox started and the baseline runs before the first tier.
         lock_before = read_exec_lock(backend_url)
-        (results, seconds, outcomes), backend, doc_files, harness = probe_tier(probe, lambda: run_tier(
-            backend_url, args.run_id, tier, examples, baselines,
+        tier_run = functools.partial(
+            run_tier, backend_url, args.run_id, tier, examples, baselines,
             args.register_concurrency, args.profile, label=f"{tier}x{position}",
             room_size=room_size, namespace=namespace, shared_canvas=args.shared_canvas,
-            probe_command=probe.command if probe is not None else None,
-        ))
+            probe_command=probe.command if probe is not None else None, agents=args.agents,
+        )
+        if args.agents:
+            # The scripted model is Curio's default for the tier alone.
+            tier_run = functools.partial(on_the_scripted_model, backend_url, tier_run)
+        (results, seconds, outcomes), backend, doc_files, harness = probe_tier(probe, tier_run)
         all_results.extend(results)
         lock = reporting.exec_lock_delta(lock_before, read_exec_lock(backend_url))
         tabs = reporting.socket_summary(outcomes)
@@ -609,6 +649,7 @@ def main(argv: list[str] | None = None) -> int:
                                          backend=backend, doc_files=doc_files,
                                          harness=harness,
                                          canvas=reporting.canvas_summary(outcomes))
+        summary["agents"] = reporting.agents_summary(outcomes)
         tier_reports.append(summary)
         print(f"[stress] tier {tier}: {summary['completed']}/{tier} completed in "
               f"{seconds:.1f}s, {summary['failure_count']} failure(s)", flush=True)
@@ -627,6 +668,7 @@ def main(argv: list[str] | None = None) -> int:
     report = reporting.build_report(args.run_id, backend_url, tier_reports,
                                     args.stats_log, profile=args.profile,
                                     room_size=room_size, shared_canvas=args.shared_canvas)
+    report["agents"] = args.agents
     json_path, md_path = reporting.write_outputs(report, args.out)
     with open(os.path.join(args.out, "samples.json"), "w", encoding="utf-8") as fh:
         json.dump(reporting.raw_samples(all_results), fh)
