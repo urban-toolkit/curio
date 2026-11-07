@@ -33,7 +33,17 @@ from utk_curio.backend.tests.test_projects.test_guest_copy_leaks import (  # noq
     example,
     sandbox,
 )
+from utk_curio.backend.tests.test_projects.test_guest_store_leaks import _listing
 from utk_curio.common.kept_sessions import is_kept_session
+
+
+def _listed_once(client, example: str) -> None:
+    """Each visitor's Data Catalog lists the store once, as their canvases
+    do, before anything is measured: a store's first listing marks it
+    (``datasets/application/migrations.py``), as test_guest_store_leaks.py's
+    tests measure."""
+    for token in (VISITOR_A, VISITOR_B):
+        _listing(client, token, dataflowId=example)
 
 
 def _new_dataflow(client, token: str) -> str:
@@ -62,6 +72,7 @@ def _copy_folder_of(token: str, project_id: str):
 def test_a_hosted_guests_plays_on_its_new_dataflow_are_kept_on_it_for_it_alone(client, example, sandbox):
     from utk_curio.backend.app.execution import runtime_journal
 
+    _listed_once(client, example)
     before = _digests(example)
     mine = _new_dataflow(client, VISITOR_A)
     made_a, made_b = sandbox["artifacts"]["a"], sandbox["artifacts"]["b"]
@@ -105,6 +116,7 @@ def test_another_guest_finds_none_of_a_guests_new_dataflow_and_writes_nothing_fo
     )
     assert shared.status_code == 201, shared.get_data(as_text=True)
     monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+    _listed_once(client, example)
     before = _digests(example)
     mine = _new_dataflow(client, VISITOR_A)
     made_a = sandbox["artifacts"]["a"]
@@ -152,6 +164,7 @@ def test_a_hosted_guests_dataset_add_lands_on_its_new_dataflow_alone(client, exa
     )
     assert imported.status_code == 201, imported.get_data(as_text=True)
     uploaded = imported.get_json()["id"]
+    _listed_once(client, example)
     before = _digests(example)
     mine = _new_dataflow(client, VISITOR_A)
 
@@ -196,6 +209,7 @@ def test_the_next_start_drops_a_guests_new_dataflows_and_makes_no_row_of_one(cli
     from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.app.users.models import User
 
+    _listed_once(client, example)
     before = _digests(example)
     mine = _new_dataflow(client, VISITOR_A)
     _play(client, VISITOR_A, mine, "a")
