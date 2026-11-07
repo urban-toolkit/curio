@@ -12,14 +12,16 @@ before the step that drops it:
 
 1. ``setsid``          the child leads its own process group, so the parent can
                        kill the child *and anything it spawned* with one
-                       ``killpg``. Must precede running user code, or a
-                       runaway grandchild survives the timeout.
+                       ``killpg``. Must precede the seccomp filter, which
+                       denies it, and running user code, or a runaway
+                       grandchild survives the timeout.
 2. ``PR_SET_NO_NEW_PRIVS``  no ``setuid`` binary can regain privilege later.
                        Must precede the seccomp filter, and is what makes the
                        filter irrevocable.
 3. seccomp             blocks the syscall groups the child has no business
-                       using: sockets, ptrace, mount. Irrevocable once
-                       installed.
+                       using: sockets, ptrace, mount, and leaving its process
+                       group, for every process it starts as well.
+                       Irrevocable once installed.
 4. ``setgid``/``setuid``    drop to the unprivileged execution user. Groups must
                        be dropped *before* the uid, or the process keeps its
                        supplementary groups forever.
@@ -106,7 +108,15 @@ def _install_seccomp_filter(*, required):
     imports C extensions that use whatever they like) would break constantly
     and get widened until it meant nothing. The denylist is narrower in what it
     promises but is honest about it: it stops network egress, debugger
-    attachment, and mount games, and it does not claim to be a full sandbox.
+    attachment, mount games and leaving the process group, and it does not
+    claim to be a full sandbox.
+
+    Every process node code starts inherits the filter, so none can leave the
+    child's process group (``setsid``, ``setpgid``): every kill of a run, at
+    its deadline, when the child exits and when a zygote dies mid-run, is a
+    ``killpg`` of that group, and a process outside it would run on for
+    nobody. The child's own ``setsid`` comes before the filter, in
+    :func:`confine`.
 
     Network denial is why hosting requires Linux. ``unshare(CLONE_NEWNET)``
     would be stronger but needs CAP_SYS_ADMIN, which Docker does not grant by
@@ -145,6 +155,8 @@ def _install_seccomp_filter(*, required):
         "init_module", "finit_module", "delete_module",
         # Raw kernel surfaces with a poor security history.
         "bpf", "perf_event_open", "userfaultfd", "kexec_load",
+        # Leaving the child's process group. glibc's setpgrp is setpgid(0, 0).
+        "setsid", "setpgid",
     )
 
     # EPERM rather than killing the process, so the failure surfaces as a
