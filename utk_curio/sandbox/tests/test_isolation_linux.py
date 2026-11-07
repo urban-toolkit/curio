@@ -2395,6 +2395,11 @@ def test_the_zygote_holds_a_pidfd_of_each_running_child_and_none_once_its_run_en
         return held
 
     assert run_isolated(isolated, "    return 1\n")["stderr"] == ""
+    # The zygote closes a run's connection just after its report: idle, it
+    # holds one socket, its listening one.
+    give_up = time.monotonic() + 10
+    while len(_sockets_of(zygote)) != 1 and time.monotonic() < give_up:
+        time.sleep(0.05)
     before = descriptors()
 
     caller, child = _ask_for_a_sleeping_child(isolated)
