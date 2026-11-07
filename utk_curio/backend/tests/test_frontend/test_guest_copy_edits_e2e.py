@@ -39,7 +39,17 @@ NODE = "guest-trees"
 ORIGINAL = "trees = 12\n"
 EDITED = "trees = 13  # this visitor's own change\n"
 RESEARCHER = "agent.curio.researcher@1"
-#: What the scripted Researcher answers.
+#: The scripted Researcher's first reply: it reads the dataflow, its nodes'
+#: code included, on the server. A turn's prompt holds no node's code by itself:
+#: the model reads it (``dataflow.read``), or the chat panel sends the canvas.
+READ_THE_DATAFLOW = (
+    "Let me read the dataflow.\n\n```curio.v1\n"
+    + json.dumps({"toolRequest": {"tool": "dataflow.read", "params": {"include": ["content"]}}})
+    + "\n```"
+)
+#: Where the next call's messages hand the model what its read returned.
+READ_RESULT = "[tool result] dataflow.read: ok\n"
+#: What the scripted Researcher answers once it has read the dataflow.
 QUOTE = "The node sets trees = 13."
 
 
@@ -109,6 +119,26 @@ def _drop_on_the_node(page, coord: str) -> None:
     })
     assert dropped == "ok", f"the agent's drag failed: {dropped}"
     close_tools_palette(page, "agents")
+
+
+def _code_the_read_returned(prompts: list) -> str:
+    """The node's code in what the Researcher's ``dataflow.read`` returned, as
+    the run's next call hands it to the model."""
+    results = [
+        message["content"][len(READ_RESULT):]
+        for call in prompts for message in call
+        if isinstance(message, dict) and isinstance(message.get("content"), str)
+        and message["content"].startswith(READ_RESULT)
+    ]
+    assert results, f"the Researcher's dataflow.read never answered it: {json.dumps(prompts)[-3000:]}"
+    try:
+        read, _end = json.JSONDecoder().raw_decode(results[0])
+    except ValueError as exc:
+        raise AssertionError(f"the Researcher's dataflow.read returned no dataflow: {results[0][:3000]}") from exc
+    nodes = (read.get("dataflow") or {}).get("nodes") or []
+    found = [node.get("content") for node in nodes if isinstance(node, dict) and node.get("id") == NODE]
+    assert found, f"the Researcher's dataflow.read holds no node {NODE}: {results[0][:3000]}"
+    return found[0]
 
 
 def _the_local_guests_edit_is_the_dataflows_own(browser, contexts, mine, base, backend, example, token) -> None:
@@ -182,13 +212,17 @@ def test_a_hosted_guests_edit_is_kept_for_it_alone_and_its_agent_reads_it(app_fr
         listed = api_json(f"{backend}/api/agents/projects/{example}/attachments", my_token)["attachments"]
         attached = [a for a in listed if (a.get("target") or {}).get("targetId") == NODE]
         assert attached, f"the guest's drop on the node attached no agent to it: {listed}"
-        script_agent_replies(backend, QUOTE)
+        script_agent_replies(backend, READ_THE_DATAFLOW, QUOTE)
         answered = api_json(
             f"{backend}/api/agents/projects/{example}/attachments/{attached[0]['attachmentId']}/run",
             my_token, method="POST", payload={"message": "Quote this node's code."}, timeout=120,
         )
         assert QUOTE in json.dumps(answered), answered
-        asked = json.dumps(captured_agent_prompts(backend))
+        prompts = captured_agent_prompts(backend)
+        # Its read on the server is of the visitor's own copy, not the example.
+        read = _code_the_read_returned(prompts)
+        assert read == EDITED, f"the Researcher's read of the dataflow holds {read!r}, not the visitor's own code"
+        asked = json.dumps(prompts)
         assert "trees = 13" in asked, "the Researcher was not handed the visitor's own code"
         # The other visitor's copy, and the example, are as they were.
         assert _spec_code(backend, their_token, example) == ORIGINAL
