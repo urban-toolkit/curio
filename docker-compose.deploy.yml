@@ -33,6 +33,12 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    # The weights model packages fetch (scripts/fetch_model_weights.py --into
+    # on the host), read in place: the site's command passes
+    # --model-weights-dir /model-weights, and its docker-compose.site.yml may
+    # mount another host folder at /model-weights instead (DEPLOYMENT.md).
+    volumes:
+      - ./model-weights:/model-weights:ro
     environment:
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
       # Each node's Python runs in a confined child process instead of

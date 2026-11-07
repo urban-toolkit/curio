@@ -104,6 +104,24 @@ def fetched_weights_folder(manifest: PackageManifest, shipped: Path) -> Path | N
     return folder if holds_weights(folder, manifest) else None
 
 
+def fetched_weights_of(manifest: PackageManifest, folder: Path) -> Path | None:
+    """Where this Curio reads the weights its operator fetches of the model
+    package *manifest*, the copy in *folder*: *folder* itself when it is an
+    account's own copy that holds them, else the catalog's copy's
+    (:func:`fetched_weights_folder`), so the catalog's own folder counts
+    only without ``--model-weights-dir``. None when they are not here."""
+    shipped = (packages_catalog_dir.catalog_root() / manifest.dir_name).resolve()
+    if Path(folder).resolve() != shipped and holds_weights(folder, manifest):
+        return folder
+    catalog_manifest = _model_manifest(shipped)
+    if (
+        catalog_manifest is None or catalog_manifest.model.fetch is None
+        or catalog_manifest.model.entry != manifest.model.entry
+    ):
+        return None
+    return fetched_weights_folder(catalog_manifest, shipped)
+
+
 @dataclass(frozen=True)
 class ListedModelPackage:
     """A model package one account can add or run, as the Model Catalog lists it.
@@ -209,7 +227,9 @@ def weights_folder(manifest: PackageManifest, folder: Path) -> Path | None:
     *manifest* in *folder*: *folder* itself when it holds them, else the
     catalog's copy of the same package, else the folder a pip install fetches
     that copy's left-out weights into, or, for weights its operator fetches,
-    :func:`fetched_weights_folder`. None when none of them has them."""
+    :func:`fetched_weights_of`. None when none of them has them."""
+    if manifest.model.fetch is not None:
+        return fetched_weights_of(manifest, folder)
     if holds_weights(folder, manifest):
         return folder
     shipped = packages_catalog_dir.catalog_root() / manifest.dir_name
@@ -229,8 +249,10 @@ def weights_folder(manifest: PackageManifest, folder: Path) -> Path | None:
 def local_weights_folder(manifest: PackageManifest, folder: Path) -> Path | None:
     """:func:`weights_folder` without the download: *folder* when it holds the
     weights, else the catalog's copy of the same package when that does (or,
-    for weights its operator fetches, :func:`fetched_weights_folder`), else
+    for weights its operator fetches, :func:`fetched_weights_of`), else
     None."""
+    if manifest.model.fetch is not None:
+        return fetched_weights_of(manifest, folder)
     if holds_weights(folder, manifest):
         return folder
     shipped = packages_catalog_dir.catalog_root() / manifest.dir_name
@@ -380,16 +402,12 @@ def _resolved(manifest: PackageManifest, folder: Path) -> ResolvedModel | None:
     if manifest.model.fetch is None:
         weights = weights_folder(manifest, folder)
         return None if weights is None else ResolvedModel(weights)
-    if holds_weights(folder, manifest):
+    weights = fetched_weights_of(manifest, folder)
+    if weights == folder:
         return ResolvedModel(folder)
     shipped = (packages_catalog_dir.catalog_root() / manifest.dir_name).resolve()
-    catalog_manifest = _model_manifest(shipped)
-    if catalog_manifest is None or catalog_manifest.model.fetch is None:
-        return ResolvedModel(folder)
-    if catalog_manifest.model.entry != manifest.model.entry:
-        return None
-    weights = fetched_weights_folder(catalog_manifest, shipped)
-    return ResolvedModel(shipped, None if weights in (None, shipped) else weights)
+    home = shipped if _model_manifest(shipped) is not None else folder
+    return ResolvedModel(home, None if weights in (None, home) else weights)
 
 
 def _resolve_models(user_key: str | None, model_ids, owners) -> dict[str, ResolvedModel]:
