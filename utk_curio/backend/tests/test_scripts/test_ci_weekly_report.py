@@ -64,12 +64,13 @@ def _zip(text: str) -> bytes:
     return buffer.getvalue()
 
 
-def _api(runs, summary):
+def _api(runs, summary, jobs=None):
     def fetch(path):
         if path.startswith("actions/workflows/"):
             return {"workflow_runs": runs}
         if "/jobs" in path:
-            return {"jobs": [{"conclusion": "success"}] * 27 + [{"conclusion": "skipped"}]}
+            return {"jobs": jobs if jobs is not None else
+                    [{"name": "unit", "conclusion": "success"}] * 27 + [{"name": "jest", "conclusion": "skipped"}]}
         if path.endswith("/artifacts?per_page=100"):
             return {"artifacts": [
                 {"id": 7, "name": "ci-summary", "created_at": "2026-11-07T11:54:00Z"},
@@ -120,7 +121,24 @@ def test_the_page_lists_each_run_then_its_summary(tmp_path, monkeypatch):
     assert f"| [3]({URL}/3) | 1 | success | 3.9 h | 27 success, 1 skipped | [page]({URL}/3/artifacts/8) |" in page
     assert "### Run 3" in page
     assert "| End-to-end tests | tests.test_a::test_x | 1, 3 | 2 |" in page
+    assert "did not pass" not in page
     assert section["flaky"] and section["passed"]
+
+
+def test_the_page_names_each_job_that_did_not_pass():
+    """11-07's hunt was red from test-gpu-stress alone, whose results are in no
+    suite row: the page said "30 success, 1 failure" and every suite passed."""
+    jobs = ([{"name": "unit (backend-1)", "conclusion": "success"}] * 29
+            + [{"name": "jest", "conclusion": "skipped"},
+               {"name": "test-gpu-stress", "conclusion": "failure", "html_url": f"{URL}/3/job/9"},
+               {"name": "e2e-desktop (4)", "conclusion": "cancelled", "html_url": f"{URL}/3/job/10"}])
+    failed = _run(3, conclusion="failure")
+    fetch, fetch_bytes = _api([failed], "| Suite | Result |", jobs)
+    page = weekly.render([weekly.run_section(fetch, fetch_bytes, failed)], SINCE)
+    assert "| 29 success, 1 skipped, 1 failure, 1 cancelled |" in page
+    assert ("### Run 3\n\n**Jobs that did not pass:** "
+            f"[test-gpu-stress]({URL}/3/job/9) (failure), [e2e-desktop (4)]({URL}/3/job/10) (cancelled)\n\n"
+            "| Suite | Result |") in page
 
 
 def test_the_week_is_red_on_a_flaky_test_or_a_failed_run(tmp_path, monkeypatch):
