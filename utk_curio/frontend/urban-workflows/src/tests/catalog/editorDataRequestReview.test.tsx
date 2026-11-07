@@ -9,7 +9,8 @@
  * - on bob's canvas the same card says it waits for the dataflow's owner, and
  *   what her Apply will do;
  * - a node that loads the dataset asked for says on its dataset pill that it
- *   waits for the owner, on both canvases.
+ *   waits for the owner, on both canvases;
+ * - and, with her drawer open as it is here, its pin (#1352).
  *
  * The canvas reads the requests through `fetch`, which answers here.
  */
@@ -266,6 +267,35 @@ describe("the node that loads the dataset bob asked for", () => {
     await waitFor(() => expect(sent.some((s) => s.path.includes("/datasets/requests"))).toBe(true));
     expect(screen.getByRole("button")).toHaveTextContent("DATASET");
     expect(view.container.querySelector("[data-curio-waits-for-owner]")).toBeNull();
+    view.unmount();
+  });
+});
+
+describe("the pin of alice's Data Catalog drawer", () => {
+  // #1352: pinned, the drawer stays open while the canvas, the palette and the
+  // top bar keep working. Its root carries data-pinned, on which the shell's
+  // stylesheet takes the pointer off the root and the scrim, and its panel is
+  // not a modal dialog. Unpinned, it is one, over a scrim.
+  test("pinned, the drawer lets the page work and is not modal; unpinned, it is modal", async () => {
+    on("owner");
+    const view = openDrawer();
+    await bobsCard();
+    const dialog = screen.getByRole("dialog", { name: "Data Catalog" });
+    const root = document.querySelector('[data-curio-dataset-catalog-drawer="true"]');
+    expect(root).not.toHaveAttribute("data-pinned");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+
+    act(() => {
+      within(dialog).getByRole("button", { name: "Pin drawer open" }).click();
+    });
+    expect(root).toHaveAttribute("data-pinned", "true");
+    expect(dialog).not.toHaveAttribute("aria-modal");
+
+    act(() => {
+      within(dialog).getByRole("button", { name: "Unpin drawer" }).click();
+    });
+    expect(root).not.toHaveAttribute("data-pinned");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
     view.unmount();
   });
 });

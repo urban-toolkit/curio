@@ -15,7 +15,6 @@ import { AddKeyAction } from "../../components/connectionKeys/AddKeyAction";
 import { SolveFeedback } from "../../components/agents/attach/builderStrip/SolveFeedback";
 import { CredentialHint } from "../../components/editing/CredentialHint";
 import { subscribeApiSettingsRequests } from "../../components/apiSettings/apiSettingsRequest";
-import { HOSTED_GUEST_KEYS_NOTE } from "../../components/apiSettings/useHostedGuest";
 
 /**
  * A guest on a Curio with sign-in (a hosted guest, under --deploy) cannot save
@@ -23,9 +22,12 @@ import { HOSTED_GUEST_KEYS_NOTE } from "../../components/apiSettings/useHostedGu
  * no form. So the two buttons that open that form, "Add key for <host>" and
  * the code editor's "Save as API key", are not offered to a hosted guest. The
  * local guest (sign-in off) and a signed-in user still get both. The code
- * editor's hint gives a hosted guest advice it can follow: the note API
- * Settings shows it, and signing in with its own account.
+ * editor's hint gives a hosted guest advice it can follow: signing in with its
+ * own account.
  */
+
+/** The note this hint and API Settings once showed a hosted guest. */
+const GUEST_NOTE = "Personal keys cannot be saved on a shared guest account.";
 
 type UserContextValue = React.ContextType<typeof UserContext>;
 
@@ -165,8 +167,9 @@ describe("the advice in the code editor's key hint", () => {
     expect(hint()).not.toHaveTextContent("curio_secret");
     expect(hint()).toHaveTextContent(
       "Line 3 looks like an API key. Keys in node code are saved with the dataflow and shared with it. " +
-        `${HOSTED_GUEST_KEYS_NOTE} Sign in with your own account to save it in API Settings.`,
+        "Sign in with your own account to save it in API Settings.",
     );
+    expect(hint()).not.toHaveTextContent(GUEST_NOTE);
   });
 
   it.each([
@@ -178,6 +181,6 @@ describe("the advice in the code editor's key hint", () => {
       "Line 3 looks like an API key. Keys in node code are saved with the dataflow and shared with it. " +
         'Save it in API Settings and write api_key = curio_secret("<name>") instead.',
     );
-    expect(hint()).not.toHaveTextContent(HOSTED_GUEST_KEYS_NOTE);
+    expect(hint()).not.toHaveTextContent(GUEST_NOTE);
   });
 });

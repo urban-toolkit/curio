@@ -69,6 +69,10 @@ services:
       # job is the one that covers isolation WITHOUT a filesystem boundary.
       # test-exec-user covers the other half.
       - CURIO_EXEC_USER=
+      # This runner's share of its CPUs, for every library that starts a
+      # thread per CPU it sees (torch, OpenBLAS): test-isolated sizes it, and
+      # scripts/ci_isolated_threads.py checks a node's torch uses it.
+      - OMP_NUM_THREADS=${CURIO_CI_LIBRARY_THREADS:?the test-isolated job sizes the stack's library threads}
     # The job's own host ports, in place of the base file's 5002/8080, which
     # are the production stack's on the runner.
     ports: !override

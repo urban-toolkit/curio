@@ -17,6 +17,7 @@ import {
 } from "../../services/datasetCatalog";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useToastContext } from "../../providers/ToastProvider";
+import { hostedGuestSignInNote, useHostedGuest } from "../../components/apiSettings/useHostedGuest";
 import { DataCatalogBrowseCard } from "./DataCatalogBrowseCard";
 import { DataCatalogBrowseDrawer } from "./DataCatalogBrowseDrawer";
 import {
@@ -43,6 +44,9 @@ function withReason(text: string, err: unknown): string {
 export const DataCatalogBrowse: React.FC = () => {
   const { projectId } = useFlowContext();
   const { showToast } = useToastContext();
+  // Every hosted guest shares one account, whose list for all projects every
+  // guest's dataflows start with: its Add and Remove tell it to sign in.
+  const hostedGuest = useHostedGuest();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<DatasetSortMode>("recent");
   const [origin, setOrigin] = useState<DatasetOrigin | "">("");
@@ -167,6 +171,10 @@ export const DataCatalogBrowse: React.FC = () => {
 
   const handleAddToAllProjects = useCallback(
     async (dataset: DatasetCatalogItem) => {
+      if (hostedGuest) {
+        showToast(hostedGuestSignInNote("add datasets to all projects"), "warning");
+        return;
+      }
       setDefaultsBusyId(dataset.id);
       try {
         const resp = await datasetCatalogApi.addDatasetToDefaults(dataset.id);
@@ -192,11 +200,15 @@ export const DataCatalogBrowse: React.FC = () => {
         setDefaultsBusyId(null);
       }
     },
-    [catalog.reload, showToast, openDatasetDetails],
+    [catalog.reload, showToast, openDatasetDetails, hostedGuest],
   );
 
   const handleRemoveFromAllProjects = useCallback(
     async (dataset: DatasetCatalogItem) => {
+      if (hostedGuest) {
+        showToast(hostedGuestSignInNote("remove datasets from all projects"), "warning");
+        return;
+      }
       setDefaultsBusyId(dataset.id);
       try {
         const resp = await datasetCatalogApi.removeDatasetFromDefaults(dataset.id);
@@ -217,7 +229,7 @@ export const DataCatalogBrowse: React.FC = () => {
         setDefaultsBusyId(null);
       }
     },
-    [catalog.reload, showToast, openDatasetDetails],
+    [catalog.reload, showToast, openDatasetDetails, hostedGuest],
   );
 
   const runDatasetAction = (id: CatalogCardActionId, dataset: DatasetCatalogItem) => {

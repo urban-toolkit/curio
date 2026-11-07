@@ -408,14 +408,40 @@ def editor_session(user_id, name: str) -> Optional[str]:
     return entry.session_id if entry is not None else None
 
 
+def visitor_session(user_id, name: str, sign_in: Optional[str]) -> Optional[str]:
+    """The kept session that made the artifact *name*, when a play of the
+    hosted guest signed in as *sign_in* kept it on their own copy of a
+    dataflow (``projects/visitor_copies.py``), which has no row of its own;
+    else None. Every hosted guest signs in to the account *user_id*, so the
+    copy must be this sign-in's."""
+    from utk_curio.backend.app.projects import visitor_copies
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.users.models import User
+
+    if not name or not sign_in or user_id is None or not visitor_copies.copies_for(db.session.get(User, user_id)):
+        return None
+    entry = _newest_holding(
+        KeptStepOutput.query.outerjoin(Project, Project.id == KeptStepOutput.project_id)
+        .filter(Project.id.is_(None)),
+        name,
+    )
+    if entry is None or not visitor_copies.is_own_copy(sign_in, entry.project_id):
+        return None
+    return entry.session_id
+
+
 def read_session(user_id, name: str, sign_in: Optional[str]) -> Optional[str]:
     """The session the account *user_id*, signed in as *sign_in*, reads the
     artifact *name* under where no dataflow is named: the kept session that
     made it, when the runs of a dataflow the account owns kept it
-    (:func:`owner_session`) or the account's own runs as an editor did
-    (:func:`editor_session`), else the sign-in, as when that lookup fails."""
+    (:func:`owner_session`), the account's own runs as an editor did
+    (:func:`editor_session`) or the sign-in's plays as a hosted guest did
+    (:func:`visitor_session`), else the sign-in, as when that lookup fails."""
     try:
-        session = owner_session(user_id, name) or editor_session(user_id, name)
+        session = (
+            owner_session(user_id, name) or editor_session(user_id, name)
+            or visitor_session(user_id, name, sign_in)
+        )
     except Exception:  # noqa: BLE001 - a read never fails on this lookup
         log.warning("could not look up the kept output %s", name)
         try:
@@ -562,6 +588,25 @@ def forget_node(project_id: str, node_id: str) -> int:
 
     def _apply():
         entries = KeptStepOutput.query.filter_by(project_id=project_id, node_id=node_id).all()
+        for entry in entries:
+            db.session.delete(entry)
+        return len(entries)
+
+    return commit_with_retry(_apply)
+
+
+def forget_dataflows(project_ids) -> int:
+    """Drop every output kept for each of *project_ids*, whoever made it, as
+    the server's start drops the hosted guests' copies of dataflows
+    (``projects/visitor_copies.drop_all``), which have no row whose delete
+    would take them; their artifacts go once the delete commits
+    (:func:`_note_deleted_entry`). Returns how many went."""
+    ids = list(dict.fromkeys(str(project_id) for project_id in project_ids or () if project_id))
+    if not ids:
+        return 0
+
+    def _apply():
+        entries = KeptStepOutput.query.filter(KeptStepOutput.project_id.in_(ids)).all()
         for entry in entries:
             db.session.delete(entry)
         return len(entries)

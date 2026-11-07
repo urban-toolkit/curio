@@ -129,7 +129,7 @@ describe.each(VIEWS)("a source's Access list, in the %s", (_view, view) => {
       "https://example.org/app-tokens",
     );
     expect(addKey()).toBeNull();
-    expect(within(access).getAllByText(GUEST_NOTE, { exact: false })).toHaveLength(1);
+    expect(access).not.toHaveTextContent(GUEST_NOTE);
   });
 
   it.each([

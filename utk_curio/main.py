@@ -25,6 +25,7 @@ from utk_curio.cli.lifecycle import clean_shutdown, shutdown_flag, signal_handle
 from utk_curio.cli.logs import COLOR_FRONTEND, log_always, log_info, print_output_queue, setup_logging
 from utk_curio.cli.services import start_backend, start_frontend, start_sandbox
 from utk_curio.cli.test_runner import run_tests
+from utk_curio.common.open_files import raise_limit as raise_open_files_limit
 
 
 def main():
@@ -516,6 +517,8 @@ def main():
 
     if args.command == "start":
         _require_supported_node()
+        # Every server inherits this process's limit on open files.
+        raise_open_files_limit()
         if args.server == "all":
             log_always("Starting all servers (backend, sandbox, frontend)...")
         # A deployment's frontend with nothing to build needs none of the checks

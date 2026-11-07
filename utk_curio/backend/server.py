@@ -1,6 +1,10 @@
 import os
+
+from werkzeug.serving import WSGIRequestHandler
+
 from utk_curio.backend.app import create_app
 from utk_curio.backend.config import CURIO_SEED_EXAMPLES
+from utk_curio.common.request_deadline import RequestHeadDeadline
 
 app = create_app()
 
@@ -78,15 +82,22 @@ def _run_kwargs():
     }
 
 
+class RequestHandler(RequestHeadDeadline, WSGIRequestHandler):
+    """Werkzeug's request handler, which closes a connection that sends no
+    request within ``request_start_timeout`` seconds (``RequestHeadDeadline``)."""
+
+
 def _socketio_run_kwargs():
-    """What ``socketio.run`` is handed: ``_run_kwargs``, and the reloader's
+    """What ``socketio.run`` is handed: ``_run_kwargs``, the reloader's
     exclusions, which Flask-SocketIO passes on to Werkzeug's reloader only as
-    ``reloader_options``. Without them a package install, which writes under
-    ``.curio/`` and ``site-packages/``, restarts a dev backend mid-request.
+    ``reloader_options``, and the request handler. Without the exclusions a
+    package install, which writes under ``.curio/`` and ``site-packages/``,
+    restarts a dev backend mid-request.
 
     The Werkzeug server is the one Flask-SocketIO's threading mode runs on (a
     thread per request and per WebSocket); ``allow_unsafe_werkzeug`` lets it
     start without a terminal, as the launcher and the Docker image start it.
+    Flask-SocketIO hands ``request_handler`` on to Werkzeug's ``run_simple``.
     """
     return {
         'allow_unsafe_werkzeug': True,
@@ -94,6 +105,7 @@ def _socketio_run_kwargs():
             'exclude_patterns': RELOADER_EXCLUDE_PATTERNS,
             'reloader_type': DEFAULT_RELOADER_TYPE,
         },
+        'request_handler': RequestHandler,
         **_run_kwargs(),
     }
 

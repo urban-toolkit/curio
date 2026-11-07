@@ -4,6 +4,7 @@ import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "../../packages/publishing/useDrawerDragThrough";
+import { pinnedDrawer } from "../../packages/publishing/pinnedDrawer";
 import { answerEscape, escapeAnswered, isTopDrawer } from "../../ModalShell";
 import { useDatasetDetails } from "../../datasets/catalog/datasetDetailsContext";
 import { useModelCatalogDrawer } from "../../../providers/modelCatalog";
@@ -48,6 +49,7 @@ export const DiscoveryCatalogDrawer: React.FC<DiscoveryCatalogDrawerProps> = ({
   const drawerRef = useRef<HTMLElement>(null);
   const dragThrough = useDrawerDragThrough();
   const [pinned, setPinned] = useState(false);
+  const pin = pinnedDrawer(pinned);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<DiscoverySortMode>("name");
   // The source open in the drawer, and the query asked of it.
@@ -132,6 +134,7 @@ export const DiscoveryCatalogDrawer: React.FC<DiscoveryCatalogDrawerProps> = ({
         data-curio-discovery-catalog-drawer="true"
         aria-hidden={!presented}
         {...dragThrough}
+        {...pin.root}
       >
         <button
           type="button"
@@ -145,7 +148,7 @@ export const DiscoveryCatalogDrawer: React.FC<DiscoveryCatalogDrawerProps> = ({
           ref={drawerRef}
           className={shell.drawer}
           role="dialog"
-          aria-modal="true"
+          {...pin.panel}
           aria-labelledby="discovery-catalog-title"
           tabIndex={-1}
           data-curio-open-drawer={presented || undefined}

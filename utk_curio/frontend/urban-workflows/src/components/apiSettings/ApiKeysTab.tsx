@@ -17,7 +17,6 @@ import { NodeKeyForm, deliveryText, formatUsed } from "./NodeKeyForm";
 import { SourceKeyForm, usedByText } from "./SourceKeyForm";
 import type { ApiSettingsFocus } from "./apiSettingsRequest";
 import type { LlmListingState } from "./useLlmListing";
-import { HOSTED_GUEST_KEYS_NOTE } from "./useHostedGuest";
 
 /** "A", "A and B", "A, B and C". */
 export function listNames(names: string[]): string {
@@ -397,28 +396,12 @@ export const ApiKeysTab: React.FC<{
 
   return (
     <div className={styles.tabBody}data-testid="api-keys-tab">
-      <p className={llmStyles.intro}>
-        Every key this account uses: the language models agents run on, the keys the Discovery Catalog sends to
-        data sources, and keys your node code reads by name. Keys are write-only: once saved they are never shown
-        again.
-      </p>
       {loadError ? <p className={modal.error} role="alert">{loadError}</p> : null}
       {listing && !listing.editable ? (
         <>
           <p className={llmStyles.note} role="note">{listing.reason}</p>
-          <p className={llmStyles.active}>
-            {listing.active.source ? (
-              <>
-                Guests use <strong>{listing.active.model}</strong> on this Curio&apos;s endpoint.
-              </>
-            ) : (
-              listing.active.error
-            )}
-          </p>
+          {listing.active.source ? null : <p className={llmStyles.active}>{listing.active.error}</p>}
         </>
-      ) : null}
-      {hostedGuest ? (
-        <p className={styles.guestNotice}>{HOSTED_GUEST_KEYS_NOTE}</p>
       ) : null}
       {sourceError ? <p className={modal.error} role="alert">{sourceError}</p> : null}
       {nodeError ? <p className={modal.error} role="alert">{nodeError}</p> : null}
@@ -429,7 +412,6 @@ export const ApiKeysTab: React.FC<{
         llmEditable || !hostedGuest ? <p className={llmStyles.empty}>No keys yet.</p> : null
       ) : (
         <table className={llmStyles.table}>
-          <caption>Your keys. Keys are never shown.</caption>
           <thead>
             <tr>
               <th scope="col">Name</th>

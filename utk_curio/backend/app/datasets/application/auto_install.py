@@ -30,6 +30,19 @@ def _diagnostic(
     return diag
 
 
+def _data_type_of(sandbox_output: Any) -> str | None:
+    """The kind the sandbox says an output is, when it says."""
+    if not isinstance(sandbox_output, dict):
+        return None
+    return sandbox_output.get("dataType") or sandbox_output.get("data_type")
+
+
+def skipped_diagnostic(*, node_id: str | None, sandbox_output: Any, reason: str) -> dict[str, Any]:
+    """The diagnostic of a node output that is not saved as a dataset, for
+    *reason*, with no install tried."""
+    return _diagnostic("skipped", node_id=node_id, data_type=_data_type_of(sandbox_output), reason=reason)
+
+
 def _user_key_of(user: Any) -> str | None:
     """*user*'s store key, or None when it cannot be read."""
     try:
@@ -76,11 +89,7 @@ def auto_install_node_output(
     with ``status`` in ``"installed" | "skipped" | "failed"``. Never raises:
     install errors are logged and reported as ``failed`` rather than swallowed.
     """
-    data_type = (
-        (sandbox_output.get("dataType") or sandbox_output.get("data_type"))
-        if isinstance(sandbox_output, dict)
-        else None
-    )
+    data_type = _data_type_of(sandbox_output)
 
     if user is None or not node_id or not isinstance(sandbox_output, dict):
         return _diagnostic(

@@ -167,11 +167,11 @@ def test_a_real_account_can_still_remove_a_manifestless_leftover(
 def test_guest_delete_of_an_unpublished_dataset_is_not_blocked(
     app, db, client, catalog_root
 ):
-    """A guest still owns the guest store; the rule is about SHARED state.
+    """The local guest still owns the guest store; the rule is about SHARED state.
 
     ``delete_dataset`` cascades through ``unpublish_dataset`` and re-raises any
-    403, so an account gate placed before the "not published" 404 would stop a
-    guest deleting a dataset of their own that was never published. The gate
+    403, so an account gate placed before the "not published" 404 would stop
+    the local guest deleting a dataset of their own that was never published. The gate
     therefore sits after the lookup. A 404 here means the cascade got past the
     account rule and found nothing to unpublish, which is the correct path.
     """

@@ -12,6 +12,7 @@ import {
   setToken,
   UserData,
 } from "../utils/authApi";
+import { askAgain } from "../utils/askAgain";
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
 import { UserContext } from "./userContext";
 import { Loading } from "../components/login/Loading";
@@ -37,36 +38,14 @@ const STANDALONE_VIEWER: UserData = {
 };
 
 /**
- * The waits between the session checks of one page load, 7.5 s in all. A check
- * that got no answer or a server error says nothing about the session, and the
- * next one usually passes: the browser drops every request in flight when the
- * machine's network changes, and a restarting server answers 502 for a moment.
- * The page shows the sign-in form only once the last check failed too.
+ * Who is signed in, asked again while a check gets no answer or a server error
+ * (`askAgain`): such a check says nothing about the session. Any other failure,
+ * a 401 among them, is thrown at once, and so is the last check's, so the page
+ * shows the sign-in form only once the last check failed too. *stopped* (the
+ * provider unmounted) ends it between checks, with the error the check had.
  */
-export const SESSION_CHECK_WAITS_MS = [500, 1000, 2000, 4000];
-
-const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-/**
- * Who is signed in, asked again after each of `SESSION_CHECK_WAITS_MS` while a
- * check gets no answer or a server error. Any other failure, a 401 among them,
- * is thrown at once, and so is the last check's. *stopped* (the provider
- * unmounted) ends it between checks, with the error the check had.
- */
-async function askWhoIsSignedIn(stopped: () => boolean): Promise<UserData> {
-  for (const ms of SESSION_CHECK_WAITS_MS) {
-    try {
-      return await authApi.getMe();
-    } catch (e) {
-      if (!mayPassAgain(e) || stopped()) throw e;
-      console.warn(
-        `[Curio] The session check failed (${(e as Error)?.message ?? e}); asking again in ${ms} ms.`,
-      );
-      await wait(ms);
-      if (stopped()) throw e;
-    }
-  }
-  return authApi.getMe();
+function askWhoIsSignedIn(stopped: () => boolean): Promise<UserData> {
+  return askAgain("The session check", () => authApi.getMe(), mayPassAgain, stopped);
 }
 
 const UserProvider = ({ children }: { children: React.ReactNode }) => {

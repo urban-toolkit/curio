@@ -152,6 +152,9 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.monitor.routes import monitor_bp
     app.register_blueprint(monitor_bp)
+    # The monitor's histories cover this process: each start writes them anew.
+    from utk_curio.backend.app.monitor import history as monitor_history
+    monitor_history.start()
 
     # Non-prod DB stub endpoints for Playwright E2E tests.
     # Lets Playwright seed users / projects directly without the signup form.

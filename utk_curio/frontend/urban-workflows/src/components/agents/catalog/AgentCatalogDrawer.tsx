@@ -17,6 +17,7 @@ import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import footerStyles from "../../packages/publishing/DrawerFooter.module.css";
 import shell from "../../packages/publishing/CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "../../packages/publishing/useDrawerDragThrough";
+import { pinnedDrawer } from "../../packages/publishing/pinnedDrawer";
 import { SortMode } from "../../../services/packages";
 import {
   agentCategoryIcon,
@@ -92,6 +93,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
   const c = useAgentCatalogDrawer(presented, projectId, onEnsureProject);
   const panelRef = useRef<HTMLElement>(null);
   const dragThrough = useDrawerDragThrough();
+  const pin = pinnedDrawer(pinned);
   // Upload-import (dev/36), opened from the footer's Import package button.
   const [importOpen, setImportOpen] = useState(false);
   const [detailCard, setDetailCard] = useState<AgentCard | null>(null);
@@ -212,6 +214,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
       data-curio-agent-catalog-drawer="true"
       aria-hidden={!presented}
       {...dragThrough}
+      {...pin.root}
     >
       {/* The scrim's label is deliberately NOT the header close button's. The
           Node drawer gives both the same accessible name, which makes an
@@ -229,7 +232,7 @@ export const AgentCatalogDrawer: React.FC<AgentCatalogDrawerProps> = ({
         ref={panelRef}
         className={shell.drawer}
         role="dialog"
-        aria-modal="true"
+        {...pin.panel}
         aria-labelledby="agent-catalog-drawer-title"
         tabIndex={-1}
         data-curio-open-drawer={presented || undefined}

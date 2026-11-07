@@ -1,13 +1,14 @@
 """The monitor routes.
 
-All four are public and unauthenticated, like ``/version`` and
-``/api/config/public``, and all four exist on every instance. There is no
+All five are public and unauthenticated, like ``/version`` and
+``/api/config/public``, and all five exist on every instance. There is no
 deploy gate: a laptop benefits from the error log as much as a server does, and
 a page that only appears in one posture is a page nobody remembers exists.
 
 Read ``errors.py``'s module docstring before changing what the errors route
-returns. It is deliberately exempt from the anonymity rule the other two GETs
-are tested against.
+returns. It is deliberately exempt from the anonymity rule the other three GETs
+are tested against. The LLM route's model names are the one free text those
+three carry (``llm_tokens.py``).
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ import time
 from flask import Blueprint, jsonify, request
 
 from utk_curio.backend.app.common.address_limiter import AddressLimiter
-from utk_curio.backend.app.monitor import counters, errors, hardware, stats, storage
+from utk_curio.backend.app.monitor import counters, errors, hardware, llm_tokens, stats, storage
 
 monitor_bp = Blueprint("monitor", __name__, url_prefix="/api/monitor")
 
@@ -129,7 +130,8 @@ def _deployment(sandbox) -> dict:
     Every setting that has a value a person chose (the exec account name, the
     LLM base URL, model and key) is reported as "configured: true/false". The
     question an operator has is whether it is set, and the value itself would
-    be the leak.
+    be the leak. The models that answered requests are named on the LLM route
+    instead, by the owner's call (``llm_tokens.py``).
     """
     from utk_curio import __version__
     from utk_curio.backend import config
@@ -183,6 +185,13 @@ def monitor_route():
 def monitor_storage_route():
     """Disk usage across the state tree, from a cached walk. Aggregates."""
     return jsonify(storage.snapshot())
+
+
+@monitor_bp.route("/llm", methods=["GET"])
+def monitor_llm_route():
+    """Each model's LLM tokens per hour and in total, since the backend
+    started. Aggregates, naming models (``llm_tokens.py``)."""
+    return jsonify(llm_tokens.snapshot())
 
 
 @monitor_bp.route("/errors", methods=["GET"])

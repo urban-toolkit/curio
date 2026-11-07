@@ -46,6 +46,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFileCode } from "@fortawesome/free-solid-svg-icons";
 import shell from "./CatalogDrawerShell.module.css";
 import { useDrawerDragThrough } from "./useDrawerDragThrough";
+import { pinnedDrawer } from "./pinnedDrawer";
 import styles from "./NodeCatalogDrawer.module.css";
 import { answerEscape, escapeAnswered, isTopDrawer } from "../../ModalShell";
 import ConfirmDialog from "../../ConfirmDialog";
@@ -142,6 +143,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const [search, setSearch] = useState(initialSearch);
   const [sort, setSort] = useState<SortMode>("new");
   const [pinned, setPinned] = useState(false);
+  const pin = pinnedDrawer(pinned);
   const [functionOpen, setFunctionOpen] = useState(false);
   // One slot for whichever confirmation is open (#197). The two destructive
   // actions here are mutually exclusive from the user's point of view, and a
@@ -451,12 +453,13 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           presented ? shell.overlayRootPresented : ""
         }`}
         // The drawer stays mounted through its exit slide, and the panel below
-        // carries aria-modal="true" - so without this it advertises a modal
-        // dialog to assistive tech while sliding away. Its two siblings
+        // is a modal dialog while unpinned - so without this it advertises a
+        // modal dialog to assistive tech while sliding away. Its two siblings
         // (DatasetCatalogDrawer, AgentCatalogDrawer) have always had it.
         aria-hidden={!presented}
         {...{ [copy.rootAttribute]: "true" }}
         {...dragThrough}
+        {...pin.root}
       >
         <button
           type="button"
@@ -470,7 +473,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           ref={drawerRef}
           className={shell.drawer}
           role="dialog"
-          aria-modal="true"
+          {...pin.panel}
           aria-labelledby={copy.titleId}
           tabIndex={-1}
           data-curio-open-drawer={presented || undefined}

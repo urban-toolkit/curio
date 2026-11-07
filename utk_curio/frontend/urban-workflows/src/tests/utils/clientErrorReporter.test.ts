@@ -22,24 +22,31 @@ type Listener = (event: any) => void;
  * flag and its count of reports are per load; its listeners kept here rather
  * than added to jsdom's one window; and the post it reports through.
  */
-function installed(): { on: Record<string, Listener>; post: jest.Mock; perLoad: number } {
+function installed(): {
+  on: Record<string, Listener>;
+  post: jest.Mock;
+  perLoad: number;
+  reportHandledError: (message: string, stack?: string) => void;
+} {
   const on: Record<string, Listener> = {};
   const add = jest.spyOn(window, "addEventListener").mockImplementation(((type: string, listener: Listener) => {
     on[type] = listener;
   }) as any);
   let post!: jest.Mock;
   let perLoad = 0;
+  let reportHandledError!: (message: string, stack?: string) => void;
   try {
     jest.isolateModules(() => {
       post = require("../../api/monitorApi").postClientError;
       const reporter = require("../../utils/clientErrorReporter");
       perLoad = reporter.MAX_REPORTS_PER_LOAD;
+      reportHandledError = reporter.reportHandledError;
       reporter.installClientErrorReporter();
     });
   } finally {
     add.mockRestore();
   }
-  return { on, post, perLoad };
+  return { on, post, perLoad, reportHandledError };
 }
 
 /** The window `error` event the browser raises for a ResizeObserver loop. */
@@ -78,5 +85,17 @@ describe("the browser error reporter", () => {
     for (let notice = 0; notice < perLoad * 2; notice += 1) on.error(loopNotice());
     on.error(uncaught("a tile could not draw"));
     expect(reported(post)).toEqual(["Uncaught Error: a tile could not draw"]);
+  });
+
+  // A page that caught a failure and showed it (the projects page's list,
+  // #1274) still tells the monitor, so its error log says why.
+  test("reports an error a page handled, within the same reports a page may send", () => {
+    const { on, post, perLoad, reportHandledError } = installed();
+    reportHandledError("Couldn't load your dataflows: [Errno 24] Too many open files");
+    expect(reported(post)).toEqual(["Couldn't load your dataflows: [Errno 24] Too many open files"]);
+
+    for (let error = 0; error < perLoad * 2; error += 1) on.error(uncaught(`error ${error}`));
+    reportHandledError("Couldn't load your dataflows: Bad gateway");
+    expect(post).toHaveBeenCalledTimes(perLoad);
   });
 });

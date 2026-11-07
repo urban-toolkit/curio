@@ -20,7 +20,7 @@
  */
 import React, { useCallback, useState } from "react";
 import { flushSync } from "react-dom";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { MemoryRouter } from "react-router-dom";
 
@@ -162,6 +162,29 @@ describe.each([
     expect(closeOver).toHaveBeenCalledTimes(1);
     expect(setDefine).not.toHaveBeenCalled();
   });
+});
+
+// #1352: pinned, a drawer stays open while the canvas, the palette and the top
+// bar keep working. Its root carries data-pinned, on which the shell's
+// stylesheet takes the pointer off the root and the scrim, and its panel is not
+// a modal dialog. Unpinned, it is one, over a scrim. Define scenario has no pin.
+test.each([
+  ["the Scenario Catalog drawer", "catalog" as const, "Scenario Catalog", "scenario-catalog"],
+  ["a header drawer", "provenance" as const, "Node provenance", "provenance"],
+])("pinned, %s lets the page work and is not modal; unpinned, it is modal", (_kind, over, name, root) => {
+  render(tree(over, false));
+  const dialog = screen.getByRole("dialog", { name });
+  const drawer = document.querySelector(`[data-curio-${root}-drawer="true"]`);
+  expect(drawer).not.toHaveAttribute("data-pinned");
+  expect(dialog).toHaveAttribute("aria-modal", "true");
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Pin drawer open" }));
+  expect(drawer).toHaveAttribute("data-pinned", "true");
+  expect(dialog).not.toHaveAttribute("aria-modal");
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Unpin drawer" }));
+  expect(drawer).not.toHaveAttribute("data-pinned");
+  expect(dialog).toHaveAttribute("aria-modal", "true");
 });
 
 test("Define scenario has no scrim, sits at the catalog drawers' tier, and is not modal", () => {

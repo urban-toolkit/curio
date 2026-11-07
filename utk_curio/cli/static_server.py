@@ -10,6 +10,7 @@ from html import escape as html_escape
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 from utk_curio.common.backend_address import backend_base_url
+from utk_curio.common.request_deadline import RequestHeadDeadline
 
 
 # How long the page server waits for the backend to assemble a dashboard before
@@ -163,10 +164,11 @@ def run_spa_static_server(directory: str, port: int, base_path: str = "", backen
         )
         return f'<script id="curio-dashboard-payload" type="application/json">{safe}</script>'
 
-    class SpaStaticHandler(SimpleHTTPRequestHandler):
+    class SpaStaticHandler(RequestHeadDeadline, SimpleHTTPRequestHandler):
         # The 1.0 default closes the socket after every response, so one page
         # load opens hundreds of connections. Safe: every response here carries
-        # a Content-Length.
+        # a Content-Length. A kept connection that sends no request for
+        # ``request_start_timeout`` seconds is closed (RequestHeadDeadline).
         protocol_version = "HTTP/1.1"
 
         def __init__(self, *args, **kwargs):

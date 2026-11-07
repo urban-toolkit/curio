@@ -61,7 +61,7 @@ def test_signup_signin_flow(app_frontend: FrontendPage, page):
 # Every page load asks /api/auth/me. The server answers a dead session with 401
 # and nothing else; a check the browser aborted because the page navigated
 # away, or one that met a server error, says nothing about the session, so the
-# load asks again after each of SESSION_CHECK_WAITS_MS (UserProvider.tsx, 7.5 s
+# load asks again after each of ASK_AGAIN_WAITS_MS (utils/askAgain.ts, 7.5 s
 # in all) before it shows the sign-in page. The routes below fail every check
 # of one load on purpose, so that load shows the sign-in page either way: what
 # is under test is the NEXT load.

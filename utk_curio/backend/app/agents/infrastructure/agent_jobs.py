@@ -81,6 +81,15 @@ def reset_registry() -> None:
     _TURNS.reset()
 
 
+def _for_the_asker(events: Iterator[tuple[str, Any]]) -> Iterator[tuple[str, Any]]:
+    """*events*, run for the visitor whose request starts the job: on the
+    job's thread, which holds no request, a hosted guest's own copies and
+    datasets are theirs, as in their requests (``visitor_copies.carried``)."""
+    from utk_curio.backend.app.projects import visitor_copies
+
+    return visitor_copies.carried(events)
+
+
 def start_turn(*, user_key: str, project_id: str, attachment_id: str, job_id: str,
                events: Iterator[tuple[str, Any]], app_context=None, redact_values: dict | None = None,
                on_finish=None) -> Job:
@@ -90,7 +99,7 @@ def start_turn(*, user_key: str, project_id: str, attachment_id: str, job_id: st
     *on_finish* called once it is no longer live."""
     return _TURNS.start(
         user_key=user_key, project_id=project_id, key=attachment_id, kind="turn",
-        job_id=job_id, events=events, app_context=app_context,
+        job_id=job_id, events=_for_the_asker(events), app_context=app_context,
         redact_values=redact_values, on_finish=on_finish,
     )
 
@@ -150,7 +159,7 @@ def start_job(
     text."""
     return _REGISTRY.start(
         user_key=user_key, project_id=project_id, key=attachment_id, kind=kind,
-        job_id=job_id, events=events, app_context=app_context,
+        job_id=job_id, events=_for_the_asker(events), app_context=app_context,
         redact_values=redact_values,
     )
 
@@ -178,7 +187,7 @@ def register_job(
 def run_job(job: Job, events: Iterator[tuple[str, Any]], app_context=None) -> Job:
     """Drive a registered *job*'s *events* in a daemon thread, as
     :func:`start_job` does."""
-    return _REGISTRY.run(job, events, app_context=app_context)
+    return _REGISTRY.run(job, _for_the_asker(events), app_context=app_context)
 
 
 def fail_job(job: Job, message: str) -> None:
