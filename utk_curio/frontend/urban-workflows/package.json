@@ -60,8 +60,14 @@
     "jsdom": "^29.0.0",
     "dompurify": "^3.4.13",
     "babel-plugin-istanbul": "^8.0.0",
-    "test-exclude": "^8.0.0",
-    "glob": "^13.0.0",
+    "test-exclude": {
+      ".": "^8.0.0",
+      "minimatch": "^11.0.5"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.5"
+    },
+    "glob": "^14.0.4",
     "@urban-toolkit/autk-map": "$@urban-toolkit/autk-map"
   },
   "devDependencies": {
