@@ -14,9 +14,8 @@ import subprocess
 import sys
 import tempfile
 import textwrap
-import unittest
+import unittest.mock
 from pathlib import Path
-from unittest import mock
 
 from utk_curio.backend.tests import parts
 from utk_curio.backend.tests._support import collection
@@ -227,7 +226,7 @@ class CollectionsAtOnceTest(unittest.TestCase):
             argv = [sys.executable, "-m", "pytest", ".", "--collect-only", "-q", "-s",
                     "-p", "no:cacheprovider"]
             held = {key: os.environ.get(key) or f"held-here-{key}" for key in collection.STATE_PATHS}
-            with mock.patch.dict(os.environ, held):
+            with unittest.mock.patch.dict(os.environ, held):
                 found = collection.collect_each(
                     [(argv, {"CURIO_UNIT_PART": f"{k}/2", "PYTEST_ADDOPTS": ""}) for k in (1, 2)], suite)
         self.assertTrue(all("test_mod.py::test_one" in ids for ids in found), found)

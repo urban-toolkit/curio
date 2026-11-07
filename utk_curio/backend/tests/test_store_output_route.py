@@ -8,8 +8,7 @@ hands back the sandbox's answer: the reference, or a refusal with its reason.
 The sandbox's own checks are in ``sandbox/tests/test_stored_rows.py``.
 """
 
-import unittest
-from unittest import mock
+import unittest.mock
 
 from utk_curio.backend.app import create_app
 from utk_curio.backend.app.api import routes
@@ -40,7 +39,7 @@ class StoreOutputRouteTest(unittest.TestCase):
             self.asked.append((method, path, kwargs.get("json")))
             return self.reply
 
-        patched = mock.patch.object(routes, "_sandbox_call", fake_sandbox_call)
+        patched = unittest.mock.patch.object(routes, "_sandbox_call", fake_sandbox_call)
         patched.start()
         self.addCleanup(patched.stop)
 
@@ -48,10 +47,10 @@ class StoreOutputRouteTest(unittest.TestCase):
         from utk_curio.backend.app.users import dependencies
 
         for target, name, value in (
-            (dependencies, "get_current_user", lambda *a, **k: mock.Mock(id=1)),
+            (dependencies, "get_current_user", lambda *a, **k: unittest.mock.Mock(id=1)),
             (routes, "get_current_token", lambda: "the-callers-token"),
         ):
-            patched = mock.patch.object(target, name, value)
+            patched = unittest.mock.patch.object(target, name, value)
             patched.start()
             self.addCleanup(patched.stop)
 

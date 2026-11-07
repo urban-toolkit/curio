@@ -9,8 +9,7 @@ a 413 with its size), so the node can say why it drew nothing.
 """
 
 import json
-import unittest
-from unittest import mock
+import unittest.mock
 
 from utk_curio.backend.app import CORS_HEADERS, create_app
 from utk_curio.backend.app.api import routes
@@ -52,16 +51,16 @@ class RasterRouteTest(unittest.TestCase):
             self.calls.append({"method": method, "path": path, **kwargs})
             return self.reply
 
-        patch = mock.patch.object(routes, "_sandbox_call", fake_sandbox_call)
+        patch = unittest.mock.patch.object(routes, "_sandbox_call", fake_sandbox_call)
         patch.start()
         self.addCleanup(patch.stop)
 
     def sign_in(self):
         from utk_curio.backend.app.users import dependencies
 
-        for module, name, value in ((dependencies, "get_current_user", mock.Mock(id=1)),
+        for module, name, value in ((dependencies, "get_current_user", unittest.mock.Mock(id=1)),
                                     (routes, "get_current_token", "session-1")):
-            patched = mock.patch.object(module, name, lambda *a, _v=value, **k: _v)
+            patched = unittest.mock.patch.object(module, name, lambda *a, _v=value, **k: _v)
             patched.start()
             self.addCleanup(patched.stop)
 

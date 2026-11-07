@@ -14,8 +14,7 @@ stream into one ``bytes``), never the parsed tree.
 
 import json
 import tracemalloc
-import unittest
-from unittest import mock
+import unittest.mock
 
 
 from utk_curio.backend.app import create_app
@@ -83,17 +82,17 @@ class GetRelayMemoryTest(unittest.TestCase):
             self.calls.append(kwargs)
             return FakeSandboxResponse(self.body)
 
-        patch = mock.patch.object(routes, "_sandbox_call", fake_sandbox_call)
+        patch = unittest.mock.patch.object(routes, "_sandbox_call", fake_sandbox_call)
         patch.start()
         self.addCleanup(patch.stop)
         from utk_curio.backend.app.users import dependencies
 
         for module, name in ((dependencies, "get_current_user"),
                              (routes, "get_current_token")):
-            patched = mock.patch.object(
+            patched = unittest.mock.patch.object(
                 module, name,
                 lambda *a, **k: ("session-1" if name == "get_current_token"
-                                 else mock.Mock(id=1)),
+                                 else unittest.mock.Mock(id=1)),
             )
             patched.start()
             self.addCleanup(patched.stop)
@@ -147,7 +146,7 @@ class GetRelayMemoryTest(unittest.TestCase):
             raise RuntimeError("404 Client Error: NOT FOUND")
 
         failing.raise_for_status = raise_for_status
-        with mock.patch.object(routes, "_sandbox_call", lambda *a, **k: failing):
+        with unittest.mock.patch.object(routes, "_sandbox_call", lambda *a, **k: failing):
             response = self.client.get("/get", query_string={"fileName": "a1"})
 
         self.assertEqual(response.status_code, 500)

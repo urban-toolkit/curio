@@ -7,8 +7,7 @@ JSON -- which looks like success, because the data still arrives. Only the
 stress harness noticed, because it treats that 415 as an error.
 """
 
-import unittest
-from unittest import mock
+import unittest.mock
 
 from utk_curio.backend.app import create_app
 from utk_curio.backend.app.api import routes
@@ -41,7 +40,7 @@ class ArrowProxyHeadersTest(unittest.TestCase):
             self.sent.append(kwargs.get("headers") or {})
             return ArrowResponse()
 
-        patch = mock.patch.object(routes, "_sandbox_call", fake_sandbox_call)
+        patch = unittest.mock.patch.object(routes, "_sandbox_call", fake_sandbox_call)
         patch.start()
         self.addCleanup(patch.stop)
         # /get is behind require_auth, which resolves a user before the route
@@ -51,10 +50,10 @@ class ArrowProxyHeadersTest(unittest.TestCase):
 
         for module, name in ((dependencies, "get_current_user"),
                              (routes, "get_current_token")):
-            patched = mock.patch.object(
+            patched = unittest.mock.patch.object(
                 module, name,
                 lambda *a, **k: ("session-1" if name == "get_current_token"
-                                 else mock.Mock(id=1)),
+                                 else unittest.mock.Mock(id=1)),
             )
             patched.start()
             self.addCleanup(patched.stop)
