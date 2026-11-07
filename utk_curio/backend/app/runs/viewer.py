@@ -360,7 +360,10 @@ def start_viewer_run(
 
     A hosted guest who has their own copy of the dataflow runs the copy
     (``visitor_copies.dashboard_copy``), with the saved outputs that hold for
-    it (:func:`made_as_saved`), and keeps what the run makes on the copy."""
+    it (:func:`made_as_saved`), and keeps what the run makes on the copy. The
+    dashboard of a hosted guest's own new dataflow, which has no row, runs it
+    for that guest alone (``visitor_copies.dashboard_new``): as it is now,
+    with no saved output, kept on it; for anyone else it is not found."""
     from flask import current_app
 
     from utk_curio.backend.app.execution.node_names import template_labels
@@ -377,18 +380,27 @@ def start_viewer_run(
         _pruned_since_start.set()
         prune_quietly()
     project = db.session.get(Project, project_id)
-    if project is None:
+    new = visitor_copies.dashboard_new(project_id) if project is None else None
+    if project is None and new is None:
         raise RunError("Dashboard not found.", 404)
+    project = project or new
     user_key = _owner_user_dir_key(project)
-    spec, saved = _saved_state(user_key, project_id)
+    if new is not None:
+        # A guest saves nothing: the dataflow as it is now, with no saved output.
+        spec, saved = visitor_copies.spec_of(project_id), []
+    else:
+        spec, saved = _saved_state(user_key, project_id)
     if spec is None:
         raise RunError("Dashboard not found.", 404)
     # The dataflow the run plans and keeps on, and the visitor it serves on
-    # its threads: a hosted guest's own copy, and that guest.
+    # its threads: a hosted guest's own copy, or own new dataflow, and that
+    # guest.
     kept_on, sign_in = project_id, None
-    own = visitor_copies.dashboard_copy(project_id)
+    own = visitor_copies.dashboard_copy(project_id) if new is None else None
     own_spec = visitor_copies.spec_of(own) if own is not None else None
-    if own_spec is not None:
+    if new is not None:
+        sign_in = visitor_copies.current_sign_in()
+    elif own_spec is not None:
         holding = made_as_saved(user_key, project_id, spec, own_spec)
         spec, saved = own_spec, [ref for ref in saved if ref.node_id in holding]
         kept_on, sign_in = own, visitor_copies.current_sign_in()
@@ -591,7 +603,10 @@ def dashboard_output(project_id: str, file_name: str, token: Optional[str]):
     may read it (``kept.readable_output``): for a hosted guest who has their
     own copy of the dataflow, one kept on the copy, which their dashboard's
     runs keep on (``visitor_copies.dashboard_copy``), else one kept on the
-    dataflow, as for anyone else."""
+    dataflow, as for anyone else. What is kept on a hosted guest's copy or
+    new dataflow, named by its own id, is that guest's: only the dashboard of
+    their new dataflow reads it there (``visitor_copies.dashboard_new``), and
+    anyone else's read is not found."""
     from utk_curio.backend.app.projects import visitor_copies
 
     own = visitor_copies.dashboard_copy(project_id)
@@ -600,6 +615,8 @@ def dashboard_output(project_id: str, file_name: str, token: Optional[str]):
             return readable_output(own, file_name, token)
         except RunError:
             pass
+    elif visitor_copies.is_copy(project_id) and visitor_copies.dashboard_new(project_id) is None:
+        raise RunError("No such output on this dashboard.", 404)
     return readable_output(project_id, file_name, token)
 
 

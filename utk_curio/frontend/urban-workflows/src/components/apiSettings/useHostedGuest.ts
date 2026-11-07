@@ -12,9 +12,10 @@ export function isHostedGuest(user: UserData | null, enableUserAuth: boolean): b
 }
 
 /**
- * What a hosted guest is told when it does something that needs a saved
- * dataflow, on one it never saved: such a guest cannot save it, so only an
- * account can. *action* names what it did, as in "add datasets".
+ * What a hosted guest is told when it does what only an account does: save a
+ * dataflow, or change what every guest shares, such as the packages and the
+ * Data Catalog of the account they all sign in to. *action* names what it
+ * did, as in "publish datasets".
  */
 export function hostedGuestSignInNote(action: string): string {
   return `Sign in to ${action}.`;

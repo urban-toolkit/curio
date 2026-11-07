@@ -85,11 +85,16 @@ def user_key() -> str:
 
 def require_project(project_id: str) -> None:
     """Ownership: the project must exist and belong to the caller; otherwise
-    ``{"error": "project not found"}`` 404, which is what the handlers said."""
+    ``{"error": "project not found"}`` 404, which is what the handlers said.
+    A hosted guest's own new dataflow, which has no row, is its own
+    (``projects/visitor_copies.py``)."""
+    from utk_curio.backend.app.projects import visitor_copies
+
     try:
         projects_repo.get_for_user(project_id, g.user.id)
     except NotFoundError:
-        raise PackageServiceError("project not found", 404) from None
+        if visitor_copies.own_new(g.user, project_id) is None:
+            raise PackageServiceError("project not found", 404) from None
 
 
 def opened_dataflow_packages(project_id: str):

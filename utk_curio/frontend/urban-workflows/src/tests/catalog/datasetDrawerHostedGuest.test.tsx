@@ -1,10 +1,11 @@
 /**
- * The Data Catalog's Add, Remove and Publish on a dataflow a hosted guest never
- * saved (`isHostedGuest`: a guest on a Curio started with --deploy, where every
- * visitor shares the one guest account). Each needs a saved dataflow, and such
- * a guest cannot save one, so each tells it to sign in rather than doing
- * nothing. On a dataflow it has, its actions go on as before; the local shared
- * guest and a signed-in account keep today's behavior.
+ * The Data Catalog's Add, Remove and Publish for a hosted guest
+ * (`isHostedGuest`: a guest on a Curio started with --deploy, where every
+ * visitor shares the one guest account). Its Add and Remove act on a
+ * dataflow the server holds, made first when it was never saved, as an
+ * account's are: a dataflow of its own, kept until the server starts again.
+ * Its Publish tells it to sign in on any dataflow, before any dataflow is
+ * made: the Data Catalog it publishes to is every account's.
  *
  * Its Delete tells it to sign in on any dataflow, and asks and sends nothing:
  * the dataset is in the one store every guest reads. Its Remove from project
@@ -201,38 +202,63 @@ afterEach(() => {
 });
 
 describe("a hosted guest", () => {
-  describe("on a dataflow it never saved", () => {
+  describe.each([
+    ["it never saved, made for it on the action", null, "flow-new"],
+    ["it has", "flow-1", "flow-1"],
+  ])("on a dataflow %s", (_where, id, made) => {
     beforeEach(() => {
-      // No id, and none comes back, since a guest's save is skipped.
-      mockProjectId = null;
-      mockEnsureProjectId.mockResolvedValue(null);
+      mockProjectId = id;
+      mockEnsureProjectId.mockResolvedValue(made);
     });
 
-    it("is told to sign in when it adds a dataset", async () => {
+    it("adds a dataset to it, as an account does", async () => {
       const { result } = renderDrawerAs(HOSTED_GUEST);
 
       await add(result);
 
-      expect(mockShowToast).toHaveBeenCalledWith("Sign in to add datasets.", "warning");
-      expect(installSpy).not.toHaveBeenCalled();
+      expect(mockEnsureProjectId).toHaveBeenCalledTimes(1);
+      expect(installSpy).toHaveBeenCalledTimes(1);
+      expect(installSpy.mock.calls[0].slice(0, 2)).toEqual([made, DATASET.id]);
+      expect(signInToasts()).toEqual([]);
     });
 
-    it("is told to sign in when it removes a dataset", async () => {
+    it("removes a dataset from it, as an account does", async () => {
       const { result } = renderDrawerAs(HOSTED_GUEST);
 
       await remove(result);
 
-      expect(mockShowToast).toHaveBeenCalledWith("Sign in to remove datasets.", "warning");
-      expect(uninstallSpy).not.toHaveBeenCalled();
+      expect(mockEnsureProjectId).toHaveBeenCalledTimes(1);
+      expect(uninstallSpy).toHaveBeenCalledWith(made, DATASET.id);
+      expect(signInToasts()).toEqual([]);
     });
 
-    it("is told to sign in when it publishes a dataset", async () => {
+    it("is told to sign in when it publishes a dataset, and no dataflow is made nor anything sent", async () => {
       const { result } = renderDrawerAs(HOSTED_GUEST);
 
       await publish(result);
 
       expect(mockShowToast).toHaveBeenCalledWith("Sign in to publish datasets.", "warning");
+      expect(mockEnsureProjectId).not.toHaveBeenCalled();
       expect(publishSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("when the dataflow it never saved cannot be made", () => {
+    beforeEach(() => {
+      // ensureProjectId says why; the action adds nothing to that.
+      mockProjectId = null;
+      mockEnsureProjectId.mockResolvedValue(null);
+    });
+
+    it("is not told to sign in when it adds or removes, and nothing is sent", async () => {
+      const { result } = renderDrawerAs(HOSTED_GUEST);
+
+      await add(result);
+      await remove(result);
+
+      expect(installSpy).not.toHaveBeenCalled();
+      expect(uninstallSpy).not.toHaveBeenCalled();
+      expect(signInToasts()).toEqual([]);
     });
   });
 
@@ -240,25 +266,6 @@ describe("a hosted guest", () => {
     beforeEach(() => {
       mockProjectId = "flow-1";
       mockEnsureProjectId.mockResolvedValue("flow-1");
-    });
-
-    it("adds a dataset, as before", async () => {
-      const { result } = renderDrawerAs(HOSTED_GUEST);
-
-      await add(result);
-
-      expect(installSpy).toHaveBeenCalledTimes(1);
-      expect(installSpy.mock.calls[0].slice(0, 2)).toEqual(["flow-1", DATASET.id]);
-      expect(signInToasts()).toEqual([]);
-    });
-
-    it("removes a dataset, as before", async () => {
-      const { result } = renderDrawerAs(HOSTED_GUEST);
-
-      await remove(result);
-
-      expect(uninstallSpy).toHaveBeenCalledWith("flow-1", DATASET.id);
-      expect(signInToasts()).toEqual([]);
     });
 
     it("is not told its Remove deletes the upload, which stays in the store every guest reads", async () => {

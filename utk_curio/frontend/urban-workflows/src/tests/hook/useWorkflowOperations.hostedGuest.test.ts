@@ -2,7 +2,9 @@
  * Who may save a dataflow from the canvas: everyone but a hosted guest
  * (`isHostedGuest`: a guest on a Curio started with --deploy, where every
  * visitor shares the one guest account). Without --deploy the shared guest is
- * the one local user, and it saves like a signed-in account.
+ * the one local user, and it saves like a signed-in account. A hosted guest's
+ * dataflow not saved yet is still made on the first action that needs an id,
+ * as an account's is: its own, kept until the server starts again.
  */
 import { renderHook, act } from "@testing-library/react";
 
@@ -139,8 +141,9 @@ describe("a hosted guest", () => {
     expect(mockShowToast).not.toHaveBeenCalled();
   });
 
-  it("gets no dataflow created before an install, and is told nothing", async () => {
-    // A catalog's Add on a dataflow never saved saves it first, on its own.
+  it("gets its own dataflow created before an install, as an account does, and is told nothing", async () => {
+    // A catalog's Add on a dataflow never saved makes it first, on its own:
+    // for a hosted guest, a dataflow of its own, kept for its visit.
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
 
     let id: string | null | undefined;
@@ -148,9 +151,24 @@ describe("a hosted guest", () => {
       id = await result.current.ensureProjectId();
     });
 
-    expect(id).toBeNull();
-    expect(projectsApi.create).not.toHaveBeenCalled();
+    expect(id).toBe("proj-new");
+    expect(projectsApi.create).toHaveBeenCalledTimes(1);
+    expect(projectsApi.create).toHaveBeenCalledWith(expect.objectContaining({ name: "wf" }));
+    expect(result.current.projectId).toBe("proj-new");
+    expect(projectsApi.update).not.toHaveBeenCalled();
     expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it("makes that dataflow once, however many actions ask for it at once", async () => {
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+
+    let ids: Array<string | null> = [];
+    await act(async () => {
+      ids = await Promise.all([result.current.ensureProjectId(), result.current.ensureProjectId()]);
+    });
+
+    expect(ids).toEqual(["proj-new", "proj-new"]);
+    expect(projectsApi.create).toHaveBeenCalledTimes(1);
   });
 });
 

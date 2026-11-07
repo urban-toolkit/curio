@@ -179,10 +179,9 @@ export function NodeFromFunctionModal({
     setBusy(true);
     setProblem(null);
     try {
-      // The node's package goes into this dataflow, which a hosted guest that
-      // never saved it has no id for, and cannot save: it is told to sign in
-      // before anything is written.
-      if (hostedGuest && !(await ensureProjectId())) {
+      // A hosted guest makes no package, which would be every guest's: it is
+      // told to sign in before anything is written, a dataflow included.
+      if (hostedGuest) {
         showToast(hostedGuestSignInNote("make nodes from Python functions"), "warning");
         return;
       }

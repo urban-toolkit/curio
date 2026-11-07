@@ -263,6 +263,19 @@ def resolve_saved_inputs(names: list[str], dataflow_id: str | None) -> dict:
         return {}
 
 
+def _dataflow_row(user, dataflow_id: str):
+    """The row of the dataflow *dataflow_id*, or, for a hosted guest's own
+    new dataflow, which has none, that dataflow read as one
+    (``visitor_copies.own_new``): its guest's runs keep what they make on it,
+    as an owner's do."""
+    from utk_curio.backend.app.projects import visitor_copies
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.extensions import db
+
+    project = db.session.get(Project, dataflow_id)
+    return project if project is not None else visitor_copies.own_new(user, dataflow_id)
+
+
 def _kept_maker(user, project) -> str | None:
     """Whose kept outputs a run of *user* on *project* keeps and reads:
     the owner's (``kept.MADE_BY_OWNER``), those of an editor she invited
@@ -308,10 +321,7 @@ def resolve_kept_inputs(
     if user is None or not dataflow_id or not kept_on:
         return {}
     try:
-        from utk_curio.backend.app.projects.models import Project
-        from utk_curio.backend.extensions import db
-
-        maker = _kept_maker(user, db.session.get(Project, dataflow_id))
+        maker = _kept_maker(user, _dataflow_row(user, dataflow_id))
         if maker is None:
             return {}
         granted = {}
@@ -539,7 +549,7 @@ class _KeptRun:
 class _Visitor:
     """A hosted guest's play of a dataflow their account owns, an example,
     and the guest's own copy of it (``projects/visitor_copies.py``), or None
-    when none could be made."""
+    when none could be made; or of the guest's own new dataflow, itself."""
 
     copy: str | None
 
@@ -553,7 +563,12 @@ def _hosted_guests_play(user, session_token: str | None, run: NodeRun) -> _Visit
     for any other run: a viewer's step in a kept session of its own, a run
     that names no node or dataflow, anyone but a hosted guest, and a hosted
     guest's run of another account's dataflow, which keeps nothing anyway.
-    The sign-in is the one the route was asked with, never read here from a
+    The play of a hosted guest's own new dataflow, which no other guest
+    opens, keeps on that dataflow and records in its journal, and joins no
+    Data Catalog either. One that names a dataflow with no row that is not
+    the guest's own, another guest's copy or new dataflow or one a start
+    dropped, keeps and records nothing, and joins no Data Catalog. The
+    sign-in is the one the route was asked with, never read here from a
     request: a run on a thread of its own has none."""
     if user is None or not run.dataflow_id or not run.node_id or not session_token:
         return None
@@ -569,8 +584,12 @@ def _hosted_guests_play(user, session_token: str | None, run: NodeRun) -> _Visit
 
         if not visitor_copies.copies_for(user):
             return None
+        if visitor_copies.own_new(user, run.dataflow_id, sign_in=session_token) is not None:
+            return _Visitor(copy=run.dataflow_id)
         project = db.session.get(Project, run.dataflow_id)
-        if project is None or project.user_id != getattr(user, "id", None):
+        if project is None:
+            return _Visitor(copy=None)
+        if project.user_id != getattr(user, "id", None):
             return None
     except Exception:  # noqa: BLE001 - a run never fails on this lookup
         return None
@@ -614,13 +633,11 @@ def _kept_run(
     if user is None or not run.dataflow_id or not run.node_id or not kept_on:
         return None
     from utk_curio.backend.app.datasets.infrastructure.sandbox_artifacts import made_by_a_kept_run
-    from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.app.runs import kept
-    from utk_curio.backend.extensions import db
     from utk_curio.common.kept_sessions import new_session_id
 
     try:
-        maker = _kept_maker(user, db.session.get(Project, run.dataflow_id))
+        maker = _kept_maker(user, _dataflow_row(user, run.dataflow_id))
     except Exception:  # noqa: BLE001 - a run never fails on this lookup
         return None
     if maker is None:

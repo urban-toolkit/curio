@@ -181,10 +181,9 @@ export function NodeSaveAsModal({
     setBusy(true);
     setBusyKind("save");
     try {
-      // The package goes into this dataflow, which a hosted guest that never
-      // saved it has no id for, and cannot save: it is told to sign in before
-      // anything is made.
-      if (hostedGuest && !(await ensureProjectId())) {
+      // A hosted guest saves no package, which would be every guest's: it is
+      // told to sign in before anything is made, a dataflow included.
+      if (hostedGuest) {
         showToast(hostedGuestSignInNote("save nodes as packages"), "warning");
         return;
       }

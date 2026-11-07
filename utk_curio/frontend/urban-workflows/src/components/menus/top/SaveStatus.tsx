@@ -6,6 +6,7 @@ import { faCircleCheck, faFloppyDisk } from "@fortawesome/free-solid-svg-icons";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useCollab } from "../../../providers/CollaborationProvider";
 import { useSaveState, type SaveState } from "../../../providers/flow/useSaveState";
+import { GUEST_KEPT_LABEL, GUEST_KEPT_TOOLTIP } from "../../apiSettings/keptForTheVisit";
 import { useHostedGuest } from "../../apiSettings/useHostedGuest";
 import headerStyles from "../../layout/GlobalPageHeader.module.css";
 import styles from "./UpMenu.module.css";
@@ -17,10 +18,7 @@ const LABEL: Record<SaveState, string> = {
     unsaved: "Unsaved",
 };
 
-/** What a hosted guest's bar reads once the server has its every change. */
-export const GUEST_KEPT_LABEL = "Kept for this visit";
-/** And its tooltip: only an account saves a dataflow. */
-export const GUEST_KEPT_TOOLTIP = "Sign in to save dataflows.";
+export { GUEST_KEPT_LABEL, GUEST_KEPT_TOOLTIP };
 
 /**
  * The top bar's save status, always present on a dataflow you own, so its
@@ -33,9 +31,10 @@ export const GUEST_KEPT_TOOLTIP = "Sign in to save dataflows.";
  * it as well as the colour, so the state does not rest on telling two hues
  * apart. A click is File > Save.
  *
- * A hosted guest's canvas is bound to its own copy's doc, which keeps its
- * changes until the server starts again: Saved reads Kept for this visit,
- * and each state's tooltip says to sign in to save dataflows.
+ * A hosted guest's canvas is bound to its own copy's doc, or to the doc of
+ * the dataflow its File > New made, which keeps its changes until the server
+ * starts again: Saved reads Kept for this visit, and each state's tooltip
+ * says to sign in to save dataflows.
  *
  * ``data-curio-changes-pending`` says whether changes wait for the server
  * right now, before the bar shows it.

@@ -143,7 +143,28 @@ test("a lone shapefile goes to the import, which says how to zip it", async () =
   expect(mockShowToast).toHaveBeenCalledWith("A shapefile cannot be read from roads.shp alone.", "error");
 });
 
-test("a hosted guest on a dataflow it never saved is told to sign in, and nothing is imported", async () => {
+function signInToasts(): string[] {
+  return mockShowToast.mock.calls.map((call: unknown[]) => String(call[0])).filter((m) => m.startsWith("Sign in"));
+}
+
+test("a hosted guest's file on a dataflow it never saved goes into the dataflow made for it, as an account's", async () => {
+  // The dataflow made for it is its own, kept until the server starts again.
+  mockHostedGuest = true;
+  mockEnsureProjectId.mockResolvedValue("df-new");
+  mockApi.importDataset.mockResolvedValue(item("imported.xtrees", { title: "trees" }));
+
+  const dataset = await importing([csv()]);
+
+  expect(mockEnsureProjectId).toHaveBeenCalledTimes(1);
+  expect(mockApi.importDataset).toHaveBeenCalledWith(expect.any(File), { dataflowId: "df-new" });
+  expect(mockApi.installToDataflow).toHaveBeenCalledWith(
+    "df-new", "imported.xtrees", expect.objectContaining({ id: "imported.xtrees" }), undefined,
+  );
+  expect(dataset).toMatchObject({ datasetId: "imported.xtrees", title: "trees" });
+  expect(signInToasts()).toEqual([]);
+});
+
+test("a hosted guest's file whose dataflow could not be made is not imported, and no one is told to sign in", async () => {
   mockHostedGuest = true;
   mockEnsureProjectId.mockResolvedValue(null);
 
@@ -151,5 +172,5 @@ test("a hosted guest on a dataflow it never saved is told to sign in, and nothin
 
   expect(dataset).toBeNull();
   expect(mockApi.importDataset).not.toHaveBeenCalled();
-  expect(mockShowToast).toHaveBeenCalledWith("Sign in to add datasets.", "warning");
+  expect(signInToasts()).toEqual([]);
 });

@@ -270,6 +270,105 @@ def test_non_shared_guest_cannot_create_project(client, guest_user_and_token, tm
     assert "Guest users cannot save" in create.get_json()["error"]
 
 
+def test_a_hosted_guests_create_makes_a_dataflow_only_that_guest_opens(
+    client, db, user_and_token, tmp_curio, monkeypatch,
+):
+    """Two visitors, A and B, sign in to the shared guest account on a Curio
+    started with --deploy, as two browsers do. A's create is its File > New:
+    201 and a create's answer, for a dataflow of A's own with no row, which
+    A opens, renames and categorizes, and which A's gallery lists first,
+    marked as kept for the visit. To B, and to an account, it does not exist
+    on any route. The next start drops it. The shared account's dataflows
+    are as they were, and saving one stays refused."""
+    import hashlib
+
+    from utk_curio.backend import config
+    from utk_curio.backend.app.common.user_storage import GUEST_KEY
+    from utk_curio.backend.app.projects import visitor_copies
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.users.models import User, UserSession
+
+    guest = User(username=config.CURIO_SHARED_GUEST_USERNAME, name="Guest", is_guest=True)
+    db.session.add(guest)
+    db.session.flush()
+    db.session.add(UserSession(user_id=guest.id, token="visitor-a"))
+    db.session.add(UserSession(user_id=guest.id, token="visitor-b"))
+    db.session.commit()
+    _, account = user_and_token
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+    example = client.post(
+        "/api/projects", data=json.dumps({"name": "Example", "spec": _spec(), "outputs": []}),
+        headers=_auth("visitor-a"),
+    ).get_json()["id"]
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+    example_file = storage.project_dir(GUEST_KEY, example) / storage.SPEC_FILE
+    example_bytes = hashlib.sha256(example_file.read_bytes()).hexdigest()
+
+    created = client.post(
+        "/api/projects", data=json.dumps({"name": "Mine", "spec": _spec(), "outputs": []}),
+        headers=_auth("visitor-a"),
+    )
+
+    assert created.status_code == 201, created.get_data(as_text=True)
+    body = created.get_json()
+    mine = body["id"]
+    assert {"id", "name", "slug", "spec", "outputs", "categories", "spec_revision", "folder_path",
+            "created_at", "updated_at", "scenarios"} <= set(body)
+    assert (body["name"], body["kept_for_visit"], body["outputs"]) == ("Mine", True, [])
+    assert body["spec"]["dataflow"]["name"] == "Mine"
+    assert db.session.get(Project, mine) is None
+    assert [p.id for p in Project.query.all()] == [example]
+
+    # A opens it, renames it and sets its categories, as on any dataflow it owns.
+    opened = client.get(f"/api/projects/{mine}", headers=_auth("visitor-a"))
+    assert opened.status_code == 200 and opened.get_json()["spec"]["dataflow"]["name"] == "Mine"
+    renamed = client.put(f"/api/projects/{mine}", data=json.dumps({"name": "Renamed"}), headers=_auth("visitor-a"))
+    assert renamed.status_code == 200, renamed.get_data(as_text=True)
+    assert renamed.get_json()["name"] == renamed.get_json()["spec"]["dataflow"]["name"] == "Renamed"
+    tagged = client.put(f"/api/projects/{mine}", data=json.dumps({"categories": {"topic": ["Parks"]}}),
+                        headers=_auth("visitor-a"))
+    assert tagged.status_code == 200, tagged.get_data(as_text=True)
+    assert tagged.get_json()["categories"]["hand"] == {"topic": ["Parks"]}
+    read = client.get(f"/api/projects/{mine}/categories", headers=_auth("visitor-a"))
+    assert read.status_code == 200 and read.get_json()["categories"]["hand"] == {"topic": ["Parks"]}
+    assert client.get(f"/api/projects/{mine}/history", headers=_auth("visitor-a")).status_code == 200
+    # A PUT of a spec is a save, which a guest does not make.
+    assert client.put(f"/api/projects/{mine}", data=json.dumps({"spec": _spec()}),
+                      headers=_auth("visitor-a")).status_code == 403
+    listed = client.get("/api/projects", headers=_auth("visitor-a")).get_json()
+    assert [(p["id"], p["name"], p["kept_for_visit"]) for p in listed] == [
+        (mine, "Renamed", True), (example, "Example", False),
+    ]
+
+    # To B and to an account it does not exist.
+    for token in ("visitor-b", account):
+        for method, path, payload in (
+            ("GET", f"/api/projects/{mine}", None),
+            ("PUT", f"/api/projects/{mine}", {"name": "Not yours"}),
+            ("GET", f"/api/projects/{mine}/categories", None),
+            ("GET", f"/api/projects/{mine}/history", None),
+            ("GET", f"/api/projects/{mine}/outputs/get?fileName=x", None),
+        ):
+            answer = client.open(path, method=method, headers=_auth(token),
+                                 data=json.dumps(payload) if payload is not None else None)
+            assert answer.status_code == 404, (token, method, path, answer.get_data(as_text=True))
+        assert mine not in [p["id"] for p in client.get("/api/projects", headers=_auth(token)).get_json()]
+    assert client.get(f"/api/projects/{mine}/shared").status_code == 404
+    assert [p["id"] for p in client.get("/api/projects", headers=_auth("visitor-b")).get_json()] == [example]
+
+    # The shared account's dataflow: unchanged, and its save stays refused.
+    saved = client.put(f"/api/projects/{example}", data=json.dumps({"spec": _spec()}), headers=_auth("visitor-a"))
+    assert saved.status_code == 403
+    assert hashlib.sha256(example_file.read_bytes()).hexdigest() == example_bytes
+    assert db.session.get(Project, example).name == "Example"
+
+    # The next start drops it.
+    assert visitor_copies.drop_all() == 1
+    assert client.get(f"/api/projects/{mine}", headers=_auth("visitor-a")).status_code == 404
+    assert [p["id"] for p in client.get("/api/projects", headers=_auth("visitor-a")).get_json()] == [example]
+    assert hashlib.sha256(example_file.read_bytes()).hexdigest() == example_bytes
+
+
 def test_ownership_isolation(client, user_and_token, db, tmp_curio):
     _, alice_token = user_and_token
 
