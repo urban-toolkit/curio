@@ -239,10 +239,10 @@ def merge_declared_and_detected(
 class RegistryFetcher(Protocol):
     """The registry seam — injectable for tests and offline deployments."""
     def fetch_metadata(self, name: str) -> dict:  # pragma: no cover - protocol
-        ...
+        """The registry's metadata document for package *name*."""
 
     def fetch_tarball(self, url: str, max_bytes: int) -> bytes:  # pragma: no cover
-        ...
+        """The tarball at *url*; a response over *max_bytes* is refused."""
 
 
 class HttpRegistryFetcher:

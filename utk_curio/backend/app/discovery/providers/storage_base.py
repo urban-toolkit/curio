@@ -81,12 +81,9 @@ class StorageProvider(Protocol):
     def scan(self, prefix: str = "") -> Iterator[FileEntry]:
         """Every file under *prefix*, recursively. Hidden and system files are
         never yielded."""
-        ...
 
     def open(self, relpath: str, *, byte_range: tuple[int, int] | None = None) -> BinaryIO:
         """Read one file, or ``byte_range`` (inclusive start, exclusive end) of it."""
-        ...
 
     def local_path(self, relpath: str):
         """A readable path on this machine, or None when the file is remote."""
-        ...

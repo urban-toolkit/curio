@@ -66,12 +66,12 @@ MAX_COLLECTION_OBJECT_BYTES = 4 * 1024 * 1024 * 1024
 
 class DiscoveryTransport(Protocol):
     def json_get(self, url: str, *, credential: str | None = None,
-                 headers: dict[str, str] | None = None) -> Any: ...
+                 headers: dict[str, str] | None = None) -> Any:
+        """The body of *url*: a JSON document, as text."""
 
     def get_page(self, url: str, *, credential: str | None = None,
                  headers: dict[str, str] | None = None) -> tuple[str, dict]:
         """The body and the response headers, for a paginated listing."""
-        ...
 
     def download(self, url: str, sink: Callable[[bytes], None], *, max_bytes: int,
                  credential: str | None = None, headers: dict[str, str] | None = None,
@@ -81,7 +81,6 @@ class DiscoveryTransport(Protocol):
         """Stream *url* to *sink*. ``before_body(headers, final_url)`` runs on
         the response headers before any body byte is read; what it raises
         ends the download there."""
-        ...
 
 
 class HttpDiscoveryTransport:
