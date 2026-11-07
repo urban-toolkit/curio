@@ -274,7 +274,9 @@ class _Queued:
 class _DocLock:
     """An open doc's lock, an RLock. A read of the dataflow waits for it, so a
     disk sync its holder asks for, such as a history point's, waits until the
-    thread holds no lock a read waits for (``storage.sync_when_free``)."""
+    thread holds no lock a read waits for (``storage.sync_when_free``). One
+    that fails then raises from the block, as it did inside it, unless the
+    block failed already."""
 
     __slots__ = ("_lock",)
 
@@ -286,13 +288,13 @@ class _DocLock:
         try:
             self._lock.acquire()
         except BaseException:
-            storage.release_syncs()
+            storage.release_syncs(raising=False)
             raise
         return self
 
-    def __exit__(self, *exc) -> None:
+    def __exit__(self, exc_type, exc, traceback) -> None:
         self._lock.release()
-        storage.release_syncs()
+        storage.release_syncs(raising=exc_type is None)
 
 
 class _OpenDoc:

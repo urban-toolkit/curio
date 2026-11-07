@@ -819,7 +819,8 @@ def spec_write_lock(user_key: str, project_id: str):
     :class:`SpecLockOrderError` before it waits.
 
     A read of the dataflow waits for this lock, so a disk sync its holder asks
-    for waits until the lock is let go (:func:`sync_when_free`).
+    for waits until the lock is let go, and one that fails then fails the
+    block's caller (:func:`sync_when_free`).
     """
     from utk_curio.backend.extensions import session_holds_write_lock
 
@@ -831,6 +832,7 @@ def spec_write_lock(user_key: str, project_id: str):
         )
     d = ensure_project_dir(user_key, project_id)
     hold_syncs()
+    ended = False
     try:
         with exclusive_lock(
             d / ".spec.lock",
@@ -844,8 +846,9 @@ def spec_write_lock(user_key: str, project_id: str):
                 yield
             finally:
                 held.discard(key)
+        ended = True
     finally:
-        release_syncs()
+        release_syncs(raising=ended)
 
 
 _spec_lock_holder = threading.local()
@@ -884,32 +887,48 @@ def hold_syncs() -> None:
     _syncs.depth = getattr(_syncs, "depth", 0) + 1
 
 
-def release_syncs() -> None:
-    """This thread let go of such a lock. Once it holds none, each file it
-    asked to sync meanwhile is synced, in the order it asked. A sync that
-    fails is logged, not raised: what it wrote is already there for every
-    reader, and the work done under the lock is not undone."""
+def release_syncs(*, raising: bool = True) -> None:
+    """This thread let go of such a lock; *raising* is false when the lock's
+    block failed. Once it holds none, each file it asked to sync meanwhile is
+    synced, in the order it asked. The first sync that fails raises here,
+    once all are done, so what asked for it fails as it did when it synced
+    under the lock. It is logged instead when its asker said so
+    (:func:`sync_when_free`), or when the block failed already, whose error
+    stands; so is every later one."""
     _syncs.depth -= 1
     if _syncs.depth:
         return
     waiting, _syncs.waiting = getattr(_syncs, "waiting", []), []
-    for descriptor in waiting:
+    failed = None
+    for descriptor, logged in waiting:
         try:
             _sync(descriptor)
-        except OSError:
-            logger.error("A file written under a dataflow's lock could not be synced to disk", exc_info=True)
+        except OSError as exc:
+            if logged or not raising or failed is not None:
+                logger.error("A file written under a dataflow's lock could not be synced to disk", exc_info=True)
+            else:
+                failed = exc
+    if failed is not None:
+        raise failed
 
 
-def sync_when_free(descriptor: int) -> None:
+def sync_when_free(descriptor: int, *, logged: bool = False) -> None:
     """Sync the file open as *descriptor* to disk, then close *descriptor*:
     at once, or, while this thread holds a lock a read of a dataflow waits
     for, once it holds none (:func:`release_syncs`). On a strained disk one
     sync takes seconds, and a read must not wait for it: what was written is
-    there for every reader before it reaches the disk."""
+    there for every reader before it reaches the disk. A sync that fails
+    raises where it runs, so what asked for it fails, as when it synced under
+    the lock; with *logged*, it is logged instead."""
     if getattr(_syncs, "depth", 0):
-        _syncs.waiting = [*getattr(_syncs, "waiting", []), descriptor]
+        _syncs.waiting = [*getattr(_syncs, "waiting", []), (descriptor, logged)]
         return
-    _sync(descriptor)
+    try:
+        _sync(descriptor)
+    except OSError:
+        if not logged:
+            raise
+        logger.error("A file could not be synced to disk", exc_info=True)
 
 
 def _sync(descriptor: int) -> None:
