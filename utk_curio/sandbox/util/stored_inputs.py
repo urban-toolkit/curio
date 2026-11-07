@@ -15,7 +15,8 @@ One rule, which both runners follow: in process (``worker.execute_code`` and
   (``[{name, type, geojson}]``), a dict a node returned.
 
 A frame read from an envelope keeps the envelope's ``layerName`` and
-``layerType`` in its ``metadata`` (:func:`keep_layer_identity`) and is in the
+``layerType`` in its ``metadata`` (:func:`keep_layer_identity`), beside the
+label of the bundle part it was read from, and is in the
 coordinate system its FeatureCollection names. A JavaScript node gets it as
 the FeatureCollection ``worker._to_js_value`` writes, under its layer name.
 
@@ -70,9 +71,9 @@ def keep_layer_identity(value, envelope):
     where Curio keeps a frame's own (``metadata``, which ``parseOutput`` hands
     on), so a node can tell an Autark node's layers apart, as the Map Editor
     node does to edit one of them (#662). A frame that already has a name keeps
-    it.
+    it, and one read from a bundle keeps its part's label.
     """
-    from utk_curio.sandbox.util.codec import is_geospatial_frame
+    from utk_curio.sandbox.util.codec import is_geospatial_frame, part_label_only
 
     name = envelope.get("layerName")
     if not isinstance(name, str) or not name or not is_geospatial_frame(value):
@@ -83,7 +84,7 @@ def keep_layer_identity(value, envelope):
     kept = {"name": name}
     if isinstance(envelope.get("layerType"), str) and envelope["layerType"]:
         kept["layerType"] = envelope["layerType"]
-    value.__dict__["metadata"] = kept
+    value.__dict__["metadata"] = {**kept, **(part_label_only(meta) or {})}
     return value
 
 

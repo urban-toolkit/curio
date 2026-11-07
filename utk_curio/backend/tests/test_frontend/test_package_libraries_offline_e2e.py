@@ -365,6 +365,9 @@ def test_a_node_card_dropped_from_the_drawer_opens_the_add_review_and_its_node_r
     assert (sorted(_node_ids(page) - before), _adds(writes)) == ([], []), (
         f"the drop made nodes or added the package before the review was confirmed: {writes}"
     )
+    # The review shows at once, and waits there while the dataflow still opens:
+    # it is captured once it can be confirmed.
+    expect(review.get_by_role("button", name="Add to project", exact=True)).to_be_enabled(timeout=30000)
     save_workflow_test_screenshot(
         page, DROP_STEM, test_name="add-review", fit_reactflow=False, clip_selector=ADD_REVIEW,
     )
@@ -692,6 +695,8 @@ def test_a_model_card_whose_package_is_not_added_opens_the_add_review_and_its_no
     assert (sorted(_node_ids(page) - before), _adds(writes)) == ([], []), (
         f"the drop made nodes or added the package before the review was confirmed: {writes}"
     )
+    # Captured once it can be confirmed, as the node card's review above.
+    expect(review.get_by_role("button", name="Add to project", exact=True)).to_be_enabled(timeout=30000)
     save_workflow_test_screenshot(
         page, MODEL_DROP_STEM, test_name="add-review", fit_reactflow=False, clip_selector=ADD_REVIEW,
     )

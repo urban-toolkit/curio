@@ -276,6 +276,16 @@ describe("controls of the node's own (Data Export's Download)", () => {
 
   afterEach(() => { mockDashboardOn = false; });
 
+  test("draw the widgets they hold themselves (Data Export's Part), which get no row of their own", () => {
+    const part: WidgetDef = { name: "part", type: "text", label: "Part", default: "" };
+    const { container } = render(<NodeEditor {...props} ownWidgets={["part"]} data={nodeData([FILE_NAME, part])} />);
+
+    const controls = activePane(container).querySelector<HTMLElement>("[data-widget-controls]")!;
+    expect(controls.querySelector('[data-widget-row="file_name"]')).not.toBeNull();
+    expect(controls.querySelector('[data-widget-row="part"]')).toBeNull();
+    expect(within(controls).getByRole("button", { name: "Download trees.csv" })).toBeTruthy();
+  });
+
   test("sit on the Widgets tab the node opens on, under File name's control, and nowhere on its code", () => {
     const { container } = render(<NodeEditor {...props} data={nodeData([FILE_NAME])} />);
 

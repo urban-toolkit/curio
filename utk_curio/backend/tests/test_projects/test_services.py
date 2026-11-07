@@ -24,6 +24,13 @@ def _make_spec(name="test"):
     }
 
 
+def _default_agents() -> list[str]:
+    """The lockfile a new dataflow gets: the catalog cards Curio ships."""
+    from utk_curio.backend.app.agents.domain import builtin
+
+    return sorted(m.dir_name for m in builtin.list_builtin_manifests() if m.catalog.listed)
+
+
 def test_save_new_project(app, db, user_and_token, tmp_curio):
     user, _ = user_and_token
     data = ProjectCreate(name="My Project", spec=_make_spec(), outputs=[])
@@ -32,9 +39,11 @@ def test_save_new_project(app, db, user_and_token, tmp_curio):
     assert detail.name == "My Project"
     assert detail.spec_revision == 1
     # The spec as sent, but for its name, which is the row's: the dataflow is
-    # made under the name its row is (see the test below).
+    # made under the name its row is (see the test below), and with the agents
+    # every account has by default.
     expected = _make_spec()
     expected["dataflow"]["name"] = "My Project"
+    expected["dataflow"]["agents"] = _default_agents()
     assert storage.read_spec(services._user_dir_key(user), detail.id) == expected
 
 
@@ -55,6 +64,7 @@ def test_a_new_dataflow_is_named_as_its_row(app, db, user_and_token, tmp_curio):
 
     expected = copy.deepcopy(sent)
     expected["dataflow"]["name"] = "Name Of The Row"
+    expected["dataflow"]["agents"] = _default_agents()
     assert expected["dataflow"]["provenance_id"] == "Name In The Spec"
     assert detail.name == "Name Of The Row"
     assert detail.spec["dataflow"]["name"] == "Name Of The Row", (
@@ -234,13 +244,16 @@ def test_a_hosted_guests_create_is_a_dataflow_of_its_own_and_its_saves_are_refus
     monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
     created = services.save_project(user, ProjectCreate(name="Mine", spec=_make_spec("mine")), sign_in=token)
 
-    # A dataflow of its own, answered as a create: no row, and the account's
-    # dataflows are the example alone.
+    # A dataflow of its own, answered as a create, with the agents every
+    # account's new dataflow starts with: no row, and the account's dataflows
+    # are the example alone.
     assert created.name == "Mine" and created.kept_for_visit is True
     assert created.id != example.id and created.spec["dataflow"]["name"] == "Mine"
+    assert created.spec["dataflow"]["agents"] == _default_agents()
     assert db.session.get(Project, created.id) is None
     assert [p.id for p in Project.query.all()] == [example.id]
     assert storage.read_spec(GUEST_KEY, created.id)["dataflow"]["name"] == "Mine"
+    assert storage.read_spec(GUEST_KEY, created.id)["dataflow"]["agents"] == _default_agents()
     assert visitor_copies.is_own_copy(token, created.id) and visitor_copies.is_new(created.id)
     # Its visitor opens it and lists it first; another visitor finds none of it.
     with visitor_copies.serving(token):

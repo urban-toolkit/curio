@@ -168,6 +168,7 @@ from .db_stubs import (  # noqa: F401
     api_json,
     ensure_node_only_agent,
     install_session_cookie,
+    take_agents_out,
     stub_db_user,
     stub_db_login,
     stub_login_and_enter_workflow,

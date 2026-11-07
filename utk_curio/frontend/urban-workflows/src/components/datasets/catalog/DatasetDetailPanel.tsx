@@ -9,6 +9,7 @@ import {
   isDatasetInstalledFromCatalog,
   isDatasetPublishedToCatalog,
   isLayerGroupId,
+  layerGroupKind,
 } from "../../../services/datasetCatalog";
 import { DatasetDataflowUsageSection, useDatasetDataflowUsage } from "./DatasetDataflowUsage";
 import { nodeKindLabel } from "./nodeKindLabel";
@@ -379,13 +380,13 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     : lineage;
   const { consumingNodes } = effectiveLineage.downstream;
   const published = isDatasetPublishedToCatalog(dataset);
-  // Neither a multi-part bundle, a layer group (whatever format it shows) nor a
-  // collection (an index of files kept where they are) is a single exportable file.
-  const canExport =
-    dataset.format !== "bundle" &&
-    dataset.format !== "osm" &&
-    dataset.format !== "collection" &&
-    !isLayerGroupId(dataset.id);
+  // A bundle and a layer group (whatever format it shows) export as one zip of
+  // their parts, but for a group of NetCDF variables, which a zip cannot hold
+  // as tables. A collection (an index of files kept where they are) and an
+  // OSM extract that is not a group have no file to export.
+  const canExport = isLayerGroupId(dataset.id)
+    ? layerGroupKind(dataset.id) !== "netcdf"
+    : dataset.format !== "osm" && dataset.format !== "collection";
   const discovered = dataset.discoverySource;
   // A storage source's resource is a folder or a bucket, not a portal page.
   // Which words describe where the bytes came from: a file the person

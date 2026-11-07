@@ -1,6 +1,6 @@
 import os
 
-from werkzeug.serving import WSGIRequestHandler
+from werkzeug.serving import WSGIRequestHandler, is_running_from_reloader
 
 from utk_curio.backend.app import create_app
 from utk_curio.backend.config import CURIO_SEED_EXAMPLES
@@ -21,6 +21,7 @@ with app.app_context():
         from utk_curio.backend.app.projects.services import (
             _user_dir_key,
             reconcile_guest_projects,
+            seed_default_agents,
         )
         guest = _shared_guest_user()
         # The hosted guests' copies go, as their examples are put back.
@@ -31,6 +32,9 @@ with app.app_context():
         n = reconcile_guest_projects(guest)
         if n:
             app.logger.info("Reconciled %d guest project(s) from filesystem", n)
+        # The agents every account has by default, before the examples are put
+        # back, so each example gets them, and every guest's copy of one too.
+        seed_default_agents(guest)
         if CURIO_SEED_EXAMPLES:
             from utk_curio.backend.app.projects.seed import seed_example_projects
             s = seed_example_projects(guest)
@@ -116,9 +120,18 @@ def serve():
         "[backend]", "so its threads stay idle in this process", import_first=True,
     )
 
+    run_kwargs = _socketio_run_kwargs()
+    # The hourly sample of both servers' open files, from now, in the process
+    # that serves. Under the reloader this function also runs in the process
+    # that only watches the files, which serves nothing.
+    if not run_kwargs["use_reloader"] or is_running_from_reloader():
+        from utk_curio.backend.app.monitor import open_files as monitor_open_files
+
+        monitor_open_files.start_sampler(app)
+
     # The app's own SocketIO server (extensions.init_socketio), which
     # Flask-SocketIO keeps on the app.
-    app.extensions["socketio"].run(app, **_socketio_run_kwargs())
+    app.extensions["socketio"].run(app, **run_kwargs)
 
 
 if __name__ == '__main__':

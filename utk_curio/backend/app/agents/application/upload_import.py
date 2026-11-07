@@ -18,6 +18,7 @@ from utk_curio.backend.app.agents.repositories import imports
 from utk_curio.backend.app.agents.repositories import publications
 from utk_curio.backend.app.agents.repositories import storage
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
+from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import manifest as agents_manifest
 
 
@@ -74,10 +75,12 @@ def upload_import(user_key: str, manifest_raw: object, prompt_files: object, *, 
     ``base`` is no agent and is refused; size limits apply. The coordinate is
     ``<id>@<major>``: a newer version of a major the store holds replaces it,
     as a node package's Update does, while the same or an older version is a
-    409 (a version is immutable), and so is a store copy of an agent Curio
-    ships; the write is atomic. Success registers the coordinate in My Imports
-    (upload IS an explicit account import) and returns the My Imports card,
-    publishable. A hosted guest is refused (``lifecycle.refuse_hosted_guest``).
+    409 (a version is immutable), and so is the id and major of an agent
+    Curio ships, for every account (``builtin.is_shipped``; the same id at
+    another major is the account's own); the write is atomic. Success
+    registers the coordinate in My Imports (upload IS an explicit account
+    import) and returns the My Imports card, publishable. A hosted guest is
+    refused (``lifecycle.refuse_hosted_guest``).
     """
 
     from utk_curio.backend.app.common.safe_paths import PathTraversalError
@@ -141,10 +144,12 @@ def upload_import(user_key: str, manifest_raw: object, prompt_files: object, *, 
         raise AgentServiceError(str(exc), 400) from exc
 
     coord = m.dir_name
+    # An agent Curio ships, at its major, stays Curio's for every account,
+    # whether or not the account's store holds a copy of it.
+    if builtin.is_shipped(coord):
+        raise AgentServiceError(f"{coord!r} is an agent Curio ships; give yours an id of its own", 409)
     existing = storage.load_installed_agent_definition(user_key, coord)
     if existing is not None:
-        if existing.provenance.trust == "built-in":
-            raise AgentServiceError(f"{coord!r} is an agent Curio ships; give yours an id of its own", 409)
         if agents_manifest.version_order(m.version) <= agents_manifest.version_order(existing.version):
             raise AgentServiceError(
                 f"{coord!r} holds version {existing.version} in your store, and a version is "

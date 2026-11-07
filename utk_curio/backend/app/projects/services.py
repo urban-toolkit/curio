@@ -922,6 +922,41 @@ def _seed_dataset_defaults(user, ukey: str, project_id: str, spec: dict) -> dict
     return storage.read_spec(ukey, project_id) or spec
 
 
+def seed_default_agents(user) -> None:
+    """Add the agents Curio adds to every account that *user*'s account does
+    not have yet, in its imports and in every dataflow it has
+    (``agents.service.seed_default_agents``). Never raises."""
+    from utk_curio.backend.app.agents.service import seed_default_agents as seed_agents
+
+    seed_agents(_user_dir_key(user), user)
+
+
+def agents_for_new_dataflows(user) -> list:
+    """The agents a dataflow *user*'s account makes starts with: its imports
+    with their closures, the agents Curio adds by default among them, which
+    are added to the account first (``agents.service.agents_for_new_dataflows``).
+    Adding those takes the spec lock of every dataflow the account has, so a
+    caller asks before it holds any lock or uncommitted write (#909).
+    Best-effort: a dataflow is never refused for its agents."""
+    try:
+        from utk_curio.backend.app.agents.service import agents_for_new_dataflows as agents_for
+
+        return agents_for(_user_dir_key(user), user=user)
+    except Exception:  # noqa: BLE001 - never block a dataflow on its agents
+        logger.warning("The agents of a new dataflow could not be read", exc_info=True)
+        return []
+
+
+def seed_spec_with_agents(spec, agents: list):
+    """*spec*, a dataflow not written yet, with *agents*
+    (:func:`agents_for_new_dataflows`) in its lockfile beside those it lists,
+    so it is made with them in its first write
+    (``agents.service.seed_spec_with_imported_agents``)."""
+    from utk_curio.backend.app.agents.service import seed_spec_with_imported_agents
+
+    return seed_spec_with_imported_agents(spec, agents)
+
+
 def _saved_outputs_to_copy(data: ProjectCreate) -> tuple:
     """``(the copied dataflow's id and its owner's key, {node id: output
     name})``: the outputs the dataflow *data* copies (``copy_of``) saved,
@@ -978,15 +1013,20 @@ def _history_to_copy(user, data: ProjectCreate) -> Optional[tuple]:
     return _owner_user_dir_key(project), project.id
 
 
-def _new_dataflow_spec(ukey: str, data: ProjectCreate) -> None:
-    """*data*'s spec as a new dataflow is made with, set in place: an
-    account's create and a hosted guest's alike (:func:`save_project`)."""
+def _new_dataflow_spec(ukey: str, data: ProjectCreate, agents: list) -> None:
+    """*data*'s spec as a new dataflow is made with, set in place, with
+    *agents* (:func:`agents_for_new_dataflows`, asked before anything is
+    written): an account's create and a hosted guest's alike
+    (:func:`save_project`)."""
     from utk_curio.backend.app.packages.service import seed_spec_with_defaults
 
     # New project: merge per-user defaults into the spec's lockfile so the
     # package palette starts populated. Caller can override by passing a
     # spec that already declares packages.
     data.spec = seed_spec_with_defaults(ukey, data.spec)
+    # And the account's agents beside any the spec lists, so its agents palette
+    # starts populated too, in the same first write.
+    data.spec = seed_spec_with_agents(data.spec, agents)
     # A spec that does not name itself is a spec the canvas reloads with an
     # undefined workflow name; fill what the client left out (never overwrite).
     _ensure_dataflow_identity(data.spec, data.name)
@@ -999,23 +1039,6 @@ def _new_dataflow_spec(ukey: str, data: ProjectCreate) -> None:
     _normalize_spec_categories(data.spec)
     scenarios.normalize_spec_scenarios(data.spec)
     _drop_live_output_refs(data.spec)
-
-
-def _add_imported_agents(ukey: str, project_id: str) -> Optional[dict]:
-    """Install the account's imported agents into the new dataflow
-    *project_id*, for an account's create and a hosted guest's alike: the
-    agents palette reads the PROJECT lockfile, so an account-level import
-    that never reaches a lockfile is invisible on the canvas however the
-    catalog labels it. The spec as it is then, or ``None`` when the seed
-    failed, which never blocks a create."""
-    try:
-        from utk_curio.backend.app.agents.service import seed_project_with_imported_agents
-
-        seed_project_with_imported_agents(ukey, project_id)
-        return storage.read_spec(ukey, project_id)
-    except Exception:  # noqa: BLE001 - never block project creation on a seed
-        logger.warning("agent seed for project %s failed", project_id, exc_info=True)
-        return None
 
 
 def _visitors_create(user, data: ProjectCreate, *, sign_in: Optional[str], history_from) -> Optional[str]:
@@ -1033,19 +1056,21 @@ def _create_for_visitor(user, data: ProjectCreate, sign_in: str) -> ProjectDetai
     """A hosted guest's File > New: a dataflow of its own, kept until the
     server starts again (``visitor_copies.new_dataflow``), made from *data*
     as an account's create makes one, with the account's packages and
-    agents, and answered as a create is. It has no row, so only its guest's
-    gallery lists it. The outputs the create sends are not installed, and
-    the account's default datasets are not added: the guests' store and its
-    Data Catalog are every guest's."""
+    agents in its first write, and answered as a create is. It has no row,
+    so only its guest's gallery lists it. The outputs the create sends are
+    not installed, and the account's default datasets are not added: the
+    guests' store and its Data Catalog are every guest's."""
     from utk_curio.backend.app.packages.service import ensure_user_packages_initialized
 
     ukey = _user_dir_key(user)
     ensure_user_packages_initialized(ukey)
-    _new_dataflow_spec(ukey, data)
+    # Asked before anything is written, as an account's create asks: adding
+    # the defaults takes the spec lock of each dataflow the account has (#909).
+    agents = agents_for_new_dataflows(user)
+    _new_dataflow_spec(ukey, data, agents)
     own = visitor_copies.new_dataflow(user, data.spec, sign_in=sign_in)
     if own is None:
         raise ProjectError(GUEST_SAVE_REFUSAL, 403)
-    _add_imported_agents(ukey, own)
     return _kept_detail(user, own, sign_in=sign_in)
 
 
@@ -1142,6 +1167,12 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     # First-time real users have no per-user package store yet; seed builtin
     # so the new dataflow's palette isn't empty.
     ensure_user_packages_initialized(ukey)
+    # And the agents it is made with: the account's, the ones every account
+    # has by default among them. Asked before this request writes anything:
+    # adding those defaults installs them into each dataflow the account has,
+    # under that dataflow's spec lock, which no thread may wait for holding an
+    # uncommitted write (#909).
+    agents = agents_for_new_dataflows(user)
 
     project = repo.upsert_project(
         user_id=user.id,
@@ -1155,7 +1186,7 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     # save rewrites the row after its create, so the create writes it right.
     project.folder_path = str(storage.project_dir(ukey, project_id))
 
-    _new_dataflow_spec(ukey, data)
+    _new_dataflow_spec(ukey, data, agents)
 
     actor = dataflow_docs.person(ukey, "create")
     created = dataflow_docs.create(ukey, project_id, data.spec, actor)
@@ -1189,7 +1220,8 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     # the real install within a release. Best-effort: a stale default must never
     # stop a project from being created.
     effective_spec = _seed_dataset_defaults(user, ukey, project_id, effective_spec)
-    effective_spec = _add_imported_agents(ukey, project_id) or effective_spec
+    # The answer carries the spec as it is on disk.
+    effective_spec = storage.read_spec(ukey, project_id) or effective_spec
 
     # Record only outputs the reload path can restore from a durable source
     # (installed dataset / legacy copy). Writing the raw client list would let a

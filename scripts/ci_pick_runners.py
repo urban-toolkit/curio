@@ -2,18 +2,18 @@
 
 CPU jobs run on GitHub-hosted ``ubuntu-latest`` while the organization's
 hosted runners have room, on the self-hosted arcade pool (``[self-hosted,
-arcade, cpu]``) after that, and on the utk-desktop runners (utk-desktop-01 and
--02, ``[self-hosted, utk-desktop]``) when arcade is full too, all but
+arcade, cpu]``) after that, and on the utk-desktop runners (utk-desktop-01 to
+-03, ``[self-hosted, utk-desktop]``) when arcade is full too, all but
 build-image (``NOT_ON_DESKTOPS``), which waits on arcade then. The GPU job
 (test-gpu) runs on the arcade GPU pool (arcade-gpu-01..04, ``[self-hosted,
 arcade, gpu]``) while it has a free runner, then on utk-gpu (``[self-hosted,
-utk, gpu]``), and on utk-desktop-01 (``[self-hosted, utk-desktop-01, gpu]``)
-when utk-gpu is busy too, where it runs as many workers as the desktop holds
-(scripts/ci_memory_budget.py). utk-desktop-02 takes CPU jobs only. A desktop
-runs one job of either kind, so the desktops' room counts the jobs of both. A
-self-hosted runner's labels are its machine (arcade, utk, utk-desktop-01,
-utk-desktop-02; both desktops also carry utk-desktop) and its kind (cpu or
-gpu). arcade-cpu-40 also carries ``skill-evals``, the one runner of the Skill
+utk, gpu]``), and on utk-desktop-01 or -03 (``[self-hosted, utk-desktop,
+gpu]``) when utk-gpu is busy too, where it runs as many workers as the desktop
+holds (scripts/ci_memory_budget.py). utk-desktop-02 takes CPU jobs only. A
+desktop runs one job of either kind, so the desktops' room counts the jobs of
+both. A self-hosted runner's labels are its machine (arcade, utk,
+utk-desktop-01 to -03; every desktop also carries utk-desktop) and its kind
+(cpu or gpu). arcade-cpu-40 also carries ``skill-evals``, the one runner of the Skill
 evaluations workflow (skill-evals.yml): while its job runs there it holds that
 runner of the CPU pool, as any job does.
 GitHub cannot express "this runner, or that one if busy": ``runs-on`` has no
@@ -68,7 +68,7 @@ RUNS_ON = {
     "arcade-gpu": ["self-hosted", "arcade", "gpu"],
     "utk": ["self-hosted", "utk", "gpu"],
     "desktop": ["self-hosted", "utk-desktop"],
-    "desktop-gpu": ["self-hosted", "utk-desktop-01", "gpu"],
+    "desktop-gpu": ["self-hosted", "utk-desktop", "gpu"],
 }
 CPU_POOLS = ("arcade", "hosted", "desktop")
 #: The GPU pools a dispatch can name, and the place each one is.
@@ -80,13 +80,13 @@ CPU_RUNNERS = 40
 GPU_RUNNERS = 4
 #: utk-gpu, one runner.
 UTK_RUNNERS = 1
-#: The utk-desktop runners (utk-desktop-01 and -02), each one job at a time.
-DESKTOP_RUNNERS = 2
-#: Those of them that also take the GPU job, asked for by name: utk-desktop-01
-#: (30 GB, an RTX 3070). utk-desktop-02's 12 GB hold one worker, and test-gpu
-#: took 47 min there against 20 on utk-desktop-01, so it carries cpu, not gpu
-#: (owner, 11-04).
-GPU_DESKTOPS = ("utk-desktop-01",)
+#: The utk-desktop runners (utk-desktop-01 to -03), each one job at a time.
+DESKTOP_RUNNERS = 3
+#: Those of them that also take the GPU job, the ones that carry gpu:
+#: utk-desktop-01 (30 GB, an RTX 3070) and utk-desktop-03 (30 GB, an RTX 4080).
+#: utk-desktop-02's 12 GB hold one worker, and test-gpu took 47 min there
+#: against 20 on utk-desktop-01, so it carries cpu, not gpu (owner, 11-04).
+GPU_DESKTOPS = ("utk-desktop-01", "utk-desktop-03")
 DESKTOP_GPU_RUNNERS = len(GPU_DESKTOPS)
 #: CPU jobs that never take a desktop: past hosted and arcade they wait on
 #: arcade. build-image's buildx reads the image's layer cache from GitHub's
@@ -182,7 +182,7 @@ def desktop_room(counts: dict) -> tuple[int, int]:
     """Free desktops for CPU jobs, and for the GPU job.
 
     A CPU job can take any desktop, the GPU job only those in GPU_DESKTOPS (today
-    utk-desktop-01, so a CPU job there leaves the GPU job no desktop). A running
+    utk-desktop-01 and -03, so a CPU job on one leaves the GPU job the other). A running
     CPU job's runner says which desktop it holds; a queued one's does not, so
     CPU jobs are also taken to fill the desktops without a GPU first, and the
     rest to hold GPU desktops, whichever holds more.

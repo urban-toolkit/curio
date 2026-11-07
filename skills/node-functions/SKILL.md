@@ -67,14 +67,15 @@ Gives the path to write a file the node returns, such as a raster or a mosaic's 
 
 - `name`: one plain file name, such as `mosaic.vrt`.
 
-### curio_export(data, name="")
+### curio_export(data, name="", part=None)
 
 Engines: python.
 
-Writes data to a file the node returns, a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF and anything else as JSON, and gives the file's name: a Data Export node's code is one such call, naming the file after its File name widget, and its Download button saves the file.
+Writes data to a file the node returns, a table as CSV, a GeoDataFrame as GeoJSON, a raster as GeoTIFF, a tuple, list or dict that holds a table or a raster (a bundle's parts) as one zip of a file per part and a `bundle.json`, and any other value as JSON, and gives the file's name: a Data Export node's code is one such call, naming the file after its File name widget and the part after its Part widget, and its Download button saves the file. A table or a raster inside a part, or a value JSON cannot hold, is refused, never written as its text.
 
 - `data`: what to write, such as `input_0`.
 - `name`: the file's name, which ends in its format's extension: a name with none gets it, a name ending in another data format's, such as `trees.csv` for a GeoDataFrame, gets it in that one's place, and an empty one is `data_export`.
+- `part`: one part of a tuple, list or dict to write alone, in its own format, named by its label (a bundle part's label, which each table carries in `metadata["partLabel"]`), its key in a dict, or its position from 0; None or empty writes every part.
 
 ### curio_load_model(model_id)
 

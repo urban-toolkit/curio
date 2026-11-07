@@ -229,16 +229,18 @@ def test_a_hosted_guests_agents_work_on_its_own_new_dataflow_which_no_other_gues
     assert storage.read_spec(GUEST_KEY, mine) is None
 
 
-def test_a_hosted_guests_new_dataflow_starts_with_the_accounts_agents(client, shared_example, monkeypatch):
-    """A new dataflow starts with the agents of the account that makes it,
-    in its lockfile from its create, a hosted guest's as an account's."""
-    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
-    imported = client.post("/api/agents/imports", json={"coord": COORD}, headers=_auth(VISITOR_A))
-    assert imported.status_code in (200, 201), imported.get_data(as_text=True)
-    monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+def test_a_hosted_guests_new_dataflow_starts_with_the_agents_an_accounts_does(client, shared_example):
+    """A new dataflow starts with every agent Curio adds by default, in its
+    lockfile from its first write, a hosted guest's as an account's; its
+    agents palette lists them before anything else is asked."""
+    from utk_curio.backend.app.agents.service import default_agent_coords
 
     mine = _new_dataflow(client, VISITOR_A)
 
     opened = client.get(f"/api/projects/{mine}", headers=_auth(VISITOR_A)).get_json()
-    assert COORD in opened["spec"]["dataflow"].get("agents", []), opened["spec"]["dataflow"]
-    assert COORD in storage.read_spec(GUEST_KEY, mine)["dataflow"].get("agents", [])
+    assert opened["spec"]["dataflow"]["agents"] == sorted(default_agent_coords())
+    assert storage.read_spec(GUEST_KEY, mine)["dataflow"]["agents"] == sorted(default_agent_coords())
+    listed = client.get(f"/api/agents/projects/{mine}", headers=_auth(VISITOR_A))
+    assert listed.status_code == 200, listed.get_data(as_text=True)
+    assert sorted(a["dirName"] for a in listed.get_json()["agents"]) == sorted(default_agent_coords())
+    assert all(a["installedInProject"] is True for a in listed.get_json()["agents"])

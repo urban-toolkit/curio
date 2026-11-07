@@ -1,14 +1,15 @@
 /**
  * The monitor's lines over time (pages/monitor/MonitorCharts.tsx,
  * `linesOverTimeSpec`): time on x, a value on y, a line per value of a series
- * field, and its two options, a log y axis and series drawn dashed, as a limit
- * is. Its tooltip is the Curio one (tooltip/vegaTooltip.test.tsx).
+ * field, and its options: a log y axis, series drawn dashed, as a limit is,
+ * and a dot on each point. Its tooltip is the Curio one
+ * (tooltip/vegaTooltip.test.tsx).
  */
 jest.mock("vega", () => ({}), { virtual: true });
 jest.mock("vega-lite", () => ({}), { virtual: true });
 
 import { CATEGORICAL } from "../../pages/monitor/chartColors";
-import { linesOverTimeSpec } from "../../pages/monitor/MonitorCharts";
+import { linesOverTimeSpec, powersOfTen } from "../../pages/monitor/MonitorCharts";
 
 const ROWS = [
   { t: 1000, server: "backend", value: 3 },
@@ -40,10 +41,32 @@ test("time on x, the value on y and a line per series, in the palette's colours"
 test("a log y axis, and the series it names drawn dashed", () => {
   const spec: any = linesOverTimeSpec({ ...BASE, logY: true, dashed: ["limit"] });
   expect(spec.encoding.y.scale).toEqual({ type: "log" });
-  expect(spec.encoding.strokeDash).toMatchObject({
+  // Ticked at each power of ten the values span, from 3 to 1024, and as many
+  // ticks, as Vega thins the values down to the count.
+  expect(spec.encoding.y.axis.values).toEqual([1, 10, 100, 1000, 10000]);
+  expect(spec.encoding.y.axis.tickCount).toBe(5);
+  const linear: any = linesOverTimeSpec(BASE);
+  expect(linear.encoding.y.axis.values).toBeUndefined();
+  // With no legend of its own, which Vega-Lite merges into the colour's.
+  expect(spec.encoding.strokeDash).toEqual({
     field: "server",
-    legend: null,
+    type: "nominal",
     scale: { domain: ["backend", "limit"], range: [[1, 0], [6, 4]] },
+  });
+});
+
+test("a log axis's ticks are the powers of ten around its positive values", () => {
+  expect(powersOfTen([212, 96, 65536])).toEqual([10, 100, 1000, 10000, 100000]);
+  expect(powersOfTen([1000, 1024])).toEqual([1000, 10000]);
+  expect(powersOfTen([100])).toEqual([100]);
+  expect(powersOfTen([0, -3])).toEqual([]);
+  expect(powersOfTen([])).toEqual([]);
+});
+
+test("a dot on each point when asked, so a line of one point shows", () => {
+  const spec: any = linesOverTimeSpec({ ...BASE, points: true });
+  expect(spec.mark).toEqual({
+    type: "line", strokeWidth: 2, strokeCap: "round", strokeJoin: "round", point: { filled: true, size: 64 },
   });
 });
 

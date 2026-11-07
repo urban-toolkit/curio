@@ -42,7 +42,11 @@ def list_catalog():
     rail reads its counts straight off it, and the drawer's tab badges seed
     from it before the rows land. ``agents`` is kept as an alias of ``items``
     so the existing drawer keeps working while the browse page is built.
+
+    The account gets the agents Curio adds by default first, as each agent
+    listing does (``seed_default_agents``).
     """
+    agents_services.seed_default_agents(_user_dir_key(g.user), g.user)
     project_id, spec_key = _listing_dataflow(request.args.get("projectId") or None)
     agents = agents_services.list_global_catalog(_user_dir_key(g.user), project_id, spec_key=spec_key)
     facets = agents_services.agent_catalog_facets(agents)
@@ -205,7 +209,10 @@ def list_provider_models():
 @require_auth
 def list_imports():
     """Optional ``?projectId=`` marks which imports are installed in that
-    project (memo dev/47 — the lockfile is the one source of truth)."""
+    project (memo dev/47: the lockfile is the one source of truth). The
+    account gets the agents Curio adds by default first
+    (``seed_default_agents``)."""
+    agents_services.seed_default_agents(_user_dir_key(g.user), g.user)
     project_id, spec_key = _listing_dataflow(request.args.get("projectId") or None)
     return (
         jsonify({"agents": agents_services.list_my_imports(_user_dir_key(g.user), project_id, spec_key=spec_key)}),

@@ -5,7 +5,8 @@
  * first, and such a guest cannot save one: each tells it to sign in, naming
  * what it was doing, and nothing is saved or sent. The local shared guest and
  * a signed-in account keep today's behavior: the save creates the dataflow and
- * the action goes on.
+ * the action goes on. An Add's review shows at once and waits for that save,
+ * or for a dataflow still opening, with its confirm off until the id comes.
  *
  * The harness is modelCatalogDrawer.test.tsx's, with a dataflow that has no id.
  */
@@ -121,6 +122,7 @@ const SIGNED_IN_USER = userContext(SIGNED_IN, true);
 
 const MODEL_DRAWER = '[data-curio-model-catalog-drawer="true"]';
 const NODE_DRAWER = '[data-curio-node-catalog-drawer="true"]';
+const ADD_REVIEW = '[data-curio-add-review="true"]';
 
 function renderModelDrawerAs(value: UserContextValue) {
   return render(
@@ -238,6 +240,7 @@ describe("a hosted guest, on a dataflow it never saved", () => {
     expect(mockShowToast).toHaveBeenCalledWith("Sign in to add models.", "warning");
     expect(mockEnsureProjectId).not.toHaveBeenCalled();
     expect(mockApi.resolve).not.toHaveBeenCalled();
+    expect(document.querySelector(ADD_REVIEW)).toBeNull();
   });
 
   test("is told to sign in when it removes a model, and nothing is saved or removed", async () => {
@@ -288,6 +291,40 @@ describe.each([
     await waitFor(() => expect(mockApi.resolve).toHaveBeenCalled());
     expect(mockEnsureProjectId).toHaveBeenCalledTimes(1);
     expect(signInToasts()).toEqual([]);
+  });
+
+  test("shows the Add's review at once, waiting for the dataflow, and lets it be confirmed once the id comes", async () => {
+    // The dataflow's id, held until the test gives it, as an open or a save
+    // still under way holds it.
+    let giveTheId: (id: string) => void = () => undefined;
+    mockEnsureProjectId.mockImplementation(() => new Promise<string>((resolve) => {
+      giveTheId = resolve;
+    }));
+    renderModelDrawerAs(value);
+
+    await addDeepUmbra();
+
+    const review = document.querySelector(ADD_REVIEW) as HTMLElement;
+    expect(review).not.toBeNull();
+    expect(review).toHaveTextContent('Add "Deep Umbra (accumulated shadows)"');
+    expect(review).toHaveTextContent("Waiting for this dataflow to open.");
+    expect(within(review).getByRole("button", { name: "Add to project" })).toBeDisabled();
+    expect(within(review).getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(mockApi.resolve).not.toHaveBeenCalled();
+
+    await act(async () => {
+      giveTheId("p-new");
+    });
+    await waitFor(() => expect(mockApi.resolve).toHaveBeenCalled());
+    expect(review).not.toHaveTextContent("Waiting for this dataflow to open.");
+    const confirm = within(review).getByRole("button", { name: "Add to project" });
+    expect(confirm).toBeEnabled();
+    await act(async () => {
+      fireEvent.click(confirm);
+    });
+    await waitFor(() =>
+      expect(mockApi.installToProject).toHaveBeenCalledWith("p-new", "model.scout.deep-umbra@1"),
+    );
   });
 
   test("removes a model from the dataflow the save created", async () => {

@@ -109,9 +109,14 @@ def _listing_dataflow(project_id: str | None) -> tuple[str | None, str | None]:
     """The dataflow a listing marks what is in, and the storage key it is
     read under: the one the request's account drives (:func:`_driven_dataflow`),
     a hosted guest's own copy of it once made, else *project_id* under the
-    account's own key."""
+    account's own key. Another visitor's copy or new dataflow is none: every
+    hosted guest's own key is the one key it is kept under."""
     flow = _driven_dataflow(project_id)
-    return (flow.project_id, flow.key) if flow is not None else (project_id, None)
+    if flow is not None:
+        return flow.project_id, flow.key
+    if visitor_copies.is_copy(project_id):
+        return None, None
+    return project_id, None
 
 
 def _provider_error(exc: ProviderConfigError):

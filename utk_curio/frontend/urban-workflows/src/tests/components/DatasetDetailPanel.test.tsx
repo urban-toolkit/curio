@@ -138,9 +138,16 @@ describe("DatasetDetailPanel header actions", () => {
     }
   });
 
-  it("disables Export for multi-part bundle datasets", () => {
-    renderPanel(lineageFixture(), catalogItem({ format: "bundle" }));
-    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
+  it("enables Export for a bundle, which downloads as one zip, and keeps it off for a collection", () => {
+    const { unmount } = renderPanel(lineageFixture(), catalogItem({ format: "bundle" }));
+    expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+    unmount();
+
+    // A collection's files stay in their source: there is no file to export.
+    renderPanel(lineageFixture(), catalogItem({ format: "collection" }));
+    const exportButton = screen.getByRole("button", { name: "Export" });
+    expect(exportButton).toBeDisabled();
+    expect(exportButton).toHaveAttribute("data-tooltip", "This dataset has no single file to export.");
   });
 
   it("enables Export for a regular dataset", () => {
@@ -148,12 +155,22 @@ describe("DatasetDetailPanel header actions", () => {
     expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
   });
 
-  it("disables Export for a layer group that shows its layers' format (#586)", () => {
+  it("enables Export for a layer group, whatever format it shows (#586)", () => {
     // A Discovery download's group shows GeoJSON, as each of its layers does,
-    // but it is still several datasets and no single file to export.
+    // and an OpenStreetMap import's shows OSM: either downloads as one zip of
+    // its layers.
+    for (const format of ["geojson", "osm"] as const) {
+      const { unmount } = renderPanel(
+        lineageFixture(),
+        catalogItem({ id: "osm.x1a2b3c4d", format, groupLayerIds: ["imported.xa", "imported.xb"] }),
+      );
+      expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+      unmount();
+    }
+    // A group of NetCDF variables has no tables or rasters for a zip to hold.
     renderPanel(
       lineageFixture(),
-      catalogItem({ id: "osm.x1a2b3c4d", format: "geojson", groupLayerIds: ["imported.xa", "imported.xb"] }),
+      catalogItem({ id: "netcdf.xwrf1", format: "netcdf", groupLayerIds: ["imported.xrain", "imported.xt2"] }),
     );
     expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
   });

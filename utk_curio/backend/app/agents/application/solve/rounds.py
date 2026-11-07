@@ -570,6 +570,7 @@ def _verified_content_rounds(
     extra_inputs: dict | None = None,
     delegate_runner=None,
     dataset_paths_fn=None,
+    collections_fn=None,
     exec_user_key: str | None = None,
     secrets_fn=None,
     prior_outputs_fn=None,
@@ -596,7 +597,9 @@ def _verified_content_rounds(
       refusal text is the correction's error, and it never reaches the sandbox;
     - a run's ``dataset_paths`` are resolved for the candidate + its slice,
       by ``dataset_paths_fn(codes, formats)``, which fills ``formats`` with
-      how they are read (a layer group's entry, naming its layers);
+      how they are read (a layer group's entry, naming its layers), and its
+      collections and media folder by ``collections_fn(codes)``, on the
+      thread that starts the attempt, which hands them to the one that runs it;
     - a failed round feeds the next generation ``previousAttempt``,
       ``validationError``, ``sourceGrounding`` (data-loading nodes) and — when
       the failure names an HTTP problem — fresh probe evidence for the URLs
@@ -623,6 +626,7 @@ def _verified_content_rounds(
         grounding_loop_ctx=grounding_loop_ctx, grounding_base=grounding_base,
         start_from_current=start_from_current, extra_inputs=extra_inputs,
         delegate_runner=delegate_runner, dataset_paths_fn=dataset_paths_fn,
+        collections_fn=collections_fn,
         exec_user_key=exec_user_key, secrets_fn=secrets_fn,
         prior_outputs_fn=prior_outputs_fn, resolve_source=resolve_source, clock=clock,
         recorded_failure=recorded_failure, node_budget_s=node_budget_s,

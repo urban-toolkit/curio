@@ -13,6 +13,26 @@ def _auth(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
+def _record_defaults_removed(user) -> None:
+    """The state Remove from all projects leaves for every agent Curio adds
+    by default, for an account with no dataflow yet: each recorded as added
+    once and none imported, so no listing adds them back. The account then
+    adds only the agents a test adds. Written to the imports file directly,
+    since every agents test starts here; ``test_default_agents.py`` takes
+    them out through the routes."""
+    _record_defaults_removed_under(_user_dir_key(user))
+
+
+def _record_defaults_removed_under(user_key: str) -> None:
+    """:func:`_record_defaults_removed` for the account stored under
+    *user_key*, for a test that writes it before the account's row is made,
+    as the shared guest's is."""
+    from utk_curio.backend.app.agents.repositories import imports
+    from utk_curio.backend.app.agents.service import default_agent_coords
+
+    imports.save_imported_agents(user_key, [], seeded=default_agent_coords())
+
+
 def _block_closure_repair(monkeypatch):
     """dev/126 (``DEC-080``): stand in for the one state the repair cannot fix
     — a required agent that is visible nowhere, where ``install_in_project``

@@ -13,7 +13,9 @@ Invariants (dev/15 / DEC-046, structural rather than bookkept):
   delegate is a *missing specialist* (the caller mints a reviewed
   ``project.install`` proposal — `REQ-ORCH-001`, never a silent install).
 - **Order-deterministic**: ``delegatesTo`` order is preference order; the
-  first entry that declares the capability wins.
+  first entry that declares the capability wins, unless it names an agent
+  Curio ships and an agent of the account's own in the project declares the
+  capability: the account's own answers first (``builtin.answering_order``).
 - **Depth-1 by construction**: the child's system content carries NO tail
   instruction and its reply is never parsed for ``toolRequest`` /
   ``delegateRequest`` — no nested tools, no delegation cycles, without a
@@ -80,11 +82,15 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
     dev/49-recorded widening landed in memo dev/52).
 
     Order: (1) the parent's ``delegatesTo`` entries, in declaration order
-    (dev/15: order = preference); (2) any other template installed in THIS
-    project that declares the capability and that ``delegatesTo`` does not
-    name, in sorted-coord order (deterministic tie-break). Never consults
-    other projects. When nothing installed matches but a ``delegatesTo``
-    entry is visible in the catalog, the outcome is ``not-installed`` (the
+    (dev/15: order = preference), where an entry naming an agent Curio ships
+    yields to an agent of the account's own installed in THIS project that
+    declares the capability, and one naming the account's own is taken as
+    named (:func:`_the_accounts_own_first`); (2) any other template installed
+    in THIS project that declares the capability and that ``delegatesTo``
+    does not name, the account's own agents before the agents Curio ships,
+    each by id (``builtin.answering_order``). Never consults other projects. When
+    nothing installed matches but a ``delegatesTo`` entry is visible in the
+    catalog, the outcome is ``not-installed`` (the
     missing-specialist proposal path); a capability nobody declares is
     ``unresolvable``.
 
@@ -115,19 +121,20 @@ def resolve_among(
         for coord in _candidate_coords(agent_id, installed):
             m = catalog._resolve_definition(user_key, coord)
             if m is not None and capability in m.capability_ids:
-                return Resolution("ok", coord, m)
+                return _the_accounts_own_first(user_key, installed, parent, capability, Resolution("ok", coord, m))
         internal = _internal_resolution(user_key, agent_id, capability)
         if internal is not None:
-            return internal
+            return _the_accounts_own_first(user_key, installed, parent, capability, internal)
         if missing is None:
             visible_coord, visible_m = find_visible(user_key, agent_id)
             if visible_m is not None and capability in visible_m.capability_ids:
                 missing = Resolution("not-installed", visible_coord, visible_m)
-    # Capability-first fallback: any other installed template declaring it.
+    # Capability-first fallback: any other installed template declaring it,
+    # the account's own before Curio's (``builtin.answering_order``).
     # An agent delegatesTo names was walked above for what its entry
     # delegates, and takes nothing else; the parent takes only its modes.
     named = {*preferred_ids, parent.agent_id}
-    for coord in sorted(installed, key=coord_order):
+    for coord in builtin.answering_order(installed):
         if coord.split("@", 1)[0] in named:
             continue
         m = catalog._resolve_definition(user_key, coord)
@@ -149,6 +156,32 @@ def resolve_among(
                 missing = Resolution("not-installed", m.dir_name, m)
                 break
     return missing or Resolution("unresolvable")
+
+
+def _the_accounts_own_first(
+    user_key: str | None, installed: set[str], parent: AgentManifest, capability: str, named: Resolution
+) -> Resolution:
+    """*named*, the agent a ``delegatesTo`` entry of *parent* names for
+    *capability*, unless it is an agent Curio ships and an agent of the
+    account's own in the dataflow (*installed*) declares *capability*: that
+    one answers in its place, the first in ``builtin.answering_order``. A
+    named agent of the account's own answers as named, and an entry naming
+    *parent* itself keeps its modes on it. Neither *parent* nor an agent an
+    entry names for other capabilities only takes *capability* here."""
+    if not builtin.is_shipped(named.coord) or str(named.coord).split("@", 1)[0] == parent.agent_id:
+        return named
+    for coord in builtin.answering_order(installed):
+        if builtin.is_shipped(coord):
+            break  # the account's own come first; the rest are Curio's
+        agent_id = coord.split("@", 1)[0]
+        if agent_id == parent.agent_id or (
+            agent_id in parent.delegates_to and not parent.delegates(agent_id, capability)
+        ):
+            continue
+        m = catalog._resolve_definition(user_key, coord)
+        if m is not None and capability in m.capability_ids:
+            return Resolution("ok", coord, m)
+    return named
 
 
 def _internal_resolution(user_key: str, agent_id: str, capability: str) -> Resolution | None:

@@ -206,6 +206,49 @@ def test_a_staged_dataframe_input_reaches_the_child():
     assert (int(rows), int(total)) == (4, 10)
 
 
+def _output_file(art_id):
+    """The bytes of the file the output *art_id* names, as a Data Export
+    node's Download reads them (``/output-file``)."""
+    headers = {"X-Curio-Sandbox-Token": TOKEN} if TOKEN else {}
+    request = urllib.request.Request(BASE_URL + "/output-file?fileName=" + art_id, headers=headers)
+    with urllib.request.urlopen(request, timeout=60) as response:
+        return response.read()
+
+
+def test_a_data_export_of_several_values_writes_one_zip_as_the_exec_user():
+    """``curio_export`` of a tuple writes its parts in the child's own work
+    folder, as the exec user, and the parent keeps the one zip they make."""
+    import io
+    import zipfile
+
+    result = assert_ran(run_node("""
+        import geopandas as gpd
+        import numpy as np
+        import pandas as pd
+        import rasterio
+        from rasterio.transform import from_origin
+        from shapely.geometry import Point
+
+        path = curio_output_file("heights.tif")
+        with rasterio.open(
+            path, "w", driver="GTiff", width=4, height=3, count=1, dtype="float32",
+            crs="EPSG:32616", transform=from_origin(440000, 4640000, 30, 30),
+        ) as raster:
+            raster.write(np.arange(12, dtype="float32").reshape(3, 4), 1)
+        trees = pd.DataFrame({"tree": ["oak", "elm"]})
+        stations = gpd.GeoDataFrame({"name": ["Grand"]}, geometry=[Point(447000, 4637000)], crs="EPSG:32616")
+        return curio_export((trees, stations, rasterio.open(path), 3), "layers")
+    """), "exporting four parts")
+
+    artifact_id = result["output"]["path"]
+    with zipfile.ZipFile(io.BytesIO(_output_file(artifact_id))) as archive:
+        names = archive.namelist()
+        spec = json.loads(archive.read("bundle.json"))
+        assert archive.read("Table_part_1.csv").decode("utf-8") == "tree\noak\nelm\n"
+    assert names == ["Table_part_1.csv", "Geo_table_part_2.geojson", "Raster_part_3.tif", "bundle.json"]
+    assert spec["parts"][3] == {"index": 3, "label": "Number · part 4", "kind": "int", "value": 3}
+
+
 def test_a_staged_input_cannot_be_written_by_the_child():
     """A staged input is the stored file under a second name, so a child that
     could write it would change that output for every later run and reader.
