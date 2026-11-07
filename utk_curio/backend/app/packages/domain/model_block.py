@@ -10,7 +10,8 @@ own ``license`` is its code's; the block's ``license`` is the weights':
   labels are text prompts and which finds every thing each prompt names. The
   node that runs an ``image-to-image`` or ``node-regression`` model feeds it
   itself (``CurioModel.run``), and the node that runs a
-  ``concept-segmentation`` model loads it from its folder itself;
+  ``concept-segmentation`` model, always its package's own code, loads it
+  from its folder itself;
 - ``runtime``: ``onnx`` (one ``.onnx`` file, with any external data beside it)
   or ``transformers`` (a checkpoint folder ``from_pretrained`` reads);
 - ``entry``: the ``.onnx`` file, or the checkpoint folder, under ``models/``;
@@ -50,7 +51,11 @@ from utk_curio.backend.app.packages.domain.model_fetch import (
 KINDS = ("node", "model")
 
 RUNTIMES = ("onnx", "transformers")
-TYPES = ("semantic-segmentation", "image-to-image", "node-regression", "concept-segmentation")
+#: The type whose labels are text prompts. Its node is its package's own
+#: code: Curio writes no cell for it (``manifest.py`` refuses a template of
+#: it that ships no ``source``).
+CONCEPT_SEGMENTATION = "concept-segmentation"
+TYPES = ("semantic-segmentation", "image-to-image", "node-regression", CONCEPT_SEGMENTATION)
 #: The types whose ONNX models read an image of the block's ``input`` size.
 IMAGE_TYPES = ("semantic-segmentation", "image-to-image")
 INPUT_DTYPES = ("uint8", "float32")

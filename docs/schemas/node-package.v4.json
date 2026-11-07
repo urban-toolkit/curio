@@ -12,6 +12,16 @@
   },
   "then": { "required": ["model"] },
   "else": { "not": { "anyOf": [{ "required": ["model"] }, { "required": ["downloadOnFirstUse"] }] } },
+  "allOf": [
+    {
+      "description": "A concept-segmentation model's node runs the code its package ships: Curio writes no cell for it, so each template names its source.",
+      "if": {
+        "required": ["model"],
+        "properties": { "model": { "required": ["type"], "properties": { "type": { "const": "concept-segmentation" } } } }
+      },
+      "then": { "properties": { "templates": { "items": { "required": ["source"] } } } }
+    }
+  ],
   "properties": {
     "$schema": {
       "type": "string",

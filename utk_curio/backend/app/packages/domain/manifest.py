@@ -27,6 +27,7 @@ from utk_curio.backend.app.packages.domain.dataflow_categories import (
     clean_dataflow_categories,
 )
 from utk_curio.backend.app.packages.domain.model_block import (
+    CONCEPT_SEGMENTATION,
     KINDS,
     MODELS_DIR,
     ModelBlock,
@@ -625,6 +626,7 @@ def package_manifest_from_dict(raw: object, *, manifest_path: Path, dir_name: st
             )
 
     kind, model = _parse_kind_and_model(raw, where=str(manifest_path))
+    _refuse_templates_curio_writes(templates, model, where=str(manifest_path))
     dataflow_categories = _parse_dataflow_categories(raw.get(DATAFLOW_CATEGORIES), where=str(manifest_path))
 
     return PackageManifest(
@@ -676,6 +678,20 @@ def _parse_kind_and_model(raw: dict, *, where: str) -> tuple[str, ModelBlock | N
         return kind, parse_model_block(block)
     except ModelBlockError as exc:
         raise ManifestError(f"{where}.model: {exc}") from exc
+
+
+def _refuse_templates_curio_writes(templates, model: ModelBlock | None, *, where: str) -> None:
+    """A ``concept-segmentation`` model's node is its package's own code:
+    Curio writes no cell for that type, so each template names its
+    ``source``."""
+    if model is None or model.type != CONCEPT_SEGMENTATION:
+        return
+    for template in templates:
+        if not template.source:
+            raise ManifestError(
+                f"{where}.templates[{template.template_id!r}]: a {CONCEPT_SEGMENTATION} model's node runs the "
+                "code its package ships, so the template names its source (sources/<file>.py)"
+            )
 
 
 def _parse_download_on_first_use(raw: dict, model: ModelBlock | None, kind: str, *, where: str) -> tuple[str, ...]:

@@ -139,7 +139,7 @@ Dragging a model onto a node rewrites the id in its first `curio_load_model(...)
 
 An image-to-image or node-regression model is run by the node made for it, which prepares the model's inputs itself and calls `model.run({input name: array})`; it returns the graph's outputs in order. **Accumulated Shadow** runs Deep Umbra this way, one map tile at a time, and **Weather Routing** runs the weather GNN on its road graph's node features and edges. A model package whose node ships no code of its own opens with a `model.run` skeleton that names each array the model's graph takes. `curio_segment` refuses these models.
 
-A concept segmentation model is run by the node made for it too, which loads the checkpoint at `model.path` with the library its package declares and finds what each prompt names; `model.labels` are the prompts the model ships with. A node that ships no code of its own opens with the model, its prompts and its `model.path`. `curio_segment` refuses these models as well.
+A concept segmentation model is run by the node its package ships, whose code loads the checkpoint at `model.path` with the library its package declares and finds what each prompt names; the model's labels are the prompts it ships with. Each template of such a package names its `source`. `curio_segment` refuses these models as well.
 
 A model whose weights Curio fetches stops its node when they are not on this Curio yet: *The weights of model '`<id>`' are not on this Curio. Whoever runs this Curio fetches them once, with: python scripts/fetch_model_weights.py `<id>`*.
 
@@ -192,7 +192,7 @@ A model package's `manifest.json` is a node package's ([NODE-CATALOG.md](NODE-CA
 | `dataflowCategories` | | The tags and data types a dataflow is filed under on the **Projects** page when it has a node of the package or loads the model with `curio_load_model`, as in a node package ([NODE-CATALOG.md](NODE-CATALOG.md#6-the-manifest)). A `semantic-segmentation` model puts the dataflow under Computer vision and Imagery without declaring them. |
 | `dependencies.packages` | | The packages the model's node needs, named as a node package names them ([NODE-CATALOG.md](NODE-CATALOG.md#6-the-manifest)). Adding the model adds them too, and the packages they name in turn, and its node can import the Python modules they ship. A model whose needed package is in neither your account nor the catalog is not added, and the message names that package. |
 
-A template with no `source` opens with the cell Curio writes for the model's type.
+A template with no `source` opens with the cell Curio writes for the model's type. A `concept-segmentation` model has no such cell: each of its templates names its `source`, and a manifest whose template does not is refused.
 
 ---
 

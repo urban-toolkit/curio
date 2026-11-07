@@ -7,7 +7,8 @@ puts them in the package's entry folder, or under the folder
 ``curio.py start --model-weights-dir`` names, where Curio reads them in place.
 
 - The ``concept-segmentation`` type and the ``fetch`` block, as the schema and
-  the parser read them, and what each refuses.
+  the parser read them, and what each refuses, a template of that type with
+  no source of its own among it.
 - Where a run reads the weights: the package's own folder, or the flag's
   folder, which the sandbox gets apart from the model's and reads in place.
 - Without them the model still resolves, so its node says how to fetch them,
@@ -72,12 +73,27 @@ def _block(**change) -> dict:
     return block
 
 
+#: The test package's one node, whose code it ships.
+SOURCE = "sources/find.py"
+
+
+def _template(**change) -> dict:
+    """The test package's template; a None in *change* removes a key."""
+    template = {"id": "find", "label": "Find", "category": "computation", "engine": "python", "editor": "code",
+                "source": SOURCE, "inputPorts": [], "outputPorts": [{"types": ["DATAFRAME"]}]}
+    for key, value in change.items():
+        if value is None:
+            template.pop(key, None)
+        else:
+            template[key] = value
+    return template
+
+
 def _manifest(**top) -> dict:
     raw = {
         "id": PACKAGE_ID, "version": "1.0.0", "name": NAME, "publisher": "Test", "license": "MIT",
         "compatibility": {"major": 1}, "kind": "model",
-        "templates": [{"id": "find", "label": "Find", "category": "computation", "engine": "python",
-                       "editor": "code", "inputPorts": [], "outputPorts": [{"types": ["DATAFRAME"]}]}],
+        "templates": [_template()],
         "model": _block(),
     }
     raw.update(top)
@@ -101,6 +117,10 @@ def _write_package(folder: Path, manifest: dict | None = None) -> Path:
 
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "manifest.json").write_text(json.dumps(manifest or _manifest()), encoding="utf-8")
+    (folder / "sources").mkdir(exist_ok=True)
+    (folder / SOURCE).write_text(
+        f'model = curio_load_model("{PACKAGE_ID}")\nreturn input_0\n', encoding="utf-8",
+    )
     refresh_package_integrity(folder)
     return folder
 
@@ -237,16 +257,27 @@ def test_a_package_whose_weights_are_fetched_names_none_to_download_on_first_use
         _parse(_manifest(downloadOnFirstUse=[ENTRY]))
 
 
-def test_its_node_opens_on_its_model_and_its_prompts_not_on_a_graph_skeleton(catalog):
-    """A template with no source of its own: the model loaded by its id, its
-    prompts and where its checkpoint is, never ONNX's model.run."""
-    from utk_curio.backend.app.packages.application.model_packages import model_default_cell
-    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+def test_a_concept_segmentation_template_with_no_source_of_its_own_is_refused():
+    """Its node is the code its package ships: Curio writes no cell for the
+    type, so the parser and the schema refuse a template without a source,
+    saying why. A semantic segmentation model's template still may have none,
+    and opens with the cell Curio writes for it."""
+    from utk_curio.backend.app.packages.domain.manifest import ManifestError
 
-    cell = model_default_cell(load_package_manifest(catalog / DIR), catalog / DIR)
-    assert cell.startswith(f'model = curio_load_model("{PACKAGE_ID}")\n'), cell
-    assert "model.labels" in cell and "model.path" in cell, cell
-    assert "model.run" not in cell, cell
+    refused = _manifest(templates=[_template(), _template(id="plain", source=None)])
+    with pytest.raises(ManifestError, match=re.escape(
+        "manifest.json.templates['plain']: a concept-segmentation model's node runs the code its package ships, "
+        "so the template names its source (sources/<file>.py)"
+    )):
+        _parse(refused)
+    assert list(_validator().iter_errors(refused))
+
+    segmentation = _manifest(
+        templates=[_template(source=None)],
+        model=_block(type="semantic-segmentation", fetch=None, labels=["road", "sky"]),
+    )
+    assert _parse(segmentation).templates[0].source is None
+    assert list(_validator().iter_errors(segmentation)) == []
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +454,7 @@ def test_integrity_leaves_a_fetched_packages_weights_out(catalog, capsys):
 
     assert _regen_integrity_script()._regen_one(package) == 0
     listed = json.loads((package / "integrity.json").read_text(encoding="utf-8"))["sha256"]
-    assert sorted(listed) == ["manifest.json", "models/LICENSE.txt"], listed
+    assert sorted(listed) == ["manifest.json", "models/LICENSE.txt", SOURCE], listed
     assert _build_integrity(package) == listed
     assert integrity_mismatch(package) is None
     assert seeding._package_is_healthy(package)
