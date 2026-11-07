@@ -136,6 +136,8 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
 
 Other workflows: `autk-schema.yml` (weekly check of the vendored Autark schema), `weekly-flake-hunt.yml` (Saturdays: the Full stack build on main with `repeat` 10, then the week's report on the hunt's own run page from that run's `ci-summary` artifact, `scripts/ci_weekly_report.py`), `skill-evals.yml` (started by hand: the skills' evaluations live, on the models of `CURIO_EVAL_MODELS`, on the runner labelled `skill-evals`, with its report `curio-skill-evals-report.html` as the run's artifact; `scripts/ci_skill_eval_scope.py`, `scripts/ci_skill_evals.py`, `scripts/skill_evals_report.py`, floors in `scripts/skill_eval_floors.json`), `bump-version.yml` (version bump on main), `deploy.yml` (deploys main), `publish-pip-to-pypi.yml` (PyPI on release).
 
+Code Quality: GitHub's CodeQL code quality analysis runs on every push to main and every PR (set up in the repository settings, with no workflow file). The `main` ruleset requires its results at every severity, so a PR that adds a finding cannot merge until the finding is fixed or the owner dismisses it on the PR. A PR's check reports only the findings the PR adds. A comment inside an `except` block clears `py/empty-except`; a `# codeql[...]` line clears nothing. About 90 lines that are right as written stay open on main on purpose: a dismissal is lost when an edit to the file renumbers its findings.
+
 ## Scripts
 
 - `scripts/test.sh`: boots and runs each suite; CI calls it and `curio test` wraps it.
