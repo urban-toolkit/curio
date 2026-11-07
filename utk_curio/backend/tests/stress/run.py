@@ -17,6 +17,15 @@ doc files the tier's shared dataflows left on disk. After a tier with any
 failure it also saves every backend thread's stack in ``--out``
 (``thread-stacks-tier-<n>-<users>-users.txt``), so a backend that stalled
 shows the lock each thread waits on; ``--stacks-only`` saves them alone.
+
+With ``--shared-canvas`` every member of a room works on the room's one
+dataflow instead of a copy of its own: room k is made from example k of the
+mix (round-robin), each member adds a Python node of its own below a node of
+it (:func:`canvas_parent`), takes the lock of the node it types in, and plays
+the dataflow as its tab holds it; the room's owner then runs it on the server
+and saves it (``sockets.py``, ``driver.VirtualUser.on_the_canvas``). The solo
+baseline runs each example with that node added, twice where it passes on the
+output of a node that is not Python, which no tier compared before.
 """
 
 from __future__ import annotations
@@ -36,14 +45,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
-from ..test_frontend.workflow_spec import parse_workflow
+from ..test_frontend.workflow_spec import PY_CODE_TYPES, parse_workflow
 from . import report as reporting
 from . import sockets
 from .autk import compile_autk_data
 from .backend_probe import (
     BackendProbe, Sampler, reading_now, save_thread_stacks, track_worker, worker_finished,
 )
-from .driver import BURST, Pacing, VirtualUser, new_user_name
+from .driver import AUTK_GRAMMAR, BURST, JS_COMPUTATION, PASS_ON, Pacing, VirtualUser, new_user_name
 
 REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
@@ -120,15 +129,39 @@ def build_pacing(profile: str, tier: int, rng: random.Random) -> list[Pacing]:
     ]
 
 
-def build_rooms(names: list[str], room_size: int) -> list[sockets.Room]:
+def build_rooms(names: list[str], room_size: int, shared: bool = False) -> list[sockets.Room]:
     """The tier's users in rooms of *room_size*, in order, the last one
-    smaller; none for a room size of 0."""
+    smaller; none for a room size of 0. *shared*: each a shared canvas."""
     if room_size <= 0:
         return []
     return [
-        sockets.Room(index, names[index * room_size:(index + 1) * room_size])
+        sockets.Room(index, names[index * room_size:(index + 1) * room_size], shared=shared)
         for index in range(math.ceil(len(names) / room_size))
     ]
+
+
+def example_of(index: int, room_size: int, examples: list, shared_canvas: bool = False):
+    """The example user *index* of a tier works on: round-robin over the mix,
+    each user its own; on a shared canvas, its room's, room k on example k,
+    so a tier of ten rooms makes every example of the mix a shared canvas."""
+    if shared_canvas and room_size > 0:
+        return examples[(index // room_size) % len(examples)]
+    return examples[index % len(examples)]
+
+
+def canvas_parent(workflow, autk_code: dict) -> dict | None:
+    """The node of a dataflow each member of a shared canvas adds its own node
+    below: the first, in the order the dataflow runs, whose output a Python
+    node reads, a Python node's first, else a JavaScript node's, else an
+    Autark node's that loads data (one in *autk_code*). ``{id, x, y,
+    engine}``; None for a dataflow with none."""
+    order = workflow.topo_sorted_nodes()
+    for engine, kinds in (("python", PY_CODE_TYPES), ("javascript", (JS_COMPUTATION,)),
+                          ("autark", (AUTK_GRAMMAR,))):
+        for node in order:
+            if node.type in kinds and (engine != "autark" or node.id in autk_code):
+                return {"id": node.id, "x": node.x, "y": node.y, "engine": engine}
+    return None
 
 
 class Example:
@@ -143,6 +176,7 @@ class Example:
             self.spec_json = json.loads(handle.read())
         self.workflow = parse_workflow(self.path)
         self.autk_code = compile_autk_data(self.path)
+        self.canvas_parent = canvas_parent(self.workflow, self.autk_code)
 
 
 def load_mix(names: list[str]) -> list[Example]:
@@ -195,32 +229,58 @@ def read_exec_lock(backend_url: str) -> dict | None:
     return sandbox.get("execLock")
 
 
-def run_baseline(backend_url: str, run_id: str, examples: list[Example]) -> dict:
+def run_baseline(backend_url: str, run_id: str, examples: list[Example],
+                 shared_canvas: bool = False) -> dict:
     """Run each example alone, first, and keep its output hashes.
 
     This is the yardstick the concurrent users are measured against, and it
     doubles as a sanity check: if an example cannot pass on an idle stack, the
     tiers below would only be reporting that same breakage N times over.
+
+    For shared canvases each example runs with the node a member adds
+    (``VirtualUser.add_own_node``), its hash kept as :data:`PASS_ON`. Where
+    that node passes on the output of a node that is not Python (an Autark
+    node's layers, a JavaScript node's value), which no tier compared before,
+    the example runs twice, and the two runs must agree before every member
+    of its rooms is held to them.
     """
     baselines: dict[str, dict[str, str]] = {}
     for index, example in enumerate(examples):
-        user = VirtualUser(
-            backend_url, new_user_name(0, index, run_id), example.relpath,
-            example.spec_json, example.workflow, example.autk_code,
-        )
-        result = user.run()
-        if not result.completed:
-            detail = "; ".join(
-                f"{s.node_id or s.endpoint}: {(s.error or '')[:200]}"
-                for s in result.failures
+        passes = 1
+        if shared_canvas:
+            if example.canvas_parent is None:
+                raise SystemExit(f"[stress] {example.relpath} has no node whose output a Python node "
+                                 "reads, so a shared canvas's members have nothing to add a node below")
+            passes = 1 if example.canvas_parent["engine"] == "python" else 2
+        runs = []
+        for attempt in range(passes):
+            user = VirtualUser(
+                backend_url, new_user_name(0 if attempt == 0 else f"0r{attempt + 1}", index, run_id),
+                example.relpath, example.spec_json, example.workflow, example.autk_code,
             )
-            raise SystemExit(
-                f"[stress] baseline for {example.relpath} failed on an idle "
-                f"stack, so the tiers would be meaningless: {detail}"
-            )
-        baselines[example.relpath] = result.hashes
-        print(f"[stress] baseline {example.relpath}: {result.seconds:.1f}s, "
-              f"{len(result.hashes)} hashed output(s)", flush=True)
+            if shared_canvas:
+                user.add_own_node(example.canvas_parent)
+            result = user.run()
+            if not result.completed:
+                detail = "; ".join(
+                    f"{s.node_id or s.endpoint}: {(s.error or '')[:200]}"
+                    for s in result.failures
+                )
+                raise SystemExit(
+                    f"[stress] baseline for {example.relpath} failed on an idle "
+                    f"stack, so the tiers would be meaningless: {detail}"
+                )
+            hashes = dict(result.hashes)
+            if shared_canvas:
+                hashes[PASS_ON] = hashes.pop(user.own_node["id"], None)
+            runs.append(hashes)
+            print(f"[stress] baseline {example.relpath}: {result.seconds:.1f}s, "
+                  f"{len(result.hashes)} hashed output(s)", flush=True)
+        differ = sorted(key for key in set(runs[0]) | set(runs[-1]) if runs[0].get(key) != runs[-1].get(key))
+        if differ:
+            raise SystemExit(f"[stress] two solo runs of {example.relpath} gave different outputs at "
+                             f"{', '.join(differ)}, so no member's could be compared with them")
+        baselines[example.relpath] = runs[0]
     return baselines
 
 
@@ -242,12 +302,17 @@ def run_slice(job: dict, start_gate, register_gate, results_out) -> None:
 
     try:
         room_size, names, examples = job["room_size"], job["names"], job["examples"]
+        shared = job.get("shared_canvas", False)
         mine = set(job["indices"])
-        rooms = {room.index: room for room in build_rooms(names, room_size)
+        rooms = {room.index: room for room in build_rooms(names, room_size, shared=shared)
                  if room.index * room_size in mine}
+        for room in rooms.values():
+            if shared:
+                example = example_of(room.index * room_size, room_size, examples, shared)
+                room.example, room.parent = example.relpath, example.canvas_parent
         users = []
         for index in job["indices"]:
-            example = examples[index % len(examples)]
+            example = example_of(index, room_size, examples, shared)
             users.append(VirtualUser(
                 job["backend_url"], names[index], example.relpath, example.spec_json,
                 example.workflow, example.autk_code,
@@ -256,6 +321,7 @@ def run_slice(job: dict, start_gate, register_gate, results_out) -> None:
                 pacing=job["pacing"][index],
                 room=rooms[index // room_size] if room_size else None,
                 namespace=job["namespace"],
+                probe_command=job.get("probe_command"),
             ))
         with ThreadPoolExecutor(max_workers=len(users)) as pool:
             futures = [pool.submit(user.run) for user in users]
@@ -281,11 +347,14 @@ def _lost_user(name: str, example: str, why: str):
 def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
              baselines: dict, register_concurrency: int,
              profile: str = "burst", label: str | None = None,
-             room_size: int = 0, namespace: str | None = None) -> tuple[list, float, list]:
+             room_size: int = 0, namespace: str | None = None,
+             shared_canvas: bool = False, probe_command: list | None = None) -> tuple[list, float, list]:
     """Run *tier* users, all doing their dataflow work at the same moment,
     and, in rooms of *room_size*, each with its tab of its room's dataflow;
     the results, the seconds it took, and each room's outcome
-    (``sockets.Room.outcome``).
+    (``sockets.Room.outcome``). With *shared_canvas*, every member works on
+    its room's one dataflow, and the room's owner reads the file its save
+    wrote through *probe_command* (``backend_probe``), when there is one.
 
     The users run in harness processes of their own (:func:`tier_slices`,
     :func:`run_slice`), whole rooms each, behind one start gate that spans
@@ -311,7 +380,8 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
     for number, indices in enumerate(slices):
         job = {"slice": number, "indices": indices, "names": names, "examples": examples,
                "baselines": baselines, "pacing": pacing, "room_size": room_size,
-               "namespace": namespace, "backend_url": backend_url}
+               "namespace": namespace, "backend_url": backend_url,
+               "shared_canvas": shared_canvas, "probe_command": probe_command}
         process = context.Process(target=run_slice, args=(job, start_gate, register_gate, results_out),
                                   name=f"stress-{label}-{number}", daemon=True)
         process.start()
@@ -343,7 +413,7 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
         why = (message or {}).get("error") or (
             f"its harness process ended (exit code {processes[number].exitcode}) without reporting"
         )
-        results.extend(_lost_user(names[index], examples[index % len(examples)].relpath, why)
+        results.extend(_lost_user(names[index], example_of(index, room_size, examples, shared_canvas).relpath, why)
                        for index in indices)
     return results, seconds, outcomes
 
@@ -404,6 +474,20 @@ def tier_lines(summary: dict) -> list[str]:
             f"update(s), {timing}; {tabs['unsynced']} unsynced, "
             f"{tabs['diverged_rooms']} room(s) diverged"
         )
+    canvas = summary.get("canvas")
+    if canvas:
+        locks, runs, saved = canvas["locks"], canvas["server_runs"], canvas["saved"]
+        held = "not read" if locks["held_at_end"] is None else locks["held_at_end"]
+        took = runs["seconds"]
+        lines.append(
+            f"{canvas['rooms']} shared canvas(es): {canvas['nodes_added']} node(s) and "
+            f"{canvas['edges_added']} connection(s) added; locks {locks['taken']} taken, "
+            f"{locks['refused']} refused, {held} held at the end; {runs['count']} run(s) on the server "
+            f"({', '.join(f'{n} {s}' for s, n in sorted(runs['statuses'].items())) or 'none'}"
+            + (f", p50 {took['p50']} s, max {took['max']} s" if took else "")
+            + f"), {runs['not_done']} step(s) not done; {saved['read']} save(s) read back, "
+            f"{saved['lacks']} thing(s) missing from them"
+        )
     backend = summary.get("backend") or {}
     if backend.get("measured"):
         threads, rss = backend["threads"], backend["rss_mib"]
@@ -453,6 +537,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--room-size", type=int, default=sockets.ROOM_SIZE,
                         help="users per shared dataflow, whose tabs type and "
                              "drag in it together over Socket.IO (0: no tabs)")
+    parser.add_argument("--shared-canvas", action="store_true",
+                        help="every member of a room works on the room's one "
+                             "dataflow (room k on example k of the mix): adds a "
+                             "node of its own, takes the lock of the node it "
+                             "types in, plays the dataflow as its tab holds it, "
+                             "and the room's owner runs it on the server and "
+                             "saves it")
     parser.add_argument("--probe", default="",
                         help="the command that runs Python where the backend "
                              "runs, to read its threads, memory and doc files, "
@@ -479,8 +570,10 @@ def main(argv: list[str] | None = None) -> int:
 
     backend_url = args.backend.rstrip("/")
     tiers = [int(t) for t in args.tiers.split(",") if t.strip()]
-    examples = load_mix([m.strip() for m in args.mix.split(",") if m.strip()])
     room_size = max(0, args.room_size)
+    if args.shared_canvas and not room_size:
+        parser.error("--shared-canvas puts each room on one dataflow, so it needs a --room-size")
+    examples = load_mix([m.strip() for m in args.mix.split(",") if m.strip()])
     if room_size:
         sockets.require_websocket_client()
 
@@ -489,10 +582,11 @@ def main(argv: list[str] | None = None) -> int:
     probe = make_probe(args)
     print(f"[stress] run {args.run_id} against {backend_url}; "
           f"tiers {tiers}; profile {args.profile}; "
-          + (f"rooms of {room_size} on {namespace}" if room_size else "no tabs"),
+          + (f"rooms of {room_size} on {namespace}" if room_size else "no tabs")
+          + ("; each room one shared canvas" if args.shared_canvas else ""),
           flush=True)
 
-    baselines = run_baseline(backend_url, args.run_id, examples)
+    baselines = run_baseline(backend_url, args.run_id, examples, shared_canvas=args.shared_canvas)
 
     tier_reports = []
     all_results = []
@@ -504,7 +598,8 @@ def main(argv: list[str] | None = None) -> int:
         (results, seconds, outcomes), backend, doc_files, harness = probe_tier(probe, lambda: run_tier(
             backend_url, args.run_id, tier, examples, baselines,
             args.register_concurrency, args.profile, label=f"{tier}x{position}",
-            room_size=room_size, namespace=namespace,
+            room_size=room_size, namespace=namespace, shared_canvas=args.shared_canvas,
+            probe_command=probe.command if probe is not None else None,
         ))
         all_results.extend(results)
         lock = reporting.exec_lock_delta(lock_before, read_exec_lock(backend_url))
@@ -512,7 +607,8 @@ def main(argv: list[str] | None = None) -> int:
         summary = reporting.tier_summary(tier, results, seconds, args.profile,
                                          exec_lock=lock, sockets=tabs,
                                          backend=backend, doc_files=doc_files,
-                                         harness=harness)
+                                         harness=harness,
+                                         canvas=reporting.canvas_summary(outcomes))
         tier_reports.append(summary)
         print(f"[stress] tier {tier}: {summary['completed']}/{tier} completed in "
               f"{seconds:.1f}s, {summary['failure_count']} failure(s)", flush=True)
@@ -530,7 +626,7 @@ def main(argv: list[str] | None = None) -> int:
 
     report = reporting.build_report(args.run_id, backend_url, tier_reports,
                                     args.stats_log, profile=args.profile,
-                                    room_size=room_size)
+                                    room_size=room_size, shared_canvas=args.shared_canvas)
     json_path, md_path = reporting.write_outputs(report, args.out)
     with open(os.path.join(args.out, "samples.json"), "w", encoding="utf-8") as fh:
         json.dump(reporting.raw_samples(all_results), fh)

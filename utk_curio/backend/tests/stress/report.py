@@ -142,6 +142,63 @@ def socket_summary(rooms: list[dict]) -> dict | None:
     }
 
 
+def canvas_summary(rooms: list[dict]) -> dict | None:
+    """What a tier's shared canvases did, from each room's ``canvas``
+    (``sockets.Room.outcome``): the nodes and connections the members added;
+    the locks they took, were refused and let go, and those the server still
+    held at the end (None when no room read them) or a tab still showed; the
+    owner's runs on the server, how long each took and how it ended, and the
+    steps that did not end done; and the saves read back, the rooms whose
+    file was read, why the others' was not, and what the files lacked. None
+    for a tier with no shared canvas."""
+    canvases = [room["canvas"] for room in rooms if room.get("canvas")]
+    if not canvases:
+        return None
+    runs = [canvas["server_run"] for canvas in canvases if canvas.get("server_run")]
+    saves = [canvas["saved"] for canvas in canvases if canvas.get("saved")]
+    held = [canvas["locks"]["held_at_end"] for canvas in canvases
+            if canvas["locks"].get("held_at_end") is not None]
+    statuses: dict[str, int] = {}
+    for run in runs:
+        statuses[str(run.get("status"))] = statuses.get(str(run.get("status")), 0) + 1
+    return {
+        "rooms": len(canvases),
+        "examples": sorted({canvas["example"] for canvas in canvases if canvas.get("example")}),
+        "nodes_added": sum(canvas["nodes_added"] for canvas in canvases),
+        "edges_added": sum(canvas["edges_added"] for canvas in canvases),
+        "locks": {
+            "taken": sum(canvas["locks"]["taken"] for canvas in canvases),
+            "refused": sum(canvas["locks"]["refused"] for canvas in canvases),
+            "released": sum(canvas["locks"]["released"] for canvas in canvases),
+            "held_at_end": sum(len(locks) for locks in held) if held else None,
+            "rooms_read": len(held),
+            "tabs_showing_locks": sum(canvas["locks"]["tabs_showing_locks"] for canvas in canvases),
+        },
+        "server_runs": {
+            "count": len(runs),
+            "statuses": statuses,
+            "seconds": distribution([run["seconds"] for run in runs
+                                     if isinstance(run.get("seconds"), (int, float))]),
+            "steps": sum(run.get("steps") or 0 for run in runs),
+            "not_done": sum(len(run.get("not_done") or []) for run in runs),
+        },
+        "saved": {
+            "read": sum(1 for save in saves if save.get("measured")),
+            "not_measured": sorted({save.get("problem") or "no reason given"
+                                    for save in saves if not save.get("measured")}),
+            "lacks": sum(len(save.get("lacks") or []) for save in saves),
+        },
+        "per_room": [
+            {
+                "example": canvas.get("example"), "nodes_added": canvas["nodes_added"],
+                "locks": canvas["locks"], "server_run": canvas.get("server_run"),
+                "saved": canvas.get("saved"),
+            }
+            for canvas in canvases
+        ],
+    }
+
+
 def cpu_track(readings: list, seconds_key: str, at_key: str) -> dict | None:
     """A process's CPU over the *readings* that carry its CPU seconds
     (*seconds_key*) and the moment each was read (*at_key*): the seconds it
@@ -239,7 +296,8 @@ def doc_files_summary(listing: dict | None, problem: str | None = None) -> dict:
 def tier_summary(tier: int, results: list[UserResult], seconds: float,
                  profile: str = "burst", exec_lock: dict | None = None,
                  sockets: dict | None = None, backend: dict | None = None,
-                 doc_files: dict | None = None, harness: dict | None = None) -> dict:
+                 doc_files: dict | None = None, harness: dict | None = None,
+                 canvas: dict | None = None) -> dict:
     failures = [(r, s) for r in results for s in r.failures]
     kinds = {kind: 0 for kind in FAILURE_KINDS}
     for _, sample in failures:
@@ -261,6 +319,7 @@ def tier_summary(tier: int, results: list[UserResult], seconds: float,
         "endpoints": endpoint_stats(results),
         "exec_lock": exec_lock,
         "sockets": sockets,
+        "canvas": canvas,
         "backend": backend,
         "doc_files": doc_files,
         "harness": harness,
@@ -360,12 +419,13 @@ def peak_container_stats(stats_log: str | None) -> dict | None:
 
 def build_report(run_id: str, backend_url: str, tiers: list[dict],
                  stats_log: str | None = None, profile: str = "burst",
-                 room_size: int | None = None) -> dict:
+                 room_size: int | None = None, shared_canvas: bool = False) -> dict:
     report = {
         "run_id": run_id,
         "backend_url": backend_url,
         "profile": profile,
         "room_size": room_size,
+        "shared_canvas": shared_canvas,
         "tiers": tiers,
         "failed": any(t["failure_count"] for t in tiers),
     }
@@ -406,6 +466,40 @@ def _tabs_table(tiers: list[dict]) -> list[str]:
         lines.append(
             f"| {tier['tier']} | {tabs['rooms']} | {tabs['tabs']} | {tabs['updates']} "
             f"| {' | '.join(cells)} | {tabs['unsynced']} | {tabs['diverged_rooms']} |"
+        )
+    return lines
+
+
+def _canvas_table(tiers: list[dict]) -> list[str]:
+    if not any(tier.get("canvas") for tier in tiers):
+        return []
+    lines = ["", ("Shared canvases: every member of a room works on its one dataflow. Each adds a "
+                  "node of its own below a node of it, takes the lock of the node it types in, and "
+                  "plays the dataflow as its tab holds it; the room's owner then runs it on the "
+                  "server and saves it, and the saved file must hold every member's node, "
+                  "connection and typed lines. A lock held at the end, a step of a run not done, "
+                  "or anything missing from a save fails the tier."), ""]
+    lines.append("| Tier | Canvases | Nodes added | Connections added | Locks taken | Locks refused "
+                 "| Held at end | Run p50 | Run p95 | Run max | Steps not done | Saves read back "
+                 "| Missing from saves |")
+    lines.append("| ---: | -------: | ----------: | ----------------: | ----------: | ------------: "
+                 "| ----------: | ------: | ------: | ------: | -------------: | --------------: "
+                 "| -----------------: |")
+    for tier in tiers:
+        canvas = tier.get("canvas")
+        if not canvas:
+            continue
+        locks, runs, saved = canvas["locks"], canvas["server_runs"], canvas["saved"]
+        took = runs["seconds"]
+        timing = [f"{took[key]} s" for key in ("p50", "p95", "max")] if took else ["no run"] * 3
+        held = "not read" if locks["held_at_end"] is None else str(locks["held_at_end"])
+        read = f"{saved['read']} of {canvas['rooms']}"
+        if saved["not_measured"]:
+            read += f" (not measured: {'; '.join(saved['not_measured'])})"
+        lines.append(
+            f"| {tier['tier']} | {canvas['rooms']} | {canvas['nodes_added']} | {canvas['edges_added']} "
+            f"| {locks['taken']} | {locks['refused']} | {held} | {' | '.join(timing)} "
+            f"| {runs['not_done']} | {read} | {saved['lacks']} |"
         )
     return lines
 
@@ -472,6 +566,8 @@ def markdown(report: dict) -> str:
         for name in ((tier.get("sockets") or {}).get("transports") or [])
     })
     wire = "arrow artifacts" + (f", tabs over {' and '.join(transports)}" if transports else "")
+    if any(tier.get("canvas") for tier in report["tiers"]):
+        wire += ", shared canvases"
     lines = [f"## Stress run `{report['run_id']}` "
              f"({report.get('profile', 'burst')} profile, {wire})", ""]
     lines.append("| Tier | Users | Completed | Wall | Failures | User p95 |")
@@ -497,6 +593,7 @@ def markdown(report: dict) -> str:
                           + (f" on {cores} cores" if cores else ""))
         lines += ["", peak_line + "."]
     lines += _tabs_table(report["tiers"])
+    lines += _canvas_table(report["tiers"])
     lines += _backend_table(report["tiers"])
     lines += _cpu_table(report["tiers"])
 
