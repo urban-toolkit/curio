@@ -25,7 +25,10 @@ before the step that drops it:
                        supplementary groups forever.
 5. ``PR_SET_PDEATHSIG``  the kernel kills the child when the zygote dies,
                        since nothing else would then end it or read its
-                       result. After the uid drop, which clears it.
+                       result. After the uid drop, which clears it. What
+                       node code starts loses it at its fork, so the
+                       sandbox kills the child's group then
+                       (``ZygoteClient.run``).
 6. ``setrlimit``       memory, CPU, processes, file size. Applied after the uid
                        drop so the child cannot raise its own soft limits back
                        to the (higher) hard limits.
