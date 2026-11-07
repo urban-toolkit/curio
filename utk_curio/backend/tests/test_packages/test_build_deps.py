@@ -349,6 +349,21 @@ class TestPythonReview:
         )
         assert not [f for f in findings if f.code == "py-conflict"]
 
+    def test_a_compatible_release_is_read_and_checked_against_installed_packages(
+            self, tmp_curio, install_package, manifest_dict):
+        """pip's ``~=1.4`` is ``>=1.4,<2`` to the project resolver: the review
+        takes it, and finds it cannot meet an installed package's ``>=2.0.0``."""
+        install_package("guest",
+                           manifest=manifest_dict(python_deps={"rasterio": ">=2.0.0"}))
+        _, findings = review_python_dependencies(
+            {"rasterio": {"constraint": "~=1.4", "source": "declared"}},
+            "guest", is_satisfied=lambda *_: False,
+        )
+        assert not [f for f in findings if f.code == "py-bad-constraint"]
+        conflict = [f for f in findings if f.code == "py-conflict"]
+        assert len(conflict) == 1 and conflict[0].severity == "block"
+        assert "rasterio" in conflict[0].message
+
 
 class TestPackageDeps:
     def test_installed_in_range_passes(self, tmp_curio, install_package):
