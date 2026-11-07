@@ -72,6 +72,7 @@ def _accepted(call):
     except InstallerError as exc:
         refused = str(exc)
     assert not refused, f"Curio refused a package that ships skills: {refused}"
+    return None
 
 
 def test_import_export_publish_and_add_keep_a_packages_skills(tmp_curio, tmp_path, monkeypatch, make_archive):

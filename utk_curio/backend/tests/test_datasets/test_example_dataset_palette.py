@@ -56,6 +56,7 @@ def _example_refs():
         if len(refs) >= 2:
             return path.name, refs
     pytest.skip("no example declares two or more datasets")
+    return None
 
 
 def _project_with_refs(client, token, refs):

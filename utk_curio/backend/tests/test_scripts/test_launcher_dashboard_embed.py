@@ -130,6 +130,7 @@ def _start_spa(tmp_path, backend_url: str, base_path: str = "") -> str:
                     return url
             threading.Event().wait(0.05)
     pytest.fail("run_spa_static_server never came up")
+    return None
 
 
 def _get(base: str, path: str, method: str = "GET") -> str:

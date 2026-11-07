@@ -59,6 +59,7 @@ def _start(dist, base_path: str = "", backend_url: str = "") -> str:
         except OSError:
             threading.Event().wait(0.05)
     pytest.fail("run_spa_static_server never came up")
+    return None
 
 
 @pytest.fixture(scope="module")
