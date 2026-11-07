@@ -19,7 +19,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 - `docs/`: user and developer guides; `docs/examples/` (curated dataflows, their walkthroughs, test dataflows, and `docs/examples/skills/` and `docs/examples/agents/`, a skill and an agent to import, the worked example of AGENT-CATALOG's "Add skills and agents"); `docs/schemas/` (JSON Schemas: `trill.v1.json` for dataflows; `node-package.v4.json`, `dataset.v1.json`, `discovery-source.v1.json` and `agent-package.v1.json` for the catalogs' manifests; `example-prompt-fixture.v1.json` for the agent validation prompts).
 - `scripts/`: developer and CI scripts (see Scripts).
 - `vendor/duckdb-extensions/`: DuckDB extensions bundled with Curio.
-- `.github/workflows/`: CI and release workflows (see CI); `.github/actions/`: `start-stack`, `stop-stack` (its image cleanup on self-hosted runners is `scripts/ci_image_cleanup.sh`), `image-env` (the CI image's Python packages, copied to the runner).
+- `.github/workflows/`: CI and release workflows (see CI); `.github/actions/`: `start-stack`, `stop-stack` (its image cleanup on self-hosted runners is `scripts/ci_image_cleanup.sh`), `image-env` (the CI image's Python packages for the runner, `scripts/ci_image_python.sh`: on an arcade runner the image's own folder mounted read-only in place, which stop-stack lets go before its cleanup; elsewhere copied).
 - `docker-compose.yml` plus overlays: `docker-compose.ci.yml`, `docker-compose.ci-shards.yml`, `docker-compose.ci-isolated.yml`, `docker-compose.ci-exec-user.yml`, `docker-compose.ci-stress.yml`, `docker-compose.deploy.yml`.
 
 ## Entry points

@@ -37,12 +37,14 @@ runs:
         docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" | xargs -r docker rm -f
 
     # The containers run as root and write into the bind-mounted checkout,
-    # which the runner user cannot clean otherwise. Then the images and build
-    # cache CI jobs leave on a self-hosted daemon go, as
-    # scripts/ci_image_cleanup.sh describes: on an arcade runner the job's own
-    # image stays for the next job, and a job that has no image of its own
-    # removes none; utk-gpu, whose daemon the deployed stacks share, keeps no
-    # CI image.
+    # which the runner user cannot clean otherwise. On an arcade runner the
+    # image's Python packages a job used in place (./.github/actions/image-env)
+    # are let go: their helper container holds its image, which the cleanup
+    # could not remove otherwise. Then the images and build cache CI jobs
+    # leave on a self-hosted daemon go, as scripts/ci_image_cleanup.sh
+    # describes: on an arcade runner the job's own image stays for the next
+    # job, and a job that has no image of its own removes none; utk-gpu, whose
+    # daemon the deployed stacks share, keeps no CI image.
     - name: 🧹 Hand back root-owned files, remove old CI images (self-hosted)
       if: runner.environment == 'self-hosted'
       shell: bash
@@ -50,4 +52,5 @@ runs:
         PROJECT: ${{ inputs.project }}
       run: |
         docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+        bash "$GITHUB_WORKSPACE/scripts/ci_image_python.sh" release || true
         bash "$GITHUB_WORKSPACE/scripts/ci_image_cleanup.sh" "$PROJECT"
