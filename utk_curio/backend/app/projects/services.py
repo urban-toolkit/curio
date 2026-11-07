@@ -1943,7 +1943,9 @@ def _as_the_visitors_copy(project_id: str, loaded: dict) -> dict:
     project = db.session.get(Project, project_id) if spec is not None else None
     if project is None:
         return loaded
-    holding = made_as_saved(_owner_user_dir_key(project), project_id, loaded["spec"], spec)
+    # The copy as a link serves a dataflow, compared with the dataflow served so.
+    shown = strip_agent_state(spec)
+    holding = made_as_saved(_owner_user_dir_key(project), project_id, loaded["spec"], shown)
 
     def held(refs) -> list:
         return [ref for ref in refs if ref.get("node_id") in holding]
@@ -1951,7 +1953,7 @@ def _as_the_visitors_copy(project_id: str, loaded: dict) -> dict:
     return {
         **loaded,
         "project": visitor_copies.with_spec(loaded["project"], spec),
-        "spec": strip_agent_state(spec),
+        "spec": shown,
         "outputs": held(loaded["outputs"]),
         "missing_outputs": held(loaded.get("missing_outputs", ())),
     }

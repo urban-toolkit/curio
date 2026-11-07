@@ -302,6 +302,33 @@ def test_a_hosted_guests_dashboard_page_carries_their_own_copy(client, dashboard
     assert _example(example) == before
 
 
+def test_a_hosted_guests_copy_that_leaves_the_tiles_alone_shows_the_saved_outputs(
+    client, dashboard, sandbox, embedded,
+):
+    """A copy whose changes reach no tile, as a rename alone makes one: its
+    dashboard shows the example's saved output, and its page runs nothing as
+    it opens. A node with a saved result is never run again."""
+    example, saved = dashboard
+    before = _example(example)
+    renamed = client.put(f"/api/projects/{example}", data=json.dumps({"name": "Mine"}),
+                         headers=auth_headers(VISITOR_A))
+    assert renamed.status_code == 200, renamed.get_data(as_text=True)
+
+    mine = _payload(client, VISITOR_A, example)
+    opened = _start(client, VISITOR_A, example, {})
+
+    # A's page is A's copy's, named as A named it, with the example's output.
+    assert mine["meta"]["name"] == "Mine"
+    assert _shade(mine["spec"])["content"] == SHIPPED_CODE
+    assert saved in mine["outputs"] and embedded == [saved]
+    assert [ref["node_id"] for ref in mine["outputRefs"]] == ["shade"]
+    assert opened.status_code == 200, opened.get_data(as_text=True)
+    assert opened.get_json()["runId"] is None
+    assert sandbox.runs == []
+    assert {o["node_id"]: o["filename"] for o in _load(client, VISITOR_A, example)["outputs"]} == {"shade": saved}
+    assert _example(example) == before
+
+
 def test_a_hosted_guests_dashboard_that_fetches_its_data_loads_their_own_copy(client, dashboard):
     """A dashboard's page served without its data (its server could not build
     it in time, or the dev server) loads it as the owner's load does, which
