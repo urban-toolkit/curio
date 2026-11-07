@@ -13,11 +13,10 @@ with the columns a node needs to reach each file:
 writes from one of a collection's files: a video's frame, a video made from a
 video (an overlay of it, say), a table of what a node found in a video, a
 recording's window, a photo's overlay. ``DERIVED`` lists what may be derived
-from a file of each kind. A ``tag``
-tells two derived files of one file and time apart: an overlay's names the
-model that drew it. The backend serves the file back under the same id
-(``DERIVED_ID_RE``). Both paths, in process and isolated, build these from one
-function, so they cannot disagree.
+from a file of each kind. A ``tag`` tells two derived files of one file and
+time apart: an overlay's names the model that drew it. The backend serves the
+file back under the same id (``DERIVED_ID_RE``). Both paths, in process and
+isolated, build these from one function, so they cannot disagree.
 """
 
 from __future__ import annotations
