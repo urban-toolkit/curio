@@ -360,3 +360,15 @@ jobs:
           [ -n "$c" ] || exit 0
           docker inspect -f "stable: started={{.State.StartedAt}}" "$c"
           docker exec -i "$c" python3 -I - < "$RUNNER_TEMP/probe.py" || echo "probe failed"
+
+      # Before #1377 sets init: true in the deploy compose file: can this
+      # Docker start curio's image under its init?
+      - name: Docker init
+        run: |
+          echo "init binary: $(docker info --format '{{.InitBinary}}')"
+          image="$(docker inspect -f '{{.Config.Image}}' curio-dev)"
+          if out="$(docker run --rm --init --entrypoint true "$image" 2>&1)"; then
+            echo "curio-dev's image starts under --init: yes"
+          else
+            echo "curio-dev's image starts under --init: no ($(echo "$out" | tail -n 1))"
+          fi
