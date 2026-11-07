@@ -591,7 +591,9 @@ def test_a_drop_helper_returns_the_dropped_node_not_one_the_load_brings(
     # load has put the dataflow's own node on the canvas, and after its fit.
     dropped = drag_builtin_to_canvas(page, LOADING_TILE, at=FIRST_DROP)
 
-    types = {node["id"]: node["nodeType"] for node in canvas_nodes(page)}
+    # By kind: a tile makes its node under the versioned id
+    # (``curio.builtin/data-loading@1``), the spec names it without.
+    types = {node["id"]: (node["nodeType"] or "").split("@")[0] for node in canvas_nodes(page)}
     seen = {
         "loads the page held": page.evaluate("() => window.__curioHeldLoads"),
         "the dataflow's own node was returned": dropped == ITS_NODE,
