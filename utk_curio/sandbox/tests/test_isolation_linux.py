@@ -1738,6 +1738,80 @@ def test_a_child_dies_with_its_zygote(isolated):
         caller.close()
 
 
+def _starts_a_process(pid_file, then):
+    """Node code that starts ``sleep 120``, writes its pid to *pid_file*, then
+    runs *then*.
+
+    ``Popen`` raises when the program cannot start, so a pid in the file is a
+    process that ran. Written beside the file, then renamed, so a reader never
+    sees half of it.
+    """
+    part = f"{pid_file}.part"
+    return (
+        "    import os, subprocess\n"
+        "    started = subprocess.Popen(['sleep', '120'])\n"
+        f"    with open({part!r}, 'w') as handle:\n"
+        "        handle.write(str(started.pid))\n"
+        f"    os.replace({part!r}, {str(pid_file)!r})\n"
+    ) + then
+
+
+def test_a_process_its_node_started_dies_with_the_zygote(isolated, workspace):
+    """A process that node code started outlived a zygote that died.
+
+    The kernel kills the child with the zygote (``PR_SET_PDEATHSIG``), but a
+    process the child starts loses that setting at its fork. So it ran on for
+    nobody, outside the sandbox's count of running nodes, until it ended. The
+    run, which reads end-of-file before its status, now kills the child's
+    process group.
+    """
+    import copy
+    import signal
+    import threading
+
+    from utk_curio.sandbox.isolation import lifecycle
+
+    # A deadline as long as the process's life, so the zygote's own deadline
+    # kill cannot end it within the test: only the kill this test is about can.
+    config = copy.copy(isolated)
+    config.wall_timeout = 120
+    pid_file = workspace / "started.pid"
+    code = _starts_a_process(
+        pid_file, then="    import time\n    time.sleep(120)\n    return 1\n"
+    )
+    replies = []
+    run = threading.Thread(
+        target=lambda: replies.append(run_isolated(config, code)), daemon=True
+    )
+    run.start()
+    started = None
+    try:
+        give_up = time.monotonic() + 60
+        while not pid_file.exists() and time.monotonic() < give_up:
+            time.sleep(0.05)
+        assert pid_file.exists(), f"the node never started its process: {replies}"
+        started = int(pid_file.read_text())
+        assert _alive(started), f"process {started} ended before the zygote died"
+        assert run.is_alive(), f"the run ended before the zygote died: {replies}"
+
+        lifecycle._process.kill()
+        lifecycle._process.wait(timeout=10)
+        give_up = time.monotonic() + 10
+        while _alive(started) and time.monotonic() < give_up:
+            time.sleep(0.05)
+        assert not _alive(started), (
+            f"the zygote is dead and process {started}, which its node started, "
+            "still runs, for nobody"
+        )
+
+        run.join(timeout=30)
+        assert not run.is_alive(), "the run did not end when its zygote died"
+        assert "before reporting the child" in replies[0]["stderr"], replies[0]
+    finally:
+        if started is not None and _alive(started):
+            os.kill(started, signal.SIGKILL)
+
+
 def test_concurrent_executions_do_not_collide(isolated):
     """Parallelism was an explicit design choice; artifacts must stay distinct."""
     from concurrent.futures import ThreadPoolExecutor
