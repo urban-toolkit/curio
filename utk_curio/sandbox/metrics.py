@@ -26,6 +26,7 @@ Flask app. A leaf module keeps the isolation suite importable without Flask.
 from __future__ import annotations
 
 import collections
+import contextlib
 import threading
 import time
 
@@ -55,15 +56,13 @@ _errors: collections.deque = collections.deque(maxlen=ERROR_WINDOW)
 def record_dispatch(isolated: bool) -> None:
     """Count one execution, and whether it was confined. Never raises."""
     global _total, _isolated, _in_process
-    try:
+    with contextlib.suppress(Exception):
         with _LOCK:
             _total += 1
             if isolated:
                 _isolated += 1
             else:
                 _in_process += 1
-    except Exception:
-        pass
 
 
 class _Slot:
@@ -77,22 +76,18 @@ class _Slot:
 
     def __enter__(self):
         global _slots_in_use
-        try:
+        with contextlib.suppress(Exception):
             with _LOCK:
                 _slots_in_use += 1
-        except Exception:
-            pass
         return self
 
     def __exit__(self, exc_type, exc, tb):
         global _slots_in_use
-        try:
+        with contextlib.suppress(Exception):
             with _LOCK:
                 # Clamped: an underflow would render as a negative gauge and
                 # send someone hunting a bug in the wrong process.
                 _slots_in_use = max(0, _slots_in_use - 1)
-        except Exception:
-            pass
         return False
 
 
@@ -108,17 +103,15 @@ def record_child_death(reason: str, detail: str = "", context: dict | None = Non
     from ``supervisor.classify_child_death`` so the tally and the sentence a
     user reads can never disagree.
     """
-    try:
+    with contextlib.suppress(Exception):
         with _LOCK:
             _deaths[str(reason)] += 1
-    except Exception:
-        pass
     record_error(summary=str(detail or reason), detail=str(detail or ""), context=context)
 
 
 def record_error(*, summary: str, detail: str = "", context: dict | None = None) -> None:
     """Append one sandbox-side failure to the window. Never raises."""
-    try:
+    with contextlib.suppress(Exception):
         summary_text = str(summary or "").strip() or "Sandbox error"
         detail_text = str(detail or "")[:_DETAIL_CHARS]
         now = time.time()
@@ -142,8 +135,6 @@ def record_error(*, summary: str, detail: str = "", context: dict | None = None)
                 "context": dict(context or {}),
                 "count": 1,
             })
-    except Exception:
-        pass
 
 
 def errors() -> list:

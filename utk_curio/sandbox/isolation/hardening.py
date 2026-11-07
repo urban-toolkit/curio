@@ -31,6 +31,7 @@ scoping in the parent is what keeps artifacts apart, and that is not something a
 child can reach at all.
 """
 
+import contextlib
 import glob
 import os
 import stat as stat_module
@@ -219,12 +220,10 @@ def prepare_scratch_root(shared_data_dir, *, exec_uid=None):
     os.makedirs(root, exist_ok=True)
     if sys.platform == "win32":
         return root
-    try:
+    with contextlib.suppress(OSError):
         os.chmod(root, 0o711)
         if exec_uid is not None and os.getuid() == 0:
             os.chown(root, 0, -1)
-    except OSError:
-        pass
     return root
 
 

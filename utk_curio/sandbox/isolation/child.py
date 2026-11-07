@@ -48,6 +48,7 @@ scratch directory (not a pipe) so a child that dies mid-write cannot wedge the
 parent on a half-read stream; the parent reads the file after the child exits.
 """
 
+import contextlib
 import json
 import os
 import sys
@@ -699,7 +700,6 @@ def run_node(request, namespace_factory):
     ``stderr``, because that is the contract the frontend renders and the
     in-process path already honours.
     """
-    import contextlib
     import io
     import traceback
     import warnings
@@ -910,12 +910,10 @@ def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=Fals
     # traceback on the inherited stderr, which reaches the sandbox log. Cheap,
     # and it is the difference between diagnosing a native crash and guessing
     # at it: the fd-closing bug above presented only as signal 11.
-    try:
+    with contextlib.suppress(Exception):
         import faulthandler
 
         faulthandler.enable()
-    except Exception:
-        pass
 
     scratch_dir = request["scratch_dir"]
     try:
@@ -932,14 +930,12 @@ def main(request, namespace_factory, *, uid=None, gid=None, require_seccomp=Fals
         point_numba_at_scratch(scratch_dir)
     except BaseException:
         import traceback
-        try:
+        with contextlib.suppress(Exception):
             write_result(
                 {"ok": False, "stdout": [], "stderr": traceback.format_exc(),
                  "output": None, "imports": []},
                 scratch_dir,
             )
-        except Exception:
-            pass
         os._exit(3)
 
     try:

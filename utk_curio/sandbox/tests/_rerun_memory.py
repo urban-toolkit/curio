@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import csv
 import json
 import os
@@ -402,11 +403,9 @@ class _Sandbox:
         while time.monotonic() < deadline:
             if self.proc.poll() is not None:
                 raise RuntimeError(f"the sandbox exited during startup:\n{self.log_tail()}")
-            try:
+            with contextlib.suppress(Exception):
                 if requests.get(f"{self.url}/live", timeout=2).ok:
                     return
-            except Exception:
-                pass
             time.sleep(0.25)
         raise RuntimeError(f"the sandbox did not answer /live in {timeout:.0f}s:\n{self.log_tail()}")
 

@@ -15,6 +15,7 @@ without any access to the artifact store can import this module alone.
 ``detect_kind`` and friends from there keep working unchanged.
 """
 
+import contextlib
 import datetime
 import json
 import math
@@ -360,10 +361,8 @@ def _write_dataframe_parquet(frame, parquet_path):
             f"(FORMAT PARQUET, ROW_GROUP_SIZE {PARQUET_ROW_GROUP_ROWS})"
         )
     finally:
-        try:
+        with contextlib.suppress(Exception):
             writer.unregister("curio_frame")
-        except Exception:
-            pass
         writer.close()
 
 def detect_kind(obj):

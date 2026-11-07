@@ -1188,10 +1188,8 @@ def describe_session_artifacts(session_ids) -> dict:
         size = (blob_bytes or 0) + (json_bytes or 0) + folder_bytes(str(art_id))
         path = _stored_file(kind, value_str)
         if path is not None:
-            try:
+            with contextlib.suppress(OSError):
                 size += path.stat().st_size
-            except OSError:
-                pass
         elif isinstance(value_str, str):
             size += len(value_str.encode("utf-8"))
         entry = described.setdefault(session_id, {"bytes": 0, "ids": []})
@@ -1231,10 +1229,8 @@ def forget_session_artifacts(session_ids) -> int:
     for art_id, _session_id, kind, value_str, _blob, _json in rows:
         path = _stored_file(kind, value_str)
         if path is not None:
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 path.unlink()
-            except FileNotFoundError:
-                pass
         if str(art_id) not in named:
             forget_run_output(str(art_id))
     return len(rows)

@@ -62,6 +62,7 @@ its pid is stopped, since nothing will read its result.
 """
 
 import argparse
+import contextlib
 import errno
 import json
 import os
@@ -435,10 +436,8 @@ class Zygote:
             waiting = []
         running = [state["connection"] for state in self._pending.values()]
         for sock in (self._listener, connection, *waiting, *running):
-            try:
+            with contextlib.suppress(Exception):
                 sock.close()
-            except Exception:
-                pass
 
         template = self.namespace_template
 
@@ -503,7 +502,7 @@ class Zygote:
             try:
                 _send(connection, payload)
             except OSError:
-                pass
+                pass  # the caller hung up; the child is reaped all the same
             finally:
                 connection.close()
 
@@ -600,12 +599,10 @@ def main(argv=None):
     try:
         zygote.serve_forever()
     except KeyboardInterrupt:
-        pass
+        pass  # Ctrl-C stops the zygote as a normal exit; its socket goes below
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(args.socket)
-        except OSError:
-            pass
     return 0
 
 

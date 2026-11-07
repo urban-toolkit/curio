@@ -35,6 +35,7 @@ runs this so, on each model of ``CURIO_EVAL_MODELS``
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -245,10 +246,8 @@ class _Workers:
 
     def close(self) -> None:
         for process in self.processes:
-            try:
+            with contextlib.suppress(OSError):
                 process.stdin.close()
-            except OSError:
-                pass
             try:
                 process.wait(timeout=30)
             except subprocess.TimeoutExpired:

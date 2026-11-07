@@ -1,5 +1,6 @@
 """Node.js version checks, node_modules stamps, and the frontend build."""
 
+import contextlib
 import json
 import os
 import re
@@ -38,10 +39,8 @@ def _read_node_version():
         return None, 0
     major = 0
     if raw.startswith("v"):
-        try:
+        with contextlib.suppress(ValueError):
             major = int(raw[1:].split(".", 1)[0])
-        except ValueError:
-            pass
     return raw, major
 
 
@@ -263,11 +262,9 @@ def _build_stamp_reason(root: str = "") -> str | None:
 
     wanted_mode = _frontend_build_mode(root)
     built_mode = None
-    try:
+    with contextlib.suppress(OSError):
         with open(os.path.join(dist, BUILD_STAMP), encoding="utf-8") as fh:
             built_mode = fh.read().strip() or None
-    except OSError:
-        pass
 
     if built_mode != wanted_mode:
         return f"built in {built_mode or 'an unrecorded'} mode, need {wanted_mode}"

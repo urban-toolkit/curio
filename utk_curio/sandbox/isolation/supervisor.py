@@ -328,10 +328,8 @@ def prepare_user_overlay_dir(path, *, exec_uid=None):
     os.makedirs(path, exist_ok=True)
     if sys.platform == "win32":
         return path
-    try:
+    with contextlib.suppress(OSError):
         os.chmod(path, 0o755)
-    except OSError:
-        pass
     return path
 
 
@@ -353,12 +351,10 @@ def prepare_user_work_dir(path, *, exec_uid=None):
     os.makedirs(path, exist_ok=True)
     if sys.platform == "win32":
         return path
-    try:
+    with contextlib.suppress(OSError):
         os.chmod(path, 0o700)
         if exec_uid is not None and os.getuid() == 0:
             os.chown(path, exec_uid, -1)
-    except OSError:
-        pass
 
     docs = shipped.path("docs")
     if docs.is_dir():
@@ -502,7 +498,5 @@ def cleanup_scratch(scratch_dir):
     housekeeping problem, while an exception here would turn a successful node
     into a failed one.
     """
-    try:
+    with contextlib.suppress(Exception):
         shutil.rmtree(scratch_dir, ignore_errors=True)
-    except Exception:
-        pass

@@ -20,6 +20,7 @@ in ``rasterWire.cases.json``.
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import json
 import math
@@ -235,10 +236,8 @@ def raster_from_envelope(envelope, directory):
     else:
         # In use again: the store's sweep removes a file under ``artifacts/``
         # only once nothing has used it for days (``parsers.forget_made_before``).
-        try:
+        with contextlib.suppress(OSError):
             os.utime(path)
-        except OSError:
-            pass
     return rasterio.open(path)
 
 

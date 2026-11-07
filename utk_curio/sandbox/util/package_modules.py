@@ -91,10 +91,8 @@ def _loaded_from(module, folder):
     without ``__init__.py``, its search path."""
     namespace = getattr(module, "__dict__", None) or {}
     places = [namespace.get("__file__")]
-    try:
+    with contextlib.suppress(TypeError):
         places.extend(namespace.get("__path__") or [])
-    except TypeError:
-        pass
     return any(isinstance(place, str) and _within(place, folder) for place in places)
 
 
@@ -139,9 +137,7 @@ def importable(folder, names):
             module = sys.modules.get(key)
             if module is not None and _loaded_from(module, folder):
                 sys.modules.pop(key, None)
-        try:
+        with contextlib.suppress(ValueError):
             sys.path.remove(folder)
-        except ValueError:
-            pass
         for key in [key for key in list(sys.path_importer_cache) if _within(key, folder)]:
             sys.path_importer_cache.pop(key, None)
