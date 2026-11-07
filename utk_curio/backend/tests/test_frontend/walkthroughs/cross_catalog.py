@@ -9,7 +9,17 @@ from playwright.sync_api import expect
 
 from ..utils import accept_confirm_dialog
 from .framework import Ctx, walkthrough
-from .agent_catalog import open_agent_drawer
+from .agent_catalog import (
+    default_agent_and_what_it_requires,
+    free_default_agent,
+    open_agent_drawer,
+    take_out_of_this_dataflow,
+)
+
+
+def agent_card(drawer, coord: str):
+    """The Agent Catalog drawer's card of the agent at *coord*."""
+    return drawer.locator(f'article[data-agent-coord="{coord}"]')
 
 
 # ---------------------------------------------------------------------------
@@ -96,11 +106,16 @@ def catalog_add_is_confirmed(ctx: Ctx) -> None:
         page.locator(DATA_DRAWER_ROOT).wait_for(state="detached", timeout=10000)
 
     ctx.say("The Agent Catalog", "The same question, and it discloses more.")
-    agent_drawer = open_agent_drawer(ctx)
     # An agent that requires others, so the dialog has dependencies to name.
-    agent_add = agent_drawer.get_by_role(
+    # Every dataflow starts with the agents Curio adds by default, so it and
+    # the agents it requires are taken out of this one first.
+    requiring, *its_required = default_agent_and_what_it_requires(ctx)
+    assert its_required, f"{requiring} requires no other agent, so its Add names none"
+    take_out_of_this_dataflow(ctx, [requiring, *its_required])
+    agent_drawer = open_agent_drawer(ctx)
+    agent_add = agent_card(agent_drawer, requiring).get_by_role(
         "button", name=re.compile(r"^Add to project \(\+\d+ required\)")
-    ).first
+    )
     agent_add.wait_for(state="visible", timeout=20000)
     ctx.click(agent_add)
 
@@ -133,15 +148,20 @@ def catalog_add_is_confirmed(ctx: Ctx) -> None:
 def catalog_remove_is_an_app_dialog(ctx: Ctx) -> None:
     page = ctx.page
 
+    # Every dataflow starts with the agents Curio adds by default: one no
+    # other requires is taken out of this one, so its card offers Add.
+    coord = free_default_agent(ctx)
+    take_out_of_this_dataflow(ctx, [coord])
     drawer = open_agent_drawer(ctx)
+    card = agent_card(drawer, coord)
 
-    # Put one in the dataflow first, so there is something to remove.
-    add = drawer.get_by_role("button", name=re.compile(r"^Add to project")).first
+    # Put it in the dataflow first, so there is something to remove.
+    add = card.get_by_role("button", name=re.compile(r"^Add to project"))
     add.wait_for(state="visible", timeout=20000)
     ctx.click(add)
     accept_confirm_dialog(page, title=re.compile(r"^Add "), button="Add to project")
 
-    remove = drawer.get_by_role("button", name="Remove from project", exact=True).first
+    remove = card.get_by_role("button", name="Remove from project", exact=True)
     remove.wait_for(state="visible", timeout=30000)
 
     ctx.say("Remove it again", "This is where the browser's own box used to appear.")
@@ -156,7 +176,7 @@ def catalog_remove_is_an_app_dialog(ctx: Ctx) -> None:
     ctx.click(modal.get_by_role("button", name="Remove", exact=True))
     expect(modal).to_have_count(0, timeout=10000)
     expect(
-        drawer.get_by_role("button", name=re.compile(r"^Add to project")).first
+        card.get_by_role("button", name=re.compile(r"^Add to project"))
     ).to_be_visible(timeout=30000)
     ctx.say("Removed", "And the drawer behind it never went anywhere.")
 
@@ -185,8 +205,12 @@ def catalog_remove_is_an_app_dialog(ctx: Ctx) -> None:
 def catalog_add_reports_success(ctx: Ctx) -> None:
     page = ctx.page
 
+    # Every dataflow starts with the agents Curio adds by default: one no
+    # other requires is taken out of this one, so its card offers Add.
+    coord = free_default_agent(ctx)
+    take_out_of_this_dataflow(ctx, [coord])
     drawer = open_agent_drawer(ctx)
-    add = drawer.get_by_role("button", name=re.compile(r"^Add to project")).first
+    add = agent_card(drawer, coord).get_by_role("button", name=re.compile(r"^Add to project"))
     add.wait_for(state="visible", timeout=20000)
 
     ctx.say("Add an agent", "The Agent catalog used to finish in silence.")

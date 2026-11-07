@@ -755,6 +755,7 @@ def install_imported_file(
     source_updated_at: str | None = None,
     source_encoding: str | None = None,
     discovery_source: dict | None = None,
+    visitor: str | None = None,
 ) -> InstallResult:
     """Save an uploaded file into the user's dataset store with a generated manifest.
 
@@ -763,7 +764,9 @@ def install_imported_file(
     dataset — content is never used to reuse a previous import's directory.
     ``group_id`` / ``layer_name`` link multi-part imports (e.g. the layers of one
     OSM PBF); ``source_updated_at`` records the original file's last-modified
-    date, distinct from the record's ``created_at`` / ``updated_at``.
+    date, distinct from the record's ``created_at`` / ``updated_at``. A hosted
+    guest's import is named after the guest, *visitor*
+    (``imported.<visitor>.x<uuid>``, ``projects/visitor_copies.visitor_of``).
     """
     return _install_imported(
         user_key,
@@ -776,6 +779,7 @@ def install_imported_file(
         source_updated_at=source_updated_at,
         source_encoding=source_encoding,
         discovery_source=discovery_source,
+        visitor=visitor,
     )
 
 
@@ -793,6 +797,7 @@ def install_imported_path(
     discovery_source: dict | None = None,
     description: str | None = None,
     collection: dict | None = None,
+    visitor: str | None = None,
 ) -> InstallResult:
     """Move a file already on disk into a fresh dataset folder.
 
@@ -801,7 +806,7 @@ def install_imported_path(
     size in RAM. *source_path* is consumed. It is moved with ``os.replace``
     when it sits on the same filesystem as the store, which every staging
     directory under ``.curio/users/<key>/`` does, and copied then removed
-    otherwise.
+    otherwise. *visitor* names a hosted guest's, as there.
     """
     source_path = Path(source_path)
     if not source_path.is_file():
@@ -827,6 +832,7 @@ def install_imported_path(
         discovery_source=discovery_source,
         description=description,
         collection=collection,
+        visitor=visitor,
     )
 
 
@@ -869,13 +875,15 @@ def _install_imported(
     discovery_source: dict | None = None,
     description: str | None = None,
     collection: dict | None = None,
+    visitor: str | None = None,
 ) -> InstallResult:
-    """Mint ``imported.x<uuid>@1``, let *place_data* put the file, write the manifest."""
+    """Mint ``imported.x<uuid>@1``, or a hosted guest's ``imported.<visitor>.x<uuid>@1``,
+    let *place_data* put the file, write the manifest."""
     # A per-import unique token — never the file content — guarantees each import
     # is a distinct dataset. The dir-name regex requires each dot-segment to
     # start with [a-z]; the 'x' prefix keeps the (hex) uuid segment letter-first.
     unique = uuid.uuid4().hex[:12]
-    dataset_id = f"imported.x{unique}"
+    dataset_id = f"imported.{visitor}.x{unique}" if visitor else f"imported.x{unique}"
     dir_name = f"{dataset_id}@1"
 
     dest = dataset_dir(user_key, dir_name)

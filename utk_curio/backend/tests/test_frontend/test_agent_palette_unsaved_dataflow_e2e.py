@@ -42,6 +42,7 @@ from playwright.sync_api import expect
 
 from .utils import (
     accept_confirm_dialog,
+    api_json,
     open_tools_palette,
     require_project_page,
     require_user_auth,
@@ -54,6 +55,24 @@ if TYPE_CHECKING:
 
 DRAWER_ROOT = '[data-curio-agent-catalog-drawer="true"]'
 PALETTE_ROW = "#agents-palette [data-agent-coord]"
+#: Remove from all projects walks every dataflow the account has, its
+#: examples among them, so it gets the harness's long answer budget.
+REMOVE_TIMEOUT_S = 60.0
+
+
+def _remove_one_from_all_projects(page, backend: str) -> str:
+    """Take one agent the account has by default out of all its projects,
+    through the API, and return its coordinate: one no other agent requires,
+    which Remove from all projects takes out at once. A new dataflow then
+    starts without it, so adding it is what puts it in."""
+    token = next(c["value"] for c in page.context.cookies() if c["name"] == "session_token")
+    cards = api_json(f"{backend}/api/agents/catalog", token)["items"]
+    required = {r["coord"] for card in cards for r in card.get("requiresAgents") or []}
+    coord = next(
+        card["dirName"] for card in cards if card.get("imported") and card["dirName"] not in required
+    )
+    api_json(f"{backend}/api/agents/imports/{coord}", token, method="DELETE", timeout=REMOVE_TIMEOUT_S)
+    return coord
 
 
 def _open_drawer_from_menu(page):
@@ -69,7 +88,7 @@ def _open_drawer_from_menu(page):
 
 
 def test_agent_added_to_an_unsaved_dataflow_reaches_the_palette(
-    app_frontend: "FrontendPage", frontend_server: str, page
+    app_frontend: "FrontendPage", frontend_server: str, current_server: str, page
 ):
     require_project_page()
     require_user_auth()
@@ -83,6 +102,13 @@ def test_agent_added_to_an_unsaved_dataflow_reaches_the_palette(
     )
     page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
 
+    # Every new dataflow starts with the agents Curio adds by default, so one
+    # is taken out of all the account's projects first, and the new dataflow
+    # opened again: the agent added below is one it would not have had.
+    coord = _remove_one_from_all_projects(page, current_server)
+    page.reload()
+    page.locator("#tools-menu").wait_for(state="visible", timeout=45000)
+
     # THE PRECONDITION: nothing saved yet. If the harness ever starts landing on
     # a saved dataflow this test silently becomes a duplicate of the existing
     # one, so assert it rather than assume it.
@@ -94,12 +120,11 @@ def test_agent_added_to_an_unsaved_dataflow_reaches_the_palette(
     # Open the palette FIRST and leave it mounted underneath, so what follows is
     # a claim about a live repaint rather than about a fresh fetch on mount.
     open_tools_palette(page, "agents")
+    expect(page.locator(f'#agents-palette [data-agent-coord="{coord}"]')).to_have_count(0, timeout=20000)
 
     drawer = _open_drawer_from_menu(page)
-    card = drawer.locator("article[data-agent-coord]").first
+    card = drawer.locator(f'article[data-agent-coord="{coord}"]')
     card.wait_for(state="visible", timeout=20000)
-    coord = card.get_attribute("data-agent-coord")
-    assert coord, "the first agent card carries no coordinate"
 
     card.get_by_role("button", name=re.compile(r"^Add to project")).click()
     with page.expect_response(

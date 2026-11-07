@@ -414,6 +414,38 @@ class TestUsageCapture:
         run_chat_completion(_cfg(), [{"role": "user", "content": "hi"}], usage_out=sink)
         assert sink == {}
 
+    def test_a_stream_its_caller_stopped_gives_the_usage_its_server_had_reported(self, monkeypatch):
+        """A caller that stops reading, as the turn loop does on a Stop, ends
+        the stream at its last piece. A server that reports its usage with
+        every chunk, as vLLM's continuous usage stats do, had counted the
+        input and that piece by then. That is the turn's usage, which the
+        turn loop adds to its total and settles in the ledger, not nothing."""
+        import types as t
+        from utk_curio.backend.app.agents.infrastructure.providers import stream_chat_turn
+
+        pulled = []
+
+        def _chunks():
+            for count, text in enumerate(["The ", "parks ", "are in the loader."], start=1):
+                pulled.append(text)
+                yield t.SimpleNamespace(
+                    choices=[t.SimpleNamespace(delta=t.SimpleNamespace(content=text), finish_reason=None)],
+                    usage=t.SimpleNamespace(prompt_tokens=500, completion_tokens=count),
+                )
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = t.SimpleNamespace(completions=t.SimpleNamespace(create=lambda **kwargs: _chunks()))
+
+        monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+        sink = {}
+        events = stream_chat_turn(_cfg(), [{"role": "user", "content": "hi"}], usage_out=sink)
+        assert next(events) == "The "
+        events.close()
+
+        assert pulled == ["The "]  # the server was read no further than the piece shown
+        assert sink == {"inputTokens": 500, "outputTokens": 1}
+
 
 # ---------------------------------------------------------------------------
 # The typed turn: system slots per provider, cache usage, and the shim
