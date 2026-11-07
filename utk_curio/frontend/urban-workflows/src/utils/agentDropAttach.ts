@@ -1,13 +1,13 @@
 import type { AgentDropTarget } from "../services/agents";
-import { hostedGuestSignInNote } from "../components/apiSettings/useHostedGuest";
 
 /**
  * Orchestrates a palette-agent drop → attach. A node target is validated by the
  * backend against the dataflow as the server holds it, so a node added a
  * moment ago must reach the server first: `keepDataflow` waits until the
  * server holds every change this tab made (a dataflow not saved yet is made
- * first), then the attach uses the resolved project id. Canvas targets need no
- * specific node, so they skip the wait.
+ * first), then the attach uses the resolved project id. A drop on the canvas
+ * needs no specific node, so it waits only when the dataflow has no id yet,
+ * to make it.
  *
  * Dependencies are injected (no React coupling) so this stays unit-testable.
  */
@@ -17,12 +17,10 @@ export interface AgentDropAttachDeps {
   target: AgentDropTarget;
   agentCoord: string;
   /** The dataflow's id once the server holds this tab's every change, a
-   *  dataflow not saved yet made first (`ensureProjectId`). */
+   *  dataflow not saved yet made first (`ensureProjectId`): an account's, and
+   *  a hosted guest's own, kept until the server starts again. */
   keepDataflow: () => Promise<string | null | undefined>;
   attach: (projectId: string, coord: string, target: AgentDropTarget) => Promise<unknown>;
-  /** A hosted guest (`isHostedGuest`), who cannot save a dataflow: it works
-   *  on its own copy of one it has, and makes none it does not. */
-  hostedGuest?: boolean;
   /** Whether this is the owner's tab, whose drop waits for `keepDataflow`.
    * An editor the owner invited makes no dataflow and records nothing: the
    * editor's canvas is bound to the dataflow's doc on the server, which the
@@ -42,16 +40,10 @@ export async function attachAgentOnDrop(deps: AgentDropAttachDeps): Promise<{ ta
   let projectId = deps.projectId;
   // A connection target is validated against the dataflow's edges exactly the
   // way a node target is validated against its nodes, so a drop onto a freshly
-  // drawn edge needs the same wait first.
-  const keepsFirst = deps.target.kind === "node" || deps.target.kind === "connection";
-  // A hosted guest cannot make a dataflow: on a canvas with none it is told
-  // to sign in, before anything is sent. A note, shown as a warning like the
-  // other sign-in notes, not as a failure. On a dataflow it has, its canvas is
-  // bound to its own copy's doc, and its drop waits for the server to hold
-  // what it changed, as an account's does.
-  if (deps.hostedGuest && !projectId) {
-    throw Object.assign(new Error(hostedGuestSignInNote("attach agents")), { toastVariant: "warning" as const });
-  }
+  // drawn edge needs the same wait first. A drop on the canvas of a dataflow
+  // not saved yet makes it first, as a drop on its node does: an agent is
+  // attached to a dataflow the server holds.
+  const keepsFirst = deps.target.kind === "node" || deps.target.kind === "connection" || !projectId;
   if (keepsFirst && deps.savesHere !== false) {
     // The just-dropped-on element reaches the server before the attach is
     // checked against the dataflow. Also covers a never-saved one (made now).

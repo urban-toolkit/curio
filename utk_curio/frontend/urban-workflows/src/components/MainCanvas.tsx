@@ -721,9 +721,6 @@ export function MainCanvas() {
                     agentCoord,
                     keepDataflow: ensureProjectId,
                     attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
-                    // A hosted guest's drop on a canvas with no dataflow says
-                    // to sign in.
-                    hostedGuest,
                     // An invited editor's tab makes no dataflow: it waits for the
                     // server to have what the editor changed, then attaches.
                     savesHere: viewerMode !== "shared",
@@ -742,7 +739,7 @@ export function MainCanvas() {
                 revealCreated(createCodeNode(drop.type, { position: drop.position }));
                 markDirty();
         }
-    }, [createLoaderFor, askTheOwner, importDataFile, dropPackageCard, showToast, dropScenario, revealNodes, agentsDataflow, ensureProjectId, hostedGuest, viewerMode, whenChangesKept, markDirty, revealCreated, createCodeNode]);
+    }, [createLoaderFor, askTheOwner, importDataFile, dropPackageCard, showToast, dropScenario, revealNodes, agentsDataflow, ensureProjectId, viewerMode, whenChangesKept, markDirty, revealCreated, createCodeNode]);
 
     // While the dataflow the route names is still opening, a drop waits for
     // it, then is made by the canvas it opened as: the load would replace

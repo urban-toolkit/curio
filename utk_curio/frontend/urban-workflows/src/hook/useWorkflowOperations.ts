@@ -1228,10 +1228,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
      * the server holds every change this tab made. A dataflow not saved yet is
      * made first, as its first save would make it, and a routed one still
      * loading is waited for (#340). Concurrent callers share one create.
-     * Null when there is none to act on, with the reason said but for a
-     * hosted guest's, whose action tells it to sign in. A hosted guest's
-     * canvas of a dataflow it has (an example) binds to its own copy's doc
-     * and waits as an account's does.
+     * Null when there is none to act on, with the reason said. A hosted
+     * guest's canvas of a dataflow it has (an example) binds to its own
+     * copy's doc and waits as an account's does, and its dataflow not saved
+     * yet is made as an account's is: its own, kept until the server starts
+     * again.
      */
     const ensureProjectId = useCallback(async (): Promise<string | null> => {
         const kept = async () => {
@@ -1248,11 +1249,6 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             return projectIdRef.current;
         };
         if (projectIdRef.current) return kept();
-        // A hosted guest's saves are refused, so a dataflow it never saved
-        // gets no id, and no toast from here: the action that asked tells it
-        // to sign in (hostedGuestSignInNote). Only a save the guest asks for
-        // (File > Save, Save a copy) answers "Guest users cannot save projects".
-        if (blockGuestSaves) return null;
         try {
             if (viewerMode === "shared") {
                 throw new Error("Shared dataflows are read-only; use Save a copy");
@@ -1268,7 +1264,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             );
             return null;
         }
-    }, [blockGuestSaves, viewerMode, settleRoutedLoad, createDataflow, showToast]);
+    }, [viewerMode, settleRoutedLoad, createDataflow, showToast]);
 
     // Map a record's install-warnings onto friendly node labels and warn the user.
     // Without this, a computed output that failed to install (e.g. its artifact
