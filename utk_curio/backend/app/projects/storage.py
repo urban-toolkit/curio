@@ -817,6 +817,9 @@ def spec_write_lock(user_key: str, project_id: str):
     write lock to index each output it installs, so the two would wait for each
     other until the busy timeout (#909). Such a thread is refused here with
     :class:`SpecLockOrderError` before it waits.
+
+    A read of the dataflow waits for this lock, so a disk sync its holder asks
+    for waits until the lock is let go (:func:`sync_when_free`).
     """
     from utk_curio.backend.extensions import session_holds_write_lock
 
@@ -827,18 +830,22 @@ def spec_write_lock(user_key: str, project_id: str):
             "then write to the database, or commit before asking for it."
         )
     d = ensure_project_dir(user_key, project_id)
-    with exclusive_lock(
-        d / ".spec.lock",
-        namespace=_SPEC_LOCK_NAMESPACE,
-        key=f"{user_key}/{project_id}",
-    ):
-        held = _spec_locks_held()
-        key = (str(user_key), project_id)
-        held.add(key)
-        try:
-            yield
-        finally:
-            held.discard(key)
+    hold_syncs()
+    try:
+        with exclusive_lock(
+            d / ".spec.lock",
+            namespace=_SPEC_LOCK_NAMESPACE,
+            key=f"{user_key}/{project_id}",
+        ):
+            held = _spec_locks_held()
+            key = (str(user_key), project_id)
+            held.add(key)
+            try:
+                yield
+            finally:
+                held.discard(key)
+    finally:
+        release_syncs()
 
 
 _spec_lock_holder = threading.local()
@@ -858,6 +865,58 @@ def holds_spec_lock(user_key: str, project_id: str) -> bool:
     a caller may run under the lock it took for a longer read-modify-write,
     asks for it only when this thread does not hold it already."""
     return (str(user_key), project_id) in _spec_locks_held()
+
+
+# ---------------------------------------------------------------------------
+# Disk syncs held back while a thread holds a lock a read waits for
+# ---------------------------------------------------------------------------
+
+#: Per thread: how many holds it has of the locks a read of a dataflow waits
+#: for, a spec lock (:func:`spec_write_lock`) and an open doc's lock
+#: (``collaboration/dataflow_docs.py``), and the files it wrote meanwhile
+#: whose disk sync waits until it holds none (:func:`sync_when_free`).
+_syncs = threading.local()
+
+
+def hold_syncs() -> None:
+    """This thread takes a lock a read of a dataflow waits for: a disk sync
+    it asks for (:func:`sync_when_free`) waits until it holds none."""
+    _syncs.depth = getattr(_syncs, "depth", 0) + 1
+
+
+def release_syncs() -> None:
+    """This thread let go of such a lock. Once it holds none, each file it
+    asked to sync meanwhile is synced, in the order it asked. A sync that
+    fails is logged, not raised: what it wrote is already there for every
+    reader, and the work done under the lock is not undone."""
+    _syncs.depth -= 1
+    if _syncs.depth:
+        return
+    waiting, _syncs.waiting = getattr(_syncs, "waiting", []), []
+    for descriptor in waiting:
+        try:
+            _sync(descriptor)
+        except OSError:
+            logger.error("A file written under a dataflow's lock could not be synced to disk", exc_info=True)
+
+
+def sync_when_free(descriptor: int) -> None:
+    """Sync the file open as *descriptor* to disk, then close *descriptor*:
+    at once, or, while this thread holds a lock a read of a dataflow waits
+    for, once it holds none (:func:`release_syncs`). On a strained disk one
+    sync takes seconds, and a read must not wait for it: what was written is
+    there for every reader before it reaches the disk."""
+    if getattr(_syncs, "depth", 0):
+        _syncs.waiting = [*getattr(_syncs, "waiting", []), descriptor]
+        return
+    _sync(descriptor)
+
+
+def _sync(descriptor: int) -> None:
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 # ---------------------------------------------------------------------------

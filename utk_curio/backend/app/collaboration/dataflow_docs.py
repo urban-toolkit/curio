@@ -140,7 +140,10 @@ the docs touches no database. A writer under the spec lock already (a
 read-modify-write that must not interleave) is not made to ask for it again.
 No holder of a doc's lock touches the database, so a thread holding a
 database write may wait for one: the PUT writes its row before its spec, and a
-create comes before its row is committed (#909).
+create comes before its row is committed (#909). A read of a dataflow waits for
+its spec lock and its doc's lock, so a history point made under them reaches
+the disk once its thread holds neither (``storage.sync_when_free``): on a
+strained disk one sync takes seconds.
 
 **Reads**: :func:`read` is the dataflow as it is now, an open doc's over the
 file.
@@ -268,6 +271,30 @@ class _Queued:
         self.data = data
 
 
+class _DocLock:
+    """An open doc's lock, an RLock. A read of the dataflow waits for it, so a
+    disk sync its holder asks for, such as a history point's, waits until the
+    thread holds no lock a read waits for (``storage.sync_when_free``)."""
+
+    __slots__ = ("_lock",)
+
+    def __init__(self):
+        self._lock = threading.RLock()
+
+    def __enter__(self) -> "_DocLock":
+        storage.hold_syncs()
+        try:
+            self._lock.acquire()
+        except BaseException:
+            storage.release_syncs()
+            raise
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self._lock.release()
+        storage.release_syncs()
+
+
 class _OpenDoc:
     """One open dataflow. Its fields are guarded by :attr:`lock`, but the
     times, which this module's lock guards."""
@@ -275,7 +302,7 @@ class _OpenDoc:
     def __init__(self, project_id: str, user_key: str):
         self.project_id = project_id
         self.user_key = user_key
-        self.lock = threading.RLock()
+        self.lock = _DocLock()
         self.doc = None
         self.awareness: Optional[Awareness] = None
         self.doc_id: Optional[str] = None

@@ -310,23 +310,34 @@ def _line(point: dict) -> bytes:
 
 def _append_points(user_key: str, project_id: str, points: list[dict]) -> None:
     """Add *points* at the end of the file, a line each, dropping what a write
-    cut short left after its last whole line."""
+    cut short left after its last whole line. Every reader has them once the
+    history lock is let go. The file reaches the disk after that, once this
+    thread holds no lock a read of the dataflow waits for, its doc's among
+    them (``storage.sync_when_free``): on a strained disk a sync takes
+    seconds, and a read waits for none."""
     path = _points_path(_folder(user_key, project_id))
-    with storage.history_lock(user_key, project_id):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "ab+") as handle:
-            handle.seek(0, os.SEEK_END)
-            size = handle.tell()
-            if size:
-                handle.seek(max(0, size - 1))
-                if handle.read(1) != b"\n":
-                    handle.seek(0)
-                    data = handle.read()
-                    handle.truncate(data.rfind(b"\n") + 1)
-            handle.seek(0, os.SEEK_END)
-            handle.write(b"".join(_line(point) for point in points))
-            handle.flush()
-            os.fsync(handle.fileno())
+    written = None
+    try:
+        with storage.history_lock(user_key, project_id):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "ab+") as handle:
+                handle.seek(0, os.SEEK_END)
+                size = handle.tell()
+                if size:
+                    handle.seek(max(0, size - 1))
+                    if handle.read(1) != b"\n":
+                        handle.seek(0)
+                        data = handle.read()
+                        handle.truncate(data.rfind(b"\n") + 1)
+                handle.seek(0, os.SEEK_END)
+                handle.write(b"".join(_line(point) for point in points))
+                handle.flush()
+                written = os.dup(handle.fileno())
+    except BaseException:
+        if written is not None:
+            os.close(written)
+        raise
+    storage.sync_when_free(written)
 
 
 def _write_points(user_key: str, project_id: str, points: list[dict]) -> None:
