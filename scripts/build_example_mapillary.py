@@ -31,9 +31,8 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from urllib.parse import urlsplit
 
-REPO = Path(__file__).resolve().parents[1]
+REPO =Path(__file__).resolve().parents[1]
 FOLDER = REPO / "docs" / "examples" / "data" / "storage" / "mapillary"
 DATASET_ID = "data.curio.mapillary-sample"
 MAPILLARY = REPO / "discovery" / "source.mapillary.imagery@1"
@@ -68,9 +67,7 @@ def fetch(token: str) -> list:
 
     manifest = load_source_manifest(MAPILLARY)
     credential = f"{manifest.auth.header_name}:{manifest.auth.value_prefix}{token}"
-    transport = CredentialedTransport(
-        HttpDiscoveryTransport(), credential, hosts=(urlsplit(manifest.provider.base_url).hostname,)
-    )
+    transport = CredentialedTransport.for_source(HttpDiscoveryTransport(), credential, manifest)
     service = build_service(manifest, transport)
     spec = manifest.resource("images")
     west, south, east, north = AREA

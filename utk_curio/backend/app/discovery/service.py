@@ -156,14 +156,11 @@ class DiscoveryService:
 
     def _transport_for(self, manifest: DiscoverySourceManifest):
         inner = self._transport or transport_mod.build_transport(budget=self._budget)
-        credential = self._credential_for(manifest)
-        if credential is None:
-            return inner
         # Bound here rather than passed down, so providers never handle a
         # token and cannot put one in a URL they build or a message they log.
         # Only the source's own origin (scheme, host and port) receives it.
-        return transport_mod.CredentialedTransport(
-            inner, credential, origins=(manifest.provider.base_url,)
+        return transport_mod.CredentialedTransport.for_source(
+            inner, self._credential_for(manifest), manifest
         )
 
     def _storage_for(self, manifest: DiscoverySourceManifest):
