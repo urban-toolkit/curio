@@ -421,7 +421,6 @@ class TestCanonicalTemplateId:
         # Ten since Merge Flow left (#662); every member names a template the
         # built-in package ships, so a stale member fails here too.
         assert len(members) >= 10, f"expected the NodeType roster, parsed {members}"
-        import json
 
         manifest = json.loads(
             (Path(__file__).resolve().parents[4] / "packages" / "curio.builtin@1" / "manifest.json")

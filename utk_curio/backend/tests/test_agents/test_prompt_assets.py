@@ -235,8 +235,6 @@ class TestTheRecommendationMode:
     def test_it_asks_for_no_tool(self):
         """It runs only as a delegate, with no tools: it names no tool a run
         could call and shows no request syntax, and says to reply in text."""
-        import re
-
         from utk_curio.backend.app.agents.application.tools import REGISTRY
 
         text = builtin.read_prompt_text(builtin.builtin_coord("agent.curio.node-builder"), "package.recommend")
@@ -258,8 +256,6 @@ class TestTheJsonModes:
         """Each runs only as a delegate, with no tools, and answers in one
         JSON object the runtime turns into reviewed proposals: it names no
         tool a run could call and shows no request syntax."""
-        import re
-
         from utk_curio.backend.app.agents.application.tools import REGISTRY
 
         text = builtin.read_prompt_text(builtin.builtin_coord(agent_id), capability)

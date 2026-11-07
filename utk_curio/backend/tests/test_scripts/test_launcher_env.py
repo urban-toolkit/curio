@@ -620,8 +620,6 @@ class TestAgentAndBuildFlags:
         key), or belonged to a different subsystem entirely. Adding one back
         should require editing this list.
         """
-        import re
-
         source = _launcher_source()
         # Read from source rather than by building the parser: the parser is
         # constructed inside main(), and TestVariablesThatStayEnvOnly below
