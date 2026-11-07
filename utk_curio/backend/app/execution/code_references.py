@@ -275,7 +275,7 @@ def widget_literal(value, language: str) -> str:
             return "True" if value else "False"
         return "true" if value else "false"
     if isinstance(value, (int, float)):
-        if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
+        if isinstance(value, float) and not math.isfinite(value):
             return "None" if language == "python" else "null"
         return js_number(value)
     if isinstance(value, str):
@@ -1005,7 +1005,7 @@ DATE_FALLBACK = "1970-01-01"
 
 
 def _finite(x) -> bool:
-    return isinstance(x, (int, float)) and not isinstance(x, bool) and x == x and x not in (float("inf"), float("-inf"))
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and (not isinstance(x, float) or math.isfinite(x))
 
 
 def _choices(options: dict) -> list:
