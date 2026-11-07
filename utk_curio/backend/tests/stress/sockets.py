@@ -45,7 +45,7 @@ import json
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional
 from urllib.parse import urlsplit
 

@@ -108,7 +108,6 @@ from .utils import (
     play_node,
     run_node_and_wait,
     save_dataflow,
-    scenario_card_button,
     set_node_code,
     stub_db_login,
     take_agents_out,
