@@ -169,6 +169,7 @@ jest.mock("../../utils/fitViewWithMenuOffset", () => ({
   topOverlayBottom: () => null,
 }));
 
+import { CURIO_UNIVERSAL_NODE_TYPE } from "../../constants";
 import { MainCanvas } from "../../components/MainCanvas";
 import { ProjectLoader } from "../../components/ProjectLoader";
 import { clearCurrentProject } from "../../registry/projectPackagesStore";
@@ -329,6 +330,30 @@ test("a node dropped while the owner's dataflow opens is made once the dataflow 
     whileOpening: NOTHING,
     opened: { ...NOTHING, nodes: [TILE] },
   });
+});
+
+test("a node dropped while a dataflow with a node opens lands clear of that node", async () => {
+  const load = heldLoad();
+  mockFlow.loadProject.mockReturnValue(load.promise);
+  const { target } = drawCanvas();
+  await waitFor(() => expect(mockFlow.loadProject).toHaveBeenCalled());
+
+  // Dropped at (300, 200) of a canvas at rest, where the load then puts a node.
+  drop(target, tileDrag());
+  mockFlow.nodes = [
+    { id: "loaded", type: CURIO_UNIVERSAL_NODE_TYPE, position: { x: 200, y: 100 }, data: { nodeType: TILE } },
+  ];
+  await act(async () => {
+    load.land(LOADED);
+  });
+  await waitFor(() => expect(mockLoadTrill).toHaveBeenCalled());
+  await settle();
+
+  // Both are default nodes (525x350): just below the node is 258 away, just
+  // right of it 433, so it goes below, the canvas's gutter of 8 between them.
+  expect(mockCreateCodeNode.mock.calls.map(([type, options]) => [type, (options as any)?.position])).toEqual([
+    [TILE, { x: 300, y: 100 + 350 + 8 }],
+  ]);
 });
 
 test("a file an invited editor drops while the dataflow opens is imported once it is in, by his canvas", async () => {
