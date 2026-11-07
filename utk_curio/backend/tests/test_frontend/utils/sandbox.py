@@ -4,6 +4,7 @@ back, and running a dataflow's code nodes without a browser.
 
 import os
 import json
+import math
 import re
 import textwrap
 from pathlib import Path
@@ -347,7 +348,7 @@ def snapshot_artifact(artifact_id: str) -> dict:
 def _same_value(a, b) -> bool:
     """Equal, with NaN equal to NaN, through nested lists and dicts."""
     if isinstance(a, float) and isinstance(b, float):
-        return a == b or (a != a and b != b)
+        return a == b or (math.isnan(a) and math.isnan(b))
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(_same_value(a[key], b[key]) for key in a)
     if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
