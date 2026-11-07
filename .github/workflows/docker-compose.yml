@@ -2056,6 +2056,19 @@ jobs:
             --stats-log "$GITHUB_WORKSPACE/ci-report/docker-stats.log" \
             --probe "docker exec $cid python"
 
+      # After a failed step, every backend thread's stack once more, beside
+      # those the harness saved after each tier with failures
+      # (backend/thread_stacks.py): a stalled backend shows the lock each
+      # thread waits on. Not on a cancel, which GitHub force-ends.
+      - name: 🧵 Save the backend's thread stacks
+        if: failure()
+        run: |
+          cid="$(docker compose -p curio-ci-stress ps -a -q curio | head -n1 || true)"
+          if [ -z "$cid" ]; then echo "no stack container to ask"; exit 0; fi
+          python -m utk_curio.backend.tests.stress --stacks-only failed-job \
+            --out "$GITHUB_WORKSPACE/ci-report/stress" \
+            --probe "docker exec $cid python" || true
+
       - name: 📈 Stop the container stats sampler
         if: always()
         run: kill "$(cat "$GITHUB_WORKSPACE/stats-sampler.pid")" 2>/dev/null || true
@@ -2270,6 +2283,19 @@ jobs:
           PYTHONPATH="$GITHUB_WORKSPACE" bash "$GITHUB_WORKSPACE/scripts/ci_repeat.sh" python -m pytest \
             tests/test_frontend/test_stress_browser.py -v -ra
 
+      # After a failed step, every backend thread's stack once more, beside
+      # those the harness saved in each report folder after each tier with
+      # failures (backend/thread_stacks.py): a stalled backend shows the lock
+      # each thread waits on. Not on a cancel, which GitHub force-ends.
+      - name: 🧵 Save the backend's thread stacks
+        if: failure()
+        run: |
+          cid="$(docker compose -p curio-ci-stress ps -a -q curio | head -n1 || true)"
+          if [ -z "$cid" ]; then echo "no stress container to ask"; exit 0; fi
+          python -m utk_curio.backend.tests.stress --stacks-only failed-job \
+            --out "$GITHUB_WORKSPACE/stress-stacks" \
+            --probe "docker exec $cid python" || true
+
       - name: 📈 Stop the container stats sampler
         if: always()
         run: kill "$(cat "$GITHUB_WORKSPACE/stats-sampler.pid")" 2>/dev/null || true
@@ -2293,6 +2319,7 @@ jobs:
             stress.run*/
             stress-session/
             stress-session.run*/
+            stress-stacks/
             docker-stats.log
           if-no-files-found: warn
           retention-days: 7

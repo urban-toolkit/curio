@@ -25,7 +25,7 @@ Curio is a framework for urban visual analytics built on dataflows: a React canv
 ## Entry points
 
 - `utk_curio/main.py` `main()`: the argument parser and the `setup`, `start` and `test` commands. What it calls is in `utk_curio/cli/`: `environment.py` (arguments to environment variables), `frontend_build.py`, `static_server.py`, `services.py` (start the backend, sandbox and frontend), `dependencies.py`, `test_runner.py`, `logs.py`, `lifecycle.py`, `arguments.py`.
-- Backend: `utk_curio/backend/server.py` builds the app with `create_app()` from `utk_curio/backend/app/__init__.py`, which registers every blueprint. Settings: `utk_curio/backend/config.py`.
+- Backend: `utk_curio/backend/server.py` builds the app with `create_app()` from `utk_curio/backend/app/__init__.py`, which registers every blueprint. Settings: `utk_curio/backend/config.py`. Its `serve()` registers `utk_curio/backend/thread_stacks.py`: on SIGUSR1 the backend appends every thread's Python stack to `backend-thread-stacks.txt` in its state folder.
 - Sandbox: `utk_curio/sandbox/server.py`. `app/api.py` holds the routes (`/exec`, `/execJs`, `/get`, `/artifact-meta`, `/monitor`); `app/worker.py` runs node code (`execute_code`, `execute_js_code`); `app/auth.py` checks the backend's token; `run_place.py` is the reply of `/exec` and `/execJs`, which keeps a run's connection busy while it waits for its place.
 - Sandbox internals: `utk_curio/sandbox/isolation/` (fork isolation: `zygote.py`, `supervisor.py`, `child.py`, `hardening.py`; `seccomp_filter.py`: the seccomp filter code the isolated child and a JavaScript run's Node share, pyseccomp's import among it, which the zygote makes before its first fork, and Node's exec wrapper on Linux); `utk_curio/sandbox/util/` (`db.py`, `parsers.py`, `codec.py`, `user_code.py`: the `userCode` both paths run, whose relative paths into `docs/` read the shipped files; `stored_inputs.py`: what an input reads as from its stored output on both paths, an Autark node's layers as frames).
 - Owner rule, 11-07, never to change and with no option to turn it off: every process a node starts ends when the node does, whether it returns, raises or throws, or reaches its deadline or timeout. The tests named here guard it; never weaken, skip or remove them.
@@ -113,7 +113,7 @@ Every suite runs on GitHub CI, through `.github/workflows/docker-compose.yml`.
   - The video runner (`test_walkthrough_videos.py`) saves each scene's `ctx.mark` calls as `<slug>.marks.json`: where a clip starts and ends and which waits it cuts.
 - Sandbox: `utk_curio/sandbox/tests/` (`conftest.py`, which leaves the `cuda` mark out unless `-m` names it; only test-gpu runs those tests).
 - Frontend Jest: `src/tests/` (guide in `src/tests/README.md`); `npm test` and `npm run typecheck` in `utk_curio/frontend/urban-workflows/`.
-- Stress harness: `utk_curio/backend/tests/stress/` (`driver.py`: one user; `sockets.py`: its tab of a shared dataflow, a pycrdt doc over Socket.IO; `backend_probe.py`: the backend's threads, memory and doc files, read where it runs; `report.py`).
+- Stress harness: `utk_curio/backend/tests/stress/` (`driver.py`: one user; `sockets.py`: its tab of a shared dataflow, a pycrdt doc over Socket.IO; `backend_probe.py`: the backend's threads, memory and doc files, read where it runs, and its thread stacks, which `run.py` saves in `--out` after a tier with failures and `--stacks-only` saves alone; `report.py`).
 
 ## CI
 

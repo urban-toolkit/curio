@@ -13,7 +13,10 @@ opens a tab of its room's shared dataflow over Socket.IO, types and drags in
 it while its own dataflow runs, and the report gives how long each update took
 to reach the room's other tabs. Around each tier the probe (``--probe``,
 ``backend_probe.py``) reads the backend's threads and memory, and after it the
-doc files the tier's shared dataflows left on disk.
+doc files the tier's shared dataflows left on disk. After a tier with any
+failure it also saves every backend thread's stack in ``--out``
+(``thread-stacks-tier-<n>-<users>-users.txt``), so a backend that stalled
+shows the lock each thread waits on; ``--stacks-only`` saves them alone.
 """
 
 from __future__ import annotations
@@ -37,7 +40,9 @@ from ..test_frontend.workflow_spec import parse_workflow
 from . import report as reporting
 from . import sockets
 from .autk import compile_autk_data
-from .backend_probe import BackendProbe, Sampler, reading_now, track_worker, worker_finished
+from .backend_probe import (
+    BackendProbe, Sampler, reading_now, save_thread_stacks, track_worker, worker_finished,
+)
 from .driver import BURST, Pacing, VirtualUser, new_user_name
 
 REPO_ROOT = os.path.abspath(
@@ -456,7 +461,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-probe", action="store_true",
                         help="read nothing of the backend's process")
     parser.add_argument("--run-id", default=uuid.uuid4().hex[:6])
+    parser.add_argument("--stacks-only", metavar="NAME", default="",
+                        help="run no tier: only ask the backend, through the "
+                             "probe, for every thread's stack, saved in --out "
+                             "as thread-stacks-NAME.txt (a CI job does after a "
+                             "failed step)")
     args = parser.parse_args(argv)
+
+    if args.stacks_only:
+        # Before anything that waits on the backend, which may be stalled.
+        probe = make_probe(args)
+        if probe is None:
+            parser.error("--stacks-only asks through the probe, which --no-probe turns off")
+        _, line = save_thread_stacks(probe, args.out, args.stacks_only)
+        print(f"[stress] {line}", flush=True)
+        return 0
 
     backend_url = args.backend.rstrip("/")
     tiers = [int(t) for t in args.tiers.split(",") if t.strip()]
@@ -504,6 +523,9 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(f"[stress] tier {tier}: exec lock waited {waits}", flush=True)
         for line in tier_lines(summary):
+            print(f"[stress] tier {tier}: {line}", flush=True)
+        if summary["failure_count"] and probe is not None:
+            _, line = save_thread_stacks(probe, args.out, f"tier-{position + 1}-{tier}-users")
             print(f"[stress] tier {tier}: {line}", flush=True)
 
     report = reporting.build_report(args.run_id, backend_url, tier_reports,

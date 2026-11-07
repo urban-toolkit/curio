@@ -2,6 +2,7 @@ import os
 
 from werkzeug.serving import WSGIRequestHandler, is_running_from_reloader
 
+from utk_curio.backend import thread_stacks
 from utk_curio.backend.app import create_app
 from utk_curio.backend.config import CURIO_SEED_EXAMPLES
 from utk_curio.common.request_deadline import RequestHeadDeadline
@@ -112,6 +113,10 @@ def _socketio_run_kwargs():
 
 def serve():
     """Serve the backend, Socket.IO included, until it is stopped."""
+    # SIGUSR1 writes every thread's stack to a file (thread_stacks.py), which
+    # the stress jobs ask for after a tier with failures.
+    thread_stacks.register()
+
     # The connection DuckDB 1.x's import opens holds a thread per core and
     # serves nothing here (2.0 opens it on first use only). Imported now, so a
     # later import opens no pool of its own.
