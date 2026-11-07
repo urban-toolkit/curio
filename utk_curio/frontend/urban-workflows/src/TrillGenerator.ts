@@ -155,7 +155,7 @@ export class TrillGenerator {
                 source: this.latestTrill,
                 target: versionId,
                 label: change
-            })
+            });
         }
 
         this.latestTrill = versionId;
@@ -223,7 +223,7 @@ export class TrillGenerator {
                 provenance_id: name,
                 packages,
             }
-        }
+        };
         if (description) {
             trill.dataflow.description = description;
         }
@@ -444,7 +444,7 @@ export class TrillGenerator {
                 }
             }
 
-            trill.dataflow.nodes.push(trill_node)
+            trill.dataflow.nodes.push(trill_node);
         }
 
         if(datasetRefs.size > 0){
@@ -455,7 +455,7 @@ export class TrillGenerator {
             let trill_edge: any = {};
 
             if(edge.type == "BIDIRECTIONAL_EDGE"){ // This is an interaction edge
-                trill_edge.type = "Interaction"
+                trill_edge.type = "Interaction";
             }
 
             trill_edge.id = edge.id;
@@ -492,7 +492,7 @@ export class TrillGenerator {
             }
         }
 
-        return trill
+        return trill;
     
     }
 

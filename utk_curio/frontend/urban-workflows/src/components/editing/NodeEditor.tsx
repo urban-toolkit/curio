@@ -166,7 +166,7 @@ function NodeEditor({
     const [markersDirty, setMarkersDirty] = useState<number>(0); // make WidgetsEditor update replacedCode
     const [replacedCode, setReplacedCode] = useState<string>(""); // python or grammar with marks resolved
     const [replacedCodeDirty, setReplacedCodeDirty] = useState<number>(0); // code has to rerun every time button is pressed (having changes or not)
-    const [fullscreen, setFullscreen] = useState<string>("");
+    const [fullscreen] = useState<string>("");
     const { dashboardOn, markDirty, markNodeStale, requestAutoRun, nodes: flowNodes, dataflowDoc } = useFlowContext();
     // A template that declares opensOnControls (Data Loading, Data Export)
     // shows only its controls on its Widgets tab, as a dashboard tile shows

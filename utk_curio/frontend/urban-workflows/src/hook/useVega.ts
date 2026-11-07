@@ -288,7 +288,6 @@ export const useVega = ({
   // count: an annotation-only chart is not an empty chart.
   const countDrawnMarks = (view: any): number | undefined => {
     let drawn = 0;
-    let sawScenegraph = false;
     const MARKROLES = new Set([
       'symbol', 'rect', 'line', 'area', 'path', 'arc', 'text', 'rule', 'shape',
       'image', 'trail',
@@ -304,11 +303,10 @@ export const useVega = ({
     };
     try {
       traverse(view.scenegraph().root);
-      sawScenegraph = true;
     } catch (_) {
       return undefined;   // could not count: no claim is made (dev/136)
     }
-    return sawScenegraph ? drawn : undefined;
+    return drawn;
   };
   const processData = async () => {
     // hot reload visualizations with new incoming data

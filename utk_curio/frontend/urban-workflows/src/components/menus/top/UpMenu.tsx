@@ -10,7 +10,6 @@ import { trillToNotebook, serializeNotebook } from "../../../NotebookConvertor";
 import styles from "./UpMenu.module.css";
 import headerStyles from "../../layout/GlobalPageHeader.module.css";
 import clsx from "clsx";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faBolt,
     faClockRotateLeft,

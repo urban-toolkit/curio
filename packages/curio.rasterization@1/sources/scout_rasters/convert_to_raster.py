@@ -16,6 +16,9 @@ layer becomes the tiles SCOUT writes. Changes from SCOUT's file:
   than ``height`` raises SCOUT's message instead of printing it.
 - SCOUT's polygons reducer is set on a Canvas subclass rather than patched
   onto datashader's own Canvas.
+- ``compute_all`` calls ``compute_tile`` without SCOUT's list of what it
+  returns, always None, and without ``dask.compute`` of that list, which
+  computed nothing.
 - The unused imports (matplotlib, cv2, pygeos, and datashader's second
   import), the ``USE_PYGEOS`` setting (it told geopandas not to use pygeos),
   and SCOUT's commented-out code (earlier versions of ``create_image`` and
@@ -146,12 +149,9 @@ def compute_all(gdf, zoom, max_height, outputfolder):
         if not os.path.exists(folder):
             os.makedirs(folder)
 
-    delayed = []
     for i in range(math.floor(bottomleft[0]),math.ceil(topright[0])):
         for j in range(math.floor(bottomleft[1]),math.ceil(topright[1])):
-            ddelayed = compute_tile(gdf, i, j, zoom, max_height, outputfolder)
-            delayed.append(ddelayed)
-    dask.compute(*delayed)
+            compute_tile(gdf, i, j, zoom, max_height, outputfolder)  # Curio: compute_all calls compute_tile without SCOUT's list of what it returns
 
 def elevation(filtered, bbox):
     proxy = pd.DataFrame({'height': 0, 'geometry': bbox}, index=[len(filtered)])

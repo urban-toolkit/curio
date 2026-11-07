@@ -425,7 +425,7 @@ def main():
     report["versions"] = {"numpy": np.__version__, "onnxruntime": onnxruntime.__version__}
 
     if args.onnx_only:
-        du = generator = None
+        du = None
     else:
         os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
         du = load_scout_module(scout)

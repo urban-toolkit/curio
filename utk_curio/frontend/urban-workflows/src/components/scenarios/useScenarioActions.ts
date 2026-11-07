@@ -16,7 +16,6 @@ import {
   nextScenarioColor,
   nextScenarioName,
   updateScenario,
-  type ScenarioEdit,
 } from "../../utils/scenarios/scenarioEdits";
 import { liveScenarios, scenarioParts } from "../../utils/scenarios/scenarioParts";
 // The context's own module, not the provider's: the provider mounts the
@@ -66,19 +65,6 @@ export function useScenarioActions() {
   const selectedIds = useCallback(
     () => reactFlow.getNodes().filter((n) => n.selected && !isDrawnHidden(n)).map((n) => n.id),
     [reactFlow],
-  );
-
-  const apply = useCallback(
-    (edit: ScenarioEdit, done?: string) => {
-      if (edit.error !== undefined) {
-        showToast(edit.error, "warning");
-        return false;
-      }
-      setScenarios(edit.scenarios);
-      if (done) showToast(done, "success");
-      return true;
-    },
-    [setScenarios, showToast],
   );
 
   /**

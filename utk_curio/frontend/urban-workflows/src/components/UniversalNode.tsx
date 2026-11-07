@@ -177,7 +177,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const sendCode = behavior.sendCodeOverride ?? nodeState.sendCode;
   const setSendCodeCallback = behavior.setSendCodeCallbackOverride ?? nodeState.setSendCodeCallback;
   const setOutputCallback = behavior.setOutputCallbackOverride ?? nodeState.setOutput;
-  const output = behavior.outputOverride ?? nodeState.output
+  const output = behavior.outputOverride ?? nodeState.output;
   const showLoading = behavior.showLoading ?? false;
   const playDisabledByTemplate = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 

@@ -51,8 +51,6 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     startUiTransition,
     onInstall,
     onUninstall,
-    onPublish,
-    onUnpublish,
     onDelete,
     onPickImport,
     handleDatasetDragStart,

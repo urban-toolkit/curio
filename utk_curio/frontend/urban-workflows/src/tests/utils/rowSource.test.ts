@@ -91,11 +91,13 @@ describe("rowSource", () => {
         const { payload, reads } = counting(DATAFRAME);
         const rows = lazyRows(payload);
 
-        rows[0];
+        const first = rows[0];
         const afterFirst = reads.length;
-        rows[0];
+        const again = rows[0];
 
         expect(reads.length).toBe(afterFirst);
+        expect(first).toEqual({ id: 1, name: "a", value: 1.5 });
+        expect(again).toBe(first);
     });
 
     it("supports what the table path does to it", () => {

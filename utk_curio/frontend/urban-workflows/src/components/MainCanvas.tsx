@@ -913,7 +913,7 @@ export function MainCanvas() {
                 <div className="spinner" />
                 <span className="sr-only">Loading…</span>
             </div>
-    }
+    };
 
     return (
         <AgentAttachmentsProvider enabled={agents.drives} installsWaitForOwner={agents.installsWaitForOwner}>

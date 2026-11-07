@@ -983,7 +983,7 @@ function scenarioParts(
   });
   const labels = scope.inputs.map((input) => input.scenario);
   if (parsed.chip === null || labels.some((label) => label == null)) {
-    return chip(null, <Line>The scenario boxes of this node's inputs are not known here.</Line>);
+    return chip(null, <Line>{"The scenario boxes of this node's inputs are not known here."}</Line>);
   }
   const fromBox = anyFromABox(labels as ScenarioLabel[]);
   const writes = <Line tone="mono">writes {resolveReferences(referenceText(inner), scope, "json").code}</Line>;
