@@ -94,6 +94,13 @@ function card(container: HTMLElement, id: string): HTMLElement {
   return container.querySelector(`[data-project-id="${id}"]`) as HTMLElement;
 }
 
+/** The badge of a card's strip (`CatalogItemStripHeader`'s slot). */
+function badgeOf(cardEl: HTMLElement): HTMLElement {
+  const slot = cardEl.querySelector(".stripBadgeSlot") as HTMLElement | null;
+  expect(slot).not.toBeNull();
+  return slot!;
+}
+
 beforeEach(() => {
   mockUser = GUEST;
   mockList.mockReset();
@@ -115,6 +122,8 @@ describe("a hosted guest's gallery", () => {
     expect(mark.getAttribute("data-curio-kept-for-visit")).toBe("true");
     expect(mark.hasAttribute("title")).toBe(false);
     expect(getAllByTooltip(mine, SIGN_IN_TO_SAVE)).toEqual([mark]);
+    // The mark is the card strip's badge, where an account's card shows its revision.
+    expect(badgeOf(mine).textContent).toBe(KEPT);
   });
 
   test("marks no example and no account's dataflow", async () => {
@@ -123,7 +132,8 @@ describe("a hosted guest's gallery", () => {
     const example = card(container, "ex1");
     expect(within(example).queryByText(KEPT)).toBeNull();
     expect(queryAllByTooltip(example, SIGN_IN_TO_SAVE)).toEqual([]);
-    expect(within(example).getByText("Rev 2")).toBeTruthy();
+    // Its strip's badge is its revision, as an account's card's is.
+    expect(badgeOf(example).textContent).toBe("Rev 2");
   });
 
   test("its drawer marks it too, and offers no Delete on either surface", async () => {
