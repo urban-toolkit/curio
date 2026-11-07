@@ -559,8 +559,11 @@ def _hosted_guests_play(user, session_token: str | None, run: NodeRun) -> _Visit
     guest's run of another account's dataflow, which keeps nothing anyway.
     The play of a hosted guest's own new dataflow, which no other guest
     opens, keeps on that dataflow and records in its journal, and joins no
-    Data Catalog either. The sign-in is the one the route was asked with,
-    never read here from a request: a run on a thread of its own has none."""
+    Data Catalog either. One that names a dataflow with no row that is not
+    the guest's own, another guest's copy or new dataflow or one a start
+    dropped, keeps and records nothing, and joins no Data Catalog. The
+    sign-in is the one the route was asked with, never read here from a
+    request: a run on a thread of its own has none."""
     if user is None or not run.dataflow_id or not run.node_id or not session_token:
         return None
     from utk_curio.common.kept_sessions import is_kept_session
@@ -578,7 +581,9 @@ def _hosted_guests_play(user, session_token: str | None, run: NodeRun) -> _Visit
         if visitor_copies.own_new(user, run.dataflow_id, sign_in=session_token) is not None:
             return _Visitor(copy=run.dataflow_id)
         project = db.session.get(Project, run.dataflow_id)
-        if project is None or project.user_id != getattr(user, "id", None):
+        if project is None:
+            return _Visitor(copy=None)
+        if project.user_id != getattr(user, "id", None):
             return None
     except Exception:  # noqa: BLE001 - a run never fails on this lookup
         return None

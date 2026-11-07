@@ -204,28 +204,75 @@ def test_shared_guest_can_save(app, db, guest_user_and_token, tmp_curio, monkeyp
     assert updated.name == "Renamed"
 
 
-def test_a_hosted_guests_save_is_refused(app, db, guest_user_and_token, tmp_curio, monkeypatch):
-    """With --deploy every visitor is the shared guest, which saves nothing:
-    not a new dataflow, and not the examples it opens as its own. The words are
-    the ones the page shows (useWorkflowOperations.ts)."""
+def test_a_hosted_guests_create_is_a_dataflow_of_its_own_and_its_saves_are_refused(
+    app, db, guest_user_and_token, tmp_curio, monkeypatch,
+):
+    """With --deploy every visitor is the shared guest. A visitor's create
+    (File > New) is a dataflow of its own, kept until the server starts
+    again: no row, not one of the account's dataflows, not found for another
+    visitor, gone when the server starts. It saves nothing else: not the
+    examples it opens as its own, not a copy of one (Save a copy, Duplicate),
+    in the words the page shows (useWorkflowOperations.ts)."""
+    import hashlib
+
     from utk_curio.backend import config
+    from utk_curio.backend.app.common.user_storage import GUEST_KEY
+    from utk_curio.backend.app.projects import visitor_copies
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.users.models import UserSession
 
     monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
-    user, _ = guest_user_and_token
+    user, token = guest_user_and_token
     user.username = services.CURIO_SHARED_GUEST_USERNAME
+    another = "another-visitor-token"
+    db.session.add(UserSession(user_id=user.id, token=another))
     db.session.commit()
     example = services.save_project(user, ProjectCreate(name="Example", spec=_make_spec()))
+    example_file = storage.project_dir(GUEST_KEY, example.id) / storage.SPEC_FILE
+    example_bytes = hashlib.sha256(example_file.read_bytes()).hexdigest()
 
     monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
-    with pytest.raises(services.ProjectError, match="^Guest users cannot save projects$") as created:
-        services.save_project(user, ProjectCreate(name="Mine", spec=_make_spec()))
+    created = services.save_project(user, ProjectCreate(name="Mine", spec=_make_spec("mine")), sign_in=token)
+
+    # A dataflow of its own, answered as a create: no row, and the account's
+    # dataflows are the example alone.
+    assert created.name == "Mine" and created.kept_for_visit is True
+    assert created.id != example.id and created.spec["dataflow"]["name"] == "Mine"
+    assert db.session.get(Project, created.id) is None
+    assert [p.id for p in Project.query.all()] == [example.id]
+    assert storage.read_spec(GUEST_KEY, created.id)["dataflow"]["name"] == "Mine"
+    assert visitor_copies.is_own_copy(token, created.id) and visitor_copies.is_new(created.id)
+    # Its visitor opens it and lists it first; another visitor finds none of it.
+    with visitor_copies.serving(token):
+        assert services.load_project(user, created.id)["spec"]["dataflow"]["name"] == "Mine"
+        assert [p.id for p in services.list_projects(user)] == [created.id, example.id]
+    with visitor_copies.serving(another):
+        with pytest.raises(NotFoundError):
+            services.load_project(user, created.id)
+        assert [p.id for p in services.list_projects(user)] == [example.id]
+
+    # The saves stay refused: File > Save of the example, Save a copy and Duplicate.
     with pytest.raises(services.ProjectError, match="^Guest users cannot save projects$") as updated:
         services.update_project(user, example.id, ProjectUpdate(name="Scribbled on"))
-    assert created.value.status == updated.value.status == 403
+    with pytest.raises(services.ProjectError, match="^Guest users cannot save projects$") as copied:
+        services.save_project(
+            user, ProjectCreate(name="A copy", spec=_make_spec(), copy_of=example.id), sign_in=token,
+        )
+    with pytest.raises(services.ProjectError, match="^Guest users cannot save projects$") as duplicated:
+        services.duplicate_project(user, example.id)
+    assert updated.value.status == copied.value.status == duplicated.value.status == 403
     assert services.may_save(user, example.id) is False
-    from utk_curio.backend.app.projects.models import Project
-
+    assert [p.id for p in Project.query.all()] == [example.id]
     assert db.session.get(Project, example.id).name == "Example"
+    assert hashlib.sha256(example_file.read_bytes()).hexdigest() == example_bytes
+
+    # The next start drops it, as it drops the guests' copies.
+    assert visitor_copies.drop_all() == 1
+    assert storage.read_spec(GUEST_KEY, created.id) is None
+    with visitor_copies.serving(token):
+        with pytest.raises(NotFoundError):
+            services.load_project(user, created.id)
+        assert [p.id for p in services.list_projects(user)] == [example.id]
     # The one write the account still makes: the cleanup a dataset's removal
     # does in the dataflows that bound it, as its dataset actions do.
     cleaned = services.update_project(user, example.id, ProjectUpdate(name="Cleaned"), cleanup=True)

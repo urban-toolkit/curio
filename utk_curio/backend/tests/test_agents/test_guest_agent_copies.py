@@ -185,3 +185,60 @@ def test_the_copies_go_when_the_server_starts(client, shared_example, monkeypatc
     assert set(_canvas_nodes(client, VISITOR_A, shared_example)) == {"n1"}
     assert _attachments(client, VISITOR_A, shared_example) == []
     assert storage.read_spec(GUEST_KEY, shared_example) is not None
+
+
+def _new_dataflow(client, token: str) -> str:
+    """The visitor signed in as *token* makes a dataflow of its own, as its
+    File > New does on its first action that needs one; its id."""
+    created = client.post("/api/projects", json={
+        "name": "Mine", "spec": {"dataflow": {"name": "Mine", "nodes": [], "edges": []}}, "outputs": [],
+    }, headers=_auth(token))
+    assert created.status_code == 201, created.get_data(as_text=True)
+    assert created.get_json()["kept_for_visit"] is True
+    return created.get_json()["id"]
+
+
+def test_a_hosted_guests_agents_work_on_its_own_new_dataflow_which_no_other_guest_finds(
+    client, shared_example, monkeypatch,
+):
+    from utk_curio.backend.app.projects import visitor_copies
+
+    mine = _new_dataflow(client, VISITOR_A)
+    att_id, node_id = _agent_adds_a_node(client, VISITOR_A, mine, monkeypatch)
+
+    # The agent's node lands in the visitor's dataflow, which opens with it.
+    assert set(_canvas_nodes(client, VISITOR_A, mine)) == {node_id}
+    assert [a["attachmentId"] for a in _attachments(client, VISITOR_A, mine)] == [att_id]
+    assert [n["id"] for n in storage.read_spec(GUEST_KEY, mine)["dataflow"]["nodes"]] == [node_id]
+    # Another visitor finds no such dataflow, on its agents' routes too.
+    for path in (f"/api/projects/{mine}", f"/api/agents/projects/{mine}/attachments",
+                 f"/api/agents/projects/{mine}"):
+        answer = client.get(path, headers=_auth(VISITOR_B))
+        assert answer.status_code == 404, (path, answer.get_data(as_text=True))
+    for path, payload in ((f"/api/agents/projects/{mine}/install", {"coord": COORD}),
+                          (f"/api/agents/projects/{mine}/attachments/{att_id}/run", {"message": "mine now"})):
+        answer = client.post(path, json=payload, headers=_auth(VISITOR_B))
+        assert answer.status_code == 404, (path, answer.get_data(as_text=True))
+    # B made no copy of it: another visitor's dataflow is never copied.
+    assert not storage.project_dir(GUEST_KEY, visitor_copies.copy_id(VISITOR_B, mine)).exists()
+    assert set(_canvas_nodes(client, VISITOR_B, shared_example)) == {"n1"}
+
+    # The next start drops it, its agents' work with it.
+    assert visitor_copies.drop_all() == 1
+    assert client.get(f"/api/agents/projects/{mine}/attachments", headers=_auth(VISITOR_A)).status_code == 404
+    assert storage.read_spec(GUEST_KEY, mine) is None
+
+
+def test_a_hosted_guests_new_dataflow_starts_with_the_accounts_agents(client, shared_example, monkeypatch):
+    """A new dataflow starts with the agents of the account that makes it,
+    in its lockfile from its create, a hosted guest's as an account's."""
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+    imported = client.post("/api/agents/imports", json={"coord": COORD}, headers=_auth(VISITOR_A))
+    assert imported.status_code in (200, 201), imported.get_data(as_text=True)
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+
+    mine = _new_dataflow(client, VISITOR_A)
+
+    opened = client.get(f"/api/projects/{mine}", headers=_auth(VISITOR_A)).get_json()
+    assert COORD in opened["spec"]["dataflow"].get("agents", []), opened["spec"]["dataflow"]
+    assert COORD in storage.read_spec(GUEST_KEY, mine)["dataflow"].get("agents", [])
