@@ -14,7 +14,6 @@
 import { useCallback } from "react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useToastContext } from "../../providers/ToastProvider";
-import { hostedGuestSignInNote, useHostedGuest } from "../apiSettings/useHostedGuest";
 import {
   IMPORTABLE_DATASET_EXTENSIONS,
   createDatasetDragPayload,
@@ -50,7 +49,6 @@ export function notImportableMessage(name: string): string {
  * toast saying why, when it cannot. */
 export function useDataFileImport(): (files: readonly File[]) => Promise<DatasetDragPayload | null> {
   const { ensureProjectId, setDataflowDatasets } = useFlowContext();
-  const hostedGuest = useHostedGuest();
   const { showToast } = useToastContext();
   // On the owner's dataflow, an invited editor's tab asks her instead.
   const askTheOwner = useAskTheOwner();
@@ -66,14 +64,12 @@ export function useDataFileImport(): (files: readonly File[]) => Promise<Dataset
         showToast(notImportableMessage(file.name), "error");
         return null;
       }
-      // The dataflow it goes into, saved first if it never was. A hosted guest
-      // cannot save one, so it is told to sign in, as Add to project tells it.
-      // An editor's tab saves none: his file goes into his own Data Catalog.
+      // The dataflow it goes into, made first if it never was saved: an
+      // account's, and a hosted guest's own, kept until the server starts
+      // again. An editor's tab saves none: his file goes into his own Data
+      // Catalog.
       const dataflowId = askTheOwner ? null : await ensureProjectId();
-      if (!dataflowId && !askTheOwner) {
-        if (hostedGuest) showToast(hostedGuestSignInNote("add datasets"), "warning");
-        return null;
-      }
+      if (!dataflowId && !askTheOwner) return null;
       showToast(`Importing ${file.name} into ${askTheOwner ? "your" : "the"} Data Catalog...`, "info");
       try {
         const imported = await datasetCatalogApi.importDataset(file, dataflowId ? { dataflowId } : {});
@@ -93,6 +89,6 @@ export function useDataFileImport(): (files: readonly File[]) => Promise<Dataset
         return null;
       }
     },
-    [ensureProjectId, setDataflowDatasets, hostedGuest, showToast, askTheOwner],
+    [ensureProjectId, setDataflowDatasets, showToast, askTheOwner],
   );
 }
