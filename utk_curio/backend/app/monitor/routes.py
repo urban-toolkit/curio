@@ -1,14 +1,14 @@
 """The monitor routes.
 
-All five are public and unauthenticated, like ``/version`` and
-``/api/config/public``, and all five exist on every instance. There is no
+All six are public and unauthenticated, like ``/version`` and
+``/api/config/public``, and all six exist on every instance. There is no
 deploy gate: a laptop benefits from the error log as much as a server does, and
 a page that only appears in one posture is a page nobody remembers exists.
 
 Read ``errors.py``'s module docstring before changing what the errors route
-returns. It is deliberately exempt from the anonymity rule the other three GETs
+returns. It is deliberately exempt from the anonymity rule the other four GETs
 are tested against. The LLM route's model names are the one free text those
-three carry (``llm_tokens.py``).
+four carry (``llm_tokens.py``).
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import time
 from flask import Blueprint, jsonify, request
 
 from utk_curio.backend.app.common.address_limiter import AddressLimiter
-from utk_curio.backend.app.monitor import counters, errors, hardware, llm_tokens, stats, storage
+from utk_curio.backend.app.monitor import counters, errors, hardware, llm_tokens, open_files, stats, storage
 
 monitor_bp = Blueprint("monitor", __name__, url_prefix="/api/monitor")
 
@@ -192,6 +192,14 @@ def monitor_llm_route():
     """Each model's LLM tokens per hour and in total, since the backend
     started. Aggregates, naming models (``llm_tokens.py``)."""
     return jsonify(llm_tokens.snapshot())
+
+
+@monitor_bp.route("/open-files", methods=["GET"])
+def monitor_open_files_route():
+    """The backend's and the sandbox's open files and limits, sampled every
+    hour since the backend started. Timestamps and numbers only
+    (``open_files.py``)."""
+    return jsonify(open_files.snapshot())
 
 
 @monitor_bp.route("/errors", methods=["GET"])
