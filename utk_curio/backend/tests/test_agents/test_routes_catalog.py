@@ -21,8 +21,21 @@ from utk_curio.backend.tests._support.agent_routes import (
 )
 
 
+def _default_coords() -> list[str]:
+    """The catalog cards Curio ships, which every account has by default."""
+    return sorted(m.dir_name for m in builtin.list_builtin_manifests() if m.catalog.listed)
+
+
 class TestMyImports:
-    def test_empty(self, client, user_and_token, tmp_curio):
+    def test_a_new_account_holds_the_default_agents(self, client, new_account_and_token, tmp_curio):
+        _, token = new_account_and_token
+        resp = client.get("/api/agents/imports", headers=_auth(token))
+        assert resp.status_code == 200
+        listed = [a["dirName"] for a in resp.get_json()["agents"]]
+        assert listed == _default_coords()
+        assert not [coord for coord in listed if builtin.is_internal(coord)]
+
+    def test_empty_once_the_account_removed_them(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
         resp = client.get("/api/agents/imports", headers=_auth(token))
         assert resp.status_code == 200
@@ -51,13 +64,16 @@ class TestMyImports:
         r = client.post("/api/agents/imports", json={}, headers=_auth(token))
         assert r.status_code == 400
 
-    def test_remove_import(self, client, user_and_token, tmp_curio):
-        user, token = user_and_token
+    def test_remove_import(self, client, new_account_and_token, tmp_curio):
+        user, token = new_account_and_token
         coord = _write_def(user)
         client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
+        listed = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
+        assert [a["dirName"] for a in listed] == sorted([*_default_coords(), coord])
         r = client.delete(f"/api/agents/imports/{coord}", headers=_auth(token))
         assert r.status_code == 200
-        assert client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"] == []
+        listed = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
+        assert [a["dirName"] for a in listed] == _default_coords()
 
     def test_requires_auth(self, client, tmp_curio):
         assert client.get("/api/agents/imports").status_code in (401, 403)
@@ -405,6 +421,37 @@ class TestMyImportsInstalledState:
         cards = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
         card = next(c for c in cards if c["dirName"] == self.COORD)
         assert card["installedInProject"] is False  # no project context given
+
+
+class TestRequiredAgentsOfADataflowNotSaved:
+    """A dataflow not saved yet has no lockfile. The agents it is made with are
+    the account's imports, which its drawer and palette list, so a card's
+    required agent is there when the account holds it, and only then."""
+
+    BUILDER = "agent.curio.dataflow-builder@1"
+    REMOVED = "agent.curio.node-builder@1"
+
+    def _required(self, client, token, path: str) -> dict:
+        cards = client.get(path, headers=_auth(token)).get_json()["agents"]
+        card = next(c for c in cards if c["dirName"] == self.BUILDER)
+        return {row["coord"]: row["installedInProject"] for row in card["requiresAgents"]}
+
+    def test_a_required_agent_the_account_holds_is_there(self, client, new_account_and_token, tmp_curio):
+        _, token = new_account_and_token
+        for path in ("/api/agents/imports", "/api/agents/catalog"):
+            required = self._required(client, token, path)
+            assert required, path
+            assert all(required.values()), (path, required)
+
+    def test_a_required_agent_the_account_removed_is_missing(self, client, new_account_and_token, tmp_curio):
+        _, token = new_account_and_token
+        client.get("/api/agents/imports", headers=_auth(token))
+        removed = client.delete(f"/api/agents/imports/{self.REMOVED}", headers=_auth(token))
+        assert removed.status_code == 200, removed.get_data(as_text=True)
+        for path in ("/api/agents/imports", "/api/agents/catalog"):
+            required = self._required(client, token, path)
+            assert required[self.REMOVED] is False, (path, required)
+            assert all(there for coord, there in required.items() if coord != self.REMOVED), (path, required)
 
 
 class TestProviderModels:

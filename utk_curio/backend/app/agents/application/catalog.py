@@ -224,6 +224,14 @@ def _requires_agents_rows(user_key: str, m: AgentManifest, installed: set[str]) 
     return rows
 
 
+def _required_present(project_id: str | None, installed: set[str], imported: set[str]) -> set[str]:
+    """The agents a card's required agents are looked for in: the dataflow's
+    lockfile, or, for a dataflow not saved yet, the account's imports, which
+    its first save puts in it (``lifecycle.seed_spec_with_imported_agents``)
+    and which its drawer and palette list."""
+    return installed if project_id else imported
+
+
 def _resolve_definition(user_key: str, coord: str) -> AgentManifest | None:
     """Resolve a coordinate's canonical metadata.
 
@@ -393,6 +401,7 @@ def list_global_catalog(user_key: str, project_id: str | None = None, *,
         spec = projects_storage.read_spec(spec_key or user_key, project_id)
         if spec is not None:
             installed = set(project_agents.project_agents(spec))
+    present = _required_present(project_id, installed, imported)
     # Global Catalog = shipped cards ∪ published definitions (published wins on dupes).
     by_dir: dict[str, tuple[AgentManifest, bool]] = {}
     for m in builtin.list_builtin_manifests():
@@ -407,7 +416,7 @@ def list_global_catalog(user_key: str, project_id: str | None = None, *,
             imported=dir_name in imported,
             installed_in_project=dir_name in installed,
             published=published,
-            requires_agents=_requires_agents_rows(user_key, m, installed),
+            requires_agents=_requires_agents_rows(user_key, m, present),
         )
         for dir_name, (m, published) in sorted(by_dir.items())
     ]
@@ -428,6 +437,7 @@ def list_my_imports(user_key: str, project_id: str | None = None, *,
         spec = projects_storage.read_spec(spec_key or user_key, project_id)
         if spec is not None:
             installed = set(project_agents.project_agents(spec))
+    present = _required_present(project_id, installed, imported)
     out: list[dict] = []
     for coord in sorted(imported):
         m = None if builtin.is_internal(coord) else _resolve_definition(user_key, coord)
@@ -443,7 +453,7 @@ def list_my_imports(user_key: str, project_id: str | None = None, *,
                 installed_in_project=coord in installed,
                 published=publications.is_published(coord),
                 publishable=(m.provenance.trust == "imported"),
-                requires_agents=_requires_agents_rows(user_key, m, installed),
+                requires_agents=_requires_agents_rows(user_key, m, present),
             )
         )
     return out

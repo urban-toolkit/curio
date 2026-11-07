@@ -24,6 +24,9 @@ import threading
 _lock = threading.Lock()
 _process = None
 _socket_path = None
+# ensure_running's arguments for the zygote it last started, so
+# restart_if_exited starts the next one the same way.
+_started_with = None
 
 # The zygote imports geopandas/pandas/shapely/duckdb before it can serve, which
 # is the cost being amortised. Generous, because a cold import on a loaded
@@ -190,7 +193,7 @@ def ensure_running(config, *, exec_user=None, require_seccomp=True):
     means only the first caller spawns, and a process that has since died is
     replaced rather than reused.
     """
-    global _process, _socket_path
+    global _process, _socket_path, _started_with
 
     with _lock:
         if _process is not None and _process.poll() is None:
@@ -235,7 +238,27 @@ def ensure_running(config, *, exec_user=None, require_seccomp=True):
 
         _process = process
         _socket_path = socket_path
+        _started_with = (config, exec_user, require_seccomp)
         return socket_path
+
+
+def restart_if_exited():
+    """Start the zygote again, as it was last started, if it has exited.
+
+    The sandbox starts it on its first isolated run and keeps that run's
+    runner, so without this a zygote that died stayed dead. Does nothing
+    while it runs, before its first start and after :func:`shutdown`. Raises
+    :class:`ZygoteStartupError` when the new one does not start.
+    """
+    with _lock:
+        # Under the lock, so two runs never ask at once: ``Popen.poll``
+        # answers None while another thread is inside it, as if still alive.
+        if _process is None or _started_with is None or _process.poll() is None:
+            return
+        config, exec_user, require_seccomp = _started_with
+    # It takes the lock and asks again, so the runs that found the zygote
+    # gone together start one zygote between them.
+    ensure_running(config, exec_user=exec_user, require_seccomp=require_seccomp)
 
 
 def _wait_for_ready(process, socket_path):

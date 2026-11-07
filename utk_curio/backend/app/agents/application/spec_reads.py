@@ -164,11 +164,13 @@ def _node_attachment_declaring(
 def _installed_coord_declaring(
     spec: dict | None, capability: str, *, user_key: str | None = None
 ) -> str | None:
-    """The first coord of the project's lockfile, in sorted order, whose agent
-    declares *capability*, or None."""
+    """The first coord of the project's lockfile whose agent declares
+    *capability*, in the order agents answer for a job
+    (``builtin.answering_order``: the account's own before Curio's), or
+    None."""
     return next(
         (
-            coord for coord in sorted(agents_project_agents.project_agents(spec))
+            coord for coord in builtin.answering_order(agents_project_agents.project_agents(spec))
             if _declares(user_key, coord, capability)
         ),
         None,
