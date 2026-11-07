@@ -350,10 +350,12 @@ class TestDerivedFiles:
         body = _a_video(row["path"])
         whole = media(client, auth, dataset["id"], row["file_id"], "original")
         assert whole.status_code == 200, whole.get_data(as_text=True)[:300]
-        assert (whole.mimetype, whole.headers["Accept-Ranges"]) == ("video/mp4", "bytes") and whole.data == body
+        assert whole.mimetype == "video/mp4" and whole.data == body
         part = media(client, auth, dataset["id"], row["file_id"], "original", Range="bytes=0-99")
         assert part.status_code == 206 and part.data == body[:100]
-        assert part.headers["Content-Range"] == f"bytes 0-99/{len(body)}"
+        assert (part.headers.get("Accept-Ranges"), part.headers.get("Content-Range")) == (
+            "bytes", f"bytes 0-99/{len(body)}"
+        )
         poster = media(client, auth, dataset["id"], row["file_id"], "poster")
         for picture in (client.get(row["thumbnail"], headers=auth), poster):
             assert picture.status_code == 200 and picture.mimetype == "image/jpeg", picture.get_data()[:300]
