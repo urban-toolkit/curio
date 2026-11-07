@@ -1621,6 +1621,78 @@ def test_a_run_after_the_zygote_died_starts_it_again(isolated, monkeypatch):
     assert lifecycle.is_running() and lifecycle._process is not dead
 
 
+def test_the_callers_of_a_dead_zygote_read_end_of_file_while_its_child_runs(isolated):
+    """A child kept the zygote's end of the connections it was forked with:
+    its own caller's, and that of any caller accepted and not read yet.
+
+    Node code could write to those callers, and once the zygote died they
+    read nothing until the child ended: a run in flight waited out its whole
+    deadline instead of failing at once. The child closes them as it starts,
+    so both read end-of-file the moment the zygote is gone, while the child
+    still sleeps.
+    """
+    import json
+    import signal
+    import socket
+
+    from utk_curio.sandbox.isolation import lifecycle, protocol, supervisor
+    from utk_curio.sandbox.util.parsers import _shared_data_dir
+
+    # Accepted before the child is forked (the zygote accepts in order), and
+    # never asks for anything.
+    waiting = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    waiting.connect(isolated.socket_path)
+    caller = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    caller.connect(isolated.socket_path)
+    request = protocol.build_exec_request(
+        code="    import time\n    time.sleep(120)\n    return 1\n",
+        node_type="curio.builtin/python-computation",
+        data_type="",
+        scratch_dir=supervisor.make_scratch_dir(
+            str(_shared_data_dir()), exec_uid=isolated.exec_uid
+        ),
+        input_spec=dict(protocol.INPUT_NONE),
+        limits=isolated.limits,
+        wall_timeout=120,
+    )
+    caller.sendall(protocol.encode_request(request) + b"\n")
+    caller.settimeout(30)
+    answer = b""
+    while not answer.endswith(b"\n"):
+        chunk = caller.recv(64)
+        assert chunk, f"the zygote closed the connection before the pid: {answer!r}"
+        answer += chunk
+    pid = json.loads(answer)["pid"]
+    try:
+        lifecycle._process.kill()
+        lifecycle._process.wait(timeout=10)
+
+        held = []
+        for whose, connection in (("its own caller's", caller),
+                                  ("a caller's it was not forked for", waiting)):
+            connection.settimeout(5)
+            try:
+                ended = connection.recv(1) == b""
+            except ConnectionResetError:
+                ended = True
+            except socket.timeout:
+                ended = False
+            if not ended:
+                held.append(whose)
+        assert not held, (
+            f"the zygote is dead and its child {pid} still holds the zygote's "
+            f"end of {' and '.join(held)} connection"
+        )
+    finally:
+        for killer in (os.killpg, os.kill):
+            try:
+                killer(pid, signal.SIGKILL)
+            except OSError:
+                pass
+        waiting.close()
+        caller.close()
+
+
 def test_concurrent_executions_do_not_collide(isolated):
     """Parallelism was an explicit design choice; artifacts must stay distinct."""
     from concurrent.futures import ThreadPoolExecutor
