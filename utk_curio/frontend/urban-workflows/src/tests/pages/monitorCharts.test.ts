@@ -1,8 +1,9 @@
 /**
  * The monitor's lines over time (pages/monitor/MonitorCharts.tsx,
  * `linesOverTimeSpec`): time on x, a value on y, a line per value of a series
- * field, and its two options, a log y axis and series drawn dashed, as a limit
- * is. Its tooltip is the Curio one (tooltip/vegaTooltip.test.tsx).
+ * field, and its options: a log y axis, series drawn dashed, as a limit is,
+ * and a dot on each point. Its tooltip is the Curio one
+ * (tooltip/vegaTooltip.test.tsx).
  */
 jest.mock("vega", () => ({}), { virtual: true });
 jest.mock("vega-lite", () => ({}), { virtual: true });
@@ -44,6 +45,13 @@ test("a log y axis, and the series it names drawn dashed", () => {
     field: "server",
     legend: null,
     scale: { domain: ["backend", "limit"], range: [[1, 0], [6, 4]] },
+  });
+});
+
+test("a dot on each point when asked, so a line of one point shows", () => {
+  const spec: any = linesOverTimeSpec({ ...BASE, points: true });
+  expect(spec.mark).toEqual({
+    type: "line", strokeWidth: 2, strokeCap: "round", strokeJoin: "round", point: { filled: true, size: 64 },
   });
 });
 

@@ -9,12 +9,14 @@ import {
   formatCount,
   formatDuration,
   formatExactCount,
+  formatOpenFiles,
   toJson,
   toMarkdown,
 } from "../../utils/diagnosticsBundle";
 import type {
   MonitorErrorsPayload,
   MonitorLlmPayload,
+  MonitorOpenFilesPayload,
   MonitorPayload,
   MonitorStoragePayload,
 } from "../../api/monitorApi";
@@ -187,6 +189,21 @@ function llm(): MonitorLlmPayload {
   };
 }
 
+function openFiles(): MonitorOpenFilesPayload {
+  return {
+    computedAt: "2026-09-22T14:03:11Z",
+    startedAt: "2026-09-22T12:03:00Z",
+    maxDays: 90,
+    intervalSeconds: 3600,
+    warnAbovePercent: 80,
+    clearBelowPercent: 70,
+    samples: [
+      { at: "2026-09-22T12:03:05Z", backend: { open: 212, limit: 65536 }, sandbox: { open: 96, limit: 65536 } },
+      { at: "2026-09-22T13:03:05Z", backend: { open: 230, limit: 65536 }, sandbox: null },
+    ],
+  };
+}
+
 describe("formatCount and formatExactCount", () => {
   test.each([
     [950, "950", "950"],
@@ -304,6 +321,32 @@ describe("toMarkdown", () => {
     expect(toMarkdown(bundle)).not.toContain("LLM tokens");
     expect(toMarkdown({ ...bundle, llm: null })).not.toContain("LLM tokens");
   });
+
+  test("gives both servers' open files and limits from the last sample", () => {
+    const md = toMarkdown({ ...bundle, openFiles: openFiles() });
+    expect(md).toContain("### Open files");
+    expect(md).toContain(
+      "- backend 230 of 65,536 · sandbox not answering, sampled 2026-09-22T13:03:05Z"
+    );
+    expect(md.indexOf("### Open files")).toBeLessThan(md.indexOf("### Recent errors"));
+  });
+
+  test("leaves the open files out before the first sample, and with no payload", () => {
+    expect(toMarkdown({ ...bundle, openFiles: { ...openFiles(), samples: [] } })).not.toContain("Open files");
+    expect(toMarkdown({ ...bundle, openFiles: null })).not.toContain("Open files");
+    expect(toMarkdown(bundle)).not.toContain("Open files");
+  });
+});
+
+describe("formatOpenFiles", () => {
+  test.each([
+    [{ open: 212, limit: 65536 }, "backend 212 of 65,536"],
+    [{ open: 212, limit: null }, "backend 212"],
+    [{ open: null, limit: 1024 }, "backend not counted"],
+    [null, "backend not answering"],
+  ])("writes %j", (counts, text) => {
+    expect(formatOpenFiles("backend", counts)).toBe(text);
+  });
 });
 
 describe("toJson", () => {
@@ -321,6 +364,12 @@ describe("toJson", () => {
     const parsed = JSON.parse(toJson({ monitor: null, storage: null, errors: null, llm: llm() }));
     expect(parsed.llm.models.map((entry: { model: string }) => entry.model)).toEqual(["gemma4", "gpt`5"]);
     expect(JSON.parse(toJson({ monitor: null, storage: null, errors: null })).llm).toBeNull();
+  });
+
+  test("keeps every open-files sample, and says null without them", () => {
+    const parsed = JSON.parse(toJson({ monitor: null, storage: null, errors: null, openFiles: openFiles() }));
+    expect(parsed.openFiles.samples).toEqual(openFiles().samples);
+    expect(JSON.parse(toJson({ monitor: null, storage: null, errors: null })).openFiles).toBeNull();
   });
 
   test("the JSON bundle is NOT capped the way the markdown is", () => {
