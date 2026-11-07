@@ -14,7 +14,8 @@ not here. Two reasons:
 
 - ``proc.kill()`` on the child alone is not enough. Node code can spawn
   processes and those outlive it, so the child calls ``setsid`` and the whole
-  process group is killed.
+  process group is killed. The seccomp filter, where it is installed, keeps
+  every process node code starts in that group.
 - The killer has to be the child's parent. While the zygote holds an unreaped
   child, that pid cannot be recycled, so the signal is guaranteed to reach the
   intended process. This module used to ``killpg`` a pid it did not own, which
