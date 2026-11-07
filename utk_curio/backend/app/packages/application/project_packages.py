@@ -8,7 +8,7 @@ every caller, and import order between siblings cannot matter.
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Callable, Iterable
 
 from utk_curio.backend.app.collaboration import dataflow_docs, owner_uses
 from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
@@ -138,7 +138,7 @@ def _add_to_lockfile(user_key: str, project_id: str, added: set[str]) -> tuple[s
 
 
 def install_to_project(
-    user_key: str, project_id: str, dir_name: str,
+    user_key: str, project_id: str, dir_name: str, *, lands_on: Callable[[str], str] | None = None,
 ) -> dict:
     """Add *dir_name* to *project_id*'s lockfile; install to user store if missing.
 
@@ -146,6 +146,11 @@ def install_to_project(
     installed with it and go in the lockfile beside it: the dataflow then uses
     each (``prune.packages_in_use``), and a node of the package finds their
     modules at the major the lockfile names (``python_modules``).
+
+    *lands_on*, given *project_id*, names the dataflow whose lockfile the add
+    writes, asked once the store holds the package: a hosted guest's own copy
+    of the dataflow, made then (``routes/common.project_write``), so an
+    install the store refuses makes no copy.
 
     Returns ``{"packages": [...], "addedToUserStore": bool, "importErrors":
     {lib: reason}}``, plus ``restartRecommended`` when pip actually changed a
@@ -168,7 +173,8 @@ def install_to_project(
     # "nothing is broken" is a different statement from "nobody looked".
     extra["importErrors"] = outcome.import_errors
 
-    current, _wrote = _add_to_lockfile(user_key, project_id, {dir_name, *outcome.packages})
+    target = lands_on(project_id) if lands_on is not None else project_id
+    current, _wrote = _add_to_lockfile(user_key, target, {dir_name, *outcome.packages})
     return {
         "packages": sorted(current),
         "addedToUserStore": outcome.copied,
@@ -223,9 +229,16 @@ def remove_unused_package(user_key: str, dir_name: str) -> None:
 
 
 def uninstall_from_project(
-    user_key: str, project_id: str, dir_name: str,
+    user_key: str, project_id: str, dir_name: str, *,
+    lands_on: Callable[[str], str] | None = None, prunes: bool = True,
 ) -> dict:
     """Drop *dir_name* from *project_id*'s lockfile and run the prune sweep.
+
+    *lands_on*, given *project_id*, names the dataflow whose lockfile the
+    removal writes, asked once the removal is allowed and changes the
+    lockfile, as :func:`install_to_project` asks it. Without *prunes* the
+    store and its defaults stay as they are: a hosted guest's store is every
+    guest's (``routes/common.prunes_the_store``).
 
     Returns ``{"packages": [...], "pruned": [...], "removedFromDefaults": [...]}``.
     """
@@ -256,8 +269,10 @@ def uninstall_from_project(
     current = get_project_lockfile(user_key, project_id)
     if dir_name in current:
         current.discard(dir_name)
-        _write_lockfile(user_key, project_id, current)
+        _write_lockfile(user_key, lands_on(project_id) if lands_on is not None else project_id, current)
 
+    if not prunes:
+        return {"packages": sorted(current), "pruned": [], "removedFromDefaults": []}
     prune = packages_prune.prune_unreferenced_packages(user_key, {dir_name})
     return {
         "packages": sorted(current),

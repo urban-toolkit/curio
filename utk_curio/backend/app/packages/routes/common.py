@@ -114,15 +114,32 @@ def project_read(project_id: str) -> str:
     return visitor_copies.for_request(g.user, project_id, make=False)
 
 
-def refuse_a_hosted_guests_change() -> None:
-    """Refuse a hosted guest's change to a dataflow's packages: the dataflows
-    its account owns are the examples every guest opens, as its Node Catalog
-    says before it sends one."""
-    from utk_curio.backend.app.users.capabilities import catalog_entry_refusal
+#: Why a hosted guest's change to a dataflow's packages changes nothing.
+COPY_NOT_MADE = "Your own copy of this dataflow could not be made, so its packages are as they were."
 
-    refusal = catalog_entry_refusal(g.user, "change a dataflow's packages")
-    if refusal:
-        raise PackageServiceError(refusal, 403)
+
+def project_write(project_id: str) -> str:
+    """The dataflow a change to *project_id*'s lockfile writes: itself, or a
+    hosted guest's own copy of it, made now when it has none
+    (``projects/visitor_copies.py``). A hosted guest never writes a dataflow
+    its account owns, which every guest opens: when its copy cannot be made,
+    the change is refused."""
+    from utk_curio.backend.app.projects import visitor_copies
+
+    own = visitor_copies.for_request(g.user, project_id, make=True)
+    if visitor_copies.copies_for(g.user) and not visitor_copies.is_copy(own):
+        raise PackageServiceError(COPY_NOT_MADE, 409)
+    return own
+
+
+def prunes_the_store() -> bool:
+    """Whether a package's removal from a dataflow may prune the caller's
+    store and its defaults: only for a caller who may install into it
+    (``capabilities.package_install_refusal``). A hosted guest's store is
+    every guest's, so its removals leave the store as it is."""
+    from utk_curio.backend.app.users.capabilities import package_install_refusal
+
+    return package_install_refusal(g.user) is None
 
 
 def catalog_publish_disabled():

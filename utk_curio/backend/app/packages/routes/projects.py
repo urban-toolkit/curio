@@ -17,7 +17,8 @@ from utk_curio.backend.app.packages.routes.common import (
     opened_dataflow_packages,
     packages_bp,
     project_read,
-    refuse_a_hosted_guests_change,
+    project_write,
+    prunes_the_store,
     require_project,
     user_key,
 )
@@ -56,11 +57,14 @@ def get_project_packages(project_id: str):
 def install_to_project_route(project_id: str):
     """Install a catalog package into one project's lockfile. The payload carries
     ``importErrors``: the install itself answers whether the libraries work.
-    A hosted guest is refused: its account's dataflows are every guest's."""
+    A hosted guest's add lands on its own copy of the dataflow
+    (``project_write``); one of a package its store lacks is refused, as every
+    install of a hosted guest into the store is."""
     dir_name = requests.dir_name(request.get_json(silent=True) or {})
     require_project(project_id)
-    refuse_a_hosted_guests_change()
-    return jsonify(packages_project_packages.install_to_project(user_key(), project_id, dir_name)), 201
+    return jsonify(packages_project_packages.install_to_project(
+        user_key(), project_id, dir_name, lands_on=project_write,
+    )), 201
 
 
 @packages_bp.route("/projects/<project_id>/<dir_name>", methods=["DELETE"])
@@ -68,7 +72,10 @@ def install_to_project_route(project_id: str):
 @_map_package_errors
 def uninstall_from_project_route(project_id: str, dir_name: str):
     """Drop a package from one project's lockfile; auto-prune the user store.
-    A hosted guest is refused, as its install is."""
+    A hosted guest's removal reads its own copy of the dataflow once it has
+    one, lands on that copy (``project_write``), and prunes nothing from the
+    store every guest reads (``prunes_the_store``)."""
     require_project(project_id)
-    refuse_a_hosted_guests_change()
-    return jsonify(packages_project_packages.uninstall_from_project(user_key(), project_id, dir_name)), 200
+    return jsonify(packages_project_packages.uninstall_from_project(
+        user_key(), project_read(project_id), dir_name, lands_on=project_write, prunes=prunes_the_store(),
+    )), 200
