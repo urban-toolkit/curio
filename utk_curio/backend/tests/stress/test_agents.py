@@ -22,8 +22,8 @@ so a checkout without them fails test by test.
 import json
 import threading
 import unittest
+import unittest.mock as mock
 from types import SimpleNamespace
-from unittest import mock
 
 _NODE = "5b1d1e8a-2f4a-4c55-9d0e-1a2b3c4d5e6f"
 
@@ -464,15 +464,13 @@ class AnAgentsLockTest(unittest.TestCase):
 
     def test_an_agents_lock_held_at_the_end_is_said_in_words(self):
         """The server's lock and a tab's, as step 2's end check reads them."""
-        from unittest import mock as mocking
-
         from utk_curio.backend.tests.stress import sockets
         from utk_curio.backend.tests.stress.sockets import Room, _locks_at_the_end
 
         tab, _ = _tab("a", answers=[{"ok": True, "snapshot": {"locks": {_NODE: _AGENTS_LOCK}}}])
         tab.room_event("node_locked", {"nodeId": _NODE, "lock": _AGENTS_LOCK})
         member = _Member("a")
-        with mocking.patch.object(sockets, "SETTLE_TIMEOUT_S", 0.01):
+        with mock.patch.object(sockets, "SETTLE_TIMEOUT_S",0.01):
             _locks_at_the_end(member, Room(0, ["a"], shared=True), tab)
         errors = [error for _label, kind, error in member.failures() if kind == "locked"]
         self.assertEqual(len(errors), 2, member.failures())
@@ -611,8 +609,6 @@ class TheRoomsAgentsTest(unittest.TestCase):
         """The server's room, read once for the room by its first tab there,
         and each tab's own view; a write a tab lacks is said once, however
         often it is looked for."""
-        from unittest import mock as mocking
-
         from utk_curio.backend.tests.stress import sockets
         from utk_curio.backend.tests.stress.agents import MemberTurn
 
@@ -629,7 +625,7 @@ class TheRoomsAgentsTest(unittest.TestCase):
         _server_writes(holding, server, _NODE, "# u0\nreturn input_0")
         holding.room_event("agent_turn", {**_envelope(9, "done"), "askId": turn.ask_id})
         lacking.room_event("agent_joined", {"participant_id": "agent-9", "name": "Node Builder", "agent": {}})
-        with mocking.patch.object(sockets, "SETTLE_TIMEOUT_S", 0.05):
+        with mock.patch.object(sockets, "SETTLE_TIMEOUT_S",0.05):
             self._at_the_end(room, members, [holding, lacking])
             room.agents._writes_in_tab(members[1], lacking)
         self.assertEqual(len(holding.link.calls) + len(lacking.link.calls), 1,
@@ -647,8 +643,6 @@ class TheRoomsAgentsTest(unittest.TestCase):
         self.assertEqual((outcome["unsynced"], outcome["tabs_showing_agents"], outcome["diverged"]), (2, 1, True))
 
     def test_a_room_whose_agents_did_their_work_is_no_failure_and_its_outcome_counts_its_turns(self):
-        from unittest import mock as mocking
-
         from utk_curio.backend.tests.stress import sockets
         from utk_curio.backend.tests.stress.agents import MemberTurn, changed_meanwhile
 
@@ -670,7 +664,7 @@ class TheRoomsAgentsTest(unittest.TestCase):
                 tab.room_event("agent_turn", {**_envelope(9, "done"), "askId": turn.ask_id})
             tabs.append(tab)
         members = [_Member("u0", _NODE), _Member("u1", "loader")]
-        with mocking.patch.object(sockets, "SETTLE_TIMEOUT_S", 0.05):
+        with mock.patch.object(sockets, "SETTLE_TIMEOUT_S",0.05):
             self._at_the_end(room, members, tabs)
         self.assertEqual([member.failures() for member in members], [[], []])
         outcome = room.agents.outcome([tab.summary() for tab in tabs])
