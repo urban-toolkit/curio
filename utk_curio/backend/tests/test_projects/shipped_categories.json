@@ -206,24 +206,18 @@
   },
   "21-storage-photos-and-videos": {
     "tags": [
-      "Vega-Lite",
-      "GeoPandas",
-      "Pandas"
+      "Vega-Lite"
     ],
     "data_type": [
-      "Tables",
-      "Geometries",
       "Imagery",
       "Video"
     ]
   },
   "22-storage-audio-recordings": {
     "tags": [
-      "Vega-Lite",
-      "Pandas"
+      "Vega-Lite"
     ],
     "data_type": [
-      "Tables",
       "Audio"
     ]
   },
