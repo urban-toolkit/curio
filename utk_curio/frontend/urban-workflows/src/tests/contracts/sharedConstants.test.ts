@@ -34,6 +34,7 @@ const FILES = [
   "visDefaults",
   "nodeSettings",
   "dashboardRuns",
+  "catalogCode",
 ];
 
 /** A shared file, read when a test runs, so a checkout without it fails each test on its own. */
@@ -176,6 +177,31 @@ describe("the tools whose work lands as the agent's change", () => {
     for (const tool of [...shared("agentInstalls").tools, "project.install"]) {
       expect(landsAsAChange(tool)).toBe(false);
     }
+  });
+});
+
+describe("how node code names a catalog's item", () => {
+  test("the id and each format's loader line are the file's", () => {
+    // Read here, so a checkout without the file or the modules fails this test alone.
+    const { SAFE_MODEL_ID_RE, modelIdsInCode } = require("../../services/packages/modelCode");
+    const { datasetIdsInCode, getDatasetLoaderSnippet } = require("../../services/datasetCatalog/datasetLoaderSnippets");
+    const { DATASET_ID_PATTERN } = require("../../utils/widgets/widgetModel");
+    const { itemId, loadedVariables, keptInCode, loaderOptions } = shared("catalogCode");
+    expect(SAFE_MODEL_ID_RE.source).toBe(`^${itemId}$`);
+    expect(DATASET_ID_PATTERN).toBe(`^${itemId}$`);
+    expect(datasetIdsInCode('df = curio_load_data("data.utk.x@1", bounds=None)')).toEqual(["data.utk.x@1"]);
+    expect(modelIdsInCode("m = curio_load_model('model.curio.ddrnet23-slim')")).toEqual(["model.curio.ddrnet23-slim"]);
+    for (const [format, variable] of Object.entries(loadedVariables) as [string, string][]) {
+      const snippet = getDatasetLoaderSnippet({ id: "data.utk.example", format, path: "/tmp/example-file" } as never);
+      expect(snippet.code).toBe(`${variable} = curio_load_data("data.utk.example"${loaderOptions[format] ?? ""})`);
+      expect(snippet.returnVariable).toBe(keptInCode.includes(format) ? null : variable);
+    }
+  });
+
+  test("no module of the frontend spells the id", () => {
+    const { itemId } = shared("catalogCode");
+    const copies = sources(SRC).filter((file) => fs.readFileSync(file, "utf8").includes(itemId));
+    expect(copies.map((file) => path.relative(SRC, file))).toEqual([]);
   });
 });
 

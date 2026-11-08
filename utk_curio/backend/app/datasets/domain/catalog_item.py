@@ -14,6 +14,12 @@ from utk_curio.backend.app.datasets.domain.constants import AUTARK_LAYER_TYPES, 
 from utk_curio.backend.app.datasets.infrastructure.data_size import data_size_bytes
 from utk_curio.backend.app.datasets.infrastructure.file_meta import read_file_meta
 from utk_curio.backend.app.datasets.domain.manifest import DatasetManifest
+from utk_curio.common import shared_constants
+
+#: How node code names a catalog's item, and the line a Data Loading node
+#: loads a dataset with, per format: one table this generator and the
+#: canvas's (``datasetLoaderSnippets.ts``) both read (``catalogCode.json``).
+_CATALOG_CODE = shared_constants.read("catalogCode")
 
 
 def format_for_path(path: Path) -> str | None:
@@ -23,10 +29,8 @@ def format_for_path(path: Path) -> str | None:
 # Dataset ids are interpolated into generated Python source, so only ids matching
 # this whitelist may appear inside a ``curio_data_path("<id>")`` call. Ids can
 # come from user-editable spec JSON (legacy ref fallbacks), so an id with a quote
-# or backslash would otherwise break out of the string literal. Must stay in sync
-# with the scan regex in api/routes.py and SAFE_DATASET_ID_RE in the frontend
-# datasetLoaderSnippets.ts.
-_SAFE_DATASET_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$")
+# or backslash would otherwise break out of the string literal.
+_SAFE_DATASET_ID_RE = re.compile("^" + _CATALOG_CODE["itemId"] + "$")
 
 
 def _safe_dataset_id(dataset_id: Any) -> str | None:
@@ -134,28 +138,16 @@ def execution_format(item: dict[str, Any]) -> dict[str, str]:
 
 
 #: What a loader names the value ``curio_load_data`` returns, per format.
-LOADED_VARIABLES = {
-    "csv": "df",
-    "parquet": "df",
-    "geojson": "gdf",
-    "shp": "gdf",
-    "json": "data",
-    "geotiff": "src",
-    "bundle": "bundle",
-    "onnx": "session",
-    "netcdf": "ds",
-}
+LOADED_VARIABLES = dict(_CATALOG_CODE["loadedVariables"])
 
 #: Formats whose loaded value stays in the node's own code: a node's output
 #: cannot carry an onnxruntime session or an xarray Dataset, so their loader
-#: names the value and returns nothing. KEEP IN SYNC with ``KEPT_IN_CODE`` in
-#: the frontend generator.
-KEPT_IN_CODE = frozenset({"onnx", "netcdf"})
+#: names the value and returns nothing.
+KEPT_IN_CODE = frozenset(_CATALOG_CODE["keptInCode"])
 
 #: The options a loader names after the id, so its node shows them: a
-#: GeoTIFF's ``bounds`` read only the cells inside them. KEEP IN SYNC with
-#: ``LOADER_OPTIONS`` in the frontend generator.
-LOADER_OPTIONS = {"geotiff": ", bounds=None"}
+#: GeoTIFF's ``bounds`` read only the cells inside them.
+LOADER_OPTIONS = dict(_CATALOG_CODE["loaderOptions"])
 
 
 def loader_snippet(
@@ -174,9 +166,10 @@ def loader_snippet(
     :data:`AUTARK_LAYER_TYPES`) is then set as the frame's ``metadata``, so an
     Autark node draws the frame as that layer.
 
-    KEEP IN SYNC with the frontend generator
+    The frontend generator
     ``frontend/urban-workflows/src/services/datasetCatalog/datasetLoaderSnippets.ts``
-    (same call syntax) and the scan regex in ``datasets/domain/code_refs.py``.
+    writes the same calls from the same table (``catalogCode.json``), and the
+    scan regex in ``datasets/domain/code_refs.py`` finds them.
     """
     safe_id = _safe_dataset_id(dataset_id)
     if safe_id:
