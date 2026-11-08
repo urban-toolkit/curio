@@ -2096,7 +2096,7 @@ PICKED_CODE = (
 CODE_TYPE = "curio.builtin/python-computation"
 
 # The function the nodefromfunction scene makes a node of.
-FUNCTION_CHOICE = "model.scout.deep-umbra@1|deep_umbra.deep_umbra|season_factor"
+FUNCTION_CHOICE = "model.scout.deep-umbra@1|deep_umbra|season_factor"
 
 
 def _session_token(page) -> str:

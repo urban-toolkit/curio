@@ -5,10 +5,11 @@ import { CatalogDetailHeader } from "../../catalog/CatalogDetailHeader";
 import { DetailLink } from "../../datasets/catalog/DetailLink";
 import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import { isModelPackage, packagesApi, primaryCategory } from "../../../services/packages";
-import type { PackagePayload } from "../../../services/packages";
+import type { OfferedModulePayload, PackagePayload } from "../../../services/packages";
 import { modelInfoRows } from "../../models/catalog/modelFacts";
 import styles from "../../agents/catalog/AgentDetailModal.module.css";
 import browseStyles from "../../../pages/catalog/CatalogBrowseLayout.module.css";
+import moduleStyles from "./PackageDetailModal.module.css";
 
 export interface PackageDetailModalProps {
   pkg: PackagePayload;
@@ -127,6 +128,62 @@ function InfoSection({ label, rows }: { label: string; rows: [string, React.Reac
 }
 
 /**
+ * The modules a package ships, each with the functions it offers (its
+ * `__all__`, else its public functions): each one's call and the first
+ * paragraph of its docstring, as the header above a node's code lists them
+ * under Functions. Read when the details open; until then, and when the read
+ * fails, the modules' names alone.
+ */
+function ModulesSection({ dirName, modules }: { dirName: string; modules: string[] }) {
+  const [offered, setOffered] = useState<OfferedModulePayload[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    // A call that throws at once fails as one that answers with an error does.
+    Promise.resolve()
+      .then(() => packagesApi.packageFunctions(dirName))
+      .then((answer) => {
+        if (!cancelled) setOffered(answer.modules);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [dirName]);
+  return (
+    <section className={styles.section}>
+      {/* What the package's nodes import, and what a node of another
+          package may import once this one is a dependency. */}
+      <h3 className={styles.sectionLabel}>Modules ({modules.length})</h3>
+      <ul className={styles.list}>
+        {modules.map((name) => {
+          const rows = (offered ?? []).filter(
+            (row) => (row.module === name || row.module.startsWith(`${name}.`)) && row.functions.length > 0,
+          );
+          return (
+            <li key={name} data-package-module={name}>
+              <code>{name}</code>
+              {rows.map((row) => (
+                <React.Fragment key={row.module}>
+                  {row.module !== name ? <code className={moduleStyles.submodule}>{row.module}</code> : null}
+                  <ul className={moduleStyles.functions} data-module-functions={row.module}>
+                    {row.functions.map((fn) => (
+                      <li key={fn.name} data-module-function={fn.name}>
+                        <span className={moduleStyles.call}>{fn.call}</span>
+                        {fn.doc ? <span className={moduleStyles.doc}>{fn.doc}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                </React.Fragment>
+              ))}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/**
  * "View details" for one package, the Node Catalog's answer to
  * ``AgentDetailModal`` and ``DatasetDetailModal``, and the Model Catalog's
  * too: a model package (kind `model`) shows its model's fields, its code's
@@ -142,11 +199,13 @@ function InfoSection({ label, rows }: { label: string; rows: [string, React.Reac
  *
  * A modal rather than a route, matching both peers - the browse pages do not
  * navigate. Everything rendered here is already on the `PackagePayload` the
- * listing returns, but the weights' license text, read on request. The one
+ * listing returns, but the weights' license text, read on request, and the
+ * functions its modules offer, read as it opens. The one
  * thing it adds over the drawer is the COMPLETE node list: the drawer caps it
  * at `TEMPLATE_PREVIEW_LIMIT` and collapses the rest into "…and N more", which
  * is exactly the detail someone opening a details view is looking for. Every
- * package lists the modules it ships, which its nodes import.
+ * package lists the modules it ships, which its nodes import, with the
+ * functions each offers (`ModulesSection`).
  */
 export const PackageDetailModal: React.FC<PackageDetailModalProps> = ({
   pkg,
@@ -352,20 +411,7 @@ export const PackageDetailModal: React.FC<PackageDetailModalProps> = ({
           </section>
         ) : null}
 
-        {modules.length > 0 ? (
-          <section className={styles.section}>
-            {/* What the package's nodes import, and what a node of another
-                package may import once this one is a dependency. */}
-            <h3 className={styles.sectionLabel}>Modules ({modules.length})</h3>
-            <ul className={styles.list}>
-              {modules.map((name) => (
-                <li key={name}>
-                  <code>{name}</code>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+        {modules.length > 0 ? <ModulesSection dirName={pkg.dirName} modules={modules} /> : null}
 
         {pkg.permissions.length > 0 ? (
           <section className={styles.section}>

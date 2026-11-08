@@ -1,8 +1,10 @@
 import React, { useContext, useEffect } from "react";
 import styles from "./WidgetTags.module.css";
 import { useTooltipContent } from "../../tooltip/useTooltipContent";
-import { ChipPreviewTip } from "./ChipPreview";
+import { ChipPreviewTip, FunctionPreview } from "./ChipPreview";
 import { ChipPreviewContext, type ChipPreviewSource } from "./chipPreviewSource";
+import { CURIO_FUNCTIONS, FUNCTION_HOW, FUNCTION_HOW_IMPORT, type FunctionGroup } from "./functionCalls";
+import type { OfferedFunctionPayload } from "../../../services/packages/types";
 import {
   INPUT_REF_MIME,
   SCENARIO_REF_MIME,
@@ -668,9 +670,94 @@ function InputsChips({
   );
 }
 
+/**
+ * A function the node's code can call, under Functions: its name, a hover
+ * with its call and what it does (FunctionPreview), and a click that writes
+ * its call at the cursor, with its import line when the code lacks it
+ * (*onInsert*, `functionCalls.insertFunctionCall`). It does not drag: a call
+ * is not a chip.
+ */
+function FunctionTag({
+  fn,
+  module,
+  onInsert,
+  disabled,
+}: {
+  fn: OfferedFunctionPayload;
+  module: string | null;
+  onInsert?: (fn: OfferedFunctionPayload, module: string | null) => void;
+  disabled: boolean;
+}) {
+  const how = module ? FUNCTION_HOW_IMPORT : FUNCTION_HOW;
+  const preview = useTooltipContent(<FunctionPreview fn={fn} module={module} />);
+  const insert = () => {
+    if (!disabled) onInsert?.(fn, module);
+  };
+  return (
+    <span
+      className={styles.functionTag}
+      role={onInsert ? "button" : undefined}
+      tabIndex={onInsert ? 0 : undefined}
+      aria-disabled={onInsert && disabled ? true : undefined}
+      data-tooltip={`${fn.call}. ${how}`}
+      {...preview}
+      data-function-tag={fn.name}
+      data-function-module={module ?? ""}
+      onClick={insert}
+      onKeyDown={(event) => {
+        if (!onInsert || disabled) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          insert();
+        }
+      }}
+    >
+      {fn.name}
+    </span>
+  );
+}
+
+/**
+ * Functions: a line per module that offers a function the node's code can
+ * call, the module's name, then a tag per function, in the order its
+ * `__all__` names them; the node's own package's modules first, then those of
+ * the packages it depends on, then Curio's own, which need no import.
+ */
+function FunctionsChips({
+  groups,
+  onInsert,
+  disabled,
+}: {
+  groups: FunctionGroup[];
+  onInsert?: (fn: OfferedFunctionPayload, module: string | null) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className={styles.functionGroups}>
+      {groups.map((group) => {
+        const title = group.module ?? CURIO_FUNCTIONS;
+        return (
+          // No module is named "": Curio's line.
+          <div key={group.module ?? ""} className={styles.functionGroup} data-function-group={group.module ?? "curio"}>
+            <span className={styles.functionModule} data-tooltip={group.module ? `Imported from ${group.module}` : "Curio's functions, which need no import"}>
+              {title}
+            </span>
+            <span className={styles.functionTags}>
+              {group.functions.map((fn) => (
+                <FunctionTag key={fn.name} fn={fn} module={group.module} onInsert={onInsert} disabled={disabled} />
+              ))}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Each category's name in the header's row. */
 const CATEGORY_NAMES: Record<StripCategory, string> = {
   inputs: "Inputs",
+  functions: "Functions",
   scenarios: "Scenarios",
   widgets: "Widgets",
   selections: "Selections",
@@ -679,14 +766,16 @@ const CATEGORY_NAMES: Record<StripCategory, string> = {
 /** The attribute a category's name carries, which tests find it by. */
 const CATEGORY_NAME_ATTRIBUTES: Partial<Record<StripCategory, string>> = {
   inputs: "data-input-strip",
+  functions: "data-function-strip",
   selections: "data-selection-strip",
 };
 
 /**
  * The header above a code or grammar editor (#662): every chip the node can
- * use, whatever its code or spec uses, in one row of categories, each with its
- * count and shown only when it has chips: Inputs, Scenarios, Widgets and
- * Selections. Every category starts closed; a click opens its chips
+ * use, whatever its code or spec uses, and the functions its code can call, in
+ * one row of categories, each with its count and shown only when it has
+ * something: Inputs, Functions, Scenarios, Widgets and Selections. Every
+ * category starts closed; a click opens its chips
  * under the row, closing the category open, and a second click closes them.
  * The one open stays open for its node (*nodeId*) while the dataflow is open
  * (`stripCategories`).
@@ -701,6 +790,9 @@ const CATEGORY_NAME_ATTRIBUTES: Partial<Record<StripCategory, string>> = {
  *   columns (or its layers, or how to read its tuple) under it; in a Vega-Lite
  *   spec (*grammar* `VEGA_LITE`) with an input, then the line of `inputs`, the
  *   dataset that stacks them, opening to its fields (`InputsChips`).
+ * - Functions, in code: what its code can call (*functions*, the node's list
+ *   as `services/packages/nodeFunctions` reads it), a line per module, then
+ *   Curio's own (`FunctionsChips`); a click writes a call (*onInsertFunction*).
  * - Scenarios, in a spec (*language* `json`) whose node receives an edge from a
  *   scenario box: in a Vega-Lite spec the boxes' swatches, text colors and
  *   order, then, in a Vega-Lite or an Autark spec, a tag per input in its color
@@ -715,9 +807,11 @@ export function ReferenceStrip({
   widgets,
   inputs = [],
   selections = [],
+  functions = [],
   language,
   grammar,
   onInsert,
+  onInsertFunction,
   onLoadColumns,
   previews = null,
   disabled = false,
@@ -727,11 +821,15 @@ export function ReferenceStrip({
   widgets: WidgetDef[];
   inputs?: InputScope[];
   selections?: SelectionTagDef[];
+  /** What the node's code can call, by module (`functionCalls.functionGroups`). */
+  functions?: FunctionGroup[];
   /** The editor's language: a spec's chips are `json`. */
   language?: CodeLanguage;
   /** A spec's grammar, as the editor resolves its chips (`VEGA_LITE`). */
   grammar?: string | null;
   onInsert: (inner: string) => void;
+  /** Writes a function's call at the cursor (`functionCalls.insertFunctionCall`). */
+  onInsertFunction?: (fn: OfferedFunctionPayload, module: string | null) => void;
   onLoadColumns?: (slot: number) => void;
   /** What the node's chip previews read (chipPreviewSource). */
   previews?: ChipPreviewSource | null;
@@ -745,6 +843,7 @@ export function ReferenceStrip({
   const scenarios = spec && fedFromABox(inputs);
   const counts: Record<StripCategory, number> = {
     inputs: inputs.length + (stacked ? 1 : 0),
+    functions: spec ? 0 : functions.reduce((sum, group) => sum + group.functions.length, 0),
     // The swatches are one chip, then text colors and order, in Vega-Lite.
     scenarios: scenarios ? (vegaLite ? SCENARIO_LISTS.length : 0) + inputs.length : 0,
     widgets: widgets.length,
@@ -768,6 +867,8 @@ export function ReferenceStrip({
             disabled={disabled}
           />
         );
+      case "functions":
+        return <FunctionsChips groups={functions} onInsert={onInsertFunction} disabled={disabled} />;
       case "scenarios":
         return <ScenarioChips inputs={inputs} lists={vegaLite} onInsert={onInsert} disabled={disabled} />;
       case "widgets":
@@ -813,10 +914,10 @@ export function ReferenceStrip({
         <div className={styles.stripOpen}>
           {opened.map((category) => (
             // A category's tags are one row; Inputs is a line per input, each
-            // open list under its line.
+            // open list under its line, and Functions a line per module.
             <div
               key={category}
-              className={category === "inputs" ? styles.categoryStack : styles.categoryChips}
+              className={category === "inputs" || category === "functions" ? styles.categoryStack : styles.categoryChips}
               role="group"
               aria-label={`${CATEGORY_NAMES[category]} chips`}
               data-strip-chips={category}

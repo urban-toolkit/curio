@@ -1,7 +1,8 @@
 /**
  * Which categories of a node's header are open, and which lists under its
  * Inputs (#662). The header above a node's code or spec lists the chips the
- * node can use in one row of categories, all closed until one is clicked, and
+ * node can use, and the functions its code can call, in one row of
+ * categories, all closed until one is clicked, and
  * one open at a time: opening a category closes the one open. Inputs holds a
  * line per input, each opening to its list, and several lists can be open. A
  * category or a list opened stays open for its node while the dataflow is
@@ -16,7 +17,7 @@
 import { useCallback, useState, useSyncExternalStore } from "react";
 
 /** The header's categories, in its row's order. */
-export const STRIP_CATEGORIES = ["inputs", "scenarios", "widgets", "selections"] as const;
+export const STRIP_CATEGORIES = ["inputs", "functions", "scenarios", "widgets", "selections"] as const;
 export type StripCategory = (typeof STRIP_CATEGORIES)[number];
 
 const NONE: ReadonlySet<StripCategory> = new Set();

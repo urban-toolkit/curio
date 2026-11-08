@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 
 import "bootstrap/dist/css/bootstrap.min.css";
 import { NodeType } from "../../constants";
@@ -41,6 +41,9 @@ import { wiredInputSlots } from "../../utils/inputSlots";
 import { ICodeData } from "../../types";
 import { ReferenceStrip } from "./widgets/WidgetTag";
 import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
+import { functionGroups, insertFunctionCall } from "./widgets/functionCalls";
+// The module itself, not the services/packages barrel, which a code node needs none of.
+import { useNodeFunctions } from "../../services/packages/nodeFunctions";
 import { useEditorTooltip } from "./useEditorTooltip";
 import type { ChipPreviewSource } from "./widgets/chipPreviewSource";
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
@@ -175,6 +178,16 @@ function CodeEditor({
         dashboardOn,
     } = useFlowContext();
     const collab = useCollab();
+    // What the node's code can call, for the header's Functions: read as a
+    // run of the node would import it, on the dataflow its runs are of.
+    const nodeFunctions = useNodeFunctions(
+        nodeType ? String(nodeType) : null,
+        agentsDataflowId(canvasRole(viewerMode, collab), projectId, getCurrentProjectId()),
+    );
+    const headerFunctions = useMemo(
+        () => (nodeFunctions.state === "ready" ? functionGroups(nodeFunctions.functions) : []),
+        [nodeFunctions],
+    );
     // The wired circles: the value on circle k is the code's input_k. A ref,
     // since the run effect below is keyed on the resolved code alone.
     const wiredSlotsRef = useRef<number[]>([]);
@@ -524,7 +537,12 @@ function CodeEditor({
             : "No output yet";
 
     return (
-        <div className="nowheel nodrag" style={{ height: inCell ? "auto" : "100%", display: "flex", flexDirection: "column", backgroundColor: "#fff", userSelect: "none" }}>
+        <div
+            className="nowheel nodrag"
+            // Whether the header's Functions are still being read, which a capture waits for.
+            data-curio-functions={nodeFunctions.state}
+            style={{ height: inCell ? "auto" : "100%", display: "flex", flexDirection: "column", backgroundColor: "#fff", userSelect: "none" }}
+        >
             {showCredentialHint ? (
                 <CredentialHint
                     findings={credentialFindings}
@@ -538,9 +556,11 @@ function CodeEditor({
                 widgets={references.widgets}
                 inputs={stripInputs}
                 selections={references.selections}
+                functions={headerFunctions}
                 language={widgetLanguage}
                 disabled={readOnly}
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
+                onInsertFunction={(fn, module) => insertFunctionCall(widgetEditor?.editor, fn, module)}
                 onLoadColumns={onLoadColumns}
                 previews={chipPreviews}
             />

@@ -86,6 +86,13 @@
   color: var(--curio-danger-text);
 }
 
+/* A function under Functions: amber, like its tag. */
+.chipFunction {
+  border-color: #f0d3a6;
+  background: var(--curio-accent-amber-bg);
+  color: var(--curio-accent-amber-fg);
+}
+
 .segment {
   display: inline-flex;
   align-items: center;

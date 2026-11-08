@@ -2,9 +2,10 @@
 
 SCOUT's Compute Catalog, the Curio way. The Node Catalog drawer's **New node
 from a Python function** lists the functions of the modules installed
-packages ship. This picks ``season_factor`` in ``deep_umbra.deep_umbra``, a
-module of the shipped, read-only model package ``model.scout.deep-umbra@1``,
-gives its one parameter a text widget, and creates the node in a new package.
+packages ship. This picks ``season_factor``, which ``deep_umbra``, the module
+of the shipped, read-only model package ``model.scout.deep-umbra@1``, offers
+(its ``__all__``), gives its one parameter a text widget, and creates the node
+in a new package.
 Then:
 
 1. The node is in the palette with no reload, and its code imports the
@@ -62,11 +63,11 @@ NODE_TYPE = "curio.builtin/python-computation"
 READER_CODE = "print(f'<<{input_0}>>')\nreturn input_0\n"
 
 SHADOW_DIR = "model.scout.deep-umbra@1"
-MODULE = "deep_umbra.deep_umbra"
+MODULE = "deep_umbra"
 FUNCTION = "season_factor"
 LABEL = "Season factor"
 WRITTEN_CODE = (
-    "from deep_umbra.deep_umbra import season_factor\n"
+    "from deep_umbra import season_factor\n"
     "\n"
     "return season_factor(season=[!! season !!])\n"
 )

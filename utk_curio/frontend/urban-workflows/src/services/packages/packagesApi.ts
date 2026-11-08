@@ -19,6 +19,8 @@ import type {
   FunctionTemplatePayload,
   FunctionTemplateRequest,
   InstallResponse,
+  NodeFunctionsPayload,
+  PackageFunctionsPayload,
   PackageKind,
   PackageMetadataUpdate,
   PackagePayload,
@@ -153,6 +155,18 @@ export const packagesApi = {
       method: "POST",
       body: JSON.stringify(body),
     });
+  },
+
+  /** What the code of a node of *nodeType*, in the dataflow *dataflowId*, can call: the header above its code. */
+  nodeFunctions(nodeType: string, dataflowId?: string | null): Promise<NodeFunctionsPayload> {
+    const params = new URLSearchParams({ nodeType });
+    if (dataflowId) params.set("dataflowId", dataflowId);
+    return apiFetch(`/api/packages/node-functions?${params.toString()}`);
+  },
+
+  /** Each module of *dirName* with the functions it offers: its details. */
+  packageFunctions(dirName: string): Promise<PackageFunctionsPayload> {
+    return apiFetch(`/api/packages/${encodeURIComponent(dirName)}/functions`);
   },
 
   /** Whether ``publishToCatalog`` is allowed (``CURIO_ALLOW_FACTORY_CATALOG_PUBLISH``; on by default). */

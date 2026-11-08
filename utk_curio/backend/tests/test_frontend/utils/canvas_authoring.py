@@ -1017,9 +1017,9 @@ def assert_shows_only_controls(page, node_id: str) -> None:
     expect(pane.get_by_role("button", name=re.compile(r"^(Edit|Delete) widget "))).to_have_count(0)
 
 
-#: The categories of chips a node's header lists, in its row's order
-#: (``ReferenceStrip`` in WidgetTag.tsx).
-STRIP_CATEGORIES = ("inputs", "scenarios", "widgets", "selections")
+#: The categories of chips a node's header lists, and of the functions its code
+#: can call, in its row's order (``ReferenceStrip`` in WidgetTag.tsx).
+STRIP_CATEGORIES = ("inputs", "functions", "scenarios", "widgets", "selections")
 
 
 def open_strip_category(page, node_id: str, category: str, *, timeout: float = 15000):

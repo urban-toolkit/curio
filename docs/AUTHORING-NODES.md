@@ -218,12 +218,36 @@ return convert_raster(input_0, zoom=[!! zoom !!])
 ```
 
 - A node's logic is in its package's functions
-  ([Extending](EXTENDING.md#a-nodes-logic-is-in-its-packages-functions)): a
-  module's `__all__` names the functions it offers, and each says what it does
-  in the first paragraph of its docstring, which is what an agent reads of it.
-  The template's source holds the node's settings, as widgets or constants,
-  and a short call: Media's Sample Video Frames sets `EVERY_SECONDS` and
-  returns a call of `sample_video_frames`, from Media's `media_collections`.
+  ([Extending](EXTENDING.md#a-nodes-logic-is-in-its-packages-functions)). The
+  template's source holds the node's settings, as widgets or constants, and a
+  short call: Media's Sample Video Frames sets `EVERY_SECONDS` and returns a
+  call of `sample_video_frames`, from Media's `media_collections`.
+- A module's `__all__` names what it offers, and each function it offers says
+  what it does in the first paragraph of its docstring. That is what users and
+  agents read of it: the header above a node's code lists those functions
+  under **Functions**
+  ([Node Catalog](NODE-CATALOG.md#functions-a-node-can-call)), with each one's
+  call and that paragraph, **View details** lists them under **Modules**,
+  **New node from a Python function** offers them, and an agent that writes a
+  node's code reads them. A module with no `__all__` offers every function
+  whose name does not start with `_`.
+- A folder's `__init__.py` can offer what its other modules define, and the
+  modules offer nothing of their own:
+
+  ```python
+  # sources/building_height/__init__.py
+  from .convert_to_raster import convert_raster
+
+  __all__ = ["convert_raster"]
+  ```
+
+  ```python
+  # sources/building_height/convert_to_raster.py
+  __all__ = []
+  ```
+
+  Functions then lists `convert_raster` under `building_height`, and a click
+  on it writes `from building_height import convert_raster`.
 - A module is a `.py` file, or a folder of `.py` files, directly in `sources/`,
   named like a Python identifier. The files your templates name as their
   `source` are not modules.

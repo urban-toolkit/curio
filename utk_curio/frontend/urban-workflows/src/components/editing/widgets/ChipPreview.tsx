@@ -22,6 +22,8 @@
  *   chip writes.
  * - A chip with a problem shows the problem. An input not run, stale, failed
  *   or being read says so; a header tag ends with how to use it (*tag*).
+ * - A function under the header's Functions (`FunctionPreview`): its call,
+ *   the first paragraph of its docstring and the module it comes from.
  *
  * It shows 5 rows by 6 columns, cells cut at 24 characters and at their share
  * of the card's width, a tuple's or a layer list's first 2 with 3 rows each;
@@ -75,6 +77,8 @@ import {
   type WidgetDef,
   type WidgetValue,
 } from "../../../utils/widgets/widgetModel";
+import { FUNCTION_HOW, FUNCTION_HOW_IMPORT } from "./functionCalls";
+import type { OfferedFunctionPayload } from "../../../services/packages/types";
 
 /** The line a header tag's preview ends with. */
 export const TAG_HOW = "Drag into the code, or click to insert it at the cursor";
@@ -1089,6 +1093,30 @@ export function ChipPreview(props: ChipPreviewProps) {
           {TAG_HOW}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * What a function under the header's Functions is, as its hover shows it, in
+ * a chip's preview's look: its name and the module it comes from (Curio's own
+ * need no import), its call, the first paragraph of its docstring, and what a
+ * click writes.
+ */
+export function FunctionPreview({ fn, module }: { fn: OfferedFunctionPayload; module: string | null }) {
+  return (
+    <div className={styles.preview} style={{ maxHeight: PREVIEW_MAX_HEIGHT }} data-chip-preview="function">
+      <Head chip={fn.name} chipClass={styles.chipFunction}>
+        {" "}
+        <Text muted>{module ? `from ${module}` : "Curio's, with no import"}</Text>
+      </Head>
+      <div className={styles.body} data-preview-body="true">
+        <Line tone="mono">{fn.call}</Line>
+        {fn.doc ? <Line>{fn.doc}</Line> : null}
+      </div>
+      <div className={styles.foot} data-preview-foot="true">
+        {module ? FUNCTION_HOW_IMPORT : FUNCTION_HOW}
+      </div>
     </div>
   );
 }
