@@ -166,18 +166,18 @@ class TestTheSchema:
         return schema, schema["properties"]["resources"]["items"]["properties"]["time"]["oneOf"]
 
     def test_both_forms_name_a_capture_as_the_validator_does(self, forms):
-        _schema, (name, given) = forms
+        name, given = forms[1]
         assert name["pattern"] == given["properties"]["capture"]["pattern"] == CAPTURE_NAME_RE.pattern
         assert given["required"] == ["capture"]
         assert given["additionalProperties"] is False
 
     def test_the_units_and_the_zone_shape_are_the_validators(self, forms):
-        _schema, (_name, given) = forms
+        given = forms[1][1]
         assert given["properties"]["unit"]["enum"] == sorted(M.TIME_UNITS)
         assert given["properties"]["timezone"]["pattern"] == M._TIME_ZONE_RE.pattern
 
     def test_every_key_the_validator_writes_is_declared(self, forms):
-        _schema, (_name, given) = forms
+        given = forms[1][1]
         written = M.build_manifest_dict(parse(a_storage_manifest("/srv/x", [SNAPSHOTS, WALKS])))
         keys = set().union(*(entry["time"] for entry in written["resources"]))
         assert keys == set(given["properties"])
