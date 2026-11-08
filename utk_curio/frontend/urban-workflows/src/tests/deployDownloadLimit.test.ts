@@ -26,4 +26,17 @@ describe("The deploy's download limit", () => {
             expect(command.match(/%s/g)).toHaveLength(args.length);
         }
     });
+
+    test("each stack sets it before its command line names it", () => {
+        const jobs = text.split(/^ {2}deploy-(?:dev|stable):$/m).slice(1);
+        expect(jobs).toHaveLength(2);
+        for (const job of jobs) {
+            const command = job.search(/printf ' {4}command: \[/);
+            expect(command).toBeGreaterThan(-1);
+            expect(job.indexOf('download_args=""')).toBeGreaterThan(-1);
+            expect(job.indexOf('download_args=""')).toBeLessThan(command);
+            expect(job.indexOf(`download_args=', "--discovery-max-download-mb", "2048"'`)).toBeGreaterThan(-1);
+            expect(job.indexOf(`download_args=', "--discovery-max-download-mb", "2048"'`)).toBeLessThan(command);
+        }
+    });
 });

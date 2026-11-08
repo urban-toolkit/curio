@@ -189,6 +189,12 @@ jobs:
             mkdir -p /srv/curio-model-weights 2>/dev/null || echo "::warning::could not make /srv/curio-model-weights"
             weights_args=', "--model-weights-dir", "/model-weights"'
           fi
+          # Cache files takes a file of up to 8 GiB, when this release's
+          # launcher has the flag: SideSeeing's longest walks are 7 GiB videos.
+          cache_args=""
+          if grep -q -e '"--media-cache-max-file-gb"' utk_curio/main.py; then
+            cache_args=', "--media-cache-max-file-gb", "8"'
+          fi
           # This stack's container name, host ports and curio.py arguments
           # (docker-compose.deploy.yml). The backend is /api on whichever host
           # serves the page, so the stack needs no hostname of its own. Each
@@ -211,7 +217,7 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s]\n' "$llm_args" "$weights_args" "$download_args" >> docker-compose.site.yml
+          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" >> docker-compose.site.yml
           if [ -n "$weights_args" ]; then
             printf '    volumes: ["/srv/curio-model-weights:/model-weights:ro"]\n' >> docker-compose.site.yml
           fi
@@ -436,6 +442,12 @@ jobs:
               mkdir -p /srv/curio-model-weights 2>/dev/null || echo "::warning::could not make /srv/curio-model-weights"
               weights_args=', "--model-weights-dir", "/model-weights"'
             fi
+            # The file size Cache files takes, as curio-dev's, for a release
+            # whose launcher has the flag.
+            cache_args=""
+            if grep -q -e '"--media-cache-max-file-gb"' utk_curio/main.py; then
+              cache_args=', "--media-cache-max-file-gb", "8"'
+            fi
             cat > docker-compose.site.yml <<'SITE'
           services:
             curio:
@@ -444,7 +456,7 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s]\n' "$llm_args" "$weights_args" "$download_args" >> docker-compose.site.yml
+            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" >> docker-compose.site.yml
             if [ -n "$weights_args" ]; then
               printf '    volumes: ["/srv/curio-model-weights:/model-weights:ro"]\n' >> docker-compose.site.yml
             fi

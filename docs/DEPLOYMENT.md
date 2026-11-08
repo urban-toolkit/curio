@@ -70,7 +70,7 @@ connected peer re-checked before any response body is read. A download started
 from the Dataset Finder's card, or from an agent's approved proposal, is the
 same download under the same policy.
 
-Two things a deployment should know:
+What a deployment should know:
 
 - **A source manifest can never exempt a host from that policy.** The one
   exemption in the codebase is for an operator-configured search provider, and
@@ -86,6 +86,14 @@ Two things a deployment should know:
   URLs a dataset, a job or the audit log records never hold it.
 - **Hugging Face models** download up to 2 GB each, from the Hub's file
   storage after a redirect, through the same policy.
+- **A download, or a table added from a bucket,** takes one file of up to
+  `--discovery-max-download-mb` (1024 by default). **Cache files** copies a
+  bucket collection's files one at a time, each of up to
+  `--media-cache-max-file-gb` (4 by default) and all of an account's together
+  up to `--media-cache-max-gb` (20 by default), both checked against the
+  bucket's listing before a byte is fetched, and a file that sends more than
+  its listing said is stopped. Raising either lets one user's click fetch that
+  much from the bucket and keep it on this machine's disk.
 
 Two sources reach OpenStreetMap:
 
@@ -225,7 +233,9 @@ repository in the Discovery Catalog. The manifest format is in
 - **Disk.** A bucket collection's files are cached per account on request,
   under `.curio/exec-scratch/users/<key>/media/objects/` with isolation on and
   `.curio/users/<key>/media/objects/` without. `--media-cache-max-gb`
-  (default 20) caps each account. Thumbnails, posters and spectrograms are
+  (default 20) caps each account, and `--media-cache-max-file-gb` (default 4)
+  each file; a collection over either is refused before any file is copied.
+  Thumbnails, posters and spectrograms are
   cached under `.curio/users/<key>/media-cache/`, and a storage row's sample
   thumbnails under `.curio/discovery-cache/`. Deleting a collection removes
   its caches, never the source's files. With isolation on, the cached files
@@ -467,8 +477,6 @@ The repo includes [`.github/workflows/deploy.yml`](../.github/workflows/deploy.y
 
 To adapt it: install Tailscale on the server (`sudo tailscale up --advertise-tags=tag:curio-server --ssh`), create a Tailscale OAuth client with the `auth_keys` scope and tag `tag:ci`, add an ACL allowing `tag:ci -> tag:curio-server:22`, create a `deploy` user on the server with the `docker` group, and set three GitHub secrets: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`, `DEPLOY_SSH_KEY` (private key whose pubkey is in `~deploy/.ssh/authorized_keys`). Then update the hostname (`utk` → your Tailscale machine name) and the `--backend-url` addresses the workflow writes into each stack's `docker-compose.site.yml`.
 
-Both stacks start with `--discovery-max-download-mb 2048`, so a download, or a file of a bucket table, may be up to 2 GiB on them: a month of detections in data.urbantk.org's `idot` bucket is a JSON Lines file of up to 1.7 GB.
-
 To give both stacks an LLM endpoint of their own (the **Curio** rows and Curio's default in [LLM configurations](#llm-configurations)):
 
 1. In the repository's **Settings → Environments**, open `dev` and add the secrets `CURIO_DEPLOY_API_KEY` (the endpoint's key) and `CURIO_DEPLOY_BASE_URL` (its OpenAI-compatible base URL). Do the same for `stable`.
@@ -479,6 +487,10 @@ To give both stacks an LLM endpoint of their own (the **Curio** rows and Curio's
 Without both secrets, the deploy removes `.secrets/llm-endpoint` and the stack has no endpoint of its own.
 
 Both stacks mount `/srv/curio-model-weights` read-only at `/model-weights` and start with `--model-weights-dir /model-weights`: fetch a model's weights there once ([Model weights a package fetches](#model-weights-a-package-fetches)), with `--into /srv/curio-model-weights`.
+
+Both stacks also start with `--media-cache-max-file-gb 8`, so **Cache files** copies the SideSeeing walks, videos of up to 7 GiB, from data.urbantk.org. Each account still holds at most 20 GB of cached files.
+
+They also start with `--discovery-max-download-mb 2048`, so a download, or a file of a bucket table, may be up to 2 GiB on them: a month of detections in data.urbantk.org's `idot` bucket is a JSON Lines file of up to 1.7 GB.
 
 A merge to `main` deploys the dev stack once: Bump version bumps the patch version and dispatches the dev deploy of that commit. Stable runs manually via Actions → Deploy → Run workflow.
 
