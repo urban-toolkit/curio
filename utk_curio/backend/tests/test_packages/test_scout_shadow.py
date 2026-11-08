@@ -814,7 +814,8 @@ def test_the_package_writes_its_raster_with_rasterizations_mosaic():
     nothing of Curio's own code."""
     modules = (SOURCES / MODULE).glob("*.py")
     text = "\n".join(path.read_text(encoding="utf-8") for path in modules)
-    assert "from scout_rasters.web_tiles import mosaic_rasters, tile_bounds\n" in text
+    assert "\nfrom scout_rasters.mosaic import mosaic_rasters\n" in text
+    assert "\nfrom scout_rasters.web_tiles import tile_bounds\n" in text
     assert _manifest()["dependencies"]["packages"] == {RASTER_PACKAGE.name: "*"}
     assert "rasterio.open(path, \"w\"" not in text and "Window(" not in text
     assert "def write_mosaic" not in text and "def tile_bounds" not in text

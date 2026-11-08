@@ -1,7 +1,7 @@
 """Raster algebra and its raster helpers: the Rasterization package's raster algebra
-(``scout_rasters/raster_algebra.py``) and web map tiles
-(``scout_rasters/web_tiles.py``), and Curio's raster helpers
-(``util/rasters.py``).
+(``scout_rasters/raster_algebra.py``), web map tiles
+(``scout_rasters/web_tiles.py``) and mosaic (``scout_rasters/mosaic.py``), and
+Curio's raster helpers (``util/rasters.py``).
 
 - The raster algebra's grid checks name every way two grids differ, in words
   and numbers written as JavaScript writes them.
@@ -9,7 +9,8 @@
   type, nodata as NaN; its statistics give numpy's numbers on a band.
 - ``curio_load_data("<id>", bounds=...)`` reads the cells whose centres lie in
   the bounds, on the raster's own grid.
-- Map tiles, and any rasters on one grid, are laid side by side in one GeoTIFF.
+- Map tiles, and any rasters on one grid, are laid side by side: files in a VRT
+  that points at them, cells in a GeoTIFF.
 
 Every test imports the modules itself, Rasterization's through a run's staged copy of
 the package's modules (the ``scout_rasters`` fixture), so a checkout without
@@ -50,6 +51,7 @@ def scout_rasters(tmp_path):
         _SCOUT.update(
             raster_algebra=importlib.import_module("scout_rasters.raster_algebra"),
             web_tiles=importlib.import_module("scout_rasters.web_tiles"),
+            mosaic=importlib.import_module("scout_rasters.mosaic"),
         )
         try:
             yield _SCOUT
@@ -65,6 +67,11 @@ def algebra():
 def web_tiles():
     """Rasterization's web map tiles, for a test that uses the ``scout_rasters`` fixture."""
     return _SCOUT["web_tiles"]
+
+
+def mosaic_module():
+    """Rasterization's mosaic, for a test that uses the ``scout_rasters`` fixture."""
+    return _SCOUT["mosaic"]
 
 
 def rasters():
@@ -530,6 +537,22 @@ class TestTileMosaic:
             assert masked.mask[:4, 4:].all() and masked.mask[4:, :4].all()
             assert not masked.mask[:4, :4].any() and not masked.mask[4:, 4:].any()
 
+    def test_files_are_laid_side_by_side_in_a_vrt_that_points_at_them(self, tmp_path):
+        import rasterio
+        from affine import Affine
+
+        left = _raster(tmp_path / "left.tif", [[1.0, 2.0], [3.0, 4.0]], transform=Affine(1.0, 0.0, 0.0, 0.0, -1.0, 2.0))
+        right = _raster(tmp_path / "right.tif", [[5.0, 6.0], [7.0, 8.0]], transform=Affine(1.0, 0.0, 2.0, 0.0, -1.0, 2.0))
+        tiles = [{"transform": tuple(r.transform)[:6], "width": r.width, "height": r.height, "path": r.name}
+                 for r in (left, right)]
+        path = mosaic_module().mosaic_rasters(tiles, str(tmp_path / "m.vrt"), crs="EPSG:32616", dtype="float32",
+                                              nodata=-9999.0)
+        with open(path, encoding="utf-8") as handle:
+            assert str(tmp_path / "right.tif") in handle.read()
+        with rasterio.open(path) as mosaic:
+            assert mosaic.read(1).tolist() == [[1.0, 2.0, 5.0, 6.0], [3.0, 4.0, 7.0, 8.0]]
+            assert tuple(mosaic.transform)[:6] == (1.0, 0.0, 0.0, 0.0, -1.0, 2.0)
+
     def test_cells_of_any_size_are_laid_where_their_corners_fall(self, tmp_path):
         import rasterio
 
@@ -537,23 +560,23 @@ class TestTileMosaic:
             {"transform": (1.0, 0.0, 0.0, 0.0, -1.0, 3.0), "width": 2, "height": 1, "cells": [[1.0, 1.0]]},
             {"transform": (1.0, 0.0, 1.0, 0.0, -1.0, 2.0), "width": 1, "height": 2, "cells": [[2.0], [2.0]]},
         ]
-        path = web_tiles().mosaic_rasters(tiles, str(tmp_path / "m.tif"), crs="EPSG:32616", dtype="float32",
-                                          fill=-1.0)
+        path = mosaic_module().mosaic_rasters(tiles, str(tmp_path / "m.tif"), crs="EPSG:32616", dtype="float32",
+                                              fill=-1.0)
         with rasterio.open(path) as mosaic:
             assert mosaic.read(1).tolist() == [[1.0, 1.0], [-1.0, 2.0], [-1.0, 2.0]]
 
-    def test_a_rotated_tile_or_a_tile_without_its_cells_is_refused(self, tmp_path):
-        """The mosaic is a GeoTIFF of the tiles' cells: a tile that names only
-        its file is refused, among cells or alone (Media's Mosaic Rasters
-        writes its own VRT of files)."""
+    def test_a_rotated_tile_or_a_mix_of_files_and_cells_is_refused(self, tmp_path):
+        """A mosaic is of files or of cells: a rotated tile is refused, and so
+        is a mix of tiles that name their file and tiles that hold their
+        cells, before anything is written."""
         rotated = [{"transform": (1.0, 0.2, 0.0, 0.0, -1.0, 0.0), "width": 1, "height": 1, "cells": [[1.0]]}]
         with pytest.raises(ValueError, match="a tile is rotated; only north-up tiles make a mosaic"):
-            web_tiles().mosaic_rasters(rotated, str(tmp_path / "r.tif"), crs="EPSG:32616", dtype="float32")
+            mosaic_module().mosaic_rasters(rotated, str(tmp_path / "r.tif"), crs="EPSG:32616", dtype="float32")
+        assert not (tmp_path / "r.tif").exists()
         mixed = [
             {"transform": (1.0, 0.0, 0.0, 0.0, -1.0, 1.0), "width": 1, "height": 1, "cells": [[1.0]]},
             {"transform": (1.0, 0.0, 1.0, 0.0, -1.0, 1.0), "width": 1, "height": 1, "path": "/x.tif"},
         ]
-        for tiles in (mixed, mixed[1:]):
-            with pytest.raises(ValueError, match="every tile of a mosaic holds its cells"):
-                web_tiles().mosaic_rasters(tiles, str(tmp_path / "m.tif"), crs="EPSG:32616", dtype="float32")
-            assert not (tmp_path / "m.tif").exists()
+        with pytest.raises(ValueError, match="every tile of a mosaic names its file, or every tile holds its cells"):
+            mosaic_module().mosaic_rasters(mixed, str(tmp_path / "m.tif"), crs="EPSG:32616", dtype="float32")
+        assert not (tmp_path / "m.tif").exists()

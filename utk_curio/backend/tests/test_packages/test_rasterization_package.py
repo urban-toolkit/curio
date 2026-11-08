@@ -157,14 +157,16 @@ def test_it_carries_the_scout_tag_and_its_raster_nodes_rasters():
 
 
 def test_deep_umbra_depends_on_it_and_finds_it_in_the_catalog():
-    """Deep Umbra's node imports ``scout_rasters.web_tiles``, so its package
-    names Rasterization in ``dependencies.packages``, and the catalog holds
-    the package by that name."""
+    """Deep Umbra's node imports ``scout_rasters.mosaic`` and
+    ``scout_rasters.web_tiles``, so its package names Rasterization in
+    ``dependencies.packages``, and the catalog holds the package by that name."""
     umbra = json.loads((REPO / "packages" / "model.scout.deep-umbra@1" / "manifest.json").read_text(encoding="utf-8"))
     assert umbra["dependencies"]["packages"] == {f"{PACKAGE_ID}@1": "*"}
     assert _manifest()["id"] == PACKAGE_ID and _manifest()["compatibility"]["major"] == 1
     imports = (REPO / "packages" / "model.scout.deep-umbra@1" / "sources" / "deep_umbra" / "node_outputs.py")
-    assert "from scout_rasters.web_tiles import mosaic_rasters, tile_bounds" in imports.read_text(encoding="utf-8")
+    text = imports.read_text(encoding="utf-8")
+    assert "\nfrom scout_rasters.mosaic import mosaic_rasters\n" in text
+    assert "\nfrom scout_rasters.web_tiles import tile_bounds\n" in text
 
 
 def test_a_shipped_dataflow_lists_rasterization_only_when_it_holds_one_of_its_nodes():

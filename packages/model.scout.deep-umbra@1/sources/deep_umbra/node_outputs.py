@@ -32,9 +32,10 @@ import numpy as np
 import rasterio
 from pyproj import Transformer
 
-# A web map tile's bounds and tiles side by side in one GeoTIFF, Rasterization's
+# Tiles side by side in one GeoTIFF and a web map tile's bounds, Rasterization's
 # (curio.rasterization@1, which the package names in dependencies.packages).
-from scout_rasters.web_tiles import mosaic_rasters, tile_bounds
+from scout_rasters.mosaic import mosaic_rasters
+from scout_rasters.web_tiles import tile_bounds
 
 from .deep_umbra import TILE, predict_shadow, season_factor, shadow_fraction
 

@@ -9,8 +9,9 @@
     "sources/rasterize-buildings.py": "b0739294eb6951269f77f4adc06abbd6f012c96c365932cfe7a857cac86fecf6",
     "sources/scout_rasters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sources/scout_rasters/convert_to_raster.py": "dc400f893bd24c4dbef936b1cd5efc78288f20f22a848d4f5ee8651b4f38afc4",
+    "sources/scout_rasters/mosaic.py": "638dd6a23bc4352475cb82e128d1aac6eb65df731d581c462220cf91562946e5",
     "sources/scout_rasters/node_outputs.py": "6d5a741822043189ab80f3fd92d7c3d09a6b3e4b3d09d848d73331ff0b76e517",
     "sources/scout_rasters/raster_algebra.py": "6f55e28897ba598d4eb7377d9a8c759b252fdd8e31c92cc60ccee24f0517e24d",
-    "sources/scout_rasters/web_tiles.py": "87ea7d65c7eba25890bc4449284d769b75fba23d65acb89476b9205f5ca18a1a"
+    "sources/scout_rasters/web_tiles.py": "1cd60535f0f72de86bad3828ca6a6ee75d32eb3f9772eb92730fbfc2901f7fad"
   }
 }
