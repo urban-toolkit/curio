@@ -14,7 +14,8 @@ relpath is always POSIX):
 
 - ``{name}`` captures part of one segment, as a string;
 - ``{name:int}``, ``{name:date}`` (``YYYY-MM-DD``) and ``{name:<strftime>}``
-  (``%Y %m %d %H %M %S %j %y %b``) type the capture;
+  (``%Y %m %d %H %M %S %j %y %b``, and ``%f``, a fraction of a second of 1
+  to 6 digits, as ``strptime`` reads it: ``016`` is 0.016 s) type the capture;
 - ``*`` matches within one segment and captures nothing;
 - ``**``, alone as a segment, spans zero or more folders;
 - anything else is literal.
@@ -63,6 +64,9 @@ _STRFTIME = {
     "%S": r"\d{2}",
     "%j": r"\d{3}",
     "%b": r"[A-Za-z]{3}",
+    # A fraction of a second: strptime reads 1 to 6 digits, zero-padded on
+    # the right, so 016 is 16 milliseconds and 5 half a second.
+    "%f": r"\d{1,6}",
 }
 
 _TOKEN_RE = re.compile(r"\{([^{}:]*)(?::([^{}]*))?\}|\*|[^{}*]+")

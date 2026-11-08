@@ -411,7 +411,7 @@ A storage source's `resources` say how its files are organized. `provider` says 
 | `extensions` | | The file extensions it takes. A collection's follow its kind: images and frames take jpg, jpeg, png, webp, gif, bmp, tif and tiff; videos mp4, mov, m4v, webm, mkv and avi; media both; audio wav, flac, mp3, ogg, opus, m4a, aiff and aif; rasters tif, tiff and jp2. A table's follow its format: geojson and json for `geojson`, the format's own for the others. |
 | `options` | | For a CSV table: `delimiter` and `header`. A table read with them lands as Parquet. |
 | `fps` | | For `frames`: frames per second. A frame's `t_s` is its number over it. |
-| `time` | | For a collection: the date or time path field that is each file's time, as `recorded_at` for audio and `taken_at` for the other kinds. |
+| `time` | | For a collection: the path field that is each file's time, as `recorded_at` for audio and `taken_at` for the other kinds. A date or time field is read as written, or with `{"capture": "<field>", "timezone": "America/Chicago"}` as a local time in that IANA time zone, converted to UTC. A whole number is a time as `{"capture": "<field>", "unit": "ns"}`: seconds (`s`), milliseconds (`ms`) or nanoseconds (`ns`) since 1970, in UTC. The field's own column keeps what the path says. |
 | `metadata` | | For a collection: a CSV, Parquet or JSON table of up to 256 MiB, in the same source, joined onto its rows, as `{"path": ..., "on": ...}`, where `on` is `file_name`, `frame`, or a path field. Its `lat` and `lon` (or `latitude` and `longitude`) columns give a file its position. |
 
 **Path templates.** A template matches each file's path:
@@ -421,11 +421,24 @@ A storage source's `resources` say how its files are organized. `provider` says 
 | `{name}` | Part of one folder or file name, as text. |
 | `{name:int}` | A whole number. |
 | `{name:date}` | A date written `2024-05-01`. |
-| `{name:%Y%m%d_%H%M%S}` | A time, in the format it is written in. |
+| `{name:%Y%m%d_%H%M%S}` | A time, in the format it is written in, with `%Y`, `%y`, `%m`, `%d`, `%j`, `%b`, `%H`, `%M`, `%S`, and `%f` for a fraction of a second of 1 to 6 digits (`016` is 16 milliseconds). |
 | `*` | Anything within one folder or file name. |
 | `**` | Any number of folders. |
 
 Each named part becomes a column of the dataset and a field the **Add** dialog can narrow by. For `frames`, `{sequence}` and `{frame:int}` name the sequence and the frame number; without `{sequence}`, a frame's folder is its sequence. Some names are taken by a collection's own columns (`path`, `name`, `kind`, `bytes`, and the like). A manifest that uses one is not listed, and the source's page gives the reason.
+
+**A time in a path.** Snapshots named by when they were taken, in nanoseconds since 1970, and walks in folders named by their start in Chicago:
+
+```jsonc
+{ "id": "snapshots", "name": "Crossing snapshots", "kind": "images",
+  "path": "{crossing}/images/{month:%Y_%m}/{ns:int}-snapshot.jpg",
+  "time": { "capture": "ns", "unit": "ns" } },
+{ "id": "walks", "name": "Walk videos", "kind": "videos",
+  "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/video.mp4",
+  "time": { "capture": "began", "timezone": "America/Chicago" } }
+```
+
+`W042/images/2025_07/1752710404341667481-snapshot.jpg` gets the `taken_at` 2025-07-17 00:00:04.341667481, and the walk in `2026-10-26-16-03-17-016` 2026-10-26 21:03:17.016, both in UTC. `ns` stays a number, and `began` the local time. A local time the clocks show twice, when they go back, is read as the first of the two; one they skip, when they go forward, is read with the offset from before the change.
 
 The example storage source's manifest, with one resource per use case (abridged):
 
