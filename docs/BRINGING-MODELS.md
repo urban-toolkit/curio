@@ -66,6 +66,7 @@ A segmentation model's node calls Curio's `curio_segment` and needs no code of
 yours ([MODEL-CATALOG.md](MODEL-CATALOG.md#3-using-a-model-in-a-dataflow)). An
 image-to-image or node-regression model is run by the node you write for it,
 which prepares the model's inputs itself. That is the case this guide covers.
+A concept-segmentation model is always run by the node you write for it.
 
 ---
 
@@ -238,8 +239,9 @@ The manifest is a node package's ([NODE-CATALOG.md](NODE-CATALOG.md)), with:
   module are not detected, so list every library.
 - `templates`: one template, the node that runs the model. Dragging the model's
   card onto the canvas drops it. Its `source` is the node's code; a template
-  with no `source` opens with the cell Curio writes for the model's type. Its
-  `widgets` are what the user sets ([section 6](#6-widgets-what-the-user-sets)).
+  with no `source` opens with the cell Curio writes for the model's type, and
+  a `concept-segmentation` model's template must have one. Its `widgets` are
+  what the user sets ([section 6](#6-widgets-what-the-user-sets)).
 
 The `model` block describes the weights:
 

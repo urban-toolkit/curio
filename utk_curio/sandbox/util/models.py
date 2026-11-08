@@ -46,7 +46,7 @@ NOT_FETCHED = (
 )
 
 #: The model type whose labels are text prompts: its node loads the model's
-#: checkpoint itself.
+#: checkpoint itself, and ``curio_segment`` refuses it.
 CONCEPT_SEGMENTATION = "concept-segmentation"
 
 

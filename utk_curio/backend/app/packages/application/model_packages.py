@@ -42,7 +42,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from utk_curio.backend.app.packages.domain.default_cells import CONCEPT_SEGMENTATION, SEGMENTATION, default_cell
+from utk_curio.backend.app.packages.domain.default_cells import SEGMENTATION, default_cell
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.domain.manifest import ManifestError, PackageManifest
 from utk_curio.backend.app.packages.domain.model_block import MODELS_DIR
@@ -362,11 +362,10 @@ def _graph_inputs(manifest: PackageManifest, folder: Path):
 def model_default_cell(manifest: PackageManifest, folder: Path) -> str:
     """The cell a node of the model package *manifest* in *folder* opens with
     when its template ships no ``source`` (``domain/default_cells.py``): a
-    segmentation model's runs as it is; a concept segmentation model's names
-    its prompts and its checkpoint; another type's is a ``model.run``
+    segmentation model's runs as it is; another type's is a ``model.run``
     skeleton naming the arrays its graph takes. Nothing is downloaded for it."""
     block = manifest.model
-    inputs = None if block.type in (SEGMENTATION, CONCEPT_SEGMENTATION) else _graph_inputs(manifest, folder)
+    inputs = None if block.type == SEGMENTATION else _graph_inputs(manifest, folder)
     return default_cell(manifest.package_id, block.type, inputs)
 
 

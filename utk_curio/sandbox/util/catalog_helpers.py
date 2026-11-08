@@ -326,9 +326,9 @@ class CurioModel:
     has not fetched its weights stops at loading, saying how to fetch them
     (``models.NOT_FETCHED``). ``runner``, the callable that labels one image's
     pixels, opens the model's runtime the first time it is used, and
-    ``labels`` are the classes it can name, or a ``concept-segmentation``
-    model's prompts. ``run`` feeds an ONNX model's graph the arrays the node
-    prepared itself, as an ``image-to-image`` model is run.
+    ``labels`` are the classes it can name. ``run`` feeds an ONNX model's
+    graph the arrays the node prepared itself, as an ``image-to-image`` model
+    is run.
     """
 
     def __init__(self, model_id: str, folder: str, weights: str | None = None):
@@ -381,14 +381,7 @@ class CurioModel:
 
     @property
     def labels(self) -> list:
-        from utk_curio.sandbox.util.models import CONCEPT_SEGMENTATION
-
-        listed = list(self.manifest.get("labels") or [])
-        # A concept segmentation model's labels are its prompts: it has no
-        # runner of classes to read them from.
-        if listed or self.manifest.get("task") == CONCEPT_SEGMENTATION:
-            return listed
-        return list(self.runner.labels)
+        return list(self.manifest.get("labels") or []) or list(self.runner.labels)
 
     def __repr__(self) -> str:
         return f"<CurioModel {self.id}>"

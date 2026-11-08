@@ -126,8 +126,9 @@ def test_a_fetch_that_stopped_halfway_is_not_fetched(package, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_the_weights_are_read_where_they_are_and_the_labels_are_the_prompts(package, weights):
-    """The manifest from the model's folder, the weights from theirs: no
-    runner is opened to name a concept segmentation model's labels."""
+    """The manifest from the model's folder, the weights from theirs. The
+    labels a manifest lists, a concept segmentation model's prompts, come back
+    as every model's do, with no runner opened."""
     from utk_curio.sandbox.util.catalog_helpers import CurioModel
 
     model = CurioModel(MODEL_ID, str(package), str(weights))
@@ -307,10 +308,12 @@ def test_an_isolated_run_never_copies_them_even_where_links_cannot_reach_them(is
 
 def test_weights_outside_the_models_ids_or_not_absolute_never_reach_the_child(isolated, package, weights):
     """The route keeps a weights folder only for a model the run resolved,
-    and only an absolute one."""
+    and only an absolute one: the run goes on without either entry, and the
+    child is handed neither. Its reply is read, as the caller reads it: the
+    run happens while the reply streams."""
     from utk_curio.sandbox.app import app
 
-    handed, _copied = isolated
+    handed, copied = isolated
     resp = app.test_client().post("/exec", json={
         "code": textwrap.indent("return 1\n", "    "),
         "file_path": "",
@@ -321,7 +324,15 @@ def test_weights_outside_the_models_ids_or_not_absolute_never_reach_the_child(is
         "models": {MODEL_ID: str(package)},
         "model_weights": {"model.test.other": str(weights), MODEL_ID: "model-weights/relative"},
     })
+    status, body = resp.status_code, resp.get_data(as_text=True)
     resp.close()
 
-    request, _files = handed[-1]
+    assert status == 200, (status, body)
+    assert json.loads(body)["stdout"] == ["the child ran"], body
+    assert len(handed) == 1, handed
+    request, files = handed[-1]
+    assert request["models"] == {MODEL_ID: "model_0"}
     assert request["model_weights"] == {}
+    assert str(weights) not in json.dumps(request)
+    assert not [name for name in files if name.startswith("model_0/models/")], files
+    assert not [source for source in copied if weights in source.parents], copied
