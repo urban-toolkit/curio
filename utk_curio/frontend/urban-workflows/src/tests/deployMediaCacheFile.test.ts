@@ -23,8 +23,21 @@ describe("The deploy's limit on one cached file", () => {
         expect(commands).toHaveLength(2);
         for (const command of commands) {
             expect(command).toMatch(
-                /"24576"%s%s%s\]\\n' "\$llm_args" "\$weights_args" "\$cache_args" >> docker-compose\.site\.yml$/,
+                /"24576"%s%s%s%s\]\\n' "\$llm_args" "\$weights_args" "\$cache_args" "\$download_args" >> docker-compose\.site\.yml$/,
             );
+        }
+    });
+
+    test("each stack sets it before its command line names it", () => {
+        const jobs = text.split(/^ {2}deploy-(?:dev|stable):$/m).slice(1);
+        expect(jobs).toHaveLength(2);
+        for (const job of jobs) {
+            const command = job.search(/printf ' {4}command: \[/);
+            expect(command).toBeGreaterThan(-1);
+            expect(job.indexOf('cache_args=""')).toBeGreaterThan(-1);
+            expect(job.indexOf('cache_args=""')).toBeLessThan(command);
+            expect(job.indexOf(`cache_args=', "--media-cache-max-file-gb", "8"'`)).toBeLessThan(command);
+            expect(job.indexOf(`cache_args=', "--media-cache-max-file-gb", "8"'`)).toBeGreaterThan(-1);
         }
     });
 });

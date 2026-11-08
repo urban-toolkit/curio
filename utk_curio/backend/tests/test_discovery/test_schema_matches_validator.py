@@ -152,6 +152,97 @@ def test_the_table_formats_match(schema):
     assert formats == sorted(M.TABLE_FORMATS)
 
 
+class TestJsonLinesOptions:
+    """A jsonl table's ``options`` as ``domain/json_rows.py`` reads them."""
+
+    DETECTIONS = {
+        "id": "detections", "name": "Detections", "kind": "table", "format": "jsonl",
+        "path": "{crossing}/data/*_{year:int}_{month:int}.jsonl",
+        "options": {
+            "parse": ["value"],
+            "columns": {"timestamp": {"path": "timestamp", "type": "timestamp"},
+                        "image_timestamp_ns": "value.image_timestamp_ns"},
+            "unpack": [
+                {"path": "value.models_results", "key": "model",
+                 "columns": {"inference_time_seconds": "inference_time_seconds"}},
+                {"path": "detections",
+                 "columns": {"class": "class", "confidence": "confidence",
+                             "x0": "bbox.0", "y0": "bbox.1", "x1": "bbox.2", "y1": "bbox.3"}},
+            ],
+        },
+    }
+
+    def _options(self, schema):
+        return schema["properties"]["resources"]["items"]["properties"]["options"]["properties"]
+
+    def test_the_option_and_level_keys_are_the_validators(self, schema):
+        from utk_curio.backend.app.discovery.domain import json_rows as R
+
+        assert set(R.OPTION_KEYS) <= set(self._options(schema))
+        level = self._options(schema)["unpack"]["items"]
+        assert sorted(level["properties"]) == sorted(R.LEVEL_KEYS) and level["additionalProperties"] is False
+
+    def test_a_columns_type_and_keys_are_the_validators(self, schema):
+        from utk_curio.backend.app.discovery.domain import json_rows as R
+
+        column = schema["$defs"]["jsonlColumn"]
+        assert column["properties"]["type"]["enum"] == list(R.COLUMN_TYPES)
+        assert sorted(column["properties"]) == sorted(R.COLUMN_KEYS) and column["additionalProperties"] is False
+        assert schema["$defs"]["jsonlColumns"]["additionalProperties"] == {
+            "anyOf": [{"$ref": "#/$defs/jsonlPath"}, {"$ref": "#/$defs/jsonlColumn"}],
+        }
+
+    def test_the_bounds_are_the_validators(self, schema):
+        from utk_curio.backend.app.discovery.domain import json_rows as R
+
+        options = self._options(schema)
+        assert options["parse"]["maxItems"] == R.MAX_PARSE
+        assert options["unpack"]["maxItems"] == R.MAX_LEVELS
+        assert schema["$defs"]["jsonlColumns"]["maxProperties"] == R.MAX_COLUMNS
+        assert schema["$defs"]["jsonlPath"]["maxLength"] == R.MAX_PATH_CHARS
+        assert schema["$defs"]["jsonlColumnName"]["maxLength"] == R.MAX_NAME_CHARS
+
+    def test_a_table_of_detections_is_read_by_both(self, schema):
+        jsonschema = pytest.importorskip("jsonschema")
+        from utk_curio.backend.tests.test_discovery.conftest import a_storage_manifest
+
+        raw = a_storage_manifest("/srv/idot", [self.DETECTIONS])
+        assert not list(jsonschema.Draft202012Validator(schema).iter_errors(raw))
+        parsed = M._parse_manifest(raw, where="manifest.json")
+        assert parsed.resources[0].format == "jsonl"
+        assert parsed.resources[0].extensions == ("jsonl", "ndjson")
+
+    @pytest.mark.parametrize("options", [
+        {"unpack": [{"path": "value.models_results", "keys": "model"}]},
+        {"columns": {"__curio_row": "a"}},
+        {"columns": {"a": "b..c"}},
+        {"parse": [""]},
+        {"unpack": []},
+        {"columns": {}},
+        {"columns": {"t": {"path": "t", "type": "date"}}},
+        {"columns": {"t": {"type": "int"}}},
+        {"unpack": [{"path": "a", "columns": {"c": {"path": "c", "unit": "s"}}}]},
+    ], ids=[
+        "unknown-level-key", "reserved-prefix", "empty-name-in-path", "parse-empty-path", "unpack-empty",
+        "no-columns", "unknown-type", "typed-column-without-path", "unknown-column-key-in-a-level",
+    ])
+    def test_options_both_refuse(self, schema, options):
+        jsonschema = pytest.importorskip("jsonschema")
+        from utk_curio.backend.tests.test_discovery.conftest import a_storage_manifest
+
+        raw = a_storage_manifest("/srv/idot", [{**self.DETECTIONS, "options": options}])
+        assert list(jsonschema.Draft202012Validator(schema).iter_errors(raw))
+        with pytest.raises(M.ManifestError, match=r"manifest\.resources\[0\]\.options: "):
+            M._parse_manifest(raw, where="manifest.json")
+
+    def test_a_csv_table_with_them_is_refused(self):
+        from utk_curio.backend.tests.test_discovery.conftest import a_storage_manifest
+
+        raw = a_storage_manifest("/srv/idot", [{**self.DETECTIONS, "format": "csv", "path": "a.csv"}])
+        with pytest.raises(M.ManifestError, match="a csv table reads no parse, columns, unpack"):
+            M._parse_manifest(raw, where="manifest.json")
+
+
 def test_the_resource_id_pattern_matches(schema):
     pattern = schema["properties"]["resources"]["items"]["properties"]["id"]["pattern"]
     assert pattern == M._RESOURCE_ID_RE.pattern
