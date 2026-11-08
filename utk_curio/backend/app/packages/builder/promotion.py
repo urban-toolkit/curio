@@ -310,7 +310,7 @@ def _provision_dependencies(user_key: str, journal: dict[str, Any], manifest) ->
     """Python deps install at Apply — the reviewed installer step the build
     phase deliberately never ran (dev/89 §3.4). dev/97: ONE routing decision
     (dep_destinations) sends a backend-bearing package's deps to its isolated
-    OVERLAY (wipe-and-rebuild under this lock — invocations wait, B-1); node
+    OVERLAY (wipe-and-rebuild under this lock: invocations wait, B-1); node
     code's environment (the shared interpreter, or under fork isolation the
     account's own tree) is touched only when the manifest also carries
     warm-sandbox python templates. Any failure compensates immediately."""
