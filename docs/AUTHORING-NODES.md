@@ -216,6 +216,10 @@ from building_height.convert_to_raster import convert_raster
 return convert_raster(input_0, zoom=[!! zoom !!])
 ```
 
+- A node's logic is its code ([Extending](EXTENDING.md#a-nodes-logic-is-its-code)):
+  a module holds what several of your nodes share, and each function it offers
+  says what it does in the first paragraph of its docstring, which is what an
+  agent reads of it.
 - A module is a `.py` file, or a folder of `.py` files, directly in `sources/`,
   named like a Python identifier. The files your templates name as their
   `source` are not modules.

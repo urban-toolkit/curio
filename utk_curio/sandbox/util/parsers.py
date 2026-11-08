@@ -58,25 +58,6 @@ from utk_curio.sandbox.util.codec import (
 
 #     return parsedJson
 
-# I/O type checking — RETIRED (memo dev/120).
-#
-# ``checkIOType`` used to dispatch on the legacy uppercase node names
-# (DATA_LOADING, DATA_EXPORT and the other code nodes) and refuse inputs and
-# outputs outside a hand-typed copy of the builtin manifest's port types. Every
-# caller has sent the namespaced id (``curio.builtin/data-loading``) since the
-# package registry landed, so the check has been a no-op on the browser path,
-# the agents' runner and the e2e runner for as long as those ids have existed.
-# A node's type contract is its template's declared ports (DEC-062/076),
-# enforced by the canvas at connect time; the validators are gone.
-#
-# The NAME stays, and stays seeded into every node namespace (owner decision
-# 2026-09-09): the #158 contract promises that every name the old star import
-# leaked keeps resolving in node code. Calling it does nothing, which is what
-# it did for every namespaced id already.
-def checkIOType(data, nodeType, input=True):
-    """No-op kept for the #158 namespace contract — see the note above."""
-    return None
-
 
 def parse_primitive(data_type, data_value):
     try:
