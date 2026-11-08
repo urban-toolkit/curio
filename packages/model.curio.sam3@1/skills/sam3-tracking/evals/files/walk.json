@@ -1,0 +1,75 @@
+{
+  "dataflow": {
+    "name": "Objects along a walk",
+    "description": "A street survey's video, its objects followed by SAM 3's Track Objects, whose overlay a Simple View plays.",
+    "task": "Follow curb ramps, cones and people through a survey video.",
+    "timestamp": 0,
+    "provenance_id": "sam3-tracking-walk",
+    "packages": [
+      "model.curio.sam3@1"
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.curio.storage-survey",
+        "dirName": "data.curio.storage-survey@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-09-27T00:00:00Z"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "walk-videos",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 215,
+        "content": "collection = curio_load_collection(\"data.curio.storage-survey\")\n\nreturn collection\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the survey collection, photos and video together.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "walk-objects",
+        "type": "model.curio.sam3/track-objects",
+        "x": 645,
+        "y": 215,
+        "content": "from sam3_tracking import track_objects\n\n# What to look for, in plain words: SAM 3 takes any short noun phrase.\nLABELS = [\n    \"curb ramp\", \"curb cut\", \"tactile paving\", \"bollard\", \"pole\",\n    \"construction barrier\", \"traffic cone\", \"person\",\n]\nEVERY_SECONDS = 0.5  # the gap between two frames SAM 3 looks at\nFROM_SECONDS = 0  # the part of each video to track, in seconds from its start\nTO_SECONDS = None  # None is the video's end\nMAX_SECONDS = 300  # the most video one run takes\nWIDTH = 960  # the widest frames are read and drawn at\n\nreturn track_objects(\n    input_0, curio_load_model(\"model.curio.sam3\"), curio_derived_file,\n    labels=LABELS, every_seconds=EVERY_SECONDS, from_seconds=FROM_SECONDS,\n    to_seconds=TO_SECONDS, max_seconds=MAX_SECONDS, width=WIDTH,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Follow the curb ramps, cones and people through the video.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "walk-overlay",
+        "type": "curio.builtin/vis-simple",
+        "x": 1290,
+        "y": 215,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Play the overlay of each video.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-walk-videosout-walk-objectsin",
+        "source": "walk-videos",
+        "target": "walk-objects"
+      },
+      {
+        "id": "reactflow__edge-walk-objectsout-walk-overlayin",
+        "source": "walk-objects",
+        "target": "walk-overlay"
+      }
+    ]
+  }
+}

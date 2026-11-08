@@ -6,14 +6,16 @@
 
 The file lists the libraries ``curio.py setup --with-examples`` installs from
 the package manifests, one pip requirement per line, as setup's own walk lists
-them (``manifest_requirements`` in utk_curio/cli/dependencies.py). CI's image
-installs it in a layer of its own before the source is copied (the
+them (``manifest_requirements`` in utk_curio/cli/dependencies.py), and the
+libraries of every other package the shipped catalog holds: CI's suites run
+the code of every package Curio ships, one no example uses yet among them,
+whose libraries setup installs only when someone adds the package. CI's image
+installs the file in a layer of its own before the source is copied (the
 Dockerfile's CURIO_CI_SETUP), and the image build's cache keys that layer on
 the file's content, so it is rebuilt only when the list changes.
 
-The walk runs over the shipped catalog and the examples' packages alone, in an
-empty state directory as in the image build, so no user's store on this
-machine changes the list.
+The walk runs over the shipped catalog alone, in an empty state directory as
+in the image build, so no user's store on this machine changes the list.
 """
 
 from __future__ import annotations
@@ -27,7 +29,8 @@ REPO = Path(__file__).resolve().parents[1]
 LIST = REPO / "scripts" / "ci-requirements.txt"
 HEADER = (
     "# What `curio.py setup --with-examples` installs from the package manifests,\n"
-    "# which CI's image installs before its source (the Dockerfile's CURIO_CI_SETUP).\n"
+    "# with the libraries of every other package Curio ships, which CI's image\n"
+    "# installs before its source (the Dockerfile's CURIO_CI_SETUP).\n"
     "# Written by scripts/ci_requirements.py; a unit test checks it is current.\n"
 )
 
@@ -43,7 +46,7 @@ def expected() -> str:
         os.environ["CURIO_SEED_EXAMPLES"] = "1"
         os.environ["CURIO_STATE_DIR"] = state
         try:
-            requirements = manifest_requirements()
+            requirements = manifest_requirements(whole_catalog=True)
         finally:
             for name, value in saved.items():
                 if value is None:
