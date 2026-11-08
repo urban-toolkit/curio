@@ -64,7 +64,7 @@ Which of them each agent holds, and which its modes are handed, is in the [Agent
 
 ### Skills from packages
 
-A node package can ship skills of its own, in its `skills/` folder, such as Rasterization's `rasterization` and the Vega-Lite package's `vega-lite-charts` ([Node Catalog](NODE-CATALOG.md#6-the-manifest)). The Skill Catalog lists the skills of the packages you can add, each with its package: its card and its details say **From Rasterization**, and **Used by** reads *Agents on a dataflow that uses Rasterization*.
+A node package can ship skills of its own, in its `skills/` folder, such as Rasterization's `rasterization` and the Vega-Lite package's `vega-lite-charts` ([Node Catalog](NODE-CATALOG.md#6-the-manifest)), and so can a model package, such as SAM 3's `sam3-tracking`. The Skill Catalog lists the skills of the packages you can add, each with its package: its card and its details say **From Rasterization**, and **Used by** reads *Agents on a dataflow that uses Rasterization*.
 
 - Every agent on a dataflow that uses the package lists the package's skills after its own, and a call that writes one of the package's nodes holds the ones that serve it.
 - A package's skill comes and goes with its package. It has no **Remove**, **Publish** or **Export**, and an agent's **Add skill** does not offer it.

@@ -335,7 +335,7 @@ def install_manifest_dependencies(*, block_on_verify: bool = False) -> None:
     _report_unimportable_deps(merged, block=block_on_verify)
 
 
-def manifest_requirements() -> list[str]:
+def manifest_requirements(*, whole_catalog: bool = False) -> list[str]:
     """The libraries :func:`install_manifest_dependencies` installs into this
     interpreter, one ``pip install`` requirement each and sorted, without
     installing anything.
@@ -345,10 +345,15 @@ def manifest_requirements() -> list[str]:
     layer of its own before the source is copied (the Dockerfile's
     ``CURIO_CI_SETUP``). Per-user installs under fork isolation go to each
     user's own tree, not this interpreter, so they are not in it.
+
+    With *whole_catalog*, the walk takes every package the shipped catalog
+    holds, not only the built-in and the examples' packages: CI's suites run
+    the code of every package Curio ships, one no example uses among them,
+    which setup installs only when someone adds it.
     """
     from utk_curio.backend.app.packages.infrastructure.pip_runner import pip_requirement
 
-    per_pkg, _per_user = _walk_manifests()
+    per_pkg, _per_user = _walk_manifests(whole_catalog=whole_catalog)
     if not per_pkg:
         return []
     merged = _merge_host_deps(per_pkg)
@@ -368,10 +373,14 @@ def _merge_host_deps(per_pkg: list[tuple[str, dict[str, str]]]) -> dict[str, str
     return merged
 
 
-def _walk_manifests() -> tuple[list[tuple[str, dict[str, str]]], dict[str, list[tuple[str, dict]]]]:
+def _walk_manifests(
+    *, whole_catalog: bool = False,
+) -> tuple[list[tuple[str, dict[str, str]]], dict[str, list[tuple[str, dict]]]]:
     """Every manifest :func:`install_manifest_dependencies` reads, as
     ``(per_pkg, per_user)``: the ``(dir_name, python deps)`` pairs bound for
-    this interpreter, and, under fork isolation, each user's own pairs."""
+    this interpreter, and, under fork isolation, each user's own pairs. With
+    *whole_catalog*, every package of the shipped catalog is bound for this
+    interpreter (:func:`manifest_requirements`)."""
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
     from utk_curio.backend.app.packages.service import ManifestError
     from utk_curio.backend.app.packages.service import example_dep_package_ids
@@ -406,6 +415,8 @@ def _walk_manifests() -> tuple[list[tuple[str, dict[str, str]]], dict[str, list[
     catalog_globs = ["curio.builtin@*"]
     if os.environ.get("CURIO_SEED_EXAMPLES") == "1":
         catalog_globs += [f"{pid}@*" for pid in example_dep_package_ids()]
+    if whole_catalog:
+        catalog_globs.append("*@*")
     if catalog.is_dir():
         for pattern in catalog_globs:
             for pkg_dir in sorted(catalog.glob(pattern)):
