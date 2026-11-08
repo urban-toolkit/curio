@@ -79,7 +79,8 @@ def test_rasterization_offers_the_calls_its_readme_lists_and_the_weather_model_i
         ],
     }
     offered = _offered(WEATHER_GNN)
-    assert [name for name, _call in offered.pop("weather_routing")] == ["calculate_weather_route"]
+    routing = offered.pop("weather_routing")
+    assert [name for name, _call in routing] == ["calculate_weather_route"]
     assert offered == {
         "weather_routing.calculate_isochrones": [],
         "weather_routing.road_graph": [],
