@@ -11,7 +11,7 @@
   reads a missing neighbour.
 - **output**: the accumulated shadow on the input's own grid, one float32 band
   in minutes (Deep Umbra's output from 0 to 1, times the season's minutes),
-  written with Curio's mosaic helper (``mosaic_rasters``), with NaN as its
+  written with Rasterization's mosaic (``mosaic_rasters``), with NaN as its
   nodata, as Curio's raster tools write theirs: a GeoTIFF that names no nodata
   is read by autk-db with 0 as its nodata, which would leave every cell in the
   sun out of an Autark map. A tile not predicted is NaN. Its statistics over the ground are a Raster Calculator's,
@@ -32,11 +32,9 @@ import numpy as np
 import rasterio
 from pyproj import Transformer
 
-# A web map tile's bounds, Rasterization's (curio.rasterization@1, which the
-# package names in dependencies.packages), and Curio's tiles side by side in
-# one GeoTIFF.
-from scout_rasters.web_tiles import tile_bounds
-from utk_curio.sandbox.util.rasters import mosaic_rasters
+# A web map tile's bounds and tiles side by side in one GeoTIFF, Rasterization's
+# (curio.rasterization@1, which the package names in dependencies.packages).
+from scout_rasters.web_tiles import mosaic_rasters, tile_bounds
 
 from .deep_umbra import TILE, predict_shadow, season_factor, shadow_fraction
 

@@ -1,6 +1,6 @@
 {
   "sha256": {
-    "README.md": "47b0a42d935c8384eb943ef7f259e80281d44d96b73fb79207a5c19b1a836a15",
+    "README.md": "95841978d6ad7d1f2c57eeeb5ce91776b06eece860d820bd303b17f7a67e21d0",
     "manifest.json": "7826b981430812bd230c1eee1f0babbe7e5f6ac8ecb9b178699ffa05f94c51d2",
     "skills/rasterization/SKILL.md": "876eab34e2dfae9ce4b6b3336e3ac6cf637361def2602928ee38669f63ab74e2",
     "skills/rasterization/evals/evals.json": "b135c8ed0e060b8fa8d63eb5a6f2c60e9912a251e752dedfe09c949a3eee2729",
@@ -10,7 +10,7 @@
     "sources/scout_rasters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sources/scout_rasters/convert_to_raster.py": "dc400f893bd24c4dbef936b1cd5efc78288f20f22a848d4f5ee8651b4f38afc4",
     "sources/scout_rasters/node_outputs.py": "6d5a741822043189ab80f3fd92d7c3d09a6b3e4b3d09d848d73331ff0b76e517",
-    "sources/scout_rasters/raster_algebra.py": "d1edb234e642c00445b01cdaf52fb8548c768dd38fcb90ff5993477da104dfcf",
-    "sources/scout_rasters/web_tiles.py": "38c3d051eb9d48a3653cab276450de20999b16d2c2d1faef9b3e267436f5a2c2"
+    "sources/scout_rasters/raster_algebra.py": "6f55e28897ba598d4eb7377d9a8c759b252fdd8e31c92cc60ccee24f0517e24d",
+    "sources/scout_rasters/web_tiles.py": "87ea7d65c7eba25890bc4449284d769b75fba23d65acb89476b9205f5ca18a1a"
   }
 }

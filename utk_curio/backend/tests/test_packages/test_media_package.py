@@ -177,6 +177,23 @@ def test_mosaic_rasters_names_what_differs(collection):
         run_node("mosaic-rasters", mixed, helpers)
 
 
+def test_mosaic_rasters_refuses_a_rotated_tile(collection):
+    tiles, helpers = collection("orthos")
+    rotated = tiles[tiles["year"] == 2024].copy()
+    transform = json.loads(rotated["transform"].iloc[0])
+    transform[1] = 0.2
+    rotated.loc[rotated.index[0], "transform"] = json.dumps(transform)
+    with pytest.raises(ValueError, match="a tile is rotated; only north-up tiles make a mosaic"):
+        run_node("mosaic-rasters", rotated, helpers)
+
+
+def test_mosaic_rasters_code_is_all_in_the_node():
+    """Its whole mosaic is in the node's code, which imports nothing of Curio's."""
+    code = node_source("mosaic-rasters")
+    assert "utk_curio" not in code
+    assert "<VRTDataset" in code and "curio_output_file(name)" in code
+
+
 def test_an_uncached_file_is_named_not_crashed_on(collection):
     media, helpers = collection("survey")
     media = media.copy()
@@ -271,6 +288,25 @@ def test_mosaic_rasters_lets_a_tiles_empty_pixels_show_the_tile_below(folder_col
     tiles, helpers = folder_collection(root, {"id": "t", "name": "Tiles", "kind": "rasters", "path": "*.tif"})
     mosaic = run_node("mosaic-rasters", tiles, helpers)
     assert mosaic.read(1)[0].tolist() == [7, 7, 7, 9, 9, 9]
+
+
+def test_mosaic_rasters_lays_the_tiles_side_by_side_in_a_vrt_that_points_at_them(folder_collection, tmp_path):
+    """The mosaic is a VRT that names each tile's file, each tile where its
+    corner falls and the mosaic's corner the north-west tile's."""
+    import numpy as np
+
+    root = tmp_path / "tiles"
+    root.mkdir()
+    _tile(root / "a.tif", 447000.0, list(range(1, 17)), nodata=255)
+    _tile(root / "b.tif", 447004.0, list(range(17, 33)), nodata=255)
+    tiles, helpers = folder_collection(root, {"id": "t", "name": "Tiles", "kind": "rasters", "path": "*.tif"})
+    mosaic = run_node("mosaic-rasters", tiles, helpers)
+    with open(mosaic.name, encoding="utf-8") as handle:
+        text = handle.read()
+    assert len(tiles) == 2 and all(str(path) in text for path in tiles["path"]), text
+    left, right = np.arange(1, 17).reshape(4, 4), np.arange(17, 33).reshape(4, 4)
+    assert mosaic.read(1).tolist() == np.hstack([left, right]).tolist()
+    assert tuple(mosaic.transform)[:6] == (1.0, 0.0, 447000.0, 0.0, -1.0, 4641000.0)
 
 
 def test_mosaic_rasters_refuses_tiles_whose_empty_value_differs(folder_collection, tmp_path):

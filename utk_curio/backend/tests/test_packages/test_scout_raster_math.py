@@ -7,8 +7,9 @@ names and grid checks are the Rasterization package's module
 codes=None, ...)``, which writes where ``output_file`` says, and
 ``raster_statistics(...)``, with the arguments the old helpers took.
 ``absolute=True`` gives the size of a result, such as how much a depth
-changed. SCOUT's tile helpers, ``tile_bounds`` and ``mosaic_web_tiles``, are
-the package's too (``scout_rasters.web_tiles``).
+changed. SCOUT's tile helpers, ``tile_bounds`` and ``mosaic_web_tiles``, and
+the GeoTIFF mosaic they and Deep Umbra write with, ``mosaic_rasters`` on
+``mosaic_grid``, are the package's too (``scout_rasters.web_tiles``).
 
 A node reaches them by importing them: the Raster Calculator's own code, or a
 node of a package that names Rasterization in ``dependencies.packages``, as Deep
@@ -54,7 +55,7 @@ PLAIN = "curio.builtin/python-computation"
 MOVED = (
     "curio_raster_calculate", "curio_raster_statistics", "raster_calculate", "raster_statistics",
     "operate", "in_codes", "masked_bands", "dataset_grid", "write_raster", "_content_name",
-    "tile_corner", "tile_bounds", "mosaic_web_tiles",
+    "tile_corner", "tile_bounds", "mosaic_web_tiles", "mosaic_grid", "mosaic_rasters",
 )
 #: What the sandbox kept for Compare Scenarios' raster Difference, gone with
 #: it: the envelope subtraction, the grid checks it called and their error,

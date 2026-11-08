@@ -55,11 +55,12 @@ option.
 
 The functions are the package's module, `scout_rasters`: `raster_algebra`
 holds the operations and the statistics, and `web_tiles` the web map tile
-helpers `tile_bounds` and `mosaic_web_tiles`. A node of another package
-imports them when its package names Rasterization in its manifest's
-`dependencies.packages`, as Deep Umbra
+helpers `tile_bounds` and `mosaic_web_tiles`, with the mosaic they write,
+`mosaic_rasters`: rasters on one grid side by side in one GeoTIFF. A node
+of another package imports them when its package names Rasterization in its
+manifest's `dependencies.packages`, as Deep Umbra
 ([`model.scout.deep-umbra@1`](../model.scout.deep-umbra@1/README.md)) does for
-`tile_bounds`:
+`tile_bounds` and `mosaic_rasters`:
 
 ```json
 "dependencies": {"packages": {"curio.rasterization@1": "*"}}

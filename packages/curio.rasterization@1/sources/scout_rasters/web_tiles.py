@@ -2,14 +2,11 @@
 their own grid. Rasterize Buildings writes its mosaic of SCOUT's tiles with
 ``mosaic_web_tiles``, and Deep Umbra's node (``model.scout.deep-umbra@1``,
 whose package names Rasterization in ``dependencies.packages``) places each tile it
-predicts with ``tile_bounds``. The mosaic itself is written by Curio's
-``mosaic_rasters``, which Curio Media's Mosaic Rasters writes with too.
+predicts with ``tile_bounds`` and writes them side by side with ``mosaic_rasters``.
 """
 from __future__ import annotations
 
 import math
-
-from utk_curio.sandbox.util.rasters import mosaic_rasters
 
 
 # ---------------------------------------------------------------------------
@@ -67,3 +64,96 @@ def mosaic_web_tiles(tiles, zoom, path, *, crs="EPSG:3395", tile_size=256, dtype
     ]
     return mosaic_rasters(pieces, path, crs=crs, dtype=dtype, resolution=(x_res, y_res), fill=fill,
                           nodata=nodata, band_descriptions=band_descriptions, tags=tags)
+
+
+# ---------------------------------------------------------------------------
+# Rasters on one grid, side by side
+# ---------------------------------------------------------------------------
+
+def mosaic_grid(tiles, resolution=None):
+    """``(west, north, x_res, y_res, width, height, offsets)``: the grid
+    *tiles* make side by side, and where each one's top-left cell lands on it.
+
+    Each tile is a dict with its ``transform`` (rasterio's order, a to f),
+    ``width`` and ``height``. The grid starts at the tiles' north-west corner,
+    its cells are *resolution* ``(x, y)`` in size, else the first tile's, and
+    it reaches the farthest tile's far edge. A tile goes where its corner falls,
+    to the nearest cell. A rotated tile is refused.
+    """
+    transforms = [tuple(tile["transform"])[:6] for tile in tiles]
+    if any(abs(t[1]) > 1e-12 or abs(t[3]) > 1e-12 for t in transforms):
+        raise ValueError("a tile is rotated; only north-up tiles make a mosaic")
+    x_res, y_res = resolution or (transforms[0][0], transforms[0][4])
+    extents = []
+    for t, tile in zip(transforms, tiles):
+        x0, y0 = t[2], t[5]
+        extents.append((x0, y0 + int(tile["height"]) * t[4], x0 + int(tile["width"]) * t[0], y0))
+    west = min(e[0] for e in extents)
+    south = min(e[1] for e in extents)
+    east = max(e[2] for e in extents)
+    north = max(e[3] for e in extents)
+    size_x = int(math.ceil((east - west) / x_res - 1e-9))
+    size_y = int(math.ceil((north - south) / -y_res - 1e-9))
+    offsets = [
+        (int(round((x0 - west) / x_res)), int(round((north - y0) / -y_res))) for x0, _s, _e, y0 in extents
+    ]
+    return west, north, x_res, y_res, size_x, size_y, offsets
+
+
+def mosaic_rasters(tiles, path, *, crs, dtype, bands=1, nodata=None, resolution=None, fill=0,
+                   band_descriptions=None, tags=None):
+    """Rasters that lie on one grid (:func:`mosaic_grid`), side by side in one
+    GeoTIFF at *path*, which is returned.
+
+    Every tile holds its ``cells`` (``(rows, columns)``, or ``(bands, rows,
+    columns)``), written in *dtype*; a part of the grid no tile covers holds
+    *fill*, and the file names *nodata*, when given, as its no-data value.
+    """
+    import numpy as np
+    import rasterio
+    from rasterio.transform import Affine
+    from rasterio.windows import Window
+
+    west, north, x_res, y_res, size_x, size_y, offsets = mosaic_grid(tiles, resolution)
+    if not all("cells" in tile for tile in tiles):
+        raise ValueError("every tile of a mosaic holds its cells")
+    sizes = {(int(tile["width"]), int(tile["height"])) for tile in tiles}
+    tile_w, tile_h = next(iter(sizes))
+    # Tiles of one size, each in its own slot of the grid: written slot by
+    # slot, the GeoTIFF's blocks being the tiles.
+    regular = len(sizes) == 1 and all(x % tile_w == 0 and y % tile_h == 0 for x, y in offsets)
+    profile = {
+        "driver": "GTiff", "width": size_x, "height": size_y, "count": bands, "dtype": dtype,
+        "crs": crs, "transform": Affine(x_res, 0.0, west, 0.0, y_res, north),
+    }
+    if regular and tile_w % 16 == 0 and tile_h % 16 == 0:
+        profile.update({"tiled": True, "blockxsize": tile_w, "blockysize": tile_h})
+    profile["compress"] = "deflate"
+    if nodata is not None:
+        profile["nodata"] = nodata
+
+    def planes(tile):
+        cells = np.asarray(tile["cells"], dtype=dtype)
+        return cells[np.newaxis] if cells.ndim == 2 else cells
+
+    with rasterio.open(path, "w", **profile) as mosaic:
+        if regular:
+            by_slot = dict(zip(offsets, tiles))
+            blank = np.full((tile_h, tile_w), fill, dtype=dtype)
+            for column in range(0, size_x, tile_w):
+                for row in range(0, size_y, tile_h):
+                    tile = by_slot.get((column, row))
+                    window = Window(column, row, tile_w, tile_h)
+                    for band in range(bands):
+                        mosaic.write(blank if tile is None else planes(tile)[band], band + 1, window=window)
+        else:
+            mosaic.write(np.full((bands, size_y, size_x), fill, dtype=dtype))
+            for (x_off, y_off), tile in zip(offsets, tiles):
+                cells = planes(tile)
+                mosaic.write(cells, window=Window(x_off, y_off, cells.shape[2], cells.shape[1]))
+        for index, description in enumerate(band_descriptions or (), start=1):
+            if description:
+                mosaic.set_band_description(index, description)
+        if tags:
+            mosaic.update_tags(**tags)
+    return path

@@ -807,17 +807,19 @@ def test_its_module_is_deep_umbra_and_exports_the_cells_call(tmp_path):
         assert not hasattr(outputs, "open_model") and not hasattr(outputs, "MISSING_MODEL")
 
 
-def test_the_package_writes_its_raster_with_curios_mosaic_helper():
-    """The shadow raster is written by Curio's mosaic helper, and its tiles
+def test_the_package_writes_its_raster_with_rasterizations_mosaic():
+    """The shadow raster is written by Rasterization's mosaic, and its tiles
     placed by Rasterization's tile bounds, which the package names in
-    ``dependencies.packages``: not a copy of either in the package."""
+    ``dependencies.packages``: not a copy of either in the package, and
+    nothing of Curio's own code."""
     modules = (SOURCES / MODULE).glob("*.py")
     text = "\n".join(path.read_text(encoding="utf-8") for path in modules)
-    assert "from utk_curio.sandbox.util.rasters import mosaic_rasters\n" in text
-    assert "from scout_rasters.web_tiles import tile_bounds\n" in text
+    assert "from scout_rasters.web_tiles import mosaic_rasters, tile_bounds\n" in text
     assert _manifest()["dependencies"]["packages"] == {RASTER_PACKAGE.name: "*"}
     assert "rasterio.open(path, \"w\"" not in text and "Window(" not in text
     assert "def write_mosaic" not in text and "def tile_bounds" not in text
+    assert "def mosaic_rasters" not in text and "def mosaic_grid" not in text
+    assert "utk_curio" not in text
 
 
 # ---------------------------------------------------------------------------
