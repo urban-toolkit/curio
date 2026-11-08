@@ -4,14 +4,17 @@ package's functions, as its details list them.
 - A module offers what its ``__all__`` names. The shipped packages name, in the
   module node code imports it from, only what node code calls: Deep Umbra's
   ``deep_umbra`` offers ``accumulated_shadow`` and ``season_factor``, and its
-  other modules nothing; Rasterization's modules the calls its README lists;
-  the weather model's ``weather_routing`` its route. Every name a shipped
-  ``__all__`` lists is a function its module offers, with a docstring.
+  other modules nothing; Rasterization's modules the calls its README lists,
+  the mosaics in ``scout_rasters.mosaic``; Media's ``media_collections`` the
+  two its video and audio nodes call; the weather model's ``weather_routing``
+  its route. Every name a shipped ``__all__`` lists is a function its module
+  offers, with a docstring.
 - ``GET /api/packages/node-functions?nodeType=``: the engine of the node's
   template, Curio's functions for that engine from the page that lists them
   (``skills/node-functions/SKILL.md``), and, for a Python node, the functions
-  the modules a run hands it offer, its own package's first. Each with the call
-  a click on it writes.
+  the modules a run hands it offer, its own package's first, as Accumulated
+  Shadow's and Mosaic Rasters' headers list Rasterization's after their own
+  package's. Each with the call a click on it writes.
 - ``GET /api/packages/<dir>/functions``: each module of a package with the
   functions it offers, from the account's copy, else the catalog's.
 
@@ -30,8 +33,19 @@ REPO = Path(__file__).resolve().parents[4]
 PACKAGES = REPO / "packages"
 DEEP_UMBRA = PACKAGES / "model.scout.deep-umbra@1"
 RASTERIZATION = PACKAGES / "curio.rasterization@1"
+MEDIA = PACKAGES / "curio.media@1"
 WEATHER_GNN = PACKAGES / "model.scout.weather-gnn@1"
 SHADOW = "model.scout.deep-umbra/accumulated-shadow"
+MOSAIC = "curio.media/mosaic-rasters"
+
+#: Rasterization's modules that offer a function, as a header lists them
+#: after the node's own package's, in module order.
+RASTERIZATION_LISTED = [
+    ("curio.rasterization@1", "scout_rasters.mosaic"),
+    ("curio.rasterization@1", "scout_rasters.node_outputs"),
+    ("curio.rasterization@1", "scout_rasters.raster_algebra"),
+    ("curio.rasterization@1", "scout_rasters.web_tiles"),
+]
 
 
 def _offered(package: Path) -> dict[str, list[tuple[str, str]]]:
@@ -63,6 +77,11 @@ def test_rasterization_offers_the_calls_its_readme_lists_and_the_weather_model_i
     assert _offered(RASTERIZATION) == {
         "scout_rasters": [],
         "scout_rasters.convert_to_raster": [],
+        "scout_rasters.mosaic": [
+            ("mosaic_rasters", "mosaic_rasters(tiles, path, *, crs, dtype, bands=1, nodata=None, resolution=None, "
+                               "fill=0, band_descriptions=None, tags=None)"),
+            ("mosaic_collection", "mosaic_collection(tiles, output_file)"),
+        ],
         "scout_rasters.node_outputs": [
             ("rasterize_buildings", "rasterize_buildings(buildings, attribute, zoom, max_height, output_file)"),
         ],
@@ -70,12 +89,11 @@ def test_rasterization_offers_the_calls_its_readme_lists_and_the_weather_model_i
             ("raster_calculate", "raster_calculate(operation, rasters, codes=None, *, absolute=False, output_file=None)"),
             ("raster_statistics", "raster_statistics(raster, band=1, mask=None, mask_values=None, where=None)"),
         ],
+        # mosaic_web_tiles writes with mosaic_rasters, which scout_rasters.mosaic offers.
         "scout_rasters.web_tiles": [
             ("tile_bounds", "tile_bounds(x, y, zoom, crs='EPSG:3395')"),
             ("mosaic_web_tiles", "mosaic_web_tiles(tiles, zoom, path, *, crs='EPSG:3395', tile_size=256, "
                                  "dtype='float32', fill=0, nodata=None, band_descriptions=None, tags=None)"),
-            ("mosaic_rasters", "mosaic_rasters(tiles, path, *, crs, dtype, bands=1, nodata=None, resolution=None, "
-                               "fill=0, band_descriptions=None, tags=None)"),
         ],
     }
     offered = _offered(WEATHER_GNN)
@@ -86,6 +104,15 @@ def test_rasterization_offers_the_calls_its_readme_lists_and_the_weather_model_i
         "weather_routing.road_graph": [],
         "weather_routing.weather_routing": [],
         "weather_routing.weight_calculation": [],
+    }
+
+
+def test_media_offers_the_calls_of_its_video_and_audio_nodes_from_media_collections():
+    assert _offered(MEDIA) == {
+        "media_collections": [
+            ("sample_video_frames", "sample_video_frames(media, derived_file, *, every_seconds=2.0, max_frames_per_video=300)"),
+            ("split_audio", "split_audio(media, derived_file, *, window_seconds=5.0, max_windows_per_recording=2000)"),
+        ],
     }
 
 
@@ -124,8 +151,8 @@ def test_every_name_a_shipped_modules_all_lists_is_there_and_each_function_says_
             for function in modules.functions(module):
                 assert function.doc, f"{folder.name}: {module}.{function.name} says nothing in its docstring"
             checked += 1
-    # Deep Umbra's three, Rasterization's four and the weather model's five.
-    assert checked >= 12, checked
+    # Deep Umbra's three, Rasterization's five, the weather model's five and Media's one.
+    assert checked >= 14, checked
 
 
 # ---------------------------------------------------------------------------
@@ -163,9 +190,7 @@ def test_the_header_lists_what_accumulated_shadows_code_can_call(client, user_an
     # names in dependencies.packages; a module that offers nothing is left out.
     assert [(row["package"], row["module"]) for row in listed["modules"]] == [
         ("model.scout.deep-umbra@1", "deep_umbra"),
-        ("curio.rasterization@1", "scout_rasters.node_outputs"),
-        ("curio.rasterization@1", "scout_rasters.raster_algebra"),
-        ("curio.rasterization@1", "scout_rasters.web_tiles"),
+        *RASTERIZATION_LISTED,
     ]
     shadow, season = listed["modules"][0]["functions"]
     assert shadow == {
@@ -177,7 +202,7 @@ def test_the_header_lists_what_accumulated_shadows_code_can_call(client, user_an
     }
     assert (season["call"], season["insert"]) == ("season_factor(season)", "season_factor(season)")
     assert season["doc"].startswith("Minutes of shadow a pixel at 1 stands for")
-    algebra = listed["modules"][2]["functions"]
+    algebra = listed["modules"][3]["functions"]
     assert [(f["name"], f["insert"]) for f in algebra] == [
         ("raster_calculate", "raster_calculate(operation, rasters)"),
         ("raster_statistics", "raster_statistics(raster)"),
@@ -194,6 +219,36 @@ def test_the_header_lists_what_accumulated_shadows_code_can_call(client, user_an
     assert by_name["curio_derived_file"]["call"] == (
         'curio_derived_file(dataset_id, file_id, t_ms, ext=None, *, kind="video", tag=None)'
     )
+
+
+def test_mosaic_rasters_lists_medias_module_then_rasterizations_whose_mosaic_its_code_calls(client, user_and_token):
+    """A Media node is handed Media's module, then Rasterization's, which Media
+    names in dependencies.packages: Mosaic Rasters' code returns
+    ``mosaic_collection``'s call, under ``scout_rasters.mosaic``."""
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+
+    user, token = user_and_token
+    key = _account(user)
+    for package in (RASTERIZATION, MEDIA):
+        install_package_from_directory(key, package)
+
+    answer = _get(client, token, f"?nodeType={MOSAIC}")
+    assert answer.status_code == 200, answer.get_data(as_text=True)
+    listed = answer.get_json()
+    assert listed["engine"] == "python"
+    assert [(row["package"], row["module"]) for row in listed["modules"]] == [
+        ("curio.media@1", "media_collections"),
+        *RASTERIZATION_LISTED,
+    ]
+    assert [(f["name"], f["insert"]) for f in listed["modules"][0]["functions"]] == [
+        ("sample_video_frames", "sample_video_frames(media, derived_file)"),
+        ("split_audio", "split_audio(media, derived_file)"),
+    ]
+    assert [(f["name"], f["insert"]) for f in listed["modules"][1]["functions"]] == [
+        ("mosaic_rasters", "mosaic_rasters(tiles, path, crs=crs, dtype=dtype)"),
+        ("mosaic_collection", "mosaic_collection(tiles, output_file)"),
+    ]
+    assert all(f["doc"] for row in listed["modules"] for f in row["functions"]), listed["modules"]
 
 
 def test_a_javascript_node_lists_curios_functions_for_javascript_and_a_spec_nothing(client, user_and_token):

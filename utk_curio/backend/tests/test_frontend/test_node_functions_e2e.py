@@ -119,9 +119,11 @@ def test_a_nodes_functions_show_beside_its_inputs_say_what_they_do_and_write_the
     frame_nodes(page, [CALCULATOR])
     calculator = _groups(page, CALCULATOR)
     assert [group for group, _tags in calculator] == [
-        "scout_rasters.node_outputs", "scout_rasters.raster_algebra", "scout_rasters.web_tiles", "curio",
+        "scout_rasters.mosaic", "scout_rasters.node_outputs", "scout_rasters.raster_algebra",
+        "scout_rasters.web_tiles", "curio",
     ], calculator
-    assert calculator[1][1] == ["raster_calculate", "raster_statistics"], calculator
+    assert calculator[0][1] == ["mosaic_rasters", "mosaic_collection"], calculator
+    assert calculator[2][1] == ["raster_calculate", "raster_statistics"], calculator
 
     # Deep Umbra's node: its own package's first, then Rasterization's, then Curio's.
     frame_nodes(page, [SHADOW])
