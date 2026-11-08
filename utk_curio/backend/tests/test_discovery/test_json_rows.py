@@ -202,7 +202,8 @@ class TestTypes:
     def test_a_missing_or_null_value_is_empty_and_nothing_is_told(self):
         options = {"columns": {"a": {"path": "a", "type": "int"}, "b": {"path": "b", "type": "timestamp"}}}
         told: list = []
-        assert R.rows_of({"b": None}, R.read_options(options), lambda *said: told.append(said)) == [(None, None)]
+        got = R.rows_of({"b": None}, R.read_options(options), lambda *said: told.append(said))
+        assert got == [(None, None)]
         assert told == []
 
     def test_a_typed_column_of_a_level_is_told_once_per_value(self):
