@@ -298,7 +298,7 @@ class TestInstalledTemplatesNotInProject:
             "maxIncomingEdges", "dirName",
             "engine", "editor", "hasCode", "backendHandler", "executable",  # dev/119
             "contentKind", "hasGrammar",  # dev/134
-            "category", "bidirectional",  # the interaction rule reads these
+            "category", "bidirectional", "behavior",  # the interaction rule reads these
         }
 
 

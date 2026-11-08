@@ -75,6 +75,20 @@ def _index(user_key: str, result: InstallResult) -> InstallResult:
     return result
 
 
+def update_collection(user_key: str, dataset_root: Path, fields: dict) -> None:
+    """Merge *fields* into the ``collection`` block of the collection installed
+    at *dataset_root*, in its manifest and in the index entry that mirrors it:
+    what a cache of a bucket's files read from them, which its details show."""
+    from utk_curio.backend.app.datasets.repositories import index as index_repo
+
+    manifest = load_dataset_manifest(dataset_root)
+    if manifest.collection is None:
+        return
+    block = {**manifest.collection, **fields}
+    replace_manifest(dataclasses.replace(manifest, collection=block), dataset_root)
+    index_repo.safe_upsert_from_dir(user_key, dataset_root)
+
+
 def _is_installed(user_key: str, dir_name: str) -> bool:
     return (dataset_dir(user_key, dir_name) / "manifest.json").is_file()
 

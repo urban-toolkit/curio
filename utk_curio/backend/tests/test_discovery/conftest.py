@@ -83,18 +83,22 @@ def fixture_corpus(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _reset_discovery_process_state():
-    """The rate limiter and the WFS capabilities cache are module-level by
-    design (both bound a PROCESS), so they leak between tests unless cleared."""
+    """The rate limiter, the WFS capabilities cache and the running caches are
+    module-level by design (each bounds a PROCESS), so they leak between tests
+    unless cleared."""
+    from utk_curio.backend.app.discovery.application import cache_collection
     from utk_curio.backend.app.discovery.infrastructure import ratelimit
     from utk_curio.backend.app.discovery.providers import wfs
 
     ratelimit.limiter.reset()
     ratelimit.download_slots.reset()
     wfs.WfsProvider.clear_cache()
+    cache_collection.reset_running()
     yield
     ratelimit.limiter.reset()
     ratelimit.download_slots.reset()
     wfs.WfsProvider.clear_cache()
+    cache_collection.reset_running()
 
 
 def workers_finish_first(monkeypatch) -> None:

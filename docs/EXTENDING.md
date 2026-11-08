@@ -24,6 +24,15 @@ The Scenario Catalog has no manifests: it lists the scenarios saved in your proj
 
 Curio's code names no artifact these folders ship: it reads what each one brings off its manifest, so yours gets what Curio's own get. [`test_no_artifact_ids_in_core.py`](../utk_curio/backend/tests/test_no_artifact_ids_in_core.py) fails on a shipped id in Curio's code, outside its short list of exceptions.
 
+## A node's logic is its code
+
+What a node does is the code it shows: its starter, or its package template's source, which you read and edit in the node.
+
+- Curio gives node code a function only for what that code cannot do on its own, or must do exactly as Curio's own code does: reach a catalog's item by the id the code names, a saved key, a file Curio serves or keeps after the run, Curio's own file formats, the Map Editor's edits and a layer chip. [`skills/node-functions/SKILL.md`](../skills/node-functions/SKILL.md) lists them. [`test_node_functions_sandbox.py`](../utk_curio/backend/tests/test_node_functions_sandbox.py) fails on a `curio_` function that page does not list, and [`test_sandbox_namespace.py`](../utk_curio/backend/tests/test_sandbox_namespace.py) on any other name in node code's namespace but the libraries it pins.
+- Package sources and the nodes of the shipped examples import nothing from `utk_curio`. [`test_node_code_imports_no_curio.py`](../utk_curio/backend/tests/test_node_code_imports_no_curio.py) fails on such an import, outside its short list of exceptions.
+- A node that does something new comes in a package, with its code in its template's source, as Media's Sample Video Frames does ([`packages/curio.media@1/sources/video-frames.py`](../packages/curio.media@1/sources/video-frames.py)). Curio adds no built-in node type for it.
+- Code that several nodes share is a module of their package ([Modules beside your template](AUTHORING-NODES.md#modules-beside-your-template)), and each function it offers says what it does in the first paragraph of its docstring.
+
 ## 1. Anatomy of a package
 
 ```

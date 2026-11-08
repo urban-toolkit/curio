@@ -96,8 +96,7 @@ def build_namespace_template():
     """Import everything node code expects and return the seeded globals.
 
     Deliberately mirrors ``worker._worker_init`` so an isolated node sees the
-    same names as an in-process one, with one intentional exception documented
-    in :func:`_unavailable_under_isolation`.
+    same names as an in-process one.
     """
     import warnings
 
@@ -131,9 +130,7 @@ def build_namespace_template():
     import shapely
     from shapely import wkt
 
-    from utk_curio.sandbox.util.codec import detect_kind
     from utk_curio.sandbox.util.input_layers import curio_layer
-    from utk_curio.sandbox.util.parsers import checkIOType
     from utk_curio.sandbox.util.feature_edits import edit_features
 
     return {
@@ -157,49 +154,11 @@ def build_namespace_template():
         "datetime": datetime,
         "Path": _pathlib.Path,
         "duckdb": duckdb,
-        "detect_kind": detect_kind,
-        "checkIOType": checkIOType,
         # The Edit Features node's code applies its edit list with it (#662).
         "curio_edit_features": edit_features,
         # A layer chip, [!! input_0:roads !!], reads one layer of an input with it.
         "curio_layer": curio_layer,
-        # The three store helpers the in-process path also seeds are replaced
-        # by stubs. See _unavailable_under_isolation.
-        "load_from_duckdb": _unavailable_under_isolation("load_from_duckdb"),
-        "save_to_duckdb": _unavailable_under_isolation("save_to_duckdb"),
-        "save_dataset_parquet": _unavailable_under_isolation("save_dataset_parquet"),
     }
-
-
-def _unavailable_under_isolation(name):
-    """A stub for a store helper the in-process path exposes to node code.
-
-    ``worker._globals_cache`` seeds ``load_from_duckdb``, ``save_to_duckdb``
-    and ``save_dataset_parquet`` straight into user scope, so node code can
-    read and write any artifact in the store, including other sessions'. That
-    is precisely what isolation removes, so these cannot be the real functions
-    here.
-
-    Binding the names to a stub rather than leaving them undefined is about the
-    error message: a node that used them gets a sentence explaining why it
-    stopped working instead of a bare ``NameError``.
-
-    To be clear about what this is worth: it is clarity and defence in depth,
-    not the control. Node code is arbitrary Python and can import the real
-    module itself. What actually keeps the store out of reach is filesystem
-    permissions on ``.curio/data`` for the execution user.
-    """
-
-    def _stub(*_args, **_kwargs):
-        raise RuntimeError(
-            f"{name}() is not available when node execution is isolated. "
-            "Nodes exchange data through their inputs and return value rather "
-            "than by reaching into the artifact store directly. If you need "
-            "this, run with CURIO_ISOLATION=off and accept that node code then has "
-            "the sandbox's full privileges."
-        )
-
-    return _stub
 
 
 def _release_import_time_duckdb():

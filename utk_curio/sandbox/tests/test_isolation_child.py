@@ -444,22 +444,18 @@ class TestDatasetPaths(ChildTestCase):
 
 
 class TestStoreHelpersAreNotReachable(unittest.TestCase):
-    """The in-process path seeds load_from_duckdb into user scope.
-
-    Under isolation that would hand node code the whole artifact store,
-    including other sessions', so the zygote binds those names to a stub. The
-    name exists on purpose: a sentence beats a NameError.
+    """Node code gets no store helper: an isolated node's namespace has none
+    of them, so its code cannot read or write the artifact store by name,
+    other sessions' artifacts among them. Nodes exchange data through their
+    inputs and return values.
     """
 
-    def test_the_stub_explains_itself(self):
+    def test_no_store_helper_is_in_the_namespace(self):
         from utk_curio.sandbox.isolation import zygote
 
-        stub = zygote._unavailable_under_isolation("load_from_duckdb")
-        with self.assertRaises(RuntimeError) as caught:
-            stub("some-artifact-id")
-        message = str(caught.exception)
-        self.assertIn("load_from_duckdb", message)
-        self.assertIn("CURIO_ISOLATION=off", message)
+        template = zygote.build_namespace_template()
+        for name in ("load_from_duckdb", "save_to_duckdb", "save_dataset_parquet"):
+            self.assertNotIn(name, template)
 
 
 class TestDeathDescriptions(unittest.TestCase):
