@@ -187,8 +187,8 @@ def test_a_plain_python_node_calling_the_old_helpers_is_refused(workspace, call)
 
 
 def test_deep_umbra_declares_rasterization_and_its_node_is_handed_its_modules(tmp_curio):
-    """Deep Umbra's node imports ``tile_bounds`` from Rasterization, which its
-    manifest names in ``dependencies.packages``: a run of Accumulated Shadow
+    """Deep Umbra's node imports ``tile_bounds`` and ``mosaic_rasters`` from
+    Rasterization, which its manifest names in ``dependencies.packages``: a run of Accumulated Shadow
     is handed Deep Umbra's module and Rasterization's, its own first, as any node of
     a package that names another is (``python_modules.modules_for_node``)."""
     from utk_curio.backend.app.packages.application.python_modules import modules_for_node
@@ -204,7 +204,7 @@ def test_deep_umbra_declares_rasterization_and_its_node_is_handed_its_modules(tm
         {"root": str(package_dir("guest", RASTERIZATION.name) / "sources"), "names": [MODULE]},
     ]
     outputs = (DEEP_UMBRA / "sources" / "deep_umbra" / "node_outputs.py").read_text(encoding="utf-8")
-    assert "from scout_rasters.web_tiles import tile_bounds" in outputs
+    assert "from scout_rasters.web_tiles import mosaic_rasters, tile_bounds" in outputs
 
 
 def test_the_flood_dataflows_averages_by_period_are_raster_calculators():

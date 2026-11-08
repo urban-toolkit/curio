@@ -164,7 +164,7 @@ def test_deep_umbra_depends_on_it_and_finds_it_in_the_catalog():
     assert umbra["dependencies"]["packages"] == {f"{PACKAGE_ID}@1": "*"}
     assert _manifest()["id"] == PACKAGE_ID and _manifest()["compatibility"]["major"] == 1
     imports = (REPO / "packages" / "model.scout.deep-umbra@1" / "sources" / "deep_umbra" / "node_outputs.py")
-    assert "from scout_rasters.web_tiles import tile_bounds" in imports.read_text(encoding="utf-8")
+    assert "from scout_rasters.web_tiles import mosaic_rasters, tile_bounds" in imports.read_text(encoding="utf-8")
 
 
 def test_a_shipped_dataflow_lists_rasterization_only_when_it_holds_one_of_its_nodes():
