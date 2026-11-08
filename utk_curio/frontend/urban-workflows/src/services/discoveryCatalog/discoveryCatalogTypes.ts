@@ -473,6 +473,9 @@ export interface DiscoveryCollectionStatus {
   cachedFiles: number;
   cachedBytes: number;
   samples: { fileId: string; name: string; kind: string }[];
+  /** Your Cache files job for it while one runs: a panel opened or reloaded
+   *  meanwhile follows it. One runs at a time for a collection. */
+  cacheJob?: DiscoveryAcquireJob | null;
 }
 
 export interface DiscoverySearchQuery {

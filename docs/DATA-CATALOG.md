@@ -197,14 +197,14 @@ A **collection** is a dataset made of many files that stay where they are: a fol
 | `path` | Where this execution can open the file. For a bucket's collection it is empty until **Cache files** has run. |
 | `thumbnail`, `image_url`, `audio_url` | Addresses **Simple View** draws and plays. |
 | Images and frames | `width`, `height`, `taken_at`, and `gps_lat` and `gps_lon` when the file carries them. Frames also have `sequence`, `frame` and `t_s`: `frame` over the resource's `fps`, empty when it declares none. Frames come in sequence and frame order. |
-| Videos | `duration_s`, `fps`, `codec`, `width`, `height`. |
-| Audio | `recorded_at`, `duration_s`, `sample_rate`, `channels`, `codec`. |
+| Videos | `duration_s`, `fps`, `codec`, `width`, `height`; from a bucket, once **Cache files** has copied the file. |
+| Audio | `recorded_at`, `duration_s`, `sample_rate`, `channels`, `codec`; from a bucket, once **Cache files** has copied the file. |
 | Rasters | `crs`, `transform`, `res`, `width`, `height`, `bands`, `dtype`, `nodata`, and the footprint as geometry. |
 | `probe_error` | Why a file could not be read, on a row that is kept anyway. |
 
 Rows with a position, and rasters, come back as a GeoDataFrame, so a map node draws them. **Simple View** shows the rows as cards, a page at a time; a video or a recording has a **Play** button in its card, and so has a video a node made from one ([`curio_derived_file`](../skills/node-functions/SKILL.md)). The `curio.media` package adds **Sample Video Frames**, **Split Audio** and **Mosaic Rasters**, which take these rows: see its [README](../packages/curio.media@1/README.md).
 
-A collection's details have a **Collection** section: its kind, **Indexed from** its source and resource, how many files of each kind it holds, their total size, what its **Path fields** cover, the **Coverage** of its footprints or positions, its rasters' **Raster CRS**, and, for frames and audio, its sequences or total duration. A bucket's collection says how many of its files are **On this machine**, and offers **Cache files**.
+A collection's details have a **Collection** section: its kind, **Indexed from** its source and resource, how many files of each kind it holds, their total size, what its **Path fields** cover, the **Coverage** of its footprints or positions, its rasters' **Raster CRS**, and, for frames and audio, its sequences or total duration. A bucket's collection says how many of its files are **On this machine**, and offers **Cache files**. One cache of a collection runs at a time: while it runs, its details show its progress, also after a reload, and offer no second one.
 
 ---
 
