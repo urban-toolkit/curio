@@ -60,10 +60,6 @@ class FixtureMissing(DiscoveryTransportError):
     """No recorded response for this URL. Names it, and how to record one."""
 
 
-#: The ceiling for caching one file of a storage collection to disk.
-MAX_COLLECTION_OBJECT_BYTES = 4 * 1024 * 1024 * 1024
-
-
 class DiscoveryTransport(Protocol):
     def json_get(self, url: str, *, credential: str | None = None,
                  headers: dict[str, str] | None = None) -> Any:
