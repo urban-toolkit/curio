@@ -94,6 +94,7 @@ SHIPPED_CARDS = {
     "ddrnet": ("model.curio.ddrnet23-slim@1", "image-segmentation"),
     "deep-umbra": ("model.scout.deep-umbra@1", "accumulated-shadow"),
     "weather-gnn": ("model.scout.weather-gnn@1", "weather-routing"),
+    "sam3": ("model.curio.sam3@1", "track-objects"),
 }
 #: A model added from the Discovery Catalog's Hugging Face source: the ONNX
 #: export the recorded Hub search for "segformer" holds.
@@ -283,7 +284,7 @@ def _add_the_hugging_face_model(page, app_frontend, current_server: str, token: 
     return added[0]["dirName"], added[0]["name"]
 
 
-@pytest.mark.parametrize("card", ["ddrnet", "deep-umbra", "weather-gnn", "hugging-face"])
+@pytest.mark.parametrize("card", ["ddrnet", "deep-umbra", "weather-gnn", "sam3", "hugging-face"])
 def test_a_model_card_dropped_on_the_canvas_adds_its_package_and_becomes_its_node(
     app_frontend: "FrontendPage", current_server: str, page, card: str,
 ):

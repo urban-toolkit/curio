@@ -2,9 +2,10 @@
 
 A package's ``manifest.dependencies.python`` declares the libraries the
 package's behavior hooks need at runtime. The catalog install flow calls
-:func:`install_python_deps` after copying the package files; uninstall
-walks every other installed package's manifest and pip-uninstalls deps
-that no remaining package still declares.
+:func:`install_python_deps` after copying the package files; a package's
+removal (``application/prune.py``) uninstalls from this interpreter only
+libraries this process's pip installed into it (:func:`installed_here`) that
+nothing else still asks for.
 
 Design choices:
 
@@ -18,10 +19,12 @@ Design choices:
   with ``importlib.metadata`` and skipped — repeat installs of the same
   package are essentially no-ops. Note that metadata presence is not
   importability: see :func:`import_failure`.
-- **Never touches Curio's core ``pyproject`` deps.** Uninstall walks
-  package manifests, but base-install libraries (``flask``,
-  ``geopandas``, ``shapely`` …) aren't listed in any package manifest,
-  so they're safe.
+- **Takes back only what it put in.** :func:`install_python_deps` notes each
+  library it installs that this interpreter did not hold, and a removal
+  uninstalls nothing else. What the interpreter held before is left alone:
+  Curio's requirements, the image's torch, the shipped catalog's libraries
+  the launcher installs, and the user's own. Package manifests name several
+  of those too, so a manifest is no evidence that Curio put a library here.
 - **Captures pip's stderr/stdout** so failures surface in the install
   response with enough context to debug, not an opaque 500.
 """
@@ -36,6 +39,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from importlib.metadata import PackageNotFoundError, version as installed_version
@@ -265,6 +269,50 @@ def _is_satisfied(name: str, spec: str) -> bool:
         return Version(ver_str) in SpecifierSet(pep440)
     except (InvalidVersion, Exception):
         return True  # unparseable — let pip be the authority
+
+
+#: Each library :func:`install_python_deps` installed into this interpreter
+#: where it held none, by PEP 503 name: the only ones a package's removal may
+#: uninstall from it (:func:`installed_here`). This process's own record, so a
+#: restart forgets it and those libraries stay, and nothing the interpreter
+#: held before this process ran pip can be in it.
+_installed_here: set[str] = set()
+_installed_here_lock = threading.Lock()
+
+
+def _is_installed(name: str) -> bool:
+    """Whether a distribution named *name* is installed in this interpreter."""
+    try:
+        installed_version(name)
+    except PackageNotFoundError:
+        return False
+    return True
+
+
+def installed_here(names: Iterable[str]) -> list[str]:
+    """The names among *names* that :func:`install_python_deps` installed into
+    this interpreter where it held none before, since this process started,
+    and that are installed still, sorted.
+
+    A package's removal uninstalls from the shared interpreter only these
+    (``application/prune.py``). A library that was there before is not
+    Curio's to take back, whoever declares it: Curio's requirements, the
+    image's torch, the shipped catalog's libraries, the user's own. Nor is one
+    pip only upgraded: uninstalling it would remove it, not put back the
+    version it replaced.
+    """
+    with _installed_here_lock:
+        noted = set(_installed_here)
+    return sorted(
+        name for name in set(names)
+        if _canonical_dist_name(name) in noted and _is_installed(name)
+    )
+
+
+def _note_installed_here(names: Iterable[str]) -> None:
+    """Note *names*, which this process's pip just installed fresh."""
+    with _installed_here_lock:
+        _installed_here.update(_canonical_dist_name(name) for name in names)
 
 
 #: Top-level modules a distribution ships that are never the import people mean.
@@ -668,11 +716,17 @@ def install_python_deps(
 
     skipped: list[str] = []
     to_install: list[str] = []
+    # What pip installs fresh, as opposed to upgrading or downgrading a
+    # library the interpreter already held: only these may a removal take
+    # back out (:func:`installed_here`).
+    absent: list[str] = []
     for name, spec in deps.items():
         if _is_satisfied(name, spec):
             skipped.append(name)
         else:
             to_install.append(_spec_argv(name, spec))
+            if not _is_installed(name):
+                absent.append(name)
 
     if not to_install:
         log.info("All Python deps already satisfied; skipping pip: %s", skipped)
@@ -719,6 +773,7 @@ def install_python_deps(
         # pip ran: a repair may have landed without the version changing, which
         # the (name, version) memo key would otherwise hide.
         forget_import_probes()
+        _note_installed_here(absent)
         return InstallReport(installed=to_install, skipped=skipped)
 
     # Buffered path (API consumers): capture, surface tail on failure.
@@ -738,6 +793,7 @@ def install_python_deps(
             f"pip install failed (exit {proc.returncode}): {tail.strip()}"
         )
     forget_import_probes()
+    _note_installed_here(absent)
     return InstallReport(installed=to_install, skipped=skipped)
 
 
@@ -897,8 +953,9 @@ def uninstall_python_deps(names: Iterable[str]) -> UninstallReport:
     """Pip-uninstall *names*. Best-effort — already-missing packages are
     silently ignored (pip exits 0 for "not installed" with --yes).
 
-    Caller is responsible for ref-counting: don't pass a dep that's
-    still listed by another installed package's manifest.
+    The caller decides what may go: a package's removal passes only
+    libraries this process installed (:func:`installed_here`) that nothing
+    still asks for (``application/prune.py``).
     """
     names = [n for n in names if n]
     if not names:
@@ -924,6 +981,8 @@ def uninstall_python_deps(names: Iterable[str]) -> UninstallReport:
         raise PipInstallError(
             f"pip uninstall failed (exit {proc.returncode}): {tail.strip()}"
         )
+    with _installed_here_lock:
+        _installed_here.difference_update(_canonical_dist_name(name) for name in names)
     return UninstallReport(removed=list(names), kept=[])
 
 

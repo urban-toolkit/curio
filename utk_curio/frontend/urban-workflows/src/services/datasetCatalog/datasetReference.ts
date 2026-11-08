@@ -1,5 +1,6 @@
 import { isLayerGroupId, type DatasetCatalogItem } from "./datasetCatalogTypes";
 import { osmGroupLoaderSnippet } from "./datasetLoaderSnippets";
+import catalogCode from "../../contracts/catalogCode.json";
 
 /**
  * What a dataset's copy control hands over, decided in one place.
@@ -20,11 +21,10 @@ import { osmGroupLoaderSnippet } from "./datasetLoaderSnippets";
 /**
  * Ids are interpolated into Python source, so only ids matching this whitelist
  * can appear inside a ``curio_load_data("<id>")`` call — one with a quote or
- * a backslash would break out of the string literal. Kept in step with
- * ``SAFE_DATASET_ID_RE`` in ``datasetLoaderSnippets.ts`` and the backend's
- * ``_SAFE_DATASET_ID_RE``.
+ * a backslash would break out of the string literal. The id is
+ * `contracts/catalogCode.json`'s, which the loader generators read too.
  */
-const SAFE_DATASET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$/;
+const SAFE_DATASET_ID_RE = new RegExp(`^${catalogCode.itemId}$`);
 
 export interface DatasetReference {
   /** The Python to paste into a node: one call, or a layer group's loader. */

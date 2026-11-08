@@ -9,6 +9,9 @@ with the columns a node needs to reach each file:
   Inference reads, served by id by the backend;
 - ``audio_url``: a recording's URL, for a player.
 
+A row of a ``files`` resource, kind ``file``, has none of those URLs: node
+code reads the file from its ``path``.
+
 ``curio_derived_file(dataset_id, file_id, t_ms, ext)`` names a file a node
 writes from one of a collection's files: a video's frame, a video made from a
 video (an overlay of it, say), a table of what a node found in a video, a
@@ -24,6 +27,9 @@ from __future__ import annotations
 import os
 import re
 
+# A catalog item's id, as ``catalogCode.json`` (the frontend's contracts) has
+# it: the sandbox reads no contract file, so this is its copy, which
+# ``test_shared_constants.py`` holds equal to the table.
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$")
 _FILE_ID = r"[0-9a-f]{16}"
 _TAG = r"[0-9a-z]{1,32}"
@@ -60,8 +66,8 @@ DERIVED = {
 }
 
 #: The kinds of row the media route draws a thumbnail of: a collection's
-#: files, and the derived ones but a table.
-_DRAWN = ("image", "frame", "raster", "video", "audio")
+#: files but those of a ``files`` resource, and the derived ones but a table.
+DRAWN = ("image", "frame", "raster", "video", "audio")
 
 
 def media_url(dataset_id, file_id, variant="thumb"):
@@ -72,9 +78,10 @@ def media_urls(dataset_id, file_id, kind):
     """A row's ``thumbnail``, ``image_url`` and ``audio_url``, by the row's
     *kind*: what Simple View draws; the image a reader of images reads (the
     file itself, or a video's or a raster's thumbnail); a recording's file,
-    for a player. None of them for a kind the media route serves nothing of,
-    a table. A collection's rows and a derived file's row get them here."""
-    if kind not in _DRAWN:
+    for a player. None of them for a kind the media route draws nothing of:
+    a table, and a ``file``, which node code reads from its ``path``. A
+    collection's rows and a derived file's row get them here."""
+    if kind not in DRAWN:
         return {"thumbnail": None, "image_url": None, "audio_url": None}
     thumbnail = media_url(dataset_id, file_id)
     original = media_url(dataset_id, file_id, "original")

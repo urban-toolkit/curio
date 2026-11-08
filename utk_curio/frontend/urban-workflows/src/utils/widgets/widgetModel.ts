@@ -6,6 +6,7 @@
  */
 
 import { INPUTS_DATASET } from "../vegaDatasets";
+import catalogCode from "../../contracts/catalogCode.json";
 
 /** The widget kinds. Kept in sync with `WIDGET_KINDS` in
  * `utk_curio/backend/app/execution/code_references.py`, which a package
@@ -103,10 +104,10 @@ export const FILE_WIDGET_MAX_CHARS = 1_000_000;
 
 /** A dataset widget's value: the id of a Data Catalog dataset, a layer group
  * or a collection, as node code names one in `curio_load_data("<id>")`; empty
- * until one is dropped on it. Kept in sync with `DATASET_ID_RE` in
- * `utk_curio/backend/app/execution/code_references.py` and with
- * `SAFE_DATASET_ID_RE` in `services/datasetCatalog/datasetLoaderSnippets.ts`. */
-export const DATASET_ID_PATTERN = String.raw`^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$`;
+ * until one is dropped on it. The id is `contracts/catalogCode.json`'s, which
+ * `DATASET_ID_RE` in `utk_curio/backend/app/execution/code_references.py` and
+ * `services/datasetCatalog/datasetLoaderSnippets.ts` read too. */
+export const DATASET_ID_PATTERN = `^${catalogCode.itemId}$`;
 const DATASET_ID_RE = new RegExp(DATASET_ID_PATTERN);
 
 /** What a run refuses when code reads an empty dataset widget. Kept in sync
