@@ -20,7 +20,7 @@ import pytest
 
 from utk_curio.backend.app.discovery.application import index_collection, scan
 from utk_curio.backend.app.discovery.domain import manifest as M
-from utk_curio.backend.app.discovery.domain.templates import CAPTURE_NAME_RE
+from utk_curio.backend.app.discovery.domain.templates import CAPTURE_NAME_RE, TemplateError, compile_template
 from utk_curio.backend.app.discovery.providers.folder import FolderStorage
 from utk_curio.backend.tests.test_discovery.conftest import (
     a_storage_manifest,
@@ -38,7 +38,7 @@ SNAPSHOTS = {
 }
 WALKS = {
     "id": "walks", "name": "Walk videos", "kind": "videos",
-    "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S}-{ms:int}/video.mp4",
+    "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/video.mp4",
     "time": {"capture": "began", "timezone": "America/Chicago"},
 }
 RECORDINGS = {
@@ -204,6 +204,53 @@ class TestTheSchema:
                 parse(raw)
 
 
+class TestAFractionOfASecond:
+    """``%f`` in a date capture: 1 to 6 digits of a second, as Python's
+    ``strptime`` reads them, ``016`` being 16 milliseconds."""
+
+    @pytest.mark.parametrize(
+        "folder, microsecond",
+        [
+            ("2026-10-26-16-03-17-5", 500_000),
+            ("2026-10-26-16-03-17-016", 16_000),
+            ("2026-10-26-16-03-17-016250", 16_250),
+        ],
+    )
+    def test_one_to_six_digits_are_the_fraction(self, folder, microsecond):
+        template = compile_template("{began:%Y-%m-%d-%H-%M-%S-%f}/video.mp4")
+        began = template.match(f"{folder}/video.mp4")["began"]
+        assert began == datetime(2026, 10, 26, 16, 3, 17, microsecond)
+
+    def test_seven_digits_are_no_fraction_strptime_reads(self):
+        template = compile_template("{began:%Y-%m-%d-%H-%M-%S-%f}/video.mp4")
+        assert template.match("2026-10-26-16-03-17-0162501/video.mp4") is None
+
+    def test_a_capture_without_it_reads_whole_seconds_as_before(self):
+        template = compile_template("{began:%Y-%m-%d-%H-%M-%S}/video.mp4")
+        assert template.match("2026-10-26-16-03-17/video.mp4")["began"] == datetime(2026, 10, 26, 16, 3, 17)
+        assert template.match("2026-10-26-16-03-17-016/video.mp4") is None
+
+    def test_it_is_used_once(self):
+        with pytest.raises(TemplateError, match="uses %f twice"):
+            compile_template("{t:%H%M%S_%f_%f}.jpg")
+
+    def test_a_walk_starts_at_its_millisecond_in_utc(self, tmp_path):
+        walks = ("2026-10-26-16-03-17-016", "2026-10-26-16-03-17-5", "2026-10-26-16-03-17-016250")
+        rows = indexed(tmp_path, WALKS, {f"chicago/west-loop/{w}/video.mp4": b"not a video" for w in walks})
+        assert {w: str(rows[w]["taken_at"]) for w in walks} == {
+            "2026-10-26-16-03-17-016": "2026-10-26 21:03:17.016000",
+            "2026-10-26-16-03-17-5": "2026-10-26 21:03:17.500000",
+            "2026-10-26-16-03-17-016250": "2026-10-26 21:03:17.016250",
+        }
+
+    def test_without_it_the_milliseconds_stay_a_field_of_their_own(self, tmp_path):
+        resource = {**WALKS, "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S}-{ms:int}/video.mp4"}
+        row = indexed(tmp_path, resource, {
+            "chicago/west-loop/2026-10-26-16-03-17-016/video.mp4": b"not a video",
+        })["2026-10-26-16-03-17-016"]
+        assert (row["taken_at"], row["ms"]) == (datetime(2026, 10, 26, 21, 3, 17), 16)
+
+
 class TestTheIndex:
     def test_a_nanosecond_name_is_its_utc_time_and_stays_a_number(self, tmp_path):
         rows = indexed(tmp_path, SNAPSHOTS, {
@@ -247,14 +294,13 @@ class TestTheIndex:
         )
         rows = indexed(tmp_path, WALKS, {f"chicago/west-loop/{w}/video.mp4": b"not a video" for w in walks})
         assert {w: rows[w]["taken_at"] for w in walks} == {
-            "2026-10-26-16-03-17-016": datetime(2026, 10, 26, 21, 3, 17),
-            "2026-11-02-16-03-17-016": datetime(2026, 11, 2, 22, 3, 17),
+            "2026-10-26-16-03-17-016": datetime(2026, 10, 26, 21, 3, 17, 16000),
+            "2026-11-02-16-03-17-016": datetime(2026, 11, 2, 22, 3, 17, 16000),
             "2026-11-01-01-30-00-000": datetime(2026, 11, 1, 6, 30),
             "2026-03-08-02-30-00-000": datetime(2026, 3, 8, 8, 30),
         }
-        # The path's own fields keep what the path says.
-        walk = rows["2026-10-26-16-03-17-016"]
-        assert (walk["began"], walk["ms"]) == (datetime(2026, 10, 26, 16, 3, 17), 16)
+        # The path's own field keeps what the path says, Chicago's clock.
+        assert rows["2026-10-26-16-03-17-016"]["began"] == datetime(2026, 10, 26, 16, 3, 17, 16000)
 
     def test_a_date_in_a_zone_starts_at_its_local_midnight(self, tmp_path):
         resource = {"id": "d", "name": "D", "kind": "images", "path": "{day:date}/x.jpg",

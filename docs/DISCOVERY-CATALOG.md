@@ -420,7 +420,7 @@ A storage source's `resources` say how its files are organized. `provider` says 
 | `{name}` | Part of one folder or file name, as text. |
 | `{name:int}` | A whole number. |
 | `{name:date}` | A date written `2024-05-01`. |
-| `{name:%Y%m%d_%H%M%S}` | A time, in the format it is written in. |
+| `{name:%Y%m%d_%H%M%S}` | A time, in the format it is written in, with `%Y`, `%y`, `%m`, `%d`, `%j`, `%b`, `%H`, `%M`, `%S`, and `%f` for a fraction of a second of 1 to 6 digits (`016` is 16 milliseconds). |
 | `*` | Anything within one folder or file name. |
 | `**` | Any number of folders. |
 
@@ -433,11 +433,11 @@ Each named part becomes a column of the dataset and a field the **Add** dialog c
   "path": "{crossing}/images/{month:%Y_%m}/{ns:int}-snapshot.jpg",
   "time": { "capture": "ns", "unit": "ns" } },
 { "id": "walks", "name": "Walk videos", "kind": "videos",
-  "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S}-{ms:int}/video.mp4",
+  "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/video.mp4",
   "time": { "capture": "began", "timezone": "America/Chicago" } }
 ```
 
-`W042/images/2025_07/1752710404341667481-snapshot.jpg` gets the `taken_at` 2025-07-17 00:00:04.341667481, and the walk in `2026-10-26-16-03-17-016` 2026-10-26 21:03:17, both in UTC. `ns` stays a number, and `began` the local time.
+`W042/images/2025_07/1752710404341667481-snapshot.jpg` gets the `taken_at` 2025-07-17 00:00:04.341667481, and the walk in `2026-10-26-16-03-17-016` 2026-10-26 21:03:17.016, both in UTC. `ns` stays a number, and `began` the local time. A local time the clocks show twice, when they go back, is read as the first of the two; one they skip, when they go forward, is read with the offset from before the change.
 
 The example storage source's manifest, with one resource per use case (abridged):
 
