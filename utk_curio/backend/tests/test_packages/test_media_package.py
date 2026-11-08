@@ -54,7 +54,7 @@ STARTERS = {
 #: What each module the starters import offers node code: its ``__all__``.
 OFFERED = {
     "media_collections": ["sample_video_frames", "split_audio"],
-    "scout_rasters.mosaic": ["mosaic_grid", "mosaic_rasters", "mosaic_collection"],
+    "scout_rasters.mosaic": ["mosaic_rasters", "mosaic_collection"],
 }
 
 

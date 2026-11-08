@@ -22,7 +22,7 @@ from rasterio.transform import Affine
 from rasterio.windows import Window
 
 #: What node code calls.
-__all__ = ["mosaic_grid", "mosaic_rasters", "mosaic_collection"]
+__all__ = ["mosaic_rasters", "mosaic_collection"]
 
 #: A raster's number type as GDAL names it in a VRT.
 GDAL_TYPES = {
