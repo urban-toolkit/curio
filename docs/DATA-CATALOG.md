@@ -202,7 +202,7 @@ A **collection** is a dataset made of many files that stay where they are: a fol
 | Rasters | `crs`, `transform`, `res`, `width`, `height`, `bands`, `dtype`, `nodata`, and the footprint as geometry. |
 | `probe_error` | Why a file could not be read, on a row that is kept anyway. |
 
-Rows with a position, and rasters, come back as a GeoDataFrame, so a map node draws them. **Simple View** shows the rows as cards, a page at a time; a video or a recording has a **Play** button in its card. The `curio.media` package adds **Sample Video Frames**, **Split Audio** and **Mosaic Rasters**, which take these rows: see its [README](../packages/curio.media@1/README.md).
+Rows with a position, and rasters, come back as a GeoDataFrame, so a map node draws them. **Simple View** shows the rows as cards, a page at a time; a video or a recording has a **Play** button in its card, and so has a video a node made from one ([`curio_derived_file`](../skills/node-functions/SKILL.md)). The `curio.media` package adds **Sample Video Frames**, **Split Audio** and **Mosaic Rasters**, which take these rows: see its [README](../packages/curio.media@1/README.md).
 
 A collection's details have a **Collection** section: its kind, **Indexed from** its source and resource, how many files of each kind it holds, their total size, what its **Path fields** cover, the **Coverage** of its footprints or positions, its rasters' **Raster CRS**, and, for frames and audio, its sequences or total duration. A bucket's collection says how many of its files are **On this machine**, and offers **Cache files**.
 

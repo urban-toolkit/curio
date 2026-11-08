@@ -22,7 +22,9 @@ describe("The deploy's limit on one cached file", () => {
         const commands = text.match(/printf ' {4}command: \[[^\n]*/g) ?? [];
         expect(commands).toHaveLength(2);
         for (const command of commands) {
-            expect(command).toMatch(/"24576"%s%s\]\\n' "\$cache_args" "\$llm_args" >> docker-compose\.site\.yml$/);
+            expect(command).toMatch(
+                /"24576"%s%s%s\]\\n' "\$llm_args" "\$weights_args" "\$cache_args" >> docker-compose\.site\.yml$/,
+            );
         }
     });
 });
