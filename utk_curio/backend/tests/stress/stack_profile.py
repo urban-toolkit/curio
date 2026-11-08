@@ -297,6 +297,8 @@ class StackSampler:
         self._thread = threading.Thread(target=self._run, name="stack-sampler", daemon=True)
         self._started = time.monotonic()
         self._gil = None
+        self._records: dict = {}
+        self.record_texts: dict = {}
         self._gil_began = time.monotonic()
         self.gil_text = ""
         self.gil_problem = None
@@ -321,22 +323,35 @@ class StackSampler:
     def _gil_file(self) -> str:
         return GIL_FILE.format(name=re.sub(r"[^A-Za-z0-9_.-]", "-", self.name))
 
+    #: py-spy's records of the tier: the GIL's holder alone, and every
+    #: thread, idle ones too, each stack under its thread's id.
+    RECORDS = (("gil", ("--gil",)), ("all", ("--idle", "--threads")))
+
+    def _record_file(self, kind: str) -> str:
+        return GIL_FILE.format(name=re.sub(r"[^A-Za-z0-9_.-]", "-", f"{kind}-{self.name}"))
+
     def _start_gil_record(self) -> None:
-        try:
-            self._gil_began = time.monotonic()
-            self._gil = subprocess.Popen(
-                [*self.pyspy, "record", "--pid", str(self.pid), "--gil", "--nonblocking",
-                 "--rate", str(GIL_RATE), "--format", "raw", "--full-filenames",
-                 "--output", self._gil_file(), "--duration", str(GIL_MAX_S)],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-            )
-        except OSError as exc:
-            self.gil_problem = f"py-spy record did not start: {exc}"
+        self._gil_began = time.monotonic()
+        self._records = {}
+        for kind, flags in self.RECORDS:
+            try:
+                self._records[kind] = subprocess.Popen(
+                    [*self.pyspy, "record", "--pid", str(self.pid), *flags, "--nonblocking",
+                     "--rate", str(GIL_RATE), "--format", "raw", "--full-filenames",
+                     "--output", self._record_file(kind), "--duration", str(GIL_MAX_S)],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                )
+            except OSError as exc:
+                self.gil_problem = f"py-spy record {kind} did not start: {exc}"
+        self._gil = self._records.get("gil")
 
     def _end_gil_record(self) -> None:
-        """Stop the GIL record where it runs (SIGINT, which makes py-spy
-        write what it took) and read its file back through the probe."""
-        if self._gil is None:
+        """Stop py-spy's records where they run (SIGINT, which makes py-spy
+        write what it took) and read their files back through the probe,
+        as bytes: a record of a process read without stopping it may hold
+        a name read half written."""
+        records = getattr(self, "_records", {})
+        if not records:
             return
         if self.probe is not None:
             stop = ("import os, signal, psutil\n"
@@ -345,36 +360,44 @@ class StackSampler:
                     "        try:\n            os.kill(p.pid, signal.SIGINT)\n"
                     "        except OSError:\n            pass\n")
             self._probe_python(stop)
-        try:
-            said, _err = self._gil.communicate(timeout=120)
-        except subprocess.TimeoutExpired:
-            self._gil.kill()
-            said, _err = self._gil.communicate()
-            self.gil_problem = "py-spy record did not end within 120 s of its stop"
         self.gil_seconds = round(time.monotonic() - self._gil_began, 1)
-        # Its last lines say how many samples it took and how many failed.
-        self.gil_said = " | ".join(line.strip() for line in (said or "").splitlines()[-3:] if line.strip())
-        if self._gil.returncode not in (0, None) and not self.gil_problem:
-            self.gil_problem = f"py-spy record exit {self._gil.returncode}: {(said or '').strip()[-400:]}"
-        read = ("import sys\n"
-                "try:\n    sys.stdout.write(open(sys.argv[1], encoding='utf-8').read())\n"
-                "except OSError as exc:\n    sys.stdout.write('')\n    sys.stderr.write(str(exc))\n")
-        text, problem = self._probe_python(read, self._gil_file())
-        self.gil_text = text or ""
-        if not self.gil_text and not self.gil_problem:
-            self.gil_problem = f"no GIL record came back: {problem or 'empty'}"
+        self.record_texts = {}
+        said_all = []
+        for kind, process in records.items():
+            try:
+                said, _err = process.communicate(timeout=120)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                said, _err = process.communicate()
+                self.gil_problem = f"py-spy record {kind} did not end within 120 s of its stop"
+            said = (said or b"").decode("utf-8", "replace")
+            # Its last lines say how many samples it took and how many failed.
+            said_all.append(f"{kind}: " + " | ".join(
+                line.strip() for line in said.splitlines()[-3:] if line.strip()))
+            if process.returncode not in (0, None) and not self.gil_problem:
+                self.gil_problem = f"py-spy record {kind} exit {process.returncode}: {said.strip()[-400:]}"
+            read = ("import sys\n"
+                    "try:\n    sys.stdout.buffer.write(open(sys.argv[1], 'rb').read())\n"
+                    "except OSError as exc:\n    sys.stderr.write(str(exc))\n")
+            data, problem = self._probe_python(read, self._record_file(kind), binary=True)
+            self.record_texts[kind] = (data or b"").decode("utf-8", "replace")
+            if not self.record_texts[kind] and not self.gil_problem:
+                self.gil_problem = f"no {kind} record came back: {problem or 'empty'}"
+        self.gil_text = self.record_texts.get("gil", "")
+        self.gil_said = " || ".join(said_all)
 
-    def _probe_python(self, source: str, *args) -> tuple:
+    def _probe_python(self, source: str, *args, binary: bool = False) -> tuple:
         """Run *source* with the probe's Python where the backend runs:
-        its output and a problem, or None."""
+        its output (bytes when *binary*) and a problem, or None."""
         if self.probe is None:
-            return "", "no probe"
+            return (b"" if binary else ""), "no probe"
         try:
             done = subprocess.run([*self.probe.command, "-c", source, *args],
-                                  capture_output=True, text=True, timeout=60)
+                                  capture_output=True, text=not binary, timeout=120)
         except (OSError, subprocess.TimeoutExpired) as exc:
-            return "", f"{type(exc).__name__}: {exc}"
-        return done.stdout, (done.stderr.strip()[-300:] or None) if done.returncode else None
+            return (b"" if binary else ""), f"{type(exc).__name__}: {exc}"
+        stderr = done.stderr.decode("utf-8", "replace") if binary else done.stderr
+        return done.stdout, (stderr.strip()[-300:] or None) if done.returncode else None
 
     # ---- the samples -----------------------------------------------------------
 
@@ -416,12 +439,16 @@ class StackSampler:
                 failures = 0
             except Exception as exc:  # noqa: BLE001 - a sample left out, the reason kept
                 failures += 1
-                if len(self.problems) < 5:
-                    self.problems.append(f"t={began - self._started:.0f}s: {type(exc).__name__}: {exc}")
-                if self.uses_pyspy and failures >= 3 and self.probe is not None:
-                    self.problems.append("py-spy failed three times running: the backend's own dumps from here on, "
-                                         f"one every {max(self.every_s, SIGNAL_EVERY_MIN_S):g} s at most")
-                    self.pyspy = []
+                self.failed = getattr(self, "failed", 0) + 1
+                if len(self.problems) < 3:
+                    self.problems.append(f"t={began - self._started:.0f}s: {type(exc).__name__}: "
+                                         + " ".join(str(exc).split())[:300])
+                # A py-spy dump that fails (a thread that ended while it was
+                # read) is tried again at once, never replaced by the
+                # backend's own dumps, which need the GIL a tier is short of.
+                if self.uses_pyspy and failures < 3:
+                    continue
+                failures = 0
                 self._stop.wait(self._interval())
                 continue
             self.taken += 1
@@ -454,7 +481,7 @@ class StackSampler:
         self._stop.set()
         if self._thread.is_alive():
             self._thread.join(timeout=DUMP_TIMEOUT_S + 30)
-        if self.uses_pyspy or self._gil is not None:
+        if self._records:
             self._end_gil_record()
         with open(self.path, "a", encoding="utf-8") as out:
             out.write(json.dumps({

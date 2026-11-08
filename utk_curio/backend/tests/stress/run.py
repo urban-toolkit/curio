@@ -496,12 +496,14 @@ def write_stack_profile(sampler, out_dir: str, name: str, tier: int, every_s: fl
         with open(path, "w", encoding="utf-8") as out:
             out.write(stack_profile.markdown(result, f"tier {tier}", every_s, sampler.problems,
                                              sampler.gil_problem))
-        if sampler.gil_text:
-            with open(os.path.join(out_dir, f"gil-{name}.txt"), "w", encoding="utf-8") as out:
-                out.write(sampler.gil_text)
+        for kind, text in (getattr(sampler, "record_texts", None) or {}).items():
+            if text:
+                with open(os.path.join(out_dir, f"pyspy-{kind}-{name}.txt"), "w", encoding="utf-8") as out:
+                    out.write(text)
         source = "py-spy" if sampler.uses_pyspy else "the backend's own dumps"
         print(f"[stress] tier {tier}: {sampler.taken} stack sample(s) from {source}, every "
-              f"{every_s:g} s, in {path}" + (f"; problems: {'; '.join(sampler.problems)}" if sampler.problems else "")
+              f"{every_s:g} s, {getattr(sampler, 'failed', 0)} failed, in {path}"
+              + (f"; problems: {'; '.join(sampler.problems)}" if sampler.problems else "")
               + (f"; GIL record: {sampler.gil_problem}" if sampler.gil_problem else "")
               + (f"; py-spy record said: {sampler.gil_said}" if sampler.gil_said else ""), flush=True)
         for line in stack_profile.log_lines(result):
