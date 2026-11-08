@@ -13,6 +13,7 @@ from typing import Any
 from flask import current_app
 
 from utk_curio.backend.app.discovery.application.acquire import DiscoveryAcquire, _Cancelled
+from utk_curio.backend.app.discovery.application import bucket_mount_check
 from utk_curio.backend.app.discovery.application.browse import DiscoveryBrowse
 from utk_curio.backend.app.discovery.application import scan as scanning
 from utk_curio.backend.app.discovery.application.model_acquire import ModelAcquire
@@ -75,6 +76,20 @@ def declared_keys() -> dict[str, str]:
     """Every key a source on this Curio sends, by the secret id its manifests
     name, with what API Settings calls it. An account saves keys only for these."""
     return credentials.declared_keys(DiscoveryCatalog().manifests())
+
+
+def start_bucket_mount_check() -> bool:
+    """The bucket mount service's self-test, once, on a thread of its own,
+    when ``--bucket-mounts-dir`` and ``--bucket-mount-socket`` name a service
+    (``application/bucket_mount_check.py``). False when they name none."""
+    return bucket_mount_check.start()
+
+
+def bucket_mounts_status() -> dict:
+    """/monitor's Deployment line for the bucket mount service: ``state``
+    (``none``, ``pending``, ``passed`` or ``unavailable``) and ``problem``, the
+    words of why it is unavailable."""
+    return bucket_mount_check.status()
 
 
 def _renamed_source_dir(source_dir: str) -> str:
