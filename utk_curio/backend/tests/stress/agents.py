@@ -84,6 +84,11 @@ WRITE_TOOL = "node.content.write"
 LANDED = "applied"
 #: The events that end an ask (``turn_jobs.ENDINGS``, and its withdrawal).
 ENDINGS = ("done", "error", "withdrawn")
+#: A turn's phases, each timed from its ask to the first event that ends it
+#: (:attr:`MemberTurn.phases`): the turn prepared and its run reserved
+#: (``execution``, its first event), its write landed or refused
+#: (``tool_result``), and its end (``done``, or how else it ended).
+PHASES = (("prepared", ("execution",)), ("written", ("tool_result",)), ("ended", ENDINGS))
 
 # Each wait is a judgement, as sockets.py's are:
 #   TURN   - from the ask to the turn's end. A scripted turn does no model work:
@@ -245,6 +250,11 @@ class MemberTurn:
         self.events = 0
         self.broken = 0
         self._seen: set = set()
+        #: When the first event of each kind came (``time.perf_counter``), and
+        #: how long the server says its rounds and settling took (``done``'s
+        #: ``durationMs``, which leaves out its preparing).
+        self._came: dict[str, float] = {}
+        self.duration_ms: Optional[int] = None
         #: Set once the work is over, however it ended.
         self.over = threading.Event()
 
@@ -270,13 +280,31 @@ class MemberTurn:
             self._seen.add(seq)
         self.events += 1
         data = data if isinstance(data, dict) else {}
+        now = time.perf_counter()
+        if isinstance(name, str) and (name != "tool_result" or data.get("tool") == WRITE_TOOL):
+            self._came.setdefault(name, now)
         if name == "tool_result" and data.get("tool") == WRITE_TOOL:
             self.write, self.reason = data.get("status"), data.get("reason")
         elif name in ENDINGS and self.end is None:
             self.end = name
             self.error = data.get("error") if name == "error" else None
+            if isinstance(data.get("durationMs"), (int, float)):
+                self.duration_ms = int(data["durationMs"])
             if self.asked_at is not None:
-                self.seconds = time.perf_counter() - self.asked_at
+                self.seconds = now - self.asked_at
+
+    @property
+    def phases(self) -> dict:
+        """Seconds from the ask to each phase's end (:data:`PHASES`), for
+        those its follow saw; none before the ask was sent."""
+        if self.asked_at is None:
+            return {}
+        out = {}
+        for phase, names in PHASES:
+            came = [self._came[name] for name in names if name in self._came]
+            if came:
+                out[phase] = round(min(came) - self.asked_at, 2)
+        return out
 
     @property
     def landed(self) -> bool:
@@ -402,6 +430,7 @@ class MemberTurn:
             "end": self.end, "seconds": None if self.seconds is None else round(self.seconds, 2),
             "write": "landed" if write == LANDED else (write or "none"), "reason": self.reason,
             "events": self.events, "broken_streams": self.broken,
+            "phases": self.phases, "duration_ms": self.duration_ms,
         }
 
 
@@ -644,6 +673,8 @@ class RoomAgents:
             "asked": len(asked),
             "ends": ends,
             "turn_seconds": [turn["seconds"] for turn in asked if turn["seconds"] is not None],
+            "phases": {phase: [turn["phases"][phase] for turn in asked if phase in (turn.get("phases") or {})]
+                       for phase, _names in PHASES},
             "writes": writes,
             "unsynced": unsynced + untold,
             "present_at_end": self.present_at_end,

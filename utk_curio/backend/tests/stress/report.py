@@ -199,6 +199,11 @@ def canvas_summary(rooms: list[dict]) -> dict | None:
     }
 
 
+#: A turn's phases, each ended by its first event of a kind (``agents.PHASES``):
+#: prepared and its run reserved, its write's result, its end.
+TURN_PHASES = ("prepared", "written", "ended")
+
+
 def agents_summary(rooms: list[dict]) -> dict | None:
     """What a tier's agents did (``--agents``), from each room's ``agents``
     (``agents.RoomAgents.outcome``): the turns asked, how they ended and how
@@ -226,6 +231,10 @@ def agents_summary(rooms: list[dict]) -> dict | None:
         "asked": sum(group["asked"] for group in groups),
         "ends": {"done": 0, "error": 0, "withdrawn": 0, "never": 0, **summed("ends")},
         "turn_s": distribution([value for group in groups for value in group["turn_seconds"]], digits=2),
+        # From each ask to the end of each phase of its turn (agents.PHASES).
+        "phases_s": {phase: distribution([value for group in groups
+                                          for value in (group.get("phases") or {}).get(phase) or []], digits=2)
+                     for phase in TURN_PHASES},
         "writes": {"landed": 0, "changed_meanwhile": 0, "refused": 0, "none": 0, **summed("writes")},
         "unsynced": sum(group["unsynced"] for group in groups),
         "present_at_end": sum(len(names) for names in present) if present else None,
@@ -575,6 +584,31 @@ def _agents_table(tiers: list[dict]) -> list[str]:
             f"| {ends['never']} | {' | '.join(timing)} | {writes['landed']} | {writes['changed_meanwhile']} "
             f"| {writes['refused'] + writes['none']} | {agents['unsynced']} | {present} |"
         )
+    return lines + _turn_phases_table(tiers)
+
+
+def _turn_phases_table(tiers: list[dict]) -> list[str]:
+    """Where an agent's turn spends its time: from each ask, the seconds to
+    the turn's first event, once it is prepared and its run reserved; to its
+    write's result; and to its end."""
+    if not any(any(((tier.get("agents") or {}).get("phases_s") or {}).values()) for tier in tiers):
+        return []
+    lines = ["", ("Agents' turns, phase by phase: the seconds from each ask to the turn's first event, once "
+                  "it is prepared and its run reserved; to its write's result, landed or refused; and to "
+                  "its end."), ""]
+    lines.append("| Tier | Prepared p50 | Prepared p95 | Prepared max | Written p50 | Written p95 | Written max "
+                 "| Ended p50 | Ended p95 | Ended max |")
+    lines.append("| ---: | -----------: | -----------: | -----------: | ----------: | ----------: | ----------: "
+                 "| --------: | --------: | --------: |")
+    for tier in tiers:
+        phases = (tier.get("agents") or {}).get("phases_s") or {}
+        if not any(phases.values()):
+            continue
+        cells = []
+        for phase in TURN_PHASES:
+            took = phases.get(phase)
+            cells += [f"{took[key]} s" for key in ("p50", "p95", "max")] if took else ["-"] * 3
+        lines.append(f"| {tier['tier']} | {' | '.join(cells)} |")
     return lines
 
 

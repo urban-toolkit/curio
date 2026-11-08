@@ -515,6 +515,10 @@ def tier_lines(summary: dict) -> list[str]:
             f"{writes['refused']} refused otherwise, {writes['none']} never made; {agents['unsynced']} "
             f"missing from a tab, {present} agent(s) in the room at the end"
         )
+        phases = agents.get("phases_s") or {}
+        if any(phases.values()):
+            lines.append("agent turns, p50 from the ask: " + ", ".join(
+                f"{phase} {took['p50']} s" for phase, took in phases.items() if took))
     backend = summary.get("backend") or {}
     if backend.get("measured"):
         threads, rss = backend["threads"], backend["rss_mib"]

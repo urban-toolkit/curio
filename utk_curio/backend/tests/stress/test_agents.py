@@ -180,6 +180,33 @@ class ATurnsOutcomeTest(unittest.TestCase):
         self.assertEqual(samples, [("agent turn", _NODE, True, None, None)])
         self.assertEqual(turn.events, 3)
 
+    def test_a_turns_phases_are_timed_from_its_ask_by_the_first_event_that_ends_each(self):
+        """Prepared and its run reserved (its first event, ``execution``), its
+        write's result (another tool's result is no write), and its end; with
+        the server's own time of its rounds and settling."""
+        from utk_curio.backend.tests.stress import agents
+
+        clock = iter([130.0, 120.0, 131.0, 132.0, 190.0, 195.0])
+        with mock.patch.object(agents.time, "perf_counter", lambda: next(clock)):
+            turn = agents.MemberTurn("u1", _NODE, "x", early=True)
+            turn.asked, turn.asked_at = True, 100.0
+            for envelope in (_envelope(1, "execution"),
+                             _envelope(2, "tool_result", {"tool": "dataflow.read", "status": "ok"}),
+                             _landed(3), _envelope(4, "change"), _envelope(5, "done", {"durationMs": 59000}),
+                             _envelope(6, "execution")):
+                turn.take(envelope)
+        self.assertEqual(turn.phases, {"prepared": 30.0, "written": 31.0, "ended": 90.0})
+        self.assertEqual((turn.seconds, turn.duration_ms), (90.0, 59000))
+        outcome = turn.outcome()
+        self.assertEqual((outcome["phases"], outcome["duration_ms"]), (turn.phases, 59000))
+        self.assertEqual(agents.MemberTurn("u2", _NODE, "x", early=True).phases, {}, "no phase before its ask")
+
+    def test_the_reports_turn_phases_are_the_harness_phases(self):
+        from utk_curio.backend.tests.stress.agents import PHASES
+        from utk_curio.backend.tests.stress.report import TURN_PHASES
+
+        self.assertEqual(TURN_PHASES, tuple(phase for phase, _names in PHASES))
+
     def test_a_turn_never_asked_is_judged_where_it_failed(self):
         _turn_, samples = _judged(_done(), asked=False)
         self.assertEqual(samples, [])
@@ -632,6 +659,8 @@ class TheRoomsAgentsTest(unittest.TestCase):
             turn.asked, turn.end, turn.seconds = True, "done", 1.5
             turn.write = "applied" if member == "u0" else "refused"
             turn.reason = None if member == "u0" else changed_meanwhile("loader")
+            if member == "u0":
+                turn.asked_at, turn._came = 0.0, {"execution": 2.0, "tool_result": 3.0, "done": 4.5}
             turn.over.set()
             room.agents.turns[member] = turn
         for name in ("u0", "u1"):
@@ -650,6 +679,8 @@ class TheRoomsAgentsTest(unittest.TestCase):
         self.assertEqual(outcome["writes"], {"landed": 1, "changed_meanwhile": 1, "refused": 0, "none": 0})
         self.assertEqual((outcome["turn_seconds"], outcome["unsynced"], outcome["diverged"]), ([1.5, 1.5], 0, False))
         self.assertEqual(outcome["turn_events_told"], 4)
+        self.assertEqual(outcome["phases"], {"prepared": [2.0], "written": [3.0], "ended": [4.5]},
+                         "a turn whose ask was never timed has no phases")
         self.assertEqual(room.outcome()["agents"]["asked"], 2, "the room's outcome carries its agents'")
 
 
@@ -698,6 +729,24 @@ class TheTurnsSectionTest(unittest.TestCase):
         self.assertEqual((agents["unsynced"], agents["present_at_end"], agents["rooms_read"]), (2, 1, 2))
         self.assertEqual((agents["tabs_showing_agents"], agents["diverged_rooms"]), (3, 1))
         self.assertEqual(agents["turn_events_told"], 1800)
+
+    def test_the_turn_phases_add_up_per_tier_and_show_where_a_turn_waits(self):
+        from utk_curio.backend.tests.stress.report import agents_summary
+
+        agents = agents_summary([
+            _agents(phases={"prepared": [30.0, 2.0], "written": [31.0, 3.0], "ended": [90.0, 9.0]}),
+            _agents(phases={"prepared": [1.0], "written": [], "ended": [5.0]}),
+        ])
+        # Nearest rank, as every percentile of the report.
+        self.assertEqual(agents["phases_s"]["prepared"],
+                         {"count": 3, "total": 33.0, "p50": 2.0, "p95": 30.0, "max": 30.0})
+        self.assertEqual(agents["phases_s"]["written"]["count"], 2)
+        rendered = _markdown(_tier(agents=agents))
+        self.assertIn("Agents' turns, phase by phase", rendered)
+        row = next(line for line in rendered.splitlines() if line.startswith("| 100 | 2.0 s |"))
+        self.assertEqual(row, "| 100 | 2.0 s | 30.0 s | 30.0 s | 3.0 s | 31.0 s | 31.0 s | 9.0 s | 90.0 s | 90.0 s |")
+        self.assertNotIn("phase by phase", _markdown(_tier(agents=agents_summary([_agents()]))),
+                         "a tier whose turns' phases were not read shows none")
 
     def test_a_tier_with_no_agents_has_no_turns_section_and_presence_not_read_says_so(self):
         from utk_curio.backend.tests.stress.report import agents_summary
