@@ -59,6 +59,10 @@ CONNECT_SECONDS = 10.0
 CHUNK_BYTES = 64 * 1024
 #: How often the listening thread looks whether it should stop.
 ACCEPT_POLL_SECONDS = 0.5
+#: How long, and for how many reads, a refused connection is read and dropped
+#: before it closes.
+LINGER_SECONDS = 0.5
+LINGER_READS = 4
 
 _REASONS = {
     400: "Bad Request",
@@ -219,6 +223,7 @@ class MountProxy:
             try:
                 upstream = self._connect(addresses, port)
                 self._track(upstream)
+                client.settimeout(self.idle_seconds)
                 client.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
                 if rest:
                     upstream.sendall(rest)
@@ -354,15 +359,23 @@ def _host_of_target(target: str) -> Optional[str]:
 
 
 def _answer(client: socket.socket, status: int) -> None:
-    """Answer *status* with no body, and say the connection closes."""
+    """Answer *status* with no body, and say the connection closes. Then a
+    lingering close: what the client still sends is read and dropped for a
+    moment, so the close does not reset the connection before the client
+    reads the answer."""
     allow = "Allow: CONNECT\r\n" if status == 405 else ""
     head = (f"HTTP/1.1 {status} {_REASONS.get(status, 'Error')}\r\n{allow}"
             "Content-Length: 0\r\nConnection: close\r\n\r\n")
     try:
         client.settimeout(1.0)
         client.sendall(head.encode("ascii"))
+        client.shutdown(socket.SHUT_WR)
+        client.settimeout(LINGER_SECONDS)
+        for _ in range(LINGER_READS):
+            if not client.recv(CHUNK_BYTES):
+                return
     except OSError:
-        # The client is gone; the refusal is logged already.
+        # The client is gone, or sends on; the refusal is logged already.
         return
 
 

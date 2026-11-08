@@ -6,6 +6,11 @@ loaded by its path: the stand-in has the checkout, not Curio's libraries.
 
     selftest       the self-test the backend runs as it starts, which must read
                    as an execution account that is not root
+    source-mount   mount two sources' buckets as the backend mounts them
+                   (application/bucket_mount_sources.py): rclone takes the
+                   parameters, names each mount as the backend expects, the
+                   mount shows here, and its listing fails, since nothing
+                   listens on the proxy's port in the stand-in
     leave-mounted  mount the service's test folder, read it as that account,
                    check it refuses a write, and leave it mounted, as a service
                    that stops without unmounting leaves its mounts
@@ -21,6 +26,7 @@ import errno
 import importlib.util
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -63,6 +69,73 @@ def selftest(mounts) -> int:
         return fail("the environment names no mount service")
     print(f"self-test: passed={outcome.passed} problem={outcome.problem}: {outcome.detail}")
     return 0 if outcome.passed else fail(mounts.PROBLEMS.get(outcome.problem, outcome.problem))
+
+
+#: Two sources' mounts: the shipped Sentinel-2 source's bucket, virtual-hosted
+#: (discovery/source.aws.sentinel-2-chicago@1), and a path-style one with a
+#: port. Each is (mount name, endpoint, bucket, folder, path style).
+SOURCE_MOUNTS = (
+    ("source.ci.virtual-hosted@1", "https://s3.us-west-2.amazonaws.com", "sentinel-cogs",
+     "sentinel-s2-l2a-cogs/16/T/DM/2024/7", False),
+    ("source.ci.path-style@1", "https://data.example.org:9000", "bucket", "", True),
+)
+#: How long a source mount's listing may take to fail with no way out.
+NO_WAY_OUT_SECONDS = 60
+
+
+def source_mount(mounts) -> int:
+    folder, socket_path = mounts.configured()
+    client = mounts.RcClient(socket_path)
+    for name, endpoint, bucket, prefix, path_style in SOURCE_MOUNTS:
+        parameters = mounts.s3_parameters(endpoint, path_style=path_style)
+        path = mounts.remote_path(bucket, prefix)
+        fs = mounts.connection_string("s3", parameters, path)
+        point = f"{mounts.SERVICE_MOUNTS}/{name}"
+        try:
+            client.call("operations/mkdir", {"fs": mounts.SERVICE_MOUNTS, "remote": name})
+            client.call("mount/mount", {"fs": fs, "mountPoint": point, **mounts.SOURCE_MOUNT_OPTIONS})
+        except mounts.RcError as error:
+            return fail(f"mounting {fs} at {point}: {error.reason}")
+        try:
+            failed = _a_source_mount(client, folder / name, point, mounts.listed_fs("s3", parameters, path))
+        finally:
+            try:
+                client.call("mount/unmount", {"mountPoint": point})
+            except mounts.RcError as error:
+                print(f"could not unmount {point}: {error.reason}")
+        if failed:
+            return failed
+        print(f"mounted {fs} at {point}; it reached no bucket with no proxy, and is unmounted")
+    return 0
+
+
+def _a_source_mount(client, here: Path, point: str, expected: str) -> int:
+    entries = client.call("mount/listmounts").get("mountPoints") or []
+    names = [entry.get("Fs") for entry in entries if entry.get("MountPoint") == point]
+    if names != [expected]:
+        return fail(f"the service lists {point} as {names}, not [{expected!r}]")
+    print(f"the service lists {point} as {expected}")
+    if not listed(here):
+        return fail(f"the mount at {point} did not reach this container at {here}")
+    started = time.monotonic()
+    box = {}
+
+    def read():
+        try:
+            box["entries"] = os.listdir(here)
+        except OSError as exc:
+            box["error"] = exc
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    reader.join(NO_WAY_OUT_SECONDS)
+    took = time.monotonic() - started
+    if reader.is_alive():
+        return fail(f"listing {here} gave no answer in {NO_WAY_OUT_SECONDS} s")
+    if "error" not in box:
+        return fail(f"listing {here} answered {box['entries'][:5]} with no proxy to reach a bucket through")
+    print(f"listing {here} failed after {took:.1f} s, as it must with no way out: {box['error']}")
+    return 0
 
 
 def leave_mounted(mounts) -> int:
@@ -121,7 +194,10 @@ def gone(mounts) -> int:
     return 0
 
 
-CHECKS = {"selftest": selftest, "leave-mounted": leave_mounted, "dead": dead, "gone": gone}
+CHECKS = {
+    "selftest": selftest, "source-mount": source_mount,
+    "leave-mounted": leave_mounted, "dead": dead, "gone": gone,
+}
 
 
 def main(argv: list[str]) -> int:
