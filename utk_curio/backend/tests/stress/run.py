@@ -624,6 +624,18 @@ def main(argv: list[str] | None = None) -> int:
 
     baselines = run_baseline(backend_url, args.run_id, examples, shared_canvas=args.shared_canvas)
 
+    def tier_run(tier: int, position: int):
+        """The tier, as :func:`probe_tier` runs it; with the agents, on
+        Curio's scripted model, its default for the tier alone. Read only
+        once the tier runs, the probe's command among it."""
+        run = functools.partial(
+            run_tier, backend_url, args.run_id, tier, examples, baselines,
+            args.register_concurrency, args.profile, label=f"{tier}x{position}",
+            room_size=room_size, namespace=namespace, shared_canvas=args.shared_canvas,
+            probe_command=probe.command if probe is not None else None, agents=args.agents,
+        )
+        return on_the_scripted_model(backend_url, run) if args.agents else run()
+
     tier_reports = []
     all_results = []
     for position, tier in enumerate(tiers):
@@ -631,16 +643,8 @@ def main(argv: list[str] | None = None) -> int:
         # Bracketing the tier, because the counters are cumulative since the
         # sandbox started and the baseline runs before the first tier.
         lock_before = read_exec_lock(backend_url)
-        tier_run = functools.partial(
-            run_tier, backend_url, args.run_id, tier, examples, baselines,
-            args.register_concurrency, args.profile, label=f"{tier}x{position}",
-            room_size=room_size, namespace=namespace, shared_canvas=args.shared_canvas,
-            probe_command=probe.command if probe is not None else None, agents=args.agents,
-        )
-        if args.agents:
-            # The scripted model is Curio's default for the tier alone.
-            tier_run = functools.partial(on_the_scripted_model, backend_url, tier_run)
-        (results, seconds, outcomes), backend, doc_files, harness = probe_tier(probe, tier_run)
+        (results, seconds, outcomes), backend, doc_files, harness = probe_tier(
+            probe, functools.partial(tier_run, tier, position))
         all_results.extend(results)
         lock = reporting.exec_lock_delta(lock_before, read_exec_lock(backend_url))
         tabs = reporting.socket_summary(outcomes)

@@ -414,6 +414,47 @@ class ATabsViewOfTheAgentsTest(unittest.TestCase):
         self.assertEqual(present_in(None), {})
 
 
+#: An agent's lock as the server tells of it (``agent_peers._locked``, through
+#: ``room_state.try_lock``): its own name, no account, and who asked it.
+_AGENTS_LOCK = {
+    "user_id": None, "username": None, "name": "Node Builder", "participant_id": "agent-5f2c",
+    "since": 1.0, "writes": "code",
+    "agent": {"attachmentId": "att-1", "coord": "agent.curio.node-builder@1", "category": "node",
+              "askedBy": {"account": "7", "name": "Ana"}},
+}
+
+
+class AnAgentsLockTest(unittest.TestCase):
+    def test_an_agents_lock_names_the_agent_and_who_asked_it(self):
+        from utk_curio.backend.tests.stress.sockets import holder
+
+        self.assertEqual(holder(_AGENTS_LOCK), "Node Builder for Ana")
+        asked_by_account = {**_AGENTS_LOCK, "agent": {**_AGENTS_LOCK["agent"], "askedBy": {"account": "7"}}}
+        self.assertEqual(holder(asked_by_account), "Node Builder for 7")
+        self.assertEqual(holder({**_AGENTS_LOCK, "agent": {"coord": "agent.x@1"}, "name": None}), "agent.x@1 for someone")
+        self.assertEqual(holder({"participant_id": "pb", "username": "b", "agent": "Node Builder"}), "Node Builder for b")
+        self.assertEqual(holder({"participant_id": "pb", "username": "b"}), "b")
+
+    def test_an_agents_lock_held_at_the_end_is_said_in_words(self):
+        """The server's lock and a tab's, as step 2's end check reads them."""
+        from unittest import mock as mocking
+
+        from utk_curio.backend.tests.stress import sockets
+        from utk_curio.backend.tests.stress.sockets import Room, _locks_at_the_end
+
+        tab, _ = _tab("a", answers=[{"ok": True, "snapshot": {"locks": {_NODE: _AGENTS_LOCK}}}])
+        tab.room_event("node_locked", {"nodeId": _NODE, "lock": _AGENTS_LOCK})
+        member = _Member("a")
+        with mocking.patch.object(sockets, "SETTLE_TIMEOUT_S", 0.01):
+            _locks_at_the_end(member, Room(0, ["a"], shared=True), tab)
+        errors = [error for _label, kind, error in member.failures() if kind == "locked"]
+        self.assertEqual(len(errors), 2, member.failures())
+        for error in errors:
+            self.assertIn(f"node {_NODE} by Node Builder for Ana", error)
+            self.assertNotIn("{", error, "a lock's holder is said in words, never as its record")
+        self.assertEqual(tab.locks_left, [f"{_NODE} by Node Builder for Ana"])
+
+
 class _Member:
     """A member of a room as its agents read it: its name, its node, its
     result."""

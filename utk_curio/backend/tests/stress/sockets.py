@@ -231,10 +231,17 @@ def member_node(parent: dict, row: int) -> tuple[dict, dict]:
 
 def holder(lock) -> str:
     """Who holds *lock*, a lock as the server tells of it: an agent's lock
-    names its agent too (``room_state.AGENT_LOCK_FIELDS``)."""
+    names its agent too (``room_state.AGENT_LOCK_FIELDS``). An agent at work
+    in the room (``agent_peers``) holds its lock under its own name, its
+    ``agent`` saying who asked it (``askedBy``): ``Node Builder for Ana``."""
     lock = lock if isinstance(lock, dict) else {}
+    agent = lock.get("agent")
+    if isinstance(agent, dict):
+        asked = agent.get("askedBy") if isinstance(agent.get("askedBy"), dict) else {}
+        name = str(lock.get("name") or agent.get("coord") or lock.get("participant_id") or "an agent")
+        return f"{name} for {asked.get('name') or asked.get('account') or 'someone'}"
     who = str(lock.get("username") or lock.get("name") or lock.get("participant_id") or "someone")
-    return f"{lock['agent']} for {who}" if lock.get("agent") else who
+    return f"{agent} for {who}" if agent else who
 
 
 def require_websocket_client() -> None:
