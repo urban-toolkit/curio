@@ -565,7 +565,7 @@ def installed_manifests(user_key: str) -> dict[str, Any]:
     describes two different instants of the store.
     """
     out: dict[str, Any] = {}
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         for package_path in list_user_packages(user_key):
             try:
                 out[package_path.name] = load_package_manifest(package_path)

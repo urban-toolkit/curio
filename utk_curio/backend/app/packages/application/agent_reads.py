@@ -196,7 +196,7 @@ def agent_resolve_report(user_key: str, dir_names: list[str]) -> dict:
     # the resolver's two store reads and the per-package manifests — the
     # report describes a single instant of the store.
     catalog = _catalog_manifests()
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         store = packages_store_reads._store_index(user_key)
         installed = set(store)
         unknown = [dn for dn in dir_names if dn not in installed and dn not in catalog]
