@@ -488,6 +488,8 @@ Without both secrets, the deploy removes `.secrets/llm-endpoint` and the stack h
 
 Both stacks mount `/srv/curio-model-weights` read-only at `/model-weights` and start with `--model-weights-dir /model-weights`: fetch a model's weights there once ([Model weights a package fetches](#model-weights-a-package-fetches)), with `--into /srv/curio-model-weights`.
 
+Both stacks also start with `--media-cache-max-file-gb 8`, so **Cache files** copies the SideSeeing walks, videos of up to 7 GiB, from data.urbantk.org. Each account still holds at most 20 GB of cached files.
+
 A merge to `main` deploys the dev stack once: Bump version bumps the patch version and dispatches the dev deploy of that commit. Stable runs manually via Actions → Deploy → Run workflow.
 
 `deploy.yml` takes two inputs: `ref` (branch, tag, or SHA; empty deploys the latest `v*` tag) and `target` (`both` / `dev` / `stable`). Both jobs check out the requested ref and rebuild with `--no-cache --force-recreate`.
