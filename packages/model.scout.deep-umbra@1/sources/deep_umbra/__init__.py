@@ -6,7 +6,7 @@ which run the package's weights. ``season_factor`` (``deep_umbra.py``) gives
 the minutes of shadow a shadow of 1 stands for in a season.
 
 ``__all__`` names what node code imports from the package; its modules offer
-nothing of their own.
+no function of their own.
 """
 
 from .deep_umbra import season_factor

@@ -4,8 +4,8 @@
     "manifest.json": "2510a3b17dd9d4b5167f7b325c768bdd6ff2f5b2b7dcff32ff0b0bb2cc12136b",
     "models/deep_umbra.onnx": "67afb9d2d56bd0a12164e6e651214d56860ff689728c5b6f29486f21c3cb188e",
     "sources/accumulated-shadow.py": "8d7f91c0d46298757a08a92b1adf3520d98dc8c245f5168ab5905b61ab6c08d0",
-    "sources/deep_umbra/__init__.py": "2d0dd384489dee38a93c2a901b6de877ff1b2e023a4d2b649c66798a868adef8",
-    "sources/deep_umbra/deep_umbra.py": "a3c35e8bddb0934006e803eb4b66a7474e9bec348b0bf5a84248994dfd6c4b9d",
+    "sources/deep_umbra/__init__.py": "cd4f0951d7103f6242846a0e28823d4f7ce30ecc82c09933a5d59eb530dc3c10",
+    "sources/deep_umbra/deep_umbra.py": "03af4ddf3f305454ee4d3e572473e2697c4e14270826eb04c10e87e91e2d9b45",
     "sources/deep_umbra/node_outputs.py": "46b87018681c2aa345519826fff3accb43dbc3928167a13e2e3c8990370316ff"
   }
 }

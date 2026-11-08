@@ -2,13 +2,16 @@
  * What a node's code can call, as the header above its code reads it
  * (`services/packages/nodeFunctions`): one read per dataflow and node type,
  * however many headers show it; a read that fails lists nothing and is not
- * asked again; and the lists are read again only when the installed packages
- * change, which each refresh of the package registry says.
+ * asked again; a page with no session reads nothing; and the lists are read
+ * again only when the installed packages change, which each refresh of the
+ * package registry says.
  */
 const mockNodeFunctions = jest.fn();
 jest.mock("../../services/packages/packagesApi", () => ({
   packagesApi: { nodeFunctions: (...args: unknown[]) => mockNodeFunctions(...args) },
 }));
+const mockToken = jest.fn<string | undefined, []>(() => "a-session-token");
+jest.mock("../../utils/authApi", () => ({ getToken: () => mockToken() }));
 
 import React from "react";
 import { act, cleanup, render } from "@testing-library/react";
@@ -42,6 +45,7 @@ async function settle() {
 
 beforeEach(() => {
   mockNodeFunctions.mockReset();
+  mockToken.mockReturnValue("a-session-token");
 });
 
 afterEach(cleanup);
@@ -84,6 +88,15 @@ test("a read that fails lists nothing, and is not asked again", async () => {
 
 test("a node of no type reads nothing and lists nothing", async () => {
   const view = render(<Header nodeType={null} />);
+  await settle();
+  expect(stateOf(view.container)).toBe("ready");
+  expect(view.container.querySelector("[data-header]")!.getAttribute("data-curio")).toBe("0");
+  expect(mockNodeFunctions).not.toHaveBeenCalled();
+});
+
+test("a page with no session, a dashboard a viewer opens with no sign-in, reads nothing and lists nothing", async () => {
+  mockToken.mockReturnValue(undefined);
+  const view = render(<Header nodeType="ai.test/no-session" />);
   await settle();
   expect(stateOf(view.container)).toBe("ready");
   expect(view.container.querySelector("[data-header]")!.getAttribute("data-curio")).toBe("0");

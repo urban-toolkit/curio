@@ -7,9 +7,11 @@
  * canvas holds, and kept until the installed packages change: each refresh of
  * the package registry tells `forgetNodeFunctions` what they are, and when
  * they changed, the headers on the canvas read their lists again. A read
- * that fails lists nothing.
+ * that fails lists nothing, and a page with no session, such as a dashboard
+ * a viewer opens with no sign-in, reads nothing and lists nothing.
  */
 import { useEffect, useSyncExternalStore } from "react";
+import { getToken } from "../../utils/authApi";
 import { packagesApi } from "./packagesApi";
 import type { NodeFunctionsPayload } from "./types";
 
@@ -89,12 +91,14 @@ export function forgetNodeFunctions(packages?: string): void {
 }
 
 /** The list of a node of *nodeType* in the dataflow *dataflowId*, read on
- * first use and again after the packages change; nothing for no type. */
+ * first use and again after the packages change; nothing for no type, and
+ * nothing with no session, whose read could only be refused. */
 export function useNodeFunctions(nodeType: string | null | undefined, dataflowId?: string | null): NodeFunctionsState {
-  const read = () => (nodeType ? nodeFunctionsOf(nodeType, dataflowId) : NOTHING);
+  const asks = !!nodeType && !!getToken();
+  const read = () => (asks && nodeType ? nodeFunctionsOf(nodeType, dataflowId) : NOTHING);
   const state = useSyncExternalStore(subscribe, read, read);
   useEffect(() => {
-    if (nodeType) readNodeFunctions(nodeType, dataflowId);
-  }, [nodeType, dataflowId, state]);
+    if (asks && nodeType) readNodeFunctions(nodeType, dataflowId);
+  }, [asks, nodeType, dataflowId, state]);
   return state;
 }

@@ -88,10 +88,21 @@ def test_rasterization_offers_the_calls_its_readme_lists_and_the_weather_model_i
     }
 
 
-def test_every_name_a_shipped_module_lists_in_all_is_a_function_it_offers_with_a_docstring():
-    """A name in a shipped ``__all__`` that no function answers would be
-    offered to nobody: each one is a function the module defines or imports
-    from its package, and says what it does in its docstring."""
+def _values(tree: ast.Module) -> set[str]:
+    """The names the module's top level assigns a value to."""
+    targets = [
+        target for node in tree.body if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+    ]
+    return {name.id for target in targets for name in ast.walk(target) if isinstance(name, ast.Name)}
+
+
+def test_every_name_a_shipped_modules_all_lists_is_there_and_each_function_says_what_it_does():
+    """A name in a shipped ``__all__`` that nothing answers would be offered
+    to nobody: each one is a function the module offers, one it defines or
+    imports from its package, or a value it defines, such as Deep Umbra's
+    model's input and output names; and each function says what it does in
+    its docstring."""
     from utk_curio.backend.app.packages.application.function_nodes import PackageModules
     from utk_curio.backend.app.packages.domain.function_nodes import offered_names
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
@@ -100,12 +111,16 @@ def test_every_name_a_shipped_module_lists_in_all_is_a_function_it_offers_with_a
     for folder in sorted(path.parent for path in PACKAGES.glob("*/manifest.json")):
         modules = PackageModules(folder, load_package_manifest(folder))
         for module, path in modules.files:
-            names = offered_names(ast.parse(path.read_text(encoding="utf-8")))
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            names = offered_names(tree)
             if names is None:
                 continue
-            offered = modules.functions(module)
-            assert [f.name for f in offered] == names, f"{folder.name}: {module}'s __all__ names {names}"
-            for function in offered:
+            functions = [f.name for f in modules.functions(module)]
+            values = _values(tree)
+            stray = [name for name in names if name not in functions and name not in values]
+            assert not stray, f"{folder.name}: {module}'s __all__ names {stray}, which it neither offers nor defines"
+            assert functions == [name for name in names if name in functions], (folder.name, module, functions)
+            for function in modules.functions(module):
                 assert function.doc, f"{folder.name}: {module}.{function.name} says nothing in its docstring"
             checked += 1
     # Deep Umbra's three, Rasterization's four and the weather model's five.
