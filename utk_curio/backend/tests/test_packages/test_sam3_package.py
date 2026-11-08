@@ -294,10 +294,10 @@ def test_the_package_is_a_concept_segmentation_model_whose_node_is_its_own_sourc
         ("track-objects", "Track Objects", "sources/track-objects.py")]
     deps = dict(manifest.python_deps)
     assert deps["transformers"] == ">=5.0,<6.0" and "safetensors" in deps
-    # torch and torchvision are the images' own, built for CUDA, which examples
-    # 27 to 30 use: removing the model uninstalls the libraries only it
-    # declares, so it declares neither.
-    assert not {"torch", "torchvision"} & set(deps)
+    # The node imports torch, and the processor needs torchvision as it loads.
+    # Every image holds both, built for CUDA: with no version asked, they are
+    # what an add finds installed, and pip installs neither.
+    assert (deps["torch"], deps["torchvision"]) == ("", "")
 
 
 def test_the_weights_are_fetched_at_the_pinned_revision_and_never_shipped():

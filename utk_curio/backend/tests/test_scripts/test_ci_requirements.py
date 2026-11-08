@@ -107,3 +107,16 @@ def test_the_list_holds_every_shipped_packages_libraries_and_setup_still_takes_o
     only_added = set().union(*declared.values()) - allowed
     assert not only_added & at_launch, sorted(only_added & at_launch)
     assert {_name(line) for line in dependencies.manifest_requirements(whole_catalog=True)} >= only_added
+
+
+def test_the_list_names_torch_and_torchvision_alone_so_the_images_cuda_builds_stay():
+    """Every image holds torch and torchvision built for CUDA, installed before
+    this list's layer (the Dockerfile's python_base). A package declares them
+    with no version, which those builds satisfy, so the list names them with
+    none: pip then leaves the CUDA builds in place, where a version they did
+    not meet would have it fetch other builds from PyPI."""
+    listed = [
+        line for line in _script().LIST.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    assert [line for line in listed if _name(line) in ("torch", "torchvision")] == ["torch", "torchvision"]

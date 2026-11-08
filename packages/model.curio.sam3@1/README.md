@@ -128,7 +128,8 @@ checkpoint of SAM 3's original code, is not fetched: Transformers reads
 
 ## Setup
 
-Curio installs the package's Python libraries with it: `transformers` 5 and
-`safetensors`, which run the model, and `av`, `pandas`, `geopandas`, `numpy`,
-`pillow` and `pyarrow`. Torch and torchvision come with Curio's images, built for
-CUDA; on a pip install, install them before adding the model.
+Curio installs the package's Python libraries with it: `transformers` 5,
+`safetensors`, `torch` and `torchvision`, which run the model, and `av`,
+`pandas`, `geopandas`, `numpy`, `pillow` and `pyarrow`. It asks for no version of
+torch or torchvision: Curio's images hold both, built for CUDA, so adding the
+model there installs neither.
