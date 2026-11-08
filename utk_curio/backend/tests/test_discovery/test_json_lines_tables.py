@@ -169,7 +169,9 @@ class TestTheDetectionsOfSageIdot:
         assert list(frame["name"]) == [
             "object.detections.all", "object.detections.all", "object.detections.all", "plugin.error", "upload",
         ]
-        assert frame["meta.filename"].isna().all()
+        # Four lines write NaN there, which reads as null; the upload names its file.
+        assert frame["meta.filename"].isna().tolist() == [True, True, True, True, False]
+        assert frame["meta.filename"].iloc[4] == "snapshot.jpg"
         assert frame.iloc[0]["value"].startswith('{"image_timestamp_ns": 1752721216492384585, ')
         assert job["note"] == f"1 of 6 lines skipped: 1 not JSON (first at line 6 of {RELPATH})"
 
