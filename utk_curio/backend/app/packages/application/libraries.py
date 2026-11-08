@@ -310,6 +310,13 @@ def not_asked_for(user_keys, names) -> list[str]:
     for, sorted: no package in their stores declares one, and none is on
     their own lists (this dialog's). Empty when a package of theirs cannot be
     read, since it may declare any of them.
+
+    A lock owner (memo dev/99): each account's store is walked under that
+    account's seed lock, one account at a time. A package replaced in place is
+    missing from the store between the installer's rmtree and its move, which
+    run under the same lock, and a walk inside that window would give up a
+    library the package declares. The lock covers the walk alone, never the
+    uninstall a caller runs after it (``locks.package_seed_lock`` is a leaf).
     """
     asked: set[str] = set()
     for user_key in user_keys:
