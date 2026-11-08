@@ -214,3 +214,17 @@ def test_catalog_consumer_count_zero_when_unconsumed(client, user_and_token):
 
     item = _computed_item(client, token, project_id, dataset_id)
     assert item["consumerNodeCount"] == 0
+
+
+def test_dataset_details_count_its_consumers_as_the_card_does(client, user_and_token):
+    """``GET /api/datasets/<id>``, the details the Data Catalog opens, counts
+    the dataset's consumers as its browse card does, though the lookups that
+    show no count (a node run's of a collection) count none."""
+    _, token = user_and_token
+    project_id = _create_project(client, token, "Consumed", _consumed_project_spec(["n2", "n3"]))
+    dataset_id = _install_producer_output(client, token, project_id)
+
+    resp = client.get(f"/api/datasets/{dataset_id}?dataflowId={project_id}", headers=auth_headers(token))
+
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert resp.get_json()["consumerNodeCount"] == 2
