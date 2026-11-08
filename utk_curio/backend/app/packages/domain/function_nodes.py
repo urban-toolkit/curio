@@ -1,12 +1,15 @@
 """New node from a Python function (SCOUT's Compute Catalog, the Curio way). Pure.
 
 A package's modules (``python_modules.py``) are read from their source with
-``ast``, never imported or run: each public top-level function, with its
-parameters' names, kinds, defaults and annotations. Each parameter then gets
-one use: a widget, a fixed value, one of the node's inputs, or its own
-default. :func:`template_code` writes the template's code, which imports the
-function and returns its call, with ``[!! name !!]`` for a widget and
-``[!! input_k !!]`` for an input, the references a node's code holds (#662).
+``ast``, never imported or run: the functions each one offers, with their
+parameters' names, kinds, defaults and annotations. A module offers the names
+its ``__all__`` lists, when it has one (a function it defines, or one it
+imports from another module of its package); else every public top-level
+function (:func:`read_functions`). Each parameter then gets one use: a widget,
+a fixed value, one of the node's inputs, or its own default.
+:func:`template_code` writes the template's code, which imports the function
+and returns its call, with ``[!! name !!]`` for a widget and ``[!! input_k
+!!]`` for an input, the references a node's code holds (#662).
 """
 
 from __future__ import annotations
@@ -15,7 +18,8 @@ import ast
 import json
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import Callable
 
 POSITIONAL_ONLY = "positional-only"
 POSITIONAL = "positional-or-keyword"
@@ -33,6 +37,17 @@ WIDGET_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 #: At most this much of a docstring becomes the template's description.
 MAX_DESCRIPTION = 600
+
+#: How many imports a name ``__all__`` lists is followed through to the
+#: function it names: ``deep_umbra/__init__.py``'s ``from .node_outputs import
+#: accumulated_shadow`` is one.
+MAX_REEXPORTS = 8
+
+#: How a reader reaches another module of the same package, to follow an
+#: import a name of ``__all__`` comes from: a dotted module name in, ``(its
+#: source, whether it is a package's __init__.py)`` out, or None for a module
+#: the package does not ship.
+ModuleLookup = Callable[[str], "tuple[str, bool] | None"]
 
 #: What a suggested widget starts at when the parameter's default does not
 #: fit it: the kind's own value (``default_value_for``).
@@ -118,6 +133,18 @@ class FunctionSignature:
                 parts.append("/")
         return f"{self.name}({', '.join(parts)})"
 
+    @property
+    def required_call(self) -> str:
+        """A call node code can start from: its name and the parameters a call
+        must give, each by its own name, a keyword-only one as ``name=name``:
+        ``raster_calculate(operation, rasters)``."""
+        parts = [
+            f"{param.name}={param.name}" if param.kind == KEYWORD_ONLY else param.name
+            for param in self.parameters
+            if not param.has_default
+        ]
+        return f"{self.name}({', '.join(parts)})"
+
 
 def _parameter(node_arg: ast.arg, kind: str, default: ast.expr | None) -> Parameter:
     annotation = ast.unparse(node_arg.annotation) if node_arg.annotation is not None else None
@@ -157,15 +184,16 @@ def _signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> FunctionSignatur
     return FunctionSignature(node.name, tuple(params), _doc(node), problem)
 
 
-def read_functions(source: str, module: str) -> list[FunctionSignature]:
-    """The public top-level functions *source*, the module *module*, defines,
-    in source order. Raises :class:`FunctionSourceError` when it does not parse."""
+def _parse(source: str, module: str) -> ast.Module:
     try:
-        tree = ast.parse(source, filename=f"{module}.py")
+        return ast.parse(source, filename=f"{module}.py")
     except SyntaxError as exc:
         raise FunctionSourceError(f"{module} does not parse: line {exc.lineno}: {exc.msg}") from None
     except ValueError as exc:
         raise FunctionSourceError(f"{module} does not parse: {exc}") from None
+
+
+def _public_definitions(tree: ast.Module) -> list[FunctionSignature]:
     found: dict[str, FunctionSignature] = {}
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith("_"):
@@ -174,9 +202,147 @@ def read_functions(source: str, module: str) -> list[FunctionSignature]:
     return list(found.values())
 
 
-def read_function(source: str, module: str, name: str) -> FunctionSignature:
-    """The function *name* in *source*, one a node can call."""
-    for signature in read_functions(source, module):
+def defined_functions(source: str, module: str) -> list[FunctionSignature]:
+    """Every public top-level function *source*, the module *module*, defines,
+    in source order, whatever its ``__all__`` says. Raises
+    :class:`FunctionSourceError` when it does not parse."""
+    return _public_definitions(_parse(source, module))
+
+
+def _texts(node: ast.expr | None) -> list[str] | None:
+    """The texts of a literal list or tuple of texts, else None."""
+    if not isinstance(node, (ast.List, ast.Tuple)):
+        return None
+    if not all(isinstance(item, ast.Constant) and isinstance(item.value, str) for item in node.elts):
+        return None
+    return [item.value for item in node.elts]
+
+
+def offered_names(tree: ast.Module) -> list[str] | None:
+    """The names the module's ``__all__`` lists, in its order, each once: a
+    literal list or tuple of texts assigned at its top level, and extended
+    there with ``+=``. None when it has no ``__all__``, or one that only
+    running the module could tell."""
+    names: list[str] | None = None
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
+            names = _texts(node.value)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "__all__":
+            names = _texts(node.value)
+        elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name) and node.target.id == "__all__":
+            more = _texts(node.value) if isinstance(node.op, ast.Add) else None
+            names = None if names is None or more is None else names + more
+        else:
+            continue
+        if names is None:
+            return None
+    return None if names is None else list(dict.fromkeys(names))
+
+
+def _bindings(tree: ast.Module) -> dict[str, object]:
+    """What each name of the module's top level is bound to last, as the module
+    runs: a function's definition, ``(the ImportFrom, the name it imports)``,
+    or None for anything else (a class, a value, a module). Only statements at
+    the top level count, not those inside an ``if`` or a ``try``."""
+    bound: dict[str, object] = {}
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            bound[node.name] = node
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name != "*":
+                    bound[alias.asname or alias.name] = (node, alias.name)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                bound[alias.asname or alias.name.split(".", 1)[0]] = None
+        elif isinstance(node, ast.ClassDef):
+            bound[node.name] = None
+        elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                for name in ast.walk(target):
+                    if isinstance(name, ast.Name) and isinstance(name.ctx, ast.Store):
+                        bound[name.id] = None
+    return bound
+
+
+def _imported_module(module: str, package: bool, node: ast.ImportFrom) -> str | None:
+    """The dotted name of the module *node* imports from, in the module
+    *module*, a package's ``__init__.py`` when *package*: a relative import
+    starts at the module's own package. None for one that climbs past it."""
+    if not node.level:
+        return node.module
+    parts = module.split(".") if package else module.split(".")[:-1]
+    climb = node.level - 1
+    if climb >= len(parts):
+        return None
+    base = parts[: len(parts) - climb] + (node.module.split(".") if node.module else [])
+    return ".".join(base)
+
+
+def _resolved(
+    name: str, bound: dict[str, object], module: str, package: bool,
+    lookup: ModuleLookup | None, read: dict, depth: int = 0,
+) -> FunctionSignature | None:
+    """The function *name* is bound to in the module *module*: its own
+    definition, or, through an import from another module of its package
+    (*lookup*), that module's, at most MAX_REEXPORTS imports away. None for
+    anything else. *read* keeps each module's bindings for the reader."""
+    binding = bound.get(name)
+    if isinstance(binding, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return _signature(binding)
+    if not isinstance(binding, tuple) or lookup is None or depth >= MAX_REEXPORTS:
+        return None
+    node, imported = binding
+    target = _imported_module(module, package, node)
+    if target is None:
+        return None
+    if target not in read:
+        found = lookup(target)
+        try:
+            read[target] = None if found is None else (_bindings(_parse(found[0], target)), bool(found[1]))
+        except FunctionSourceError:
+            read[target] = None
+    if read[target] is None:
+        return None
+    target_bound, target_package = read[target]
+    return _resolved(imported, target_bound, target, target_package, lookup, read, depth + 1)
+
+
+def read_functions(
+    source: str, module: str, *, package: bool = False, lookup: ModuleLookup | None = None,
+) -> list[FunctionSignature]:
+    """The functions *source*, the module *module*, offers, in order.
+
+    With an ``__all__`` (:func:`offered_names`), the names it lists, in its
+    order, that are functions: one the module defines, or one it imports from
+    another module of its package, which *lookup* reads (*package* says the
+    module is a package's ``__init__.py``, which a relative import starts
+    from). A name it lists that is not a function, or that comes from a module
+    the package does not ship, is left out. Without one, every public
+    top-level function, in source order (:func:`defined_functions`).
+
+    Raises :class:`FunctionSourceError` when *source* does not parse."""
+    tree = _parse(source, module)
+    names = offered_names(tree)
+    if names is None:
+        return _public_definitions(tree)
+    bound = _bindings(tree)
+    read: dict = {}
+    found: list[FunctionSignature] = []
+    for name in names:
+        signature = _resolved(name, bound, module, package, lookup, read)
+        if signature is not None:
+            found.append(signature if signature.name == name else replace(signature, name=name))
+    return found
+
+
+def read_function(
+    source: str, module: str, name: str, *, package: bool = False, lookup: ModuleLookup | None = None,
+) -> FunctionSignature:
+    """The function *name* the module offers (:func:`read_functions`), one a
+    node can call."""
+    for signature in read_functions(source, module, package=package, lookup=lookup):
         if signature.name == name:
             if signature.problem:
                 raise FunctionSourceError(signature.problem)

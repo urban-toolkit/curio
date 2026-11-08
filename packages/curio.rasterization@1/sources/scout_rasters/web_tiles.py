@@ -11,6 +11,9 @@ import math
 
 from .mosaic import mosaic_rasters
 
+#: What node code calls. ``mosaic_rasters`` is ``mosaic.py``'s, which offers it.
+__all__ = ["tile_bounds", "mosaic_web_tiles"]
+
 
 # ---------------------------------------------------------------------------
 # Map tiles side by side

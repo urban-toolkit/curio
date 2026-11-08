@@ -35,6 +35,9 @@ from .convert_to_raster import convert_raster
 # ``compute_tile`` draws each tile.
 from .web_tiles import mosaic_web_tiles
 
+#: What node code calls.
+__all__ = ["rasterize_buildings"]
+
 TILE_SIZE = 256
 MOSAIC_CRS = "EPSG:3395"
 TILE_FILE = re.compile(r"^(\d+)_(\d+)_(\d+)\.png$")

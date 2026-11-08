@@ -32,6 +32,8 @@ Every function keeps SCOUT's name and arithmetic. The changes:
   and ``get_deep_shadow``, which the ONNX file replaces), its training code
   (losses, the discriminator, the checkpoint restore), its print lines, its
   unused imports and its commented-out usage example are left out.
+- ``__all__`` names nothing: node code imports what the package offers,
+  ``season_factor`` among it, from ``deep_umbra`` itself (``__init__.py``).
 
 Each line Curio changed ends with a ``# Curio:`` comment that quotes its entry
 above, or sits in a changed block (a new function, a rewritten call) whose
@@ -40,6 +42,8 @@ SCOUT's only in quotes, spacing, line breaks, order or punctuation, have none.
 """
 
 import numpy as np
+
+__all__ = []  # Curio: __all__ names nothing
 
 #: The ONNX model's inputs, in SCOUT's order, and its output; each is
 #: (1, 512, 512, 1) float32.

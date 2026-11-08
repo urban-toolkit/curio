@@ -33,6 +33,9 @@ import sys
 import warnings
 from decimal import Decimal
 
+#: What node code calls.
+__all__ = ["raster_calculate", "raster_statistics"]
+
 #: What ``raster_calculate`` does, and how many rasters each operation reads.
 ARITHMETIC = ("add", "subtract", "multiply", "divide")
 CHOOSE = "choose"
