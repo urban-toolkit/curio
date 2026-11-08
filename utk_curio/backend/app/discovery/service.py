@@ -516,6 +516,16 @@ class DiscoveryService:
         service = DatasetCatalogService(self.user)
         return service._mutations._install_imported_path(path, filename, fmt, **kwargs)
 
+    def _describe_collection(self, item: dict[str, Any], fields: dict[str, Any]) -> None:
+        """The seam into the Data Catalog for what a cache read from one of
+        this account's collections: *fields* of its block, in its manifest and
+        its index entry. *item*'s ``path`` is its index, in ``data/``."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.datasets.install.installer import update_collection
+
+        update_collection(self.user_key, Path(item["path"]).parents[1], fields)
+
     def _resource_row(
         self, manifest: DiscoverySourceManifest, resource, held, *, group: scanning.Group | None = None
     ) -> dict[str, Any]:
@@ -945,6 +955,7 @@ class DiscoveryService:
                         items=_items,
                         progress=_progress,
                         cancelled=lambda: job.cancelled,
+                        describe=lambda fields: worker._describe_collection(item, fields),
                     )
                     job_store.jobs.finish(
                         job, "completed", dataset=item, dataset_id=dataset_id,
@@ -968,12 +979,15 @@ class DiscoveryService:
                     ratelimit.download_slots.release(user_key)
                     cache_collection.release(user_key, dataset_id, owner)
 
+        running = False
         try:
-            return _start(job, _run, user_key)
-        except BaseException:
-            # No worker, so the collection is free for the next cache.
-            cache_collection.release(user_key, dataset_id, owner)
-            raise
+            row = _start(job, _run, user_key)
+            running = True
+            return row
+        finally:
+            if not running:
+                # No worker, so the collection is free for the next cache.
+                cache_collection.release(user_key, dataset_id, owner)
 
     def get_job(self, job_id: str) -> dict[str, Any]:
         job = job_store.jobs.get(self.user_key, job_id)

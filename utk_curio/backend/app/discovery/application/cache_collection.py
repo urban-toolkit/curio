@@ -115,26 +115,33 @@ def cache(
     items: Callable[[int, int | None], None] | None = None,
     progress: Callable[[int, int | None], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
+    describe: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Fetch every file of *dataset* not yet cached, then read the details of
     the videos and recordings among its cached files. Returns counts.
 
     *owner* is the cache (a job) whose caller claimed the collection already
     (:func:`claim`). Without it this call claims it, and either way it refuses
-    while another cache of the collection runs.
+    while another cache of the collection runs. *describe*, when given, gets
+    what the collection's block says of its files once their details are read
+    (``probeErrors``, and ``totalSeconds`` for recordings), for the Data
+    Catalog to keep.
     """
     owner = owner or uuid.uuid4().hex
     held, claimed = claim(user_key, dataset["id"], lambda: owner)
     if held != owner:
         raise CacheRunning("these files are being cached already")
     try:
-        return _cache(user_key, dataset, provider, items=items, progress=progress, cancelled=cancelled)
+        return _cache(
+            user_key, dataset, provider,
+            items=items, progress=progress, cancelled=cancelled, describe=describe,
+        )
     finally:
         if claimed:
             release(user_key, dataset["id"], owner)
 
 
-def _cache(user_key, dataset, provider, *, items, progress, cancelled) -> dict[str, Any]:
+def _cache(user_key, dataset, provider, *, items, progress, cancelled, describe) -> dict[str, Any]:
     import pandas as pd
     import pyarrow.parquet as pq
 
@@ -163,20 +170,22 @@ def _cache(user_key, dataset, provider, *, items, progress, cancelled) -> dict[s
                 raise DownloadTooLarge(f"{row.relpath} is larger than one object may be")
             final = target / cached_name(row.file_id, row.ext)
             part = final.with_name(final.name + ".part")
+            # Opened before the fetch: when another cache writes it, it stays theirs.
+            handle = _open_part(part, row.relpath)
+            landed = False
             try:
-                with _open_part(part, row.relpath) as handle:
+                with handle:
                     provider.stream(
                         row.relpath,
                         handle.write,
                         max_bytes=int(row.bytes) + 1024 * 1024,
                         ceiling=MAX_COLLECTION_OBJECT_BYTES,
                     )
-            except CacheRunning:
-                raise  # the .part is the other cache's
-            except BaseException:
-                part.unlink(missing_ok=True)
-                raise
-            _land(part, final, user_key, dataset["id"], int(row.bytes))
+                _land(part, final, user_key, dataset["id"], int(row.bytes))
+                landed = True
+            finally:
+                if not landed:
+                    part.unlink(missing_ok=True)
             media_dirs.grant_to_child(final)
             done_bytes += int(row.bytes)
             if items is not None:
@@ -185,7 +194,7 @@ def _cache(user_key, dataset, provider, *, items, progress, cancelled) -> dict[s
                 progress(done_bytes, needed)
     finally:
         # What landed is read even when the cache stops partway.
-        _read_cached_details(user_key, dataset, index)
+        _read_cached_details(user_key, dataset, index, describe)
     return {"cached": len(todo), "bytes": done_bytes, "total": len(index)}
 
 
@@ -293,10 +302,12 @@ READ_ONCE_CACHED = ("video", "audio")
 _READ = ("file_id", "relpath", "ext", "bytes", "kind", "duration_s", "probe_error")
 
 
-def _read_cached_details(user_key: str, dataset: dict[str, Any], index) -> None:
+def _read_cached_details(user_key: str, dataset: dict[str, Any], index, describe=None) -> None:
     """Read the details of the cached videos and recordings the index lacks,
     those an earlier cache copied among them, and write them into it. A file
-    that cannot be read says why in its row's ``probe_error``."""
+    that cannot be read says why in its row's ``probe_error``. *describe* then
+    gets what the collection's block says of its files, as indexing a folder
+    counts it (``index_collection.collection_block``)."""
     import logging
 
     try:
@@ -306,10 +317,28 @@ def _read_cached_details(user_key: str, dataset: dict[str, Any], index) -> None:
             if path is not None and path.stat().st_size == int(row.bytes):
                 found[row.file_id] = probing.probe(row.kind, path)
         record_details(dataset["path"], found)
+        if found and describe is not None:
+            describe(_block_fields(dataset))
     except Exception:  # noqa: BLE001 - the files are cached either way
         logging.getLogger(__name__).warning(
             "Could not record the details of %s's cached files", dataset.get("id"), exc_info=True
         )
+
+
+def _block_fields(dataset: dict[str, Any]) -> dict[str, Any]:
+    """``probeErrors``, and for recordings ``totalSeconds``, from the index as it is now."""
+    import pandas as pd
+    import pyarrow.parquet as pq
+
+    names = set(pq.read_schema(dataset["path"]).names)
+    index = pd.read_parquet(dataset["path"], columns=[c for c in ("duration_s", "probe_error") if c in names])
+    fields: dict[str, Any] = {}
+    if "probe_error" in index.columns:
+        fields["probeErrors"] = int(index["probe_error"].notna().sum())
+    kind = (dataset.get("collection") or {}).get("kind")
+    if kind == "audio" and "duration_s" in index.columns and index["duration_s"].notna().any():
+        fields["totalSeconds"] = round(float(index["duration_s"].fillna(0).sum()), 3)
+    return fields
 
 
 def _unread(index) -> list:
@@ -365,6 +394,5 @@ def record_details(index_path: str, details: dict[str, dict[str, Any]]) -> None:
             frame.to_parquet(part, index=False)
         shutil.copymode(path, part)
         os.replace(part, path)
-    except BaseException:
+    finally:
         part.unlink(missing_ok=True)
-        raise

@@ -199,6 +199,9 @@ class TestACachedFileIsRead:
         row = index.iloc[0]
         assert row["sample_rate"] == 8000 and row["channels"] >= 1 and row["duration_s"] > 0
         assert str(row["recorded_at"]) == "2024-05-01 06:00:00"
+        # Its details say how long the recordings run, as a folder's do.
+        item = client.get(f"/api/datasets/{dataset['id']}", headers=auth).get_json()
+        assert item["collection"].get("totalSeconds") == pytest.approx(row["duration_s"]), item["collection"]
 
     def test_a_walk_cached_before_is_read_by_the_next_cache(self, client, auth, app, walks_bucket, user_and_token):
         import pandas as pd
@@ -288,16 +291,19 @@ class TestOneCacheAtATime:
         assert status["cacheJob"] is None and status["cachedFiles"] == 2, status
 
     def test_two_caches_at_once_cannot_pass_the_accounts_limit(
-        self, client, auth, app, walks_bucket, monkeypatch
+        self, client, auth, app, walks_bucket, monkeypatch, user_and_token
     ):
         from utk_curio.backend.app.discovery.application import cache_collection
 
+        user, _token = user_and_token
         walks, sounds = _add(client, auth, "walks"), _add(client, auth, "sounds")
         walks_bytes, sound_bytes = 2 * CLIP.stat().st_size, RECORDING.stat().st_size
-        room = max(walks_bytes, sound_bytes) + min(walks_bytes, sound_bytes) // 2
+        held = cache_collection.used_bytes(str(user.id))
+        room = held + max(walks_bytes, sound_bytes) + min(walks_bytes, sound_bytes) // 2
         monkeypatch.setenv("CURIO_MEDIA_CACHE_MAX_GB", repr(room / 1024**3))
         # Either collection fits alone; both together do not.
-        assert max(walks_bytes, sound_bytes) <= cache_collection.cap_bytes() < walks_bytes + sound_bytes
+        cap = cache_collection.cap_bytes()
+        assert held + max(walks_bytes, sound_bytes) <= cap < held + walks_bytes + sound_bytes
         hold = _Hold(monkeypatch, WALKS[0])
         try:
             first = _cache(client, auth, walks["id"])
@@ -366,7 +372,7 @@ class TestOneWriterPerFile:
         def first():
             try:
                 cache_collection.cache("9", dataset, _Bucket(before=hold))
-            except BaseException as exc:  # noqa: BLE001 - reported below
+            except Exception as exc:  # noqa: BLE001 - reported below
                 failures.append(exc)
 
         worker = threading.Thread(target=first, daemon=True)
