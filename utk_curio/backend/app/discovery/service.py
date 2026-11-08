@@ -14,6 +14,7 @@ from flask import current_app
 
 from utk_curio.backend.app.discovery.application.acquire import DiscoveryAcquire, _Cancelled
 from utk_curio.backend.app.discovery.application import bucket_mount_check
+from utk_curio.backend.app.discovery.application import bucket_mount_sources
 from utk_curio.backend.app.discovery.application.browse import DiscoveryBrowse
 from utk_curio.backend.app.discovery.application import scan as scanning
 from utk_curio.backend.app.discovery.application.model_acquire import ModelAcquire
@@ -90,6 +91,21 @@ def bucket_mounts_status() -> dict:
     (``none``, ``pending``, ``passed`` or ``unavailable``) and ``problem``, the
     words of why it is unavailable."""
     return bucket_mount_check.status()
+
+
+def start_bucket_mount_proxy(host: str) -> bool:
+    """The mount service's one way out, a CONNECT proxy on *host* (the
+    backend's own), when ``--bucket-mounts-dir`` and ``--bucket-mount-socket``
+    name a service (``infrastructure/mount_proxy.py``). Whether it listens."""
+    return bucket_mount_sources.start_proxy(host)
+
+
+def ensure_bucket_mount(manifest: DiscoverySourceManifest) -> bucket_mount_sources.SourceMount:
+    """*manifest*'s bucket mounted through the mount service, or why not:
+    ``state`` ``none`` (no service), ``not-mountable``, ``mounted`` (its file
+    ``relpath`` is ``folder / (tail + relpath)``) or ``down``, with ``reason``
+    (``application/bucket_mount_sources.py``)."""
+    return bucket_mount_sources.ensure(manifest)
 
 
 def _renamed_source_dir(source_dir: str) -> str:

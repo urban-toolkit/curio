@@ -134,8 +134,10 @@ def serve():
         from utk_curio.backend.app.monitor import open_files as monitor_open_files
 
         monitor_open_files.start_sampler(app)
-        # The bucket mount service's self-test, once, when --bucket-mounts-dir
-        # and --bucket-mount-socket name one; /monitor shows how it went.
+        # When --bucket-mounts-dir and --bucket-mount-socket name a bucket
+        # mount service: its one way out, a proxy on the backend's own host,
+        # then its self-test, once; /monitor shows how it went.
+        discovery_service.start_bucket_mount_proxy(run_kwargs["host"])
         discovery_service.start_bucket_mount_check()
 
     # The app's own SocketIO server (extensions.init_socketio), which

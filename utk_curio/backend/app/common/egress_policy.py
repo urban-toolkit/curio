@@ -137,16 +137,34 @@ def check_url(
     if trusted_host is not None and (host.lower(), parsed.port) == trusted_host:
         return True, ""  # operator-declared provider host (dev/90 A2)
     try:
-        addresses = resolver(host)
+        public_addresses(host, resolver=resolver)
+    except EgressRefused as refused:
+        return False, str(refused)
+    return True, ""
+
+
+def public_addresses(host: str, *, resolver=None) -> list[str]:
+    """Every address *host* resolves to, each one public; raises
+    :class:`EgressRefused` with the reason when the host does not resolve or
+    any of its addresses is not public.
+
+    The one check of a host's addresses: :func:`check_url` runs it, and the
+    bucket mount proxy (``discovery/infrastructure/mount_proxy.py``) connects
+    only to an address it returned, so a second lookup of the name cannot
+    send that connection elsewhere.
+    """
+    resolver = resolver or _default_resolver
+    try:
+        addresses = list(resolver(host))
     except OSError as exc:
-        return False, f"the host does not resolve: {exc}"
+        raise EgressRefused(f"the host does not resolve: {exc}") from None
     if not addresses:
-        return False, "the host does not resolve"
+        raise EgressRefused("the host does not resolve")
     for address in addresses:
         ok, reason = _address_is_public(address, host)
         if not ok:
-            return False, reason
-    return True, ""
+            raise EgressRefused(reason)
+    return addresses
 
 
 def _address_is_public(address: str, host: str) -> tuple[bool, str]:
