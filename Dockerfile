@@ -10,7 +10,13 @@ ARG CURIO_CI_SETUP=0
 # -----------------------------------------------------------------------------
 # Stage 1: Unified Python service (no Node required)
 # -----------------------------------------------------------------------------
-FROM python:3.12-slim AS python_base
+# Both base images are pinned by digest. A new image under the same tag
+# otherwise changes every layer below with no change here: on 11-08 one left
+# main's layer cache unused and gave each commit an image with no layer in
+# common with the last. A bump is an edit of the digest, and the Dockerfile is
+# one of build-image's early inputs, so main then builds and its layer cache
+# gets the new layers.
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS python_base
 
 ENV PYTHONUNBUFFERED=1 LOG_TO_STDOUT=true
 WORKDIR /app
@@ -117,7 +123,7 @@ COPY utk_curio/ utk_curio/
 # -----------------------------------------------------------------------------
 # Stage 2: Build frontends with Node (avoids NodeSource on slim in CI)
 # -----------------------------------------------------------------------------
-FROM node:26-bookworm-slim AS frontend_builder
+FROM node:26-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68 AS frontend_builder
 # The dependencies first, from the manifests and the vendored tarball they
 # name (vendor/autark/README.md), so a source change reuses the npm layer and
 # only rebuilds.

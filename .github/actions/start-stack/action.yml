@@ -42,6 +42,15 @@ runs:
       shell: bash
       run: python3 scripts/ci_memory_budget.py --github-env
 
+    # The image is about 17 GB. On a GitHub-hosted runner the toolchains no CI
+    # job uses go while it is pulled, and the step after the wait says how
+    # much room that left (scripts/ci_disk.sh).
+    - name: 📏 Free disk, and room for the image (GitHub-hosted)
+      shell: bash
+      run: |
+        bash scripts/ci_disk.sh free "before the pull"
+        bash scripts/ci_disk.sh drop-tools
+
     - uses: docker/login-action@v4
       with:
         registry: ghcr.io
@@ -49,8 +58,7 @@ runs:
         password: ${{ inputs.token }}
 
     # Tagged with the name compose gives the service's image, so `up` finds it
-    # and builds nothing. From then on the job has an image of its own, which
-    # stop-stack's cleanup asks before it removes the ones earlier jobs left.
+    # and builds nothing. stop-stack removes both names at the job's end.
     - name: 📥 Pull the image
       shell: bash
       env:
@@ -62,7 +70,6 @@ runs:
         docker pull --quiet "$IMAGE"
         echo "Pulled in $(( $(date +%s) - started )) s, $(docker image inspect --format '{{.Size}}' "$IMAGE") bytes on this daemon"
         docker tag "$IMAGE" "$PROJECT-curio"
-        echo "CURIO_CI_OWN_IMAGE=1" >> "$GITHUB_ENV"
 
     - name: 🌱 Seed the workspace
       if: inputs.seed != ''
@@ -105,3 +112,8 @@ runs:
         ' || { echo "::error::$PROJECT did not become healthy in ${WAIT}s" >&2
                docker compose -p "$PROJECT" logs --no-color --tail=200 curio || true
                exit 1; }
+
+    - name: 📏 Free disk once the unused toolchains are gone (GitHub-hosted)
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      run: bash scripts/ci_disk.sh wait-tools

@@ -12,11 +12,14 @@
  * in the image, which ships no compose file or workflow, so this check lives
  * here.
  *
- * stop-stack ends every job that starts a stack with
- * scripts/ci_image_cleanup.sh (tested in the backend suite), which on an
- * arcade runner removes images only once CURIO_CI_OWN_IMAGE says the job has
- * one of its own. So every such job must say so: start-stack after its pull,
- * or the job after it builds its image.
+ * No CI image outlives its job on a self-hosted runner: the image is about
+ * 17 GB, and the 44 arcade runners share one disk, which the images they kept
+ * between jobs filled on 11-08. So every job that pulls, builds or takes an
+ * image there runs scripts/ci_image_cleanup.sh (tested in the backend suite)
+ * at its end whatever its steps did, through stop-stack or a step of its own,
+ * and its first step removes what a job ended before its cleanup left. On a
+ * GitHub-hosted runner start-stack and build-image make room for the image
+ * first (scripts/ci_disk.sh, tested in the backend suite).
  *
  * On an arcade runner those packages are the image's own folder, mounted in
  * place by a helper container (scripts/ci_image_python.sh, tested in the
@@ -104,7 +107,7 @@ describe("The image's Python packages on the runner", () => {
         const text = read(STOP_STACK);
         const release = text.indexOf('bash "$GITHUB_WORKSPACE/scripts/ci_image_python.sh" release');
         expect(release).toBeGreaterThan(-1);
-        expect(release).toBeLessThan(text.indexOf('bash "$GITHUB_WORKSPACE/scripts/ci_image_cleanup.sh" "$PROJECT"'));
+        expect(release).toBeLessThan(text.indexOf('bash "$GITHUB_WORKSPACE/scripts/ci_image_cleanup.sh"'));
     });
 
     test("every job that takes them on a self-hosted runner lets them go, whatever its steps did", () => {
@@ -126,31 +129,35 @@ describe("The image's Python packages on the runner", () => {
             .filter(
                 ([, job]) =>
                     !/uses: \.\/\.github\/actions\/stop-stack\n {8}if: always\(\)/.test(job) &&
-                    !/if: always\(\)[^\n]*\n {8}run: bash scripts\/ci_image_python\.sh release$/m.test(job),
+                    !/if: always\(\)[^\n]*\n {8}run: \|\n {10}bash scripts\/ci_image_python\.sh release$/m.test(job),
             )
             .map(([name]) => name);
         expect(holding).toEqual([]);
     });
 });
 
-describe("Removing CI images on self-hosted runners", () => {
-    const MARK = 'echo "CURIO_CI_OWN_IMAGE=1" >> "$GITHUB_ENV"';
+describe("No CI image outlives its job on a self-hosted runner", () => {
+    const START_STACK = ".github/actions/start-stack/action.yml";
+    const STOP_STACK = ".github/actions/stop-stack/action.yml";
+    /** A step that pulls, builds or takes the CI image. */
+    const PLACES_AN_IMAGE = /uses: \.\/\.github\/actions\/(start-stack|image-env)|runner-env: "true"|docker compose -p \S+ build|docker pull/;
+    const STOP_STACK_ALWAYS = /uses: \.\/\.github\/actions\/stop-stack\n {8}if: always\(\)/;
+    const CLEANUP_ALWAYS = /if: always\(\)[^\n]*\n {8}run: \|\n(?: {10}[^\n]*\n)*? {10}[^\n]*bash scripts\/ci_image_cleanup\.sh/;
+
+    /** The jobs that can put a CI image on a self-hosted runner's daemon. */
+    function placing(): [string, string][] {
+        return Array.from(jobs()).filter(
+            ([, job]) => PLACES_AN_IMAGE.test(job) && !/^ {4}runs-on: ubuntu-latest$/m.test(job),
+        );
+    }
 
     test("stop-stack runs the cleanup script", () => {
-        expect(read(".github/actions/stop-stack/action.yml")).toContain(
-            'bash "$GITHUB_WORKSPACE/scripts/ci_image_cleanup.sh" "$PROJECT"',
-        );
+        expect(read(STOP_STACK)).toContain('bash "$GITHUB_WORKSPACE/scripts/ci_image_cleanup.sh"\n');
     });
 
-    test("start-stack says the job has an image once it has pulled and named it", () => {
-        expect(read(".github/actions/start-stack/action.yml")).toContain(
-            `docker tag "$IMAGE" "$PROJECT-curio"\n        ${MARK}`,
-        );
-    });
-
-    test("every job that ends with stop-stack says when it has an image of its own", () => {
-        const stopping = Array.from(jobs()).filter(([, job]) => job.includes("uses: ./.github/actions/stop-stack"));
-        expect(stopping.map(([name]) => name).sort()).toEqual([
+    test("every job that puts a CI image on a self-hosted daemon removes it at its end, whatever its steps did", () => {
+        expect(placing().map(([name]) => name).sort()).toEqual([
+            "build-image",
             "e2e-desktop",
             "test-exec-user",
             "test-gpu",
@@ -158,13 +165,53 @@ describe("Removing CI images on self-hosted runners", () => {
             "test-isolated",
             "unit",
         ]);
-        const silent = stopping
-            .filter(
-                ([, job]) =>
-                    !job.includes("uses: ./.github/actions/start-stack") &&
-                    !/docker compose -p \S+ build --parallel\n\s+echo "CURIO_CI_OWN_IMAGE=1" >> "\$GITHUB_ENV"/.test(job),
-            )
+        const keeping = placing()
+            .filter(([, job]) => !STOP_STACK_ALWAYS.test(job) && !CLEANUP_ALWAYS.test(job))
             .map(([name]) => name);
-        expect(silent).toEqual([]);
+        expect(keeping).toEqual([]);
+    });
+
+    test("skill-evals, which pulls main's image on its arcade runner, removes it at its end", () => {
+        expect(read(".github/workflows/skill-evals.yml")).toMatch(STOP_STACK_ALWAYS);
+    });
+
+    test("each such job's first step removes the CI images a job ended before its cleanup left", () => {
+        const text = read(WORKFLOW);
+        const start = text.indexOf("- &reclaim");
+        const reclaim = text.slice(start, text.indexOf("- name: ", start + 1));
+        expect(reclaim).toContain('grep -E "^(curio-ci(-[a-z-]+)?-curio|ghcr\\.io/${GITHUB_REPOSITORY,,}-ci):"');
+        expect(reclaim).toContain("| xargs -r docker image rm > /dev/null 2>&1 || true");
+        expect(reclaim).not.toMatch(/docker image rm -f|docker rmi/);
+        const late = placing()
+            .filter(([, job]) => !/^ {4}steps:\n(?: {6}#[^\n]*\n)* {6}- [&*]reclaim$/m.test(job))
+            .map(([name]) => name);
+        expect(late).toEqual([]);
+    });
+
+    test("no job says whether it has an image of its own any more", () => {
+        for (const file of [WORKFLOW, ".github/workflows/skill-evals.yml", START_STACK, STOP_STACK, "scripts/ci_image_cleanup.sh"]) {
+            expect([file, read(file).includes("CURIO_CI_OWN_IMAGE")]).toEqual([file, false]);
+        }
+    });
+
+    test("start-stack and build-image make room on a GitHub-hosted runner before the image comes", () => {
+        const startStack = read(START_STACK);
+        const drop = startStack.indexOf("bash scripts/ci_disk.sh drop-tools");
+        expect(drop).toBeGreaterThan(-1);
+        expect(drop).toBeLessThan(startStack.indexOf('docker pull --quiet "$IMAGE"'));
+        expect(startStack.indexOf("bash scripts/ci_disk.sh wait-tools")).toBeGreaterThan(
+            startStack.indexOf("did not become healthy"),
+        );
+        const buildImage = jobs().get("build-image") ?? "";
+        const dropBeforeBuild = buildImage.indexOf("bash scripts/ci_disk.sh drop-tools");
+        expect(dropBeforeBuild).toBeGreaterThan(-1);
+        expect(dropBeforeBuild).toBeLessThan(buildImage.indexOf("uses: docker/build-push-action"));
+    });
+
+    test("stop-stack says how much disk was free at the job's end, before the teardown", () => {
+        const text = read(STOP_STACK);
+        const free = text.indexOf('scripts/ci_disk.sh" free');
+        expect(free).toBeGreaterThan(-1);
+        expect(free).toBeLessThan(text.indexOf('docker compose -p "$PROJECT" down'));
     });
 });

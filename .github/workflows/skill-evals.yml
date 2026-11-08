@@ -115,8 +115,8 @@ jobs:
 
       # The Full stack build pushes an image for each commit of main it builds;
       # the newest one there is has the Python every run here uses. Tagged as
-      # start-stack tags a stack's image, so stop-stack's cleanup keeps it for
-      # this runner's next job and removes the older ones.
+      # start-stack tags a stack's image; stop-stack's cleanup removes it at
+      # the job's end, as it removes every CI image.
       - name: 📥 Pull the image of main's newest commit that has one
         if: steps.scope.outputs.skill_evals != ''
         shell: bash
@@ -130,7 +130,6 @@ jobs:
               echo "the Python of main's $sha, pulled in $(( $(date +%s) - started )) s;"
               echo "the code of $GITHUB_REF_NAME ($GITHUB_SHA)"
               docker tag "$image" "$PROJECT-curio"
-              echo "CURIO_CI_OWN_IMAGE=1" >> "$GITHUB_ENV"
               exit 0
             fi
           done
