@@ -945,11 +945,14 @@ def _catalog_listing_rows(user_key: str, project_id: str, params: dict) -> list[
             return value.strip()[:_CATALOG_PARAM_MAX_CHARS]
         return None
 
+    # No usage counts: a row shows none, and counting reads every dataflow of
+    # the account.
     listing = DatasetCatalogService(user).list_catalog(
         dataflow_id=project_id,
         q=_param("q"),
         fmt=_param("format"),
         origin=_param("origin"),
+        consumer_counts=False,
     )
     rows = []
     for item in listing.get("items") or []:
