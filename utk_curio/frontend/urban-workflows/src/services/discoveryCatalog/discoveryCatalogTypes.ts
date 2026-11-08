@@ -85,7 +85,7 @@ export type DiscoveryAcquirableFormat = (typeof DISCOVERY_ACQUIRABLE_FORMATS)[nu
 
 /** What a source's rows add as: a portal's formats, and a storage source's
  *  table formats and `collection`. */
-export type DiscoverySourceFormat = DiscoveryAcquirableFormat | "shp" | "gpkg" | "pbf" | "collection";
+export type DiscoverySourceFormat = DiscoveryAcquirableFormat | "shp" | "gpkg" | "pbf" | "jsonl" | "collection";
 
 export const DISCOVERY_PROVIDER_LABEL: Record<DiscoveryProviderType, string> = {
   socrata: "Socrata",

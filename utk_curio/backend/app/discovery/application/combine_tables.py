@@ -8,9 +8,9 @@ lacks is null in its rows. Each capture of the template becomes a column (a
 ``source_file`` says which file each row came from.
 
 Text files are read as UTF-8, transcoded on the way when they are not, the
-same rule every import follows (#280). DuckDB reads csv, json and parquet;
-geopandas reads geojson and shapefiles, which combine into GeoParquet when
-their CRS agree.
+same rule every import follows (#280). DuckDB reads csv, json and parquet,
+and the Parquet parts a JSON Lines file is read into; geopandas reads geojson
+and shapefiles, which combine into GeoParquet when their CRS agree.
 """
 
 from __future__ import annotations
@@ -35,7 +35,9 @@ MAX_COMBINED_REMOTE_BYTES = 2 * 1024 * 1024 * 1024
 #: ``source_file``) keeps its value under this suffix, so neither is lost.
 COLLISION_SUFFIX = "_from_path"
 
-DUCKDB_READERS = {"csv": "read_csv", "json": "read_json", "parquet": "read_parquet"}
+#: How DuckDB reads each format's staged files. A JSON Lines file is staged
+#: as Parquet parts (``application/json_lines.py``).
+DUCKDB_READERS = {"csv": "read_csv", "json": "read_json", "parquet": "read_parquet", "jsonl": "read_parquet"}
 
 #: Columns that exist only while the files are combined.
 FILE_COLUMN = "__curio_file"
@@ -44,6 +46,10 @@ ROW_COLUMN = "__curio_row"
 
 class CombineError(DiscoveryError):
     """The files cannot be combined into one table."""
+
+
+class NoRows(CombineError):
+    """No file gave a row."""
 
 
 @dataclass(frozen=True)
@@ -96,7 +102,8 @@ def combine(
 
     ``stage(found, into_dir, index)`` returns a local path to read one file
     from: the file itself for a folder whose bytes are already UTF-8, or a
-    staged copy.
+    staged copy. For a JSON Lines file it returns the Parquet parts its rows
+    were written to, in line order, which may be none.
     """
     check_format(spec)
     fmt = spec.format
@@ -106,9 +113,12 @@ def combine(
             from utk_curio.backend.app.discovery.application.storage_acquire import Cancelled
 
             raise Cancelled()
-        staged.append((stage(found, tmp, index), found))
+        local = stage(found, tmp, index)
+        staged.extend((path, found) for path in (local if isinstance(local, list) else [local]))
         if items is not None:
             items(index, len(files))
+    if not staged:
+        raise NoRows(f"{spec.name}: no line of {'its file' if len(files) == 1 else 'its files'} gave a row")
     if fmt in DUCKDB_READERS:
         return _combine_with_duckdb(spec, staged, tmp=tmp, dest=dest)
     return _combine_geo(spec, staged, dest=dest)

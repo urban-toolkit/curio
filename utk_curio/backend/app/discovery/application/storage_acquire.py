@@ -27,6 +27,7 @@ from utk_curio.backend.app.common.user_storage import user_key_segment, users_ba
 from utk_curio.backend.app.datasets.install.shapefile import shapefile_to_parquet
 from utk_curio.backend.app.discovery.application import combine_tables
 from utk_curio.backend.app.discovery.application import index_collection
+from utk_curio.backend.app.discovery.application import json_lines
 from utk_curio.backend.app.discovery.application import scan as scanning
 from utk_curio.backend.app.discovery.domain import parameters as P
 from utk_curio.backend.app.discovery.domain.errors import (
@@ -86,6 +87,10 @@ def _held_fingerprint(held: dict[str, Any]) -> str | None:
 
 
 def _read_with_options(spec) -> bool:
+    """Whether a table's files are read by what its manifest says, and land as
+    Parquet: a CSV declared with options, and every JSON Lines table."""
+    if spec.format == "jsonl":
+        return True
     return spec.format == "csv" and any(key in spec.options for key in CSV_READ_OPTIONS)
 
 
@@ -263,12 +268,15 @@ class StorageAcquire:
             )
             return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
         if _combined(spec, files):
-            dataset = self._add_combined(
+            dataset, note = self._add_combined(
                 manifest, provider, spec, selection, files, resource_id=resource_id,
                 title=title or name, items=items, stage=stage, cancelled=cancelled,
                 fingerprint=fingerprint,
             )
-            return {"dataset": dataset, "alreadyPresent": False, "unchanged": False}
+            return {
+                "dataset": dataset, "alreadyPresent": False, "unchanged": False,
+                **({"note": note} if note else {}),
+            }
 
         only = files[0]
         discovery_source = {
@@ -433,23 +441,33 @@ class StorageAcquire:
     def _add_combined(
         self, manifest, provider, spec, selection, files, *, resource_id, title, items, stage,
         cancelled, fingerprint,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], str | None]:
+        """The table *files* combine into, and what the add says of the lines
+        a JSON Lines table skipped, or None."""
+        lines = json_lines.Reading.of(spec) if spec.format == "jsonl" else None
         if stage:
-            stage(f"Combining {len(files):,} files…")
+            stage(f"{'Reading' if lines else 'Combining'} {len(files):,} {'file' if len(files) == 1 else 'files'}…")
         with tempfile.TemporaryDirectory(dir=self._tmp_dir()) as tmp:
             tmp_dir = Path(tmp)
             dest = tmp_dir / f"{spec.id}.parquet"
-            combined = combine_tables.combine(
-                spec,
-                files,
-                stage=lambda found, into, index: self._stage_for_combine(
-                    manifest, provider, spec, found, into, index, cancelled
-                ),
-                tmp=tmp_dir,
-                dest=dest,
-                items=items,
-                cancelled=cancelled,
-            )
+            try:
+                combined = combine_tables.combine(
+                    spec,
+                    files,
+                    stage=lambda found, into, index: self._stage_for_combine(
+                        manifest, provider, spec, found, into, index, cancelled, lines=lines, stage=stage,
+                    ),
+                    tmp=tmp_dir,
+                    dest=dest,
+                    items=items,
+                    cancelled=cancelled,
+                )
+            except combine_tables.NoRows as exc:
+                skipped = lines.skipped.note() if lines is not None else None
+                if skipped is None:
+                    raise
+                raise combine_tables.NoRows(f"{exc}; {skipped}") from None
+            note = lines.skipped.note() if lines is not None else None
             discovery_source = {
                 "sourceId": manifest.dir_name,
                 "sourceName": manifest.name,
@@ -462,23 +480,25 @@ class StorageAcquire:
             }
             if len(files) == 1:
                 discovery_source["sourcePath"] = files[0].relpath
-                description = f"Read from {files[0].relpath} of {manifest.name}."
+                description = f"Read from {files[0].relpath} of {manifest.name}"
             else:
-                description = f"Combined from {len(files):,} {spec.format} files of {manifest.name}."
-            return self._install_path(
+                description = f"Combined from {len(files):,} {spec.format} files of {manifest.name}"
+            dataset = self._install_path(
                 combined.path,
                 dest.name,
                 "parquet",
                 title=title,
                 discovery_source=discovery_source,
                 row_count=combined.rows,
-                description=description,
+                description=description + (f"; {note}." if note else "."),
             )
+            return dataset, note
 
     def _stage_for_combine(
-        self, manifest, provider, spec, found, into: Path, index: int, cancelled
-    ) -> Path:
-        """A local path to read *found* from, UTF-8 when it is text."""
+        self, manifest, provider, spec, found, into: Path, index: int, cancelled, *, lines=None, stage=None,
+    ) -> Path | list[Path]:
+        """A local path to read *found* from, UTF-8 when it is text; for a
+        JSON Lines file, read by *lines*, the Parquet parts of its rows."""
         from utk_curio.backend.app.datasets.infrastructure.text_encoding import (
             TextDecodeError,
             _first_invalid_utf8,
@@ -486,6 +506,7 @@ class StorageAcquire:
         )
 
         local = provider.local_path(found.relpath)
+        copied = local is None
         if local is None:
             if spec.format == "shp":
                 folder = into / f"part-{index:06d}"
@@ -496,6 +517,14 @@ class StorageAcquire:
             else:
                 local = into / f"part-{index:06d}{Path(found.relpath).suffix.lower()}"
                 self._copy(provider, found.relpath, local, _file_bound(manifest), found.size, None, cancelled)
+        if lines is not None:
+            parts = lines.read(
+                Path(local), found.relpath, into, f"part-{index:06d}", stage=stage, cancelled=cancelled,
+            )
+            if copied:
+                # Its rows are in the parts; the next file's copy takes its room.
+                Path(local).unlink()
+            return parts
         if spec.format in ("csv", "json", "geojson") and _first_invalid_utf8(local) is not None:
             target = into / f"part-{index:06d}-utf8{Path(found.relpath).suffix.lower()}"
             try:

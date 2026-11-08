@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from utk_curio.backend.app.discovery.domain import json_rows
 from utk_curio.backend.app.discovery.domain import parameters as P
 from utk_curio.backend.app.discovery.domain.limits import max_download_bytes
 from utk_curio.backend.app.discovery.domain.source_id import SourceId
@@ -179,7 +180,7 @@ COLLECTION_KINDS = tuple(kind for kind in RESOURCE_KINDS if kind != "table")
 
 #: The file formats a ``table`` resource may name. gpkg, pbf and shp are
 #: converted to Parquet layers on the way in, as an upload of one is.
-TABLE_FORMATS = ("csv", "json", "geojson", "parquet", "gpkg", "shp", "pbf")
+TABLE_FORMATS = ("csv", "json", "geojson", "parquet", "gpkg", "shp", "pbf", "jsonl")
 
 #: Formats a storage source can hand the Data Catalog.
 STORAGE_FORMATS = TABLE_FORMATS + ("collection",)
@@ -205,6 +206,7 @@ TABLE_EXTENSIONS = {
     "gpkg": ("gpkg",),
     "shp": ("shp",),
     "pbf": ("pbf",),
+    "jsonl": ("jsonl", "ndjson"),
 }
 
 #: How many files one source may hold. A manifest may lower it.
@@ -934,6 +936,7 @@ def _parse_resource(raw: object, *, where: str) -> ResourceSpec:
     options = raw.get("options") or {}
     if not isinstance(options, dict):
         raise ManifestError(f"manifest.{where}.options must be an object")
+    _check_table_options(fmt, options, where)
 
     return ResourceSpec(
         id=resource_id,
@@ -952,6 +955,16 @@ def _parse_resource(raw: object, *, where: str) -> ResourceSpec:
         metadata=metadata,
         parameters=_parse_parameters(raw.get("parameters"), where=f"manifest.{where}.parameters"),
     )
+
+
+def _check_table_options(fmt: str | None, options: dict[str, Any], where: str) -> None:
+    """Refuse a storage resource's ``options`` its format does not read: a
+    jsonl table's are read here (``domain/json_rows.py``), so a manifest that
+    names one wrongly is not listed."""
+    try:
+        json_rows.check_options(fmt, options)
+    except json_rows.OptionError as exc:
+        raise ManifestError(f"manifest.{where}.options: {exc}") from exc
 
 
 def _storage_capabilities(raw: object, resources: tuple[ResourceSpec, ...]) -> CapabilitySpec:
