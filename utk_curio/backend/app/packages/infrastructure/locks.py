@@ -15,18 +15,26 @@ template-resolution refusal, an incomplete roster, or a brief wrong installed
 state. Sharing the lock closes it: a reader observes either the complete old
 tree or the complete new one.
 
-The lock is **exclusive** (not a shared/read lock — the underlying primitive
-is a mutex), **per-user** (one user's reseed never delays another's reads),
+A writer — the seeder's swap, an install, an uninstall, a metadata edit, the
+e2e plant — holds it **exclusive**: no reader and no other writer while it
+changes the store. Readers hold it **shared** (``shared=True``): any number
+of them at once, never with a writer, and a writer that waits keeps new
+readers out (:mod:`common.file_locks`). A dataflow's agents read its owner's
+store many times per turn, so with an exclusive lock a room's turns read it
+one at a time.
+
+The lock is **per-user** (one user's reseed never delays another's reads),
 thread- and process-safe via :mod:`common.file_locks`, and **NOT reentrant**:
-acquiring it twice on one thread deadlocks. That is why composite readers must
-call the private unlocked cores rather than the public readers.
+acquiring it twice on one thread deadlocks, shared or not. That is why
+composite readers must call the private unlocked cores rather than the public
+readers.
 """
 
 from __future__ import annotations
 
 from contextlib import contextmanager
 
-from utk_curio.backend.app.common.file_locks import exclusive_lock
+from utk_curio.backend.app.common.file_locks import exclusive_lock, shared_lock
 from utk_curio.backend.app.packages.repositories.store import user_packages_dir
 
 # The seeder's own lock file, kept here so both sides name it in one place.
@@ -35,8 +43,9 @@ SEED_LOCK_NAMESPACE = "package-seed"
 
 
 @contextmanager
-def package_seed_lock(user_key: str):
-    """Hold the exclusive per-user package-store lock.
+def package_seed_lock(user_key: str, *, shared: bool = False):
+    """Hold the per-user package-store lock: exclusive for a writer, shared
+    with other readers for a reader (*shared*).
 
     The package-store directory is created if absent: the lock file has to
     live somewhere, and a first read for a user whose store does not exist yet
@@ -52,7 +61,8 @@ def package_seed_lock(user_key: str):
     """
     base = user_packages_dir(user_key)
     base.mkdir(parents=True, exist_ok=True)
-    with exclusive_lock(
+    hold = shared_lock if shared else exclusive_lock
+    with hold(
         base / SEED_LOCK_FILENAME,
         namespace=SEED_LOCK_NAMESPACE,
         key=user_key,

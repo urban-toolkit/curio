@@ -85,7 +85,7 @@ def package_functions(user_key: str) -> list[dict]:
     module's public functions, their parameters, and the widget and use each
     parameter suggests. A module that does not parse carries its problem."""
     out: list[dict] = []
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         for root in list_user_packages(user_key):
             try:
                 manifest = load_package_manifest(root)
@@ -138,7 +138,7 @@ def node_functions(user_key: str, node_type: object, project_id: str | None = No
     if isinstance(sources, dict):
         sources = [sources]
     out: list[dict] = []
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         for source in sources or []:
             root = Path(source["root"]).parent
             try:
@@ -152,7 +152,7 @@ def node_functions(user_key: str, node_type: object, project_id: str | None = No
 
 def _module_source(user_key: str, dir_name: str, module: str) -> tuple[PackageManifest, str]:
     root = package_dir(user_key, dir_name)
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         if not root.is_dir():
             raise PackageServiceError(f"package {dir_name} is not installed", 404)
         manifest = load_package_manifest(root)
