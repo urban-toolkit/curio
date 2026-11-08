@@ -169,7 +169,7 @@ class TestTheDerivation:
         ("walks/chicago/", "walks/chicago", ""),
         ("photos/img_", "photos", "img_"),
         ("img_", "", "img_"),
-    ])
+    ], ids=["no-prefix", "one-folder", "two-folders", "folder-and-tail", "tail-alone"])
     def test_the_prefixs_folders_are_the_mounts_folder_and_its_last_part_the_tail(self, prefix, folder, tail):
         mount = bucket_mount(a_manifest("https://data.example.org/bucket", prefix))
 
@@ -189,6 +189,9 @@ class TestTheDerivation:
         (a_manifest("https://data.example.org/bucket", "a//b/"), "empty, . or .. folder"),
         (a_manifest("https://data.example.org/bucket", "a/./"), "empty, . or .. folder"),
         (a_manifest("https://data.example.org", kind="ckan"), "is not a bucket"),
+    ], ids=[
+        "http", "deeper-path", "bad-port", "query", "userinfo", "address-with-no-path",
+        "single-label-endpoint", "bad-bucket-name", "empty-folder", "dot-folder", "not-a-bucket",
     ])
     def test_anything_else_is_not_mountable_and_says_why(self, manifest, why):
         with pytest.raises(NotMountable) as refused:
@@ -206,14 +209,15 @@ class TestTheUrlsRcloneAsks:
 
     CASES = {
         "path-style": a_manifest("https://data.example.org/sideseeing", "chicago/"),
-        "path-style with a port": a_manifest("https://data.example.org:9000/bucket"),
+        "path-style-with-a-port": a_manifest("https://data.example.org:9000/bucket"),
         "virtual-hosted": shipped(SENTINEL),
-        "a prefix with a tail": a_manifest("https://data.example.org/bucket", "photos/img_"),
-        "a tail alone": a_manifest("https://data.example.org/bucket", "img_"),
+        "prefix-with-a-tail": a_manifest("https://data.example.org/bucket", "photos/img_"),
+        "tail-alone": a_manifest("https://data.example.org/bucket", "img_"),
     }
 
     @pytest.mark.parametrize("case", sorted(CASES))
-    @pytest.mark.parametrize("relpath", ["a.jpg", "2024/7/1/B04.tif", "walk 1/vídeo #2.mp4"])
+    @pytest.mark.parametrize("relpath", ["a.jpg", "2024/7/1/B04.tif", "walk 1/vídeo #2.mp4"],
+                             ids=["flat", "nested", "spaces-and-accents"])
     def test_the_mounts_url_of_each_file_is_s3storages(self, case, relpath):
         manifest = self.CASES[case]
         mount = bucket_mount(manifest)
@@ -256,11 +260,11 @@ class TestTheRemote:
 NOT_PUBLIC = {
     "private": ["10.0.0.5"],
     "loopback": ["127.0.0.1"],
-    "carrier-grade NAT": ["100.64.0.1"],
-    "cloud metadata": ["169.254.169.254"],
-    "IPv4-mapped metadata": ["::ffff:169.254.169.254"],
-    "IPv6 loopback": ["::1"],
-    "one public, one private": ["93.184.216.34", "192.168.1.10"],
+    "carrier-grade-nat": ["100.64.0.1"],
+    "cloud-metadata": ["169.254.169.254"],
+    "ipv4-mapped-metadata": ["::ffff:169.254.169.254"],
+    "ipv6-loopback": ["::1"],
+    "one-public-one-private": ["93.184.216.34", "192.168.1.10"],
 }
 
 

@@ -278,7 +278,7 @@ class TestRefusals:
         b"CONNECT bad_host!:443 HTTP/1.1",
         b"CONNECT [::1 HTTP/1.1",
         b"NOT A REQUEST",
-    ])
+    ], ids=["no-port", "port-too-big", "bad-host", "unclosed-bracket", "not-a-request"])
     def test_a_malformed_request(self, start_proxy, upstream, request_line):
         head = self._refused(start_proxy, upstream, None, request=request_line + b"\r\n\r\n")
 
