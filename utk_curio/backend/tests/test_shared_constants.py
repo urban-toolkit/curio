@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 from pathlib import Path
 
@@ -25,7 +26,7 @@ CONTRACTS = REPO_ROOT / "utk_curio" / "frontend" / "urban-workflows" / "src" / "
 #: Each shared file, by its name without ``.json``.
 FILES = (
     "renderCauses", "solveStopReasons", "agentCategories", "noteColors", "autkGrammar", "visDefaults", "nodeSettings",
-    "dashboardRuns", "agentInstalls", "agentChanges",
+    "dashboardRuns", "agentInstalls", "agentChanges", "catalogCode",
 )
 
 
@@ -267,6 +268,48 @@ def _docstrings(tree: ast.AST) -> set[int]:
             if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
                 nodes.add(id(body[0].value))
     return nodes
+
+
+def test_how_node_code_names_a_catalog_item_is_the_files():
+    from utk_curio.backend.app.datasets.domain import catalog_item, code_refs
+    from utk_curio.backend.app.execution import code_references
+    from utk_curio.sandbox.util import collections
+
+    code = _file("catalogCode")
+    item = code["itemId"]
+    assert catalog_item.LOADED_VARIABLES == code["loadedVariables"]
+    assert catalog_item.KEPT_IN_CODE == frozenset(code["keptInCode"]) <= set(code["loadedVariables"])
+    assert catalog_item.LOADER_OPTIONS == code["loaderOptions"]
+    for fmt, variable in code["loadedVariables"].items():
+        snippet = catalog_item.loader_snippet(fmt, None, "data.utk.example")
+        options = code["loaderOptions"].get(fmt, "")
+        assert snippet["code"] == f'{variable} = curio_load_data("data.utk.example"{options})', fmt
+        assert snippet["returnVariable"] == (None if fmt in code["keptInCode"] else variable), fmt
+    assert code_refs.ITEM_ID == item
+    assert code_refs.MODEL_CALL_RE.findall("m = curio_load_model('model.curio.ddrnet23-slim')") == [
+        ("'", "model.curio.ddrnet23-slim")
+    ]
+    assert code_references.DATASET_ID_RE.pattern == f"^{item}$"
+    # The sandbox reads no contract file, so its copy is held to the file here.
+    assert collections._ID_RE.pattern == f"^{item}$"
+    # An id never ends the Python string a generator writes it into.
+    for bad in ('a"b', "a'b", "a\\b", "a b", "-a", "a" * 201):
+        assert not catalog_item.is_safe_dataset_id(bad), bad
+    assert catalog_item.is_safe_dataset_id("data.utk.chicago-tracts@1")
+
+
+def test_no_code_of_curio_but_the_sandboxs_spells_the_item_id():
+    item = _file("catalogCode")["itemId"]
+    copies = []
+    for folder, dirs, files in os.walk(REPO_ROOT / "utk_curio"):
+        dirs[:] = [d for d in dirs if d not in {"tests", "node_modules", "dist", "__pycache__", "vendor", "_shipped"}]
+        for name in files:
+            path = Path(folder, name)
+            if path.suffix in {".py", ".ts", ".tsx", ".js", ".mjs"} and item in path.read_text(
+                encoding="utf-8", errors="ignore"
+            ):
+                copies.append(path.relative_to(REPO_ROOT).as_posix())
+    assert sorted(copies) == ["utk_curio/sandbox/util/collections.py"]
 
 
 def test_no_python_module_of_curio_spells_a_shared_sentence_or_color():

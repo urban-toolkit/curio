@@ -158,29 +158,11 @@ export function SummaryContent({ summary, nodeId }: { summary: any; nodeId: stri
   );
 }
 
-// ── Default code ───────────────────────────────────────────────────────────
-
-const DEFAULT_CODE = `import pandas as pd
-
-df = input_0  # The DataFrame on input circle 0
-
-summary = {
-    "shape": {"rows": int(df.shape[0]), "columns": int(df.shape[1])},
-    "dtypes": df.dtypes.astype(str).to_dict(),
-    "missing": df.isnull().sum().to_dict(),
-    "describe": df.describe(include="all").fillna("").to_dict(),
-}
-
-return summary
-`;
-
 // ── Behavior hook ─────────────────────────────────────────────────────────
 
+// The node's code is its template's starter, packages/curio.builtin@1/sources/data-summary.py.
 export const useDataSummaryBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [summaryData, setSummaryData] = useState<any>(null);
-
-  // Pre-populate the editor on first drop; respect code already saved in the workflow.
-  const defaultValueOverride = data.defaultCode ? undefined : DEFAULT_CODE;
 
   // After each successful execution, fetch the output file and render it as a summary table.
   // Watching nodeState.output avoids overriding setOutputCallback (which causes render loops).
@@ -211,5 +193,5 @@ export const useDataSummaryBehavior: NodeBehaviorHook = (data, nodeState) => {
     [summaryData, data.nodeId, nodeState.output],
   );
 
-  return { contentComponent, defaultValueOverride };
+  return { contentComponent };
 };

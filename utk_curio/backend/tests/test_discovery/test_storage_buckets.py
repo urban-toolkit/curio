@@ -243,6 +243,94 @@ class TestABucket:
         assert client.get("/api/discovery/collections/imported.xnope@1").status_code == 401
 
 
+# ── a bucket of walks, one larger than a cached file may be by default ─────
+
+#: Over the 4 GiB a cached file may hold when the operator sets no limit.
+OVER_THE_FILE_LIMIT = 5 * 1024**3
+
+
+@pytest.fixture()
+def walks_bucket(tmp_path, monkeypatch, discovery_dir):
+    """Two videos: a.mp4, a real clip, then b.mp4, listed at 5 GiB.
+
+    b.mp4's recorded body is the same small clip, so a cache that lets it
+    through ends rather than fetching 5 GiB.
+    """
+    from utk_curio.backend.app.discovery.infrastructure import transport
+
+    root = tmp_path / "corpus"
+    (root / "bucket").mkdir(parents=True)
+    clip = (REPO / "docs" / "examples" / "data" / "storage" / "survey" / "2025" / "clip_01.mp4").read_bytes()
+    (root / "bucket" / "walks.xml").write_text(
+        _xml([("data/walks/a.mp4", len(clip)), ("data/walks/b.mp4", OVER_THE_FILE_LIMIT)]),
+        encoding="utf-8",
+    )
+    (root / "bucket" / "clip.mp4").write_bytes(clip)
+    index = {
+        f"{BUCKET}/?list-type=2&max-keys=1000&prefix=data%2Fwalks%2F": {"file": "bucket/walks.xml"},
+        f"{BUCKET}/data/walks/a.mp4": {"file": "bucket/clip.mp4"},
+        f"{BUCKET}/data/walks/b.mp4": {"file": "bucket/clip.mp4"},
+    }
+    (root / "index.json").write_text(json.dumps(index), encoding="utf-8")
+    monkeypatch.setenv(transport.ENV_FIXTURES, str(root))
+    monkeypatch.setenv("CURIO_TESTING", "1")
+    # The limits a deployment has when its operator sets none.
+    monkeypatch.delenv("CURIO_MEDIA_CACHE_MAX_GB", raising=False)
+    monkeypatch.delenv("CURIO_MEDIA_CACHE_MAX_FILE_GB", raising=False)
+    write_source(discovery_dir, "source.example.walks@1", {
+        "id": "source.example.walks", "name": "Walks", "version": "1.0.0",
+        "compatibility": {"major": 1},
+        "provider": {"type": "s3", "baseUrl": BUCKET, "options": {"prefix": "data/"}},
+        "auth": {"mode": "public"},
+        "resources": [{"id": "walks", "name": "Walks", "kind": "videos", "path": "walks/{walk}.mp4"}],
+    })
+    return root
+
+
+def _cache(client, auth, dataset_id):
+    res = client.post(f"/api/discovery/collections/{dataset_id}/cache", headers=auth)
+    assert res.status_code == 202, res.get_data(as_text=True)
+    return wait_for(client, auth, res.get_json()["jobId"])
+
+
+class TestTheLimitOnOneCachedFile:
+    def test_a_file_over_it_refuses_the_cache_before_any_file_is_fetched(
+        self, client, auth, app, walks_bucket, user_and_token
+    ):
+        from utk_curio.backend.app.discovery.application import cache_collection
+
+        user, _token = user_and_token
+        job = add(client, auth, "source.example.walks@1", "walks")
+        assert job["status"] == "completed", job.get("error")
+        dataset_id = job["dataset"]["id"]
+
+        cached = _cache(client, auth, dataset_id)
+
+        assert cached["status"] == "failed", cached
+        # Refused up front: a.mp4, which comes first and fits, was not copied
+        # either, so no cache is left half done.
+        assert cache_collection.cached_count(str(user.id), dataset_id) == (0, 0)
+        # The message names the file, its size and the limit it is over.
+        error = cached["error"]
+        assert "walks/b.mp4" in error and f"{OVER_THE_FILE_LIMIT:,} bytes" in error, error
+        assert f"{4 * 1024**3:,}" in error and "CURIO_MEDIA_CACHE_MAX_FILE_GB" in error, error
+
+    def test_the_operator_raises_it_with_media_cache_max_file_gb(
+        self, client, auth, app, walks_bucket, user_and_token, monkeypatch
+    ):
+        from utk_curio.backend.app.discovery.application import cache_collection
+
+        user, _token = user_and_token
+        monkeypatch.setenv("CURIO_MEDIA_CACHE_MAX_FILE_GB", "6")
+        job = add(client, auth, "source.example.walks@1", "walks")
+        dataset_id = job["dataset"]["id"]
+
+        cached = _cache(client, auth, dataset_id)
+
+        assert cached["status"] == "completed", cached.get("error")
+        assert cache_collection.cached_count(str(user.id), dataset_id)[0] == 2
+
+
 class TestHuggingFacePagination:
     def test_the_link_header_is_followed_only_on_the_hub(self):
         from utk_curio.backend.app.discovery.providers.huggingface import _next_link

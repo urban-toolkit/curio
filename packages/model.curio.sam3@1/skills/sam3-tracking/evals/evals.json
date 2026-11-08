@@ -1,0 +1,76 @@
+{
+  "skill_name": "sam3-tracking",
+  "agent": "agent.curio.node-builder@1",
+  "dataflow": "evals/files/walk.json",
+  "models": ["model.curio.sam3@1"],
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Make the tracking look only for traffic cones and people, at one frame a second.",
+      "expected_output": "One code write on the Track Objects node walk-objects that sets LABELS to [\"traffic cone\", \"person\"] and EVERY_SECONDS to 1, keeping the rest of its code, and no new node.",
+      "assertions": [
+        "The answer writes the code of the Track Objects node walk-objects.",
+        "The written code sets LABELS to a list of traffic cone and person, and nothing else.",
+        "The written code sets EVERY_SECONDS to 1.",
+        "The answer adds no node."
+      ],
+      "checks": [
+        {"assertion": 2, "kind": "code", "node": "walk-objects", "pattern": "(?m)^LABELS\\s*=\\s*\\[\\s*(?:[\"']traffic cone[\"']\\s*,\\s*[\"']person[\"']|[\"']person[\"']\\s*,\\s*[\"']traffic cone[\"'])\\s*,?\\s*\\]"},
+        {"assertion": 3, "kind": "code", "node": "walk-objects", "pattern": "(?m)^EVERY_SECONDS\\s*=\\s*1(?:\\.0*)?\\s*(?:#.*)?$"}
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add a node that puts every object Track Objects followed in one table, one row per object, with when it was first and last seen.",
+      "expected_output": "One node.create of curio.builtin/python-computation whose code returns pd.concat of pd.read_parquet over each path in input_0's tracks column, with the answer connecting walk-objects to it or saying to.",
+      "assertions": [
+        "The answer makes one node.create of type curio.builtin/python-computation.",
+        "The code it writes reads each path of input_0's tracks column with pd.read_parquet.",
+        "The code returns every video's tracks as one table, with pd.concat.",
+        "The answer connects the Track Objects node walk-objects to the new node, or tells the user to."
+      ],
+      "checks": [
+        {"assertion": 1, "kind": "node-added", "type": "curio.builtin/python-computation", "count": 1},
+        {"assertion": 2, "kind": "code", "type": "curio.builtin/python-computation", "pattern": "read_parquet"},
+        {"assertion": 3, "kind": "code", "type": "curio.builtin/python-computation", "pattern": "concat\\("}
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Track Objects stopped with \"corner.mp4: Track Objects takes 300 s of video in one run; set FROM_SECONDS and TO_SECONDS to the part to track, such as 0 and 300\". Track only the first minute of each video.",
+      "expected_output": "One code write on the Track Objects node walk-objects that sets TO_SECONDS to 60, keeping FROM_SECONDS at 0 and MAX_SECONDS at 300.",
+      "assertions": [
+        "The answer writes the code of the Track Objects node walk-objects.",
+        "The written code sets TO_SECONDS to 60 and keeps FROM_SECONDS at 0.",
+        "The written code keeps MAX_SECONDS at 300."
+      ],
+      "checks": [
+        {"assertion": 2, "kind": "code", "node": "walk-objects", "pattern": "(?m)^TO_SECONDS\\s*=\\s*60(?:\\.0*)?\\s*(?:#.*)?$"},
+        {"assertion": 2, "kind": "code", "node": "walk-objects", "pattern": "(?m)^FROM_SECONDS\\s*=\\s*0(?:\\.0*)?\\s*(?:#.*)?$"},
+        {"assertion": 3, "kind": "code", "node": "walk-objects", "pattern": "(?m)^MAX_SECONDS\\s*=\\s*300\\s*(?:#.*)?$"}
+      ]
+    }
+  ],
+  "trigger_queries": [
+    {"query": "Can the tracking also look for bicycles and fire hydrants?", "should_trigger": true},
+    {"query": "How do I draw when each tracked object was seen, one bar per object?", "should_trigger": true},
+    {"query": "What is in the tracks column, and how do I read it in another node?", "should_trigger": true},
+    {"query": "Track Objects says the video is too long. How do I track only part of it?", "should_trigger": true},
+    {"query": "Why does the overlay play at two frames a second?", "should_trigger": true},
+    {"query": "How many traffic cones did each video have?", "should_trigger": true},
+    {"query": "The node says the SAM 3 weights are not on this Curio. What should I do?", "should_trigger": true},
+    {"query": "Can it find potholes and puddles on the sidewalk in the walk video?", "should_trigger": true},
+    {"query": "Make the object tracking look at fewer frames so it runs faster.", "should_trigger": true},
+    {"query": "Where does the overlay start in the video, if I only tracked from second 30?", "should_trigger": true},
+    {"query": "Show the survey's photos on a map by where they were taken.", "should_trigger": false},
+    {"query": "Rename the Data Loading node to Survey files.", "should_trigger": false},
+    {"query": "Add a Data Summary of the survey collection.", "should_trigger": false},
+    {"query": "Who changed this dataflow last?", "should_trigger": false},
+    {"query": "Sample a frame every two seconds from the video as images I can browse.", "should_trigger": false},
+    {"query": "Make the Simple View show smaller cards.", "should_trigger": false},
+    {"query": "Split the survey's audio recordings into one-second windows.", "should_trigger": false},
+    {"query": "What license does the survey collection have?", "should_trigger": false},
+    {"query": "Undo my last change.", "should_trigger": false},
+    {"query": "Add a bar chart of how many files of each kind the survey has.", "should_trigger": false}
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "skill_name": "sam3-tracking",
+  "cases": [
+    {
+      "case": 1,
+      "assertions": [
+        "The answer writes the code of the Track Objects node walk-objects.",
+        "The written code sets LABELS to a list of traffic cone and person, and nothing else.",
+        "The written code sets EVERY_SECONDS to 1.",
+        "The answer adds no node."
+      ]
+    },
+    {
+      "case": 2,
+      "assertions": [
+        "The answer makes one node.create of type curio.builtin/python-computation.",
+        "The code it writes reads each path of input_0's tracks column with pd.read_parquet.",
+        "The code returns every video's tracks as one table, with pd.concat.",
+        "The answer connects the Track Objects node walk-objects to the new node, or tells the user to."
+      ]
+    },
+    {
+      "case": 3,
+      "assertions": [
+        "The answer writes the code of the Track Objects node walk-objects.",
+        "The written code sets TO_SECONDS to 60 and keeps FROM_SECONDS at 0.",
+        "The written code keeps MAX_SECONDS at 300."
+      ]
+    }
+  ],
+  "answers": [],
+  "gaps": [
+    {
+      "case": 1,
+      "why": "No shipped example or test dataflow holds a Track Objects node whose settings an agent's run changed, and no run of the tools on this case's dataflow is recorded, so no answer's code write and change card can be written from a source."
+    },
+    {
+      "case": 2,
+      "why": "No shipped example or test dataflow reads Track Objects' tracks in a node of its own, and no run of the tools on this case's dataflow is recorded, so no answer's node and code can be written from a source."
+    },
+    {
+      "case": 3,
+      "why": "No shipped example or test dataflow holds a Track Objects node set to a part of its videos, and no run of the tools on this case's dataflow is recorded, so no answer's code write and change card can be written from a source."
+    }
+  ]
+}

@@ -22,32 +22,36 @@ from __future__ import annotations
 
 import re
 
+from utk_curio.common import shared_constants
+
+#: How node code names a catalog's item, a dataset's, a collection's or a
+#: model's: the one id the generators write (``catalogCode.json``, which the
+#: canvas's scanners read too), so they only ever emit ids this scan can find.
+ITEM_ID = shared_constants.read("catalogCode")["itemId"]
+
 #: Literal ``curio_load_data("<id>")`` calls in node code, and the two other ways
 #: a node names a dataset: ``curio_data_path`` (its file, for a reader of your
 #: own) and ``curio_load_collection`` (a collection, whose index is the dataset's
-#: data file). The id charset must
-#: stay in sync with ``_SAFE_DATASET_ID_RE`` in ``catalog_item.py`` (the backend
-#: snippet generator) and the frontend ``datasetLoaderSnippets.ts``: the
-#: generators only ever emit ids this scan can find. Single or double quotes are
+#: data file). Single or double quotes are
 #: accepted because users edit the generated code, and the backreference means a
 #: mismatched pair is not a reference at all. The id is the call's first
 #: argument; options may follow it, as ``curio_load_data("<id>", bounds=...)``.
 DATASET_PATH_CALL_RE = re.compile(
-    r"""(?:curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*[,)]"""
+    r"""(?:curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])(""" + ITEM_ID + r""")\1\s*[,)]"""
 )
 
 #: The calls that may read a collection, for the ids whose files a node will
 #: read: ``curio_load_collection``, and ``curio_load_data`` on a collection id
 #: (the resolver keeps only the ids that are collections).
 COLLECTION_CALL_RE = re.compile(
-    r"""(?:curio_load_collection|curio_load_data)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*[,)]"""
+    r"""(?:curio_load_collection|curio_load_data)\(\s*(["'])(""" + ITEM_ID + r""")\1\s*[,)]"""
 )
 
 #: Literal ``curio_load_model("<id>")`` calls: the Model Catalog's models a node
-#: runs, with the same id charset (the frontend's ``modelIdsInCode`` mirrors
-#: it). Not a dataset reference, so not in ``DATASET_PATH_CALL_RE``.
+#: runs, with the same id (the frontend's ``modelIdsInCode`` reads it too). Not
+#: a dataset reference, so not in ``DATASET_PATH_CALL_RE``.
 MODEL_CALL_RE = re.compile(
-    r"""curio_load_model\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)"""
+    r"""curio_load_model\(\s*(["'])(""" + ITEM_ID + r""")\1\s*\)"""
 )
 
 #: Bound the work against pathological or generated code. Shared with the
