@@ -23,6 +23,11 @@ by appending a dump to a file in its state folder (``backend/thread_stacks.py``)
 and prints ``pid``, ``path`` and ``stacks``, the dump, with ``problem`` when no
 whole dump came in time.
 
+Given ``--saved-specs`` and dataflow ids, it prints ``specs``: what each
+dataflow's file (``spec.trill.json``) holds of its nodes' code and its
+connections (:func:`saved_specs`), which a shared canvas's save is checked
+against.
+
 The rest of the file is the harness's side: :class:`BackendProbe` runs the
 script, :func:`reading_now` stamps a reading with when it was taken and the
 harness's CPU seconds (``resource.getrusage``, its worker processes counted),
@@ -112,6 +117,41 @@ def doc_files(roots: list, project_ids: list) -> dict:
                     })
                     entry["bin_bytes" if path.suffix == ".bin" else "updates_bytes"] = path.stat().st_size
         found[project_id] = [segments[key] for key in sorted(segments)]
+    return found
+
+
+#: A dataflow's file in its folder (``projects/storage.SPEC_FILE``).
+SPEC_FILE = "spec.trill.json"
+
+
+def saved_specs(roots: list, project_ids: list) -> dict:
+    """Each dataflow's file under *roots*, by dataflow id, as much of it as a
+    shared canvas's save is checked against: each node's code by node id (an
+    empty text for a node whose code is no text), and each connection's ends,
+    ``[source, target]``, by connection id; None for a dataflow with no file."""
+    found = {}
+    for project_id in project_ids:
+        if not _PROJECT_ID.match(project_id):
+            continue
+        found[project_id] = None
+        for root in roots:
+            for path in sorted(Path(root).glob(f"users/*/projects/{project_id}/{SPEC_FILE}")):
+                with open(path, encoding="utf-8") as handle:
+                    spec = json.load(handle)
+                dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+                dataflow = dataflow if isinstance(dataflow, dict) else {}
+                found[project_id] = {
+                    "nodes": {
+                        node["id"]: node.get("content") if isinstance(node.get("content"), str) else ""
+                        for node in dataflow.get("nodes") or []
+                        if isinstance(node, dict) and isinstance(node.get("id"), str)
+                    },
+                    "edges": {
+                        edge["id"]: [edge.get("source"), edge.get("target")]
+                        for edge in dataflow.get("edges") or []
+                        if isinstance(edge, dict) and isinstance(edge.get("id"), str)
+                    },
+                }
     return found
 
 
@@ -212,6 +252,24 @@ def thread_stacks_here() -> dict:
     return ask_for_stacks(pid, stacks_file(environ, cwd))
 
 
+def saved_specs_here(project_ids: list) -> dict:
+    """The saved files of the dataflows *project_ids*, read here, under the
+    backend's state root (:func:`saved_specs`)."""
+    try:
+        import psutil
+    except ImportError:
+        return {"error": "psutil is not installed where the probe runs"}
+    pid = find_backend(psutil)
+    if pid is None:
+        return {"error": "no process here serves -m backend.server"}
+    try:
+        backend = psutil.Process(pid)
+        environ, cwd = backend.environ(), backend.cwd()
+    except psutil.Error as exc:
+        return {"error": f"the backend (pid {pid}) could not be read: {type(exc).__name__}: {exc}"}
+    return {"specs": saved_specs(state_roots(environ, cwd), project_ids)}
+
+
 def read(project_ids: list) -> dict:
     """One reading of the backend, here."""
     try:
@@ -235,7 +293,12 @@ def read(project_ids: list) -> dict:
 
 def main(argv: list) -> None:
     try:
-        reading = thread_stacks_here() if argv[:1] == ["--thread-stacks"] else read(argv)
+        if argv[:1] == ["--thread-stacks"]:
+            reading = thread_stacks_here()
+        elif argv[:1] == ["--saved-specs"]:
+            reading = saved_specs_here(argv[1:])
+        else:
+            reading = read(argv)
     except Exception as exc:  # noqa: BLE001 - the harness reports it, never crashes on it
         reading = {"error": f"{type(exc).__name__}: {exc}"}
     sys.stdout.write(json.dumps(reading))
@@ -268,6 +331,12 @@ class BackendProbe:
         """The backend's dump of every thread's stack (:func:`ask_for_stacks`);
         raises :class:`ProbeError` when it could not be asked."""
         return self._run(["--thread-stacks"], self.timeout + STACKS_WAIT_S)
+
+    def saved_specs(self, project_ids) -> dict:
+        """``{"specs": ...}``, the saved files of the dataflows *project_ids*
+        (:func:`saved_specs`); raises :class:`ProbeError` with the reason
+        when it read none."""
+        return self._run(["--saved-specs", *project_ids], self.timeout)
 
     def _run(self, args: list, timeout: float) -> dict:
         try:

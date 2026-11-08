@@ -21,6 +21,22 @@ as the canvas does:
 * and stays open until its user's own dataflow run is done, as a person's tab
   does while their nodes run.
 
+**A shared canvas** (``--shared-canvas``) is a room whose members all work on
+its one dataflow, the owner's. After the sync each member adds a Python node
+of its own below a node of the dataflow (``run.canvas_parent``), with its
+connection, as the canvas writes a node it adds (:func:`member_node`,
+``doc_mapping.apply_dataflow``). Once every member's node is in every tab, it
+asks for the lock of the node it types in, as the canvas does when the node
+takes focus (``node_lock``), types and drags, and lets the lock go
+(``node_unlock``). Locks are soft: a member whose lock another holds types
+anyway, as the canvas lets it, and lets go only of a lock it got. Each tab
+keeps the room's locks as the canvas does, from the join's snapshot and the
+lock events (:data:`ROOM_EVENTS`). Once the room's docs agree, the member
+plays the dataflow with the code its tab holds and its owner runs it on the
+server and saves it (``driver.VirtualUser.on_the_canvas``). Before any tab
+closes, which would let go of its locks, the server's lock table, read as a
+tab joining then reads it, and each tab's must hold no lock.
+
 **Sync time** is how long an update took to be in every other tab of the room
 that had synced when it was sent: from just before the sender emits it to the
 moment the last of them has applied it. An update is known by its sender's
@@ -44,6 +60,7 @@ import hashlib
 import json
 import threading
 import time
+import uuid
 from collections import deque
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -94,10 +111,15 @@ BURST_KEY_GAP_S = 0.2
 #             session profile spread over two minutes.
 #   SETTLE  - after the room's last update, how long until every update must
 #             be in every tab of the room.
+#   DONE    - on a shared canvas, how long a tab whose member's work is over
+#             waits for the rest of its room's (every member's plays, and the
+#             owner's run on the server and save) before the room's locks are
+#             read: about a member's plays under a 100-user burst, twice over.
 CONNECT_TIMEOUT_S = 60.0
 CALL_TIMEOUT_S = 60.0
 ROOM_WAIT_S = 300.0
 SETTLE_TIMEOUT_S = 60.0
+DONE_WAIT_S = 900.0
 
 #: The roles whose changes the server applies (``projects/access.py``).
 EDIT_ROLES = ("owner", "editor")
@@ -106,8 +128,27 @@ EDIT_ROLES = ("owner", "editor")
 EVENT = doc_mapping.EVENT
 #: The event that answers a tab's updates the server queued, once applied.
 KEPT_EVENT = doc_mapping.KEPT_EVENT
+#: The room's events a tab reads besides the doc's, each with its handler in
+#: :meth:`Tab.room_event`: a lock taken and let go (``collaboration/events.py``),
+#: and a participant's leave, which lets go of its locks
+#: (``room_state.remove_user``), kept as the canvas keeps them
+#: (``CollaborationProvider.tsx``).
+ROOM_EVENTS = ("node_locked", "node_unlocked", "user_left")
+#: What ``node_lock`` answers when another participant holds the lock: no
+#: failure, since locks are soft and the canvas only shows a chip.
+LOCKED_BY_OTHER = "locked_by_other"
 #: The doc's roots that hold the nodes by id, and their order.
 NODES, NODE_ORDER = "nodes", "nodeOrder"
+#: What the room's tabs compare of each connection (:meth:`Tab.digest`).
+EDGE_FIELDS = ("id", "source", "target", "sourceHandle", "targetHandle", "type")
+
+#: A member's own node on a shared canvas: a Python node whose one line of
+#: code passes its input on (``input_0``, its one circle), placed a column to
+#: the right of the node it reads and a row lower per member.
+MEMBER_NODE_TYPE = "curio.builtin/python-computation"
+PASS_ON_CODE = "return input_0"
+MEMBER_NODE_DX = 645
+MEMBER_NODE_DY = 120
 
 _NODE_FIELDS: dict = doc_mapping.LAYOUT["node"]
 #: The node key that holds its code: the Trill field the layout keeps as a Text.
@@ -148,6 +189,37 @@ def socket_target(backend_url: str) -> tuple[str, str]:
     and the namespace is given apart."""
     parts = urlsplit(backend_url)
     return f"{parts.scheme}://{parts.netloc}", f"{parts.path.rstrip('/')}/socket.io"
+
+
+def member_node(parent: dict, row: int) -> tuple[dict, dict]:
+    """A member's own node on a shared canvas and its connection below
+    *parent* (``{id, x, y}``), each as the canvas writes it in Trill
+    (``TrillGenerator.generateTrill``): a Python node with an id as uuid4 makes
+    one, whose code passes its input on (:data:`PASS_ON_CODE`), at *row* below
+    the others; and an edge from the parent's output to its input."""
+    node_id = str(uuid.uuid4())
+    x = parent.get("x") if isinstance(parent.get("x"), (int, float)) else 0
+    y = parent.get("y") if isinstance(parent.get("y"), (int, float)) else 0
+    node = {
+        "id": node_id, "type": MEMBER_NODE_TYPE,
+        "x": x + MEMBER_NODE_DX, "y": y + MEMBER_NODE_DY * row,
+        "content": PASS_ON_CODE, "out": "DEFAULT", "in": "DEFAULT", "goal": "",
+        "metadata": {"keywords": []},
+    }
+    edge = {
+        "id": f"reactflow__edge-{parent['id']}out-{node_id}in",
+        "source": parent["id"], "target": node_id,
+        "sourceHandle": "out", "targetHandle": "in",
+    }
+    return node, edge
+
+
+def holder(lock) -> str:
+    """Who holds *lock*, a lock as the server tells of it: an agent's lock
+    names its agent too (``room_state.AGENT_LOCK_FIELDS``)."""
+    lock = lock if isinstance(lock, dict) else {}
+    who = str(lock.get("username") or lock.get("name") or lock.get("participant_id") or "someone")
+    return f"{lock['agent']} for {who}" if lock.get("agent") else who
 
 
 def require_websocket_client() -> None:
@@ -198,10 +270,11 @@ class SocketLink:
     """A tab's socket: connected as the canvas connects, with no reconnection,
     since a tab that reconnects is outside the room it joined until it joins
     again; a drop is a failure instead. *on_yjs* takes the doc's messages and
-    the answers to the tab's queued updates (:data:`KEPT_EVENT`)."""
+    the answers to the tab's queued updates (:data:`KEPT_EVENT`); *on_room*,
+    given, takes each of :data:`ROOM_EVENTS` as ``on_room(name, payload)``."""
 
     def __init__(self, backend_url: str, namespace: str, token: str,
-                 on_yjs: Callable, on_close: Callable):
+                 on_yjs: Callable, on_close: Callable, on_room: Optional[Callable] = None):
         self.namespace = namespace
         # emit() is not thread-safe for a message of several packets, which
         # every binary event is; the tab's thread and the socket's both send.
@@ -213,6 +286,10 @@ class SocketLink:
         self._client.on(EVENT, on_yjs, namespace=namespace)
         self._client.on(KEPT_EVENT, on_yjs, namespace=namespace)
         self._client.on("disconnect", on_close, namespace=namespace)
+        if on_room is not None:
+            for name in ROOM_EVENTS:
+                self._client.on(name, lambda *args, name=name: on_room(name, args[0] if args else None),
+                                namespace=namespace)
         origin, path = socket_target(backend_url)
         self._client.connect(
             origin, namespaces=[namespace], auth={"token": token},
@@ -361,16 +438,36 @@ class SyncLedger:
 
 class Room:
     """The tabs of one shared dataflow, and the phases they go through
-    together. ``members[0]`` owns the dataflow."""
+    together. ``members[0]`` owns the dataflow. A room on a shared canvas
+    (*shared*) also keeps what each member added and typed in it, the locks
+    the server held once the members' work was over, and the owner's run of
+    the dataflow on the server and its save."""
 
-    def __init__(self, index: int, members: list[str]):
+    def __init__(self, index: int, members: list[str], shared: bool = False):
         self.index = index
         self.members = list(members)
         self.owner = self.members[0]
+        self.shared = shared
         #: The owner's dataflow, once it is created, and the nodes to type in:
         #: (node id, line comment of its language), from the owner's dataflow.
         self.project_id: Optional[str] = None
         self.targets: list[tuple[str, str]] = []
+        #: On a shared canvas: the example the dataflow was made from, and the
+        #: node of it each member's own node goes below, ``{id, x, y}``.
+        self.example: Optional[str] = None
+        self.parent: Optional[dict] = None
+        #: Each member's own node, its connection and the node it reads
+        #: (ids); and the node each member typed in, with the line it typed.
+        self.added: dict[str, tuple[str, str, str]] = {}
+        self.typed: dict[str, tuple[str, str]] = {}
+        #: The locks the server held once every member's work was over, node
+        #: id -> who, as the first tab there read them; None until read.
+        self.locks_at_end: Optional[dict] = None
+        self._locks_reader: Optional[str] = None
+        #: The owner's run of the dataflow on the server, and its save read
+        #: back, as the owner's driver records them (``VirtualUser.on_the_canvas``).
+        self.server_run: Optional[dict] = None
+        self.saved: Optional[dict] = None
         #: Set once the owner has invited its editors, or has failed to.
         self.invited = threading.Event()
         self.ledger = SyncLedger()
@@ -423,11 +520,41 @@ class Room:
 
     def targets_for(self, member: str) -> list[tuple[str, str]]:
         """The nodes to type in, the one *member* starts with first, so a
-        room's tabs spread over the dataflow's code and some share a node."""
-        if not self.targets:
+        room's tabs spread over the dataflow's code and some share a node.
+
+        On a shared canvas whose dataflow has no Python or JavaScript node
+        (only Autark documents, which a typed line would break, and the
+        canvas's own nodes), the members' own nodes instead, two members to a
+        node, once every member's node is in (:meth:`add`)."""
+        if self.targets:
+            shift = self.members.index(member) % len(self.targets)
+            return self.targets[shift:] + self.targets[:shift]
+        if not self.shared:
             return []
-        shift = self.members.index(member) % len(self.targets)
-        return self.targets[shift:] + self.targets[:shift]
+        with self._cond:
+            position = self.members.index(member)
+            pair = self.members[position - position % 2]
+            first = [self.added[pair][0]] if pair in self.added else []
+            rest = [self.added[m][0] for m in self.members if m in self.added and m != pair]
+        return [(node_id, "# ") for node_id in first + rest]
+
+    def add(self, member: str, node_id: str, edge_id: str, parent_id: str) -> None:
+        """*member* added its own node, connected below *parent_id*."""
+        with self._cond:
+            self.added[member] = (node_id, edge_id, parent_id)
+
+    def typed_in(self, member: str, node_id: str, line: str) -> None:
+        """*member* typed *line*, :data:`LINES_TYPED` times, in *node_id*."""
+        with self._cond:
+            self.typed[member] = (node_id, line)
+
+    def reads_the_locks(self, member: str) -> bool:
+        """Whether *member*'s tab is the one that reads the server's locks
+        once every member's work is over: the first tab to ask."""
+        with self._cond:
+            if self._locks_reader is None:
+                self._locks_reader = member
+            return self._locks_reader == member
 
     def settle(self, member: str, timeout: float) -> bool:
         """Reach the "settled" phase; then the room's one verdict on whether
@@ -457,11 +584,12 @@ class Room:
             self._tabs[member] = summary
 
     def outcome(self) -> dict:
-        """What the room's tabs did, for the report (``report.socket_summary``)."""
+        """What the room's tabs did, for the report (``report.socket_summary``,
+        and ``report.canvas_summary`` for a shared canvas's ``canvas``)."""
         with self._cond:
             tabs = list(self._tabs.values())
         state = [t["state_bytes"] for t in tabs if t.get("state_bytes") is not None]
-        return {
+        outcome = {
             "room": self.index,
             "project_id": self.project_id,
             "members": len(self.members),
@@ -476,6 +604,32 @@ class Room:
             "unsynced": self.ledger.open,
             "diverged": self.diverged,
             "doc_state_bytes": max(state) if state else None,
+        }
+        if self.shared:
+            outcome["canvas"] = self._canvas(tabs)
+        return outcome
+
+    def _canvas(self, tabs: list[dict]) -> dict:
+        """What the members did on the shared canvas: the nodes and
+        connections they added, the locks they took, were refused and let go,
+        those the server and the tabs still showed at the end, and the
+        owner's run on the server and save."""
+        held = None
+        if self.locks_at_end is not None:
+            held = sorted(f"{node_id} by {who}" for node_id, who in self.locks_at_end.items())
+        return {
+            "example": self.example,
+            "nodes_added": sum(t.get("nodes_added", 0) for t in tabs),
+            "edges_added": sum(t.get("edges_added", 0) for t in tabs),
+            "locks": {
+                "taken": sum(t.get("locks_taken", 0) for t in tabs),
+                "refused": sum(t.get("locks_refused", 0) for t in tabs),
+                "released": sum(t.get("locks_released", 0) for t in tabs),
+                "held_at_end": held,
+                "tabs_showing_locks": sum(1 for t in tabs if t.get("locks_left")),
+            },
+            "server_run": self.server_run,
+            "saved": self.saved,
         }
 
 
@@ -514,11 +668,18 @@ class Tab:
         self.link = None
         self.transport: Optional[str] = None
         self.role: Optional[str] = None
+        #: Who this tab is in the room (its join's answer), which a lock names.
+        self.participant_id: Optional[str] = None
         self.doc_id: Optional[str] = None
         self.synced = False
         self.closing = False
         self.dropped: Optional[str] = None
         self.keystrokes = self.drags = self.received = 0
+        self.nodes_added = self.edges_added = 0
+        self.locks_taken = self.locks_refused = self.locks_released = 0
+        #: The locks this tab still showed at the end, ``node by who``; None
+        #: until read (:meth:`wait_for_no_locks`).
+        self.locks_left: Optional[list] = None
         self.state_bytes: Optional[int] = None
         self._remote = False
         self._local: list[bytes] = []
@@ -528,6 +689,17 @@ class Tab:
         self._acks = threading.Condition()
         self._waiting: deque = deque()
         self._cursor: Optional[_Cursor] = None
+        #: The room's locks as the server told this tab of them, node id ->
+        #: the lock (its holder's participant id and names), as the canvas
+        #: keeps them; guarded by the condition. Each of :data:`ROOM_EVENTS`
+        #: has its handler here.
+        self._room = threading.Condition()
+        self._locks: dict[str, dict] = {}
+        self._room_handlers: dict[str, Callable] = {
+            "node_locked": self._node_locked,
+            "node_unlocked": self._node_unlocked,
+            "user_left": self._user_left,
+        }
         self.doc.observe(self._observed)
 
     # -- the server's messages ---------------------------------------------
@@ -570,6 +742,51 @@ class Tab:
         if message[1] == YSyncMessageType.SYNC_STEP2:
             self._have_doc.set()
         self.ledger.applied(self.name, clocks, at)
+
+    def room_event(self, name: str, payload) -> None:
+        """One of the room's events (:data:`ROOM_EVENTS`), from the socket."""
+        handler = self._room_handlers.get(name)
+        if handler is None or not isinstance(payload, dict):
+            return
+        with self._room:
+            handler(payload)
+            self._room.notify_all()
+
+    def _node_locked(self, payload: dict) -> None:
+        if isinstance(payload.get("nodeId"), str):
+            lock = payload.get("lock")
+            self._locks[payload["nodeId"]] = lock if isinstance(lock, dict) else {}
+
+    def _node_unlocked(self, payload: dict) -> None:
+        self._locks.pop(payload.get("nodeId"), None)
+
+    def _user_left(self, payload: dict) -> None:
+        """A participant left, letting go of the locks it names; a node
+        someone took since keeps its new lock, as on the canvas."""
+        released = payload.get("released_locks")
+        who = payload.get("participant_id")
+        for node_id in released if isinstance(released, list) and who else ():
+            if (self._locks.get(node_id) or {}).get("participant_id") == who:
+                self._locks.pop(node_id, None)
+
+    def room_locks(self) -> dict[str, str]:
+        """The room's locks as this tab knows them: node id -> its holder."""
+        with self._room:
+            return {node_id: holder(lock) for node_id, lock in self._locks.items()}
+
+    def wait_for_no_locks(self, timeout: float) -> dict[str, str]:
+        """The locks this tab still shows after waiting up to *timeout* for
+        none, node id -> its holder; kept as :attr:`locks_left`."""
+        deadline = time.monotonic() + timeout
+        with self._room:
+            while self._locks:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    break
+                self._room.wait(left)
+            shown = {node_id: holder(lock) for node_id, lock in self._locks.items()}
+        self.locks_left = sorted(f"{node_id} by {who}" for node_id, who in shown.items())
+        return shown
 
     def _closed(self, reason=None) -> None:
         if self.closing:
@@ -677,8 +894,23 @@ class Tab:
                         "watcher's changes, so the owner's invitation did not hold")
             return None
 
-        self.role = self._call("socket join_session", "join_session",
-                               {"projectId": self.project_id}, problem).get("role")
+        ack = self._call("socket join_session", "join_session", {"projectId": self.project_id}, problem)
+        self.role = ack.get("role")
+        self.participant_id = ack.get("participant_id")
+        # The room's locks when it joined, which the lock events then keep up
+        # to date; one told of meanwhile stands.
+        locks = (ack.get("snapshot") or {}).get("locks")
+        with self._room:
+            for node_id, lock in (locks.items() if isinstance(locks, dict) else ()):
+                self._locks.setdefault(node_id, lock if isinstance(lock, dict) else {})
+
+    def server_locks(self) -> dict[str, str]:
+        """The locks the server holds now, node id -> its holder, as a tab
+        joining the room now is told of them (``join_session``'s snapshot),
+        asked again on this tab's socket."""
+        ack = self._call("socket room locks", "join_session", {"projectId": self.project_id})
+        locks = (ack.get("snapshot") or {}).get("locks")
+        return {node_id: holder(lock) for node_id, lock in (locks.items() if isinstance(locks, dict) else ())}
 
     def sync(self) -> None:
         """Sync step 1; returns once the doc holds the server's (its step 2)."""
@@ -743,13 +975,74 @@ class Tab:
         self.drags += 1
         self._publish(updates, clock)
 
-    def work(self, targets: list[tuple[str, str]], pacing) -> None:
+    def add_node(self, node: dict, edge: dict) -> None:
+        """Add *node* and *edge*, each as Trill, as the canvas writes a node it
+        adds and the connection it draws: one transaction from the dataflow
+        the doc holds to the same with both (``doc_mapping.apply_dataflow``,
+        the twin of the canvas's ``applyDataflow``), which also writes the
+        nodes' and the connections' order again, as the canvas's does."""
+        with self.lock:
+            base = doc_mapping.doc_to_dataflow(self.doc)
+            target = {**base, "nodes": [*(base.get("nodes") or []), node],
+                      "edges": [*(base.get("edges") or []), edge]}
+            doc_mapping.apply_dataflow(self.doc, base, target)
+            updates, self._local = self._local, []
+            clock = state_vector(self.doc).get(self.client_id)
+        self.nodes_added += 1
+        self.edges_added += 1
+        self._publish(updates, clock)
+
+    def _lock_call(self, label: str, event: str, node_id: str):
+        """Send a lock event for *node_id* and return its answer, recording
+        how long it took only when it fails to come."""
+        started = time.perf_counter()
+        try:
+            ack = self.link.call(event, {"projectId": self.project_id, "nodeId": node_id}, CALL_TIMEOUT_S)
+        except Exception as exc:  # noqa: BLE001 - a timeout or a dead socket
+            self.record(label, time.perf_counter() - started, False,
+                        f"{type(exc).__name__}: {exc}", "socket")
+            raise TabFailed(label) from exc
+        return ack, time.perf_counter() - started
+
+    def take_lock(self, node_id: str) -> bool:
+        """Ask for the node's lock, as the canvas does when the node takes
+        focus (``node_lock``): whether this tab holds it now. Another
+        participant's lock is no failure (:data:`LOCKED_BY_OTHER`): locks are
+        soft, and the canvas only shows a chip and still lets one type."""
+        ack, seconds = self._lock_call("socket node_lock", "node_lock", node_id)
+        if isinstance(ack, dict) and ack.get("ok") is True:
+            self.locks_taken += 1
+            self.record("socket node_lock", seconds, True)
+            return True
+        if isinstance(ack, dict) and ack.get("error") == LOCKED_BY_OTHER:
+            self.locks_refused += 1
+            self.record("socket node_lock", seconds, True)
+            return False
+        self.record("socket node_lock", seconds, False, f"the server answered {ack!r}", "socket")
+        return False
+
+    def release_lock(self, node_id: str) -> None:
+        """Let go of the node's lock, which this tab holds, as the canvas does
+        when focus leaves the node (``node_unlock``)."""
+        ack, seconds = self._lock_call("socket node_unlock", "node_unlock", node_id)
+        if isinstance(ack, dict) and ack.get("ok") is True:
+            self.locks_released += 1
+            self.record("socket node_unlock", seconds, True)
+            return
+        self.record("socket node_unlock", seconds, False,
+                    f"the server answered {ack!r} to letting go of node {node_id}'s lock, "
+                    "which this tab held", "socket")
+
+    def work(self, targets: list[tuple[str, str]], pacing, *, lock: bool = False) -> tuple[str, str]:
         """Type :data:`LINES_TYPED` lines into a node's code, dragging the node
         after every :data:`DRAG_EVERY` keystrokes, at *pacing*'s pace
-        (``key_gap()``, and ``pause()`` after each drag)."""
+        (``key_gap()``, and ``pause()`` after each drag): the node, and the
+        line typed. With *lock*, the node's lock is asked for first and let go
+        of after, if this tab got it (:meth:`take_lock`)."""
         node_id, comment = self.target(targets)
-        text = "".join(TYPED_LINE.format(prefix=comment, user=self.name) for _ in range(LINES_TYPED))
-        for count, char in enumerate(text, 1):
+        line = TYPED_LINE.format(prefix=comment, user=self.name)
+        held = self.take_lock(node_id) if lock else False
+        for count, char in enumerate(line * LINES_TYPED, 1):
             self.keystroke(node_id, char)
             if count % DRAG_EVERY == 0:
                 self.drag(node_id)
@@ -759,6 +1052,9 @@ class Tab:
             gap = pacing.key_gap()
             if gap:
                 time.sleep(gap)
+        if held:
+            self.release_lock(node_id)
+        return node_id, line
 
     def wait_for_answers(self, timeout: float) -> bool:
         """Whether the server answered every update this tab sent in *timeout*."""
@@ -776,24 +1072,30 @@ class Tab:
         return not missing
 
     def digest(self) -> str:
-        """What the room's tabs edit in the doc, each node's code and place, as
-        a digest the room's tabs compare; and the size of the doc a tab
-        joining now would download.
+        """What the room's tabs edit in the doc, as a digest the room's tabs
+        compare: its nodes, in the doc's order, each with its type, code and
+        place, and its connections, each with its ends, handles and type; and
+        the size of the doc a tab joining now would download.
 
         Not the whole dataflow: a spec written outside the doc, as the owner's
         save of its outputs writes one, reaches the doc as the server's own
         transaction at its next write (``dataflow_docs._catch_up``), relayed
         to every tab a moment later, so tabs reading at that moment would
         differ for no fault. Such a write changes the dataflow's datasets,
-        never a node's code or place."""
+        never which nodes and connections it has, nor a node's code or place."""
         with self.lock:
             dataflow = doc_mapping.doc_to_dataflow(self.doc)
             self.state_bytes = len(self.doc.get_update())
-        edits = {
-            node.get("id"): [node.get(CODE_KEY), node.get("x"), node.get("y")]
-            for node in dataflow.get("nodes") or [] if isinstance(node, dict)
-        }
-        return hashlib.sha256(json.dumps(edits, sort_keys=True).encode("utf-8")).hexdigest()
+        nodes = [[node.get("id"), node.get("type"), node.get(CODE_KEY), node.get("x"), node.get("y")]
+                 for node in dataflow.get("nodes") or [] if isinstance(node, dict)]
+        edges = [[edge.get(name) for name in EDGE_FIELDS]
+                 for edge in dataflow.get("edges") or [] if isinstance(edge, dict)]
+        return hashlib.sha256(json.dumps({"nodes": nodes, "edges": edges}).encode("utf-8")).hexdigest()
+
+    def dataflow(self) -> dict:
+        """The Trill ``dataflow`` the tab's doc holds now."""
+        with self.lock:
+            return doc_mapping.doc_to_dataflow(self.doc)
 
     def close(self) -> None:
         self.closing = True
@@ -809,6 +1111,9 @@ class Tab:
             "synced": self.synced, "keystrokes": self.keystrokes, "drags": self.drags,
             "received": self.received, "state_bytes": self.state_bytes,
             "dropped": self.dropped,
+            "nodes_added": self.nodes_added, "edges_added": self.edges_added,
+            "locks_taken": self.locks_taken, "locks_refused": self.locks_refused,
+            "locks_released": self.locks_released, "locks_left": self.locks_left,
         }
 
 
@@ -816,32 +1121,90 @@ class Tab:
 # One user's tab, from the room's invitation to its close
 # ---------------------------------------------------------------------------
 
+def _add_own_node(user, room: Room, tab: Tab) -> None:
+    """Add *user*'s own node below the room's node it reads (``room.parent``),
+    then wait until every member's node is in every tab, as a person looks at
+    the canvas before typing: a member may type in another's node."""
+    node, edge = member_node(room.parent, room.members.index(user.name) + 1)
+    tab.add_node(node, edge)
+    user.own_node = node
+    room.add(user.name, node["id"], edge["id"], room.parent["id"])
+    room.reach("added", user.name, ROOM_WAIT_S)
+    # A member whose node is not everywhere by then is reported by the
+    # settling after the typing, as any update is.
+    room.ledger.wait_settled(SETTLE_TIMEOUT_S)
+
+
+def _locks_at_the_end(user, room: Room, tab: Tab) -> None:
+    """Once every member's work is over, and before any tab closes, which
+    would let go of its locks: the locks the server holds, read by the room's
+    first tab there as a tab joining then is told of them, and those this tab
+    still shows. Every member let go of each lock it got, so each is a
+    failure (``locked``)."""
+    record = user.socket_sample
+    if room.reads_the_locks(user.name):
+        held = tab.server_locks()
+        room.locks_at_end = held
+        if held:
+            record("socket locks", 0.0, False,
+                   f"the server still held {len(held)} lock(s) once every member's work was over: "
+                   + ", ".join(f"node {node_id} by {who}" for node_id, who in sorted(held.items())),
+                   "locked")
+    shown = tab.wait_for_no_locks(SETTLE_TIMEOUT_S)
+    if shown:
+        record("socket locks", SETTLE_TIMEOUT_S, False,
+               f"its tab still showed {len(shown)} lock(s) {SETTLE_TIMEOUT_S:.0f}s after every member's "
+               "work was over: " + ", ".join(f"node {node_id} by {who}" for node_id, who in sorted(shown.items())),
+               "locked")
+
+
 def run_tab(user, room: Room, *, backend_url: str, namespace: str, pacing,
-            make_link: Optional[Callable] = None) -> None:
+            make_link: Optional[Callable] = None) -> bool:
     """Open *user*'s tab of its room's dataflow, type and drag with the rest of
     the room, check every tab holds the same doc, and keep the tab open until
-    the user's dataflow run is done (``user.dataflow_done``). Each failure is
-    recorded on the user (``user.socket_sample``)."""
+    the user's dataflow run is done (``user.dataflow_done``).
+
+    On a shared canvas (``room.shared``), run on the user's own thread, the
+    member adds its own node first (:func:`_add_own_node`), takes the lock of
+    the node it types in, works on the dataflow once the room's docs agree
+    (``user.on_the_canvas``), and the room's locks are read once every
+    member's work is over (:func:`_locks_at_the_end`).
+
+    Whether the tab got through; each failure is recorded on the user
+    (``user.socket_sample``)."""
     record = user.socket_sample
     tab: Optional[Tab] = None
+    through = False
     try:
         if not room.invited.wait(ROOM_WAIT_S):
             record("socket room", ROOM_WAIT_S, False,
                    f"the room's owner had not invited its editors after {ROOM_WAIT_S:.0f}s", "socket")
-            return
+            return False
         if room.project_id is None or not room.present(user.name):
-            return  # no dataflow to open: what stopped it is recorded where it happened
+            if room.shared:
+                # Its owner's failure to make the dataflow or to invite it is
+                # recorded on the owner; that this member did none of its
+                # work on the canvas, here.
+                record("socket room", 0.0, False,
+                       "it was left out of its room's shared dataflow (its owner did not make it, "
+                       "or could not invite it), so it did none of its work there", "socket")
+            return False  # no dataflow to open: what stopped it is recorded where it happened
         tab = Tab(user.name, room.project_id, room.ledger, record,
                   on_drop=lambda: room.leave(user.name))
+        on_room = tab.room_event
         tab.connect(make_link or (lambda on_yjs, on_close: SocketLink(
-            backend_url, namespace, user.token, on_yjs, on_close)))
+            backend_url, namespace, user.token, on_yjs, on_close, on_room=on_room)))
         tab.join()
         tab.sync()
         room.ledger.synced(user.name)
         if not room.reach("synced", user.name, ROOM_WAIT_S):
             record("socket room", ROOM_WAIT_S, False,
                    f"the rest of the room had not synced after {ROOM_WAIT_S:.0f}s", "socket")
-        tab.work(room.targets_for(user.name), pacing)
+        if room.shared:
+            _add_own_node(user, room, tab)
+        typed = tab.work(room.targets_for(user.name), pacing, lock=room.shared)
+        if room.shared:
+            room.typed_in(user.name, *typed)
         tab.wait_for_answers(CALL_TIMEOUT_S)
         room.reach("typed", user.name, ROOM_WAIT_S)
         if not room.ledger.wait_settled(SETTLE_TIMEOUT_S):
@@ -857,11 +1220,18 @@ def run_tab(user, room: Room, *, backend_url: str, namespace: str, pacing,
             other = room.check(user.name, tab.digest(), ROOM_WAIT_S)
             if other is not None:
                 record("socket converge", 0.0, False,
-                       f"its nodes' code and places differ from {other}'s tab's, "
+                       f"its nodes, connections, code or places differ from {other}'s tab's, "
                        "with every update in both", "diverged")
         else:
             tab.digest()  # the doc's size, all the same
-        user.dataflow_done.wait()
+        if room.shared:
+            through = user.on_the_canvas(tab)
+            room.reach("done", user.name, DONE_WAIT_S)
+            _locks_at_the_end(user, room, tab)
+            room.reach("locks read", user.name, ROOM_WAIT_S)
+        else:
+            user.dataflow_done.wait()
+            through = True
     except TabFailed:
         pass  # what happened is already recorded
     except Exception as exc:  # noqa: BLE001 - a crashed tab is a finding too
@@ -872,3 +1242,4 @@ def run_tab(user, room: Room, *, backend_url: str, namespace: str, pacing,
             user.result.tab = tab.summary()
             room.closed_tab(user.name, user.result.tab)
         room.leave(user.name)
+    return through

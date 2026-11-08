@@ -9,13 +9,20 @@
   it, the kept message that answers it once its batch is applied.
 * Where a tab connects, and where it types and drags: the canvas's socket
   target, and the layout's places for a node's code and its place.
+* A shared canvas (``--shared-canvas``): a member's own node and connection
+  as the canvas writes them, the digest that compares nodes and connections,
+  the room's locks as a tab keeps them, a lock asked for around typing, the
+  locks read at the end, the node each room's members add theirs below, the
+  example of each room, and how the owner's run and save are judged.
 
 The tab against the server is ``test_collaboration/test_stress_tabs.py``.
 Names are imported in each test, so a checkout without them fails test by test.
 """
 
+import os
 import threading
 import unittest
+import uuid
 
 
 class LedgerTest(unittest.TestCase):
@@ -294,6 +301,448 @@ class WhereATabConnectsAndWorksTest(unittest.TestCase):
         self.assertEqual([room.owner for room in rooms], ["u0", "u5", "u10"])
         self.assertEqual(build_rooms(["u0"], 5)[0].members, ["u0"])
         self.assertEqual(build_rooms(["u0", "u1"], 0), [])
+
+
+#: A dataflow of two nodes and their connection, as a room's doc starts.
+_FLOW = {
+    "nodes": [
+        {"id": "loader", "type": "curio.builtin/python-computation", "x": 10, "y": 20, "content": "x = 1\n"},
+        {"id": "chart", "type": "curio.builtin/vis-vega", "x": 300, "y": 20, "content": "{}"},
+    ],
+    "edges": [{"id": "e1", "source": "loader", "target": "chart"}],
+    "name": "Shared",
+}
+
+
+class _Link:
+    """A tab's socket stand-in: it keeps what the tab sends, answers each
+    update, and answers each call with the next of *answers*."""
+
+    def __init__(self, answers=()):
+        self.sent = []
+        self.calls = []
+        self.answers = list(answers)
+
+    def emit(self, event, data, callback=None):
+        self.sent.append(data["message"])
+        if callback is not None:
+            callback({"ok": True})
+
+    def call(self, event, data, _timeout):
+        self.calls.append((event, data))
+        return self.answers.pop(0)
+
+
+def _server_doc(flow=None) -> bytes:
+    """The room's doc holding *flow* (:data:`_FLOW`), as the server sends it
+    whole to each tab that syncs: one history, which every tab of the room
+    then shares."""
+    from utk_curio.backend.app.collaboration import doc_mapping
+
+    server = doc_mapping.new_doc()
+    doc_mapping.dataflow_to_doc(flow or _FLOW, server, doc_id="d")
+    return server.get_update()
+
+
+def _tab(name, answers=(), flow=None, doc=None):
+    """*name*'s tab holding *doc*, a room's doc as the server sent it (a doc
+    of its own holding *flow*, by default), on a stand-in socket; the samples
+    it records."""
+    from pycrdt import create_update_message
+
+    from utk_curio.backend.tests.stress.sockets import SyncLedger, Tab
+
+    samples = []
+    tab = Tab(name, "p", SyncLedger(),
+              lambda label, seconds, ok, error=None, kind=None: samples.append((label, ok, error, kind)))
+    tab.receive({"projectId": "p", "message": create_update_message(doc or _server_doc(flow))})
+    tab.link = _Link(answers)
+    return tab, samples
+
+
+def _no_pause():
+    from utk_curio.backend.tests.stress.driver import Pacing
+
+    return Pacing(key_gap_min=0.0, key_gap_max=0.0)
+
+
+class AMembersNodeTest(unittest.TestCase):
+    def test_a_members_node_and_connection_land_as_the_canvas_writes_them(self):
+        """One transaction of the doc's own mapping (``apply_dataflow``): a
+        Python node that passes its input on, below its parent, and the
+        connection from the parent's output to its input."""
+        from utk_curio.backend.tests.stress.sockets import MEMBER_NODE_TYPE, PASS_ON_CODE, member_node
+
+        tab, samples = _tab("a")
+        node, edge = member_node({"id": "loader", "x": 10, "y": 20}, 2)
+        self.assertEqual(uuid.UUID(node["id"]).version, 4)
+        tab.add_node(node, edge)
+        self.assertEqual(len(tab.link.sent), 1, "a node and its connection are one update")
+        flow = tab.dataflow()
+        mine = next(n for n in flow["nodes"] if n["id"] == node["id"])
+        self.assertEqual((mine["type"], mine["content"]), (MEMBER_NODE_TYPE, PASS_ON_CODE))
+        self.assertGreater(mine["x"], 10)
+        self.assertGreater(mine["y"], 20)
+        self.assertIn({"id": edge["id"], "source": "loader", "target": node["id"],
+                       "sourceHandle": "out", "targetHandle": "in"}, flow["edges"])
+        self.assertEqual([n["id"] for n in flow["nodes"]][:2], ["loader", "chart"])
+        self.assertEqual((tab.nodes_added, tab.edges_added), (1, 1))
+        self.assertTrue(all(ok for _label, ok, _error, _kind in samples), samples)
+
+    def test_two_members_adding_at_once_end_with_the_same_doc(self):
+        """Each tab writes the nodes' order again, as the canvas does: once
+        each holds every update, the order the docs agree on holds both nodes
+        once. Both tabs synced the room's one doc first, as every tab does
+        from the server; an update can only be applied where the history it
+        builds on is."""
+        from utk_curio.backend.tests.stress.sockets import member_node, state_vector
+
+        room = _server_doc()
+        a, _ = _tab("a", doc=room)
+        b, _ = _tab("b", doc=room)
+        node_a, edge_a = member_node({"id": "loader", "x": 10, "y": 20}, 1)
+        node_b, edge_b = member_node({"id": "loader", "x": 10, "y": 20}, 2)
+        a.add_node(node_a, edge_a)
+        b.add_node(node_b, edge_b)
+        self.assertNotEqual(a.digest(), b.digest())
+        for sender, receiver in ((a, b), (b, a)):
+            for message in sender.link.sent:
+                receiver.receive({"projectId": "p", "message": message})
+        self.assertEqual(state_vector(a.doc), state_vector(b.doc), "each tab holds every update")
+        self.assertEqual(a.digest(), b.digest())
+        ids = [n["id"] for n in a.dataflow()["nodes"]]
+        self.assertEqual(ids, [n["id"] for n in b.dataflow()["nodes"]])
+        self.assertEqual(sorted(ids[2:]), sorted([node_a["id"], node_b["id"]]))
+        self.assertEqual(len(ids), len(set(ids)))
+
+
+class TheDigestTest(unittest.TestCase):
+    def _digest(self, **changes):
+        flow = {**_FLOW, **changes}
+        return _tab("t", flow=flow)[0].digest()
+
+    def test_tabs_holding_the_same_nodes_and_connections_agree(self):
+        self.assertEqual(self._digest(), self._digest())
+
+    def test_a_connection_more_or_another_handle_is_another_doc(self):
+        plain = self._digest()
+        more = self._digest(edges=[*_FLOW["edges"], {"id": "e2", "source": "chart", "target": "loader"}])
+        handle = self._digest(edges=[{**_FLOW["edges"][0], "targetHandle": "in_1"}])
+        self.assertEqual(len({plain, more, handle}), 3)
+
+    def test_a_node_more_or_another_type_is_another_doc(self):
+        plain = self._digest()
+        more = self._digest(nodes=[*_FLOW["nodes"], {"id": "n3", "type": "curio.builtin/python-computation",
+                                                   "x": 0, "y": 0, "content": ""}])
+        retyped = self._digest(nodes=[{**_FLOW["nodes"][0], "type": "curio.builtin/data-loading"}, _FLOW["nodes"][1]])
+        self.assertEqual(len({plain, more, retyped}), 3)
+
+
+class TheRoomsLocksTest(unittest.TestCase):
+    """A tab keeps the room's locks as the canvas keeps them
+    (``CollaborationProvider.tsx``), and asks for the lock of the node it
+    types in, as the canvas does when the node takes focus."""
+
+    def test_a_tab_keeps_the_rooms_locks_from_their_events(self):
+        tab, _ = _tab("a")
+        tab.room_event("node_locked", {"nodeId": "loader", "lock": {"participant_id": "pb", "username": "b"}})
+        tab.room_event("node_locked", {"nodeId": "chart", "lock": {"participant_id": "pc", "username": "c"}})
+        self.assertEqual(tab.room_locks(), {"loader": "b", "chart": "c"})
+        tab.room_event("node_unlocked", {"nodeId": "chart"})
+        self.assertEqual(tab.room_locks(), {"loader": "b"})
+        tab.room_event("user_left", {"participant_id": "pc", "released_locks": ["loader"]})
+        self.assertEqual(tab.room_locks(), {"loader": "b"}, "a leave lets go only of its own locks")
+        tab.room_event("user_left", {"participant_id": "pb", "released_locks": ["loader"]})
+        self.assertEqual(tab.room_locks(), {})
+        tab.room_event("agent_turn", {"nodeId": "loader"})
+        self.assertEqual(tab.wait_for_no_locks(0.01), {})
+        self.assertEqual(tab.locks_left, [])
+
+    def test_a_lock_still_shown_after_the_wait_is_kept(self):
+        tab, _ = _tab("a")
+        tab.room_event("node_locked", {"nodeId": "loader", "lock": {"participant_id": "pb", "username": "b"}})
+        threading.Timer(0.05, tab.room_event, args=("node_unlocked", {"nodeId": "loader"})).start()
+        self.assertEqual(tab.wait_for_no_locks(5), {}, "the wait ends once the lock is let go")
+        tab.room_event("node_locked", {"nodeId": "chart", "lock": {"participant_id": "pb", "username": "b",
+                                                                   "agent": "Node Builder"}})
+        self.assertEqual(tab.wait_for_no_locks(0.01), {"chart": "Node Builder for b"})
+        self.assertEqual(tab.locks_left, ["chart by Node Builder for b"])
+
+    def test_a_tab_that_gets_the_lock_types_then_lets_it_go(self):
+        tab, samples = _tab("a", answers=[{"ok": True, "lock": {}}, {"ok": True}])
+        node_id, line = tab.work([("loader", "# ")], _no_pause(), lock=True)
+        self.assertEqual((node_id, line), ("loader", "# a typed this line\n"))
+        self.assertEqual([event for event, _data in tab.link.calls], ["node_lock", "node_unlock"])
+        self.assertEqual(tab.link.calls[0][1], {"projectId": "p", "nodeId": "loader"})
+        self.assertTrue(tab.dataflow()["nodes"][0]["content"].startswith(line * 2))
+        self.assertEqual((tab.locks_taken, tab.locks_refused, tab.locks_released), (1, 0, 1))
+        self.assertTrue(all(ok for _label, ok, _error, _kind in samples), samples)
+
+    def test_a_lock_another_holds_is_no_failure_and_the_tab_types_anyway(self):
+        """Locks are soft: the canvas only shows a chip. The tab lets go of
+        nothing it did not get."""
+        tab, samples = _tab("a", answers=[{"ok": False, "error": "locked_by_other"}])
+        tab.work([("loader", "# ")], _no_pause(), lock=True)
+        self.assertEqual([event for event, _data in tab.link.calls], ["node_lock"])
+        self.assertIn("# a typed this line\n", tab.dataflow()["nodes"][0]["content"])
+        self.assertEqual((tab.locks_taken, tab.locks_refused, tab.locks_released), (0, 1, 0))
+        self.assertTrue(all(ok for _label, ok, _error, _kind in samples), samples)
+
+    def test_any_other_refusal_of_a_lock_or_its_release_is_a_failure(self):
+        tab, samples = _tab("a", answers=[{"ok": False, "error": "read_only"},
+                                          {"ok": False, "error": "not_lock_owner"}])
+        self.assertFalse(tab.take_lock("loader"))
+        tab.release_lock("loader")
+        failed = [(label, kind) for label, ok, _error, kind in samples if not ok]
+        self.assertEqual(failed, [("socket node_lock", "socket"), ("socket node_unlock", "socket")])
+        self.assertEqual(tab.locks_released, 0)
+
+
+class _RoomUser:
+    def __init__(self, name):
+        self.name = name
+        self.samples = []
+
+    def socket_sample(self, label, seconds, ok, error=None, kind=None):
+        self.samples.append((label, ok, error, kind))
+
+
+class TheLocksAtTheEndTest(unittest.TestCase):
+    """Once every member's work is over and before any tab closes: the
+    server's locks, read once for the room, and each tab's must be none."""
+
+    def _read(self, server_locks, shown=None):
+        from utk_curio.backend.tests.stress.sockets import Room, _locks_at_the_end
+
+        room = Room(0, ["a", "b"], shared=True)
+        users, tabs = {}, {}
+        for name in ("a", "b"):
+            tab, _ = _tab(name, answers=[{"ok": True, "snapshot": {"locks": server_locks}}])
+            for node_id, lock in (shown or {}).items():
+                tab.room_event("node_locked", {"nodeId": node_id, "lock": lock})
+            users[name], tabs[name] = _RoomUser(name), tab
+            _locks_at_the_end(users[name], room, tab)
+        return room, users, tabs
+
+    def test_no_lock_anywhere_is_no_failure(self):
+        room, users, tabs = self._read({})
+        self.assertEqual(room.locks_at_end, {})
+        self.assertEqual([users[name].samples for name in users], [[], []])
+        self.assertEqual(len(tabs["a"].link.calls) + len(tabs["b"].link.calls), 1,
+                         "the room's first tab there reads the server's locks, once")
+
+    def test_a_lock_the_server_still_holds_is_one_failure(self):
+        room, users, _ = self._read({"loader": {"participant_id": "pb", "username": "b"}})
+        self.assertEqual(room.locks_at_end, {"loader": "b"})
+        failures = [s for name in users for s in users[name].samples if not s[1]]
+        self.assertEqual([(label, kind) for label, _ok, _error, kind in failures], [("socket locks", "locked")])
+        self.assertIn("node loader by b", failures[0][2])
+
+    def test_a_tab_still_showing_a_lock_is_a_failure_of_its_own(self):
+        from unittest import mock
+
+        from utk_curio.backend.tests.stress import sockets
+
+        with mock.patch.object(sockets, "SETTLE_TIMEOUT_S", 0.01):
+            _, users, tabs = self._read({}, shown={"chart": {"participant_id": "pa", "username": "a"}})
+        for name in ("a", "b"):
+            [(label, ok, error, kind)] = users[name].samples
+            self.assertEqual((label, ok, kind), ("socket locks", False, "locked"))
+            self.assertIn("node chart by a", error)
+            self.assertEqual(tabs[name].locks_left, ["chart by a"])
+
+
+class ASharedRoomTest(unittest.TestCase):
+    def test_a_canvas_with_no_code_node_has_its_members_type_two_to_a_node(self):
+        """Its dataflow holds only Autark documents, which a typed line would
+        break: the members type in their own nodes, two to each, so a lock
+        is refused there too."""
+        from utk_curio.backend.tests.stress.sockets import Room
+
+        room = Room(0, [f"u{i}" for i in range(5)], shared=True)
+        for index, member in enumerate(room.members):
+            if member != "u2":
+                room.add(member, f"n{index}", f"e{index}", "load")
+        first = {member: room.targets_for(member)[0] for member in room.members}
+        self.assertEqual(first, {"u0": ("n0", "# "), "u1": ("n0", "# "), "u2": ("n0", "# "),
+                                 "u3": ("n0", "# "), "u4": ("n4", "# ")})
+        self.assertEqual(Room(1, ["u0"]).targets_for("u0"), [], "a room of copies has no such fallback")
+
+    def test_a_canvas_with_code_nodes_spreads_over_them_as_rooms_do(self):
+        from utk_curio.backend.tests.stress.sockets import Room
+
+        room = Room(0, ["u0", "u1", "u2"], shared=True)
+        room.targets = [("n1", "# "), ("n2", "// ")]
+        room.add("u0", "own0", "e0", "n1")
+        self.assertEqual([room.targets_for(m)[0][0] for m in room.members], ["n1", "n2", "n1"])
+
+    def test_a_shared_rooms_outcome_says_what_its_members_did_on_the_canvas(self):
+        from utk_curio.backend.tests.stress.sockets import Room
+
+        room = Room(3, ["a", "b"], shared=True)
+        room.example = "11.json"
+        room.closed_tab("a", {"synced": True, "nodes_added": 1, "edges_added": 1, "locks_taken": 1,
+                              "locks_released": 1, "locks_left": []})
+        room.closed_tab("b", {"synced": True, "nodes_added": 1, "edges_added": 1, "locks_refused": 1,
+                              "locks_left": ["x by a"]})
+        room.locks_at_end = {"x": "a"}
+        canvas = room.outcome()["canvas"]
+        self.assertEqual((canvas["example"], canvas["nodes_added"], canvas["edges_added"]), ("11.json", 2, 2))
+        self.assertEqual(canvas["locks"], {"taken": 1, "refused": 1, "released": 1,
+                                           "held_at_end": ["x by a"], "tabs_showing_locks": 1})
+        self.assertNotIn("canvas", Room(0, ["a"]).outcome())
+
+
+class WhichNodeAndExampleTest(unittest.TestCase):
+    def test_room_k_works_on_example_k_of_the_mix(self):
+        """Ten rooms of ten make every example of a mix of six a shared canvas;
+        without shared canvases each user has its own, round-robin."""
+        from utk_curio.backend.tests.stress.run import example_of
+
+        mix = ["e0", "e1", "e2", "e3", "e4", "e5"]
+        self.assertEqual([example_of(index, 10, mix, True) for index in range(0, 100, 10)],
+                         mix + mix[:4])
+        self.assertEqual({example_of(index, 10, mix, True) for index in range(30, 40)}, {"e3"})
+        self.assertEqual([example_of(index, 10, mix) for index in range(7)], mix + ["e0"])
+
+    def test_each_example_of_the_mix_has_a_node_a_python_node_reads(self):
+        """Python first, then JavaScript, then an Autark data load, in the
+        order the dataflow runs."""
+        import json
+
+        from utk_curio.backend.app.execution.autk_spec_kind import is_autk_data_node
+        from utk_curio.backend.tests.stress.run import DEFAULT_MIX, EXAMPLES_DIR, canvas_parent
+        from utk_curio.backend.tests.test_frontend.workflow_spec import parse_workflow
+
+        picked = {}
+        for name in DEFAULT_MIX:
+            path = os.path.join(EXAMPLES_DIR, name)
+            with open(path, encoding="utf-8") as handle:
+                nodes = json.load(handle)["dataflow"]["nodes"]
+            autk = {node["id"]: "compiled" for node in nodes if is_autk_data_node(node)}
+            parent = canvas_parent(parse_workflow(path), autk)
+            picked[name] = (parent["id"], parent["engine"])
+        self.assertEqual(picked["08-autark-spatial-join-regression.json"], ("niteroi-raster", "python"))
+        self.assertEqual(picked["11-autark-pbf-loading.json"], ("pbf-load", "autark"))
+        self.assertEqual(picked["dataflows/regression.json"], ("reg-data", "autark"))
+        self.assertEqual(picked["dataflows/js-computation.json"], ("js-node-1", "javascript"))
+        self.assertEqual(picked["01-vega-lite-chained-transforms.json"][1], "python")
+        self.assertEqual(picked["02-vega-lite-spatial-density.json"][1], "python")
+
+    def test_a_dataflow_with_no_such_node_has_none(self):
+        from utk_curio.backend.tests.stress.run import canvas_parent
+        from utk_curio.backend.tests.test_frontend.workflow_spec import parse_workflow_dict
+
+        flow = parse_workflow_dict({"dataflow": {"nodes": [
+            {"id": "v", "type": "curio.builtin/vis-vega", "content": "{}"},
+            {"id": "m", "type": "curio.builtin/autk-grammar", "content": "{}"},
+        ], "edges": []}})
+        self.assertIsNone(canvas_parent(flow, {}))
+
+
+class TheOwnersRunAndSaveTest(unittest.TestCase):
+    def test_a_step_is_done_as_its_role_says_and_a_members_node_runs(self):
+        from utk_curio.backend.tests.stress.driver import steps_not_done
+
+        steps = [
+            {"nodeId": "load", "role": "run", "status": "ok"},
+            {"nodeId": "chart", "role": "forward", "status": "forwarded"},
+            {"nodeId": "map", "role": "browser", "status": "browser"},
+            {"nodeId": "plot", "role": "browser", "status": "waiting"},
+            {"nodeId": "join", "role": "run", "status": "error", "stderrTail": "Traceback\nValueError: no"},
+            {"nodeId": "late", "role": "run", "status": "running"},
+            {"nodeId": "type", "role": "missing", "status": "error"},
+            {"nodeId": "mine", "role": "run", "status": "waiting", "skipReason": "Waits for the canvas"},
+        ]
+        self.assertEqual(steps_not_done(steps, must_run={"mine"}), [
+            "join (run) ended error: Traceback ValueError: no",
+            "late (run) ended running",
+            "type (missing) ended error",
+            "mine (run) ended waiting: Waits for the canvas",
+        ])
+
+    def test_a_save_must_hold_each_members_node_connection_and_lines(self):
+        from utk_curio.backend.tests.stress.driver import saved_lacks
+
+        saved = {"nodes": {"na": "return input_0", "nb": "", "load": "# b typed\n# b typed\nx = 1"},
+                 "edges": {"ea": ["load", "na"], "eb": ["chart", "nb"]}}
+        added = {"a": ("na", "ea", "load"), "b": ("nb", "eb", "load"), "c": ("nc", "ec", "load")}
+        typed = {"a": ("load", "# a typed\n"), "b": ("load", "# b typed\n")}
+        self.assertEqual(saved_lacks(saved, added, typed), [
+            "b's node nb's code", "b's connection eb", "c's node nc", "c's connection ec",
+            "a's lines in node load",
+        ])
+        whole = {"nodes": {"na": "return input_0", "load": "# a typed\n# a typed\nx"},
+                 "edges": {"ea": ["load", "na"]}}
+        self.assertEqual(saved_lacks(whole, {"a": ("na", "ea", "load")}, {"a": ("load", "# a typed\n")}), [])
+
+    def _reads(self, *answers):
+        """A user whose node ``n`` made a list, and the Accept header of each
+        read of it, the backend answering with *answers* (status, body)."""
+        import requests
+
+        from utk_curio.backend.tests.stress.driver import VirtualUser
+
+        user = VirtualUser("http://backend", "u", "e.json", {}, None, {})
+        user.project_id = "p"
+        user.result.outputs["n"] = {"path": "art1", "dataType": "list"}
+        replies, accepts = [], []
+        for status, body in answers:
+            reply = requests.Response()
+            reply.status_code, reply._content, reply.encoding = status, body, "utf-8"
+            replies.append(reply)
+
+        class Session:
+            def request(self, _method, _url, **kwargs):
+                accepts.append((kwargs.get("headers") or {}).get("Accept"))
+                return replies[len(accepts) - 1]
+
+        user.session = Session()
+        return user, accepts
+
+    def test_an_output_that_is_no_table_is_read_as_json_as_the_canvas_does(self):
+        from types import SimpleNamespace
+
+        from utk_curio.backend.tests.stress.driver import ARROW_IPC_MIME, json_artifact_hash
+
+        body = b'{"data": [{"name": "roads"}], "dataType": "list", "filename": "art1"}'
+        user, accepts = self._reads(
+            (415, b'{"error": "not_acceptable", "message": "Arrow IPC only supports tabular kinds; '
+                  b"got 'list'; re-request without the Arrow Accept header.\"}"),
+            (200, body),
+        )
+        user._compare_to_baseline(SimpleNamespace(id="n"))
+        self.assertEqual(accepts, [ARROW_IPC_MIME, None])
+        self.assertEqual(user.result.hashes["n"], json_artifact_hash(body))
+        self.assertEqual(user.result.failures, [])
+
+    def test_a_geodataframe_refused_for_its_geometry_is_still_a_failure(self):
+        """That 415 is how the backend's dropped WKB opt-in was caught: no
+        JSON read hides it."""
+        from types import SimpleNamespace
+
+        from utk_curio.backend.tests.stress.driver import UserFailed
+
+        user, accepts = self._reads(
+            (415, b'{"error": "not_acceptable", "message": "Arrow IPC serves geodataframe geometry as WKB; '
+                  b'send X-Curio-Accept-Geometry: wkb to accept it"}'),
+        )
+        with self.assertRaises(UserFailed):
+            user._compare_to_baseline(SimpleNamespace(id="n"))
+        self.assertEqual(len(accepts), 1)
+        [failure] = user.result.failures
+        self.assertEqual((failure.status, failure.kind), (415, "http_error"))
+
+    def test_a_json_output_is_compared_without_its_per_run_name(self):
+        """What the Arrow route answers 415 (a list, a dict) is read as JSON,
+        as the canvas reads it: two runs' outputs differ by their name only."""
+        from utk_curio.backend.tests.stress.driver import json_artifact_hash
+
+        one = json_artifact_hash(b'{"data": [{"name": "roads"}], "dataType": "list", "filename": "a1"}')
+        two = json_artifact_hash(b'{"filename": "b2", "dataType": "list", "data": [{"name": "roads"}]}')
+        other = json_artifact_hash(b'{"data": [{"name": "parks"}], "dataType": "list", "filename": "a1"}')
+        self.assertEqual(one, two)
+        self.assertNotEqual(one, other)
 
 
 if __name__ == "__main__":

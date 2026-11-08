@@ -2133,7 +2133,11 @@ jobs:
   # those users also opens a tab of a shared dataflow, a pycrdt doc synced over
   # Socket.IO as the canvas syncs it, and types and drags in it; the report
   # gives the sync times, and the backend's threads, memory and doc files read
-  # in the stack's container (--probe). The browser tier is five
+  # in the stack's container (--probe). Then 100 users work in ten rooms of
+  # ten, each room one shared canvas (--shared-canvas): every member adds a
+  # node of its own to the room's dataflow, takes the lock of the node it
+  # types in and plays the dataflow as its tab holds it, and each room's owner
+  # runs it on the server and saves it. The browser tier is five
   # real Chrome contexts rendering Autark on WebGPU, which is the half that
   # cannot be driven any other way and does not scale past a handful on one GPU.
   test-gpu-stress:
@@ -2242,7 +2246,7 @@ jobs:
           node-version: "26"
 
       # With `repeat`, each stage below runs that many times on this one stack,
-      # as the three stages already share it; every run signs up users of its
+      # as the four stages already share it; every run signs up users of its
       # own (a fresh --run-id) and writes its own report folder ({run}).
       # The probe reads the backend in its container: the stack's .curio is
       # its root's alone.
@@ -2272,6 +2276,26 @@ jobs:
             --backend "http://localhost:5072" \
             --tiers 100 --profile session \
             --out "$GITHUB_WORKSPACE/stress-session{run}" \
+            --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
+            --probe "docker exec $cid python"
+
+      # 100 users in ten rooms of ten, each room one shared canvas made from
+      # the example of its number in the mix, so every example is one. Every
+      # member adds a Python node of its own below a node of the dataflow,
+      # takes the lock of the node it types in, types, drags and lets the lock
+      # go, then plays the dataflow as its tab holds it and checks its results
+      # against the solo baseline. Each room's owner then runs the dataflow on
+      # the server and saves it; the probe reads the file the save wrote, which
+      # must hold every member's node, connection and lines, and no lock may
+      # be held at the end.
+      - name: 🧩 Run 10 canvases of 10 users
+        if: ${{ !cancelled() }}
+        run: |
+          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
+          bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
+            --backend "http://localhost:5072" \
+            --tiers 100 --room-size 10 --shared-canvas \
+            --out "$GITHUB_WORKSPACE/stress-canvas{run}" \
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
             --probe "docker exec $cid python"
 
@@ -2332,6 +2356,8 @@ jobs:
             stress.run*/
             stress-session/
             stress-session.run*/
+            stress-canvas/
+            stress-canvas.run*/
             stress-stacks/
             docker-stats.log
           if-no-files-found: warn
