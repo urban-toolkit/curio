@@ -35,6 +35,14 @@ Locking mirrors ``projects/storage.py``: a per-account in-process
 ``fcntl.flock`` (cross-process, POSIX; degrades to thread-only on Windows
 exactly as project-spec writes already do). Reads tolerate corrupt lines and
 missing files, like every other FS store.
+
+A line is written under that lock and synced to disk once the lock is let go
+(:func:`_locked`), as storage syncs what a writer of a dataflow wrote
+(``storage.sync_when_free``): on a strained disk one sync takes seconds, and
+each run of an account appends three lines (its reserve, its settle and its
+title's usage), so a sync under the lock queued every run of the account
+behind the others'. The run that appends still returns only once its line is
+on disk.
 """
 
 from __future__ import annotations
@@ -88,21 +96,45 @@ def _today() -> str:
 
 @contextmanager
 def _locked(user_key: str):
-    """The append critical section: in-process lock + flock."""
-    with _account_lock(user_key):
-        directory = _ledger_dir(user_key)
-        directory.mkdir(parents=True, exist_ok=True)
-        handle = open(directory / ".lock", "a+")
-        try:
-            if fcntl is not None:
-                fcntl.flock(handle, fcntl.LOCK_EX)
-            yield
-        finally:
+    """The append critical section: in-process lock + flock. It yields the
+    list :func:`_append` puts each file it wrote in, each synced to disk once
+    both locks are let go (:func:`_sync`)."""
+    written: list[int] = []
+    ended = False
+    try:
+        with _account_lock(user_key):
+            directory = _ledger_dir(user_key)
+            directory.mkdir(parents=True, exist_ok=True)
+            handle = open(directory / ".lock", "a+")
             try:
                 if fcntl is not None:
-                    fcntl.flock(handle, fcntl.LOCK_UN)
+                    fcntl.flock(handle, fcntl.LOCK_EX)
+                yield written
             finally:
-                handle.close()
+                try:
+                    if fcntl is not None:
+                        fcntl.flock(handle, fcntl.LOCK_UN)
+                finally:
+                    handle.close()
+        ended = True
+    finally:
+        _sync(written, raising=ended)
+
+
+def _sync(written: list[int], *, raising: bool = True) -> None:
+    """Sync each file a locked block wrote to disk, then close it, with no
+    lock held. A sync that fails raises once all are done, as it did under
+    the lock, unless the block failed already, whose error stands."""
+    failed = None
+    for descriptor in written:
+        try:
+            os.fsync(descriptor)
+        except OSError as exc:
+            failed = failed or exc
+        finally:
+            os.close(descriptor)
+    if failed is not None and raising:
+        raise failed
 
 
 def _read_entries(user_key: str, day: str) -> list[dict]:
@@ -128,13 +160,15 @@ def _read_entries(user_key: str, day: str) -> list[dict]:
     return entries
 
 
-def _append(user_key: str, day: str, entry: dict) -> None:
+def _append(user_key: str, day: str, entry: dict, written: list[int]) -> None:
+    """Write *entry*'s line, whole, under the block of :func:`_locked`, which
+    syncs it to disk once the block lets its locks go (*written*)."""
     path = _day_path(user_key, day)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry) + "\n")
         handle.flush()
-        os.fsync(handle.fileno())
+        written.append(os.dup(handle.fileno()))
 
 
 def _usage_counts(raw: object) -> dict:
@@ -216,7 +250,7 @@ def reserve(
     now = _now()
     day = now.date().isoformat()
     rid = reservation_id or uuid.uuid4().hex
-    with _locked(user_key):
+    with _locked(user_key) as written:
         _append(
             user_key,
             day,
@@ -228,6 +262,7 @@ def reserve(
                 "attachmentKey": attachment_key,
                 "llmConfigId": llm_config_id,
             },
+            written,
         )
     return {"reservationId": rid, "day": day}
 
@@ -241,7 +276,7 @@ def settle(
     counts: usage is never lost."""
     day = reservation.get("day") or _today()
     rid = reservation.get("reservationId", "")
-    with _locked(user_key):
+    with _locked(user_key) as written:
         for entry in _read_entries(user_key, day):
             if entry.get("kind") == "settle" and entry.get("reservationId") == rid:
                 return entry  # first-write-wins idempotence
@@ -252,7 +287,7 @@ def settle(
             "status": status,
             "usage": _usage_counts(usage) if usage else None,
         }
-        _append(user_key, day, entry)
+        _append(user_key, day, entry, written)
         return entry
 
 
@@ -265,7 +300,7 @@ def record_housekeeping_usage(
     the transcript's execution records sum to."""
     if not usage:
         return
-    with _locked(user_key):
+    with _locked(user_key) as written:
         _append(
             user_key,
             _today(),
@@ -276,4 +311,5 @@ def record_housekeeping_usage(
                 "usage": _usage_counts(usage),
                 "llmConfigId": llm_config_id,
             },
+            written,
         )
