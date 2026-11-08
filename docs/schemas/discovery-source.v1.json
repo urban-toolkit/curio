@@ -1160,7 +1160,7 @@
       "type": "string",
       "maxLength": 256,
       "pattern": "^([^.\\u0000-\\u001f\\u007f]+(\\.[^.\\u0000-\\u001f\\u007f]+)*)?$",
-      "description": "Keys joined by dots, from where the path starts. A number picks an item of a list (bbox.0). A key may itself hold dots (meta.vsn): the longest key that is there is taken first. The empty path is the item itself."
+      "description": "Keys joined by dots, from where the path starts. A number picks an item of a list (bbox.0). A key may itself hold dots (meta.site): the longest key that is there is taken first. The empty path is the item itself."
     },
     "jsonlColumnName": {
       "type": "string",

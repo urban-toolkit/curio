@@ -467,6 +467,8 @@ The repo includes [`.github/workflows/deploy.yml`](../.github/workflows/deploy.y
 
 To adapt it: install Tailscale on the server (`sudo tailscale up --advertise-tags=tag:curio-server --ssh`), create a Tailscale OAuth client with the `auth_keys` scope and tag `tag:ci`, add an ACL allowing `tag:ci -> tag:curio-server:22`, create a `deploy` user on the server with the `docker` group, and set three GitHub secrets: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`, `DEPLOY_SSH_KEY` (private key whose pubkey is in `~deploy/.ssh/authorized_keys`). Then update the hostname (`utk` → your Tailscale machine name) and the `--backend-url` addresses the workflow writes into each stack's `docker-compose.site.yml`.
 
+Both stacks start with `--discovery-max-download-mb 2048`, so a download, or a file of a bucket table, may be up to 2 GiB on them: a month of detections in data.urbantk.org's `idot` bucket is a JSON Lines file of up to 1.7 GB.
+
 To give both stacks an LLM endpoint of their own (the **Curio** rows and Curio's default in [LLM configurations](#llm-configurations)):
 
 1. In the repository's **Settings → Environments**, open `dev` and add the secrets `CURIO_DEPLOY_API_KEY` (the endpoint's key) and `CURIO_DEPLOY_BASE_URL` (its OpenAI-compatible base URL). Do the same for `stable`.

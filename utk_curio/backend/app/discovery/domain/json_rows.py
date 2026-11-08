@@ -14,7 +14,7 @@ unless the resource's ``options`` say otherwise:
   position in a list, and the ``columns`` it keeps of each item.
 
 A path names keys from where it starts, joined by dots. A number picks an item
-of a list (``bbox.0``). A key may itself hold dots (``meta.vsn``): the longest
+of a list (``bbox.0``). A key may itself hold dots (``meta.site``): the longest
 key that is there is taken first. The empty path is the item itself.
 
 With ``unpack``, a row holds only the columns the line and the levels name.
@@ -73,7 +73,7 @@ class JsonPath:
 
     text: str
     #: For each name, the keys to try there, longest first, and the name each
-    #: one leads on to: ``meta.vsn`` tries ``"meta.vsn"``, then ``"meta"``.
+    #: one leads on to: ``meta.site`` tries ``"meta.site"``, then ``"meta"``.
     keys: tuple[tuple[tuple[str, int], ...], ...]
     #: For each name, the list position it picks, or None for a name that
     #: picks none.
@@ -91,7 +91,7 @@ class Level:
     path: JsonPath
     key: str | None
     columns: tuple[Column, ...]
-    #: How a skipped line names it: ``detections under value.models_results``.
+    #: How a skipped line names it: ``items under value.results``.
     where: str
 
 
