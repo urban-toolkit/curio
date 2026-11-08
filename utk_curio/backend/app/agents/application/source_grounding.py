@@ -122,7 +122,7 @@ _URL_SCHEMES = ("http://", "https://")
 # and ``curio_load_collection``. One pattern, owned by the datasets domain, so
 # execution and lineage find the same ids; the page of the functions node code
 # calls says which they are, and test_node_functions.py pins the two together.
-from utk_curio.backend.app.datasets.domain.code_refs import DATASET_PATH_CALL_RE  # noqa: E402,F401
+from utk_curio.backend.app.datasets.domain.code_refs import DATASET_PATH_CALL_RE, ITEM_ID  # noqa: E402,F401
 
 #: The kinds of catalog item a function's argument names that the Data Catalog
 #: holds (``node_functions.CATALOG_PHRASES``): a call of one is a dataset read.
@@ -338,7 +338,7 @@ def _catalog_call_re(names: tuple[str, ...]) -> re.Pattern | None:
         return None
     return re.compile(
         r"\b(" + "|".join(re.escape(name) for name in names) + r")"
-        + r"""\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\2\s*[,)]"""
+        + r"""\(\s*(["'])(""" + ITEM_ID + r""")\2\s*[,)]"""
     )
 
 

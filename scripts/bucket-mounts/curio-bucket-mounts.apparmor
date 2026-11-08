@@ -1,0 +1,82 @@
+# AppArmor profile of Curio's bucket mount service
+# (docker-compose.bucket-mounts.yml). It is Docker's default profile for
+# containers (github.com/moby/profiles, apparmor/template.go) with two
+# changes: the default's "deny mount" becomes FUSE mounts under /mounts alone,
+# and its unmounts anywhere become unmounts under /mounts alone; and of the
+# capabilities, only SYS_ADMIN, the one the service keeps.
+#
+# Load it once on the host, and again after an edit, as root:
+#   install -m 644 scripts/bucket-mounts/curio-bucket-mounts.apparmor /etc/apparmor.d/curio-bucket-mounts
+#   apparmor_parser -r -W /etc/apparmor.d/curio-bucket-mounts
+# A profile in /etc/apparmor.d/ loads again at every boot. Docker refuses to
+# start a container under a profile the kernel has not loaded.
+
+abi <abi/3.0>,
+
+#include <tunables/global>
+
+profile curio-bucket-mounts flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  network,
+  # Disallow obsolete socket families removed from the Linux kernel.
+  # AF_DECnet has no AppArmor family name, so it cannot be denied here.
+  deny network ax25,
+  deny network ipx,
+  deny network appletalk,
+  deny network netrom,
+  deny network rose,
+  deny network econet,
+  deny network atmsvc,
+  deny network irda,
+  deny network wanpipe,
+  deny network isdn,
+  deny network caif,
+  # Disallow AF_ALG (Linux kernel crypto API).
+  deny network alg,
+  # Disallow AF_VSOCK to prevent host/guest communication.
+  deny network vsock,
+
+  # mount(2) and umount2(2); the container drops every other capability.
+  capability sys_admin,
+  file,
+  # The FUSE device, which "file" allows already, named for the reader.
+  /dev/fuse rw,
+
+  # rclone mounts through fusermount3 (libfuse 3.18, with mount(2)) a file
+  # system of type fuse.rclone, or plain fuse on a kernel without FUSE
+  # subtypes, and only under /mounts, the folder the host shares with Curio.
+  mount fstype=fuse.rclone -> /mounts/**,
+  mount fstype=fuse -> /mounts/**,
+  umount /mounts/**,
+
+  # Host (privileged) processes may send signals to container processes.
+  signal (receive) peer=unconfined,
+  # runc may send signals to container processes (for "docker stop").
+  signal (receive) peer=runc,
+  # crun may send signals to container processes (for "docker stop" when used with crun OCI runtime).
+  signal (receive) peer=crun,
+  # Container processes may send signals amongst themselves.
+  signal (send,receive) peer=curio-bucket-mounts,
+
+  deny @{PROC}/* w,   # deny write for all files directly in /proc (not in a subdir)
+  # deny write to files not in /proc/<number>/** or /proc/sys/**
+  deny @{PROC}/{[^1-9/],[^1-9/][^0-9/],[^1-9s/][^0-9y/][^0-9s/],[^1-9/][^0-9/][^0-9/][^0-9/]*}/** w,
+  deny @{PROC}/sys/[^k]** w,  # deny /proc/sys except /proc/sys/k* (effectively /proc/sys/kernel)
+  deny @{PROC}/sys/kernel/{?,??,[^s][^h][^m]**} w,  # deny everything except shm* in /proc/sys/kernel/
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/kcore rwklx,
+
+  deny /sys/[^f]*/** wklx,
+  deny /sys/f[^s]*/** wklx,
+  deny /sys/fs/[^c]*/** wklx,
+  deny /sys/fs/c[^g]*/** wklx,
+  deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/devices/virtual/powercap/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+
+  # allow processes within the container to trace each other,
+  # provided all other LSM and yama setting allow it.
+  ptrace (trace,tracedby,read,readby) peer=curio-bucket-mounts,
+}

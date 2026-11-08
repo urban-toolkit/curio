@@ -24,14 +24,16 @@ The Scenario Catalog has no manifests: it lists the scenarios saved in your proj
 
 Curio's code names no artifact these folders ship: it reads what each one brings off its manifest, so yours gets what Curio's own get. [`test_no_artifact_ids_in_core.py`](../utk_curio/backend/tests/test_no_artifact_ids_in_core.py) fails on a shipped id in Curio's code, outside its short list of exceptions.
 
-## A node's logic is its code
+## A node's logic is in its package's functions
 
-What a node does is the code it shows: its starter, or its package template's source, which you read and edit in the node.
+What a package's node does is a function of a module of its package. The node's code holds its settings and a short call of that function.
 
+- A module's `__all__` names the functions it offers, and each says what it does in the first paragraph of its docstring ([Modules beside your template](AUTHORING-NODES.md#modules-beside-your-template)).
+- A node's code, its template's source, holds its settings, as constants or widgets, and returns one call. Media's Sample Video Frames ([`packages/curio.media@1/sources/video-frames.py`](../packages/curio.media@1/sources/video-frames.py)) sets `EVERY_SECONDS` and `MAX_FRAMES_PER_VIDEO`, then returns `sample_video_frames(input_0, curio_derived_file, every_seconds=EVERY_SECONDS, max_frames_per_video=MAX_FRAMES_PER_VIDEO)`, from Media's module `media_collections`.
+- A node calls another package's functions when its package names that package in `dependencies.packages`: Media's Mosaic Rasters returns Rasterization's `mosaic_collection(input_0, curio_output_file)`, from `scout_rasters.mosaic`.
 - Curio gives node code a function only for what that code cannot do on its own, or must do exactly as Curio's own code does: reach a catalog's item by the id the code names, a saved key, a file Curio serves or keeps after the run, Curio's own file formats, the Map Editor's edits and a layer chip. [`skills/node-functions/SKILL.md`](../skills/node-functions/SKILL.md) lists them. [`test_node_functions_sandbox.py`](../utk_curio/backend/tests/test_node_functions_sandbox.py) fails on a `curio_` function that page does not list, and [`test_sandbox_namespace.py`](../utk_curio/backend/tests/test_sandbox_namespace.py) on any other name in node code's namespace but the libraries it pins.
-- Package sources and the nodes of the shipped examples import nothing from `utk_curio`. [`test_node_code_imports_no_curio.py`](../utk_curio/backend/tests/test_node_code_imports_no_curio.py) fails on such an import, outside its short list of exceptions.
-- A node that does something new comes in a package, with its code in its template's source, as Media's Sample Video Frames does ([`packages/curio.media@1/sources/video-frames.py`](../packages/curio.media@1/sources/video-frames.py)). Curio adds no built-in node type for it.
-- Code that several nodes share is a module of their package ([Modules beside your template](AUTHORING-NODES.md#modules-beside-your-template)), and each function it offers says what it does in the first paragraph of its docstring.
+- Package sources and the nodes of the shipped examples import nothing from `utk_curio`. [`test_node_code_imports_no_curio.py`](../utk_curio/backend/tests/test_node_code_imports_no_curio.py) fails on such an import.
+- A node that does something new comes in a package, with its functions in the package's modules. Curio adds no built-in node type for it.
 
 ## 1. Anatomy of a package
 
@@ -207,7 +209,7 @@ The Discovery Catalog's patterns:
 
 - **Key the cache on the request's inputs.** A download already held, by `(sourceId, resourceId, format, parametersHash)`, answers `200` and contacts no portal; the place search keys on the query text.
 - **Expire what changes.** A downloaded file stays until its dataset is deleted; a place answer lasts a day (`CACHE_TTL_S` in `places.py`), and a WFS server's capabilities document 15 minutes (`CAPABILITIES_TTL_S` in `providers/wfs.py`).
-- **Store per user, serve by id.** A bucket collection's files are cached under the account's own media directory (`media_work_root` in [`discovery/infrastructure/media_dirs.py`](../utk_curio/backend/app/discovery/infrastructure/media_dirs.py)) by [`application/cache_collection.py`](../utk_curio/backend/app/discovery/application/cache_collection.py), capped by `--media-cache-max-gb` (`CURIO_MEDIA_CACHE_MAX_GB`), and the files a node derives with `curio_derived_file` go beside them. Both are served by id from `@require_auth` routes in [`discovery/media_routes.py`](../utk_curio/backend/app/discovery/media_routes.py) (`/api/datasets/<dataset_id>/media/<file_id>`), which look the file up in the caller's own dataset and never take a path from the request.
+- **Store per user, serve by id.** A bucket collection's files are cached under the account's own media directory (`media_work_root` in [`discovery/infrastructure/media_dirs.py`](../utk_curio/backend/app/discovery/infrastructure/media_dirs.py)) by [`application/cache_collection.py`](../utk_curio/backend/app/discovery/application/cache_collection.py), capped by `--media-cache-max-file-gb` (`CURIO_MEDIA_CACHE_MAX_FILE_GB`) per file and `--media-cache-max-gb` (`CURIO_MEDIA_CACHE_MAX_GB`) per account, and the files a node derives with `curio_derived_file` go beside them. Both are served by id from `@require_auth` routes in [`discovery/media_routes.py`](../utk_curio/backend/app/discovery/media_routes.py) (`/api/datasets/<dataset_id>/media/<file_id>`), which look the file up in the caller's own dataset and never take a path from the request.
 
 ### 3.7 The error contract back to the frontend
 
@@ -253,7 +255,7 @@ A model in the Model Catalog is a model package, so it declares its runtime's li
 #### How the install/uninstall flow handles them
 
 - **Adding a package from the catalog** copies the package files, then runs `pip install` (via [`utk_curio/backend/app/packages/infrastructure/pip_runner.py`](../utk_curio/backend/app/packages/infrastructure/pip_runner.py)) for every dep that isn't already importable. Already-satisfied deps are skipped, so re-adding the same package is near-instant. The request blocks until pip finishes (v1 sync UX); the confirm button stays busy.
-- **Removing a package** (when its user-store copy is being pruned) walks every other still-installed package's manifest, finds the python deps the pruned package declared that **no other package needs**, and pip-uninstalls those. Shared deps stay.
+- **Removing a package** (when its user-store copy is being pruned) uninstalls the python deps it declared that **nothing else asks for**: no other installed package declares them and no Installed libraries list names them. They leave from where they were installed: under fork isolation the account's own tree, and nothing else; otherwise the shared interpreter, and there only the ones Curio's pip installed since the backend started. A library that was installed already, such as the image's `torch`, stays.
 - A failed pip install rolls back the package's user-store copy so the user can retry cleanly. The Flask response carries the tail of pip's stderr so the user knows what failed (network error, version conflict, missing wheel, etc.).
 
 #### Packages a package needs
@@ -348,7 +350,7 @@ model = curio_load_model("model.scout.deep-umbra")
 return accumulated_shadow(input_0, season=[!! season !!], model=model, output_file=curio_output_file)
 ```
 
-`deep_umbra` imports `tile_bounds` from `scout_rasters`, the module of the Rasterization package, which Deep Umbra names in `dependencies.packages`. Adding Deep Umbra adds Rasterization too (§3.8, "Packages a package needs").
+`deep_umbra` imports `tile_bounds` and `mosaic_rasters` from `scout_rasters`, the module of the Rasterization package, which Deep Umbra names in `dependencies.packages`. Adding Deep Umbra adds Rasterization too (§3.8, "Packages a package needs").
 
 Agents read the same files. A run that writes an Accumulated Shadow node's code gets the template's whole `description`, this starter, and the public functions of `deep_umbra` and of `scout_rasters`, each by its signature and the first paragraph of its docstring, the functions the starter imports first. They are read from the sources with `ast`, never imported (`read_functions` in [`packages/domain/function_nodes.py`](../utk_curio/backend/app/packages/domain/function_nodes.py)), from the modules the sandbox makes importable for the node (`modules_for_node`), in the run's dataflow block ([ARCHITECTURE.md, Agent Prompt Composition](ARCHITECTURE.md#agent-prompt-composition)). `packages.resolve` gives an agent a package's functions and its `dependencies.packages` too. The preamble names no package's templates or functions, so a package documents its functions in their docstrings and shows their use in its starters: that is what an agent knows of them.
 

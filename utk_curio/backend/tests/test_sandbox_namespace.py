@@ -157,7 +157,7 @@ def test_each_path_seeds_only_the_pinned_libraries_and_curio_functions():
     of Curio's functions for node code, a curio_ name, which
     test_node_functions_sandbox.py holds to the page that lists them. So no
     other helper reaches node code unlisted (docs/EXTENDING.md, "A node's
-    logic is its code")."""
+    logic is in its package's functions")."""
     from utk_curio.sandbox.isolation.zygote import build_namespace_template
 
     for path, names in (("in process", set(worker._globals_cache)), ("isolated", set(build_namespace_template()))):

@@ -72,7 +72,7 @@ discovery/
 | **Downloaded and added datasets** | Your Data Catalog store, `.curio/users/<user-key>/datasets/` | **Download** and **Add to Data Catalog**. A table is an ordinary imported dataset; a collection is its index. |
 | **A collection's files** | Where the source keeps them | Nobody. Curio reads them in place. |
 | **A service's images**, from Mapillary or Google Street View | Your Data Catalog store, with the collection | **Download**. |
-| **A bucket collection's cached files** | Your account's media folder | **Cache files**, up to a per-account limit. |
+| **A bucket collection's cached files** | Your account's media folder | **Cache files**, up to a limit per file and one per account. |
 | **Added models** | Your package store, each model as a model package with its weights and an **Image Segmentation** node | **Add to Model Catalog**. |
 
 ---
@@ -82,7 +82,7 @@ discovery/
 There are two pages and a drawer on the canvas, plus an agent that works on the canvas:
 
 - **The `/catalog/discovery` page** lists the sources. Reach it from **Discovery Catalog** in the top bar of `/projects` and every catalog page. Filter by provider or access in the left rail. Type in **Search every portal…** and the cards give way to results from every source at once, each tagged with the source it came from. With a filter set in the rail, the search asks only the sources the filter shows. Click a card to describe it in the right-hand drawer, or right-click it for its actions.
-- **A source's page**, `/catalog/discovery/<sourceId>@<major>`, is one source on its own. Reach it with **Browse datasets** on a card, in the drawer, or in the right-click menu, or **Add by link** for Direct URL. A portal's page lists nothing until you search, then shows that portal's matches and how many there are. Direct URL's page has a **Link to a file** field. A service's page lists what it can be asked for, a row each. A storage source's page lists its resources at once: a row for each, or for each value or file when its manifest splits it. A row has a kind (**Table**, **Rasters**, **Frames**, **Images**, **Videos**, **Photos and videos**, or **Audio**) and its format, a line saying what it holds (files, images and videos, frames in sequences, or recordings), what its path fields cover, and its size. A collection's row also shows its first files as thumbnails.
+- **A source's page**, `/catalog/discovery/<sourceId>@<major>`, is one source on its own. Reach it with **Browse datasets** on a card, in the drawer, or in the right-click menu, or **Add by link** for Direct URL. A portal's page lists nothing until you search, then shows that portal's matches and how many there are. Direct URL's page has a **Link to a file** field. A service's page lists what it can be asked for, a row each. A storage source's page lists its resources at once: a row for each, or for each value or file when its manifest splits it. A row has a kind (**Table**, **Rasters**, **Frames**, **Images**, **Videos**, **Photos and videos**, **Audio**, or **Files**) and its format, a line saying what it holds (files, images and videos, frames in sequences, or recordings), what its path fields cover, and its size. A collection's row also shows its first files as thumbnails, except a **Files** row, whose files have no preview.
 - **The canvas drawer**: on the canvas, the **Discovery Catalog** button in the top bar opens the sources beside the dataflow. **Search every portal…** searches every source at once; **Browse datasets** on a card opens that source in the drawer, as its page shows it, and **All portals** goes back to the cards. What you download or add lands in the Data or Model Catalog, as it does from the pages, and a model's **View model** opens the Model Catalog drawer.
 - **The Dataset Finder**, an agent you attach on the canvas, can search the portals for you and propose a download. See [part 6](#6-the-dataset-finder).
 
@@ -108,7 +108,7 @@ A storage source is read when it is first opened, and again when its listing is 
 | **View on the portal ↗** | A result row | Nothing | The dataset's page on the portal's own site, in a new tab. |
 | **Add to Data Catalog** | A storage source's row | Your Data Catalog gains a dataset | A dialog to keep only some values of each path field, when there are any to choose from, then a progress bar, then *"Added `<title>` to your Data Catalog."* with **View details**. |
 | **Add again** | A storage source's row marked **In your Data Catalog** | Your Data Catalog gains a dataset, when the row's files changed | A progress bar, then *"Added `<title>` to your Data Catalog."*, or *"Nothing has changed in `<title>` since it was added."* |
-| **Files** | A storage source's row | Nothing | The row's files, 50 at a time, with thumbnails for a collection's. Pick some and **Add N picked files** adds only those. |
+| **Files** | A storage source's row | Nothing | The row's files, 50 at a time, with thumbnails for a collection's, except a `files` resource's. Pick some and **Add N picked files** adds only those. |
 | **Rescan** | A storage source's page | Nothing | The source is read again, and its rows show what it holds. |
 | **Cache files** | A bucket collection's details, in the Data Catalog | Your account's media folder | Its files are copied to the Curio machine, so nodes can read them. |
 | **Add to Model Catalog** | A Hugging Face models row | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. A guest on a `--deploy` instance is refused before anything downloads. |
@@ -154,6 +154,8 @@ On a Curio started with `--deploy`, a dataset a guest downloads or adds from her
 **I have photos and videos.** A `media` resource takes both. Each photo carries its EXIF time and position, and a video plays in **Simple View**; **Sample Video Frames** turns videos into frames: see [example 21](examples/21-storage-photos-and-videos.md).
 
 **I have audio recordings.** An `audio` resource, whose file names can carry the recording time. **Simple View** shows each recording as a spectrogram with **Play**, and **Split Audio** measures the level of each window: see [example 22](examples/22-storage-audio-recordings.md).
+
+**I want other files in node code, such as each capture's JSON records.** A `files` resource takes files of any type, such as `chicago/west-loop/{walk}/{record}.json`. Its collection lists them with their path fields, reads nothing from them and shows no preview; node code opens each from its row's `path`, as `json.load(open(row["path"]))`, once **Cache files** has copied a bucket's.
 
 **I have a folder of unrelated data files.** Declare one resource per file, as a portal lists its datasets, and add each: see [example 23](examples/23-storage-folder-of-different-files.md). A folder of unrelated files of one format, such as `{name}.csv` with `"datasets": "per-file"`, lists one row per file.
 
@@ -272,10 +274,12 @@ A Direct URL link to a `.parquet` file, and a bucket or Hugging Face row of `par
 ### Adding from a storage source
 
 - **Tables are copied.** One file lands as itself. A shapefile brings its `.dbf`, `.shx`, `.prj` and `.cpg` with it, in whatever letter case they are named, and lands as GeoParquet; a GeoPackage or OSM PBF lands as one dataset per layer, as an upload does. A CSV declared with `options` is read with them and lands as Parquet. Several files land as one Parquet table, with a column per path field and a `source_file` column; a file's own column of the same name keeps its name, and the added one ends in `_from_path`. Geographic files land as one GeoParquet, in EPSG:4326, when they share a coordinate system. GeoPackage and PBF files are added one at a time, with `"datasets": "per-file"`.
+- **JSON Lines tables** are read a line at a time into the rows their manifest declares, and land as Parquet with a column per path field and a `source_file` column, from one file or several. When lines are skipped, the message when the add finishes and the dataset's description say how many and why ([JSON Lines tables](#json-lines-tables)).
 - **Collections are referenced.** The Data Catalog keeps an index; the files stay where the source keeps them, and nothing is written to the source. Deleting the collection deletes its index and never the files.
 - **Adding again.** A row marked **In your Data Catalog** offers **View dataset** and **Add again**. **Add again** reads the row's files: when they changed, it adds a new dataset of them, which the row then holds; when they did not, you keep the dataset you have, and a message says so.
 - **Narrowing.** Keeping only some values in the **Add** dialog, or picking files under **Files**, adds a separate dataset of just those files. The row stays offered whole.
 - **A bucket's files.** In a collection from a bucket or a Hugging Face dataset repository, each image and raster is indexed from its first 64 KiB, and a detail stored past them stays empty. Its videos and recordings are indexed by their path and size; once **Cache files** has copied them, their duration, frame rate, size and codec, or their sample rate and channels, are read from them. Thumbnails of its images and rasters are drawn on request; a video's or recording's appears once it is cached. Nodes read its files once **Cache files** has copied them to the Curio machine; until then a row's `path` is empty.
+- **Caching limits.** **Cache files** copies files of up to 4 GiB each, or what the operator sets with `--media-cache-max-file-gb`, and up to 20 GB for your account in all, or what `--media-cache-max-gb` sets. A collection with a larger file, or with more than your account has room for, is refused before any file is copied, and the message names the files over the limit. To cache the others, pick them under **Files** and add them as a dataset of their own.
 - **Size.** 4 GiB per file from a folder, and the download limit per file from a bucket, or for what an add for an area reads ([A GeoParquet file for an area](#a-geoparquet-file-for-an-area)); 512 MiB for a GeoPackage or PBF. A combined table takes up to 10,000 files, and 16 GiB from a folder or 2 GiB from a bucket. A source lists up to 200,000 matched files, or fewer when its manifest sets a lower limit, and its page says when it holds more. Adding a resource with more files than that limit is refused: pick files under **Files**, or narrow it in the **Add** dialog when its row offers **Add to Data Catalog**.
 - **Rows that cannot be added.** A row over one of these limits, a shapefile without its `.dbf` or `.shx`, and GeoPackage or PBF files declared as one table say why under the row's name, and **Add to Data Catalog** is off. A row of several files still offers **Files**, to add some of them.
 - **Publishing.** A collection cannot be published.
@@ -403,14 +407,14 @@ A storage source's `resources` say how its files are organized. `provider` says 
 |---|---|---|
 | `id` | Yes | Unique in the source. |
 | `name`, `description` | `name` | What the row says. |
-| `kind` | Yes | `table`, or a collection: `rasters`, `frames`, `images`, `videos`, `media` (images and videos together), or `audio`. |
+| `kind` | Yes | `table`, or a collection: `rasters`, `frames`, `images`, `videos`, `media` (images and videos together), `audio`, or `files` (files of any type, which Curio does not read or preview, for node code to open from each row's `path`). |
 | `path` | Yes | Which files belong to it, as a path template relative to the folder, bucket prefix or repository. |
-| `format` | For `table` | `csv`, `json`, `geojson`, `parquet`, `gpkg`, `shp`, or `pbf`. |
+| `format` | For `table` | `csv`, `json`, `jsonl`, `geojson`, `parquet`, `gpkg`, `shp`, or `pbf`. A `jsonl` file holds one JSON object per line ([JSON Lines tables](#json-lines-tables)). |
 | `datasets` | | How it adds: `one` dataset of every matched file (the default), `per:<field>` for one per value of a path field, listed as one row each, or `per-file`, for tables and rasters only. |
-| `extensions` | | The file extensions it takes. A collection's follow its kind: images and frames take jpg, jpeg, png, webp, gif, bmp, tif and tiff; videos mp4, mov, m4v, webm, mkv and avi; media both; audio wav, flac, mp3, ogg, opus, m4a, aiff and aif; rasters tif, tiff and jp2. A table's follow its format: geojson and json for `geojson`, the format's own for the others. |
-| `options` | | For a CSV table: `delimiter` and `header`. A table read with them lands as Parquet. |
+| `extensions` | | The file extensions it takes. A collection's follow its kind: images and frames take jpg, jpeg, png, webp, gif, bmp, tif and tiff; videos mp4, mov, m4v, webm, mkv and avi; media both; audio wav, flac, mp3, ogg, opus, m4a, aiff and aif; rasters tif, tiff and jp2; files every file its path matches. A table's follow its format: geojson and json for `geojson`, jsonl and ndjson for `jsonl`, the format's own for the others. |
+| `options` | | For a CSV table: `delimiter` and `header`; a table read with them lands as Parquet. For a JSON Lines table: `parse`, `columns` and `unpack` ([JSON Lines tables](#json-lines-tables)). |
 | `fps` | | For `frames`: frames per second. A frame's `t_s` is its number over it. |
-| `time` | | For a collection: the date or time path field that is each file's time, as `recorded_at` for audio and `taken_at` for the other kinds. |
+| `time` | | For a collection: the path field that is each file's time, as `recorded_at` for audio and `taken_at` for the other kinds. A date or time field is read as written, or with `{"capture": "<field>", "timezone": "America/Chicago"}` as a local time in that IANA time zone, converted to UTC. A whole number is a time as `{"capture": "<field>", "unit": "ns"}`: seconds (`s`), milliseconds (`ms`) or nanoseconds (`ns`) since 1970, in UTC. The field's own column keeps what the path says. |
 | `metadata` | | For a collection: a CSV, Parquet or JSON table of up to 256 MiB, in the same source, joined onto its rows, as `{"path": ..., "on": ...}`, where `on` is `file_name`, `frame`, or a path field. Its `lat` and `lon` (or `latitude` and `longitude`) columns give a file its position. |
 
 **Path templates.** A template matches each file's path:
@@ -420,11 +424,24 @@ A storage source's `resources` say how its files are organized. `provider` says 
 | `{name}` | Part of one folder or file name, as text. |
 | `{name:int}` | A whole number. |
 | `{name:date}` | A date written `2024-05-01`. |
-| `{name:%Y%m%d_%H%M%S}` | A time, in the format it is written in. |
+| `{name:%Y%m%d_%H%M%S}` | A time, in the format it is written in, with `%Y`, `%y`, `%m`, `%d`, `%j`, `%b`, `%H`, `%M`, `%S`, and `%f` for a fraction of a second of 1 to 6 digits (`016` is 16 milliseconds). |
 | `*` | Anything within one folder or file name. |
 | `**` | Any number of folders. |
 
 Each named part becomes a column of the dataset and a field the **Add** dialog can narrow by. For `frames`, `{sequence}` and `{frame:int}` name the sequence and the frame number; without `{sequence}`, a frame's folder is its sequence. Some names are taken by a collection's own columns (`path`, `name`, `kind`, `bytes`, and the like). A manifest that uses one is not listed, and the source's page gives the reason.
+
+**A time in a path.** Snapshots named by when they were taken, in nanoseconds since 1970, and walks in folders named by their start in Chicago:
+
+```jsonc
+{ "id": "snapshots", "name": "Crossing snapshots", "kind": "images",
+  "path": "{crossing}/images/{month:%Y_%m}/{ns:int}-snapshot.jpg",
+  "time": { "capture": "ns", "unit": "ns" } },
+{ "id": "walks", "name": "Walk videos", "kind": "videos",
+  "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/video.mp4",
+  "time": { "capture": "began", "timezone": "America/Chicago" } }
+```
+
+`W042/images/2025_07/1752710404341667481-snapshot.jpg` gets the `taken_at` 2025-07-17 00:00:04.341667481, and the walk in `2026-10-26-16-03-17-016` 2026-10-26 21:03:17.016, both in UTC. `ns` stays a number, and `began` the local time. A local time the clocks show twice, when they go back, is read as the first of the two; one they skip, when they go forward, is read with the offset from before the change.
 
 The example storage source's manifest, with one resource per use case (abridged):
 
@@ -470,6 +487,76 @@ Curio reads public S3 buckets, and Hugging Face dataset repositories, with your 
 
 [`discovery/ICONS.md`](../discovery/ICONS.md) records where each shipped icon came from. Replacing or removing one is a PNG and a manifest line.
 
+### JSON Lines tables
+
+A `table` of `"format": "jsonl"` reads files that hold one JSON object per line. Each line is a row, and its fields are the columns, unless the resource's `options` say otherwise:
+
+| Option | What it declares |
+|---|---|
+| `parse` | Fields of a line that hold JSON as text, such as `"value": "{\"a\": 1}"`. Each is read as the JSON it holds, before anything else. |
+| `columns` | The columns a line keeps: an object of names, each with the path to its value, or with `{"path": ..., "type": ...}` to give the column a type. |
+| `unpack` | Lists or objects in a line whose items are the rows, outermost first. Each level has a `path`, from the level above, or from the line for the first level. It may name a `key`, a column that takes each item's name in an object or its position in a list, and `columns`, what a row keeps of each item. |
+
+A path is keys joined by dots. A number picks an item of a list, as `bbox.0` does. A key may itself hold dots, as `meta.vsn` does: the longest key that is there is taken first. The empty path, `""`, is the item itself.
+
+With `unpack`, a row holds only the columns the line and the levels name. An object or a list lands as its JSON text, and `NaN`, `Infinity` and `-Infinity` land as null. A column whose values are of several kinds, such as numbers and text, lands as text. A column name may not start with `__curio_`, and no two columns may share a name, whatever their case.
+
+A column in a line's or a level's `columns` may take a `type`:
+
+| `type` | Reads | Lands as |
+|---|---|---|
+| `timestamp` | ISO 8601 text with its offset: `2025-07-17T03:00:16.492384585+00:00`, `...Z`, `...-05:00` | A UTC time, to the nanosecond, with no time zone attached |
+| `int` | A whole number, or text holding one | A 64-bit whole number |
+| `float` | A number, or text holding one | A number |
+| `bool` | `true` or `false`, or that text | True or false |
+| `string` | Any value | Text; a number or an object as its JSON text |
+
+A value its type cannot read, such as a time with no offset or `1.5` for an `int`, is left empty; a missing or null value is empty in any column.
+
+A line is skipped when it is not a JSON object, when a `parse` field holds text that is not JSON, when a path `unpack` names holds no list or object in an item it reaches, or when the line is longer than 16 MiB. An empty list or object gives no row and skips nothing. When lines are skipped or values are left empty, the message when the add finishes and the dataset's description say how many and why, by reason and, for values, by column, with the first line each was met on. When no line gives a row, the add fails and says why.
+
+A detection log, one row per detection:
+
+```jsonc
+{ "id": "detections", "name": "Detections", "kind": "table", "format": "jsonl",
+  "path": "{crossing}/data/*_{year:int}_{month:int}.jsonl",
+  "options": {
+    // "value" holds the detections as JSON text.
+    "parse": ["value"],
+    "columns": { "timestamp": { "path": "timestamp", "type": "timestamp" },
+                 "image_timestamp_ns": "value.image_timestamp_ns" },
+    "unpack": [
+      // One item per model, named by its key.
+      { "path": "value.models_results", "key": "model",
+        "columns": { "inference_time_seconds": "inference_time_seconds" } },
+      // One row per detection of that model.
+      { "path": "detections",
+        "columns": { "class": "class", "confidence": "confidence",
+                     "x0": "bbox.0", "y0": "bbox.1", "x1": "bbox.2", "y1": "bbox.3" } }
+    ]
+  } }
+```
+
+This line of `W042/data/W042_2025_07.jsonl`, shortened and broken over lines here:
+
+```text
+{"timestamp":"2025-07-17T03:00:25.101747549+00:00","name":"object.detections.all",
+ "value":"{\"image_timestamp_ns\": 1752721225101747549, \"models_results\": {
+   \"YOLOv5n\": {\"detections\": [{\"class\": \"person\", \"confidence\": 0.459, \"bbox\": [2176.9, 680.6, 2219.9, 809.8]}], \"inference_time_seconds\": 1.847, ...},
+   \"YOLOv8n\": {\"detections\": [{\"class\": \"car\", \"confidence\": 0.313, \"bbox\": [1076.1, 605.0, 1140.4, 638.8]}], \"inference_time_seconds\": 1.897, ...},
+   \"YOLOv10n\": {\"detections\": [], \"inference_time_seconds\": 1.902, ...}}}",
+ "meta.vsn":"W042","meta.filename":NaN}
+```
+
+gives two rows, numbers rounded here, each followed by the path's `crossing`, `year` and `month` and by `source_file`. `timestamp` is a UTC time:
+
+| timestamp | image_timestamp_ns | model | inference_time_seconds | class | confidence | x0 | y0 | x1 | y1 |
+|---|---|---|---|---|---|---|---|---|---|
+| 2025-07-17 03:00:25.101747549 | 1752721225101747549 | YOLOv5n | 1.847 | person | 0.459 | 2176.9 | 680.6 | 2219.9 | 809.8 |
+| 2025-07-17 03:00:25.101747549 | 1752721225101747549 | YOLOv8n | 1.897 | car | 0.313 | 1076.1 | 605.0 | 1140.4 | 638.8 |
+
+YOLOv10n saw nothing in that image, so it gives no row.
+
 ---
 
 ## Operator notes
@@ -480,6 +567,7 @@ Curio reads public S3 buckets, and Hugging Face dataset repositories, with your 
 | `CURIO_DISCOVERY_MAX_DOWNLOAD_MB` | `--discovery-max-download-mb` | The largest file a download or a bucket add takes, in megabytes. Default 1024. A source's manifest may set a lower limit for itself. |
 | `CURIO_DEFAULT_SOCRATA_APP_TOKEN` | none | A Socrata app token every account inherits until it saves its own, for the City of Chicago Data Portal. A source whose manifest sets `auth.operatorDefault` reads its key's default from `CURIO_DEFAULT_` and its `auth.secretId` in capitals, with every other character as `_`, never from one of Curio's own settings such as `CURIO_DEFAULT_LLM_ENDPOINT_FILE`. |
 | `CURIO_MEDIA_CACHE_MAX_GB` | `--media-cache-max-gb` | How much each account may hold in cached bucket files and downloaded street-level images, in gigabytes. Default 20. |
+| `CURIO_MEDIA_CACHE_MAX_FILE_GB` | `--media-cache-max-file-gb` | The largest file **Cache files** copies from a bucket, in gigabytes. Default 4. |
 
 **Sources ship with the deployment.** To change or remove a shipped one, edit the sources directory and restart. The Docker image bakes `discovery/` in; see [DEPLOYMENT.md § Configure the stack](DEPLOYMENT.md#1-configure-the-stack).
 

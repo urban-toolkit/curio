@@ -135,8 +135,10 @@ def _deployment(sandbox) -> dict:
     """
     from utk_curio import __version__
     from utk_curio.backend import config
+    from utk_curio.backend.app.discovery import service as discovery_service
     from utk_curio.backend.app.packages.routes import common as packages_routes_common
 
+    bucket_mounts = discovery_service.bucket_mounts_status()
     return {
         "version": __version__,
         "isolation": (sandbox or {}).get("isolation") or "unknown",
@@ -154,6 +156,11 @@ def _deployment(sandbox) -> dict:
         # Whether the operator named a search provider (--agent-search-url);
         # web.search reads the same variable and has a keyless default.
         "searchToolConfigured": bool(os.environ.get("CURIO_SEARCH_URL", "").strip()),
+        # The bucket mount service's self-test (--bucket-mounts-dir): none,
+        # pending, passed or unavailable, and why it is unavailable, in words
+        # from a closed list. What went wrong, with its paths, is in the errors.
+        "bucketMounts": bucket_mounts["state"],
+        "bucketMountsProblem": bucket_mounts["problem"],
         "env": config.CURIO_ENV,
         "platform": platform.platform(),
         "pythonVersion": platform.python_version(),

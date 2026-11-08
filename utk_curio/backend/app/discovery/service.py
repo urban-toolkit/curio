@@ -13,6 +13,7 @@ from typing import Any
 from flask import current_app
 
 from utk_curio.backend.app.discovery.application.acquire import DiscoveryAcquire, _Cancelled
+from utk_curio.backend.app.discovery.application import bucket_mount_check
 from utk_curio.backend.app.discovery.application.browse import DiscoveryBrowse
 from utk_curio.backend.app.discovery.application import scan as scanning
 from utk_curio.backend.app.discovery.application.model_acquire import ModelAcquire
@@ -75,6 +76,20 @@ def declared_keys() -> dict[str, str]:
     """Every key a source on this Curio sends, by the secret id its manifests
     name, with what API Settings calls it. An account saves keys only for these."""
     return credentials.declared_keys(DiscoveryCatalog().manifests())
+
+
+def start_bucket_mount_check() -> bool:
+    """The bucket mount service's self-test, once, on a thread of its own,
+    when ``--bucket-mounts-dir`` and ``--bucket-mount-socket`` name a service
+    (``application/bucket_mount_check.py``). False when they name none."""
+    return bucket_mount_check.start()
+
+
+def bucket_mounts_status() -> dict:
+    """/monitor's Deployment line for the bucket mount service: ``state``
+    (``none``, ``pending``, ``passed`` or ``unavailable``) and ``problem``, the
+    words of why it is unavailable."""
+    return bucket_mount_check.status()
 
 
 def _renamed_source_dir(source_dir: str) -> str:
@@ -445,7 +460,7 @@ class DiscoveryService:
             ],
             "total": len(group.files),
             "offset": offset,
-            "previews": group.spec.is_collection,
+            "previews": group.spec.has_previews,
         }
 
     def _storage_detail(self, manifest: DiscoverySourceManifest, resource_id: str) -> DiscoveryResourceDetail:
@@ -871,6 +886,7 @@ class DiscoveryService:
         import pandas as pd
 
         from utk_curio.backend.app.discovery.application import cache_collection
+        from utk_curio.sandbox.util.collections import DRAWN
 
         item, manifest = self.collection(dataset_id)
         block = item.get("collection") or {}
@@ -880,7 +896,10 @@ class DiscoveryService:
             cached, cached_bytes = total, int(block.get("totalBytes") or 0)
         else:
             cached, cached_bytes = cache_collection.cached_count(self.collection_store(item), dataset_id)
-        rows = pd.read_parquet(item["path"], columns=["file_id", "name", "kind"]).head(samples)
+        rows = pd.read_parquet(item["path"], columns=["file_id", "name", "kind"])
+        # The files the strip draws: those with a preview, so a ``files``
+        # resource's collection shows none.
+        rows = rows[rows["kind"].isin(DRAWN)].head(samples)
         # This account's cache of it, while one runs: a page opened or
         # reloaded meanwhile follows that job rather than offering another.
         owner = cache_collection.running_cache(self.user_key, dataset_id)

@@ -4,3 +4,5 @@
 # actually sent, so git must not rewrite its line endings: the point of the
 # corpus is that it is byte-for-byte what the parser will meet in production.
 utk_curio/backend/tests/test_discovery/fixtures/** -text
+# Lines cut from a source's files, kept as they were (SAGE-IDOT's end in CRLF).
+utk_curio/backend/tests/test_discovery/data/** -text

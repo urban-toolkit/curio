@@ -174,6 +174,13 @@ jobs:
           if [ -s .secrets/llm-endpoint ] && grep -q -e '"--llm-endpoint-file"' utk_curio/main.py; then
             llm_args=', "--llm-endpoint-file", "/run/secrets/curio_llm_endpoint"'
           fi
+          # A bucket table's file of up to 2 GiB, when this release's launcher
+          # has the flag: a month of SAGE-IDOT's detections on data.urbantk.org
+          # is a JSON Lines file of up to 1.7 GB.
+          download_args=""
+          if grep -q -e '"--discovery-max-download-mb"' utk_curio/main.py; then
+            download_args=', "--discovery-max-download-mb", "2048"'
+          fi
           # The weights model packages fetch, when this release reads them:
           # one host folder both stacks mount read-only, which
           # scripts/fetch_model_weights.py --into fills (DEPLOYMENT.md).
@@ -181,6 +188,12 @@ jobs:
           if grep -q -e '"--model-weights-dir"' utk_curio/main.py; then
             mkdir -p /srv/curio-model-weights 2>/dev/null || echo "::warning::could not make /srv/curio-model-weights"
             weights_args=', "--model-weights-dir", "/model-weights"'
+          fi
+          # Cache files takes a file of up to 8 GiB, when this release's
+          # launcher has the flag: SideSeeing's longest walks are 7 GiB videos.
+          cache_args=""
+          if grep -q -e '"--media-cache-max-file-gb"' utk_curio/main.py; then
+            cache_args=', "--media-cache-max-file-gb", "8"'
           fi
           # This stack's container name, host ports and curio.py arguments
           # (docker-compose.deploy.yml). The backend is /api on whichever host
@@ -204,7 +217,7 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s]\n' "$llm_args" "$weights_args" >> docker-compose.site.yml
+          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" >> docker-compose.site.yml
           if [ -n "$weights_args" ]; then
             printf '    volumes: ["/srv/curio-model-weights:/model-weights:ro"]\n' >> docker-compose.site.yml
           fi
@@ -417,11 +430,23 @@ jobs:
             if [ -s .secrets/llm-endpoint ] && grep -q -e '"--llm-endpoint-file"' utk_curio/main.py; then
               llm_args=', "--llm-endpoint-file", "/run/secrets/curio_llm_endpoint"'
             fi
+            # The download limit curio-dev takes, for a release whose launcher
+            # has the flag.
+            download_args=""
+            if grep -q -e '"--discovery-max-download-mb"' utk_curio/main.py; then
+              download_args=', "--discovery-max-download-mb", "2048"'
+            fi
             # The weights model packages fetch, as curio-dev mounts them.
             weights_args=""
             if grep -q -e '"--model-weights-dir"' utk_curio/main.py; then
               mkdir -p /srv/curio-model-weights 2>/dev/null || echo "::warning::could not make /srv/curio-model-weights"
               weights_args=', "--model-weights-dir", "/model-weights"'
+            fi
+            # The file size Cache files takes, as curio-dev's, for a release
+            # whose launcher has the flag.
+            cache_args=""
+            if grep -q -e '"--media-cache-max-file-gb"' utk_curio/main.py; then
+              cache_args=', "--media-cache-max-file-gb", "8"'
             fi
             cat > docker-compose.site.yml <<'SITE'
           services:
@@ -431,7 +456,7 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s]\n' "$llm_args" "$weights_args" >> docker-compose.site.yml
+            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" >> docker-compose.site.yml
             if [ -n "$weights_args" ]; then
               printf '    volumes: ["/srv/curio-model-weights:/model-weights:ro"]\n' >> docker-compose.site.yml
             fi

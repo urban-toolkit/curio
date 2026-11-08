@@ -423,14 +423,16 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     setConfirmAction({
       title: `Remove ${pkg.name}?`,
       // The second paragraph states the condition rather than guessing the
-      // outcome: `prune_unreferenced_packages` deletes the store copy, drops it
-      // from defaults and pip-uninstalls its libraries from the SHARED
-      // interpreter, but only when no other dataflow's lockfile still names it.
+      // outcome: `prune_unreferenced_packages` deletes the store copy and drops
+      // it from defaults only when no other dataflow's lockfile still names it,
+      // and uninstalls only libraries Curio installed for it that nothing else
+      // asks for, from the account's own environment.
       body:
         `Remove ${pkg.name} (${pkg.dirName}) from this project?` +
-        `\n\nIf no other dataflow uses it, it is also deleted from your account ` +
-        `and its Python libraries are uninstalled from the shared environment, ` +
-        `which affects every dataflow and everyone using this Curio.` +
+        `\n\nIf no other dataflow uses it, it is also deleted from your account, ` +
+        `and Python libraries Curio installed for it alone may be uninstalled ` +
+        `from your environment. Libraries that were already installed, or that ` +
+        `another package or your Installed libraries list uses, stay.` +
         codeWarning,
       confirmLabel: "Remove",
       run: () => performUninstall(pkg),

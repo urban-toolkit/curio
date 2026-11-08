@@ -1188,9 +1188,11 @@ def test_a_preset_testing_env_var_still_counts(monkeypatch):
 # flag is passed, so a value already in the environment is still read.
 
 #: Every variable these flags write: #615's table but the guest configuration's,
-#: CURIO_PACKAGES_ROOT, CURIO_PROXY_HOPS and CURIO_MODEL_WEIGHTS_DIR.
+#: CURIO_PACKAGES_ROOT, CURIO_PROXY_HOPS, CURIO_MODEL_WEIGHTS_DIR,
+#: CURIO_MEDIA_CACHE_MAX_FILE_GB and the bucket mount service's two.
 OPERATOR_KEYS = (
     "CURIO_MEDIA_CACHE_MAX_GB",
+    "CURIO_MEDIA_CACHE_MAX_FILE_GB",
     "CURIO_DB_POOL_SIZE",
     "CURIO_DB_POOL_OVERFLOW",
     "CURIO_DB_POOL_TIMEOUT",
@@ -1207,11 +1209,14 @@ OPERATOR_KEYS = (
     "LOG_TO_STDOUT",
     "CURIO_PACKAGES_ROOT",
     "CURIO_MODEL_WEIGHTS_DIR",
+    "CURIO_BUCKET_MOUNTS_DIR",
+    "CURIO_BUCKET_MOUNT_SOCKET",
 )
 
 #: The flags that write them.
 OPERATOR_FLAG_NAMES = (
     "--media-cache-max-gb",
+    "--media-cache-max-file-gb",
     "--db-pool-size",
     "--db-pool-overflow",
     "--db-pool-timeout",
@@ -1228,6 +1233,8 @@ OPERATOR_FLAG_NAMES = (
     "--log-to-stdout",
     "--packages-root",
     "--model-weights-dir",
+    "--bucket-mounts-dir",
+    "--bucket-mount-socket",
 )
 
 
@@ -1277,6 +1284,12 @@ def _media_cache_bytes():
     return cache_collection.cap_bytes()
 
 
+def _media_cache_file_bytes():
+    from utk_curio.backend.app.discovery.application import cache_collection
+
+    return cache_collection.file_cap_bytes()
+
+
 def _package_workers():
     from utk_curio.backend.app.packages.infrastructure import backend_runtime
 
@@ -1304,6 +1317,8 @@ _POOL = "m.Config.SQLALCHEMY_ENGINE_OPTIONS"
 OPERATOR_FLAGS = [
     pytest.param("media_cache_max_gb", 2.5, "CURIO_MEDIA_CACHE_MAX_GB", "2.5",
                  _media_cache_bytes, int(2.5 * 1024**3), id="media-cache-max-gb"),
+    pytest.param("media_cache_max_file_gb", 8, "CURIO_MEDIA_CACHE_MAX_FILE_GB", "8",
+                 _media_cache_file_bytes, 8 * 1024**3, id="media-cache-max-file-gb"),
     pytest.param("db_pool_size", 16, "CURIO_DB_POOL_SIZE", "16",
                  _backend(f"{_POOL}['pool_size']"), 16, id="db-pool-size"),
     pytest.param("db_pool_overflow", 0, "CURIO_DB_POOL_OVERFLOW", "0",
@@ -1387,6 +1402,64 @@ def test_the_model_weights_dir_flag_is_resolved_and_read_by_the_backend(tmp_path
     set_environment_variables(**BASE, model_weights_dir=str(tmp_path / "a" / ".." / "weights"))
     assert Path(os.environ["CURIO_MODEL_WEIGHTS_DIR"]) == (tmp_path / "weights").resolve()
     assert _model_weights_dir() == (tmp_path / "weights").resolve()
+
+
+def _bucket_mounts():
+    from utk_curio.backend.app.discovery.infrastructure import bucket_mounts
+
+    return bucket_mounts.configured()
+
+
+def test_the_bucket_mount_flags_are_resolved_and_read_by_the_backend(tmp_path):
+    """Where the bucket mount service's mounts appear, and its control socket
+    (``--bucket-mounts-dir``, ``--bucket-mount-socket``); without the flags,
+    no service."""
+    (tmp_path / "mounts").mkdir()
+    (tmp_path / "control").mkdir()
+
+    set_environment_variables(**BASE)
+    assert "CURIO_BUCKET_MOUNTS_DIR" not in os.environ and _bucket_mounts() is None
+
+    set_environment_variables(
+        **BASE,
+        bucket_mounts_dir=str(tmp_path / "a" / ".." / "mounts"),
+        bucket_mount_socket=str(tmp_path / "control" / "rc.sock"),
+    )
+    mounts, socket_file = (tmp_path / "mounts").resolve(), (tmp_path / "control").resolve() / "rc.sock"
+    assert Path(os.environ["CURIO_BUCKET_MOUNTS_DIR"]) == mounts
+    assert Path(os.environ["CURIO_BUCKET_MOUNT_SOCKET"]) == socket_file
+    assert _bucket_mounts() == (mounts, socket_file)
+
+
+@pytest.mark.parametrize("given, missing", [
+    ("bucket_mounts_dir", "--bucket-mount-socket"),
+    ("bucket_mount_socket", "--bucket-mounts-dir"),
+], ids=["dir-alone", "socket-alone"])
+def test_one_bucket_mount_flag_alone_is_refused(tmp_path, given, missing):
+    with pytest.raises(SystemExit) as refused:
+        set_environment_variables(**BASE, **{given: str(tmp_path / "x")})
+
+    message = str(refused.value)
+    assert message.startswith("Refusing to start: ")
+    assert f"needs {missing} too" in message
+    assert "CURIO_BUCKET_MOUNTS_DIR" not in os.environ
+    assert "CURIO_BUCKET_MOUNT_SOCKET" not in os.environ
+
+
+def test_under_deploy_the_socket_folder_is_made_its_owners_alone(tmp_path, linux_host, has_exec_account):
+    """Only root may reach the service's socket: --deploy makes its folder
+    0700, as the service does; a local start leaves it as it is."""
+    (tmp_path / "mounts").mkdir()
+    control = tmp_path / "control"
+    control.mkdir()
+    control.chmod(0o755)
+    flags = dict(bucket_mounts_dir=str(tmp_path / "mounts"), bucket_mount_socket=str(control / "rc.sock"))
+
+    set_environment_variables(**BASE, **flags)
+    assert control.stat().st_mode & 0o777 == 0o755
+
+    set_environment_variables(**BASE, deploy=True, **flags)
+    assert control.stat().st_mode & 0o777 == 0o700
 
 
 def test_the_state_dir_flag_is_resolved_and_read_by_the_backend(tmp_path):

@@ -1,9 +1,10 @@
 """Drift guards for the portable ``curio_data_path`` contract.
 
-Three independent copies of the same dataset-id grammar decide whether a
-generated loader snippet is safe, and two independent copies of the same cap
-bound how many ids one execution may resolve. They sit in three languages and
-two processes, so nothing but a test keeps them equal:
+Three places decide on the same dataset-id grammar, whether a generated
+loader snippet is safe, and two independent copies of the same cap bound how
+many ids one execution may resolve. The grammar is one contract,
+``src/contracts/catalogCode.json``, which each place reads; the caps sit in two
+processes, so nothing but a test keeps them equal:
 
 * the frontend generator decides whether to emit an id call at all;
 * the backend generator makes the same decision server-side;
@@ -15,7 +16,8 @@ generators refuse to emit become resolvable; tighten it alone and legitimately
 generated snippets stop resolving and fail at runtime instead. Raise one cap
 alone and the extra ids are silently dropped by whichever side kept the lower
 number. This module follows the precedent in ``test_sink_node_type_parity.py``
-and regexes the TS source so either side failing to move fails CI.
+and regexes the TS source, the contract's id put in where it reads it, so
+either side failing to move fails CI.
 """
 from __future__ import annotations
 
@@ -27,6 +29,7 @@ from utk_curio.backend.app.datasets.domain.code_refs import (
     MAX_DATASET_IDS as MAX_EXEC_DATASET_IDS,
 )
 from utk_curio.backend.app.datasets.domain.catalog_item import _SAFE_DATASET_ID_RE
+from utk_curio.common import shared_constants
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SNIPPETS_TS = (
@@ -38,12 +41,35 @@ SANDBOX_API = REPO_ROOT / "utk_curio/sandbox/app/api.py"
 # The shared grammar, written once here. Every copy below must reduce to it.
 ID_BODY = "[A-Za-z0-9][A-Za-z0-9._@-]{0,199}"
 
+#: Where the TS source reads the contract's id.
+CONTRACT_ID_IN_TS = "${catalogCode.itemId}"
+
+
+def _snippets_source() -> str:
+    """The frontend generator's source, which must read the shared contract."""
+    src = SNIPPETS_TS.read_text(encoding="utf-8")
+    assert 'import catalogCode from "../../contracts/catalogCode.json";' in src, (
+        f"{SNIPPETS_TS} no longer reads contracts/catalogCode.json"
+    )
+    return src
+
+
+def _with_the_contracts_id(pattern: str) -> str:
+    assert CONTRACT_ID_IN_TS in pattern, pattern
+    return pattern.replace(CONTRACT_ID_IN_TS, shared_constants.read("catalogCode")["itemId"])
+
 
 def _frontend_id_regex() -> str:
-    src = SNIPPETS_TS.read_text(encoding="utf-8")
-    match = re.search(r"SAFE_DATASET_ID_RE\s*=\s*/\^(.+?)\$/", src)
+    match = re.search(r"SAFE_DATASET_ID_RE\s*=\s*new RegExp\(`\^(.+?)\$`\)", _snippets_source())
     assert match, f"could not find SAFE_DATASET_ID_RE in {SNIPPETS_TS}"
-    return match.group(1)
+    return _with_the_contracts_id(match.group(1))
+
+
+def _frontend_scanner() -> str:
+    """The pattern ``datasetIdsInCode`` scans with, its flags ``g``."""
+    match = re.search(r'new RegExp\(\s*String\.raw`([^`]*)`,\s*"g",?\s*\)', _snippets_source())
+    assert match, f"could not find the scanner's RegExp in {SNIPPETS_TS}"
+    return _with_the_contracts_id(match.group(1))
 
 
 def test_backend_generator_and_frontend_generator_share_the_id_grammar():
@@ -107,8 +133,9 @@ def test_the_scanner_finds_an_id_followed_by_options():
         assert [m.group(3) for m in catalog_calls.finditer(code)] == ["data.scout.depth"], code
     # The id must be the whole first argument, not the start of an expression.
     assert not _DATASET_PATH_CALL_RE.search('curio_load_data("data.scout" + suffix)')
-    src = SNIPPETS_TS.read_text(encoding="utf-8")
-    assert r"\1\s*[,)]/g" in src, "the frontend scanner must end the id the way DATASET_PATH_CALL_RE does"
+    assert _frontend_scanner() == _DATASET_PATH_CALL_RE.pattern, (
+        "the frontend scanner must find and end the id the way DATASET_PATH_CALL_RE does"
+    )
 
 
 def test_sandbox_cap_matches_the_backend_cap():

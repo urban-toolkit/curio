@@ -20,6 +20,8 @@ PACKAGES = REPO / "packages"
 DDRNET = "model.curio.ddrnet23-slim"
 DEEP_UMBRA = "model.scout.deep-umbra"
 WEATHER_GNN = "model.scout.weather-gnn"
+#: The model whose weights its operator fetches.
+SAM3 = "model.curio.sam3"
 #: A node package that ships a module of its own.
 RASTERIZATION = "curio.rasterization"
 
@@ -308,14 +310,14 @@ def _imported_model_package(root: Path) -> Path:
 
 class TestModelPackagesInTheModelCatalog:
     """The model packages, through the packages listings filtered to kind
-    ``model``: the catalog's (DDRNet23-Slim, Deep Umbra and the weather GNN),
-    and those imported or published into a person's store. Each shows once,
-    with its weights' fields, its modules and its weights' license text."""
+    ``model``: the catalog's (DDRNet23-Slim, Deep Umbra, the weather GNN and
+    SAM 3), and those imported or published into a person's store. Each shows
+    once, with its weights' fields, its modules and its weights' license text."""
 
     def test_the_listing_shows_each_model_package_once_with_its_weights_fields(self, client, auth, shipped):
         rows = _rows(client, auth, "/api/packages/catalog?kind=model")
-        # One row a model: the three the palette counts.
-        assert sorted(rows) == sorted(f"{model_id}@1" for model_id in (DDRNET, DEEP_UMBRA, WEATHER_GNN))
+        # One row a model: the four the palette counts.
+        assert sorted(rows) == sorted(f"{model_id}@1" for model_id in (DDRNET, DEEP_UMBRA, WEATHER_GNN, SAM3))
         for model_id, model_type, module in (
             (DEEP_UMBRA, "image-to-image", "deep_umbra"), (WEATHER_GNN, "node-regression", "weather_routing"),
         ):
@@ -346,6 +348,23 @@ class TestModelPackagesInTheModelCatalog:
         assert sorted(ddrnet["dependencies"]["python"]) == ["onnxruntime"]
         assert ddrnet["modules"] == [] and block["downloadsOnFirstUse"] is False
         assert [template["label"] for template in ddrnet["templates"]] == ["Image Segmentation"]
+        # SAM 3: its weights are its operator's to fetch, so the catalog lists
+        # where they come from, and whether this clone has them yet.
+        sam3 = rows[f"{SAM3}@1"]
+        block = sam3["model"]
+        assert (sam3["name"], sam3["license"], block["runtime"], block["type"]) == (
+            "SAM 3 (objects found by name)", "MIT", "transformers", "concept-segmentation")
+        assert (block["license"], block["licenseFile"], block["publisher"], block["homepage"]) == (
+            "SAM License", "LICENSE", "Meta (facebook/sam3 on Hugging Face)", "https://huggingface.co/facebook/sam3")
+        assert (block["fetch"]["huggingface"], block["fetch"]["revision"]) == (
+            "facebook/sam3", "3c879f39826c281e95690f02c7821c4de09afae7")
+        assert (len(block["labels"]), block["sizeBytes"], block["downloadsOnFirstUse"]) == (35, 3_444_996_474, False)
+        checkpoint = PACKAGES / f"{SAM3}@1" / block["entry"]
+        fetched = all((checkpoint / item["path"]).is_file() for item in block["fetch"]["files"])
+        assert block["weightsNotFetched"] is not fetched
+        assert sam3["modules"] == ["sam3_tracking"]
+        assert [template["label"] for template in sam3["templates"]] == ["Track Objects"]
+        assert {"transformers", "safetensors"} <= set(sam3["dependencies"]["python"])
         from utk_curio.backend.app.packages.service import catalog_root
 
         text = json.dumps(rows)

@@ -312,6 +312,14 @@ def main():
         ),
     )
     parser.add_argument(
+        "--media-cache-max-file-gb", type=float, default=None, metavar="GB",
+        help=(
+            "The largest file Cache files copies from a bucket, in gigabytes "
+            "(sets CURIO_MEDIA_CACHE_MAX_FILE_GB, default 4). A collection "
+            "holding a larger file is refused before any file is copied."
+        ),
+    )
+    parser.add_argument(
         "--packages-root", default=None, metavar="PATH",
         help=(
             "Directory the shared Node Catalog is read from and published to "
@@ -328,6 +336,23 @@ def main():
             "scripts/fetch_model_weights.py --into PATH writes them (sets "
             "CURIO_MODEL_WEIGHTS_DIR). Without it, each package's own folder. "
             "Every account must be able to read it: isolated nodes read it."
+        ),
+    )
+    parser.add_argument(
+        "--bucket-mounts-dir", default=None, metavar="PATH",
+        help=(
+            "Directory where the bucket mount service's mounts appear in this "
+            "container, /bucket-mounts with docker-compose.bucket-mounts.yml "
+            "(sets CURIO_BUCKET_MOUNTS_DIR). Give --bucket-mount-socket with it."
+        ),
+    )
+    parser.add_argument(
+        "--bucket-mount-socket", default=None, metavar="PATH",
+        help=(
+            "The bucket mount service's control socket, "
+            "/run/curio-bucket-mounts/rc.sock with docker-compose.bucket-mounts.yml "
+            "(sets CURIO_BUCKET_MOUNT_SOCKET). Give --bucket-mounts-dir with it. "
+            "Under --deploy, its folder is made readable by its owner alone."
         ),
     )
     parser.add_argument(
@@ -482,6 +507,8 @@ def main():
         discovery_root=args.discovery_root,
         packages_root=args.packages_root,
         model_weights_dir=args.model_weights_dir,
+        bucket_mounts_dir=args.bucket_mounts_dir,
+        bucket_mount_socket=args.bucket_mount_socket,
         save_node_outputs=args.save_node_outputs,
         solve_max_attempts=args.solve_max_attempts,
         solve_node_budget=args.solve_node_budget,
@@ -491,6 +518,7 @@ def main():
         validation_node_limit=args.validation_node_limit,
         discovery_max_download_mb=args.discovery_max_download_mb,
         media_cache_max_gb=args.media_cache_max_gb,
+        media_cache_max_file_gb=args.media_cache_max_file_gb,
         db_pool_size=args.db_pool_size,
         db_pool_overflow=args.db_pool_overflow,
         db_pool_timeout=args.db_pool_timeout,

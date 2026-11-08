@@ -10,7 +10,7 @@ Every tile must share its CRS, resolution, band count, data type and no-data
 value, and be north-up. The node names the first difference it finds. Where
 tiles overlap, a tile's no-data pixels leave the tile below them showing.
 """
-# Curio's raster helpers lay rasters on one grid side by side.
-from utk_curio.sandbox.util.rasters import mosaic_collection
+
+from scout_rasters.mosaic import mosaic_collection
 
 return mosaic_collection(input_0, curio_output_file)

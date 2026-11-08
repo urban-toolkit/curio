@@ -207,7 +207,7 @@ export interface DatasetDiscoverySource {
 }
 
 /** A collection's kind. Mirrors the Discovery Catalog's collection `RESOURCE_KINDS`. */
-export type DatasetCollectionKind = "rasters" | "frames" | "images" | "videos" | "media" | "audio";
+export type DatasetCollectionKind = "rasters" | "frames" | "images" | "videos" | "media" | "audio" | "files";
 
 /**
  * The `collection` block of a `collection` dataset: which source and
@@ -785,4 +785,5 @@ export const DATASET_COLLECTION_KIND_LABEL: Record<DatasetCollectionKind, string
   videos: "Videos",
   media: "Photos and videos",
   audio: "Audio",
+  files: "Files",
 };

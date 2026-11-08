@@ -22,12 +22,14 @@ can narrow what may be ingested but never widen it.
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from utk_curio.backend.app.discovery.domain import json_rows
 from utk_curio.backend.app.discovery.domain import parameters as P
 from utk_curio.backend.app.discovery.domain.limits import max_download_bytes
 from utk_curio.backend.app.discovery.domain.source_id import SourceId
@@ -174,12 +176,14 @@ DISCOVERY_ACQUIRABLE_FORMATS = ("csv", "geojson", "json", "parquet", "geotiff")
 #: What a storage resource can be. ``table`` files are copied into the Data
 #: Catalog as the other sources' downloads are; every other kind becomes one
 #: ``collection`` dataset, an index with one row per file, referenced in place.
-RESOURCE_KINDS = ("table", "rasters", "frames", "images", "videos", "media", "audio")
+#: A ``files`` resource's files are of any type: nothing is read from them and
+#: they have no preview, and node code reads each from its row's ``path``.
+RESOURCE_KINDS = ("table", "rasters", "frames", "images", "videos", "media", "audio", "files")
 COLLECTION_KINDS = tuple(kind for kind in RESOURCE_KINDS if kind != "table")
 
 #: The file formats a ``table`` resource may name. gpkg, pbf and shp are
 #: converted to Parquet layers on the way in, as an upload of one is.
-TABLE_FORMATS = ("csv", "json", "geojson", "parquet", "gpkg", "shp", "pbf")
+TABLE_FORMATS = ("csv", "json", "geojson", "parquet", "gpkg", "shp", "pbf", "jsonl")
 
 #: Formats a storage source can hand the Data Catalog.
 STORAGE_FORMATS = TABLE_FORMATS + ("collection",)
@@ -188,7 +192,8 @@ _IMAGE_EXTENSIONS = ("jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff")
 _VIDEO_EXTENSIONS = ("mp4", "mov", "m4v", "webm", "mkv", "avi")
 _AUDIO_EXTENSIONS = ("wav", "flac", "mp3", "ogg", "opus", "m4a", "aiff", "aif")
 
-#: The files a resource's template sees when it names no ``extensions``.
+#: The files a resource's template sees when it names no ``extensions``. None
+#: listed is every file the template matches, whatever its extension.
 DEFAULT_EXTENSIONS = {
     "rasters": ("tif", "tiff", "jp2"),
     "frames": _IMAGE_EXTENSIONS,
@@ -196,6 +201,7 @@ DEFAULT_EXTENSIONS = {
     "videos": _VIDEO_EXTENSIONS,
     "media": _IMAGE_EXTENSIONS + _VIDEO_EXTENSIONS,
     "audio": _AUDIO_EXTENSIONS,
+    "files": (),
 }
 TABLE_EXTENSIONS = {
     "csv": ("csv",),
@@ -205,7 +211,17 @@ TABLE_EXTENSIONS = {
     "gpkg": ("gpkg",),
     "shp": ("shp",),
     "pbf": ("pbf",),
+    "jsonl": ("jsonl", "ndjson"),
 }
+
+#: The units of a ``time`` capture that is a number: seconds, milliseconds or
+#: nanoseconds since 1970, in UTC.
+TIME_UNITS = ("s", "ms", "ns")
+
+#: How a time zone's name is written in the IANA database: ``America/Chicago``,
+#: ``Etc/GMT+5``, ``UTC``. A name of this shape is a zone only when this
+#: machine's zone database has it (:func:`_known_time_zone`).
+_TIME_ZONE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,32}){0,2}$")
 
 #: How many files one source may hold. A manifest may lower it.
 DEFAULT_MAX_FILES = 200_000
@@ -327,6 +343,12 @@ class ResourceSpec:
     fps: float | None = None
     #: The capture holding each file's timestamp.
     time: str | None = None
+    #: With ``time`` naming an int capture: ``s``, ``ms`` or ``ns``, the unit
+    #: of the epoch time in UTC it holds.
+    time_unit: str | None = None
+    #: With ``time`` naming a date or strftime capture: the IANA time zone its
+    #: local time is in, which the index converts to UTC.
+    time_zone: str | None = None
     #: A table joined onto a collection's rows: ``{"path", "on"}``.
     metadata: dict[str, str] | None = None
     #: What a person answers before adding this resource. Replaces the
@@ -336,6 +358,12 @@ class ResourceSpec:
     @property
     def is_collection(self) -> bool:
         return self.kind != "table"
+
+    @property
+    def has_previews(self) -> bool:
+        """Whether its files have thumbnails: a collection's do, except a
+        ``files`` resource's, which have no preview."""
+        return self.is_collection and self.kind != "files"
 
     @property
     def dataset_format(self) -> str:
@@ -900,16 +928,9 @@ def _parse_resource(raw: object, *, where: str) -> ResourceSpec:
             raise ManifestError(f"manifest.{where}.fps must be a number between 0 and 1000")
         fps = float(fps)
 
-    time_field = raw.get("time")
-    if time_field is not None:
-        if kind == "table":
-            raise ManifestError(f"manifest.{where}.time only applies to a collection")
-        time_field = _require_str(time_field, f"{where}.time")
-        capture = next((c for c in template.captures if c.name == time_field), None)
-        if capture is None or capture.type not in ("date", "datetime"):
-            raise ManifestError(
-                f"manifest.{where}.time must name a date or strftime capture of {path!r}"
-            )
+    time_field, time_unit, time_zone = _parse_time(
+        raw.get("time"), template, kind=kind, path=path, where=where
+    )
 
     metadata = raw.get("metadata")
     if metadata is not None:
@@ -934,6 +955,7 @@ def _parse_resource(raw: object, *, where: str) -> ResourceSpec:
     options = raw.get("options") or {}
     if not isinstance(options, dict):
         raise ManifestError(f"manifest.{where}.options must be an object")
+    _check_table_options(fmt, options, where)
 
     return ResourceSpec(
         id=resource_id,
@@ -949,9 +971,105 @@ def _parse_resource(raw: object, *, where: str) -> ResourceSpec:
         options=dict(options),
         fps=fps,
         time=time_field,
+        time_unit=time_unit,
+        time_zone=time_zone,
         metadata=metadata,
         parameters=_parse_parameters(raw.get("parameters"), where=f"manifest.{where}.parameters"),
     )
+
+
+def _check_table_options(fmt: str | None, options: dict[str, Any], where: str) -> None:
+    """Refuse a storage resource's ``options`` its format does not read: a
+    jsonl table's are read here (``domain/json_rows.py``), so a manifest that
+    names one wrongly is not listed."""
+    try:
+        json_rows.check_options(fmt, options)
+    except json_rows.OptionError as exc:
+        raise ManifestError(f"manifest.{where}.options: {exc}") from exc
+
+
+def _parse_time(
+    raw: object, template: Template, *, kind: str, path: str, where: str
+) -> tuple[str | None, str | None, str | None]:
+    """A collection's ``time``: ``(capture, unit, zone)``.
+
+    ``time`` names the capture that is each file's time, or is an object
+    ``{"capture", "unit", "timezone"}``. A date or strftime capture is a time
+    as written, or with ``timezone`` a local time in that zone. An int capture
+    is a time only with ``unit``: seconds, milliseconds or nanoseconds since
+    1970, in UTC.
+    """
+    if raw is None:
+        return None, None, None
+    if kind == "table":
+        raise ManifestError(f"manifest.{where}.time only applies to a collection")
+    unit = zone = None
+    if isinstance(raw, dict):
+        unknown = sorted(str(key) for key in raw if key not in ("capture", "unit", "timezone"))
+        if unknown:
+            raise ManifestError(
+                f"manifest.{where}.time reads capture, unit and timezone; it has no {', '.join(unknown)}"
+            )
+        name = raw.get("capture")
+        if not isinstance(name, str) or not name.strip():
+            raise ManifestError(f"manifest.{where}.time.capture must name a capture of {path!r}")
+        name = name.strip()
+        unit, zone = raw.get("unit"), raw.get("timezone")
+    elif isinstance(raw, str) and raw.strip():
+        name = raw.strip()
+    else:
+        raise ManifestError(
+            f"manifest.{where}.time must be a capture's name, or an object with capture, unit and timezone"
+        )
+    capture = next((c for c in template.captures if c.name == name), None)
+    if capture is not None and capture.type == "int":
+        if zone is not None:
+            raise ManifestError(
+                f"manifest.{where}.time.timezone applies to a date or strftime capture; "
+                f"{name!r} is a number, read in UTC with its unit"
+            )
+        if unit is None:
+            raise ManifestError(
+                f"manifest.{where}.time: {name!r} is a number, which is a time only "
+                "with a unit: s, ms or ns"
+            )
+        if unit not in TIME_UNITS:
+            raise ManifestError(f"manifest.{where}.time.unit must be one of {list(TIME_UNITS)}")
+        return name, unit, None
+    if capture is None or capture.type not in ("date", "datetime"):
+        raise ManifestError(
+            f"manifest.{where}.time must name a date or strftime capture of {path!r}, "
+            "or an int capture with a unit"
+        )
+    if unit is not None:
+        raise ManifestError(
+            f"manifest.{where}.time.unit applies to an int capture; {name!r} is a date"
+        )
+    if zone is not None and not _known_time_zone(zone):
+        raise ManifestError(
+            f"manifest.{where}.time.timezone {zone!r} is not a time zone"
+            + (
+                "; name one as the IANA database does, such as America/Chicago"
+                if _time_zones()
+                else "; this machine has no time zone database"
+            )
+        )
+    return name, None, zone
+
+
+def _known_time_zone(name: object) -> bool:
+    """Whether *name* is a zone of this machine's IANA database, spelled as
+    the database spells it."""
+    return isinstance(name, str) and bool(_TIME_ZONE_RE.match(name)) and name in _time_zones()
+
+
+@functools.lru_cache(maxsize=1)
+def _time_zones() -> frozenset[str]:
+    """Every zone name the database knows. A name a case-insensitive disk
+    would also open (``america/chicago``) is not one of them."""
+    from zoneinfo import available_timezones
+
+    return frozenset(available_timezones())
 
 
 def _storage_capabilities(raw: object, resources: tuple[ResourceSpec, ...]) -> CapabilitySpec:
@@ -1161,15 +1279,23 @@ def _resource_dict(spec: ResourceSpec) -> dict[str, Any]:
         "kind": spec.kind,
         "path": spec.path,
         "datasets": spec.datasets,
-        "extensions": list(spec.extensions),
     }
+    if spec.extensions:
+        # None listed: every file the template matches.
+        out["extensions"] = list(spec.extensions)
     if spec.format:
         out["format"] = spec.format
     if spec.options:
         out["options"] = dict(spec.options)
     if spec.fps is not None:
         out["fps"] = spec.fps
-    if spec.time:
+    if spec.time and (spec.time_unit or spec.time_zone):
+        out["time"] = {"capture": spec.time}
+        if spec.time_unit:
+            out["time"]["unit"] = spec.time_unit
+        if spec.time_zone:
+            out["time"]["timezone"] = spec.time_zone
+    elif spec.time:
         out["time"] = spec.time
     if spec.metadata:
         out["metadata"] = dict(spec.metadata)
