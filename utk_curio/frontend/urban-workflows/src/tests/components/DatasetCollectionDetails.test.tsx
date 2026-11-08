@@ -218,6 +218,42 @@ describe("a collection's details", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Caching…" })).toBeDisabled());
   });
 
+  it("opened while its cache runs, as after a reload, shows that job and follows it", async () => {
+    jest.useFakeTimers();
+    try {
+      const running = {
+        jobId: "j1",
+        status: "running",
+        bytesRead: 0,
+        totalBytes: null,
+        stageMessage: "Caching files…",
+        error: null,
+        datasetId: null,
+        dataset: null,
+        alreadyPresent: false,
+        unchanged: false,
+        sourceId: "source.example.bucket@1",
+        resourceId: "cache:imported.xc1@1",
+        itemsDone: 1,
+        itemsTotal: 2,
+      };
+      apiFetch.mockImplementation((path: string) => {
+        if (path.startsWith("/api/discovery/jobs/")) return new Promise(() => {});
+        return Promise.resolve(status({ cacheJob: running }));
+      });
+      await renderPanel(item());
+      expect(screen.getByRole("button", { name: "Caching…" })).toBeDisabled();
+      expect(screen.queryByRole("button", { name: "Cache files" })).toBeNull();
+      expect(screen.getByText("1 of 2 files")).toBeInTheDocument();
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+      });
+      expect(apiFetch).toHaveBeenCalledWith("/api/discovery/jobs/j1");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("offers nothing to cache for a folder's files", async () => {
     apiFetch.mockResolvedValue(status({ local: true, provider: "folder", cachedFiles: 2 }));
     await renderPanel(item());
