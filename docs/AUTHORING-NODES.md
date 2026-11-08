@@ -197,8 +197,9 @@ is read by, `"input_0"`.
 
 ### Modules beside your template
 
-A template can import Python modules that ship in the package's `sources/`
-folder, with ordinary `import` statements:
+A node's logic is functions of Python modules that ship in the package's
+`sources/` folder. Its template's source holds the node's settings, imports
+one function with an ordinary `import` statement and returns its call:
 
 ```
 packages/me.heights@1/
@@ -216,10 +217,13 @@ from building_height.convert_to_raster import convert_raster
 return convert_raster(input_0, zoom=[!! zoom !!])
 ```
 
-- A node's logic is its code ([Extending](EXTENDING.md#a-nodes-logic-is-its-code)):
-  a module holds what several of your nodes share, and each function it offers
-  says what it does in the first paragraph of its docstring, which is what an
-  agent reads of it.
+- A node's logic is in its package's functions
+  ([Extending](EXTENDING.md#a-nodes-logic-is-in-its-packages-functions)): a
+  module's `__all__` names the functions it offers, and each says what it does
+  in the first paragraph of its docstring, which is what an agent reads of it.
+  The template's source holds the node's settings, as widgets or constants,
+  and a short call: Media's Sample Video Frames sets `EVERY_SECONDS` and
+  returns a call of `sample_video_frames`, from Media's `media_collections`.
 - A module is a `.py` file, or a folder of `.py` files, directly in `sources/`,
   named like a Python identifier. The files your templates name as their
   `source` are not modules.

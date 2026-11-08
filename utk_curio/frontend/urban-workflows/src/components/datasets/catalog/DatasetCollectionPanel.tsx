@@ -34,6 +34,7 @@ const COUNT_NOUN: Record<string, [string, string]> = {
   frame: ["frame", "frames"],
   audio: ["recording", "recordings"],
   raster: ["raster", "rasters"],
+  file: ["file", "files"],
 };
 
 function countsLabel(counts: Record<string, number>): string {

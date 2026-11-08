@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import sys
 import warnings
 from decimal import Decimal
 
@@ -213,15 +214,21 @@ def _codes(operation: str, codes):
 # ---------------------------------------------------------------------------
 
 def is_dataset(value) -> bool:
-    from utk_curio.sandbox.util.rasters import is_dataset as _is
+    """Whether *value* is an open rasterio dataset, without importing rasterio."""
+    module = sys.modules.get("rasterio")
+    return module is not None and isinstance(value, module.io.DatasetReader)
 
-    return _is(value)
+
+def epsg_name(crs) -> str | None:
+    """``EPSG:<code>`` for a CRS that has one, else None."""
+    if crs is None:
+        return None
+    code = crs.to_epsg()
+    return f"EPSG:{code}" if code else None
 
 
 def dataset_grid(dataset) -> dict:
     """The grid a dataset's cells lie on, as an envelope names it."""
-    from utk_curio.sandbox.util.rasters import epsg_name
-
     t = dataset.transform
     crs = dataset.crs
     name = epsg_name(crs) or (crs.to_wkt() if crs is not None else None)
