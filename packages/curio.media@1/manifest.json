@@ -7,7 +7,7 @@
   "createdAt": "2026-09-27T00:00:00Z",
   "dependencies": {
     "js": {},
-    "packages": {},
+    "packages": {"curio.rasterization@1": "*"},
     "python": {
       "av": ">=15.0",
       "geopandas": ">=1.1.3",
