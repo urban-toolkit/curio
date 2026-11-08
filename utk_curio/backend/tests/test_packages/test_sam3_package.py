@@ -315,10 +315,10 @@ def test_the_weights_are_fetched_at_the_pinned_revision_and_never_shipped():
     # The package's own files, which a clone that fetched the weights into
     # the package's folder holds beside them.
     integrity = json.loads((PACKAGE / "integrity.json").read_text(encoding="utf-8"))["sha256"]
-    assert sorted(integrity) == ["LICENSE", "README.md", "manifest.json", "sources/track-objects.py"] + sorted(
+    assert sorted(integrity) == sorted(["LICENSE", "README.md", "manifest.json", "sources/track-objects.py"] + [
         f"skills/{path.relative_to(PACKAGE / 'skills').as_posix()}"
         for path in (PACKAGE / "skills").rglob("*") if path.is_file() and not path.name.startswith(".")
-    )
+    ])
 
 
 def test_the_labels_are_the_35_prompts_and_the_readme_groups_them_in_seven():
