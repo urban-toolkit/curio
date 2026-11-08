@@ -92,8 +92,8 @@ ROSTER = {
     "curio.builtin/data-pool": {"category": "data", "bidirectional": True},
     "curio.builtin/vis-vega": {"category": "vis_grammar", "bidirectional": True},
     "curio.builtin/vis-simple": {"category": "vis_simple", "bidirectional": True},
-    "curio.builtin/autk-grammar": {"category": "vis_grammar", "bidirectional": True},
-    "curio.builtin/edit-features": {"category": "data", "bidirectional": True},
+    "curio.builtin/autk-grammar": {"category": "vis_grammar", "bidirectional": True, "behavior": "autk-grammar"},
+    "curio.builtin/edit-features": {"category": "data", "bidirectional": True, "behavior": "edit-features"},
 }
 
 
@@ -173,6 +173,33 @@ class TestInteractionEdgeErrors:
         assert pt.interaction_edge_errors({"edges": [link]}, types.get, ROSTER, [("edit", "map")]) == []
         # Fed the other way round is not fed.
         assert len(pt.interaction_edge_errors({"edges": [link]}, types.get, ROSTER, [("map", "edit")])) == 1
+
+    def test_the_map_editor_rule_reads_the_behavior_never_the_id(self):
+        # A package's own Map Editor and map, named for what they do and not
+        # for the built-in ids, get the rule; a template that only borrows the
+        # built-in id's name does not.
+        roster = dict(ROSTER, **{
+            "acme.edits/editor": {"category": "data", "bidirectional": True, "behavior": "edit-features"},
+            "acme.maps/street-map": {"category": "vis_grammar", "bidirectional": True, "behavior": "autk-grammar"},
+            "acme.copy/edit-features": {"category": "data", "bidirectional": True},
+        })
+        types = {
+            "edit": "acme.edits/editor@1", "map": "acme.maps/street-map@2", "bars": "curio.builtin/vis-vega@1",
+            "pool": "curio.builtin/data-pool@1", "copy": "acme.copy/edit-features@1",
+        }
+        feeds = {"from": "edit", "to": "map"}
+        for src, dst in (("edit", "map"), ("map", "edit")):
+            plan = {"edges": [feeds, {"from": src, "to": dst, "kind": "interaction"}]}
+            assert pt.interaction_edge_errors(plan, types.get, roster) == [], (src, dst)
+        plan = {"edges": [{"from": "edit", "to": "bars"}, {"from": "edit", "to": "bars", "kind": "interaction"}]}
+        (err,) = pt.interaction_edge_errors(plan, types.get, roster)
+        assert "joins the editor node to an autk-grammar or street-map map it feeds, and to no other node" in err
+        # The look-alike is a pool, as any other template with the handle is.
+        assert pt.interaction_edge_errors(
+            {"edges": [{"from": "copy", "to": "pool", "kind": "interaction"}]}, types.get, roster
+        ) == []
+        pools, _ = pt.interaction_roles(roster)
+        assert pools == {"curio.builtin/data-pool", "acme.copy/edit-features"}
 
     def test_unknown_template_fails_open(self):
         plan = {"edges": [{"from": "vis", "to": "mystery", "kind": "interaction"}]}

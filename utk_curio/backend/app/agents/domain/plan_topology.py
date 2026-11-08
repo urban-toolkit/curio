@@ -30,26 +30,33 @@ on eight example fixtures rather than as a wrong score.
 """
 from __future__ import annotations
 
-from utk_curio.backend.app.agents.domain.contracts import AUTK_TEMPLATE, EDIT_FEATURES_TEMPLATE
 from utk_curio.backend.app.agents.domain import agent_text
 
 INTERACTION_EDGE_TYPE = "Interaction"
-#: The Map Editor node, linked by an interaction edge to an Autark map it
-#: feeds on a data edge and to no other node (``interaction_edge_errors``).
-EDITOR_TEMPLATE = EDIT_FEATURES_TEMPLATE
-MAP_TEMPLATE = AUTK_TEMPLATE
+#: The behavior a Map Editor template names: its node is linked by an
+#: interaction edge to a map it feeds on a data edge, and to no other node
+#: (``interaction_edge_errors``). Read off each template's roster row, never
+#: off its id, as ``map_edits`` reads it.
+EDITOR_BEHAVIOR = "edit-features"
+#: The behavior an Autark map's template names.
+MAP_BEHAVIOR = "autk-grammar"
 
+
+def template_behavior(templates: dict, template_id: str) -> str:
+    """The behavior the roster row of *template_id* names, ``""`` for none."""
+    row = templates.get(template_id)
+    return str(row.get("behavior") or "") if isinstance(row, dict) else ""
 
 
 def interaction_roles(templates: dict) -> tuple[frozenset[str], frozenset[str]]:
     """``(pools, visualizations)``: the template ids an interaction edge may
     join, read from the roster. A template that declares ``bidirectional`` has
     the interaction handle; it is a visualization when its category is one
-    (``vis_*``) and a pool otherwise. The Map Editor node has the handle too,
+    (``vis_*``) and a pool otherwise. A Map Editor template has the handle too,
     and is neither: it links to its map alone."""
     capable = {
         tid for tid, row in templates.items()
-        if isinstance(row, dict) and row.get("bidirectional") and tid != EDITOR_TEMPLATE
+        if isinstance(row, dict) and row.get("bidirectional") and template_behavior(templates, tid) != EDITOR_BEHAVIOR
     }
     visualizations = frozenset(
         tid for tid in capable if str(templates[tid].get("category") or "").startswith("vis")
@@ -231,6 +238,9 @@ def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict, data_
     pools, visualizations = interaction_roles(templates)
     highlighters = interaction_highlighters(templates)
     pool_names = " or ".join(sorted(template_suffix(t) for t in pools)) or "pool"
+    map_names = " or ".join(
+        sorted(template_suffix(t) for t in templates if template_behavior(templates, t) == MAP_BEHAVIOR)
+    ) or MAP_BEHAVIOR
     if data_pairs is None:
         data_pairs = [(e["from"], e["to"]) for e in plan.get("edges", []) or [] if not is_interaction_edge(e)]
     fed = {(str(source), str(target)) for source, target in data_pairs}
@@ -241,22 +251,23 @@ def interaction_edge_errors(plan: dict, type_of_endpoint, templates: dict, data_
         src, dst = (strip_type_version(type_of_endpoint(edge[end])) for end in ("from", "to"))
         if src not in templates or dst not in templates:
             continue
-        if EDITOR_TEMPLATE in (src, dst):
-            editor, other = (edge["from"], edge["to"]) if src == EDITOR_TEMPLATE else (edge["to"], edge["from"])
-            other_type = dst if src == EDITOR_TEMPLATE else src
-            if other_type != MAP_TEMPLATE:
+        src_edits = template_behavior(templates, src) == EDITOR_BEHAVIOR
+        if src_edits or template_behavior(templates, dst) == EDITOR_BEHAVIOR:
+            editor, other = (edge["from"], edge["to"]) if src_edits else (edge["to"], edge["from"])
+            editor_type, other_type = (src, dst) if src_edits else (dst, src)
+            if template_behavior(templates, other_type) != MAP_BEHAVIOR:
                 errors.append(
                     agent_text.message(
-                        "topology.edit-features-other-node", i=i, editor_type=template_suffix(EDITOR_TEMPLATE),
-                        map_type=template_suffix(MAP_TEMPLATE), other=repr(other),
+                        "topology.edit-features-other-node", i=i, editor_type=template_suffix(editor_type),
+                        map_type=map_names, other=repr(other),
                         other_type=template_suffix(other_type) or 'untyped',
                     )
                 )
             elif (str(editor), str(other)) not in fed:
                 errors.append(
                     agent_text.message(
-                        "topology.edit-features-not-fed", i=i, editor_type=template_suffix(EDITOR_TEMPLATE),
-                        map_type=template_suffix(MAP_TEMPLATE), editor=repr(editor), other=repr(other),
+                        "topology.edit-features-not-fed", i=i, editor_type=template_suffix(editor_type),
+                        map_type=template_suffix(other_type), editor=repr(editor), other=repr(other),
                     )
                 )
             continue

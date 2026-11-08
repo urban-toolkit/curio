@@ -1,8 +1,9 @@
 {
   "sha256": {
     "README.md": "4f403ab48b71d2bf96bb0a5c5d01c67a2b1fddb125206132ea5fb169c1bad698",
-    "manifest.json": "a77904e45e7046142df3e81d013def6acd2eb15cd39b7256961ff6f9e9e03231",
+    "manifest.json": "0e64c80c49b6f2775519c45d111769ce2589dfd8ce9a4b471da521462ba402c1",
     "sources/data-export.py": "355737904ed4868836d74fb6b9c8cfdc6b3bc7150a6da401d7c8a382a747b155",
-    "sources/data-loading.py": "d53681dfdb38b6dba78d2d7b04b21ed75d985b88bc6843805b5cd271351aca9a"
+    "sources/data-loading.py": "d53681dfdb38b6dba78d2d7b04b21ed75d985b88bc6843805b5cd271351aca9a",
+    "sources/data-summary.py": "69e7c6974ade4fcad45ea0d5f8babb4e2646075a927d9e301532ce37aa6e6ae9"
   }
 }

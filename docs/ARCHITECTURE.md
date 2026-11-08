@@ -624,7 +624,9 @@ whose code is its only state: one call of `curio_edit_features`
   registers (`registerEditMap`). The tool layers are never kept across a
   redraw, hidden by Show only this layer or picked on. The node edits
   on the maps it feeds and is linked to (`linkedMaps` in `mapLayerEdits.ts`), and
-  `plan_topology` allows its interaction edge only to such a map.
+  `plan_topology` allows its interaction edge only to such a map, telling
+  the editor and the map by their templates' behaviors (`edit-features`,
+  `autk-grammar`), never by their ids.
 - Fed by several nodes, the code hands the step every circle (`by_input=True`),
   and the step names each unnamed layer after its circle, `input_<k>`, as the
   map does.
@@ -3195,12 +3197,13 @@ reply that reaches the cap says so ([A chat turn](#a-chat-turn)).
 | `/starters` | GET | Per-template starter source bodies from every installed package, keyed on `<packageId>/<templateId>@<major>` |
 
 Starters come from each installed package's optional per-template `source` file.
-In `curio.builtin@1` only Data Loading ships one (`sources/data-loading.py`),
+In `curio.builtin@1` Data Loading, Data Export and Data Summary ship one
+(`sources/data-loading.py`, `sources/data-export.py`, `sources/data-summary.py`),
 so its other nodes open with an empty editor; third-party packages may ship a
-starter per template. When a template declares both `behavior: "code"` and a
-`source`, the frontend composes `withPackageStarter` over the behavior hook so
-the starter, and the template's `widgets` beside it, are injected on a fresh drop
-(see [Behavior Hooks](#behavior-hooks)).
+starter per template. Whatever behavior a template with a `source` names, the
+frontend composes `withPackageStarter` over its behavior hook
+(`registry/packagesClient.ts`), so the starter, and the template's `widgets`
+beside it, are injected on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 
 A template's `widgets` reach a node an agent creates too, whatever writes its
 content: a plan and `node.create` read them with `declared_widgets`
