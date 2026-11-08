@@ -7,8 +7,8 @@ A source's bucket mounts on a deployment that runs the bucket mount service
 - ``https://host[:port]/<bucket>``, one path segment: path-style, at the
   endpoint ``https://host[:port]``;
 - ``https://<bucket>.<host>``, no path: virtual-hosted, at the endpoint
-  ``https://<host>``, the bucket the host's first label (the shipped
-  Sentinel-2 source, ``discovery/source.aws.sentinel-2-chicago@1``).
+  ``https://<host>``, the bucket the host's first label (an AWS bucket's
+  ``https://<bucket>.s3.<region>.amazonaws.com``).
 
 ``options.prefix`` up to its last ``/`` is the folder of the bucket the mount
 shows. A prefix that does not end in ``/`` leaves its last part, the tail,
