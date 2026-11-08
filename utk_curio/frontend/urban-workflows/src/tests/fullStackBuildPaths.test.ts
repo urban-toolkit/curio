@@ -21,6 +21,8 @@ const READ_FROM_THE_CHECKOUT: Array<[string, string]> = [
     [".nvmrc", "setup-node in jest and preview-runner, and scripts/check_node_pins.py"],
     [".node-version", "scripts/check_node_pins.py"],
     ["docker-compose.deploy.yml", "test-gpu's check of the production deploy configuration"],
+    ["docker-compose.bucket-mounts.yml", "the bucket-mounts job and bucketMountsOverlay.test.ts"],
+    ["docker-compose.ci-bucket-mounts.yml", "the bucket-mounts job"],
 ];
 
 describe(`the paths filters of ${WORKFLOW}`, () => {
