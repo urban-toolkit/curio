@@ -129,6 +129,18 @@ describe("a collection's details", () => {
     );
   });
 
+  it("says how many files a files resource's collection holds, and draws none of them", async () => {
+    apiFetch.mockResolvedValue(status({ fileCount: 4, samples: [] }));
+    await renderPanel(
+      item({ collection: { ...block, kind: "files", resource: "walk-records", counts: { file: 4 }, fileCount: 4 } }),
+    );
+    expect(screen.getByText("Kind").nextElementSibling).toHaveTextContent("Files");
+    expect(screen.getByText("4 files")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Files in this collection" })).not.toBeInTheDocument();
+    const drawn = (global as any).fetch.mock.calls.filter(([url]: [string]) => String(url).includes("/media/"));
+    expect(drawn).toEqual([]);
+  });
+
   it("names its resource and says what its fields, CRS and footprints cover", async () => {
     apiFetch.mockResolvedValue(status({ local: true, provider: "folder" }));
     await renderPanel(

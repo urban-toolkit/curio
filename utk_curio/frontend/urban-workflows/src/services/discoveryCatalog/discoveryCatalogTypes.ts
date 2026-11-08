@@ -42,7 +42,8 @@ export const SERVICE_PROVIDER_TYPES: readonly DiscoveryProviderType[] = [
 export type DiscoverySourceKind = "portal" | "storage" | "service" | "model";
 
 /** Matches `RESOURCE_KINDS`. `table` is copied; every other kind is a
- *  collection, referenced where its files are. */
+ *  collection, referenced where its files are. A `files` row's files are of
+ *  any type, with no thumbnails. */
 export type DiscoveryResourceKind =
   | "table"
   | "rasters"
@@ -51,6 +52,7 @@ export type DiscoveryResourceKind =
   | "videos"
   | "media"
   | "audio"
+  | "files"
   | "model";
 
 /** Matches `KIND_LABEL` in `discovery/application/scan.py`, and a model
@@ -63,6 +65,7 @@ export const DISCOVERY_RESOURCE_KIND_LABEL: Record<DiscoveryResourceKind, string
   videos: "Videos",
   media: "Photos and videos",
   audio: "Audio",
+  files: "Files",
   model: "Model",
 };
 

@@ -555,6 +555,7 @@
           "kind": {
             "enum": [
               "audio",
+              "files",
               "frames",
               "images",
               "media",
@@ -562,12 +563,12 @@
               "table",
               "videos"
             ],
-            "description": "'table' files are copied into the Data Catalog. Every other kind becomes one collection dataset, an index with one row per file, referenced in place."
+            "description": "'table' files are copied into the Data Catalog. Every other kind becomes one collection dataset, an index with one row per file, referenced in place. A 'files' resource takes files of any type: nothing is read from them, they have no preview, and node code reads each from its row's path."
           },
           "path": {
             "type": "string",
             "minLength": 1,
-            "description": "{name} captures part of a folder or file name, {name:int}, {name:date} and {name:<strftime>} type it, * matches within a name, and ** spans folders."
+            "description": "{name} captures part of a folder or file name, {name:int}, {name:date} and {name:<strftime>} type it, * matches within a name, and ** spans folders. A strftime format takes %Y, %y, %m, %d, %j, %b, %H, %M, %S, and %f, a fraction of a second of 1 to 6 digits (016 is 16 milliseconds)."
           },
           "format": {
             "enum": [
@@ -594,7 +595,7 @@
               "type": "string",
               "pattern": "^[a-z0-9]{1,8}$"
             },
-            "description": "The file extensions the resource takes, without the dot. The defaults follow its kind, or its format for a table."
+            "description": "The file extensions the resource takes, without the dot. The defaults follow its kind, or its format for a table; a 'files' resource takes every file its path matches."
           },
           "fps": {
             "type": "number",
@@ -603,9 +604,46 @@
             "description": "Frames per second of a 'frames' resource: each frame's t_s is its number over it."
           },
           "time": {
-            "type": "string",
-            "pattern": "^[a-z_][a-z0-9_]{0,31}$",
-            "description": "A collection only: the date or strftime capture holding each file's timestamp, which fills recorded_at for audio and taken_at for the other kinds."
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z_][a-z0-9_]{0,31}$",
+                "description": "A date or strftime capture, read as written."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "capture"
+                ],
+                "additionalProperties": false,
+                "not": {
+                  "required": [
+                    "unit",
+                    "timezone"
+                  ]
+                },
+                "properties": {
+                  "capture": {
+                    "type": "string",
+                    "pattern": "^[a-z_][a-z0-9_]{0,31}$"
+                  },
+                  "unit": {
+                    "enum": [
+                      "ms",
+                      "ns",
+                      "s"
+                    ],
+                    "description": "For an int capture: seconds, milliseconds or nanoseconds since 1970, in UTC."
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,32}){0,2}$",
+                    "description": "For a date or strftime capture: the IANA time zone its local time is in, such as America/Chicago. The time is converted to UTC."
+                  }
+                }
+              }
+            ],
+            "description": "A collection only: the capture holding each file's timestamp, which fills recorded_at for audio and taken_at for the other kinds. A date or strftime capture's name, or an object: {capture, unit} for an int capture that is an epoch time, {capture, timezone} for a date or strftime capture written in local time."
           },
           "metadata": {
             "type": "object",

@@ -152,15 +152,16 @@ def test_a_package_whose_skills_break_the_format_is_refused_and_leaves_nothing(
 @pytest.mark.parametrize(("dir_name", "skill"), [
     ("curio.rasterization@1", "rasterization"),
     ("curio.vega-lite@1", "vega-lite-charts"),
+    ("model.curio.sam3@1", "sam3-tracking"),
 ])
 def test_a_shipped_package_ships_its_skill_its_integrity_map_covers_it_and_an_add_brings_it(
     tmp_curio, dir_name, skill,
 ):
-    """Rasterization's ``skills/`` holds one skill, ``rasterization``, and the
-    Vega-Lite package's one, ``vega-lite-charts``, which Curio's strict reader
-    takes; the package's ``integrity.json`` records its file; and an account's
-    add of the package from the catalog puts it in the account's copy, whose
-    map records it too."""
+    """Rasterization's ``skills/`` holds one skill, ``rasterization``, the
+    Vega-Lite package's one, ``vega-lite-charts``, and SAM 3's model package
+    one, ``sam3-tracking``, which Curio's strict reader takes; the package's
+    ``integrity.json`` records its file; and an account's add of the package
+    from the catalog puts it in the account's copy, whose map records it too."""
     from utk_curio.backend.app.agents.domain import skills
     from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
     from utk_curio.backend.app.packages.repositories.skills import skill_folders

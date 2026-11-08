@@ -69,8 +69,9 @@ RUN pip install --upgrade pip setuptools wheel && \
 FROM python_base AS ci_deps_0
 
 # CI only. The libraries setup installs from the package manifests, as setup's
-# own walk lists them (scripts/ci_requirements.py writes the file), installed
-# before the source is copied. COPY keys its cache on the file's content, so a
+# own walk lists them, with those of every other package Curio ships, whose
+# code the suites run too (scripts/ci_requirements.py writes the file),
+# installed before the source is copied. COPY keys its cache on the file's content, so a
 # commit that changes no dependency reuses this layer. The pip command is the
 # launcher's (install_python_deps). No browser: the e2e suite drives each
 # runner's own Chrome (browser_type_launch_args in the tests' conftest).
