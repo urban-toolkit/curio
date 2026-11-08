@@ -23,7 +23,6 @@ without them and each test fails on its own.
 from __future__ import annotations
 
 import json
-import pathlib
 import shutil
 from pathlib import Path
 
@@ -40,14 +39,14 @@ EDITED_TASK = "Count the zebras crossing each street"
 def _dataflow_files(monkeypatch, name: str) -> list:
     """The dataflow files (``.json``) ``Path.<name>`` runs on from now on."""
     seen: list = []
-    original = getattr(pathlib.Path, name)
+    original = getattr(Path, name)
 
     def counted(self, *args, **kwargs):
         if self.suffix == ".json":
             seen.append(str(self))
         return original(self, *args, **kwargs)
 
-    monkeypatch.setattr(pathlib.Path, name, counted)
+    monkeypatch.setattr(Path, name, counted)
     return seen
 
 
@@ -88,12 +87,12 @@ def test_under_dev_an_edited_example_shows_at_the_next_call_and_without_it_the_k
     kept = _by_key()[NINE]
     file = kept.entry.path
     edited = {**kept.spec, "dataflow": {**kept.spec["dataflow"], "task": EDITED_TASK}}
-    original = pathlib.Path.read_text
+    original = Path.read_text
 
     def read_text(self, *args, **kwargs):
         return json.dumps(edited) if self == file else original(self, *args, **kwargs)
 
-    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+    monkeypatch.setattr(Path, "read_text", read_text)
 
     assert _by_key()[NINE].spec == kept.spec
     monkeypatch.setenv("CURIO_DEV", "1")
