@@ -23,9 +23,10 @@ page of the base entry there whole, and ``{{skill:<name>}}`` the body of a
 skill Curio ships. Nothing is generated or committed.
 
 When the backend starts (``create_app``), :func:`render_at_start` renders
-every page, skill and prompt once, and a read returns that render. Under
-``curio.py start --dev`` (``CURIO_DEV=1``) a read renders the file again, so an
-edit shows on the next run.
+every page, skill and prompt once, and a read returns that render. That a
+page's file stays inside the base entry is checked once per page, too
+(:func:`page_file`). Under ``curio.py start --dev`` (``CURIO_DEV=1``) a read
+renders the file again, and checks it again, so an edit shows on the next run.
 
 The texts the runtime composes a run's turns from (the tools, the reply
 protocol, the frames around what a run is given) are sections of pages: a
@@ -180,10 +181,29 @@ def page_file(page: str) -> Path:
             f"{PAGE_PREFIX}{page} names no page of Curio's agent text; a curio: path is one of: "
             + ", ".join(PAGE_PREFIX + name for name in listed)
         )
-    file = base / page
-    if not file.resolve().is_relative_to(base.resolve()):
-        raise AgentTextError(f"{PAGE_PREFIX}{page} leads out of Curio's agent text, to {file.resolve()}")
-    return file
+    outside = _leads_out(base, page) if os.environ.get(_DEV_ENV) == "1" else _leads_out_once(base, page)
+    if outside is not None:
+        raise AgentTextError(f"{PAGE_PREFIX}{page} leads out of Curio's agent text, to {outside}")
+    return base / page
+
+
+def _leads_out(base: Path, page: str) -> Path | None:
+    """Where the file of *page* leads, when that is out of the base entry
+    *base* (a symbolic link to a file outside it), else None."""
+    file = (base / page).resolve()
+    return None if file.is_relative_to(base.resolve()) else file
+
+
+@lru_cache(maxsize=64)
+def _leads_out_once(base: Path, page: str) -> Path | None:
+    """:func:`_leads_out`, once per base entry and page. A resolve walks every
+    component of a path with an lstat, letting the GIL go at each one, and
+    every lookup of an agent's manifest and every section a run reads asks
+    :func:`page_file`. The base entry is a folder Curio ships, rendered when
+    the backend starts and read as it was then (:func:`read`); under
+    ``curio.py start --dev`` a page is checked again at each read, as it is
+    rendered again."""
+    return _leads_out(base, page)
 
 
 def _page_of(file: Path) -> str | None:
