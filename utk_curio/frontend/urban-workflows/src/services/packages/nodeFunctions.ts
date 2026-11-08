@@ -7,8 +7,9 @@
  * canvas holds, and kept until the installed packages change: each refresh of
  * the package registry tells `forgetNodeFunctions` what they are, and when
  * they changed, the headers on the canvas read their lists again. A read
- * that fails lists nothing, and a page with no session, such as a dashboard
- * a viewer opens with no sign-in, reads nothing and lists nothing.
+ * that fails lists nothing, and a page with no session reads nothing and
+ * lists nothing. The dashboard page reads nothing either, with a session or
+ * without: its code editors ask for no node type (CodeEditor).
  */
 import { useEffect, useSyncExternalStore } from "react";
 import { getToken } from "../../utils/authApi";

@@ -179,9 +179,11 @@ function CodeEditor({
     } = useFlowContext();
     const collab = useCollab();
     // What the node's code can call, for the header's Functions: read as a
-    // run of the node would import it, on the dataflow its runs are of.
+    // run of the node would import it, on the dataflow its runs are of. Only
+    // where the code is edited: the dashboard page mounts every node of the
+    // dataflow, and its tiles' code is read-only, so there it reads nothing.
     const nodeFunctions = useNodeFunctions(
-        nodeType ? String(nodeType) : null,
+        nodeType && !dashboardOn ? String(nodeType) : null,
         agentsDataflowId(canvasRole(viewerMode, collab), projectId, getCurrentProjectId()),
     );
     const headerFunctions = useMemo(
