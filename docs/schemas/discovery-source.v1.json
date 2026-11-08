@@ -555,6 +555,7 @@
           "kind": {
             "enum": [
               "audio",
+              "files",
               "frames",
               "images",
               "media",
@@ -562,7 +563,7 @@
               "table",
               "videos"
             ],
-            "description": "'table' files are copied into the Data Catalog. Every other kind becomes one collection dataset, an index with one row per file, referenced in place."
+            "description": "'table' files are copied into the Data Catalog. Every other kind becomes one collection dataset, an index with one row per file, referenced in place. A 'files' resource takes files of any type: nothing is read from them, they have no preview, and node code reads each from its row's path."
           },
           "path": {
             "type": "string",
@@ -593,7 +594,7 @@
               "type": "string",
               "pattern": "^[a-z0-9]{1,8}$"
             },
-            "description": "The file extensions the resource takes, without the dot. The defaults follow its kind, or its format for a table."
+            "description": "The file extensions the resource takes, without the dot. The defaults follow its kind, or its format for a table; a 'files' resource takes every file its path matches."
           },
           "fps": {
             "type": "number",

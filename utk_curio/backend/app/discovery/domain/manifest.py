@@ -174,7 +174,9 @@ DISCOVERY_ACQUIRABLE_FORMATS = ("csv", "geojson", "json", "parquet", "geotiff")
 #: What a storage resource can be. ``table`` files are copied into the Data
 #: Catalog as the other sources' downloads are; every other kind becomes one
 #: ``collection`` dataset, an index with one row per file, referenced in place.
-RESOURCE_KINDS = ("table", "rasters", "frames", "images", "videos", "media", "audio")
+#: A ``files`` resource's files are of any type: nothing is read from them and
+#: they have no preview, and node code reads each from its row's ``path``.
+RESOURCE_KINDS = ("table", "rasters", "frames", "images", "videos", "media", "audio", "files")
 COLLECTION_KINDS = tuple(kind for kind in RESOURCE_KINDS if kind != "table")
 
 #: The file formats a ``table`` resource may name. gpkg, pbf and shp are
@@ -188,7 +190,8 @@ _IMAGE_EXTENSIONS = ("jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff")
 _VIDEO_EXTENSIONS = ("mp4", "mov", "m4v", "webm", "mkv", "avi")
 _AUDIO_EXTENSIONS = ("wav", "flac", "mp3", "ogg", "opus", "m4a", "aiff", "aif")
 
-#: The files a resource's template sees when it names no ``extensions``.
+#: The files a resource's template sees when it names no ``extensions``. None
+#: listed is every file the template matches, whatever its extension.
 DEFAULT_EXTENSIONS = {
     "rasters": ("tif", "tiff", "jp2"),
     "frames": _IMAGE_EXTENSIONS,
@@ -196,6 +199,7 @@ DEFAULT_EXTENSIONS = {
     "videos": _VIDEO_EXTENSIONS,
     "media": _IMAGE_EXTENSIONS + _VIDEO_EXTENSIONS,
     "audio": _AUDIO_EXTENSIONS,
+    "files": (),
 }
 TABLE_EXTENSIONS = {
     "csv": ("csv",),
@@ -336,6 +340,12 @@ class ResourceSpec:
     @property
     def is_collection(self) -> bool:
         return self.kind != "table"
+
+    @property
+    def has_previews(self) -> bool:
+        """Whether its files have thumbnails: a collection's do, except a
+        ``files`` resource's, which have no preview."""
+        return self.is_collection and self.kind != "files"
 
     @property
     def dataset_format(self) -> str:
@@ -1161,8 +1171,10 @@ def _resource_dict(spec: ResourceSpec) -> dict[str, Any]:
         "kind": spec.kind,
         "path": spec.path,
         "datasets": spec.datasets,
-        "extensions": list(spec.extensions),
     }
+    if spec.extensions:
+        # None listed: every file the template matches.
+        out["extensions"] = list(spec.extensions)
     if spec.format:
         out["format"] = spec.format
     if spec.options:

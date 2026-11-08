@@ -8,7 +8,7 @@ the Data Catalog is its index, a Parquet table with one row per file:
 - every capture of the resource's template, typed (a ``year``, a ``sensor``);
 - what the file says about itself, by kind: size and EXIF time and GPS for an
   image, duration and codec for video and audio, CRS, bands and a footprint
-  for a raster;
+  for a raster, and nothing for a ``files`` resource's file, of any type;
 - for frames, ``sequence``, ``frame`` and ``t_s``;
 - the columns of a declared metadata table, joined on ``file_name``, ``frame``
   or a capture.
@@ -91,6 +91,9 @@ def build_rows(
     def work(pair):
         found, kind = pair
         if cancelled is not None and cancelled():
+            return {}
+        if kind == "file":
+            # A ``files`` resource's file is of any type: nothing is read from it.
             return {}
         try:
             local = provider.local_path(found.relpath)

@@ -6,7 +6,7 @@ resolved through the collection's source (which checks it against the
 source's root), and only then is anything read. What is served:
 
 - ``thumb``: a JPEG drawn from an image, a raster, a video's frame, or an
-  audio recording's spectrogram;
+  audio recording's spectrogram; a ``files`` resource's file has none;
 - ``poster``: a video's frame;
 - ``original``: the file itself, when a browser can show or play its format.
 
@@ -254,9 +254,15 @@ def _source_path(found: Located) -> tuple[Path, bool]:
 
 
 def _draw(found: Located, variant: str):
+    from utk_curio.sandbox.util.collections import DRAWN
+
     kind = found.row.kind
     if variant == "poster" and kind != "video":
         raise MediaUnavailable("only a video has a poster")
+    if kind not in DRAWN:
+        # Refused before the file is read or fetched: a table a node found,
+        # or a ``files`` resource's file, has no preview.
+        raise CapabilityUnsupported(f"no preview for a {kind}")
     path, temporary = _source_path(found)
     try:
         if kind in ("image", "frame"):
@@ -381,8 +387,9 @@ def sample_thumbnail(manifest, provider, sample, *, user_key: str | None = None)
     source itself.
     """
     from utk_curio.backend.app.common.user_storage import curio_root
+    from utk_curio.sandbox.util.collections import DRAWN
 
-    if sample.kind not in ("image", "frame", "raster", "video", "audio"):
+    if sample.kind not in DRAWN:
         raise MediaUnavailable("no preview for this file")
     if user_key is None:
         folder = curio_root() / "discovery-cache" / manifest.dir_name / "samples"
