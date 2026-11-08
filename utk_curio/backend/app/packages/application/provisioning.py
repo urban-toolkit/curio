@@ -144,7 +144,24 @@ def _declared_import_failures(
         # Host last, deliberately: for a "both" package a broken host copy is
         # the one the user can repair with a plain pip, so it is the reason
         # worth surfacing when both environments are broken.
-        failures.update(_import_failures_or_silence(deps))
+        failures.update(_node_import_failures(user_key, deps))
+    return failures
+
+
+def _node_import_failures(user_key: str, deps) -> dict[str, str]:
+    """*deps*' verdict where *user_key*'s node code imports them from: the
+    shared interpreter, and under fork isolation the account's own tree in
+    front of it, where :func:`provision_user_node_deps` installs what the
+    shared interpreter lacks (#332). Asking only the shared interpreter about
+    a library in the account's tree reports a working one as not installed.
+
+    The shared interpreter is asked first, since its verdicts are memoised;
+    only the libraries it fails go to the account's tree, whose probe is a
+    subprocess every time."""
+    failures = _import_failures_or_silence(deps)
+    if (failures and packages_backend_runtime.per_user_node_envs()
+            and packages_backend_runtime.user_node_overlay_dir(user_key).is_dir()):
+        return node_overlay_import_failures(user_key, sorted(failures))
     return failures
 
 
@@ -174,10 +191,15 @@ def _overlay_import_failures(user_key: str, dir_name: str, deps):
 NODE_OVERLAY_LOCK = "_node-overlay"
 
 
-def _provision_user_node_deps(
+def provision_user_node_deps(
     user_key: str, py_deps: dict, failures: dict,
 ) -> list[str]:
     """Install *py_deps* into *user_key*'s node overlay; report what broke.
+
+    Where every install of node libraries goes under fork isolation: a
+    package's (:func:`provision_python_deps`) and an applied build's
+    (``builder/promotion.py``). The shared interpreter is the image's and
+    every account's, and nothing one account installs may move it.
 
     Incremental, unlike the per-package handler overlay: that one is derived
     state rebuilt from one manifest, so wiping it is cheap and correct. This
@@ -288,7 +310,7 @@ def provision_python_deps(user_key: str, dir_name: str, manifest) -> InstallOutc
         # there is one warm worker with one sys.modules and nothing to scope
         # into, so this stays the shared interpreter exactly as before.
         if packages_backend_runtime.per_user_node_envs():
-            host_installed = _provision_user_node_deps(user_key, py_deps, failures)
+            host_installed = provision_user_node_deps(user_key, py_deps, failures)
         else:
             pip_report = packages_pip_runner.install_python_deps(py_deps)
             host_installed = sorted(pip_report.installed)

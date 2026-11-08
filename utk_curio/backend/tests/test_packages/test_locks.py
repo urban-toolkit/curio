@@ -285,7 +285,8 @@ _ACCOUNTED_ENUMERATORS = {
     "app/packages/application/workflow_deps.py": {"check_workflow_deps"},  # lock owner
     "app/packages/application/starters.py": {"_generate_unlocked"},  # unlocked core
     "app/packages/application/libraries.py": {"package_derived",  # lock owners
-                                              "any_package_declares"},
+                                              "any_package_declares",
+                                              "not_asked_for"},
     "app/packages/builder/deps.py": {"installed_manifests"},  # lock owner
     "app/packages/application/function_nodes.py": {"package_functions"},  # lock owner
     "app/packages/application/model_packages.py": {"held_model_packages"},  # lock owner
@@ -329,6 +330,51 @@ def test_every_raw_store_enumeration_is_a_known_lock_owner_or_unlocked_core():
         "a raw list_user_packages() call appeared (or moved) outside the "
         "accounted set — decide whether it owns the seed lock or is an unlocked "
         "core called only under it, then record it in _ACCOUNTED_ENUMERATORS"
+    )
+
+
+def test_a_removals_library_walk_waits_out_a_package_swap(
+    tmp_curio, install_package, manifest_dict,
+):
+    """``libraries.not_asked_for`` decides which libraries a package's removal
+    keeps, by what the account's other packages declare. A package replaced in
+    place is missing from the store between the installer's rmtree and its
+    move, which run under the seed lock. A walk inside that window would give
+    up a library the package declares, and the prune would uninstall it from
+    under the package."""
+    from utk_curio.backend.app.packages.application import libraries
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+
+    install_package("7", manifest_dict(
+        "ai.test.swapped", python_deps={"curio-swapped-library": ">=1.0"}))
+    tree = package_dir("7", "ai.test.swapped@1")
+    aside = tree.with_name(tree.name + ".old")
+    entered, release = threading.Event(), threading.Event()
+    given_up: list[list[str]] = []
+
+    def _swap():
+        with package_seed_lock("7"):
+            tree.rename(aside)
+            entered.set()
+            release.wait(timeout=10)
+            aside.rename(tree)
+
+    def _walk():
+        given_up.append(libraries.not_asked_for(["7"], {"curio-swapped-library"}))
+
+    swapper = threading.Thread(target=_swap)
+    swapper.start()
+    assert entered.wait(timeout=5)
+    walker = threading.Thread(target=_walk)
+    walker.start()
+    walker.join(timeout=0.3)
+    assert not given_up, "the walk read the store inside the package's swap"
+
+    release.set()
+    swapper.join(timeout=5)
+    walker.join(timeout=5)
+    assert given_up == [[]], (
+        f"the library the swapped package declares was given up for removal: {given_up}"
     )
 
 

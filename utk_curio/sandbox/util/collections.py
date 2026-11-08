@@ -27,6 +27,9 @@ from __future__ import annotations
 import os
 import re
 
+# A catalog item's id, as ``catalogCode.json`` (the frontend's contracts) has
+# it: the sandbox reads no contract file, so this is its copy, which
+# ``test_shared_constants.py`` holds equal to the table.
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$")
 _FILE_ID = r"[0-9a-f]{16}"
 _TAG = r"[0-9a-z]{1,32}"
