@@ -27,8 +27,9 @@ class TestTopLevelShape:
 
         deployment = body["deployment"]
         for key in ("version", "isolation", "isolationActive", "env",
-                    "platform", "pythonVersion"):
+                    "platform", "pythonVersion", "bucketMounts"):
             assert isinstance(deployment[key], str), key
+        assert deployment["bucketMountsProblem"] is None or isinstance(deployment["bucketMountsProblem"], str)
         for key in ("execUserConfigured", "authEnabled", "projectsEnabled",
                     "guestLoginAllowed",
                     "factoryPublishAllowed", "saveNodeOutputDefault",
@@ -103,6 +104,66 @@ class TestTheSearchProvider:
         monkeypatch.delenv("CURIO_SEARCH_URL", raising=False)
         monkeypatch.setenv("CURIO_AGENT_SEARCH_URL", "https://search.example.com/?q={q}")
         assert self._flag(client) is False
+
+
+class TestTheBucketMounts:
+    """``bucketMounts`` says how the bucket mount service's self-test went:
+    ``none`` when no service is named (``--bucket-mounts-dir`` and
+    ``--bucket-mount-socket``), then ``pending``, ``passed`` or
+    ``unavailable``, with why in ``bucketMountsProblem``."""
+
+    def _line(self, client):
+        deployment = client.get("/api/monitor").get_json()["deployment"]
+        return deployment["bucketMounts"], deployment["bucketMountsProblem"]
+
+    def _named(self, monkeypatch):
+        from utk_curio.backend.app.discovery.infrastructure import bucket_mounts
+
+        monkeypatch.setenv(bucket_mounts.DIR_VARIABLE, "/bucket-mounts")
+        monkeypatch.setenv(bucket_mounts.SOCKET_VARIABLE, "/run/curio-bucket-mounts/rc.sock")
+
+    def _record(self, *outcome):
+        from utk_curio.backend.app.discovery.application import bucket_mount_check
+        from utk_curio.backend.app.discovery.infrastructure import bucket_mounts
+
+        bucket_mount_check.record(bucket_mounts.SelfTest(*outcome))
+
+    def setup_method(self):
+        from utk_curio.backend.app.discovery.application import bucket_mount_check
+
+        bucket_mount_check.reset()
+
+    def teardown_method(self):
+        from utk_curio.backend.app.discovery.application import bucket_mount_check
+
+        bucket_mount_check.reset()
+
+    def test_none_when_no_service_is_named(self, client, monkeypatch):
+        from utk_curio.backend.app.discovery.infrastructure import bucket_mounts
+
+        monkeypatch.delenv(bucket_mounts.DIR_VARIABLE, raising=False)
+        monkeypatch.delenv(bucket_mounts.SOCKET_VARIABLE, raising=False)
+        assert self._line(client) == ("none", None)
+
+    def test_pending_until_the_self_test_ends(self, client, monkeypatch):
+        self._named(monkeypatch)
+        assert self._line(client) == ("pending", None)
+
+    def test_passed(self, client, monkeypatch):
+        self._named(monkeypatch)
+        self._record(True, None, "mounted /selftest at /mounts/.selftest, read it, unmounted it")
+        assert self._line(client) == ("passed", None)
+
+    def test_unavailable_says_why_in_words_alone(self, client, monkeypatch):
+        from utk_curio.backend.app.discovery.infrastructure import bucket_mounts
+
+        self._named(monkeypatch)
+        self._record(False, "mount-refused", "mounting /selftest at /mounts/.selftest: Permission denied")
+        assert self._line(client) == ("unavailable", bucket_mounts.PROBLEMS["mount-refused"])
+        errors = client.get("/api/monitor/errors").get_json()["errors"]
+        assert [entry["detail"] for entry in errors] == [
+            "mounting /selftest at /mounts/.selftest: Permission denied",
+        ]
 
 
 class TestThePublishSwitch:
