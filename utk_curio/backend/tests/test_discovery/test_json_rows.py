@@ -67,6 +67,11 @@ class TestTheOptions:
         ({"unpack": [{"key": "k"}]}, "unpack[0] needs a path"),
         ({"unpack": [{"path": "a", "keys": "k"}]}, "unpack[0] reads no keys; a level takes path, key and columns"),
         ({"columns": {f"c{n}": "a" for n in range(257)}}, "a row keeps at most 256 columns"),
+    ], ids=[
+        "csv-option", "unpack-names-nothing", "same-name-any-case", "key-and-column-same-name",
+        "reserved-prefix", "no-columns", "columns-not-an-object", "path-not-text", "empty-name-in-path",
+        "path-too-long", "control-character-in-name", "parse-empty", "parse-empty-path", "unpack-empty",
+        "too-many-levels", "level-not-an-object", "level-without-path", "unknown-level-key", "too-many-columns",
     ])
     def test_options_that_cannot_be_read_are_refused_with_why(self, options, words):
         with pytest.raises(R.OptionError) as raised:
@@ -171,7 +176,7 @@ class TestWhatALineGives:
         (b'["W042", 1]', "not a JSON object"),
         (b'{"name": "S\xe3o Paulo"}', "not UTF-8 text"),
         (b"[" * 100_000 + b"]" * 100_000, "not JSON"),
-    ])
+    ], ids=["cut-short", "a-list", "not-utf8", "nested-too-deep"])
     def test_a_line_that_is_not_a_json_object_is_skipped_saying_why(self, raw, reason):
         with pytest.raises(R.LineSkipped) as skipped:
             R.read_line(raw)

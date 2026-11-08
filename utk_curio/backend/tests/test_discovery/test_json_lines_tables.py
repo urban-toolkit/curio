@@ -209,7 +209,9 @@ class TestReadingAFileInParts:
         assert frame["v"].tolist()[2:] == [1.0, 2.0, 2.5, 3.0] and frame["v"].isna().tolist()[:2] == [True, True]
         assert frame["t"].tolist() == ["1", "2", "3", "x", "4", "5"]
         assert frame["big"].tolist() == ["1", "2", "18446744073709551616", "3", "4", "5"]
-        assert frame["flag"].tolist() == ["true", "false", None, "true", "1", "false"]
+        # pandas 3 reads a missing text as NaN, older pandas as None.
+        assert frame["flag"].isna().tolist() == [False, False, True, False, False, False]
+        assert frame["flag"].dropna().tolist() == ["true", "false", "true", "1", "false"]
         # Arrow alone would read [1.5, false] as [1.5, 0.0].
         assert frame["score"].tolist() == ["0.5", "0.25", "1.5", "false", "2.0", "3.5"]
 
