@@ -1,10 +1,10 @@
 """Node code imports nothing from Curio's own code.
 
-A node's logic is its code (docs/EXTENDING.md, "A node's logic is its code"):
-what a package's node runs is in the package's sources, and what Curio gives
-node code is the functions skills/node-functions/SKILL.md lists, which need no
-import. So no package source, and no node of a shipped example, imports from
-``utk_curio``.
+A node's logic is in its package's functions (docs/EXTENDING.md, "A node's
+logic is in its package's functions"): what a package's node runs is in the
+package's sources, and what Curio gives node code is the functions
+skills/node-functions/SKILL.md lists, which need no import. So no package
+source, and no node of a shipped example, imports from ``utk_curio``.
 """
 
 from __future__ import annotations
@@ -84,6 +84,7 @@ def test_the_scan_finds_imports_planted_in_node_code(tmp_path):
 def test_no_node_code_imports_curio():
     unexpected = sorted(importers(REPO))
     assert not unexpected, (
-        "node code imports Curio's code: " + ", ".join(unexpected) + ". A node's logic is its code: put it in the "
-        "node's source or a module of its package, and call only the functions skills/node-functions/SKILL.md lists."
+        "node code imports Curio's code: " + ", ".join(unexpected) + ". A node's logic is in its package's "
+        "functions: put it in a module of the node's package, and call only the functions "
+        "skills/node-functions/SKILL.md lists."
     )

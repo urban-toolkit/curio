@@ -54,13 +54,21 @@ option.
 ### Raster math in another package
 
 The functions are the package's module, `scout_rasters`: `raster_algebra`
-holds the operations and the statistics, and `web_tiles` the web map tile
-helpers `tile_bounds` and `mosaic_web_tiles`, with the mosaic they write,
-`mosaic_rasters`: rasters on one grid side by side in one GeoTIFF. A node
-of another package imports them when its package names Rasterization in its
-manifest's `dependencies.packages`, as Deep Umbra
+holds the operations and the statistics, `web_tiles` the web map tile helpers
+`tile_bounds` and `mosaic_web_tiles`, and `mosaic` the mosaics:
+
+| Function | What it does |
+|---|---|
+| `mosaic_rasters(tiles, path, *, crs, dtype, ...)` | Rasters that lie on one grid side by side in one raster at `path`: a GDAL VRT that points at their files when every tile names its file, a GeoTIFF of their cells when every tile holds its cells |
+| `mosaic_grid(tiles, resolution=None)` | The grid tiles make side by side, and where each tile's top-left cell lands on it |
+| `mosaic_collection(tiles, output_file)` | A raster collection's rows side by side in one VRT that `output_file(name)` places, opened; it names the first way the tiles differ in CRS, resolution, bands, data type or no-data value |
+
+A node of another package imports them when its package names Rasterization
+in its manifest's `dependencies.packages`, as Deep Umbra
 ([`model.scout.deep-umbra@1`](../model.scout.deep-umbra@1/README.md)) does for
-`tile_bounds` and `mosaic_rasters`:
+`tile_bounds` and `mosaic_rasters`, and Media
+([`curio.media@1`](../curio.media@1/README.md)) for `mosaic_collection`, which
+its Mosaic Rasters node calls:
 
 ```json
 "dependencies": {"packages": {"curio.rasterization@1": "*"}}

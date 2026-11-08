@@ -1,6 +1,6 @@
 {
   "sha256": {
-    "README.md": "7b97c5022208964b708b37d5f952fd87cbc4e61d935e2c94a59cbf3c70f44044",
+    "README.md": "914d1f3a76b8f69bdafa0cdca24fc05190aafe2f60e46c9b1696480d91645bd1",
     "manifest.json": "bb078aa13b4f8148bc840fbcf1f9828d9108cd1df5c1a39a0e3604706a3c212b",
     "sources/media_collections.py": "bfd625bc542345b2b63b03e1a73752aaafe3bae8586ceb6c7abb6c434594ec21",
     "sources/mosaic-rasters.py": "85a006f4cd4b3f328f0647b07fc57e3cccece6bdc89fde040f2ed1bcdc8805bb",

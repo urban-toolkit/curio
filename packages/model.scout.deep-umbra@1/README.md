@@ -107,6 +107,7 @@ with `--with-examples`.
 
 The package depends on [Rasterization](../curio.rasterization@1/README.md)
 (`curio.rasterization@1` in its `dependencies.packages`): the node places each
-tile it predicts with Rasterization's `tile_bounds` and writes them side by
-side with its `mosaic_rasters` (`scout_rasters.web_tiles`), so Rasterization
-must be installed too, and a run of the node is handed both packages' modules.
+tile it predicts with Rasterization's `tile_bounds` (`scout_rasters.web_tiles`)
+and writes them side by side with its `mosaic_rasters` (`scout_rasters.mosaic`),
+so Rasterization must be installed too, and a run of the node is handed both
+packages' modules.

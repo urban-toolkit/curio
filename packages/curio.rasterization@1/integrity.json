@@ -1,6 +1,6 @@
 {
   "sha256": {
-    "README.md": "95841978d6ad7d1f2c57eeeb5ce91776b06eece860d820bd303b17f7a67e21d0",
+    "README.md": "3fc4a5f15b1ef34231cbbb7a4c73dc85792e938e99c5bc3856479e6a94330445",
     "manifest.json": "7826b981430812bd230c1eee1f0babbe7e5f6ac8ecb9b178699ffa05f94c51d2",
     "skills/rasterization/SKILL.md": "876eab34e2dfae9ce4b6b3336e3ac6cf637361def2602928ee38669f63ab74e2",
     "skills/rasterization/evals/evals.json": "b135c8ed0e060b8fa8d63eb5a6f2c60e9912a251e752dedfe09c949a3eee2729",

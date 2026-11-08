@@ -188,8 +188,8 @@ def test_each_shipped_dataflow_lists_the_packages_its_packages_need():
 #
 # Both scans leave out the package's own modules and the modules of the
 # packages its ``dependencies.packages`` names, which the account's store
-# resolves (``python_modules.dependency_module_names``): Deep Umbra imports
-# Rasterization's ``scout_rasters`` and names ``curio.rasterization@1``. The check below leaves
+# resolves (``python_modules.dependency_module_names``): Deep Umbra and Media import
+# Rasterization's ``scout_rasters`` and name ``curio.rasterization@1``. The check below leaves
 # out the same modules through the same function, in a store holding every
 # shipped package.
 
