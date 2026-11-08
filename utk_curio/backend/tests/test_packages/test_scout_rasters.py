@@ -269,8 +269,15 @@ def test_raster_conversion_is_retired_and_no_shipped_dataflow_names_the_old_type
 def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
     """A dataflow's lockfile is how opening it, a scenario dropped from it and
     ``--with-examples`` add the package: each shipped dataflow with one of the
-    two raster nodes names ``curio.rasterization@1``, and no other does."""
-    with_a_raster_node, with_a_node, declaring = set(), set(), set()
+    two raster nodes names ``curio.rasterization@1``, and so does each with a
+    node of a package that names it in ``dependencies.packages`` (Media's
+    Mosaic Rasters calls its mosaic), and no other does."""
+    dependents = set()
+    for manifest_path in sorted((REPO / "packages").glob("*/manifest.json")):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if f"{PACKAGE_ID}@1" in ((manifest.get("dependencies") or {}).get("packages") or {}):
+            dependents.add(manifest["id"])
+    with_a_raster_node, with_a_node, with_a_dependents_node, declaring = set(), set(), set(), set()
     for pattern in SHIPPED_JSON[:2]:
         for path in sorted(REPO.glob(pattern)):
             dataflow = json.loads(path.read_text(encoding="utf-8")).get("dataflow") or {}
@@ -280,6 +287,8 @@ def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
                 with_a_raster_node.add(key)
             if any(node_type.startswith(f"{PACKAGE_ID}/") for node_type in types):
                 with_a_node.add(key)
+            if any(node_type.split("/")[0] in dependents for node_type in types):
+                with_a_dependents_node.add(key)
             if f"{PACKAGE_ID}@1" in (dataflow.get("packages") or []):
                 declaring.add(key)
     assert with_a_raster_node == {
@@ -288,8 +297,14 @@ def test_every_shipped_dataflow_with_a_raster_node_declares_the_package():
         "docs/examples/dataflows/lower-manhattan-park-shade.json",
         "docs/examples/dataflows/quad-cities-flood-vulnerability.json",
     }, with_a_raster_node
-    # The Vega-Lite package holds the charts: only a raster node needs this one.
-    assert with_a_node == declaring == with_a_raster_node, (with_a_node, declaring)
+    # The Vega-Lite package holds the charts: only a raster node is this one's.
+    assert with_a_node == with_a_raster_node, with_a_node
+    assert declaring == with_a_node | with_a_dependents_node, (declaring, with_a_node, with_a_dependents_node)
+    assert {
+        "docs/examples/18-storage-orthorectified-imagery.json",
+        "docs/examples/21-storage-photos-and-videos.json",
+        "docs/examples/22-storage-audio-recordings.json",
+    } <= with_a_dependents_node, sorted(with_a_dependents_node)
 
 
 # ---------------------------------------------------------------------------
