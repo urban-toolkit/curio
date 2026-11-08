@@ -218,6 +218,9 @@ def _template_entry(package_id: str, template) -> dict:
         # third, "in/out" handle. plan_topology reads the interaction rule
         # from this and the category.
         "bidirectional": bool(template.bidirectional),
+        # The behavior it names: a rule for one kind of node reads it, never
+        # the template's id (plan_topology's Map Editor and its map).
+        "behavior": template.behavior or "",
         # dev/90 A14: a PRESENTATION template (editor none + a custom
         # behavior — the dev/89 post-it profile) holds authorable CONTENT
         # (the note text its behavior renders) even though it has no code
