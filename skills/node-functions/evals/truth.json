@@ -441,7 +441,7 @@
       "case": 4,
       "name": "golden",
       "kind": "golden",
-      "source": "docs/examples/21-storage-photos-and-videos.json node survey-frames (curio.media's Sample Video Frames), its content, reading the collection as node survey-loader's content does, curio_load_collection(\"data.curio.storage-survey\"), at the half second the prompt names (EVERY_SECONDS), and naming curio_derived_file's kind=\"video\", the default skills/node-functions/SKILL.md gives it",
+      "source": "packages/curio.media@1/sources/media_collections.py, sample_video_frames, which docs/examples/21-storage-photos-and-videos.json node survey-frames (curio.media's Sample Video Frames) calls, written out as one Python node's code with its settings as constants, reading the collection as node survey-loader's content does, curio_load_collection(\"data.curio.storage-survey\"), at the half second the prompt names (EVERY_SECONDS), and naming curio_derived_file's kind=\"video\", the default skills/node-functions/SKILL.md gives it",
       "fails": [],
       "reply": "I added a Python Computation node, Survey video frames. Its code reads the collection with curio_load_collection(\"data.curio.storage-survey\"), takes its video's row, and for each frame at 0, 500, 1000 ms and on gets where to write it from curio_derived_file(dataset_id, file_id, t_ms, kind=\"video\"), writes the frame there as a JPEG and returns the frames' rows, which carry the thumbnail and image_url curio_derived_file gives, so a Simple View shows them as cards.",
       "changes": {

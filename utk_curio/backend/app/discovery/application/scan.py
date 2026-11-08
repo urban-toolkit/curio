@@ -56,6 +56,7 @@ KIND_LABEL = {
     "videos": "Videos",
     "media": "Photos and videos",
     "audio": "Audio",
+    "files": "Files",
 }
 
 
@@ -260,7 +261,8 @@ def _extension(relpath: str) -> str:
 
 
 def match_file(spec: ResourceSpec, entry: FileEntry) -> MatchedFile | None:
-    if _extension(entry.relpath) not in spec.extensions:
+    # A resource that lists no extensions takes every file its template matches.
+    if spec.extensions and _extension(entry.relpath) not in spec.extensions:
         return None
     values = spec.template.match(entry.relpath)
     if values is None:
@@ -501,7 +503,8 @@ def to_resource(manifest: DiscoverySourceManifest, group: Group) -> DiscoveryRes
         kind=group.spec.kind,
         file_count=len(group.files),
         fields=tuple(fields),
-        samples=tuple(f.relpath for f in group.files[:MAX_SAMPLES]),
+        # The files its thumbnails draw; a row whose files have no preview has none.
+        samples=tuple(f.relpath for f in group.files[:MAX_SAMPLES]) if group.spec.has_previews else (),
         parameter_ids=("area",) if takes_area(manifest, group.spec) else (),
     )
 
@@ -635,7 +638,7 @@ class ListingCache:
     ) -> Sample | None:
         """The file at *index* of a collection row, to draw a thumbnail of."""
         group = self.group(manifest, resource_id, scope=scope)
-        if group is None or not group.spec.is_collection:
+        if group is None or not group.spec.has_previews:
             return None
         return sample_at(group, index)
 

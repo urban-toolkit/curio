@@ -7,12 +7,15 @@ names and grid checks are the Rasterization package's module
 codes=None, ...)``, which writes where ``output_file`` says, and
 ``raster_statistics(...)``, with the arguments the old helpers took.
 ``absolute=True`` gives the size of a result, such as how much a depth
-changed. SCOUT's tile helpers, ``tile_bounds`` and ``mosaic_web_tiles``, are
-the package's too (``scout_rasters.web_tiles``).
+changed. SCOUT's tile helpers, ``tile_bounds`` and ``mosaic_web_tiles``
+(``scout_rasters.web_tiles``), and the mosaic, ``mosaic_rasters`` on
+``mosaic_grid`` and ``mosaic_collection`` (``scout_rasters.mosaic``), are the
+package's too.
 
 A node reaches them by importing them: the Raster Calculator's own code, or a
 node of a package that names Rasterization in ``dependencies.packages``, as Deep
-Umbra does for ``tile_bounds``. A plain Python node no longer has them:
+Umbra does for ``tile_bounds`` and ``mosaic_rasters``, and Media for
+``mosaic_collection``. A plain Python node no longer has them:
 ``curio_raster_calculate`` and ``curio_raster_statistics`` refuse, naming the
 Raster Calculator. So the flood dataflow's two Average depth by period nodes,
 which choose each period's depth, are Raster Calculators, whose input circles
@@ -54,7 +57,7 @@ PLAIN = "curio.builtin/python-computation"
 MOVED = (
     "curio_raster_calculate", "curio_raster_statistics", "raster_calculate", "raster_statistics",
     "operate", "in_codes", "masked_bands", "dataset_grid", "write_raster", "_content_name",
-    "tile_corner", "tile_bounds", "mosaic_web_tiles",
+    "tile_corner", "tile_bounds", "mosaic_web_tiles", "mosaic_grid", "mosaic_rasters", "mosaic_collection",
 )
 #: What the sandbox kept for Compare Scenarios' raster Difference, gone with
 #: it: the envelope subtraction, the grid checks it called and their error,
@@ -186,8 +189,8 @@ def test_a_plain_python_node_calling_the_old_helpers_is_refused(workspace, call)
 
 
 def test_deep_umbra_declares_rasterization_and_its_node_is_handed_its_modules(tmp_curio):
-    """Deep Umbra's node imports ``tile_bounds`` from Rasterization, which its
-    manifest names in ``dependencies.packages``: a run of Accumulated Shadow
+    """Deep Umbra's node imports ``mosaic_rasters`` and ``tile_bounds`` from
+    Rasterization, which its manifest names in ``dependencies.packages``: a run of Accumulated Shadow
     is handed Deep Umbra's module and Rasterization's, its own first, as any node of
     a package that names another is (``python_modules.modules_for_node``)."""
     from utk_curio.backend.app.packages.application.python_modules import modules_for_node
@@ -203,7 +206,8 @@ def test_deep_umbra_declares_rasterization_and_its_node_is_handed_its_modules(tm
         {"root": str(package_dir("guest", RASTERIZATION.name) / "sources"), "names": [MODULE]},
     ]
     outputs = (DEEP_UMBRA / "sources" / "deep_umbra" / "node_outputs.py").read_text(encoding="utf-8")
-    assert "from scout_rasters.web_tiles import tile_bounds" in outputs
+    assert "\nfrom scout_rasters.mosaic import mosaic_rasters\n" in outputs
+    assert "\nfrom scout_rasters.web_tiles import tile_bounds\n" in outputs
 
 
 def test_the_flood_dataflows_averages_by_period_are_raster_calculators():
@@ -243,10 +247,10 @@ def _app_modules():
 
 def test_no_core_module_defines_the_moved_functions():
     """None of the moved functions is defined in Curio's own code, the old
-    module is gone, and the package defines each of them. Nor does core keep
-    the envelope subtraction and the grid checks Compare Scenarios' raster
-    Difference called: their module went with it, and the package's raster
-    algebra alone defines the grid checks."""
+    module is gone, and the package defines each of them, in one of its
+    modules only. Nor does core keep the envelope subtraction and the grid
+    checks Compare Scenarios' raster Difference called: their module went with
+    it, and the package's raster algebra alone defines the grid checks."""
     found = []
     for path, relative in _app_modules():
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
@@ -260,8 +264,12 @@ def test_no_core_module_defines_the_moved_functions():
     assert not (REPO / "utk_curio" / "sandbox" / "util" / "raster_algebra.py").exists()
     assert not ENVELOPES.exists(), ENVELOPES
     defined = set()
-    for module in ("raster_algebra.py", "web_tiles.py"):
+    twice = []
+    for module in ("raster_algebra.py", "web_tiles.py", "mosaic.py"):
         tree = ast.parse((SOURCES / MODULE / module).read_text(encoding="utf-8"))
-        defined |= {node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
+        here = {node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
+        twice += sorted(f"{module}: {name}" for name in here & defined & set(MOVED))
+        defined |= here
+    assert twice == [], twice
     assert set(MOVED) - {"curio_raster_calculate", "curio_raster_statistics"} <= defined, defined
     assert {"RasterAlgebraError", "js_number", "grid_differences", "describe_grid"} <= defined, defined

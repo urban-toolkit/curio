@@ -301,7 +301,10 @@ AUDIO_EXTENSIONS = frozenset({"wav", "flac", "mp3", "ogg", "opus", "m4a", "aiff"
 
 def file_kind(resource_kind: str, relpath: str) -> str:
     """What one file of a collection is: ``image``, ``video``, ``frame``,
-    ``audio`` or ``raster``."""
+    ``audio``, ``raster``, or ``file`` for every file of a ``files``
+    resource, whatever its extension says."""
+    if resource_kind == "files":
+        return "file"
     ext = relpath.rsplit(".", 1)[-1].lower() if "." in relpath else ""
     if resource_kind == "rasters":
         return "raster"

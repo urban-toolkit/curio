@@ -555,6 +555,7 @@
           "kind": {
             "enum": [
               "audio",
+              "files",
               "frames",
               "images",
               "media",
@@ -562,12 +563,12 @@
               "table",
               "videos"
             ],
-            "description": "'table' files are copied into the Data Catalog. Every other kind becomes one collection dataset, an index with one row per file, referenced in place."
+            "description": "'table' files are copied into the Data Catalog. Every other kind becomes one collection dataset, an index with one row per file, referenced in place. A 'files' resource takes files of any type: nothing is read from them, they have no preview, and node code reads each from its row's path."
           },
           "path": {
             "type": "string",
             "minLength": 1,
-            "description": "{name} captures part of a folder or file name, {name:int}, {name:date} and {name:<strftime>} type it, * matches within a name, and ** spans folders."
+            "description": "{name} captures part of a folder or file name, {name:int}, {name:date} and {name:<strftime>} type it, * matches within a name, and ** spans folders. A strftime format takes %Y, %y, %m, %d, %j, %b, %H, %M, %S, and %f, a fraction of a second of 1 to 6 digits (016 is 16 milliseconds)."
           },
           "format": {
             "enum": [
@@ -575,11 +576,12 @@
               "geojson",
               "gpkg",
               "json",
+              "jsonl",
               "parquet",
               "pbf",
               "shp"
             ],
-            "description": "The file format of a 'table' resource."
+            "description": "The file format of a 'table' resource. A 'jsonl' file holds one JSON object per line, read into rows as its options say."
           },
           "datasets": {
             "type": "string",
@@ -593,7 +595,7 @@
               "type": "string",
               "pattern": "^[a-z0-9]{1,8}$"
             },
-            "description": "The file extensions the resource takes, without the dot. The defaults follow its kind, or its format for a table."
+            "description": "The file extensions the resource takes, without the dot. The defaults follow its kind, or its format for a table; a 'files' resource takes every file its path matches."
           },
           "fps": {
             "type": "number",
@@ -602,9 +604,46 @@
             "description": "Frames per second of a 'frames' resource: each frame's t_s is its number over it."
           },
           "time": {
-            "type": "string",
-            "pattern": "^[a-z_][a-z0-9_]{0,31}$",
-            "description": "A collection only: the date or strftime capture holding each file's timestamp, which fills recorded_at for audio and taken_at for the other kinds."
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z_][a-z0-9_]{0,31}$",
+                "description": "A date or strftime capture, read as written."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "capture"
+                ],
+                "additionalProperties": false,
+                "not": {
+                  "required": [
+                    "unit",
+                    "timezone"
+                  ]
+                },
+                "properties": {
+                  "capture": {
+                    "type": "string",
+                    "pattern": "^[a-z_][a-z0-9_]{0,31}$"
+                  },
+                  "unit": {
+                    "enum": [
+                      "ms",
+                      "ns",
+                      "s"
+                    ],
+                    "description": "For an int capture: seconds, milliseconds or nanoseconds since 1970, in UTC."
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,32}){0,2}$",
+                    "description": "For a date or strftime capture: the IANA time zone its local time is in, such as America/Chicago. The time is converted to UTC."
+                  }
+                }
+              }
+            ],
+            "description": "A collection only: the capture holding each file's timestamp, which fills recorded_at for audio and taken_at for the other kinds. A date or strftime capture's name, or an object: {capture, unit} for an int capture that is an epoch time, {capture, timezone} for a date or strftime capture written in local time."
           },
           "metadata": {
             "type": "object",
@@ -623,7 +662,7 @@
           },
           "options": {
             "type": "object",
-            "description": "For a csv table: delimiter and header. A table read with them lands in the Data Catalog as Parquet. For an 'autark-osm' resource: layers, the Autark layers it loads, or tags, the OpenStreetMap tags whose features it loads. For a 'mapillary' resource: endpoint, 'images' for an images resource and 'map_features' for a table. For an 'overture' resource: theme and type, the Overture feature type it reads, subtype, the one subtype it keeps, and layer, the Autark layer an Autark map draws it as.",
+            "description": "For a csv table: delimiter and header. A table read with them lands in the Data Catalog as Parquet. For a jsonl table: parse, columns and unpack; it lands as Parquet. For an 'autark-osm' resource: layers, the Autark layers it loads, or tags, the OpenStreetMap tags whose features it loads. For a 'mapillary' resource: endpoint, 'images' for an images resource and 'map_features' for a table. For an 'overture' resource: theme and type, the Overture feature type it reads, subtype, the one subtype it keeps, and layer, the Autark layer an Autark map draws it as.",
             "properties": {
               "theme": {
                 "type": "string",
@@ -676,6 +715,53 @@
                   "pattern": "^([A-Za-z0-9][A-Za-z0-9_:.\\-]{0,63})=(\\*|[^\"\\\\\\[\\]\\x00-\\x1f\\x7f]{1,255})$"
                 },
                 "description": "OpenStreetMap tags, key=value or key=*: the nodes, ways and multipolygon relations with any of them."
+              },
+              "parse": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/jsonlPath"
+                    },
+                    {
+                      "minLength": 1
+                    }
+                  ]
+                },
+                "description": "A jsonl table: fields of a line that hold JSON as text, read as the JSON they hold before anything else."
+              },
+              "columns": {
+                "$ref": "#/$defs/jsonlColumns",
+                "description": "A jsonl table: the columns a line keeps. Without unpack and columns, every field of a line is a column."
+              },
+              "unpack": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 8,
+                "description": "A jsonl table: nested lists or objects whose items are the rows, outermost first. With unpack, a row holds only the columns the line and the levels name.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "path"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "$ref": "#/$defs/jsonlPath",
+                      "description": "Where the list or object is, from the level above (from the line, for the first level)."
+                    },
+                    "key": {
+                      "$ref": "#/$defs/jsonlColumnName",
+                      "description": "A column for each item's name in an object, or its position in a list."
+                    },
+                    "columns": {
+                      "$ref": "#/$defs/jsonlColumns",
+                      "description": "The columns a row keeps of each item, each path from the item."
+                    }
+                  }
+                }
               }
             }
           },
@@ -1107,6 +1193,61 @@
           "description": "tags: OpenStreetMap keys the field suggests, such as amenity or shop."
         }
       }
+    },
+    "jsonlPath": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^([^.\\u0000-\\u001f\\u007f]+(\\.[^.\\u0000-\\u001f\\u007f]+)*)?$",
+      "description": "Keys joined by dots, from where the path starts. A number picks an item of a list (bbox.0). A key may itself hold dots (meta.site): the longest key that is there is taken first. The empty path is the item itself."
+    },
+    "jsonlColumnName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?![_][_][Cc][Uu][Rr][Ii][Oo][_])[^\\u0000-\\u001f\\u007f]+$",
+      "description": "A column's name, unique in the table whatever its case, not starting with __curio_."
+    },
+    "jsonlColumns": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 256,
+      "propertyNames": {
+        "$ref": "#/$defs/jsonlColumnName"
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/jsonlPath"
+          },
+          {
+            "$ref": "#/$defs/jsonlColumn"
+          }
+        ]
+      },
+      "description": "Columns, each a name and the path to its value, or {path, type}. An object or a list lands as its JSON text, and NaN, Infinity and -Infinity as null."
+    },
+    "jsonlColumn": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/jsonlPath"
+        },
+        "type": {
+          "enum": [
+            "timestamp",
+            "int",
+            "float",
+            "string",
+            "bool"
+          ],
+          "description": "timestamp: ISO 8601 text with its offset, as a UTC time to the nanosecond, with no zone attached; int: a whole number, or text holding one, as 64 bits; float: a number, or text holding one; string: any value, a number or an object as its JSON text; bool: true or false, or that text. A value its type cannot read is null, and the add counts it by column and reason."
+        }
+      },
+      "description": "A column with a type."
     }
   }
 }

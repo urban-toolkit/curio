@@ -145,8 +145,8 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["audio", "frames", "images", "media", "rasters", "videos"],
-          "description": "The kind of files, that of the source row they belong to."
+          "enum": ["audio", "files", "frames", "images", "media", "rasters", "videos"],
+          "description": "The kind of files, that of the source row they belong to. A 'files' collection's files are of any type, with no preview."
         },
         "sourceId": { "type": "string", "description": "The source's folder name, '<sourceId>@<major>'." },
         "sourceName": { "type": "string", "description": "The source's name." },
