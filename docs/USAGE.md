@@ -89,6 +89,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--discovery-root PATH` | `<repo_root>/discovery/` | Where the shipped Discovery Catalog sources are read from. Your own sources stay in `.curio/discovery/` |
 | `--discovery-max-download-mb MB` | `1024` | The largest file the Discovery Catalog downloads, or adds from a bucket. A source's manifest may set a lower limit for itself |
 | `--media-cache-max-gb GB` | `20` | How much each account may hold in cached bucket files and downloaded street-level images |
+| `--media-cache-max-file-gb GB` | `4` | The largest file **Cache files** copies from a bucket. A collection holding a larger file is refused before any file is copied |
 | `--packages-root PATH` | `<repo_root>/packages/` | Where the shared Node Catalog is read from and published to. Start it from a copy of `packages/`: the built-in nodes are installed from it |
 | `--save-node-outputs` / `--no-save-node-outputs` | off | Whether a new node's **Save output dataset** toggle starts on. Users can still flip it on each node |
 | `--allow-publish` / `--no-allow-publish` | on | Whether the node, model, data, agent and skill catalogs allow Publish/Unpublish |

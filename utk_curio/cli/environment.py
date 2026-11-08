@@ -87,7 +87,7 @@ def set_state_dir(state_dir=None):
         os.environ["CURIO_STATE_DIR"] = str(Path(state_dir).expanduser().resolve())
 
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, agent_search_url=None, backend_url=None, discovery_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None, media_cache_max_gb=None, db_pool_size=None, db_pool_overflow=None, db_pool_timeout=None, proxy_hops=None, package_workers=None, js_parallelism=None, js_registry_url=None, js_block_unpinned=None, shared_guest_name=None, shared_guest_username=None, collab_origins=None, collab_namespace=None, log_to_stdout=None, packages_root=None, llm_endpoint_file=None, model_weights_dir=None, bucket_mounts_dir=None, bucket_mount_socket=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, agent_search_url=None, backend_url=None, discovery_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None, media_cache_max_gb=None, media_cache_max_file_gb=None, db_pool_size=None, db_pool_overflow=None, db_pool_timeout=None, proxy_hops=None, package_workers=None, js_parallelism=None, js_registry_url=None, js_block_unpinned=None, shared_guest_name=None, shared_guest_username=None, collab_origins=None, collab_namespace=None, log_to_stdout=None, packages_root=None, llm_endpoint_file=None, model_weights_dir=None, bucket_mounts_dir=None, bucket_mount_socket=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -304,6 +304,8 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
             os.environ[env_name] = str(value)
     if media_cache_max_gb is not None:
         os.environ["CURIO_MEDIA_CACHE_MAX_GB"] = f"{media_cache_max_gb:g}"
+    if media_cache_max_file_gb is not None:
+        os.environ["CURIO_MEDIA_CACHE_MAX_FILE_GB"] = f"{media_cache_max_file_gb:g}"
     if js_block_unpinned is not None:
         os.environ["CURIO_JS_BLOCK_UNPINNED"] = "1" if js_block_unpinned else "0"
     if log_to_stdout is not None:
