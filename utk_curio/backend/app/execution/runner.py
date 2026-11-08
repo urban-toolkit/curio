@@ -492,14 +492,19 @@ def run_through_node(
         if is_py and "curio_load_model" in seeded:
             # The model packages the node loads, as /processPythonCode
             # resolves them, from the acting account's store.
-            from utk_curio.backend.app.execution.node_exec import resolve_models_for
+            from utk_curio.backend.app.execution.node_exec import resolve_fetched_weights_for, resolve_models_for
 
             if acting_user is not None:
                 models = resolve_models_for(seeded, acting_key, owners=owners)
+                model_weights = resolve_fetched_weights_for(seeded, acting_key, owners=owners) if models else {}
             else:
                 models = resolve_models_for(seeded, exec_user_key or user_key)
+                model_weights = resolve_fetched_weights_for(seeded, exec_user_key or user_key) if models else {}
             if models:
                 payload["models"] = models
+            if model_weights:
+                # Weights their operator fetched, read where they are.
+                payload["model_weights"] = model_weights
         if is_py:
             # The modules the node's package ships beside its templates, as
             # /processPythonCode resolves them (#468).

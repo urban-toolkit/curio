@@ -104,8 +104,10 @@ class _TransformersRunner:
         return logits[0].argmax(dim=0).cpu().numpy()
 
 
-def load_runner(model_dir: str):
-    """The runner a model's manifest names (``models.model_spec``)."""
+def load_runner(model_dir: str, weights: str | None = None):
+    """The runner a model's manifest names (``models.model_spec``), reading
+    its weights under *weights* when given (weights fetched under
+    ``--model-weights-dir``), else under *model_dir*."""
     from utk_curio.sandbox.util.models import model_spec
 
     path = os.path.join(str(model_dir), "manifest.json")
@@ -115,10 +117,11 @@ def load_runner(model_dir: str):
     except (OSError, ValueError) as exc:
         raise RuntimeError(f"{model_dir} is not a Model Catalog model: {exc}") from exc
     runtime = manifest.get("runtime")
+    root = str(weights or model_dir)
     if runtime == "onnx":
-        return _OnnxRunner(str(model_dir), manifest), manifest
+        return _OnnxRunner(root, manifest), manifest
     if runtime == "transformers":
-        return _TransformersRunner(str(model_dir), manifest), manifest
+        return _TransformersRunner(root, manifest), manifest
     raise RuntimeError(f"Curio does not run {runtime!r} models")
 
 
@@ -183,10 +186,18 @@ def make_curio_segment(curio_derived_file=None):
         import pandas as pd
         from PIL import Image
 
-        if (getattr(model, "manifest", None) or {}).get("task") == "image-to-image":
+        from utk_curio.sandbox.util.models import CONCEPT_SEGMENTATION
+
+        task = (getattr(model, "manifest", None) or {}).get("task")
+        if task == "image-to-image":
             raise ValueError(
                 f"{getattr(model, 'id', 'This model')} makes images from images, so it does not label pixels: "
                 "run it with a node made for it, not curio_segment"
+            )
+        if task == CONCEPT_SEGMENTATION:
+            raise ValueError(
+                f"{getattr(model, 'id', 'This model')} finds the things text prompts name, so it does not "
+                "label pixels by class: run it with a node made for it, not curio_segment"
             )
         runner = getattr(model, "runner", None)
         if runner is None:
