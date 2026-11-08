@@ -1,0 +1,26 @@
+# Compose file of the CI job bucket-mounts (.github/workflows/docker-compose.yml):
+# a stand-in for Curio's container, beside the bucket-mounts service of
+# docker-compose.bucket-mounts.yml, which is merged after this file
+# (COMPOSE_FILE=docker-compose.ci-bucket-mounts.yml:docker-compose.bucket-mounts.yml)
+# and binds the mounts folder and the control volume into it as into Curio's.
+#
+# The job runs the backend's own self-test in it, from the checkout it mounts
+# read-only (scripts/bucket-mounts/ci_check.py), and reads the test mount as
+# curio-exec, an account it makes as Curio's image makes one, so the read shows
+# what node code can read. Its healthcheck waits for that account.
+services:
+  curio:
+    image: python:3.12-alpine
+    init: true
+    command: ["sh", "-c", "adduser -D -H -s /sbin/nologin curio-exec && exec sleep 86400"]
+    volumes:
+      - .:/curio:ro
+    environment:
+      CURIO_BUCKET_MOUNTS_DIR: /bucket-mounts
+      CURIO_BUCKET_MOUNT_SOCKET: /run/curio-bucket-mounts/rc.sock
+      CURIO_EXEC_USER: curio-exec
+    healthcheck:
+      test: ["CMD", "id", "curio-exec"]
+      interval: 2s
+      timeout: 5s
+      retries: 30

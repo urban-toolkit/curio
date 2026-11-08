@@ -130,9 +130,13 @@ def serve():
     # that serves. Under the reloader this function also runs in the process
     # that only watches the files, which serves nothing.
     if not run_kwargs["use_reloader"] or is_running_from_reloader():
+        from utk_curio.backend.app.discovery import service as discovery_service
         from utk_curio.backend.app.monitor import open_files as monitor_open_files
 
         monitor_open_files.start_sampler(app)
+        # The bucket mount service's self-test, once, when --bucket-mounts-dir
+        # and --bucket-mount-socket name one; /monitor shows how it went.
+        discovery_service.start_bucket_mount_check()
 
     # The app's own SocketIO server (extensions.init_socketio), which
     # Flask-SocketIO keeps on the app.

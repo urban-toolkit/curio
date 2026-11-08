@@ -331,6 +331,23 @@ def main():
         ),
     )
     parser.add_argument(
+        "--bucket-mounts-dir", default=None, metavar="PATH",
+        help=(
+            "Directory where the bucket mount service's mounts appear in this "
+            "container, /bucket-mounts with docker-compose.bucket-mounts.yml "
+            "(sets CURIO_BUCKET_MOUNTS_DIR). Give --bucket-mount-socket with it."
+        ),
+    )
+    parser.add_argument(
+        "--bucket-mount-socket", default=None, metavar="PATH",
+        help=(
+            "The bucket mount service's control socket, "
+            "/run/curio-bucket-mounts/rc.sock with docker-compose.bucket-mounts.yml "
+            "(sets CURIO_BUCKET_MOUNT_SOCKET). Give --bucket-mounts-dir with it. "
+            "Under --deploy, its folder is made readable by its owner alone."
+        ),
+    )
+    parser.add_argument(
         "--save-node-outputs", action=argparse.BooleanOptionalAction, default=None,
         help=(
             "Whether a new node's 'Save output dataset' toggle starts on (sets "
@@ -482,6 +499,8 @@ def main():
         discovery_root=args.discovery_root,
         packages_root=args.packages_root,
         model_weights_dir=args.model_weights_dir,
+        bucket_mounts_dir=args.bucket_mounts_dir,
+        bucket_mount_socket=args.bucket_mount_socket,
         save_node_outputs=args.save_node_outputs,
         solve_max_attempts=args.solve_max_attempts,
         solve_node_budget=args.solve_node_budget,
