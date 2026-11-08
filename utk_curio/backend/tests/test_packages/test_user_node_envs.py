@@ -19,6 +19,11 @@ import pytest
 from utk_curio.backend.app.packages.infrastructure import backend_runtime as rt
 from utk_curio.backend.app.packages.application import libraries
 from utk_curio.backend.app.packages.application import provisioning
+# The real installer, taken before conftest's autouse stub replaces it: the
+# tests of a prune without isolation need the pip run it notes.
+from utk_curio.backend.app.packages.infrastructure.pip_runner import (
+    install_python_deps as _real_install_python_deps,
+)
 
 
 class _Manifest:
@@ -344,3 +349,231 @@ class TestWhereTheUninstallLands:
         assert uninstall_calls == []
         assert report.removed == []
         assert report.kept == ["humanize"]
+
+
+def _transformers_libraries() -> dict[str, str]:
+    """What a model the Discovery Catalog's Hugging Face source adds declares:
+    the libraries a Transformers checkpoint runs on, torch among them."""
+    from utk_curio.backend.app.discovery.application.model_acquire import RUNTIME_DEPS
+
+    return dict(RUNTIME_DEPS["transformers"])
+
+
+def _new_dataflow(client, token) -> str:
+    """A new, empty dataflow of the account *token* signs in; its id."""
+    resp = client.post(
+        "/api/projects",
+        json={
+            "name": "uses-a-package",
+            "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
+            "outputs": [],
+        },
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    return resp.get_json()["id"]
+
+
+@pytest.fixture
+def a_dataflow_using(client, user_and_token, install_package, manifest_dict, monkeypatch):
+    """Factory: a new dataflow of the signed-in account that uses a package
+    of the account's own declaring *python_deps*. Returns ``(user_key,
+    project_id, manifest)``.
+
+    Adding a package the store holds asks whether its libraries import, so the
+    probes are stubbed: nothing here imports a library for real.
+    """
+    from utk_curio.backend.app.packages import service as packages_service
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+    from utk_curio.backend.app.projects import services as projects_services
+
+    monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
+    monkeypatch.setattr(
+        pip_runner, "import_failures_in", lambda deps, path, interpreter=None: {})
+    user, token = user_and_token
+    user_key = projects_services._user_dir_key(user)
+
+    def _make(package_id: str, python_deps: dict[str, str]):
+        manifest = install_package(
+            user_key, manifest_dict(package_id, python_deps=python_deps)).manifest
+        project_id = _new_dataflow(client, token)
+        packages_service.install_to_project(user_key, project_id, manifest.dir_name)
+        return user_key, project_id, manifest
+
+    return _make
+
+
+class TestAddingAPackageTheStoreHolds:
+    """Add to project answers whether a package the account already holds
+    still works (``store_install._ensure_user_store_install``), by probing the
+    libraries it declares. The probe has to ask where they were installed."""
+
+    def test_under_isolation_its_libraries_are_probed_in_the_accounts_own_tree(
+        self, isolated, launch_tree, client, user_and_token, install_package,
+        manifest_dict, monkeypatch,
+    ):
+        """Under isolation the libraries are in the account's own tree, and the
+        shared interpreter has never heard of them: asking it reported every
+        one as not installed, on a package that works."""
+        from utk_curio.backend.app.packages import service as packages_service
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+        from utk_curio.backend.app.projects import services as projects_services
+
+        user, token = user_and_token
+        user_key = projects_services._user_dir_key(user)
+        rt.user_node_overlay_dir(user_key).mkdir(parents=True)
+        monkeypatch.setattr(
+            pip_runner, "import_failures",
+            lambda deps: {d: f"{d} is not installed" for d in deps},
+        )
+        monkeypatch.setattr(
+            pip_runner, "import_failures_in", lambda deps, path, interpreter=None: {})
+        manifest = install_package(user_key, manifest_dict(
+            "ai.test.own", python_deps={"curio-own-library": ">=1.0"})).manifest
+
+        result = packages_service.install_to_project(
+            user_key, _new_dataflow(client, token), manifest.dir_name)
+
+        assert result["importErrors"] == {}
+
+
+@pytest.fixture
+def pip_that_installs(monkeypatch):
+    """The real ``install_python_deps``, over a pip that installs nothing for
+    real: a library is missing until a ``pip install`` names it, then there.
+    Returns the libraries it installed."""
+    import re
+    import subprocess
+    import types
+    from importlib.metadata import PackageNotFoundError
+
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+    there: dict[str, str] = {}
+
+    def _version(name):
+        if name not in there:
+            raise PackageNotFoundError(name)
+        return there[name]
+
+    def _run(cmd, *args, **kwargs):
+        assert list(cmd[1:4]) == ["-m", "pip", "install"], f"only pip install is faked: {cmd}"
+        for requirement in cmd[5:]:
+            there[re.split(r"[<>=!~]", requirement, maxsplit=1)[0]] = "1.0"
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(pip_runner, "install_python_deps", _real_install_python_deps)
+    monkeypatch.setattr(pip_runner, "installed_version", _version)
+    monkeypatch.setattr(
+        pip_runner, "subprocess",
+        types.SimpleNamespace(run=_run, TimeoutExpired=subprocess.TimeoutExpired),
+    )
+    monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
+    return there
+
+
+class TestRemovingAPackageFromItsLastDataflow:
+    """Remove from project prunes a package no dataflow of the account uses
+    any more (``prune.prune_unreferenced_packages``), with the libraries only
+    it asked for. They leave from where its install put them, as the
+    libraries dialog's do (above): under isolation the account's own tree,
+    never the one interpreter the image and every other account run on."""
+
+    def test_under_isolation_a_models_libraries_leave_only_the_accounts_own_tree(
+        self, isolated, launch_tree, a_dataflow_using, uninstall_calls,
+    ):
+        """Removing a Hugging Face model from a dataflow ran ``pip uninstall
+        -y safetensors torch transformers`` on the server's own interpreter.
+        That took the image's torch from every account, examples 27 to 30
+        and SAM 3's Track Objects among them, until the container was made
+        again."""
+        from utk_curio.backend.app.packages import service as packages_service
+
+        user_key, project_id, manifest = a_dataflow_using(
+            "ai.test.hf-model", _transformers_libraries())
+        own_tree = rt.user_node_overlay_dir(user_key)
+        own_tree.mkdir(parents=True, exist_ok=True)
+        other_tree = rt.user_node_overlay_dir("9999")
+        other_tree.mkdir(parents=True)
+
+        result = packages_service.uninstall_from_project(user_key, project_id, manifest.dir_name)
+
+        assert result["pruned"] == [manifest.dir_name]
+        assert uninstall_calls == [
+            ("target", sorted(_transformers_libraries()), str(own_tree)),
+        ], f"the removal reached beyond the account's own tree: {uninstall_calls}"
+
+    def test_under_isolation_a_library_on_the_accounts_own_list_stays(
+        self, isolated, launch_tree, a_dataflow_using, uninstall_calls,
+    ):
+        """A library the account installed itself, in Installed libraries, is
+        its own choice: a package that declared it too does not take it."""
+        from utk_curio.backend.app.packages import service as packages_service
+
+        user_key, project_id, manifest = a_dataflow_using(
+            "ai.test.hf-model", _transformers_libraries())
+        libraries.add_library(user_key, "python", "torch")
+        own_tree = rt.user_node_overlay_dir(user_key)
+        own_tree.mkdir(parents=True, exist_ok=True)
+
+        packages_service.uninstall_from_project(user_key, project_id, manifest.dir_name)
+
+        assert uninstall_calls == [
+            ("target", sorted(set(_transformers_libraries()) - {"torch"}), str(own_tree)),
+        ]
+
+    def test_without_isolation_a_library_the_interpreter_already_held_stays(
+        self, in_process, launch_tree, a_dataflow_using, uninstall_calls,
+    ):
+        """One interpreter, the server's: Curio runs on it, and on an image
+        torch is in it from the start. This server's pip installed none of the
+        model's libraries, so none of them is uninstalled."""
+        from utk_curio.backend.app.packages import service as packages_service
+
+        user_key, project_id, manifest = a_dataflow_using(
+            "ai.test.hf-model", _transformers_libraries())
+
+        result = packages_service.uninstall_from_project(user_key, project_id, manifest.dir_name)
+
+        assert result["pruned"] == [manifest.dir_name]
+        assert uninstall_calls == [], (
+            f"the removal uninstalled libraries this server never installed: {uninstall_calls}"
+        )
+
+    def test_without_isolation_a_library_this_server_installed_for_it_goes(
+        self, in_process, launch_tree, a_dataflow_using, pip_that_installs, uninstall_calls,
+    ):
+        """A local Curio keeps its interpreter tidy: a library its own pip
+        brought in for the package, which nothing else asks for, leaves with
+        the package."""
+        from utk_curio.backend.app.packages import service as packages_service
+
+        user_key, project_id, manifest = a_dataflow_using(
+            "ai.test.tidy", {"curio-prune-probe": ">=1.0"})
+        provisioning.provision_python_deps(user_key, manifest.dir_name, manifest)
+        assert "curio-prune-probe" in pip_that_installs, "the install never ran pip"
+
+        packages_service.uninstall_from_project(user_key, project_id, manifest.dir_name)
+
+        assert uninstall_calls == [("host", ["curio-prune-probe"], None)]
+
+    def test_without_isolation_a_library_another_account_asks_for_stays(
+        self, in_process, launch_tree, a_dataflow_using, pip_that_installs,
+        install_package, manifest_dict, uninstall_calls,
+    ):
+        """Every account's nodes import from the one interpreter, so a library
+        stays while any account's package declares it."""
+        from utk_curio.backend.app.packages import service as packages_service
+
+        user_key, project_id, manifest = a_dataflow_using(
+            "ai.test.mine", {"curio-prune-shared": ">=1.0"})
+        provisioning.provision_python_deps(user_key, manifest.dir_name, manifest)
+        assert "curio-prune-shared" in pip_that_installs, "the install never ran pip"
+        install_package("9999", manifest_dict(
+            "ai.test.theirs", python_deps={"curio-prune-shared": ">=1.0"}))
+
+        packages_service.uninstall_from_project(user_key, project_id, manifest.dir_name)
+
+        assert uninstall_calls == [], (
+            f"the removal uninstalled a library another account's package declares: {uninstall_calls}"
+        )
