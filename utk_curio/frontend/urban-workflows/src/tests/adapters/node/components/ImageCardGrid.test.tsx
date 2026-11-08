@@ -196,4 +196,149 @@ describe('ImageCardGrid', () => {
     });
     expect(onClickRow).not.toHaveBeenCalled();
   });
+
+  describe('when its signed link lapses', () => {
+    // The backend checks a player's signed link on every range the element
+    // fetches, and refuses it once its life (`expiresIn`, ten minutes) is
+    // over. A seek, or the next range of a long play, after that failed, and
+    // the player stopped there for good.
+    const { apiFetch } = require('../../../../utils/authApi') as { apiFetch: jest.Mock };
+    const MINUTE = 60_000;
+    const LINK_PATH = `/api/datasets/imported.xc1%401/media/${'b'.repeat(16)}/link?dataflowId=alices-dataflow`;
+    const linkUrl = (n: number) => `http://backend.test/api/media/link-${n}`;
+    let clock = 0;
+    let now: jest.SpyInstance;
+    let play: jest.SpyInstance;
+
+    beforeEach(() => {
+      let minted = 0;
+      apiFetch.mockReset();
+      apiFetch.mockImplementation(() => Promise.resolve({ url: `/api/media/link-${++minted}`, expiresIn: 600 }));
+      clock = 1_700_000_000_000;
+      now = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+      play = jest.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      now.mockRestore();
+      play.mockRestore();
+      apiFetch.mockReset();
+    });
+
+    /** Plays a collection's file from its card, on alice's dataflow, and
+     *  returns its element once the first link has loaded. */
+    async function playCard(kind: 'video' | 'audio'): Promise<HTMLMediaElement> {
+      const name = kind === 'video' ? 'clip.mp4' : 'birds.wav';
+      const row = {
+        thumbnail: 'https://example.test/poster.png',
+        kind,
+        dataset_id: 'imported.xc1@1',
+        file_id: 'b'.repeat(16),
+        name,
+      };
+      const { container } = render(
+        <ImageCardGrid
+          {...defaultProps}
+          rows={[row]}
+          imageColumns={['thumbnail']}
+          interacted={['0']}
+          dataflowId="alices-dataflow"
+        />,
+      );
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: `Play ${name}` }));
+      });
+      const element = await waitFor(() => {
+        const found = container.querySelector(kind);
+        expect(found).toHaveAttribute('src', linkUrl(1));
+        return found as HTMLMediaElement;
+      });
+      // The first link plays from the start on its own.
+      expect(element).toHaveAttribute('autoplay');
+      fireEvent.loadedMetadata(element);
+      fireEvent.play(element);
+      return element;
+    }
+
+    /** What the browser does when the element loads a new link: back to
+     *  the start, at the default speed, then its metadata. */
+    function loadFresh(element: HTMLMediaElement) {
+      element.currentTime = 0;
+      element.playbackRate = 1;
+      fireEvent.loadedMetadata(element);
+    }
+
+    const KINDS = [
+      { kind: 'video' as const, file: 'a video' },
+      { kind: 'audio' as const, file: 'a recording' },
+    ];
+
+    it.each(KINDS)(
+      '$file still playing when a range fails after its link lapsed plays on from there on a fresh link',
+      async ({ kind }) => {
+        const element = await playCard(kind);
+        element.playbackRate = 1.5;
+        element.currentTime = 683.2;
+        fireEvent.timeUpdate(element);
+        clock += 11 * MINUTE;
+        await act(async () => {
+          fireEvent.error(element);
+        });
+
+        await waitFor(() => expect(element).toHaveAttribute('src', linkUrl(2)));
+        // Asked as the first was, through the same dataflow.
+        expect(apiFetch.mock.calls).toEqual([[LINK_PATH, { method: 'POST' }], [LINK_PATH, { method: 'POST' }]]);
+        expect(element).not.toHaveAttribute('autoplay');
+        loadFresh(element);
+        expect([element.currentTime, element.playbackRate]).toEqual([683.2, 1.5]);
+        expect(play).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each(KINDS)(
+      '$file paused past its link\'s life stays paused where a seek took it, on a fresh link',
+      async ({ kind }) => {
+        const element = await playCard(kind);
+        element.currentTime = 42;
+        fireEvent.timeUpdate(element);
+        fireEvent.pause(element);
+        // A quarter of an hour later, a seek past what the element holds.
+        clock += 15 * MINUTE;
+        element.currentTime = 300;
+        fireEvent.seeking(element);
+        await act(async () => {
+          fireEvent.error(element);
+        });
+
+        await waitFor(() => expect(element).toHaveAttribute('src', linkUrl(2)));
+        expect(element).not.toHaveAttribute('autoplay');
+        loadFresh(element);
+        expect(element.currentTime).toBe(300);
+        expect(play).not.toHaveBeenCalled();
+      },
+    );
+
+    it('a link that fails while still good asks for none: the failure is the file\'s own', async () => {
+      const element = await playCard('video');
+      clock += 3 * MINUTE;
+      await act(async () => {
+        fireEvent.error(element);
+      });
+      expect(apiFetch).toHaveBeenCalledTimes(1);
+      expect(element).toHaveAttribute('src', linkUrl(1));
+
+      // Nor does a fresh link that fails at once: a file that cannot play
+      // asks for one link more, not one after another.
+      clock += 8 * MINUTE;
+      await act(async () => {
+        fireEvent.error(element);
+      });
+      await waitFor(() => expect(element).toHaveAttribute('src', linkUrl(2)));
+      await act(async () => {
+        fireEvent.error(element);
+      });
+      expect(apiFetch).toHaveBeenCalledTimes(2);
+      expect(element).toHaveAttribute('src', linkUrl(2));
+    });
+  });
 });

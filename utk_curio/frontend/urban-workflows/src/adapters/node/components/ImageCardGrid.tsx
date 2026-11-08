@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import CSS from 'csstype';
 import { ImageSource, resolveImageSources } from '../../../utils/imageColumns';
 import { backendUrl } from '../../../utils/backendUrl';
@@ -123,8 +123,37 @@ const playButtonStyle: CSS.Properties = {
 };
 
 /**
+ * A failure this close to a link's lapse, or after it, is taken for the
+ * lapse: the page counts a link's life from when the link arrives, a little
+ * after the backend started counting.
+ */
+const LAPSE_MARGIN_MS = 60_000;
+
+/** Where a player stands: its time, whether it plays, and its speed. */
+interface PlayerPlace {
+  at: number;
+  playing: boolean;
+  rate: number;
+}
+
+/** A signed link, and when it lapses by this page's clock. */
+interface MediaLink {
+  url: string;
+  lapsesAt: number;
+  /** Where the player stood when the link before this one lapsed; null for
+   *  the first link, which plays from the start. */
+  resume: PlayerPlace | null;
+}
+
+const playerStyle: CSS.Properties = { width: '100%', display: 'block' };
+
+/**
  * Plays one file. `<video>` and `<audio>` cannot send the token, so the
- * backend is asked for a short-lived signed link first.
+ * backend is asked for a short-lived signed link first. The backend checks
+ * the link on every range the element fetches, so once the link lapses, a
+ * seek or the next range of a long play fails: the player then asks for a
+ * fresh link and goes on from where it stood, playing or paused. A failure
+ * while the link is still good is the file's own, and stops the player.
  */
 function Player({ datasetId, fileId, kind, dataflowId }: {
   datasetId: string;
@@ -132,32 +161,70 @@ function Player({ datasetId, fileId, kind, dataflowId }: {
   kind: 'video' | 'audio';
   dataflowId: string | null;
 }) {
-  const [src, setSrc] = useState<string | null>(null);
+  const [link, setLink] = useState<MediaLink | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Set when a link lapses: asks for the next one, which resumes there.
+  const [lapse, setLapse] = useState<PlayerPlace | null>(null);
+  // Where the player stands, from its own events: what a browser reports
+  // once a fetch has failed is not the same in every browser.
+  const stands = useRef({ at: 0, playing: false });
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<{ url: string }>(
+    apiFetch<{ url: string; expiresIn: number }>(
       collectionMediaPath(
         `/api/datasets/${encodeURIComponent(datasetId)}/media/${encodeURIComponent(fileId)}/link`,
         dataflowId,
       ),
       { method: 'POST' },
     )
-      .then((res) => !cancelled && setSrc(`${backendUrl()}${res.url}`))
+      .then((res) => {
+        if (cancelled) return;
+        // A link whose answer gives no life is never taken for lapsed.
+        const life = Number.isFinite(res.expiresIn) ? res.expiresIn * 1000 : Infinity;
+        setLink({ url: `${backendUrl()}${res.url}`, lapsesAt: Date.now() + life, resume: lapse });
+      })
       .catch((err: Error) => !cancelled && setError(err.message || 'This file cannot be played.'));
     return () => {
       cancelled = true;
     };
-  }, [datasetId, fileId, dataflowId]);
+  }, [datasetId, fileId, dataflowId, lapse]);
 
   if (error) return <div style={{ ...captionStyle, color: '#b42318' }}>{error}</div>;
-  if (!src) return <div style={{ ...imgStyle, background: '#f8fafc' }} />;
-  return kind === 'video' ? (
-    <video src={src} controls autoPlay style={{ width: '100%', display: 'block' }} />
-  ) : (
-    <audio src={src} controls autoPlay style={{ width: '100%', display: 'block' }} />
-  );
+  if (!link) return <div style={{ ...imgStyle, background: '#f8fafc' }} />;
+  const media = {
+    src: link.url,
+    controls: true,
+    // A fresh link starts where the lapsed one stood, playing only if it played.
+    autoPlay: link.resume === null,
+    style: playerStyle,
+    onPlay: () => {
+      stands.current.playing = true;
+    },
+    onPause: () => {
+      stands.current.playing = false;
+    },
+    onTimeUpdate: (e: React.SyntheticEvent<HTMLMediaElement>) => {
+      stands.current.at = e.currentTarget.currentTime;
+    },
+    onSeeking: (e: React.SyntheticEvent<HTMLMediaElement>) => {
+      stands.current.at = e.currentTarget.currentTime;
+    },
+    onError: (e: React.SyntheticEvent<HTMLMediaElement>) => {
+      if (Date.now() < link.lapsesAt - LAPSE_MARGIN_MS) return;
+      setLapse({ ...stands.current, rate: e.currentTarget.playbackRate });
+    },
+    onLoadedMetadata: (e: React.SyntheticEvent<HTMLMediaElement>) => {
+      const resume = link.resume;
+      if (!resume) return;
+      const element = e.currentTarget;
+      element.currentTime = resume.at;
+      element.playbackRate = resume.rate;
+      // A start the browser refuses leaves the player paused there.
+      if (resume.playing) Promise.resolve(element.play()).catch(() => undefined);
+    },
+  };
+  return kind === 'video' ? <video {...media} /> : <audio {...media} />;
 }
 
 const pagerStyle: CSS.Properties = {
@@ -218,7 +285,12 @@ export default function ImageCardGrid({
           >
             {media && playing === index ? (
               <div onClick={(e) => e.stopPropagation()}>
-                <Player {...media} dataflowId={dataflowId} />
+                {/* One player per file and dataflow: where it stood belongs to that file. */}
+                <Player
+                  key={`${media.datasetId}/${media.fileId}/${dataflowId ?? ''}`}
+                  {...media}
+                  dataflowId={dataflowId}
+                />
               </div>
             ) : (
               <div style={{ ...imageRowStyle, position: 'relative' }}>

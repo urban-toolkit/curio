@@ -13,3 +13,8 @@ __pycache__/
 /.env
 # The LLM endpoint file a deployment mounts at run time, never built in.
 /.secrets/
+# The weights a model package's operator fetches, which a deployment mounts
+# read-only: inside a folder directly under a package's models/, or in the
+# folder docker-compose.deploy.yml mounts. Never built in.
+packages/*/models/*/**
+model-weights

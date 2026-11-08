@@ -189,6 +189,7 @@ def execute_isolated(
     saved_paths=None,
     imports_session=None,
     library_keys=None,
+    model_weights=None,
 ):
     """Run one node in an isolated child. Returns the standard response dict.
 
@@ -224,6 +225,11 @@ def execute_isolated(
     *saved_paths* are the inputs that are saved outputs of the run's dataflow,
     each staged from the file its owner's store holds when the store has no
     row for it (``staging.stage_saved_output``).
+
+    *model_weights* (``{model id: folder}``) are weights an operator fetched
+    under ``--model-weights-dir``. They go to the child as they are, absolute,
+    and it reads them in place: staged, a checkpoint of gigabytes would be
+    copied into every run, since a link cannot cross the mount they sit on.
 
     *user_key* switches the child into that user's own work directory instead:
     persistent, writable, owned by the execution user, and the one place an
@@ -293,6 +299,7 @@ def execute_isolated(
             overlay_dir=overlay_dir,
             dataset_paths=staged_datasets,
             models=staged_models,
+            model_weights=model_weights,
             package_modules=staged_modules,
             dataset_formats=dataset_formats,
             collections=collections,

@@ -397,6 +397,35 @@ def resolve_models(code: str, user, dataflow_id: str | None = None) -> dict:
     return resolve_models_for(code, exec_user_key(user), owners=owners)
 
 
+def resolve_fetched_weights_for(code: str, user_key: str | None, *, owners=None) -> dict:
+    """``{model id: folder}`` for the models of :func:`resolve_models_for`
+    whose weights their operator fetched under ``--model-weights-dir``: the
+    folder whose entry holds them, which the sandbox reads in place and never
+    stages (``packages.service.resolve_model_weights``). Fail-open like the
+    models: without it, ``curio_load_model`` says the weights are not here."""
+    from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
+
+    ids = model_ids_in_code(code)
+    if not ids:
+        return {}
+    try:
+        from utk_curio.backend.app.packages.service import resolve_model_weights
+
+        if owners is None:
+            return resolve_model_weights(user_key, ids)
+        return resolve_model_weights(user_key, ids, owners=owners)
+    except Exception as e:  # noqa: BLE001 - resolution must never fail the execution
+        print(f"[processPythonCode] model weights resolution failed: {e}", flush=True)
+        return {}
+
+
+def resolve_fetched_weights(code: str, user, dataflow_id: str | None = None) -> dict:
+    """:func:`resolve_fetched_weights_for` the account *user* runs as, on the
+    dataflow *dataflow_id*, as :func:`resolve_models` resolves its models."""
+    owners = owners_packages_for(user, dataflow_id) if "curio_load_model" in code else None
+    return resolve_fetched_weights_for(code, exec_user_key(user), owners=owners)
+
+
 def resolve_package_modules(
     node_type: str, user_key: str | None, dataflow_id: str | None = None, *, owners=None,
 ) -> dict | list | None:
@@ -811,6 +840,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         with left_out_files.failures() as unavailable:
             dataset_paths = resolve_dataset_paths(run.code, run.dataflow_id, user, dataset_formats)
             exec_models = resolve_models(run.code, user, run.dataflow_id)
+            exec_model_weights = resolve_fetched_weights(run.code, user, run.dataflow_id) if exec_models else {}
         if unavailable:
             return _unavailable_reply(
                 user, run, input_ref, unavailable, started=t0, journal_on=_journal_on(user, run, visitor),
@@ -838,8 +868,10 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
             # dev/116: present only when the code names a saved key; the
             # request body is otherwise byte-identical to before.
             **({"secrets": exec_secrets} if exec_secrets else {}),
-            # Likewise only when the code runs a model.
+            # Likewise only when the code runs a model, and only for weights
+            # their operator fetched under --model-weights-dir: read in place.
             **({"models": exec_models} if exec_models else {}),
+            **({"model_weights": exec_model_weights} if exec_model_weights else {}),
             # And only when the node's package ships modules beside its templates.
             **({"package_modules": package_modules} if package_modules else {}),
             # And only for an editor's run of the owner's dataflow: her node

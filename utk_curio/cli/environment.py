@@ -87,7 +87,7 @@ def set_state_dir(state_dir=None):
         os.environ["CURIO_STATE_DIR"] = str(Path(state_dir).expanduser().resolve())
 
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, agent_search_url=None, backend_url=None, discovery_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None, media_cache_max_gb=None, db_pool_size=None, db_pool_overflow=None, db_pool_timeout=None, proxy_hops=None, package_workers=None, js_parallelism=None, js_registry_url=None, js_block_unpinned=None, shared_guest_name=None, shared_guest_username=None, collab_origins=None, collab_namespace=None, log_to_stdout=None, packages_root=None, llm_endpoint_file=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, agent_search_url=None, backend_url=None, discovery_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None, media_cache_max_gb=None, db_pool_size=None, db_pool_overflow=None, db_pool_timeout=None, proxy_hops=None, package_workers=None, js_parallelism=None, js_registry_url=None, js_block_unpinned=None, shared_guest_name=None, shared_guest_username=None, collab_origins=None, collab_namespace=None, log_to_stdout=None, packages_root=None, llm_endpoint_file=None, model_weights_dir=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -132,6 +132,17 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         os.environ["CURIO_DISCOVERY_ROOT"] = str(Path(discovery_root).expanduser().resolve())
     if packages_root:
         os.environ["CURIO_PACKAGES_ROOT"] = str(Path(packages_root).expanduser().resolve())
+    # Where the weights a model package fetches are read in place
+    # (packages/repositories/catalog_dir.py), resolved like the roots above.
+    if model_weights_dir:
+        weights_dir = Path(model_weights_dir).expanduser().resolve()
+        if not weights_dir.is_dir():
+            log_warning(
+                f"--model-weights-dir {weights_dir} is not a directory: a model package that "
+                "fetches its weights finds none there until scripts/fetch_model_weights.py "
+                "--into writes them."
+            )
+        os.environ["CURIO_MODEL_WEIGHTS_DIR"] = str(weights_dir)
     # Respect an already-set CURIO_LAUNCH_CWD / CURIO_SHARED_DATA so the test
     # harness can point the backend at a dedicated workspace (see
     # utk_curio/backend/tests/conftest.py). Only fall back to cwd otherwise.
@@ -321,6 +332,8 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         log_always(f"CURIO_DISCOVERY_ROOT={os.environ['CURIO_DISCOVERY_ROOT']}")
     if packages_root:
         log_always(f"CURIO_PACKAGES_ROOT={os.environ['CURIO_PACKAGES_ROOT']}")
+    if model_weights_dir:
+        log_always(f"CURIO_MODEL_WEIGHTS_DIR={os.environ['CURIO_MODEL_WEIGHTS_DIR']}")
 
 
 def _is_testing() -> bool:

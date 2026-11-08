@@ -13,10 +13,12 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import { ModelCatalogBrowse } from "../../pages/models/ModelCatalogBrowse";
 import { NodeCatalogBrowse } from "../../pages/catalog/NodeCatalogBrowse";
+import { modelInfoRows } from "../../components/models/catalog/modelFacts";
 import {
   builtinPackage,
   ddrnetPackage,
   deepUmbraPackage,
+  fetchedModelPackage,
   importedModelPackage,
   rasterizationPackage,
 } from "../_support/modelPackages";
@@ -302,6 +304,52 @@ describe("the Node Catalog page", () => {
     fireEvent.change(screen.getByPlaceholderText("Search packages…"), { target: { value: "nothing is called this" } });
     expect(screen.getByText("No packages match the current filters.")).toBeInTheDocument();
     expect(screen.queryByText("Loading packages…")).toBeNull();
+  });
+});
+
+describe("a concept segmentation model whose weights its operator fetches", () => {
+  const NOT_FETCHED =
+    "Not on this Curio: whoever runs it fetches them with scripts/fetch_model_weights.py model.test.prompted";
+
+  beforeEach(() => {
+    mockApi.catalog.mockResolvedValue({
+      packages: [ddrnetPackage(), deepUmbraPackage(), fetchedModelPackage()],
+      families: [],
+      catalogCollisions: [],
+    });
+  });
+
+  test("the rail lists its type, and narrows the grid to it", async () => {
+    renderPage();
+    const prompted = await gridCard("model.test.prompted@1");
+    expect(prompted).toHaveTextContent("Concept segmentation");
+    expect(railRow(/Concept segmentation/)).toHaveTextContent("1");
+    fireEvent.click(railRow(/Concept segmentation/));
+    await waitFor(() => expect(card("model.curio.ddrnet23-slim@1")).toBeNull());
+    expect(card("model.scout.deep-umbra@1")).toBeNull();
+    expect(card("model.test.prompted@1")).not.toBeNull();
+  });
+
+  test("its details name its type and prompts, and say its weights are not on this Curio", async () => {
+    renderPage();
+    const prompted = await gridCard("model.test.prompted@1");
+    fireEvent.click(within(prompted).getByRole("button", { name: "View details" }));
+    const modal = await screen.findByRole("dialog", { name: "Model details" });
+    const row = (label: string) => within(modal).getByText(label, { selector: "dt" }).nextElementSibling as HTMLElement;
+    expect(row("Type")).toHaveTextContent("Concept segmentation");
+    expect(row("Runtime")).toHaveTextContent("Transformers");
+    expect(row("Labels")).toHaveTextContent("2");
+    expect(row("Weights")).toHaveTextContent(NOT_FETCHED);
+    expect(within(modal).queryByText("Downloads on first use")).toBeNull();
+  });
+
+  test("once fetched, its details have no Weights row", () => {
+    const facts = (pkg: ReturnType<typeof fetchedModelPackage>) =>
+      Object.fromEntries(modelInfoRows(pkg as Parameters<typeof modelInfoRows>[0]).map((fact) => [fact.label, fact.value]));
+    const fetched = fetchedModelPackage();
+    expect(facts(fetched).Weights).toBe(NOT_FETCHED);
+    expect(facts(fetchedModelPackage({ model: { ...fetched.model, weightsNotFetched: false } })).Weights).toBeUndefined();
+    expect(facts(deepUmbraPackage()).Weights).toBe("Downloads on first use");
   });
 });
 

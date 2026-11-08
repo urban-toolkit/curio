@@ -16,6 +16,7 @@ from utk_curio.backend.app.packages.repositories import (
 )
 from utk_curio.backend.app.packages.repositories.archive import InstallResult
 from utk_curio.backend.app.packages.repositories.store import package_dir
+from utk_curio.backend.app.packages.application import model_packages as packages_model_packages
 from utk_curio.backend.app.packages.application import store_install as packages_store_install
 
 NOT_THE_PUBLISHER_MESSAGE = (
@@ -48,6 +49,8 @@ def publish_installed_to_catalog(
     Records who published it — without that the catalog is a global tree with
     no recorded owner, so nothing could tell a package the user authored from
     one that shipped with the deployment (see repositories/publisher_record.py).
+    A model package whose weights its operator fetches is refused, saying why
+    (``model_packages.refuse_fetched_weights``).
     InstallerError propagates for the route to answer.
     """
     if not PACKAGE_DIR_RE.match(dir_name):
@@ -55,6 +58,7 @@ def publish_installed_to_catalog(
     source = package_dir(user_key, dir_name)
     if not source.is_dir():
         raise PackageServiceError(f"package {dir_name} is not installed", 404)
+    packages_model_packages.refuse_fetched_weights_in(source, "{name} cannot be published")
     catalog = packages_catalog_dir.catalog_root()
     _refuse_replacing_someone_elses(catalog, dir_name, user_key)
     with packages_store_install.staging_scratch(user_key) as scratch:

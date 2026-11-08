@@ -5,10 +5,13 @@ block (``docs/schemas/node-package.v4.json``, ``$defs.model``). The package's
 own ``license`` is its code's; the block's ``license`` is the weights':
 
 - ``type``: ``semantic-segmentation``, one label per pixel; ``image-to-image``,
-  images in and an image out; or ``node-regression``, a graph in (node
-  features and edges) and values for each node out. The node that runs an
-  ``image-to-image`` or ``node-regression`` model feeds it itself
-  (``CurioModel.run``);
+  images in and an image out; ``node-regression``, a graph in (node features
+  and edges) and values for each node out; or ``concept-segmentation``, whose
+  labels are text prompts and which finds every thing each prompt names. The
+  node that runs an ``image-to-image`` or ``node-regression`` model feeds it
+  itself (``CurioModel.run``), and the node that runs a
+  ``concept-segmentation`` model, always its package's own code, loads it
+  from its folder itself;
 - ``runtime``: ``onnx`` (one ``.onnx`` file, with any external data beside it)
   or ``transformers`` (a checkpoint folder ``from_pretrained`` reads);
 - ``entry``: the ``.onnx`` file, or the checkpoint folder, under ``models/``;
@@ -17,8 +20,11 @@ own ``license`` is its code's; the block's ``license`` is the weights':
   ``float32`` scaled by ``scale`` and then normalized by ``mean`` and ``std``;
   a ``node-regression`` model reads a graph of any size and has none;
 - ``labels``: the class of each output channel (a Transformers checkpoint may
-  leave them to its ``config.json``); an ``image-to-image`` or
-  ``node-regression`` model has none;
+  leave them to its ``config.json``), or a ``concept-segmentation`` model's
+  prompts; an ``image-to-image`` or ``node-regression`` model has none;
+- ``fetch``: where the weights come from when the package ships without them
+  (``model_fetch.py``): files on Hugging Face at a pinned commit, which its
+  operator downloads into the entry folder;
 - ``sizeBytes``, ``discoverySource`` (where a downloaded model came from), and
   the weights' ``license``, ``licenseFile``, ``publisher`` and ``homepage``.
 
@@ -32,13 +38,24 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
+from utk_curio.backend.app.packages.domain.model_fetch import (
+    MODELS_DIR,
+    ModelFetch,
+    ModelFetchError,
+    check_fetched_entry,
+    fetch_dict,
+    parse_fetch,
+)
+
 #: The kinds of package: a node package, or a model package with its weights.
 KINDS = ("node", "model")
-#: The folder of a model package that holds its weights.
-MODELS_DIR = "models"
 
 RUNTIMES = ("onnx", "transformers")
-TYPES = ("semantic-segmentation", "image-to-image", "node-regression")
+#: The type whose labels are text prompts. Its node is its package's own
+#: code: Curio writes no cell for it (``manifest.py`` refuses a template of
+#: it that ships no ``source``).
+CONCEPT_SEGMENTATION = "concept-segmentation"
+TYPES = ("semantic-segmentation", "image-to-image", "node-regression", CONCEPT_SEGMENTATION)
 #: The types whose ONNX models read an image of the block's ``input`` size.
 IMAGE_TYPES = ("semantic-segmentation", "image-to-image")
 INPUT_DTYPES = ("uint8", "float32")
@@ -82,6 +99,7 @@ class ModelBlock:
     license_file: str | None = None
     publisher: str = ""
     homepage: str | None = None
+    fetch: ModelFetch | None = None
 
 
 def _text(raw: dict, key: str) -> str:
@@ -209,7 +227,20 @@ def parse_model_block(raw: object) -> ModelBlock:
         type=model_type, runtime=runtime, entry=entry, license=license_text.strip(), input=model_input,
         labels=labels, size_bytes=size, discovery_source=_discovery_source(raw.get("discoverySource")),
         license_file=license_file, publisher=publisher.strip(), homepage=homepage,
+        fetch=_fetch(raw.get("fetch"), entry, runtime),
     )
+
+
+def _fetch(raw: object, entry: str, runtime: str) -> ModelFetch | None:
+    """The block's ``fetch`` (``model_fetch.py``), whose files land in the
+    entry folder, or None for weights the package ships."""
+    if raw is None:
+        return None
+    try:
+        check_fetched_entry(entry, runtime)
+        return parse_fetch(raw)
+    except ModelFetchError as exc:
+        raise ModelBlockError(f"fetch: {exc}") from exc
 
 
 def model_block_dict(block: ModelBlock) -> dict[str, Any]:
@@ -237,4 +268,6 @@ def model_block_dict(block: ModelBlock) -> dict[str, Any]:
         out["homepage"] = block.homepage
     if block.discovery_source:
         out["discoverySource"] = dict(block.discovery_source)
+    if block.fetch is not None:
+        out["fetch"] = fetch_dict(block.fetch)
     return out
