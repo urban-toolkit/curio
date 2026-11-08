@@ -618,11 +618,15 @@ function CodeEditor({
                     // rule above it; a dashboard tile keeps its gray box.
                     backgroundColor: dashboardOn ? "#f7f7f7" : "#ffffff",
                     borderTop: dashboardOn ? "1px solid #e0e0e0" : "none",
+                    padding: "4px 8px",
                     // A failed node's error line (NodeOutcomeStrip) sits over
-                    // the bottom of this box: room below the last line lets it
-                    // scroll clear of the strip. In a notebook cell the strip
-                    // sits under the box instead.
-                    padding: output.code === "error" && !inCell ? "4px 8px 32px" : "4px 8px",
+                    // the bottom of the node on the canvas, 8px off its edge
+                    // and a text line tall. This box ends above that line, so
+                    // none of the output runs under it or shows in the thin
+                    // band between it and the node's edge, and the last line
+                    // scrolls clear of it. In a notebook cell the line sits
+                    // under the box, and a dashboard tile shows none.
+                    ...(output.code === "error" && !inCell && !dashboardOn ? { marginBottom: "28px" } : {}),
                     // In a notebook cell the output takes its own height.
                     ...(inCell ? { flex: "none", maxHeight: `${NOTEBOOK_OUTPUT_MAX}px`, padding: "6px 8px 0" } : {}),
                     fontSize: "11px",
