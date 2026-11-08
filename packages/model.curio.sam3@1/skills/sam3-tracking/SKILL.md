@@ -20,13 +20,13 @@ SAM 3 is a model of the Model Catalog that finds every object a short phrase nam
 ### Which node
 
 - Objects named in words, followed through a collection's videos, are a Track Objects node, wired from the Data Loading node that loads the collection (`curio_load_collection(...)`). Rows that are not videos are left out.
-- The node's code is the whole analysis: to change what it does, write its code, as a Python node's. It loads the model with `curio_load_model("model.curio.sam3")`, a literal id Curio reads: keep that line.
+- Its code holds its settings and one call of `track_objects`, from the package's module `sam3_tracking`. Change what it does through the settings, and keep the call, which hands it `curio_load_model("model.curio.sam3")`, a literal id Curio reads, and `curio_derived_file`.
 - An Image Segmentation node does not run SAM 3: `curio_segment` refuses a concept segmentation model, and a model dropped on a node swaps only for one of the node's type.
 - A table of the objects is a Python Computation node that reads the tracks (below); a chart of them is a Vega-Lite node on that table.
 
 ### Its settings
 
-The constants at the top of its code:
+The constants at the top of its code, each passed to `track_objects` as the argument of its name in lowercase:
 
 - `LABELS`: the phrases to look for, a list of short noun phrases. Any phrase works; the 35 labels of the model are the prompts its package names, such as sidewalk, crosswalk, curb ramp, tactile paving, pole, bollard, trash bin, traffic cone, construction barrier, pothole, person, car and bicycle.
 - `EVERY_SECONDS`, 0.5 by default: the gap between two frames SAM 3 looks at. A longer gap runs faster and can miss what passes quickly.

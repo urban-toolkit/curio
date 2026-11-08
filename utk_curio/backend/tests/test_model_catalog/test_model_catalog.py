@@ -362,7 +362,8 @@ class TestModelPackagesInTheModelCatalog:
         checkpoint = PACKAGES / f"{SAM3}@1" / block["entry"]
         fetched = all((checkpoint / item["path"]).is_file() for item in block["fetch"]["files"])
         assert block["weightsNotFetched"] is not fetched
-        assert sam3["modules"] == [] and [template["label"] for template in sam3["templates"]] == ["Track Objects"]
+        assert sam3["modules"] == ["sam3_tracking"]
+        assert [template["label"] for template in sam3["templates"]] == ["Track Objects"]
         assert {"transformers", "safetensors"} <= set(sam3["dependencies"]["python"])
         from utk_curio.backend.app.packages.service import catalog_root
 

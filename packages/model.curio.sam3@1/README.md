@@ -5,13 +5,15 @@ names, such as *curb ramp* or *traffic cone*, in an image or a video. It
 outlines each object with a mask, and in a video it follows each one from frame
 to frame under one id. Curio runs it with Hugging Face Transformers.
 
-This is a model package: the model's node and where its weights come from. The
+This is a model package: the model's node, the module that holds the node's
+logic, and where the model's weights come from. The
 [Model Catalog](../../docs/MODEL-CATALOG.md) lists it.
 
 | Part | What it is | License |
 |---|---|---|
 | `models/checkpoint/` | The weights, `facebook/sam3` on Hugging Face at revision `3c879f39826c281e95690f02c7821c4de09afae7`: the eight files Transformers reads, 3.4 GB. Fetched by whoever runs Curio, never shipped | SAM License (`LICENSE`), published by Meta |
-| `sources/track-objects.py` | The Track Objects node's code | MIT |
+| `sources/track-objects.py` | The Track Objects node's code: its settings and one call of `track_objects` | MIT |
+| `sources/sam3_tracking.py` | The module the node calls: `track_objects`, SAM 3 through a collection's videos | MIT |
 
 ## Nodes
 
@@ -22,8 +24,29 @@ This is a model package: the model's node and where its weights come from. The
 **Track Objects** samples each video of a collection, one frame every
 `EVERY_SECONDS`, and runs SAM 3 on those frames with the phrases in `LABELS`.
 SAM 3 holds each frame back until it has seen a few after it, so it can drop an
-object that showed up for a moment and was never there. The node's whole code
-is in the node: change it as you would any Python node's.
+object that showed up for a moment and was never there.
+
+Its code tab holds its settings and one call of `track_objects`, the function of
+the package's module `sam3_tracking`, which the header above the code lists:
+
+```python
+from sam3_tracking import track_objects
+
+LABELS = [...]
+EVERY_SECONDS = 0.5
+...
+
+return track_objects(
+    input_0, curio_load_model("model.curio.sam3"), curio_derived_file,
+    labels=LABELS, every_seconds=EVERY_SECONDS, from_seconds=FROM_SECONDS,
+    to_seconds=TO_SECONDS, max_seconds=MAX_SECONDS, width=WIDTH,
+)
+```
+
+The node hands the function Curio's plumbing: the model, whose `path` is the
+folder of its weights, and `curio_derived_file`, which says where the overlay
+and the tracks are kept. Empty `LABELS`, a part longer than `MAX_SECONDS` and a
+video not cached yet stop the node before SAM 3 loads.
 
 The input is a collection's rows, as a Data Loading node gives them with
 `curio_load_collection(...)`, each video's file cached on the machine. Rows
@@ -31,7 +54,8 @@ that are not videos are left out.
 
 ## Settings
 
-The constants at the top of the node's code:
+The constants at the top of the node's code, each handed to `track_objects` as
+the argument of its name in lowercase:
 
 | Setting | Default | What it sets |
 |---|---|---|

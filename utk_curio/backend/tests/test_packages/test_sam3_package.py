@@ -1,10 +1,15 @@
 """SAM 3's model package, ``model.curio.sam3@1``, and its Track Objects node.
 
+Track Objects' logic is a module of the package, ``sources/sam3_tracking.py``,
+whose ``track_objects`` the node's code tab calls with its settings and Curio's
+plumbing (``sources/track-objects.py``). These tests run that function, and
+the node's code as the canvas runs it (``input_names.call_as_node``), each with
+the module staged and imported as a run of the node stages it, on the rows Data
+Loading gives for a folder of videos.
+
 SAM 3's weights are Meta's, gated on Hugging Face and 3.4 GB: no clone, image
-or pip install holds them, and no test fetches them. These tests run the
-node's own code, ``sources/track-objects.py``, as the canvas runs it
-(``input_names.call_as_node``), on the rows Data Loading gives for a folder of
-videos, with a tiny SAM 3 video model built here with random weights:
+or pip install holds them, and no test fetches them. The tests use a tiny SAM 3
+video model built here with random weights:
 
 - saved where ``--model-weights-dir`` puts the package's weights, every file
   the package's ``fetch`` lists, and read in place, as ``curio_load_model``
@@ -24,11 +29,15 @@ without them fails each test on its own.
 from __future__ import annotations
 
 import ast
+import contextlib
+import importlib
 import json
 import os
 import re
 import shutil
+import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -36,6 +45,14 @@ REPO = Path(__file__).resolve().parents[4]
 PACKAGE = REPO / "packages" / "model.curio.sam3@1"
 MODEL_ID = "model.curio.sam3"
 SOURCE = PACKAGE / "sources" / "track-objects.py"
+#: The package's module, which holds Track Objects' logic.
+MODULE = "sam3_tracking"
+MODULE_SOURCE = PACKAGE / "sources" / f"{MODULE}.py"
+#: The node's settings, in its code tab's order, and the arguments they are.
+SETTINGS = {
+    "LABELS": "labels", "EVERY_SECONDS": "every_seconds", "FROM_SECONDS": "from_seconds",
+    "TO_SECONDS": "to_seconds", "MAX_SECONDS": "max_seconds", "WIDTH": "width",
+}
 #: SAM 3 at the revision sideseeing-tools pins.
 REVISION = "3c879f39826c281e95690f02c7821c4de09afae7"
 #: The files Transformers reads of it; sam3.pt, the original code's, is not one.
@@ -251,22 +268,43 @@ def _node_source(**settings) -> str:
     return code
 
 
-def _run(rows, helpers, *, model_folder: Path, weights: Path | None, **settings):
-    """The node's output on *rows*, its model the package in *model_folder*,
-    its weights read in place in *weights*, as a run on a Curio started with
-    ``--model-weights-dir`` reads them."""
-    from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
-    from utk_curio.sandbox.util.input_names import call_as_node
+@contextlib.contextmanager
+def _staged(tmp_path: Path):
+    """The package's module, importable as a run of Track Objects imports it:
+    staged into a folder of the run's own, then imported by its name."""
+    from utk_curio.sandbox.util.package_modules import importable
+    from utk_curio.sandbox.util.staging import stage_package_modules
 
-    namespace = dict(helpers)
+    run = Path(tempfile.mkdtemp(prefix="run-", dir=tmp_path))
+    staged = stage_package_modules([{"root": str(PACKAGE / "sources"), "names": [MODULE]}], str(run))
+    assert staged == {"root": "package_modules", "names": [MODULE]}, staged
+    with importable(str(run / staged["root"]), staged["names"]):
+        yield importlib.import_module(MODULE)
+
+
+def _loaded(model_folder: Path, weights: Path | None):
+    """``curio_load_model`` for the package in *model_folder*, its weights read
+    in place in *weights*, as a run on a Curio started with
+    ``--model-weights-dir`` gets it."""
+    from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
+
     loaders = {}
     install_catalog_helpers(
         loaders, data_path=str, formats={}, collections={}, media_dir=None,
         models={MODEL_ID: str(model_folder)}, model_weights={MODEL_ID: str(weights)} if weights else None,
     )
-    namespace["curio_load_model"] = loaders["curio_load_model"]
+    return loaders["curio_load_model"]
+
+
+def _run(rows, helpers, tmp_path: Path, *, model_folder: Path, weights: Path | None, **settings):
+    """The node's output on *rows*: its code, with *settings* set, run as the
+    canvas runs it, with the package's module importable."""
+    from utk_curio.sandbox.util.input_names import call_as_node
+
+    namespace = {**helpers, "curio_load_model": _loaded(model_folder, weights)}
     body = "\n".join("    " + line for line in _node_source(**settings).splitlines())
-    return call_as_node(body, namespace, rows, [0])
+    with _staged(tmp_path):
+        return call_as_node(body, namespace, rows, [0])
 
 
 @pytest.fixture
@@ -285,6 +323,7 @@ def catalog_copy(tmp_path):
 
 def test_the_package_is_a_concept_segmentation_model_whose_node_is_its_own_source():
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+    from utk_curio.backend.app.packages.repositories.python_modules import module_names
 
     manifest = load_package_manifest(PACKAGE)
     block = manifest.model
@@ -292,6 +331,8 @@ def test_the_package_is_a_concept_segmentation_model_whose_node_is_its_own_sourc
         "model", "concept-segmentation", "transformers", "models/checkpoint")
     assert [(t.template_id, t.label, t.source) for t in manifest.templates] == [
         ("track-objects", "Track Objects", "sources/track-objects.py")]
+    # The node's logic is the package's one module; its source is no module.
+    assert module_names(PACKAGE, manifest) == {MODULE}
     deps = dict(manifest.python_deps)
     assert deps["transformers"] == ">=5.0,<6.0" and "safetensors" in deps
     # The node imports torch, and the processor needs torchvision as it loads.
@@ -315,7 +356,9 @@ def test_the_weights_are_fetched_at_the_pinned_revision_and_never_shipped():
     # The package's own files, which a clone that fetched the weights into
     # the package's folder holds beside them.
     integrity = json.loads((PACKAGE / "integrity.json").read_text(encoding="utf-8"))["sha256"]
-    assert sorted(integrity) == sorted(["LICENSE", "README.md", "manifest.json", "sources/track-objects.py"] + [
+    assert sorted(integrity) == sorted([
+        "LICENSE", "README.md", "manifest.json", "sources/track-objects.py", f"sources/{MODULE}.py",
+    ] + [
         f"skills/{path.relative_to(PACKAGE / 'skills').as_posix()}"
         for path in (PACKAGE / "skills").rglob("*") if path.is_file() and not path.name.startswith(".")
     ])
@@ -339,59 +382,94 @@ def test_the_weights_license_is_metas_sam_license():
     assert text.startswith("SAM License\n") and "SAM Materials" in text
 
 
-def test_the_node_calls_only_curios_plumbing_and_shows_its_settings_first():
-    """Its logic is its own code: it loads the model by the id the backend
-    scans and keeps its files where the media route serves them, and calls
-    nothing else of Curio's."""
+def test_the_code_tab_holds_its_settings_and_one_call_of_the_packages_module():
+    """Track Objects' logic is the package's module: its code tab imports the
+    module's function, sets the node's settings, and returns one call of it,
+    which hands it Curio's plumbing, the model by the literal id the backend
+    reads and ``curio_derived_file``, and each setting as its argument."""
     code = SOURCE.read_text(encoding="utf-8")
-    tree = ast.parse("def node(input_0):\n" + "\n".join("    " + line for line in code.splitlines()))
-    called = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id.startswith("curio_")}
-    assert called == {"curio_load_model", "curio_derived_file"}
-    imported = [alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names]
-    imported += [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
-    assert not [name for name in imported if name.split(".")[0] == "utk_curio"]
     assert f'curio_load_model("{MODEL_ID}")' in code
-    settings = {}
-    for statement in tree.body[0].body:
-        if isinstance(statement, ast.Assign) and isinstance(statement.targets[0], ast.Name):
-            if statement.targets[0].id.isupper() and statement.targets[0].id != "PER_FILE":
-                try:
-                    settings[statement.targets[0].id] = ast.literal_eval(statement.value)
-                except ValueError:
-                    continue
+    body = ast.parse("def node(input_0):\n" + "\n".join("    " + line for line in code.splitlines())).body[0].body
+    imports, assigns, returned = body[:1], body[1:-1], body[-1]
+    assert [ast.unparse(statement) for statement in imports] == [f"from {MODULE} import track_objects"]
+    assert all(isinstance(statement, ast.Assign) for statement in assigns), [ast.unparse(s) for s in assigns]
+    settings = {statement.targets[0].id: ast.literal_eval(statement.value) for statement in assigns}
+    assert list(settings) == list(SETTINGS)
     assert settings["LABELS"] == DEFAULT_LABELS
     assert set(DEFAULT_LABELS) <= set(_manifest()["model"]["labels"])
     assert (settings["EVERY_SECONDS"], settings["FROM_SECONDS"], settings["TO_SECONDS"]) == (0.5, 0, None)
     assert settings["MAX_SECONDS"] > 0 and settings["WIDTH"] % 2 == 0
-    assert code.index("LABELS = [") < code.index("curio_load_model(")
+    assert isinstance(returned, ast.Return) and isinstance(returned.value, ast.Call), ast.unparse(returned)
+    call = returned.value
+    assert ast.unparse(call.func) == "track_objects"
+    assert [ast.unparse(arg) for arg in call.args] == [
+        "input_0", f"curio_load_model('{MODEL_ID}')", "curio_derived_file"]
+    assert {keyword.arg: ast.unparse(keyword.value) for keyword in call.keywords} == {
+        argument: setting for setting, argument in SETTINGS.items()}
+
+
+def test_the_module_offers_track_objects_says_what_it_does_and_is_handed_curios_plumbing():
+    """The Functions header above the node's code lists what the module's
+    ``__all__`` names, each with the first paragraph of its docstring. The
+    module imports nothing of Curio's and calls none of Curio's functions: the
+    node hands it the model and ``curio_derived_file``."""
+    tree = ast.parse(MODULE_SOURCE.read_text(encoding="utf-8"))
+    (offered,) = [
+        statement for statement in tree.body
+        if isinstance(statement, ast.Assign) and [ast.unparse(t) for t in statement.targets] == ["__all__"]
+    ]
+    assert ast.literal_eval(offered.value) == ["track_objects"]
+    (function,) = [s for s in tree.body if isinstance(s, ast.FunctionDef) and s.name == "track_objects"]
+    first = " ".join((ast.get_docstring(function) or "").split("\n\n", 1)[0].split())
+    assert "SAM 3" in first and len(first) <= 600, first
+    assert [arg.arg for arg in function.args.args] == ["media", "model", "derived_file"]
+    assert [arg.arg for arg in function.args.kwonlyargs] == list(SETTINGS.values())
+    imported = [alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names]
+    imported += [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
+    assert not [name for name in imported if name.split(".")[0] == "utk_curio"]
+    assert not [node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id.startswith("curio_")]
 
 
 # ---------------------------------------------------------------------------
 # The node, run
 # ---------------------------------------------------------------------------
 
-def test_without_its_weights_the_node_says_how_to_fetch_them(videos, catalog_copy, few_threads):
+def test_without_its_weights_the_node_says_how_to_fetch_them(videos, catalog_copy, few_threads, tmp_path):
     from utk_curio.sandbox.util.models import NOT_FETCHED
 
     rows, helpers = videos
     with pytest.raises(RuntimeError) as raised:
-        _run(rows, helpers, model_folder=catalog_copy, weights=None)
+        _run(rows, helpers, tmp_path, model_folder=catalog_copy, weights=None)
     assert str(raised.value) == NOT_FETCHED.format(model_id=MODEL_ID)
 
 
-def test_empty_labels_stop_the_node_before_it_loads_the_model(videos, catalog_copy):
+def test_the_nodes_code_hands_its_settings_to_the_module(videos, catalog_copy, weights, few_threads, tmp_path):
+    """The code tab's call, run as the canvas runs it: the node's settings
+    reach ``track_objects``, and the node returns the overlay's row."""
+    import pandas as pd
+
     rows, helpers = videos
-    with pytest.raises(ValueError, match="LABELS is empty: name at least one thing to look for"):
-        _run(rows, helpers, model_folder=catalog_copy, weights=None, LABELS=[])
+    out = _run(rows, helpers, tmp_path, model_folder=catalog_copy, weights=weights,
+               LABELS=["pole", "person"], EVERY_SECONDS=1.0)
+    (row,) = out.to_dict("records")
+    # One frame a second of the 2 s clip: at 0 s and 1 s.
+    assert (row["kind"], row["fps"], row["duration_s"]) == ("video", 1.0, 2.0)
+    assert sorted(key for key in row if key.endswith("_objects")) == ["person_objects", "pole_objects"]
+    tracks = pd.read_parquet(row["tracks"])
+    assert set(tracks["label"]) <= {"pole", "person"}
+    assert row["pole_objects"] + row["person_objects"] == len(tracks)
 
 
-def test_track_objects_follows_each_object_through_a_clip(videos, catalog_copy, weights, few_threads):
+def test_track_objects_follows_each_object_through_a_clip(videos, catalog_copy, weights, few_threads, tmp_path):
     import av
     import pandas as pd
 
     rows, helpers = videos
     (video,) = rows[rows["kind"] == "video"].to_dict("records")
-    out = _run(rows, helpers, model_folder=catalog_copy, weights=weights, EVERY_SECONDS=EVERY)
+    model = _loaded(catalog_copy, weights)(MODEL_ID)
+    with _staged(tmp_path) as module:
+        out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
+                                   every_seconds=EVERY)
 
     assert len(out) == 1
     row = out.iloc[0]
@@ -428,30 +506,40 @@ def test_track_objects_follows_each_object_through_a_clip(videos, catalog_copy, 
     assert counts == {label: int((tracks["label"] == label).sum()) for label in DEFAULT_LABELS}
 
 
-def test_a_part_longer_than_one_run_takes_stops_before_any_file_is_written(
-    videos, catalog_copy, weights, few_threads, tmp_path,
-):
-    """The 2 s clip against a limit of 1 s: the node names the limit and the
-    settings that pick a part, and writes no overlay and no tracks."""
+def test_a_part_of_a_video_is_tracked_from_where_it_starts(videos, catalog_copy, weights, few_threads, tmp_path):
+    """The 2 s clip from 1 s to 2 s, a part of 1 s, within a limit of 1 s: its
+    files are named by where the part starts, and so is its overlay's time."""
+    rows, helpers = videos
+    model = _loaded(catalog_copy, weights)(MODEL_ID)
+    with _staged(tmp_path) as module:
+        out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
+                                   every_seconds=EVERY, from_seconds=1, to_seconds=2, max_seconds=1)
+    (row,) = out.to_dict("records")
+    assert (row["file_id"], row["t_s"], row["duration_s"]) == (
+        f"{rows['file_id'].iloc[0]}@1000-sam3.mp4", 1.0, 2 * EVERY)
+
+
+def test_each_stop_comes_before_sam3_loads_and_writes_nothing(videos, tmp_path):
+    """Empty labels, a part longer than one run takes and a video not on this
+    machine each stop the call before any frame is read or file written, and
+    before SAM 3 loads: the model here names a folder that holds nothing. A
+    collection with no video loads nothing either."""
     rows, helpers = videos
     relpath = rows["relpath"].iloc[0]
-    with pytest.raises(ValueError) as raised:
-        _run(rows, helpers, model_folder=catalog_copy, weights=weights, MAX_SECONDS=1)
-    assert str(raised.value) == (
+    nothing = SimpleNamespace(path=str(tmp_path / "no-weights"))
+    derived = helpers["curio_derived_file"]
+    with _staged(tmp_path) as module:
+        with pytest.raises(ValueError) as no_labels:
+            module.track_objects(rows, nothing, derived, labels=[])
+        with pytest.raises(ValueError) as too_long:
+            module.track_objects(rows, nothing, derived, labels=DEFAULT_LABELS, max_seconds=1)
+        with pytest.raises(ValueError) as not_cached:
+            module.track_objects(rows.assign(path=None), nothing, derived, labels=DEFAULT_LABELS)
+        assert module.track_objects(rows.assign(kind="image"), nothing, derived, labels=DEFAULT_LABELS).empty
+    assert str(no_labels.value) == "LABELS is empty: name at least one thing to look for"
+    assert str(too_long.value) == (
         f"{relpath}: Track Objects takes 1 s of video in one run; "
         "set FROM_SECONDS and TO_SECONDS to the part to track, such as 0 and 1"
     )
+    assert str(not_cached.value) == f"{relpath} is not on this machine yet; cache the collection's files first"
     assert not (tmp_path / "media" / "videos").exists() and not (tmp_path / "media" / "tables").exists()
-    # The same clip tracked from 1 s to 2 s is a part of 1 s, which runs.
-    out = _run(rows, helpers, model_folder=catalog_copy, weights=weights, MAX_SECONDS=1, FROM_SECONDS=1,
-               TO_SECONDS=2, EVERY_SECONDS=EVERY)
-    assert (out["file_id"].iloc[0], out["t_s"].iloc[0]) == (f"{rows['file_id'].iloc[0]}@1000-sam3.mp4", 1.0)
-
-
-def test_a_video_not_on_this_machine_says_to_cache_it(videos, catalog_copy, weights, few_threads):
-    rows, helpers = videos
-    relpath = rows["relpath"].iloc[0]
-    rows = rows.copy()
-    rows["path"] = None
-    with pytest.raises(ValueError, match=re.escape(f"{relpath} is not on this machine yet; cache the collection's files first")):
-        _run(rows, helpers, model_folder=catalog_copy, weights=weights)
