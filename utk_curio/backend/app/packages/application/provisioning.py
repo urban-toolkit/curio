@@ -149,15 +149,20 @@ def _declared_import_failures(
 
 
 def _node_import_failures(user_key: str, deps) -> dict[str, str]:
-    """*deps*' verdict where *user_key*'s node code imports them from: under
-    fork isolation the account's own tree in front of the shared interpreter,
-    where :func:`provision_user_node_deps` installs them (#332), else the
-    shared interpreter alone. Asking only the shared interpreter about a
-    library in the account's tree reports a working one as not installed."""
-    if (packages_backend_runtime.per_user_node_envs()
+    """*deps*' verdict where *user_key*'s node code imports them from: the
+    shared interpreter, and under fork isolation the account's own tree in
+    front of it, where :func:`provision_user_node_deps` installs what the
+    shared interpreter lacks (#332). Asking only the shared interpreter about
+    a library in the account's tree reports a working one as not installed.
+
+    The shared interpreter is asked first, since its verdicts are memoised;
+    only the libraries it fails go to the account's tree, whose probe is a
+    subprocess every time."""
+    failures = _import_failures_or_silence(deps)
+    if (failures and packages_backend_runtime.per_user_node_envs()
             and packages_backend_runtime.user_node_overlay_dir(user_key).is_dir()):
-        return node_overlay_import_failures(user_key, deps)
-    return _import_failures_or_silence(deps)
+        return node_overlay_import_failures(user_key, sorted(failures))
+    return failures
 
 
 def _overlay_import_failures(user_key: str, dir_name: str, deps):
