@@ -294,12 +294,15 @@ def package_modules_functions(user_key: str, dir_name: str) -> dict:
     if not PACKAGE_DIR_RE.match(str(dir_name)):
         raise PackageServiceError(f"no package {dir_name!r}", 404)
     own = package_dir(user_key, dir_name)
-    with package_seed_lock(user_key):
-        if own.is_dir():
-            return {"dirName": dir_name, "modules": module_functions(own, load_package_manifest(own))}
-    shipped = packages_catalog_dir.catalog_root() / dir_name
-    if shipped.is_dir():
-        return {"dirName": dir_name, "modules": module_functions(shipped, load_package_manifest(shipped))}
+    try:
+        with package_seed_lock(user_key):
+            if own.is_dir():
+                return {"dirName": dir_name, "modules": module_functions(own, load_package_manifest(own))}
+        shipped = packages_catalog_dir.catalog_root() / dir_name
+        if shipped.is_dir():
+            return {"dirName": dir_name, "modules": module_functions(shipped, load_package_manifest(shipped))}
+    except ManifestError as exc:
+        raise PackageServiceError(f"{dir_name}'s manifest cannot be read: {exc}") from None
     raise PackageServiceError(f"no package {dir_name!r}", 404)
 
 
