@@ -1,0 +1,94 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-11-07T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "av": ">=15.0",
+      "geopandas": ">=1.1.3",
+      "numpy": "",
+      "pandas": ">=3.0.2",
+      "pillow": ">=12.2.0",
+      "pyarrow": ">=24.0.0",
+      "safetensors": ">=0.4",
+      "transformers": ">=5.0,<6.0"
+    }
+  },
+  "description": "Meta's Segment Anything Model 3: it finds every object a short phrase names, such as curb ramp or traffic cone, in an image or a video, outlines each with a mask, and follows each one from frame to frame under one id. Its Track Objects node runs it on a collection's videos and writes an overlay video, which Simple View plays, and a table of one row per object. The weights, 3.4 GB and gated by Meta, are in neither the Curio repository nor the pip package: whoever runs Curio fetches them once with scripts/fetch_model_weights.py.",
+  "id": "model.curio.sam3",
+  "kind": "model",
+  "license": "MIT",
+  "model": {
+    "entry": "models/checkpoint",
+    "fetch": {
+      "huggingface": "facebook/sam3",
+      "revision": "3c879f39826c281e95690f02c7821c4de09afae7",
+      "files": [
+        {"path": "config.json", "gitSha1": "3e600e765b0f1b4c52680aed9ad242c9a90f7ed1"},
+        {"path": "model.safetensors", "sha256": "6d06f0a5f84e435071fe6603e61d0b4cc7b40e0d39d487cfd4d67d8cc11cc14a"},
+        {"path": "processor_config.json", "gitSha1": "9d3bd6df8a54852cd56087a3ae019cce051de2b2"},
+        {"path": "tokenizer.json", "gitSha1": "bd1e367764006ad6a2249b1dcc0b20879c7c211f"},
+        {"path": "tokenizer_config.json", "gitSha1": "1f20c0274c5d4581b5ccdcbdddd7a22729b5c57b"},
+        {"path": "special_tokens_map.json", "gitSha1": "cf0682d6de72c1547f41b4f6d7c59f62deffef94"},
+        {"path": "vocab.json", "gitSha1": "182766ce89b439768edadda342519f33802f5364"},
+        {"path": "merges.txt", "gitSha1": "76e821f1b6f0a9709293c3b6b51ed90980b3166b"}
+      ]
+    },
+    "homepage": "https://huggingface.co/facebook/sam3",
+    "labels": [
+      "sidewalk", "crosswalk", "curb", "driveway", "alley", "tactile paving", "stairs",
+      "curb ramp", "curb cut", "wheelchair ramp", "ramp", "curbramp",
+      "traffic light", "pedestrian signal", "stop sign",
+      "pole", "fire hydrant", "trash bin", "bench", "bollard", "tree", "planter", "parking meter",
+      "bicycle rack", "bus stop",
+      "construction barrier", "traffic cone", "scaffolding",
+      "pothole", "puddle", "manhole cover", "sidewalk crack",
+      "person", "car", "bicycle"
+    ],
+    "license": "SAM License",
+    "licenseFile": "LICENSE",
+    "publisher": "Meta (facebook/sam3 on Hugging Face)",
+    "runtime": "transformers",
+    "sizeBytes": 3444996474,
+    "type": "concept-segmentation"
+  },
+  "name": "SAM 3 (objects found by name)",
+  "permissions": [],
+  "publisher": "Curio",
+  "readOnly": true,
+  "templates": [
+    {
+      "behavior": "code",
+      "category": "computation",
+      "description": "Follow what LABELS names through every video of a collection with SAM 3, one frame every EVERY_SECONDS seconds, each object under one id from frame to frame. Returns each video as its overlay, the frames looked at with each object's mask and id drawn, which Simple View plays, with t_s, where the overlay starts in the video; <label>_objects, how many objects of each label it followed; and tracks, the path of a Parquet table of one row per object (object_id, label, start_s, end_s, frames, largest_share, mean_score). FROM_SECONDS and TO_SECONDS pick the part of each video to track, at most MAX_SECONDS. The model is this package's, model.curio.sam3.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "icon": null,
+      "iconRef": "fa-solid:crosshairs",
+      "id": "track-objects",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["DATAFRAME", "GEODATAFRAME"]
+        }
+      ],
+      "label": "Track Objects",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["DATAFRAME", "GEODATAFRAME"]
+        }
+      ],
+      "source": "sources/track-objects.py"
+    }
+  ],
+  "version": "1.0.0"
+}

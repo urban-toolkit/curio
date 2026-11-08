@@ -1,0 +1,8 @@
+{
+  "sha256": {
+    "LICENSE": "4dea99bfaa016e21bc860d73f344236bd1e5c4977d1a9a8fd32f822b500ae1be",
+    "README.md": "938a37ff672c687923c6ba06a6371c3ddeb6ad1c4f0c3bea874eb067b15ab269",
+    "manifest.json": "6060a9f3cd1b65274d82907c552d7243755afb89e359fe51beff3cd05f5a7f6a",
+    "sources/track-objects.py": "8e06a77b8cb11c53e05241b7603e8aa7b0aa59714b31063ac9488b4c12f26962"
+  }
+}
