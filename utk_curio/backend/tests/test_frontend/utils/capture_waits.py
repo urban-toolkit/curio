@@ -10,7 +10,39 @@ import allure
 from playwright.sync_api import (
     Page,
     TimeoutError as PlaywrightTimeoutError,
+    expect,
 )
+
+
+#: The canvas title's heading, and what it reads while the dataflow the route
+#: names is opening (``projectLoadState.ts``'s ``OPENING_TITLE``).
+CANVAS_TITLE_HEADING = "[data-curio-canvas-title] h1"
+OPENING_TITLE = "Opening dataflow…"
+
+#: How long a dataflow may take to open. Its load is one request, answered when
+#: the server can: arcade answered one in 24 s during a host stall (#1391's run
+#: 42342733844), and the suite gives a load 60 s elsewhere.
+DATAFLOW_OPEN_TIMEOUT_MS = 60000
+
+
+def wait_for_dataflow_open(page, *, timeout: float = DATAFLOW_OPEN_TIMEOUT_MS) -> None:
+    """Wait while the canvas title says the dataflow its route names is still
+    opening.
+
+    A drop made meanwhile is kept and made only once the load is in
+    (``useDropsWhileOpening``, #1253), so its node comes as late as the server
+    answers the load. A helper that waits for that node waits for this first,
+    then gives the node its own time. On another account's dataflow the canvas
+    also waits for the room to name the tab's role (up to 15 s), and on one
+    that has nodes for their first fit (#1392): those waits are the node's.
+    """
+    try:
+        expect(page.locator(CANVAS_TITLE_HEADING)).not_to_have_text(OPENING_TITLE, timeout=timeout)
+    except AssertionError:
+        raise AssertionError(
+            f"the dataflow never opened within {timeout / 1000:.0f} s: the canvas title still "
+            f"read {OPENING_TITLE!r}, so a drop made while it opened was kept and made no node"
+        ) from None
 
 
 #: How often the viewport wait reads the viewport, in ms. On a timer, never per
