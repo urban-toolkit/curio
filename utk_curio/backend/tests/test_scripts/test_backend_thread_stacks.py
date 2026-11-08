@@ -35,6 +35,15 @@ def wait_for_the_room_lock(lock):
     with lock:
         pass
 
+def say_ready(busy_seconds):
+    print("ready" if thread_stacks.register() else "not registered", flush=True)
+    # Busy for the seconds the test names: the moment right after "ready",
+    # when the test's signal may come.
+    busy_until = time.monotonic() + busy_seconds
+    while time.monotonic() < busy_until:
+        pass
+    return True
+
 room_lock = threading.Lock()
 room_lock.acquire()
 waiters = [threading.Thread(target=wait_for_the_room_lock, args=(room_lock,),
@@ -48,9 +57,10 @@ while not all(sys._current_frames()[waiter.ident].f_code.co_name == "wait_for_th
         print("the waiters never all waited on the lock", flush=True)
         sys.exit(1)
     time.sleep(0.01)
-print("ready" if thread_stacks.register() else "not registered", flush=True)
-while True:
-    time.sleep(0.2)
+said = False
+# One line, so whatever the main thread runs once it has said "ready", in
+# say_ready or idle, the signal finds it on this line.
+while True: said = said or say_ready(float(sys.argv[1])); time.sleep(0.2)
 """
 
 
@@ -59,6 +69,16 @@ class TheDumpTest(unittest.TestCase):
         """The registration in a process of its own, asked as the stress
         probe asks the backend: SIGUSR1, then the dump read back from the
         file in the process's state folder."""
+        self._check_the_dump(busy_seconds=0.0)
+
+    def test_the_dump_finds_the_main_thread_busy_just_after_it_said_ready(self):
+        """The test asks as soon as it reads "ready", so on a loaded machine
+        the signal can find the main thread before it idles; held busy there
+        for 5 seconds, it always does, and the dump shows it there."""
+        stacks = self._check_the_dump(busy_seconds=5.0)
+        self.assertIn("in say_ready", stacks)
+
+    def _check_the_dump(self, *, busy_seconds):
         from utk_curio.backend.tests.stress.backend_probe import ask_for_stacks, stacks_file
 
         state = tempfile.TemporaryDirectory()
@@ -67,7 +87,7 @@ class TheDumpTest(unittest.TestCase):
                "PYTHONPATH": os.pathsep.join(filter(None, [str(REPO_ROOT), os.environ.get("PYTHONPATH")]))}
         script = Path(state.name, "blocked_on_the_room_lock.py")
         script.write_text(_BLOCKED_PROCESS, encoding="utf-8")
-        process = subprocess.Popen([sys.executable, str(script)], env=env,
+        process = subprocess.Popen([sys.executable, str(script), str(busy_seconds)], env=env,
                                    cwd=state.name, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, text=True)
         try:
@@ -100,6 +120,7 @@ class TheDumpTest(unittest.TestCase):
         self.assertIn("time.sleep(0.2)", stacks)
         self.assertNotIn("in on_signal", stacks)
         self.assertNotIn("in dump", stacks)
+        return stacks
 
     def test_the_probe_finds_the_file_the_backend_writes(self):
         """The probe runs with nothing of Curio's, so it keeps its own copy of

@@ -410,6 +410,75 @@ class TestRestartHonesty:
         assert "restartRecommended" not in journal
 
 
+class TestApplyUnderIsolation:
+    """Apply installs a built package's libraries where node code imports
+    them. Under fork isolation that is the account's own tree, where every
+    other install puts them (``provisioning.provision_python_deps``). The one
+    interpreter is the image's and every account's: a pin installed there,
+    as this build's ``torch==2.4.0``, moves torch under every account's nodes."""
+
+    @pytest.fixture
+    def installs(self, tmp_curio, monkeypatch):
+        """Isolation on, and each pip install recorded with where it was asked
+        to land. A library imports from the account's tree once it went
+        there; the shared interpreter has none of them."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+        monkeypatch.setenv("CURIO_ISOLATION", "fork")
+        monkeypatch.setenv("CURIO_SHARED_DATA", "./.curio/data/")
+        calls: list = []
+        in_tree: set[str] = set()
+
+        def _to_host(deps, on_line=None):
+            calls.append(("host", dict(deps)))
+            return pip_runner.InstallReport(installed=sorted(deps), skipped=[])
+
+        def _to_target(deps, target_dir, on_line=None):
+            calls.append(("target", dict(deps), str(target_dir)))
+            in_tree.update(deps)
+            for name in deps:
+                Path(target_dir, f"{name}.py").write_text("", encoding="utf-8")
+            return pip_runner.InstallReport(installed=sorted(deps), skipped=[])
+
+        def _probe_tree(deps, path, interpreter=None):
+            return {d: "not installed" for d in deps if d not in in_tree}
+
+        def _probe_host(deps):
+            return {d: f"No module named {d!r}" for d in deps}
+
+        monkeypatch.setattr(pip_runner, "install_python_deps", _to_host)
+        monkeypatch.setattr(pip_runner, "install_python_deps_to_target", _to_target)
+        monkeypatch.setattr(pip_runner, "import_failures_in", _probe_tree)
+        monkeypatch.setattr(pip_runner, "import_failures", _probe_host)
+        return calls
+
+    def test_a_pinned_library_goes_into_the_accounts_own_tree(self, manifest_dict, installs):
+        from utk_curio.backend.app.packages.infrastructure.backend_runtime import (
+            user_node_overlay_dir,
+        )
+
+        digest = _stage_build(manifest_dict, python_deps={"torch": "2.4.0"})
+
+        journal = promote("guest", target="ai.test.demo@1", artifact_digest=digest)
+
+        assert installs == [
+            ("target", {"torch": "2.4.0"}, str(user_node_overlay_dir("guest"))),
+        ], f"Apply installed outside the account's own tree: {installs}"
+        # Nothing shared changed, so nothing asks for a restart.
+        assert "restartRecommended" not in journal
+
+    def test_the_probe_after_it_asks_the_accounts_own_tree(self, manifest_dict, installs):
+        """Asking the shared interpreter about a library pip put in the
+        account's tree reports a working install as one that will not import."""
+        digest = _stage_build(manifest_dict, python_deps={"curio-apply-probe": "1.0"})
+
+        journal = promote("guest", target="ai.test.demo@1", artifact_digest=digest)
+
+        assert "importErrors" not in journal, journal.get("importErrors")
+
+
 def _stage_backend_build(manifest_dict, *, entry_src, python_deps=None,
                          warm_python_kind=False, user_key="guest") -> str:
     """A staged backend-bearing archive (dev/97 routing/probe tests)."""

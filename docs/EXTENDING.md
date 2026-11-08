@@ -253,7 +253,7 @@ A model in the Model Catalog is a model package, so it declares its runtime's li
 #### How the install/uninstall flow handles them
 
 - **Adding a package from the catalog** copies the package files, then runs `pip install` (via [`utk_curio/backend/app/packages/infrastructure/pip_runner.py`](../utk_curio/backend/app/packages/infrastructure/pip_runner.py)) for every dep that isn't already importable. Already-satisfied deps are skipped, so re-adding the same package is near-instant. The request blocks until pip finishes (v1 sync UX); the confirm button stays busy.
-- **Removing a package** (when its user-store copy is being pruned) walks every other still-installed package's manifest, finds the python deps the pruned package declared that **no other package needs**, and pip-uninstalls those. Shared deps stay.
+- **Removing a package** (when its user-store copy is being pruned) uninstalls the python deps it declared that **nothing else asks for**: no other installed package declares them and no Installed libraries list names them. They leave from where they were installed: under fork isolation the account's own tree, and nothing else; otherwise the shared interpreter, and there only the ones Curio's pip installed since the backend started. A library that was installed already, such as the image's `torch`, stays.
 - A failed pip install rolls back the package's user-store copy so the user can retry cleanly. The Flask response carries the tail of pip's stderr so the user knows what failed (network error, version conflict, missing wheel, etc.).
 
 #### Packages a package needs
