@@ -25,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 from utk_curio.backend.app.discovery.application import probe as probing
 from utk_curio.backend.app.discovery.application.scan import MatchedFile
@@ -152,17 +153,52 @@ def _probe_remote_head(provider, found: MatchedFile, kind: str) -> dict[str, Any
     return details
 
 
+#: Nanoseconds in one of each unit a number's ``time`` can be in.
+_NANOSECONDS = {"s": 1_000_000_000, "ms": 1_000_000, "ns": 1}
+
+
 def _fill_time(spec: ResourceSpec, rows: list[dict[str, Any]]) -> None:
-    """A declared ``time`` capture is the file's timestamp."""
+    """A declared ``time`` capture is the file's timestamp.
+
+    A date or strftime capture is the time as written or, with a time zone,
+    that local time in UTC. An int capture with a unit is an epoch time in
+    UTC. The capture's own column keeps what the path says.
+    """
     if not spec.time:
         return
     column = "recorded_at" if spec.kind == "audio" else "taken_at"
+    zone = ZoneInfo(spec.time_zone) if spec.time_zone else None
     for row in rows:
         value = row.get(spec.time)
-        if isinstance(value, datetime):
-            row[column] = value
+        if spec.time_unit:
+            moment = _epoch_time(value, spec.time_unit)
+        elif isinstance(value, datetime):
+            moment = value
         elif isinstance(value, date):
-            row[column] = datetime(value.year, value.month, value.day)
+            moment = datetime(value.year, value.month, value.day)
+        else:
+            moment = None
+        if moment is None:
+            continue
+        if zone is not None:
+            # A local time the clocks show twice, in the hour a change back
+            # repeats, is its first pass; one they skip reads with the offset
+            # before the change (Python's fold 0).
+            moment = moment.replace(tzinfo=zone).astimezone(timezone.utc).replace(tzinfo=None)
+        row[column] = moment
+
+
+def _epoch_time(value: Any, unit: str):
+    """*value* in *unit* since 1970 as a UTC time, to the nanosecond; None for
+    a number no timestamp holds (past 2262)."""
+    import pandas as pd
+
+    if not isinstance(value, int) or isinstance(value, bool):
+        return None
+    nanoseconds = value * _NANOSECONDS[unit]
+    if not -(2**63) < nanoseconds < 2**63:
+        return None
+    return pd.Timestamp(nanoseconds, unit="ns")
 
 
 def _number_frames(spec: ResourceSpec, rows: list[dict[str, Any]]) -> None:
