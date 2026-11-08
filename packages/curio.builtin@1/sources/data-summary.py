@@ -1,5 +1,3 @@
-import pandas as pd
-
 df = input_0  # The DataFrame on input circle 0
 
 summary = {
