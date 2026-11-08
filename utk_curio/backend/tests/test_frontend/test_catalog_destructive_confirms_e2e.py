@@ -8,11 +8,10 @@ test below states the specific defect it pins.
   other dataflow used, permanently deleted the file from the account while the
   toast said only "Removed ... from this dataflow."
 - **Node "Remove from project" confirmed, but understated.** The prune deletes
-  the package from the user store, drops it from defaults, and `pip uninstall`s
-  its Python libraries from the interpreter Curio itself runs on - shared by
-  every dataflow and everyone on the instance. The dialog said none of that,
-  and the response fields reporting it (`pruned`, `removedFromDefaults`) were
-  discarded by the UI.
+  the package from the user store, drops it from defaults, and uninstalls the
+  Python libraries Curio installed for it alone from the account's own
+  environment. The dialog said none of that, and the response fields
+  reporting it (`pruned`, `removedFromDefaults`) were discarded by the UI.
 - **Publish had no dialog on any surface**, though it is the only write in the
   product that leaves the account, and its inverse (Unpublish) always confirmed.
 
@@ -265,14 +264,15 @@ def test_removing_a_dataset_names_every_dataflow_whose_code_alone_loads_it(
     expect(remove).to_be_visible(timeout=10000)
 
 
-def test_removing_a_package_says_it_reaches_the_shared_environment(
+def test_removing_a_package_says_what_leaves_with_it(
     app_frontend: "FrontendPage", current_server: str, page
 ):
     """The dialog existed but described a dataflow-scoped edit.
 
     `prune_unreferenced_packages` deletes the user's store copy, drops it from
-    defaults, and pip-uninstalls its Python libraries from the interpreter
-    Curio runs on. None of that was disclosed.
+    defaults, and uninstalls the Python libraries Curio installed for it alone
+    from the account's own environment, never one that was there already or
+    that something else uses. None of that was disclosed.
     """
     require_project_page()
     require_user_auth()
@@ -295,10 +295,13 @@ def test_removing_a_package_says_it_reaches_the_shared_environment(
     modal = _modal(page, re.compile(r"^Remove "))
     # THE POINT: the second paragraph, which did not exist.
     expect(modal).to_contain_text("deleted from your account")
-    expect(modal).to_contain_text("shared environment")
+    expect(modal).to_contain_text("may be uninstalled from your environment")
+    expect(modal).to_contain_text("Libraries that were already installed")
+    # One account's removal changes no one else's environment.
+    expect(modal).not_to_contain_text("everyone using this Curio")
     save_workflow_test_screenshot(
         page, "node-remove-confirm",
-        test_name="test_removing_a_package_says_it_reaches_the_shared_environment",
+        test_name="test_removing_a_package_says_what_leaves_with_it",
         fit_reactflow=False,
     )
     modal.get_by_role("button", name="Cancel", exact=True).click()
