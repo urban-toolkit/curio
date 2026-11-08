@@ -349,7 +349,8 @@ def test_the_weights_are_fetched_at_the_pinned_revision_and_never_shipped():
     digests = {item["path"]: set(item) - {"path"} for item in fetch["files"]}
     # Hugging Face stores the weights with Git LFS, which lists a SHA-256; the
     # other files by their git blob.
-    assert digests.pop("model.safetensors") == {"sha256"}
+    weights = digests.pop("model.safetensors")
+    assert weights == {"sha256"}
     assert set(map(frozenset, digests.values())) == {frozenset({"gitSha1"})}
     assert block["sizeBytes"] == 3_444_996_474
     assert "downloadOnFirstUse" not in _manifest()
