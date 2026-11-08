@@ -647,7 +647,10 @@ def _mint_node_content_write(
         refusal = _content_refusal(raw_content, content.extract_node_content(raw_content), None)
         if refusal:
             return "refused", refusal, None
-    spec = dataflow_docs.live(user_key, project_id)
+    from utk_curio.backend import profile_timing
+
+    with profile_timing.step("mint:live"):
+        spec = dataflow_docs.live(user_key, project_id)
     if spec is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
     nodes = (spec.get("dataflow") or {}).get("nodes") or []
@@ -660,7 +663,8 @@ def _mint_node_content_write(
     # to it the values the user typed.
     from utk_curio.backend.app.packages import service as packages_services
 
-    entry, _err = packages_services.resolve_template(user_key, project_id, node.get("type"))
+    with profile_timing.step("mint:resolve_template"):
+        entry, _err = packages_services.resolve_template(user_key, project_id, node.get("type"))
     # A chart's or a map's node takes its document as an object too, as its
     # text, as node.create does.
     proposed = content.extract_node_content(raw_content, document=_holds_document(entry, node.get("type")))
@@ -673,27 +677,32 @@ def _mint_node_content_write(
     # Before the gate, which may probe a source: a reference the node's run
     # would refuse. This tool declares no widget, so writing the code again
     # could never mend the node.
-    unresolved = agents_grounding._reference_problems(proposed, current, engine, chips)
+    with profile_timing.step("mint:references"):
+        unresolved = agents_grounding._reference_problems(proposed, current, engine, chips)
     if unresolved:
         return agents_tool_rounds._refuse_params(
             agent_text.message("mint.content-references", problems="\n".join(unresolved))
         )
-    verdict, refusal = agents_grounding._gate_generated_content(
-        user_key, project_id, loop_ctx,
-        code=proposed, engine=engine,
-        node_type=node.get("type"), params=params,
-        base=loop_ctx.get("_grounding_base"), chips=chips,
-        node_id=node_id, current=current,
-    )
+    with profile_timing.step("mint:gate"):
+        verdict, refusal = agents_grounding._gate_generated_content(
+            user_key, project_id, loop_ctx,
+            code=proposed, engine=engine,
+            node_type=node.get("type"), params=params,
+            base=loop_ctx.get("_grounding_base"), chips=chips,
+            node_id=node_id, current=current,
+        )
     if refusal:
         return agents_tool_rounds._refuse_params(refusal)
     # A Map Editor node's code is held to what the node reads; the code it
     # holds already is the user's own.
-    unreadable = map_edits.refusal(user_key, project_id, node.get("type"), proposed, current=node.get("content") or "")
+    with profile_timing.step("mint:map_edits"):
+        unreadable = map_edits.refusal(user_key, project_id, node.get("type"), proposed,
+                                       current=node.get("content") or "")
     if unreadable:
         return agents_tool_rounds._refuse_params(unreadable)
     # A pinned tile's spec is held to what its dashboard publishes.
-    unpublishable = dashboards.refusal(user_key, project_id, node, proposed)
+    with profile_timing.step("mint:dashboards"):
+        unpublishable = dashboards.refusal(user_key, project_id, node, proposed)
     if unpublishable:
         return agents_tool_rounds._refuse_params(unpublishable)
     # The node as the user knows it, the way node.create names one: its kind,

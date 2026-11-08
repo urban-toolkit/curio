@@ -462,19 +462,34 @@ def _turn(asked: Ask) -> Iterator[tuple]:
 
 
 def _turn_events(asked: Ask) -> Iterator[tuple]:
+    # Profiling branch only: the turn's steps, timed (profile_timing).
+    from utk_curio.backend import profile_timing
+
+    profile_timing.begin(f"ask={asked.ask_id[:8]} att={asked.attachment_id[:8]} "
+                         f"queued={time.time() - asked.asked_at:.2f}")
     try:
-        turn = turn_loop.AttachmentTurn(
-            asked.user_key, asked.project_id, asked.attachment_id, asked.message, asked.config,
-            asked.context, streaming=asked.streaming, stop=asked.stop,
-        )
-    except AgentServiceError as exc:
-        yield "error", _publish(asked, "error", {"error": str(exc)}, status=exc.status)
-        return
-    for name, payload in turn.stream():
-        if name == "done":
-            asked.result = turn.result
-        data = {"text": payload} if name == "delta" else {"error": payload} if name == "error" else payload
-        yield name, _publish(asked, name, data, status=502 if name == "error" else None)
+        try:
+            with profile_timing.step("construct"):
+                turn = turn_loop.AttachmentTurn(
+                    asked.user_key, asked.project_id, asked.attachment_id, asked.message, asked.config,
+                    asked.context, streaming=asked.streaming, stop=asked.stop,
+                )
+        except AgentServiceError as exc:
+            yield "error", _publish(asked, "error", {"error": str(exc)}, status=exc.status)
+            return
+        seen = set()
+        for name, payload in turn.stream():
+            if name not in seen:
+                seen.add(name)
+                profile_timing.mark(f"ev:{name}")
+            if name == "done":
+                asked.result = turn.result
+            data = {"text": payload} if name == "delta" else {"error": payload} if name == "error" else payload
+            with profile_timing.step(f"publish:{name}"):
+                published = _publish(asked, name, data, status=502 if name == "error" else None)
+            yield name, published
+    finally:
+        profile_timing.end()
 
 
 # ---------------------------------------------------------------------------

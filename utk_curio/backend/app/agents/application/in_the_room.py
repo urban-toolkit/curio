@@ -97,9 +97,17 @@ def at_work(user_key: str, project_id: Optional[str], attachment_id: Optional[st
         named = {"coord": coord, "name": getattr(manifest, "name", None) or coord or "An agent",
                  "category": getattr(manifest, "category", None) or None,
                  "asked_by": who.asked_by, "asker_sign_in": who.sign_in}
+    from utk_curio.backend import profile_timing
+
+    profile_timing.mark("at_work:joining")
     with agent_peers.at_work(user_key, project_id, attachment_id=str(attachment_id), skills=skills,
                              **named) as joined, testing_provider.answering(attachment_id):
-        yield joined
+        profile_timing.mark("at_work:joined")
+        try:
+            yield joined
+        finally:
+            profile_timing.mark("at_work:leaving")
+    profile_timing.mark("at_work:left")
 
 
 def held_skills(run_skills) -> list[str]:

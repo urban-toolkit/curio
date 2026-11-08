@@ -272,7 +272,9 @@ jobs:
   # nothing that needs it runs for one, so a fork PR never reaches a
   # self-hosted runner.
   pick-runners:
+    # tmp/agent-turn-profile: only test-gpu-stress runs on this branch.
     if: >-
+      false &&
       github.event_name != 'schedule' &&
       github.event.action != 'labeled' &&
       (github.event_name != 'pull_request' ||
@@ -2252,34 +2254,31 @@ jobs:
       # own (a fresh --run-id) and writes its own report folder ({run}).
       # The probe reads the backend in its container: the stack's .curio is
       # its root's alone.
-      - name: 🔥 Run the HTTP tiers (5, 10, 50, 100 users)
+      # tmp/agent-turn-profile: py-spy in the stack's container, which the two
+      # canvas stages below sample the backend with (--stacks-every, --py-spy)
+      # through `docker exec --privileged`, which may trace it. The HTTP tiers,
+      # the session profile and the browser tier do not run on this branch.
+      - name: 🔬 Install py-spy in the stack's container
         run: |
           cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
-          bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
-            --backend "http://localhost:5072" \
-            --tiers 5,10,50,100 \
-            --out "$GITHUB_WORKSPACE/stress{run}" \
-            --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
-            --probe "docker exec $cid python"
-
-      # The same 100 users, behaving like people rather than a thundering
-      # herd: arrivals spread over two minutes and a pause between node runs.
-      # A stack can be fine for a hundred people working and still fall over
-      # when all hundred press Run in the same millisecond, and the two
-      # numbers are fixed by different things, so both are recorded.
-      # This stage and the browser tier run after a red stage but not after a
-      # cancel: GitHub force-ends a cancelled job five minutes on, so a cancel
-      # goes straight to the steps that keep the logs and tear the stack down.
-      - name: 🚶 Run the session profile (100 users, realistic pacing)
-        if: ${{ !cancelled() }}
-        run: |
-          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
-          bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
-            --backend "http://localhost:5072" \
-            --tiers 100 --profile session \
-            --out "$GITHUB_WORKSPACE/stress-session{run}" \
-            --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
-            --probe "docker exec $cid python"
+          docker exec "$cid" pip install --no-cache-dir --quiet py-spy==0.4.2 \
+            || echo "::warning::py-spy did not install: the samples are the backend's own dumps"
+          docker exec --privileged "$cid" py-spy --version || true
+          docker exec "$cid" python --version || true
+          # One dump now, so a py-spy that cannot attach shows before the stages.
+          probe_json="$(docker exec "$cid" python -c "$(cat utk_curio/backend/tests/stress/backend_probe.py)" || true)"
+          echo "probe: $probe_json"
+          pid="$(printf '%s' "$probe_json" | python -c 'import json,sys; print(json.load(sys.stdin).get("pid", ""))' || true)"
+          echo "backend pid: $pid"
+          if [ -n "$pid" ]; then
+            timeout 120 docker exec --privileged "$cid" py-spy dump --pid "$pid" --nonblocking > pyspy-first-dump.txt 2>&1 \
+              || echo "::warning::py-spy could not dump the backend"
+            head -n 60 pyspy-first-dump.txt || true
+            timeout 120 docker exec --privileged "$cid" py-spy dump --pid "$pid" --nonblocking --json > pyspy-first-dump.json 2>&1 \
+              || echo "::warning::py-spy dump --json failed"
+            head -c 2000 pyspy-first-dump.json || true
+            echo
+          fi
 
       # 100 users in ten rooms of ten, each room one shared canvas made from
       # the example of its number in the mix, so every example is one. Every
@@ -2299,7 +2298,8 @@ jobs:
             --tiers 100 --room-size 10 --shared-canvas \
             --out "$GITHUB_WORKSPACE/stress-canvas{run}" \
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
-            --probe "docker exec $cid python"
+            --probe "docker exec $cid python" \
+            --stacks-every 2 --py-spy "docker exec --privileged $cid py-spy"
 
       # The same ten canvases, and every member also asks Node Builder to put
       # a line on top of its own node's code: 100 agent turns at once, ten in
@@ -2320,7 +2320,8 @@ jobs:
             --tiers 100 --room-size 10 --shared-canvas --agents \
             --out "$GITHUB_WORKSPACE/stress-agents{run}" \
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
-            --probe "docker exec $cid python"
+            --probe "docker exec $cid python" \
+            --stacks-every 2 --py-spy "docker exec --privileged $cid py-spy"
 
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
       # half, and vice versa: they fail for different reasons and get fixed by
@@ -2334,7 +2335,7 @@ jobs:
       # those host-side paths are never read by anything; pointing them at the
       # runner's temp dir costs nothing.
       - name: 🖥️ Run the browser tier (5 concurrent WebGPU users)
-        if: ${{ !cancelled() }}
+        if: ${{ false }}
         env:
           CURIO_STATE_DIR: ${{ runner.temp }}/stress-e2e/.curio
         run: |

@@ -278,22 +278,40 @@ class _DocLock:
     that fails then raises from the block, as it did inside it, unless the
     block failed already."""
 
-    __slots__ = ("_lock",)
+    __slots__ = ("_lock", "_tokens")
 
     def __init__(self):
         self._lock = threading.RLock()
+        # Profiling branch only: each entry's wait and hold (profile_timing).
+        self._tokens = []
 
     def __enter__(self) -> "_DocLock":
+        from utk_curio.backend import profile_timing
+
         storage.hold_syncs()
         try:
+            began = time.perf_counter()
             self._lock.acquire()
         except BaseException:
             storage.release_syncs(raising=False)
             raise
+        try:
+            token = profile_timing.lock_entered(time.perf_counter() - began)
+        except Exception:  # noqa: BLE001 - profiling never breaks the lock
+            token = None
+        self._tokens.append(token)
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:
+        from utk_curio.backend import profile_timing
+
+        token = self._tokens.pop() if self._tokens else None
         self._lock.release()
+        if token is not None:
+            try:
+                profile_timing.lock_left(token)
+            except Exception:  # noqa: BLE001 - profiling never breaks the lock
+                pass
         storage.release_syncs(raising=exc_type is None)
 
 

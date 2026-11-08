@@ -48,6 +48,7 @@ import time
 import uuid
 from contextlib import ExitStack
 
+from utk_curio.backend import profile_timing
 from utk_curio.backend.app.agents.application.tool_rounds import ParamRefusal
 from utk_curio.backend.app.agents.application.tool_rounds import _RunConversation
 from utk_curio.backend.app.agents.domain import agent_text
@@ -126,10 +127,11 @@ class AttachmentTurn:
         self.room_refused = False
         # What the turn settled with (:meth:`settle_ok`), for an ask that waits for it.
         self.result: dict | None = None
-        (self.coord, self.session_id, messages, self.run_policy, self.wants_title,
-         self.pins, self.loop_ctx) = agents_prepare._prepare_run(
-            user_key, project_id, attachment_id, message, config, run_context
-        )
+        with profile_timing.step("prepare_run"):
+            (self.coord, self.session_id, messages, self.run_policy, self.wants_title,
+             self.pins, self.loop_ctx) = agents_prepare._prepare_run(
+                user_key, project_id, attachment_id, message, config, run_context
+            )
         # dev/114: the current user text — turns persist AFTER the run, so the
         # grounding gate cannot read it from the session; a path the user typed
         # is the one human-trusted source of a local path.
@@ -144,12 +146,13 @@ class AttachmentTurn:
         # snapshot pinned here is what settlement charges. For a stream, a
         # quota/budget denial surfaces as a plain 429 before any streaming
         # begins, and consumes/persists nothing.
-        self.reservation = ledger.reserve(
-            user_key,
-            reservation_id=self.execution_id,
-            llm_config_id=config.config_id,
-            **self.run_policy["admit"],
-        )
+        with profile_timing.step("ledger_reserve"):
+            self.reservation = ledger.reserve(
+                user_key,
+                reservation_id=self.execution_id,
+                llm_config_id=config.config_id,
+                **self.run_policy["admit"],
+            )
         self.usage_total: dict = {}
         self.usage_sink: dict = {}
         self.tool_calls: list = []
@@ -209,7 +212,8 @@ class AttachmentTurn:
                 break
             self.usage_sink = {}
             try:
-                result = yield from self._provider_round()
+                with profile_timing.step("provider_round"):
+                    result = yield from self._provider_round()
             except NativeToolsRefused as refusal:
                 # The endpoint takes no native tools after all: the same round
                 # again, on the fenced protocol.
@@ -273,7 +277,8 @@ class AttachmentTurn:
                 yield from self._delegate_round(req, result, native_calls)
                 yield from self._emit_landed()
                 continue
-            yield from self._tool_round(req, result, native_calls)
+            with profile_timing.step("tool_round"):
+                yield from self._tool_round(req, result, native_calls)
             yield from self._emit_landed()
 
     def _cut(self, result: dict) -> None:
@@ -727,9 +732,10 @@ class AttachmentTurn:
         answered: it landed, or the plan's card ends the turn."""
         yield from self._emit("tool_requested", {"tool": req["tool"]})
         yield from self._emit("tool_started", {"tool": req["tool"]})
-        status, text = agents_tool_rounds._execute_tool_request(
-            self.user_key, self.project_id, self.loop_ctx, req, self.tool_calls, self.minted
-        )
+        with profile_timing.step("execute_tool"):
+            status, text = agents_tool_rounds._execute_tool_request(
+                self.user_key, self.project_id, self.loop_ctx, req, self.tool_calls, self.minted
+            )
         # The event carries what the call's record holds for the chat: why it
         # failed, and whether the egress policy refused it (#447).
         record = self.tool_calls[-1]
@@ -797,7 +803,8 @@ class AttachmentTurn:
         reply_text = "\n\n".join(self.folded)
         run_parts = self.minted + self.final_parts  # proposals ride the turn (dev/41)
         status = "stopped" if self.stopped else "ok"
-        ledger.settle(self.user_key, self.reservation, usage=self.usage_total or None, status=status)
+        with profile_timing.step("ledger_settle"):
+            ledger.settle(self.user_key, self.reservation, usage=self.usage_total or None, status=status)
         execution = agents_policy._execution_record(
             self.execution_id, self.pins, self.usage_total, self.started, status, self.tool_calls,
             delegations=self.delegations,
@@ -811,23 +818,25 @@ class AttachmentTurn:
             execution["cutAtOutputLimit"] = True
         if self.room_refused:
             execution["thinkingRoomRefused"] = True
-        agents_prepare._persist_exchange(
-            self.user_key,
-            self.project_id,
-            self.session_id,
-            self.attachment_id,
-            self.message,
-            reply_text,
-            execution=execution,
-            parts=run_parts,
-            writer=self.loop_ctx.get("writer"),
-        )
+        with profile_timing.step("persist_exchange"):
+            agents_prepare._persist_exchange(
+                self.user_key,
+                self.project_id,
+                self.session_id,
+                self.attachment_id,
+                self.message,
+                reply_text,
+                execution=execution,
+                parts=run_parts,
+                writer=self.loop_ctx.get("writer"),
+            )
         # Title before the done frame: the reply text already streamed via
         # deltas, and the client's post-send refresh must see the title.
         if self.wants_title and not self.stopped:
-            agents_titles._generate_conversation_title(
-                self.user_key, self.project_id, self.attachment_id, self.message, self.config
-            )
+            with profile_timing.step("title"):
+                agents_titles._generate_conversation_title(
+                    self.user_key, self.project_id, self.attachment_id, self.message, self.config
+                )
         # The skills the reply's line under it names, as the persisted record
         # holds them: those its system turn held (pins.skills, its catalog
         # left out) and those it loaded (skillsLoaded).

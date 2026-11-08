@@ -148,10 +148,13 @@ def _land_held(user_key: str, project_id: str, loop_ctx: dict, spec: dict, propo
     names the node in its state, writes, and keeps both a second while a tab
     is bound. Each ``change`` event of the write carries what its state said
     (``writing``)."""
+    from utk_curio.backend import profile_timing
+
     nodes = _nodes_it_changes(proposal)
     who = agents_room.asker_of(loop_ctx)
     with agents_room.at_work(user_key, project_id, loop_ctx.get("attachment_id"), spec=spec, who=who) as peer:
-        held = wait_for_people(project_id, nodes, loop_ctx.get("asker_id"), sign_in=who.sign_in, peer=peer)
+        with profile_timing.step("land:wait_for_people"):
+            held = wait_for_people(project_id, nodes, loop_ctx.get("asker_id"), sign_in=who.sign_in, peer=peer)
         if held:
             return "refused", agent_text.message("change.person-editing", name=held), None
         if peer is None:
@@ -159,11 +162,15 @@ def _land_held(user_key: str, project_id: str, loop_ctx: dict, spec: dict, propo
         writes = (agents_room.content_writes(spec, proposal["nodeId"]) if proposal["tool"] == "node.content.write"
                   else agents_room.settings_writes(proposal.get("settings")))
         # The wait is done: the lock now, or the name of who took it meanwhile.
+        profile_timing.mark("land:holding")
         with agent_peers.holding(peer, nodes, writes, within=0) as hold:
+            profile_timing.mark("land:held")
             if hold.held_by is not None:
                 return "refused", agent_text.message("change.person-editing", name=hold.held_by), None
             before = len(loop_ctx.get("_landed") or [])
-            outcome = lander(user_key, project_id, loop_ctx, spec, proposal, part)
+            with profile_timing.step("land:lander"):
+                outcome = lander(user_key, project_id, loop_ctx, spec, proposal, part)
+            profile_timing.mark("land:releasing")
             if outcome[0] != LANDED:
                 hold.keep = False  # nothing landed: nothing to show a second
                 return outcome

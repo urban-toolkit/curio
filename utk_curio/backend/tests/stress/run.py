@@ -54,6 +54,8 @@ import requests
 from ..test_frontend.workflow_spec import PY_CODE_TYPES, parse_workflow
 from . import report as reporting
 from . import sockets
+from . import stack_profile
+from .stack_profile import StackSampler
 from .agents import TURN_WAIT_S, RoomAgents, on_the_scripted_model
 from .autk import compile_autk_data
 from .backend_probe import (
@@ -442,21 +444,28 @@ def make_probe(args) -> BackendProbe | None:
     return BackendProbe(command)
 
 
-def probe_tier(probe: BackendProbe | None, run):
+def probe_tier(probe: BackendProbe | None, run, stacks=None):
     """Run *run* (a tier) between two readings, sampling while it runs:
     ``(what run returned, backend summary, doc files summary, harness
     summary)``. The backend is read through *probe*; the harness's own CPU is
     read whatever the probe. *run* returns its rooms' outcomes last, whose
-    dataflows' doc files are listed."""
+    dataflows' doc files are listed. *stacks*, given the backend's pid (or
+    None), makes the tier's sampler of thread stacks
+    (``stack_profile.StackSampler``), or None for none."""
     problems = []
     start, problem = reading_now(probe)
     if problem:
         problems.append(f"before the tier: {problem}")
     sampler = Sampler(probe, PROBE_EVERY_S).start()
+    stack_sampler = stacks(start.get("pid")) if stacks is not None else None
+    if stack_sampler is not None:
+        stack_sampler.start()
     try:
         outcome = run()
     finally:
         samples = sampler.stop()
+        if stack_sampler is not None:
+            stack_sampler.stop()
     if sampler.problem:
         problems.append(f"while it ran: {sampler.problem}")
     if probe is not None:
@@ -473,6 +482,32 @@ def probe_tier(probe: BackendProbe | None, run):
             reporting.backend_summary(start, samples, end, PROBE_EVERY_S, problem),
             reporting.doc_files_summary(listing, problem),
             reporting.harness_summary(start, samples, end))
+
+
+def write_stack_profile(sampler, out_dir: str, name: str, tier: int, every_s: float) -> None:
+    """Where the backend's threads spent the tier, from *sampler*'s samples
+    and its GIL record: ``stack-profile-<name>.md`` and the GIL record's raw
+    lines in ``gil-<name>.txt`` in *out_dir*, and the profile's head in the
+    log. A profile that fails says why in the log and fails nothing."""
+    try:
+        result = stack_profile.profile(sampler.samples, sampler.gil_text, sampler.gil_seconds)
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, f"stack-profile-{name}.md")
+        with open(path, "w", encoding="utf-8") as out:
+            out.write(stack_profile.markdown(result, f"tier {tier}", every_s, sampler.problems,
+                                             sampler.gil_problem))
+        if sampler.gil_text:
+            with open(os.path.join(out_dir, f"gil-{name}.txt"), "w", encoding="utf-8") as out:
+                out.write(sampler.gil_text)
+        source = "py-spy" if sampler.uses_pyspy else "the backend's own dumps"
+        print(f"[stress] tier {tier}: {sampler.taken} stack sample(s) from {source}, every "
+              f"{every_s:g} s, in {path}" + (f"; problems: {'; '.join(sampler.problems)}" if sampler.problems else "")
+              + (f"; GIL record: {sampler.gil_problem}" if sampler.gil_problem else "")
+              + (f"; py-spy record said: {sampler.gil_said}" if sampler.gil_said else ""), flush=True)
+        for line in stack_profile.log_lines(result):
+            print(f"[stress] tier {tier}: stacks: {line}", flush=True)
+    except Exception as exc:  # noqa: BLE001 - the profile is extra: it never fails the run
+        print(f"[stress] tier {tier}: the stack profile failed: {type(exc).__name__}: {exc}", flush=True)
 
 
 def tier_lines(summary: dict) -> list[str]:
@@ -593,6 +628,18 @@ def main(argv: list[str] | None = None) -> int:
                              "probe, for every thread's stack, saved in --out "
                              "as thread-stacks-NAME.txt (a CI job does after a "
                              "failed step)")
+    parser.add_argument("--stacks-every", type=float, default=0.0, metavar="SECONDS",
+                        help="while each tier runs, a sample of every backend "
+                             "thread's stack every SECONDS, saved in --out as "
+                             "stack-samples-<tier>.jsonl, and where the threads "
+                             "spent the tier in stack-profile-<tier>.md "
+                             "(stack_profile.py); 0, the default, takes none")
+    parser.add_argument("--py-spy", default="", metavar="COMMAND",
+                        help="with --stacks-every, the command that runs py-spy "
+                             "where the backend runs, such as 'docker exec "
+                             "--privileged <container> py-spy': the samples are "
+                             "py-spy's dumps, which need no GIL and name its "
+                             "holder, and py-spy records the GIL's holder too")
     args = parser.parse_args(argv)
 
     if args.stacks_only:
@@ -640,6 +687,26 @@ def main(argv: list[str] | None = None) -> int:
         )
         return on_the_scripted_model(backend_url, run) if args.agents else run()
 
+    def tier_stacks(name: str, made: list):
+        """The factory of the tier's stack sampler (:func:`probe_tier`), which
+        keeps what it made in *made*; None without ``--stacks-every``."""
+        if args.stacks_every <= 0:
+            return None
+
+        def make(pid):
+            # The GIL record's file where the backend runs is named after the
+            # report folder too: two stages' tiers share their names.
+            folder = os.path.basename(os.path.normpath(args.out)) or "stress"
+            sampler = StackSampler(
+                args.stacks_every, os.path.join(args.out, f"stack-samples-{name}.jsonl"), probe=probe,
+                pyspy=shlex.split(args.py_spy) if args.py_spy.strip() else None, pid=pid,
+                name=f"{folder}-{name}",
+            )
+            made.append(sampler)
+            return sampler
+
+        return make
+
     tier_reports = []
     all_results = []
     for position, tier in enumerate(tiers):
@@ -647,8 +714,11 @@ def main(argv: list[str] | None = None) -> int:
         # Bracketing the tier, because the counters are cumulative since the
         # sandbox started and the baseline runs before the first tier.
         lock_before = read_exec_lock(backend_url)
+        stack_name, made = f"tier-{position + 1}-{tier}-users", []
         (results, seconds, outcomes), backend, doc_files, harness = probe_tier(
-            probe, functools.partial(tier_run, tier, position))
+            probe, functools.partial(tier_run, tier, position), stacks=tier_stacks(stack_name, made))
+        for sampler in made:
+            write_stack_profile(sampler, args.out, stack_name, tier, args.stacks_every)
         all_results.extend(results)
         lock = reporting.exec_lock_delta(lock_before, read_exec_lock(backend_url))
         tabs = reporting.socket_summary(outcomes)

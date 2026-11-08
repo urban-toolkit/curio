@@ -193,8 +193,12 @@ def land_content(user_key: str, project_id: str, loop_ctx: dict, spec: dict, pro
         restore()
         agents_changes.forget(spec, attachment_id, change["changeId"])
 
-    written = dataflow_docs.write(user_key, project_id, spec, agents_changes.actor(user_key, spec, loop_ctx, "apply"),
-                                  on_refused=_changed_meanwhile)
+    from utk_curio.backend import profile_timing
+
+    with profile_timing.step("land:doc_write"):
+        written = dataflow_docs.write(user_key, project_id, spec,
+                                      agents_changes.actor(user_key, spec, loop_ctx, "apply"),
+                                      on_refused=_changed_meanwhile)
     if written.refused:
         return "refused", agent_text.message("change.changed-meanwhile", node_id=repr(node_id)), None
     writer = _writer(user_key, spec, loop_ctx)

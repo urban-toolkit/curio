@@ -58,25 +58,32 @@ def _prepare_run(
     (granted ids + the attachment target). A required manifest tool that
     resolves no grant refuses the run here — validation stage, before
     admission, so it consumes no quota."""
-    spec, record, coord, manifest, requested_tools, instruction = _runnable(user_key, project_id, attachment_id)
+    from utk_curio.backend import profile_timing as _pt
+
+    with _pt.step("p:runnable"):
+        spec, record, coord, manifest, requested_tools, instruction = _runnable(user_key, project_id, attachment_id)
     # An edited intent replaces the instruction slot only, so the preamble,
     # the configuration and every runtime-owned slot still apply
     # (contracts.compose_system).
-    preamble = agents_prompts._resolve_prompt_text(user_key, coord, "system")
-    configuration = (
-        catalog_settings.configuration_for(user_key, manifest.config_keys())
-        if manifest is not None else None
-    )
+    with _pt.step("p:preamble"):
+        preamble = agents_prompts._resolve_prompt_text(user_key, coord, "system")
+    with _pt.step("p:configuration"):
+        configuration = (
+            catalog_settings.configuration_for(user_key, manifest.config_keys())
+            if manifest is not None else None
+        )
     session_id = record.get("sessionId")
     if not isinstance(session_id, str):
         session_id = None
-    prior = sessions.read_turns(user_key, project_id, session_id) if session_id else []
+    with _pt.step("p:read_turns"):
+        prior = sessions.read_turns(user_key, project_id, session_id) if session_id else []
     # The skills the run lists, those it is handed for its node, those its
     # conversation loaded before, and those the message names, /<name> each
     # (skill_runs).
-    run_skills = agents_skill_runs.for_chat(
-        user_key, project_id, manifest, spec, record.get("target"), preamble, prior, message=message,
-    )
+    with _pt.step("p:skills"):
+        run_skills = agents_skill_runs.for_chat(
+            user_key, project_id, manifest, spec, record.get("target"), preamble, prior, message=message,
+        )
     # Grant-less runs keep the T2 tail byte-identical; granted runs get the
     # toolRequest paragraph (memos dev/39/41).
     resolved = tools.resolve_grants(requested_tools)
@@ -87,48 +94,59 @@ def _prepare_run(
                     " (the datalake.* tools are discovery.* now)" if renamed else "")
     # skill.read exactly when the run lists skills, whatever the manifest asks.
     granted = agents_skill_runs.grants(resolved, run_skills)
-    runtime_blocks = _roster_blocks(user_key, project_id, manifest, granted)
+    with _pt.step("p:roster"):
+        runtime_blocks = _roster_blocks(user_key, project_id, manifest, granted)
     # Worked examples: the shipped dataflows closest to this run, for an
     # agent that takes them. Chosen per run, so they ride the runtime slot
     # beside the roster and the cached preamble stays fixed.
-    runtime_blocks.append(agents_examples.attached_block(coord, spec, record.get("target"), message))
+    with _pt.step("p:examples"):
+        runtime_blocks.append(agents_examples.attached_block(coord, spec, record.get("target"), message))
     # Delegation (dev/48, DEC-046): offered only when the manifest names
     # delegates that resolve to visible definitions — server-resolved, never
     # the manifest's raw list. Each capability is offered under the name of
     # the agent this dataflow would run for it.
     entries: list = []
-    if manifest is not None and manifest.delegates_to:
-        entries = delegation.offered_capability_entries(
-            user_key, set(project_agents.project_agents(spec)), manifest,
-        )
-    native_tools = _native_tools_for(config, user_key, granted, entries, run_skills.names)
+    with _pt.step("p:delegation"):
+        if manifest is not None and manifest.delegates_to:
+            entries = delegation.offered_capability_entries(
+                user_key, set(project_agents.project_agents(spec)), manifest,
+            )
+    with _pt.step("p:native_tools"):
+        native_tools = _native_tools_for(config, user_key, granted, entries, run_skills.names)
 
-    fenced_system = _system_content(preamble, instruction, configuration, granted, runtime_blocks, entries,
-                                    native=False, run_skills=run_skills)
-    system = (
-        _system_content(preamble, instruction, configuration, granted, runtime_blocks, entries,
-                        native=True, run_skills=run_skills)
-        if native_tools else fenced_system
-    )
+    with _pt.step("p:system_fenced"):
+        fenced_system = _system_content(preamble, instruction, configuration, granted, runtime_blocks, entries,
+                                        native=False, run_skills=run_skills)
+    with _pt.step("p:system_native"):
+        system = (
+            _system_content(preamble, instruction, configuration, granted, runtime_blocks, entries,
+                            native=True, run_skills=run_skills)
+            if native_tools else fenced_system
+        )
     # What the dataflow can use, for a run that can write a node's code: data
     # the run reads beside the canvas context, never a runtime-owned slot. Its
     # datasets are read once a turn, and the turn's delegated runs reuse them.
-    dataflow_datasets = (
-        agents_dataflow_block.read_datasets(project_id)
-        if agents_dataflow_block.writes_code(granted, manifest) else None
-    )
-    dataflow_block = agents_dataflow_block.for_chat_run(
-        user_key, project_id, spec, record.get("target"), granted, manifest=manifest, datasets=dataflow_datasets,
-    )
+    with _pt.step("p:read_datasets"):
+        dataflow_datasets = (
+            agents_dataflow_block.read_datasets(project_id)
+            if agents_dataflow_block.writes_code(granted, manifest) else None
+        )
+    with _pt.step("p:dataflow_block"):
+        dataflow_block = agents_dataflow_block.for_chat_run(
+            user_key, project_id, spec, record.get("target"), granted, manifest=manifest,
+            datasets=dataflow_datasets,
+        )
     messages = _messages(system, prior, run_context, message, dataflow_block)
     wants_title = (
         not record.get("title")
         and not record.get("titleEdited")
         and not any(t.get("role") == "user" for t in prior)
     )
-    run_policy = agents_policy._run_policy(user_key, project_id, coord, spec, record)
-    pins = _run_pins(coord, manifest, record, config, granted, run_policy, configuration,
-                     protocol=("native" if native_tools else "fenced") if granted or entries else None)
+    with _pt.step("p:run_policy"):
+        run_policy = agents_policy._run_policy(user_key, project_id, coord, spec, record)
+    with _pt.step("p:pins"):
+        pins = _run_pins(coord, manifest, record, config, granted, run_policy, configuration,
+                         protocol=("native" if native_tools else "fenced") if granted or entries else None)
     if run_skills.pins():
         pins["skills"] = run_skills.pins()
     loop_ctx = {
