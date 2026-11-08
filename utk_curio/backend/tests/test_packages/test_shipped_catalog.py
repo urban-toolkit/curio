@@ -148,6 +148,33 @@ def test_the_whole_shipped_catalog_resolves_together():
     )
 
 
+def test_each_shipped_dataflow_lists_the_packages_its_packages_need():
+    """Adding a package to a dataflow adds the packages it names in
+    ``dependencies.packages`` to its lockfile too
+    (``project_packages.install_to_project``), and a dataflow keeps the
+    packages its lockfile lists: each shipped dataflow lists every package a
+    package it lists needs, such as Rasterization beside Media or Deep Umbra."""
+    needs = {p.name: sorted(_raw_package_deps(p)) for p in PACKAGE_DIRS}
+    assert needs["curio.media@1"] == needs["model.scout.deep-umbra@1"] == ["curio.rasterization@1"], needs
+    examples = CATALOG.parent / "docs" / "examples"
+    read, missing = 0, []
+    for path in sorted(examples.rglob("*.json")):
+        if any(part in path.parts for part in ("prompts", "expected_outputs")):
+            continue
+        spec = json.loads(path.read_text(encoding="utf-8"))
+        dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+        if not isinstance(dataflow, dict):
+            continue
+        read += 1
+        listed = [p for p in dataflow.get("packages") or [] if isinstance(p, str)]
+        missing += [
+            f"{path.relative_to(examples).as_posix()} lists {package}, which needs {needed}"
+            for package in listed for needed in needs.get(package, []) if needed not in listed
+        ]
+    assert read >= 50, read
+    assert missing == [], missing
+
+
 # ---------------------------------------------------------------------------
 # The manifest declares what the sources import
 # ---------------------------------------------------------------------------
@@ -161,8 +188,8 @@ def test_the_whole_shipped_catalog_resolves_together():
 #
 # Both scans leave out the package's own modules and the modules of the
 # packages its ``dependencies.packages`` names, which the account's store
-# resolves (``python_modules.dependency_module_names``): Deep Umbra imports
-# Rasterization's ``scout_rasters`` and names ``curio.rasterization@1``. The check below leaves
+# resolves (``python_modules.dependency_module_names``): Deep Umbra and Media import
+# Rasterization's ``scout_rasters`` and name ``curio.rasterization@1``. The check below leaves
 # out the same modules through the same function, in a store holding every
 # shipped package.
 

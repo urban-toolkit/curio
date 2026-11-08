@@ -35,8 +35,10 @@ CATALOG = REPO / "packages"
 #: id)``, the template id None for one at the top of the manifest.
 SHIPPED = {
     ("curio.builtin@1", "spatial-join"): {"dataTypes": ["Geometries"]},
-    ("curio.media@1", "video-frames"): {"dataTypes": ["Imagery", "Video"]},
-    ("curio.media@1", "split-audio"): {"dataTypes": ["Audio"]},
+    ("curio.media@1", "video-frames"): {
+        "tags": ["GeoPandas", "Pandas"], "dataTypes": ["Tables", "Geometries", "Imagery", "Video"],
+    },
+    ("curio.media@1", "split-audio"): {"tags": ["Pandas"], "dataTypes": ["Tables", "Audio"]},
     ("curio.media@1", "mosaic-rasters"): {"dataTypes": ["Rasters"]},
     # Rasterization: SCOUT on every node, Rasters on its two raster nodes. The
     # Vega-Lite package declares none: its charts are not SCOUT's.

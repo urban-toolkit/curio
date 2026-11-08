@@ -1,9 +1,10 @@
 {
   "sha256": {
-    "README.md": "7b97c5022208964b708b37d5f952fd87cbc4e61d935e2c94a59cbf3c70f44044",
-    "manifest.json": "ef81b9a5089e01edae5cb57b6327a0981c2ce4c962f797240cf8a1e03b88c628",
-    "sources/mosaic-rasters.py": "f735208e8be6ca3eb1766a1a3eaa97ea0d2127795bd35d412f57a04eee4dbe3a",
-    "sources/split-audio.py": "785ff54c438df80d7c6320cba2398347253dc4ccdaab55830a506f44c8be9bbd",
-    "sources/video-frames.py": "845f3607979b52ca8be27715a34291e46d66d2dc8d4b6fecb344473cb2b2fb73"
+    "README.md": "914d1f3a76b8f69bdafa0cdca24fc05190aafe2f60e46c9b1696480d91645bd1",
+    "manifest.json": "7b64ae0d3b517a92e58b6f9c7277c535b9f82363e08c7ae0b53ee3e2a3136323",
+    "sources/media_collections.py": "bfd625bc542345b2b63b03e1a73752aaafe3bae8586ceb6c7abb6c434594ec21",
+    "sources/mosaic-rasters.py": "85a006f4cd4b3f328f0647b07fc57e3cccece6bdc89fde040f2ed1bcdc8805bb",
+    "sources/split-audio.py": "41500ba3110ea3aa60393df892aee7b1cb88470dda9be03ae25d5344db175fbd",
+    "sources/video-frames.py": "3e5b074c2fc2f4657fceb35ff545d176a693f875be18478916f56764238c7fb9"
   }
 }
