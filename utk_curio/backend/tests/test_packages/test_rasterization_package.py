@@ -169,10 +169,19 @@ def test_deep_umbra_depends_on_it_and_finds_it_in_the_catalog():
     assert "\nfrom scout_rasters.web_tiles import tile_bounds\n" in text
 
 
-def test_a_shipped_dataflow_lists_rasterization_only_when_it_holds_one_of_its_nodes():
-    """Example 06 and the charts dataflow hold no raster node, so neither lists
-    Rasterization; the dataflows with a Raster Calculator or Rasterize
-    Buildings do."""
+def test_a_shipped_dataflow_lists_rasterization_only_when_a_node_of_it_needs_it():
+    """A dataflow lists Rasterization when it holds one of its nodes, or a node
+    of a package that names Rasterization in ``dependencies.packages``, which
+    adding that package adds too: Deep Umbra's, and Media's, whose Mosaic
+    Rasters calls Rasterization's mosaic. Example 06 and the charts dataflow
+    hold none of them, so neither lists it; example 24 holds Rasterize
+    Buildings, and examples 18, 21 and 22 hold Media's nodes."""
+    needing = {PACKAGE_ID}
+    for path in sorted((REPO / "packages").glob("*/manifest.json")):
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        if f"{PACKAGE_ID}@1" in ((manifest.get("dependencies") or {}).get("packages") or {}):
+            needing.add(manifest["id"])
+    assert needing == {PACKAGE_ID, "model.scout.deep-umbra", "curio.media"}, needing
     listed, holding = set(), set()
     for path in sorted((REPO / "docs" / "examples").rglob("*.json")):
         if any(part in path.parts for part in ("prompts", "expected_outputs")):
@@ -184,10 +193,15 @@ def test_a_shipped_dataflow_lists_rasterization_only_when_it_holds_one_of_its_no
         relative = path.relative_to(REPO).as_posix()
         if f"{PACKAGE_ID}@1" in (dataflow.get("packages") or []):
             listed.add(relative)
-        if any(str(node.get("type", "")).startswith(f"{PACKAGE_ID}/") for node in dataflow.get("nodes") or []):
+        if any(str(node.get("type", "")).split("/")[0] in needing for node in dataflow.get("nodes") or []):
             holding.add(relative)
     assert listed == holding
-    assert "docs/examples/24-scout-shadow-model-chicago-loop.json" in holding
+    assert {
+        "docs/examples/18-storage-orthorectified-imagery.json",
+        "docs/examples/21-storage-photos-and-videos.json",
+        "docs/examples/22-storage-audio-recordings.json",
+        "docs/examples/24-scout-shadow-model-chicago-loop.json",
+    } <= holding, sorted(holding)
     assert "docs/examples/06-back-bay-road-sunlight.json" not in listed
     assert "docs/examples/dataflows/scenario-comparison-charts.json" not in listed
 
