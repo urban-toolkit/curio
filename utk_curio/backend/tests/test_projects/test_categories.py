@@ -24,10 +24,7 @@ quad-cities-flood-vulnerability ``Vega-Lite`` when their charts did
 Their charts became the Vega-Lite package's (#1270), which declares no tag:
 example 06 and the charts dataflow lost ``SCOUT``, which only their charts
 had given them. Examples 27 to 30, whose nodes run torch, carry the computed
-``PyTorch`` tag (2026-11-06). Examples 21 and 22 lost ``Pandas`` and
-``Tables``, and 21 ``GeoPandas`` and ``Geometries`` too, when their Media
-nodes became a call of the package's ``media_collections``, whose code, not
-the node's, imports those libraries (2026-11-08).
+``PyTorch`` tag (2026-11-06).
 The automatic sections must reproduce it from the files alone, and the
 hand-set ones live in the files themselves.
 """
