@@ -312,6 +312,14 @@ def main():
         ),
     )
     parser.add_argument(
+        "--media-cache-max-file-gb", type=float, default=None, metavar="GB",
+        help=(
+            "The largest file Cache files copies from a bucket, in gigabytes "
+            "(sets CURIO_MEDIA_CACHE_MAX_FILE_GB, default 4). A collection "
+            "holding a larger file is refused before any file is copied."
+        ),
+    )
+    parser.add_argument(
         "--packages-root", default=None, metavar="PATH",
         help=(
             "Directory the shared Node Catalog is read from and published to "
@@ -480,6 +488,7 @@ def main():
         validation_node_limit=args.validation_node_limit,
         discovery_max_download_mb=args.discovery_max_download_mb,
         media_cache_max_gb=args.media_cache_max_gb,
+        media_cache_max_file_gb=args.media_cache_max_file_gb,
         db_pool_size=args.db_pool_size,
         db_pool_overflow=args.db_pool_overflow,
         db_pool_timeout=args.db_pool_timeout,

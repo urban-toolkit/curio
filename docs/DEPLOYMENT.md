@@ -69,7 +69,7 @@ connected peer re-checked before any response body is read. A download started
 from the Dataset Finder's card, or from an agent's approved proposal, is the
 same download under the same policy.
 
-Two things a deployment should know:
+What a deployment should know:
 
 - **A source manifest can never exempt a host from that policy.** The one
   exemption in the codebase is for an operator-configured search provider, and
@@ -85,6 +85,14 @@ Two things a deployment should know:
   URLs a dataset, a job or the audit log records never hold it.
 - **Hugging Face models** download up to 2 GB each, from the Hub's file
   storage after a redirect, through the same policy.
+- **A download, or a table added from a bucket,** takes one file of up to
+  `--discovery-max-download-mb` (1024 by default). **Cache files** copies a
+  bucket collection's files one at a time, each of up to
+  `--media-cache-max-file-gb` (4 by default) and all of an account's together
+  up to `--media-cache-max-gb` (20 by default), both checked against the
+  bucket's listing before a byte is fetched, and a file that sends more than
+  its listing said is stopped. Raising either lets one user's click fetch that
+  much from the bucket and keep it on this machine's disk.
 
 Two sources reach OpenStreetMap:
 
@@ -224,7 +232,9 @@ repository in the Discovery Catalog. The manifest format is in
 - **Disk.** A bucket collection's files are cached per account on request,
   under `.curio/exec-scratch/users/<key>/media/objects/` with isolation on and
   `.curio/users/<key>/media/objects/` without. `--media-cache-max-gb`
-  (default 20) caps each account. Thumbnails, posters and spectrograms are
+  (default 20) caps each account, and `--media-cache-max-file-gb` (default 4)
+  each file; a collection over either is refused before any file is copied.
+  Thumbnails, posters and spectrograms are
   cached under `.curio/users/<key>/media-cache/`, and a storage row's sample
   thumbnails under `.curio/discovery-cache/`. Deleting a collection removes
   its caches, never the source's files. With isolation on, the cached files

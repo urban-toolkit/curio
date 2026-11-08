@@ -6,10 +6,10 @@ under isolation a node has no network at all, so the files are fetched once,
 by the backend, through the discovery transport and its egress policy, into the
 user's media directory. Until a file is cached its ``path`` is null.
 
-Bounded twice: one object at a time up to
-:data:`~infrastructure.transport.MAX_COLLECTION_OBJECT_BYTES`, and all of a
-user's cached objects together up to ``CURIO_MEDIA_CACHE_MAX_GB``. A
-service's images land in the same folder and are bounded by the same check,
+Bounded twice, both before a byte is fetched: each object up to
+``CURIO_MEDIA_CACHE_MAX_FILE_GB`` (:func:`check_sizes`), and all of a user's
+cached objects together up to ``CURIO_MEDIA_CACHE_MAX_GB``. A service's
+images land in the same folder and are bounded by the same check,
 :func:`check_room`.
 """
 
@@ -21,19 +21,36 @@ from typing import Any, Callable
 
 from utk_curio.backend.app.discovery.domain.errors import CapabilityUnsupported, DownloadTooLarge
 from utk_curio.backend.app.discovery.infrastructure import media_dirs
-from utk_curio.backend.app.discovery.infrastructure.transport import MAX_COLLECTION_OBJECT_BYTES
 
 ENV_CAP = "CURIO_MEDIA_CACHE_MAX_GB"
 DEFAULT_CAP_GB = 20
 
+#: The largest file one cache copies (``curio.py --media-cache-max-file-gb``).
+ENV_FILE_CAP = "CURIO_MEDIA_CACHE_MAX_FILE_GB"
+DEFAULT_FILE_CAP_GB = 4
+
+#: The files a refusal names at most; it counts the rest.
+NAMED_FILES = 3
+
+
+def _gigabytes(env: str, default: float) -> int:
+    raw = os.environ.get(env)
+    try:
+        gigabytes = float(raw) if raw else default
+    except ValueError:
+        gigabytes = default
+    return int(max(0.0, gigabytes) * 1024**3)
+
 
 def cap_bytes() -> int:
-    raw = os.environ.get(ENV_CAP)
-    try:
-        gigabytes = float(raw) if raw else DEFAULT_CAP_GB
-    except ValueError:
-        gigabytes = DEFAULT_CAP_GB
-    return int(max(0.0, gigabytes) * 1024**3)
+    """What one account may hold in cached files, in bytes."""
+    return _gigabytes(ENV_CAP, DEFAULT_CAP_GB)
+
+
+def file_cap_bytes() -> int:
+    """The largest file a cache copies, in bytes. Read on each call, as
+    :func:`cap_bytes` is."""
+    return _gigabytes(ENV_FILE_CAP, DEFAULT_FILE_CAP_GB)
 
 
 def cached_name(file_id: str, ext: str) -> str:
@@ -77,6 +94,31 @@ def check_room(user_key: str, needed: int) -> None:
         )
 
 
+def check_sizes(rows) -> None:
+    """Refuse a cache of *rows* (index rows, with ``relpath`` and ``bytes``)
+    when one is larger than a cached file may be, before any is fetched.
+
+    Checked as it is fetched instead, such a file ended the cache partway:
+    the files before it were copied, and those after it never could be.
+    """
+    cap = file_cap_bytes()
+    over = [(str(row.relpath), int(row.bytes)) for row in rows if int(row.bytes) > cap]
+    if not over:
+        return
+    if len(over) == 1:
+        relpath, size = over[0]
+        raise DownloadTooLarge(
+            f"{relpath} is {size:,} bytes; one cached file is limited to {cap:,} ({ENV_FILE_CAP})"
+        )
+    named = ", ".join(f"{relpath} ({size:,} bytes)" for relpath, size in over[:NAMED_FILES])
+    if len(over) > NAMED_FILES:
+        named += f" and {len(over) - NAMED_FILES:,} more"
+    raise DownloadTooLarge(
+        f"{len(over):,} files are larger than one cached file may be, {cap:,} bytes "
+        f"({ENV_FILE_CAP}): {named}"
+    )
+
+
 def cache(
     user_key: str,
     dataset: dict[str, Any],
@@ -101,14 +143,14 @@ def cache(
         if existing.is_file() and existing.stat().st_size == int(row.bytes):
             continue
         todo.append(row)
+    check_sizes(todo)
     needed = sum(int(r.bytes) for r in todo)
     check_room(user_key, needed)
+    ceiling = file_cap_bytes()
     done_bytes = 0
     for count, row in enumerate(todo, start=1):
         if cancelled is not None and cancelled():
             raise Cancelled()
-        if int(row.bytes) > MAX_COLLECTION_OBJECT_BYTES:
-            raise DownloadTooLarge(f"{row.relpath} is larger than one object may be")
         final = target / cached_name(row.file_id, row.ext)
         part = final.with_name(final.name + ".part")
         with part.open("wb") as handle:
@@ -116,7 +158,7 @@ def cache(
                 row.relpath,
                 handle.write,
                 max_bytes=int(row.bytes) + 1024 * 1024,
-                ceiling=MAX_COLLECTION_OBJECT_BYTES,
+                ceiling=ceiling,
             )
         os.replace(part, final)
         media_dirs.grant_to_child(final)

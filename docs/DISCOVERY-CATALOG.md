@@ -72,7 +72,7 @@ discovery/
 | **Downloaded and added datasets** | Your Data Catalog store, `.curio/users/<user-key>/datasets/` | **Download** and **Add to Data Catalog**. A table is an ordinary imported dataset; a collection is its index. |
 | **A collection's files** | Where the source keeps them | Nobody. Curio reads them in place. |
 | **A service's images**, from Mapillary or Google Street View | Your Data Catalog store, with the collection | **Download**. |
-| **A bucket collection's cached files** | Your account's media folder | **Cache files**, up to a per-account limit. |
+| **A bucket collection's cached files** | Your account's media folder | **Cache files**, up to a limit per file and one per account. |
 | **Added models** | Your package store, each model as a model package with its weights and an **Image Segmentation** node | **Add to Model Catalog**. |
 
 ---
@@ -276,6 +276,7 @@ A Direct URL link to a `.parquet` file, and a bucket or Hugging Face row of `par
 - **Adding again.** A row marked **In your Data Catalog** offers **View dataset** and **Add again**. **Add again** reads the row's files: when they changed, it adds a new dataset of them, which the row then holds; when they did not, you keep the dataset you have, and a message says so.
 - **Narrowing.** Keeping only some values in the **Add** dialog, or picking files under **Files**, adds a separate dataset of just those files. The row stays offered whole.
 - **A bucket's files.** In a collection from a bucket or a Hugging Face dataset repository, each image and raster is indexed from its first 64 KiB, and a detail stored past them stays empty. Its videos and recordings are indexed by their path and size only. Thumbnails of its images and rasters are drawn on request; a video's or recording's appears once it is cached. Nodes read its files once **Cache files** has copied them to the Curio machine; until then a row's `path` is empty.
+- **Caching limits.** **Cache files** copies files of up to 4 GiB each, or what the operator sets with `--media-cache-max-file-gb`, and up to 20 GB for your account in all, or what `--media-cache-max-gb` sets. A collection with a larger file, or with more than your account has room for, is refused before any file is copied, and the message names the files over the limit. To cache the others, pick them under **Files** and add them as a dataset of their own.
 - **Size.** 4 GiB per file from a folder, and the download limit per file from a bucket, or for what an add for an area reads ([A GeoParquet file for an area](#a-geoparquet-file-for-an-area)); 512 MiB for a GeoPackage or PBF. A combined table takes up to 10,000 files, and 16 GiB from a folder or 2 GiB from a bucket. A source lists up to 200,000 matched files, or fewer when its manifest sets a lower limit, and its page says when it holds more. Adding a resource with more files than that limit is refused: pick files under **Files**, or narrow it in the **Add** dialog when its row offers **Add to Data Catalog**.
 - **Rows that cannot be added.** A row over one of these limits, a shapefile without its `.dbf` or `.shx`, and GeoPackage or PBF files declared as one table say why under the row's name, and **Add to Data Catalog** is off. A row of several files still offers **Files**, to add some of them.
 - **Publishing.** A collection cannot be published.
@@ -480,6 +481,7 @@ Curio reads public S3 buckets, and Hugging Face dataset repositories, with your 
 | `CURIO_DISCOVERY_MAX_DOWNLOAD_MB` | `--discovery-max-download-mb` | The largest file a download or a bucket add takes, in megabytes. Default 1024. A source's manifest may set a lower limit for itself. |
 | `CURIO_DEFAULT_SOCRATA_APP_TOKEN` | none | A Socrata app token every account inherits until it saves its own, for the City of Chicago Data Portal. A source whose manifest sets `auth.operatorDefault` reads its key's default from `CURIO_DEFAULT_` and its `auth.secretId` in capitals, with every other character as `_`, never from one of Curio's own settings such as `CURIO_DEFAULT_LLM_ENDPOINT_FILE`. |
 | `CURIO_MEDIA_CACHE_MAX_GB` | `--media-cache-max-gb` | How much each account may hold in cached bucket files and downloaded street-level images, in gigabytes. Default 20. |
+| `CURIO_MEDIA_CACHE_MAX_FILE_GB` | `--media-cache-max-file-gb` | The largest file **Cache files** copies from a bucket, in gigabytes. Default 4. |
 
 **Sources ship with the deployment.** To change or remove a shipped one, edit the sources directory and restart. The Docker image bakes `discovery/` in; see [DEPLOYMENT.md § Configure the stack](DEPLOYMENT.md#1-configure-the-stack).
 
