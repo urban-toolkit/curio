@@ -8,14 +8,16 @@
  * reference: no path on this machine ever reaches the code.
  */
 
+import catalogCode from "../../contracts/catalogCode.json";
+
 /**
  * Model ids are written into Python source, so only an id matching this
  * whitelist may appear inside a `curio_load_model("<id>")` call: a quote or a
- * backslash would break out of the string literal. KEEP IN SYNC with
- * `MODEL_CALL_RE` in `backend/app/datasets/domain/code_refs.py`, which uses the
- * dataset id charset.
+ * backslash would break out of the string literal. The id is
+ * `contracts/catalogCode.json`'s, which `MODEL_CALL_RE` in
+ * `backend/app/datasets/domain/code_refs.py` reads too.
  */
-export const SAFE_MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$/;
+export const SAFE_MODEL_ID_RE = new RegExp(`^${catalogCode.itemId}$`);
 
 /** Same bound as the backend's `MAX_MODEL_IDS`. */
 const MAX_MODEL_IDS = 8;
@@ -34,7 +36,7 @@ export function modelIdsInCode(code: unknown): string[] {
   const ids: string[] = [];
   // Fresh matcher per call: a module-level /g regex carries lastIndex between
   // calls, so sharing one would make results depend on call order.
-  const re = /curio_load_model\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*\)/g;
+  const re = new RegExp(String.raw`curio_load_model\(\s*(["'])(${catalogCode.itemId})\1\s*\)`, "g");
   for (const match of code.matchAll(re)) {
     const id = match[2];
     if (ids.includes(id)) continue;

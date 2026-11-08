@@ -64,6 +64,8 @@ import math
 import re
 from typing import Iterable
 
+from utk_curio.common import shared_constants
+
 #: A reference as written. Kept in sync with ``REFERENCE_PATTERN``.
 REFERENCE_RE = re.compile(r"\[!!\s*(.*?)\s*!!\]")
 
@@ -201,10 +203,9 @@ WIDGET_KINDS = (
 
 #: A dataset widget's value: the id of a Data Catalog dataset, a layer group or
 #: a collection, as node code names one in ``curio_load_data("<id>")``; empty
-#: until one is dropped on it. Kept in sync with ``DATASET_ID_PATTERN`` in
-#: ``widgetModel.ts`` and with ``DATASET_PATH_CALL_RE`` in
-#: ``datasets/domain/code_refs.py``, whose calls such an id fills.
-DATASET_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$")
+#: until one is dropped on it. The id is ``catalogCode.json``'s, which
+#: ``widgetModel.ts`` and ``datasets/domain/code_refs.py`` read too.
+DATASET_ID_RE = re.compile("^" + shared_constants.read("catalogCode")["itemId"] + "$")
 
 
 def empty_dataset_message(reference: str, widget: dict) -> str:
