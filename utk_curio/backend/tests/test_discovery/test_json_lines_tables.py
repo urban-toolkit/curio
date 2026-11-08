@@ -31,7 +31,8 @@ DETECTIONS = {
     "path": "{crossing}/data/*_{year:int}_{month:int}.jsonl",
     "options": {
         "parse": ["value"],
-        "columns": {"timestamp": "timestamp", "image_timestamp_ns": "value.image_timestamp_ns"},
+        "columns": {"timestamp": {"path": "timestamp", "type": "timestamp"},
+                    "image_timestamp_ns": "value.image_timestamp_ns"},
         "unpack": [
             {"path": "value.models_results", "key": "model",
              "columns": {"inference_time_seconds": "inference_time_seconds"}},
@@ -125,6 +126,10 @@ class TestTheDetectionsOfSageIdot:
         assert list(frame["class"]) == ["car", "car", "car", "person", "car"]
         assert str(frame["image_timestamp_ns"].dtype) == "int64"
         assert list(frame["image_timestamp_ns"]) == [1752721216492384585] * 3 + [1752721225101747549] * 2
+        # The line's time, a UTC time to the nanosecond: here the image's own.
+        assert str(frame["timestamp"].dtype) == "datetime64[ns]"
+        assert frame["timestamp"].iloc[0] == pd.Timestamp("2025-07-17 03:00:16.492384585")
+        assert list(frame["timestamp"].astype("int64")) == list(frame["image_timestamp_ns"])
         assert frame.iloc[0][["x0", "y0", "x1", "y1"]].tolist() == [
             81.07574462890625, 861.7494506835938, 356.38250732421875, 977.5149536132812,
         ]
@@ -214,6 +219,35 @@ class TestReadingAFileInParts:
         assert frame["flag"].dropna().tolist() == ["true", "false", "true", "1", "false"]
         # Arrow alone would read [1.5, false] as [1.5, 0.0].
         assert frame["score"].tolist() == ["0.5", "0.25", "1.5", "false", "2.0", "3.5"]
+
+    def test_a_value_its_type_cannot_read_is_left_empty_and_counted_by_column(
+        self, client, auth, app, discovery_dir, tmp_path, monkeypatch
+    ):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        # A part a row, so one part's typed column holds only an empty value.
+        monkeypatch.setattr(json_lines, "ROWS_PER_PART", 1)
+        a_log(discovery_dir, tmp_path, {"2024-01-01.jsonl": jsonl(
+            {"t": "2024-01-01T00:00:00Z", "n": "1"},
+            {"t": "yesterday", "n": 2},
+            {"t": "2024-01-01T06:00:00+06:00", "n": 2.5},
+        ) + '{"t":'}, options={"columns": {
+            "t": {"path": "t", "type": "timestamp"}, "n": {"path": "n", "type": "int"},
+        }})
+        job = added(client, auth, "log")
+        table = pq.read_table(job["dataset"]["path"])
+        assert table.schema.field("t").type == pa.timestamp("ns")
+        assert table.schema.field("n").type == pa.int64()
+        assert table.column("t").cast(pa.int64()).to_pylist() == [1704067200000000000, None, 1704067200000000000]
+        assert table.column("n").to_pylist() == [1, 2, None]
+        note = (
+            "1 of 4 lines skipped: 1 not JSON (first at line 4 of log/2024-01-01.jsonl). "
+            "2 values left empty: 1 of t not an ISO 8601 time with an offset (first at line 2 of log/2024-01-01.jsonl); "
+            "1 of n not a whole number (first at line 3 of log/2024-01-01.jsonl)"
+        )
+        assert job["note"] == note
+        assert job["dataset"]["description"] == f"Read from log/2024-01-01.jsonl of Example Folder; {note}."
 
     def test_a_line_over_the_bound_is_skipped_and_the_rest_read(
         self, client, auth, app, discovery_dir, tmp_path, monkeypatch

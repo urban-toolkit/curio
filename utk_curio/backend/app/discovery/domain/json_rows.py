@@ -7,7 +7,8 @@ unless the resource's ``options`` say otherwise:
 - ``parse``: fields of the line that hold JSON as text, such as
   ``"value": "{\\"a\\": 1}"``, read as the JSON they hold before anything else;
 - ``columns``: the columns the line keeps, each a name and the path to its
-  value;
+  value, or ``{"path": ..., "type": ...}`` to give the column a type
+  (:data:`COLUMN_TYPES`);
 - ``unpack``: nested lists or objects whose items are the rows, outermost
   first. Each level names its ``path`` from the level above (from the line,
   for the first), a ``key`` column for each item's name in an object or its
@@ -27,18 +28,32 @@ A line that is not a JSON object, a ``parse`` field whose text is not JSON,
 and a line where an ``unpack`` path holds no list or object (in any item it
 reaches) give no rows: :class:`LineSkipped` says why. A list or object that
 is there and empty gives no rows and is not skipped.
+
+A typed column's value is converted as its type says. A ``timestamp`` reads
+ISO 8601 text with its offset and is held as nanoseconds since 1970 in UTC.
+A value its type cannot read is left empty, and the caller is told the
+column and why (:func:`rows_of`'s ``empty``); a missing or null value is
+null, as in any column.
 """
 
 from __future__ import annotations
 
+import calendar
 import json
+import math
 import re
 from dataclasses import dataclass
-from typing import Any
+from datetime import datetime
+from typing import Any, Callable
 
-#: What a jsonl table's ``options`` may hold, and what each ``unpack`` level may.
+#: What a jsonl table's ``options`` may hold, what each ``unpack`` level may,
+#: and what a column given as an object may.
 OPTION_KEYS = ("parse", "columns", "unpack")
 LEVEL_KEYS = ("path", "key", "columns")
+COLUMN_KEYS = ("path", "type")
+
+#: The types a column may take.
+COLUMN_TYPES = ("timestamp", "int", "float", "string", "bool")
 
 #: Bounds on what one resource declares.
 MAX_PARSE = 16
@@ -84,6 +99,8 @@ class JsonPath:
 class Column:
     name: str
     path: JsonPath
+    #: One of :data:`COLUMN_TYPES`, or None for a column typed by its values.
+    type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -115,6 +132,19 @@ class LineRows:
                 names.append(level.key)
             names.extend(column.name for column in level.columns)
         return tuple(names)
+
+    @property
+    def types(self) -> tuple[str | None, ...] | None:
+        """Each column's type in :attr:`names` order (None for one typed by
+        its values, a level's key among them), or None with :attr:`names`."""
+        if self.columns is None and not self.levels:
+            return None
+        types = [column.type for column in self.columns or ()]
+        for level in self.levels:
+            if level.key is not None:
+                types.append(None)
+            types.extend(column.type for column in level.columns)
+        return tuple(types)
 
 
 # ── reading the options ────────────────────────────────────────────────────
@@ -169,10 +199,22 @@ def _parse_list(raw: object) -> tuple[JsonPath, ...]:
 def _columns(raw: object, where: str) -> tuple[Column, ...]:
     if not isinstance(raw, dict) or not raw:
         raise OptionError(f"{where} must name at least one column, as an object of names and paths")
-    return tuple(
-        Column(name=_column_name(name, where), path=compile_path(path, f"{where}.{name}", empty=True))
-        for name, path in raw.items()
-    )
+    return tuple(_column(_column_name(name, where), spec, f"{where}.{name}") for name, spec in raw.items())
+
+
+def _column(name: str, spec: object, where: str) -> Column:
+    """A column given as a path, or as ``{"path": ..., "type": ...}``."""
+    if not isinstance(spec, dict):
+        return Column(name=name, path=compile_path(spec, where, empty=True))
+    unknown = sorted(set(spec) - set(COLUMN_KEYS))
+    if unknown:
+        raise OptionError(f"{where} reads no {', '.join(unknown)}; a column takes path and type")
+    if "path" not in spec:
+        raise OptionError(f"{where} needs a path")
+    kind = spec.get("type")
+    if kind is not None and kind not in COLUMN_TYPES:
+        raise OptionError(f"{where}.type must be one of {', '.join(COLUMN_TYPES)}")
+    return Column(name=name, path=compile_path(spec["path"], f"{where}.path", empty=True), type=kind)
 
 
 def _levels(raw: object) -> tuple[Level, ...]:
@@ -313,9 +355,130 @@ def cell(value: Any) -> Any:
     return value
 
 
-def rows_of(record: dict[str, Any], rows: LineRows) -> list[Any]:
+# ── a column's type ────────────────────────────────────────────────────────
+
+
+class _Unread(Exception):
+    """A value a column's type cannot read, and why."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+#: ISO 8601 with its offset: ``2025-07-17T03:00:16.492384585+00:00``, with a
+#: space allowed for the ``T``, a fraction of 1 to 9 digits, and an offset of
+#: ``Z``, ``+HH:MM`` or ``+HHMM``.
+_TIMESTAMP_RE = re.compile(
+    r"(\d{4})-(\d{2})-(\d{2})[Tt ](\d{2}):(\d{2}):(\d{2})(?:[.,](\d{1,9}))?"
+    r"(?:([Zz])|([+-])(\d{2}):?(\d{2}))"
+)
+_INT_RE = re.compile(r"[+-]?\d+")
+_FLOAT_RE = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
+_INT64_LOW, _INT64_HIGH = -(2 ** 63), 2 ** 63
+_NOT_A_TIME = "not an ISO 8601 time with an offset"
+
+
+def _timestamp(value: Any) -> int:
+    """Nanoseconds since 1970 in UTC."""
+    match = _TIMESTAMP_RE.fullmatch(value.strip()) if isinstance(value, str) else None
+    if match is None:
+        raise _Unread(_NOT_A_TIME)
+    year, month, day, hour, minute, second = (int(match.group(index)) for index in range(1, 7))
+    try:
+        seconds = calendar.timegm(datetime(year, month, day, hour, minute, second).timetuple())
+    except ValueError as exc:
+        raise _Unread(_NOT_A_TIME) from exc
+    if match.group(8) is None:
+        hours, minutes = int(match.group(10)), int(match.group(11))
+        if hours > 23 or minutes > 59:
+            raise _Unread(_NOT_A_TIME)
+        seconds -= (hours * 3600 + minutes * 60) * (1 if match.group(9) == "+" else -1)
+    nanoseconds = seconds * 1_000_000_000 + int((match.group(7) or "").ljust(9, "0"))
+    if not _INT64_LOW <= nanoseconds < _INT64_HIGH:
+        raise _Unread("outside the years 1678 to 2261")
+    return nanoseconds
+
+
+def _int(value: Any) -> int:
+    if isinstance(value, bool):
+        raise _Unread("not a whole number")
+    if isinstance(value, float):
+        if not value.is_integer():
+            raise _Unread("not a whole number")
+        value = int(value)
+    elif isinstance(value, str):
+        text = value.strip()
+        if not _INT_RE.fullmatch(text):
+            raise _Unread("not a whole number")
+        try:
+            value = int(text)
+        except ValueError as exc:
+            # Past the digits Python converts at all, so past 64 bits too.
+            raise _Unread("a whole number past 64 bits") from exc
+    elif not isinstance(value, int):
+        raise _Unread("not a whole number")
+    if not _INT64_LOW <= value < _INT64_HIGH:
+        raise _Unread("a whole number past 64 bits")
+    return value
+
+
+def _float(value: Any) -> float:
+    if isinstance(value, bool):
+        raise _Unread("not a number")
+    if isinstance(value, str):
+        value = value.strip()
+        if not _FLOAT_RE.fullmatch(value):
+            raise _Unread("not a number")
+    elif not isinstance(value, (int, float)):
+        raise _Unread("not a number")
+    try:
+        number = float(value)
+    except OverflowError as exc:
+        raise _Unread("not a number") from exc
+    if not math.isfinite(number):
+        raise _Unread("not a number")
+    return number
+
+
+def _bool(value: Any) -> bool:
+    if value is True or value is False:
+        return value
+    if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+        return value.strip().lower() == "true"
+    raise _Unread("not true or false")
+
+
+def _string(value: Any) -> str:
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+_CONVERT: dict[str, Callable[[Any], Any]] = {
+    "timestamp": _timestamp, "int": _int, "float": _float, "string": _string, "bool": _bool,
+}
+
+
+def _typed(item: Any, column: Column, unread: list[tuple[str, str]]) -> Any:
+    """Typed *column*'s value in *item*; one its type cannot read is None,
+    noted in *unread*."""
+    raw = resolve(item, column.path)
+    if raw is _MISSING or raw is None:
+        return None
+    try:
+        return _CONVERT[column.type](raw)
+    except _Unread as exc:
+        unread.append((column.name, exc.reason))
+        return None
+
+
+def rows_of(
+    record: dict[str, Any], rows: LineRows, empty: Callable[[str, str], None] | None = None,
+) -> list[Any]:
     """The rows *record* gives: tuples in :attr:`LineRows.names` order, or one
-    dict of the line's fields when the lines' fields are the columns."""
+    dict of the line's fields when the lines' fields are the columns.
+
+    ``empty(column, reason)`` is called for each value a column's type could
+    not read, which the row holds as null, once the line gives its rows."""
     for path in rows.parse:
         found = _holder(record, path)
         if found is None:
@@ -330,15 +493,25 @@ def rows_of(record: dict[str, Any], rows: LineRows) -> list[Any]:
     if rows.columns is None and not rows.levels:
         # A line with no fields has nothing to hold.
         return [{name: cell(value) for name, value in record.items()}] if record else []
-    own = tuple(cell(resolve(record, column.path)) for column in rows.columns or ())
-    if not rows.levels:
-        return [own]
+    unread: list[tuple[str, str]] = []
+    own = tuple(
+        cell(resolve(record, column.path)) if column.type is None else _typed(record, column, unread)
+        for column in rows.columns or ()
+    )
     out: list[tuple] = []
-    _unpack(record, rows.levels, 0, own, out)
+    if rows.levels:
+        _unpack(record, rows.levels, 0, own, out, unread)
+    else:
+        out.append(own)
+    if empty is not None:
+        for name, reason in unread:
+            empty(name, reason)
     return out
 
 
-def _unpack(item: Any, levels: tuple[Level, ...], depth: int, kept: tuple, out: list) -> None:
+def _unpack(
+    item: Any, levels: tuple[Level, ...], depth: int, kept: tuple, out: list, unread: list[tuple[str, str]],
+) -> None:
     level = levels[depth]
     found = resolve(item, level.path)
     if isinstance(found, list):
@@ -351,8 +524,11 @@ def _unpack(item: Any, levels: tuple[Level, ...], depth: int, kept: tuple, out: 
     for key, child in entries:
         row = kept + (key,) if level.key is not None else kept
         if level.columns:
-            row = row + tuple(cell(resolve(child, column.path)) for column in level.columns)
+            row = row + tuple(
+                cell(resolve(child, column.path)) if column.type is None else _typed(child, column, unread)
+                for column in level.columns
+            )
         if last:
             out.append(row)
         else:
-            _unpack(child, levels, depth + 1, row, out)
+            _unpack(child, levels, depth + 1, row, out, unread)

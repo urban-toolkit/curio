@@ -160,7 +160,8 @@ class TestJsonLinesOptions:
         "path": "{crossing}/data/*_{year:int}_{month:int}.jsonl",
         "options": {
             "parse": ["value"],
-            "columns": {"timestamp": "timestamp", "image_timestamp_ns": "value.image_timestamp_ns"},
+            "columns": {"timestamp": {"path": "timestamp", "type": "timestamp"},
+                        "image_timestamp_ns": "value.image_timestamp_ns"},
             "unpack": [
                 {"path": "value.models_results", "key": "model",
                  "columns": {"inference_time_seconds": "inference_time_seconds"}},
@@ -180,6 +181,16 @@ class TestJsonLinesOptions:
         assert set(R.OPTION_KEYS) <= set(self._options(schema))
         level = self._options(schema)["unpack"]["items"]
         assert sorted(level["properties"]) == sorted(R.LEVEL_KEYS) and level["additionalProperties"] is False
+
+    def test_a_columns_type_and_keys_are_the_validators(self, schema):
+        from utk_curio.backend.app.discovery.domain import json_rows as R
+
+        column = schema["$defs"]["jsonlColumn"]
+        assert column["properties"]["type"]["enum"] == list(R.COLUMN_TYPES)
+        assert sorted(column["properties"]) == sorted(R.COLUMN_KEYS) and column["additionalProperties"] is False
+        assert schema["$defs"]["jsonlColumns"]["additionalProperties"] == {
+            "anyOf": [{"$ref": "#/$defs/jsonlPath"}, {"$ref": "#/$defs/jsonlColumn"}],
+        }
 
     def test_the_bounds_are_the_validators(self, schema):
         from utk_curio.backend.app.discovery.domain import json_rows as R
@@ -208,6 +219,12 @@ class TestJsonLinesOptions:
         {"parse": [""]},
         {"unpack": []},
         {"columns": {}},
+        {"columns": {"t": {"path": "t", "type": "date"}}},
+        {"columns": {"t": {"type": "int"}}},
+        {"unpack": [{"path": "a", "columns": {"c": {"path": "c", "unit": "s"}}}]},
+    ], ids=[
+        "unknown-level-key", "reserved-prefix", "empty-name-in-path", "parse-empty-path", "unpack-empty",
+        "no-columns", "unknown-type", "typed-column-without-path", "unknown-column-key-in-a-level",
     ])
     def test_options_both_refuse(self, schema, options):
         jsonschema = pytest.importorskip("jsonschema")

@@ -1177,9 +1177,39 @@
         "$ref": "#/$defs/jsonlColumnName"
       },
       "additionalProperties": {
-        "$ref": "#/$defs/jsonlPath"
+        "anyOf": [
+          {
+            "$ref": "#/$defs/jsonlPath"
+          },
+          {
+            "$ref": "#/$defs/jsonlColumn"
+          }
+        ]
       },
-      "description": "Columns, each a name and the path to its value. An object or a list lands as its JSON text, and NaN, Infinity and -Infinity as null."
+      "description": "Columns, each a name and the path to its value, or {path, type}. An object or a list lands as its JSON text, and NaN, Infinity and -Infinity as null."
+    },
+    "jsonlColumn": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/jsonlPath"
+        },
+        "type": {
+          "enum": [
+            "timestamp",
+            "int",
+            "float",
+            "string",
+            "bool"
+          ],
+          "description": "timestamp: ISO 8601 text with its offset, as a UTC time to the nanosecond, with no zone attached; int: a whole number, or text holding one, as 64 bits; float: a number, or text holding one; string: any value, a number or an object as its JSON text; bool: true or false, or that text. A value its type cannot read is null, and the add counts it by column and reason."
+        }
+      },
+      "description": "A column with a type."
     }
   }
 }

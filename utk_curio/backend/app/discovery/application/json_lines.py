@@ -2,17 +2,18 @@
 
 The file is read a line at a time, and its rows are written as Parquet parts
 of at most ``ROWS_PER_PART`` rows, or the rows of ``BYTES_PER_PART`` bytes of
-lines, so a file of any size takes the memory of one part. Each part types its
-columns from its own values; a column whose values in one part are not of one
-kind (numbers and text, true and a number, a whole number past 64 bits) holds
-them as text there. The parts of every file are then combined as any table's
-files are (``combine_tables``), where DuckDB gives each column one type
-across them.
+lines, so a file of any size takes the memory of one part. A column with a
+``type`` is written as that type in every part. Any other column takes its type
+from the part's own values; one whose values in a part are not of one kind
+(numbers and text, true and a number, a whole number past 64 bits) holds them
+as text there. The parts of every file are then combined as any table's files
+are (``combine_tables``), where DuckDB gives each column one type across them.
 
 What each line gives is ``domain/json_rows.py``'s. A line that gives no rows
 for a reason is skipped and counted by that reason, with the first line it
 happened on (:class:`Skipped`), and the add says so in its message and in the
-dataset's description. A blank line is not counted.
+dataset's description, as it says how many values a column's type could not
+read, left empty, by column and reason. A blank line is not counted.
 """
 
 from __future__ import annotations
@@ -47,6 +48,9 @@ class Skipped:
     counts: dict[str, int] = field(default_factory=dict)
     #: For each reason, where it first happened: ``line 220 of a/b.jsonl``.
     first: dict[str, str] = field(default_factory=dict)
+    #: Values a column's type could not read, left empty, by column and why.
+    empties: dict[tuple[str, str], int] = field(default_factory=dict)
+    first_empty: dict[tuple[str, str], str] = field(default_factory=dict)
 
     def skip(self, reason: str, number: int, relpath: str) -> None:
         if reason not in self.counts:
@@ -54,19 +58,35 @@ class Skipped:
             self.first[reason] = f"line {number:,} of {relpath}"
         self.counts[reason] += 1
 
+    def empty(self, column: str, reason: str, number: int, relpath: str) -> None:
+        key = (column, reason)
+        if key not in self.empties:
+            self.empties[key] = 0
+            self.first_empty[key] = f"line {number:,} of {relpath}"
+        self.empties[key] += 1
+
     @property
     def total(self) -> int:
         return sum(self.counts.values())
 
     def note(self) -> str | None:
-        """What the add says of the lines it skipped, or None when it skipped none."""
-        if not self.total:
-            return None
-        reasons = "; ".join(
-            f"{count:,} {reason} (first at {self.first[reason]})"
-            for reason, count in sorted(self.counts.items(), key=lambda item: -item[1])
-        )
-        return f"{self.total:,} of {self.lines:,} lines skipped: {reasons}"
+        """What the add says of the lines it skipped and the values it left
+        empty, or None when it did neither."""
+        said = []
+        if self.total:
+            reasons = "; ".join(
+                f"{count:,} {reason} (first at {self.first[reason]})"
+                for reason, count in sorted(self.counts.items(), key=lambda item: -item[1])
+            )
+            said.append(f"{self.total:,} of {self.lines:,} lines skipped: {reasons}")
+        emptied = sum(self.empties.values())
+        if emptied:
+            reasons = "; ".join(
+                f"{count:,} of {column} {reason} (first at {self.first_empty[(column, reason)]})"
+                for (column, reason), count in sorted(self.empties.items(), key=lambda item: -item[1])
+            )
+            said.append(f"{emptied:,} {'value' if emptied == 1 else 'values'} left empty: {reasons}")
+        return ". ".join(said) or None
 
 
 @dataclass
@@ -100,16 +120,20 @@ def read(
     *into*, named ``<prefix>-00001.parquet`` on, in line order. Returns them;
     none when no line gave a row. *relpath* is how a skipped line names it."""
     names = rows.names
+    types = rows.types
     parts: list[Path] = []
     pending: list[Any] = []
     pending_bytes = 0
     number = 0
 
+    def empty(column: str, reason: str) -> None:
+        skipped.empty(column, reason, number, relpath)
+
     def flush() -> None:
         nonlocal pending, pending_bytes
         if pending:
             part = into / f"{prefix}-{len(parts) + 1:05d}.parquet"
-            _write_part(pending, names, part)
+            _write_part(pending, names, types, part)
             parts.append(part)
             if stage is not None:
                 stage(f"Reading {relpath}: {skipped.rows:,} rows")
@@ -137,7 +161,7 @@ def read(
                 continue
             skipped.lines += 1
             try:
-                got = json_rows.rows_of(json_rows.read_line(line), rows)
+                got = json_rows.rows_of(json_rows.read_line(line), rows, empty)
             except json_rows.LineSkipped as exc:
                 skipped.skip(exc.reason, number, relpath)
                 continue
@@ -155,21 +179,39 @@ def _size(count: int) -> str:
     return f"{count // mib} MiB" if count % mib == 0 else f"{count:,} bytes"
 
 
-def _write_part(pending: list[Any], names: tuple[str, ...] | None, part: Path) -> None:
+def _write_part(
+    pending: list[Any], names: tuple[str, ...] | None, types: tuple[str | None, ...] | None, part: Path,
+) -> None:
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    if names is None:
+    if names is None or types is None:
         # Every line's own fields: the columns are each name a line used, in
         # the order they first came, and a line without one has null there.
         order: dict[str, None] = {}
         for row in pending:
             for name in row:
                 order.setdefault(name, None)
-        columns = {name: [row.get(name) for row in pending] for name in order}
+        arrays = {name: _array([row.get(name) for row in pending]) for name in order}
     else:
-        columns = {name: list(values) for name, values in zip(names, zip(*pending))}
-    pq.write_table(pa.table({name: _array(values) for name, values in columns.items()}), part)
+        arrays = {
+            name: _array(list(values)) if kind is None else pa.array(list(values), type=_arrow_type(kind))
+            for name, kind, values in zip(names, types, zip(*pending))
+        }
+    pq.write_table(pa.table(arrays), part)
+
+
+def _arrow_type(kind: str):
+    """The Arrow type a typed column is written as. A ``timestamp`` is UTC
+    nanoseconds with no zone attached, which the combine keeps to the
+    nanosecond on every DuckDB; one with a zone it holds to the microsecond
+    before DuckDB 2."""
+    import pyarrow as pa
+
+    return {
+        "timestamp": pa.timestamp("ns"), "int": pa.int64(), "float": pa.float64(),
+        "string": pa.string(), "bool": pa.bool_(),
+    }[kind]
 
 
 def _array(values: list[Any]):

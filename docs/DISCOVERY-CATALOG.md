@@ -479,14 +479,26 @@ A `table` of `"format": "jsonl"` reads files that hold one JSON object per line.
 | Option | What it declares |
 |---|---|
 | `parse` | Fields of a line that hold JSON as text, such as `"value": "{\"a\": 1}"`. Each is read as the JSON it holds, before anything else. |
-| `columns` | The columns a line keeps: an object of names, each with the path to its value. |
+| `columns` | The columns a line keeps: an object of names, each with the path to its value, or with `{"path": ..., "type": ...}` to give the column a type. |
 | `unpack` | Lists or objects in a line whose items are the rows, outermost first. Each level has a `path`, from the level above, or from the line for the first level. It may name a `key`, a column that takes each item's name in an object or its position in a list, and `columns`, what a row keeps of each item. |
 
 A path is keys joined by dots. A number picks an item of a list, as `bbox.0` does. A key may itself hold dots, as `meta.vsn` does: the longest key that is there is taken first. The empty path, `""`, is the item itself.
 
 With `unpack`, a row holds only the columns the line and the levels name. An object or a list lands as its JSON text, and `NaN`, `Infinity` and `-Infinity` land as null. A column whose values are of several kinds, such as numbers and text, lands as text. A column name may not start with `__curio_`, and no two columns may share a name, whatever their case.
 
-A line is skipped when it is not a JSON object, when a `parse` field holds text that is not JSON, when a path `unpack` names holds no list or object in an item it reaches, or when the line is longer than 16 MiB. An empty list or object gives no row and skips nothing. When lines are skipped, the message when the add finishes and the dataset's description say how many and why, with the first line each reason was met on. When no line gives a row, the add fails and says why.
+A column in a line's or a level's `columns` may take a `type`:
+
+| `type` | Reads | Lands as |
+|---|---|---|
+| `timestamp` | ISO 8601 text with its offset: `2025-07-17T03:00:16.492384585+00:00`, `...Z`, `...-05:00` | A UTC time, to the nanosecond, with no time zone attached |
+| `int` | A whole number, or text holding one | A 64-bit whole number |
+| `float` | A number, or text holding one | A number |
+| `bool` | `true` or `false`, or that text | True or false |
+| `string` | Any value | Text; a number or an object as its JSON text |
+
+A value its type cannot read, such as a time with no offset or `1.5` for an `int`, is left empty; a missing or null value is empty in any column.
+
+A line is skipped when it is not a JSON object, when a `parse` field holds text that is not JSON, when a path `unpack` names holds no list or object in an item it reaches, or when the line is longer than 16 MiB. An empty list or object gives no row and skips nothing. When lines are skipped or values are left empty, the message when the add finishes and the dataset's description say how many and why, by reason and, for values, by column, with the first line each was met on. When no line gives a row, the add fails and says why.
 
 A detection log, one row per detection:
 
@@ -496,7 +508,8 @@ A detection log, one row per detection:
   "options": {
     // "value" holds the detections as JSON text.
     "parse": ["value"],
-    "columns": { "timestamp": "timestamp", "image_timestamp_ns": "value.image_timestamp_ns" },
+    "columns": { "timestamp": { "path": "timestamp", "type": "timestamp" },
+                 "image_timestamp_ns": "value.image_timestamp_ns" },
     "unpack": [
       // One item per model, named by its key.
       { "path": "value.models_results", "key": "model",
@@ -520,12 +533,12 @@ This line of `W042/data/W042_2025_07.jsonl`, shortened and broken over lines her
  "meta.vsn":"W042","meta.filename":NaN}
 ```
 
-gives two rows, numbers rounded here, each followed by the path's `crossing`, `year` and `month` and by `source_file`:
+gives two rows, numbers rounded here, each followed by the path's `crossing`, `year` and `month` and by `source_file`. `timestamp` is a UTC time:
 
 | timestamp | image_timestamp_ns | model | inference_time_seconds | class | confidence | x0 | y0 | x1 | y1 |
 |---|---|---|---|---|---|---|---|---|---|
-| 2025-07-17T03:00:25.101747549+00:00 | 1752721225101747549 | YOLOv5n | 1.847 | person | 0.459 | 2176.9 | 680.6 | 2219.9 | 809.8 |
-| 2025-07-17T03:00:25.101747549+00:00 | 1752721225101747549 | YOLOv8n | 1.897 | car | 0.313 | 1076.1 | 605.0 | 1140.4 | 638.8 |
+| 2025-07-17 03:00:25.101747549 | 1752721225101747549 | YOLOv5n | 1.847 | person | 0.459 | 2176.9 | 680.6 | 2219.9 | 809.8 |
+| 2025-07-17 03:00:25.101747549 | 1752721225101747549 | YOLOv8n | 1.897 | car | 0.313 | 1076.1 | 605.0 | 1140.4 | 638.8 |
 
 YOLOv10n saw nothing in that image, so it gives no row.
 
