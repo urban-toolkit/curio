@@ -60,7 +60,7 @@ A model package declares one of four types of model:
 | `semantic-segmentation` | an image | one class per pixel | DDRNet23-Slim, run by **Image Segmentation** |
 | `image-to-image` | images or rasters | an image or a raster | Deep Umbra, run by **Accumulated Shadow**; Local Relief, below |
 | `node-regression` | a graph: node features and edges | values for each node | the weather GNN, run by **Weather Routing** |
-| `concept-segmentation` | images or video, and text prompts, its labels | every thing each prompt names | a Transformers checkpoint its node loads from `model.path` |
+| `concept-segmentation` | images or video, and text prompts, its labels | every thing each prompt names | SAM 3, a Transformers checkpoint its node loads from `model.path`, run by **Track Objects** |
 
 A segmentation model's node calls Curio's `curio_segment` and needs no code of
 yours ([MODEL-CATALOG.md](MODEL-CATALOG.md#3-using-a-model-in-a-dataflow)). An
