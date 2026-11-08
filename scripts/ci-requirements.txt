@@ -1,5 +1,6 @@
 # What `curio.py setup --with-examples` installs from the package manifests,
-# which CI's image installs before its source (the Dockerfile's CURIO_CI_SETUP).
+# with the libraries of every other package Curio ships, which CI's image
+# installs before its source (the Dockerfile's CURIO_CI_SETUP).
 # Written by scripts/ci_requirements.py; a unit test checks it is current.
 astral>=3.2.0
 av>=15.0.0
@@ -20,9 +21,11 @@ pyproj>=3.7.2
 pythermalcomfort>=3.9.0,<4.0.0
 rasterio>=1.5.0
 rasterstats>=0.20.0,<1.0.0
+safetensors>=0.4.0
 scikit-learn>=1.6.0
 scipy>=1.13.0
 shapely>=2.0.0
 spatialpandas>=0.5.0
 suntime>=1.4.0
+transformers>=5.0.0,<6.0.0
 xarray>=2026.1.0
