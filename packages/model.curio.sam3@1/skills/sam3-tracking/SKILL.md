@@ -43,9 +43,9 @@ One row per video, its overlay: the frames SAM 3 looked at, each object's mask a
 - `t_s`: where the overlay starts in the video, so a time in the video is `t_s` plus the time in the overlay;
 - `duration_s`, `fps`, `width` and `height`: the overlay's;
 - `<label>_objects`: how many objects of each label of `LABELS` it followed, a space written as `_`, such as `traffic_cone_objects`;
-- `tracks`: the path of a Parquet file, one row per object: `video_file_id`, `video`, `object_id` (the id drawn on the overlay), `label`, `start_s` and `end_s` (the first and the last time it was seen, in seconds from the video's start), `frames` (in how many of the frames looked at it was seen), `largest_share` (the largest share of a frame its mask covered, 0 to 1) and `mean_score`.
+- `tracks`: the Parquet file Track Objects wrote of the video's objects, one row per object: `video_file_id`, `video`, `object_id` (the id drawn on the overlay), `label`, `start_s` and `end_s` (the first and the last time it was seen, in seconds from the video's start), `frames` (how many of the frames looked at it was seen in), `largest_share` (the largest share of a frame its mask covered, 0 to 1) and `mean_score`.
 
-A Python Computation node wired from Track Objects reads every video's tracks into one table:
+A Python Computation node wired from Track Objects puts every video's objects in one table:
 
 ```python
 import pandas as pd

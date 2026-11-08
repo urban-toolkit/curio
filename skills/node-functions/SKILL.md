@@ -81,7 +81,7 @@ Writes data to a file the node returns, a table as CSV, a GeoDataFrame as GeoJSO
 
 Engines: python.
 
-Loads a Model Catalog model: `curio_segment` runs a segmentation model, `model.run({input name: array})` runs an ONNX model's graph and returns its outputs in order, and `model.path` is where its weights are, the folder a node that loads a Transformers checkpoint itself reads, as SAM 3's Track Objects does with `from_pretrained(model.path, local_files_only=True)`.
+Loads a Model Catalog model: `curio_segment` runs a segmentation model, `model.run({input name: array})` runs an ONNX model's graph and returns its outputs in order, and `model.path` is the folder of its weights, for a node that loads them itself.
 
 - `model_id` (a Model Catalog model): the model's id.
 
