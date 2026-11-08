@@ -1,4 +1,4 @@
-"""The prune sweep: drop user-store copies (and defaults entries, and now-unreferenced python libraries) for packages no project references.
+"""The prune sweep: drop user-store copies (and defaults entries, and the python libraries only they asked for) for packages no project references.
 
 Application layer of the packages package (memo dev/143, B2): cut from ``services.py``
 by responsibility; every function keeps its name and body. Sibling modules are reached
@@ -29,6 +29,7 @@ from utk_curio.backend.app.packages.infrastructure import (
     pip_runner as packages_pip_runner,
 )
 from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError
+from utk_curio.backend.app.packages.application import libraries as packages_libraries
 from utk_curio.backend.app.packages.application import store_reads as packages_store_reads
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.application.seeding import BUILTIN_PACKAGE_ID
@@ -50,6 +51,9 @@ def prune_unreferenced_packages(
         new projects — if nothing actually uses it, the seed has no future
         purpose.)
 
+    Then the libraries only the pruned packages asked for leave from where
+    their install put them (:func:`_uninstall_libraries_only_they_asked_for`).
+
     Returns ``{"pruned": <dirs>, "removedFromDefaults": <dirs>}``.
     """
     candidates = {
@@ -68,14 +72,14 @@ def prune_unreferenced_packages(
     removed_from_defaults: set[str] = set()
     current_defaults = defaults_io.load_defaults(user_key)
     new_defaults = set(current_defaults)
-    # Track each pruned package's manifest.python_deps BEFORE deletion so
-    # we can ref-count and pip-uninstall after the files are gone.
-    pruned_python_deps: dict[str, dict[str, str]] = {}
+    # Each pruned package's libraries, read BEFORE its files go, for the
+    # sweep after the loop.
+    pruned_libraries: dict[str, set[str]] = {}
     for dn in unreferenced:
         try:
-            pruned_python_deps[dn] = _read_python_deps(user_key, dn)
+            pruned_libraries[dn] = _node_libraries(user_key, dn)
         except Exception:  # noqa: BLE001 — keep prune resilient
-            pruned_python_deps[dn] = {}
+            pruned_libraries[dn] = set()
         try:
             if uninstall_package(user_key, dn):
                 pruned.add(dn)
@@ -91,19 +95,45 @@ def prune_unreferenced_packages(
     if removed_from_defaults:
         defaults_io.save_defaults(user_key, new_defaults)
 
-    # Pip-uninstall every Python dep that *was* declared by a pruned
-    # package and is no longer declared by anything still installed.
-    # Walking the surviving manifests by hand is safer than trying to
-    # diff before/after — it gives a single authoritative reference set.
-    deps_to_remove = _python_deps_unique_to_pruned(user_key, pruned_python_deps, pruned)
-    if deps_to_remove:
-        try:
-            packages_pip_runner.uninstall_python_deps(deps_to_remove)
-        except PipInstallError as exc:
-            # Don't fail the whole prune over a pip uninstall hiccup;
-            # the user can clean up manually if needed.
-            log.warning("prune: pip uninstall failed: %s", exc)
+    _uninstall_libraries_only_they_asked_for(
+        user_key, set().union(*(pruned_libraries[dn] for dn in pruned)),
+    )
     return {"pruned": pruned, "removedFromDefaults": removed_from_defaults}
+
+
+def _uninstall_libraries_only_they_asked_for(user_key: str, libraries: set[str]) -> None:
+    """Uninstall the pruned packages' *libraries* that nothing else asks for,
+    from where their install put them: the libraries dialog's removal
+    (``libraries.uninstall_user_libraries``), whose route follows the install's.
+
+    Under fork isolation that is the account's own tree, which no other
+    account imports from, so only the account's own packages and list count.
+    A library the install found importable already, such as the image's
+    torch, was never copied into it, and the shared interpreter is not
+    touched.
+
+    Without isolation it is the one interpreter Curio runs on and every
+    account's nodes import from. A library leaves it only when this server's
+    own pip installed it there (``pip_runner.installed_here``) and no
+    account's packages or list asks for it: what the interpreter held before
+    (requirements, the image's torch, the shipped catalog's libraries, the
+    user's own) stays, whoever declared it.
+    """
+    if not libraries:
+        return
+    isolated = packages_backend_runtime.per_user_node_envs()
+    accounts = [user_key] if isolated else packages_libraries.accounts()
+    names = packages_libraries.not_asked_for(accounts, libraries)
+    if not isolated:
+        names = packages_pip_runner.installed_here(names)
+    if not names:
+        return
+    try:
+        packages_libraries.uninstall_user_libraries(user_key, names)
+    except PipInstallError as exc:
+        # Don't fail the whole prune over a pip uninstall hiccup;
+        # the user can clean up manually if needed.
+        log.warning("prune: pip uninstall failed: %s", exc)
 
 
 def dataflow_packages(spec, installed_majors) -> set[str]:
@@ -177,25 +207,16 @@ def _read_python_deps(user_key: str, dir_name: str) -> dict[str, str]:
     return dict(m.python_deps or {}) if m is not None else {}
 
 
-def _python_deps_unique_to_pruned(
-    user_key: str,
-    pruned_deps: dict[str, dict[str, str]],
-    pruned_names: set[str],
-) -> list[str]:
-    """Return the dep names that were declared by a pruned package and
-    are NOT declared by any other package still in the user store.
-
-    Walks every surviving package's manifest once so cost stays linear
-    in the user's installed-package count.
-    """
-    candidate_dep_names: set[str] = set()
-    for dn in pruned_names:
-        candidate_dep_names.update(pruned_deps.get(dn, {}).keys())
-    if not candidate_dep_names:
-        return []
-    still_needed: set[str] = set()
-    for dir_name, manifest in packages_store_reads._locked_store_index(user_key).items():
-        if dir_name in pruned_names or isinstance(manifest, Exception):
-            continue  # just removed, or unreadable — declares nothing we can see
-        still_needed.update(dict(manifest.python_deps or {}).keys())
-    return sorted(candidate_dep_names - still_needed)
+def _node_libraries(user_key: str, dir_name: str) -> set[str]:
+    """The libraries *dir_name*'s install put where node code imports from:
+    those its manifest declares, when they go there
+    (``backend_runtime.dep_destinations``, ``host`` or ``both``). A package
+    whose libraries go to its own overlay alone loses them with its backend
+    residue, and none of them is anywhere else."""
+    manifest = packages_store_reads._read_manifest(user_key, dir_name)
+    if manifest is None:
+        return set()
+    destination, _reason = packages_backend_runtime.dep_destinations(manifest)
+    if destination not in ("host", "both"):
+        return set()
+    return set(manifest.python_deps or {})

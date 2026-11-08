@@ -267,14 +267,63 @@ def uninstall_user_library(user_key: str, name: str):
     ``pip uninstall`` against the shared interpreter would both fail to remove
     their copy and risk removing a host-level package something else needs.
     """
+    return uninstall_user_libraries(user_key, [name])
+
+
+def uninstall_user_libraries(user_key: str, names):
+    """:func:`uninstall_user_library` for several libraries at once: one pip
+    run, or one walk of the user's tree under its lock.
+
+    A package's removal takes its libraries back through this
+    (``prune.py``), so they leave from where their install put them, as the
+    dialog's do.
+    """
+    names = list(names)
     if not packages_backend_runtime.per_user_node_envs():
-        return packages_pip_runner.uninstall_python_deps([name])
+        return packages_pip_runner.uninstall_python_deps(names)
     overlay = packages_backend_runtime.user_node_overlay_dir(user_key)
     if not overlay.is_dir():
         # Nothing was ever installed for this user; saying so beats raising.
-        return packages_pip_runner.UninstallReport(removed=[], kept=[name])
+        return packages_pip_runner.UninstallReport(removed=[], kept=names)
     with target_lock(user_key, packages_provisioning.NODE_OVERLAY_LOCK):
-        return packages_pip_runner.uninstall_python_deps_from_target([name], str(overlay))
+        return packages_pip_runner.uninstall_python_deps_from_target(names, str(overlay))
+
+
+def accounts() -> list[str]:
+    """The key of each account with a folder of its own under the users' base."""
+    base = _users_base()
+    if not base.is_dir():
+        return []
+    keys: list[str] = []
+    for entry in sorted(base.iterdir()):
+        if not entry.is_dir():
+            continue
+        try:
+            keys.append(_user_key_segment(entry.name))
+        except ValueError:
+            continue  # a folder no account is keyed by
+    return keys
+
+
+def not_asked_for(user_keys, names) -> list[str]:
+    """The names among *names* that none of the accounts *user_keys* asks
+    for, sorted: no package in their stores declares one, and none is on
+    their own lists (this dialog's). Empty when a package of theirs cannot be
+    read, since it may declare any of them.
+    """
+    asked: set[str] = set()
+    for user_key in user_keys:
+        with package_seed_lock(user_key):  # memo dev/99: one consistent walk
+            for package_path in list_user_packages(user_key):
+                try:
+                    m = load_package_manifest(package_path)
+                except (ManifestError, OSError):
+                    return []
+                asked.update(_canonical(lib) for lib in (m.python_deps or {}))
+        asked.update(
+            _canonical(split_lib_spec(spec)[0]) for spec in _load_raw(user_key)["python"]
+        )
+    return sorted({name for name in names if _canonical(name) not in asked})
 
 
 def user_library_import_failure(user_key: str, name: str):
