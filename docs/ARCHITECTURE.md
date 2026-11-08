@@ -1412,10 +1412,6 @@ Five design points worth knowing:
   parent stores as `list_of_ids` or `dict_of_ids`, as the in-process path does.
   Unpickling a hostile child's output in the privileged parent would hand back
   most of what isolation removed.
-- **Node code loses direct store access.** The in-process path seeds
-  `load_from_duckdb` / `save_to_duckdb` / `save_dataset_parquet` into user
-  scope; under isolation those names raise instead. Nodes exchange data through
-  inputs and return values.
 
 **Syscall confinement is not enough on its own.** seccomp does not stop
 `open()`, and reading files is what a data node legitimately does, so a

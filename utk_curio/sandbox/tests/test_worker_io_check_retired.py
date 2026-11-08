@@ -3,9 +3,9 @@
 ``checkIOType`` used to refuse a Data Loading node whose output was not a
 (geo)dataframe/raster and any Data Export node that produced output — but only
 when addressed by the legacy uppercase name, which no caller has sent since
-namespaced ids landed. The validators are gone; these tests pin that the same
-code executes whichever spelling the request carries, so the check can never
-silently return through a canonicalisation.
+namespaced ids landed. The validators and their name are gone; these tests pin
+that the same code executes whichever spelling the request carries, so the
+check can never silently return through a canonicalisation.
 """
 
 import unittest
@@ -40,10 +40,8 @@ class TestIOCheckRetired(unittest.TestCase):
             self.assertEqual(result["stderr"], "", node_type)
             self.assertEqual(result["output"]["dataType"], "int", node_type)
 
-    def test_the_name_is_a_no_op_for_every_argument(self):
-        self.assertIsNone(parsers.checkIOType({"dataType": "outputs", "data": [{}] * 9}, "PYTHON_COMPUTATION"))
-        self.assertIsNone(parsers.checkIOType({"dataType": "str", "data": None}, "DATA_LOADING", False))
-        for gone in ("validate_input", "validate_output", "check_valid_output",
+    def test_the_checks_and_their_name_are_gone(self):
+        for gone in ("checkIOType", "validate_input", "validate_output", "check_valid_output",
                      "check_dataframe_input", "check_transformation_input"):
             self.assertFalse(hasattr(parsers, gone), gone)
 

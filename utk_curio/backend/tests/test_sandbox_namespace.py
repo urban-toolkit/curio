@@ -94,7 +94,7 @@ def stdout_of(result: dict) -> str:
 # 1. The pre-seeded namespace
 # ---------------------------------------------------------------------------
 
-#: Every name the legacy star-import leaked, plus the ones that were always
+#: Every library the legacy star-import leaked, plus the ones that were always
 #: explicit. Pinned so a dropped entry fails here, not in a user's dataflow.
 EXPECTED_SEEDED_NAMES = {
     # always explicit
@@ -102,10 +102,12 @@ EXPECTED_SEEDED_NAMES = {
     "warnings",
     # leaked by `from parsers import *` before the in-process move (#158)
     "np", "numpy", "shapely", "wkt", "math", "datetime", "Path", "duckdb",
-    # sandbox helpers
-    "load_from_duckdb", "save_to_duckdb", "detect_kind", "checkIOType",
-    "save_dataset_parquet",
 }
+
+#: The sandbox's own helpers the star import also leaked. Node code gets none
+#: of them, in either path (owner, 11-07): Curio's functions for node code are
+#: the curio_ ones skills/node-functions/SKILL.md lists.
+RETIRED_HELPERS = ("load_from_duckdb", "save_to_duckdb", "save_dataset_parquet", "detect_kind", "checkIOType")
 
 
 def test_seeded_globals_cover_every_legacy_name():
@@ -138,20 +140,31 @@ def test_neither_path_seeds_the_compare_scenarios_steps():
         assert importlib.util.find_spec(f"utk_curio.sandbox.util.{module}") is None, module
 
 
-def test_checkIOType_stays_seeded_as_the_documented_no_op():
-    """dev/120: the name-keyed I/O validators are retired, but the NAME keeps
-    resolving in node code (owner decision — the #158 contract stays whole) and
-    calling it, with any arguments, does nothing. A payload the old rule would
-    have refused (a DATA_EXPORT producing output) is the proof."""
-    from utk_curio.sandbox.util import parsers
+def test_neither_path_seeds_the_sandbox_helpers():
+    """The store and type helpers stay the sandbox's own: neither path seeds
+    them, and node code that calls one fails as any unknown name does."""
+    from utk_curio.sandbox.isolation.zygote import build_namespace_template
 
-    seeded = worker._globals_cache["checkIOType"]
-    assert seeded is parsers.checkIOType
-    assert seeded({"dataType": "dataframe", "data": None}, "DATA_EXPORT", False) is None
-    assert seeded({"dataType": "json", "data": None}, "DATA_LOADING", False) is None
-    assert seeded(None, None) is None
-    out = stdout_of(run("print(checkIOType({'dataType': 'str'}, 'DATA_EXPORT', False))\nreturn 1"))
-    assert out.strip() == "None"
+    assert set(RETIRED_HELPERS) & set(worker._globals_cache) == set()
+    assert set(RETIRED_HELPERS) & set(build_namespace_template()) == set()
+    for name in RETIRED_HELPERS:
+        result = run(f"return {name}")
+        assert "NameError" in result["stderr"] and name in result["stderr"], result["stderr"]
+
+
+def test_each_path_seeds_only_the_pinned_libraries_and_curio_functions():
+    """A name node code gets with no import is a library pinned above or one
+    of Curio's functions for node code, a curio_ name, which
+    test_node_functions_sandbox.py holds to the page that lists them. So no
+    other helper reaches node code unlisted (docs/EXTENDING.md, "A node's
+    logic is its code")."""
+    from utk_curio.sandbox.isolation.zygote import build_namespace_template
+
+    for path, names in (("in process", set(worker._globals_cache)), ("isolated", set(build_namespace_template()))):
+        others = sorted(
+            name for name in names - EXPECTED_SEEDED_NAMES - {"__builtins__"} if not name.startswith("curio_")
+        )
+        assert not others, f"the {path} namespace seeds {others}, neither a pinned library nor a curio_ function"
 
 
 @pytest.mark.parametrize("expr,expected", [
