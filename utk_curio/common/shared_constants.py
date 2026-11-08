@@ -14,7 +14,9 @@ viewer never changes and the header a viewer's run is followed with
 (``dashboardRuns.json``), the agent tools whose Apply installs into an
 account, which only a dataflow's owner reviews (``agentInstalls.json``), the
 agent tools whose work lands at once as the agent's change, a review of one
-saved before then having no Apply (``agentChanges.json``), and
+saved before then having no Apply (``agentChanges.json``), how node code
+names a catalog's item and the line a Data Loading node loads a dataset with,
+per format (``catalogCode.json``), and
 the layout of a dataflow's Yjs doc, the place each
 Trill field has in it (``dataflowDoc.json``, which the server's doc mapping,
 ``collaboration/doc_mapping.py``, alone reads). The frontend imports each of the others; the backend

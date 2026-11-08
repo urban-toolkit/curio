@@ -26,7 +26,7 @@ from utk_curio.backend.app.packages import service as packages_services
 from utk_curio.backend.app.agents.domain import agent_text
 
 #: The behavior a Map Editor template names.
-BEHAVIOR = "edit-features"
+BEHAVIOR = plan_topology.EDITOR_BEHAVIOR
 #: The kind of a Solve attempt these checks fail.
 KIND = "map-edits"
 #: The most of a neighbour's Map Editor call a node's context carries.

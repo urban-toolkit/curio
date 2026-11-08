@@ -136,6 +136,16 @@ export function useCollectionStatus(datasetId: string | undefined, dataflowId: s
     [datasetId, load],
   );
 
+  // A cache that runs while this panel opens (after a reload, or from another
+  // tab) is followed, so the panel shows it and offers no second one.
+  useEffect(() => {
+    const running = status?.cacheJob;
+    if (!running || isTerminal(running.status)) return;
+    if (job && (job.jobId === running.jobId || !isTerminal(job.status))) return;
+    setJob(running);
+    follow(running.jobId);
+  }, [status, job, follow]);
+
   const cacheFiles = useCallback(() => {
     if (!datasetId) return;
     discoveryCatalogApi

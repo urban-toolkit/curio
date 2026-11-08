@@ -624,7 +624,9 @@ whose code is its only state: one call of `curio_edit_features`
   registers (`registerEditMap`). The tool layers are never kept across a
   redraw, hidden by Show only this layer or picked on. The node edits
   on the maps it feeds and is linked to (`linkedMaps` in `mapLayerEdits.ts`), and
-  `plan_topology` allows its interaction edge only to such a map.
+  `plan_topology` allows its interaction edge only to such a map, telling
+  the editor and the map by their templates' behaviors (`edit-features`,
+  `autk-grammar`), never by their ids.
 - Fed by several nodes, the code hands the step every circle (`by_input=True`),
   and the step names each unnamed layer after its circle, `input_<k>`, as the
   map does.
@@ -1412,10 +1414,6 @@ Five design points worth knowing:
   parent stores as `list_of_ids` or `dict_of_ids`, as the in-process path does.
   Unpickling a hostile child's output in the privileged parent would hand back
   most of what isolation removed.
-- **Node code loses direct store access.** The in-process path seeds
-  `load_from_duckdb` / `save_to_duckdb` / `save_dataset_parquet` into user
-  scope; under isolation those names raise instead. Nodes exchange data through
-  inputs and return values.
 
 **Syscall confinement is not enough on its own.** seccomp does not stop
 `open()`, and reading files is what a data node legitimately does, so a
@@ -1798,6 +1796,7 @@ Some vocabularies and tables are read by both the frontend and the backend. Each
 | `autkGrammar.json` | The Autark grammar's top-level families, the prefix of the names a grammar node's inputs are read by (`input_<k>`), and what a document with more than one view is told (see [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)) | `contracts/autkGrammar.ts`, `utils/autkSpecKind.ts` | `contracts.INPUT_TABLE_PREFIX` and `AUTK_ONE_VIEW` |
 | `visDefaults.json` | What a visualization node does with its input by itself: the column roles and the pandas dtypes each role comes from, the Vega-Lite and Autark starter ladders (each rule's id, condition, mark or family and description, in ladder order), the Vega-Lite `$schema` URL, and the column names, URL extensions and share of image values behind Simple View's image columns | `starterSpec.ts`, `vegaDefaultSpec.ts`, `autkDefaultSpec.ts` and `imageColumns.ts`, which keep each rule's builder, keyed by its id, and the matching logic | `contracts.py`'s tables, which the prompt fields render into the preamble |
 | `nodeSettings.json` | The words of a Data Pool's two selects and of each of its modes, keyed by `ResolutionType`, and of a Simple View's image column (see [Dataflow plans](#dataflow-plans)) | The pool's selects (`DataPoolContent.tsx`), the view's picker (`simpleVisBehavior.tsx`) and an agent's change card (`reviewCardText.ts`) | `agents/domain/data_pool_settings.py` and `simple_vis_settings.py`: the modes an agent may set, and the words of a plan's preview and a `node.create`'s summary |
+| `catalogCode.json` | The id node code names a dataset, a collection or a model by, and the line a Data Loading node loads a dataset with, per format: the variable it names, the formats whose value stays in the node's code, and the options written after the id (a GeoTIFF's `bounds=None`) | The loader generator and its scan (`datasetLoaderSnippets.ts`), `datasetReference.ts`, `modelCode.ts` and a dataset widget's value (`widgetModel.ts`) | The loader generator (`datasets/domain/catalog_item.py`), the scans of `code_refs.py` and `source_grounding.py`, and `code_references.DATASET_ID_RE`. The sandbox reads no contract file: its copy in `util/collections.py` is held to the file by `test_shared_constants.py` |
 
 - **Where.** The folder is in the frontend's source, so the Docker image's frontend build, which copies only `utk_curio/frontend/`, and the Jest job and the release's frontend build, which run before or without Python, read the files where they are. A clone and the Docker image keep the folder there for the backend too, and a pip install has it inside its package, which carries the frontend's source (`MANIFEST.in` and `include-package-data`). `test_pip_wheel_layout.py` checks that a pip install's backend reads them there.
 - **Reading.** `shared_constants.read` parses a file as `JSON.parse` does, except that an object naming one key twice raises, where `JSON.parse` and `json.loads` keep the last value.
@@ -2435,11 +2434,13 @@ A storage source is read through a `StorageProvider` ([`providers/storage_base.p
 
 - **One table file** streams into staging, capped at 4 GiB from a folder and at the download ceiling from a bucket, and goes through `install_imported_path()` ([`datasets/install/installer.py`](../utk_curio/backend/app/datasets/install/installer.py)), which moves it into the dataset folder with `os.replace` and transcodes text to UTF-8 as a stream (`transcode_file_to_utf8`). Portal downloads install through the same seam. A shapefile's parts are staged beside it as `data.*`, their sha taken together, and the whole converts to GeoParquet; a GeoPackage or PBF goes through the multi-layer importer. A CSV declared with `options` goes through the combine path, to be read with them.
 - **Several table files** go through [`application/combine_tables.py`](../utk_curio/backend/app/discovery/application/combine_tables.py): DuckDB reads them with `union_by_name`, numbers each file's rows as they are scanned, joins the captured fields and `source_file`, and writes Parquet ordered by file and row. The file name and row number are named `__curio_file` and `__curio_row` while they are needed. A capture, or `source_file`, whose name a file's column already uses, compared without case, gets a `_from_path` suffix. Geographic formats combine with GeoPandas into GeoParquet in EPSG:4326, refusing files whose CRS differ. Bounds: `MAX_COMBINED_FILES` (10,000) and 16 GiB local or 2 GiB remote.
-- **A collection** goes through [`application/index_collection.py`](../utk_curio/backend/app/discovery/application/index_collection.py): a pool of four probes each file with Pillow (size, EXIF time, GPS IFD), PyAV (video and audio streams, BWF origination time) or rasterio (CRS, transform, footprint in EPSG:4326). A remote image or raster is probed from one 64 KiB `Range` read; a remote video or recording is not read. Frames are ordered by sequence and frame and get `t_s`, the frame number over `fps`; a `time` capture fills `taken_at` or `recorded_at`; and `metadata` joins a CSV, Parquet or JSON table, from the folder or the bucket, by `file_name`, `frame` or a capture. A file that fails to probe keeps its row, with `probe_error`. The index is written as `data/index.parquet`, GeoParquet when rows have positions, and installed as format `collection` with the `collection` block, which `dataset_index_entry.collection_json` mirrors.
+- **A collection** goes through [`application/index_collection.py`](../utk_curio/backend/app/discovery/application/index_collection.py): a pool of four probes each file with Pillow (size, EXIF time, GPS IFD), PyAV (video and audio streams, BWF origination time) or rasterio (CRS, transform, footprint in EPSG:4326). A remote image or raster is probed from one 64 KiB `Range` read; a remote video or recording is not read until it is cached (below). Frames are ordered by sequence and frame and get `t_s`, the frame number over `fps`; a `time` capture fills `taken_at` or `recorded_at`; and `metadata` joins a CSV, Parquet or JSON table, from the folder or the bucket, by `file_name`, `frame` or a capture. A file that fails to probe keeps its row, with `probe_error`. The index is written as `data/index.parquet`, GeoParquet when rows have positions, and installed as format `collection` with the `collection` block, which `dataset_index_entry.collection_json` mirrors.
 
 `av` and `rasterio` are declared in `curio.builtin@1`, because the backend probes and draws thumbnails and, under fork isolation, a user's package overlay is not importable by the backend.
 
-**Caching a bucket's files.** [`application/cache_collection.py`](../utk_curio/backend/app/discovery/application/cache_collection.py) streams a bucket collection's objects to `media_work_root(user)/objects/<datasetId>/`, as a job, capped at 4 GiB per object and at `--media-cache-max-gb` (`CURIO_MEDIA_CACHE_MAX_GB`, default 20) per account, checked before any byte is fetched. A service's images land in the same folder, and the same check (`check_room`) runs on them before their collection is added.
+**Caching a bucket's files.** [`application/cache_collection.py`](../utk_curio/backend/app/discovery/application/cache_collection.py) streams a bucket collection's objects to `media_work_root(user)/objects/<datasetId>/`, as a job, capped at `--media-cache-max-file-gb` (`CURIO_MEDIA_CACHE_MAX_FILE_GB`, default 4) per object (`check_sizes`) and at `--media-cache-max-gb` (`CURIO_MEDIA_CACHE_MAX_GB`, default 20) per account (`check_room`), both checked before any byte is fetched, so a cache never stops partway over a limit. A service's images land in the same folder, and the same check (`check_room`) runs on them before their collection is added.
+
+**One cache at a time.** An account runs one cache of a collection at a time: `start_cache` claims it (`cache_collection.claim`) in the same locked step that makes its job, so a second **Cache files** while it runs answers with that job and starts nothing, and `GET /collections/<id>` returns it as `cacheJob`, which a reloaded page follows. What the account's running caches have still to fetch counts against its cap: `check_room` adds those pending bytes, and a cache reserves its own in the same step, so two caches started together cannot both pass. A file is fetched into a `.part` that must not exist yet, so no two caches, in this process or another, write one; a cache first drops the `.part` files one that never ended left. Once its files have landed, the cache probes the cached videos and recordings whose rows have no details yet, as the index probes a folder's, and `record_details` writes what they hold into the index: it fills only empty values, so a `time` capture's or a metadata table's value stays, and replaces the file whole with its mode, as GeoParquet when it was. The collection's block then gets what its details count, `probeErrors` and, for recordings, `totalSeconds`, through the service's seam into the Data Catalog (`installer.update_collection`, which replaces the manifest and mirrors it into the index).
 
 ### Services
 
@@ -3195,12 +3196,13 @@ reply that reaches the cap says so ([A chat turn](#a-chat-turn)).
 | `/starters` | GET | Per-template starter source bodies from every installed package, keyed on `<packageId>/<templateId>@<major>` |
 
 Starters come from each installed package's optional per-template `source` file.
-In `curio.builtin@1` only Data Loading ships one (`sources/data-loading.py`),
+In `curio.builtin@1` Data Loading, Data Export and Data Summary ship one
+(`sources/data-loading.py`, `sources/data-export.py`, `sources/data-summary.py`),
 so its other nodes open with an empty editor; third-party packages may ship a
-starter per template. When a template declares both `behavior: "code"` and a
-`source`, the frontend composes `withPackageStarter` over the behavior hook so
-the starter, and the template's `widgets` beside it, are injected on a fresh drop
-(see [Behavior Hooks](#behavior-hooks)).
+starter per template. Whatever behavior a template with a `source` names, the
+frontend composes `withPackageStarter` over its behavior hook
+(`registry/packagesClient.ts`), so the starter, and the template's `widgets`
+beside it, are injected on a fresh drop (see [Behavior Hooks](#behavior-hooks)).
 
 A template's `widgets` reach a node an agent creates too, whatever writes its
 content: a plan and `node.create` read them with `declared_widgets`
