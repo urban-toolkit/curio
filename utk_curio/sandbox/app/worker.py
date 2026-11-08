@@ -340,14 +340,15 @@ def _worker_init():
     import hashlib
     import ast
     import io
-    # The names below are not used by this module - they exist purely to be
+    # The libraries below are not used by this module - they exist purely to be
     # pre-seeded into every node's namespace. The legacy subprocess wrapper
     # (utk_curio/sandbox/python_wrapper.txt) did `from ...util.parsers import *`,
     # and parsers.py has no __all__, so it leaked exactly these into user scope.
-    # Moving execution in-process replaced that star-import with the explicit
-    # 5-name import below and silently dropped them, which is why `np` and
-    # shapely stopped working while `pd`/`gpd` kept working (#158). Keep this
-    # list explicit rather than restoring `import *` so the contract is greppable.
+    # Moving execution in-process dropped them, which is why `np` and shapely
+    # stopped working while `pd`/`gpd` kept working (#158). Keep this list
+    # explicit rather than restoring `import *` so the contract is greppable.
+    # Curio's own functions for node code are the curio_ ones
+    # skills/node-functions/SKILL.md lists, and no other.
     import datetime
     import math
     import shapely
@@ -355,13 +356,6 @@ def _worker_init():
     import numpy as np
     from shapely import wkt
 
-    from utk_curio.sandbox.util.parsers import (
-        load_from_duckdb,
-        save_to_duckdb,
-        detect_kind,
-        checkIOType,
-        save_dataset_parquet,
-    )
     from utk_curio.sandbox.util.feature_edits import edit_features
     from utk_curio.sandbox.util.input_layers import curio_layer
 
@@ -387,11 +381,6 @@ def _worker_init():
         'datetime': datetime,
         'Path': _pathlib.Path,
         'duckdb': duckdb,
-        'load_from_duckdb': load_from_duckdb,
-        'save_to_duckdb': save_to_duckdb,
-        'detect_kind': detect_kind,
-        'checkIOType': checkIOType,
-        'save_dataset_parquet': save_dataset_parquet,
         # The Edit Features node's code applies its edit list with it (#662).
         'curio_edit_features': edit_features,
         # A layer chip, [!! input_0:roads !!], reads one layer of an input with it.
@@ -568,10 +557,9 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
     from utk_curio.sandbox.isolation.supervisor import cleanup_scratch
     from utk_curio.sandbox.util.package_modules import importable
     from utk_curio.sandbox.util import input_names, output_files
-    from utk_curio.sandbox.util.parsers import _make_id, load_artifact
+    from utk_curio.sandbox.util.codec import detect_kind
+    from utk_curio.sandbox.util.parsers import _make_id, load_artifact, save_to_duckdb
     from utk_curio.sandbox.util.user_code import compile_user_code
-    save_to_duckdb   = _globals_cache['save_to_duckdb']
-    detect_kind      = _globals_cache['detect_kind']
 
     # _exec_lock serializes sys.stdout mutation and os.chdir.
     with _exec_lock.hold("exec_in_process"):
@@ -663,7 +651,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 # Each wired circle k is the code's input_k. dev/120: no
                 # name-keyed I/O check here: the type contract is the
                 # template's declared ports, enforced by the canvas at connect
-                # time (see parsers.checkIOType's note).
+                # time.
                 inputs = input_names.split_inputs(input_data, input_slots, data_type)
 
                 # Code that reads an input none arrived on would fail on the
