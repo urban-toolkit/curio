@@ -605,7 +605,9 @@ def _catalog_listing_items(project_id: str, user=None) -> list | None:
 
         if user is None:
             user = getattr(g, "user", None) if has_request_context() else None
-        listing = DatasetCatalogService(user).list_catalog(dataflow_id=project_id)
+        # No usage counts: the gate grounds no count, and counting reads every
+        # dataflow of the account.
+        listing = DatasetCatalogService(user).list_catalog(dataflow_id=project_id, consumer_counts=False)
     except Exception:  # a broken catalog is data, never a run error
         log.warning(
             "Could not read the Data Catalog for source grounding (project %s): "

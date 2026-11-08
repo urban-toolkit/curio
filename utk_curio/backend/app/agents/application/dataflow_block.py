@@ -94,7 +94,9 @@ def read_datasets(project_id: str, user=None) -> tuple[block.Dataset, ...]:
 
         if user is None and has_request_context():
             user = getattr(g, "user", None)
-        listing = DatasetCatalogService(user).list_catalog(dataflow_id=project_id)
+        # No usage counts: the block shows none, and counting reads every
+        # dataflow of the account.
+        listing = DatasetCatalogService(user).list_catalog(dataflow_id=project_id, consumer_counts=False)
     except Exception:  # noqa: BLE001 - a broken catalog leaves the block without datasets
         log.warning("Could not read the Data Catalog for project %s's dataflow block", project_id, exc_info=True)
         return ()
