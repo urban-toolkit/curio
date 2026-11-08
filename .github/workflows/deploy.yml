@@ -174,6 +174,12 @@ jobs:
           if [ -s .secrets/llm-endpoint ] && grep -q -e '"--llm-endpoint-file"' utk_curio/main.py; then
             llm_args=', "--llm-endpoint-file", "/run/secrets/curio_llm_endpoint"'
           fi
+          # Cache files takes a file of up to 8 GiB, when this release's
+          # launcher has the flag: SideSeeing's longest walks are 7 GiB videos.
+          cache_args=""
+          if grep -q -e '"--media-cache-max-file-gb"' utk_curio/main.py; then
+            cache_args=', "--media-cache-max-file-gb", "8"'
+          fi
           # This stack's container name, host ports and curio.py arguments
           # (docker-compose.deploy.yml). The backend is /api on whichever host
           # serves the page, so the stack needs no hostname of its own. Each
@@ -196,7 +202,7 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s]\n' "$llm_args" >> docker-compose.site.yml
+          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s]\n' "$cache_args" "$llm_args" >> docker-compose.site.yml
           if [ -n "$llm_args" ]; then
             printf '    secrets: [curio_llm_endpoint]\nsecrets:\n  curio_llm_endpoint:\n    file: ./.secrets/llm-endpoint\n' >> docker-compose.site.yml
           fi
@@ -406,6 +412,12 @@ jobs:
             if [ -s .secrets/llm-endpoint ] && grep -q -e '"--llm-endpoint-file"' utk_curio/main.py; then
               llm_args=', "--llm-endpoint-file", "/run/secrets/curio_llm_endpoint"'
             fi
+            # The file size Cache files takes, as curio-dev's, for a release
+            # whose launcher has the flag.
+            cache_args=""
+            if grep -q -e '"--media-cache-max-file-gb"' utk_curio/main.py; then
+              cache_args=', "--media-cache-max-file-gb", "8"'
+            fi
             cat > docker-compose.site.yml <<'SITE'
           services:
             curio:
@@ -414,7 +426,7 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s]\n' "$llm_args" >> docker-compose.site.yml
+            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s]\n' "$cache_args" "$llm_args" >> docker-compose.site.yml
             if [ -n "$llm_args" ]; then
               printf '    secrets: [curio_llm_endpoint]\nsecrets:\n  curio_llm_endpoint:\n    file: ./.secrets/llm-endpoint\n' >> docker-compose.site.yml
             fi
