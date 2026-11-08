@@ -26,7 +26,6 @@ without them and each test fails on its own.
 from __future__ import annotations
 
 import json
-import pathlib
 import shutil
 from pathlib import Path
 
@@ -60,13 +59,13 @@ def _parses(monkeypatch) -> list:
 def _resolves(monkeypatch) -> list:
     """The paths resolved from now on."""
     resolved: list = []
-    original = pathlib.Path.resolve
+    original = Path.resolve
 
     def counted(self, *args, **kwargs):
         resolved.append(str(self))
         return original(self, *args, **kwargs)
 
-    monkeypatch.setattr(pathlib.Path, "resolve", counted)
+    monkeypatch.setattr(Path, "resolve", counted)
     return resolved
 
 
