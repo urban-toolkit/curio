@@ -9,9 +9,14 @@ with the columns a node needs to reach each file:
   Inference reads, served by id by the backend;
 - ``audio_url``: a recording's URL, for a player.
 
+A row of a ``files`` resource, kind ``file``, has none of those URLs: node
+code reads the file from its ``path``.
+
 ``curio_derived_file(dataset_id, file_id, t_ms, ext)`` names a file a node
-writes from one of a collection's files: a video's frame, a recording's
-window, a photo's overlay. A ``tag`` tells two derived files of one file and
+writes from one of a collection's files: a video's frame, a video made from a
+video (an overlay of it, say), a table of what a node found in a video, a
+recording's window, a photo's overlay. ``DERIVED`` lists what may be derived
+from a file of each kind. A ``tag`` tells two derived files of one file and
 time apart: an overlay's names the model that drew it. The backend serves the
 file back under the same id (``DERIVED_ID_RE``). Both paths, in process and
 isolated, build these from one function, so they cannot disagree.
@@ -22,32 +27,106 @@ from __future__ import annotations
 import os
 import re
 
+# A catalog item's id, as ``catalogCode.json`` (the frontend's contracts) has
+# it: the sandbox reads no contract file, so this is its copy, which
+# ``test_shared_constants.py`` holds equal to the table.
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$")
 _FILE_ID = r"[0-9a-f]{16}"
 _TAG = r"[0-9a-z]{1,32}"
+_EXT = r"[0-9a-z]{1,8}"
 _FILE_ID_RE = re.compile(rf"^{_FILE_ID}$")
 _TAG_RE = re.compile(rf"^{_TAG}$")
 
-#: A derived file's id, ``<fileId>@<t_ms>`` or ``<fileId>@<t_ms>-<tag>``: what
-#: ``curio_derived_file`` names and the media route looks up.
-DERIVED_ID_RE = re.compile(rf"^({_FILE_ID})@([0-9]{{1,12}})(?:-({_TAG}))?$")
+#: A derived file's id, ``<fileId>@<t_ms>`` or ``<fileId>@<t_ms>-<tag>``, and
+#: for a file of any type but its kind's first, its extension after that:
+#: ``<fileId>@<t_ms>-<tag>.mp4``. What ``curio_derived_file`` names and the
+#: media route looks up.
+DERIVED_ID_RE = re.compile(rf"^({_FILE_ID})@([0-9]{{1,12}})(?:-({_TAG}))?(?:\.({_EXT}))?$")
 
-#: What a derived file of each source kind is, and where it goes.
+#: The largest time a derived file's id holds: twelve digits of milliseconds.
+_MAX_T_MS = 10**12 - 1
+
+#: What a node may derive from a file of each kind, by the derived file's
+#: extension: the folder it goes in, and the kind of its row. The first is
+#: what ``ext=None`` derives, and its id names no extension. Any other's id
+#: does, so a video's frame and a video made from it at one time and tag are
+#: two ids, each naming one file.
 DERIVED = {
-    "video": ("frames", "jpg", "frame"),
-    "audio": ("clips", "wav", "audio"),
-    # A segmentation's overlay of a photo.
-    "image": ("overlays", "png", "image"),
+    # A video's frame, a video made from it (an overlay, say), the overlay of
+    # one of its frames, and a table of what a node found in it, which later
+    # nodes read by its path and the media route does not serve.
+    "video": {
+        "jpg": ("frames", "frame"), "mp4": ("videos", "video"), "png": ("overlays", "image"),
+        "parquet": ("tables", "table"),
+    },
+    "audio": {"wav": ("clips", "audio")},
+    # A segmentation's overlay of a photo, or of a sequence's frame.
+    "image": {"png": ("overlays", "image")},
+    "frame": {"png": ("overlays", "image")},
 }
+
+#: The kinds of row the media route draws a thumbnail of: a collection's
+#: files but those of a ``files`` resource, and the derived ones but a table.
+DRAWN = ("image", "frame", "raster", "video", "audio")
 
 
 def media_url(dataset_id, file_id, variant="thumb"):
     return f"/api/datasets/{dataset_id}/media/{file_id}?variant={variant}"
 
 
+def media_urls(dataset_id, file_id, kind):
+    """A row's ``thumbnail``, ``image_url`` and ``audio_url``, by the row's
+    *kind*: what Simple View draws; the image a reader of images reads (the
+    file itself, or a video's or a raster's thumbnail); a recording's file,
+    for a player. None of them for a kind the media route draws nothing of:
+    a table, and a ``file``, which node code reads from its ``path``. A
+    collection's rows and a derived file's row get them here."""
+    if kind not in DRAWN:
+        return {"thumbnail": None, "image_url": None, "audio_url": None}
+    thumbnail = media_url(dataset_id, file_id)
+    original = media_url(dataset_id, file_id, "original")
+    if kind in ("image", "frame"):
+        image_url = original
+    elif kind in ("raster", "video"):
+        image_url = thumbnail
+    else:
+        image_url = None
+    return {"thumbnail": thumbnail, "image_url": image_url, "audio_url": original if kind == "audio" else None}
+
+
+def derived_type(kind, ext=None):
+    """``(folder, ext, row kind, suffix)`` of what a node derives as *ext*
+    from a *kind* file (``DERIVED``), the kind's first when *ext* is None.
+    *suffix* is what the derived file's id holds after its stem: nothing for
+    the kind's first type, ``.<ext>`` for any other.
+
+    Raises ValueError for a kind nothing is derived from, and an ext its kind
+    does not list: the media route would serve that file under no id."""
+    types = DERIVED.get(kind)
+    if types is None:
+        raise ValueError(f"kind is the kind of the file it is derived from: {_one_of(DERIVED)}, not {kind!r}")
+    first = next(iter(types))
+    ext = first if ext is None else ext
+    if ext not in types:
+        raise ValueError(f"a node derives {_one_of(types)} from a file of kind {kind!r}, not {ext!r}")
+    folder, row_kind = types[ext]
+    return folder, ext, row_kind, "" if ext == first else f".{ext}"
+
+
+def _one_of(values):
+    """``'a', 'b' or 'c'``."""
+    said = [repr(value) for value in values]
+    return said[0] if len(said) == 1 else f"{', '.join(said[:-1])} or {said[-1]}"
+
+
 def derived_stem(t_ms, tag=None):
     """``<t_ms>`` or ``<t_ms>-<tag>``: a derived file's name, and its id after the ``@``."""
     return f"{int(t_ms)}-{tag}" if tag is not None else f"{int(t_ms)}"
+
+
+def derived_id(file_id, t_ms, tag=None, suffix=""):
+    """The id a derived file is served under: ``<fileId>@<stem><suffix>``."""
+    return f"{file_id}@{derived_stem(t_ms, tag)}{suffix}"
 
 
 def derived_relpath(kind_folder, dataset_id, file_id, t_ms, ext, tag=None):
@@ -116,17 +195,9 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
         # Kept as objects, so a file not here reads None: pandas would store a
         # column of strings with NaN for it, which is truthy.
         frame["path"] = pd.Series([where(row) for _, row in frame.iterrows()], index=frame.index, dtype=object)
-        frame["thumbnail"] = [media_url(dataset_id, fid) for fid in frame["file_id"]]
-        kinds = list(frame["kind"])
-        frame["image_url"] = [
-            media_url(dataset_id, fid, "original") if kind in ("image", "frame") else
-            (media_url(dataset_id, fid) if kind in ("raster", "video") else None)
-            for fid, kind in zip(frame["file_id"], kinds)
-        ]
-        frame["audio_url"] = [
-            media_url(dataset_id, fid, "original") if kind == "audio" else None
-            for fid, kind in zip(frame["file_id"], kinds)
-        ]
+        urls = [media_urls(dataset_id, fid, kind) for fid, kind in zip(frame["file_id"], frame["kind"])]
+        for column in ("thumbnail", "image_url", "audio_url"):
+            frame[column] = [row_urls[column] for row_urls in urls]
         # What a reader looks for first (the name, the path fields, what was
         # read from the file) ahead of the columns that locate the file, which
         # is also the order a Simple View card captions a row in.
@@ -134,33 +205,44 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
         return frame[[c for c in frame.columns if c not in last] + last]
 
     def curio_derived_file(dataset_id, file_id, t_ms, ext=None, *, kind="video", tag=None):
-        """Where to write the frame (or clip, or overlay) at *t_ms* of one file, and its row.
+        """Where to write a file derived from one file of a collection, and its row.
 
-        *tag*, up to 32 lowercase letters and digits, tells two derived files
-        of one file and time apart, as the model that drew an overlay does.
-        Returns ``{"file_id", "path", "thumbnail", "image_url"|"audio_url"}``.
-        The directory exists when this returns; write the bytes to ``path``.
+        *kind* is that file's kind and *ext* what is derived from it
+        (``DERIVED``): from a video, its frame at *t_ms* (``jpg``, the
+        default), a video made from it that starts at *t_ms* (``mp4``), the
+        overlay of its frame at *t_ms* (``png``), or a table of what a node
+        found in it (``parquet``); a recording's clip (``wav``); an image's
+        or a frame's overlay (``png``). *tag*, up to 32 lowercase letters and
+        digits, tells two derived files of one file and time apart, as the
+        model that drew an overlay does.
+
+        Returns the row the media route serves it under, with the columns a
+        collection's row of its kind has: ``file_id``, ``dataset_id``,
+        ``kind``, ``path``, ``thumbnail``, ``image_url`` and ``audio_url``,
+        the last three None for a table, which later nodes read by its
+        ``path``. The directory exists when this returns; the node writes the
+        bytes to ``path``.
         """
         dataset_id, file_id = str(dataset_id), str(file_id)
         if not _ID_RE.match(dataset_id) or not _FILE_ID_RE.match(file_id):
             raise ValueError("not a collection file")
         if tag is not None and not _TAG_RE.match(str(tag)):
             raise ValueError("a derived file's tag is 1 to 32 lowercase letters and digits")
+        if not 0 <= int(t_ms) <= _MAX_T_MS:
+            raise ValueError("t_ms is a time in the file, in milliseconds from its start")
+        folder, ext, row_kind, suffix = derived_type(kind, ext)
         if not media_dir:
             raise RuntimeError(
                 "This node cannot write derived files here - run it on a collection "
                 "loaded with curio_load_collection()."
             )
-        folder, default_ext, _row_kind = DERIVED.get(kind, DERIVED["video"])
-        path = os.path.join(media_dir, derived_relpath(folder, dataset_id, file_id, t_ms, ext or default_ext, tag))
+        path = os.path.join(media_dir, derived_relpath(folder, dataset_id, file_id, t_ms, ext, tag))
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        derived_id = f"{file_id}@{derived_stem(t_ms, tag)}"
-        row = {"file_id": derived_id, "path": path, "thumbnail": media_url(dataset_id, derived_id)}
-        if kind == "audio":
-            row["audio_url"] = media_url(dataset_id, derived_id, "original")
-        else:
-            row["image_url"] = media_url(dataset_id, derived_id, "original")
-        return row
+        served_as = derived_id(file_id, t_ms, tag, suffix)
+        return {
+            "file_id": served_as, "dataset_id": dataset_id, "kind": row_kind, "path": path,
+            **media_urls(dataset_id, served_as, row_kind),
+        }
 
     def curio_output_file(name):
         """A path to write a file this node returns, such as a mosaic's VRT."""

@@ -1,0 +1,16 @@
+{
+  "itemId": "[A-Za-z0-9][A-Za-z0-9._@-]{0,199}",
+  "loadedVariables": {
+    "csv": "df",
+    "parquet": "df",
+    "geojson": "gdf",
+    "shp": "gdf",
+    "json": "data",
+    "geotiff": "src",
+    "bundle": "bundle",
+    "onnx": "session",
+    "netcdf": "ds"
+  },
+  "keptInCode": ["onnx", "netcdf"],
+  "loaderOptions": { "geotiff": ", bounds=None" }
+}

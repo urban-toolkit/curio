@@ -1188,9 +1188,11 @@ def test_a_preset_testing_env_var_still_counts(monkeypatch):
 # flag is passed, so a value already in the environment is still read.
 
 #: Every variable these flags write: #615's table but the guest configuration's,
-#: CURIO_PACKAGES_ROOT and CURIO_PROXY_HOPS.
+#: CURIO_PACKAGES_ROOT, CURIO_PROXY_HOPS, CURIO_MODEL_WEIGHTS_DIR and
+#: CURIO_MEDIA_CACHE_MAX_FILE_GB.
 OPERATOR_KEYS = (
     "CURIO_MEDIA_CACHE_MAX_GB",
+    "CURIO_MEDIA_CACHE_MAX_FILE_GB",
     "CURIO_DB_POOL_SIZE",
     "CURIO_DB_POOL_OVERFLOW",
     "CURIO_DB_POOL_TIMEOUT",
@@ -1206,11 +1208,13 @@ OPERATOR_KEYS = (
     "COLLAB_NAMESPACE",
     "LOG_TO_STDOUT",
     "CURIO_PACKAGES_ROOT",
+    "CURIO_MODEL_WEIGHTS_DIR",
 )
 
 #: The flags that write them.
 OPERATOR_FLAG_NAMES = (
     "--media-cache-max-gb",
+    "--media-cache-max-file-gb",
     "--db-pool-size",
     "--db-pool-overflow",
     "--db-pool-timeout",
@@ -1226,6 +1230,7 @@ OPERATOR_FLAG_NAMES = (
     "--collab-namespace",
     "--log-to-stdout",
     "--packages-root",
+    "--model-weights-dir",
 )
 
 
@@ -1275,6 +1280,12 @@ def _media_cache_bytes():
     return cache_collection.cap_bytes()
 
 
+def _media_cache_file_bytes():
+    from utk_curio.backend.app.discovery.application import cache_collection
+
+    return cache_collection.file_cap_bytes()
+
+
 def _package_workers():
     from utk_curio.backend.app.packages.infrastructure import backend_runtime
 
@@ -1302,6 +1313,8 @@ _POOL = "m.Config.SQLALCHEMY_ENGINE_OPTIONS"
 OPERATOR_FLAGS = [
     pytest.param("media_cache_max_gb", 2.5, "CURIO_MEDIA_CACHE_MAX_GB", "2.5",
                  _media_cache_bytes, int(2.5 * 1024**3), id="media-cache-max-gb"),
+    pytest.param("media_cache_max_file_gb", 8, "CURIO_MEDIA_CACHE_MAX_FILE_GB", "8",
+                 _media_cache_file_bytes, 8 * 1024**3, id="media-cache-max-file-gb"),
     pytest.param("db_pool_size", 16, "CURIO_DB_POOL_SIZE", "16",
                  _backend(f"{_POOL}['pool_size']"), 16, id="db-pool-size"),
     pytest.param("db_pool_overflow", 0, "CURIO_DB_POOL_OVERFLOW", "0",
@@ -1365,6 +1378,26 @@ def test_omitted_operator_flags_leave_the_environment_alone():
     set_environment_variables(**BASE)
     for key in OPERATOR_KEYS:
         assert os.environ[key] == "from-the-environment", key
+
+
+def _model_weights_dir():
+    from utk_curio.backend.app.packages.repositories import catalog_dir
+
+    return catalog_dir.model_weights_dir()
+
+
+def test_the_model_weights_dir_flag_is_resolved_and_read_by_the_backend(tmp_path):
+    """Where a model package's fetched weights are read in place
+    (``--model-weights-dir``); without the flag, none, and each package's own
+    folder is read."""
+    (tmp_path / "weights").mkdir()
+
+    set_environment_variables(**BASE)
+    assert "CURIO_MODEL_WEIGHTS_DIR" not in os.environ and _model_weights_dir() is None
+
+    set_environment_variables(**BASE, model_weights_dir=str(tmp_path / "a" / ".." / "weights"))
+    assert Path(os.environ["CURIO_MODEL_WEIGHTS_DIR"]) == (tmp_path / "weights").resolve()
+    assert _model_weights_dir() == (tmp_path / "weights").resolve()
 
 
 def test_the_state_dir_flag_is_resolved_and_read_by_the_backend(tmp_path):

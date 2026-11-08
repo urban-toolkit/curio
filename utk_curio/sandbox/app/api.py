@@ -1005,6 +1005,16 @@ def exec():
     if not isinstance(models, dict):
         models = {}
     models = {str(key): str(value) for key, value in list(models.items())[:8] if value}
+    # {modelId: folder} for the models among those whose weights their
+    # operator fetched under --model-weights-dir: absolute, and read where
+    # they are on both paths, never staged.
+    model_weights = request.json.get('model_weights') or {}
+    if not isinstance(model_weights, dict):
+        model_weights = {}
+    model_weights = {
+        str(key): str(value) for key, value in model_weights.items()
+        if str(key) in models and isinstance(value, str) and os.path.isabs(value)
+    }
     # {"root", "names"}: the modules the node's package ships beside its
     # templates, from the user's package store (#468). Both paths stage them
     # into a folder of the run's own and make them importable for the run.
@@ -1036,6 +1046,7 @@ def exec():
                 dataset_formats=dataset_formats, package_modules=package_modules,
                 input_slots=input_slots, saved_paths=saved_paths, imports_session=imports_session,
                 **({"library_keys": library_keys} if library_keys else {}),
+                **({"model_weights": model_weights} if model_weights else {}),
             )
         return execute_code(
             code, str(file_path), str(node_type), str(data_type), launch_dir,
@@ -1043,6 +1054,7 @@ def exec():
             dataset_paths=dataset_paths, secrets=secrets, collections=collections, media_dir=media_dir,
             models=models, dataset_formats=dataset_formats, package_modules=package_modules,
             input_slots=input_slots, saved_paths=saved_paths, imports_session=imports_session,
+            **({"model_weights": model_weights} if model_weights else {}),
         )
 
     return _reply_when_run('/exec', node_type, run)

@@ -62,6 +62,19 @@ def catalog_root() -> Path:
     return shipped.path("packages")
 
 
+#: The folder ``--model-weights-dir`` names (``utk_curio/cli/environment.py``).
+_MODEL_WEIGHTS_ENV = "CURIO_MODEL_WEIGHTS_DIR"
+
+
+def model_weights_dir() -> Path | None:
+    """Where this Curio reads the weights its model packages fetch
+    (``domain/model_fetch.py``): the folder ``--model-weights-dir`` names,
+    whose ``<package id>@<major>/`` holds each package's entry. None without
+    the flag: each package's are then read from its own folder."""
+    value = os.environ.get(_MODEL_WEIGHTS_ENV, "").strip()
+    return Path(value).expanduser().resolve() if value else None
+
+
 def publish_package_archive_to_catalog_dir(
     archive: bytes | IO[bytes],
     catalog_parent: Path,

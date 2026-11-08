@@ -22,7 +22,9 @@
     A collection's index, one row per file with a readable ``path``.
 ``curio_load_model("<id>")``
     A Model Catalog model, ready for ``curio_segment``, or, for an
-    ``image-to-image`` model, for ``model.run({input name: array})``.
+    ``image-to-image`` model, for ``model.run({input name: array})``. Its
+    ``path`` is where its weights are, for a node that loads them itself
+    (a ``concept-segmentation`` model's checkpoint folder).
 
 The backend resolves each id a node's code names, for the account running it,
 and sends the paths, the formats, the collections and the models with the
@@ -317,14 +319,20 @@ class CurioModel:
 
     ``folder`` is where its files are and ``manifest`` what its manifest says;
     both are read when the model is loaded, so a folder that is not a model
-    fails there. ``runner``, the callable that labels one image's pixels, opens
-    the model's runtime the first time it is used, and ``labels`` are the
-    classes it can name. ``run`` feeds an ONNX model's graph the arrays the
-    node prepared itself, as an ``image-to-image`` model is run.
+    fails there. ``path`` is where its weights are, the ``.onnx`` file or the
+    checkpoint folder its manifest's entry names: under ``folder``, or under
+    *weights*, the folder the backend names for weights its operator fetched
+    under ``--model-weights-dir``, read where they are. A model whose operator
+    has not fetched its weights stops at loading, saying how to fetch them
+    (``models.NOT_FETCHED``). ``runner``, the callable that labels one image's
+    pixels, opens the model's runtime the first time it is used, and
+    ``labels`` are the classes it can name. ``run`` feeds an ONNX model's
+    graph the arrays the node prepared itself, as an ``image-to-image`` model
+    is run.
     """
 
-    def __init__(self, model_id: str, folder: str):
-        from utk_curio.sandbox.util.models import model_spec
+    def __init__(self, model_id: str, folder: str, weights: str | None = None):
+        from utk_curio.sandbox.util.models import NOT_FETCHED, missing_fetched_files, model_spec
 
         self.id = model_id
         self.folder = folder
@@ -334,6 +342,10 @@ class CurioModel:
                 self.manifest = model_spec(json.load(handle))
         except (OSError, ValueError) as exc:
             raise RuntimeError(f"Model '{model_id}' has no readable manifest: {exc}") from exc
+        self._weights = weights or folder
+        if missing_fetched_files(self._weights, self.manifest):
+            raise RuntimeError(NOT_FETCHED.format(model_id=model_id))
+        self.path = os.path.join(self._weights, str(self.manifest.get("entry") or ""))
         self._runner = None
         self._session = None
 
@@ -342,7 +354,7 @@ class CurioModel:
         if self._runner is None:
             from utk_curio.sandbox.util.vision import load_runner
 
-            self._runner, _ = load_runner(self.folder)
+            self._runner, _ = load_runner(self.folder, weights=self._weights)
         return self._runner
 
     def run(self, feeds: dict) -> list:
@@ -360,9 +372,7 @@ class CurioModel:
                     f"Model '{self.id}' runs on onnxruntime, which is not installed here: "
                     "add the model with Add in the Model Catalog, which installs it."
                 ) from exc
-            self._session = ort.InferenceSession(
-                os.path.join(self.folder, self.manifest["entry"]), providers=["CPUExecutionProvider"]
-            )
+            self._session = ort.InferenceSession(self.path, providers=["CPUExecutionProvider"])
         names = [spec.name for spec in self._session.get_inputs()]
         missing = [name for name in names if name not in feeds]
         if missing:
@@ -446,6 +456,7 @@ def install_catalog_helpers(
     model_base: str | None = None,
     output_dir: str | None = None,
     output_names: list | None = None,
+    model_weights: dict | None = None,
 ) -> None:
     """Put the catalog helpers into one execution's *namespace*.
 
@@ -454,7 +465,9 @@ def install_catalog_helpers(
     as the backend resolved it, and a layer group's id has an entry naming its
     layers (:func:`layer_group_entry`), each of which has a file and a format
     of its own. *models* is ``{id: folder}``, relative to *model_base* when
-    staged. *output_dir* is the folder the run's files go to, and
+    staged. *model_weights* is ``{id: folder}`` for weights an operator
+    fetched under ``--model-weights-dir``: absolute, read where they are, and
+    never staged. *output_dir* is the folder the run's files go to, and
     *output_names* a list that gets each name given there
     (``collections.make_collection_helpers``).
     """
@@ -468,6 +481,7 @@ def install_catalog_helpers(
     )
     curio_load_collection = collection_helpers["curio_load_collection"]
     model_folder = make_model_folder(models, base=model_base)
+    weights_of = {str(k): str(v) for k, v in (model_weights or {}).items() if v}
 
     known_collections = {str(k) for k in (collections or {})}
 
@@ -541,7 +555,7 @@ def install_catalog_helpers(
 
     def curio_load_model(model_id):
         model_id = str(model_id)
-        return CurioModel(model_id, model_folder(model_id))
+        return CurioModel(model_id, model_folder(model_id), weights_of.get(model_id))
 
     namespace["curio_data_path"] = data_path
     namespace["curio_load_data"] = curio_load_data

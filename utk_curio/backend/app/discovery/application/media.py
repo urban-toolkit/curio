@@ -6,7 +6,7 @@ resolved through the collection's source (which checks it against the
 source's root), and only then is anything read. What is served:
 
 - ``thumb``: a JPEG drawn from an image, a raster, a video's frame, or an
-  audio recording's spectrogram;
+  audio recording's spectrogram; a ``files`` resource's file has none;
 - ``poster``: a video's frame;
 - ``original``: the file itself, when a browser can show or play its format.
 
@@ -121,7 +121,9 @@ def locate(service, dataset_id: str, file_id: str) -> Located:
     derived from one of the collection's: a video's frame, a recording's
     window or an image's overlay (its tag names the model that drew it),
     written where ``curio_derived_file`` put it, in this account's media
-    folder. A collection the service's dataflow lists from its owner's store
+    folder. A file of any type but the first its kind derives adds its
+    extension: ``<file_id>@<t_ms>-<tag>.mp4`` is a video a node made from a
+    video. A collection the service's dataflow lists from its owner's store
     (``DiscoveryService.collection``) has its cached files read from that
     store's media folder, and nothing else of it.
     """
@@ -135,9 +137,7 @@ def locate(service, dataset_id: str, file_id: str) -> Located:
     rows = index_cache.rows(path)
     derived = DERIVED_ID_RE.match(file_id)
     if derived:
-        return _locate_derived(
-            service, dataset_id, rows, derived.group(1), int(derived.group(2)), derived.group(3)
-        )
+        return _locate_derived(service, dataset_id, rows, file_id, *derived.groups())
     row = rows.get(file_id)
     if row is None:
         raise ResourceNotFound(f"{file_id!r} is not a file of {dataset_id!r}")
@@ -153,22 +153,32 @@ def locate(service, dataset_id: str, file_id: str) -> Located:
     return Located(dataset_id=dataset_id, row=row, local=Path(local) if local else None, provider=provider)
 
 
-def _locate_derived(service, dataset_id: str, rows, source_id: str, t_ms: int, tag: str | None) -> Located:
-    from utk_curio.sandbox.util.collections import DERIVED, derived_relpath, derived_stem
+def _locate_derived(
+    service, dataset_id: str, rows, file_id: str, source_id: str, t_ms: str, tag: str | None, ext: str | None,
+) -> Located:
+    """The file *file_id* names, which ``curio_derived_file`` wrote from the
+    collection's file *source_id*: one type of what a file of its kind
+    derives (``DERIVED``), the one its id's extension names, and only under
+    the id ``curio_derived_file`` gives it."""
+    from utk_curio.sandbox.util.collections import DERIVED, derived_id, derived_relpath, derived_type
 
     source = rows.get(source_id)
     if source is None or source.kind not in DERIVED:
-        raise ResourceNotFound(f"{source_id!r} is not a video, recording or image of {dataset_id!r}")
-    folder, ext, kind = DERIVED[source.kind]
+        raise ResourceNotFound(f"{source_id!r} is not a video, recording, image or frame of {dataset_id!r}")
+    try:
+        folder, ext, kind, suffix = derived_type(source.kind, ext)
+    except ValueError:
+        raise ResourceNotFound(f"{file_id!r} names no file a node derives from a {source.kind}") from None
+    if derived_id(source_id, t_ms, tag, suffix) != file_id:
+        raise ResourceNotFound(f"{file_id!r} names no file a node derives from a {source.kind}")
     path = media_dirs.media_work_root(service.user_key) / derived_relpath(
         folder, dataset_id, source_id, t_ms, ext, tag
     )
     if not path.is_file():
-        raise ResourceNotFound("this file has not been extracted; run the node that makes it again")
+        raise ResourceNotFound("this file has not been made; run the node that makes it again")
     stat = path.stat()
-    stem = derived_stem(t_ms, tag)
     row = IndexRow(
-        file_id=f"{source_id}@{stem}", relpath=f"{source.relpath}@{stem}", ext=ext, kind=kind,
+        file_id=file_id, relpath=f"{source.relpath}@{file_id.split('@', 1)[1]}", ext=ext, kind=kind,
         bytes=stat.st_size, mtime=str(stat.st_mtime_ns),
     )
     return Located(dataset_id=dataset_id, row=row, local=path, provider=None)
@@ -244,9 +254,15 @@ def _source_path(found: Located) -> tuple[Path, bool]:
 
 
 def _draw(found: Located, variant: str):
+    from utk_curio.sandbox.util.collections import DRAWN
+
     kind = found.row.kind
     if variant == "poster" and kind != "video":
         raise MediaUnavailable("only a video has a poster")
+    if kind not in DRAWN:
+        # Refused before the file is read or fetched: a table a node found,
+        # or a ``files`` resource's file, has no preview.
+        raise CapabilityUnsupported(f"no preview for a {kind}")
     path, temporary = _source_path(found)
     try:
         if kind in ("image", "frame"):
@@ -371,8 +387,9 @@ def sample_thumbnail(manifest, provider, sample, *, user_key: str | None = None)
     source itself.
     """
     from utk_curio.backend.app.common.user_storage import curio_root
+    from utk_curio.sandbox.util.collections import DRAWN
 
-    if sample.kind not in ("image", "frame", "raster", "video", "audio"):
+    if sample.kind not in DRAWN:
         raise MediaUnavailable("no preview for this file")
     if user_key is None:
         folder = curio_root() / "discovery-cache" / manifest.dir_name / "samples"

@@ -129,6 +129,18 @@ describe("a collection's details", () => {
     );
   });
 
+  it("says how many files a files resource's collection holds, and draws none of them", async () => {
+    apiFetch.mockResolvedValue(status({ fileCount: 4, samples: [] }));
+    await renderPanel(
+      item({ collection: { ...block, kind: "files", resource: "walk-records", counts: { file: 4 }, fileCount: 4 } }),
+    );
+    expect(screen.getByText("Kind").nextElementSibling).toHaveTextContent("Files");
+    expect(screen.getByText("4 files")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Files in this collection" })).not.toBeInTheDocument();
+    const drawn = (global as any).fetch.mock.calls.filter(([url]: [string]) => String(url).includes("/media/"));
+    expect(drawn).toEqual([]);
+  });
+
   it("names its resource and says what its fields, CRS and footprints cover", async () => {
     apiFetch.mockResolvedValue(status({ local: true, provider: "folder" }));
     await renderPanel(
@@ -216,6 +228,42 @@ describe("a collection's details", () => {
       { method: "POST" },
     );
     await waitFor(() => expect(screen.getByRole("button", { name: "Caching…" })).toBeDisabled());
+  });
+
+  it("opened while its cache runs, as after a reload, shows that job and follows it", async () => {
+    jest.useFakeTimers();
+    try {
+      const running = {
+        jobId: "j1",
+        status: "running",
+        bytesRead: 0,
+        totalBytes: null,
+        stageMessage: "Caching files…",
+        error: null,
+        datasetId: null,
+        dataset: null,
+        alreadyPresent: false,
+        unchanged: false,
+        sourceId: "source.example.bucket@1",
+        resourceId: "cache:imported.xc1@1",
+        itemsDone: 1,
+        itemsTotal: 2,
+      };
+      apiFetch.mockImplementation((path: string) => {
+        if (path.startsWith("/api/discovery/jobs/")) return new Promise(() => {});
+        return Promise.resolve(status({ cacheJob: running }));
+      });
+      await renderPanel(item());
+      expect(screen.getByRole("button", { name: "Caching…" })).toBeDisabled();
+      expect(screen.queryByRole("button", { name: "Cache files" })).toBeNull();
+      expect(screen.getByText("1 of 2 files")).toBeInTheDocument();
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+      });
+      expect(apiFetch).toHaveBeenCalledWith("/api/discovery/jobs/j1");
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("offers nothing to cache for a folder's files", async () => {

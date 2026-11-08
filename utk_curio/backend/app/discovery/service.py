@@ -445,7 +445,7 @@ class DiscoveryService:
             ],
             "total": len(group.files),
             "offset": offset,
-            "previews": group.spec.is_collection,
+            "previews": group.spec.has_previews,
         }
 
     def _storage_detail(self, manifest: DiscoverySourceManifest, resource_id: str) -> DiscoveryResourceDetail:
@@ -515,6 +515,16 @@ class DiscoveryService:
 
         service = DatasetCatalogService(self.user)
         return service._mutations._install_imported_path(path, filename, fmt, **kwargs)
+
+    def _describe_collection(self, item: dict[str, Any], fields: dict[str, Any]) -> None:
+        """The seam into the Data Catalog for what a cache read from one of
+        this account's collections: *fields* of its block, in its manifest and
+        its index entry. *item*'s ``path`` is its index, in ``data/``."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.datasets.install.installer import update_collection
+
+        update_collection(self.user_key, Path(item["path"]).parents[1], fields)
 
     def _resource_row(
         self, manifest: DiscoverySourceManifest, resource, held, *, group: scanning.Group | None = None
@@ -861,6 +871,7 @@ class DiscoveryService:
         import pandas as pd
 
         from utk_curio.backend.app.discovery.application import cache_collection
+        from utk_curio.sandbox.util.collections import DRAWN
 
         item, manifest = self.collection(dataset_id)
         block = item.get("collection") or {}
@@ -870,7 +881,14 @@ class DiscoveryService:
             cached, cached_bytes = total, int(block.get("totalBytes") or 0)
         else:
             cached, cached_bytes = cache_collection.cached_count(self.collection_store(item), dataset_id)
-        rows = pd.read_parquet(item["path"], columns=["file_id", "name", "kind"]).head(samples)
+        rows = pd.read_parquet(item["path"], columns=["file_id", "name", "kind"])
+        # The files the strip draws: those with a preview, so a ``files``
+        # resource's collection shows none.
+        rows = rows[rows["kind"].isin(DRAWN)].head(samples)
+        # This account's cache of it, while one runs: a page opened or
+        # reloaded meanwhile follows that job rather than offering another.
+        owner = cache_collection.running_cache(self.user_key, dataset_id)
+        cache_job = job_store.jobs.get(self.user_key, owner) if owner else None
         return {
             "datasetId": dataset_id,
             "provider": manifest.provider.type,
@@ -883,10 +901,19 @@ class DiscoveryService:
                 {"fileId": r.file_id, "name": r.name, "kind": r.kind}
                 for r in rows.itertuples(index=False)
             ],
+            "cacheJob": (
+                cache_job.to_row()
+                if cache_job is not None and cache_job.status not in job_store.TERMINAL
+                else None
+            ),
         }
 
     def start_cache(self, dataset_id: str) -> dict[str, Any]:
-        """Fetch a bucket collection's files to this machine, as a job."""
+        """Fetch a bucket collection's files to this machine, as a job.
+
+        One cache of a collection runs at a time for an account: asked again
+        while one runs, this starts nothing and answers with that one's job.
+        """
         from utk_curio.backend.app.discovery.application import cache_collection
         from utk_curio.backend.app.discovery.domain.errors import CapabilityUnsupported
 
@@ -894,8 +921,17 @@ class DiscoveryService:
         # A folder's files and a service's downloaded images are local already.
         if manifest.provider.type == "folder" or manifest.is_service:
             raise CapabilityUnsupported(f"{item['title']} is already on this machine")
-        ratelimit.download_slots.acquire(self.user_key)
-        job = job_store.jobs.create(self.user_key, manifest.dir_name, f"cache:{dataset_id}")
+
+        def _new_job() -> str:
+            ratelimit.download_slots.acquire(self.user_key)
+            return job_store.jobs.create(self.user_key, manifest.dir_name, f"cache:{dataset_id}").job_id
+
+        owner, started = cache_collection.claim(self.user_key, dataset_id, _new_job)
+        job = job_store.jobs.get(self.user_key, owner)
+        if not started:
+            if job is None:
+                raise cache_collection.CacheRunning(f"{item['title']} is being cached already")
+            return job.to_row()
         app = current_app._get_current_object()
         user_id = getattr(self.user, "id", None)
         user_key, transport, budget = self.user_key, self._transport, self._budget
@@ -919,9 +955,11 @@ class DiscoveryService:
                         user_key,
                         item,
                         worker._storage_for(manifest),
+                        owner=owner,
                         items=_items,
                         progress=_progress,
                         cancelled=lambda: job.cancelled,
+                        describe=lambda fields: worker._describe_collection(item, fields),
                     )
                     job_store.jobs.finish(
                         job, "completed", dataset=item, dataset_id=dataset_id,
@@ -943,8 +981,17 @@ class DiscoveryService:
                     )
                 finally:
                     ratelimit.download_slots.release(user_key)
+                    cache_collection.release(user_key, dataset_id, owner)
 
-        return _start(job, _run, user_key)
+        running = False
+        try:
+            row = _start(job, _run, user_key)
+            running = True
+            return row
+        finally:
+            if not running:
+                # No worker, so the collection is free for the next cache.
+                cache_collection.release(user_key, dataset_id, owner)
 
     def get_job(self, job_id: str) -> dict[str, Any]:
         job = job_store.jobs.get(self.user_key, job_id)

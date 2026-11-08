@@ -495,7 +495,7 @@ def _stage_package_modules(package_modules):
 def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True,
                  dataset_paths=None, secrets=None, collections=None, media_dir=None, models=None,
                  dataset_formats=None, package_modules=None, input_slots=None, saved_paths=None,
-                 imports_session=None):
+                 imports_session=None, model_weights=None):
     """
     Execute user code in-process using pre-loaded library globals.
 
@@ -532,6 +532,9 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 it derives.
 
     models:     {modelId: folder} for the code's curio_load_model("<id>") calls.
+
+    model_weights: {modelId: folder} for the models whose weights their
+                operator fetched under --model-weights-dir, read where they are.
 
     package_modules: {"root", "names"}, or a list of them: the modules the
                 node's package ships beside its templates, and those of the
@@ -608,6 +611,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                     collections=collections,
                     media_dir=media_dir,
                     models=models,
+                    model_weights=model_weights,
                     output_dir=str(output_files.run_output_dir(art_id)),
                 )
                 # Code that still reads `arg` or `input`, or holds a chip spelled

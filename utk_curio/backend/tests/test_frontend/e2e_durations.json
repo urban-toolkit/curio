@@ -111,7 +111,7 @@
  "tests.test_frontend.test_catalog_destructive_confirms_e2e::test_publishing_is_not_a_canvas_drawer_action[chromium]": 9.8,
  "tests.test_frontend.test_catalog_destructive_confirms_e2e::test_removing_a_dataset_from_the_dataflow_asks_first[chromium]": 10.6,
  "tests.test_frontend.test_catalog_destructive_confirms_e2e::test_removing_a_dataset_names_every_dataflow_whose_code_alone_loads_it[chromium]": 6.3,
- "tests.test_frontend.test_catalog_destructive_confirms_e2e::test_removing_a_package_says_it_reaches_the_shared_environment[chromium]": 5.7,
+ "tests.test_frontend.test_catalog_destructive_confirms_e2e::test_removing_a_package_says_what_leaves_with_it[chromium]": 5.7,
  "tests.test_frontend.test_catalog_destructive_confirms_e2e::test_the_catalog_pages_use_one_button_vocabulary[chromium]": 9.8,
  "tests.test_frontend.test_catalog_destructive_confirms_e2e::test_uploading_a_file_then_deleting_it_warns_about_every_dataflow[chromium]": 10.1,
  "tests.test_frontend.test_catalog_detail_export_e2e::test_a_builtin_agent_exports_from_view_details[chromium]": 2.6,

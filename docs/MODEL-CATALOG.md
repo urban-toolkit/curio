@@ -30,7 +30,9 @@ model.curio.ddrnet23-slim@1/
   models/ddrnet23_slim.data
 ```
 
-The manifest's `model` block says which runtime runs the model (**ONNX** or **Transformers**), its type (semantic segmentation: a class for every pixel; image to image: images in, an image out; or node regression: a graph in, its node features and edges, and values for each node out), the **labels** of its classes, and how an image is prepared for it. A node's code names the model it runs; a dataflow lists the model's package with the other packages it uses.
+The manifest's `model` block says which runtime runs the model (**ONNX** or **Transformers**), its type (semantic segmentation: a class for every pixel; image to image: images in, an image out; node regression: a graph in, its node features and edges, and values for each node out; or concept segmentation: text prompts as its labels, and every thing each prompt names found), the **labels** of its classes, and how an image is prepared for it. A node's code names the model it runs; a dataflow lists the model's package with the other packages it uses.
+
+Some model packages ship without their weights: their `model` block's `fetch` names the files on Hugging Face, and whoever runs Curio fetches them once with `scripts/fetch_model_weights.py` ([DEPLOYMENT.md](DEPLOYMENT.md#model-weights-a-package-fetches)).
 
 ### What ships with Curio
 
@@ -39,6 +41,7 @@ The manifest's `model` block says which runtime runs the model (**ONNX** or **Tr
 | DDRNet23-Slim (street scenes) | ONNX | The 19 Cityscapes classes: road, sidewalk, building, wall, fence, pole, traffic light, traffic sign, vegetation, terrain, sky, person, rider, car, truck, bus, train, motorcycle, bicycle | MIT; trained on Cityscapes |
 | Deep Umbra (accumulated shadows) | ONNX | None: image to image, building heights in, the share of a day in shadow out | Used with the permission of SCOUT's authors |
 | SCOUT weather GNN (weather at road nodes) | ONNX | None: node regression, a road graph's nodes and the weather at each in, five weather values at each node out | Used with the permission of SCOUT's authors |
+| SAM 3 (objects found by name) | Transformers | 35 phrases for what a camera looking at a sidewalk sees, such as curb ramp, tactile paving, pole, traffic cone and person; its node takes any short phrase | SAM License |
 
 Each package's code is MIT; its weights keep their own license.
 
@@ -47,6 +50,8 @@ DDRNet23-Slim is about 23 MB and labels a street photo in a fraction of a second
 Deep Umbra, [SCOUT](https://github.com/urban-toolkit/scout)'s shadow model, is about 10.5 MB. Its package, `model.scout.deep-umbra@1`, has the **Accumulated Shadow** node, which runs it on a raster of building heights and returns the minutes of shadow on the same grid ([example 24](examples/24-scout-shadow-model-chicago-loop.md)). A pip install downloads its weights from GitHub the first time a node runs it ([Installation from pip](USAGE.md#installation-from-pip)). The package is read-only, depends on `onnxruntime`, `rasterio`, `numpy` and `pyproj`, and is installed when Curio starts with `--with-examples`. See its [README](../packages/model.scout.deep-umbra@1/README.md).
 
 The weather GNN, SCOUT's weather graph network, is about 52 KB. Its package, `model.scout.weather-gnn@1`, has the **Weather Routing** node, which runs it on the road graph it builds from a roads layer, to weigh each road by the weather the network predicts on it from the WRF forecast in the Data Catalog, before routing ([the chicago-rain-wind-routing test dataflow](examples/dataflows/chicago-rain-wind-routing.json)). The package is read-only, depends on `osmnx`, `networkx`, `netCDF4`, `scipy`, `scikit-learn`, `onnxruntime`, `geopandas`, `numpy`, `pandas` and `shapely`, and is installed when Curio starts with `--with-examples`. See its [README](../packages/model.scout.weather-gnn@1/README.md).
+
+SAM 3, Meta's Segment Anything Model 3, finds every object a short phrase names and follows each one from frame to frame of a video. Its weights are 3.4 GB and Meta gates them on Hugging Face, so neither git nor the pip package holds them: whoever runs Curio fetches them once, with `python scripts/fetch_model_weights.py model.curio.sam3` ([DEPLOYMENT.md](DEPLOYMENT.md#model-weights-a-package-fetches)). Its package, `model.curio.sam3@1`, has the **Track Objects** node, which follows what its `LABELS` name through each video of a collection, one frame every `EVERY_SECONDS`, on the GPU when the machine has one, and returns each video's overlay, which Simple View plays, how many objects of each label it followed, and a table of their tracks. Its code tab holds those settings and one call of `track_objects`, the function of the package's module `sam3_tracking`. The package is read-only and depends on `transformers` 5, `safetensors`, `torch` and `torchvision`; Curio's images hold the last two, built for CUDA, so adding it there installs neither. See its [README](../packages/model.curio.sam3@1/README.md).
 
 ### Storage layers
 
@@ -72,7 +77,7 @@ An agent writes only models your store holds into a node, and asks you to add an
 - **The `/catalog/models` page**, reached from **Model Catalog** in the top bar, works on your whole account: a model added here goes into every project you have and every new one. Search with **Search models…**, sort, and filter in the left rail by **All models**, **In all projects**, **By type** or **By runtime**. Each card shows the runtime, the type, the label count, the size and the weights' license. Click a card to describe it in the right-hand drawer, which offers **Add to all projects** (or **Update all projects**), **Publish** or **Unpublish** for a model of your own, **Remove from account** for a model of your own that no dataflow uses, and **View details**. **Import package** is in the header, and `/catalog/models/<id>` opens the page with that model's details.
 - **The Model Catalog dropdown**, in the left Tools panel, holds the models already added to this dataflow, under **Models in project** with their count, as cards to drag onto the canvas or a node. **Browse Model Catalog +** opens the drawer for the others.
 
-**View details** opens the same details window as a node package's. For a model it starts with a **Model** section: **Type**, **Runtime**, **Input size**, **Labels**, **Size**, **Weights license** (with **View license** when the package ships its text), **Weights publisher**, **Homepage**, **Node** (the node a drop on the canvas creates), and **Weights**: *Downloads on first use* for weights a pip install left out that no node has fetched yet. Then come the labels, **Downloaded from** (the Discovery Catalog source, linked) for a model you downloaded, **Package info** (**Identifier**, **Version**, **Category**, **Publisher**, **Code license**, **Channel**, **Nodes**, **In all projects**, **In the catalog**), **Nodes in this package**, **Modules** (the Python modules the package ships, such as Deep Umbra's `deep_umbra`), **Permissions** and **Dependencies**. **Export** is in the header.
+**View details** opens the same details window as a node package's. For a model it starts with a **Model** section: **Type**, **Runtime**, **Input size**, **Labels**, **Size**, **Weights license** (with **View license** when the package ships its text), **Weights publisher**, **Homepage**, **Node** (the node a drop on the canvas creates), and **Weights**: *Downloads on first use* for weights a pip install left out that no node has fetched yet, and *Not on this Curio* for weights whoever runs Curio has not fetched yet, naming the command that fetches them. Then come the labels, **Downloaded from** (the Discovery Catalog source, linked) for a model you downloaded, **Package info** (**Identifier**, **Version**, **Category**, **Publisher**, **Code license**, **Channel**, **Nodes**, **In all projects**, **In the catalog**), **Nodes in this package**, **Modules** (the Python modules the package ships, such as Deep Umbra's `deep_umbra`), **Permissions** and **Dependencies**. **Export** is in the header.
 
 ### Action matrix
 
@@ -83,14 +88,14 @@ An agent writes only models your store holds into a node, and asks you to add an
 | **Add to project** | Drawer | This dataflow's lockfile, plus your package store if the model is not there yet | A review first, listing the model's permissions, its libraries and the packages it needs. The model joins the **In project** tab. When the add changes a library under the running Curio, the drawer says to restart Curio to pick it up. |
 | **Add to all projects** | `/catalog/models` | Your defaults and every project's lockfile, plus your package store | The same review first. The model is in every project, and new projects start with it. |
 | **Update** (drawer), **Update all projects** (`/catalog/models`) | Shown when the shared catalog has a higher version than your copy | Your store copy, replaced by the catalog's version | Every project that uses the model gets the new version. |
-| **Remove from project** | Drawer | This dataflow's lockfile; when no other dataflow uses the model, also your store copy, your defaults entry and its Python libraries | A confirmation first, which names every dataflow whose nodes load the model in their code alone, this one included: that code stays as it is, and fails once the model leaves your account. Then the model leaves the **In project** tab. Refused while the model's node is on the canvas, or a node the model was dropped onto. |
+| **Remove from project** | Drawer | This dataflow's lockfile; when no other dataflow uses the model, also your store copy and your defaults entry, and Python libraries Curio installed for it alone may be uninstalled from your environment | A confirmation first, which names every dataflow whose nodes load the model in their code alone, this one included: that code stays as it is, and fails once the model leaves your account. Then the model leaves the **In project** tab. Refused while the model's node is on the canvas, or a node the model was dropped onto. |
 | **Remove from account** | The `/catalog/models` right-hand drawer, for a model of your own that no dataflow uses | Your store copy, weights included, and your defaults entry | A confirmation first, then the model leaves your account. |
 | **Import package** | The drawer's footer, or the `/catalog/models` header | Your package store; from the drawer, this dataflow's lockfile too | The model from a `.curio.zip` archive, weights included. |
-| **Export** | The details | Nothing | The model's package saved as `<packageId>@<major>.curio.zip`, weights included. |
-| **Publish**, **Unpublish** | The `/catalog/models` right-hand drawer, for a model of your own | The shared catalog | **Publish** lets every user on this install browse and add the model; **Unpublish** takes it out. Both are hidden when the operator turns publishing off. |
+| **Export** | The details | Nothing | The model's package saved as `<packageId>@<major>.curio.zip`, weights included. Refused for a model whose weights Curio fetches, with a message saying why. |
+| **Publish**, **Unpublish** | The `/catalog/models` right-hand drawer, for a model of your own | The shared catalog | **Publish** lets every user on this install browse and add the model; **Unpublish** takes it out. Both are hidden when the operator turns publishing off. **Publish** is refused for a model whose weights Curio fetches. |
 | **Drag onto a node** | The **Model Catalog** dropdown or the canvas drawer | The node's code | The node's `curio_load_model(...)` line names the model, and the node keeps the model in the dataflow. Only a model of the type the node runs goes in: another type is refused, with a message naming both, and so is a drop when the node's type or the model's is unknown, with a message saying which. A node whose code calls no `curio_load_model` says *This node does not run a model*. |
-| **Drag onto the canvas** | The **Model Catalog** dropdown or the canvas drawer | The dataflow; what **Add to project** changes, when the dataflow does not have the model yet | The model's node where you drop it (**Image Segmentation** for DDRNet23-Slim, **Accumulated Shadow** for Deep Umbra, **Weather Routing** for the weather GNN), its `curio_load_model(...)` line naming the model. When the dataflow does not have the model, the review of **Add to project** comes first, and the node appears once the model and its libraries are installed; **Cancel** adds no node. On a hosted deployment, a guest's drop of a model the dataflow does not have is refused. |
-| **Save as package node** | A node's **Node settings**, for a node whose code loads one of your models | Your package store and this dataflow's lockfile | A new model package holding a copy of the model's weights, in the Model Catalog. The node becomes its node, and names the new package's id. |
+| **Drag onto the canvas** | The **Model Catalog** dropdown or the canvas drawer | The dataflow; what **Add to project** changes, when the dataflow does not have the model yet | The model's node where you drop it (**Image Segmentation** for DDRNet23-Slim, **Accumulated Shadow** for Deep Umbra, **Weather Routing** for the weather GNN, **Track Objects** for SAM 3), its `curio_load_model(...)` line naming the model. When the dataflow does not have the model, the review of **Add to project** comes first, and the node appears once the model and its libraries are installed; **Cancel** adds no node. On a hosted deployment, a guest's drop of a model the dataflow does not have is refused. |
+| **Save as package node** | A node's **Node settings**, for a node whose code loads one of your models | Your package store and this dataflow's lockfile | A new model package holding a copy of the model's weights, in the Model Catalog. The node becomes its node, and names the new package's id. Refused for a node that loads a model whose weights Curio fetches. |
 | **Add to Model Catalog** | A **Hugging Face models** row, in the Discovery Catalog | Your Model Catalog gains a model | A progress bar, then *"Added `<name>` to your Model Catalog."* with **View model**. |
 
 ### Workflows
@@ -103,7 +108,7 @@ An agent writes only models your store holds into a node, and asks you to add an
 
 **A node says a model is not one of your models.** The node names a model whose package is not in your store, for example in a dataflow someone shared with you. Add that model (**Add to project** in the drawer, or **Import package** with an archive of it), or drag one of yours onto the node.
 
-**I want to remove a model.** Open each dataflow that has it and use **Remove from project** in the Model Catalog drawer. When you remove it from the last one, Curio deletes it from your account, drops it from your defaults and uninstalls its Python libraries.
+**I want to remove a model.** Open each dataflow that has it and use **Remove from project** in the Model Catalog drawer. When you remove it from the last one, Curio deletes it from your account and drops it from your defaults, and Python libraries it installed for the model alone may be uninstalled. Libraries that were already installed stay.
 
 **I edit someone else's dataflow and want to use a model of mine.** On a dataflow whose owner invited you to edit it ([Collaboration](COLLABORATION.md#who-edits-owner-editors-and-watchers)), a model reaches the dataflow through the owner's review, as a package does ([Node Catalog](NODE-CATALOG.md#workflows)). **Add to project** in the drawer, a card dropped on the canvas, which makes its node at once, and a model dropped on a node each ask the owner to add it, and the node reads **WAITING** until the owner reviews it. The owner's Model Catalog drawer lists your request under **Waiting for review**; **Apply** copies the model into the owner's Model Catalog with its weights, installs its libraries there and adds it to the dataflow, and your runs then load the owner's copy.
 
@@ -137,6 +142,10 @@ Dragging a model onto a node rewrites the id in its first `curio_load_model(...)
 
 An image-to-image or node-regression model is run by the node made for it, which prepares the model's inputs itself and calls `model.run({input name: array})`; it returns the graph's outputs in order. **Accumulated Shadow** runs Deep Umbra this way, one map tile at a time, and **Weather Routing** runs the weather GNN on its road graph's node features and edges. A model package whose node ships no code of its own opens with a `model.run` skeleton that names each array the model's graph takes. `curio_segment` refuses these models.
 
+A concept segmentation model is run by the node its package ships, whose code, or the package's module it calls, loads the checkpoint at `model.path` with the library its package declares and finds what each prompt names; the model's labels are the prompts it ships with. Each template of such a package names its `source`. **Track Objects** runs SAM 3 this way: its code hands the model to `track_objects` of the package's module `sam3_tracking`, which loads it with Transformers' `Sam3VideoModel`. `curio_segment` refuses these models as well.
+
+A model whose weights Curio fetches stops its node when they are not on this Curio yet: *The weights of model '`<id>`' are not on this Curio. Whoever runs this Curio fetches them once, with: python scripts/fetch_model_weights.py `<id>`*.
+
 ---
 
 ## 4. Runtimes and libraries
@@ -144,7 +153,7 @@ An image-to-image or node-regression model is run by the node made for it, which
 | Runtime | What runs it | Libraries |
 |---|---|---|
 | **ONNX** | `onnxruntime`, on the CPU | `onnxruntime`, installed when you add the model. |
-| **Transformers** | Hugging Face Transformers, on the CPU | `torch`, `transformers` and `safetensors`, installed when you add the model. |
+| **Transformers** | Hugging Face Transformers, on the CPU; a node that loads the model itself, as Track Objects does, picks its device | `torch`, `transformers` and `safetensors` (SAM 3 adds `torchvision`), installed when you add the model; Curio's images already hold torch and torchvision. |
 
 A model's libraries install the way a node package's do. When they do not install, the model is still added, and the message says why; the node then says what to install when it runs. An account that may not install libraries cannot add a model.
 
@@ -157,6 +166,8 @@ A node reads its model from your store and needs no network to run it.
 A model ships with the deployment, or you add one from the Discovery Catalog's **Hugging Face models**, or import a model package's archive with **Import package**: from the drawer's footer it joins your account and the open dataflow, from the `/catalog/models` header your account only. A model you add is yours: every dataflow you open can run it, and other users on the install see it once you publish it.
 
 **Export**, in a model's details, saves its package as `<packageId>@<major>.curio.zip`, weights included, which **Import package** reads in any Curio. **Publish**, in the `/catalog/models` right-hand drawer, puts a model of your own in the shared catalog, where every user on this install can browse and add it, and **Unpublish** takes it out. Both are hidden when the operator turns publishing off ([NODE-CATALOG.md, Operator notes](NODE-CATALOG.md#operator-notes)).
+
+**Export**, **Publish** and **Save as package node** refuse a model whose weights Curio fetches, with a message saying why: each Curio fetches them for itself.
 
 A dataflow names its models by id, and lists their packages. Someone you share it with runs a shipped model once opening the dataflow has added its package. A model of your own keeps its id through **Export** and **Import package**, so send them its archive, or publish it for them to add; else they drag a model of their own onto the node.
 
@@ -172,24 +183,27 @@ A model package's `manifest.json` is a node package's ([NODE-CATALOG.md](NODE-CA
 |---|---|---|
 | `kind` | Yes | `model`. |
 | `id`, `name`, `version`, `compatibility.major`, `publisher`, `license`, `templates` | Yes | As every node package declares them. `license` is the license of the package's code; `id` is the id a node loads the model by. |
-| `model.type` | Yes | `semantic-segmentation`, `image-to-image` or `node-regression`. |
+| `model.type` | Yes | `semantic-segmentation`, `image-to-image`, `node-regression` or `concept-segmentation`. |
 | `model.runtime` | Yes | `onnx` or `transformers`. |
 | `model.entry` | Yes | For `onnx`, the graph file; for `transformers`, the folder of the checkpoint. A path under `models/`. |
-| `model.labels` | | The classes, in the order the model numbers them. An `image-to-image` or `node-regression` model has none. |
+| `model.labels` | | The classes, in the order the model numbers them, or a `concept-segmentation` model's text prompts. An `image-to-image` or `node-regression` model has none. |
+| `model.fetch` | | Weights the package ships without, which whoever runs Curio fetches with `scripts/fetch_model_weights.py` into the entry folder, a `transformers` checkpoint directly under `models/`, such as `models/checkpoint`: `huggingface`, the repository, `<owner>/<name>`; `revision`, the full 40-digit hash of the commit the files are read at; and `files`, each file to fetch by its `path` in the repository, with the digest Hugging Face's model API lists for it: `sha256` for a file stored with Git LFS, `gitSha1` for any other. List the files the runtime reads, not the whole repository. Git, the Docker image and the pip package leave the entry folder out, and so does `integrity.json`. |
 | `model.input` | For an `onnx` image model | A `node-regression` model reads a graph of any size and has none. How an image is prepared: `width` and `height` (8 to 8192 pixels), `dtype` (`uint8` or `float32`), `layout` (`NCHW`, or `NHWC` for an `image-to-image` model), `scale`, and an optional `mean` and `std` of three numbers each. |
 | `model.license`, `model.licenseFile` | `model.license` | The weights' license, and the file in the package that holds its text. |
 | `model.publisher`, `model.homepage`, `model.sizeBytes` | | Who published the weights, where they are described, and their size. Shown on the card and in the details. |
-| `downloadOnFirstUse` | | For a model package that ships with Curio: the weights the pip package leaves out, by their paths under `models/`, such as the `.onnx` file and an external-data file beside it, or the checkpoint's folder, which covers every file in it. A pip install downloads them from GitHub the first time a node loads the model. A node package has none. |
-| `dataflowCategories` | | The tags and data types a dataflow is filed under on the **Projects** page when it has a node of the package or loads the model with `curio_load_model`, as in a node package ([NODE-CATALOG.md](NODE-CATALOG.md#6-the-manifest)). A `semantic-segmentation` model puts the dataflow under Computer vision and Imagery without declaring them. |
+| `downloadOnFirstUse` | | For a model package that ships with Curio: the weights the pip package leaves out, by their paths under `models/`, such as the `.onnx` file and an external-data file beside it, or the checkpoint's folder, which covers every file in it. A pip install downloads them from GitHub the first time a node loads the model. A node package has none, nor does a model package with `model.fetch`. |
+| `dataflowCategories` | | The tags and data types a dataflow is filed under on the **Projects** page when it has a node of the package or loads the model with `curio_load_model`, as in a node package ([NODE-CATALOG.md](NODE-CATALOG.md#6-the-manifest)). A `semantic-segmentation` or `concept-segmentation` model puts the dataflow under Computer vision and Imagery without declaring them. |
 | `dependencies.packages` | | The packages the model's node needs, named as a node package names them ([NODE-CATALOG.md](NODE-CATALOG.md#6-the-manifest)). Adding the model adds them too, and the packages they name in turn, and its node can import the Python modules they ship. A model whose needed package is in neither your account nor the catalog is not added, and the message names that package. |
 
-A template with no `source` opens with the cell Curio writes for the model's type.
+A template with no `source` opens with the cell Curio writes for the model's type. A `concept-segmentation` model has no such cell: each of its templates names its `source`, and a manifest whose template does not is refused.
 
 ---
 
 ## Operator notes
 
-**Shipping a model.** Add its model package to `packages/` and restart; `--packages-root` moves that folder. The Docker image bakes `packages/` in. A model there must be one Curio may redistribute, with the weights' license in the package.
+**Shipping a model.** Add its model package to `packages/` and restart; `--packages-root` moves that folder. The Docker image bakes `packages/` in. A model there must be one Curio may redistribute, with the weights' license in the package; weights in git are files directly in `models/`.
+
+**A model whose weights Curio fetches.** Run `scripts/fetch_model_weights.py <package id>` once on the machine that runs Curio, as [DEPLOYMENT.md](DEPLOYMENT.md#model-weights-a-package-fetches) says; `--model-weights-dir` names a folder of their own.
 
 ---
 

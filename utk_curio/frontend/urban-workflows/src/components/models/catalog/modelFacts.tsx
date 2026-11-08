@@ -62,14 +62,25 @@ export function modelMetaLine(pkg: ModelPackage): string {
   return [modelRuntimeLabel(pkg), kind, modelSizeLabel(pkg)].filter(Boolean).join(" · ");
 }
 
+/** What the details say of weights that are not on this Curio yet: a pip
+ *  install downloads them on a node's first run, and weights a package's
+ *  operator fetches wait for the fetch. */
+export function modelWeightsNote(pkg: ModelPackage): string | null {
+  if (pkg.model.weightsNotFetched) {
+    return `Not on this Curio: whoever runs it fetches them with scripts/fetch_model_weights.py ${pkg.packageId}`;
+  }
+  return pkg.model.downloadsOnFirstUse ? "Downloads on first use" : null;
+}
+
 /** The model's rows for the details: how its weights run, the code's license
  *  (the package's) beside the weights' license, the weights' publisher and
  *  homepage, the node a drop creates, and whether the weights download on
- *  first use. */
+ *  first use or wait to be fetched. */
 export function modelInfoRows(pkg: ModelPackage, weightsLicense?: React.ReactNode): ModelFact[] {
   const input = modelInputLabel(pkg);
   const size = modelSizeLabel(pkg);
   const node = modelNodeLabel(pkg);
+  const weights = modelWeightsNote(pkg);
   const rows: (ModelFact | null)[] = [
     { label: "Type", value: modelTypeLabel(pkg) },
     { label: "Runtime", value: modelRuntimeLabel(pkg) },
@@ -90,7 +101,7 @@ export function modelInfoRows(pkg: ModelPackage, weightsLicense?: React.ReactNod
         }
       : null,
     node ? { label: "Node", value: node } : null,
-    pkg.model.downloadsOnFirstUse ? { label: "Weights", value: "Downloads on first use" } : null,
+    weights ? { label: "Weights", value: weights } : null,
   ];
   return rows.filter((row): row is ModelFact => row != null);
 }

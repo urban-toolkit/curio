@@ -215,24 +215,45 @@ def test_map_edits_names_no_what_differs(builtin_package_dir: Path):
 BUILTIN_STARTERS = {
     "data-loading": "sources/data-loading.py",
     "data-export": "sources/data-export.py",
+    "data-summary": "sources/data-summary.py",
 }
 
 
-def test_only_data_loading_and_data_export_ship_a_starter(builtin_package_dir: Path):
+def test_only_data_loading_data_export_and_data_summary_ship_a_starter(builtin_package_dir: Path):
     """Data Loading opens with the code that loads what its Data widget holds,
-    and Data Export with the code that writes its input to the file its File
-    name widget names; every other built-in template opens empty, and ships no
-    starter file."""
+    Data Export with the code that writes its input to the file its File name
+    widget names, and Data Summary with the code that summarizes its input, as
+    a starter file each, so the code a node runs is in the package and not in
+    the canvas's own code. Every other built-in template opens empty, and
+    ships no starter file."""
     manifest = load_package_manifest(builtin_package_dir)
     for template in manifest.templates:
         assert template.source == BUILTIN_STARTERS.get(template.template_id), (
             f"built-in template {template.template_id} declares source {template.source!r}"
         )
     shipped = sorted(p.name for p in (builtin_package_dir / "sources").iterdir())
-    assert shipped == ["data-export.py", "data-loading.py"], shipped
+    assert shipped == ["data-export.py", "data-loading.py", "data-summary.py"], shipped
     assert (builtin_package_dir / "sources" / "data-export.py").read_text(encoding="utf-8") == (
         "return curio_export(input_0, [!! file_name !!], part=[!! part !!])\n"
     )
+    summary = (builtin_package_dir / "sources" / "data-summary.py").read_text(encoding="utf-8")
+    for line in ('"shape": {"rows": int(df.shape[0]), "columns": int(df.shape[1])},',
+                 '"dtypes": df.dtypes.astype(str).to_dict(),',
+                 '"missing": df.isnull().sum().to_dict(),',
+                 '"describe": df.describe(include="all").fillna("").to_dict(),'):
+        assert line in summary, line
+    assert summary.endswith("return summary\n")
+
+
+def test_data_summarys_code_lives_only_in_its_starter():
+    """The canvas holds no copy of Data Summary's code: its behavior opens the
+    node with the template's starter, as every built-in template that ships
+    one does."""
+    behavior = REAL_CATALOG.parent / "utk_curio" / "frontend" / "urban-workflows" / "src" / "adapters" / "node" / (
+        "dataSummaryBehavior.tsx"
+    )
+    text = behavior.read_text(encoding="utf-8")
+    assert "describe(include=" not in text and "DEFAULT_CODE" not in text
 
 
 def test_data_export_is_a_python_code_node_that_opens_on_its_file_name(builtin_package_dir: Path):

@@ -187,24 +187,25 @@ A node tied to a dataset shows a pill on its title bar: **DATASET** when it read
 
 ### Collections
 
-A **collection** is a dataset made of many files that stay where they are: a folder of orthoimagery, video frames, photos and videos, or audio recordings, added from a storage source in the [Discovery Catalog](DISCOVERY-CATALOG.md). Its data file is an index with one row per file. `curio_load_collection("<datasetId>")` returns those rows with a way to reach each file:
+A **collection** is a dataset made of many files that stay where they are: a folder of orthoimagery, video frames, photos and videos, audio recordings, or files of any type, added from a storage source in the [Discovery Catalog](DISCOVERY-CATALOG.md). Its data file is an index with one row per file. `curio_load_collection("<datasetId>")` returns those rows with a way to reach each file:
 
 | Column | Holds |
 |---|---|
 | `file_id`, `relpath`, `name`, `ext`, `bytes` | Which file the row is. |
-| `kind` | `image`, `frame`, `video`, `audio`, or `raster`. |
+| `kind` | `image`, `frame`, `video`, `audio`, `raster`, or `file` for a `files` resource's file of any type. |
 | The path fields | One column per field of the source's path template, such as `year`, `sensor` or `sequence`. |
 | `path` | Where this execution can open the file. For a bucket's collection it is empty until **Cache files** has run. |
 | `thumbnail`, `image_url`, `audio_url` | Addresses **Simple View** draws and plays. |
 | Images and frames | `width`, `height`, `taken_at`, and `gps_lat` and `gps_lon` when the file carries them. Frames also have `sequence`, `frame` and `t_s`: `frame` over the resource's `fps`, empty when it declares none. Frames come in sequence and frame order. |
-| Videos | `duration_s`, `fps`, `codec`, `width`, `height`. |
-| Audio | `recorded_at`, `duration_s`, `sample_rate`, `channels`, `codec`. |
+| Videos | `duration_s`, `fps`, `codec`, `width`, `height`; from a bucket, once **Cache files** has copied the file. |
+| Audio | `recorded_at`, `duration_s`, `sample_rate`, `channels`, `codec`; from a bucket, once **Cache files** has copied the file. |
 | Rasters | `crs`, `transform`, `res`, `width`, `height`, `bands`, `dtype`, `nodata`, and the footprint as geometry. |
+| Files | Nothing read from the file, and no `thumbnail`, `image_url` or `audio_url`: node code opens it from `path`, as `json.load(open(row["path"]))` for a JSON file. |
 | `probe_error` | Why a file could not be read, on a row that is kept anyway. |
 
-Rows with a position, and rasters, come back as a GeoDataFrame, so a map node draws them. **Simple View** shows the rows as cards, a page at a time; a video or a recording has a **Play** button in its card. The `curio.media` package adds **Sample Video Frames**, **Split Audio** and **Mosaic Rasters**, which take these rows: see its [README](../packages/curio.media@1/README.md).
+Rows with a position, and rasters, come back as a GeoDataFrame, so a map node draws them. **Simple View** shows the rows as cards, a page at a time; a video or a recording has a **Play** button in its card, and so has a video a node made from one ([`curio_derived_file`](../skills/node-functions/SKILL.md)). The `curio.media` package adds **Sample Video Frames**, **Split Audio** and **Mosaic Rasters**, which take these rows: see its [README](../packages/curio.media@1/README.md).
 
-A collection's details have a **Collection** section: its kind, **Indexed from** its source and resource, how many files of each kind it holds, their total size, what its **Path fields** cover, the **Coverage** of its footprints or positions, its rasters' **Raster CRS**, and, for frames and audio, its sequences or total duration. A bucket's collection says how many of its files are **On this machine**, and offers **Cache files**.
+A collection's details have a **Collection** section: its kind, **Indexed from** its source and resource, how many files of each kind it holds, their total size, what its **Path fields** cover, the **Coverage** of its footprints or positions, its rasters' **Raster CRS**, and, for frames and audio, its sequences or total duration. A bucket's collection says how many of its files are **On this machine**, and offers **Cache files**. One cache of a collection runs at a time: while it runs, its details show its progress, also after a reload, and offer no second one.
 
 ---
 
@@ -397,7 +398,7 @@ Only the dataset's publisher may unpublish or delete it.
 | `createdAt` / `updatedAt` | | ISO timestamps for the Curio *record*. |
 | `sourceUpdatedAt` | | Last-modified date of the *original file* at import time. |
 | `discoverySource` | | Where a Discovery Catalog download came from: the source (`sourceId`, `sourceName`), `resourceId`, `resourceUrl`, `finalUrl`, `fetchedAt`, and the bytes' `contentSha256`. A download narrowed by its answers, such as an area, records them as `parameters`, with their `parametersHash`. From a storage source: `sourcePath` for one file, `fileCount` and `fields` for several, and `narrowed` when only some of a row's files were added. A file downloaded by hand from a Dataset Finder row records its link as `resourceUrl`, `fetchedAt`, `contentSha256` and `manual: true`. See [DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md). |
-| `collection` | For `collection` | The source and resource its files belong to (`sourceId`, `resource`, `resourceId`, `path`), its `kind` (`rasters`, `frames`, `images`, `videos`, `media` or `audio`), the path `fields`, `counts` per kind, `fileCount`, `totalBytes`, `hasGps`, when it was indexed, and what an add narrowed it to. |
+| `collection` | For `collection` | The source and resource its files belong to (`sourceId`, `resource`, `resourceId`, `path`), its `kind` (`rasters`, `frames`, `images`, `videos`, `media`, `audio` or `files`), the path `fields`, `counts` per kind, `fileCount`, `totalBytes`, `hasGps`, when it was indexed, and what an add narrowed it to. |
 | `featureCount` / `rowCount` | | Counts for geo and tabular data. |
 | `schema` | | Object describing the fields; inferred from a preview when absent. |
 | `groupId` / `layerName` | | Multi-layer imports: every layer of one import shares a `groupId`. NetCDF variables stored a file each share one that starts with `netcdf.`, and each names its variable as `layerName`. |

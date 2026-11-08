@@ -164,6 +164,48 @@ export function importedModelPackage(over: Record<string, unknown> = {}): Packag
   });
 }
 
+/** A concept segmentation model whose weights its operator fetches from
+ *  Hugging Face, which this Curio has not fetched yet: its labels are text
+ *  prompts. */
+export function fetchedModelPackage(over: Record<string, unknown> = {}): PackagePayload {
+  return row({
+    packageId: "model.test.prompted",
+    dirName: "model.test.prompted@1",
+    name: "Prompted segmenter",
+    publisher: "Test",
+    description: "Finds what each text prompt names.",
+    kind: "model",
+    readOnly: true,
+    templates: [
+      template({
+        id: "model.test.prompted/find@1",
+        templateId: "find",
+        label: "Find",
+        source: "sources/find.py",
+      }),
+    ],
+    model: {
+      type: "concept-segmentation",
+      runtime: "transformers",
+      entry: "models/checkpoint",
+      labels: ["person", "bicycle"],
+      sizeBytes: 3_439_938_512,
+      license: "Acme's terms",
+      publisher: "Acme",
+      homepage: "https://huggingface.co/acme/tiny-prompted",
+      fetch: {
+        huggingface: "acme/tiny-prompted",
+        revision: "3c879f39826c281e95690f02c7821c4de09afae7",
+        files: [{ path: "config.json", gitSha1: "0".repeat(40) }, { path: "model.safetensors", sha256: "0".repeat(64) }],
+      },
+      downloadsOnFirstUse: false,
+      weightsNotFetched: true,
+    },
+    createdAt: "2026-11-07T00:00:00Z",
+    ...over,
+  });
+}
+
 /** A node package that ships a module of its own. */
 export function rasterizationPackage(over: Record<string, unknown> = {}): PackagePayload {
   return row({

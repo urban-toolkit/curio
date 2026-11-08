@@ -6,6 +6,7 @@ import {
   DatasetLoaderSnippet,
 } from "./datasetCatalogTypes";
 import { AUTARK_LAYER_TYPES } from "../../utils/autarkLayerTypes";
+import catalogCode from "../../contracts/catalogCode.json";
 
 type DatasetLike = DatasetCatalogItem | DatasetDragPayload;
 
@@ -28,12 +29,12 @@ function datasetPath(dataset: DatasetLike): string {
 /**
  * Dataset ids are interpolated into generated Python source, so only ids
  * matching this whitelist may appear inside a ``curio_load_data("<id>")``
- * call — an id with a quote or backslash would break out of the string
- * literal. KEEP IN SYNC with ``_SAFE_DATASET_ID_RE`` in the backend generator
- * (``backend/app/datasets/domain/catalog_item.py``) and the scan regex in
- * ``backend/app/datasets/domain/code_refs.py``.
+ * call: an id with a quote or backslash would break out of the string
+ * literal. The id is `contracts/catalogCode.json`'s, which the backend
+ * generator (``backend/app/datasets/domain/catalog_item.py``) and its scan
+ * (``backend/app/datasets/domain/code_refs.py``) read too.
  */
-const SAFE_DATASET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,199}$/;
+const SAFE_DATASET_ID_RE = new RegExp(`^${catalogCode.itemId}$`);
 
 /**
  * Every dataset id a piece of node code references through
@@ -65,7 +66,10 @@ export function datasetIdsInCode(code: unknown): string[] {
   // index) reference the dataset just as much (`DATASET_PATH_CALL_RE` matches all three).
   // The id is the first argument; options may follow it, as
   // `curio_load_data("<id>", bounds=...)`.
-  const re = /(?:curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])([A-Za-z0-9][A-Za-z0-9._@-]{0,199})\1\s*[,)]/g;
+  const re = new RegExp(
+    String.raw`(?:curio_load_data|curio_data_path|curio_load_collection)\(\s*(["'])(${catalogCode.itemId})\1\s*[,)]`,
+    "g",
+  );
   for (const match of code.matchAll(re)) {
     const id = match[2];
     if (seen.has(id)) continue;
@@ -98,30 +102,18 @@ function pathExpr(path: string): string {
   return JSON.stringify(path);
 }
 
-/** What a loader names the value `curio_load_data` returns, per format. KEEP IN
- * SYNC with `LOADED_VARIABLES` in the backend generator. */
-const LOADED_VARIABLES: Partial<Record<DatasetFormat, string>> = {
-  csv: "df",
-  parquet: "df",
-  geojson: "gdf",
-  shp: "gdf",
-  json: "data",
-  geotiff: "src",
-  bundle: "bundle",
-  onnx: "session",
-  netcdf: "ds",
-};
+/** What a loader names the value `curio_load_data` returns, per format, from
+ * the table the backend generator reads too (`contracts/catalogCode.json`). */
+const LOADED_VARIABLES: Partial<Record<DatasetFormat, string>> = catalogCode.loadedVariables;
 
 /** Formats whose loaded value stays in the node's own code: a node's output
  * cannot carry an onnxruntime session or an xarray Dataset, so their loader
- * names the value and returns nothing. KEEP IN SYNC with `KEPT_IN_CODE` in the
- * backend generator. */
-const KEPT_IN_CODE: ReadonlySet<DatasetFormat> = new Set<DatasetFormat>(["onnx", "netcdf"]);
+ * names the value and returns nothing. */
+const KEPT_IN_CODE: ReadonlySet<DatasetFormat> = new Set(catalogCode.keptInCode as DatasetFormat[]);
 
 /** The options a loader names after the id, so its node shows them: a
- * GeoTIFF's `bounds` read only the cells inside them. KEEP IN SYNC with
- * `LOADER_OPTIONS` in the backend generator. */
-const LOADER_OPTIONS: Partial<Record<DatasetFormat, string>> = { geotiff: ", bounds=None" };
+ * GeoTIFF's `bounds` read only the cells inside them. */
+const LOADER_OPTIONS: Partial<Record<DatasetFormat, string>> = catalogCode.loaderOptions;
 
 /**
  * Loader body for ``format: bundle`` datasets (multi-output node results: a

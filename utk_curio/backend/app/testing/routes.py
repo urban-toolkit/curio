@@ -284,12 +284,13 @@ def dataset_paths():
 
     Response: ``{"paths": {"<id>": "<absolute path>"}, "formats": {...},
     "collections": {...}, "mediaDir": ..., "models": {...},
-    "packageModules": ...}``: ``formats`` as
+    "modelWeights": {...}, "packageModules": ...}``: ``formats`` as
     ``/processPythonCode`` sends them for ``curio_load_data``, ``collections``
     and ``mediaDir`` as ``resolve_exec_collections`` gives them for
     ``curio_load_collection`` calls, ``models`` as ``node_exec.resolve_models_for``
-    does for ``curio_load_model`` calls, from that user's package store,
-    ``packageModules`` as
+    does for ``curio_load_model`` calls, from that user's package store, and
+    ``modelWeights`` as ``node_exec.resolve_fetched_weights_for`` does for
+    them, ``packageModules`` as
     ``node_exec.resolve_package_modules`` does for the node's package, as
     that user or the shared guest. Ids that do not resolve are simply absent,
     matching production's fail-open behaviour.
@@ -301,6 +302,7 @@ def dataset_paths():
     )
     from utk_curio.backend.app.execution.node_exec import (
         resolve_dataset_paths,
+        resolve_fetched_weights_for,
         resolve_models_for,
         resolve_package_modules,
     )
@@ -326,10 +328,11 @@ def dataset_paths():
         code, user_key, user=g.user, dataflow_id=body.get("dataflow_id"),
     )
     models = resolve_models_for(code, user_key)
+    model_weights = resolve_fetched_weights_for(code, user_key) if models else {}
     package_modules = resolve_package_modules(body.get("nodeType"), user_key, body.get("dataflow_id"))
     return jsonify({
         "paths": paths, "formats": formats, "collections": collections, "mediaDir": media_dir,
-        "models": models, "packageModules": package_modules,
+        "models": models, "modelWeights": model_weights, "packageModules": package_modules,
     }), 200
 
 

@@ -76,6 +76,26 @@ def _image_size(data: bytes):
         return image.size
 
 
+def _a_video(path) -> bytes:
+    """A second of a tiny MP4, written with PyAV as node code writes one, its
+    index at the front; returns its bytes. MPEG-4 Part 2, which every build
+    of PyAV encodes."""
+    import av
+    import numpy as np
+
+    with av.open(str(path), "w", options={"movflags": "faststart"}) as container:
+        stream = container.add_stream("mpeg4", rate=10)
+        stream.width, stream.height, stream.pix_fmt = 64, 48, "yuv420p"
+        for shade in range(0, 200, 20):
+            pixels = np.full((48, 64, 3), shade, dtype=np.uint8)
+            for packet in stream.encode(av.VideoFrame.from_ndarray(pixels, format="rgb24")):
+                container.mux(packet)
+        for packet in stream.encode():
+            container.mux(packet)
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
 class TestThumbnails:
     @pytest.mark.parametrize("resource_id, name", [
         ("survey", "IMG_0001.jpg"),
@@ -311,6 +331,133 @@ class TestDerivedFiles:
     def test_a_raster_has_no_derived_files(self, client, auth, app, shipped_root):
         dataset, index = collection(client, auth, "orthos")
         assert media(client, auth, dataset["id"], f"{index['file_id'].iloc[0]}@0").status_code == 404
+
+    def test_a_video_a_node_made_from_a_video_plays_and_seeks(self, client, auth, app, shipped_root, user_and_token):
+        """What Track Objects writes beside a collection's video: an overlay
+        MP4. Simple View plays its row as it plays the video's: it asks for a
+        signed link, then fetches the file a range at a time, and its card
+        shows the video's poster."""
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+
+        user, _token = user_and_token
+        dataset, index = collection(client, auth, "survey")
+        video_id = file_id_of(index, "clip_01.mp4")
+        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))[
+            "curio_derived_file"
+        ]
+        row = derive(dataset["id"], video_id, 0, "mp4", tag="overlay")
+        body = _a_video(row["path"])
+        whole = media(client, auth, dataset["id"], row["file_id"], "original")
+        assert whole.status_code == 200, whole.get_data(as_text=True)[:300]
+        assert whole.mimetype == "video/mp4" and whole.data == body
+        part = media(client, auth, dataset["id"], row["file_id"], "original", Range="bytes=0-99")
+        assert part.status_code == 206 and part.data == body[:100]
+        assert (part.headers.get("Accept-Ranges"), part.headers.get("Content-Range")) == (
+            "bytes", f"bytes 0-99/{len(body)}"
+        )
+        poster = media(client, auth, dataset["id"], row["file_id"], "poster")
+        for picture in (client.get(row["thumbnail"], headers=auth), poster):
+            assert picture.status_code == 200 and picture.mimetype == "image/jpeg", picture.get_data()[:300]
+        assert (row["kind"], row["dataset_id"]) == ("video", dataset["id"])
+        assert row["file_id"] == f"{video_id}@0-overlay.mp4"
+
+        link = client.post(f"/api/datasets/{dataset['id']}/media/{row['file_id']}/link", headers=auth)
+        assert link.status_code == 200, link.get_data(as_text=True)[:300]
+        seek = client.get(link.get_json()["url"], headers={"Range": f"bytes={len(body) - 50}-"})
+        assert seek.status_code == 206 and seek.data == body[-50:]
+        assert seek.headers["Content-Range"] == f"bytes {len(body) - 50}-{len(body) - 1}/{len(body)}"
+
+        # An id that names no file a node wrote is still not found: another
+        # tag, another time, the frame at this time and tag, the frame's id
+        # with an extension.
+        for missing in (f"{video_id}@0-other.mp4", f"{video_id}@500-overlay.mp4", f"{video_id}@0-overlay",
+                        f"{video_id}@0-overlay.jpg"):
+            assert media(client, auth, dataset["id"], missing, "original").status_code == 404, missing
+
+    def test_a_table_a_node_found_in_a_video_is_kept_and_never_served(
+        self, client, auth, app, shipped_root, user_and_token
+    ):
+        """Track Objects' tracks: a Parquet beside its overlay, which a later
+        node reads by its path. Its row links nothing, and the media route
+        serves none of it."""
+        import pandas as pd
+
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+
+        user, _token = user_and_token
+        dataset, index = collection(client, auth, "survey")
+        video_id = file_id_of(index, "clip_01.mp4")
+        root = media_dirs.media_work_root(str(user.id))
+        row = make_collection_helpers(None, {}, str(root))["curio_derived_file"](
+            dataset["id"], video_id, 0, "parquet", tag="overlay"
+        )
+        pd.DataFrame({"label": ["car"], "frames_seen": [12]}).to_parquet(row["path"])
+        assert row["path"] == str(root / "tables" / dataset["id"] / video_id / "0-overlay.parquet")
+        assert (row["thumbnail"], row["image_url"], row["audio_url"]) == (None, None, None)
+        assert pd.read_parquet(row["path"])["frames_seen"].tolist() == [12]
+        assert media(client, auth, dataset["id"], row["file_id"], "original").status_code == 415
+
+    def test_an_overlay_of_a_sequences_frame_is_served(self, client, auth, app, shipped_root, user_and_token):
+        """A frames collection's file (dashcam) is an image, as a photo is:
+        Image Segmentation writes its overlay as a photo's, and the route
+        serves it. It answered 404: no frame had derived files."""
+        from PIL import Image
+
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+
+        user, _token = user_and_token
+        dataset, index = collection(client, auth, "dashcam")
+        frame = file_id_of(index, "trip01_000001.jpg")
+        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))[
+            "curio_derived_file"
+        ]
+        row = derive(dataset["id"], frame, 0, "png", kind="image", tag="0a1b2c3d4e5f")
+        Image.new("RGB", (64, 48), (30, 30, 200)).save(row["path"], "PNG")
+        overlay = client.get(row["image_url"], headers=auth)
+        assert overlay.status_code == 200 and overlay.mimetype == "image/png", overlay.get_data(as_text=True)[:300]
+
+    def test_an_overlay_of_a_frame_sampled_from_a_video_is_served(
+        self, client, auth, app, shipped_root, user_and_token
+    ):
+        """Image Segmentation on Sample Video Frames' rows, whose ids name a
+        video and a time (``<videoId>@<t_ms>``): the node stopped with "not a
+        collection file". The frame's overlay is the video's, and served."""
+        from types import SimpleNamespace
+
+        import numpy as np
+        import pandas as pd
+        from PIL import Image
+
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+        from utk_curio.sandbox.util.vision import make_curio_segment
+
+        user, _token = user_and_token
+        dataset, index = collection(client, auth, "survey")
+        video_id = file_id_of(index, "clip_01.mp4")
+        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))[
+            "curio_derived_file"
+        ]
+        sampled = derive(dataset["id"], video_id, 500)
+        Image.new("RGB", (64, 48), (200, 30, 30)).save(sampled["path"], "JPEG")
+        frames = pd.DataFrame([{
+            "dataset_id": dataset["id"], "file_id": sampled["file_id"], "kind": "frame", "path": sampled["path"],
+        }])
+
+        class Road:
+            labels = ["road", "sky"]
+
+            def __call__(self, image):
+                return np.zeros((image.height, image.width))
+
+        model = SimpleNamespace(id="model.test.road@1", manifest={}, runner=Road())
+        url = make_curio_segment(derive)(frames, model)["overlay_url"].iloc[0]
+        overlay = client.get(url, headers=auth)
+        assert overlay.status_code == 200 and overlay.mimetype == "image/png", overlay.get_data(as_text=True)[:300]
+        assert url.startswith(f"/api/datasets/{dataset['id']}/media/{video_id}@500-")
 
 
 class TestExecutionResolution:

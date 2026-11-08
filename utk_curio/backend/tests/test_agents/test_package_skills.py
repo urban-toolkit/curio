@@ -65,6 +65,8 @@ RASTERIZATION_SKILL = RASTERIZATION_DIR / "skills" / "rasterization"
 VEGA_LITE = "curio.vega-lite@1"
 VEGA_LITE_DIR = REPO_ROOT / "packages" / VEGA_LITE
 VEGA_LITE_SKILL = VEGA_LITE_DIR / "skills" / "vega-lite-charts"
+SAM3 = "model.curio.sam3@1"
+SAM3_SKILL = REPO_ROOT / "packages" / SAM3 / "skills" / "sam3-tracking"
 #: The two packages, in the order the shipped dataflows that use both list them.
 PACKAGES = [RASTERIZATION, VEGA_LITE]
 CALC = "curio.rasterization/raster-calculator"
@@ -404,10 +406,10 @@ def test_every_skill_a_shipped_package_ships_serves_its_own_templates_by_names_t
     use it, and names what it serves by names the code knows: templates of
     its own package, behaviors Curio's templates declare, and features
     ``skill_runs`` reads. Rasterization's serves every Rasterization
-    template, and the Vega-Lite package's every chart of its own, and neither
-    a behavior, since their templates' behaviors are those of Curio's Python
-    and Vega-Lite nodes; a package's skill holds no marker, since it is read
-    as written."""
+    template, the Vega-Lite package's every chart of its own, and SAM 3's its
+    Track Objects, and none a behavior, since their templates' behaviors are
+    those of Curio's Python and Vega-Lite nodes; a package's skill holds no
+    marker, since it is read as written."""
     from utk_curio.backend.app.agents.domain import skills
     from utk_curio.backend.app.packages.repositories.skills import skill_folders
 
@@ -432,8 +434,9 @@ def test_every_skill_a_shipped_package_ships_serves_its_own_templates_by_names_t
             assert set(named[skill_runs.FEATURES_KEY]) <= set(skill_runs.FEATURES), folder
             assert "{{" not in skill.body, folder
             served[f"{root.name}/{folder.name}"] = named
-    assert list(served) == [f"{RASTERIZATION}/rasterization", f"{VEGA_LITE}/vega-lite-charts"], list(served)
-    for package, folder in ((RASTERIZATION, RASTERIZATION_SKILL), (VEGA_LITE, VEGA_LITE_SKILL)):
+    assert list(served) == [
+        f"{RASTERIZATION}/rasterization", f"{VEGA_LITE}/vega-lite-charts", f"{SAM3}/sam3-tracking"], list(served)
+    for package, folder in ((RASTERIZATION, RASTERIZATION_SKILL), (VEGA_LITE, VEGA_LITE_SKILL), (SAM3, SAM3_SKILL)):
         skill = skills.parse(folder)
         assert (skill.license, skill.metadata["author"]) == ("MIT", "curio")
         manifest = json.loads((folder.parents[1] / "manifest.json").read_text(encoding="utf-8"))

@@ -181,6 +181,69 @@ class TestConcurrency:
         assert ledger.aggregates(UKEY)["runs"] == 3
 
 
+class TestADiskSyncHoldsNoOneBack:
+    """A line is written under the account's lock and synced to disk once the
+    lock is let go. On a strained disk one sync takes seconds, and each run
+    of an account appends three lines (its reserve, its settle and its title's
+    usage), so a sync made under the lock queued every run of the account
+    behind every other's: in the 100-agent stress stage of 11-07, ten scripted
+    turns of one dataflow each took about 90 s, waiting on each other's 30
+    syncs. The run that appends still returns only once its own line is on
+    disk."""
+
+    #: Each kind of line, as the slow run appends it: a run's reserve, its
+    #: settle, and the usage of its title's call.
+    APPENDS = {
+        "reserve": lambda: ledger.reserve(UKEY),
+        "settle": lambda: ledger.settle(UKEY, {"reservationId": "r-slow", "day": ledger._today()},
+                                        usage={"inputTokens": 3, "outputTokens": 1}),
+        "usage": lambda: ledger.record_housekeeping_usage(UKEY, {"inputTokens": 2, "outputTokens": 1}),
+    }
+
+    @pytest.mark.parametrize("append", sorted(APPENDS))
+    def test_a_slow_sync_of_one_runs_line_holds_no_other_run_of_the_account_back(
+        self, tmp_curio, monkeypatch, append,
+    ):
+        syncing, let_go = threading.Event(), threading.Event()
+        real_fsync = os.fsync
+        synced = []
+
+        def slow_sync(descriptor):
+            """The slow run's sync waits for the test, as on a strained disk."""
+            name = threading.current_thread().name
+            if name == "slow-sync":
+                syncing.set()
+                assert let_go.wait(30), "the test never let the slow sync end"
+            if name in ("slow-sync", "another-run"):
+                synced.append(name)
+            real_fsync(descriptor)
+
+        monkeypatch.setattr(ledger.os, "fsync", slow_sync)
+        slow = threading.Thread(target=self.APPENDS[append], name="slow-sync")
+        other = threading.Thread(target=lambda: ledger.reserve(UKEY), name="another-run")
+        try:
+            slow.start()
+            assert syncing.wait(10), f"the {append} line was never synced"
+            other.start()
+            other.join(5)
+            assert not other.is_alive(), (
+                f"another run of the account waited for the {append} line's disk sync: the account's "
+                "lock was held across it")
+            assert slow.is_alive(), f"the {append} returned before its own line was on disk"
+        finally:
+            let_go.set()
+            slow.join(10)
+            other.join(10)
+        assert not slow.is_alive() and not other.is_alive()
+        assert sorted(synced) == ["another-run", "slow-sync"], "each line is synced to disk, once"
+        lines = _day_file().read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 2, lines
+        aggregates = ledger.aggregates(UKEY)
+        # Both lines whole: the other run's reserve, and the slow run's line.
+        assert (aggregates["runs"], aggregates["usage"]["inputTokens"]) == {
+            "reserve": (2, 0), "settle": (1, 3), "usage": (1, 2)}[append]
+
+
 class TestCachedInput:
     """A caching provider reports cache reads and writes; they are kept and
     summed when reported, and they are part of inputTokens, never added to it."""

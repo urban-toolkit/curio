@@ -538,7 +538,7 @@ def test_a_node_can_write_what_it_derives_from_a_collection():
     result = assert_ran(_collection_request("""
         import os
         tiles = curio_load_collection("%s")
-        row = curio_derived_file("%s", tiles["file_id"].iloc[0], 0, "txt", kind="video")
+        row = curio_derived_file("%s", tiles["file_id"].iloc[0], 0, "jpg", kind="video")
         with open(row["path"], "w") as handle:
             handle.write("derived")
         print(open(row["path"]).read())

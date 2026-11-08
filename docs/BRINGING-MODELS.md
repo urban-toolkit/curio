@@ -53,18 +53,20 @@ Pick the path that fits your model:
 | A Hugging Face segmentation model | Add it from the Discovery Catalog's **Hugging Face models**, with no export; it gets the **Image Segmentation** node ([DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md#adding-a-model)). |
 | A scikit-learn model, or plain Python | A node package: put the code in its `sources/` and call it from the node's code ([AUTHORING-NODES.md](AUTHORING-NODES.md)). |
 
-A model package declares one of three types of model:
+A model package declares one of four types of model:
 
 | Type | In | Out | Example |
 |---|---|---|---|
 | `semantic-segmentation` | an image | one class per pixel | DDRNet23-Slim, run by **Image Segmentation** |
 | `image-to-image` | images or rasters | an image or a raster | Deep Umbra, run by **Accumulated Shadow**; Local Relief, below |
 | `node-regression` | a graph: node features and edges | values for each node | the weather GNN, run by **Weather Routing** |
+| `concept-segmentation` | images or video, and text prompts, its labels | every thing each prompt names | SAM 3, a Transformers checkpoint its package's module loads from `model.path`, run by **Track Objects** |
 
 A segmentation model's node calls Curio's `curio_segment` and needs no code of
 yours ([MODEL-CATALOG.md](MODEL-CATALOG.md#3-using-a-model-in-a-dataflow)). An
 image-to-image or node-regression model is run by the node you write for it,
 which prepares the model's inputs itself. That is the case this guide covers.
+A concept-segmentation model is always run by the node you write for it.
 
 ---
 
@@ -237,12 +239,14 @@ The manifest is a node package's ([NODE-CATALOG.md](NODE-CATALOG.md)), with:
   module are not detected, so list every library.
 - `templates`: one template, the node that runs the model. Dragging the model's
   card onto the canvas drops it. Its `source` is the node's code; a template
-  with no `source` opens with the cell Curio writes for the model's type. Its
-  `widgets` are what the user sets ([section 6](#6-widgets-what-the-user-sets)).
+  with no `source` opens with the cell Curio writes for the model's type, and
+  a `concept-segmentation` model's template must have one. Its `widgets` are
+  what the user sets ([section 6](#6-widgets-what-the-user-sets)).
 
 The `model` block describes the weights:
 
-- `type`: `semantic-segmentation`, `image-to-image` or `node-regression`.
+- `type`: `semantic-segmentation`, `image-to-image`, `node-regression` or
+  `concept-segmentation`.
 - `runtime`: `onnx`, for an exported model.
 - `entry`: the `.onnx` file, under `models/`.
 - `input`: for an `onnx` image model, what the model was made for: `width` and
@@ -256,6 +260,8 @@ The `model` block describes the weights:
 - `publisher`, `homepage` and `sizeBytes`: who published the weights, where
   they are described, and their size in bytes. The card and the details show
   them.
+- `fetch`: for weights the package ships without, which whoever runs Curio
+  fetches from Hugging Face ([MODEL-CATALOG.md, The manifest](MODEL-CATALOG.md#6-the-manifest)).
 
 Every field is in [MODEL-CATALOG.md, The manifest](MODEL-CATALOG.md#6-the-manifest)
 and in the [node package schema](schemas/node-package.v4.json).
