@@ -77,7 +77,7 @@ def pip_as_the_execution_account(monkeypatch, world_traversable_dir):
 
         account = pwd.getpwnam(EXEC_USER)
         monkeypatch.setenv("CURIO_EXEC_USER", EXEC_USER)
-        assert pip_runner._pip_account() == (account.pw_uid, account.pw_gid)
+        assert (pip_runner._pip_bounds() or {}).get("drop") == [account.pw_uid, account.pw_gid]
     wheelhouse = world_traversable_dir()
     monkeypatch.setenv("PIP_NO_INDEX", "1")
     monkeypatch.setenv("PIP_FIND_LINKS", str(wheelhouse))
