@@ -38,10 +38,13 @@ services:
     # data loads (/execJs has no cap), each of them a real process tree. This
     # limit is one of the things the run is measuring the distance to, so it
     # matches the other CI overlays rather than being widened for the job.
-    pids_limit: 4096
+    # tmp/sharded-backend: up to 8 backend processes, whose threads count too.
+    pids_limit: 16384
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
       - CURIO_SKIP_DEP_INSTALL=1
+      # tmp/sharded-backend: set, nginx is in front of one backend process too.
+      - CURIO_BACKEND_ROUTER=${CURIO_BACKEND_ROUTER:-}
       # Pinned, not inferred: a runner that cannot confine must fail the job
       # rather than quietly run every user's node code in one process, which
       # would measure a stack nobody deploys.
@@ -70,3 +73,6 @@ services:
       - 0.0.0.0
       - --sandbox-port
       - "2000"
+      # tmp/sharded-backend: the job starts the stack at 1, 4 and 8 in turn.
+      - --backend-processes
+      - "${CURIO_BACKEND_PROCESSES:-1}"

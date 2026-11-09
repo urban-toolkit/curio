@@ -196,6 +196,13 @@ RUN groupadd --system curio-exec \
     && useradd --system --gid curio-exec --no-create-home \
         --shell /usr/sbin/nologin curio-exec
 
+# tmp/sharded-backend: nginx, which `curio.py start --backend-processes N`
+# puts in front of the N backend processes (utk_curio/cli/backend_group.py).
+# A layer of its own in this last stage, so the layers above stay cached.
+RUN apt-get update && apt-get install -y --no-install-recommends nginx \
+    && rm -rf /var/lib/apt/lists/* \
+    && nginx -v
+
 # Adjust these COPY paths if your build outputs to "build/" instead of "dist/"
 COPY --from=frontend_builder /src/utk_curio/frontend/urban-workflows/dist \
     /app/utk_curio/frontend/urban-workflows/dist
