@@ -360,8 +360,10 @@ class TestModelPackagesInTheModelCatalog:
         assert (block["fetch"]["huggingface"], block["fetch"]["revision"]) == (
             "jetjodh/sam3", "1aa50ce07302cb375f85d8084b68a0fb378b8d85")
         assert (len(block["labels"]), block["sizeBytes"]) == (35, 3_444_996_474)
+        from utk_curio.backend.app.packages.domain.model_fetch import is_stamped, parse_fetch
+
         checkpoint = PACKAGES / f"{SAM3}@1" / block["entry"]
-        fetched = all((checkpoint / item["path"]).is_file() for item in block["fetch"]["files"])
+        fetched = all(is_stamped(checkpoint / item.path, item) for item in parse_fetch(block["fetch"]).files)
         assert block["downloadsOnFirstUse"] is not fetched
         assert "weightsNotFetched" not in block
         assert sam3["modules"] == ["sam3_tracking"]

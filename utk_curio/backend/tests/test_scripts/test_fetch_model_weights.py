@@ -5,7 +5,10 @@ it lists from ``https://huggingface.co/<repo>/resolve/<revision>/<path>``,
 into the package's entry folder or, with ``--into <dir>``, into
 ``<dir>/<id>@<major>/<entry>``, the folder ``--model-weights-dir`` reads. Each
 file streams to a temporary file, is checked against its digest, and only
-then is moved into place, readable by every account.
+then is moved into place, readable by every account, and stamped with that
+digest as Curio's own download stamps it: a stamped file is skipped unread,
+one with no stamp is hashed once, and one whose stamp names another digest
+is fetched again.
 
 No test opens a socket: each hands the script an opener that answers from
 bytes in memory (``_HuggingFace``) and keeps every request. The token is a
@@ -42,6 +45,14 @@ FILES = {"config.json": CONFIG, "model.safetensors": WEIGHTS}
 
 def _git_blob_sha1(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
+
+
+#: The stamp the script writes beside each file it places, as Curio's own
+#: download writes it, and what it holds: the digest the manifest names.
+STAMPS = {
+    ".config.json.digest": f"gitSha1 {_git_blob_sha1(CONFIG)}\n",
+    ".model.safetensors.digest": f"sha256 {hashlib.sha256(WEIGHTS).hexdigest()}\n",
+}
 
 
 def _script():
@@ -119,7 +130,9 @@ def test_it_fetches_each_file_checks_it_and_places_it_for_every_account(shipped)
     assert {name: (entry / name).read_bytes() for name in FILES} == FILES
     assert [_mode(entry / name) for name in FILES] == [0o644, 0o644]
     assert [_mode(entry), _mode(entry.parent)] == [0o755, 0o755]
-    assert sorted(path.name for path in entry.iterdir()) == sorted(FILES), "a temporary file was left"
+    assert sorted(path.name for path in entry.iterdir()) == sorted([*FILES, *STAMPS]), "a temporary file was left"
+    assert {name: (entry / name).read_text(encoding="utf-8") for name in STAMPS} == STAMPS
+    assert [_mode(entry / name) for name in STAMPS] == [0o644, 0o644]
     assert [request.full_url for request in hugging_face.requests] == [
         f"https://huggingface.co/{REPOSITORY}/resolve/{REVISION}/{name}" for name in FILES
     ]
@@ -181,6 +194,63 @@ def test_a_file_in_place_whose_digest_differs_is_fetched_again(shipped):
 
     assert code == 0 and (entry / "config.json").read_bytes() == CONFIG
     assert "Done: 2 fetched, 0 already here." in out, out
+    assert {name: (entry / name).read_text(encoding="utf-8") for name in STAMPS} == STAMPS
+
+
+def test_a_stamped_file_is_skipped_unread(shipped, monkeypatch):
+    """A file whose stamp names the digest the manifest names is in place:
+    the script does not hash 3.4 GB again to say so."""
+    _run(shipped, PACKAGE_ID, opener=_HuggingFace(FILES))
+    hashed = []
+    for name in ("sha1", "sha256"):
+        real = getattr(hashlib, name)
+        monkeypatch.setattr(
+            hashlib, name, lambda *args, real=real, name=name, **kwargs: hashed.append(name) or real(*args, **kwargs),
+        )
+
+    code, out, err = _run(shipped, PACKAGE_ID, opener=_HuggingFace())
+
+    assert (code, err) == (0, "")
+    assert "Done: 0 fetched, 2 already here." in out, out
+    assert hashed == [], "a stamped file was hashed again"
+
+
+def test_a_file_with_no_stamp_is_hashed_once_and_stamped_when_it_matches(shipped):
+    """Placed by hand, or by an older script: checked against its digest and
+    stamped, readable by every account, with nothing asked of Hugging Face."""
+    entry = shipped / "packages" / DIR / ENTRY
+    entry.mkdir(parents=True)
+    for name, data in FILES.items():
+        (entry / name).write_bytes(data)
+
+    code, out, err = _run(shipped, PACKAGE_ID, opener=_HuggingFace())
+
+    assert (code, err) == (0, "")
+    assert "Done: 0 fetched, 2 already here." in out, out
+    assert {name: (entry / name).read_text(encoding="utf-8") for name in STAMPS} == STAMPS
+    assert [_mode(entry / name) for name in STAMPS] == [0o644, 0o644]
+
+
+def test_a_file_whose_stamp_names_another_digest_is_fetched_again(shipped):
+    """The package's next version names other bytes for config.json: the
+    stamp of the file in place names the old digest, so that file is
+    fetched again, and stamped anew; the other is in place."""
+    _run(shipped, PACKAGE_ID, opener=_HuggingFace(FILES))
+    manifest = shipped / "packages" / DIR / "manifest.json"
+    raw = json.loads(manifest.read_text(encoding="utf-8"))
+    next_config = b'{"model_type": "tiny", "layers": 2}'
+    raw["model"]["fetch"]["files"][0]["gitSha1"] = _git_blob_sha1(next_config)
+    manifest.write_text(json.dumps(raw), encoding="utf-8")
+    hugging_face = _HuggingFace({"config.json": next_config})
+
+    code, out, err = _run(shipped, PACKAGE_ID, opener=hugging_face)
+
+    assert (code, err) == (0, "")
+    assert "Done: 1 fetched, 1 already here." in out, out
+    entry = shipped / "packages" / DIR / ENTRY
+    assert (entry / "config.json").read_bytes() == next_config
+    assert (entry / ".config.json.digest").read_text(encoding="utf-8") == f"gitSha1 {_git_blob_sha1(next_config)}\n"
+    assert [request.full_url.rsplit("/", 1)[1] for request in hugging_face.requests] == ["config.json"]
 
 
 @pytest.mark.parametrize("status", [401, 403])

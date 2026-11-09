@@ -20,7 +20,13 @@ package's entry folder, or under the folder ``curio.py start
   second use reads them in place; two first uses download once; a file that
   does not match, a cut download, a gated or gone source, an address the
   egress policy refuses and a folder Curio cannot write each place nothing
-  and fail the node's run, saying what failed and naming the script.
+  and fail the node's run, saying what failed and naming the script; an
+  agent's run of the node fails alike.
+- Stamps: each placed file's digest beside it, the same from the first use
+  and from the script; a later version that names other digests downloads
+  those files again; a file with no stamp is hashed once, and stamped when
+  it matches or downloaded again when it does not, and no node reads it
+  meanwhile.
 - The Model Catalog's listing says the weights download on first use until
   they are here.
 - Integrity, ``scripts/regen_integrity.py`` among it, leaves them out.
@@ -147,13 +153,48 @@ def _write_package(folder: Path, manifest: dict | None = None) -> Path:
 
 def _fetch_into(root: Path, *names: str) -> Path:
     """The weights under *root* as ``scripts/fetch_model_weights.py`` leaves
-    them: every file, or those *names* gives."""
+    them: every file, or those *names* gives, each stamped with its digest."""
+    from utk_curio.backend.app.packages.domain.model_fetch import write_stamp
+
+    wanted = {name: data for name, data in FILES.items() if not names or name in names}
+    _place_by_hand(root, wanted)
+    for item in _parse(_manifest()).model.fetch.files:
+        if item.path in wanted:
+            write_stamp(root / ENTRY / item.path, item)
+    return root
+
+
+def _place_by_hand(root: Path, files: dict | None = None) -> Path:
+    """*files* (``{name: bytes}``, the right ones by default) under *root*'s
+    entry with no stamp, as a hand or a Curio before stamps left them."""
     entry = root / ENTRY
     entry.mkdir(parents=True, exist_ok=True)
-    for name, data in (("config.json", CONFIG), ("model.safetensors", WEIGHTS)):
-        if not names or name in names:
-            (entry / name).write_bytes(data)
+    for name, data in (FILES if files is None else files).items():
+        (entry / name).write_bytes(data)
     return root
+
+
+#: The stamp each file of the block gets beside it, and what it holds.
+STAMPS = {
+    ".config.json.digest": f"gitSha1 {_git_blob_sha1(CONFIG)}\n",
+    ".model.safetensors.digest": f"sha256 {hashlib.sha256(WEIGHTS).hexdigest()}\n",
+}
+
+
+def _stamps(entry: Path) -> dict:
+    """The stamps in *entry*, by name, with what each holds."""
+    return {path.name: path.read_text(encoding="utf-8") for path in sorted(entry.glob(".*.digest"))}
+
+
+def _spy_on_hashing(monkeypatch) -> list:
+    """The names of the files hashed from now on, by either digest."""
+    from utk_curio.backend.app.packages.domain import model_fetch
+
+    hashed = []
+    for name in ("sha256_of", "git_blob_sha1"):
+        real = getattr(model_fetch, name)
+        monkeypatch.setattr(model_fetch, name, lambda path, real=real: hashed.append(Path(path).name) or real(path))
+    return hashed
 
 
 def _add(user_key: str, catalog: Path) -> Path:
@@ -347,10 +388,10 @@ def test_a_first_use_downloads_the_weights_into_the_catalogs_copy_and_a_second_r
     """Added, its copy holds no weights, nor does the catalog: resolving it
     downloads each file the block lists into the catalog's copy, with no
     token, waiting at most the idle timeout for each answer, each file
-    checked and readable by every account, the models/ folder its owner's as
-    isolation leaves a shipped package's. The next resolve reads them there,
-    and an account that never added the model gets none, and downloads
-    nothing."""
+    checked, stamped with its digest and readable by every account, its
+    stamp too, the models/ folder its owner's as isolation leaves a shipped
+    package's. The next resolve reads them there, and an account that never
+    added the model gets none, and downloads nothing."""
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
     from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
 
@@ -366,8 +407,9 @@ def test_a_first_use_downloads_the_weights_into_the_catalogs_copy_and_a_second_r
     assert {name: (entry / name).read_bytes() for name in FILES} == FILES
     assert [_mode(entry / name) for name in FILES] == [0o644, 0o644]
     assert (_mode(entry), _mode(entry.parent)) == (0o755, 0o700)
-    assert _left_in(entry) == [".download.lock"]
-    assert _mode(entry / ".download.lock") == 0o644
+    assert _left_in(entry) == [".config.json.digest", ".download.lock", ".model.safetensors.digest"]
+    assert _stamps(entry) == STAMPS
+    assert [_mode(entry / name) for name in (".download.lock", *STAMPS)] == [0o644, 0o644, 0o644]
     assert not (copy / "models").exists()
 
     assert resolve_model_dirs("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((catalog / DIR).resolve())}
@@ -534,7 +576,10 @@ def test_a_file_whose_digest_does_not_match_is_refused_and_never_placed(catalog,
     assert "so it was not placed" in message and SCRIPT in message, message
     entry = catalog / DIR / ENTRY
     assert not (entry / "model.safetensors").exists()
-    assert _left_in(entry) == [".download.lock"], "a file that does not match, or a partial file, was left"
+    # config.json, which matched, is placed and stamped; nothing else is.
+    assert _left_in(entry) == [".config.json.digest", ".download.lock"], (
+        "a file that does not match, its stamp, or a partial file, was left"
+    )
 
 
 def test_a_download_cut_midway_leaves_nothing_and_the_next_use_fetches_it_whole(catalog, monkeypatch):
@@ -594,7 +639,255 @@ def test_a_partial_file_a_restart_left_a_moment_ago_is_written_over_by_the_next_
     resolve_model_dirs("guest", [PACKAGE_ID])
 
     assert {name: (entry / name).read_bytes() for name in FILES} == FILES
-    assert _left_in(entry) == [".download.lock"]
+    assert _left_in(entry) == [".config.json.digest", ".download.lock", ".model.safetensors.digest"]
+
+
+# ---------------------------------------------------------------------------
+# Stamps: which digest each placed file has
+# ---------------------------------------------------------------------------
+
+#: The package's next version: the same config, other weights, at another revision.
+NEXT_REVISION = "9d1f0e6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e"
+NEXT_WEIGHTS = bytes((byte + 1) % 256 for byte in WEIGHTS)
+NEXT_FILES = {"config.json": CONFIG, "model.safetensors": NEXT_WEIGHTS}
+NEXT_FETCH = {
+    "huggingface": REPOSITORY,
+    "revision": NEXT_REVISION,
+    "files": [
+        {"path": "config.json", "gitSha1": _git_blob_sha1(CONFIG)},
+        {"path": "model.safetensors", "sha256": hashlib.sha256(NEXT_WEIGHTS).hexdigest()},
+    ],
+}
+
+
+def test_a_later_version_that_names_other_digests_downloads_those_files_again(catalog, weights_dir, monkeypatch):
+    """Under the flag's folder, kept by ``<id>@<major>``, the first use placed
+    this version's weights. The next version of the package names other
+    weights at another revision: they are not in place until downloaded, so
+    no run reads the old ones as the new, and its first use downloads the
+    file whose digest changed, and only that one."""
+    from utk_curio.backend.app.packages.application.model_packages import weights_on_first_use
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+    from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
+    from utk_curio.backend.tests._support.fetched_weights import CDN, FakeHuggingFace, resolve_url
+
+    copy = _add("guest", catalog)
+    _hugging_face(monkeypatch)
+    resolve_model_dirs("guest", [PACKAGE_ID])
+    root = (weights_dir / DIR).resolve()
+    assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str(root)}
+
+    _write_package(catalog / DIR, _manifest(model=_block(fetch=NEXT_FETCH)))
+    assert resolve_model_weights("guest", [PACKAGE_ID]) == {}, "the old weights were read as the new version's"
+    assert weights_on_first_use(load_package_manifest(copy), copy)
+    hugging_face = FakeHuggingFace(
+        REPOSITORY, NEXT_REVISION, NEXT_FILES, redirect=("model.safetensors",),
+    ).serve(monkeypatch)
+
+    assert resolve_model_dirs("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((catalog / DIR).resolve())}
+
+    assert hugging_face.urls == [resolve_url(REPOSITORY, NEXT_REVISION, "model.safetensors"), f"{CDN}/model.safetensors"]
+    entry = root / ENTRY
+    assert {name: (entry / name).read_bytes() for name in NEXT_FILES} == NEXT_FILES
+    assert _stamps(entry) == {
+        **STAMPS, ".model.safetensors.digest": f"sha256 {hashlib.sha256(NEXT_WEIGHTS).hexdigest()}\n",
+    }
+    assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str(root)}
+    assert not weights_on_first_use(load_package_manifest(copy), copy)
+
+
+def test_weights_placed_with_no_stamp_are_hashed_once_and_stamped_when_they_match(catalog, weights_dir, monkeypatch):
+    """Placed by hand, or by a Curio or a script before stamps: they are not
+    read as in place until checked. The first use hashes each file once,
+    under the model's lock, and stamps it, readable by every account;
+    nothing downloads, and every later use reads the stamps alone."""
+    from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
+
+    _no_download(monkeypatch)
+    _add("guest", catalog)
+    root = _place_by_hand(weights_dir / DIR).resolve()
+    hashed = _spy_on_hashing(monkeypatch)
+    assert resolve_model_weights("guest", [PACKAGE_ID]) == {}
+
+    for _ in range(3):
+        assert resolve_model_dirs("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((catalog / DIR).resolve())}
+        assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str(root)}
+
+    assert sorted(hashed) == sorted(FILES), "each file is hashed once, then read by its stamp"
+    entry = root / ENTRY
+    assert _stamps(entry) == STAMPS
+    assert [_mode(entry / name) for name in STAMPS] == [0o644, 0o644]
+    assert {name: (entry / name).read_bytes() for name in FILES} == FILES
+
+
+def test_a_weight_placed_with_no_stamp_that_does_not_match_downloads_again(catalog, weights_dir, monkeypatch):
+    """The file that does not match its digest downloads again; the one that
+    matches is stamped where it is."""
+    from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
+
+    hugging_face = _hugging_face(monkeypatch)
+    _add("guest", catalog)
+    root = _place_by_hand(weights_dir / DIR, {**FILES, "model.safetensors": WEIGHTS[::-1]}).resolve()
+    assert resolve_model_weights("guest", [PACKAGE_ID]) == {}, "a file that does not match was read as in place"
+
+    resolve_model_dirs("guest", [PACKAGE_ID])
+
+    assert hugging_face.urls == _urls()[1:]
+    entry = root / ENTRY
+    assert {name: (entry / name).read_bytes() for name in FILES} == FILES
+    assert _stamps(entry) == STAMPS
+    assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str(root)}
+
+
+def test_a_weight_that_does_not_match_is_never_read_even_when_its_download_fails(
+    client, user_and_token, catalog, monkeypatch,
+):
+    """Without the flag the weights are in the catalog's copy, which the
+    sandbox reads. A file there that is not the one the block names goes
+    before it downloads again, so a download that fails leaves nothing a
+    node could read, and the run fails with that download's error: the
+    sandbox is not asked."""
+    user, token = user_and_token
+    _add(_key(user), catalog)
+    entry = _place_by_hand(catalog / DIR, {**FILES, "model.safetensors": WEIGHTS[::-1]}) / ENTRY
+    _hugging_face(monkeypatch, status=401, error_code="GatedRepo")
+    sent = _capture_sandbox(monkeypatch)
+
+    reply = _play(client, token)
+
+    assert reply.status_code == 200, reply.get_data(as_text=True)
+    body = reply.get_json()
+    assert not body["output"].get("path"), body
+    assert f"Curio could not download model.safetensors, a file of the weights of {PACKAGE_ID}" in body["stderr"], body
+    assert f"Hugging Face refused it (HTTP 401): {REPOSITORY} is gated, or gone" in body["stderr"], body
+    assert sent == []
+    assert not (entry / "model.safetensors").exists()
+    # config.json matched its digest: kept, and stamped.
+    assert (entry / "config.json").read_bytes() == CONFIG
+    assert _left_in(entry) == [".config.json.digest", ".download.lock"]
+
+
+class _ScriptsHuggingFace:
+    """The opener ``scripts/fetch_model_weights.py`` is handed: answers each
+    request with the bytes *files* hold for its path, and fails the test on
+    any other."""
+
+    def __init__(self, files):
+        self.files = dict(files)
+        self.urls = []
+
+    def open(self, request, timeout=None):
+        import io
+        from urllib.parse import unquote
+
+        self.urls.append(request.full_url)
+        path = unquote(request.full_url.split(f"/resolve/{REVISION}/", 1)[1])
+        if path not in self.files:
+            raise AssertionError(f"the script asked for {path}")
+        return io.BytesIO(self.files[path])
+
+
+def _run_the_script(shipped_root: Path, into: Path, files: dict) -> str:
+    """What ``scripts/fetch_model_weights.py <id> --into <into>`` prints, run
+    on the package under *shipped_root* with Hugging Face holding *files*."""
+    import io
+
+    spec = importlib.util.spec_from_file_location("_curio_fetch_model_weights", REPO / "scripts" / "fetch_model_weights.py")
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    out, err = io.StringIO(), io.StringIO()
+    code = script.main(
+        [PACKAGE_ID, "--into", str(into)], opener=_ScriptsHuggingFace(files), environ={},
+        shipped_root=shipped_root, out=out, err=err,
+    )
+    assert code == 0, (out.getvalue(), err.getvalue())
+    return out.getvalue()
+
+
+def test_the_first_use_and_the_script_stamp_each_file_alike(catalog, weights_dir, tmp_path, monkeypatch):
+    """The same stamp, byte for byte and readable by every account: so the
+    server reads the files the script fetched by their stamps, hashing none
+    and downloading none, and the script finds in place, asking nothing,
+    those the server downloaded."""
+    from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
+
+    _hugging_face(monkeypatch)
+    _add("guest", catalog)
+    resolve_model_dirs("guest", [PACKAGE_ID])
+    served = weights_dir / DIR / ENTRY
+    shipped_root = tmp_path / "shipped"
+    _write_package(shipped_root / "packages" / DIR)
+    fetched = tmp_path / "fetched"
+
+    _run_the_script(shipped_root, fetched, FILES)
+
+    by_script = fetched / DIR / ENTRY
+    assert _stamps(by_script) == _stamps(served) == STAMPS
+    assert [_mode(by_script / name) for name in STAMPS] == [_mode(served / name) for name in STAMPS] == [0o644, 0o644]
+
+    monkeypatch.setenv("CURIO_MODEL_WEIGHTS_DIR", str(fetched))
+    _no_download(monkeypatch)
+    hashed = _spy_on_hashing(monkeypatch)
+    assert resolve_model_dirs("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((catalog / DIR).resolve())}
+    assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((fetched / DIR).resolve())}
+    assert hashed == []
+
+    out = _run_the_script(shipped_root, weights_dir, {})
+    assert "Done: 0 fetched, 2 already here." in out, out
+
+
+def test_a_folder_curio_cannot_write_holding_unstamped_weights_says_so_until_the_script_stamps_them(
+    catalog, weights_dir, tmp_path, monkeypatch,
+):
+    """A folder mounted read-only, filled by a script before stamps: the
+    weights cannot be checked and stamped there, so the run fails saying
+    Curio cannot write them and naming the script, and nothing is asked of
+    Hugging Face or removed. The script, run on that folder, hashes and
+    stamps them, asking nothing; read-only again, the folder is read by its
+    stamps."""
+    import errno
+
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+    from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
+
+    hugging_face = _hugging_face(monkeypatch)
+    _add("guest", catalog)
+    root = _place_by_hand(weights_dir / DIR).resolve()
+    read_only = {"on": True}
+    real_open = os.open
+
+    def open_on_a_read_only_mount(path, flags, *args, **kwargs):
+        writes = flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT)
+        if read_only["on"] and writes and str(path).startswith(str(weights_dir.resolve())):
+            raise OSError(errno.EROFS, os.strerror(errno.EROFS), str(path))
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", open_on_a_read_only_mount)
+
+    with left_out_files.failures() as failed:
+        resolve_model_dirs("guest", [PACKAGE_ID])
+    assert resolve_model_weights("guest", [PACKAGE_ID]) == {}
+    message = failed.get(f"{PACKAGE_ID}@1", "")
+    assert message.startswith(
+        f"Curio could not write the weights of {PACKAGE_ID} into {root / ENTRY}: {os.strerror(errno.EROFS)}. "
+    ), failed
+    assert f"{SCRIPT} --into <that folder>" in message, message
+    assert hugging_face.requests == []
+    assert {name: (root / ENTRY / name).read_bytes() for name in FILES} == FILES
+
+    read_only["on"] = False
+    shipped_root = tmp_path / "shipped"
+    _write_package(shipped_root / "packages" / DIR)
+    out = _run_the_script(shipped_root, weights_dir, {})
+    assert "Done: 0 fetched, 2 already here." in out, out
+    assert _stamps(root / ENTRY) == STAMPS
+
+    read_only["on"] = True
+    with left_out_files.failures() as failed:
+        assert resolve_model_dirs("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((catalog / DIR).resolve())}
+    assert failed == {}
+    assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str(root)}
+    assert hugging_face.requests == []
 
 
 @pytest.mark.parametrize("status, code, says, asks_for_a_token", [
@@ -629,6 +922,39 @@ def test_a_source_that_refuses_fails_the_run_naming_it_and_the_script(
     assert ("HF_TOKEN=" in stderr) is asks_for_a_token, stderr
     assert sent == []
     assert not any((catalog / DIR / ENTRY / name).exists() for name in FILES)
+
+
+def test_a_source_that_refuses_fails_an_agents_run_of_the_node_with_the_downloads_reason(catalog, monkeypatch):
+    """An agent's run of the node (``execution/runner.py``) fails it with the
+    download's own error, as a run from the canvas does, and journals it:
+    the sandbox is not asked, where it would only say the weights are not
+    on this Curio."""
+    from utk_curio.backend.app.execution import runner, runtime_journal
+    from utk_curio.backend.tests._support.fetched_weights import resolve_url
+
+    _add("4242", catalog)
+    _hugging_face(monkeypatch, status=401, error_code="GatedRepo")
+    asked = []
+    spec = {"dataflow": {"edges": [], "nodes": [{
+        "id": "track", "type": "curio.builtin/python-computation", "goal": "track the cars",
+        "content": f'model = curio_load_model("{PACKAGE_ID}")\nreturn 1',
+    }]}}
+
+    report = runner.run_through_node(
+        "4242", "p-weights", spec, "track",
+        exec_fn=lambda endpoint, payload: asked.append(payload) or {
+            "stdout": [], "stderr": "", "output": {"path": "art-1", "dataType": "int"},
+        },
+    )
+
+    assert asked == [], "the sandbox was asked to run a node whose weights could not be downloaded"
+    assert (report["ok"], report["blocker"], report["error"]) == (False, "track", "node 'track' failed"), report
+    stderr = report["nodes"]["track"]["stderrTail"]
+    assert f"Hugging Face refused it (HTTP 401): {REPOSITORY} is gated, or gone" in stderr, stderr
+    assert resolve_url(REPOSITORY, REVISION, "config.json") in stderr and SCRIPT in stderr, stderr
+    assert "HF_TOKEN=" in stderr, stderr
+    record = runtime_journal.read_record("4242", "p-weights", "track")
+    assert (record["status"], record["stderrTail"], record["validation"]) == ("error", stderr, True), record
 
 
 def test_the_download_goes_through_the_egress_policy(catalog, monkeypatch):
@@ -947,7 +1273,9 @@ def test_the_sdist_leaves_a_fetched_entry_out_and_keeps_shipped_weights(monkeypa
     from setuptools._distutils.filelist import FileList
 
     monkeypatch.chdir(REPO)
-    fetched = [f"packages/{DIR}/{ENTRY}/config.json", f"packages/{DIR}/{ENTRY}/model.safetensors"]
+    fetched = [
+        f"packages/{DIR}/{ENTRY}/{name}" for name in ("config.json", "model.safetensors", *STAMPS, ".download.lock")
+    ]
     kept = [f"packages/{DIR}/manifest.json", "packages/model.test.shipped@1/models/w.onnx"]
     files = FileList()
     files.set_allfiles(sorted(fetched + kept))
