@@ -1293,9 +1293,9 @@ def _package_workers():
 
 
 def _js_parallelism():
-    from utk_curio.sandbox.app import worker
+    from utk_curio.common.exec_pool import js_parallelism
 
-    return worker._default_js_parallelism()
+    return js_parallelism()
 
 
 def _js_policy(field):
