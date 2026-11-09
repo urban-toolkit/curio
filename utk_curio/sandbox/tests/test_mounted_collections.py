@@ -18,7 +18,6 @@ from pathlib import Path
 import pytest
 
 from utk_curio.sandbox.tests.test_collection_helpers import ROWS, write_index
-from utk_curio.sandbox.tests.test_fetched_model_weights import isolated  # noqa: F401 - a fixture
 
 ROOT = "/bucket-mounts/source.example.walks@1"
 TAIL = "img_"
@@ -104,10 +103,53 @@ class TestInProcess(unittest.TestCase):
         self.assertEqual(body["stdout"], [])
 
 
-def test_the_isolated_path_hands_the_child_each_entrys_tail_and_why_its_mount_is_down(isolated, tmp_path):  # noqa: F811
+class _Zygote:
+    """The zygote's half of an isolated run: keeps each request it is handed,
+    and runs nothing."""
+
+    handed: list = []
+
+    def __init__(self, socket_path):
+        self.socket_path = socket_path
+
+    def run(self, request, wall_timeout=None):
+        _Zygote.handed.append(request)
+        return 0, None, False
+
+
+@pytest.fixture
+def isolated(tmp_path, monkeypatch):
+    """A sandbox on a data folder of its own that runs Python isolated, up to
+    its zygote: the requests it hands the zygote."""
+    from utk_curio.sandbox.app import api
+    from utk_curio.sandbox.isolation import runner, supervisor
+    from utk_curio.sandbox.util.db import init_db, release_connection
+
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+    monkeypatch.setenv("CURIO_SHARED_DATA", "./.curio/data/")
+    (tmp_path / ".curio" / "data").mkdir(parents=True)
+    config = runner.IsolationConfig.from_environment({
+        "CURIO_EXEC_PARALLELISM": "1",
+        "CURIO_EXEC_SOCKET": str(tmp_path / "exec-zygote.sock"),
+        "CURIO_LAUNCH_CWD": str(tmp_path),
+    })
+    monkeypatch.setattr(api, "_isolation_state", (runner.execute_isolated, config))
+    monkeypatch.setattr(supervisor, "ZygoteClient", _Zygote)
+    monkeypatch.setattr(
+        supervisor, "read_child_manifest",
+        lambda scratch_dir: {"ok": False, "stdout": ["the child ran"], "stderr": ""},
+    )
+    _Zygote.handed = []
+    release_connection()
+    init_db()
+    yield _Zygote.handed
+    release_connection()
+
+
+def test_the_isolated_path_hands_the_child_each_entrys_tail_and_why_its_mount_is_down(isolated, tmp_path):
     from utk_curio.sandbox.app import app
 
-    handed, _copied = isolated
+    handed = isolated
     index = write_index(tmp_path / "index.parquet", ROWS)
     collections = {
         "imported.xa": {"root": ROOT, "tail": TAIL, "kind": "media"},
@@ -127,8 +169,8 @@ def test_the_isolated_path_hands_the_child_each_entrys_tail_and_why_its_mount_is
     resp.get_data(as_text=True)
     resp.close()
 
-    request, _files = handed[-1]
-    assert request["collections"] == collections
+    assert handed, "the run never reached its zygote"
+    assert handed[-1]["collections"] == collections
 
 
 def test_the_isolated_child_reads_each_row_in_the_mount(tmp_path):

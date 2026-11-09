@@ -178,8 +178,7 @@ class PlainFolders:
     def list(self, folder: Path) -> bool:
         if not self._held(folder):
             return False
-        with os.scandir(folder) as entries:
-            sum(1 for _ in entries)
+        os.listdir(folder)
         return True
 
 
