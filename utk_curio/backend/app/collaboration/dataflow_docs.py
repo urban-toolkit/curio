@@ -155,6 +155,7 @@ import json
 import logging
 import os
 import re
+import sys
 import threading
 import time
 import uuid
@@ -190,6 +191,7 @@ from utk_curio.backend.app.collaboration.events import (
 from utk_curio.backend.app.projects import scenarios as project_scenarios
 from utk_curio.backend.app.projects import storage
 from utk_curio.backend.config import COLLAB_NAMESPACE
+from utk_curio.common import shards
 
 logger = logging.getLogger(__name__)
 
@@ -341,6 +343,9 @@ class _OpenDoc:
         self.unmade: Optional[dict] = None
         self.loaded = False
         self.closed = False
+        #: tmp/sharded-backend: opened in a process that does not own the
+        #: dataflow (:func:`_foreign`), so it leaves memory once idle.
+        self.foreign = False
         #: The sockets that started a sync: sid -> participant.
         self.tabs: dict[str, dict] = {}
         #: Each awareness client id, and the socket that set it.
@@ -856,6 +861,76 @@ def _built_anew_if_grown(entry: _OpenDoc) -> None:
     _built_anew(entry, dataflow)
 
 
+# ---------------------------------------------------------------------------
+# tmp/sharded-backend: the owner guard, prototype form
+# ---------------------------------------------------------------------------
+
+#: The readers and writers callers name: a touch inside one is logged once, by it.
+_GUARD_OPS = frozenset({"read", "live", "write", "writing", "put", "create"})
+#: Each (op, caller)'s first touches are logged, then every hundredth, with
+#: the count so far, so a flood stays short and still counts.
+_GUARD_FIRST = 20
+_GUARD_EVERY = 100
+_guard_lock = threading.Lock()
+_guard_counts: dict[tuple, int] = {}
+_THIS_MODULE = os.path.join("collaboration", "dataflow_docs.py")
+#: A doc a process that does not own its dataflow opened leaves memory this
+#: long after it is idle (a write's spec is written at once).
+FOREIGN_CLOSE_AFTER_S = 1.0
+
+
+def _guard_where() -> tuple[str, str]:
+    """The outermost function of this module on the stack of the function that
+    asks :func:`_foreign`, and the first caller outside this module (as
+    ``path:line``, under ``utk_curio/`` or a library's file name)."""
+    frame = sys._getframe(2)
+    op, caller = "?", "?"
+    while frame is not None:
+        filename = frame.f_code.co_filename
+        if filename.endswith(_THIS_MODULE):
+            op = frame.f_code.co_name
+        elif not filename.endswith("contextlib.py"):
+            normal = filename.replace("\\", "/")
+            at = normal.rfind("utk_curio/")
+            where = normal[at + len("utk_curio/"):] if at >= 0 else "lib/" + os.path.basename(normal)
+            caller = f"{where}:{frame.f_lineno}"
+            break
+        frame = frame.f_back
+    return op, caller
+
+
+def _foreign(project_id: str, op: Optional[str] = None) -> bool:
+    """Whether another backend process owns *project_id*'s doc, in a start of
+    several (``--backend-processes``); the touch is logged as a
+    ``[shard-guard]`` line on stderr, which step 3 of the plan turns into
+    rules: by *op*, a reader or writer of this module, when it is the
+    outermost one on the stack, and with no *op* (an open in :func:`_held`) by
+    the outermost function of this module, unless a reader or writer on the
+    stack logs it. A create is not logged: it writes the files and keeps no
+    doc (:func:`create`), as signup's examples do by the thousand."""
+    if not shards.sharded():
+        return False
+    owner = shards.owner_of(project_id)
+    me = shards.this_shard()
+    if owner == me:
+        return False
+    outermost, caller = _guard_where()
+    if op is None:
+        if outermost in _GUARD_OPS:
+            return True
+        op = outermost
+    elif outermost != op:
+        return True
+    if op == "create":
+        return True
+    with _guard_lock:
+        count = _guard_counts[(op, caller)] = _guard_counts.get((op, caller), 0) + 1
+    if count <= _GUARD_FIRST or count % _GUARD_EVERY == 0:
+        print(f"[shard-guard] shard {me}: {op} of {project_id} owned by {owner} from {caller} (#{count})",
+              file=sys.stderr, flush=True)
+    return True
+
+
 @contextmanager
 def _held(project_id: str, user_key: str, *, unmade: Optional[dict] = None) -> Iterator[_OpenDoc]:
     """The open doc of the dataflow, opened if it is not, with its lock held.
@@ -863,8 +938,13 @@ def _held(project_id: str, user_key: str, *, unmade: Optional[dict] = None) -> I
     (only tests reuse an id across accounts): it is dropped, writing nothing.
     *unmade*, for a hosted guest's copy with no spec yet, is the spec of the
     dataflow it copies, which a doc this opens is built from in memory
-    (:func:`_load_unmade`)."""
+    (:func:`_load_unmade`).
+
+    tmp/sharded-backend: an open in a process that does not own the dataflow
+    is logged (:func:`_foreign`) and goes ahead; its doc leaves memory a
+    second after it is idle (:func:`_close_due`)."""
     user_key = str(user_key)
+    foreign = _foreign(project_id)
     while True:
         with _lock:
             entry = _docs.get(project_id)
@@ -875,6 +955,8 @@ def _held(project_id: str, user_key: str, *, unmade: Optional[dict] = None) -> I
             if entry is None or entry.closed:
                 entry = _docs[project_id] = _OpenDoc(project_id, user_key)
                 entry.unmade = unmade
+            if foreign:
+                entry.foreign = True
         with entry.lock:
             if entry.closed:
                 continue
@@ -888,6 +970,8 @@ def _held(project_id: str, user_key: str, *, unmade: Optional[dict] = None) -> I
                             del _docs[project_id]
                     raise
             yield entry
+            if foreign:
+                _ensure_flusher()
             return
 
 
@@ -930,7 +1014,9 @@ def _save_due(entry: _OpenDoc) -> Optional[float]:
 
 
 def _close_due(entry: _OpenDoc) -> Optional[float]:
-    return None if entry.idle_since is None else entry.idle_since + CLOSE_AFTER_S
+    if entry.idle_since is None:
+        return None
+    return entry.idle_since + (FOREIGN_CLOSE_AFTER_S if entry.foreign else CLOSE_AFTER_S)
 
 
 def _discard(entry: _OpenDoc) -> None:
@@ -1234,6 +1320,10 @@ def read(user_key: str, project_id: str) -> Optional[dict]:
     spec = storage.read_spec(user_key, project_id)
     if spec is None:
         return None
+    if _foreign(project_id, "read"):
+        # tmp/sharded-backend: the doc is another process's; the file as
+        # saved, at most its doc's write behind, and no doc kept here.
+        return spec
     if _open_entry(project_id, user_key) is None and not _behind(user_key, project_id):
         return spec
     try:
@@ -1390,6 +1480,7 @@ def live(user_key: str, project_id: str) -> Optional[Live]:
     holds (a doc whose log holds changes the file does not is opened to read
     them), without the history. ``None`` when the dataflow has no spec."""
     user_key = str(user_key)
+    _foreign(project_id, "live")
     file = storage.read_spec_file(user_key, project_id)
     if not isinstance(file.spec, dict):
         return None
@@ -1457,6 +1548,7 @@ def write(user_key: str, project_id: str, spec: Live, actor: Actor, *,
     if doc_mapping.same(_writable(spec), spec.base):
         spec.written = Written(False)
         return spec.written
+    _foreign(project_id, "write")
     attachments = _attachments_of(spec.base)
     written = _write(user_key, project_id, spec.base, spec, actor, on_refused=on_refused, on_dropped=on_dropped,
                      point=point, backfilled=backfilled)
@@ -1475,6 +1567,7 @@ def writing(user_key: str, project_id: str, actor: Actor, *,
     ends without an exception (what the write did is the spec's
     :attr:`Live.written`). ``None`` when the dataflow has no spec, and then
     nothing is written."""
+    _foreign(project_id, "writing")
     spec = live(user_key, project_id)
     yield spec
     if spec is not None:
@@ -1492,6 +1585,7 @@ def put(user_key: str, project_id: str, spec: dict, *, over: Optional[Live], act
     (``concurrency.assert_save_keeps_server_work``), checked against *over*.
     *backfilled* is :func:`write`'s. A dataflow with no spec, *over*
     ``None``, is made by it (:func:`create`)."""
+    _foreign(project_id, "put")
     if over is None:
         create(user_key, project_id, spec, actor)
         return Written(True)
@@ -1519,6 +1613,16 @@ def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
     so the tabs that hold it sync on."""
     user_key = str(user_key)
     mine = _writable(spec)
+    if _foreign(project_id, "create"):
+        # tmp/sharded-backend: the doc is another process's; the files alone,
+        # and no doc kept here.
+        entry = _open_entry(project_id)
+        if entry is not None:
+            _discard(entry)
+        storage.write_spec(user_key, project_id, spec)
+        _drop_pointer(user_key, project_id)
+        _made_anew(user_key, project_id, actor)
+        return Live(mine, user_key=user_key, project_id=project_id)
     if _made_from_its_doc(user_key, project_id, spec, actor):
         return Live(mine, user_key=user_key, project_id=project_id)
     if _open_entry(project_id, user_key) is not None and doc_mapping.mappable(doc_mapping.owned(_dataflow_of(mine))):
