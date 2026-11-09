@@ -19,8 +19,11 @@
 # - untagged images no container uses;
 # - on an arcade CPU runner, whose daemon only CI uses and where no job builds
 #   with it, all build cache; elsewhere the build cache no build has used for
-#   a day. An arcade GPU runner keeps the rest of its cache for test-gpu, which
-#   builds its image there: 27 to 40 s with it, 682 s without (11-08).
+#   a day, then all but the KEEP_CACHE most recently used. A GPU runner keeps
+#   that much for test-gpu, which builds its image there: 27 to 40 s with it,
+#   682 s without (11-08). The day's rule alone let arcade-gpu-01 hold 80 GB
+#   (11-09). Docker 28 and later name the limit --reserved-space, older ones
+#   --keep-storage.
 #
 # The deployed stacks' images and every image a container uses stay:
 # `docker image rm` without -f skips an image in use. The disk use before and
@@ -31,6 +34,9 @@
 set -u
 
 repo="ghcr.io/$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')-ci"
+# About two of test-gpu's builds: the layers every commit shares (apt, torch,
+# the pip installs) and the source layers of the last ones.
+KEEP_CACHE=30GB
 
 echo "Docker disk use before the cleanup:"
 docker system df || true
@@ -46,6 +52,9 @@ if [[ "${RUNNER_NAME:-}" == arcade-cpu-* ]]; then
   docker builder prune -af > /dev/null 2>&1 || true
 else
   docker builder prune -af --filter until=24h > /dev/null 2>&1 || true
+  docker builder prune -af --reserved-space "$KEEP_CACHE" > /dev/null 2>&1 \
+    || docker builder prune -af --keep-storage "$KEEP_CACHE" > /dev/null 2>&1 \
+    || echo "::warning::the build cache could not be held to $KEEP_CACHE"
 fi
 echo "Docker disk use after the cleanup:"
 docker system df || true

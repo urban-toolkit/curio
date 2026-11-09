@@ -6,8 +6,9 @@ and whatever the job did: the CI stacks' image names (``curio-ci*-curio``) and
 every pulled CI image go, this commit's too. No other image is ever named for
 removal, and none with -f, so an image a container uses stays. An arcade CPU
 runner, whose daemon only CI uses, also loses all its build cache; elsewhere,
-an arcade GPU runner among them, only what no build used for a day goes, so
-test-gpu's next build there reuses its layers.
+an arcade GPU runner among them, what no build used for a day goes, then all
+but the 30 GB most recently used, so test-gpu's next build there reuses its
+layers and the cache stops growing.
 """
 from __future__ import annotations
 
@@ -36,9 +37,13 @@ IMAGES = STACK_NAMES + [f"{CI_REPO}:{SHA}", f"{CI_REPO}:{OTHER_SHA}"] + OTHERS
 
 #: Stands in for docker: logs every call, answers `image ls` from FAKE_IMAGES,
 #: all of it or one repository's, and `image rm` takes the names out of it, so
-#: what is left after the cleanup is what the daemon would still hold.
+#: what is left after the cleanup is what the daemon would still hold. A call
+#: holding a word of FAKE_REFUSE fails, as an unknown flag does.
 FAKE_DOCKER = """#!/bin/sh
 echo "$*" >> "$DOCKER_LOG"
+for word in $FAKE_REFUSE; do
+  case " $* " in *" $word "*) exit 1 ;; esac
+done
 case "$1 $2" in
   "system df") echo "TYPE TOTAL ACTIVE SIZE RECLAIMABLE" ;;
   "info --format") echo "$DOCKER_ROOT" ;;
@@ -55,9 +60,10 @@ exit 0
 """
 
 
-def _cleanup(tmp_path, runner, images=IMAGES, repository="urban-toolkit/curio"):
+def _cleanup(tmp_path, runner, images=IMAGES, repository="urban-toolkit/curio", refuse=""):
     """Run the cleanup; return its result, the docker calls, the names it
-    removed and the images left on the fake daemon."""
+    removed and the images left on the fake daemon. ``refuse`` lists the
+    flags the fake docker does not know."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     docker = bin_dir / "docker"
@@ -70,7 +76,8 @@ def _cleanup(tmp_path, runner, images=IMAGES, repository="urban-toolkit/curio"):
     log = tmp_path / "docker.log"
     env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "DOCKER_LOG": str(log),
            "FAKE_IMAGES": str(listing), "DOCKER_ROOT": str(docker_root), "RUNNER_NAME": runner,
-           "GITHUB_REPOSITORY": repository, "GITHUB_SHA": SHA, "GITHUB_WORKSPACE": str(tmp_path)}
+           "GITHUB_REPOSITORY": repository, "GITHUB_SHA": SHA, "GITHUB_WORKSPACE": str(tmp_path),
+           "FAKE_REFUSE": refuse}
     # The variable that once told an arcade job whether it had an image of
     # its own; no job sets it any more, and the cleanup must not need it.
     env.pop("CURIO_CI_OWN_IMAGE", None)
@@ -102,19 +109,39 @@ def test_a_job_cancelled_before_its_pull_removes_the_images_earlier_jobs_left(tm
     assert left == OTHERS
 
 
-@pytest.mark.parametrize("runner,prune", [
-    ("arcade-cpu-07", "builder prune -af"),
-    ("arcade-cpu-40", "builder prune -af"),
+KEPT_CACHE = ["builder prune -af --filter until=24h", "builder prune -af --reserved-space 30GB"]
+
+
+@pytest.mark.parametrize("runner,prunes", [
+    ("arcade-cpu-07", ["builder prune -af"]),
+    ("arcade-cpu-40", ["builder prune -af"]),
     # 11-08: test-gpu built its image in 682 s on an arcade GPU runner with no
-    # cache, against 27 to 40 s with it.
-    ("arcade-gpu-03", "builder prune -af --filter until=24h"),
-    ("utk-gpu", "builder prune -af --filter until=24h"),
-    ("utk-desktop-03", "builder prune -af --filter until=24h"),
+    # cache, against 27 to 40 s with it; 11-09: under the day's rule alone
+    # arcade-gpu-01 held 80 GB of it.
+    ("arcade-gpu-03", KEPT_CACHE),
+    ("utk-gpu", KEPT_CACHE),
+    ("utk-desktop-03", KEPT_CACHE),
 ])
-def test_all_build_cache_goes_on_an_arcade_cpu_runner_and_a_days_unused_elsewhere(tmp_path, runner, prune):
+def test_all_build_cache_goes_on_an_arcade_cpu_runner_and_elsewhere_a_day_and_30_gb_stay(tmp_path, runner, prunes):
     result, calls, _, _ = _cleanup(tmp_path, runner)
     assert result.returncode == 0, result.stderr
-    assert [call for call in calls if call.startswith("builder prune")] == [prune]
+    assert [call for call in calls if call.startswith("builder prune")] == prunes
+
+
+def test_a_docker_before_28_holds_the_build_cache_to_30_gb_with_keep_storage(tmp_path):
+    result, calls, _, _ = _cleanup(tmp_path, "arcade-gpu-03", refuse="--reserved-space")
+    assert result.returncode == 0, result.stderr
+    assert [call for call in calls if call.startswith("builder prune")] == KEPT_CACHE + [
+        "builder prune -af --keep-storage 30GB"]
+    assert "::warning::" not in result.stdout
+
+
+def test_a_docker_that_cannot_hold_the_build_cache_says_so_and_the_cleanup_goes_on(tmp_path):
+    result, calls, _, left = _cleanup(tmp_path, "arcade-gpu-03", refuse="--reserved-space --keep-storage")
+    assert result.returncode == 0, result.stderr
+    assert "::warning::the build cache could not be held to 30GB" in result.stdout
+    assert left == OTHERS
+    assert "Free disk after the cleanup:" in result.stdout
 
 
 def test_the_ci_repository_is_found_from_a_mixed_case_name(tmp_path):
