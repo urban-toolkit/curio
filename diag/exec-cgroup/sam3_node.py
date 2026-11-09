@@ -64,6 +64,16 @@ class _Model:
         mark("weights load starts")
         loaded = real_model.from_pretrained(*args, **kwargs)
         mark("weights loaded on the CPU")
+        real_iterator = loaded.propagate_in_video_iterator
+
+        def counted(*args, **kwargs):
+            for count, output in enumerate(real_iterator(*args, **kwargs), 1):
+                if count % 50 == 0:
+                    mark(f"{count} frames tracked, GPU {torch.cuda.memory_allocated() / 2**30:.1f} GiB allocated,"
+                         f" {torch.cuda.max_memory_allocated() / 2**30:.1f} at most")
+                yield output
+
+        loaded.propagate_in_video_iterator = counted
         return loaded
 
 
