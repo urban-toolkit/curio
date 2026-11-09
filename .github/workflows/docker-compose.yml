@@ -2396,6 +2396,9 @@ jobs:
       # the server and saves it; the probe reads the file the save wrote, which
       # must hold every member's node, connection and lines, and no lock may
       # be held at the end.
+      # tmp/backend-room-curve: both stages put every room on example 01,
+      # whose members ask as soon as their node is in, so a tier's numbers
+      # change with its room count alone; no py-spy, so the timings are clean.
       - name: 🧩 Run 10 canvases of 10 users
         if: ${{ !cancelled() }}
         run: |
@@ -2403,10 +2406,10 @@ jobs:
           bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
             --backend "http://localhost:5072" \
             --tiers 100 --room-size 10 --shared-canvas \
+            --mix 01-vega-lite-chained-transforms.json \
             --out "$GITHUB_WORKSPACE/stress-canvas{run}" \
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
-            --probe "docker exec $cid python" \
-            --stacks-every 2 --py-spy "docker exec --privileged $cid py-spy"
+            --probe "docker exec $cid python"
 
       # The same ten canvases, and every member also asks Node Builder to put
       # a line on top of its own node's code: 100 agent turns at once, ten in
@@ -2418,17 +2421,17 @@ jobs:
       # members' own nodes, they ask once the typing is over, as they play.
       # Every turn must land its write, every tab and the save must hold each
       # agent's code, and no agent may still be in the room or hold a lock.
-      - name: 🤖 Run 10 canvases of 10 users with agents
+      - name: 🤖 Run 1, 2, 3 and 10 canvases of 10 users with agents
         if: ${{ !cancelled() }}
         run: |
           cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
           bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
             --backend "http://localhost:5072" \
-            --tiers 100 --room-size 10 --shared-canvas --agents \
+            --tiers 10,20,30,100 --room-size 10 --shared-canvas --agents \
+            --mix 01-vega-lite-chained-transforms.json \
             --out "$GITHUB_WORKSPACE/stress-agents{run}" \
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
-            --probe "docker exec $cid python" \
-            --stacks-every 2 --py-spy "docker exec --privileged $cid py-spy"
+            --probe "docker exec $cid python"
 
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
       # half, and vice versa: they fail for different reasons and get fixed by
