@@ -1453,15 +1453,20 @@ child's own `setsid` comes before the filter.
 Starting a process in a session or process group of its own, as
 `subprocess.Popen(start_new_session=True)` does, fails with `PermissionError`.
 
-A JavaScript node's Node.js gets the same two denials on Linux, isolated or
-not, and so does every process it starts. The sandbox is threaded and cannot
+A JavaScript node's Node.js gets the child's denials on Linux, isolated or
+not, but the network's, and so does every process it starts. The sandbox is threaded and cannot
 run code between `fork` and `exec`, so Node starts through an exec wrapper,
 [`isolation/seccomp_filter.py`](../utk_curio/sandbox/isolation/seccomp_filter.py)
 run as a script (`worker._node_command`), which holds the filter code the
 child uses. Popen's `start_new_session` makes the wrapper a session and process
-group leader; the wrapper sets `PR_SET_NO_NEW_PRIVS`, installs a filter that
-denies only `setsid` and `setpgid`, since Node needs its network, and execs
-Node, which keeps its pid. So no process Node starts can leave Node's process
+group leader; the wrapper sets `PR_SET_NO_NEW_PRIVS`, installs the child's
+denylist without its network calls, since Node needs its network
+(`seccomp_filter.NODE_CODE_DENIED`: `ptrace`, `process_vm_readv` and
+`process_vm_writev`, the mount and namespace calls, module loading, `bpf`,
+`perf_event_open`, `userfaultfd`, `kexec_load`, `setsid` and `setpgid`), and
+execs Node, which keeps its pid. On a host whose `ptrace_scope` is 0, another
+run of the execution account could otherwise attach to a Node run, which is
+dumpable after its exec (`tests/test_js_node_filter.py`). So no process Node starts can leave Node's process
 group, which the run kills when Node exits (`worker._end_node_run`), whether or
 not the process carries the run's mark (`CURIO_JS_RUN`, which a process started
 with an environment of its own lacks). `child_process.spawn` with

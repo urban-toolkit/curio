@@ -147,17 +147,10 @@ def _install_seccomp_filter(*, required):
         # ``socket`` itself is denied below for every family but AF_UNIX.
         "socketcall", "connect", "accept", "accept4",
         "sendto", "sendmsg", "recvfrom", "recvmsg",
-        # Debugger attachment: ptrace on a sibling would sidestep everything.
-        "ptrace", "process_vm_readv", "process_vm_writev",
-        # Namespace and mount games.
-        "mount", "umount", "umount2", "unshare", "setns", "pivot_root", "chroot",
-        # Kernel module loading.
-        "init_module", "finit_module", "delete_module",
-        # Raw kernel surfaces with a poor security history.
-        "bpf", "perf_event_open", "userfaultfd", "kexec_load",
-        # Leaving the child's process group: setsid and setpgid, which a
+        # Debugger attachment, namespaces and mounts, kernel modules, raw
+        # kernel surfaces and leaving the child's process group, which a
         # JavaScript run's Node is denied too (seccomp_filter.py).
-        *seccomp_filter.LEAVING_THE_GROUP,
+        *seccomp_filter.NODE_CODE_DENIED,
     )
 
     # Each denied with EPERM, so the failure surfaces as a normal Python
