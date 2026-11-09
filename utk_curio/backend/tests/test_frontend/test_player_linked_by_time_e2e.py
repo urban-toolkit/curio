@@ -81,7 +81,8 @@ WALK_CODE = (
     "import geopandas as gpd\n"
     "from shapely.geometry import Point\n"
     "\n"
-    "# A walk's points, one every 0.1 s, handed over in a shuffled order.\n"
+    "# A walk's points, one every 0.1 s, handed over in a shuffled order, about\n"
+    "# 165 m apart: autk-map draws a point as a disc 64 m in radius.\n"
     f"order = {json.dumps(ORDER)}\n"
     "return gpd.GeoDataFrame(\n"
     "    {\n"
@@ -89,7 +90,7 @@ WALK_CODE = (
     '        "t_s": [k / 10 for k in order],\n'
     '        "level": [3 + k % 4 for k in order],\n'
     "    },\n"
-    "    geometry=[Point(-87.64 + k * 0.0004, 41.88 + (k % 2) * 0.0002) for k in order],\n"
+    "    geometry=[Point(-87.64 + k * 0.002, 41.88 + (k % 2) * 0.0005) for k in order],\n"
     '    crs="EPSG:4326",\n'
     ")\n"
 )
