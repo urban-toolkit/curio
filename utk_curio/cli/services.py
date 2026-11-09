@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 
 from utk_curio.cli.dependencies import _ensure_root_node_modules, _skip_dep_install
 from utk_curio.cli.environment import _is_testing
@@ -27,6 +28,7 @@ from utk_curio.cli.logs import (
     log_warning,
     logger,
 )
+from utk_curio.common import backend_processes
 from utk_curio.common.llm_endpoint import without_backend_only
 from utk_curio.sandbox.isolation.lifecycle import server_environment
 
@@ -157,7 +159,9 @@ def prepare_backend_database():
     try:
         env = {
             **os.environ,
-            "FLASK_APP": "utk_curio.backend.app:create_app",
+            # The app the migration needs, without the startup work: that is
+            # the home backend's, once it starts (common/backend_processes.py).
+            "FLASK_APP": "utk_curio.backend.app:create_app(startup_work=False)",
             "PYTHONPATH": project_root + os.pathsep + os.environ.get("PYTHONPATH", ""),
         }
         # Make sure the `flask db upgrade` subprocess targets the test
@@ -288,7 +292,10 @@ def _kill_port(port: int) -> None:
         log_warning(f"[Backend] Could not check port {port}: {e}")
 
 
-def start_backend(host, port, no_server=False):
+def start_backend(host, port, no_server=False, *, process=0, processes=1, boot_id=None):
+    """Start backend process *process* of *processes*, of the start whose boot
+    id is *boot_id*: a new one when none is given, as for the one backend a
+    start runs. Process 0 is home (``common/backend_processes.py``)."""
     _kill_port(int(port))
     log_info(f"Starting backend on {host}:{port}...", COLOR_BACKEND, 0)
 
@@ -304,8 +311,14 @@ def start_backend(host, port, no_server=False):
     # backend_server = os.path.join(script_dir, "backend", "server.py")
     env = os.environ.copy()
     env = {**os.environ, "PYTHONPATH": project_root + os.pathsep + env.get("PYTHONPATH", "")}
+    # Which backend it is, and its start's boot id, never one this launcher's
+    # own environment holds: a run left going under another start's id was
+    # cut off by a restart.
+    env.update(backend_processes.environment(
+        process=process, processes=processes, boot_id=boot_id or str(uuid.uuid4()),
+    ))
 
-    process = subprocess.Popen(
+    backend = subprocess.Popen(
         [sys.executable, "-u", "-m", "backend.server"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -313,8 +326,8 @@ def start_backend(host, port, no_server=False):
         cwd=script_dir,
         env=env
     )
-    threading.Thread(target=stream_output, args=(process, "Backend", COLOR_BACKEND), daemon=True).start()
-    return process
+    threading.Thread(target=stream_output, args=(backend, "Backend", COLOR_BACKEND), daemon=True).start()
+    return backend
 
 
 def start_sandbox(host, port):

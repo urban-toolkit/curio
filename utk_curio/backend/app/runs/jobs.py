@@ -3,15 +3,16 @@
 A run's thread drives ``run_engine.run_events`` and records what it yields; a
 browser that follows the run only subscribes, so closing it changes nothing.
 The tables are the record; this holds liveness, the event log and the
-cancel flags. ``BOOT_ID`` names this process: a run left queued or running
-by another one was cut off by a restart.
+cancel flags. ``BOOT_ID`` names the start this process belongs to, which
+every backend process of the start shares (``common/backend_processes.py``):
+a run left queued or running under another one was cut off by a restart.
 """
 from __future__ import annotations
 
 import threading
-import uuid
 
 from utk_curio.backend.app.common.job_registry import JobRefused, JobRegistry
+from utk_curio.common import backend_processes
 
 #: Runs one account may have going at once.
 MAX_ACTIVE_RUNS_PER_USER = 2
@@ -19,7 +20,9 @@ MAX_ACTIVE_RUNS_PER_USER = 2
 FINISHED_TTL_SECONDS = 15 * 60
 MAX_EVENTS_PER_RUN = 5000
 
-BOOT_ID = str(uuid.uuid4())
+#: Made once, at import: the launcher's for every backend of its start, else
+#: this process's own.
+BOOT_ID = backend_processes.boot_id()
 
 __all__ = ["JobRefused", "REGISTRY", "BOOT_ID", "cancel_flag", "drop_cancel_flag"]
 
