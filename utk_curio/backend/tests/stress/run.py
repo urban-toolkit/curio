@@ -581,6 +581,32 @@ def tier_lines(summary: dict) -> list[str]:
             f".updates {files['updates_bytes']['total']} B"
             + (f"; no log for {', '.join(files['without_log'])}" if files["without_log"] else "")
         )
+    lines.extend(process_lines(summary))
+    return lines
+
+
+def process_lines(summary: dict) -> list[str]:
+    """tmp/sharded-backend: each backend process's rooms, sync, turns, CPU and
+    memory over the tier, for the log."""
+    rooms = {entry["process"]: entry for entry in (summary.get("sockets") or {}).get("per_process") or []}
+    turns = {entry["process"]: entry for entry in (summary.get("agents") or {}).get("per_process") or []}
+    each = {entry["shard"]: entry for entry in (summary.get("backend") or {}).get("processes") or []}
+    lines = []
+    for process in sorted(set(rooms) | set(turns) | set(each), key=lambda value: (value is None, value)):
+        parts = [f"process {process}"]
+        room = rooms.get(process)
+        if room:
+            sync = room.get("sync_ms") or {}
+            parts.append(f"{room['rooms']} room(s), sync p50 {sync.get('p50')} ms, p95 {sync.get('p95')} ms")
+        turn = (turns.get(process) or {}).get("turn_s")
+        if turn:
+            parts.append(f"turn p50 {turn['p50']} s, p95 {turn['p95']} s")
+        one = each.get(process)
+        if one:
+            cpu = one.get("cpu") or {}
+            parts.append(f"{cpu.get('cores_busy')} cores (peak {cpu.get('peak_cores_busy')}), "
+                         f"RSS peak {one.get('rss_mib_peak')} MiB, threads peak {one.get('threads_peak')}")
+        lines.append("; ".join(parts))
     return lines
 
 
@@ -642,6 +668,11 @@ def main(argv: list[str] | None = None) -> int:
                              "--privileged <container> py-spy': the samples are "
                              "py-spy's dumps, which need no GIL and name its "
                              "holder, and py-spy records the GIL's holder too")
+    parser.add_argument("--backend-processes", type=int,
+                        default=int(os.environ.get("CURIO_BACKEND_PROCESSES") or 1), metavar="N",
+                        help="tmp/sharded-backend: how many backend processes the stack runs "
+                             "(curio.py start --backend-processes), so the report names each "
+                             "room's process (shards.shard_of)")
     args = parser.parse_args(argv)
 
     if args.stacks_only:
@@ -723,13 +754,13 @@ def main(argv: list[str] | None = None) -> int:
             write_stack_profile(sampler, args.out, stack_name, tier, args.stacks_every)
         all_results.extend(results)
         lock = reporting.exec_lock_delta(lock_before, read_exec_lock(backend_url))
-        tabs = reporting.socket_summary(outcomes)
+        tabs = reporting.socket_summary(outcomes, shards=args.backend_processes)
         summary = reporting.tier_summary(tier, results, seconds, args.profile,
                                          exec_lock=lock, sockets=tabs,
                                          backend=backend, doc_files=doc_files,
                                          harness=harness,
                                          canvas=reporting.canvas_summary(outcomes))
-        summary["agents"] = reporting.agents_summary(outcomes)
+        summary["agents"] = reporting.agents_summary(outcomes, shards=args.backend_processes)
         tier_reports.append(summary)
         print(f"[stress] tier {tier}: {summary['completed']}/{tier} completed in "
               f"{seconds:.1f}s, {summary['failure_count']} failure(s)", flush=True)

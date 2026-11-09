@@ -106,16 +106,30 @@ def distribution(values: list[float], scale: float = 1.0, digits: int = 1) -> di
     }
 
 
-def socket_summary(rooms: list[dict]) -> dict | None:
+def room_process(room: dict, shards: int) -> int:
+    """tmp/sharded-backend: the backend process that owns *room*'s dataflow
+    among *shards* (``utk_curio/common/shards.shard_of``)."""
+    from utk_curio.common.shards import shard_of
+
+    return shard_of(room.get("project_id"), shards)
+
+
+def socket_summary(rooms: list[dict], shards: int = 1) -> dict | None:
     """What a tier's tabs did, from each room's ``sockets.Room.outcome``: the
     updates they sent, how long each took to be in every other tab of its room
     (``sync_ms``; None when no room had a second tab), the updates that never
     were (``unsynced``), the rooms whose tabs ended with different docs, and
     the size of the doc a tab joining at the end would download. None for a
-    tier with no rooms."""
+    tier with no rooms. tmp/sharded-backend: each room's backend process among
+    *shards*, and each process's rooms and sync."""
     if not rooms:
         return None
     seconds = [value for room in rooms for value in room["sync_seconds"]]
+    per_process: dict = {}
+    for room in rooms:
+        held = per_process.setdefault(room_process(room, shards), {"rooms": 0, "seconds": []})
+        held["rooms"] += 1
+        held["seconds"].extend(room["sync_seconds"])
     state = [room["doc_state_bytes"] for room in rooms if room.get("doc_state_bytes") is not None]
     return {
         "rooms": len(rooms),
@@ -132,12 +146,18 @@ def socket_summary(rooms: list[dict]) -> dict | None:
         "per_room": [
             {
                 "room": room["room"], "project_id": room["project_id"], "tabs": room["tabs"],
+                "process": room_process(room, shards),
                 "doc_ids": room["doc_ids"], "updates": room["updates"],
                 "sync_ms": distribution(room["sync_seconds"], 1000.0),
                 "unsynced": room["unsynced"], "diverged": room["diverged"],
                 "doc_state_bytes": room.get("doc_state_bytes"),
             }
             for room in rooms
+        ],
+        "processes": shards,
+        "per_process": [
+            {"process": process, "rooms": held["rooms"], "sync_ms": distribution(held["seconds"], 1000.0)}
+            for process, held in sorted(per_process.items())
         ],
     }
 
@@ -204,7 +224,7 @@ def canvas_summary(rooms: list[dict]) -> dict | None:
 TURN_PHASES = ("prepared", "written", "ended")
 
 
-def agents_summary(rooms: list[dict]) -> dict | None:
+def agents_summary(rooms: list[dict], shards: int = 1) -> dict | None:
     """What a tier's agents did (``--agents``), from each room's ``agents``
     (``agents.RoomAgents.outcome``): the turns asked, how they ended and how
     long each took from its ask to its end (``turn_s``: None when none
@@ -212,10 +232,20 @@ def agents_summary(rooms: list[dict]) -> dict | None:
     otherwise, never made), the landed writes and turn ends missing from a
     tab, the agents the server still had in a room at the end (None when no
     room read them) and the tabs that still showed one, and the rooms whose
-    tabs differed once every turn had ended. None for a tier with no agents."""
-    groups = [room["agents"] for room in rooms if room.get("agents")]
+    tabs differed once every turn had ended. None for a tier with no agents.
+    tmp/sharded-backend: each room's backend process among *shards*, and
+    each process's rooms, turns and phases."""
+    pairs = [(room, room["agents"]) for room in rooms if room.get("agents")]
+    groups = [group for _, group in pairs]
     if not groups:
         return None
+    per_process: dict = {}
+    for room, group in pairs:
+        held = per_process.setdefault(room_process(room, shards), {"rooms": 0, "turns": [], "phases": {}})
+        held["rooms"] += 1
+        held["turns"].extend(group["turn_seconds"])
+        for phase in TURN_PHASES:
+            held["phases"].setdefault(phase, []).extend((group.get("phases") or {}).get(phase) or [])
     present = [group["present_at_end"] for group in groups if group.get("present_at_end") is not None]
 
     def summed(key: str) -> dict:
@@ -243,9 +273,22 @@ def agents_summary(rooms: list[dict]) -> dict | None:
         "turn_events_told": sum(group["turn_events_told"] for group in groups),
         "diverged_rooms": sum(1 for group in groups if group.get("diverged")),
         "per_room": [
-            {key: group.get(key) for key in ("early", "asked", "ends", "writes", "unsynced", "present_at_end",
-                                             "diverged", "turns")}
-            for group in groups
+            {
+                "project_id": room.get("project_id"), "process": room_process(room, shards),
+                "turn_s": distribution(group["turn_seconds"], digits=2),
+                **{key: group.get(key) for key in ("early", "asked", "ends", "writes", "unsynced", "present_at_end",
+                                                   "diverged", "turns")},
+            }
+            for room, group in pairs
+        ],
+        "processes": shards,
+        "per_process": [
+            {
+                "process": process, "rooms": held["rooms"],
+                "turn_s": distribution(held["turns"], digits=2),
+                "phases_s": {phase: distribution(values, digits=2) for phase, values in held["phases"].items()},
+            }
+            for process, held in sorted(per_process.items())
         ],
     }
 
@@ -315,7 +358,32 @@ def backend_summary(start: dict | None, samples: list[dict], end: dict | None,
         "samples": sum(1 for sample in samples if sample and "threads" in sample),
         "every_s": every_s,
         "problem": problem,
+        "processes": process_summaries(readings),
     }
+
+
+def process_summaries(readings: list) -> list:
+    """tmp/sharded-backend: each backend process's own threads, resident
+    memory and CPU over the tier, by its shard, from the readings'
+    ``processes`` (``backend_probe.read``); empty for a probe that lists none."""
+    by_shard: dict = {}
+    for reading in readings:
+        for one in (reading or {}).get("processes") or []:
+            by_shard.setdefault(one.get("shard"), []).append({**one, "at": reading.get("at")})
+    out = []
+    for shard in sorted(by_shard, key=lambda value: (value is None, value)):
+        rows = by_shard[shard]
+        threads = [row["threads"] for row in rows if isinstance(row.get("threads"), (int, float))]
+        rss = [row["rss_bytes"] / MIB for row in rows if isinstance(row.get("rss_bytes"), (int, float))]
+        out.append({
+            "shard": shard,
+            "pid": rows[-1].get("pid"),
+            "threads_peak": max(threads) if threads else None,
+            "rss_mib_start": round(rss[0], 1) if rss else None,
+            "rss_mib_peak": round(max(rss), 1) if rss else None,
+            "cpu": cpu_track(rows, "cpu_seconds", "at"),
+        })
+    return out
 
 
 def doc_files_summary(listing: dict | None, problem: str | None = None) -> dict:

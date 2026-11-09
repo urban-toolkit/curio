@@ -270,24 +270,55 @@ def saved_specs_here(project_ids: list) -> dict:
     return {"specs": saved_specs(state_roots(environ, cwd), project_ids)}
 
 
+def serving_backends(processes: list, own_pid: int) -> list:
+    """tmp/sharded-backend: the pids of every backend process that serves
+    among *processes*, ``(pid, ppid, cmdline)`` each: those whose parent is a
+    backend too where Werkzeug's reloader runs, else all of them."""
+    backends = {pid: ppid for pid, ppid, cmdline in processes
+                if pid != own_pid and is_backend(cmdline or [])}
+    children = sorted(pid for pid, ppid in backends.items() if ppid in backends)
+    return children or sorted(backends)
+
+
 def read(project_ids: list) -> dict:
-    """One reading of the backend, here."""
+    """One reading of the backend, here: with several backend processes
+    (``--backend-processes``), their threads, resident bytes and CPU seconds
+    summed, and each process's own in ``processes``, by its ``shard``."""
     try:
         import psutil
     except ImportError:
         return {"error": "psutil is not installed where the probe runs"}
-    pid = find_backend(psutil)
-    if pid is None:
+    listed = []
+    for process in psutil.process_iter(["pid", "ppid", "cmdline"]):
+        info = process.info
+        listed.append((info.get("pid"), info.get("ppid"), info.get("cmdline") or []))
+    pids = serving_backends(listed, os.getpid())
+    if not pids:
         return {"error": "no process here serves -m backend.server"}
+    each = []
+    home_environ, cwd = None, None
     try:
-        backend = psutil.Process(pid)
-        reading = process_reading(backend)
-        if project_ids:
-            environ, cwd = backend.environ(), backend.cwd()
+        for pid in pids:
+            backend = psutil.Process(pid)
+            one = process_reading(backend)
+            environ = backend.environ()
+            shard = environ.get("CURIO_SHARD")
+            one["shard"] = int(shard) if shard and shard.isdigit() else 0
+            each.append(one)
+            if project_ids and (home_environ is None or one["shard"] == 0):
+                home_environ, cwd = environ, backend.cwd()
     except psutil.Error as exc:
-        return {"error": f"the backend (pid {pid}) could not be read: {type(exc).__name__}: {exc}"}
+        return {"error": f"a backend process (of {pids}) could not be read: {type(exc).__name__}: {exc}"}
+    each.sort(key=lambda one: (one["shard"], one["pid"]))
+    reading = {
+        "pid": each[0]["pid"],
+        "threads": sum(one["threads"] for one in each),
+        "rss_bytes": sum(one["rss_bytes"] for one in each),
+        "cpu_seconds": round(sum(one["cpu_seconds"] for one in each), 3),
+        "processes": each,
+    }
     if project_ids:
-        reading["docs"] = doc_files(state_roots(environ, cwd), project_ids)
+        reading["docs"] = doc_files(state_roots(home_environ, cwd), project_ids)
     return reading
 
 
