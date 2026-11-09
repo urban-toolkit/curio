@@ -97,6 +97,10 @@ What a deployment should know:
   bucket's listing before a byte is fetched, and a file that sends more than
   its listing said is stopped. Raising either lets one user's click fetch that
   much from the bucket and keep it on this machine's disk.
+- **A bucket mount reaches only the hosts of the sources being mounted,
+  through the backend.** The [mount service](#bucket-mounts) has no network
+  of its own: the backend tunnels its HTTPS to the host of a source it mounts,
+  after the policy above, and to an address the policy passed.
 
 Two sources reach OpenStreetMap:
 
@@ -345,6 +349,59 @@ Before a stack starts with it, the host needs three things, set up once:
    `apparmor_parser` lines again. Every stack on the host uses this one
    profile, the [dev stack](#optional-dev-stack-alongside-stable) too.
 
+To start a stack with the service:
+
+1. Add the overlay to `COMPOSE_FILE`, after `docker-compose.deploy.yml` and
+   before `docker-compose.site.yml`, and keep it there for every later
+   command, [Updating](#updating)'s too:
+
+   ```bash
+   export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.bucket-mounts.yml:docker-compose.site.yml
+   ```
+
+2. In `docker-compose.site.yml`, beside its other lines, bind a host folder
+   outside the checkout into both services, and add the folder and the
+   service's socket to Curio's `command`. Write each bind in full: Compose
+   replaces the overlay's bind of the same target with yours, and without its
+   `propagation` the mounts do not reach Curio.
+
+   ```yaml
+   services:
+     curio:
+       command: ["--backend-url", "https://lab-name.your-uni.edu/curio/api", "--base-path", "/curio", "--exec-memory-mb", "24576", "--bucket-mounts-dir", "/bucket-mounts", "--bucket-mount-socket", "/run/curio-bucket-mounts/rc.sock"]
+       volumes:
+         - type: bind
+           source: /srv/curio-bucket-mounts
+           target: /bucket-mounts
+           read_only: true
+           bind:
+             propagation: rslave
+             create_host_path: true
+     bucket-mounts:
+       volumes:
+         - type: bind
+           source: /srv/curio-bucket-mounts
+           target: /mounts
+           bind:
+             propagation: rshared
+             create_host_path: true
+   ```
+
+   Docker makes the folder, root's, when the stack starts. A folder you make
+   yourself must be root's too: the service writes in it as root with
+   `SYS_ADMIN` its only capability. Each stack on the host needs a folder of
+   its own.
+   Without these binds the overlay mounts buckets in the checkout's
+   `bucket-mounts/`, where a backup of the checkout walks into every mounted
+   bucket.
+
+3. Recreate the stack: `docker compose up -d --force-recreate`.
+
+It works when `docker compose ps` shows `bucket-mounts` as `(healthy)` and
+`/monitor`'s **Deployment** shows **Bucket mounts** *on, self-test passed*.
+While Curio tests the service after a start, the line says *on, self-test
+running*.
+
 ## 2. Configure Caddy
 
 Caddy terminates HTTPS and forwards traffic into the Docker container. The two `handle_path` blocks below split incoming requests by URL prefix: anything under `/curio/api/` goes to the backend on port 5002, everything else under `/curio/` goes to the frontend on port 8080. The `handle_path` directive strips the prefix before forwarding, so your backend code sees normal paths like `/live` and `/upload`.
@@ -535,6 +592,8 @@ Both stacks also start with `--media-cache-max-file-gb 8`, so **Cache files** co
 
 They also start with `--discovery-max-download-mb 2048`, so a download, or a file of a bucket table, may be up to 2 GiB on them: a month of detections in data.urbantk.org's `idot` bucket is a JSON Lines file of up to 1.7 GB.
 
+Each stack runs its own [bucket mount service](#bucket-mounts) when the deployed release has it, mounting in `/srv/curio-bucket-mounts/dev` or `/srv/curio-bucket-mounts/stable`. Before a deploy stops the running stack, it checks the host: `/dev/fuse`, a shared mount at `/srv`, and the AppArmor profile, loaded and with `/etc/apparmor.d/curio-bucket-mounts` the same as the checkout's `scripts/bucket-mounts/curio-bucket-mounts.apparmor`. A failed check fails the deploy with the command to run. Once the new stack is up, the deploy fails unless `bucket-mounts` is healthy and **Bucket mounts** says *on, self-test passed*.
+
 A merge to `main` deploys the dev stack once: Bump version bumps the patch version and dispatches the dev deploy of that commit. Stable runs manually via Actions → Deploy → Run workflow.
 
 `deploy.yml` takes two inputs: `ref` (branch, tag, or SHA; empty deploys the latest `v*` tag) and `target` (`both` / `dev` / `stable`). Both jobs check out the requested ref and rebuild with `--no-cache --force-recreate`.
@@ -693,4 +752,9 @@ flooding it cannot push real errors out of the log.
   reads the folder `--model-weights-dir` names in place, so any node code can
   open the weights there by their path, not only the nodes of an account that
   added the model.
+- **Only `bucket-mounts` holds FUSE's privileges** ([Bucket mounts](#bucket-mounts)).
+  Its control socket is in a folder only root may enter, and node code runs as
+  `curio-exec`, Python and JavaScript, so no node reaches it. A mounted bucket
+  is readable by every node, as a folder source is: node code opens its files
+  by their path under `--bucket-mounts-dir`.
 
