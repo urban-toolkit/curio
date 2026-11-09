@@ -2020,9 +2020,10 @@ jobs:
       - name: 🧪 The self-test, reading as a non-root account
         run: docker compose exec -T curio python /curio/scripts/bucket-mounts/ci_check.py selftest
 
-      # Two buckets mounted as the backend mounts a source: rclone takes the
-      # parameters and names each mount as the backend expects, and with
-      # nothing on the proxy's port in the stand-in no listing reaches a bucket.
+      # Two buckets mounted at once as the backend mounts a source: rclone
+      # takes the parameters and names each mount as the backend expects, with
+      # nothing on the proxy's port in the stand-in no listing reaches a
+      # bucket, and vfs/forget and vfs/refresh find each mount by that name.
       - name: 🪣 A source's mount, with no way out but the backend's proxy
         run: docker compose exec -T curio python /curio/scripts/bucket-mounts/ci_check.py source-mount
 
