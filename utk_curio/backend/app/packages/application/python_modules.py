@@ -146,7 +146,7 @@ def dependency_module_names(user_key: str, package_deps: object) -> frozenset[st
         return frozenset()
     majors_by_pkg = packages_store_reads._installed_majors_by_pkg(user_key)
     names: set[str] = set()
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         for dir_name in dependency_dirs(package_deps, majors_by_pkg):
             try:
                 manifest = load_package_manifest(package_dir(user_key, dir_name))
@@ -216,7 +216,7 @@ def modules_for_node(
         dir_name = _installed_dir_for(node_type, package_id, majors_by_pkg, pins)
         if dir_name is None:
             return None
-        with package_seed_lock(user_key):
+        with package_seed_lock(user_key, shared=True):
             manifest = load_package_manifest(package_dir(user_key, dir_name))
             if template_id not in {t.template_id for t in manifest.templates}:
                 return None
@@ -275,7 +275,7 @@ def _store_modules(
     those ``<packageId>@<major>`` alone."""
     pins = _dataflow_pins(user_key, project_id, majors_by_pkg)
     index: dict[str, dict] = {}
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         held = []
         for package_id in sorted(majors_by_pkg):
             dir_name = _dir_for_package(package_id, majors_by_pkg, pins)

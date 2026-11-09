@@ -178,7 +178,7 @@ def package_derived(user_key: str) -> list[LibraryEntry]:
     # presence probes below are importlib-metadata work, not store reads, and
     # run after release so the hold stays bounded to local manifest I/O.
     declared: list[tuple[str, dict[str, str], dict[str, str]]] = []
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         for package_path in list_user_packages(user_key):
             try:
                 m = load_package_manifest(package_path)
@@ -228,7 +228,7 @@ def any_package_declares(user_key: str, lib_name: str, kind: str) -> bool:
     """True if any installed package's manifest declares *lib_name* under
     ``dependencies.<kind>``. Used to gate pip uninstall on standalone
     remove - if a package needs the lib, we keep it on disk."""
-    with package_seed_lock(user_key):  # memo dev/99: one consistent walk
+    with package_seed_lock(user_key, shared=True):  # memo dev/99: one consistent walk
         for package_path in list_user_packages(user_key):
             try:
                 m = load_package_manifest(package_path)
@@ -320,7 +320,7 @@ def not_asked_for(user_keys, names) -> list[str]:
     """
     asked: set[str] = set()
     for user_key in user_keys:
-        with package_seed_lock(user_key):  # memo dev/99: one consistent walk
+        with package_seed_lock(user_key, shared=True):  # memo dev/99: one consistent walk
             for package_path in list_user_packages(user_key):
                 try:
                     m = load_package_manifest(package_path)

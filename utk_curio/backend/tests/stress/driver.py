@@ -3,7 +3,8 @@ and, in a room of users, open a tab of the room's shared dataflow, type and
 drag in it (``sockets.py``). On a shared canvas (``--shared-canvas``) the
 dataflow a member works on is its room's one dataflow instead: it adds a node
 of its own there, plays the dataflow as its tab holds it, and the room's owner
-runs it on the server and saves it (:meth:`VirtualUser.on_the_canvas`).
+runs it on the server and saves it (:meth:`VirtualUser.on_the_canvas`). With
+``--agents`` each member also asks its agent to write its node (``agents.py``).
 
 Everything here goes through the same backend endpoints the canvas calls, with
 the same payload shapes, so a failure found under load is a failure a real user
@@ -210,8 +211,19 @@ class Sample:
 #                   not end done, or the run did not end as one that went right
 # unsaved         - the dataflow the owner's save wrote lacks a member's node,
 #                   connection or typed lines
+# With each member's agent (--agents, agents.py):
+# agent_turn      - a member's agent's turn ended in an error, never ended, or
+#                   its write of the member's node did not land (refused, or
+#                   never made)
+# changed_meanwhile - its write was refused because the node took other code
+#                   after the agent read it, though nobody else writes it then
+# agent_unsynced  - a write that landed was not in a tab of the room, or a tab
+#                   was never told that a turn ended
+# agent_present   - once the room's work was over, an agent was still in the
+#                   room, on the server or in a tab
 FAILURE_KINDS = ("http_error", "empty_output", "timeout", "transport", "mismatch",
-                 "socket", "unsynced", "diverged", "locked", "server_run", "unsaved")
+                 "socket", "unsynced", "diverged", "locked", "server_run", "unsaved",
+                 "agent_turn", "changed_meanwhile", "agent_unsynced", "agent_present")
 
 
 @dataclass
@@ -480,6 +492,8 @@ class VirtualUser:
                 except UserFailed:
                     # It would join as a watcher, whose changes the server drops.
                     room.leave(editor)
+            if room.agents is not None:
+                room.agents.install(self)
         finally:
             room.invited.set()
 
@@ -515,13 +529,23 @@ class VirtualUser:
         the room holds the same doc (``sockets.run_tab``): play the dataflow
         as its tab holds it (:meth:`play_the_canvas`), and, for the room's
         owner, run it on the server and save it
-        (:meth:`run_and_save_the_canvas`). Whether all of it went; each
-        failure is recorded where it happened."""
+        (:meth:`run_and_save_the_canvas`). With ``--agents`` the member
+        asks its agent here where the room's typing was in the members' own
+        nodes, and waits for its turn once it played; the owner runs the
+        dataflow only once every member's turn is over (``agents.RoomAgents``).
+        Whether all of it went; each failure is recorded where it happened."""
         self.project_id = self.room.project_id
         if self.own_node is not None and PASS_ON in self.compare_to:
             self.compare_to[self.own_node["id"]] = self.compare_to[PASS_ON]
+        agents = self.room.agents
+        if agents is not None:
+            agents.ask_late(self, tab)
         went = self._attempt(self.play_the_canvas, tab)
+        if agents is not None:
+            agents.after_plays(self)
         if self.name == self.room.owner:
+            if agents is not None:
+                agents.before_the_run(self)
             went = self._attempt(self.run_and_save_the_canvas) and went
         return went
 
@@ -679,6 +703,8 @@ class VirtualUser:
             lacks = ["the dataflow's file (spec.trill.json)"]
         else:
             lacks = saved_lacks(saved, dict(self.room.added), dict(self.room.typed))
+            if self.room.agents is not None:
+                lacks += self.room.agents.saved_lacks(saved)
         if lacks:
             self._fail("saved dataflow", "", f"the dataflow its save wrote lacks {len(lacks)} thing(s) the "
                        "room's members made: " + "; ".join(lacks), "unsaved")

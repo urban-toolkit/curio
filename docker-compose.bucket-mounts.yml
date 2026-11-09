@@ -1,0 +1,111 @@
+# Bucket mounts: a service that mounts public buckets read-only with FUSE, so
+# Curio can read a bucket's files where they are (docs/ARCHITECTURE.md,
+# "Bucket mounts"). A deployment adds this file to COMPOSE_FILE after
+# docker-compose.yml and docker-compose.deploy.yml, and starts Curio with
+# --bucket-mounts-dir /bucket-mounts and
+# --bucket-mount-socket /run/curio-bucket-mounts/rc.sock.
+#
+# The service, bucket-mounts, is rclone's remote control daemon in a container
+# of its own, the only container that holds FUSE's privileges: /dev/fuse,
+# SYS_ADMIN and its AppArmor profile, which allows FUSE mounts and unmounts
+# under /mounts alone (scripts/bucket-mounts/curio-bucket-mounts.apparmor).
+# Docker refuses to start a container under a profile the host has not loaded,
+# so the host loads it first, as root:
+#   apparmor_parser -r -W scripts/bucket-mounts/curio-bucket-mounts.apparmor
+# (installed in /etc/apparmor.d/ first, it loads again at every boot).
+#
+# Its mounts reach Curio through the host: ./bucket-mounts is bound rshared
+# into the service and read-only rslave into Curio's container, so a mount the
+# service makes or removes there shows in both. The host folder must sit on a
+# shared mount, as systemd makes /. Docker makes it, root's, when it is
+# missing; one made by hand must be root's too, since the service's root has
+# no capability to write in a folder another account owns.
+#
+# Its control channel is rclone's rc API on a Unix socket, in a volume only
+# the two containers share, in a folder only root may enter, so node code's
+# account cannot reach it. The service sits on an internal network with
+# Curio's container alone; its one way out is a proxy in Curio's backend
+# (HTTPS_PROXY, utk_curio/backend/app/discovery/infrastructure/mount_proxy.py),
+# which tunnels only to the hosts of the sources Curio mounts.
+services:
+  bucket-mounts:
+    image: rclone/rclone:1.76.0@sha256:7cbeec24a44f206067597c0368be4de90ae19a64d5113c7d1938bd737a81e466
+    # Unmounts what a stopped service left under /mounts, makes the control
+    # folder 0700, writes the self-test's file, then runs rclone rcd on the
+    # socket.
+    entrypoint: ["/bin/sh", "/opt/curio-bucket-mounts/service.sh"]
+    init: true
+    restart: unless-stopped
+    devices:
+      - /dev/fuse:/dev/fuse
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor=curio-bucket-mounts
+      - no-new-privileges:true
+    read_only: true
+    # rclone's config and cache folders, and the self-test's folder. A mount
+    # keeps no cache: rclone reads the ranges a node asks for.
+    tmpfs:
+      - /config:size=1m,mode=0700
+      - /tmp:size=16m,mode=1777
+      - /selftest:size=1m,mode=0755
+    # A mount reads ahead into a buffer of each open file (rclone's
+    # --buffer-size, 16 MiB), so 2 GiB holds about a hundred files read at once.
+    mem_limit: 2g
+    pids_limit: 1024
+    environment:
+      HTTPS_PROXY: http://curio:3128
+    volumes:
+      - type: bind
+        source: ./scripts/bucket-mounts
+        target: /opt/curio-bucket-mounts
+        read_only: true
+      - type: bind
+        source: ./bucket-mounts
+        target: /mounts
+        bind:
+          propagation: rshared
+          create_host_path: true
+      - type: volume
+        source: bucket-mounts-control
+        target: /run/curio-bucket-mounts
+    networks:
+      - bucket-mounts
+    healthcheck:
+      test: ["CMD", "rclone", "rc", "--unix-socket", "/run/curio-bucket-mounts/rc.sock", "rc/noop"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Curio's container: the service's mounts, read-only, rslave so a mount made
+  # or removed after it started shows here too, and the control channel. No
+  # device, capability or AppArmor change: it mounts nothing.
+  curio:
+    volumes:
+      - type: bind
+        source: ./bucket-mounts
+        target: /bucket-mounts
+        read_only: true
+        bind:
+          propagation: rslave
+          create_host_path: true
+      - type: volume
+        source: bucket-mounts-control
+        target: /run/curio-bucket-mounts
+    networks:
+      - default
+      - bucket-mounts
+
+networks:
+  # The service's only network: Curio's container and nothing else, with no
+  # way out of the host.
+  bucket-mounts:
+    internal: true
+
+volumes:
+  # The service's control socket, in a folder only root may enter.
+  bucket-mounts-control:

@@ -11,6 +11,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker +
 - [1. Configure the stack](#1-configure-the-stack)
   - [LLM configurations](#llm-configurations)
   - [Model weights a package fetches](#model-weights-a-package-fetches)
+  - [Bucket mounts](#bucket-mounts)
 - [2. Configure Caddy](#2-configure-caddy)
 - [3. Build and run](#3-build-and-run)
   - [The GPU](#the-gpu)
@@ -61,8 +62,10 @@ match the deployed commit too. Pass `--packages-root` or `--discovery-root` to
 
 ### Outbound requests
 
-The Discovery Catalog is the one feature that makes outbound requests on a
-user's behalf, so it is worth knowing what bounds them. Every URL - search,
+Two features make outbound requests on a user's behalf: the Discovery Catalog
+and JavaScript nodes. A JavaScript node's Node.js has the network the container
+has, with no address policy, loopback included; isolated Python node code has
+no network. Every Discovery Catalog URL - search,
 describe, download, and each redirect hop - passes the same default-deny
 address policy the agent tools use: https/http only, private, loopback,
 link-local and reserved addresses refused *after* DNS resolution, and the
@@ -302,6 +305,46 @@ Fetch them once on the server, from the checkout of the release you deploy:
 - Git, the image and the pip package hold none of these weights, and
   **Export**, **Publish** and **Save as package node** refuse such a model.
 
+### Bucket mounts
+
+`docker-compose.bucket-mounts.yml` runs a mount service for buckets beside
+Curio: rclone in a container of its own, `bucket-mounts`, which mounts buckets
+read-only with FUSE. It is the one container with FUSE's privileges:
+`/dev/fuse`, `SYS_ADMIN`, and an AppArmor profile of its own, Docker's default
+profile for containers with FUSE mounts and unmounts allowed under the
+service's `/mounts` alone.
+
+Before a stack starts with it, the host needs three things, set up once:
+
+1. **The FUSE device.** This prints a line that starts with `c`:
+
+   ```bash
+   ls -l /dev/fuse
+   ```
+
+2. **A shared mount where the mounts live**, as systemd makes `/`. For a
+   folder under `/srv`, this prints `shared`:
+
+   ```bash
+   findmnt -n -o PROPAGATION -T /srv
+   ```
+
+3. **The service's AppArmor profile, loaded.** Docker refuses to start the
+   service until the kernel has it. Install and load it as root, then check:
+
+   ```bash
+   cd /srv/curio
+   sudo install -m 644 scripts/bucket-mounts/curio-bucket-mounts.apparmor /etc/apparmor.d/curio-bucket-mounts
+   sudo apparmor_parser -r -W /etc/apparmor.d/curio-bucket-mounts
+   sudo aa-status | grep curio-bucket-mounts
+   ```
+
+   The last command prints `curio-bucket-mounts`. The profile loads again at
+   every boot. When an update changes
+   `scripts/bucket-mounts/curio-bucket-mounts.apparmor`, run the `install` and
+   `apparmor_parser` lines again. Every stack on the host uses this one
+   profile, the [dev stack](#optional-dev-stack-alongside-stable) too.
+
 ## 2. Configure Caddy
 
 Caddy terminates HTTPS and forwards traffic into the Docker container. The two `handle_path` blocks below split incoming requests by URL prefix: anything under `/curio/api/` goes to the backend on port 5002, everything else under `/curio/` goes to the frontend on port 8080. The `handle_path` directive strips the prefix before forwarding, so your backend code sees normal paths like `/live` and `/upload`.
@@ -490,6 +533,8 @@ Both stacks mount `/srv/curio-model-weights` read-only at `/model-weights` and s
 
 Both stacks also start with `--media-cache-max-file-gb 8`, so **Cache files** copies the SideSeeing walks, videos of up to 7 GiB, from data.urbantk.org. Each account still holds at most 20 GB of cached files.
 
+They also start with `--discovery-max-download-mb 2048`, so a download, or a file of a bucket table, may be up to 2 GiB on them: a month of detections in data.urbantk.org's `idot` bucket is a JSON Lines file of up to 1.7 GB.
+
 A merge to `main` deploys the dev stack once: Bump version bumps the patch version and dispatches the dev deploy of that commit. Stable runs manually via Actions → Deploy → Run workflow.
 
 `deploy.yml` takes two inputs: `ref` (branch, tag, or SHA; empty deploys the latest `v*` tag) and `target` (`both` / `dev` / `stable`). Both jobs check out the requested ref and rebuild with `--no-cache --force-recreate`.
@@ -602,6 +647,8 @@ flooding it cannot push real errors out of the log.
 | `could not select device driver "nvidia"` when the stack starts | The host has no NVIDIA Container Toolkit, or no NVIDIA GPU. Set up the toolkit ([The GPU](#the-gpu)), or add `deploy: !reset {}` to the `curio` service in `docker-compose.site.yml`. |
 | A node that imports torch fails with `failed to map segment from shared object` | Its memory budget is too small for PyTorch's CUDA libraries. Pass `--exec-memory-mb 24576` in `docker-compose.site.yml`. |
 | A node says *The weights of model '...' are not on this Curio* | Its model's weights are fetched, and this stack has none: run the script the message names on the host, with `--into` the folder the stack mounts at `/model-weights` ([Model weights a package fetches](#model-weights-a-package-fetches)). |
+| `docker compose up` cannot start `bucket-mounts` | The host lacks one of the three things [Bucket mounts](#bucket-mounts) checks: `/dev/fuse`, a shared mount where the mounts live, or the loaded AppArmor profile. |
+| `/monitor` shows **Bucket mounts** *unavailable* | Curio's test of the mount service failed, for the reason the line gives. Recent errors holds the details, and `docker compose logs bucket-mounts` the service's side. |
 | Nodes fail and you cannot see why | Open `/monitor`. The error log there holds the last failures with their tracebacks, and survives longer than `.curio/messages.log`, which is truncated on every launch. |
 | `/monitor` says the sandbox is unreachable | The sandbox process is down or not answering within 3s. The rest of the page stays current; check `docker compose logs curio`. |
 
@@ -621,7 +668,7 @@ flooding it cannot push real errors out of the log.
 - **A deployment that cannot isolate does not start.** `--deploy` needs Linux, fork, setrlimit, pyseccomp and the `curio-exec` account; without them it exits with what is missing instead of serving accounts that share one interpreter. Run the Docker image, which has all of it, or drop `--deploy` and run Curio as the single-user tool it then is.
 - **Verify the sandbox is not exposed**: `docker compose ps` must not list a published port for 2000. The sandbox executes arbitrary node code; only the backend inside the container should reach it. The image binds it to `127.0.0.1` and publishes nothing, so a published 2000 means a local override added one.
 - **Verify the sandbox token is set**: `docker compose logs curio | grep CURIO_SANDBOX_TOKEN` must print `CURIO_SANDBOX_TOKEN=<set>` (the value itself is never logged). A deployment with auth on refuses to start without it.
-- **Isolated node execution is on.** `--deploy` turns it on: Linux, plus the unprivileged `curio-exec` account the image creates. Each node's Python then runs in a confined child process: memory and CPU capped, network, `ptrace` and new sessions or process groups denied by seccomp, and no read access to `instance/` or `.curio/data`. Every process a node starts ends when the node does: when it returns, fails or reaches its time limit. `docker-compose.deploy.yml` also passes `CURIO_ISOLATION=fork`, which makes the sandbox **fail-closed** too: if it cannot confine, it refuses to start. The deploy workflow checks the result over `/version` and fails the deployment if it is not `fork`. To check a running instance yourself:
+- **Isolated node execution is on.** `--deploy` turns it on: Linux, plus the unprivileged `curio-exec` account the image creates. Each node's Python then runs in a confined child process: memory and CPU capped, network, `ptrace` and new sessions or process groups denied by seccomp, and no read access to `instance/` or `.curio/data`. A JavaScript node's Node.js runs as `curio-exec` too, with the network and a home folder of its own that ends with the node, and reads neither. Every process a node starts ends when the node does: when it returns, fails or reaches its time limit. `docker-compose.deploy.yml` also passes `CURIO_ISOLATION=fork`, which makes the sandbox **fail-closed** too: if it cannot confine, it refuses to start. The deploy workflow checks the result over `/version` and fails the deployment if it is not `fork`. To check a running instance yourself:
 
   ```bash
   docker compose -p curio exec -T curio curl -sf http://127.0.0.1:2000/version
@@ -630,8 +677,8 @@ flooding it cannot push real errors out of the log.
   The `isolation` field must read `fork`. The version badge in the UI shows the same answer.
 - **Every process a JavaScript node starts ends when the node does**: when it returns, fails or reaches its time limit, a `detached` one too. On Linux, seccomp denies Node and every process it starts a new session or process group: `setsid` and `setpgid` fail with `EPERM`, and a `detached` child starts in Node's process group. With `CURIO_ISOLATION=fork`, a JavaScript node fails instead of running where that filter cannot be installed. On Windows, only Node itself is stopped.
 - **Isolation chmods several paths on the host, permanently.** At every boot the sandbox tightens the bind-mounted `./instance` to `0700` with its files at `0600`, the three stores `./.curio/data`, `./.curio/users` and `./datasets` to `0700`. It changes **modes only, never ownership**, so each path keeps whatever user created it. The three stores keep their *file* modes because a staged input reaches the child as a hardlink, which shares its source's inode. The one file the sandbox gives an owner is a node's output: once it moves into `./.curio/data`, it belongs to the account the sandbox runs as, at `0644`, so no later node can write it. Any other host process that reads these paths, such as a backup job or an operator shell as a third user, loses access and needs to run as root or as the owning account.
-- **The boundary is node code against the host, not user against user.** One OS account (`curio-exec`) is what every Curio user's nodes run as. What keeps two users' data apart is session scoping in the parent process, which no child can reach. Because all children share a uid, two nodes running concurrently can reach each other's scratch directories and find each other through `/proc`. Treat "another user's node ran at the same time" as within reach, and "another user's stored artifacts" as not, with one exception: the outputs a project SAVED are readable by anyone who can load that project, because that is what a shared dataflow or dashboard link shows.
-- **Relative writes from node code land in a per-user work directory**, `.curio/exec-scratch/users/<key>/`, which is `0700` and owned by `curio-exec`. It persists between runs and is the only place a node may write; a relative write anywhere else fails, because the launch tree is root-owned. Node output still reaches the user's store, but through the parent's validated persist step rather than the child's filesystem access. Nothing cleans this directory automatically, so include it when you size the disk.
+- **The boundary is node code against the host, not user against user.** One OS account (`curio-exec`) is what every Curio user's nodes run as, Python and JavaScript. What keeps two users' data apart is session scoping in the parent process, which no child can reach. Because all children share a uid, two nodes running concurrently can reach each other's scratch directories and find each other through `/proc`. Treat "another user's node ran at the same time" as within reach, and "another user's stored artifacts" as not, with one exception: the outputs a project SAVED are readable by anyone who can load that project, because that is what a shared dataflow or dashboard link shows.
+- **Relative writes from node code land in a per-user work directory**, `.curio/exec-scratch/users/<key>/`, which is `0700` and owned by `curio-exec`. It persists between runs and is the only place a node may write; a relative write anywhere else fails, because the launch tree is root-owned. Node output still reaches the user's store, but through the parent's validated persist step rather than the child's filesystem access. Nothing cleans this directory automatically, so include it when you size the disk. A JavaScript node works in the folder Curio started from, which it cannot write; its own files go to `os.tmpdir()`, a folder of the node's own, removed when the node ends.
 - **`.curio/data` holds a week of results.** Every node's output is kept there 7 days after it was made, saved or not, and a sweep every 6 hours removes what is older. A saved output stays in its account's Data Catalog under `.curio/users`, which keeps it. Size the disk for a week of runs, plus the saved outputs.
 - **Node authoring is still close to shell access.** A node author cannot read `instance/urban_workflow.db` or another session's artifacts, cannot open a socket, and cannot start a process in a new session or process group (`subprocess.Popen(start_new_session=True)` raises `PermissionError`), but can run arbitrary Python within the child's limits, and writes are bounded by ownership and `RLIMIT_FSIZE` rather than confined to a directory. Give accounts accordingly. See [ARCHITECTURE.md § Sandbox Isolation](ARCHITECTURE.md#sandbox-isolation).
 - **To turn it off** (an incident, or a host where it cannot work), set `CURIO_ISOLATION=off` in `docker-compose.deploy.yml`'s environment and redeploy. Remove the `CURIO_ISOLATION=fork` line at the same time, or the fail-closed setting will keep winning. The permission changes above are not reverted by that; `chmod` them back by hand if something else needs them.

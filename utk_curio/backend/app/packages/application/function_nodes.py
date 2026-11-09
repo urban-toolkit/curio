@@ -164,7 +164,7 @@ def package_functions(user_key: str) -> list[dict]:
     functions each module offers, their parameters, and the widget and use
     each parameter suggests. A module that does not parse carries its problem."""
     out: list[dict] = []
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         for root in list_user_packages(user_key):
             try:
                 manifest = load_package_manifest(root)
@@ -222,7 +222,7 @@ def _node_modules(
     # The store the run reads them from: the dataflow owner's, for a package she put in it.
     store_key = packages_python_modules._store_of_node(user_key, node_type, project_id, owners)
     out: list[tuple[str, str, str | None, list[FunctionSignature]]] = []
-    with package_seed_lock(store_key):
+    with package_seed_lock(store_key, shared=True):
         for source in sources:
             root = Path(source["root"]).parent
             try:
@@ -309,7 +309,7 @@ def package_modules_functions(user_key: str, dir_name: str) -> dict:
         raise PackageServiceError(f"no package {dir_name!r}", 404)
     own = package_dir(user_key, dir_name)
     try:
-        with package_seed_lock(user_key):
+        with package_seed_lock(user_key, shared=True):
             if own.is_dir():
                 return {"dirName": dir_name, "modules": module_functions(own, load_package_manifest(own))}
         shipped = packages_catalog_dir.catalog_root() / dir_name
@@ -324,7 +324,7 @@ def _module_function(user_key: str, dir_name: str, module: str, function: str) -
     """The function *function* the module *module* of *user_key*'s package
     *dir_name* offers, read again from the store, and the package's manifest."""
     root = package_dir(user_key, dir_name)
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         if not root.is_dir():
             raise PackageServiceError(f"package {dir_name} is not installed", 404)
         manifest = load_package_manifest(root)

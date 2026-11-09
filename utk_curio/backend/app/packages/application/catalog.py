@@ -64,7 +64,7 @@ def installed_package_payloads(user_key: str, kind: str | None = None, *, usage:
     out: list[dict] = []
     # Enumeration + manifests + mtimes under ONE seed-lock hold (memo dev/99):
     # the payloads are detached dicts, so nothing live leaves the lock.
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         for package_path in list_user_packages(user_key):
             try:
                 manifest = load_package_manifest(package_path)
@@ -99,7 +99,7 @@ def dataflow_package_payloads(owners) -> list[dict]:
     # Read before the store's lock, which reading what the dataflow uses takes.
     used = owners.used
     out: list[dict] = []
-    with package_seed_lock(owners.store_key):
+    with package_seed_lock(owners.store_key, shared=True):
         for package_path in list_user_packages(owners.store_key):
             if package_path.name not in used:
                 continue
@@ -127,7 +127,7 @@ def catalog_listing(user_key: str, kind: str | None = None) -> dict:
     and ``publishable`` (may THIS user withdraw it — the same question as "is this the
     user's own package"). Only the packages of *kind* when it is given.
     """
-    with package_seed_lock(user_key):  # memo dev/99: no transient "not installed"
+    with package_seed_lock(user_key, shared=True):  # memo dev/99: no transient "not installed"
         installed_coords = {p.name for p in list_user_packages(user_key)}
 
     root = packages_catalog_dir.catalog_root()

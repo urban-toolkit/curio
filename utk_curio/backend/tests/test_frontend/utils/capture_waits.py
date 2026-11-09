@@ -1,6 +1,6 @@
-"""What a capture waits for first: the viewport fit, toasts swept away, the
-webfont, no node running, and the server holding the tab's last change. Also a
-viewport that has landed after a move.
+"""What a capture waits for first: the dataflow a canvas page opens, the
+viewport fit, toasts swept away, the webfont, no node running, and the server
+holding the tab's last change. Also a viewport that has landed after a move.
 """
 
 import contextlib
@@ -10,7 +10,58 @@ import allure
 from playwright.sync_api import (
     Page,
     TimeoutError as PlaywrightTimeoutError,
+    expect,
 )
+
+
+#: The canvas title's heading, and what it reads while the dataflow the route
+#: names is opening (``projectLoadState.ts``'s ``OPENING_TITLE``).
+CANVAS_TITLE_HEADING = "[data-curio-canvas-title] h1"
+OPENING_TITLE = "Opening dataflow…"
+
+#: How long a dataflow may take to open. Its load is one request, answered when
+#: the server can: arcade answered one in 24 s during a host stall (#1391's run
+#: 42342733844) and one in 16 s during another (run 42455722251), and the suite
+#: gives a load 60 s elsewhere.
+DATAFLOW_OPEN_TIMEOUT_MS = 60000
+
+
+def wait_for_dataflow_open(page, *, timeout: float = DATAFLOW_OPEN_TIMEOUT_MS) -> None:
+    """Wait while the canvas title says the dataflow its route names is still
+    opening.
+
+    The canvas's nodes come with the load, and a drop made meanwhile is kept
+    and made only once the load is in (``useDropsWhileOpening``, #1253), so
+    both come as late as the server answers the load. A helper that waits for
+    such a node waits for this first, then gives the node its own time: the
+    drop helpers do, and so does a capture (:func:`_wait_for_the_canvas_dataflow`).
+    On another account's dataflow the canvas also waits for the room to name
+    the tab's role (up to 15 s), and on one that has nodes for their first fit
+    (#1392): those waits are the node's.
+    """
+    try:
+        expect(page.locator(CANVAS_TITLE_HEADING)).not_to_have_text(OPENING_TITLE, timeout=timeout)
+    except AssertionError:
+        raise AssertionError(
+            f"the dataflow never opened within {timeout / 1000:.0f} s: the canvas title still "
+            f"read {OPENING_TITLE!r}, so nothing its load brings is on the canvas: not its "
+            f"nodes, nor a node dropped while it opened"
+        ) from None
+
+
+#: Whether the page shows the canvas title.
+_HAS_CANVAS_TITLE_JS = "(selector) => document.querySelector(selector) !== null"
+
+
+def _wait_for_the_canvas_dataflow(page: Page) -> None:
+    """Wait for the dataflow a canvas page opens (:func:`wait_for_dataflow_open`).
+
+    A page without the canvas title, a dashboard or a catalog, has none to read
+    and passes at once: a dashboard's tiles are its nodes, which the viewport
+    wait waits for.
+    """
+    if page.evaluate(_HAS_CANVAS_TITLE_JS, CANVAS_TITLE_HEADING):
+        wait_for_dataflow_open(page)
 
 
 #: How often the viewport wait reads the viewport, in ms. On a timer, never per
@@ -146,9 +197,16 @@ def _wait_for_reactflow_ready(
     The reads run on the page's main thread, and one long task there (decoding
     a large raster, #932) used to leave the wait fewer reads than a pass needs
     inside its 10 s, with the viewport long settled. A page that stops
-    answering still fails after ``VIEWPORT_WALL_CAP_MS``. *timeout_ms* bounds
-    the wait for a first node.
+    answering still fails after ``VIEWPORT_WALL_CAP_MS``.
+
+    On a canvas the nodes come with the dataflow's load, which a stalled arcade
+    answered 16 s after it was sent, while the capture of the Agent Catalog
+    drawer gave its first node 10 s (run 42455722251). So it first waits for
+    the dataflow to open, up to ``DATAFLOW_OPEN_TIMEOUT_MS``, as the drop
+    helpers do (:func:`_wait_for_the_canvas_dataflow`). *timeout_ms* then
+    bounds the wait for a first node.
     """
+    _wait_for_the_canvas_dataflow(page)
     page.wait_for_function(
         "() => document.querySelectorAll('.react-flow__node').length > 0",
         polling=VIEWPORT_READ_MS,
@@ -425,7 +483,12 @@ def _wait_for_no_node_running(page: Page, *, timeout_ms: int = NODE_SETTLE_TIMEO
     With *report_as*, the nodes found running when the wait begins are noted in
     the test output and the Allure report under that name, so a run the caller
     did not start stays visible even when it ends in time.
+
+    While a canvas's dataflow is still opening no node is there to run, and the
+    nodes its load brings then draw their results, so it waits for the dataflow
+    to open first (:func:`_wait_for_the_canvas_dataflow`).
     """
+    _wait_for_the_canvas_dataflow(page)
     if report_as:
         running = page.evaluate(_RUNNING_NODE_IDS_JS)
         if running:

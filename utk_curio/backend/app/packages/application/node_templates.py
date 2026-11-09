@@ -38,7 +38,7 @@ def installed_template(user_key: str | None, node_type: object, project_id: str 
         dir_name = packages_python_modules._installed_dir_for(node_type, package_id, majors_by_pkg, pins)
         if dir_name is None:
             return None
-        with package_seed_lock(user_key):
+        with package_seed_lock(user_key, shared=True):
             manifest = load_package_manifest(package_dir(user_key, dir_name))
     except Exception as exc:  # noqa: BLE001 - an unreadable store holds no template
         log.warning("Could not read the template of %s in the account's store: %s", node_type, exc)

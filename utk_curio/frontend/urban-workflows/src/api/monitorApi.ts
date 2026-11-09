@@ -27,6 +27,13 @@ export interface MonitorDeployment {
   saveNodeOutputDefault: boolean;
   llmProviderConfigured: boolean;
   searchToolConfigured: boolean;
+  /**
+   * The bucket mount service's self-test (docker-compose.bucket-mounts.yml):
+   * `none` when this deployment names no service.
+   */
+  bucketMounts: "none" | "pending" | "passed" | "unavailable";
+  /** Why the service is unavailable, in words from a closed list; null otherwise. */
+  bucketMountsProblem: string | null;
   env: string;
   platform: string;
   pythonVersion: string;

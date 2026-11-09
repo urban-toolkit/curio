@@ -1,8 +1,12 @@
-"""How many isolated node runs the sandbox runs at once.
+"""How many node runs the sandbox runs at once: isolated children, and
+JavaScript nodes' Node processes.
 
 The sandbox sizes its pool of isolated children with this
 (``sandbox/isolation/runner.py``), and the backend reads the same number to
-keep a dashboard viewer's runs to part of that pool (``runs/viewer.py``).
+keep a dashboard viewer's runs to part of that pool (``runs/viewer.py``). The
+sandbox's Node slots are :func:`js_parallelism` (``app/worker.py``), and the
+thread budget the execution account's processes share counts both pools
+(``runner.IsolationConfig.from_environment``).
 """
 
 from __future__ import annotations
@@ -36,3 +40,30 @@ def exec_parallelism(env=None) -> int:
         return max(1, int(env.get("CURIO_EXEC_PARALLELISM", default_exec_parallelism())))
     except (TypeError, ValueError):
         return default_exec_parallelism()
+
+
+def default_js_parallelism() -> int:
+    """How many Node subprocesses may run at once when nobody says otherwise.
+
+    Not a lock: JS nodes are meant to run in parallel, and this leaves them
+    doing so. It is a ceiling on how many at once, which the route had none of
+    -- one Node process per request, each loading autk-db and its own DuckDB.
+    A hundred simultaneous Autark loads peaked the CI container at 51 GB and
+    1313 processes, which is how a machine dies rather than queues.
+
+    Half the cores, floor 2, cap 16: an Autark PBF load is CPU- and
+    memory-heavy, and the work the child does is what costs, not the pipe.
+    """
+    cores = os.cpu_count() or 2
+    return max(2, min(cores // 2, 16))
+
+
+def js_parallelism(env=None) -> int:
+    """The Node slots: ``CURIO_JS_PARALLELISM`` (``--js-parallelism``) when it
+    is a positive number, else :func:`default_js_parallelism`."""
+    env = os.environ if env is None else env
+    try:
+        configured = int(env.get("CURIO_JS_PARALLELISM", ""))
+    except (TypeError, ValueError):
+        configured = 0
+    return configured if configured > 0 else default_js_parallelism()

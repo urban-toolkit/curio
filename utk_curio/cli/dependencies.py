@@ -48,7 +48,7 @@ def seed_duckdb_extensions():
     source_root = node_runtime.duckdb_extensions_dir()
     if not source_root.is_dir():
         return
-    target_root = Path.home() / ".duckdb" / "extensions" / "extensions.duckdb.org"
+    target_root = Path.home() / node_runtime.DUCKDB_EXTENSIONS_HOME
     seeded = []
     try:
         for source in source_root.rglob("*.wasm"):

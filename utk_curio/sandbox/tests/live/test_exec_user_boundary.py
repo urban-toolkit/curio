@@ -352,7 +352,6 @@ DENIED = (
     ("datasets", "the shared Data Catalog's published files"),
     (".curio/discovery", "the operator's source manifests: each names a folder or host the server reads"),
     (".curio/fetched", "the catalog files a pip install downloaded, which a node reads only as staged links"),
-    (".curio/nodejs", "the Node.js packages a pip install's sandbox runs"),
 )
 
 
@@ -474,6 +473,82 @@ def test_the_deployment_secret_cannot_be_read():
         "step creates it before the stack boots." % target
     )
     assert outcome == "denied", "an isolated node could read " + target
+
+
+def test_the_childs_environment_holds_no_token():
+    """The sandbox's token opens every sandbox route, ``/exec`` among them,
+    which stages any absolute path it is sent. The zygote's environment used
+    to be the sandbox's whole, so every child held the token and could print
+    it. Looked for by the digest of its value, so a variable of another name
+    holding it counts too."""
+    assert TOKEN, "CURIO_LIVE_SANDBOX_TOKEN is unset, so this test cannot know the token it looks for"
+    result = assert_ran(run_node("""
+        import hashlib, json, os
+        print(json.dumps(sorted(
+            name for name, value in os.environ.items()
+            if hashlib.sha256(value.encode("utf-8", "surrogateescape")).hexdigest() == %r
+        )))
+    """ % hashlib.sha256(TOKEN.encode("utf-8")).hexdigest()), "looking for the token")
+    holding = json.loads(printed(result).splitlines()[-1])
+    assert holding == [], "an isolated node's environment holds the sandbox's token: %s" % holding
+
+
+#: Node's packages: where a pip install keeps them, which the job's seed step
+#: makes, and the image's. Each with a file a reader opens.
+NODE_PACKAGES = (
+    (LAUNCH_DIR + "/.curio/nodejs", "package.json"),
+    (LAUNCH_DIR + "/node_modules", "@urban-toolkit/autk-db/package.json"),
+)
+
+
+def test_nodes_packages_are_readable_and_not_writable():
+    """Node's packages are readable by the execution account, whose JavaScript
+    nodes import them, and never writable: a module it changed or added would
+    run in every later run, and in the backend's own Node, which runs as root.
+    ``test_exec_user_boundary_js.py`` asks the same of a JavaScript node. Each
+    write tried is a new file of a name of its own, removed if it was made, or
+    an open of an existing file that writes nothing."""
+    result = assert_ran(run_node("""
+        import json, os, uuid
+        seen = {}
+        for folder, member in %r:
+            path = os.path.join(folder, member)
+            try:
+                os.listdir(folder)
+                with open(path, encoding="utf-8") as handle:
+                    json.load(handle)
+                read = "read"
+            except OSError as error:
+                read = type(error).__name__
+            wrote = []
+            for where in sorted({folder, os.path.dirname(path)}):
+                probe = os.path.join(where, "written-by-node-code-" + uuid.uuid4().hex)
+                try:
+                    os.close(os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644))
+                    wrote.append("CREATED " + probe)
+                except OSError as error:
+                    wrote.append(type(error).__name__)
+                finally:
+                    if os.path.lexists(probe):
+                        os.unlink(probe)
+            try:
+                os.close(os.open(path, os.O_WRONLY))
+                wrote.append("OPENED FOR WRITING " + path)
+            except OSError as error:
+                wrote.append(type(error).__name__)
+            seen[folder] = {"read": read, "wrote": wrote}
+        print(json.dumps(seen))
+    """ % (NODE_PACKAGES,)), "reading and writing Node's packages")
+    seen = json.loads(printed(result).splitlines()[-1])
+    for folder, member in NODE_PACKAGES:
+        assert seen[folder]["read"] == "read", (
+            "an isolated node cannot read %s/%s, a package a JavaScript node imports: %s"
+            % (folder, member, seen[folder]["read"])
+        )
+        assert seen[folder]["wrote"] and set(seen[folder]["wrote"]) == {"PermissionError"}, (
+            "an isolated node could write %s, so node code could change a module every later run imports: %s"
+            % (folder, seen[folder]["wrote"])
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -189,15 +189,17 @@ def test_windows_fallback_takes_and_releases_a_cross_process_lock(tmp_curio, mon
 # ---------------------------------------------------------------------------
 
 def _count_acquisitions(monkeypatch, module) -> dict:
-    """Count entries into the seed lock as seen from *module*'s import."""
-    counter = {"n": 0}
+    """Count entries into the seed lock as seen from *module*'s import, and
+    whether each was a reader's shared hold."""
+    counter = {"n": 0, "shared": []}
     real = locks.package_seed_lock
     from contextlib import contextmanager
 
     @contextmanager
-    def _counting(user_key):
+    def _counting(user_key, **kwargs):
         counter["n"] += 1
-        with real(user_key):
+        counter["shared"].append(kwargs.get("shared", False))
+        with real(user_key, **kwargs):
             yield
 
     monkeypatch.setattr(module, "package_seed_lock", _counting)
@@ -225,11 +227,13 @@ def test_resolver_reads_the_store_twice_under_one_acquisition(
     result = resolution.resolve_for_project(key, ["curio.builtin@1"])
     assert result.ok
     assert counter["n"] == 1, "pinned + transitive reads must share one snapshot"
+    assert counter["shared"] == [True], "a read of the store holds the lock shared"
 
-    counter["n"] = 0
+    counter["n"], counter["shared"] = 0, []
     lock = resolution.lockfile_for_user(key)
     assert len(lock["installedPackages"]) == 2
     assert counter["n"] == 1, "enumerate + resolve must share one snapshot"
+    assert counter["shared"] == [True], "a read of the store holds the lock shared"
 
 
 def test_agent_resolve_report_is_one_snapshot(
@@ -242,6 +246,7 @@ def test_agent_resolve_report_is_one_snapshot(
     assert counter["n"] == 1, (
         "installed set, resolver reads and per-package manifests must be ONE hold"
     )
+    assert counter["shared"] == [True], "a read of the store holds the lock shared"
 
 
 def test_build_deps_review_is_one_snapshot(
@@ -263,6 +268,7 @@ def test_build_deps_review_is_one_snapshot(
     report = build_deps.resolve_dependencies(key, request, fetcher=None)
     assert [r["name"] for r in report.packages] == ["ai.test.other"]
     assert counter["n"] == 1, "python + package reviews must share one snapshot"
+    assert counter["shared"] == [True], "a read of the store holds the lock shared"
 
 
 # ---------------------------------------------------------------------------

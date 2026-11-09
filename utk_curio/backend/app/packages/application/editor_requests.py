@@ -154,7 +154,7 @@ def _resolved(owner_key: str, dir_name: str, own: Path | None):
     copy, while her store does not hold it. Raises :class:`ResolverError` when
     a package it needs is held neither by her store nor by the catalog."""
     copies = packages_dependencies.catalog().snapshot()
-    with package_seed_lock(owner_key):
+    with package_seed_lock(owner_key, shared=True):
         store = packages_dependencies.readable(packages_store_reads._store_index(owner_key))
         overrides: dict[str, Path] = {}
         if own is not None and dir_name not in store:
