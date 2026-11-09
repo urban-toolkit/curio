@@ -105,7 +105,10 @@ def _end(child, reader) -> str:
         child.kill()
         child.join()
         return f"the child did not end within {PATIENCE_S:.0f} s and was killed"
-    reported = reader.recv() if reader.poll() else ""
+    try:
+        reported = reader.recv() if reader.poll() else ""
+    except EOFError:  # it ended without a word, as a crash or os._exit does
+        reported = ""
     if not reported and child.exitcode != 0:
         reported = f"the child ended with exit code {child.exitcode}"
     return reported

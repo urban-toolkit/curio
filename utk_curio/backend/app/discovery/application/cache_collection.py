@@ -15,9 +15,11 @@ images land in the same folder and are bounded by the same check,
 :func:`check_room`.
 
 One cache of a collection runs at a time for an account (:func:`claim`), and
-what the account's running caches have still to fetch counts against its cap.
-A cache that another backend process runs keeps this one waiting until it
-ends, so this one then finds the files cached (:func:`_across_processes`).
+one writer of its files at a time across backend processes (:func:`writing`):
+a cache that another process runs keeps this one waiting until it ends, so
+this one then finds the files cached. What the account's running caches and
+adds, in every process, have still to land counts against its cap
+(:func:`check_room`).
 A bucket's index lists its videos and recordings by path and size alone, so
 their details are read from the cached files and written into the index
 (:func:`record_details`).
@@ -25,6 +27,7 @@ their details are read from the cached files and written into the index
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import threading
@@ -34,7 +37,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from utk_curio.backend.app.common.file_locks import exclusive_lock
+from utk_curio.backend.app.common.file_locks import exclusive_lock, interprocess_lock, is_held
+from utk_curio.backend.app.common.safe_paths import PathTraversalError
 from utk_curio.backend.app.discovery.application import probe as probing
 from utk_curio.backend.app.discovery.domain.errors import (
     CapabilityUnsupported,
@@ -110,23 +114,26 @@ def used_bytes(user_key: str) -> int:
 def check_room(user_key: str, needed: int, *, caching: str | None = None) -> None:
     """Refuse *needed* more bytes in *user_key*'s media cache past its cap.
 
-    What the account's running caches have still to fetch counts as held.
-    With *caching*, the id of a collection whose cache this account holds
-    (:func:`claim`), *needed* becomes that cache's pending bytes in the same
-    step, so two caches started together cannot both pass.
+    What the account's running caches and adds, in every backend process,
+    have still to land counts as held (:func:`_reserved`). With *caching*, the
+    key of a cache or an add that holds its lock (the collection it writes,
+    :func:`writing`, or an add's own, :func:`room_for`), *needed* becomes what
+    it holds, in the same step, so two started together, in one process or in
+    two, cannot both pass.
     """
     cap = cap_bytes()
-    with _caches_lock:
-        pending = _pending(user_key)
+    with _room_held(user_key):
+        reserved = _reserved(user_key)
+        pending = sum(size for key, size in reserved.items() if key != caching)
         if used_bytes(user_key) + pending + needed > cap:
-            coming = f"; caches running now have {pending:,} more to fetch" if pending else ""
+            coming = f"; caches and adds running now have {pending:,} more to bring in" if pending else ""
             raise DownloadTooLarge(
                 f"caching these files needs {needed:,} bytes; this account's media cache is "
                 f"limited to {cap:,} ({ENV_CAP}){coming}"
             )
-        held = _caches.get((user_key, caching)) if caching is not None else None
-        if held is not None:
-            held.pending = needed
+        if caching is not None:
+            reserved[caching] = needed
+            _keep(user_key, reserved)
 
 
 def check_sizes(rows) -> None:
@@ -189,7 +196,7 @@ def cache(
     if held != owner:
         raise CacheRunning("these files are being cached already")
     try:
-        with _across_processes(user_key, dataset["id"]):
+        with writing(user_key, dataset["id"]):
             return _cache(
                 user_key, dataset, provider,
                 items=items, progress=progress, cancelled=cancelled, describe=describe,
@@ -239,7 +246,7 @@ def _cache(user_key, dataset, provider, *, items, progress, cancelled, describe)
                         max_bytes=int(row.bytes) + 1024 * 1024,
                         ceiling=ceiling,
                     )
-                _land(part, final, user_key, dataset["id"], int(row.bytes))
+                land(part, final, user_key, dataset["id"], int(row.bytes))
                 landed = True
             finally:
                 if not landed:
@@ -269,9 +276,6 @@ class CacheRunning(DiscoveryError):
 class _Cache:
     #: The job that runs it.
     owner: str
-    #: What it has still to fetch, once it has counted its files: held
-    #: against the account's cap until each file lands.
-    pending: int = 0
 
 
 _caches: dict[tuple[str, str], _Cache] = {}
@@ -320,34 +324,122 @@ def reset_running() -> None:
 
 
 @contextmanager
-def _across_processes(user_key: str, dataset_id: str):
-    """Hold the collection's cache across backend processes as well.
+def writing(user_key: str, dataset_id: str):
+    """Be the one writer of collection *dataset_id*'s files in *user_key*'s
+    media cache, across threads and backend processes: a cache of it, or an
+    owner's Apply that copies an editor's cached files of it in.
 
     :func:`claim` keeps one cache of it running in this process, and each
     process has its own claims: a cache another process ran would drop this
     one's half-fetched files (:func:`_drop_parts`) and fetch every file again.
-    So a cache holds this lock while it fetches, and one in another process
+    So a writer holds this lock while it writes, and one in another process
     waits for it, then finds the files cached and fetches none of them again.
+
+    The room a writer holds (:func:`check_room` with *caching*) lasts while it
+    holds this lock, and what it did not land goes back when it ends.
     """
     with exclusive_lock(
         media_dirs.cache_lock(user_key, dataset_id), namespace="collection-cache", key=f"{user_key}/{dataset_id}",
     ):
-        yield
+        try:
+            yield
+        finally:
+            _give_back(user_key, dataset_id)
 
 
-def _pending(user_key: str) -> int:
-    """What *user_key*'s running caches have still to fetch. The lock is held."""
-    return sum(held.pending for (key, _dataset), held in _caches.items() if key == user_key)
+@contextmanager
+def room_for(user_key: str, needed: int):
+    """Hold *needed* bytes of *user_key*'s media cache for files that land in
+    it before their collection is in the Data Catalog (a service's images), as
+    a cache holds what it has still to fetch: refused past the cap
+    (:func:`check_room`), and held until they land (:func:`land`) or the add
+    ends. Yields the key :func:`land` takes them off.
+
+    The room is held by a lock file of the add's own, as a collection's is
+    (:func:`writing`), which goes when the add ends: nothing else takes it.
+    """
+    key = f"adding-{uuid.uuid4().hex}"
+    lock = media_dirs.cache_lock(user_key, key)
+    try:
+        with interprocess_lock(lock):
+            try:
+                check_room(user_key, needed, caching=key)
+                yield key
+            finally:
+                _give_back(user_key, key)
+    finally:
+        lock.unlink(missing_ok=True)
 
 
-def _land(part: Path, final: Path, user_key: str, dataset_id: str, size: int) -> None:
-    """Put a fetched file in place, and take it off its cache's pending bytes
-    in the same step: :func:`check_room` never counts it twice."""
-    with _caches_lock:
+def land(part: Path, final: Path, user_key: str, key: str, size: int) -> None:
+    """Put a file in place, and take its *size* off what the cache or add
+    *key* holds, in the same step and in every process's count:
+    :func:`check_room` never counts it twice."""
+    with _room_held(user_key):
         os.replace(part, final)
-        held = _caches.get((user_key, dataset_id))
-        if held is not None:
-            held.pending = max(0, held.pending - size)
+        reserved = _read_room(user_key)
+        if key in reserved:
+            reserved[key] = max(0, reserved[key] - size)
+            _keep(user_key, reserved)
+
+
+# ── the room an account's caches and adds hold, in every process ───────────
+
+
+def _room_held(user_key: str):
+    """Hold *user_key*'s room, across threads and backend processes, while it
+    is read and written."""
+    _room, lock = media_dirs.room_files(user_key)
+    return exclusive_lock(lock, namespace="media-room", key=user_key)
+
+
+def _read_room(user_key: str) -> dict[str, int]:
+    """What the account's room file holds, by key. The room is held."""
+    path, _lock = media_dirs.room_files(user_key)
+    try:
+        room = json.loads(path.read_text(encoding="utf-8"))
+        return {str(key): int(size) for key, size in room.items()}
+    except (OSError, ValueError, TypeError, AttributeError):  # none, or not one Curio wrote
+        return {}
+
+
+def _reserved(user_key: str) -> dict[str, int]:
+    """What *user_key*'s running caches and adds, in every process, have still
+    to land, by key. The room is held. A cache or an add holds its room only
+    while its lock is held, and a process's locks go when it ends, so the room
+    of one whose process died is free again."""
+    return {key: size for key, size in _read_room(user_key).items() if _running(user_key, key)}
+
+
+def _running(user_key: str, key: str) -> bool:
+    """Whether the cache or add *key* holds its lock (:func:`writing`,
+    :func:`room_for`): in another process, or on another thread here."""
+    try:
+        lock = media_dirs.cache_lock(user_key, key)
+    except PathTraversalError:  # no key Curio wrote: nothing holds it
+        return False
+    return is_held(lock)
+
+
+def _keep(user_key: str, reserved: dict[str, int]) -> None:
+    """Write *reserved* as the account's room, whole: a reader sees the old
+    room or this one. The room is held."""
+    path, _lock = media_dirs.room_files(user_key)
+    part = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        part.write_text(json.dumps(reserved, sort_keys=True), encoding="utf-8")
+        os.replace(part, path)
+    finally:
+        part.unlink(missing_ok=True)
+
+
+def _give_back(user_key: str, key: str) -> None:
+    """The cache or add *key* has ended: what it did not land holds no room.
+    Called holding its lock, so no later cache of the key has taken room yet."""
+    with _room_held(user_key):
+        reserved = _read_room(user_key)
+        if reserved.pop(key, None) is not None:
+            _keep(user_key, reserved)
 
 
 def _drop_parts(folder: Path) -> None:
