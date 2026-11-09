@@ -172,6 +172,132 @@ class TestApplyAndReport(unittest.TestCase):
         self.assertIn("Resource limits", findings[0])
 
 
+class TestTheModelWeightsAreNeverWritableByNodeCode(unittest.TestCase):
+    """The folder ``--model-weights-dir`` names, where the server downloads
+    the weights a model package's fetch names and isolated node code reads
+    them in place, is kept as Node's packages are: the boot opens it to every
+    account's reads and takes group and other writes away, and the audit asks
+    the opposite question, whether node code could write it, where a file it
+    changed would be the model every account's later runs load. The
+    execution user here is an account other than the files' owner, whatever
+    account the test runs as, unless a test says otherwise."""
+
+    def setUp(self):
+        import tempfile
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = self._tmp.name
+        self.weights = os.path.join(self.tmp, "model-weights")
+        self.entry = os.path.join(self.weights, "model.x@1", "models", "checkpoint")
+        os.makedirs(self.entry)
+        for folder in (self.weights, os.path.join(self.weights, "model.x@1"),
+                       os.path.dirname(self.entry), self.entry):
+            os.chmod(folder, 0o755)
+        for name in ("config.json", "model.safetensors"):
+            path = os.path.join(self.entry, name)
+            with open(path, "wb") as handle:
+                handle.write(b"weights")
+            os.chmod(path, 0o644)
+        self.exec_uid = os.getuid() + 4242
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_folders_0755_and_files_0644_of_another_account_are_not_reported(self):
+        self.assertEqual(hardening.audit_model_weights(self.weights, uid=self.exec_uid, gid=None), [])
+
+    def test_a_file_or_a_folder_the_execution_user_could_write_is_reported(self):
+        weights_file = os.path.join(self.entry, "model.safetensors")
+        os.chmod(weights_file, 0o666)
+        os.chmod(self.entry, 0o777)
+
+        findings = hardening.audit_model_weights(self.weights, uid=self.exec_uid, gid=None)
+
+        self.assertEqual(len(findings), 2, findings)
+        self.assertTrue(any(weights_file in finding and "-rw-rw-rw-" in finding for finding in findings), findings)
+        self.assertTrue(any(self.entry in finding and "drwxrwxrwx" in finding for finding in findings), findings)
+        self.assertTrue(all("model weights" in finding for finding in findings), findings)
+
+    def test_a_folder_its_group_may_write_is_reported_for_a_member(self):
+        os.chmod(self.entry, 0o775)
+        group = os.stat(self.entry).st_gid
+
+        findings = hardening.audit_model_weights(self.weights, uid=self.exec_uid, gid=group)
+
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn(self.entry, findings[0])
+
+    def test_a_link_is_neither_followed_nor_reported(self):
+        outside = os.path.join(self.tmp, "outside")
+        os.makedirs(outside)
+        os.chmod(outside, 0o777)
+        os.symlink(outside, os.path.join(self.entry, "elsewhere"))
+
+        self.assertEqual(hardening.audit_model_weights(self.weights, uid=self.exec_uid, gid=None), [])
+
+    def test_without_the_folder_or_an_execution_user_there_is_nothing_to_ask(self):
+        os.chmod(self.entry, 0o777)
+        self.assertEqual(hardening.audit_model_weights(None, uid=self.exec_uid, gid=None), [])
+        self.assertEqual(hardening.audit_model_weights(self.weights, uid=None, gid=None), [])
+
+    def _boot(self, uid):
+        """``apply_and_report`` as a hosted sandbox's start runs it with
+        ``--model-weights-dir``: its findings that name the weights folder,
+        and whether it refuses to start."""
+        launch = os.path.join(self.tmp, "launch")
+        shared = os.path.join(launch, ".curio", "data")
+        os.makedirs(shared, exist_ok=True)
+        findings, fatal = hardening.apply_and_report(
+            launch, shared, uid=uid, gid=None, hosted=True, model_weights_dir=self.weights,
+        )
+        return [finding for finding in findings if self.weights in finding], fatal
+
+    def test_the_boot_opens_them_to_every_accounts_reads_and_takes_other_writes_away(self):
+        """Whatever modes they came with, as for Node's packages: every folder
+        0755, every file 0644, a file any class may run 0755; then nothing
+        there is node code's to write."""
+        folder_modes = {self.weights: 0o700, self.entry: 0o777}
+        file_modes = {
+            os.path.join(self.entry, "config.json"): (0o600, 0o644),
+            os.path.join(self.entry, "model.safetensors"): (0o666, 0o644),
+        }
+        tool = os.path.join(self.entry, "tool")
+        with open(tool, "wb") as handle:
+            handle.write(b"#!/bin/sh\n")
+        file_modes[tool] = (0o744, 0o755)
+        for folder, mode in folder_modes.items():
+            os.chmod(folder, mode)
+        for path, (before, _after) in file_modes.items():
+            os.chmod(path, before)
+
+        weights_findings, _fatal = self._boot(self.exec_uid)
+
+        self.assertEqual(weights_findings, [])
+        for folder in folder_modes:
+            self.assertEqual(stat.S_IMODE(os.stat(folder).st_mode), 0o755, folder)
+        for path, (before, after) in file_modes.items():
+            self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), after, f"{path} was 0o{before:03o}")
+        with open(os.path.join(self.entry, "model.safetensors"), "rb") as handle:
+            self.assertEqual(handle.read(), b"weights")
+
+    def test_a_hosted_instance_refuses_to_start_while_the_execution_user_owns_a_folder_there(self):
+        """The boot cannot take an owner's write away: a folder the
+        execution user owns is reported, and a hosted instance refuses to
+        start. As root the test gives the entry folder to another account;
+        otherwise the test's own account, which owns the tree, is the
+        execution user."""
+        if os.getuid() == 0:
+            exec_uid = 4243
+            os.chown(self.entry, exec_uid, -1)
+        else:
+            exec_uid = os.getuid()
+
+        weights_findings, fatal = self._boot(exec_uid)
+
+        self.assertTrue(fatal)
+        self.assertTrue([finding for finding in weights_findings if f"{self.entry}," in finding], weights_findings)
+
+
 @posix_only
 class TestHardenPaths(unittest.TestCase):
 

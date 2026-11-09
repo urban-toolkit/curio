@@ -1,8 +1,7 @@
-"""A model package's ``fetch`` block: weights its operator downloads, which never ship.
+"""A model package's ``fetch`` block: weights downloaded from Hugging Face, which never ship.
 
 A model package whose weights stay out of git and the pip package (too big for
-them, or gated by their publisher's terms) names them in its ``model`` block's
-``fetch``, and ships without them:
+them) names them in its ``model`` block's ``fetch``, and ships without them:
 
 - ``huggingface``: the repository on Hugging Face, ``<owner>/<name>``;
 - ``revision``: the commit the files are read at, its full 40-digit hash;
@@ -11,10 +10,17 @@ them, or gated by their publisher's terms) names them in its ``model`` block's
   LFS, ``gitSha1`` (the git blob hash) for any other.
 
 The files land in the package's entry folder, ``models/<name>/``, a
-Transformers checkpoint. ``scripts/fetch_model_weights.py`` downloads them
-there, or into ``<folder>/<package id>@<major>/models/<name>/`` for the folder
-``--model-weights-dir`` names (:func:`fetched_root`), where Curio then reads
-them in place.
+Transformers checkpoint, or in ``<folder>/<package id>@<major>/models/<name>/``
+for the folder ``--model-weights-dir`` names (:func:`fetched_root`), where
+Curio reads them in place. Curio downloads them there the first time a node
+runs the model (``packages/infrastructure/fetched_weights.py``), and
+``scripts/fetch_model_weights.py`` fetches them ahead. Both read each file at
+:func:`source_url`, check it with :func:`digest_of`, and leave its folders
+:data:`FOLDER_MODE` and the file :data:`FILE_MODE`. Both stamp each file they
+place with its digest (:func:`write_stamp`), and read a file as in place only
+when its stamp names the digest the block names (:func:`is_stamped`): a block
+that names other digests, in a later version of its package, downloads its
+files again. A file with no stamp is hashed once (:func:`checked_in_place`).
 
 This module imports nothing but the standard library: the fetch script reads
 it by its path, on a host that may hold no Curio dependencies.
@@ -22,7 +28,12 @@ it by its path, on a host that may hold no Curio dependencies.
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
+import os
 import re
+import tempfile
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -30,6 +41,19 @@ from pathlib import Path, PurePosixPath
 MODELS_DIR = "models"
 #: The runtime whose entry is a folder the files land in.
 FETCHED_RUNTIME = "transformers"
+HUGGING_FACE = "https://huggingface.co"
+#: Every account may read the files and enter the folders: an isolated node
+#: runs as an account of its own and reads them in place. Only their owner
+#: writes them.
+FILE_MODE = 0o644
+FOLDER_MODE = 0o755
+_CHUNK = 1024 * 1024
+#: The end of a placed file's stamp, ``.<file name>.digest`` beside it
+#: (:func:`stamp_path`). A dotfile: the package's integrity and archives leave
+#: it out, and no block lists a name that starts with a dot (:func:`_path`).
+STAMP_SUFFIX = ".digest"
+#: The longest stamp read: ``gitSha1 <40 digits>`` or ``sha256 <64 digits>``.
+_STAMP_MAX = 128
 
 #: The most files a block may list, and the longest path.
 MAX_FILES = 1024
@@ -169,3 +193,106 @@ def fetched_root(weights_dir, package_id: str, major: int) -> Path:
     fetched weights of package *package_id* at *major*, laid out as the
     package's own folder: its entry, ``models/<name>/``, is under it."""
     return Path(weights_dir) / f"{package_id}@{major}"
+
+
+def source_url(fetch: ModelFetch, path: str) -> str:
+    """Where Hugging Face serves *path* of *fetch*'s repository at its revision."""
+    return f"{HUGGING_FACE}/{fetch.huggingface}/resolve/{fetch.revision}/{urllib.parse.quote(path)}"
+
+
+def git_blob_sha1(path: Path) -> str:
+    """The git blob hash of the file at *path*: the ``gitSha1`` Hugging Face
+    lists for a file that is not in Git LFS."""
+    digest = hashlib.sha1(b"blob %d\0" % Path(path).stat().st_size, usedforsecurity=False)
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(_CHUNK), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(_CHUNK), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def digest_of(path: Path, item: FetchedFile, *, sha256: str | None = None) -> tuple[str, str, str]:
+    """``(kind, digest, expected)`` of the file at *path*, of the kind *item*
+    names: its ``sha256``, or its git blob hash. *sha256*, when given, is the
+    file's sha256 already computed as it streamed, so a big file is not read
+    again."""
+    if item.sha256 is not None:
+        return "sha256", sha256 or sha256_of(path), item.sha256
+    return "git blob sha1", git_blob_sha1(path), item.git_sha1
+
+
+def stamp_path(target: Path) -> Path:
+    """The stamp of the placed file *target*: ``.<name>.digest`` beside it."""
+    target = Path(target)
+    return target.with_name(f".{target.name}{STAMP_SUFFIX}")
+
+
+def stamp_text(item: FetchedFile) -> str:
+    """What the stamp of *item*'s file holds: the digest it was checked
+    against, as the block names it, ``sha256 <hex>`` or ``gitSha1 <hex>``."""
+    if item.sha256 is not None:
+        return f"sha256 {item.sha256}\n"
+    return f"gitSha1 {item.git_sha1}\n"
+
+
+def is_stamped(target: Path, item: FetchedFile) -> bool:
+    """Whether *target* is *item*'s file as placed: there, and stamped with
+    the digest *item* names. Reads the stamp, never the file."""
+    target = Path(target)
+    try:
+        with open(stamp_path(target), encoding="utf-8") as handle:
+            stamp = handle.read(_STAMP_MAX)
+    except (OSError, ValueError):
+        return False
+    return stamp == stamp_text(item) and target.is_file()
+
+
+def write_stamp(target: Path, item: FetchedFile) -> None:
+    """Stamp *target*, *item*'s file, once it is in place and checked: the
+    stamp is written to a temporary file beside it, made readable by every
+    account as the file is (:data:`FILE_MODE`), and renamed into place.
+    Raises ``OSError``."""
+    path = stamp_path(target)
+    handle, name = tempfile.mkstemp(dir=path.parent, prefix=f"{path.name}.", suffix=".part")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as sink:
+            sink.write(stamp_text(item))
+        os.chmod(name, FILE_MODE)
+        os.replace(name, path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(name)
+
+
+def discard(target: Path) -> None:
+    """Remove *target* and its stamp, before *target* downloads again: a file
+    that is not the one its block names is never left where a node reads.
+    Raises ``OSError``."""
+    stamp_path(target).unlink(missing_ok=True)
+    Path(target).unlink(missing_ok=True)
+
+
+def checked_in_place(target: Path, item: FetchedFile) -> bool:
+    """Whether *target* may be read as *item*'s file, checked once if need
+    be: stamped with the digest *item* names (:func:`is_stamped`), or there
+    with no stamp, placed by hand or before stamps, and of that digest,
+    which then stamps it. False for a file whose stamp names another digest,
+    for one that does not match, and for no file: each downloads again.
+    Raises ``OSError`` from reading the file or writing its stamp."""
+    if is_stamped(target, item):
+        return True
+    target = Path(target)
+    if not target.is_file() or os.path.lexists(stamp_path(target)):
+        return False
+    _kind, actual, expected = digest_of(target, item)
+    if actual != expected:
+        return False
+    write_stamp(target, item)
+    return True

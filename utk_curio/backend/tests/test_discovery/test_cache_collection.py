@@ -404,3 +404,34 @@ class TestOneWriterPerFile:
             cache_collection.cache("9", dataset, _Bucket(before=another_process_begins_b))
 
         assert theirs.read_bytes() == b"theirs"
+
+    def test_a_cache_in_another_process_waits_for_the_running_one_and_fetches_nothing_again(
+        self, app, tmp_path, monkeypatch
+    ):
+        """Each process kept its own running caches, so a cache another
+        backend process ran did not hold this one back: it dropped the other
+        cache's half-fetched file, fetched every file again, and the other
+        cache then failed to put its file in place. The other process is a
+        forked child (``_support/two_processes.py``)."""
+        from utk_curio.backend.app.discovery.application import cache_collection
+        from utk_curio.backend.tests._support.two_processes import Window, race
+
+        dataset = _index(tmp_path, ["walks/a.mp4", "walks/b.mp4"])
+        window = Window()
+        fetched_here: list[str] = []
+
+        def first_fetch_stops(relpath):
+            if relpath == "walks/a.mp4":
+                window.stop_here()
+
+        raced = race(
+            window,
+            lambda: cache_collection.cache("9", dataset, _Bucket(before=first_fetch_stops)),
+            lambda: cache_collection.cache("9", dataset, _Bucket(before=fetched_here.append)),
+            monkeypatch,
+        )
+
+        assert raced.child_exit == 0, f"the cache in the other process failed: {raced.child_error}"
+        assert fetched_here == [], f"this process fetched again what the other was caching: {fetched_here}"
+        assert raced.here["cached"] == 0, raced.here
+        assert cache_collection.cached_count("9", dataset["id"]) == (2, 8)

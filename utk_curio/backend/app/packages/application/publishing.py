@@ -49,7 +49,7 @@ def publish_installed_to_catalog(
     Records who published it — without that the catalog is a global tree with
     no recorded owner, so nothing could tell a package the user authored from
     one that shipped with the deployment (see repositories/publisher_record.py).
-    A model package whose weights its operator fetches is refused, saying why
+    A model package whose weights its ``fetch`` names is refused, saying why
     (``model_packages.refuse_fetched_weights``).
     InstallerError propagates for the route to answer.
     """

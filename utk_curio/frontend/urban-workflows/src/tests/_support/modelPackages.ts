@@ -164,8 +164,8 @@ export function importedModelPackage(over: Record<string, unknown> = {}): Packag
   });
 }
 
-/** A concept segmentation model whose weights its operator fetches from
- *  Hugging Face, which this Curio has not fetched yet: its labels are text
+/** A concept segmentation model whose weights its fetch names on Hugging
+ *  Face, which this Curio has not downloaded yet: its labels are text
  *  prompts. */
 export function fetchedModelPackage(over: Record<string, unknown> = {}): PackagePayload {
   return row({
@@ -198,8 +198,7 @@ export function fetchedModelPackage(over: Record<string, unknown> = {}): Package
         revision: "3c879f39826c281e95690f02c7821c4de09afae7",
         files: [{ path: "config.json", gitSha1: "0".repeat(40) }, { path: "model.safetensors", sha256: "0".repeat(64) }],
       },
-      downloadsOnFirstUse: false,
-      weightsNotFetched: true,
+      downloadsOnFirstUse: true,
     },
     createdAt: "2026-11-07T00:00:00Z",
     ...over,

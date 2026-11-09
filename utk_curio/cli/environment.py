@@ -138,9 +138,8 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         weights_dir = Path(model_weights_dir).expanduser().resolve()
         if not weights_dir.is_dir():
             log_warning(
-                f"--model-weights-dir {weights_dir} is not a directory: a model package that "
-                "fetches its weights finds none there until scripts/fetch_model_weights.py "
-                "--into writes them."
+                f"--model-weights-dir {weights_dir} is not a directory yet: the first node that runs "
+                "a model whose weights download on first use makes it."
             )
         os.environ["CURIO_MODEL_WEIGHTS_DIR"] = str(weights_dir)
     # The bucket mount service (discovery/infrastructure/bucket_mounts.py):

@@ -698,8 +698,8 @@ def _parse_download_on_first_use(raw: dict, model: ModelBlock | None, kind: str,
     """The optional ``downloadOnFirstUse`` (``domain/download_on_first_use.py``).
     Only a model package names one, and only paths under ``models/``: the
     weights a node's first ``curio_load_model`` downloads on a pip install. A
-    package whose weights its operator fetches (``model.fetch``) names none:
-    they are in neither git nor the pip package."""
+    package whose weights come from ``model.fetch`` names none: they are in
+    neither git nor the pip package, and download from there."""
     field = f"{where}.{DOWNLOAD_ON_FIRST_USE}"
     try:
         paths = clean_download_on_first_use(raw.get(DOWNLOAD_ON_FIRST_USE), where=field)
@@ -712,7 +712,7 @@ def _parse_download_on_first_use(raw: dict, model: ModelBlock | None, kind: str,
         )
     if paths and model is not None and model.fetch is not None:
         raise ManifestError(
-            f"{field}: a package whose weights its operator fetches (model.fetch) names none to download on first use"
+            f"{field}: a package whose weights come from model.fetch names none to download on first use"
         )
     for path in paths:
         if path.split("/")[0] != MODELS_DIR or "/" not in path:

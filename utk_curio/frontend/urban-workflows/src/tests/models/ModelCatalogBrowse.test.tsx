@@ -307,9 +307,8 @@ describe("the Node Catalog page", () => {
   });
 });
 
-describe("a concept segmentation model whose weights its operator fetches", () => {
-  const NOT_FETCHED =
-    "Not on this Curio: whoever runs it fetches them with scripts/fetch_model_weights.py model.test.prompted";
+describe("a concept segmentation model whose weights its fetch names", () => {
+  const ON_FIRST_USE = "Downloads on first use";
 
   beforeEach(() => {
     mockApi.catalog.mockResolvedValue({
@@ -330,7 +329,7 @@ describe("a concept segmentation model whose weights its operator fetches", () =
     expect(card("model.test.prompted@1")).not.toBeNull();
   });
 
-  test("its details name its type and prompts, and say its weights are not on this Curio", async () => {
+  test("its details name its type and prompts, and say its weights download on first use", async () => {
     renderPage();
     const prompted = await gridCard("model.test.prompted@1");
     fireEvent.click(within(prompted).getByRole("button", { name: "View details" }));
@@ -339,17 +338,18 @@ describe("a concept segmentation model whose weights its operator fetches", () =
     expect(row("Type")).toHaveTextContent("Concept segmentation");
     expect(row("Runtime")).toHaveTextContent("Transformers");
     expect(row("Labels")).toHaveTextContent("2");
-    expect(row("Weights")).toHaveTextContent(NOT_FETCHED);
-    expect(within(modal).queryByText("Downloads on first use")).toBeNull();
+    expect(row("Weights")).toHaveTextContent(ON_FIRST_USE);
+    expect(within(modal).queryByText(/Not on this Curio/)).toBeNull();
+    expect(within(modal).queryByText(/fetch_model_weights/)).toBeNull();
   });
 
-  test("once fetched, its details have no Weights row", () => {
+  test("once downloaded, its details have no Weights row, as a pip install's left-out weights", () => {
     const facts = (pkg: ReturnType<typeof fetchedModelPackage>) =>
       Object.fromEntries(modelInfoRows(pkg as Parameters<typeof modelInfoRows>[0]).map((fact) => [fact.label, fact.value]));
     const fetched = fetchedModelPackage();
-    expect(facts(fetched).Weights).toBe(NOT_FETCHED);
-    expect(facts(fetchedModelPackage({ model: { ...fetched.model, weightsNotFetched: false } })).Weights).toBeUndefined();
-    expect(facts(deepUmbraPackage()).Weights).toBe("Downloads on first use");
+    expect(facts(fetched).Weights).toBe(ON_FIRST_USE);
+    expect(facts(fetchedModelPackage({ model: { ...fetched.model, downloadsOnFirstUse: false } })).Weights).toBeUndefined();
+    expect(facts(deepUmbraPackage()).Weights).toBe(ON_FIRST_USE);
   });
 });
 

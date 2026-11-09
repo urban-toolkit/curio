@@ -35,7 +35,11 @@ Discovery Catalog: each is named after the guest (``imported.<visitor>.x<id>``,
 starts too. A run the guest's request starts on a thread of its own, an agent's
 job or a download, holds no request: it is handed the request's sign-in
 (:func:`carrying`, :func:`carried`) and serves it (:func:`serving`), so what is
-the guest's is theirs there as in their requests.
+the guest's is theirs there as in their requests. A signed link to one of
+their files, which a ``<video>`` asks for with no sign-in
+(``discovery/media_routes.py``), names the guest as their datasets' names do
+(:func:`visitor_of`), never by the sign-in, and its file is read as theirs
+(:func:`serving_visitor`).
 
 The guest's own edits on the canvas land on the copy too: the guest's tab
 joins the room of its copy (:func:`room_for`), keyed by the copy's id, and
@@ -89,8 +93,10 @@ _INDEXES = "visitors"
 #: The namespace of the copies' ids.
 _NAMESPACE = uuid.UUID("5d3c2a4e-7f1b-4c8e-9a6d-2b0e8f4c1a37")
 
-#: One writer of the visitors' lists at a time.
-_index_lock = threading.Lock()
+#: Beside the folder of the visitors' lists, never in it (:func:`drop_all`
+#: removes that folder): the lock every write of a list takes, and the drop of
+#: them all, so one writer at a time across threads and backend processes.
+_LISTS_LOCK = ".visitors.lock"
 
 #: The sign-in of the visitor a run on a thread of its own serves, which a
 #: request that started it handed it (:func:`serving`).
@@ -113,11 +119,15 @@ def copies_for(user) -> bool:
 def _sign_in() -> Optional[str]:
     """The token of the sign-in that names one visitor: the request's, or on
     a thread of its own, which holds no request, the one a request handed
-    its run (:func:`serving`); None for neither."""
+    its run (:func:`serving`); None for neither, and in a block that serves a
+    visitor by name alone, whatever sign-in its request sends
+    (:func:`serving_visitor`)."""
     from flask import has_request_context
 
     from utk_curio.backend.app.users.dependencies import get_current_session
 
+    if _VISITOR.get() is not None:
+        return None
     if not has_request_context():
         return _SERVING.get()
     session = get_current_session()
@@ -143,6 +153,28 @@ def serving(sign_in: Optional[str]):
             _SERVING.reset(token)
         except ValueError:  # closed on another thread, whose context it never set
             pass
+
+
+#: The visitor a block serves by name alone, as :func:`visitor_of` names
+#: them, with no sign-in (:func:`serving_visitor`).
+_VISITOR: ContextVar[Optional[str]] = ContextVar("visitor_copies_visitor", default=None)
+
+
+@contextmanager
+def serving_visitor(visitor: Optional[str]):
+    """The block serves the visitor :func:`visitor_of` names *visitor*, and
+    no sign-in, not even its request's: a signed media link's request
+    (``discovery/media_routes.py``), whose link names the visitor who asked
+    for it and never their sign-in. What that visitor uploaded or downloaded
+    lists there (:func:`lists_for`); nothing only a sign-in names does, such
+    as their copies and new dataflows (:func:`is_own_copy`), and nothing is
+    named after them there (:func:`visitor_of`). *visitor* None leaves the
+    block as it would be without this."""
+    token = _VISITOR.set(visitor)
+    try:
+        yield
+    finally:
+        _VISITOR.reset(token)
 
 
 def carrying(target):
@@ -374,17 +406,18 @@ def a_visitors(dataflow_id: Optional[str], name: Optional[str] = None) -> bool:
 
 def lists_for(dataflow_id: Optional[str], sign_in: Optional[str] = None, *, name: Optional[str] = None) -> bool:
     """Whether a dataset of the guest account's store lists for the visitor
-    signed in as *sign_in*, else the request's or the run's sign-in: one a
-    hosted guest's copy made (*dataflow_id*, the dataflow that made it), and
-    one they uploaded or downloaded (*name*, its id or folder), is that
-    guest's alone; any other is every guest's."""
+    signed in as *sign_in*, else the request's or the run's sign-in, else the
+    visitor a block serves by name (:func:`serving_visitor`): one a hosted
+    guest's copy made (*dataflow_id*, the dataflow that made it), and one
+    they uploaded or downloaded (*name*, its id or folder), is that guest's
+    alone; any other is every guest's."""
     if not a_visitors(dataflow_id, name):
         return True
     sign_in = sign_in or _sign_in()
     if is_copy(dataflow_id) and not is_own_copy(sign_in, dataflow_id):
         return False
     adder = added_by(name)
-    return adder is None or adder == visitor_of(sign_in)
+    return adder is None or adder == (visitor_of(sign_in) if sign_in else _VISITOR.get())
 
 
 def is_own_copy(sign_in: Optional[str], own: str) -> bool:
@@ -445,7 +478,7 @@ def drop_all() -> int:
     # First, so a new dataflow that stays until the next start is listed in
     # no gallery meanwhile.
     try:
-        with _index_lock:
+        with _lists_held(""):
             shutil.rmtree(_indexes(), ignore_errors=True)
     except (OSError, ValueError):
         logger.warning("could not drop the hosted guests' lists of their new dataflows", exc_info=True)
@@ -627,6 +660,19 @@ def _index(sign_in: str) -> Path:
     return _indexes() / f"{uuid.uuid5(_NAMESPACE, f'{sign_in}:dataflows').hex}.json"
 
 
+@contextmanager
+def _lists_held(key: str):
+    """Hold the visitors' lists across threads and backend processes. Every
+    write of a list and the drop of them all share one lock file, beside the
+    lists' folder; *key*, the list a write changes, keys the thread lock."""
+    from utk_curio.backend.app.common.file_locks import exclusive_lock
+
+    folder = _indexes().parent
+    folder.mkdir(parents=True, exist_ok=True)
+    with exclusive_lock(folder / _LISTS_LOCK, namespace="visitor-lists", key=key):
+        yield
+
+
 def _listed(sign_in: str) -> list[str]:
     """The ids the visitor's list holds, oldest first."""
     try:
@@ -639,12 +685,13 @@ def _listed(sign_in: str) -> list[str]:
 
 def _list(sign_in: str, own: str) -> None:
     """Add *own* to the visitor's list, written whole, so a reader never
-    sees half of it."""
-    with _index_lock:
+    sees half of it, and under the lists' lock, so a write of the list in
+    another thread or process keeps its own id too."""
+    path = _index(sign_in)
+    with _lists_held(path.name):
         listed = _listed(sign_in)
         if own in listed:
             return
-        path = _index(sign_in)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
         try:

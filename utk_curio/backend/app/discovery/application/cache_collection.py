@@ -16,6 +16,8 @@ images land in the same folder and are bounded by the same check,
 
 One cache of a collection runs at a time for an account (:func:`claim`), and
 what the account's running caches have still to fetch counts against its cap.
+A cache that another backend process runs keeps this one waiting until it
+ends, so this one then finds the files cached (:func:`_across_processes`).
 A bucket's index lists its videos and recordings by path and size alone, so
 their details are read from the cached files and written into the index
 (:func:`record_details`).
@@ -27,10 +29,12 @@ import os
 import shutil
 import threading
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from utk_curio.backend.app.common.file_locks import exclusive_lock
 from utk_curio.backend.app.discovery.application import probe as probing
 from utk_curio.backend.app.discovery.domain.errors import (
     CapabilityUnsupported,
@@ -185,10 +189,11 @@ def cache(
     if held != owner:
         raise CacheRunning("these files are being cached already")
     try:
-        return _cache(
-            user_key, dataset, provider,
-            items=items, progress=progress, cancelled=cancelled, describe=describe,
-        )
+        with _across_processes(user_key, dataset["id"]):
+            return _cache(
+                user_key, dataset, provider,
+                items=items, progress=progress, cancelled=cancelled, describe=describe,
+            )
     finally:
         if claimed:
             release(user_key, dataset["id"], owner)
@@ -314,6 +319,22 @@ def reset_running() -> None:
         _caches.clear()
 
 
+@contextmanager
+def _across_processes(user_key: str, dataset_id: str):
+    """Hold the collection's cache across backend processes as well.
+
+    :func:`claim` keeps one cache of it running in this process, and each
+    process has its own claims: a cache another process ran would drop this
+    one's half-fetched files (:func:`_drop_parts`) and fetch every file again.
+    So a cache holds this lock while it fetches, and one in another process
+    waits for it, then finds the files cached and fetches none of them again.
+    """
+    with exclusive_lock(
+        media_dirs.cache_lock(user_key, dataset_id), namespace="collection-cache", key=f"{user_key}/{dataset_id}",
+    ):
+        yield
+
+
 def _pending(user_key: str) -> int:
     """What *user_key*'s running caches have still to fetch. The lock is held."""
     return sum(held.pending for (key, _dataset), held in _caches.items() if key == user_key)
@@ -331,7 +352,8 @@ def _land(part: Path, final: Path, user_key: str, dataset_id: str, size: int) ->
 
 def _drop_parts(folder: Path) -> None:
     """Remove what a cache that never ended left half fetched. Called holding
-    the collection's claim, so no cache in this process is writing one."""
+    the collection's claim and its lock, so no cache in any process is
+    writing one."""
     for part in folder.glob("*.part"):
         part.unlink(missing_ok=True)
 

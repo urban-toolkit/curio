@@ -21,6 +21,32 @@ dependencies.
 | `curio.weather/census-reproject` | computation | Reproject census to EPSG:3395 | Reproject from UTM 32632 to EPSG:3395; tag as `census`. |
 | `curio.weather/gt65-projection` | computation | Project gt_65 column | Project down to `gt_65` for an independent boxplot view. |
 
+## Functions
+
+The code of each computation node is its settings and the call of one
+function, which does the node's work:
+
+| Function | Module | What it does |
+|---|---|---|
+| `utci_grid(raster, weather, *, timestamp=12, upscale_factor=1.0)` | `weather_utci` | The Universal Thermal Climate Index of each cell of a mean radiant temperature raster, under the weather of the hour `timestamp`: `(grid, shape)` |
+| `utci_zonal_mean(raster, utci, census)` | `weather_census` | The mean UTCI of each census polygon, with its geometry and `gt_65` |
+| `reproject_census(census, *, source_crs=32632, target_crs=3395)` | `weather_census` | The census polygons in `target_crs`, those whose mean UTCI is not above 0 left out, named `census` |
+| `gt65_column(census)` | `weather_census` | The census table cut to its `gt_65` column |
+
+UTCI from raster + weather's code, for one:
+
+```python
+from weather_utci import utci_grid
+
+TIMESTAMP = 12
+UPSCALE_FACTOR = 1.0
+
+return utci_grid(
+    [!! input_0 !!], [!! input_1 !!],
+    timestamp=TIMESTAMP, upscale_factor=UPSCALE_FACTOR,
+)
+```
+
 ## Demo wiring
 
 ```
@@ -51,6 +77,5 @@ inside the canvas (**Node Catalog → Browse Node Catalog +**) or the **Nodes** 
 - `rasterio >=1.5.0`
 - `rasterstats ^0.20`
 
-The package declares the `filesystem.read` permission; the loader nodes read their
-inputs from paths relative to the Curio launch directory, so adjust those paths in
-the node source if your data lives elsewhere.
+The package declares the `filesystem.read` permission; its loader nodes read the
+Milan datasets from the Data Catalog.
