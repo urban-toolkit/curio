@@ -31,7 +31,7 @@ from utk_curio.backend.app.agents.application.turns import policy as agents_poli
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.collaboration import agent_peers
-from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.collaboration import dataflow_docs, owner_guard
 
 
 def solve_node_stream(
@@ -60,6 +60,9 @@ def solve_node_stream(
     lands, and ``done {verdict, rounds, attempts, unchanged?, written?,
     changeId?, changeAttachmentId?}``.
     """
+    # Only the process that owns the dataflow runs its Solves, refused before
+    # anything is read or repaired.
+    owner_guard.refuse(project_id, user_key, what="a Solve")
     spec = agents_spec_reads._read_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     # DEC-080 (dev/126): as the batch — the per-node Solve resolves the same
