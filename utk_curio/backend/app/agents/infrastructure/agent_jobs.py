@@ -35,6 +35,7 @@ from __future__ import annotations
 import time
 from typing import Any, Iterator
 
+from utk_curio.backend.app.collaboration import owner_guard
 from utk_curio.backend.app.common.job_registry import Job, JobRefused, JobRegistry
 
 JOB_KINDS = ("solve-batch", "solve-node")
@@ -96,7 +97,9 @@ def start_turn(*, user_key: str, project_id: str, attachment_id: str, job_id: st
     """Drive one chat turn's *events* on a thread of its own, as
     :func:`start_job` drives a Solve's: the attachment's one live turn, its
     failure a terminal ``error`` event with *redact_values* taken out, and
-    *on_finish* called once it is no longer live."""
+    *on_finish* called once it is no longer live. Refused in a process that
+    does not own the dataflow (``collaboration/owner_guard.py``)."""
+    owner_guard.refuse(project_id, user_key, what="an agent's turn")
     return _TURNS.start(
         user_key=user_key, project_id=project_id, key=attachment_id, kind="turn",
         job_id=job_id, events=_for_the_asker(events), app_context=app_context,
@@ -156,7 +159,9 @@ def start_job(
     Solve ``_finish`` persist) run inside the thread exactly as they did
     inside the request. An exception in the generator becomes a terminal
     ``error`` event, never a lost job, with *redact_values* taken out of its
-    text."""
+    text. Refused in a process that does not own the dataflow
+    (``collaboration/owner_guard.py``): only its owner runs its Solves."""
+    owner_guard.refuse(project_id, user_key, what="a Solve")
     return _REGISTRY.start(
         user_key=user_key, project_id=project_id, key=attachment_id, kind=kind,
         job_id=job_id, events=_for_the_asker(events), app_context=app_context,
@@ -177,7 +182,9 @@ def register_job(
     the builder session that names it, so a read in between finds it live
     (:func:`reconcile_builder_session`) and no other job starts for the
     attachment. :func:`run_job` then drives its events, and :func:`fail_job`
-    ends it when the caller fails first."""
+    ends it when the caller fails first. Refused in a process that does not
+    own the dataflow (``collaboration/owner_guard.py``)."""
+    owner_guard.refuse(project_id, user_key, what="a Solve")
     return _REGISTRY.register(
         user_key=user_key, project_id=project_id, key=attachment_id, kind=kind,
         job_id=job_id, redact_values=redact_values,

@@ -53,7 +53,7 @@ from utk_curio.backend.app.agents.infrastructure import agent_jobs
 from utk_curio.backend.app.agents.infrastructure import provider_config
 from utk_curio.backend.app.agents.infrastructure import testing_provider
 from utk_curio.backend.app.agents.repositories import sessions
-from utk_curio.backend.app.collaboration import roles
+from utk_curio.backend.app.collaboration import owner_guard, roles
 from utk_curio.common.redaction import redact
 
 log = logging.getLogger(__name__)
@@ -184,6 +184,8 @@ def ask(user_key: str, project_id: str, attachment_id: str, message: str, config
     _sweep()
     if ask_id is not None and not (isinstance(ask_id, str) and _ASK_ID.fullmatch(ask_id)):
         raise AgentServiceError("'askId' must be 32 hexadecimal characters", 400)
+    # Only the process that owns the dataflow runs its agents' turns.
+    owner_guard.refuse(project_id, user_key, what="an agent's turn")
     from flask import current_app
 
     new = Ask(

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Callable, Iterable
 
-from utk_curio.backend.app.collaboration import dataflow_docs, owner_uses
+from utk_curio.backend.app.collaboration import dataflow_docs, owner_calls, owner_uses
 from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
@@ -137,6 +137,30 @@ def _add_to_lockfile(user_key: str, project_id: str, added: set[str]) -> tuple[s
     return current, True
 
 
+@owner_calls.operation("packages.add", error=PackageServiceError)
+def add_to_lockfile(user_key: str, project_id: str, added: list[str]) -> bool:
+    """Add the packages *added* to the lockfile of the dataflow *project_id*,
+    as :func:`_add_to_lockfile` does: whether this wrote it. The operation
+    ``packages.add``, which the dataflow's owner makes for a request that adds
+    a package to all of an account's projects, whichever backend process it
+    reached (``collaboration/owner_calls.py``)."""
+    _current, wrote = _add_to_lockfile(user_key, project_id, set(added))
+    return wrote
+
+
+@owner_calls.operation("packages.detach", error=PackageServiceError)
+def detach_from_project(user_key: str, project_id: str, dir_name: str) -> bool:
+    """Drop *dir_name* from the lockfile of the dataflow *project_id*:
+    whether it named it. The operation ``packages.detach``, which the
+    dataflow's owner makes for a package's removal from the account
+    (:func:`detach_from_all_projects`)."""
+    current = get_project_lockfile(user_key, project_id)
+    if dir_name not in current:
+        return False
+    _write_lockfile(user_key, project_id, current - {dir_name})
+    return True
+
+
 def install_to_project(
     user_key: str, project_id: str, dir_name: str, *, lands_on: Callable[[str], str] | None = None,
 ) -> dict:
@@ -196,6 +220,9 @@ def detach_from_all_projects(user_key: str, dir_name: str) -> list[str]:
     Best-effort per project: a spec that cannot be read or written is skipped
     rather than failing the uninstall, since the package is already gone from
     the store by the time this runs. Returns the project ids it changed.
+
+    Each lockfile is written by the backend process that owns its dataflow
+    (:func:`detach_from_project`): the request names no dataflow.
     """
     detached: list[str] = []
     for project_id in projects_storage.list_project_ids(user_key):
@@ -206,7 +233,8 @@ def detach_from_all_projects(user_key: str, dir_name: str) -> list[str]:
         if dir_name not in current:
             continue
         try:
-            _write_lockfile(user_key, project_id, current - {dir_name})
+            if not owner_calls.run(detach_from_project, user_key, project_id, dir_name=dir_name):
+                continue
         except Exception:  # noqa: BLE001 - same
             continue
         detached.append(project_id)
