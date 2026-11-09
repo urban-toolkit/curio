@@ -28,6 +28,17 @@ from utk_curio.cli.test_runner import run_tests
 from utk_curio.common.open_files import raise_limit as raise_open_files_limit
 
 
+def _start_backends(args) -> None:
+    """One backend as before, or with --backend-processes over 1 (or
+    CURIO_BACKEND_ROUTER set) several behind nginx (tmp/sharded-backend)."""
+    from utk_curio.cli import backend_group
+
+    if backend_group.wanted(args.backend_processes):
+        backend_group.start_backend_group(args.backend_host, args.backend_port, args.backend_processes)
+    else:
+        lifecycle.processes.append(start_backend(args.backend_host, args.backend_port))
+
+
 def main():
     # Local, like every backend and sandbox import in the launcher: it must
     # stay importable without the sandbox stack. Needed here so --help can
@@ -221,6 +232,15 @@ def main():
             "How many package backend handlers run at once (sets "
             "CURIO_PACKAGE_WORKERS). Defaults to half the host's cores, from 2 "
             "to 8."
+        ),
+    )
+    parser.add_argument(
+        "--backend-processes", type=int, default=1, metavar="N",
+        help=(
+            "tmp/sharded-backend prototype: how many backend processes share "
+            "the dataflows, each owning those its map gives it, behind nginx "
+            "on the backend's host and port (utk_curio/cli/backend_group.py). "
+            "Default 1: one process, no nginx."
         ),
     )
     parser.add_argument(
@@ -596,13 +616,13 @@ def main():
             raise
 
         if args.server == "all":
-            lifecycle.processes.append(start_backend(args.backend_host, args.backend_port))
+            _start_backends(args)
             lifecycle.processes.append(start_sandbox(args.sandbox_host, args.sandbox_port))
             if not frontend_first:
                 lifecycle.processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path))
         else:
             if args.server == "backend":
-                lifecycle.processes.append(start_backend(args.backend_host, args.backend_port))
+                _start_backends(args)
             elif args.server == "sandbox":
                 lifecycle.processes.append(start_sandbox(args.sandbox_host, args.sandbox_port))
             elif args.server == "frontend":
