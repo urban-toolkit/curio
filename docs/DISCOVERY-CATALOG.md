@@ -57,6 +57,7 @@ discovery/
 | OpenStreetMap | OpenStreetMap (Autark) | Public. Buildings, roads, parks, water, land surface, points of interest and features by tag for a box or for named areas, loaded by Autark |
 | Example storage | Folder | Public. A small instance of each way storage is organized, which the storage examples read |
 | Sentinel-2 over Chicago | S3 bucket | Public. True-color previews and thumbnails of one month's scenes |
+| SideSeeing street captures | S3 bucket | Public. Sidewalk walks in Chicago's West Loop, each folder named by when the walk began: its video, with faces and license plates blurred; its GPS track, sensor readings, battery current and cell networks as tables, with the walk in a `began` column; and its `metadata.json` and `anonymization.json` as files for node code |
 | Hugging Face documentation images | Hugging Face | Public; a token raises the rate limit |
 | Mapillary | Mapillary | Token needed. Street-level photos for a box, each credited to its photographer (CC BY-SA 4.0), and the signs and objects detected in them, as points |
 | Google Street View | Google | Key needed; Google bills its requests to you. Street View images for a box, one per panorama and heading |

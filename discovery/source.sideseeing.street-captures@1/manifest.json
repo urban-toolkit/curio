@@ -1,0 +1,80 @@
+{
+  "id": "source.sideseeing.street-captures",
+  "name": "SideSeeing street captures",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Sidewalk walks in Chicago's West Loop, recorded with the SideSeeing app on a phone, one folder per walk named by when it began in Chicago. Each walk brings its video, looking down at the sidewalk, with faces and license plates blurred by EgoBlur; its GPS track, sensor readings, battery current and cell networks as tables; and the app's and the anonymization's records of it.",
+  "publisher": "SideSeeing",
+  "homepage": null,
+  "tags": ["sidewalks", "video", "sensors", "chicago", "sideseeing"],
+  "provider": { "type": "s3", "baseUrl": "https://data.urbantk.org/sideseeing" },
+  "auth": { "mode": "public" },
+  "resources": [
+    {
+      "id": "walks",
+      "name": "Walk videos",
+      "description": "Each walk's video, with faces and license plates blurred. taken_at is when the walk began, in UTC; began is that time in Chicago, as its folder names it.",
+      "kind": "videos",
+      "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/video.mp4",
+      "time": { "capture": "began", "timezone": "America/Chicago" }
+    },
+    {
+      "id": "records",
+      "name": "Walk records",
+      "description": "Each walk's metadata.json, the app's record of the walk (its start and stop times, the phone and its sensors), and anonymization.json, how its video was blurred. Node code opens each from its row's path.",
+      "kind": "files",
+      "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/{record}.json",
+      "time": { "capture": "began", "timezone": "America/Chicago" }
+    },
+    {
+      "id": "gps",
+      "name": "GPS tracks",
+      "description": "About one fix a second: latitude, longitude and accuracy in meters, at datetime_utc. began names the walk.",
+      "kind": "table",
+      "format": "csv",
+      "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/gps.csv"
+    },
+    {
+      "id": "sensors-one",
+      "name": "One-axis sensors",
+      "description": "Pressure, ambient light and proximity readings, one value (axis_x) each, by sensor name. began names the walk.",
+      "kind": "table",
+      "format": "csv",
+      "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/sensors.one.csv"
+    },
+    {
+      "id": "sensors-three",
+      "name": "Three-axis sensors",
+      "description": "Accelerometer, gyroscope, magnetometer, gravity and linear acceleration readings on three axes, by sensor name. began names the walk.",
+      "kind": "table",
+      "format": "csv",
+      "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/sensors.three.csv"
+    },
+    {
+      "id": "sensors-three-uncalibrated",
+      "name": "Uncalibrated three-axis sensors",
+      "description": "Uncalibrated gyroscope and magnetometer readings on three axes, with delta_x, delta_y and delta_z, by sensor name. began names the walk.",
+      "kind": "table",
+      "format": "csv",
+      "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/sensors.three.uncalibrated.csv"
+    },
+    {
+      "id": "battery",
+      "name": "Battery current",
+      "description": "The battery's current in microamperes, about once a second. began names the walk.",
+      "kind": "table",
+      "format": "csv",
+      "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/consumption.csv"
+    },
+    {
+      "id": "cell",
+      "name": "Cell networks",
+      "description": "The cell networks the phone saw, about once a second, each as Android describes it. began names the walk.",
+      "kind": "table",
+      "format": "csv",
+      "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/cell.csv"
+    }
+  ],
+  "createdAt": "2026-11-08T00:00:00Z",
+  "updatedAt": "2026-11-08T00:00:00Z"
+}
