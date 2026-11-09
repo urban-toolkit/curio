@@ -165,6 +165,48 @@ class TestTheListing:
         assert str(storage_folder) not in json.dumps(row)
 
 
+class TestASplitRowsName:
+    @pytest.mark.parametrize(("fmt", "folder", "shown", "kept"), [
+        ("%Y", "2025", "2025", "2025-01-01T00:00:00"),
+        ("%Y_%m", "2025_07", "2025-07", "2025-07-01T00:00:00"),
+        ("%b_%Y", "Jul_2025", "2025-07", "2025-07-01T00:00:00"),
+        ("%Y_%j", "2025_198", "2025-07-17", "2025-07-17T00:00:00"),
+        ("%Y%m%d", "20250717", "2025-07-17", "2025-07-17T00:00:00"),
+        ("%Y%m%d_%H", "20250717_06", "2025-07-17T06", "2025-07-17T06:00:00"),
+        ("%Y%m%d_%H%M", "20250717_0630", "2025-07-17T06:30", "2025-07-17T06:30:00"),
+        ("%Y%m%d_%H%M%S", "20250717_063005", "2025-07-17T06:30:05", "2025-07-17T06:30:05"),
+        ("%Y%m%d_%H%M%S_%f", "20250717_063005_016", "2025-07-17T06:30:05.016000", "2025-07-17T06:30:05.016000"),
+    ])
+    def test_a_time_shows_down_to_the_unit_its_capture_writes(
+        self, tmp_path, discovery_dir, fmt, folder, shown, kept
+    ):
+        """A month's row reads ``2025-07``, not ``2025-07-01T00:00:00``; its id
+        keeps the whole time, which an add is given back."""
+        from utk_curio.backend.app.discovery.application import scan
+
+        root = write_files(tmp_path / "f", {f"{folder}/a.csv": "n\n1\n"})
+        path = write_source(discovery_dir, SOURCE, a_storage_manifest(root, [
+            {"id": "by-time", "name": "Readings", "kind": "table", "format": "csv",
+             "path": f"{{when:{fmt}}}/a.csv", "datasets": "per:when"},
+        ]))
+        manifest = load_source_manifest(path)
+        [group] = scan.scan(manifest, FolderStorage(manifest)).groups
+        assert scan.group_name(group) == f"Readings · {shown}"
+        assert group.resource_id == f"by-time@when={kept}"
+
+    def test_a_date_and_a_text_show_as_written(self, tmp_path, discovery_dir):
+        from utk_curio.backend.app.discovery.application import scan
+
+        root = write_files(tmp_path / "f", {"A/2024-01-01/a.csv": "n\n1\n"})
+        path = write_source(discovery_dir, SOURCE, a_storage_manifest(root, [
+            {"id": "by-day", "name": "Readings", "kind": "table", "format": "csv",
+             "path": "{sensor}/{day:date}/a.csv", "datasets": "per:sensor,day"},
+        ]))
+        manifest = load_source_manifest(path)
+        [group] = scan.scan(manifest, FolderStorage(manifest)).groups
+        assert scan.group_name(group) == "Readings · A, 2024-01-01"
+
+
 class TestAddingATable:
     def test_one_file_is_copied_as_itself(self, client, auth, app, storage_source):
         res = add(client, auth, "stations")
