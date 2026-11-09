@@ -469,12 +469,20 @@ export interface DiscoveryAcquireBody {
 export interface DiscoveryCollectionStatus {
   datasetId: string;
   provider: DiscoveryProviderType;
-  /** A folder on this machine: every file is readable as it is. */
+  /** A folder on this machine, or a bucket read in place: every file is
+   *  readable as it is. */
   local: boolean;
   fileCount: number;
   totalBytes: number;
   cachedFiles: number;
   cachedBytes: number;
+  /** Its bucket is read in place, through this deployment's mount of it:
+   *  nothing to cache. */
+  readInPlace?: boolean;
+  /** The host of a bucket read in place, mounted or down. */
+  bucketHost?: string | null;
+  /** Why a bucket read in place cannot be read now. */
+  mountProblem?: string | null;
   samples: { fileId: string; name: string; kind: string }[];
   /** Your Cache files job for it while one runs: a panel opened or reloaded
    *  meanwhile follows it. One runs at a time for a collection. */

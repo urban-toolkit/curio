@@ -194,18 +194,18 @@ A **collection** is a dataset made of many files that stay where they are: a fol
 | `file_id`, `relpath`, `name`, `ext`, `bytes` | Which file the row is. |
 | `kind` | `image`, `frame`, `video`, `audio`, `raster`, or `file` for a `files` resource's file of any type. |
 | The path fields | One column per field of the source's path template, such as `year`, `sensor` or `sequence`. |
-| `path` | Where this execution can open the file. For a bucket's collection it is empty until **Cache files** has run. |
+| `path` | Where this execution can open the file: in its folder, or in its bucket's mount where the deployment mounts buckets. For a bucket the deployment does not mount, it is empty until **Cache files** has run. |
 | `thumbnail`, `image_url`, `audio_url` | Addresses **Simple View** draws and plays. |
 | Images and frames | `width`, `height`, `taken_at`, and `gps_lat` and `gps_lon` when the file carries them. Frames also have `sequence`, `frame` and `t_s`: `frame` over the resource's `fps`, empty when it declares none. Frames come in sequence and frame order. |
-| Videos | `duration_s`, `fps`, `codec`, `width`, `height`; from a bucket, once **Cache files** has copied the file. |
-| Audio | `recorded_at`, `duration_s`, `sample_rate`, `channels`, `codec`; from a bucket, once **Cache files** has copied the file. |
+| Videos | `duration_s`, `fps`, `codec`, `width`, `height`; from a bucket the deployment mounts, when it is added, and from another, once **Cache files** has copied the file. |
+| Audio | `recorded_at`, `duration_s`, `sample_rate`, `channels`, `codec`; from a bucket the deployment mounts, when it is added, and from another, once **Cache files** has copied the file. |
 | Rasters | `crs`, `transform`, `res`, `width`, `height`, `bands`, `dtype`, `nodata`, and the footprint as geometry. |
 | Files | Nothing read from the file, and no `thumbnail`, `image_url` or `audio_url`: node code opens it from `path`, as `json.load(open(row["path"]))` for a JSON file. |
 | `probe_error` | Why a file could not be read, on a row that is kept anyway. |
 
 Rows with a position, and rasters, come back as a GeoDataFrame, so a map node draws them. **Simple View** shows the rows as cards, a page at a time; a video or a recording has a **Play** button in its card, and so has a video a node made from one ([`curio_derived_file`](../skills/node-functions/SKILL.md)). The `curio.media` package adds **Sample Video Frames**, **Split Audio** and **Mosaic Rasters**, which take these rows: see its [README](../packages/curio.media@1/README.md).
 
-A collection's details have a **Collection** section: its kind, **Indexed from** its source and resource, how many files of each kind it holds, their total size, what its **Path fields** cover, the **Coverage** of its footprints or positions, its rasters' **Raster CRS**, and, for frames and audio, its sequences or total duration. A bucket's collection says how many of its files are **On this machine**, and offers **Cache files**. One cache of a collection runs at a time: while it runs, its details show its progress, also after a reload, and offer no second one.
+A collection's details have a **Collection** section: its kind, **Indexed from** its source and resource, how many files of each kind it holds, their total size, what its **Path fields** cover, the **Coverage** of its footprints or positions, its rasters' **Raster CRS**, and, for frames and audio, its sequences or total duration. A bucket's collection says how many of its files are **On this machine**, and offers **Cache files**. One cache of a collection runs at a time: while it runs, its details show its progress, also after a reload, and offer no second one. On a deployment that mounts buckets, a bucket's collection says *Read in place from `<host>`* instead, with no **Cache files**, or, when its bucket cannot be read, why.
 
 ---
 

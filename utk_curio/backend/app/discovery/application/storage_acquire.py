@@ -10,7 +10,11 @@ and what is added depends on the kind:
 - every other kind is a **collection**: an index with one row per file,
   referenced where the files are.
 
-Nothing here writes to the source.
+A bucket this deployment mounts is read in place, through its mount
+(``bucket_mount_sources``): its add fails while the mount is down, and first
+has rclone list its files' folders again, so the index reads a video's
+details from the file as it reads a folder's. Nothing here writes to the
+source.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from typing import Any, Callable
 from utk_curio.backend.app.common.safe_paths import validate_component
 from utk_curio.backend.app.common.user_storage import user_key_segment, users_base
 from utk_curio.backend.app.datasets.install.shapefile import shapefile_to_parquet
+from utk_curio.backend.app.discovery.application import bucket_mount_sources
 from utk_curio.backend.app.discovery.application import combine_tables
 from utk_curio.backend.app.discovery.application import index_collection
 from utk_curio.backend.app.discovery.application import json_lines
@@ -35,6 +40,7 @@ from utk_curio.backend.app.discovery.domain.errors import (
     DiscoveryError,
     DownloadTooLarge,
     ResourceNotFound,
+    StorageUnavailable,
 )
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
 from utk_curio.backend.app.discovery.infrastructure.transport import MAX_DISCOVERY_DOWNLOAD_BYTES
@@ -232,6 +238,12 @@ class StorageAcquire:
         if held is not None and not refresh:
             return {"dataset": held, "alreadyPresent": True, "unchanged": True}
 
+        # A bucket this deployment mounts is read in place, so its add needs
+        # the mount: down, it fails with why, rather than index its videos
+        # with nothing read from them.
+        mount = bucket_mount_sources.ensure(manifest)
+        if mount.state == "down":
+            raise StorageUnavailable(f"{manifest.name} cannot be read now: {mount.reason}")
         provider = self._storage_for(manifest)
         if stage:
             stage("Finding the files…")
@@ -252,6 +264,12 @@ class StorageAcquire:
             return {"dataset": held, "alreadyPresent": True, "unchanged": True}
 
         check_addable(manifest, spec, files, for_area=area is not None)
+        if mount.mounted and area is None:
+            # Read through the mount: a file uploaded since rclone last listed
+            # its folder shows once that folder is listed again.
+            bucket_mount_sources.refresh(manifest, bucket_mount_sources.folders_of(
+                mount, [entry.relpath for found in files for entry in (found, *found.parts)],
+            ))
         if area is not None:
             dataset = self._add_area(
                 manifest, provider, spec, selection, files, area=area, values=values,
