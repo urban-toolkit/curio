@@ -32,6 +32,7 @@ from utk_curio.backend.reloader import (  # noqa: E402,F401  (re-exported)
     RELOADER_EXCLUDE_PATTERNS,
 )
 
+
 def _seed_the_shared_guest():
     """The shared guest at a start: its row, its hosted guests' copies
     dropped, its projects read back from the files, the agents every account
