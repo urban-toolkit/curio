@@ -727,3 +727,22 @@ class TestWhatDoesNotMount:
             assert cache_refusal(found) is None
         assert S3Storage(plain_http, None, reads=BucketReads(plain_http)).local_path(WALKS[0]) is None
         assert rig.service.calls == []
+
+    @pytest.mark.parametrize("mode", ["optional-token", "required-token"])
+    def test_a_bucket_that_sends_each_accounts_token_is_never_mounted(self, rig, mode):
+        """One mount reads for every account alike, anonymously: a source that
+        sends each account's own token keeps reading over HTTP with it."""
+        from dataclasses import replace
+
+        from utk_curio.backend.app.discovery.application.bucket_mount_sources import BucketReads, cache_refusal
+        from utk_curio.backend.app.discovery.domain.manifest import AuthSpec
+        from utk_curio.backend.app.discovery.providers.s3 import S3Storage
+
+        manifest = replace(rig.manifest(), auth=AuthSpec(mode=mode, secret_id="walks-token"))
+
+        found = BucketReads(manifest).state()
+
+        assert found.state == "not-mountable" and "token" in found.reason, found
+        assert cache_refusal(found) is None
+        assert S3Storage(manifest, None, reads=BucketReads(manifest)).local_path(WALKS[0]) is None
+        assert rig.service.calls == []
