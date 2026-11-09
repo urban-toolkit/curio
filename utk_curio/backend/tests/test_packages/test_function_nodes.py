@@ -624,6 +624,43 @@ class TestTheListingAndTheWrittenTemplate:
             write_function_template("guest", f"{SOURCE_ID}@1", "fn_pkg.core", "area", None, {})
         assert raised.value.status == 400
 
+    def test_the_description_holds_the_docstrings_words_without_their_marks(self, tmp_curio):
+        """A template's description is plain words: reST's and Markdown's marks
+        leave it (``plain_doc``), the words they set stay. The listing, which
+        the views set the marks from, and what an agent reads keep them."""
+        from utk_curio.backend.app.packages.application.function_nodes import (
+            module_functions,
+            package_functions,
+            write_function_template,
+        )
+        from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+        from utk_curio.backend.app.packages.repositories.store import package_dir
+
+        marked = (
+            "def shade(value, season):\n"
+            '    """Minutes of shade in *season*, as SCOUT\'s ``run_shadow_model``\n'
+            '    gives them (:func:`season_factor`, `curio_output_file`)."""\n'
+            "    return value\n"
+        )
+        as_written = (
+            "Minutes of shade in *season*, as SCOUT's ``run_shadow_model`` gives them "
+            "(:func:`season_factor`, `curio_output_file`)."
+        )
+        install_package_from_archive("guest", _archive(modules={"fn_shade.py": marked}))
+        written = write_function_template("guest", f"{SOURCE_ID}@1", "fn_shade", "shade", None, {
+            "value": {"use": "input"}, "season": {"use": "fixed", "value": "'summer'"},
+        })
+        assert written["template"]["description"] == (
+            "Minutes of shade in season, as SCOUT's run_shadow_model gives them (season_factor, curio_output_file). "
+            "Calls shade from fn_shade."
+        )
+        (package,) = [p for p in package_functions("guest") if p["packageId"] == SOURCE_ID]
+        (shade,) = {m["module"]: m for m in package["modules"]}["fn_shade"]["functions"]
+        assert shade["doc"] == as_written
+        root = package_dir("guest", f"{SOURCE_ID}@1")
+        rows = {row["module"]: row for row in module_functions(root, load_package_manifest(root))}
+        assert rows["fn_shade"]["functions"] == [{"name": "shade", "call": "shade(value, season)", "doc": as_written}]
+
     def test_the_template_it_writes(self, tmp_curio):
         from utk_curio.backend.app.packages.application.function_nodes import write_function_template
 

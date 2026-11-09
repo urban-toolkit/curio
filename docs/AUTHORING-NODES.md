@@ -231,6 +231,10 @@ return convert_raster(input_0, zoom=[!! zoom !!])
   **New node from a Python function** offers them, and an agent that writes a
   node's code reads them. A module with no `__all__` offers every function
   whose name does not start with `_`.
+- Write that paragraph as reST: ``` ``name`` ``` or ``` :func:`name` ``` for
+  code and `*name*` for a parameter. The views show the code in the code font
+  and the parameter in italics, never the marks, and a node made from the
+  function has the paragraph's words, without them, as its description.
 - A folder's `__init__.py` can offer what its other modules define, and the
   modules offer nothing of their own:
 

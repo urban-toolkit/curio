@@ -9,8 +9,9 @@ Example 24, SCOUT's shadow model on Chicago Loop, as it opens, with no run:
    own. The Raster Calculator, Rasterization's node, lists Rasterization's and
    Curio's: a package's nodes list their own package's functions.
 2. A hover of ``season_factor``'s tag shows, in the one Curio tooltip, its
-   call, ``season_factor(season)``, and the first paragraph of its docstring.
-   A frame of it, as tightly compared as a node's close-up.
+   call, ``season_factor(season)``, and the first paragraph of its docstring,
+   its reST marks setting its words rather than written out. A frame of it, as
+   tightly compared as a node's close-up.
 3. A click on it writes its call at the cursor, and its import after the code's
    first import, which the code lacks; a click on one of Curio's writes its
    call alone.
@@ -140,11 +141,14 @@ def test_a_nodes_functions_show_beside_its_inputs_say_what_they_do_and_write_the
     )
     assert row[:2] == ["inputs", "functions"], row
 
-    # 2. The hover: its call and the first paragraph of its docstring.
+    # 2. The hover: its call and the first paragraph of its docstring, whose
+    # marks (*season*, ``run_shadow_model``) set its words, never written out.
     tag = f'.react-flow__node[data-id="{SHADOW}"] [data-widget-strip] [data-function-tag="season_factor"]'
     tip = hover_until_tooltip_says(
         page, tag, "season_factor's tag",
-        ["season_factor", "from deep_umbra", "season_factor(season)", "Minutes of shadow a pixel at 1 stands for"],
+        ["season_factor", "from deep_umbra", "season_factor(season)", "Minutes of shadow a pixel at 1 stands for",
+         "in season (SCOUT's run_shadow_model)"],
+        absent=("``", "*season*"),
         timeout=READ_MS,
     )
     save_workflow_test_screenshot(

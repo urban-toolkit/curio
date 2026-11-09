@@ -7,6 +7,7 @@ import { LEAVE_DATAFLOW, useLeaveGuard } from "../../../hook/useLeaveGuard";
 import { isModelPackage, packagesApi, primaryCategory } from "../../../services/packages";
 import type { OfferedModulePayload, PackagePayload } from "../../../services/packages";
 import { modelInfoRows } from "../../models/catalog/modelFacts";
+import { DocText } from "../../editing/widgets/DocText";
 import styles from "../../agents/catalog/AgentDetailModal.module.css";
 import browseStyles from "../../../pages/catalog/CatalogBrowseLayout.module.css";
 import moduleStyles from "./PackageDetailModal.module.css";
@@ -169,7 +170,11 @@ function ModulesSection({ dirName, modules }: { dirName: string; modules: string
                     {row.functions.map((fn) => (
                       <li key={fn.name} data-module-function={fn.name}>
                         <span className={moduleStyles.call}>{fn.call}</span>
-                        {fn.doc ? <span className={moduleStyles.doc}>{fn.doc}</span> : null}
+                        {fn.doc ? (
+                          <span className={moduleStyles.doc}>
+                            <DocText doc={fn.doc} />
+                          </span>
+                        ) : null}
                       </li>
                     ))}
                   </ul>

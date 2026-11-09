@@ -1,0 +1,5 @@
+/* A name a docstring sets as code: the code font, at the size of the words around it. */
+.code {
+  font-family: var(--curio-font-mono);
+  font-size: 0.95em;
+}

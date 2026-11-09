@@ -86,6 +86,11 @@ test("each module with the functions it offers: each one's call and what it does
   const listed = Array.from(details().querySelectorAll('[data-module-functions="deep_umbra"] [data-module-function]'));
   expect(listed.map((item) => item.getAttribute("data-module-function"))).toEqual(["accumulated_shadow", "season_factor"]);
   expect(listed[1].textContent).toBe("season_factor(season)Minutes of shadow a pixel at 1 stands for.");
+  // A docstring's *emphasis* is set in italics, never written out.
+  expect(listed[0].textContent).toBe(
+    "accumulated_shadow(value, season, model, output_file)The accumulated shadow of the heights in value.",
+  );
+  expect(Array.from(listed[0].querySelectorAll("em"), (el) => el.textContent)).toEqual(["value"]);
   // A module that offers nothing has no list.
   expect(details().querySelector('[data-module-functions="deep_umbra.deep_umbra"]')).toBeNull();
   expect(details().querySelector('[data-module-functions="deep_umbra.node_outputs"]')).toBeNull();

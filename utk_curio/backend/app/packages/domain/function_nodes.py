@@ -577,7 +577,8 @@ def template_code(module: str, function: FunctionSignature, uses: dict[str, dict
     return f"from {module} import {imported}\n\nreturn {call}\n"
 
 
-def template_description(module: str, function: FunctionSignature) -> str:
-    """The template's description: the function's docstring, and where it comes from."""
-    where = f"Calls {function.name} from {module}."
-    return f"{function.doc} {where}" if function.doc else where
+def template_description(module: str, name: str, doc: str) -> str:
+    """The template's description: what the function *name* does, *doc* in
+    plain words, and where it comes from."""
+    where = f"Calls {name} from {module}."
+    return f"{doc} {where}" if doc else where

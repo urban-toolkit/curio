@@ -77,6 +77,7 @@ import {
   type WidgetDef,
   type WidgetValue,
 } from "../../../utils/widgets/widgetModel";
+import { DocText } from "./DocText";
 import { FUNCTION_HOW, FUNCTION_HOW_IMPORT } from "./functionCalls";
 import type { OfferedFunctionPayload } from "../../../services/packages/types";
 
@@ -1112,7 +1113,11 @@ export function FunctionPreview({ fn, module }: { fn: OfferedFunctionPayload; mo
       </Head>
       <div className={styles.body} data-preview-body="true">
         <Line tone="mono">{fn.call}</Line>
-        {fn.doc ? <Line>{fn.doc}</Line> : null}
+        {fn.doc ? (
+          <Line>
+            <DocText doc={fn.doc} />
+          </Line>
+        ) : null}
       </div>
       <div className={styles.foot} data-preview-foot="true">
         {module ? FUNCTION_HOW_IMPORT : FUNCTION_HOW}

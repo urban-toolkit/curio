@@ -24,6 +24,10 @@ import { getByTooltip } from "../_support/tooltips";
 const SEASON_DOC =
   "Minutes of shadow a pixel at 1 stands for, in *season* (SCOUT's ``run_shadow_model``). SCOUT gives fall 720, " +
   "though its date input reads fall as it reads spring.";
+/** SEASON_DOC as its hover shows it: its marks set its words, never written out. */
+const SEASON_SHOWN =
+  "Minutes of shadow a pixel at 1 stands for, in season (SCOUT's run_shadow_model). SCOUT gives fall 720, " +
+  "though its date input reads fall as it reads spring.";
 
 const SHADOW_LIST: NodeFunctionsPayload = {
   engine: "python",
@@ -233,9 +237,13 @@ describe("a function's hover", () => {
     expect(shown()[0]?.querySelector("[data-preview-chip]")?.textContent).toBe("season_factor");
     expect(partsOfTheTooltip()).toEqual({
       head: "season_factor from deep_umbra",
-      lines: ["season_factor(season)", SEASON_DOC],
+      lines: ["season_factor(season)", SEASON_SHOWN],
       foot: FUNCTION_HOW_IMPORT,
     });
+    // reST's ``literal`` in the code font and *emphasis* in italics.
+    const doc = shown()[0].querySelectorAll("[data-preview-line]")[1];
+    expect(Array.from(doc.querySelectorAll("code"), (el) => el.textContent)).toEqual(["run_shadow_model"]);
+    expect(Array.from(doc.querySelectorAll("em"), (el) => el.textContent)).toEqual(["season"]);
   });
 
   test("of one of Curio's says it needs no import", async () => {

@@ -16,6 +16,7 @@ function (``python_modules.modules_for_node``).
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from utk_curio.backend.app.agents.domain import node_functions as curio_functions_page
@@ -47,8 +48,21 @@ from utk_curio.backend.app.packages.repositories import catalog_dir as packages_
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 from utk_curio.backend.app.packages.repositories.python_modules import module_files
 from utk_curio.backend.app.packages.repositories.store import list_user_packages, package_dir
+from utk_curio.common import shared_constants
 
 log = logging.getLogger(__name__)
+
+#: The marks a docstring's first paragraph sets words with, as the views that
+#: show one read them (``src/contracts/docMarkup.json``, ``docMarkup.ts``):
+#: each group of the pattern holds the words of one mark.
+_DOC_MARKS = re.compile(shared_constants.read("docMarkup")["pattern"])
+
+
+def plain_doc(doc: str) -> str:
+    """*doc* without its marks: reST's ``literal``, a role's name, Markdown's
+    code, strong and emphasis each become their words, as ``plainDoc`` gives
+    them in the browser. What an agent reads keeps the marks."""
+    return _DOC_MARKS.sub(lambda match: next(words for words in match.groups() if words is not None), doc)
 
 #: At most this many module files of one package are read.
 MAX_MODULE_FILES = 200
@@ -399,7 +413,7 @@ def write_function_template(
         "editor": "code",
         "behavior": "code",
         "iconRef": "fa-brands:python",
-        "description": template_description(module, signature),
+        "description": template_description(module, signature.name, plain_doc(signature.doc)),
         "hasCode": True,
         "hasWidgets": True,
         "hasGrammar": False,
