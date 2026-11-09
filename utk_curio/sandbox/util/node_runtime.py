@@ -13,6 +13,7 @@ import os
 import pathlib
 
 from utk_curio import shipped
+from utk_curio.common.llm_endpoint import for_node_code
 
 #: The folder that holds ``utk_curio/``: the repository root in a clone, the
 #: Docker image and CI; site-packages in a pip install.
@@ -90,15 +91,17 @@ def duckdb_extensions_dir():
 
 
 def node_env(base=None, node_modules=None):
-    """The environment for a Node child: *base* (default ``os.environ``), with
-    *node_modules* (default :func:`node_modules_dir`) first on ``NODE_PATH``.
+    """The environment for a Node child: *base* (default ``os.environ``)
+    without what node code may not hold, the sandbox's token among it
+    (``common/llm_endpoint.for_node_code``), with *node_modules* (default
+    :func:`node_modules_dir`) first on ``NODE_PATH``.
 
     ``NODE_PATH`` is consulted only by the CommonJS ``require()`` resolver, not
     by ESM, so it does not resolve a top-level autk-db import (callers rewrite
     that to an absolute file URL with ``resolve_pkg_entry_url``). It still helps
     any CJS ``require()`` autk-db's worker threads perform.
     """
-    env = dict(os.environ if base is None else base)
+    env = for_node_code(os.environ if base is None else base)
     node_modules = pathlib.Path(node_modules) if node_modules is not None else node_modules_dir()
     if node_modules.is_dir():
         existing = env.get('NODE_PATH', '')

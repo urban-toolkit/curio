@@ -1311,7 +1311,11 @@ The sandbox runs as a separate Flask process. It:
   (`/exec`, `/execJs`, `/get`). The secret is minted per launch by
   `cli/environment.py::set_environment_variables` into `CURIO_SANDBOX_TOKEN`, attached by
   the backend in `execution/sandbox_client.py`, and checked in `sandbox/app/auth.py`. An
-  instance started with `--deploy` refuses to boot without one.
+  instance started with `--deploy` refuses to boot without one. Node code never holds
+  it: the zygote, whose environment every isolated child inherits, and each JavaScript
+  run's Node start without it (`common/llm_endpoint.py::for_node_code`), as the sandbox
+  starts without the backend's own key and database address (`SECRET_KEY`,
+  `DATABASE_URL`, `DATABASE_URL_TEST`, among `BACKEND_ONLY_VARIABLES`).
 - Sends no CORS headers, because no browser calls it directly.
 - Returns the memory its allocators keep free to the system whenever no
   request is in flight (`sandbox/util/memory_release.py`): every request runs
