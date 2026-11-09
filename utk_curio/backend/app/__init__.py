@@ -66,7 +66,20 @@ def _apply_cors(response):
     return response
 
 
-def create_app(config_class=config_class):
+def create_app(config_class=config_class, *, startup_work=None):
+    """The backend's Flask app.
+
+    *startup_work* says whether this process does the startup work held here:
+    the monitor's histories started anew, the dev packages seeded, the guest
+    cleanup and the kept outputs' sweep. None, the default, means it does when
+    it is the home process (``common/backend_processes.py``). ``server.py``
+    says, since under Werkzeug's reloader only the process that serves does
+    it, and the migration before a start says no.
+    """
+    if startup_work is None:
+        from utk_curio.common import backend_processes
+
+        startup_work = backend_processes.is_home()
 
     # Flask app
     app = Flask(__name__)
@@ -152,9 +165,11 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.monitor.routes import monitor_bp
     app.register_blueprint(monitor_bp)
-    # The monitor's histories cover this process: each start writes them anew.
+    # The monitor's histories cover this start: the process that does the
+    # startup work writes them anew.
     from utk_curio.backend.app.monitor import history as monitor_history
-    monitor_history.start()
+    if startup_work:
+        monitor_history.start()
 
     # Non-prod DB stub endpoints for Playwright E2E tests.
     # Lets Playwright seed users / projects directly without the signup form.
@@ -163,12 +178,13 @@ def create_app(config_class=config_class):
         app.register_blueprint(testing_bp)
         # Copy fixture node packages into the guest user's package store on first
         # startup. See utk_curio/backend/app/packages/seed.py for the policy.
-        try:
-            seeded = seed_dev_packages(user_key="guest")
-            if seeded:
-                app.logger.info("Seeded dev node packages: %s", ", ".join(seeded))
-        except Exception:  # noqa: BLE001 — never block startup on seeding
-            app.logger.exception("Package seeding failed; continuing startup")
+        if startup_work:
+            try:
+                seeded = seed_dev_packages(user_key="guest")
+                if seeded:
+                    app.logger.info("Seeded dev node packages: %s", ", ".join(seeded))
+            except Exception:  # noqa: BLE001 - never block startup on seeding
+                app.logger.exception("Package seeding failed; continuing startup")
 
     @app.before_request
     def short_circuit_preflight():
@@ -232,12 +248,15 @@ def create_app(config_class=config_class):
         app.logger.setLevel(logging.INFO)
         app.logger.info('Backend startup')
 
-    from utk_curio.backend.app.projects.tasks import start_cleanup_scheduler
-    start_cleanup_scheduler(app)
-    from utk_curio.backend.app.runs.kept import start_prune_scheduler
-    start_prune_scheduler(app)
+    # The guest cleanup and the kept outputs' sweep: timers of the process that
+    # does the startup work.
+    if startup_work:
+        from utk_curio.backend.app.projects.tasks import start_cleanup_scheduler
+        start_cleanup_scheduler(app)
+        from utk_curio.backend.app.runs.kept import start_prune_scheduler
+        start_prune_scheduler(app)
 
-    # A run an earlier backend process left going was cut off when it stopped.
+    # A run an earlier start left going was cut off when it stopped.
     with app.app_context():
         try:
             from utk_curio.backend.app.runs.service import interrupt_runs_of_other_processes

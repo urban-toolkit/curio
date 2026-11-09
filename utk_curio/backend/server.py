@@ -5,9 +5,25 @@ from werkzeug.serving import WSGIRequestHandler, is_running_from_reloader
 from utk_curio.backend import thread_stacks
 from utk_curio.backend.app import create_app
 from utk_curio.backend.config import CURIO_SEED_EXAMPLES
+from utk_curio.common import backend_processes
 from utk_curio.common.request_deadline import RequestHeadDeadline
 
-app = create_app()
+
+def _uses_reloader():
+    """Whether Werkzeug's reloader runs the backend: ``FLASK_USE_RELOADER``,
+    on unless it is "0"."""
+    return os.getenv('FLASK_USE_RELOADER', '1') != '0'
+
+
+#: Whether this process does the startup work: the home process
+#: (``common/backend_processes.py``), when it serves. Under the reloader the
+#: process the launcher started only watches the files, and the process it
+#: starts serves and does the work.
+DOES_STARTUP_WORK = backend_processes.is_home() and (
+    not _uses_reloader() or is_running_from_reloader()
+)
+
+app = create_app(startup_work=DOES_STARTUP_WORK)
 
 
 # Shared with sandbox/server.py; see utk_curio/backend/reloader.py.
@@ -16,44 +32,53 @@ from utk_curio.backend.reloader import (  # noqa: E402,F401  (re-exported)
     RELOADER_EXCLUDE_PATTERNS,
 )
 
-with app.app_context():
-    try:
-        from utk_curio.backend.app.users.services import _shared_guest_user
-        from utk_curio.backend.app.projects.services import (
-            _user_dir_key,
-            reconcile_guest_projects,
-            seed_default_agents,
-        )
-        guest = _shared_guest_user()
-        # The hosted guests' copies go, as their examples are put back.
-        from utk_curio.backend.app.projects import visitor_copies
-        dropped = visitor_copies.drop_all()
-        if dropped:
-            app.logger.info("Dropped %d hosted guest copy(ies) of dataflows", dropped)
-        n = reconcile_guest_projects(guest)
-        if n:
-            app.logger.info("Reconciled %d guest project(s) from filesystem", n)
-        # The agents every account has by default, before the examples are put
-        # back, so each example gets them, and every guest's copy of one too.
-        seed_default_agents(guest)
-        if CURIO_SEED_EXAMPLES:
-            from utk_curio.backend.app.projects.seed import seed_example_projects
-            s = seed_example_projects(guest)
-            app.logger.info("Seeded %d example project(s)", s)
-            # After the projects exist, provision the datasets their
-            # ``dataflow.datasets`` refs declare - the dataset counterpart to
-            # the node-package seeding in ``app/__init__.py``. Without the
-            # store copy the refs still resolve for execution (the hub row wins
-            # the catalog dedupe) but the Data palette has no title, format or
-            # count to show.
-            from utk_curio.backend.app.datasets.seed import seed_example_datasets
-            d = seed_example_datasets(_user_dir_key(guest))
-            if d:
-                app.logger.info(
-                    "Provisioned %d example dataset(s): %s", len(d), ", ".join(d)
-                )
-    except Exception:
-        app.logger.warning("Could not ensure guest user on startup", exc_info=True)
+def _seed_the_shared_guest():
+    """The shared guest at a start: its row, its hosted guests' copies
+    dropped, its projects read back from the files, the agents every account
+    has, and with ``--with-examples`` the examples and their datasets put
+    back. Startup work (``DOES_STARTUP_WORK``)."""
+    with app.app_context():
+        try:
+            from utk_curio.backend.app.users.services import _shared_guest_user
+            from utk_curio.backend.app.projects.services import (
+                _user_dir_key,
+                reconcile_guest_projects,
+                seed_default_agents,
+            )
+            guest = _shared_guest_user()
+            # The hosted guests' copies go, as their examples are put back.
+            from utk_curio.backend.app.projects import visitor_copies
+            dropped = visitor_copies.drop_all()
+            if dropped:
+                app.logger.info("Dropped %d hosted guest copy(ies) of dataflows", dropped)
+            n = reconcile_guest_projects(guest)
+            if n:
+                app.logger.info("Reconciled %d guest project(s) from filesystem", n)
+            # The agents every account has by default, before the examples are put
+            # back, so each example gets them, and every guest's copy of one too.
+            seed_default_agents(guest)
+            if CURIO_SEED_EXAMPLES:
+                from utk_curio.backend.app.projects.seed import seed_example_projects
+                s = seed_example_projects(guest)
+                app.logger.info("Seeded %d example project(s)", s)
+                # After the projects exist, provision the datasets their
+                # ``dataflow.datasets`` refs declare - the dataset counterpart to
+                # the node-package seeding in ``app/__init__.py``. Without the
+                # store copy the refs still resolve for execution (the hub row wins
+                # the catalog dedupe) but the Data palette has no title, format or
+                # count to show.
+                from utk_curio.backend.app.datasets.seed import seed_example_datasets
+                d = seed_example_datasets(_user_dir_key(guest))
+                if d:
+                    app.logger.info(
+                        "Provisioned %d example dataset(s): %s", len(d), ", ".join(d)
+                    )
+        except Exception:
+            app.logger.warning("Could not ensure guest user on startup", exc_info=True)
+
+
+if DOES_STARTUP_WORK:
+    _seed_the_shared_guest()
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -79,7 +104,7 @@ def _run_kwargs():
         'host': os.getenv('FLASK_BACKEND_HOST', '127.0.0.1'),
         'port': int(os.getenv('FLASK_BACKEND_PORT', 5002)),
         'debug': CURIO_BACKEND_DEBUG,
-        'use_reloader': os.getenv('FLASK_USE_RELOADER', '1') != '0',
+        'use_reloader': _uses_reloader(),
     }
 
 
@@ -126,10 +151,11 @@ def serve():
     )
 
     run_kwargs = _socketio_run_kwargs()
-    # The hourly sample of both servers' open files, from now, in the process
-    # that serves. Under the reloader this function also runs in the process
-    # that only watches the files, which serves nothing.
-    if not run_kwargs["use_reloader"] or is_running_from_reloader():
+    # The hourly sample of both servers' open files, from now: startup work,
+    # in the home process when it serves (DOES_STARTUP_WORK). Under the
+    # reloader this function also runs in the process that only watches the
+    # files, which serves nothing.
+    if DOES_STARTUP_WORK:
         from utk_curio.backend.app.discovery import service as discovery_service
         from utk_curio.backend.app.monitor import open_files as monitor_open_files
 

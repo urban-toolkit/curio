@@ -25,8 +25,9 @@ cut off by a restart, and a backend's start or any run read marks it
 interrupted (``runs/service.py``); the backends of one start share theirs, so
 none marks another's live runs. A backend Werkzeug's reloader started makes
 its own, since the reloader starts it again after each code change with the
-same environment, and each of those is a restart the launcher never sees.
-Several backends never run under the reloader.
+same environment, and each of those is a restart the launcher never sees. A
+start of several backends runs them without the reloader, under which each
+would make its own.
 
 The functions read ``os.environ`` when called, or the mapping they are given.
 """
