@@ -339,7 +339,8 @@ def test_the_owner_makes_a_change_another_process_sends_and_its_tabs_get_it(room
     as_process(monkeypatch, owner)
     monkeypatch.setenv("CURIO_BACKEND_TOKEN", SECRET)
     alice = room.tab("alice")
-    assert alice.sync()["ok"] is True
+    synced = alice.sync()
+    assert synced["ok"] is True
     client = room.application.test_client()
     path = f"/internal/dataflows/{room.project_id}/datasets.rewrite-ref"
     body = {"account": room.owner_key, "arguments": {

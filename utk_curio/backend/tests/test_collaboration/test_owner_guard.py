@@ -85,7 +85,8 @@ def test_its_owner_keeps_the_doc_as_one_process_does(room, monkeypatch):
     as_process(monkeypatch, owner_of(room.project_id))
     alice = room.tab("alice")
 
-    assert alice.sync()["ok"] is True
+    synced = alice.sync()
+    assert synced["ok"] is True
     alice.edit(_type("# owned\n"))
 
     assert _code(room.docs.read(room.owner_key, room.project_id)["dataflow"]) == "# owned\nx = 1\n"
@@ -379,10 +380,12 @@ def test_with_one_process_nothing_is_refused_and_nothing_is_looked_up(room, monk
     agent_jobs.reset_registry()
     try:
         alice = room.tab("alice")
-        assert alice.sync()["ok"] is True
+        synced = alice.sync()
+        assert synced["ok"] is True
         spec = docs.live(room.owner_key, room.project_id)
         spec["dataflow"]["name"] = "Renamed"
-        assert docs.write(room.owner_key, room.project_id, spec, docs.person(room.owner_key, "save")).wrote
+        written = docs.write(room.owner_key, room.project_id, spec, docs.person(room.owner_key, "save"))
+        assert written.wrote
         assert docs.read(room.owner_key, room.project_id)["dataflow"]["name"] == "Renamed"
         made = make_project(room.users["alice"])
         docs.create(room.owner_key, made, copy.deepcopy(SPEC), docs.by_curio(room.owner_key, "seed"))
