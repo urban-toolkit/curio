@@ -368,6 +368,14 @@ class VirtualUser:
         h = {"Content-Type": "application/json"}
         if self.token:
             h["Authorization"] = f"Bearer {self.token}"
+        # tmp/sharded-backend: the dataflow every call is about once it exists,
+        # which the router sends to the backend process that owns it: the
+        # user's own, else its room's shared one (a member asks its agent
+        # before on_the_canvas makes the room's its own).
+        dataflow = self.project_id or (
+            self.room.project_id if self.room is not None and self.room.shared else None)
+        if dataflow:
+            h["X-Curio-Dataflow"] = dataflow
         return h
 
     def _call(
