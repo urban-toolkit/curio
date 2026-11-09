@@ -5,7 +5,7 @@
     "models/deep_umbra.onnx": "67afb9d2d56bd0a12164e6e651214d56860ff689728c5b6f29486f21c3cb188e",
     "sources/accumulated-shadow.py": "8d7f91c0d46298757a08a92b1adf3520d98dc8c245f5168ab5905b61ab6c08d0",
     "sources/deep_umbra/__init__.py": "cd4f0951d7103f6242846a0e28823d4f7ce30ecc82c09933a5d59eb530dc3c10",
-    "sources/deep_umbra/deep_umbra.py": "03af4ddf3f305454ee4d3e572473e2697c4e14270826eb04c10e87e91e2d9b45",
-    "sources/deep_umbra/node_outputs.py": "46b87018681c2aa345519826fff3accb43dbc3928167a13e2e3c8990370316ff"
+    "sources/deep_umbra/deep_umbra.py": "d5df7cd40debc7992180bfac348a0aef19a9e915fc7917de7969221759c79ec5",
+    "sources/deep_umbra/node_outputs.py": "cd59851abc470bacfb808072d2538a3c2cfb473fff8743243da1cc0f3e5b3664"
   }
 }

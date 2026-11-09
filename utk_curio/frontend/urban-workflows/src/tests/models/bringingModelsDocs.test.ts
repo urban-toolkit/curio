@@ -44,6 +44,7 @@ const GONE = [
   "scout.routing@1",
   "mosaic.py",
   "test_bring_your_own_model",
+  "model.run(",
 ];
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -278,8 +279,15 @@ describe("docs/BRINGING-MODELS.md", () => {
     const helpers = Array.from(new Set(Array.from(text.matchAll(/\b(curio_[a-z_]+)\(/g), (match) => match[1])));
     expect(helpers).toEqual(expect.arrayContaining(["curio_load_model", "curio_output_file"]));
     expect(helpers.filter((name) => !new RegExp(`def ${name}\\(`).test(sources))).toEqual([]);
-    expect(text).toContain("model.run(");
-    expect(read(path.join(REPO_ROOT, HELPER_SOURCES[0]))).toMatch(/class CurioModel[\s\S]*def run\(self, feeds/);
+    // The node opens the model's file itself, in an onnxruntime session, and
+    // runs it there: the loaded model gives its path, and its run refuses.
+    expect(text).toContain("import onnxruntime as ort");
+    expect(text).toContain('session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])');
+    expect(text).toContain("session.run(None, {");
+    expect(text).not.toContain("model.run(");
+    const catalogHelpers = read(path.join(REPO_ROOT, HELPER_SOURCES[0]));
+    expect(catalogHelpers).toMatch(/class CurioModel[\s\S]*self\.path = os\.path\.join\(/);
+    expect(catalogHelpers).toMatch(/class CurioModel[\s\S]*def run\(self[^)]*\):[\s\S]*?raise RuntimeError\(RUN_REMOVED\)/);
   });
 
   test("the worked example shows Local Relief's own manifest, node code, module and widget", () => {

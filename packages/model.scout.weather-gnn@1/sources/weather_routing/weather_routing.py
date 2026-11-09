@@ -140,7 +140,7 @@ def plan_weather_route(graph, bounds, weather, model, origin_, destination_, mod
     *graph* is the road graph and *bounds* its ``(xmin, ymin, xmax, ymax)``;
     *weather* maps RAIN, T2, WSPD10, WDIR10 and RH2 to their NetCDF files and
     *model* is the weather GNN (``curio_load_model("model.scout.weather-gnn")``,
-    or anything whose ``run(feeds)`` returns its outputs). The trip starts in step
+    or anything whose ``path`` is its ONNX file). The trip starts in step
     *time_index* of the weather, *minutes_into_step* minutes in.
 
     Returns everything the routes come from: the graph SCOUT routes on, the
