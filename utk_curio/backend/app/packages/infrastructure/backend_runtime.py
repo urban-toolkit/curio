@@ -295,7 +295,18 @@ def build_overlay(user_key: str, dir_name: str, deps: dict,
     :class:`BackendRuntimeError` (507) when the built overlay exceeds the
     operator cap — the caller compensates (promotion rollback). The overlay
     is derived state: never edited in place, a crashed write cannot go stale
-    because the next build wipes first."""
+    because the next build wipes first.
+
+    Holds the overlay's tree from the wipe to the size check, as a pip run
+    into it does (``pip_runner.holding_tree``): another build of it, or its
+    removal, on another thread or in another backend process, waits rather
+    than wiping the tree while pip writes it."""
+    with pip_runner.holding_tree(overlay_dir_for(user_key, dir_name)):
+        return _build_overlay(user_key, dir_name, deps, on_line)
+
+
+def _build_overlay(user_key: str, dir_name: str, deps: dict, on_line) -> dict[str, Any]:
+    """:func:`build_overlay`, holding the overlay's tree."""
     import shutil
 
     overlay = overlay_dir_for(user_key, dir_name)
@@ -324,18 +335,27 @@ def remove_backend_residue(user_key: str, dir_name: str) -> dict[str, bool]:
     """dev/97: the uninstall sweep dev/91 §6.7 promised — overlay, data dir,
     and pin entry go; the invocation LEDGER deliberately survives (append-only
     audit history outlives an uninstall). Best-effort
-    per item, loud on failure, returns what was actually removed."""
+    per item, loud on failure, returns what was actually removed.
+
+    The overlay goes holding its tree, as a pip run into it does
+    (``pip_runner.holding_tree``), so it is never removed while a build of it
+    writes it."""
     import shutil
 
     removed = {"overlay": False, "dataDir": False, "pin": False}
-    for key, path in (("overlay", overlay_dir_for(user_key, dir_name)),
-                      ("dataDir", _data_dir(user_key, dir_name))):
+
+    def _remove(key: str, path: Path) -> None:
         if path.is_dir():
             try:
                 shutil.rmtree(path)
                 removed[key] = True
             except OSError:
                 log.warning("backend residue: could not remove %s", path, exc_info=True)
+
+    overlay = overlay_dir_for(user_key, dir_name)
+    with pip_runner.holding_tree(overlay):
+        _remove("overlay", overlay)
+    _remove("dataDir", _data_dir(user_key, dir_name))
     pins_path = _pins_path(user_key)
     try:
         pins = json.loads(pins_path.read_text(encoding="utf-8"))
