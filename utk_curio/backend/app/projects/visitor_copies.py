@@ -35,7 +35,11 @@ Discovery Catalog: each is named after the guest (``imported.<visitor>.x<id>``,
 starts too. A run the guest's request starts on a thread of its own, an agent's
 job or a download, holds no request: it is handed the request's sign-in
 (:func:`carrying`, :func:`carried`) and serves it (:func:`serving`), so what is
-the guest's is theirs there as in their requests.
+the guest's is theirs there as in their requests. A signed link to one of
+their files, which a ``<video>`` asks for with no sign-in
+(``discovery/media_routes.py``), names the guest as their datasets' names do
+(:func:`visitor_of`), never by the sign-in, and its file is read as theirs
+(:func:`serving_visitor`).
 
 The guest's own edits on the canvas land on the copy too: the guest's tab
 joins the room of its copy (:func:`room_for`), keyed by the copy's id, and
@@ -113,11 +117,15 @@ def copies_for(user) -> bool:
 def _sign_in() -> Optional[str]:
     """The token of the sign-in that names one visitor: the request's, or on
     a thread of its own, which holds no request, the one a request handed
-    its run (:func:`serving`); None for neither."""
+    its run (:func:`serving`); None for neither, and in a block that serves a
+    visitor by name alone, whatever sign-in its request sends
+    (:func:`serving_visitor`)."""
     from flask import has_request_context
 
     from utk_curio.backend.app.users.dependencies import get_current_session
 
+    if _VISITOR.get() is not None:
+        return None
     if not has_request_context():
         return _SERVING.get()
     session = get_current_session()
@@ -143,6 +151,28 @@ def serving(sign_in: Optional[str]):
             _SERVING.reset(token)
         except ValueError:  # closed on another thread, whose context it never set
             pass
+
+
+#: The visitor a block serves by name alone, as :func:`visitor_of` names
+#: them, with no sign-in (:func:`serving_visitor`).
+_VISITOR: ContextVar[Optional[str]] = ContextVar("visitor_copies_visitor", default=None)
+
+
+@contextmanager
+def serving_visitor(visitor: Optional[str]):
+    """The block serves the visitor :func:`visitor_of` names *visitor*, and
+    no sign-in, not even its request's: a signed media link's request
+    (``discovery/media_routes.py``), whose link names the visitor who asked
+    for it and never their sign-in. What that visitor uploaded or downloaded
+    lists there (:func:`lists_for`); nothing only a sign-in names does, such
+    as their copies and new dataflows (:func:`is_own_copy`), and nothing is
+    named after them there (:func:`visitor_of`). *visitor* None leaves the
+    block as it would be without this."""
+    token = _VISITOR.set(visitor)
+    try:
+        yield
+    finally:
+        _VISITOR.reset(token)
 
 
 def carrying(target):
@@ -374,17 +404,18 @@ def a_visitors(dataflow_id: Optional[str], name: Optional[str] = None) -> bool:
 
 def lists_for(dataflow_id: Optional[str], sign_in: Optional[str] = None, *, name: Optional[str] = None) -> bool:
     """Whether a dataset of the guest account's store lists for the visitor
-    signed in as *sign_in*, else the request's or the run's sign-in: one a
-    hosted guest's copy made (*dataflow_id*, the dataflow that made it), and
-    one they uploaded or downloaded (*name*, its id or folder), is that
-    guest's alone; any other is every guest's."""
+    signed in as *sign_in*, else the request's or the run's sign-in, else the
+    visitor a block serves by name (:func:`serving_visitor`): one a hosted
+    guest's copy made (*dataflow_id*, the dataflow that made it), and one
+    they uploaded or downloaded (*name*, its id or folder), is that guest's
+    alone; any other is every guest's."""
     if not a_visitors(dataflow_id, name):
         return True
     sign_in = sign_in or _sign_in()
     if is_copy(dataflow_id) and not is_own_copy(sign_in, dataflow_id):
         return False
     adder = added_by(name)
-    return adder is None or adder == visitor_of(sign_in)
+    return adder is None or adder == (visitor_of(sign_in) if sign_in else _VISITOR.get())
 
 
 def is_own_copy(sign_in: Optional[str], own: str) -> bool:
