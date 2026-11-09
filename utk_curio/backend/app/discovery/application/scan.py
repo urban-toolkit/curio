@@ -29,7 +29,7 @@ from typing import Any, Callable, Iterable
 from utk_curio.backend.app.discovery.domain.errors import ResourceNotFound
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest, ResourceSpec
 from utk_curio.backend.app.discovery.domain.resource import DiscoveryResource
-from utk_curio.backend.app.discovery.domain.templates import compile_template
+from utk_curio.backend.app.discovery.domain.templates import Capture, compile_template
 from utk_curio.backend.app.discovery.providers.storage_base import (
     SHAPEFILE_PARTS,
     FileEntry,
@@ -473,8 +473,37 @@ def group_name(group: Group) -> str:
     if spec.datasets == "per-file":
         return group.key[0]
     if spec.split_by:
-        return spec.name + " · " + ", ".join(_value_text(v) for v in group.key)
+        captures = {c.name: c for c in spec.template.captures}
+        return spec.name + " · " + ", ".join(
+            _split_text(captures.get(name), value) for name, value in zip(spec.split_by, group.key)
+        )
     return spec.name
+
+
+#: The unit each strftime directive writes, from the finest.
+_TIME_UNITS = (
+    ("%f", "fraction"), ("%S", "seconds"), ("%M", "minutes"), ("%H", "hours"),
+    ("%d", "day"), ("%j", "day"), ("%m", "month"), ("%b", "month"),
+)
+
+
+def _split_text(capture: Capture | None, value: Any) -> str:
+    """A split value as its row's name shows it: a time down to the finest
+    unit its capture's format writes, so a ``{month:%Y_%m}`` row is ``2025-07``
+    and a ``%Y`` one ``2025``; any other value as its id writes it."""
+    if capture is None or capture.type != "datetime" or not isinstance(value, datetime):
+        return _value_text(value)
+    fmt = capture.fmt or ""
+    unit = next((unit for directive, unit in _TIME_UNITS if directive in fmt), "year")
+    if unit == "fraction":
+        return value.isoformat()
+    if unit in ("seconds", "minutes", "hours"):
+        return value.isoformat(timespec=unit)
+    if unit == "day":
+        return value.date().isoformat()
+    if unit == "month":
+        return f"{value.year:04d}-{value.month:02d}"
+    return f"{value.year:04d}"
 
 
 def takes_area(manifest: DiscoverySourceManifest, spec: ResourceSpec) -> bool:

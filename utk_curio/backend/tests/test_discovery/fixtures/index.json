@@ -216,6 +216,454 @@
     },
     "status": 200
   },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=": {
+    "file": "idot/01.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/W042/data/W042_2025_07.jsonl": {
+    "file": "download/storage/idot/detections.jsonl",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/W042/data/W042_2025_12.jsonl": {
+    "file": "download/storage/idot/detections.jsonl",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/W042/images/2025_07/1752710404341667481-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W042/images/2025_07/1753995304432101203-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W042/images/2025_08/1754006414019924442-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W042/images/2025_08/1756684502785267846-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W042/images/2025_09/1756684814543795261-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W042/images/2025_09/1759276501375535168-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W042/images/2025_10/1759276814116774926-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W042/images/2025_10/1761954902526921065-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W042/images/2025_11/1761955214748752795-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W042/images/2025_11/1764546904193225470-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W042/images/2025_12/1764547215123316477-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W042/images/2025_12/1766888102308562722-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/data/W065_2025_07.jsonl": {
+    "file": "download/storage/idot/detections.jsonl",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/W065/data/W065_2026_03.jsonl": {
+    "file": "download/storage/idot/detections.jsonl",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/W065/images/2025_07/1752742855895685303-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2025_07/1754006104195089311-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2025_08/1754006433930657482-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2025_08/1756673702831197652-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2025_09/1756684820875918282-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2025_09/1759276502665540393-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2025_10/1759276819916507253-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2025_10/1761954901979893814-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2025_11/1761955240959396137-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2025_11/1764546901411737287-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2025_12/1764547220637272682-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2025_12/1767225303758180259-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2026_01/1767225620226491777-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2026_01/1769903704285412417-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2026_02/1769904012435909518-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2026_02/1772322904498319625-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2026_03/1772323217988652919-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W065/images/2026_03/1773776402444667255-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/data/W06E_2025_07.jsonl": {
+    "file": "download/storage/idot/detections.jsonl",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/W06E/data/W06E_2026_03.jsonl": {
+    "file": "download/storage/empty",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/W06E/images/2025_07/1752710403681857952-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2025_07/1754006102018097975-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2025_08/1754006416535905127-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2025_08/1756684503745935419-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2025_09/1756695619314300249-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2025_09/1759276502112841527-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2025_10/1759276813182921095-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2025_10/1761954902910228619-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2025_11/1761955221140236677-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2025_11/1764546903127857663-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2025_12/1764547217072287896-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2025_12/1767225301354369755-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2026_01/1767236417959126167-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2026_01/1769903703985579184-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2026_02/1769904017138916391-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/idot/W06E/images/2026_02/1770660902880430996-snapshot.jpg bytes=0-65535": {
+    "file": "download/storage/head.jpg",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 206
+  },
+  "https://data.urbantk.org/sideseeing/?list-type=2&max-keys=1000&prefix=chicago%2Fwest-loop%2F": {
+    "file": "sideseeing/01.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-15-45-51-706/cell.csv": {
+    "file": "download/storage/sideseeing/cell.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-15-45-51-706/gps.csv": {
+    "file": "download/storage/sideseeing/gps.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-15-45-51-706/sensors.one.csv": {
+    "file": "download/storage/sideseeing/sensors.one.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-15-45-51-706/sensors.three.csv": {
+    "file": "download/storage/sideseeing/sensors.three.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-15-45-51-706/sensors.three.uncalibrated.csv": {
+    "file": "download/storage/sideseeing/sensors.three.uncalibrated.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-16-03-17-016/cell.csv": {
+    "file": "download/storage/sideseeing/cell.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-16-03-17-016/gps.csv": {
+    "file": "download/storage/sideseeing/gps.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-16-03-17-016/sensors.one.csv": {
+    "file": "download/storage/sideseeing/sensors.one.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-16-03-17-016/sensors.three.csv": {
+    "file": "download/storage/sideseeing/sensors.three.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-16-03-17-016/sensors.three.uncalibrated.csv": {
+    "file": "download/storage/sideseeing/sensors.three.uncalibrated.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
   "https://graph.mapillary.com/images?bbox=-87.642%2C41.918%2C-87.639%2C41.92&fields=id%2Ccaptured_at%2Ccompass_angle%2Ccomputed_geometry%2Cgeometry%2Csequence%2Cis_pano%2Ccreator&is_pano=true&start_captured_at=2023-01-01T00%3A00%3A00Z&limit=2000": {
     "file": "mapillary/03.json",
     "headers": {

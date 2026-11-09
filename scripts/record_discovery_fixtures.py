@@ -66,11 +66,37 @@ PLAN = {
 #: Storage sources: every listing page is recorded as it arrives. The files
 #: themselves are not: a probe's Range read of a real object is indexed to a
 #: small synthetic file of the same format under ``download/storage/``, so the
-#: corpus carries a bucket's shape and none of its imagery.
+#: corpus carries a bucket's shape and none of its imagery. A table resource
+#: named under ``tables`` has each of its files indexed to a synthetic
+#: stand-in in the real files' format, so its add runs on the corpus too.
+#: A bucket too large to keep whole names ``folder_ends``: each listing is
+#: kept as one page of the first and last files of each folder.
 STORAGE_PLAN = {
     "source.aws.sentinel-2-chicago@1": {"slug": "s3"},
     "source.huggingface.documentation-images@1": {"slug": "huggingface"},
+    "source.sideseeing.street-captures@1": {
+        "slug": "sideseeing",
+        "tables": {
+            "gps": "download/storage/sideseeing/gps.csv",
+            "sensors-one": "download/storage/sideseeing/sensors.one.csv",
+            "sensors-three": "download/storage/sideseeing/sensors.three.csv",
+            "sensors-three-uncalibrated": "download/storage/sideseeing/sensors.three.uncalibrated.csv",
+            "cell": "download/storage/sideseeing/cell.csv",
+        },
+    },
+    "source.sage.idot-crossings@1": {
+        "slug": "idot",
+        # 168,023 objects on 169 listing pages.
+        "folder_ends": 1,
+        "tables": {
+            "detections": "download/storage/idot/detections.jsonl",
+            "frames": "download/storage/idot/detections.jsonl",
+        },
+    },
 }
+
+#: What a table's listed file of no bytes is recorded as, instead of its stand-in.
+EMPTY_FILE = "download/storage/empty"
 
 #: Synthetic stand-ins for a probed file's first bytes, by extension.
 SYNTHETIC_HEADS = {
@@ -115,12 +141,21 @@ class RecordingTransport:
         self.index = index
         self.inner = HttpDiscoveryTransport()
         self.seq = 0
+        #: The file each URL of this run is kept in. Adding one resource lists
+        #: its folder again, often at a URL already asked: it is kept once.
+        self.names: dict[str, str] = {}
+
+    def _name(self, url: str, suffix: str) -> str:
+        name = self.names.get(url)
+        if name is None:
+            self.seq += 1
+            name = self.names[url] = f"{self.slug}/{self.seq:02d}.{suffix}"
+        return name
 
     def json_get(self, url, *, credential=None, headers=None):
         body = self.inner.json_get(url, credential=credential, headers=headers)
-        self.seq += 1
         suffix = "xml" if body.lstrip().startswith("<") else "json"
-        name = f"{self.slug}/{self.seq:02d}.{suffix}"
+        name = self._name(url, suffix)
         path = FIXTURES / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body, encoding="utf-8")
@@ -134,9 +169,8 @@ class RecordingTransport:
 
     def get_page(self, url, *, credential=None, headers=None):
         body, response_headers = self.inner.get_page(url, credential=credential, headers=headers)
-        self.seq += 1
         suffix = "xml" if body.lstrip().startswith("<") else "json"
-        name = f"{self.slug}/{self.seq:02d}.{suffix}"
+        name = self._name(url, suffix)
         path = FIXTURES / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body, encoding="utf-8")
@@ -152,6 +186,61 @@ class RecordingTransport:
         raise NotImplementedError("downloads are recorded by hand; see the index")
 
 
+#: The namespace of an S3 listing's elements.
+S3_NS = "http://s3.amazonaws.com/doc/2006-03-01/"
+
+
+class CondensedListingTransport(RecordingTransport):
+    """Keeps an S3 bucket's listing as one page of the first and last *ends*
+    files of each folder, for a bucket too large for the corpus whole.
+
+    The real pages are read once, so the scan walks the whole bucket. Once a
+    listing's last page is in, its condensed page is recorded under its first
+    page's URL and says it is the last, and every later ask of that listing is
+    answered with it.
+    """
+
+    def __init__(self, slug: str, index: dict, ends: int) -> None:
+        super().__init__(slug, index)
+        self.ends = ends
+        #: Each listing's files so far, by its first page's URL.
+        self.listed: dict[str, list] = {}
+        self.condensed: dict[str, str] = {}
+
+    def json_get(self, url, *, credential=None, headers=None):
+        import xml.etree.ElementTree as ET
+
+        first = url.split("&continuation-token=", 1)[0]
+        if first in self.condensed:
+            return self.condensed[first]
+        body = self.inner.json_get(url, credential=credential, headers=headers)
+        page = ET.fromstring(body)
+        self.listed.setdefault(first, []).extend(page.iter(f"{{{S3_NS}}}Contents"))
+        if (page.findtext(f"{{{S3_NS}}}IsTruncated") or "").lower() != "true":
+            self._record(first)
+        return body
+
+    def _record(self, first: str) -> None:
+        import xml.etree.ElementTree as ET
+
+        by_folder: dict[str, list] = {}
+        for item in self.listed.pop(first):
+            key = item.findtext(f"{{{S3_NS}}}Key") or ""
+            by_folder.setdefault(key.rsplit("/", 1)[0], []).append(item)
+        ET.register_namespace("", S3_NS)
+        page = ET.Element(f"{{{S3_NS}}}ListBucketResult")
+        ET.SubElement(page, f"{{{S3_NS}}}IsTruncated").text = "false"
+        for items in by_folder.values():
+            page.extend(items if len(items) <= 2 * self.ends else items[:self.ends] + items[-self.ends:])
+        body = '<?xml version="1.0" encoding="UTF-8"?>' + ET.tostring(page, encoding="unicode")
+        self.condensed[first] = body
+        name = self._name(first, "xml")
+        (FIXTURES / name).parent.mkdir(parents=True, exist_ok=True)
+        (FIXTURES / name).write_text(body, encoding="utf-8")
+        self.index[first] = {"file": name, "status": 200, "headers": {"Content-Type": "application/xml"}}
+        print(f"    {len(body):>8}B  {name}  <- {first[:96]} (condensed)")
+
+
 def record_storage(slug_filter: str | None, index: dict) -> None:
     """List each storage source, and index a synthetic head for every file the
     listing's resources would probe."""
@@ -162,7 +251,11 @@ def record_storage(slug_filter: str | None, index: dict) -> None:
             continue
         manifest = load_source_manifest(REPO / "discovery" / dir_name)
         print(f"\n==  {manifest.name}  ({plan['slug']})")
-        transport = RecordingTransport(plan["slug"], index)
+        ends = plan.get("folder_ends")
+        if ends:
+            transport = CondensedListingTransport(plan["slug"], index, ends)
+        else:
+            transport = RecordingTransport(plan["slug"], index)
         provider = build_storage(manifest, transport)
         result = scan.scan(manifest, provider)
         print(f"    -> {result.matched} files in {len(result.groups)} rows")
@@ -170,8 +263,22 @@ def record_storage(slug_filter: str | None, index: dict) -> None:
         # different URL whenever the resources do not share one.
         for spec in manifest.resources:
             scan.scan(manifest, provider, specs=[spec])
+        if ends:
+            # The corpus holds only the files its condensed listing keeps.
+            result = scan.scan(manifest, provider)
+            print(f"    -> kept {result.matched} files in {len(result.groups)} rows")
+        tables = plan.get("tables", {})
         for group in result.groups:
+            stand_in = tables.get(group.spec.id)
             for found in group.files:
+                if stand_in is not None:
+                    # An add reads the whole file, with no Range.
+                    index[provider.file_url(found.relpath)] = {
+                        "file": EMPTY_FILE if found.size == 0 else stand_in,
+                        "status": 200,
+                        "headers": {"Content-Type": "application/octet-stream"},
+                    }
+                    continue
                 ext = found.relpath.rsplit(".", 1)[-1].lower()
                 head = SYNTHETIC_HEADS.get(ext)
                 if head is None:
@@ -424,6 +531,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--only",
-        help="record one provider slug (socrata, ckan, arcgis, wfs, s3, huggingface, mapillary, huggingface-models, nominatim)",
+        help="record one provider slug (socrata, ckan, arcgis, wfs, s3, huggingface, sideseeing, idot, "
+             "mapillary, huggingface-models, nominatim)",
     )
     record(parser.parse_args().only)

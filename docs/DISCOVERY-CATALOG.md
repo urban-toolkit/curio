@@ -57,6 +57,8 @@ discovery/
 | OpenStreetMap | OpenStreetMap (Autark) | Public. Buildings, roads, parks, water, land surface, points of interest and features by tag for a box or for named areas, loaded by Autark |
 | Example storage | Folder | Public. A small instance of each way storage is organized, which the storage examples read |
 | Sentinel-2 over Chicago | S3 bucket | Public. True-color previews and thumbnails of one month's scenes |
+| SideSeeing street captures | S3 bucket | Public. Sidewalk walks in Chicago's West Loop, each folder named by when the walk began: its video, with faces and license plates blurred; its GPS track, sensor readings and cell networks as tables, with the walk in a `began` column; and its `metadata.json` and `anonymization.json` as files for node code |
+| SAGE-IDOT rail crossings | S3 bucket | Public. Three SAGE nodes at Illinois Department of Transportation rail crossings, from July 2025, a row per crossing and month: a snapshot every 5 minutes, and the YOLO detections as JSON Lines tables, one row per detection, or one per image and model. A month's file is up to 1.8 GB, so most need `--discovery-max-download-mb` above its 1024 default |
 | Hugging Face documentation images | Hugging Face | Public; a token raises the rate limit |
 | Mapillary | Mapillary | Token needed. Street-level photos for a box, each credited to its photographer (CC BY-SA 4.0), and the signs and objects detected in them, as points |
 | Google Street View | Google | Key needed; Google bills its requests to you. Street View images for a box, one per panorama and heading |
@@ -411,7 +413,7 @@ A storage source's `resources` say how its files are organized. `provider` says 
 | `kind` | Yes | `table`, or a collection: `rasters`, `frames`, `images`, `videos`, `media` (images and videos together), `audio`, or `files` (files of any type, which Curio does not read or preview, for node code to open from each row's `path`). |
 | `path` | Yes | Which files belong to it, as a path template relative to the folder, bucket prefix or repository. |
 | `format` | For `table` | `csv`, `json`, `jsonl`, `geojson`, `parquet`, `gpkg`, `shp`, or `pbf`. A `jsonl` file holds one JSON object per line ([JSON Lines tables](#json-lines-tables)). |
-| `datasets` | | How it adds: `one` dataset of every matched file (the default), `per:<field>` for one per value of a path field, listed as one row each, or `per-file`, for tables and rasters only. |
+| `datasets` | | How it adds: `one` dataset of every matched file (the default), `per:<field>` for one per value of a path field, listed as one row each, or `per-file`, for tables and rasters only. A row of a time field is named by its time down to the finest unit the field's format writes: `2025-07` for `{month:%Y_%m}`. |
 | `extensions` | | The file extensions it takes. A collection's follow its kind: images and frames take jpg, jpeg, png, webp, gif, bmp, tif and tiff; videos mp4, mov, m4v, webm, mkv and avi; media both; audio wav, flac, mp3, ogg, opus, m4a, aiff and aif; rasters tif, tiff and jp2; files every file its path matches. A table's follow its format: geojson and json for `geojson`, jsonl and ndjson for `jsonl`, the format's own for the others. |
 | `options` | | For a CSV table: `delimiter` and `header`; a table read with them lands as Parquet. For a JSON Lines table: `parse`, `columns` and `unpack` ([JSON Lines tables](#json-lines-tables)). |
 | `fps` | | For `frames`: frames per second. A frame's `t_s` is its number over it. |
