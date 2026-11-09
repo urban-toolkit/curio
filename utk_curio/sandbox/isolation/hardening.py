@@ -7,7 +7,11 @@ socket, no ptrace, no escape. seccomp does not help, because reading a file is
 exactly what a data node legitimately does.
 
 So this module answers one question: **can the execution user read the things it
-must not?** It answers it in two parts, split that way on purpose:
+must not?** (Three trees are asked the opposite, whether it could write them:
+users' node libraries, :func:`audit_node_overlays`, Node's packages,
+:func:`audit_node_packages`, and the model weights ``--model-weights-dir``
+names, :func:`audit_model_weights`, which it must read.) It answers it in two
+parts, split that way on purpose:
 
 ``audit``
     Pure. Takes mode bits, owner and group, and decides whether a given uid/gid
@@ -48,7 +52,6 @@ SENSITIVE_PATHS = (
     ("datasets", "the shared Data Catalog's published files"),
     ("packages/*/models", "a shipped model package's weights, staged into a child that runs one"),
     (".curio/fetched", "the catalog files a pip install downloaded, staged into a child that reads one"),
-    (".curio/nodejs", "the Node.js packages a pip install's sandbox runs"),
     (".env", "the deployment's keys and tokens"),
     (".curio/discovery", "the operator's source manifests: each names a folder or host the server reads"),
 )
@@ -80,6 +83,14 @@ HARDLINK_SOURCES = frozenset({
 # What we want each of those to be. Owner-only: no read, no list, no traverse.
 DIRECTORY_MODE = 0o700
 FILE_MODE = 0o600
+
+# Node's packages, the opposite case: a JavaScript node imports them as the
+# execution user, so it must read them, and must never write them, where a
+# module it changed or added would run in every later JavaScript run, and in
+# the backend's own Node, which runs as root. A pip install keeps them in
+# ``.curio/nodejs`` (relative to the launch directory); the sandbox's
+# ``node_modules`` joins it wherever it is (:func:`node_package_trees`).
+NODE_PACKAGES = (".curio/nodejs",)
 
 
 def can_access(path_stat, *, uid, gid, write=False):
@@ -259,14 +270,7 @@ def audit_node_overlays(shared_data_dir, *, uid, gid):
             continue
         if not stat_module.S_ISDIR(path_stat.st_mode):
             continue
-        writable = bool(path_stat.st_mode & stat_module.S_IWOTH) or (
-            uid is not None and path_stat.st_uid == uid
-            and bool(path_stat.st_mode & stat_module.S_IWUSR)
-        ) or (
-            gid is not None and path_stat.st_gid == gid
-            and bool(path_stat.st_mode & stat_module.S_IWGRP)
-        )
-        if writable:
+        if _could_write(path_stat, uid=uid, gid=gid):
             findings.append(
                 f"the execution user can write {target}, which is on the "
                 f"import path of that user's nodes. Node code could plant a "
@@ -276,11 +280,150 @@ def audit_node_overlays(shared_data_dir, *, uid, gid):
     return findings
 
 
+def _could_write(path_stat, *, uid, gid):
+    """Whether *uid* or *gid* could write something with these stat results,
+    by any of its three ways: as its owner, through its group, or as other."""
+    return bool(path_stat.st_mode & stat_module.S_IWOTH) or (
+        uid is not None and path_stat.st_uid == uid
+        and bool(path_stat.st_mode & stat_module.S_IWUSR)
+    ) or (
+        gid is not None and path_stat.st_gid == gid
+        and bool(path_stat.st_mode & stat_module.S_IWGRP)
+    )
+
+
+def node_package_trees(launch_dir):
+    """The folders that hold Node's packages: each of :data:`NODE_PACKAGES`
+    under *launch_dir*, and the sandbox's ``node_modules``
+    (``node_runtime.node_modules_dir``), wherever it is. Each once: a folder
+    inside another is the other's already."""
+    from utk_curio.sandbox.util import node_runtime
+
+    candidates = [os.path.join(launch_dir, relative) for relative in NODE_PACKAGES]
+    candidates.append(str(node_runtime.node_modules_dir()))
+    trees, kept = [], []
+    for path in sorted(candidates, key=lambda candidate: len(os.path.realpath(candidate))):
+        real = os.path.realpath(path)
+        if any(real == other or real.startswith(other.rstrip(os.sep) + os.sep) for other in kept):
+            continue
+        kept.append(real)
+        trees.append(path)
+    return trees
+
+
+def _tree(top):
+    """Each folder and file of the tree at *top*, *top* first, with its
+    ``lstat``. A link is left out and never followed: a chmod follows one, to
+    wherever it leads."""
+    try:
+        top_stat = os.lstat(top)
+    except OSError:
+        return
+    if stat_module.S_ISLNK(top_stat.st_mode):
+        return
+    yield top, top_stat
+    if not stat_module.S_ISDIR(top_stat.st_mode):
+        return
+    for root, directories, files in os.walk(top):
+        for name in (*directories, *files):
+            path = os.path.join(root, name)
+            try:
+                path_stat = os.lstat(path)
+            except OSError:
+                continue
+            if not stat_module.S_ISLNK(path_stat.st_mode):
+                yield path, path_stat
+
+
+def _opened(mode, *, folder):
+    """*mode* opened to read and closed to write: everyone reads a file, and
+    reads and traverses a folder; a file that any class may execute every
+    class may; group and other lose write. The owner's write stays."""
+    if folder:
+        mode |= 0o555
+    else:
+        mode |= 0o444 | (0o111 if mode & 0o111 else 0)
+    return mode & ~0o022
+
+
+def open_node_packages(launch_dir):
+    """Make Node's packages (:func:`node_package_trees`) readable by the
+    execution user and writable by no one but their owner. Returns what
+    changed.
+
+    Each folder and file changes only when its mode is not that already: a
+    chmod in an image's layer copies the file up, and the image's
+    ``node_modules`` is right as built. Best effort, as :func:`harden_paths`
+    is: what stays writable is :func:`audit_node_packages`'s to report.
+    """
+    if not hasattr(os, "chmod") or sys.platform == "win32":
+        return {"changed": [], "failed": [], "skipped": "not a POSIX host"}
+    changed, failed = [], []
+    for top in node_package_trees(launch_dir):
+        for path, path_stat in _tree(top):
+            mode = stat_module.S_IMODE(path_stat.st_mode)
+            wanted = _opened(mode, folder=stat_module.S_ISDIR(path_stat.st_mode))
+            if wanted != mode:
+                (changed if _tighten(path, wanted) else failed).append(path)
+    return {"changed": changed, "failed": failed, "skipped": None}
+
+
+#: The most paths of one tree of Node's packages :func:`audit_node_packages`
+#: names; past them it counts the rest.
+MAX_NAMED_WRITABLE = 20
+
+
+def audit_node_packages(launch_dir, *, uid, gid):
+    """Report every folder and file of Node's packages the execution user
+    could WRITE: a folder, where node code would add a module, or a file,
+    where it would change one. The inverse of :func:`audit`, as
+    :func:`audit_node_overlays` is: these must stay readable. A finding names
+    a path under *launch_dir* relative to it, and a tree's findings past
+    :data:`MAX_NAMED_WRITABLE` are one count."""
+
+    def shown(path):
+        relative = os.path.relpath(path, launch_dir)
+        return path if relative.split(os.sep)[0] == os.pardir else relative
+
+    findings = []
+    for top in node_package_trees(launch_dir):
+        writable = [(path, path_stat) for path, path_stat in _tree(top) if _could_write(path_stat, uid=uid, gid=gid)]
+        for path, path_stat in writable[:MAX_NAMED_WRITABLE]:
+            findings.append(
+                f"the execution user can write {shown(path)}, one of Node's packages, so node code "
+                f"could change a module every later JavaScript run imports. Mode is "
+                f"{stat_module.filemode(path_stat.st_mode)}."
+            )
+        if len(writable) > MAX_NAMED_WRITABLE:
+            findings.append(
+                f"the execution user can write {len(writable) - MAX_NAMED_WRITABLE} more of "
+                f"Node's packages under {shown(top)}."
+            )
+    return findings
+
+
+def open_model_weights(weights_dir):
+    """Make the model weights in *weights_dir*, the folder
+    ``--model-weights-dir`` names, readable by the execution user and
+    writable by no one but their owner, as :func:`open_node_packages` makes
+    Node's packages. Returns what changed. Best effort: what stays writable is
+    :func:`audit_model_weights`'s to report."""
+    if not weights_dir or not hasattr(os, "chmod") or sys.platform == "win32":
+        return {"changed": [], "failed": [], "skipped": "no folder, or not a POSIX host"}
+    changed, failed = [], []
+    for path, path_stat in _tree(weights_dir):
+        mode = stat_module.S_IMODE(path_stat.st_mode)
+        wanted = _opened(mode, folder=stat_module.S_ISDIR(path_stat.st_mode))
+        if wanted != mode:
+            (changed if _tighten(path, wanted) else failed).append(path)
+    return {"changed": changed, "failed": failed, "skipped": None}
+
+
 def audit_model_weights(weights_dir, *, uid, gid):
     """Report every folder and file of *weights_dir*, the folder
     ``--model-weights-dir`` names, the execution user could WRITE.
 
-    The inverse of :func:`audit`, as :func:`audit_node_overlays` is: isolated
+    The inverse of :func:`audit`, as :func:`audit_node_packages` is: isolated
     node code reads the weights there in place, so it must read them, and it
     must never write them, where a file it changed or added would be the
     model every account's later runs load. The server downloads them there
@@ -289,23 +432,11 @@ def audit_model_weights(weights_dir, *, uid, gid):
     """
     if not weights_dir or uid is None or uid == 0:
         return []
-    findings = []
-    for walked in os.walk(weights_dir):
-        root, files = walked[0], walked[2]
-        for path in [root, *(os.path.join(root, name) for name in files)]:
-            try:
-                path_stat = os.lstat(path)
-            except OSError:
-                continue
-            if stat_module.S_ISLNK(path_stat.st_mode):
-                continue
-            if can_access(path_stat, uid=uid, gid=gid, write=True):
-                findings.append(
-                    f"the execution user can write {path}, where isolated nodes read model weights in "
-                    f"place: node code could change a model every account runs. Mode is "
-                    f"{stat_module.filemode(path_stat.st_mode)}."
-                )
-    return findings
+    return [
+        f"the execution user can write {path}, where isolated nodes read model weights in place: node "
+        f"code could change a model every account runs. Mode is {stat_module.filemode(path_stat.st_mode)}."
+        for path, path_stat in _tree(weights_dir) if _could_write(path_stat, uid=uid, gid=gid)
+    ]
 
 
 def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted, model_weights_dir=None):
@@ -333,12 +464,14 @@ def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted, model_wei
     # part -- but it means the scratch root gets its mode last either way, and
     # a future change to the walk cannot silently take it away again.
     harden_paths(launch_dir)
+    open_node_packages(launch_dir)
+    open_model_weights(model_weights_dir)
     prepare_scratch_root(shared_data_dir, exec_uid=uid)
     findings = audit(launch_dir, uid=uid, gid=gid)
-    # #332: the node-library trees are the one place that must stay readable,
-    # so they are asked the opposite question.
+    # #332: the node-library trees, Node's packages and the model weights
+    # --model-weights-dir names must stay readable, so they are asked the
+    # opposite question.
     findings += audit_node_overlays(shared_data_dir, uid=uid, gid=gid)
-    # So are the model weights --model-weights-dir names, which nodes read
-    # in place.
+    findings += audit_node_packages(launch_dir, uid=uid, gid=gid)
     findings += audit_model_weights(model_weights_dir, uid=uid, gid=gid)
     return findings, bool(findings and hosted)

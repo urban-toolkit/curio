@@ -1311,7 +1311,11 @@ The sandbox runs as a separate Flask process. It:
   (`/exec`, `/execJs`, `/get`). The secret is minted per launch by
   `cli/environment.py::set_environment_variables` into `CURIO_SANDBOX_TOKEN`, attached by
   the backend in `execution/sandbox_client.py`, and checked in `sandbox/app/auth.py`. An
-  instance started with `--deploy` refuses to boot without one.
+  instance started with `--deploy` refuses to boot without one. Node code never holds
+  it: the zygote, whose environment every isolated child inherits, and each JavaScript
+  run's Node start without it (`common/llm_endpoint.py::for_node_code`), as the sandbox
+  starts without the backend's own key and database address (`SECRET_KEY`,
+  `DATABASE_URL`, `DATABASE_URL_TEST`, among `BACKEND_ONLY_VARIABLES`).
 - Sends no CORS headers, because no browser calls it directly.
 - Returns the memory its allocators keep free to the system whenever no
   request is in flight (`sandbox/util/memory_release.py`): every request runs
@@ -1383,14 +1387,17 @@ Five design points worth knowing:
   the file to the sandbox's own account at `0644`: a later child it is staged
   for reads it, and cannot write it or change its mode.
 - **One execution account, not one per Curio user.** `CURIO_EXEC_USER` names a
-  single OS account that every user's nodes run as. The boundary this buys is
+  single OS account that every user's nodes run as, a JavaScript node's Node.js
+  among them (below). The boundary this buys is
   therefore *node code against the host*, not *user A against user B*. What
   keeps two users apart is session scoping in the parent, which the child cannot
   reach at all: `staging._read_row` reports another session's artifact as
   **missing** rather than forbidden, so its existence cannot be probed. Two
   consequences follow from the shared uid, and neither is fixed by a mode bit:
   concurrent children can reach each other's scratch directories, and a node can
-  find a sibling through `/proc`. Per-user OS accounts would close that, at the
+  find a sibling through `/proc`. Node, which drops before its exec, is
+  dumpable after it, as any program is, so another run of the account can open
+  its `/proc` entries, its pipes among them. Per-user OS accounts would close that, at the
   cost of copying instead of hardlinking every staged input, because `chown`
   acts on the inode. That is the trade being made, deliberately.
 - **A node's writes go through the parent, never straight into a store.** The
@@ -1465,6 +1472,27 @@ be installed fails with the reason and Node does not start; otherwise Node runs
 without it. macOS and Windows have no such filter: on macOS the mark finds a
 process that left the group, and on Windows the kill reaches Node alone.
 
+Node drops to the execution account exactly when an isolated child does:
+under `CURIO_ISOLATION=fork`, with `CURIO_EXEC_USER` naming an account, and with
+the sandbox running as root (`worker._node_account`, read on each run). The
+sandbox looks the account up and hands the wrapper its ids (`--user UID:GID`),
+so the wrapper looks nothing up and starts no process. After the filter it
+drops with the child's own code, `seccomp_filter.drop_privileges`: groups, then
+gid, then uid, then all three uids, all three gids and the empty group list
+checked. A drop that fails ends the wrapper with one line, whatever
+`--required` says, and an account that does not exist stops the run before
+Node starts, as it stops the zygote: Node never runs as root in the account's
+place. Node keeps its network. Its working directory stays the launch folder,
+which it reads and cannot write, and its HOME and TMPDIR are a folder of that
+Node process's own (`worker._node_home`: `supervisor.make_scratch_dir`, `0700`
+and the account's), removed once the run has killed Node and what it started.
+That folder holds a link to each of Curio's DuckDB extensions where
+duckdb-wasm looks ([below](#duckdb-extensions-come-from-this-instance)). Each
+isolated child's `RLIMIT_NPROC` counts every thread of the account, Node's too,
+so the budget the children share holds 256 for each Node slot as well as for
+each isolated one (`runner.IsolationConfig.from_environment`,
+`common/exec_pool.js_parallelism`).
+
 > [!IMPORTANT]
 > **Implementation status.** The confinement code runs in CI. Three jobs cover
 > it, and each covers a different half:
@@ -1489,7 +1517,11 @@ process that left the group, and on Windows the kill reaches Node alone.
 >   can neither write it nor change its mode, that the work
 >   directory is `0700` and owned by the execution account, and that
 >   `instance/`, `.curio/data`, `.curio/users`, `datasets/` and another user's
->   file named by absolute path are all denied.
+>   file named by absolute path are all denied. Its JavaScript twin,
+>   `tests/live/test_exec_user_boundary_js.py`, asks the same of a JavaScript
+>   node's Node, and that it holds no token and cannot reach the zygote's
+>   socket; `unit` drops Node to the account in the sandbox suite
+>   (`tests/test_js_run_as_exec_user.py`).
 >
 > It is a separate job because an execution account and the e2e harness cannot
 > coexist: hardening `.curio/data` breaks the host-side ground-truth step, which
@@ -1571,7 +1603,9 @@ autk-db runs in Node.js for the sandbox's JS nodes and for OpenStreetMap downloa
 - A clone, the Docker image and CI: the folder that holds `utk_curio/` and Curio's `package.json`.
 - A pip install: `nodejs/` in Curio's state directory. `setup.py` copies the repository's `package.json` and `package-lock.json` into the wheel at `utk_curio/sandbox/nodejs/`, and the launcher writes them into that folder.
 
-On every start, `cli/dependencies.py::_ensure_root_node_modules` runs `npm install --prefix <folder>` there, only in a folder that holds Curio's `package.json` and is not a link; otherwise it logs an error and runs no npm. `.curio/nodejs` is in the sandbox's `SENSITIVE_PATHS`.
+On every start, `cli/dependencies.py::_ensure_root_node_modules` runs `npm install --prefix <folder>` there, only in a folder that holds Curio's `package.json` and is not a link; otherwise it logs an error and runs no npm.
+
+A JavaScript node imports these packages as the execution account, and the backend's OpenStreetMap loader runs them as root, so they are readable by node code and never writable by it. Under isolation with an execution account, the sandbox's boot opens `.curio/nodejs` and the `node_modules` it reads (`hardening.open_node_packages`): everyone reads them, everyone executes a folder and a file that had execute, group and other lose write, and a mode already right is left alone, so the image's layer is never copied up. Links are skipped. Then `hardening.audit_node_packages` reports what the account could still write, and a hosted instance refuses to start with it.
 
 ### DuckDB extensions come from this instance
 
@@ -1594,7 +1628,11 @@ runtimes read that copy:
   start` that runs either one (`all`, `backend` or `sandbox`) calls
   `cli/dependencies.py::seed_duckdb_extensions`, which copies them into
   `~/.duckdb/extensions/extensions.duckdb.org/`, where duckdb-wasm looks before
-  downloading. Nothing is intercepted there.
+  downloading. Nothing is intercepted there. A JavaScript node whose Node runs
+  as the execution account has a HOME of its own, which
+  `node_runtime.link_duckdb_extensions` gives a link to each file of Curio's
+  copy at the same place; its folders are the account's, so a file the copy
+  lacks downloads into them.
 
 Both fall back to the CDN for a file this checkout does not carry, so a newer
 `@duckdb/duckdb-wasm` keeps working before its extensions are vendored; see
@@ -2594,7 +2632,7 @@ The user-facing model is in [MODEL-CATALOG.md](MODEL-CATALOG.md). A model is a m
 - **Default cells.** A model package's template without a `source` opens with the cell [`packages/domain/default_cells.py`](../utk_curio/backend/app/packages/domain/default_cells.py) writes for its model's type, served with the starters (`application/starters.py`, named for the template's id) and injected on a fresh drop (`packageNodeBehavior.tsx`, `defaultCellStarter`): a segmentation model's loads it by id and calls `curio_segment`; another type's is a `model.run` skeleton naming each array its ONNX graph takes, with its element type and shape (`datasets/domain/onnx_model.py` `graph_inputs`, read from weights already on the machine, never downloaded). `model_template` is the segmentation node a downloaded model gets, the one DDRNet23-Slim's package ships. A `concept-segmentation` model gets no cell: a new model type's node is its package's own source, so the manifest parser and the schema refuse such a package's template without a `source` (`manifest._refuse_templates_curio_writes`).
 - **Removing.** The drawer's **Remove from project** is `DELETE /api/packages/projects/<id>/<dirName>`, as for a node package: it answers 409 while a canvas node uses the model (`spec_packages.referencing_nodes`: the node's type is the package's, or its `metadata.modelRefs`, written by a drop of the model onto the node, names it while the node's code still names the model, as `nodeLinkedModelIds` reads it), and when no other dataflow uses the model, `prune_unreferenced_packages` deletes the store copy, drops it from the defaults and uninstalls, from where its install put them, the libraries only it asked for ([Install paths](#install-paths)). A literal `curio_load_model("<id>")` in node code is only a code reference: it keeps nothing, and the drawer's confirmation names every dataflow whose nodes name the model in their code alone, as the Data Catalog's names those that load a dataset in code (`codeOnlyDataflows` in `services/codeOnlyUsage.ts`, shared by both): the open dataflow from its canvas (`nodesNamingModelInCodeOnly`; for a dataset `canvasLoadsDatasetInCodeOnly`, which counts the dataset as kept while a node is bound to it or saved it as its output, as the dataset usage read does), and the account's others from `GET /api/packages/<dirName>/usage` (`prune.package_usage`, rows from `spec_packages.package_usage_in_spec`, through the scan the dataset usage read makes, `projects/usage.py`), whose `codeOnly` rows have no lockfile entry, no node of the package and no node bound to it. `DELETE /api/packages/<dirName>` removes a package from the account (`remove_package`, then `detach_from_all_projects`). The catalog pages' **Remove from account**, for a package of the account's own (in its store and in no catalog) whose store row says `inUse: false` (`GET /api/packages?usage=true`), sends `?unusedOnly=true`: `remove_unused_package` answers 409 while `packages_in_use` finds the package (every dataflow's lockfile, and the model packages its nodes' `modelRefs` name, `spec_packages.model_ref_packages`), and otherwise removes it and its defaults entry. A node that names a model the store does not hold fails on its next run with `MISSING_MODEL`.
 - **Save as package node.** A new package from a node whose code loads a model the account's store holds is a model package of its own (`factory_install.model_source_for_draft`, `model_packages.model_copy`): `builder/factory.py` copies the model's `model` block, declares its package's libraries, writes its weights (and its weights' license file) under `models/`, and renames the node's `curio_load_model` calls to the new id (`rename_model_calls`). The archive is written to a file in the store's staging folder (`build_package_archive_to`), installed from it, and `/factory/install` answers `copiedModel`, the id the frontend renames in the canvas node's code (`renameModelCalls`). A draft saved into an installed package, or a node that names no model the store holds, is built as before. The package build pipeline stages archives up to a model package's caps (`repositories/staging.py` `MAX_ARTIFACT_BYTES`).
-- **In node code.** `code_refs` finds `curio_load_model("<id>")` calls; `node_exec.resolve_models` maps each id the code names to its folder through `packages.service.resolve_model_dirs`, from the running account's store (models behave like nodes); on a dataflow whose owner invited that account to edit it, a model the owner added to the dataflow comes from the owner's store (`OwnersPackages`, as for package modules), and no other model of the owner's runs. `/processPythonCode`, a server run and the agents' validation runs send that map with the dataset paths. `curio_load_model` ([`sandbox/util/models.py`](../utk_curio/sandbox/util/models.py)) returns the folder, or raises `MISSING_MODEL`: add the model with Add in the Model Catalog, and, for a model that ships with Curio, how a pip install downloads its weights and where a clone holds them. Under fork isolation, `stage_model_dirs` ([`sandbox/util/staging.py`](../utk_curio/sandbox/util/staging.py)) hardlinks each model's tree into the run's scratch as `model_<i>/`, keeping relative paths, so an ONNX graph finds its external `.data` and a checkpoint its configs; `packages/*/models` is in the hardening allowlists beside `datasets/`. A fetched model resolves even when its download failed, to the catalog's copy, whose manifest says what the weights are, and `curio_load_model` raises `NOT_FETCHED`, naming the script. Weights under `--model-weights-dir` travel apart, as `model_weights` (`{id: folder}`, `node_exec.resolve_fetched_weights` over `resolve_model_weights`): never staged, since no hardlink crosses their mount, the child reads them in place at their absolute path (`CurioModel.path`). So hardening asks that folder the opposite question, as it asks the node-library trees: `audit_model_weights` reports every folder and file of it `curio-exec` could write, which a hosted start refuses.
+- **In node code.** `code_refs` finds `curio_load_model("<id>")` calls; `node_exec.resolve_models` maps each id the code names to its folder through `packages.service.resolve_model_dirs`, from the running account's store (models behave like nodes); on a dataflow whose owner invited that account to edit it, a model the owner added to the dataflow comes from the owner's store (`OwnersPackages`, as for package modules), and no other model of the owner's runs. `/processPythonCode`, a server run and the agents' validation runs send that map with the dataset paths. `curio_load_model` ([`sandbox/util/models.py`](../utk_curio/sandbox/util/models.py)) returns the folder, or raises `MISSING_MODEL`: add the model with Add in the Model Catalog, and, for a model that ships with Curio, how a pip install downloads its weights and where a clone holds them. Under fork isolation, `stage_model_dirs` ([`sandbox/util/staging.py`](../utk_curio/sandbox/util/staging.py)) hardlinks each model's tree into the run's scratch as `model_<i>/`, keeping relative paths, so an ONNX graph finds its external `.data` and a checkpoint its configs; `packages/*/models` is in the hardening allowlists beside `datasets/`. A fetched model resolves even when its download failed, to the catalog's copy, whose manifest says what the weights are, and `curio_load_model` raises `NOT_FETCHED`, naming the script. Weights under `--model-weights-dir` travel apart, as `model_weights` (`{id: folder}`, `node_exec.resolve_fetched_weights` over `resolve_model_weights`): never staged, since no hardlink crosses their mount, the child reads them in place at their absolute path (`CurioModel.path`). So hardening keeps that folder as it keeps Node's packages: `open_model_weights` opens it to every account's reads and takes group and other writes away at each boot, and `audit_model_weights` reports every folder and file of it `curio-exec` could still write, which a hosted start refuses.
 - **`curio_segment`** ([`sandbox/util/vision.py`](../utk_curio/sandbox/util/vision.py)) runs a model over a collection's rows: `_OnnxRunner` with onnxruntime on the CPU (the manifest's `input` says how to scale, normalize and resize), or `_TransformersRunner` with `AutoModelForSemanticSegmentation` (`local_files_only`, safetensors only). Shares are of all the pixels; the overlay goes through `curio_derived_file` with the `image` kind and a tag for the model (`model_tag`: the first twelve hex digits of the SHA-1 of its id), so the media route serves it at `<file_id>@0-<tag>`, one file per photo and model. It refuses an `image-to-image` or a `concept-segmentation` model.
 - **`CurioModel.run(feeds)`** ([`sandbox/util/catalog_helpers.py`](../utk_curio/sandbox/util/catalog_helpers.py)) runs an ONNX model's graph on the arrays its node prepared, `{input name: array}`, with onnxruntime on the CPU, and returns the graph's outputs in order; the session is opened once per loaded model. The Accumulated Shadow node of `model.scout.deep-umbra@1` runs Deep Umbra this way.
 - **Agents.** `models.search` (`agents/application/tools.py`), a read tool of the Node Builder, lists the model packages in the account's store (`held_model_packages`), the only models its node code runs: id, name, task, runtime, origin (`shipped` for a copy of a shipped package, `downloaded` for the account's own), description, up to 40 labels (with `labelsElided` when it has more), and `model_loader_line(id)`, `model = curio_load_model("<id>")`. No tool proposes or downloads a model: the Discovery Catalog's model sources stay out of the agents' tools, as storage sources do.

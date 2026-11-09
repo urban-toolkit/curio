@@ -1,10 +1,12 @@
-"""This Curio's own LLM endpoints: the file that holds them, and the
-variables only the backend may hold.
+"""This Curio's own LLM endpoints: the file that holds them, the variables
+only the backend may hold, and what node code may not hold.
 
 Shared by the launcher (``cli/environment.py``, ``cli/services.py``), which
 checks the file and keeps these variables out of every child but the backend,
-and the backend (``backend/config.py``), which reads the file, and redacts the
-endpoints out of provider errors (``agents/infrastructure/providers.py``).
+the backend (``backend/config.py``), which reads the file, and redacts the
+endpoints out of provider errors (``agents/infrastructure/providers.py``), and
+the sandbox, which starts node code without them or its own token
+(:func:`for_node_code`).
 
 The endpoint file (``--llm-endpoint-file``) holds one section per endpoint,
 named by the label users see in API Settings ("Provided by <name>")::
@@ -61,14 +63,24 @@ RETIRED_VARIABLES = (
 #: What only the backend may hold. The frontend's servers and build, the
 #: sandbox, its zygote and every node it runs start without them, so node code
 #: can neither print a key or URL that reached the launcher's environment nor
-#: find the file.
+#: find the file. Nor the key the backend's sessions are signed with, or its
+#: database's address, which for Postgres carries the password: no sandbox
+#: code reads them, and a JavaScript node has network.
 BACKEND_ONLY_VARIABLES = (
     "CURIO_DEFAULT_LLM_API_KEY",
     "CURIO_DEFAULT_LLM_BASE_URL",
     "GUEST_LLM_API_KEY",
     "GUEST_LLM_BASE_URL",
     ENDPOINT_FILE_VARIABLE,
+    "SECRET_KEY",
+    "DATABASE_URL",
+    "DATABASE_URL_TEST",
 )
+
+#: What the sandbox server holds and node code may not: the token every
+#: sandbox route asks for. With it, node code could call the sandbox as the
+#: backend does, and ``/exec`` stages any absolute path it is sent.
+NOT_FOR_NODE_CODE = ("CURIO_SANDBOX_TOKEN",)
 
 #: The provider kinds an endpoint may name, its default first.
 PROVIDERS = ("openai_compatible", "anthropic", "gemini")
@@ -97,6 +109,16 @@ def without_backend_only(environ: Mapping[str, str]) -> dict:
     """*environ* without :data:`BACKEND_ONLY_VARIABLES`, for a child that is
     not the backend."""
     return {name: value for name, value in environ.items() if name not in BACKEND_ONLY_VARIABLES}
+
+
+def for_node_code(environ: Mapping[str, str]) -> dict:
+    """*environ* without :data:`BACKEND_ONLY_VARIABLES` or
+    :data:`NOT_FOR_NODE_CODE`, for a process node code runs in: the zygote,
+    which every isolated child inherits its environment from
+    (``sandbox/isolation/lifecycle.py``), and a JavaScript run's Node
+    (``sandbox/util/node_runtime.py``)."""
+    withheld = (*BACKEND_ONLY_VARIABLES, *NOT_FOR_NODE_CODE)
+    return {name: value for name, value in environ.items() if name not in withheld}
 
 
 def _parser() -> configparser.ConfigParser:

@@ -65,7 +65,12 @@ def malloc_arena_cap(memory_mb):
 
 
 def zygote_environment(limits, environ=None):
-    """The zygote's environment: this process's, with its allocators fitted to the cap.
+    """The zygote's environment: this process's, without what node code may
+    not hold, with its allocators fitted to the cap.
+
+    Every isolated child inherits it, and node code runs in the child, so the
+    sandbox's token, which opens every sandbox route, is left out, as it is of
+    a JavaScript run's Node (``common/llm_endpoint.for_node_code``).
 
     glibc gives every thread that mallocs an arena of its own, up to eight per
     core, and each one reserves ``MALLOC_ARENA_MB`` of address space up front.
@@ -96,7 +101,9 @@ def zygote_environment(limits, environ=None):
     not change it; unlike ``MALLOC_ARENA_MAX``, a pool already named in the
     environment does not stand under a cap.
     """
-    env = dict(os.environ if environ is None else environ)
+    from utk_curio.common.llm_endpoint import for_node_code
+
+    env = for_node_code(os.environ if environ is None else environ)
     memory_mb = (limits or {}).get("memory_mb")
     if memory_mb:
         _cap_arenas(env, memory_mb)
