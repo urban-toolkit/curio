@@ -9,8 +9,9 @@ wrapper drops Node to that account before its exec, as an isolated Python
 child drops: no new privileges, the filter, then groups, gid and uid. Node
 keeps its network: an Autark data node fetches its files from the backend.
 
-So the same denials are asserted from Node's side: who it runs as, and the
-paths it cannot list or open. Two more are Node's own, since a Python child
+So the same denials are asserted from Node's side: who it runs as, the paths
+it cannot list or open, and the calls its filter denies, the isolated child's
+but the network's. Two more are Node's own, since a Python child
 has no network: the sandbox's token is in no environment Node can read, so
 Node cannot call the sandbox as the backend does, and the zygote's socket
 refuses it. And Node's packages are readable, never writable, as the Python
@@ -549,3 +550,58 @@ def test_node_cannot_connect_to_the_zygotes_socket():
         "there is no socket at %s (%s), so this proved nothing" % (ZYGOTE_SOCKET, seen["kind"])
     )
     assert seen["outcome"] == "EACCES", "a JavaScript node reached the zygote's socket: %s" % seen["outcome"]
+
+
+#: A program that prints, as JSON, what each call got: "allowed", or the name
+#: of the error that refused it. ``ptrace(PTRACE_TRACEME)`` comes last: where
+#: it is allowed, it makes the program's parent its tracer.
+_TRIES_THE_DENIED_CALLS = r'''
+import ctypes, errno, json, os, socket
+
+libc = ctypes.CDLL(None, use_errno=True)
+
+
+def outcome(result):
+    return "allowed" if result != -1 else errno.errorcode.get(ctypes.get_errno(), str(ctypes.get_errno()))
+
+
+class iovec(ctypes.Structure):
+    _fields_ = [("base", ctypes.c_void_p), ("length", ctypes.c_size_t)]
+
+
+source = ctypes.create_string_buffer(b"node code", 9)
+target = ctypes.create_string_buffer(9)
+local = iovec(ctypes.cast(target, ctypes.c_void_p), 9)
+remote = iovec(ctypes.cast(source, ctypes.c_void_p), 9)
+libc.process_vm_readv.restype = ctypes.c_ssize_t
+seen = {
+    "process_vm_readv": outcome(libc.process_vm_readv(os.getpid(), ctypes.byref(local), 1, ctypes.byref(remote), 1, 0)),
+    "unshare": outcome(libc.unshare(0x10000000)),
+}
+try:
+    socket.socket(socket.AF_INET, socket.SOCK_DGRAM).close()
+    seen["socket"] = "allowed"
+except OSError as error:
+    seen["socket"] = errno.errorcode.get(error.errno, str(error.errno))
+seen["ptrace"] = outcome(libc.ptrace(0, 0, None, None))
+print(json.dumps(seen, sort_keys=True))
+'''
+
+
+def test_node_is_denied_what_an_isolated_child_is_but_the_network():
+    """Node's filter is the isolated child's denylist without its network
+    calls, and every process Node starts inherits it: a program a JavaScript
+    node starts cannot attach to a process, read another's memory or make
+    namespaces, which matters where another run of the account is a ptrace
+    away, and it keeps its network."""
+    result = assert_ran(run_js("""
+        const { spawnSync } = require('child_process');
+        const done = spawnSync('python3', ['-I', '-S', '-c', __PROGRAM__], { encoding: 'utf8' });
+        console.log(JSON.stringify({ status: done.status, stdout: done.stdout, stderr: done.stderr }));
+        return 1;
+    """.replace("__PROGRAM__", json.dumps(_TRIES_THE_DENIED_CALLS))), "trying the calls an isolated child is denied")
+    seen = logged(result)
+    assert seen["status"] == 0, "the program the node started failed: %s" % seen["stderr"]
+    assert json.loads(seen["stdout"]) == {
+        "process_vm_readv": "EPERM", "ptrace": "EPERM", "socket": "allowed", "unshare": "EPERM",
+    }, "a process a JavaScript node started was not denied what an isolated child is: %s" % seen["stdout"]
