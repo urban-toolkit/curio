@@ -466,7 +466,9 @@ class TestAnAdd:
         storage = rig.storage(reads=BucketReads(rig.manifest()))
         with storage.open(STATIONS) as handle:
             assert handle.read() == bucket_files()[STATIONS]
-        assert storage.open(WALKS[0], byte_range=(4, 12)).read() == bucket_files()[WALKS[0]][4:12]
+        with storage.open(WALKS[0], byte_range=(4, 12)) as handle:
+            ranged = handle.read()
+        assert ranged == bucket_files()[WALKS[0]][4:12]
         with pytest.raises(DownloadTooLarge):
             storage.open(WALKS[0], max_bytes=100)
 
