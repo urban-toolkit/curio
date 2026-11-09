@@ -147,6 +147,7 @@ import { attachMapInteractionZoomFix } from '../../../adapters/node/autkMapZoom'
 import { describeAutkRun } from '../../../adapters/node/autkRunDescriptions';
 import { __resetWebGpuSupportCache } from '../../../utils/webgpuSupport';
 import { markSelectionEcho } from '../../../utils/selectionEcho';
+import { PLAYER_SELECT, latestSelect, playedRange, playerSelect } from '../../../utils/playerSelection';
 import { clearPackageNodes, registerNode } from '../../../registry/nodeRegistry';
 import { parseGeoDataframeWithGeometry } from '../../../utils/parsing';
 import { normalizeGeoSpec } from '../../../utils/vegaGeoSpec';
@@ -1128,6 +1129,52 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         await act(async () => { rerender({ d: { ...base, interactions: selection } }); });
 
         await waitFor(() => expect(highlightOnMap).toHaveBeenCalledWith('input_0', [1]));
+        expect(grammarMock().AutkGrammar.mock.calls.length).toBe(constructed);
+      });
+
+      // Simple View's player sends what it has played as an interval on t_s
+      // (utils/playerSelection), which the map matches against its own rows
+      // as it matches a brush's interval: by their time, wherever they sit.
+      test("a player's range across a direct interaction edge lights the features walked up to where it stands", async () => {
+        const highlightOnMap = jest.fn();
+        const clearHighlightOnMap = jest.fn();
+        grammarMock().AutkGrammar.mockImplementationOnce(() => ({
+          run: jest.fn().mockResolvedValue(undefined), data: {}, highlightOnMap, clearHighlightOnMap,
+        }));
+        // The point walked k-th, k / 10 s in, is in the input at its place in ORDER.
+        const ORDER = [3, 0, 4, 1, 2];
+        const WALK = {
+          dataType: 'geodataframe',
+          data: {
+            type: 'FeatureCollection',
+            features: ORDER.map((k) => ({ type: 'Feature', geometry: point(k), properties: { t_s: k / 10 } })),
+          },
+        };
+        const base = makeMockData({ outputCallback: jest.fn(), input: WALK } as any);
+        const state = makeMockNodeState();
+        const { result, rerender } = renderHook(
+          ({ d }: { d: any }) => useAutkGrammarBehavior(d, state),
+          { initialProps: { d: base } },
+        );
+        await act(async () => { await result.current.applyGrammar!(MAP); });
+        const constructed = grammarMock().AutkGrammar.mock.calls.length;
+        const standingAt = (at: number | null) => [{
+          nodeId: 'view',
+          details: latestSelect({}, PLAYER_SELECT, playerSelect(at === null ? null : playedRange({}, at))),
+          priority: 1,
+        }];
+
+        await act(async () => { rerender({ d: { ...base, interactions: standingAt(0.2) } }); });
+        await waitFor(() => expect(highlightOnMap).toHaveBeenLastCalledWith('input_0', [1, 3, 4]));
+        await act(async () => { rerender({ d: { ...base, interactions: standingAt(0.1) } }); });
+        await waitFor(() => expect(highlightOnMap).toHaveBeenLastCalledWith('input_0', [1, 3]));
+        // The player closed: the map lights nothing.
+        const cleared = clearHighlightOnMap.mock.calls.length;
+        const lit = highlightOnMap.mock.calls.length;
+        await act(async () => { rerender({ d: { ...base, interactions: standingAt(null) } }); });
+        await waitFor(() => expect(clearHighlightOnMap.mock.calls.length).toBeGreaterThan(cleared));
+        expect(clearHighlightOnMap).toHaveBeenLastCalledWith('input_0');
+        expect(highlightOnMap.mock.calls.length).toBe(lit);
         expect(grammarMock().AutkGrammar.mock.calls.length).toBe(constructed);
       });
 
