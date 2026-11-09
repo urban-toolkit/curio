@@ -659,6 +659,7 @@ def llm_deployment():
     from utk_curio.backend import config as settings
     from utk_curio.common import llm_endpoint
 
+    body = None
     if request.method == "POST":
         body = request.get_json(silent=True) or {}
         if body.get("scripted") is True:
@@ -676,9 +677,49 @@ def llm_deployment():
         settings.DEFAULT_LLM_ENDPOINTS = endpoints
     else:
         _restore_llm_deployment()
+    problems = _to_every_other_process(request.method, "/api/testing/llm-deployment", body)
+    if problems:
+        return jsonify({"error": "not every backend process took it: " + "; ".join(problems)}), 502
     return jsonify({"endpoints": [
         {"name": endpoint.name, "models": list(endpoint.models)} for endpoint in settings.DEFAULT_LLM_ENDPOINTS
     ]}), 200
+
+
+#: tmp/sharded-backend: marks a testing call one backend process passed on to
+#: the others, which pass it on no further.
+_PASSED_ON = "X-Curio-Passed-On"
+
+
+def _to_every_other_process(method: str, path: str, body) -> list[str]:
+    """tmp/sharded-backend: the same testing call to every other backend
+    process of this start over 127.0.0.1 (``CURIO_SHARD_PORTS``), so a
+    setting held in memory is every process's; what went wrong, by process.
+    Nothing with one process, or for a call passed on already."""
+    import json as _json
+    import urllib.error
+    import urllib.request
+
+    from utk_curio.common import shards
+
+    if not shards.sharded() or request.headers.get(_PASSED_ON):
+        return []
+    problems = []
+    data = _json.dumps(body).encode("utf-8") if body is not None else None
+    for shard, port in enumerate(shards.shard_ports()):
+        if shard == shards.this_shard():
+            continue
+        call = urllib.request.Request(
+            f"http://127.0.0.1:{port}{path}", data=data, method=method,
+            headers={"Content-Type": "application/json", _PASSED_ON: "1"},
+        )
+        try:
+            with urllib.request.urlopen(call, timeout=60) as answer:
+                answer.read()
+        except (OSError, urllib.error.URLError) as exc:
+            problems.append(f"process {shard} (port {port}): {exc}")
+    if problems:
+        log.error("[shard-fanout] %s %s: %s", method, path, "; ".join(problems))
+    return problems
 
 
 @testing_bp.route("/stub-project", methods=["POST"])
