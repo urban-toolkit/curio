@@ -42,8 +42,10 @@ import logging
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import uuid
 from dataclasses import dataclass
@@ -147,6 +149,49 @@ def _bounded(cmd: list[str]) -> list[str]:
     """
     bounds = _pip_bounds()
     return bounded_argv(cmd, bounds) if bounds is not None else list(cmd)
+
+
+def _pip_account() -> tuple[int, int] | None:
+    """``(uid, gid)`` of the account pip runs as when it is not this
+    process's: the execution account :func:`_bounded` drops to, which
+    ``bounded_exec`` does only from root. None when pip runs as this process."""
+    if os.name != "posix" or os.getuid() != 0:
+        return None
+    drop = (_pip_bounds() or {}).get("drop")
+    return (int(drop[0]), int(drop[1])) if drop else None
+
+
+def _place_installed(staging: Path, target: Path) -> None:
+    """Move what pip installed into *staging* into *target*, item by item, as
+    pip's own ``--target`` moves them: an item *target* already holds stays
+    as it is, since pip replaces one only with ``--upgrade``, which Curio
+    never passes. Each item moved becomes this process's, with no write for
+    group or others (:func:`_make_own`), so the account pip ran as cannot
+    write it."""
+    target.mkdir(parents=True, exist_ok=True)
+    for name in sorted(os.listdir(staging)):
+        placed = target / name
+        if os.path.lexists(placed):
+            log.warning("%s already exists; left as it is, as pip's --target leaves it", placed)
+            continue
+        shutil.move(str(staging / name), str(placed))
+        _make_own(placed)
+
+
+def _make_own(path: Path) -> None:
+    """*path*, and everything under it, this process's, with no write for
+    group or others. A link is given to it as a link, never followed."""
+    uid, gid = os.getuid(), os.getgid()
+    paths = [str(path)]
+    if path.is_dir() and not path.is_symlink():
+        for root, dirs, files in os.walk(path):
+            paths.extend(os.path.join(root, name) for name in dirs + files)
+    for current in paths:
+        os.chown(current, uid, gid, follow_symlinks=False)
+        if not os.path.islink(current):
+            mode = stat.S_IMODE(os.lstat(current).st_mode)
+            if mode & 0o022:
+                os.chmod(current, mode & ~0o022)
 
 
 def _looks_like_no_wheel(output: str) -> bool:
@@ -913,17 +958,37 @@ def install_python_deps_to_target(
 
     Holds the tree's lock (:func:`_one_run_into`): a user's node libraries
     are one tree that the libraries dialog and a package's install both
-    change, perhaps in two backend processes."""
+    change, perhaps in two backend processes.
+
+    Where pip runs as the execution account (:func:`_pip_account`), the
+    target is not that account's to write: an account's node libraries
+    belong to this process, so the nodes that import them cannot rewrite
+    them (``backend_runtime.user_node_overlay_dir``), and a package's handler
+    overlay sits in the account's own 0700 store. pip then installs into a
+    folder the account owns, and this process moves what it installed into
+    *target_dir* and makes it its own (:func:`_place_installed`)."""
     if not deps:
         return InstallReport(installed=[], skipped=[])
     with _one_run_into(target_dir):
-        return _install_to_target(deps, target_dir, on_line)
+        account = _pip_account()
+        if account is None:
+            return _install_to_target(deps, target_dir, on_line)
+        staging = tempfile.mkdtemp(prefix="curio-pip-target-")
+        try:
+            os.chown(staging, *account)
+            report = _install_to_target(deps, staging, on_line)
+            _place_installed(Path(staging), Path(target_dir))
+            return report
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
 
 
 def _install_to_target(
     deps: Mapping[str, str], target_dir: str, on_line: Optional[Callable[[str], None]],
 ) -> InstallReport:
-    """:func:`install_python_deps_to_target`, holding the tree's lock."""
+    """``pip install --target`` *target_dir* for
+    :func:`install_python_deps_to_target`, which holds the tree's lock:
+    wheels only, then a build where a dependency has no wheel."""
     specs = [_spec_argv(name, spec) for name, spec in sorted(deps.items())]
     base = [sys.executable, "-m", "pip", "install", "--no-input",
             "--target", str(target_dir)]
