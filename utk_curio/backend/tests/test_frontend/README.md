@@ -419,9 +419,12 @@ its comparison's.
 `CURIO_E2E_CANDIDATE_DIR`, so a local run fails at its first failed frame, as
 before.
 
-The helper waits until no node on the canvas is running, so a view that draws on
-its own after its input arrives is captured drawn; pass `allow_running=True` only
-for a frame whose subject is a run in progress. It then calls
+On a canvas page the helper first waits for the dataflow to open
+(`wait_for_dataflow_open`, up to 60 s): its nodes come with that load, which a
+stalled CI host has held for 16 and 24 s. It then waits until no node on the
+canvas is running, so a view that draws on its own after its input arrives is
+captured drawn; pass `allow_running=True` only for a frame whose subject is a
+run in progress. It then calls
 `_wait_for_reactflow_ready`, so baseline and comparison always share one
 fitView'd viewport. Comparison allows 10% of pixels (`MAX_DIFF_RATIO`) to differ
 by more than 30/255 per channel. Two CI runs capture the same screen within about

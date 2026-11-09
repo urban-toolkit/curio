@@ -20,6 +20,9 @@ on:
       - 'docker-compose.ci-shards.yml'
       # test-gpu asserts the production deploy configuration.
       - 'docker-compose.deploy.yml'
+      # The bucket mount service, which the bucket-mounts job starts.
+      - 'docker-compose.bucket-mounts.yml'
+      - 'docker-compose.ci-bucket-mounts.yml'
       - '.github/workflows/docker-compose.yml'
       - '.github/actions/**'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
@@ -72,6 +75,9 @@ on:
       - 'docker-compose.ci-shards.yml'
       # test-gpu asserts the production deploy configuration.
       - 'docker-compose.deploy.yml'
+      # The bucket mount service, which the bucket-mounts job starts.
+      - 'docker-compose.bucket-mounts.yml'
+      - 'docker-compose.ci-bucket-mounts.yml'
       - '.github/workflows/docker-compose.yml'
       - '.github/actions/**'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
@@ -228,8 +234,9 @@ concurrency:
 #   * A self-hosted runner's labels are its machine (arcade, utk,
 #     utk-desktop-01 to -03; every desktop also carries utk-desktop) and its
 #     kind (cpu or gpu).
-#   * test-desktop-stress, unit (sandbox) and preview-runner: always
-#     ubuntu-latest. The first two measure a 4-core, 16 GB laptop.
+#   * test-desktop-stress, unit (sandbox), preview-runner and bucket-mounts:
+#     always ubuntu-latest. The first two measure a 4-core, 16 GB laptop;
+#     bucket-mounts loads an AppArmor profile into its runner's kernel.
 #   * test-gpu-stress: always utk-gpu.
 #
 # GitHub cannot send a job to one runner, or another when the first is busy, so
@@ -336,8 +343,8 @@ jobs:
       # get theirs from build-image's last step. CPU keys in critical-path
       # order: the first ones get the hosted room, and build-image comes first,
       # since most jobs wait for it. One key per job, matching each runs-on
-      # (ciParts.test.ts checks both picks). preview-runner always runs hosted
-      # and starts at once, so its slot is held back.
+      # (ciParts.test.ts checks both picks). preview-runner and bucket-mounts
+      # always run hosted and start at once, so their slots are held back.
       - name: 🎯 Pick a runner for each job that starts at once
         id: pick
         env:
@@ -345,7 +352,7 @@ jobs:
           CURIO_CI_POOL: ${{ (inputs.pool && inputs.pool != 'auto') && inputs.pool || vars.CURIO_CI_POOL || 'auto' }}
           CURIO_CI_GPU_POOL: ${{ (inputs.gpu_pool && inputs.gpu_pool != 'auto') && inputs.gpu_pool || vars.CURIO_CI_GPU_POOL || 'auto' }}
         run: |
-          python3 scripts/ci_pick_runners.py --hosted-reserved 1 --gpu test-gpu build-image jest ci-report
+          python3 scripts/ci_pick_runners.py --hosted-reserved 2 --gpu test-gpu build-image jest ci-report
 
   # The image every CPU job below runs, built once per commit and pushed to
   # GHCR under the commit's SHA, unless a run already built the same tree (see
@@ -1969,6 +1976,82 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # A real FUSE mount, through the bucket mount service of
+  # docker-compose.bucket-mounts.yml (docs/ARCHITECTURE.md, "Bucket mounts"),
+  # beside a stand-in for Curio's container (docker-compose.ci-bucket-mounts.yml).
+  # The backend's own self-test reads the test mount as a non-root account;
+  # then the service is killed, which leaves its mount dead in the stand-in,
+  # and its next start must clear that mount before the self-test passes again
+  # (scripts/bucket-mounts/ci_check.py).
+  #
+  # On ubuntu-latest only: the job loads the service's AppArmor profile into
+  # the runner's kernel (sudo apparmor_parser), which only a VM runner may do;
+  # arcade's runners are containers that share arcade's kernel. It needs no CI
+  # image, so it starts with the run.
+  bucket-mounts:
+    # pick-runners only for its tested_by, as preview-runner.
+    needs: pick-runners
+    if: >-
+      !cancelled() &&
+      needs.pick-runners.outputs.tested_by == '' &&
+      !inputs.remint &&
+      github.event_name != 'schedule' &&
+      github.event.action != 'labeled' &&
+      !inputs.tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COMPOSE_FILE: docker-compose.ci-bucket-mounts.yml:docker-compose.bucket-mounts.yml
+      COMPOSE_PROJECT_NAME: curio-ci-bucket-mounts
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      # Docker refuses a container whose AppArmor profile the kernel has not
+      # loaded. The runner's kernel has FUSE; the modprobe is for one that
+      # does not load it by itself.
+      - name: 🛡️ Load the service's AppArmor profile
+        run: |
+          set -euo pipefail
+          test -c /dev/fuse || sudo modprobe fuse
+          sudo apparmor_parser -r -W scripts/bucket-mounts/curio-bucket-mounts.apparmor
+          sudo grep -x 'curio-bucket-mounts (enforce)' /sys/kernel/security/apparmor/profiles
+
+      - name: 🚀 Start the service beside a stand-in for Curio
+        run: docker compose up -d --wait --wait-timeout 180
+
+      - name: 🧪 The self-test, reading as a non-root account
+        run: docker compose exec -T curio python /curio/scripts/bucket-mounts/ci_check.py selftest
+
+      # Two buckets mounted as the backend mounts a source: rclone takes the
+      # parameters and names each mount as the backend expects, and with
+      # nothing on the proxy's port in the stand-in no listing reaches a bucket.
+      - name: 🪣 A source's mount, with no way out but the backend's proxy
+        run: docker compose exec -T curio python /curio/scripts/bucket-mounts/ci_check.py source-mount
+
+      - name: 💀 A killed service's mount is cleared when it starts again
+        run: |
+          set -euo pipefail
+          check() { docker compose exec -T curio python /curio/scripts/bucket-mounts/ci_check.py "$@"; }
+          check leave-mounted
+          docker compose kill bucket-mounts
+          check dead
+          docker compose up -d --wait --wait-timeout 180 bucket-mounts
+          check gone
+          check selftest
+
+      - name: 📋 The stack's logs, and the kernel's AppArmor and FUSE lines
+        if: failure()
+        run: |
+          docker compose ps -a || true
+          docker compose logs --no-color --timestamps || true
+          sudo dmesg | grep -i -E 'apparmor|fuse' | tail -n 50 || true
+          findmnt -R "$GITHUB_WORKSPACE/bucket-mounts" || true
+
+      - name: 🧹 Stop the stack
+        if: always()
+        run: docker compose down -v --remove-orphans || true
+
   # Curio on a machine the size of a laptop. ubuntu-latest is 4 cores and 16 GB
   # -- the machine #408 was reported on -- where utk has 377 GiB, and memory
   # trouble that a server absorbs is exactly what a desktop user hits.
@@ -2140,7 +2223,9 @@ jobs:
   # ten, each room one shared canvas (--shared-canvas): every member adds a
   # node of its own to the room's dataflow, takes the lock of the node it
   # types in and plays the dataflow as its tab holds it, and each room's owner
-  # runs it on the server and saves it. The browser tier is five
+  # runs it on the server and saves it; then the same ten canvases with every
+  # member's agent writing its node too (--agents), on Curio's scripted
+  # model, report in stress-agents/. The browser tier is five
   # real Chrome contexts rendering Autark on WebGPU, which is the half that
   # cannot be driven any other way and does not scale past a handful on one GPU.
   test-gpu-stress:
@@ -2302,6 +2387,27 @@ jobs:
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
             --probe "docker exec $cid python"
 
+      # The same ten canvases, and every member also asks Node Builder to put
+      # a line on top of its own node's code: 100 agent turns at once, ten in
+      # each canvas, on Curio's scripted model, which the harness makes the
+      # stack's default for the tier and puts back after (no LLM, no tokens).
+      # Where the example has a code node to type in, members ask as soon as
+      # their node is in, so the agents work while people type and drag; in
+      # the others (examples 11 and regression), where people type in the
+      # members' own nodes, they ask once the typing is over, as they play.
+      # Every turn must land its write, every tab and the save must hold each
+      # agent's code, and no agent may still be in the room or hold a lock.
+      - name: 🤖 Run 10 canvases of 10 users with agents
+        if: ${{ !cancelled() }}
+        run: |
+          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
+          bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
+            --backend "http://localhost:5072" \
+            --tiers 100 --room-size 10 --shared-canvas --agents \
+            --out "$GITHUB_WORKSPACE/stress-agents{run}" \
+            --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
+            --probe "docker exec $cid python"
+
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
       # half, and vice versa: they fail for different reasons and get fixed by
       # different changes.
@@ -2361,6 +2467,8 @@ jobs:
             stress-session.run*/
             stress-canvas/
             stress-canvas.run*/
+            stress-agents/
+            stress-agents.run*/
             stress-stacks/
             docker-stats.log
           if-no-files-found: warn
@@ -2402,7 +2510,7 @@ jobs:
   # (test_e2e_runner_split.py); what only a run can show is a test that went to
   # a CPU runner and then skipped because it wanted WebGPU after all.
   ci-report:
-    needs: [pick-runners, test-gpu, unit, jest, e2e-desktop, test-isolated, test-exec-user, preview-runner, test-desktop-stress]
+    needs: [pick-runners, test-gpu, unit, jest, e2e-desktop, test-isolated, test-exec-user, preview-runner, bucket-mounts, test-desktop-stress]
     if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' }}
     runs-on: ${{ fromJSON(needs.pick-runners.outputs.runners)['ci-report'] }}
     timeout-minutes: 30

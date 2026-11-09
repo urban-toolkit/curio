@@ -85,7 +85,8 @@ const monitorPayload = {
     execUserConfigured: true, authEnabled: true, projectsEnabled: true,
     guestLoginAllowed: true,
     factoryPublishAllowed: true, saveNodeOutputDefault: false,
-    llmProviderConfigured: true, searchToolConfigured: false, env: "prod",
+    llmProviderConfigured: true, searchToolConfigured: false,
+    bucketMounts: "passed", bucketMountsProblem: null, env: "prod",
     platform: "macOS-27.0-arm64", pythonVersion: "3.12.1",
   },
   hardware: {
@@ -304,6 +305,27 @@ describe("MonitorPage", () => {
   test("the error log is rendered from its own payload", async () => {
     renderPage();
     expect(await screen.findByText("KeyError: 'population'")).toBeInTheDocument();
+  });
+
+  test.each([
+    ["passed", null, "on, self-test passed"],
+    ["pending", null, "on, self-test running"],
+    [
+      "unavailable",
+      "the test mount did not reach this container",
+      "unavailable: the test mount did not reach this container",
+    ],
+    ["none", null, "none"],
+  ])("the deployment says how the bucket mount service's self-test went: %s", async (state, problem, text) => {
+    (fetchMonitor as jest.Mock).mockResolvedValue({
+      ...monitorPayload,
+      deployment: { ...monitorPayload.deployment, bucketMounts: state, bucketMountsProblem: problem },
+    });
+    renderPage();
+    const deployment = await screen.findByTestId("monitor-deployment");
+    const label = await within(deployment).findByText("Bucket mounts");
+    // The chip shows "…" until the payload lands.
+    await waitFor(() => expect(label.nextElementSibling?.textContent).toBe(text));
   });
 
   describe("LLM tokens", () => {

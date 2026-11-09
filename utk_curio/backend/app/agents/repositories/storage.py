@@ -72,7 +72,9 @@ def agent_definition_dir(user_key: str, dir_name: str) -> Path:
     parse_agent_dir_name(dir_name)  # raises on malformed names
     base = user_agents_dir(user_key).resolve()
     target = (base / dir_name).resolve()
-    if not is_within(target, base):
+    # Both are resolved: is_within would resolve each again, a walk of every
+    # component with an lstat each, on every lookup of an agent.
+    if not target.is_relative_to(base):
         raise PathTraversalError(
             f"Path traversal blocked: agent path {target!s} escapes base {base!s}"
         )

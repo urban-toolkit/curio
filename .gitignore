@@ -61,6 +61,10 @@ utk_curio/backend/app/datasets/infrastructure/left_out_files.record.json
 /packages/*/models/*/
 /model-weights/
 
+# The folder docker-compose.bucket-mounts.yml binds into the bucket mount
+# service and Curio's container: the service mounts buckets in it.
+/bucket-mounts/
+
 # The E2E broken-library fixture publishes this into the shared catalog and
 # unpublishes it in teardown (test_broken_library_e2e.py). A run killed
 # mid-test leaves it behind; it is never a real catalog package, so it must

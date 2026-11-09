@@ -3,11 +3,15 @@
 Each template's source is indented as ``PythonInterpreter.ts`` does and run as
 the sandbox runs it (``input_names.call_as_node``), fed the rows ``curio_load_collection`` returns
 for the example storage source's collections, so the input is what a Data
-Loading node would hand it.
+Loading node would hand it. A starter is its settings and a call into a
+module: Media's ``media_collections``, or Rasterization's ``scout_rasters``,
+which Media names in ``dependencies.packages``. Both are staged for each run
+as the sandbox stages a node's modules (the ``package_modules`` fixture).
 """
 
 from __future__ import annotations
 
+import ast
 import json
 import math
 from pathlib import Path
@@ -17,6 +21,41 @@ import pytest
 REPO = Path(__file__).resolve().parents[4]
 PACKAGE = REPO / "packages" / "curio.media@1"
 EXAMPLE = REPO / "discovery" / "source.curio.example-storage@1"
+RASTERIZATION = REPO / "packages" / "curio.rasterization@1"
+#: Media's module, and Rasterization's, whose mosaic Mosaic Rasters calls.
+MODULE = "media_collections"
+RASTER_MODULE = "scout_rasters"
+#: The modules a run of a Media node is handed: its own package's first, then
+#: Rasterization's (``python_modules.modules_for_node``).
+MODULES = [
+    {"root": str(PACKAGE / "sources"), "names": [MODULE]},
+    {"root": str(RASTERIZATION / "sources"), "names": [RASTER_MODULE]},
+]
+#: Each starter's import, its settings with their values, and the call it returns.
+STARTERS = {
+    "video-frames": (
+        "from media_collections import sample_video_frames",
+        {"EVERY_SECONDS": 2.0, "MAX_FRAMES_PER_VIDEO": 300},
+        "sample_video_frames(input_0, curio_derived_file, every_seconds=EVERY_SECONDS, "
+        "max_frames_per_video=MAX_FRAMES_PER_VIDEO)",
+    ),
+    "split-audio": (
+        "from media_collections import split_audio",
+        {"WINDOW_SECONDS": 5.0, "MAX_WINDOWS_PER_RECORDING": 2000},
+        "split_audio(input_0, curio_derived_file, window_seconds=WINDOW_SECONDS, "
+        "max_windows_per_recording=MAX_WINDOWS_PER_RECORDING)",
+    ),
+    "mosaic-rasters": (
+        "from scout_rasters.mosaic import mosaic_collection",
+        {},
+        "mosaic_collection(input_0, curio_output_file)",
+    ),
+}
+#: What each module the starters import offers node code: its ``__all__``.
+OFFERED = {
+    "media_collections": ["sample_video_frames", "split_audio"],
+    "scout_rasters.mosaic": ["mosaic_rasters", "mosaic_collection"],
+}
 
 
 def node_source(name: str, **settings) -> str:
@@ -65,8 +104,25 @@ def collection_rows(manifest, resource_id: str, tmp_path: Path):
 
 
 @pytest.fixture()
-def collection(tmp_path):
-    """``(rows_for(resource_id), helpers)`` over the example source."""
+def package_modules(tmp_path):
+    """While the test runs, the modules a run of a Media node is handed
+    (``MODULES``) import by name, staged into a folder of the run's own as the
+    sandbox stages them (``staging.stage_package_modules``). Yields what was
+    staged."""
+    from utk_curio.sandbox.util.package_modules import importable
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    run = tmp_path / "run-media"
+    run.mkdir()
+    staged = stage_package_modules(MODULES, str(run))
+    with importable(str(run / staged["root"]) if staged else None, staged["names"] if staged else []):
+        yield staged
+
+
+@pytest.fixture()
+def collection(tmp_path, package_modules):
+    """``(rows_for(resource_id), helpers)`` over the example source, with the
+    modules a Media node's run is handed importable (``package_modules``)."""
     from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
 
     manifest = load_source_manifest(EXAMPLE)
@@ -74,8 +130,9 @@ def collection(tmp_path):
 
 
 @pytest.fixture()
-def folder_collection(tmp_path):
-    """``(rows, helpers)`` for one resource over a folder a test writes."""
+def folder_collection(tmp_path, package_modules):
+    """``(rows, helpers)`` for one resource over a folder a test writes, with
+    the modules a Media node's run is handed importable (``package_modules``)."""
     from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
     from utk_curio.backend.tests.test_discovery.conftest import a_storage_manifest, write_source
 
@@ -95,6 +152,84 @@ def test_the_manifest_validates_and_names_three_nodes():
     raw = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
     assert [t["id"] for t in raw["templates"]] == ["video-frames", "split-audio", "mosaic-rasters"]
     assert manifest.python_deps["av"] and manifest.python_deps["rasterio"]
+
+
+def test_media_names_rasterization_and_ships_one_module():
+    """Mosaic Rasters calls Rasterization's mosaic, so Media's manifest names
+    Rasterization in ``dependencies.packages``, as Deep Umbra's does. Media's
+    own module, which Sample Video Frames and Split Audio call, is
+    ``media_collections``."""
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+    from utk_curio.backend.app.packages.repositories.python_modules import module_names
+
+    raw = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
+    assert raw["dependencies"]["packages"] == {"curio.rasterization@1": "*"}
+    manifest = load_package_manifest(PACKAGE)
+    assert dict(manifest.package_deps) == {"curio.rasterization@1": "*"}
+    assert module_names(PACKAGE, manifest) == frozenset({MODULE})
+
+
+def test_a_run_of_a_media_node_is_handed_its_module_then_rasterizations(tmp_curio, package_modules):
+    """A run of each Media node is handed Media's module, then Rasterization's,
+    its own first, as any node of a package that names another is
+    (``python_modules.modules_for_node``), and a run stages both."""
+    from utk_curio.backend.app.packages.application.python_modules import modules_for_node
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+
+    for package in (RASTERIZATION, PACKAGE):
+        install_package_from_directory("guest", package)
+    handed = [
+        {"root": str(package_dir("guest", PACKAGE.name) / "sources"), "names": [MODULE]},
+        {"root": str(package_dir("guest", RASTERIZATION.name) / "sources"), "names": [RASTER_MODULE]},
+    ]
+    for template in STARTERS:
+        assert modules_for_node("guest", f"curio.media/{template}") == handed, template
+    assert package_modules == {"root": "package_modules", "names": [MODULE, RASTER_MODULE]}, package_modules
+
+
+@pytest.mark.parametrize("template", sorted(STARTERS))
+def test_each_starter_is_its_settings_and_a_call_into_a_module(template):
+    """A node's logic is in functions of its package's modules, and its code
+    holds its settings and a short call: its docstring, the import of one
+    function of a module, its settings as constants, and the return of that
+    function's call, which reads every setting. No other statement, so no
+    logic of its own, and nothing of Curio's code."""
+    imported, settings, call = STARTERS[template]
+    code = node_source(template)
+    assert "utk_curio" not in code
+    body = ast.parse("def node():\n" + "\n".join("    " + line for line in code.splitlines())).body[0].body
+    kinds = [type(statement).__name__ for statement in body]
+    assert kinds == ["Expr", "ImportFrom", *["Assign"] * len(settings), "Return"], kinds
+    assert isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str), ast.dump(body[0])
+    assert ast.unparse(body[1]) == imported
+    assigned = {
+        statement.targets[0].id: ast.literal_eval(statement.value)
+        for statement in body[2:-1]
+        if len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name)
+    }
+    assert assigned == settings
+    assert ast.unparse(body[-1].value) == call
+
+
+def test_the_modules_offer_the_functions_their_all_names(package_modules):
+    """What node code calls is what each module's ``__all__`` names: Media's
+    ``media_collections`` and Rasterization's ``scout_rasters.mosaic``. Each
+    name is a function the module defines, whose docstring's first paragraph
+    says what it does, and each starter calls one of them."""
+    import importlib
+    import inspect
+
+    for name, offered in OFFERED.items():
+        module = importlib.import_module(name)
+        assert list(module.__all__) == offered, (name, module.__all__)
+        for function in offered:
+            value = getattr(module, function)
+            assert inspect.isfunction(value) and value.__module__ == name, (name, function)
+            assert (inspect.getdoc(value) or "").split("\n\n")[0].strip(), (name, function)
+    for imported, _settings, call in STARTERS.values():
+        module, function = imported.removeprefix("from ").split(" import ")
+        assert function in OFFERED[module] and call.startswith(f"{function}("), imported
 
 
 def test_sample_video_frames_makes_image_rows(collection):
@@ -175,6 +310,27 @@ def test_mosaic_rasters_names_what_differs(collection):
     mixed.loc[mixed.index[0], "crs"] = "EPSG:4326"
     with pytest.raises(ValueError, match="differ in crs"):
         run_node("mosaic-rasters", mixed, helpers)
+
+
+def test_mosaic_rasters_refuses_a_rotated_tile(collection):
+    tiles, helpers = collection("orthos")
+    rotated = tiles[tiles["year"] == 2024].copy()
+    transform = json.loads(rotated["transform"].iloc[0])
+    transform[1] = 0.2
+    rotated.loc[rotated.index[0], "transform"] = json.dumps(transform)
+    with pytest.raises(ValueError, match="a tile is rotated; only north-up tiles make a mosaic"):
+        run_node("mosaic-rasters", rotated, helpers)
+
+
+def test_mosaic_rasters_code_is_a_short_call_into_rasterizations_mosaic():
+    """Mosaic Rasters' code is the call of ``mosaic_collection``, from
+    Rasterization's ``scout_rasters.mosaic``, which holds the mosaic, and
+    imports nothing of Curio's."""
+    code = node_source("mosaic-rasters")
+    assert "utk_curio" not in code
+    assert "\nfrom scout_rasters.mosaic import mosaic_collection\n" in code
+    assert code.rstrip("\n").endswith("\nreturn mosaic_collection(input_0, curio_output_file)")
+    assert "<VRTDataset" not in code
 
 
 def test_an_uncached_file_is_named_not_crashed_on(collection):
@@ -271,6 +427,25 @@ def test_mosaic_rasters_lets_a_tiles_empty_pixels_show_the_tile_below(folder_col
     tiles, helpers = folder_collection(root, {"id": "t", "name": "Tiles", "kind": "rasters", "path": "*.tif"})
     mosaic = run_node("mosaic-rasters", tiles, helpers)
     assert mosaic.read(1)[0].tolist() == [7, 7, 7, 9, 9, 9]
+
+
+def test_mosaic_rasters_lays_the_tiles_side_by_side_in_a_vrt_that_points_at_them(folder_collection, tmp_path):
+    """The mosaic is a VRT that names each tile's file, each tile where its
+    corner falls and the mosaic's corner the north-west tile's."""
+    import numpy as np
+
+    root = tmp_path / "tiles"
+    root.mkdir()
+    _tile(root / "a.tif", 447000.0, list(range(1, 17)), nodata=255)
+    _tile(root / "b.tif", 447004.0, list(range(17, 33)), nodata=255)
+    tiles, helpers = folder_collection(root, {"id": "t", "name": "Tiles", "kind": "rasters", "path": "*.tif"})
+    mosaic = run_node("mosaic-rasters", tiles, helpers)
+    with open(mosaic.name, encoding="utf-8") as handle:
+        text = handle.read()
+    assert len(tiles) == 2 and all(str(path) in text for path in tiles["path"]), text
+    left, right = np.arange(1, 17).reshape(4, 4), np.arange(17, 33).reshape(4, 4)
+    assert mosaic.read(1).tolist() == np.hstack([left, right]).tolist()
+    assert tuple(mosaic.transform)[:6] == (1.0, 0.0, 447000.0, 0.0, -1.0, 4641000.0)
 
 
 def test_mosaic_rasters_refuses_tiles_whose_empty_value_differs(folder_collection, tmp_path):

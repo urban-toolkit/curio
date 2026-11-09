@@ -157,9 +157,12 @@ def _the_execution_account():
     if os.getuid() != 0:
         pytest.skip("dropping to the execution account requires root")
     try:
-        return pwd.getpwnam("curio-exec")
+        account = pwd.getpwnam("curio-exec")
     except KeyError:
+        account = None
+    if account is None:
         pytest.skip("the curio-exec account does not exist on this host")
+    return account
 
 
 def test_the_exec_wrapper_drops_to_the_account_it_is_given_without_starting_a_process(tmp_path, monkeypatch):

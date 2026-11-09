@@ -2,14 +2,14 @@
 their own grid. Rasterize Buildings writes its mosaic of SCOUT's tiles with
 ``mosaic_web_tiles``, and Deep Umbra's node (``model.scout.deep-umbra@1``,
 whose package names Rasterization in ``dependencies.packages``) places each tile it
-predicts with ``tile_bounds``. The mosaic itself is written by Curio's
-``mosaic_rasters``, which Curio Media's Mosaic Rasters writes with too.
+predicts with ``tile_bounds``. The mosaic itself is written by ``mosaic_rasters``
+(``mosaic.py``), which Deep Umbra's node writes its shadow with too.
 """
 from __future__ import annotations
 
 import math
 
-from utk_curio.sandbox.util.rasters import mosaic_rasters
+from .mosaic import mosaic_rasters
 
 
 # ---------------------------------------------------------------------------
