@@ -53,6 +53,15 @@ name: Deploy
 #      endpoint, [Electronic Visualization Lab], to the checkout's
 #      .secrets/llm-endpoint (owner-only) and starts the stack with
 #      --llm-endpoint-file.
+#
+#   8. Bucket mounts (docker-compose.bucket-mounts.yml): the server needs
+#      /dev/fuse, /srv on a shared mount, and the mount service's AppArmor
+#      profile, loaded once as root (DEPLOYMENT.md, "Bucket mounts", has the
+#      checks). Both stacks use the one profile, which loads again at every
+#      boot; load it again when an update changes the file:
+#        sudo install -m 644 /srv/curio-dev/scripts/bucket-mounts/curio-bucket-mounts.apparmor /etc/apparmor.d/curio-bucket-mounts
+#        sudo apparmor_parser -r -W /etc/apparmor.d/curio-bucket-mounts
+#        sudo aa-status | grep curio-bucket-mounts   # prints its name
 
 # A merge to main deploys curio-dev once: bump-version.yml runs on the merge
 # (its paths list what the deployed image holds), pushes the bump commit, and
