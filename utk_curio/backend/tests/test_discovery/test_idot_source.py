@@ -65,16 +65,15 @@ class TestTheListing:
         snapshots = [r for r in rows.values() if r["resourceId"].startswith("snapshots@")]
         for crossing, months in SNAPSHOT_MONTHS.items():
             assert sum(r["resourceId"].startswith(f"snapshots@crossing={crossing};") for r in snapshots) == months
+        # A row's name gives its month as the folder does; its id keeps the whole time.
         july = rows[row_id("snapshots", "W042", JULY)]
-        assert (july["name"], july["kind"], july["fileCount"]) == (
-            f"Crossing snapshots · W042, {JULY}", "images", 2,
-        )
+        assert (july["name"], july["kind"], july["fileCount"]) == ("Crossing snapshots · W042, 2025-07", "images", 2)
         for resource, name in (("detections", "Detections"), ("frames", "Frames by model")):
             assert {r for r in rows if r.startswith(f"{resource}@")} == {
                 row_id(resource, crossing, month) for crossing, month in DATA_MONTHS
             }
             row = rows[row_id(resource, "W042", JULY)]
-            assert (row["name"], row["kind"], row["fileCount"]) == (f"{name} · W042, {JULY}", "table", 1)
+            assert (row["name"], row["kind"], row["fileCount"]) == (f"{name} · W042, 2025-07", "table", 1)
 
     def test_a_month_over_the_default_download_limit_says_why(
         self, client, auth, app, shipped_root, fixture_corpus
@@ -107,6 +106,7 @@ class TestTheDetections:
 
         job = add(client, auth, SOURCE, row_id("detections", "W042", JULY))
         assert job["status"] == "completed", job.get("error")
+        assert job["dataset"]["title"] == "Detections · W042, 2025-07"
         frame = pd.read_parquet(job["dataset"]["path"])
         assert list(frame.columns) == [
             "timestamp", "image_timestamp_ns", "model", "inference_time_seconds",
