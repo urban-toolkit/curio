@@ -18,3 +18,7 @@ __pycache__/
 # folder docker-compose.deploy.yml mounts. Never built in.
 packages/*/models/*/**
 model-weights
+# The folder docker-compose.bucket-mounts.yml binds into the bucket mount
+# service, which mounts buckets in it: a build must never walk into a mounted
+# bucket.
+bucket-mounts

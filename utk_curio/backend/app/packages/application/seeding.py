@@ -740,7 +740,7 @@ def ensure_user_seeded(user_key: str) -> None:
         existing_defaults = defaults_io.load_defaults(user_key)
         # Names-only snapshot under the seed lock (memo dev/99); the defaults
         # write happens after release - the seed lock is a leaf.
-        with package_seed_lock(user_key):
+        with package_seed_lock(user_key, shared=True):
             builtin_names = [
                 p.name for p in list_user_packages(user_key) if p.name.startswith(prefix)
             ]

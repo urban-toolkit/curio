@@ -234,7 +234,7 @@ def resolve_for_project(
         the committed catalog fixture for a package the user has not
         installed yet. See :func:`_load_manifests` for the precedence.
     """
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         return resolve_for_project_unlocked(
             user_key, project_packages, overrides=overrides,
         )
@@ -297,7 +297,7 @@ def lockfile_for_user(user_key: str) -> dict[str, object]:
 
     Returns an empty lockfile when the user has no packages.
     """
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         names = [p.name for p in list_user_packages(user_key)]
         return resolve_for_project_unlocked(user_key, names).to_lockfile()
 
@@ -356,7 +356,7 @@ def resolve_snapshot(user_key: str, packages: list[str]):
     read before it is taken (dev/99 §3.3).
     """
     catalog = packages_dependencies.catalog().snapshot()
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         store = packages_dependencies.readable(packages_store_reads._store_index(user_key))
         packages = required_packages(packages, store, catalog)
         overrides = resolver_overrides_for(user_key, packages)

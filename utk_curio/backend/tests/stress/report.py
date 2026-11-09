@@ -199,6 +199,57 @@ def canvas_summary(rooms: list[dict]) -> dict | None:
     }
 
 
+#: A turn's phases, each ended by its first event of a kind (``agents.PHASES``):
+#: prepared and its run reserved, its write's result, its end.
+TURN_PHASES = ("prepared", "written", "ended")
+
+
+def agents_summary(rooms: list[dict]) -> dict | None:
+    """What a tier's agents did (``--agents``), from each room's ``agents``
+    (``agents.RoomAgents.outcome``): the turns asked, how they ended and how
+    long each took from its ask to its end (``turn_s``: None when none
+    ended), their writes (landed, refused as changed meanwhile, refused
+    otherwise, never made), the landed writes and turn ends missing from a
+    tab, the agents the server still had in a room at the end (None when no
+    room read them) and the tabs that still showed one, and the rooms whose
+    tabs differed once every turn had ended. None for a tier with no agents."""
+    groups = [room["agents"] for room in rooms if room.get("agents")]
+    if not groups:
+        return None
+    present = [group["present_at_end"] for group in groups if group.get("present_at_end") is not None]
+
+    def summed(key: str) -> dict:
+        total: dict = {}
+        for group in groups:
+            for name, count in (group.get(key) or {}).items():
+                total[name] = total.get(name, 0) + count
+        return total
+
+    return {
+        "rooms": len(groups),
+        "asked_at_once": sum(1 for group in groups if group.get("early")),
+        "asked": sum(group["asked"] for group in groups),
+        "ends": {"done": 0, "error": 0, "withdrawn": 0, "never": 0, **summed("ends")},
+        "turn_s": distribution([value for group in groups for value in group["turn_seconds"]], digits=2),
+        # From each ask to the end of each phase of its turn (agents.PHASES).
+        "phases_s": {phase: distribution([value for group in groups
+                                          for value in (group.get("phases") or {}).get(phase) or []], digits=2)
+                     for phase in TURN_PHASES},
+        "writes": {"landed": 0, "changed_meanwhile": 0, "refused": 0, "none": 0, **summed("writes")},
+        "unsynced": sum(group["unsynced"] for group in groups),
+        "present_at_end": sum(len(names) for names in present) if present else None,
+        "rooms_read": len(present),
+        "tabs_showing_agents": sum(group["tabs_showing_agents"] for group in groups),
+        "turn_events_told": sum(group["turn_events_told"] for group in groups),
+        "diverged_rooms": sum(1 for group in groups if group.get("diverged")),
+        "per_room": [
+            {key: group.get(key) for key in ("early", "asked", "ends", "writes", "unsynced", "present_at_end",
+                                             "diverged", "turns")}
+            for group in groups
+        ],
+    }
+
+
 def cpu_track(readings: list, seconds_key: str, at_key: str) -> dict | None:
     """A process's CPU over the *readings* that carry its CPU seconds
     (*seconds_key*) and the moment each was read (*at_key*): the seconds it
@@ -504,6 +555,63 @@ def _canvas_table(tiers: list[dict]) -> list[str]:
     return lines
 
 
+def _agents_table(tiers: list[dict]) -> list[str]:
+    if not any(tier.get("agents") for tier in tiers):
+        return []
+    lines = ["", ("Agents: every member also asks Node Builder, on Curio's scripted model (no LLM, no "
+                  "tokens), to put a line naming it on top of its own node's code. In a canvas with a code "
+                  "node to type in, the members ask as soon as their nodes are in, so the agents work while "
+                  "people type and drag; in the others, where people type in the members' own nodes, they "
+                  "ask once the typing is over, so the agents work while people play. A turn is timed from "
+                  "its ask to its end. A turn that ends in an error or never ends, a write refused, an "
+                  "agent's code missing from a tab or from the save, or an agent still in the room at the "
+                  "end fails the tier."), ""]
+    lines.append("| Tier | Canvases | Turns | Done | Error | Never ended | Turn p50 | Turn p95 | Turn max "
+                 "| Writes landed | Changed meanwhile | Other refusals | Missing from tabs | In the room at end |")
+    lines.append("| ---: | -------: | ----: | ---: | ----: | ----------: | -------: | -------: | -------: "
+                 "| ------------: | ----------------: | -------------: | ----------------: | -----------------: |")
+    for tier in tiers:
+        agents = tier.get("agents")
+        if not agents:
+            continue
+        ends, writes, took = agents["ends"], agents["writes"], agents["turn_s"]
+        timing = [f"{took[key]} s" for key in ("p50", "p95", "max")] if took else ["no turn ended"] * 3
+        present = "not read" if agents["present_at_end"] is None else str(agents["present_at_end"])
+        if agents["tabs_showing_agents"]:
+            present += f" ({agents['tabs_showing_agents']} tab(s) still showed one)"
+        lines.append(
+            f"| {tier['tier']} | {agents['rooms']} | {agents['asked']} | {ends['done']} | {ends['error']} "
+            f"| {ends['never']} | {' | '.join(timing)} | {writes['landed']} | {writes['changed_meanwhile']} "
+            f"| {writes['refused'] + writes['none']} | {agents['unsynced']} | {present} |"
+        )
+    return lines + _turn_phases_table(tiers)
+
+
+def _turn_phases_table(tiers: list[dict]) -> list[str]:
+    """Where an agent's turn spends its time: from each ask, the seconds to
+    the turn's first event, once it is prepared and its run reserved; to its
+    write's result; and to its end."""
+    if not any(any(((tier.get("agents") or {}).get("phases_s") or {}).values()) for tier in tiers):
+        return []
+    lines = ["", ("Agents' turns, phase by phase: the seconds from each ask to the turn's first event, once "
+                  "it is prepared and its run reserved; to its write's result, landed or refused; and to "
+                  "its end."), ""]
+    lines.append("| Tier | Prepared p50 | Prepared p95 | Prepared max | Written p50 | Written p95 | Written max "
+                 "| Ended p50 | Ended p95 | Ended max |")
+    lines.append("| ---: | -----------: | -----------: | -----------: | ----------: | ----------: | ----------: "
+                 "| --------: | --------: | --------: |")
+    for tier in tiers:
+        phases = (tier.get("agents") or {}).get("phases_s") or {}
+        if not any(phases.values()):
+            continue
+        cells = []
+        for phase in TURN_PHASES:
+            took = phases.get(phase)
+            cells += [f"{took[key]} s" for key in ("p50", "p95", "max")] if took else ["-"] * 3
+        lines.append(f"| {tier['tier']} | {' | '.join(cells)} |")
+    return lines
+
+
 def _backend_table(tiers: list[dict]) -> list[str]:
     if not any(tier.get("backend") or tier.get("doc_files") for tier in tiers):
         return []
@@ -568,6 +676,8 @@ def markdown(report: dict) -> str:
     wire = "arrow artifacts" + (f", tabs over {' and '.join(transports)}" if transports else "")
     if any(tier.get("canvas") for tier in report["tiers"]):
         wire += ", shared canvases"
+    if any(tier.get("agents") for tier in report["tiers"]):
+        wire += ", agents on the scripted model"
     lines = [f"## Stress run `{report['run_id']}` "
              f"({report.get('profile', 'burst')} profile, {wire})", ""]
     lines.append("| Tier | Users | Completed | Wall | Failures | User p95 |")
@@ -594,6 +704,7 @@ def markdown(report: dict) -> str:
         lines += ["", peak_line + "."]
     lines += _tabs_table(report["tiers"])
     lines += _canvas_table(report["tiers"])
+    lines += _agents_table(report["tiers"])
     lines += _backend_table(report["tiers"])
     lines += _cpu_table(report["tiers"])
 

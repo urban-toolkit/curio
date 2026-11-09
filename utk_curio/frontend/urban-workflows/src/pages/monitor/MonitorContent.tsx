@@ -6,6 +6,7 @@ import {
   fetchMonitorLlm,
   fetchMonitorOpenFiles,
   fetchMonitorStorage,
+  type MonitorDeployment,
   type MonitorErrorsPayload,
   type MonitorLlmPayload,
   type MonitorOpenFilesPayload,
@@ -35,6 +36,22 @@ const STORAGE_POLL_MS = 60000;
 const LLM_POLL_MS = 60000;
 // A sample an hour: read when the page opens, then every 10 minutes.
 const OPEN_FILES_POLL_MS = 600000;
+
+/** The bucket mount service's line: its self-test's outcome, or none. */
+function bucketMountsText(deployment: MonitorDeployment | undefined): string {
+  switch (deployment?.bucketMounts) {
+    case undefined:
+      return "…";
+    case "passed":
+      return "on, self-test passed";
+    case "pending":
+      return "on, self-test running";
+    case "unavailable":
+      return `unavailable: ${deployment?.bucketMountsProblem ?? "see Recent errors"}`;
+    default:
+      return "none";
+  }
+}
 
 /**
  * What the monitor shows: the toolbar, the deployment, hardware (each
@@ -152,6 +169,17 @@ export const MonitorContent: React.FC = () => {
           <Chip label="Guest login" value={m?.deployment.guestLoginAllowed ? "allowed" : "off"} />
           <Chip label="Exec account" value={m?.deployment.execUserConfigured ? "configured" : "none"} />
           <Chip label="Deployment LLM" value={m?.deployment.llmProviderConfigured ? "configured" : "none"} />
+          <Chip
+            label="Bucket mounts"
+            value={bucketMountsText(m?.deployment)}
+            tone={
+              m?.deployment.bucketMounts === "passed"
+                ? "good"
+                : m?.deployment.bucketMounts === "unavailable"
+                ? "warn"
+                : "neutral"
+            }
+          />
           <Chip label="Environment" value={m?.deployment.env ?? "…"} />
           <Chip label="Platform" value={m?.deployment.platform ?? "…"} />
           <Chip label="Python" value={m?.deployment.pythonVersion ?? "…"} />

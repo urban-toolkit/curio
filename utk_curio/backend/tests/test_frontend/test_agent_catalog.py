@@ -35,8 +35,13 @@ from typing import TYPE_CHECKING
 from playwright.sync_api import expect
 
 from .utils import (
+    CANVAS_TITLE_HEADING,
+    DATAFLOW_OPEN_TIMEOUT_MS,
+    OPENING_TITLE,
+    _wait_for_reactflow_ready,
     accept_confirm_dialog,
     api_json,
+    canvas_nodes,
     open_tools_palette,
     require_project_page,
     require_user_auth,
@@ -234,6 +239,87 @@ def test_drawer_lists_catalog_agents(
     expect(page.locator(DRAWER_ROOT)).to_have_count(0, timeout=5000)
     _open_drawer_from_menu(page)
     expect(page.locator(DRAWER_ROOT)).to_have_count(1)
+
+
+#: How long the page holds its dataflow's load once the test starts the count:
+#: longer than the 10 s a capture gives the canvas's first node. A stalled
+#: arcade answered the load of test_drawer_lists_catalog_agents 16 s after it
+#: was sent, 12 s after its capture began to wait (run 42455722251).
+HELD_LOAD_MS = 15000
+
+#: The page's load of its dataflow (``GET /api/projects/<id>?results=last``),
+#: held in the page until HELD_LOAD_MS after the test calls
+#: ``window.__curioLetTheLoadGoIn``: a server that answers late, whenever the
+#: test asks. Held here, not with ``page.route``, which this thread could not
+#: let go while the capture wait it calls is waiting.
+_HELD_LOAD_JS = r"""(() => {
+    const realFetch = window.fetch.bind(window);
+    const load = /\/api\/projects\/[0-9a-f-]{36}\?results=last$/;
+    let letGo;
+    const goes = new Promise((resolve) => { letGo = resolve; });
+    window.__curioHeldLoads = 0;
+    window.__curioLetTheLoadGoIn = (ms) => { setTimeout(letGo, ms); };
+    window.fetch = (input, init) => {
+        const url = typeof input === "string" ? input : (input && input.url) || "";
+        if (!load.test(url)) return realFetch(input, init);
+        window.__curioHeldLoads += 1;
+        return goes.then(() => realFetch(input, init));
+    };
+})();"""
+
+
+def test_the_capture_wait_under_the_drawer_waits_for_a_dataflow_that_opens_slowly(
+    app_frontend: "FrontendPage", current_server: str, page
+):
+    """The capture of test_drawer_lists_catalog_agents, made while the
+    dataflow under the drawer is still opening.
+
+    On CI (run 42455722251) every check before that capture passed while the
+    canvas still read "Opening dataflow…". The capture's wait for a first node
+    then gave up after its 10 s, two seconds before the stalled server answered
+    the load. Here the page holds its load until HELD_LOAD_MS after the test
+    calls the capture's wait, so the wait meets the same slow load every run.
+    """
+    require_project_page()
+    require_user_auth()
+    page.add_init_script(_HELD_LOAD_JS)
+    _enter_dataflow(
+        page, app_frontend, current_server,
+        username="agentcat_slow_open", project="Agent Catalog Slow Open",
+    )
+    drawer = _open_drawer_from_menu(page)
+    expect(_card(drawer, AGENT_COORD)).to_have_count(1, timeout=15000)
+    page.wait_for_function(
+        "() => window.__curioHeldLoads > 0", polling=100, timeout=DATAFLOW_OPEN_TIMEOUT_MS,
+    )
+
+    # Where the failed capture began: the drawer lists its card over a canvas
+    # whose dataflow is still opening, its load asked for and not answered.
+    before = {
+        "loads the page held": page.evaluate("() => window.__curioHeldLoads"),
+        "the canvas title": page.locator(CANVAS_TITLE_HEADING).inner_text(),
+        "nodes on the canvas": page.locator(".react-flow__node").count(),
+    }
+    assert before == {
+        "loads the page held": 1,
+        "the canvas title": OPENING_TITLE,
+        "nodes on the canvas": 0,
+    }
+
+    page.evaluate("(ms) => window.__curioLetTheLoadGoIn(ms)", HELD_LOAD_MS)
+    _wait_for_reactflow_ready(page)
+
+    seen = {
+        "loads the page held": page.evaluate("() => window.__curioHeldLoads"),
+        "the canvas title still says it is opening":
+            page.locator(CANVAS_TITLE_HEADING).inner_text() == OPENING_TITLE,
+        "nodes on the canvas": [node["id"] for node in canvas_nodes(page)],
+    }
+    assert seen == {
+        "loads the page held": 1,
+        "the canvas title still says it is opening": False,
+        "nodes on the canvas": [node["id"] for node in _one_node_spec()["dataflow"]["nodes"]],
+    }
 
 
 def test_drawer_search_filters_by_agent_id(

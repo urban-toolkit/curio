@@ -37,6 +37,14 @@ server and saves it (``driver.VirtualUser.on_the_canvas``). Before any tab
 closes, which would let go of its locks, the server's lock table, read as a
 tab joining then reads it, and each tab's must hold no lock.
 
+**Agents** (``--agents``, ``agents.py``): on a shared canvas each member also
+asks its agent to write its own node. A tab reads the agents' events too
+(:data:`AGENT_EVENTS`): each ask's events, and an agent's join and leave. The
+room's agents (``room.agents``, ``agents.RoomAgents``) are asked as
+:func:`run_tab` and ``driver.VirtualUser.on_the_canvas`` go, kept out of the
+tabs' compare of their docs, and checked once every member's work is over,
+before the room's locks are read.
+
 **Sync time** is how long an update took to be in every other tab of the room
 that had synced when it was sent: from just before the sender emits it to the
 moment the last of them has applied it. An update is known by its sender's
@@ -134,6 +142,13 @@ KEPT_EVENT = doc_mapping.KEPT_EVENT
 #: (``room_state.remove_user``), kept as the canvas keeps them
 #: (``CollaborationProvider.tsx``).
 ROOM_EVENTS = ("node_locked", "node_unlocked", "user_left")
+#: The events of the agents at work in the room a tab reads too (``--agents``,
+#: ``agents.py``), each with its handler in :meth:`Tab.room_event`: each event
+#: of an ask, told to the owner's and the editors' tabs
+#: (``agents/application/turns/turn_jobs.py``), and an agent's join and leave
+#: (``collaboration/agent_peers.py``); and the events that end an ask.
+AGENT_EVENTS = ("agent_turn", "agent_joined", "agent_left")
+ASK_ENDINGS = ("done", "error", "withdrawn")
 #: What ``node_lock`` answers when another participant holds the lock: no
 #: failure, since locks are soft and the canvas only shows a chip.
 LOCKED_BY_OTHER = "locked_by_other"
@@ -216,10 +231,17 @@ def member_node(parent: dict, row: int) -> tuple[dict, dict]:
 
 def holder(lock) -> str:
     """Who holds *lock*, a lock as the server tells of it: an agent's lock
-    names its agent too (``room_state.AGENT_LOCK_FIELDS``)."""
+    names its agent too (``room_state.AGENT_LOCK_FIELDS``). An agent at work
+    in the room (``agent_peers``) holds its lock under its own name, its
+    ``agent`` saying who asked it (``askedBy``): ``Node Builder for Ana``."""
     lock = lock if isinstance(lock, dict) else {}
+    agent = lock.get("agent")
+    if isinstance(agent, dict):
+        asked = agent.get("askedBy") if isinstance(agent.get("askedBy"), dict) else {}
+        name = str(lock.get("name") or agent.get("coord") or lock.get("participant_id") or "an agent")
+        return f"{name} for {asked.get('name') or asked.get('account') or 'someone'}"
     who = str(lock.get("username") or lock.get("name") or lock.get("participant_id") or "someone")
-    return f"{lock['agent']} for {who}" if lock.get("agent") else who
+    return f"{agent} for {who}" if agent else who
 
 
 def require_websocket_client() -> None:
@@ -271,7 +293,8 @@ class SocketLink:
     since a tab that reconnects is outside the room it joined until it joins
     again; a drop is a failure instead. *on_yjs* takes the doc's messages and
     the answers to the tab's queued updates (:data:`KEPT_EVENT`); *on_room*,
-    given, takes each of :data:`ROOM_EVENTS` as ``on_room(name, payload)``."""
+    given, takes each of :data:`ROOM_EVENTS` and :data:`AGENT_EVENTS` as
+    ``on_room(name, payload)``."""
 
     def __init__(self, backend_url: str, namespace: str, token: str,
                  on_yjs: Callable, on_close: Callable, on_room: Optional[Callable] = None):
@@ -287,7 +310,7 @@ class SocketLink:
         self._client.on(KEPT_EVENT, on_yjs, namespace=namespace)
         self._client.on("disconnect", on_close, namespace=namespace)
         if on_room is not None:
-            for name in ROOM_EVENTS:
+            for name in ROOM_EVENTS + AGENT_EVENTS:
                 self._client.on(name, lambda *args, name=name: on_room(name, args[0] if args else None),
                                 namespace=namespace)
         origin, path = socket_target(backend_url)
@@ -468,6 +491,8 @@ class Room:
         #: back, as the owner's driver records them (``VirtualUser.on_the_canvas``).
         self.server_run: Optional[dict] = None
         self.saved: Optional[dict] = None
+        #: With ``--agents``, the members' agents (``agents.RoomAgents``).
+        self.agents = None
         #: Set once the owner has invited its editors, or has failed to.
         self.invited = threading.Event()
         self.ledger = SyncLedger()
@@ -607,6 +632,8 @@ class Room:
         }
         if self.shared:
             outcome["canvas"] = self._canvas(tabs)
+        if self.agents is not None:
+            outcome["agents"] = self.agents.outcome(tabs)
         return outcome
 
     def _canvas(self, tabs: list[dict]) -> dict:
@@ -700,6 +727,19 @@ class Tab:
             "node_unlocked": self._node_unlocked,
             "user_left": self._user_left,
         }
+        #: What the room's agents did as this tab was told of it (``--agents``,
+        #: :data:`AGENT_EVENTS`), guarded by the room's condition: the asks it
+        #: was told the end of, the agents in the room now (participant id ->
+        #: name), and how many of their events came; and, once read at the
+        #: end, the agents it still showed and the asks it was never told the
+        #: end of (:meth:`wait_for_no_agents`, :meth:`wait_told_ends`).
+        self._room_handlers.update({"agent_turn": self._agent_turn, "agent_joined": self._agent_joined,
+                                    "agent_left": self._agent_left})
+        self._asks_ended: set = set()
+        self._agents_here: dict[str, str] = {}
+        self.agent_events = self.agents_joined = self.agents_left = 0
+        self.agents_shown: Optional[list] = None
+        self.asks_untold: Optional[list] = None
         self.doc.observe(self._observed)
 
     # -- the server's messages ---------------------------------------------
@@ -787,6 +827,90 @@ class Tab:
             shown = {node_id: holder(lock) for node_id, lock in self._locks.items()}
         self.locks_left = sorted(f"{node_id} by {who}" for node_id, who in shown.items())
         return shown
+
+    # -- the room's agents (--agents) ---------------------------------------
+
+    def _agent_turn(self, payload: dict) -> None:
+        """An event of an ask (``{projectId, attachmentId, askId, seq, event,
+        data}``): one that ends the ask is kept by its id."""
+        ask_id = payload.get("askId")
+        if not isinstance(ask_id, str):
+            return
+        self.agent_events += 1
+        if payload.get("event") in ASK_ENDINGS:
+            self._asks_ended.add(ask_id)
+
+    def _agent_joined(self, payload: dict) -> None:
+        who = payload.get("participant_id")
+        if isinstance(who, str) and isinstance(payload.get("agent"), dict):
+            self.agents_joined += 1
+            self._agents_here[who] = str(payload.get("name") or "an agent")
+
+    def _agent_left(self, payload: dict) -> None:
+        who = payload.get("participant_id")
+        if isinstance(who, str):
+            self.agents_left += 1
+            self._agents_here.pop(who, None)
+
+    def wait_for_no_agents(self, timeout: float) -> dict[str, str]:
+        """The agents this tab still shows in the room after waiting up to
+        *timeout* for none, participant id -> name; kept as
+        :attr:`agents_shown`."""
+        deadline = time.monotonic() + timeout
+        with self._room:
+            while self._agents_here:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    break
+                self._room.wait(left)
+            shown = dict(self._agents_here)
+        self.agents_shown = sorted(shown.values())
+        return shown
+
+    def wait_told_ends(self, ask_ids: list, timeout: float) -> list[str]:
+        """The asks of *ask_ids* this tab was not told the end of after
+        waiting up to *timeout* for every end; kept as :attr:`asks_untold`."""
+        deadline = time.monotonic() + timeout
+        with self._room:
+            while not set(ask_ids) <= self._asks_ended:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    break
+                self._room.wait(left)
+            untold = sorted(set(ask_ids) - self._asks_ended)
+        self.asks_untold = untold
+        return untold
+
+    def code_of(self, node_id: str) -> Optional[str]:
+        """The node's code as this tab's doc holds it now; None for no such
+        node, or one whose code is no text."""
+        with self.lock:
+            node = self.doc.get(NODES, type=Map).get(node_id)
+            code = node.get(CODE_KEY) if isinstance(node, Map) else None
+            return str(code) if isinstance(code, Text) else None
+
+    def wait_for_code(self, expected: dict, timeout: float) -> dict:
+        """The nodes of *expected* (node id -> code) whose code this tab's doc
+        still does not hold after waiting up to *timeout*, each with what it
+        holds instead."""
+        deadline = time.monotonic() + timeout
+        while True:
+            wrong = {}
+            for node_id, code in expected.items():
+                held = self.code_of(node_id)
+                if held != code:
+                    wrong[node_id] = held
+            if not wrong or time.monotonic() >= deadline:
+                return wrong
+            time.sleep(0.1)
+
+    def server_room(self) -> dict:
+        """The room as the server holds it now, as a tab joining the room now
+        is told of it (``join_session``'s snapshot: its users, locks and
+        Activity), asked again on this tab's socket."""
+        ack = self._call("socket room agents", "join_session", {"projectId": self.project_id})
+        snapshot = ack.get("snapshot")
+        return snapshot if isinstance(snapshot, dict) else {}
 
     def _closed(self, reason=None) -> None:
         if self.closing:
@@ -1114,6 +1238,9 @@ class Tab:
             "nodes_added": self.nodes_added, "edges_added": self.edges_added,
             "locks_taken": self.locks_taken, "locks_refused": self.locks_refused,
             "locks_released": self.locks_released, "locks_left": self.locks_left,
+            "agent_events": self.agent_events, "agents_joined": self.agents_joined,
+            "agents_left": self.agents_left, "agents_shown": self.agents_shown,
+            "asks_untold": self.asks_untold,
         }
 
 
@@ -1202,6 +1329,8 @@ def run_tab(user, room: Room, *, backend_url: str, namespace: str, pacing,
                    f"the rest of the room had not synced after {ROOM_WAIT_S:.0f}s", "socket")
         if room.shared:
             _add_own_node(user, room, tab)
+        if room.agents is not None:
+            room.agents.ask_early(user, tab)
         typed = tab.work(room.targets_for(user.name), pacing, lock=room.shared)
         if room.shared:
             room.typed_in(user.name, *typed)
@@ -1214,6 +1343,8 @@ def run_tab(user, room: Room, *, backend_url: str, namespace: str, pacing,
                        f"{count} of its updates were not in every other tab "
                        f"{SETTLE_TIMEOUT_S:.0f}s after the room's last: {', '.join(tabs)} lack some",
                        "unsynced")
+        if room.agents is not None:
+            room.agents.before_compare(user, tab)
         if room.settle(user.name, ROOM_WAIT_S):
             # Only once every update is everywhere: a missing one is reported
             # above, and would make every tab differ for the same reason.
@@ -1227,6 +1358,8 @@ def run_tab(user, room: Room, *, backend_url: str, namespace: str, pacing,
         if room.shared:
             through = user.on_the_canvas(tab)
             room.reach("done", user.name, DONE_WAIT_S)
+            if room.agents is not None:
+                room.agents.at_the_end(user, tab)
             _locks_at_the_end(user, room, tab)
             room.reach("locks read", user.name, ROOM_WAIT_S)
         else:

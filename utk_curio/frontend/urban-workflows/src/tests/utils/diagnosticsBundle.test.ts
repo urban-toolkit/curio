@@ -37,6 +37,8 @@ function monitor(): MonitorPayload {
       saveNodeOutputDefault: false,
       llmProviderConfigured: true,
       searchToolConfigured: false,
+      bucketMounts: "none",
+      bucketMountsProblem: null,
       env: "prod",
       platform: "macOS-27.0-arm64",
       pythonVersion: "3.12.1",

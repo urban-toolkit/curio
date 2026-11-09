@@ -62,9 +62,25 @@ def curio_root() -> Path:
     return root / "test" if _is_testing() else root
 
 
+#: Each users root as resolved, by the root as configured. Every per-user path
+#: starts from it, and a resolve walks each component of a path with an lstat,
+#: which under many requests at once costs each of them a wait for the GIL. A
+#: root does not move while Curio runs; another ``CURIO_STATE_DIR``, launch
+#: folder or test flag names another root, resolved anew.
+_resolved_roots: dict[str, Path] = {}
+
+
 def users_base() -> Path:
-    """``…/.curio[/test]/users`` — the parent of every per-user store."""
-    return (curio_root() / "users").resolve()
+    """``…/.curio[/test]/users`` — the parent of every per-user store,
+    resolved once per root (:data:`_resolved_roots`); a relative root, read
+    against the working folder, is resolved each time."""
+    root = curio_root() / "users"
+    if not root.is_absolute():
+        return root.resolve()
+    resolved = _resolved_roots.get(str(root))
+    if resolved is None:
+        resolved = _resolved_roots.setdefault(str(root), root.resolve())
+    return resolved
 
 
 def user_key_segment(user_key: str) -> str:

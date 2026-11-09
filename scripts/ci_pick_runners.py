@@ -51,7 +51,7 @@ job, ``desktop`` to any desktop that can take it (``[self-hosted,
 utk-desktop]``, with ``gpu`` for the GPU job); ``auto`` (or unset) picks. They come from the dispatch form, or the repository variables of the
 same names when the form says ``auto``.
 
-    python scripts/ci_pick_runners.py --hosted-reserved 1 --gpu test-gpu build-image jest ci-report
+    python scripts/ci_pick_runners.py --hosted-reserved 2 --gpu test-gpu build-image jest ci-report
     python scripts/ci_pick_runners.py --this-run-except build-image --hosted-reserved 2 test-isolated ...
 """
 

@@ -218,9 +218,10 @@ describe("the parts of the split suites", () => {
             expect(hostedOnly).toEqual([
                 ["unit (sandbox)", "build-image"],
                 ["preview-runner", "pick-runners"],
+                ["bucket-mounts", "pick-runners"],
                 ["test-desktop-stress", "build-image"],
             ]);
-            expect(early.options.get("--hosted-reserved")).toEqual(["1"]);
+            expect(early.options.get("--hosted-reserved")).toEqual(["2"]);
             expect(late.options.get("--hosted-reserved")).toEqual(["2"]);
         });
     });

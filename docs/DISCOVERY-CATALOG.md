@@ -274,6 +274,7 @@ A Direct URL link to a `.parquet` file, and a bucket or Hugging Face row of `par
 ### Adding from a storage source
 
 - **Tables are copied.** One file lands as itself. A shapefile brings its `.dbf`, `.shx`, `.prj` and `.cpg` with it, in whatever letter case they are named, and lands as GeoParquet; a GeoPackage or OSM PBF lands as one dataset per layer, as an upload does. A CSV declared with `options` is read with them and lands as Parquet. Several files land as one Parquet table, with a column per path field and a `source_file` column; a file's own column of the same name keeps its name, and the added one ends in `_from_path`. Geographic files land as one GeoParquet, in EPSG:4326, when they share a coordinate system. GeoPackage and PBF files are added one at a time, with `"datasets": "per-file"`.
+- **JSON Lines tables** are read a line at a time into the rows their manifest declares, and land as Parquet with a column per path field and a `source_file` column, from one file or several. When lines are skipped, the message when the add finishes and the dataset's description say how many and why ([JSON Lines tables](#json-lines-tables)).
 - **Collections are referenced.** The Data Catalog keeps an index; the files stay where the source keeps them, and nothing is written to the source. Deleting the collection deletes its index and never the files.
 - **Adding again.** A row marked **In your Data Catalog** offers **View dataset** and **Add again**. **Add again** reads the row's files: when they changed, it adds a new dataset of them, which the row then holds; when they did not, you keep the dataset you have, and a message says so.
 - **Narrowing.** Keeping only some values in the **Add** dialog, or picking files under **Files**, adds a separate dataset of just those files. The row stays offered whole.
@@ -408,10 +409,10 @@ A storage source's `resources` say how its files are organized. `provider` says 
 | `name`, `description` | `name` | What the row says. |
 | `kind` | Yes | `table`, or a collection: `rasters`, `frames`, `images`, `videos`, `media` (images and videos together), `audio`, or `files` (files of any type, which Curio does not read or preview, for node code to open from each row's `path`). |
 | `path` | Yes | Which files belong to it, as a path template relative to the folder, bucket prefix or repository. |
-| `format` | For `table` | `csv`, `json`, `geojson`, `parquet`, `gpkg`, `shp`, or `pbf`. |
+| `format` | For `table` | `csv`, `json`, `jsonl`, `geojson`, `parquet`, `gpkg`, `shp`, or `pbf`. A `jsonl` file holds one JSON object per line ([JSON Lines tables](#json-lines-tables)). |
 | `datasets` | | How it adds: `one` dataset of every matched file (the default), `per:<field>` for one per value of a path field, listed as one row each, or `per-file`, for tables and rasters only. |
-| `extensions` | | The file extensions it takes. A collection's follow its kind: images and frames take jpg, jpeg, png, webp, gif, bmp, tif and tiff; videos mp4, mov, m4v, webm, mkv and avi; media both; audio wav, flac, mp3, ogg, opus, m4a, aiff and aif; rasters tif, tiff and jp2; files every file its path matches. A table's follow its format: geojson and json for `geojson`, the format's own for the others. |
-| `options` | | For a CSV table: `delimiter` and `header`. A table read with them lands as Parquet. |
+| `extensions` | | The file extensions it takes. A collection's follow its kind: images and frames take jpg, jpeg, png, webp, gif, bmp, tif and tiff; videos mp4, mov, m4v, webm, mkv and avi; media both; audio wav, flac, mp3, ogg, opus, m4a, aiff and aif; rasters tif, tiff and jp2; files every file its path matches. A table's follow its format: geojson and json for `geojson`, jsonl and ndjson for `jsonl`, the format's own for the others. |
+| `options` | | For a CSV table: `delimiter` and `header`; a table read with them lands as Parquet. For a JSON Lines table: `parse`, `columns` and `unpack` ([JSON Lines tables](#json-lines-tables)). |
 | `fps` | | For `frames`: frames per second. A frame's `t_s` is its number over it. |
 | `time` | | For a collection: the path field that is each file's time, as `recorded_at` for audio and `taken_at` for the other kinds. A date or time field is read as written, or with `{"capture": "<field>", "timezone": "America/Chicago"}` as a local time in that IANA time zone, converted to UTC. A whole number is a time as `{"capture": "<field>", "unit": "ns"}`: seconds (`s`), milliseconds (`ms`) or nanoseconds (`ns`) since 1970, in UTC. The field's own column keeps what the path says. |
 | `metadata` | | For a collection: a CSV, Parquet or JSON table of up to 256 MiB, in the same source, joined onto its rows, as `{"path": ..., "on": ...}`, where `on` is `file_name`, `frame`, or a path field. Its `lat` and `lon` (or `latitude` and `longitude`) columns give a file its position. |
@@ -485,6 +486,76 @@ A bucket or a Hugging Face dataset repository is declared the same way, with the
 Curio reads public S3 buckets, and Hugging Face dataset repositories, with your token for one that needs it. It does not sign S3 requests, reach buckets on a private network, or read images stored inside Parquet files.
 
 [`discovery/ICONS.md`](../discovery/ICONS.md) records where each shipped icon came from. Replacing or removing one is a PNG and a manifest line.
+
+### JSON Lines tables
+
+A `table` of `"format": "jsonl"` reads files that hold one JSON object per line. Each line is a row, and its fields are the columns, unless the resource's `options` say otherwise:
+
+| Option | What it declares |
+|---|---|
+| `parse` | Fields of a line that hold JSON as text, such as `"value": "{\"a\": 1}"`. Each is read as the JSON it holds, before anything else. |
+| `columns` | The columns a line keeps: an object of names, each with the path to its value, or with `{"path": ..., "type": ...}` to give the column a type. |
+| `unpack` | Lists or objects in a line whose items are the rows, outermost first. Each level has a `path`, from the level above, or from the line for the first level. It may name a `key`, a column that takes each item's name in an object or its position in a list, and `columns`, what a row keeps of each item. |
+
+A path is keys joined by dots. A number picks an item of a list, as `bbox.0` does. A key may itself hold dots, as `meta.vsn` does: the longest key that is there is taken first. The empty path, `""`, is the item itself.
+
+With `unpack`, a row holds only the columns the line and the levels name. An object or a list lands as its JSON text, and `NaN`, `Infinity` and `-Infinity` land as null. A column whose values are of several kinds, such as numbers and text, lands as text. A column name may not start with `__curio_`, and no two columns may share a name, whatever their case.
+
+A column in a line's or a level's `columns` may take a `type`:
+
+| `type` | Reads | Lands as |
+|---|---|---|
+| `timestamp` | ISO 8601 text with its offset: `2025-07-17T03:00:16.492384585+00:00`, `...Z`, `...-05:00` | A UTC time, to the nanosecond, with no time zone attached |
+| `int` | A whole number, or text holding one | A 64-bit whole number |
+| `float` | A number, or text holding one | A number |
+| `bool` | `true` or `false`, or that text | True or false |
+| `string` | Any value | Text; a number or an object as its JSON text |
+
+A value its type cannot read, such as a time with no offset or `1.5` for an `int`, is left empty; a missing or null value is empty in any column.
+
+A line is skipped when it is not a JSON object, when a `parse` field holds text that is not JSON, when a path `unpack` names holds no list or object in an item it reaches, or when the line is longer than 16 MiB. An empty list or object gives no row and skips nothing. When lines are skipped or values are left empty, the message when the add finishes and the dataset's description say how many and why, by reason and, for values, by column, with the first line each was met on. When no line gives a row, the add fails and says why.
+
+A detection log, one row per detection:
+
+```jsonc
+{ "id": "detections", "name": "Detections", "kind": "table", "format": "jsonl",
+  "path": "{crossing}/data/*_{year:int}_{month:int}.jsonl",
+  "options": {
+    // "value" holds the detections as JSON text.
+    "parse": ["value"],
+    "columns": { "timestamp": { "path": "timestamp", "type": "timestamp" },
+                 "image_timestamp_ns": "value.image_timestamp_ns" },
+    "unpack": [
+      // One item per model, named by its key.
+      { "path": "value.models_results", "key": "model",
+        "columns": { "inference_time_seconds": "inference_time_seconds" } },
+      // One row per detection of that model.
+      { "path": "detections",
+        "columns": { "class": "class", "confidence": "confidence",
+                     "x0": "bbox.0", "y0": "bbox.1", "x1": "bbox.2", "y1": "bbox.3" } }
+    ]
+  } }
+```
+
+This line of `W042/data/W042_2025_07.jsonl`, shortened and broken over lines here:
+
+```text
+{"timestamp":"2025-07-17T03:00:25.101747549+00:00","name":"object.detections.all",
+ "value":"{\"image_timestamp_ns\": 1752721225101747549, \"models_results\": {
+   \"YOLOv5n\": {\"detections\": [{\"class\": \"person\", \"confidence\": 0.459, \"bbox\": [2176.9, 680.6, 2219.9, 809.8]}], \"inference_time_seconds\": 1.847, ...},
+   \"YOLOv8n\": {\"detections\": [{\"class\": \"car\", \"confidence\": 0.313, \"bbox\": [1076.1, 605.0, 1140.4, 638.8]}], \"inference_time_seconds\": 1.897, ...},
+   \"YOLOv10n\": {\"detections\": [], \"inference_time_seconds\": 1.902, ...}}}",
+ "meta.vsn":"W042","meta.filename":NaN}
+```
+
+gives two rows, numbers rounded here, each followed by the path's `crossing`, `year` and `month` and by `source_file`. `timestamp` is a UTC time:
+
+| timestamp | image_timestamp_ns | model | inference_time_seconds | class | confidence | x0 | y0 | x1 | y1 |
+|---|---|---|---|---|---|---|---|---|---|
+| 2025-07-17 03:00:25.101747549 | 1752721225101747549 | YOLOv5n | 1.847 | person | 0.459 | 2176.9 | 680.6 | 2219.9 | 809.8 |
+| 2025-07-17 03:00:25.101747549 | 1752721225101747549 | YOLOv8n | 1.897 | car | 0.313 | 1076.1 | 605.0 | 1140.4 | 638.8 |
+
+YOLOv10n saw nothing in that image, so it gives no row.
 
 ---
 

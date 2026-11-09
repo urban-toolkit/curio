@@ -241,8 +241,11 @@ def is_within(path: Path, base: Path) -> bool:
     path returns the absolute form without touching the filesystem for the
     tail segments, which is exactly what we want for a pre-flight check.
     """
-    resolved = path.resolve()
-    resolved_base = base.resolve()
+    return _resolved_within(path.resolve(), base.resolve())
+
+
+def _resolved_within(resolved: Path, resolved_base: Path) -> bool:
+    """:func:`is_within` for two paths ``resolve()``\\ 'd already."""
     try:
         resolved.relative_to(resolved_base)
         return True
@@ -337,7 +340,9 @@ def safe_join(
         for part in parts:
             validate_component(part, field=field)
     target = base_path.joinpath(*parts).resolve()
-    if not is_within(target, base_path):
+    # Both are resolved: is_within would resolve each again, a walk of every
+    # component with an lstat each, on every path the backend builds.
+    if not _resolved_within(target, base_path):
         _reject(f"resolved path {target!s} escapes base {base_path!s}")
     return target
 
