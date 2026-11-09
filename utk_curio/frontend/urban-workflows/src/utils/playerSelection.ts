@@ -28,7 +28,15 @@ export const CARD_SELECT = "images_click";
 /**
  * At most how often a playing player tells its range, in milliseconds. A
  * seek, a pause and a start tell it at once. Chrome tells a playing element's
- * time every 250 ms, so a player tells at each of those.
+ * time every 250 ms, so a player tells at each of those, about four times a
+ * second.
+ *
+ * Measured on CI's GPU runners (11-08, tmp/player-linked-measure), a Simple
+ * View linked to a Vega-Lite chart and an Autark map of the same points: one
+ * update costs the page about 20 ms of main thread with 900 points and 37 ms
+ * with 10,000 (the flow's renders, Vega's change and Autark's
+ * `syncHighlights`, its read of the drawn rows included), and five seconds
+ * of play took 7% and 15% of the main thread, with no video frame dropped.
  */
 export const PLAYER_TELLS_EVERY_MS = 200;
 
