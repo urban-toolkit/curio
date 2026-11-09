@@ -5,6 +5,7 @@ import { backendUrl } from '../../../utils/backendUrl';
 import { apiFetch } from '../../../utils/authApi';
 import { collectionMediaPath } from '../../../utils/collectionMedia';
 import { useAuthedObjectUrl } from '../../../utils/useAuthedObjectUrl';
+import { PLAYER_TELLS_EVERY_MS } from '../../../utils/playerSelection';
 
 /**
  * One card per row: every image column of that row side by side, above the
@@ -17,7 +18,8 @@ import { useAuthedObjectUrl } from '../../../utils/useAuthedObjectUrl';
  *
  * Cards are drawn a page at a time, so a collection of thousands of files
  * fetches one page of thumbnails, not all of them. A video or recording of a
- * collection plays in its card.
+ * collection plays in its card, and where its player stands goes to
+ * `onPlayed`, which Simple View sends as a selection (utils/playerSelection).
  */
 
 /** Cards per page. */
@@ -35,6 +37,9 @@ interface ImageCardGridProps {
    *  on an invited editor's canvas, the owner's, whose collections the
    *  editor's runs load. */
   dataflowId?: string | null;
+  /** Told where a card's player stands, in seconds into the card's file, as
+   *  it plays, is sought and stops, and null once it closes. */
+  onPlayed?: (row: Record<string, unknown>, at: number | null) => void;
 }
 
 const containerStyle: CSS.Properties = {
@@ -154,12 +159,18 @@ const playerStyle: CSS.Properties = { width: '100%', display: 'block' };
  * seek or the next range of a long play fails: the player then asks for a
  * fresh link and goes on from where it stood, playing or paused. A failure
  * while the link is still good is the file's own, and stops the player.
+ *
+ * *onTime* is told where the player stands, in seconds: at once when it
+ * starts, is sought or stops, and while it plays at most every
+ * PLAYER_TELLS_EVERY_MS. A time it already told is not told again, and when
+ * the player closes it is told null.
  */
-function Player({ datasetId, fileId, kind, dataflowId }: {
+function Player({ datasetId, fileId, kind, dataflowId, onTime }: {
   datasetId: string;
   fileId: string;
   kind: 'video' | 'audio';
   dataflowId: string | null;
+  onTime?: (at: number | null) => void;
 }) {
   const [link, setLink] = useState<MediaLink | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -168,6 +179,16 @@ function Player({ datasetId, fileId, kind, dataflowId }: {
   // Where the player stands, from its own events: what a browser reports
   // once a fetch has failed is not the same in every browser.
   const stands = useRef({ at: 0, playing: false });
+  // The time last told, and when, by this page's clock.
+  const told = useRef<{ at: number | null; when: number }>({ at: null, when: -Infinity });
+  const onTimeRef = useRef(onTime);
+  onTimeRef.current = onTime;
+  // The fresh link whose element has been taken back to where the lapsed one
+  // stood: until then it stands at its start, which is not where the player is.
+  const resumed = useRef<MediaLink | null>(null);
+  useEffect(() => () => {
+    if (told.current.at !== null) onTimeRef.current?.(null);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,23 +213,40 @@ function Player({ datasetId, fileId, kind, dataflowId }: {
 
   if (error) return <div style={{ ...captionStyle, color: '#b42318' }}>{error}</div>;
   if (!link) return <div style={{ ...imgStyle, background: '#f8fafc' }} />;
+  /** Tells where *element* stands: at once when *now*, else once the last
+   *  time told is PLAYER_TELLS_EVERY_MS old. */
+  const tell = (element: HTMLMediaElement, now: boolean) => {
+    if (link.resume !== null && resumed.current !== link) return;
+    const at = element.currentTime;
+    const clock = Date.now();
+    if (!Number.isFinite(at) || at === told.current.at) return;
+    if (!now && clock - told.current.when < PLAYER_TELLS_EVERY_MS) return;
+    told.current = { at, when: clock };
+    onTimeRef.current?.(at);
+  };
   const media = {
     src: link.url,
     controls: true,
     // A fresh link starts where the lapsed one stood, playing only if it played.
     autoPlay: link.resume === null,
     style: playerStyle,
-    onPlay: () => {
+    onPlay: (e: React.SyntheticEvent<HTMLMediaElement>) => {
       stands.current.playing = true;
+      tell(e.currentTarget, true);
     },
-    onPause: () => {
+    onPause: (e: React.SyntheticEvent<HTMLMediaElement>) => {
       stands.current.playing = false;
+      tell(e.currentTarget, true);
     },
     onTimeUpdate: (e: React.SyntheticEvent<HTMLMediaElement>) => {
       stands.current.at = e.currentTarget.currentTime;
+      tell(e.currentTarget, false);
     },
     onSeeking: (e: React.SyntheticEvent<HTMLMediaElement>) => {
       stands.current.at = e.currentTarget.currentTime;
+    },
+    onSeeked: (e: React.SyntheticEvent<HTMLMediaElement>) => {
+      tell(e.currentTarget, true);
     },
     onError: (e: React.SyntheticEvent<HTMLMediaElement>) => {
       if (Date.now() < link.lapsesAt - LAPSE_MARGIN_MS) return;
@@ -218,6 +256,7 @@ function Player({ datasetId, fileId, kind, dataflowId }: {
       const resume = link.resume;
       if (!resume) return;
       const element = e.currentTarget;
+      resumed.current = link;
       element.currentTime = resume.at;
       element.playbackRate = resume.rate;
       // A start the browser refuses leaves the player paused there.
@@ -251,6 +290,7 @@ export default function ImageCardGrid({
   interacted,
   onClickRow,
   dataflowId = null,
+  onPlayed,
 }: ImageCardGridProps) {
   const [page, setPage] = useState(0);
   const [playing, setPlaying] = useState<number | null>(null);
@@ -290,6 +330,7 @@ export default function ImageCardGrid({
                   key={`${media.datasetId}/${media.fileId}/${dataflowId ?? ''}`}
                   {...media}
                   dataflowId={dataflowId}
+                  onTime={onPlayed ? (at) => onPlayed(row, at) : undefined}
                 />
               </div>
             ) : (

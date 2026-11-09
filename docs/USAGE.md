@@ -1331,6 +1331,8 @@ Removing an interaction edge, or a node at either end, removes the highlight it 
 
 A point selection over fields (`"select": {"type": "point", "fields": ["unit_id"]}`) sends the values of the points picked, such as `{"unit_id": 103}`, and the receiving chart marks every row that holds them, in whatever order it holds its rows. A point selection without fields matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
 
+A Simple View's player is a selection too, an interval on `t_s`, the time in seconds. Draw an interaction edge from the Simple View to a chart or a map: while a video or a recording plays in one of its cards, the view at the other end marks the rows whose `t_s` lies between the file's start and where the player stands, such as a walk's points up to where the walker is. The marks follow the player as it plays and when you seek, and stay where it stands when you pause. They go when another card plays, when the Simple View's rows change, or when the edge or either node is removed. `t_s` is the time in the video as Sample Video Frames and Split Audio write it; a table that holds clock times gets its `t_s` in a Python node before it is linked. A file cut from a longer one, such as Track Objects' overlay or Split Audio's clip, holds where it starts in its own `t_s`, and its player's range is then in the longer file's time.
+
 When several selections reach a Data Pool, the two selects at the top of the pool decide which rows it marks. **Conflict inside visualization** combines the selections of one chart, and **Conflict between visualizations** combines the latest selection of each linked chart:
 
 - **Overwrite**: the most recent selection alone.
@@ -1339,7 +1341,7 @@ When several selections reach a Data Pool, the two selects at the top of the poo
 
 The chosen modes are saved with the dataflow.
 
-An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive.
+An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive. A selection from a chart or a Simple View highlights the features of the map's first input table, on the layer marked `"isPick": true`, the one layer a map highlights.
 
 A Map Editor node and the map it edits on are linked the same way, by an interaction edge that carries selections both ways: a feature picked on the map is picked in the node, and what the node picks lights up on the map.
 
