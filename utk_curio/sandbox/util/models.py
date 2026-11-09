@@ -13,12 +13,13 @@ The folder's ``manifest.json`` is a model package's (kind ``model``, its
 ``model`` block naming the weights under ``models/``); :func:`model_spec` also
 reads a flat manifest that names them itself.
 
-A model package whose operator fetches its weights (its model block's
-``fetch``) may have none on this Curio: a fresh clone, CI, a pip install, or a
-server nobody fetched them on. The backend still names its folder, and
-``curio_load_model`` stops with :data:`NOT_FETCHED`. Weights fetched under
-``--model-weights-dir`` come in a folder of their own, which the backend names
-beside the model's and every run reads where it is, isolated or not.
+A model package whose weights its model block's ``fetch`` names ships without
+them. The backend downloads them before a node's first run of the model; when
+that download fails, or the package is one the catalog does not ship, the
+backend still names its folder, and ``curio_load_model`` stops with
+:data:`NOT_FETCHED`. Weights kept under ``--model-weights-dir`` come in a
+folder of their own, which the backend names beside the model's and every run
+reads where it is, isolated or not.
 """
 
 from __future__ import annotations
@@ -38,11 +39,11 @@ MISSING_MODEL = (
     "a clone of https://github.com/urban-toolkit/curio holds them in packages/."
 )
 
-#: What ``curio_load_model`` says of a model whose operator fetches its
-#: weights when this Curio does not have them.
+#: What ``curio_load_model`` says of a model whose weights its ``fetch`` names
+#: when this Curio does not have them.
 NOT_FETCHED = (
-    "The weights of model '{model_id}' are not on this Curio. Whoever runs this Curio fetches them "
-    "once, with: python scripts/fetch_model_weights.py {model_id}"
+    "The weights of model '{model_id}' are not on this Curio, and Curio could not download them. "
+    "Whoever runs this Curio can fetch them once, with: python scripts/fetch_model_weights.py {model_id}"
 )
 
 #: The model type whose labels are text prompts: its node loads the model's

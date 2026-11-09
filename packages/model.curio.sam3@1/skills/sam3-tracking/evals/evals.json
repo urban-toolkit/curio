@@ -58,7 +58,7 @@
     {"query": "Track Objects says the video is too long. How do I track only part of it?", "should_trigger": true},
     {"query": "Why does the overlay play at two frames a second?", "should_trigger": true},
     {"query": "How many traffic cones did each video have?", "should_trigger": true},
-    {"query": "The node says the SAM 3 weights are not on this Curio. What should I do?", "should_trigger": true},
+    {"query": "The node says Curio could not download the SAM 3 weights. What should I do?", "should_trigger": true},
     {"query": "Can it find potholes and puddles on the sidewalk in the walk video?", "should_trigger": true},
     {"query": "Make the object tracking look at fewer frames so it runs faster.", "should_trigger": true},
     {"query": "Where does the overlay start in the video, if I only tracked from second 30?", "should_trigger": true},

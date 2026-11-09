@@ -7,9 +7,9 @@ the node's code as the canvas runs it (``input_names.call_as_node``), each with
 the module staged and imported as a run of the node stages it, on the rows Data
 Loading gives for a folder of videos.
 
-SAM 3's weights are Meta's, gated on Hugging Face and 3.4 GB: no clone, image
-or pip install holds them, and no test fetches them. The tests use a tiny SAM 3
-video model built here with random weights:
+SAM 3's weights are Meta's, 3.4 GB: no clone, image or pip install holds them,
+a node's first run downloads them from an identical copy, and no test fetches
+them. The tests use a tiny SAM 3 video model built here with random weights:
 
 - saved where ``--model-weights-dir`` puts the package's weights, every file
   the package's ``fetch`` lists, and read in place, as ``curio_load_model``
@@ -53,13 +53,25 @@ SETTINGS = {
     "LABELS": "labels", "EVERY_SECONDS": "every_seconds", "FROM_SECONDS": "from_seconds",
     "TO_SECONDS": "to_seconds", "MAX_SECONDS": "max_seconds", "WIDTH": "width",
 }
-#: SAM 3 at the revision sideseeing-tools pins.
-REVISION = "3c879f39826c281e95690f02c7821c4de09afae7"
-#: The files Transformers reads of it; sam3.pt, the original code's, is not one.
-CHECKPOINT_FILES = [
-    "config.json", "model.safetensors", "processor_config.json", "tokenizer.json",
-    "tokenizer_config.json", "special_tokens_map.json", "vocab.json", "merges.txt",
-]
+#: Meta's SAM 3 is gated (``facebook/sam3``, at the revision sideseeing-tools
+#: pins, 3c879f39826c281e95690f02c7821c4de09afae7). Its weights download from
+#: an identical copy, ungated, at this revision.
+REPOSITORY = "jetjodh/sam3"
+REVISION = "1aa50ce07302cb375f85d8084b68a0fb378b8d85"
+#: The files Transformers reads of it, with Meta's digests: the sha256 of the
+#: weights, stored with Git LFS, and the git blob hash of every other file.
+#: sam3.pt, the original code's checkpoint, is not one.
+CHECKPOINT_DIGESTS = {
+    "config.json": ("gitSha1", "3e600e765b0f1b4c52680aed9ad242c9a90f7ed1"),
+    "model.safetensors": ("sha256", "6d06f0a5f84e435071fe6603e61d0b4cc7b40e0d39d487cfd4d67d8cc11cc14a"),
+    "processor_config.json": ("gitSha1", "9d3bd6df8a54852cd56087a3ae019cce051de2b2"),
+    "tokenizer.json": ("gitSha1", "bd1e367764006ad6a2249b1dcc0b20879c7c211f"),
+    "tokenizer_config.json": ("gitSha1", "1f20c0274c5d4581b5ccdcbdddd7a22729b5c57b"),
+    "special_tokens_map.json": ("gitSha1", "cf0682d6de72c1547f41b4f6d7c59f62deffef94"),
+    "vocab.json": ("gitSha1", "182766ce89b439768edadda342519f33802f5364"),
+    "merges.txt": ("gitSha1", "76e821f1b6f0a9709293c3b6b51ed90980b3166b"),
+}
+CHECKPOINT_FILES = list(CHECKPOINT_DIGESTS)
 #: What the node looks for until its LABELS change.
 DEFAULT_LABELS = [
     "curb ramp", "curb cut", "tactile paving", "bollard", "pole",
@@ -341,17 +353,21 @@ def test_the_package_is_a_concept_segmentation_model_whose_node_is_its_own_sourc
     assert (deps["torch"], deps["torchvision"]) == ("", "")
 
 
-def test_the_weights_are_fetched_at_the_pinned_revision_and_never_shipped():
+def test_the_weights_download_from_the_copy_with_metas_digests_and_never_ship():
+    """The copy, at its revision, names Meta's files by Meta's digests, so a
+    file that is not Meta's is never placed; the homepage stays Meta's."""
     block = _manifest()["model"]
     fetch = block["fetch"]
-    assert (fetch["huggingface"], fetch["revision"]) == ("facebook/sam3", REVISION)
+    assert (fetch["huggingface"], fetch["revision"]) == (REPOSITORY, REVISION)
     assert [item["path"] for item in fetch["files"]] == CHECKPOINT_FILES
-    digests = {item["path"]: set(item) - {"path"} for item in fetch["files"]}
     # Hugging Face stores the weights with Git LFS, which lists a SHA-256; the
     # other files by their git blob.
-    weights = digests.pop("model.safetensors")
-    assert weights == {"sha256"}
-    assert set(map(frozenset, digests.values())) == {frozenset({"gitSha1"})}
+    assert {
+        item["path"]: next((kind, item[kind]) for kind in ("sha256", "gitSha1") if kind in item)
+        for item in fetch["files"]
+    } == CHECKPOINT_DIGESTS
+    assert all(len(item) == 2 for item in fetch["files"]), fetch["files"]
+    assert block["homepage"] == "https://huggingface.co/facebook/sam3"
     assert block["sizeBytes"] == 3_444_996_474
     assert "downloadOnFirstUse" not in _manifest()
     # The package's own files, which a clone that fetched the weights into

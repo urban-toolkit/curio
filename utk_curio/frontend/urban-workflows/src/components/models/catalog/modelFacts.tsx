@@ -62,20 +62,16 @@ export function modelMetaLine(pkg: ModelPackage): string {
   return [modelRuntimeLabel(pkg), kind, modelSizeLabel(pkg)].filter(Boolean).join(" · ");
 }
 
-/** What the details say of weights that are not on this Curio yet: a pip
- *  install downloads them on a node's first run, and weights a package's
- *  operator fetches wait for the fetch. */
+/** What the details say of weights that are not on this Curio yet: a node's
+ *  first run downloads them. */
 export function modelWeightsNote(pkg: ModelPackage): string | null {
-  if (pkg.model.weightsNotFetched) {
-    return `Not on this Curio: whoever runs it fetches them with scripts/fetch_model_weights.py ${pkg.packageId}`;
-  }
   return pkg.model.downloadsOnFirstUse ? "Downloads on first use" : null;
 }
 
 /** The model's rows for the details: how its weights run, the code's license
  *  (the package's) beside the weights' license, the weights' publisher and
  *  homepage, the node a drop creates, and whether the weights download on
- *  first use or wait to be fetched. */
+ *  first use. */
 export function modelInfoRows(pkg: ModelPackage, weightsLicense?: React.ReactNode): ModelFact[] {
   const input = modelInputLabel(pkg);
   const size = modelSizeLabel(pkg);

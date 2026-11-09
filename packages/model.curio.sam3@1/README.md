@@ -11,7 +11,7 @@ logic, and where the model's weights come from. The
 
 | Part | What it is | License |
 |---|---|---|
-| `models/checkpoint/` | The weights, `facebook/sam3` on Hugging Face at revision `3c879f39826c281e95690f02c7821c4de09afae7`: the eight files Transformers reads, 3.4 GB. Fetched by whoever runs Curio, never shipped | SAM License (`LICENSE`), published by Meta |
+| `models/checkpoint/` | The weights, Meta's `facebook/sam3`: the eight files Transformers reads, 3.4 GB, downloaded on first use from an identical copy, `jetjodh/sam3` on Hugging Face at revision `1aa50ce07302cb375f85d8084b68a0fb378b8d85`. Never shipped | SAM License (`LICENSE`), published by Meta |
 | `sources/track-objects.py` | The Track Objects node's code: its settings and one call of `track_objects` | MIT |
 | `sources/sam3_tracking.py` | The module the node calls: `track_objects`, SAM 3 through a collection's videos | MIT |
 
@@ -134,21 +134,16 @@ return pd.concat([pd.read_parquet(path) for path in input_0["tracks"]])
 
 ## The weights
 
-Meta gates `facebook/sam3` on Hugging Face, and its weights are 3.4 GB, so they
-are in neither the Curio repository nor the pip package. Whoever runs Curio
-fetches them once with
-
-```bash
-python scripts/fetch_model_weights.py model.curio.sam3
-```
-
-after accepting Meta's terms on the model's Hugging Face page, with a Hugging
-Face token in that one command's environment, as
+The weights are Meta's, published as `facebook/sam3` on Hugging Face, and are
+3.4 GB, so they are in neither the Curio repository nor the pip package. The
+first time a node runs the model, Curio downloads them from an identical copy,
+`jetjodh/sam3` at revision `1aa50ce07302cb375f85d8084b68a0fb378b8d85`, and
+checks each file against the digest the manifest names, which are the digests
+of Meta's files. The SAM License lets them be shared with its text, which this
+package ships. Later runs read them where they were placed, as
 [DEPLOYMENT.md](../../docs/DEPLOYMENT.md#model-weights-a-package-fetches) says.
-The script checks each file against the digest the manifest names. Until then
-the node stops and names that command. The repository's `sam3.pt`, the
-checkpoint of SAM 3's original code, is not fetched: Transformers reads
-`model.safetensors`.
+The repository's `sam3.pt`, the checkpoint of SAM 3's original code, is not
+downloaded: Transformers reads `model.safetensors`.
 
 ## Setup
 

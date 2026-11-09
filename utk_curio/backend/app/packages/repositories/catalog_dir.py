@@ -67,10 +67,11 @@ _MODEL_WEIGHTS_ENV = "CURIO_MODEL_WEIGHTS_DIR"
 
 
 def model_weights_dir() -> Path | None:
-    """Where this Curio reads the weights its model packages fetch
-    (``domain/model_fetch.py``): the folder ``--model-weights-dir`` names,
-    whose ``<package id>@<major>/`` holds each package's entry. None without
-    the flag: each package's are then read from its own folder."""
+    """Where this Curio keeps the weights its model packages' ``fetch`` names
+    (``domain/model_fetch.py``), downloads them on first use and reads them:
+    the folder ``--model-weights-dir`` names, whose ``<package id>@<major>/``
+    holds each package's entry. None without the flag: each package's are
+    then kept in its own folder."""
     value = os.environ.get(_MODEL_WEIGHTS_ENV, "").strip()
     return Path(value).expanduser().resolve() if value else None
 

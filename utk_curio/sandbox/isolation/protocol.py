@@ -446,7 +446,7 @@ def build_exec_request(
         "dataset_paths": dict(dataset_paths or {}),
         # {modelId: staged folder name}, relative to scratch_dir.
         "models": dict(models or {}),
-        # {modelId: absolute folder}: weights an operator fetched under
+        # {modelId: absolute folder}: weights a fetch names, kept under
         # --model-weights-dir, which the child reads in place, unstaged.
         "model_weights": dict(model_weights or {}),
         # {"root": staged folder, relative to scratch_dir, "names": [...]}.

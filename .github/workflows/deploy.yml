@@ -196,11 +196,15 @@ jobs:
             download_args=', "--discovery-max-download-mb", "2048"'
           fi
           # The weights model packages fetch, when this release reads them:
-          # one host folder both stacks mount read-only, which
-          # scripts/fetch_model_weights.py --into fills (DEPLOYMENT.md).
+          # one host folder both stacks mount, where the server downloads a
+          # model's weights the first time a node runs it (DEPLOYMENT.md).
+          # The server runs as root in the container, so the folder is
+          # root's: every account reads it, and no other writes it, since
+          # isolated node code reads the weights there in place.
           weights_args=""
           if grep -q -e '"--model-weights-dir"' utk_curio/main.py; then
-            mkdir -p /srv/curio-model-weights 2>/dev/null || echo "::warning::could not make /srv/curio-model-weights"
+            docker run --rm -v /srv/curio-model-weights:/weights alpine sh -c 'chown -R 0:0 /weights && chmod -R u+rwX,go+rX,go-w /weights' < /dev/null \
+              || echo "::warning::could not give /srv/curio-model-weights to the container's root"
             weights_args=', "--model-weights-dir", "/model-weights"'
           fi
           # Cache files takes a file of up to 8 GiB, when this release's
@@ -280,13 +284,14 @@ jobs:
                 nofile: {soft: 65536, hard: 65536}
           SITE
           printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$mounts_args" >> docker-compose.site.yml
-          # Curio's binds: the weights folder both stacks share, and this
-          # stack's bucket mounts, read-only and rslave. Each replaces an
+          # Curio's binds: the weights folder both stacks share, which the
+          # server writes as it downloads a model's weights on first use, and
+          # this stack's bucket mounts, read-only and rslave. Each replaces an
           # overlay's bind of the same target whole, so each is written in
           # full.
           curio_volumes=""
           if [ -n "$weights_args" ]; then
-            curio_volumes='"/srv/curio-model-weights:/model-weights:ro"'
+            curio_volumes='"/srv/curio-model-weights:/model-weights"'
           fi
           if [ -n "$mounts_args" ]; then
             curio_volumes="${curio_volumes:+$curio_volumes, }{type: bind, source: $mounts_dir, target: /bucket-mounts, read_only: true, bind: {propagation: rslave, create_host_path: true}}"
@@ -558,7 +563,8 @@ jobs:
             # The weights model packages fetch, as curio-dev mounts them.
             weights_args=""
             if grep -q -e '"--model-weights-dir"' utk_curio/main.py; then
-              mkdir -p /srv/curio-model-weights 2>/dev/null || echo "::warning::could not make /srv/curio-model-weights"
+              docker run --rm -v /srv/curio-model-weights:/weights alpine sh -c 'chown -R 0:0 /weights && chmod -R u+rwX,go+rX,go-w /weights' < /dev/null \
+                || echo "::warning::could not give /srv/curio-model-weights to the container's root"
               weights_args=', "--model-weights-dir", "/model-weights"'
             fi
             # The file size Cache files takes, as curio-dev's, for a release
@@ -616,7 +622,7 @@ jobs:
             # Curio's binds and the service's, as curio-dev writes them.
             curio_volumes=""
             if [ -n "$weights_args" ]; then
-              curio_volumes='"/srv/curio-model-weights:/model-weights:ro"'
+              curio_volumes='"/srv/curio-model-weights:/model-weights"'
             fi
             if [ -n "$mounts_args" ]; then
               curio_volumes="${curio_volumes:+$curio_volumes, }{type: bind, source: $mounts_dir, target: /bucket-mounts, read_only: true, bind: {propagation: rslave, create_host_path: true}}"

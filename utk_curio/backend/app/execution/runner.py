@@ -330,6 +330,10 @@ def run_through_node(
       meaningless. An upstream failure reports that node as ``blocker``.
     - Transport failures are INFRASTRUCTURE, never node errors: ``ok`` is
       False with ``infrastructure`` set and no node blamed.
+    - A model's weights that fail to download on their first use (left out
+      of a pip install, or named by a shipped package's ``fetch``) fail the
+      node with the download's own error, and the sandbox is not asked, as
+      on Play (``node_exec``).
 
     Returns ``{ok, target, order, nodes: {id: {status, stderrTail,
     stdoutTail, output, executed}}, blocker, infrastructure, error,
@@ -489,21 +493,33 @@ def run_through_node(
             payload["collections"] = dict(collections)
         if media_dir:
             payload["media_dir"] = media_dir
+        download_problem = None
         if is_py and "curio_load_model" in seeded:
             # The model packages the node loads, as /processPythonCode
             # resolves them, from the acting account's store.
+            from utk_curio.backend.app.datasets.infrastructure import left_out_files
             from utk_curio.backend.app.execution.node_exec import resolve_fetched_weights_for, resolve_models_for
 
-            if acting_user is not None:
-                models = resolve_models_for(seeded, acting_key, owners=owners)
-                model_weights = resolve_fetched_weights_for(seeded, acting_key, owners=owners) if models else {}
-            else:
-                models = resolve_models_for(seeded, exec_user_key or user_key)
-                model_weights = resolve_fetched_weights_for(seeded, exec_user_key or user_key) if models else {}
+            # On a pip install, weights its package leaves out download as
+            # they resolve, as do the weights a shipped package's fetch names
+            # on their first use, before the sandbox runs the node. A download
+            # that fails ends the node's run here with its own error, as Play's
+            # does (node_exec), where the sandbox would only say the model is
+            # not here.
+            with left_out_files.failures() as unavailable:
+                if acting_user is not None:
+                    models = resolve_models_for(seeded, acting_key, owners=owners)
+                    model_weights = resolve_fetched_weights_for(seeded, acting_key, owners=owners) if models else {}
+                else:
+                    models = resolve_models_for(seeded, exec_user_key or user_key)
+                    model_weights = resolve_fetched_weights_for(seeded, exec_user_key or user_key) if models else {}
+            if unavailable:
+                download_problem = "\n\n".join(unavailable.values())
             if models:
                 payload["models"] = models
             if model_weights:
-                # Weights their operator fetched, read where they are.
+                # Weights a fetch names, kept under --model-weights-dir and
+                # read where they are.
                 payload["model_weights"] = model_weights
         if is_py:
             # The modules the node's package ships beside its templates, as
@@ -528,6 +544,8 @@ def run_through_node(
         try:
             if widget_problem is not None:
                 result = {"stdout": [], "stderr": widget_problem, "output": {"path": "", "dataType": ""}}
+            elif download_problem is not None:
+                result = {"stdout": [], "stderr": download_problem, "output": {"path": "", "dataType": ""}}
             else:
                 result = exec_fn(endpoint, payload)
         except ExecutionTimeout as exc:

@@ -399,10 +399,12 @@ def resolve_models(code: str, user, dataflow_id: str | None = None) -> dict:
 
 def resolve_fetched_weights_for(code: str, user_key: str | None, *, owners=None) -> dict:
     """``{model id: folder}`` for the models of :func:`resolve_models_for`
-    whose weights their operator fetched under ``--model-weights-dir``: the
+    whose weights a ``fetch`` names, kept under ``--model-weights-dir``: the
     folder whose entry holds them, which the sandbox reads in place and never
-    stages (``packages.service.resolve_model_weights``). Fail-open like the
-    models: without it, ``curio_load_model`` says the weights are not here."""
+    stages (``packages.service.resolve_model_weights``). Asked after
+    :func:`resolve_models_for`, which downloads them on their first use.
+    Fail-open like the models: without it, ``curio_load_model`` says the
+    weights are not here."""
     from utk_curio.backend.app.datasets.domain.code_refs import model_ids_in_code
 
     ids = model_ids_in_code(code)
@@ -835,8 +837,11 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         endpoint = '/exec'
         dataset_formats: dict = {}
         # On a pip install, a dataset or model file its package leaves out is
-        # downloaded as it resolves. A download that fails ends the run here,
-        # with its own error, where the sandbox would only say "not available".
+        # downloaded as it resolves, as are the weights a shipped model
+        # package's fetch names on their first use, before the sandbox runs
+        # the node and its time limit starts. A download that fails ends the
+        # run here, with its own error, where the sandbox would only say "not
+        # available".
         with left_out_files.failures() as unavailable:
             dataset_paths = resolve_dataset_paths(run.code, run.dataflow_id, user, dataset_formats)
             exec_models = resolve_models(run.code, user, run.dataflow_id)
@@ -869,7 +874,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
             # request body is otherwise byte-identical to before.
             **({"secrets": exec_secrets} if exec_secrets else {}),
             # Likewise only when the code runs a model, and only for weights
-            # their operator fetched under --model-weights-dir: read in place.
+            # a fetch names, kept under --model-weights-dir: read in place.
             **({"models": exec_models} if exec_models else {}),
             **({"model_weights": exec_model_weights} if exec_model_weights else {}),
             # And only when the node's package ships modules beside its templates.
@@ -1024,10 +1029,11 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
 def _unavailable_reply(
     user, run: NodeRun, input_ref: dict, unavailable: dict, *, started: float, journal_on: str | None,
 ) -> dict:
-    """The reply of a Python run whose code reads a file the pip package
-    leaves out that could not be downloaded (*unavailable*, ``{repo path:
-    message}``): a failed run whose error is the download's own, recorded as
-    a failed run is, in the runtime journal of *journal_on*
+    """The reply of a Python run whose code reads a file Curio downloads on
+    first use that could not be downloaded (*unavailable*, ``{key:
+    message}``): a file the pip package leaves out, or the weights a model
+    package's ``fetch`` names. A failed run whose error is the download's
+    own, recorded as a failed run is, in the runtime journal of *journal_on*
     (:func:`_journal_on`). The sandbox is not asked to run code that would
     fail at that read."""
     stderr = "\n\n".join(unavailable.values())
@@ -1042,7 +1048,7 @@ def _unavailable_reply(
     )
     _monitor_errors.record(
         "node",
-        summary="A file the pip package leaves out could not be downloaded",
+        summary="A file Curio downloads on first use could not be downloaded",
         detail=stderr,
         context={"nodeType": run.node_type, "language": "python"},
     )

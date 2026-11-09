@@ -57,7 +57,7 @@ A swimlane of that table, one bar per object, is a Vega-Lite `bar` with `start_s
 
 ### When it stops
 
-- *The weights of model 'model.curio.sam3' are not on this Curio...*: whoever runs this Curio fetches them, once, with `python scripts/fetch_model_weights.py model.curio.sam3`. No change to the dataflow helps: say so, and change no node.
+- *Curio could not download ... of the weights of model.curio.sam3*, or *The weights of model 'model.curio.sam3' are not on this Curio*: the first run downloads the weights, and that download failed for the reason the message gives. Whoever runs this Curio can fetch them once, with `python scripts/fetch_model_weights.py model.curio.sam3`. No change to the dataflow helps: say so, and change no node.
 - *`<file>`: Track Objects takes 300 s of video in one run; set FROM_SECONDS and TO_SECONDS to the part to track*: set them to a part of at most `MAX_SECONDS`, such as 0 and 60 for the first minute.
 - *`<file>` does not say how long it is*: set `TO_SECONDS` to where to stop.
 - *`<file>` is not on this machine yet; cache the collection's files first*: the collection's videos are in a bucket and not cached yet.

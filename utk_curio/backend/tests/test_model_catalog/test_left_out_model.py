@@ -170,3 +170,36 @@ def test_a_failed_model_download_fails_the_node_with_what_failed(
     for words in (WEIGHTS, url_of(WEIGHTS), "Network is unreachable", CLONE):
         assert words in reply["stderr"], reply["stderr"]
     assert sent == []
+
+
+def test_a_failed_model_download_fails_an_agents_run_of_the_node_with_what_failed(
+    tmp_curio, pip_packages, monkeypatch,
+):
+    """An agent's run of the node (``execution/runner.py``) fails it with the
+    download's own error too, and journals it: the sandbox is not asked,
+    where it would only say the model is not one of the account's."""
+    from utk_curio.backend.app.execution import runner, runtime_journal
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+
+    FakeGitHub(fail=OSError("Network is unreachable")).serve(monkeypatch)
+    install_package_from_directory("4242", pip_packages / FOLDER)
+    asked = []
+    spec = {"dataflow": {"edges": [], "nodes": [{
+        "id": "shade", "type": "curio.builtin/python-computation", "goal": "shade the streets",
+        "content": f'model = curio_load_model("{MODEL_ID}")\nreturn 1',
+    }]}}
+
+    report = runner.run_through_node(
+        "4242", "p-umbra", spec, "shade",
+        exec_fn=lambda endpoint, payload: asked.append(payload) or {
+            "stdout": [], "stderr": "", "output": {"path": "art-1", "dataType": "int"},
+        },
+    )
+
+    assert asked == [], "the sandbox was asked to run a node whose model could not be downloaded"
+    assert (report["ok"], report["blocker"], report["error"]) == (False, "shade", "node 'shade' failed"), report
+    stderr = report["nodes"]["shade"]["stderrTail"]
+    for words in (WEIGHTS, url_of(WEIGHTS), "Network is unreachable", CLONE):
+        assert words in stderr, stderr
+    record = runtime_journal.read_record("4242", "p-umbra", "shade")
+    assert (record["status"], record["stderrTail"], record["validation"]) == ("error", stderr, True), record
