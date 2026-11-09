@@ -26,6 +26,7 @@ import collections
 import os
 import threading
 
+from utk_curio.common.exec_pool import js_parallelism
 from utk_curio.sandbox import metrics, run_place
 from utk_curio.sandbox.isolation import protocol, supervisor
 from utk_curio.sandbox.isolation.protocol import ProtocolError
@@ -438,8 +439,13 @@ class IsolationConfig:
         # had. Deliberately not lowered per child instead: a node is allowed
         # its threads, and taking them away would make user code slower rather
         # than the instance safer.
+        #
+        # A JavaScript node's Node runs as the same account (worker's
+        # _node_command), so its threads count against the same budget: each
+        # Node slot adds the allowance a child has.
         limits["nproc"] = _int(
-            "CURIO_EXEC_NPROC", supervisor.DEFAULT_LIMITS["nproc"] * parallelism
+            "CURIO_EXEC_NPROC",
+            supervisor.DEFAULT_LIMITS["nproc"] * (parallelism + js_parallelism(env)),
         )
         wall_timeout = _int(
             "CURIO_EXEC_TIMEOUT", supervisor.DEFAULT_WALL_TIMEOUT_SECONDS

@@ -35,6 +35,11 @@ NODEJS_FOLDER = 'nodejs'
 #: ``utk_curio/`` (``utk_curio/shipped.py``).
 DUCKDB_EXTENSIONS = pathlib.PurePosixPath('vendor', 'duckdb-extensions')
 
+#: Where duckdb-wasm's Node worker looks for an extension, under HOME:
+#: ``<version>/<platform>/<file>`` below it, the layout of Curio's copy. It
+#: downloads only one that is not there, into the same place.
+DUCKDB_EXTENSIONS_HOME = pathlib.PurePosixPath('.duckdb', 'extensions', 'extensions.duckdb.org')
+
 AUTK_DB = '@urban-toolkit/autk-db'
 
 #: What every Overpass request from Curio's Node processes says it is. The
@@ -88,6 +93,37 @@ def duckdb_extensions_dir():
     of the sandbox's and the backend's Node from it, and the backend serves it
     to the browser's."""
     return shipped.path(DUCKDB_EXTENSIONS, REPO_ROOT)
+
+
+def link_duckdb_extensions(home, *, uid=None, gid=None):
+    """Put a link to each of Curio's DuckDB extensions
+    (:func:`duckdb_extensions_dir`) where duckdb-wasm's Node worker looks
+    under *home* (:data:`DUCKDB_EXTENSIONS_HOME`), and return the links.
+
+    For a JavaScript run whose Node runs as the execution account, in a HOME
+    of the run's own (``worker._node_home``): its node loads them as the
+    sandbox's own Node loads the launcher's copies, and downloads nothing.
+    The worker reads a file there with ``readFileSync``, which follows a link.
+    The folders made are *uid*'s and *gid*'s when given, so an extension
+    missing from Curio's copy still downloads into them.
+    """
+    source_root = duckdb_extensions_dir()
+    if not source_root.is_dir():
+        return []
+    made = []
+    for source in sorted(source_root.rglob('*.wasm')):
+        relative = DUCKDB_EXTENSIONS_HOME / source.relative_to(source_root).as_posix()
+        folder = pathlib.Path(home)
+        for part in relative.parent.parts:
+            folder = folder / part
+            if not folder.is_dir():
+                folder.mkdir(mode=0o700)
+                if uid is not None:
+                    os.chown(folder, uid, -1 if gid is None else gid)
+        link = pathlib.Path(home, relative)
+        link.symlink_to(os.path.abspath(source))
+        made.append(link)
+    return made
 
 
 def node_env(base=None, node_modules=None):

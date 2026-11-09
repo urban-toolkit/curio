@@ -174,21 +174,18 @@ def _install_seccomp_filter(*, required):
 def _drop_privileges(uid, gid):
     """Become an unprivileged user. No-op when not running as root.
 
-    Groups first: ``setgid`` and ``setgroups`` need the privilege that
-    ``setuid`` gives away, so doing the uid first would strand the child in
-    root's supplementary groups.
+    The drop is ``seccomp_filter.drop_privileges``, which a JavaScript run's
+    exec wrapper makes too before it execs Node: groups, then gid, then uid,
+    each id checked after.
     """
     if os.getuid() != 0:
         # Already unprivileged, which is the normal case outside Docker. There
         # is nothing to drop, and asking would just fail.
         return False
-    if gid is not None:
-        os.setgroups([])
-        os.setgid(gid)
-    if uid is not None:
-        os.setuid(uid)
-        if os.getuid() != uid or os.geteuid() != uid:
-            raise ChildSetupError("setuid did not take effect")
+    try:
+        seccomp_filter.drop_privileges(uid, gid)
+    except OSError as exc:
+        raise ChildSetupError(str(exc)) from exc
     return True
 
 
