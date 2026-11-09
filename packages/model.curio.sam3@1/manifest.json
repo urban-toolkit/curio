@@ -21,15 +21,15 @@
       "transformers": ">=5.0,<6.0"
     }
   },
-  "description": "Meta's Segment Anything Model 3: it finds every object a short phrase names, such as curb ramp or traffic cone, in an image or a video, outlines each with a mask, and follows each one from frame to frame under one id. Its Track Objects node runs it on a collection's videos and writes an overlay video, which Simple View plays, and a table of one row per object. The weights, 3.4 GB and gated by Meta, are in neither the Curio repository nor the pip package: whoever runs Curio fetches them once with scripts/fetch_model_weights.py.",
+  "description": "Meta's Segment Anything Model 3: it finds every object a short phrase names, such as curb ramp or traffic cone, in an image or a video, outlines each with a mask, and follows each one from frame to frame under one id. Its Track Objects node runs it on a collection's videos and writes an overlay video, which Simple View plays, and a table of one row per object. The weights, Meta's 3.4 GB, are in neither the Curio repository nor the pip package: Curio downloads them the first time a node runs the model, from an identical copy on Hugging Face, each file checked against its digest.",
   "id": "model.curio.sam3",
   "kind": "model",
   "license": "MIT",
   "model": {
     "entry": "models/checkpoint",
     "fetch": {
-      "huggingface": "facebook/sam3",
-      "revision": "3c879f39826c281e95690f02c7821c4de09afae7",
+      "huggingface": "jetjodh/sam3",
+      "revision": "1aa50ce07302cb375f85d8084b68a0fb378b8d85",
       "files": [
         {"path": "config.json", "gitSha1": "3e600e765b0f1b4c52680aed9ad242c9a90f7ed1"},
         {"path": "model.safetensors", "sha256": "6d06f0a5f84e435071fe6603e61d0b4cc7b40e0d39d487cfd4d67d8cc11cc14a"},

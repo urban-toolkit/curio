@@ -1,26 +1,37 @@
-"""Model packages whose operator fetches their weights: the ``fetch`` block.
+"""Model packages whose weights their ``fetch`` names, downloaded the first time a node needs them.
 
 A model package can ship without its weights and name them in its model
 block's ``fetch``: files of a Hugging Face repository at one commit, each with
-its digest (``packages/domain/model_fetch.py``). ``scripts/fetch_model_weights.py``
-puts them in the package's entry folder, or under the folder
-``curio.py start --model-weights-dir`` names, where Curio reads them in place.
+its digest (``packages/domain/model_fetch.py``). The first time a node runs a
+shipped package's model, the backend downloads them
+(``packages/infrastructure/fetched_weights.py``) through the code a pip
+install's left-out files download with (``left_out_files``), into the
+package's entry folder, or under the folder ``curio.py start
+--model-weights-dir`` names, where Curio reads them in place.
+``scripts/fetch_model_weights.py`` fetches them there ahead.
 
 - The ``concept-segmentation`` type and the ``fetch`` block, as the schema and
   the parser read them, and what each refuses, a template of that type with
   no source of its own among it.
 - Where a run reads the weights: the package's own folder, or the flag's
   folder, which the sandbox gets apart from the model's and reads in place.
-- Without them the model still resolves, so its node says how to fetch them,
-  and the Model Catalog's listing says they are not fetched.
+- The first use: one download, each file checked against its digest, with no
+  token and an idle timeout, before the sandbox is asked to run the node; a
+  second use reads them in place; two first uses download once; a file that
+  does not match, a cut download, a gated or gone source, an address the
+  egress policy refuses and a folder Curio cannot write each place nothing
+  and fail the node's run, saying what failed and naming the script.
+- The Model Catalog's listing says the weights download on first use until
+  they are here.
 - Integrity, ``scripts/regen_integrity.py`` among it, leaves them out.
 - Export, Publish and Save as package node refuse the package, saying why.
 - No shipped package keeps a folder under ``models/`` but a fetched entry,
   which ``.gitignore``, ``.dockerignore`` and ``MANIFEST.in`` leave out.
 
 The package is made in each test's own folder, never in ``packages/``. No test
-opens a socket (``test_scripts/test_fetch_model_weights.py`` covers the fetch
-itself). The code under test is imported inside each test.
+opens a socket: ``FakeHuggingFace`` stands in for Hugging Face
+(``test_scripts/test_fetch_model_weights.py`` covers the script). The code
+under test is imported inside each test.
 """
 
 from __future__ import annotations
@@ -28,7 +39,12 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import re
+import shutil
+import stat
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -48,14 +64,18 @@ def _git_blob_sha1(data: bytes) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
 
 
+REPOSITORY = "acme/tiny-prompted"
 FETCH = {
-    "huggingface": "acme/tiny-prompted",
+    "huggingface": REPOSITORY,
     "revision": REVISION,
     "files": [
         {"path": "config.json", "gitSha1": _git_blob_sha1(CONFIG)},
         {"path": "model.safetensors", "sha256": hashlib.sha256(WEIGHTS).hexdigest()},
     ],
 }
+#: What Hugging Face holds of the repository at REVISION.
+FILES = {"config.json": CONFIG, "model.safetensors": WEIGHTS}
+SCRIPT = f"scripts/fetch_model_weights.py {PACKAGE_ID}"
 
 
 def _block(**change) -> dict:
@@ -284,46 +304,102 @@ def test_a_concept_segmentation_template_with_no_source_of_its_own_is_refused():
 # Where a run reads the weights
 # ---------------------------------------------------------------------------
 
-def test_without_its_weights_the_model_still_resolves_so_its_node_says_how_to_fetch_them(catalog):
-    """Added, its copy holds no weights, nor does the catalog: the run still
-    gets the catalog's folder, whose manifest says what to fetch, and the
-    sandbox's curio_load_model says how. An account that never added it gets
-    none, as for every model."""
-    from utk_curio.backend.app.packages.application.model_packages import weights_not_fetched
-    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+def _hugging_face(monkeypatch, files=None, **kwargs):
+    """A Hugging Face serving the test package's files at REVISION, the
+    weights through a redirect to its CDN, as the code under test's."""
+    from utk_curio.backend.tests._support.fetched_weights import FakeHuggingFace
+
+    return FakeHuggingFace(
+        REPOSITORY, REVISION, FILES if files is None else files, redirect=("model.safetensors",), **kwargs,
+    ).serve(monkeypatch)
+
+
+def _no_download(monkeypatch):
+    """A Hugging Face that fails the test it is asked anything in."""
+    return _hugging_face(monkeypatch, fail=AssertionError("Hugging Face was asked for a file"))
+
+
+def _urls() -> list[str]:
+    """What a first use asks for: each file the block lists, and the weights
+    again on the CDN the redirect names."""
+    from utk_curio.backend.tests._support.fetched_weights import CDN, resolve_url
+
+    return [
+        resolve_url(REPOSITORY, REVISION, "config.json"),
+        resolve_url(REPOSITORY, REVISION, "model.safetensors"),
+        f"{CDN}/model.safetensors",
+    ]
+
+
+def _mode(path: Path) -> int:
+    return stat.S_IMODE(path.stat().st_mode)
+
+
+def _left_in(entry: Path) -> list[str]:
+    """The names in *entry* that are not the files the block lists: the
+    download's lock, and anything a download left."""
+    return sorted(path.name for path in entry.iterdir() if path.name not in FILES)
+
+
+def test_a_first_use_downloads_the_weights_into_the_catalogs_copy_and_a_second_reads_them_there(
+    catalog, monkeypatch,
+):
+    """Added, its copy holds no weights, nor does the catalog: resolving it
+    downloads each file the block lists into the catalog's copy, with no
+    token, waiting at most the idle timeout for each answer, each file
+    checked and readable by every account, the models/ folder its owner's as
+    isolation leaves a shipped package's. The next resolve reads them there,
+    and an account that never added the model gets none, and downloads
+    nothing."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
     from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
 
+    hugging_face = _hugging_face(monkeypatch)
     copy = _add("guest", catalog)
 
+    assert resolve_model_dirs("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((catalog / DIR).resolve())}
+
+    assert hugging_face.urls == _urls()
+    assert {request.timeout_s for request in hugging_face.requests} == {left_out_files.IDLE_TIMEOUT_S}
+    assert [request.headers for request in hugging_face.requests] == [{}, {}, {}], "a token or a header was sent"
+    entry = catalog / DIR / ENTRY
+    assert {name: (entry / name).read_bytes() for name in FILES} == FILES
+    assert [_mode(entry / name) for name in FILES] == [0o644, 0o644]
+    assert (_mode(entry), _mode(entry.parent)) == (0o755, 0o700)
+    assert _left_in(entry) == [".download.lock"]
+    assert _mode(entry / ".download.lock") == 0o644
     assert not (copy / "models").exists()
+
     assert resolve_model_dirs("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((catalog / DIR).resolve())}
     assert resolve_model_weights("guest", [PACKAGE_ID]) == {}
-    assert weights_not_fetched(load_package_manifest(copy), copy)
     assert resolve_model_dirs("7", [PACKAGE_ID]) == {}
+    assert len(hugging_face.requests) == 3
 
 
-def test_weights_fetched_into_the_package_are_read_there(catalog):
-    from utk_curio.backend.app.packages.application.model_packages import weights_not_fetched
+def test_weights_fetched_into_the_package_are_read_there(catalog, monkeypatch):
+    from utk_curio.backend.app.packages.application.model_packages import weights_on_first_use
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
     from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
 
+    _no_download(monkeypatch)
     copy = _add("guest", catalog)
     _fetch_into(catalog / DIR)
 
     assert resolve_model_dirs("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((catalog / DIR).resolve())}
     assert resolve_model_weights("guest", [PACKAGE_ID]) == {}
-    assert not weights_not_fetched(load_package_manifest(copy), copy)
+    assert not weights_on_first_use(load_package_manifest(copy), copy)
     assert not (copy / "models").exists()
 
 
-def test_with_the_flag_the_weights_are_read_in_place_from_its_folder(catalog, weights_dir):
+def test_with_the_flag_the_weights_are_read_in_place_from_its_folder(catalog, weights_dir, monkeypatch):
     """``<dir>/<package id>@<major>/<entry>``: the run gets the catalog's
     folder for the manifest and the flag's folder for the weights, and
     nothing is copied into the account's store."""
-    from utk_curio.backend.app.packages.application.model_packages import weights_not_fetched
+    from utk_curio.backend.app.packages.application.model_packages import weights_on_first_use
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
     from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
 
+    _no_download(monkeypatch)
     copy = _add("guest", catalog)
     root = _fetch_into(weights_dir / DIR)
 
@@ -331,14 +407,16 @@ def test_with_the_flag_the_weights_are_read_in_place_from_its_folder(catalog, we
         PACKAGE_ID: str((catalog / DIR).resolve()), f"{PACKAGE_ID}@1": str((catalog / DIR).resolve()),
     }
     assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str(root.resolve())}
-    assert not weights_not_fetched(load_package_manifest(copy), copy)
+    assert not weights_on_first_use(load_package_manifest(copy), copy)
     assert not (copy / "models").exists()
 
 
-def test_with_the_flag_the_packages_own_folder_and_a_stopped_fetch_count_as_not_fetched(catalog, weights_dir):
+def test_with_the_flag_the_packages_own_folder_and_a_stopped_fetch_count_as_not_here(catalog, weights_dir):
     """The flag names the one place: weights left in the package's folder are
-    not read, and a folder that lacks one listed file is not complete."""
-    from utk_curio.backend.app.packages.application.model_packages import weights_not_fetched
+    not read, and a folder that lacks one listed file is not complete, so the
+    weights download on first use. Asking where they are read downloads
+    nothing."""
+    from utk_curio.backend.app.packages.application.model_packages import weights_on_first_use
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
     from utk_curio.backend.app.packages.service import resolve_model_weights
 
@@ -348,11 +426,238 @@ def test_with_the_flag_the_packages_own_folder_and_a_stopped_fetch_count_as_not_
     manifest = load_package_manifest(copy)
 
     assert resolve_model_weights("guest", [PACKAGE_ID]) == {}
-    assert weights_not_fetched(manifest, copy)
-    assert weights_not_fetched(manifest, catalog / DIR)
+    assert weights_on_first_use(manifest, copy)
+    assert weights_on_first_use(manifest, catalog / DIR)
+    assert not (weights_dir / DIR / ENTRY / "model.safetensors").exists()
 
     _fetch_into(weights_dir / DIR)
-    assert not weights_not_fetched(manifest, copy)
+    assert not weights_on_first_use(manifest, copy)
+
+
+def test_with_the_flag_a_first_use_downloads_only_what_the_flags_folder_lacks(catalog, weights_dir, monkeypatch):
+    """Into ``<dir>/<package id>@<major>/<entry>``, which isolated node code
+    reads in place: every folder made there every account may enter, the
+    files readable by all, and a file already there is not asked for again.
+    The catalog's copy and the account's stay as they were."""
+    from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
+    from utk_curio.backend.tests._support.fetched_weights import resolve_url
+
+    copy = _add("guest", catalog)
+    root = _fetch_into(weights_dir / DIR, "config.json")
+    hugging_face = _hugging_face(monkeypatch)
+    umask = os.umask(0o077)
+    try:
+        assert resolve_model_dirs("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((catalog / DIR).resolve())}
+    finally:
+        os.umask(umask)
+
+    assert hugging_face.urls == _urls()[1:]
+    assert resolve_url(REPOSITORY, REVISION, "config.json") not in hugging_face.urls
+    entry = root / ENTRY
+    assert (entry / "model.safetensors").read_bytes() == WEIGHTS
+    assert (_mode(entry / "model.safetensors"), _mode(entry / ".download.lock")) == (0o644, 0o644)
+    assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str(root.resolve())}
+    assert not (catalog / DIR / "models").exists() and not (copy / "models").exists()
+
+    # A first use on an empty folder makes each folder every account enters.
+    shutil.rmtree(root)
+    os.umask(0o077)
+    try:
+        resolve_model_dirs("guest", [PACKAGE_ID])
+    finally:
+        os.umask(umask)
+    assert [_mode(folder) for folder in (root, root / "models", entry)] == [0o755, 0o755, 0o755]
+    assert {name: (entry / name).read_bytes() for name in FILES} == FILES
+
+
+def test_two_first_uses_download_once(catalog, monkeypatch):
+    """While one first use downloads the weights, a second waits for it
+    rather than downloading them again, then reads what the first placed."""
+    from utk_curio.backend.app.packages.service import resolve_model_dirs
+
+    entered, release = threading.Event(), threading.Event()
+
+    def hold(_url):
+        entered.set()
+        assert release.wait(30)
+
+    hugging_face = _hugging_face(monkeypatch, before=hold)
+    _add("guest", catalog)
+    results, errors = [], []
+
+    def resolve():
+        try:
+            results.append(resolve_model_dirs("guest", [PACKAGE_ID]))
+        except Exception as exc:  # noqa: BLE001 - reported below, by the test's thread
+            errors.append(exc)
+
+    first = threading.Thread(target=resolve)
+    first.start()
+    assert entered.wait(30)
+    second = threading.Thread(target=resolve)
+    second.start()
+    time.sleep(0.5)
+    assert len(hugging_face.requests) == 1, hugging_face.urls
+    release.set()
+    first.join(30)
+    second.join(30)
+
+    assert errors == []
+    assert hugging_face.urls == _urls()
+    assert results == [{PACKAGE_ID: str((catalog / DIR).resolve())}] * 2
+    assert {name: (catalog / DIR / ENTRY / name).read_bytes() for name in FILES} == FILES
+
+
+def _failed_first_use(catalog) -> str:
+    """The message a first use that fails leaves for the node's run
+    (``left_out_files.failures``); the model still resolves to the catalog's
+    copy, with no weights."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+    from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
+
+    with left_out_files.failures() as failed:
+        assert resolve_model_dirs("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((catalog / DIR).resolve())}
+        assert resolve_model_weights("guest", [PACKAGE_ID]) == {}
+    assert list(failed) == [f"{PACKAGE_ID}@1"], failed
+    return failed[f"{PACKAGE_ID}@1"]
+
+
+def test_a_file_whose_digest_does_not_match_is_refused_and_never_placed(catalog, monkeypatch):
+    tampered = WEIGHTS[:-1] + b"X"
+    _hugging_face(monkeypatch, files={**FILES, "model.safetensors": tampered})
+    _add("guest", catalog)
+
+    message = _failed_first_use(catalog)
+
+    expected = hashlib.sha256(WEIGHTS).hexdigest()
+    assert f"sha256 {hashlib.sha256(tampered).hexdigest()}" in message and f"sha256 {expected}" in message, message
+    assert "so it was not placed" in message and SCRIPT in message, message
+    entry = catalog / DIR / ENTRY
+    assert not (entry / "model.safetensors").exists()
+    assert _left_in(entry) == [".download.lock"], "a file that does not match, or a partial file, was left"
+
+
+def test_a_download_cut_midway_leaves_nothing_and_the_next_use_fetches_it_whole(catalog, monkeypatch):
+    _hugging_face(monkeypatch, cut=OSError("Connection reset by peer"))
+    _add("guest", catalog)
+
+    message = _failed_first_use(catalog)
+
+    assert "Connection reset by peer" in message and SCRIPT in message, message
+    entry = catalog / DIR / ENTRY
+    assert not any((entry / name).exists() for name in FILES)
+    assert _left_in(entry) == [".download.lock"]
+
+    from utk_curio.backend.app.packages.service import resolve_model_dirs
+
+    hugging_face = _hugging_face(monkeypatch)
+    resolve_model_dirs("guest", [PACKAGE_ID])
+    assert hugging_face.urls == _urls()
+    assert {name: (entry / name).read_bytes() for name in FILES} == FILES
+
+
+def test_a_partial_file_a_dead_download_left_is_removed_and_a_live_ones_kept(catalog, monkeypatch):
+    """A process that died mid-download left its partial file: the next
+    first use removes it. One another download still writes is newer, and
+    stays."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+    from utk_curio.backend.app.packages.service import resolve_model_dirs
+
+    entry = catalog / DIR / ENTRY
+    entry.mkdir(parents=True)
+    dead, live = entry / ".model.safetensors.dead1.part", entry / ".model.safetensors.live1.part"
+    dead.write_bytes(WEIGHTS[:100])
+    live.write_bytes(WEIGHTS[:100])
+    long_ago = time.time() - left_out_files.STALE_PARTIAL_S - 60
+    os.utime(dead, (long_ago, long_ago))
+    _hugging_face(monkeypatch)
+    _add("guest", catalog)
+
+    resolve_model_dirs("guest", [PACKAGE_ID])
+
+    assert not dead.exists() and live.exists()
+    assert {name: (entry / name).read_bytes() for name in FILES} == FILES
+
+
+@pytest.mark.parametrize("status, code, says, asks_for_a_token", [
+    (401, "GatedRepo", f"Hugging Face refused it (HTTP 401): {REPOSITORY} is gated, or gone", True),
+    (403, None, f"Hugging Face refused it (HTTP 403): {REPOSITORY} is gated, or gone", True),
+    (401, "RepoNotFound", f"Hugging Face has no config.json in {REPOSITORY} at {REVISION} (HTTP 401)", False),
+    (404, "EntryNotFound", f"Hugging Face has no config.json in {REPOSITORY} at {REVISION} (HTTP 404)", False),
+], ids=["gated", "refused", "gone", "no such file"])
+def test_a_source_that_refuses_fails_the_run_naming_it_and_the_script(
+    client, user_and_token, catalog, monkeypatch, status, code, says, asks_for_a_token,
+):
+    """Gated or gone: the node's run fails with the download's message, which
+    names the source and the script that fetches the weights ahead, with a
+    token for a gated repository. The sandbox is not asked, and nothing is
+    placed."""
+    from utk_curio.backend.tests._support.fetched_weights import resolve_url
+
+    user, token = user_and_token
+    _add(_key(user), catalog)
+    _hugging_face(monkeypatch, status=status, error_code=code)
+    sent = _capture_sandbox(monkeypatch)
+
+    reply = _play(client, token)
+
+    assert reply.status_code == 200, reply.get_data(as_text=True)
+    body = reply.get_json()
+    assert not body["output"].get("path"), body
+    stderr = body["stderr"]
+    assert says in stderr, stderr
+    assert resolve_url(REPOSITORY, REVISION, "config.json") in stderr, stderr
+    assert f"https://huggingface.co/{REPOSITORY}" in stderr and SCRIPT in stderr, stderr
+    assert ("HF_TOKEN=" in stderr) is asks_for_a_token, stderr
+    assert sent == []
+    assert not any((catalog / DIR / ENTRY / name).exists() for name in FILES)
+
+
+def test_the_download_goes_through_the_egress_policy(catalog, monkeypatch):
+    """A host that resolves to a private address is refused before any request."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+    hugging_face = _hugging_face(monkeypatch)
+    monkeypatch.setattr(left_out_files, "resolver", lambda host: ["169.254.169.254"])
+    _add("guest", catalog)
+
+    message = _failed_first_use(catalog)
+
+    assert hugging_face.requests == []
+    assert "non-public address" in message, message
+
+
+def test_a_file_bigger_than_the_model_is_refused(catalog, monkeypatch):
+    """Each file is bounded by the model's sizeBytes: the block lists no size
+    of its own for each."""
+    _hugging_face(monkeypatch, files={**FILES, "model.safetensors": WEIGHTS * 2})
+    _add("guest", catalog)
+
+    message = _failed_first_use(catalog)
+
+    assert f"over the {len(CONFIG) + len(WEIGHTS)}-byte bound" in message, message
+    assert not (catalog / DIR / ENTRY / "model.safetensors").exists()
+
+
+def test_a_folder_curio_cannot_write_says_so_and_names_the_script_with_into(catalog, tmp_curio, monkeypatch):
+    """With nowhere to put the weights, the node's run says where it could
+    not write, to start Curio with --model-weights-dir naming a folder it can
+    write, and the script that fetches them there ahead. Nothing is asked of
+    Hugging Face."""
+    hugging_face = _hugging_face(monkeypatch)
+    blocked = tmp_curio / "a-file"
+    blocked.write_text("not a folder", encoding="utf-8")
+    monkeypatch.setenv("CURIO_MODEL_WEIGHTS_DIR", str(blocked / "model-weights"))
+    _add("guest", catalog)
+
+    message = _failed_first_use(catalog)
+
+    assert message.startswith(
+        f"Curio could not write the weights of {PACKAGE_ID} into {blocked.resolve() / 'model-weights' / DIR / ENTRY}: "
+    ), message
+    assert "Start Curio with --model-weights-dir naming a folder it can write" in message, message
+    assert f"{SCRIPT} --into <that folder>" in message, message
+    assert hugging_face.requests == []
 
 
 def _capture_sandbox(monkeypatch) -> list:
@@ -386,6 +691,7 @@ def test_a_run_sends_the_weights_folder_beside_the_models_folder(client, user_an
     user, token = user_and_token
     _add(_key(user), catalog)
     root = _fetch_into(weights_dir / DIR)
+    _no_download(monkeypatch)
     sent = _capture_sandbox(monkeypatch)
 
     reply = _play(client, token)
@@ -395,16 +701,49 @@ def test_a_run_sends_the_weights_folder_beside_the_models_folder(client, user_an
     assert sent[0]["model_weights"] == {PACKAGE_ID: str(root.resolve())}
 
 
-def test_a_run_without_the_flag_or_the_weights_sends_no_weights_folder(client, user_and_token, catalog, monkeypatch):
+def test_a_nodes_first_run_downloads_the_weights_once_before_the_sandbox_runs_it(
+    client, user_and_token, catalog, weights_dir, monkeypatch,
+):
+    """The download is the backend's, before it asks the sandbox to run the
+    node: the sandbox has been asked nothing while a byte of it is asked for,
+    so the node's time limit, which the sandbox keeps, starts after it. The
+    run then reads the weights in place, and so does the next, which asks
+    Hugging Face for nothing."""
     user, token = user_and_token
     _add(_key(user), catalog)
+    sent = _capture_sandbox(monkeypatch)
+    asked_while_downloading = []
+    hugging_face = _hugging_face(monkeypatch, before=lambda _url: asked_while_downloading.append(len(sent)))
+
+    for _ in range(2):
+        reply = _play(client, token)
+        assert reply.status_code == 200, reply.get_data(as_text=True)
+
+    assert hugging_face.urls == _urls()
+    assert asked_while_downloading == [0, 0, 0]
+    root = (weights_dir / DIR).resolve()
+    assert len(sent) == 2
+    for body in sent:
+        assert body["models"] == {PACKAGE_ID: str((catalog / DIR).resolve())}
+        assert body["model_weights"] == {PACKAGE_ID: str(root)}
+    assert {name: (root / ENTRY / name).read_bytes() for name in FILES} == FILES
+
+
+def test_a_run_without_the_flag_downloads_into_the_catalogs_copy_and_sends_no_weights_folder(
+    client, user_and_token, catalog, monkeypatch,
+):
+    user, token = user_and_token
+    _add(_key(user), catalog)
+    hugging_face = _hugging_face(monkeypatch)
     sent = _capture_sandbox(monkeypatch)
 
     reply = _play(client, token)
 
     assert reply.status_code == 200, reply.get_data(as_text=True)
+    assert hugging_face.urls == _urls()
     assert sent[0]["models"] == {PACKAGE_ID: str((catalog / DIR).resolve())}
     assert "model_weights" not in sent[0]
+    assert {name: (catalog / DIR / ENTRY / name).read_bytes() for name in FILES} == FILES
 
 
 # ---------------------------------------------------------------------------
@@ -417,16 +756,44 @@ def _catalog_row(client, token) -> dict:
     return {row["dirName"]: row for row in resp.get_json()["packages"]}[DIR]
 
 
-def test_the_listing_says_the_weights_are_not_fetched_until_they_are(client, user_and_token, catalog):
-    _user, token = user_and_token
+def test_the_listing_says_the_weights_download_on_first_use_until_they_are_here(
+    client, user_and_token, catalog, monkeypatch,
+):
+    """As it says of a pip install's left-out weights, with nothing
+    downloaded to say so."""
+    token = user_and_token[1]
+    _no_download(monkeypatch)
 
     row = _catalog_row(client, token)
     assert (row["model"]["type"], row["model"]["fetch"]) == ("concept-segmentation", FETCH)
-    assert row["model"]["weightsNotFetched"] is True
-    assert row["model"]["downloadsOnFirstUse"] is False
+    assert row["model"]["downloadsOnFirstUse"] is True
+    assert "weightsNotFetched" not in row["model"]
 
     _fetch_into(catalog / DIR)
-    assert _catalog_row(client, token)["model"]["weightsNotFetched"] is False
+    assert _catalog_row(client, token)["model"]["downloadsOnFirstUse"] is False
+
+
+def test_an_accounts_own_package_whose_fetch_the_catalog_does_not_ship_never_downloads(catalog, monkeypatch):
+    """A download trusts a shipped manifest's fetch alone: a package of the
+    account's own that names one, which the catalog does not hold, resolves
+    with no weights, its node says they are not here, and its listing does
+    not say they download."""
+    from utk_curio.backend.app.packages.application.model_packages import weights_on_first_use
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
+
+    _no_download(monkeypatch)
+    own = _write_package(catalog.parent / "own" / "model.test.own@1", _manifest(id="model.test.own"))
+    install_package_from_directory("guest", own)
+    copy = package_dir("guest", "model.test.own@1")
+
+    resolved = resolve_model_dirs("guest", ["model.test.own"])
+    assert {key: Path(value).resolve() for key, value in resolved.items()} == {"model.test.own": copy.resolve()}
+    assert resolve_model_weights("guest", ["model.test.own"]) == {}
+    assert not weights_on_first_use(load_package_manifest(copy), copy)
+    assert not (copy / "models").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -471,7 +838,7 @@ def _refused(raised, refused: str) -> None:
     assert isinstance(raised.value, PackageServiceError) and raised.value.status == 409, raised.value
     message = str(raised.value)
     assert message.startswith(f"{refused}: its weights come from Acme under their terms"), message
-    assert "2 GiB" in message and "scripts/fetch_model_weights.py" in message, message
+    assert "2 GiB" in message and "Each Curio downloads them the first time a node runs the model." in message, message
 
 
 def test_export_refuses_it_from_the_account_and_from_the_catalog_saying_why(catalog):

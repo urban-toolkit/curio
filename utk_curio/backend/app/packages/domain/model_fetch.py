@@ -1,8 +1,7 @@
-"""A model package's ``fetch`` block: weights its operator downloads, which never ship.
+"""A model package's ``fetch`` block: weights downloaded from Hugging Face, which never ship.
 
 A model package whose weights stay out of git and the pip package (too big for
-them, or gated by their publisher's terms) names them in its ``model`` block's
-``fetch``, and ships without them:
+them) names them in its ``model`` block's ``fetch``, and ships without them:
 
 - ``huggingface``: the repository on Hugging Face, ``<owner>/<name>``;
 - ``revision``: the commit the files are read at, its full 40-digit hash;
@@ -11,10 +10,13 @@ them, or gated by their publisher's terms) names them in its ``model`` block's
   LFS, ``gitSha1`` (the git blob hash) for any other.
 
 The files land in the package's entry folder, ``models/<name>/``, a
-Transformers checkpoint. ``scripts/fetch_model_weights.py`` downloads them
-there, or into ``<folder>/<package id>@<major>/models/<name>/`` for the folder
-``--model-weights-dir`` names (:func:`fetched_root`), where Curio then reads
-them in place.
+Transformers checkpoint, or in ``<folder>/<package id>@<major>/models/<name>/``
+for the folder ``--model-weights-dir`` names (:func:`fetched_root`), where
+Curio reads them in place. Curio downloads them there the first time a node
+runs the model (``packages/infrastructure/fetched_weights.py``), and
+``scripts/fetch_model_weights.py`` fetches them ahead. Both read each file at
+:func:`source_url`, check it with :func:`digest_of`, and leave its folders
+:data:`FOLDER_MODE` and the file :data:`FILE_MODE`.
 
 This module imports nothing but the standard library: the fetch script reads
 it by its path, on a host that may hold no Curio dependencies.
@@ -22,7 +24,9 @@ it by its path, on a host that may hold no Curio dependencies.
 
 from __future__ import annotations
 
+import hashlib
 import re
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -30,6 +34,13 @@ from pathlib import Path, PurePosixPath
 MODELS_DIR = "models"
 #: The runtime whose entry is a folder the files land in.
 FETCHED_RUNTIME = "transformers"
+HUGGING_FACE = "https://huggingface.co"
+#: Every account may read the files and enter the folders: an isolated node
+#: runs as an account of its own and reads them in place. Only their owner
+#: writes them.
+FILE_MODE = 0o644
+FOLDER_MODE = 0o755
+_CHUNK = 1024 * 1024
 
 #: The most files a block may list, and the longest path.
 MAX_FILES = 1024
@@ -169,3 +180,36 @@ def fetched_root(weights_dir, package_id: str, major: int) -> Path:
     fetched weights of package *package_id* at *major*, laid out as the
     package's own folder: its entry, ``models/<name>/``, is under it."""
     return Path(weights_dir) / f"{package_id}@{major}"
+
+
+def source_url(fetch: ModelFetch, path: str) -> str:
+    """Where Hugging Face serves *path* of *fetch*'s repository at its revision."""
+    return f"{HUGGING_FACE}/{fetch.huggingface}/resolve/{fetch.revision}/{urllib.parse.quote(path)}"
+
+
+def git_blob_sha1(path: Path) -> str:
+    """The git blob hash of the file at *path*: the ``gitSha1`` Hugging Face
+    lists for a file that is not in Git LFS."""
+    digest = hashlib.sha1(b"blob %d\0" % Path(path).stat().st_size, usedforsecurity=False)
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(_CHUNK), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(_CHUNK), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def digest_of(path: Path, item: FetchedFile, *, sha256: str | None = None) -> tuple[str, str, str]:
+    """``(kind, digest, expected)`` of the file at *path*, of the kind *item*
+    names: its ``sha256``, or its git blob hash. *sha256*, when given, is the
+    file's sha256 already computed as it streamed, so a big file is not read
+    again."""
+    if item.sha256 is not None:
+        return "sha256", sha256 or sha256_of(path), item.sha256
+    return "git blob sha1", git_blob_sha1(path), item.git_sha1

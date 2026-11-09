@@ -172,6 +172,91 @@ class TestApplyAndReport(unittest.TestCase):
         self.assertIn("Resource limits", findings[0])
 
 
+class TestTheModelWeightsAreNeverWritableByNodeCode(unittest.TestCase):
+    """The folder ``--model-weights-dir`` names, where the server downloads
+    the weights a model package's fetch names and isolated node code reads
+    them in place, is asked the opposite question: node code must read it,
+    and must never write it, where a file it changed would be the model every
+    account's later runs load. The execution user here is an account other
+    than the files' owner, whatever account the test runs as."""
+
+    def setUp(self):
+        import tempfile
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = self._tmp.name
+        self.weights = os.path.join(self.tmp, "model-weights")
+        self.entry = os.path.join(self.weights, "model.x@1", "models", "checkpoint")
+        os.makedirs(self.entry)
+        for folder in (self.weights, os.path.join(self.weights, "model.x@1"),
+                       os.path.dirname(self.entry), self.entry):
+            os.chmod(folder, 0o755)
+        for name in ("config.json", "model.safetensors"):
+            path = os.path.join(self.entry, name)
+            with open(path, "wb") as handle:
+                handle.write(b"weights")
+            os.chmod(path, 0o644)
+        self.exec_uid = os.getuid() + 4242
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_folders_0755_and_files_0644_of_another_account_are_not_reported(self):
+        self.assertEqual(hardening.audit_model_weights(self.weights, uid=self.exec_uid, gid=None), [])
+
+    def test_a_file_or_a_folder_the_execution_user_could_write_is_reported(self):
+        weights_file = os.path.join(self.entry, "model.safetensors")
+        os.chmod(weights_file, 0o666)
+        os.chmod(self.entry, 0o777)
+
+        findings = hardening.audit_model_weights(self.weights, uid=self.exec_uid, gid=None)
+
+        self.assertEqual(len(findings), 2, findings)
+        self.assertTrue(any(weights_file in finding and "-rw-rw-rw-" in finding for finding in findings), findings)
+        self.assertTrue(any(self.entry in finding and "drwxrwxrwx" in finding for finding in findings), findings)
+        self.assertTrue(all("model weights" in finding for finding in findings), findings)
+
+    def test_a_folder_its_group_may_write_is_reported_for_a_member(self):
+        os.chmod(self.entry, 0o775)
+        group = os.stat(self.entry).st_gid
+
+        findings = hardening.audit_model_weights(self.weights, uid=self.exec_uid, gid=group)
+
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn(self.entry, findings[0])
+
+    def test_a_link_is_neither_followed_nor_reported(self):
+        outside = os.path.join(self.tmp, "outside")
+        os.makedirs(outside)
+        os.chmod(outside, 0o777)
+        os.symlink(outside, os.path.join(self.entry, "elsewhere"))
+
+        self.assertEqual(hardening.audit_model_weights(self.weights, uid=self.exec_uid, gid=None), [])
+
+    def test_without_the_folder_or_an_execution_user_there_is_nothing_to_ask(self):
+        os.chmod(self.entry, 0o777)
+        self.assertEqual(hardening.audit_model_weights(None, uid=self.exec_uid, gid=None), [])
+        self.assertEqual(hardening.audit_model_weights(self.weights, uid=None, gid=None), [])
+
+    def test_a_hosted_instance_refuses_to_start_while_node_code_could_write_them(self):
+        launch = os.path.join(self.tmp, "launch")
+        shared = os.path.join(launch, ".curio", "data")
+        os.makedirs(shared)
+
+        findings, fatal = hardening.apply_and_report(
+            launch, shared, uid=self.exec_uid, gid=None, hosted=True, model_weights_dir=self.weights,
+        )
+        self.assertEqual((findings, fatal), ([], False))
+
+        os.chmod(os.path.join(self.entry, "config.json"), 0o666)
+        findings, fatal = hardening.apply_and_report(
+            launch, shared, uid=self.exec_uid, gid=None, hosted=True, model_weights_dir=self.weights,
+        )
+        self.assertTrue(fatal)
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn(os.path.join(self.entry, "config.json"), findings[0])
+
+
 @posix_only
 class TestHardenPaths(unittest.TestCase):
 

@@ -503,7 +503,8 @@ def run_through_node(
             if models:
                 payload["models"] = models
             if model_weights:
-                # Weights their operator fetched, read where they are.
+                # Weights a fetch names, kept under --model-weights-dir and
+                # read where they are.
                 payload["model_weights"] = model_weights
         if is_py:
             # The modules the node's package ships beside its templates, as

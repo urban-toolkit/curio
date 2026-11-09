@@ -276,7 +276,39 @@ def audit_node_overlays(shared_data_dir, *, uid, gid):
     return findings
 
 
-def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted):
+def audit_model_weights(weights_dir, *, uid, gid):
+    """Report every folder and file of *weights_dir*, the folder
+    ``--model-weights-dir`` names, the execution user could WRITE.
+
+    The inverse of :func:`audit`, as :func:`audit_node_overlays` is: isolated
+    node code reads the weights there in place, so it must read them, and it
+    must never write them, where a file it changed or added would be the
+    model every account's later runs load. The server downloads them there
+    (folders 0755, files 0644, its own); a link is neither followed nor
+    reported. An execution user that is root is :func:`audit`'s finding.
+    """
+    if not weights_dir or uid is None or uid == 0:
+        return []
+    findings = []
+    for walked in os.walk(weights_dir):
+        root, files = walked[0], walked[2]
+        for path in [root, *(os.path.join(root, name) for name in files)]:
+            try:
+                path_stat = os.lstat(path)
+            except OSError:
+                continue
+            if stat_module.S_ISLNK(path_stat.st_mode):
+                continue
+            if can_access(path_stat, uid=uid, gid=gid, write=True):
+                findings.append(
+                    f"the execution user can write {path}, where isolated nodes read model weights in "
+                    f"place: node code could change a model every account runs. Mode is "
+                    f"{stat_module.filemode(path_stat.st_mode)}."
+                )
+    return findings
+
+
+def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted, model_weights_dir=None):
     """Harden, then audit, and say what is left. Returns (findings, fatal).
 
     *fatal* is True when a hosted instance is still exposed after hardening.
@@ -306,4 +338,7 @@ def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted):
     # #332: the node-library trees are the one place that must stay readable,
     # so they are asked the opposite question.
     findings += audit_node_overlays(shared_data_dir, uid=uid, gid=gid)
+    # So are the model weights --model-weights-dir names, which nodes read
+    # in place.
+    findings += audit_model_weights(model_weights_dir, uid=uid, gid=gid)
     return findings, bool(findings and hosted)

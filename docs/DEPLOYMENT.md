@@ -251,55 +251,64 @@ repository in the Discovery Catalog. The manifest format is in
 
 A model package whose manifest has a `model.fetch` block ships without its
 weights ([MODEL-CATALOG.md § The manifest](MODEL-CATALOG.md#6-the-manifest)).
-Until you fetch them, a node that loads the model stops and names the command
-below, and the model's details in the Model Catalog say *Not on this Curio*.
-Fetch them once on the server, from the checkout of the release you deploy:
+The first time a node runs the model, the server downloads them from the
+repository and commit the block names, with no token, and checks each file
+against the digest the manifest names; a file that does not match is never
+placed. The node runs once they are in place, and later runs read them there.
+Until then the model's details in the Model Catalog say *Downloads on first
+use*. SAM 3's 3.4 GB come from an identical copy of Meta's files.
 
-1. Sign in at [huggingface.co](https://huggingface.co), open the repository the
-   manifest's `fetch.huggingface` names, and accept its terms if it asks.
-2. Create a token with read access at
-   [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
-3. Fetch the weights into a folder of the host, with the token in that one
-   command's environment:
-
-   ```bash
-   cd /srv/curio
-   read -rs HF_TOKEN
-   HF_TOKEN="$HF_TOKEN" python3 scripts/fetch_model_weights.py <package id> --into /srv/curio/model-weights
-   unset HF_TOKEN
-   ```
-
-   `read -rs` takes the token without showing it or keeping it in the shell's
-   history. The script prints each file's name and size as it lands, checks
-   each against the digest the manifest names, and skips a file already in
-   place, so you run it again after an update that changes the files. A
-   refusal from Hugging Face says how to get access.
-4. Pass `--model-weights-dir` to `curio.py start`. `docker-compose.deploy.yml`
-   mounts the checkout's `model-weights/` read-only at `/model-weights`, so add
-   to the `command` in `docker-compose.site.yml`:
+1. Pass `--model-weights-dir` to `curio.py start`, so the weights go to a
+   folder of their own, which isolated node code reads in place.
+   `docker-compose.deploy.yml` mounts the checkout's `model-weights/` at
+   `/model-weights`, so add to the `command` in `docker-compose.site.yml`:
 
    ```yaml
        command: ["--backend-url", "https://lab-name.your-uni.edu/curio/api", "--base-path", "/curio", "--exec-memory-mb", "24576", "--model-weights-dir", "/model-weights"]
    ```
 
    To keep the weights in another host folder, such as one that two stacks
-   share, mount it there in `docker-compose.site.yml` and fetch with `--into`
-   that folder:
+   share, mount it there in `docker-compose.site.yml`:
 
    ```yaml
-       volumes: ["/srv/curio-model-weights:/model-weights:ro"]
+       volumes: ["/srv/curio-model-weights:/model-weights"]
    ```
-5. Recreate the stack (`docker compose up -d --force-recreate`). The model's
-   details no longer say *Not on this Curio*.
+2. Give the folder to the account the container's server runs as, root, so
+   the server writes it and node code only reads it. For the checkout's
+   `model-weights/`, or the host folder your site file mounts instead:
 
-- **Every account must be able to read the folder.** Isolated node code reads
-  the weights in place, as `curio-exec`. The script makes its folders `755`
-  and its files `644`, and says so when `--into` names a folder that is not.
-- **Without `--model-weights-dir`**, Curio reads the weights from the
-  package's own folder, `packages/<package id>@<major>/models/`, where the
-  script puts them without `--into`: for a clone run with `curio.py start`.
-- **The token** is read from `HF_TOKEN` alone, sent only to huggingface.co,
-  and never printed or saved.
+   ```bash
+   sudo mkdir -p model-weights
+   sudo chown -R 0:0 model-weights
+   sudo chmod -R u+rwX,go+rX,go-w model-weights
+   ```
+3. Recreate the stack (`docker compose up -d --force-recreate`).
+
+- **The server must be able to write the folder**, and every account read
+  it. The download makes its folders `755` and its files `644`, its own.
+  Isolated node code reads the weights in place, as `curio-exec`, and a stack
+  started with `--deploy` refuses to start while `curio-exec` could write a
+  file or a folder there. A folder the server cannot write fails the node's
+  first run, saying so.
+- **Fetching ahead is optional**: for a server that cannot reach
+  huggingface.co, or a repository that asks for a token. Run the script in
+  the stack's container, which writes the mounted folder as root, with a
+  token in that one command's environment when the repository asks for one:
+
+  ```bash
+  read -rs HF_TOKEN
+  HF_TOKEN="$HF_TOKEN" docker compose exec -e HF_TOKEN curio python scripts/fetch_model_weights.py <package id> --into /model-weights
+  unset HF_TOKEN
+  ```
+
+  `read -rs` takes the token without showing it or keeping it in the shell's
+  history. The script prints each file's name and size as it lands, checks
+  each against the digest the manifest names, and skips a file already in
+  place. The token is read from `HF_TOKEN` alone, sent only to
+  huggingface.co, and never printed or saved.
+- **Without `--model-weights-dir`**, the weights go in the package's own
+  folder, `packages/<package id>@<major>/models/`, where the script puts them
+  without `--into`: for a clone run with `curio.py start`.
 - Git, the image and the pip package hold none of these weights, and
   **Export**, **Publish** and **Save as package node** refuse such a model.
 
@@ -527,7 +536,7 @@ To give both stacks an LLM endpoint of their own (the **Curio** rows and Curio's
 
 Without both secrets, the deploy removes `.secrets/llm-endpoint` and the stack has no endpoint of its own.
 
-Both stacks mount `/srv/curio-model-weights` read-only at `/model-weights` and start with `--model-weights-dir /model-weights`: fetch a model's weights there once ([Model weights a package fetches](#model-weights-a-package-fetches)), with `--into /srv/curio-model-weights`.
+Both stacks mount `/srv/curio-model-weights` at `/model-weights` and start with `--model-weights-dir /model-weights`, so a model's weights download there once, on the first node that runs it on either stack ([Model weights a package fetches](#model-weights-a-package-fetches)). Each deploy gives the folder to root, the account both containers' servers run as, readable by every account and writable by no other.
 
 Both stacks also start with `--media-cache-max-file-gb 8`, so **Cache files** copies the SideSeeing walks, videos of up to 7 GiB, from data.urbantk.org. Each account still holds at most 20 GB of cached files.
 
@@ -644,7 +653,8 @@ flooding it cannot push real errors out of the log.
 | Mixed-content errors in browser console | `--backend-url` in `docker-compose.site.yml` is an `http://` address. Use the `https://` one and run `docker compose up -d --force-recreate`. |
 | `could not select device driver "nvidia"` when the stack starts | The host has no NVIDIA Container Toolkit, or no NVIDIA GPU. Set up the toolkit ([The GPU](#the-gpu)), or add `deploy: !reset {}` to the `curio` service in `docker-compose.site.yml`. |
 | A node that imports torch fails with `failed to map segment from shared object` | Its memory budget is too small for PyTorch's CUDA libraries. Pass `--exec-memory-mb 24576` in `docker-compose.site.yml`. |
-| A node says *The weights of model '...' are not on this Curio* | Its model's weights are fetched, and this stack has none: run the script the message names on the host, with `--into` the folder the stack mounts at `/model-weights` ([Model weights a package fetches](#model-weights-a-package-fetches)). |
+| A node says *Curio could not download ..., a file of the weights of ...* | Its model's first run could not download the weights, for the reason the message gives. When the server cannot reach huggingface.co, or the repository asks for a token, fetch them ahead with the script the message names ([Model weights a package fetches](#model-weights-a-package-fetches)). |
+| A node says *Curio could not write the weights of ...* | The server cannot write the folder the weights download into: give the folder `--model-weights-dir` names to the container's root ([Model weights a package fetches](#model-weights-a-package-fetches)). |
 | `docker compose up` cannot start `bucket-mounts` | The host lacks one of the three things [Bucket mounts](#bucket-mounts) checks: `/dev/fuse`, a shared mount where the mounts live, or the loaded AppArmor profile. |
 | `/monitor` shows **Bucket mounts** *unavailable* | Curio's test of the mount service failed, for the reason the line gives. Recent errors holds the details, and `docker compose logs bucket-mounts` the service's side. |
 | Nodes fail and you cannot see why | Open `/monitor`. The error log there holds the last failures with their tracebacks, and survives longer than `.curio/messages.log`, which is truncated on every launch. |
@@ -687,8 +697,10 @@ flooding it cannot push real errors out of the log.
   wherever you mounted them from.
 - **A folder source is readable by every signed-in user**, through its source
   rows and the collections they add. Mount only what all of them may see.
-- **Fetched model weights are readable by every node.** Isolated node code
-  reads the folder `--model-weights-dir` names in place, so any node code can
-  open the weights there by their path, not only the nodes of an account that
-  added the model.
+- **Fetched model weights are readable by every node, and writable by none.**
+  Isolated node code reads the folder `--model-weights-dir` names in place, so
+  any node code can open the weights there by their path, not only the nodes
+  of an account that added the model. The server writes the folder; a stack
+  started with `--deploy` refuses to start while `curio-exec` could write in
+  it.
 

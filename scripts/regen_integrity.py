@@ -13,9 +13,9 @@ included, not just the files sitting at the top level.
 
 This script is the supported way to do it. It calls the same
 ``refresh_package_integrity`` the installer uses, so the output is identical
-to what a fresh install would produce. A model package whose weights its
-operator fetches (its model block's ``fetch``) has its entry folder left out,
-fetched or not: those weights are never part of the package.
+to what a fresh install would produce. A model package whose weights its model
+block's ``fetch`` names has its entry folder left out, downloaded or not:
+those weights are never part of the package.
 
 Note: nothing in Curio currently *verifies* these hashes at load time — a stale
 ``integrity.json`` will not stop a package from working. Keep it current anyway

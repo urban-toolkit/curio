@@ -15,7 +15,7 @@ from utk_curio.backend.app.packages.domain.catalog_family import (
 )
 from utk_curio.backend.app.packages.application import prune as packages_prune
 from utk_curio.backend.app.packages.application import templates as packages_templates
-from utk_curio.backend.app.packages.application.model_packages import weights_not_fetched, weights_on_first_use
+from utk_curio.backend.app.packages.application.model_packages import weights_on_first_use
 from utk_curio.backend.app.packages.domain.manifest import ManifestError, PackageManifest
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.repositories import (
@@ -34,12 +34,11 @@ log = logging.getLogger(__name__)
 def _listing_payload(manifest: PackageManifest, folder) -> dict:
     """*manifest*'s payload as a listing shows it, read from its *folder*: the
     modules it ships, and for a model package whether its weights download
-    on first use, or wait for its operator to fetch them."""
+    on first use."""
     payload = package_payload(manifest, package_mtime_path=folder)
     payload["modules"] = sorted(module_names(folder, manifest))
     if manifest.model is not None:
         payload["model"]["downloadsOnFirstUse"] = weights_on_first_use(manifest, folder)
-        payload["model"]["weightsNotFetched"] = weights_not_fetched(manifest, folder)
     return payload
 
 

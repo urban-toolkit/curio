@@ -227,7 +227,7 @@
     },
     "modelFetch": {
       "type": "object",
-      "description": "Weights the package ships without, which whoever runs Curio downloads once (scripts/fetch_model_weights.py) into the entry folder, a Transformers checkpoint directly under models/: files of a Hugging Face repository at one commit, each with the digest Hugging Face's model API lists for it.",
+      "description": "Weights the package ships without, which Curio downloads into the entry folder, a Transformers checkpoint directly under models/, the first time a node runs the model (scripts/fetch_model_weights.py fetches them ahead): files of a Hugging Face repository at one commit, each with the digest Hugging Face's model API lists for it, which each file is checked against.",
       "required": ["huggingface", "revision", "files"],
       "additionalProperties": false,
       "properties": {

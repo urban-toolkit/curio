@@ -84,9 +84,9 @@ export interface PackageDependencies {
  *  the Node Catalog. */
 export type PackageKind = "node" | "model";
 
-/** Weights a model package ships without, which whoever runs Curio fetches
- *  (`scripts/fetch_model_weights.py`): files of a Hugging Face repository at
- *  one commit, each with its digest. */
+/** Weights a model package ships without, which Curio downloads the first
+ *  time a node runs the model: files of a Hugging Face repository at one
+ *  commit, each with its digest. */
 export interface ModelFetchPayload {
   huggingface: string;
   revision: string;
@@ -117,12 +117,10 @@ export interface ModelBlockPayload {
   homepage?: string;
   discoverySource?: Record<string, unknown>;
   fetch?: ModelFetchPayload;
-  /** Listings only: a pip install has left the weights out and no node has
-   *  fetched them yet, so the first run downloads them. */
+  /** Listings only: the weights are not on this Curio yet (a pip install
+   *  left them out, or `fetch` names them), so a node's first run downloads
+   *  them. */
   downloadsOnFirstUse?: boolean;
-  /** Listings only: whoever runs this Curio has not fetched the weights
-   *  `fetch` names, so a node that loads the model stops, saying how. */
-  weightsNotFetched?: boolean;
 }
 
 export interface PackagePayload {

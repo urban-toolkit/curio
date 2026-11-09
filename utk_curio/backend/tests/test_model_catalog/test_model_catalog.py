@@ -20,7 +20,7 @@ PACKAGES = REPO / "packages"
 DDRNET = "model.curio.ddrnet23-slim"
 DEEP_UMBRA = "model.scout.deep-umbra"
 WEATHER_GNN = "model.scout.weather-gnn"
-#: The model whose weights its operator fetches.
+#: The model whose weights its fetch names, downloaded on first use.
 SAM3 = "model.curio.sam3"
 #: A node package that ships a module of its own.
 RASTERIZATION = "curio.rasterization"
@@ -348,8 +348,9 @@ class TestModelPackagesInTheModelCatalog:
         assert sorted(ddrnet["dependencies"]["python"]) == ["onnxruntime"]
         assert ddrnet["modules"] == [] and block["downloadsOnFirstUse"] is False
         assert [template["label"] for template in ddrnet["templates"]] == ["Image Segmentation"]
-        # SAM 3: its weights are its operator's to fetch, so the catalog lists
-        # where they come from, and whether this clone has them yet.
+        # SAM 3: its weights download on a node's first run, from the copy its
+        # fetch names, so the catalog lists where they come from, and whether
+        # this clone has them yet. The weights are Meta's, its homepage too.
         sam3 = rows[f"{SAM3}@1"]
         block = sam3["model"]
         assert (sam3["name"], sam3["license"], block["runtime"], block["type"]) == (
@@ -357,11 +358,12 @@ class TestModelPackagesInTheModelCatalog:
         assert (block["license"], block["licenseFile"], block["publisher"], block["homepage"]) == (
             "SAM License", "LICENSE", "Meta (facebook/sam3 on Hugging Face)", "https://huggingface.co/facebook/sam3")
         assert (block["fetch"]["huggingface"], block["fetch"]["revision"]) == (
-            "facebook/sam3", "3c879f39826c281e95690f02c7821c4de09afae7")
-        assert (len(block["labels"]), block["sizeBytes"], block["downloadsOnFirstUse"]) == (35, 3_444_996_474, False)
+            "jetjodh/sam3", "1aa50ce07302cb375f85d8084b68a0fb378b8d85")
+        assert (len(block["labels"]), block["sizeBytes"]) == (35, 3_444_996_474)
         checkpoint = PACKAGES / f"{SAM3}@1" / block["entry"]
         fetched = all((checkpoint / item["path"]).is_file() for item in block["fetch"]["files"])
-        assert block["weightsNotFetched"] is not fetched
+        assert block["downloadsOnFirstUse"] is not fetched
+        assert "weightsNotFetched" not in block
         assert sam3["modules"] == ["sam3_tracking"]
         assert [template["label"] for template in sam3["templates"]] == ["Track Objects"]
         assert {"transformers", "safetensors"} <= set(sam3["dependencies"]["python"])

@@ -60,6 +60,8 @@ USERS = {
      "no pinned preview runner is configured f"): "a package preview's result, on the build's review",
     ("utk_curio/backend/app/packages/domain/default_cells.py", "<module>",
      "Label every pixel of each image with a M"): "a starter cell's comment, in the node's code",
+    ("utk_curio/backend/app/packages/infrastructure/fetched_weights.py", "_cannot_write",
+     "Curio could not write the weights of  in"): "a node's error on Play, when its model's weights cannot download",
     ("utk_curio/backend/app/packages/infrastructure/workspace.py", "check_build_isolation",
      "This platform cannot bound a package bui"): "a warning to the operator who starts a build",
     ("utk_curio/backend/app/projects/dashboard_payload.py", "DashboardCannotBeStandaloneError.describe",

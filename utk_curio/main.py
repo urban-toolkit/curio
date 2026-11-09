@@ -331,11 +331,12 @@ def main():
     parser.add_argument(
         "--model-weights-dir", default=None, metavar="PATH",
         help=(
-            "Directory the weights of model packages that fetch them are read "
-            "from, in place: <PATH>/<package id>@<major>/, as "
-            "scripts/fetch_model_weights.py --into PATH writes them (sets "
-            "CURIO_MODEL_WEIGHTS_DIR). Without it, each package's own folder. "
-            "Every account must be able to read it: isolated nodes read it."
+            "Directory the weights of model packages that fetch them download "
+            "into on first use, and are read from in place: "
+            "<PATH>/<package id>@<major>/, as scripts/fetch_model_weights.py "
+            "--into PATH writes them too (sets CURIO_MODEL_WEIGHTS_DIR). "
+            "Without it, each package's own folder. The server writes it, and "
+            "every account must be able to read it: isolated nodes read it."
         ),
     )
     parser.add_argument(

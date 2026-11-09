@@ -321,9 +321,9 @@ class CurioModel:
     both are read when the model is loaded, so a folder that is not a model
     fails there. ``path`` is where its weights are, the ``.onnx`` file or the
     checkpoint folder its manifest's entry names: under ``folder``, or under
-    *weights*, the folder the backend names for weights its operator fetched
-    under ``--model-weights-dir``, read where they are. A model whose operator
-    has not fetched its weights stops at loading, saying how to fetch them
+    *weights*, the folder the backend names for weights a ``fetch`` names,
+    kept under ``--model-weights-dir``, read where they are. A model whose
+    weights are not here stops at loading, saying how to fetch them
     (``models.NOT_FETCHED``). ``runner``, the callable that labels one image's
     pixels, opens the model's runtime the first time it is used, and
     ``labels`` are the classes it can name. ``run`` feeds an ONNX model's

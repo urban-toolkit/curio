@@ -1005,9 +1005,9 @@ def exec():
     if not isinstance(models, dict):
         models = {}
     models = {str(key): str(value) for key, value in list(models.items())[:8] if value}
-    # {modelId: folder} for the models among those whose weights their
-    # operator fetched under --model-weights-dir: absolute, and read where
-    # they are on both paths, never staged.
+    # {modelId: folder} for the models among those whose weights a fetch
+    # names, kept under --model-weights-dir: absolute, and read where they
+    # are on both paths, never staged.
     model_weights = request.json.get('model_weights') or {}
     if not isinstance(model_weights, dict):
         model_weights = {}

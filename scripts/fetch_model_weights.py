@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Fetch the weights a model package names in its ``fetch`` block.
+"""Fetch the weights a model package names in its ``fetch`` block, ahead of their first use.
 
 A model package whose weights stay out of git and the pip package names them
 in its manifest's ``model.fetch`` (``utk_curio/backend/app/packages/domain/
-model_fetch.py``): files of a Hugging Face repository at one commit. Whoever
-runs a Curio runs this once, on the machine that keeps the files:
+model_fetch.py``): files of a Hugging Face repository at one commit. Curio
+downloads them the first time a node runs the model. This fetches them ahead,
+on the machine that keeps the files, with a token for a repository that asks
+for one:
 
-    HF_TOKEN=<token> python scripts/fetch_model_weights.py <package id>
+    python scripts/fetch_model_weights.py <package id>
     HF_TOKEN=<token> python scripts/fetch_model_weights.py <package id> --into <dir>
 
 It reads the shipped package's manifest (``utk_curio/shipped.py``) and
@@ -26,13 +28,13 @@ the folder ``curio.py start --model-weights-dir <dir>`` reads them from.
 
 It imports nothing but the standard library and two modules of Curio that do
 the same, read by their paths, so it runs with the host's own Python, outside
-Curio's environment.
+Curio's environment. The second, ``model_fetch``, holds the file's URL, its
+digests and the modes, which Curio's own download on first use shares.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import importlib.util
 import json
 import os
@@ -51,10 +53,6 @@ HUGGING_FACE_HOST = "huggingface.co"
 TOKEN_VARIABLE = "HF_TOKEN"
 CHUNK = 1024 * 1024
 TIMEOUT_S = 60
-#: Every account may read the files and enter the folders: an isolated node
-#: runs as an account of its own and reads them in place.
-FILE_MODE = 0o644
-FOLDER_MODE = 0o755
 
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -106,31 +104,6 @@ def size_text(size: int) -> str:
     return f"{size} B"
 
 
-def git_blob_sha1(path: Path) -> str:
-    """The git blob hash of the file at *path*: the ``gitSha1`` Hugging Face
-    lists for a file that is not in Git LFS."""
-    digest = hashlib.sha1(b"blob %d\0" % path.stat().st_size, usedforsecurity=False)
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(CHUNK), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def sha256_of(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(CHUNK), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def digest_of(path: Path, item) -> tuple[str, str]:
-    """``(kind, digest)`` of the file at *path*, of the kind *item* names."""
-    if item.sha256 is not None:
-        return "sha256", sha256_of(path)
-    return "git blob sha1", git_blob_sha1(path)
-
-
 def _package_folder(shipped, package: str, shipped_root) -> Path:
     """The shipped folder of *package*, ``<id>`` (its highest major) or
     ``<id>@<major>``."""
@@ -166,8 +139,9 @@ def _read_manifest(folder: Path, model_fetch):
     return str(raw.get("id")), model, fetch
 
 
-def _make_folder(folder: Path) -> None:
-    """Make *folder* and the parents it lacks, each one every account may enter."""
+def _make_folder(folder: Path, mode: int) -> None:
+    """Make *folder* and the parents it lacks, each one at *mode*: one every
+    account may enter."""
     missing = []
     current = folder
     while not current.exists():
@@ -175,12 +149,7 @@ def _make_folder(folder: Path) -> None:
         current = current.parent
     for path in reversed(missing):
         path.mkdir(exist_ok=True)
-        os.chmod(path, FOLDER_MODE)
-
-
-def file_url(fetch, path: str) -> str:
-    """Where Hugging Face serves *path* of *fetch*'s repository at its revision."""
-    return f"{HUGGING_FACE}/{fetch.huggingface}/resolve/{fetch.revision}/{urllib.parse.quote(path)}"
+        os.chmod(path, mode)
 
 
 def _request(url: str, credential: str) -> urllib.request.Request:
@@ -212,10 +181,10 @@ class TokenOnHuggingFace(urllib.request.HTTPRedirectHandler):
         return redirected
 
 
-def _download(opener, url: str, credential: str, target: Path, item, fetch, token_given: bool) -> int:
+def _download(opener, url: str, credential: str, target: Path, item, fetch, token_given: bool, model_fetch) -> int:
     """Stream *url* into a temporary file beside *target*, check it against
     *item*'s digest, and move it into place. Returns its size."""
-    _make_folder(target.parent)
+    _make_folder(target.parent, model_fetch.FOLDER_MODE)
     try:
         response = opener.open(_request(url, credential), timeout=TIMEOUT_S)
     except urllib.error.HTTPError as exc:
@@ -243,14 +212,13 @@ def _download(opener, url: str, credential: str, target: Path, item, fetch, toke
             sink.flush()
             os.fsync(sink.fileno())
         size = partial.stat().st_size
-        kind, actual = digest_of(partial, item)
-        expected = item.sha256 if item.sha256 is not None else item.git_sha1
+        kind, actual, expected = model_fetch.digest_of(partial, item)
         if actual != expected:
             raise FetchError(
                 f"{item.path}: Hugging Face sent {size_text(size)} whose {kind} is {actual}, not the "
                 f"{expected} the manifest names, so it was not placed."
             )
-        os.chmod(partial, FILE_MODE)
+        os.chmod(partial, model_fetch.FILE_MODE)
         os.replace(partial, target)
         return size
     finally:
@@ -287,7 +255,7 @@ def main(argv=None, *, opener=None, environ=None, shipped_root=None, out=None, e
     major = int(folder.name.rpartition("@")[2])
     if args.into:
         into = Path(args.into).expanduser().resolve()
-        _make_folder(into)
+        _make_folder(into, model_fetch.FOLDER_MODE)
         if not _readable_by_all(into):
             print(f"Note: {into} is not open to every account, and an isolated node reads the weights "
                   f"there: run chmod 755 {into}.", file=err)
@@ -305,14 +273,17 @@ def main(argv=None, *, opener=None, environ=None, shipped_root=None, out=None, e
     for item in fetch.files:
         target = entry / item.path
         if target.is_file():
-            _kind, actual = digest_of(target, item)
-            if actual == (item.sha256 if item.sha256 is not None else item.git_sha1):
+            digest = model_fetch.digest_of(target, item)
+            if digest[1] == digest[2]:
                 print(f"  {item.path}: {size_text(target.stat().st_size)}, already here", file=out)
                 present += 1
                 continue
         print(f"  {item.path}: fetching", file=out, flush=True)
         try:
-            size = _download(opener, file_url(fetch, item.path), credential, target, item, fetch, token_given)
+            size = _download(
+                opener, model_fetch.source_url(fetch, item.path), credential, target, item, fetch, token_given,
+                model_fetch,
+            )
         except FetchError as exc:
             print(str(exc), file=err)
             return 1
