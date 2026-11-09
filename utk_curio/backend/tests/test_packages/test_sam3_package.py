@@ -536,6 +536,47 @@ def test_a_part_of_a_video_is_tracked_from_where_it_starts(videos, catalog_copy,
         f"{rows['file_id'].iloc[0]}@1000-sam3.mp4", 1.0, 2 * EVERY)
 
 
+def test_every_frame_up_to_the_parts_end_decodes_with_frame_threading(videos, tmp_path, monkeypatch):
+    """Track Objects looks at one frame every EVERY_SECONDS, but decodes every
+    frame up to the part's end. On dev the 864 s SideSeeing walk at 1080p is
+    25,955 frames: 271 s of decoding with FFmpeg's default, slice threading,
+    50 s with frame threading, against an isolated node's 300 s."""
+    import av
+
+    rows, _helpers = videos
+    video = rows[rows["kind"] == "video"].iloc[0]
+    decoded_as = []
+    real_open = av.open
+
+    class _Recording:
+        """The container ``_sample`` opens, noting how each stream it decodes is threaded."""
+
+        def __init__(self, container):
+            self._container = container
+
+        def __enter__(self):
+            self._container.__enter__()
+            return self
+
+        def __exit__(self, *exc):
+            return self._container.__exit__(*exc)
+
+        def __getattr__(self, name):
+            return getattr(self._container, name)
+
+        def decode(self, stream):
+            decoded_as.append(stream.thread_type)
+            return self._container.decode(stream)
+
+    with _staged(tmp_path) as module:
+        monkeypatch.setattr(module.av, "open", lambda *args, **kwargs: _Recording(real_open(*args, **kwargs)))
+        run = SimpleNamespace(width=960, from_seconds=0, every_seconds=EVERY)
+        frames, times = module._sample(run, video, CLIP_SECONDS)
+
+    assert times == SAMPLED and len(frames) == len(SAMPLED)
+    assert [getattr(kind, "name", kind) for kind in decoded_as] == ["AUTO"], decoded_as
+
+
 def test_each_stop_comes_before_sam3_loads_and_writes_nothing(videos, tmp_path):
     """Empty labels, a part longer than one run takes and a video not on this
     machine each stop the call before any frame is read or file written, and
