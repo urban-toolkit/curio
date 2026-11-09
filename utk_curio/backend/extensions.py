@@ -1,6 +1,7 @@
 import random
 import re
 import sqlite3
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -157,6 +158,9 @@ def retry_on_write_conflict(apply_changes, attempts: int = _WRITE_CONFLICT_ATTEM
             return apply_changes()
         except OperationalError as exc:
             db.session.rollback()
+            if _is_write_conflict(exc):
+                # tmp/backend-room-curve: every lost write race, counted in messages.log.
+                print(f"[sqlite-retry] attempt {attempt + 1} of {attempts}", file=sys.stderr, flush=True)
             if not _is_write_conflict(exc) or attempt == attempts - 1:
                 raise
             # Jittered, so two racing writers do not line up again on the retry.
