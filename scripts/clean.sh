@@ -14,8 +14,10 @@ rm -rf "$REPO_ROOT/.curio"
 rm -rf "$REPO_ROOT/utk_curio/frontend/urban-workflows/node_modules"
 rm -rf "$REPO_ROOT/utk_curio/frontend/urban-workflows/dist"
 rm -rf "$REPO_ROOT/utk_curio/frontend/urban-workflows/build"
-find "$REPO_ROOT" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-find "$REPO_ROOT" -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+# Never into ./bucket-mounts: a bucket the mount service has mounted there is
+# the source's, and a walk would list all of it.
+find "$REPO_ROOT" -path "$REPO_ROOT/bucket-mounts" -prune -o -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+find "$REPO_ROOT" -path "$REPO_ROOT/bucket-mounts" -prune -o -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 rm -rf "$REPO_ROOT/dist" "$REPO_ROOT/build" "$REPO_ROOT/htmlcov"
 
 echo "==> Clean complete."

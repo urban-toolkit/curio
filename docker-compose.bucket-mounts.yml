@@ -24,8 +24,9 @@
 # Its control channel is rclone's rc API on a Unix socket, in a volume only
 # the two containers share, in a folder only root may enter, so node code's
 # account cannot reach it. The service sits on an internal network with
-# Curio's container alone; its one way out will be a proxy in Curio's backend
-# (HTTPS_PROXY), which tunnels only to the hosts of the sources Curio mounts.
+# Curio's container alone; its one way out is a proxy in Curio's backend
+# (HTTPS_PROXY, utk_curio/backend/app/discovery/infrastructure/mount_proxy.py),
+# which tunnels only to the hosts of the sources Curio mounts.
 services:
   bucket-mounts:
     image: rclone/rclone:1.76.0@sha256:7cbeec24a44f206067597c0368be4de90ae19a64d5113c7d1938bd737a81e466

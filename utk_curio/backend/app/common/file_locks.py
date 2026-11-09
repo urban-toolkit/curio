@@ -1,4 +1,4 @@
-"""Locks for the on-disk stores — one implementation, two layers.
+"""Locks for the on-disk stores: one implementation, two layers.
 
 Neither layer alone is sufficient in this app:
 

@@ -400,18 +400,24 @@ class TestTheCheck:
         assert entry["detail"] == detail
 
     def test_it_runs_the_self_test_once_on_a_thread_of_its_own(self, check, monkeypatch):
+        from utk_curio.backend.app.discovery.application import bucket_mount_sources
+
         runs = []
 
         def self_test_from_env():
-            runs.append(threading.current_thread().name)
+            runs.append(("self-test", threading.current_thread().name))
             return bm.SelfTest(True, None, "passed")
 
         monkeypatch.setattr(bm, "self_test_from_env", self_test_from_env)
+        # After a passed self-test, the same thread looks at the service's
+        # mounts of sources (test_bucket_mount_sources.py tests what it does).
+        monkeypatch.setattr(bucket_mount_sources, "reconcile_at_start",
+                            lambda: runs.append(("mounts", threading.current_thread().name)))
         assert check.start() is True
         assert check.start() is True
         check._thread.join(5)
 
-        assert runs == ["bucket-mounts-self-test"]
+        assert runs == [("self-test", "bucket-mounts-self-test"), ("mounts", "bucket-mounts-self-test")]
         assert check.status() == {"state": "passed", "problem": None}
 
     def test_a_self_test_that_raises_still_reports(self, check, monkeypatch):

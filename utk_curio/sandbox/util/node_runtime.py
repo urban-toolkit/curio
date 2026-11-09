@@ -13,6 +13,7 @@ import os
 import pathlib
 
 from utk_curio import shipped
+from utk_curio.common.llm_endpoint import for_node_code
 
 #: The folder that holds ``utk_curio/``: the repository root in a clone, the
 #: Docker image and CI; site-packages in a pip install.
@@ -33,6 +34,11 @@ NODEJS_FOLDER = 'nodejs'
 #: ``/file/`` URL the backend serves it at. A pip install keeps it in
 #: ``utk_curio/`` (``utk_curio/shipped.py``).
 DUCKDB_EXTENSIONS = pathlib.PurePosixPath('vendor', 'duckdb-extensions')
+
+#: Where duckdb-wasm's Node worker looks for an extension, under HOME:
+#: ``<version>/<platform>/<file>`` below it, the layout of Curio's copy. It
+#: downloads only one that is not there, into the same place.
+DUCKDB_EXTENSIONS_HOME = pathlib.PurePosixPath('.duckdb', 'extensions', 'extensions.duckdb.org')
 
 AUTK_DB = '@urban-toolkit/autk-db'
 
@@ -89,16 +95,49 @@ def duckdb_extensions_dir():
     return shipped.path(DUCKDB_EXTENSIONS, REPO_ROOT)
 
 
+def link_duckdb_extensions(home, *, uid=None, gid=None):
+    """Put a link to each of Curio's DuckDB extensions
+    (:func:`duckdb_extensions_dir`) where duckdb-wasm's Node worker looks
+    under *home* (:data:`DUCKDB_EXTENSIONS_HOME`), and return the links.
+
+    For a JavaScript run whose Node runs as the execution account, in a HOME
+    of the run's own (``worker._node_home``): its node loads them as the
+    sandbox's own Node loads the launcher's copies, and downloads nothing.
+    The worker reads a file there with ``readFileSync``, which follows a link.
+    The folders made are *uid*'s and *gid*'s when given, so an extension
+    missing from Curio's copy still downloads into them.
+    """
+    source_root = duckdb_extensions_dir()
+    if not source_root.is_dir():
+        return []
+    made = []
+    for source in sorted(source_root.rglob('*.wasm')):
+        relative = DUCKDB_EXTENSIONS_HOME / source.relative_to(source_root).as_posix()
+        folder = pathlib.Path(home)
+        for part in relative.parent.parts:
+            folder = folder / part
+            if not folder.is_dir():
+                folder.mkdir(mode=0o700)
+                if uid is not None:
+                    os.chown(folder, uid, -1 if gid is None else gid)
+        link = pathlib.Path(home, relative)
+        link.symlink_to(os.path.abspath(source))
+        made.append(link)
+    return made
+
+
 def node_env(base=None, node_modules=None):
-    """The environment for a Node child: *base* (default ``os.environ``), with
-    *node_modules* (default :func:`node_modules_dir`) first on ``NODE_PATH``.
+    """The environment for a Node child: *base* (default ``os.environ``)
+    without what node code may not hold, the sandbox's token among it
+    (``common/llm_endpoint.for_node_code``), with *node_modules* (default
+    :func:`node_modules_dir`) first on ``NODE_PATH``.
 
     ``NODE_PATH`` is consulted only by the CommonJS ``require()`` resolver, not
     by ESM, so it does not resolve a top-level autk-db import (callers rewrite
     that to an absolute file URL with ``resolve_pkg_entry_url``). It still helps
     any CJS ``require()`` autk-db's worker threads perform.
     """
-    env = dict(os.environ if base is None else base)
+    env = for_node_code(os.environ if base is None else base)
     node_modules = pathlib.Path(node_modules) if node_modules is not None else node_modules_dir()
     if node_modules.is_dir():
         existing = env.get('NODE_PATH', '')

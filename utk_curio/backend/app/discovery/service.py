@@ -14,6 +14,7 @@ from flask import current_app
 
 from utk_curio.backend.app.discovery.application.acquire import DiscoveryAcquire, _Cancelled
 from utk_curio.backend.app.discovery.application import bucket_mount_check
+from utk_curio.backend.app.discovery.application import bucket_mount_sources
 from utk_curio.backend.app.discovery.application.browse import DiscoveryBrowse
 from utk_curio.backend.app.discovery.application import scan as scanning
 from utk_curio.backend.app.discovery.application.model_acquire import ModelAcquire
@@ -90,6 +91,21 @@ def bucket_mounts_status() -> dict:
     (``none``, ``pending``, ``passed`` or ``unavailable``) and ``problem``, the
     words of why it is unavailable."""
     return bucket_mount_check.status()
+
+
+def start_bucket_mount_proxy(host: str) -> bool:
+    """The mount service's one way out, a CONNECT proxy on *host* (the
+    backend's own), when ``--bucket-mounts-dir`` and ``--bucket-mount-socket``
+    name a service (``infrastructure/mount_proxy.py``). Whether it listens."""
+    return bucket_mount_sources.start_proxy(host)
+
+
+def ensure_bucket_mount(manifest: DiscoverySourceManifest) -> bucket_mount_sources.SourceMount:
+    """*manifest*'s bucket mounted through the mount service, or why not:
+    ``state`` ``none`` (no service), ``not-mountable``, ``mounted`` (its file
+    ``relpath`` is ``folder / (tail + relpath)``) or ``down``, with ``reason``
+    (``application/bucket_mount_sources.py``)."""
+    return bucket_mount_sources.ensure(manifest)
 
 
 def _renamed_source_dir(source_dir: str) -> str:
@@ -814,6 +830,11 @@ class DiscoveryService:
         (``DatasetCatalogService.get_dataset``), where its owner and an editor
         the owner invited find the collections it lists, read from the owner's
         store (:meth:`collection_store`). Anyone else finds none of them.
+
+        The lookups count no dataset's usage (``consumer_counts``): only the
+        collection's own fields are read, and a node's run asks for each
+        collection it loads, while counting reads every dataflow of the
+        account.
         """
         from utk_curio.backend.app.datasets.service import DatasetCatalogError
         from utk_curio.backend.app.discovery.domain.errors import ResourceNotFound
@@ -822,7 +843,7 @@ class DiscoveryService:
         item = self._the_owners_copy(dataset_id)
         if item is None:
             try:
-                item = catalog.get_dataset(dataset_id)
+                item = catalog.get_dataset(dataset_id, consumer_counts=False)
             except DatasetCatalogError as exc:
                 item = self._listed_by_the_dataflow(dataset_id)
                 if item is None:
@@ -859,7 +880,7 @@ class DiscoveryService:
         if not self.dataflow_id or self.user is None:
             return None
         try:
-            return self._datasets().get_dataset(dataset_id, dataflow_id=self.dataflow_id)
+            return self._datasets().get_dataset(dataset_id, dataflow_id=self.dataflow_id, consumer_counts=False)
         except (DatasetCatalogError, NotFoundError):
             return None
         except Exception:  # noqa: BLE001 - the account's own collections still answer

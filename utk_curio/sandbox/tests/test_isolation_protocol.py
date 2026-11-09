@@ -415,11 +415,15 @@ class NprocScalesWithParallelismTest(unittest.TestCase):
         return IsolationConfig.from_environment(env)
 
     def test_more_slots_means_more_processes(self):
+        """A JavaScript node's Node runs as the same account, so the budget
+        also holds the allowance of each Node slot (here the default's)."""
+        from utk_curio.common.exec_pool import js_parallelism
         from utk_curio.sandbox.isolation import supervisor
 
         per_child = supervisor.DEFAULT_LIMITS["nproc"]
-        self.assertEqual(self._config("2").limits["nproc"], per_child * 2)
-        self.assertEqual(self._config("8").limits["nproc"], per_child * 8)
+        node_slots = js_parallelism({})
+        self.assertEqual(self._config("2").limits["nproc"], per_child * (2 + node_slots))
+        self.assertEqual(self._config("8").limits["nproc"], per_child * (8 + node_slots))
 
     def test_an_operator_can_still_pin_it(self):
         from utk_curio.sandbox.isolation.runner import IsolationConfig

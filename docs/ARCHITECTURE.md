@@ -1311,7 +1311,11 @@ The sandbox runs as a separate Flask process. It:
   (`/exec`, `/execJs`, `/get`). The secret is minted per launch by
   `cli/environment.py::set_environment_variables` into `CURIO_SANDBOX_TOKEN`, attached by
   the backend in `execution/sandbox_client.py`, and checked in `sandbox/app/auth.py`. An
-  instance started with `--deploy` refuses to boot without one.
+  instance started with `--deploy` refuses to boot without one. Node code never holds
+  it: the zygote, whose environment every isolated child inherits, and each JavaScript
+  run's Node start without it (`common/llm_endpoint.py::for_node_code`), as the sandbox
+  starts without the backend's own key and database address (`SECRET_KEY`,
+  `DATABASE_URL`, `DATABASE_URL_TEST`, among `BACKEND_ONLY_VARIABLES`).
 - Sends no CORS headers, because no browser calls it directly.
 - Returns the memory its allocators keep free to the system whenever no
   request is in flight (`sandbox/util/memory_release.py`): every request runs
@@ -1383,14 +1387,17 @@ Five design points worth knowing:
   the file to the sandbox's own account at `0644`: a later child it is staged
   for reads it, and cannot write it or change its mode.
 - **One execution account, not one per Curio user.** `CURIO_EXEC_USER` names a
-  single OS account that every user's nodes run as. The boundary this buys is
+  single OS account that every user's nodes run as, a JavaScript node's Node.js
+  among them (below). The boundary this buys is
   therefore *node code against the host*, not *user A against user B*. What
   keeps two users apart is session scoping in the parent, which the child cannot
   reach at all: `staging._read_row` reports another session's artifact as
   **missing** rather than forbidden, so its existence cannot be probed. Two
   consequences follow from the shared uid, and neither is fixed by a mode bit:
   concurrent children can reach each other's scratch directories, and a node can
-  find a sibling through `/proc`. Per-user OS accounts would close that, at the
+  find a sibling through `/proc`. Node, which drops before its exec, is
+  dumpable after it, as any program is, so another run of the account can open
+  its `/proc` entries, its pipes among them. Per-user OS accounts would close that, at the
   cost of copying instead of hardlinking every staged input, because `chown`
   acts on the inode. That is the trade being made, deliberately.
 - **A node's writes go through the parent, never straight into a store.** The
@@ -1465,6 +1472,27 @@ be installed fails with the reason and Node does not start; otherwise Node runs
 without it. macOS and Windows have no such filter: on macOS the mark finds a
 process that left the group, and on Windows the kill reaches Node alone.
 
+Node drops to the execution account exactly when an isolated child does:
+under `CURIO_ISOLATION=fork`, with `CURIO_EXEC_USER` naming an account, and with
+the sandbox running as root (`worker._node_account`, read on each run). The
+sandbox looks the account up and hands the wrapper its ids (`--user UID:GID`),
+so the wrapper looks nothing up and starts no process. After the filter it
+drops with the child's own code, `seccomp_filter.drop_privileges`: groups, then
+gid, then uid, then all three uids, all three gids and the empty group list
+checked. A drop that fails ends the wrapper with one line, whatever
+`--required` says, and an account that does not exist stops the run before
+Node starts, as it stops the zygote: Node never runs as root in the account's
+place. Node keeps its network. Its working directory stays the launch folder,
+which it reads and cannot write, and its HOME and TMPDIR are a folder of that
+Node process's own (`worker._node_home`: `supervisor.make_scratch_dir`, `0700`
+and the account's), removed once the run has killed Node and what it started.
+That folder holds a link to each of Curio's DuckDB extensions where
+duckdb-wasm looks ([below](#duckdb-extensions-come-from-this-instance)). Each
+isolated child's `RLIMIT_NPROC` counts every thread of the account, Node's too,
+so the budget the children share holds 256 for each Node slot as well as for
+each isolated one (`runner.IsolationConfig.from_environment`,
+`common/exec_pool.js_parallelism`).
+
 > [!IMPORTANT]
 > **Implementation status.** The confinement code runs in CI. Three jobs cover
 > it, and each covers a different half:
@@ -1489,7 +1517,11 @@ process that left the group, and on Windows the kill reaches Node alone.
 >   can neither write it nor change its mode, that the work
 >   directory is `0700` and owned by the execution account, and that
 >   `instance/`, `.curio/data`, `.curio/users`, `datasets/` and another user's
->   file named by absolute path are all denied.
+>   file named by absolute path are all denied. Its JavaScript twin,
+>   `tests/live/test_exec_user_boundary_js.py`, asks the same of a JavaScript
+>   node's Node, and that it holds no token and cannot reach the zygote's
+>   socket; `unit` drops Node to the account in the sandbox suite
+>   (`tests/test_js_run_as_exec_user.py`).
 >
 > It is a separate job because an execution account and the e2e harness cannot
 > coexist: hardening `.curio/data` breaks the host-side ground-truth step, which
@@ -1571,7 +1603,9 @@ autk-db runs in Node.js for the sandbox's JS nodes and for OpenStreetMap downloa
 - A clone, the Docker image and CI: the folder that holds `utk_curio/` and Curio's `package.json`.
 - A pip install: `nodejs/` in Curio's state directory. `setup.py` copies the repository's `package.json` and `package-lock.json` into the wheel at `utk_curio/sandbox/nodejs/`, and the launcher writes them into that folder.
 
-On every start, `cli/dependencies.py::_ensure_root_node_modules` runs `npm install --prefix <folder>` there, only in a folder that holds Curio's `package.json` and is not a link; otherwise it logs an error and runs no npm. `.curio/nodejs` is in the sandbox's `SENSITIVE_PATHS`.
+On every start, `cli/dependencies.py::_ensure_root_node_modules` runs `npm install --prefix <folder>` there, only in a folder that holds Curio's `package.json` and is not a link; otherwise it logs an error and runs no npm.
+
+A JavaScript node imports these packages as the execution account, and the backend's OpenStreetMap loader runs them as root, so they are readable by node code and never writable by it. Under isolation with an execution account, the sandbox's boot opens `.curio/nodejs` and the `node_modules` it reads (`hardening.open_node_packages`): everyone reads them, everyone executes a folder and a file that had execute, group and other lose write, and a mode already right is left alone, so the image's layer is never copied up. Links are skipped. Then `hardening.audit_node_packages` reports what the account could still write, and a hosted instance refuses to start with it.
 
 ### DuckDB extensions come from this instance
 
@@ -1594,7 +1628,11 @@ runtimes read that copy:
   start` that runs either one (`all`, `backend` or `sandbox`) calls
   `cli/dependencies.py::seed_duckdb_extensions`, which copies them into
   `~/.duckdb/extensions/extensions.duckdb.org/`, where duckdb-wasm looks before
-  downloading. Nothing is intercepted there.
+  downloading. Nothing is intercepted there. A JavaScript node whose Node runs
+  as the execution account has a HOME of its own, which
+  `node_runtime.link_duckdb_extensions` gives a link to each file of Curio's
+  copy at the same place; its folders are the account's, so a file the copy
+  lacks downloads into them.
 
 Both fall back to the CDN for a file this checkout does not carry, so a newer
 `@duckdb/duckdb-wasm` keeps working before its extensions are vendored; see
@@ -2488,12 +2526,17 @@ The model family (`huggingface-models`) is searched like a portal and added like
 
 ### Bucket mounts
 
-A deployment can run a mount service beside Curio, [`docker-compose.bucket-mounts.yml`](../docker-compose.bucket-mounts.yml): rclone's remote control daemon (`rclone rcd`) in a container of its own, which mounts buckets read-only with FUSE under its `/mounts`. The host folder there, `./bucket-mounts`, is bound `rshared` into the service and read-only `rslave` into Curio's container at `/bucket-mounts`, so a mount the service makes or removes shows in both. For now the service mounts only its own test folder: mounting a source, and reading a source's files in place, come later.
+A deployment can run a mount service beside Curio, [`docker-compose.bucket-mounts.yml`](../docker-compose.bucket-mounts.yml): rclone's remote control daemon (`rclone rcd`) in a container of its own, which mounts buckets read-only with FUSE under its `/mounts`. The host folder there, `./bucket-mounts`, is bound `rshared` into the service and read-only `rslave` into Curio's container at `/bucket-mounts`, so a mount the service makes or removes shows in both. The backend mounts a Discovery source's bucket there on demand (below); reading a source's files in place through its mount comes later.
 
 - **Privileges.** Only the service holds FUSE's: `/dev/fuse`, `SYS_ADMIN`, and its AppArmor profile, [`scripts/bucket-mounts/curio-bucket-mounts.apparmor`](../scripts/bucket-mounts/curio-bucket-mounts.apparmor), Docker's default profile with FUSE mounts and unmounts allowed under `/mounts` alone, which the host loads once (`apparmor_parser -r -W`). It drops every other capability and runs `no-new-privileges` on a read-only root, and its only network is an internal one with Curio's container. Its start, [`scripts/bucket-mounts/service.sh`](../scripts/bucket-mounts/service.sh), lazily unmounts what a stopped service left under `/mounts`, before rclone starts.
 - **Control channel.** rclone's rc API on a Unix socket, in a volume only the two containers share, in a folder `0700` root: the service makes it so, and `curio.py --deploy` again, so node code's account cannot reach the socket. `--bucket-mounts-dir` and `--bucket-mount-socket` (`CURIO_BUCKET_MOUNTS_DIR`, `CURIO_BUCKET_MOUNT_SOCKET`) name the folder and the socket in Curio's container; the launcher refuses one without the other. [`discovery/infrastructure/bucket_mounts.py`](../utk_curio/backend/app/discovery/infrastructure/bucket_mounts.py)'s `RcClient` calls it: one HTTP POST of JSON per call, each with a deadline, and rclone's error answers become plain reasons. The module imports nothing from Curio, so CI loads it by its path.
 - **Self-test.** When both flags are set, the backend tests the service once as it starts, on a thread of its own ([`discovery/application/bucket_mount_check.py`](../utk_curio/backend/app/discovery/application/bucket_mount_check.py), started by `server.py`'s `serve()`), after waiting up to a minute for its socket to answer. It mounts the service's test folder (`/selftest`, on a tmpfs, holding one line the service wrote) read-only with `allow_other` at `/mounts/.selftest`, reads the line back through `/bucket-mounts` as `curio-exec`, in a child process with that account's ids, and unmounts it. FUSE without `allow_other` still lets uid 0 read, and the backend runs as root, so a read as root would pass where node code's reads fail. The test reaches no network; it shows that FUSE, the profile, mount propagation, `allow_other` and the channel work. `/monitor`'s Deployment section shows the outcome: on, self-test passed; unavailable, with why, in words from a closed list; or none. A failure is also one of its Recent errors, with the paths and rclone's answers.
-- **CI.** The Full stack build's `bucket-mounts` job runs the service on `ubuntu-latest`, beside a stand-in for Curio's container ([`docker-compose.ci-bucket-mounts.yml`](../docker-compose.ci-bucket-mounts.yml)), after loading the profile into the runner's kernel. The self-test reads as a non-root account; then the service is killed, which leaves its mount dead in the stand-in, and its next start must clear it before the self-test passes again ([`scripts/bucket-mounts/ci_check.py`](../scripts/bucket-mounts/ci_check.py)).
+- **A source's mount.** [`discovery/application/bucket_mount_sources.py`](../utk_curio/backend/app/discovery/application/bucket_mount_sources.py)'s `ensure(manifest)` (the discovery service's `ensure_bucket_mount`) mounts a source's bucket at `/mounts/<sourceId>@<major>` in the service, which is `<bucket-mounts-dir>/<sourceId>@<major>` here: named after the source's folder, so the paths outputs save into it stay good across restarts. Nothing calls it yet but the tests. The mount comes from the manifest as it is ([`discovery/domain/bucket_mount.py`](../utk_curio/backend/app/discovery/domain/bucket_mount.py)): an `s3` source whose `baseUrl` is `https://host[:port]/<bucket>` mounts path-style at the endpoint `https://host[:port]`, and one whose `baseUrl` is `https://<bucket>.<host>`, with no path, mounts virtual-hosted at `https://<host>` (the shipped Sentinel-2 source). `options.prefix` up to its last `/` is the mount's folder, and a prefix that does not end in `/` leaves its last part as a tail every file's path in the mount starts with, so rclone asks for each file at the very URL `S3Storage.file_url` reads. Anything else (a Hugging Face repository, an `http://` bucket, a deeper path) is not mountable, with the reason, and keeps Cache files. The remote is rclone's `s3` backend, anonymous (`env_auth=false`, no keys), listed with ListObjectsV2 as Discovery lists, each file read with a GET alone (`no_head_object`); the mount is read-only with `allow_other`, no cache, files `0444`, folders `0555`, each folder's listing kept 5 minutes.
+- **Mounting, step by step.** The host check (`egress_policy.public_addresses`: every address the host resolves to must be public, the check `check_url` runs too); the host and port admitted to the proxy; `operations/mkdir` and `mount/mount`; then the mounted folder listed within 10 s on a thread of its own, so a hung FUSE call never holds the caller, which proves the mount reached Curio's container and the bucket answers listings. One mount of a source at a time. A mount found dead (`ENOTCONN`), gone, or whose remote no longer matches its manifest is mounted again: `mount/listmounts` names a remote by rclone's canonical form, `:s3{<hash>}:<bucket>/<folder>`, the hash taken of its parameters, which the backend computes the same way.
+- **Failures.** A failure keeps one reason: the host check's, *the bucket refuses listing*, *the bucket's mount gave no answer in 10 s*, *the mount did not reach this container*, *the mount service is down*, or rclone's error. What it made is unmounted, and the source is not tried again for a minute; meanwhile `ensure` answers with the kept reason. A self-test that failed for FUSE, the profile, propagation or the read as `curio-exec` lets no source mount.
+- **The proxy, the service's one way out.** The service has no network of its own: it sits on the internal network with Curio's container alone, and its `HTTPS_PROXY` is `curio:3128`, a CONNECT proxy on a thread of the backend ([`discovery/infrastructure/mount_proxy.py`](../utk_curio/backend/app/discovery/infrastructure/mount_proxy.py)) that `serve()` starts beside the self-test, on the backend's own host (`--backend-host`), a port no deployment publishes. It takes `CONNECT host:port` alone (405 otherwise), only to the host and port of a source being mounted (403 otherwise), and only when every address the host resolves to passes the egress policy; it then connects to one of those very addresses, never to the name. A check before mounting alone would leave rclone's later lookups open to a name that turns private, and rclone would hand what an internal service answers to node code as a file. A tunnel relays bytes both ways until a side closes or 5 minutes pass with nothing sent, at most 64 at once (503 beyond), and each refusal is logged with the host and why. Through a tunnel pass only TLS bytes.
+- **At backend start**, after a passed self-test, on its thread: `mount/listmounts`. A mount of a source still in the catalog is admitted again after its host check; every other mount but the self-test's is unmounted (a source the operator removed, or whose manifest names another bucket now). From then on `/monitor`'s line follows the service: a call that finds it gone makes the line unavailable, one Recent error for the loss, and the next answered call makes it on again, running the self-test again when the self-test itself found no service.
+- **CI.** The Full stack build's `bucket-mounts` job runs the service on `ubuntu-latest`, beside a stand-in for Curio's container ([`docker-compose.ci-bucket-mounts.yml`](../docker-compose.ci-bucket-mounts.yml)), after loading the profile into the runner's kernel. The self-test reads as a non-root account. Two buckets are mounted as the backend mounts a source: rclone must take the parameters and list each mount under the canonical name the backend computes, and with nothing on the proxy's port in the stand-in, each listing must fail. Then the service is killed, which leaves its mount dead in the stand-in, and its next start must clear it before the self-test passes again ([`scripts/bucket-mounts/ci_check.py`](../scripts/bucket-mounts/ci_check.py)).
 
 ### Collections in node code
 

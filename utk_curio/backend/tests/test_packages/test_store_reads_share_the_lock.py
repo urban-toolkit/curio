@@ -56,7 +56,7 @@ def test_two_readers_of_one_store_read_it_at_once(tmp_curio, monkeypatch):
     def _read():
         try:
             read.append(store_reads._locked_store_index(ACCOUNT))
-        except BaseException as exc:  # noqa: BLE001 - reported below
+        except Exception as exc:  # noqa: BLE001 - reported below
             errors.append(exc)
 
     readers = [threading.Thread(target=_read) for _ in range(2)]

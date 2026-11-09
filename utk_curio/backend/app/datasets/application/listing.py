@@ -476,7 +476,12 @@ class CatalogListing:
         dataflow_id: str | None = None,
         live_outputs: list[dict[str, Any]] | None = None,
         resolve_producer: bool = False,
+        consumer_counts: bool = True,
     ) -> dict[str, Any]:
+        """The Data Catalog's item *dataset_id*, as :meth:`list_catalog` lists
+        it for *dataflow_id*. *consumer_counts*, as for the listing: a lookup
+        that shows no count, such as a node run's of a collection, asks for
+        none."""
         # A synthetic OSM group id resolves to a bundle-shaped item built from
         # its member layers (which the un-collapsed listing still exposes).
         if is_layer_group_id(dataset_id):
@@ -488,7 +493,9 @@ class CatalogListing:
         # ``include_hub=True`` is a strict superset of ``include_hub=False`` (it
         # only *adds* the hub registry items), so a single pass finds any id -
         # no need for the historical two-pass scan.
-        result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True, live_outputs=live_outputs)
+        result = self._owner.list_catalog(
+            dataflow_id=dataflow_id, include_hub=True, live_outputs=live_outputs, consumer_counts=consumer_counts,
+        )
         for item in result["items"]:
             if item["id"] == dataset_id:
                 if resolve_producer:

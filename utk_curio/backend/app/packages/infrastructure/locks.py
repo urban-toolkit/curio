@@ -15,8 +15,8 @@ template-resolution refusal, an incomplete roster, or a brief wrong installed
 state. Sharing the lock closes it: a reader observes either the complete old
 tree or the complete new one.
 
-A writer — the seeder's swap, an install, an uninstall, a metadata edit, the
-e2e plant — holds it **exclusive**: no reader and no other writer while it
+A writer (the seeder's swap, an install, an uninstall, a metadata edit, the
+e2e plant) holds it **exclusive**: no reader and no other writer while it
 changes the store. Readers hold it **shared** (``shared=True``): any number
 of them at once, never with a writer, and a writer that waits keeps new
 readers out (:mod:`common.file_locks`). A dataflow's agents read its owner's
