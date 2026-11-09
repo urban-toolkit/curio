@@ -12,6 +12,11 @@ Two places, for two readers:
   to it, so these sit in the user's execution scratch,
   ``.curio/exec-scratch/users/<key>/media/``, the one place an isolated node
   may write. With isolation off they sit in the user's store.
+
+Every hosted guest signs in to one shared account, so what one guest's nodes
+derive is kept in a folder of that guest's own in the account's media folder
+(``derived_root``), named as their datasets are, and goes when the server
+starts (``forget_visitors``).
 """
 
 from __future__ import annotations
@@ -66,7 +71,8 @@ def cache_lock(user_key: str, dataset_id: str) -> Path:
 
 def forget_media(user_key: str, dataset_id: str) -> None:
     """Remove what Curio made from one dataset's files: its thumbnails, its
-    cached bucket files, and the files nodes derived from it.
+    cached bucket files, and the files nodes derived from it, in the media
+    folder and in each visitor's own folder in it (:func:`derived_root`).
 
     Never the files themselves, which are the source's.
     """
@@ -76,9 +82,13 @@ def forget_media(user_key: str, dataset_id: str) -> None:
 
     segment = _dataset_segment(dataset_id)
     key = user_key_segment(user_key)
-    folders = [users_base() / key / "media-cache" / segment, media_work_root(user_key) / "objects" / segment]
+    root = media_work_root(user_key)
+    folders = [users_base() / key / "media-cache" / segment, root / "objects" / segment]
+    roots = [root]
+    if (root / VISITORS).is_dir():
+        roots += [visitor for visitor in (root / VISITORS).iterdir() if visitor.is_dir()]
     derived = sorted({folder for types in DERIVED.values() for folder, _kind in types.values()})
-    folders += [media_work_root(user_key) / folder / segment for folder in derived]
+    folders += [where / folder / segment for where in roots for folder in derived]
     for folder in folders:
         shutil.rmtree(folder, ignore_errors=True)
 
@@ -92,6 +102,33 @@ def media_work_root(user_key: str) -> Path:
         shared = os.environ.get("CURIO_SHARED_DATA") or str(users_base().parent / "data")
         return Path(user_work_dir(shared, key)) / "media"
     return users_base() / key / "media"
+
+
+#: In the shared guest account's media folder: a folder of each hosted
+#: guest's own, for the files their nodes derive (:func:`derived_root`).
+VISITORS = "visitors"
+
+
+def derived_root(user_key: str, visitor: str | None = None) -> Path:
+    """Where the files nodes derive from a collection's files are, without
+    creating it: *user_key*'s media folder, or *visitor*'s own folder in it,
+    ``<media>/visitors/<visitor>/``, for a hosted guest named as
+    ``visitor_copies.visitor_of`` names them, never by the sign-in. A node
+    makes the folder as it writes there, so under isolation it is the
+    execution user's."""
+    root = media_work_root(user_key)
+    if not visitor:
+        return root
+    return root / VISITORS / validate_component(visitor, field="visitor")
+
+
+def forget_visitors(user_key: str) -> None:
+    """Remove every visitor's own folder in *user_key*'s media folder, with
+    what their nodes derived: the server does when it starts
+    (``visitor_copies.drop_all``)."""
+    import shutil
+
+    shutil.rmtree(media_work_root(user_key) / VISITORS, ignore_errors=True)
 
 
 def media_work_dir(user_key: str, *parts: str) -> Path:

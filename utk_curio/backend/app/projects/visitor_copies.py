@@ -41,6 +41,14 @@ their files, which a ``<video>`` asks for with no sign-in
 (:func:`visitor_of`), never by the sign-in, and its file is read as theirs
 (:func:`serving_visitor`).
 
+The frames, clips and overlays the guest's nodes derive from a collection's
+files are written in a folder of the guest's own in the account's media
+folder, named as their datasets are (:func:`media_visitor`,
+``media_dirs.derived_root``), wherever the guest is served: in their
+requests, on a run's thread, and through a signed link. One derived id names
+a file in each guest's folder, so none reads or overwrites another's. They go
+when the server starts too.
+
 The guest's own edits on the canvas land on the copy too: the guest's tab
 joins the room of its copy (:func:`room_for`), keyed by the copy's id, and
 syncs the copy's doc (``collaboration/dataflow_docs.py``). A room opens the
@@ -212,6 +220,30 @@ def visitor_of(sign_in: Optional[str] = None) -> Optional[str]:
     if not sign_in:
         return None
     return "v" + uuid.uuid5(_NAMESPACE, f"{sign_in}:datasets").hex
+
+
+def served_visitor(sign_in: Optional[str] = None) -> Optional[str]:
+    """The visitor the request or the run serves, as :func:`visitor_of`
+    names them: the one signed in as *sign_in*, else the request's or the
+    run's sign-in, else the visitor a block serves by name alone
+    (:func:`serving_visitor`). None for none of them."""
+    sign_in = sign_in or _sign_in()
+    return visitor_of(sign_in) if sign_in else _VISITOR.get()
+
+
+def media_visitor(user_key: Optional[str]) -> Optional[str]:
+    """The visitor whose own folder, in the media folder of the store
+    *user_key*, holds the files nodes derive now (``media_dirs.derived_root``):
+    in the shared guest account's, on a Curio started with ``--deploy``, the
+    visitor the request or the run serves (:func:`served_visitor`). None for
+    any other store; without ``--deploy``, where the shared guest is the one
+    local user; and for a run that serves no visitor, such as a dashboard's
+    that every viewer of it shares."""
+    from utk_curio.backend import config
+
+    if user_key != GUEST_KEY or config.CURIO_NO_AUTH:
+        return None
+    return served_visitor()
 
 
 def added_by(name: Optional[str]) -> Optional[str]:
@@ -417,7 +449,7 @@ def lists_for(dataflow_id: Optional[str], sign_in: Optional[str] = None, *, name
     if is_copy(dataflow_id) and not is_own_copy(sign_in, dataflow_id):
         return False
     adder = added_by(name)
-    return adder is None or adder == (visitor_of(sign_in) if sign_in else _VISITOR.get())
+    return adder is None or adder == served_visitor(sign_in)
 
 
 def is_own_copy(sign_in: Optional[str], own: str) -> bool:
@@ -459,9 +491,9 @@ def drop_all() -> int:
     """Drop every copy the hosted guests worked on, and every new dataflow
     they made, with the outputs their plays kept on it and the node outputs
     they added to it as datasets; how many. The files they uploaded and the
-    datasets they downloaded go too, and so do the visitors' lists of their
-    new dataflows. The server does when it starts, as it puts the shared
-    examples back."""
+    datasets they downloaded go too, and so do the files their nodes derived
+    and the visitors' lists of their new dataflows. The server does when it
+    starts, as it puts the shared examples back."""
     from utk_curio.backend.app.common.user_storage import user_key_segment, users_base
     from utk_curio.backend.app.runs import kept
 
@@ -475,6 +507,14 @@ def drop_all() -> int:
             logger.warning("%d hosted guest uploads stay until the next start", len(left))
     except Exception:  # noqa: BLE001 - a start goes on; they go at the next one
         logger.warning("could not drop the hosted guests' uploads", exc_info=True)
+    # Each guest's in a folder named after them, so one that cannot go now
+    # is still read by that guest alone (``media_dirs.derived_root``).
+    try:
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+
+        media_dirs.forget_visitors(GUEST_KEY)
+    except Exception:  # noqa: BLE001 - a start goes on; they go at the next one
+        logger.warning("could not drop the files the hosted guests' nodes derived", exc_info=True)
     # First, so a new dataflow that stays until the next start is listed in
     # no gallery meanwhile.
     try:
