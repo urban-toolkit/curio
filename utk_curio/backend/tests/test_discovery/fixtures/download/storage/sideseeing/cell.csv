@@ -1,0 +1,4 @@
+datetime_utc,cellular_network
+2026-10-26T21:03:17.473Z,CellInfoNr:{ mRegistered=NO mCellConnectionStatus=0 CellIdentityNr:{ mPci = 1 mTac = 1 mBands = [2] mMcc = 310 mMnc = 410 mAlphaLong = Carrier } CellSignalStrengthNr:{ ssRsrp = -81 ssRsrq = -11 ssSinr = 10 level = 2 } }
+2026-10-26T21:03:18.485Z,CellInfoLte:{ mRegistered=YES mCellConnectionStatus=1 CellIdentityLte:{ mPci = 2 mTac = 1 mMcc = 310 mMnc = 410 mAlphaLong = Carrier } CellSignalStrengthLte:{ rssi = -51 rsrp = -88 rsrq = -9 level = 3 } }
+2026-10-26T21:03:19.496Z,CellInfoNr:{ mRegistered=NO mCellConnectionStatus=0 CellIdentityNr:{ mPci = 1 mTac = 1 mBands = [2] mMcc = 310 mMnc = 410 mAlphaLong = Carrier } CellSignalStrengthNr:{ ssRsrp = -79 ssRsrq = -11 ssSinr = 12 level = 2 } }

@@ -18,8 +18,10 @@ which every file's path in the mount starts with: the file
 
 Anything else is not mountable, with the reason, and keeps Cache files: a
 Hugging Face repository (rclone has no backend for one), an ``http://``
-bucket (the proxy carries HTTPS tunnels alone), a deeper path, or a URL with
-more in it than a host and a bucket.
+bucket (the proxy carries HTTPS tunnels alone), a deeper path, a URL with
+more in it than a host and a bucket, or a source that sends each account's
+own token (``auth.mode`` other than ``public``), which one mount that every
+account reads anonymously cannot carry.
 
 A mount is named after its source's folder, ``<sourceId>@<major>``, so the
 paths node outputs save into it stay good across restarts.
@@ -87,6 +89,8 @@ def bucket_mount(manifest: DiscoverySourceManifest) -> BucketMount:
         raise NotMountable("rclone has no backend for a Hugging Face repository")
     if provider.type != "s3":
         raise NotMountable(f"its provider ({provider.type}) is not a bucket")
+    if manifest.auth.uses_token:
+        raise NotMountable("it sends each account's own token, and a mount reads for every account alike")
     name = manifest.dir_name
     if not SOURCE_DIR_RE.match(name):
         raise NotMountable(f"{name!r} is not a source's folder name")

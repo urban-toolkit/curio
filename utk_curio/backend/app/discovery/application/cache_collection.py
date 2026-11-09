@@ -4,7 +4,9 @@ A collection in a bucket is indexed from the bucket's listing, and its files
 stay there. A node reading pixels, samples or frames needs them on disk, and
 under isolation a node has no network at all, so the files are fetched once,
 by the backend, through the discovery transport and its egress policy, into the
-user's media directory. Until a file is cached its ``path`` is null.
+user's media directory. Until a file is cached its ``path`` is null. A bucket
+the deployment mounts is read in place instead (``bucket_mount_sources``), and
+none of its files is cached.
 
 Bounded twice, both before a byte is fetched: each object up to
 ``CURIO_MEDIA_CACHE_MAX_FILE_GB`` (:func:`check_sizes`), and all of a user's
@@ -168,7 +170,16 @@ def cache(
     what the collection's block says of its files once their details are read
     (``probeErrors``, and ``totalSeconds`` for recordings), for the Data
     Catalog to keep.
+
+    A bucket this deployment mounts is read in place, so nothing of it is
+    cached, also while its mount is down (``bucket_mount_sources``).
     """
+    from utk_curio.backend.app.discovery.application import bucket_mount_sources
+
+    reads = getattr(provider, "reads", None)
+    refusal = bucket_mount_sources.cache_refusal(reads.state()) if reads is not None else None
+    if refusal is not None:
+        raise CapabilityUnsupported(f"{dataset.get('title') or 'This collection'} is not cached: {refusal}")
     owner = owner or uuid.uuid4().hex
     held, claimed = claim(user_key, dataset["id"], lambda: owner)
     if held != owner:

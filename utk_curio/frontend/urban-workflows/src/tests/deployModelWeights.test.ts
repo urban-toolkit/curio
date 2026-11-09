@@ -17,14 +17,23 @@ describe("The deploy's fetched model weights", () => {
     test("each stack mounts the shared folder for the server to write and names it, for a release that reads it", () => {
         expect(workflow.match(/grep -q -e '"--model-weights-dir"' utk_curio\/main\.py/g)).toHaveLength(2);
         expect(workflow.match(/weights_args=', "--model-weights-dir", "\/model-weights"'/g)).toHaveLength(2);
+        // Curio's volumes in the site file: the weights folder first, when
+        // the release reads it, then the bucket mounts' bind.
         expect(
-            workflow.match(/printf ' {4}volumes: \["\/srv\/curio-model-weights:\/model-weights"\]\\n'/g),
+            workflow.match(
+                /^( +)if \[ -n "\$weights_args" \]; then\n\1 {2}curio_volumes='"\/srv\/curio-model-weights:\/model-weights"'\n\1fi$/gm,
+            ),
+        ).toHaveLength(2);
+        expect(
+            workflow.match(/printf ' {4}volumes: \[%s\]\\n' "\$curio_volumes" >> docker-compose\.site\.yml/g),
         ).toHaveLength(2);
         expect(workflow).not.toMatch(/model-weights:ro/);
         // Before the top-level secrets the site file may end with.
         for (const job of workflow.split(/^ {2}deploy-(?:dev|stable):$/m).slice(1)) {
             expect(job.indexOf("volumes: [")).toBeGreaterThan(-1);
             expect(job.indexOf("volumes: [")).toBeLessThan(job.indexOf("secrets: [curio_llm_endpoint]"));
+            expect(job.indexOf("curio_volumes='")).toBeGreaterThan(-1);
+            expect(job.indexOf("curio_volumes='")).toBeLessThan(job.indexOf("volumes: ["));
         }
     });
 

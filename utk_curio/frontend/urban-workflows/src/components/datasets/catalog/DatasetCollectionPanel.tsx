@@ -25,7 +25,9 @@ import stripStyles from "./DatasetCollectionPanel.module.css";
  * they are.
  *
  * The index is the dataset; the files stay where the source keeps them.
- * A bucket's files are read once cached, so the section offers Cache files.
+ * A bucket's files are read once cached, so the section offers Cache files,
+ * unless this deployment mounts the bucket: its files are read in place
+ * then, and the section says from where, or why the bucket cannot be read.
  */
 
 const COUNT_NOUN: Record<string, [string, string]> = {
@@ -223,6 +225,9 @@ export const CollectionInfoSection: React.FC<{
   const block = dataset.collection;
   if (!block) return null;
   const running = job != null && !isTerminal(job.status);
+  // A bucket read in place has nothing to cache, also while its mount is down.
+  const inPlace = status != null && (status.readInPlace === true || status.mountProblem != null);
+  const caches = status != null && !status.local && !inPlace;
   const narrowed = narrowedLabel(block);
   const split = Object.entries(block.split ?? {})
     .map(([name, value]) => `${name} ${value}`)
@@ -324,7 +329,7 @@ export const CollectionInfoSection: React.FC<{
           <dt>Indexed</dt>
           <dd>{absoluteDate(block.indexedAt)}</dd>
         </div>
-        {status && !status.local ? (
+        {status && caches ? (
           <div>
             <dt>On this machine</dt>
             <dd>
@@ -333,7 +338,15 @@ export const CollectionInfoSection: React.FC<{
           </div>
         ) : null}
       </dl>
-      {status && !status.local && status.cachedFiles < status.fileCount ? (
+      {status?.readInPlace ? (
+        <p className={stripStyles.inPlaceNote}>Read in place from {status.bucketHost ?? "its bucket"}</p>
+      ) : null}
+      {status?.mountProblem ? (
+        <p className={styles.error} role="alert">
+          {status.bucketHost ?? "Its bucket"} cannot be read now: {status.mountProblem}
+        </p>
+      ) : null}
+      {status && caches && status.cachedFiles < status.fileCount ? (
         <div className={stripStyles.cacheRow}>
           <button
             type="button"

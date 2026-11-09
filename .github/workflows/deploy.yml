@@ -62,6 +62,11 @@ name: Deploy
 #        sudo install -m 644 /srv/curio-dev/scripts/bucket-mounts/curio-bucket-mounts.apparmor /etc/apparmor.d/curio-bucket-mounts
 #        sudo apparmor_parser -r -W /etc/apparmor.d/curio-bucket-mounts
 #        sudo aa-status | grep curio-bucket-mounts   # prints its name
+#      Each stack runs its own service, mounting in a folder of its own:
+#      /srv/curio-bucket-mounts/dev and /srv/curio-bucket-mounts/stable. Each
+#      job checks all three before it stops the old stack, the installed
+#      profile against its checkout's too, and fails naming the command to
+#      run.
 
 # A merge to main deploys curio-dev once: bump-version.yml runs on the merge
 # (its paths list what the deployed image holds), pushes the bump commit, and
@@ -208,6 +213,54 @@ jobs:
           if grep -q -e '"--media-cache-max-file-gb"' utk_curio/main.py; then
             cache_args=', "--media-cache-max-file-gb", "8"'
           fi
+          # The bucket mount service (docker-compose.bucket-mounts.yml), when
+          # this release's launcher has its flags. It mounts buckets in this
+          # stack's own folder outside the checkout, which the site file below
+          # binds into both containers. Docker makes the folder, root's: the
+          # service keeps no capability to write in another account's folder.
+          mounts_args=""
+          mounts_dir=/srv/curio-bucket-mounts/dev
+          if grep -q -e '"--bucket-mounts-dir"' utk_curio/main.py; then
+            mounts_args=', "--bucket-mounts-dir", "/bucket-mounts", "--bucket-mount-socket", "/run/curio-bucket-mounts/rc.sock"'
+          fi
+          # What the service needs of the host (DEPLOYMENT.md, "Bucket
+          # mounts"), checked while the old stack still serves: FUSE, a shared
+          # mount at /srv (this stack's folder may not be there yet), and the
+          # service's AppArmor profile, loaded and the one this checkout holds.
+          # Docker refuses to start a container under a profile the kernel has
+          # not loaded, so a throwaway container of the service's own image
+          # tells. Each failure names the command to run on the host.
+          if [ -n "$mounts_args" ]; then
+            if [ ! -c /dev/fuse ]; then
+              echo "::error::/dev/fuse is not a character device, and the bucket mount service needs it. Load FUSE as root: sudo modprobe fuse"
+              exit 1
+            fi
+            srv_propagation="$(findmnt -n -o PROPAGATION -T /srv || true)"
+            case "$srv_propagation" in
+              *shared*)
+                ;;
+              *)
+                echo "::error::/srv is on a mount that is ${srv_propagation:-unknown}, not shared, so the bucket mounts would not reach Curio's container. Make it shared as root: sudo mount --make-shared $(findmnt -n -o TARGET -T /srv)"
+                exit 1
+                ;;
+            esac
+            profile_fix="sudo install -m 644 $PWD/scripts/bucket-mounts/curio-bucket-mounts.apparmor /etc/apparmor.d/curio-bucket-mounts && sudo apparmor_parser -r -W /etc/apparmor.d/curio-bucket-mounts"
+            # Pulled first when missing, so a failed pull is not taken for a
+            # missing profile.
+            mounts_image="$(sed -n 's/^    image: //p' docker-compose.bucket-mounts.yml)"
+            if ! docker image inspect "$mounts_image" > /dev/null 2>&1 && ! docker pull -q "$mounts_image" > /dev/null < /dev/null; then
+              echo "::error::could not pull $mounts_image, the bucket mount service's image"
+              exit 1
+            fi
+            if ! profile_run="$(docker run --rm --network none --security-opt apparmor=curio-bucket-mounts --entrypoint /bin/true "$mounts_image" 2>&1 < /dev/null)"; then
+              echo "::error::Docker could not start a container under the AppArmor profile curio-bucket-mounts: ${profile_run}. Load the profile as root: $profile_fix"
+              exit 1
+            fi
+            if ! cmp -s scripts/bucket-mounts/curio-bucket-mounts.apparmor /etc/apparmor.d/curio-bucket-mounts; then
+              echo "::error::/etc/apparmor.d/curio-bucket-mounts is not this checkout's scripts/bucket-mounts/curio-bucket-mounts.apparmor. Install and load the checkout's as root: $profile_fix"
+              exit 1
+            fi
+          fi
           # This stack's container name, host ports and curio.py arguments
           # (docker-compose.deploy.yml). The backend is /api on whichever host
           # serves the page, so the stack needs no hostname of its own. Each
@@ -230,14 +283,39 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" >> docker-compose.site.yml
+          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$mounts_args" >> docker-compose.site.yml
+          # Curio's binds: the weights folder both stacks share, which the
+          # server writes as it downloads a model's weights on first use, and
+          # this stack's bucket mounts, read-only and rslave. Each replaces an
+          # overlay's bind of the same target whole, so each is written in
+          # full.
+          curio_volumes=""
           if [ -n "$weights_args" ]; then
-            printf '    volumes: ["/srv/curio-model-weights:/model-weights"]\n' >> docker-compose.site.yml
+            curio_volumes='"/srv/curio-model-weights:/model-weights"'
+          fi
+          if [ -n "$mounts_args" ]; then
+            curio_volumes="${curio_volumes:+$curio_volumes, }{type: bind, source: $mounts_dir, target: /bucket-mounts, read_only: true, bind: {propagation: rslave, create_host_path: true}}"
+          fi
+          if [ -n "$curio_volumes" ]; then
+            printf '    volumes: [%s]\n' "$curio_volumes" >> docker-compose.site.yml
           fi
           if [ -n "$llm_args" ]; then
-            printf '    secrets: [curio_llm_endpoint]\nsecrets:\n  curio_llm_endpoint:\n    file: ./.secrets/llm-endpoint\n' >> docker-compose.site.yml
+            printf '    secrets: [curio_llm_endpoint]\n' >> docker-compose.site.yml
           fi
-          export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml:docker-compose.site.yml
+          # The service's side of the same folder, rshared, after Curio's keys
+          # and before the file's top-level secrets.
+          if [ -n "$mounts_args" ]; then
+            printf '  bucket-mounts:\n    volumes: [{type: bind, source: %s, target: /mounts, bind: {propagation: rshared, create_host_path: true}}]\n' "$mounts_dir" >> docker-compose.site.yml
+          fi
+          if [ -n "$llm_args" ]; then
+            printf 'secrets:\n  curio_llm_endpoint:\n    file: ./.secrets/llm-endpoint\n' >> docker-compose.site.yml
+          fi
+          # The service's overlay after the deploy's, and the site file last.
+          export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
+          if [ -n "$mounts_args" ]; then
+            export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.bucket-mounts.yml
+          fi
+          export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.site.yml
           # Build while the old stack still serves: the site is offline only
           # from `down` until the new container boots, and a failed build
           # leaves the old stack up. The image's COPY datasets/ therefore runs
@@ -336,6 +414,36 @@ jobs:
               exit 1
               ;;
           esac
+          # The bucket mount service, when this stack runs it: its container
+          # healthy and Curio's self-test of it passed, as /monitor's
+          # Deployment reads it. The self-test waits up to a minute for the
+          # service's socket and reads pending until it ends; unavailable, or
+          # none (Curio started without the flags), fails at once. The
+          # service's container has no fixed name, so Compose finds it.
+          # `< /dev/null` as above.
+          if [ -n "$mounts_args" ]; then
+            echo "=== bucket mounts ==="
+            deadline=$((SECONDS + 240))
+            while true; do
+              mounts_health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$(docker compose -p curio-dev ps -a -q bucket-mounts)" 2>/dev/null || echo missing)"
+              mounts_line="$(docker compose -p curio-dev exec -T curio \
+                               python -c 'import json, urllib.request; d = json.load(urllib.request.urlopen("http://127.0.0.1:5002/api/monitor", timeout=10))["deployment"]; print(d["bucketMounts"] + (": " + d["bucketMountsProblem"] if d["bucketMountsProblem"] else ""))' \
+                               2>/dev/null < /dev/null || true)"
+              mounts_state="${mounts_line%%:*}"
+              if [ "$mounts_health" = "healthy" ] && [ "$mounts_state" = "passed" ]; then
+                echo "OK: bucket-mounts is healthy and its self-test passed"
+                break
+              fi
+              if [ "$mounts_state" = "unavailable" ] || [ "$mounts_state" = "none" ] || [ "$SECONDS" -ge "$deadline" ]; then
+                echo "::error::the bucket mount service is not working: bucket-mounts is $mounts_health, and /monitor's Bucket mounts reads ${mounts_line:-nothing}"
+                docker compose -p curio-dev logs --no-color --tail=100 bucket-mounts || true
+                docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+                  'grep -i "bucket mount" .curio/messages.log 2>/dev/null | tail -20' < /dev/null || true
+                exit 1
+              fi
+              sleep 5
+            done
+          fi
 
           echo "=== docker ps (post-deploy) ==="
           docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.RunningFor}}\t{{.Ports}}\t{{.Status}}' || true
@@ -425,6 +533,9 @@ jobs:
           mkdir -p instance .curio
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
           set -a; [ -f .env ] && . ./.env; set +a
+          # Set below for a release whose launcher has the bucket mount
+          # service's flags, and read again once the stack is up.
+          mounts_args=""
           if grep -q -e '"--backend-url"' utk_curio/main.py 2>/dev/null; then
             # Releases after v0.16.0 take the site's arguments, container name
             # and host ports from docker-compose.site.yml, as curio-dev does.
@@ -462,6 +573,43 @@ jobs:
             if grep -q -e '"--media-cache-max-file-gb"' utk_curio/main.py; then
               cache_args=', "--media-cache-max-file-gb", "8"'
             fi
+            # The bucket mount service, as curio-dev runs it, in stable's own
+            # folder: each stack runs its own service.
+            mounts_dir=/srv/curio-bucket-mounts/stable
+            if grep -q -e '"--bucket-mounts-dir"' utk_curio/main.py; then
+              mounts_args=', "--bucket-mounts-dir", "/bucket-mounts", "--bucket-mount-socket", "/run/curio-bucket-mounts/rc.sock"'
+            fi
+            # What the service needs of the host, checked as curio-dev checks
+            # it, while the old stack still serves.
+            if [ -n "$mounts_args" ]; then
+              if [ ! -c /dev/fuse ]; then
+                echo "::error::/dev/fuse is not a character device, and the bucket mount service needs it. Load FUSE as root: sudo modprobe fuse"
+                exit 1
+              fi
+              srv_propagation="$(findmnt -n -o PROPAGATION -T /srv || true)"
+              case "$srv_propagation" in
+                *shared*)
+                  ;;
+                *)
+                  echo "::error::/srv is on a mount that is ${srv_propagation:-unknown}, not shared, so the bucket mounts would not reach Curio's container. Make it shared as root: sudo mount --make-shared $(findmnt -n -o TARGET -T /srv)"
+                  exit 1
+                  ;;
+              esac
+              profile_fix="sudo install -m 644 $PWD/scripts/bucket-mounts/curio-bucket-mounts.apparmor /etc/apparmor.d/curio-bucket-mounts && sudo apparmor_parser -r -W /etc/apparmor.d/curio-bucket-mounts"
+              mounts_image="$(sed -n 's/^    image: //p' docker-compose.bucket-mounts.yml)"
+              if ! docker image inspect "$mounts_image" > /dev/null 2>&1 && ! docker pull -q "$mounts_image" > /dev/null < /dev/null; then
+                echo "::error::could not pull $mounts_image, the bucket mount service's image"
+                exit 1
+              fi
+              if ! profile_run="$(docker run --rm --network none --security-opt apparmor=curio-bucket-mounts --entrypoint /bin/true "$mounts_image" 2>&1 < /dev/null)"; then
+                echo "::error::Docker could not start a container under the AppArmor profile curio-bucket-mounts: ${profile_run}. Load the profile as root: $profile_fix"
+                exit 1
+              fi
+              if ! cmp -s scripts/bucket-mounts/curio-bucket-mounts.apparmor /etc/apparmor.d/curio-bucket-mounts; then
+                echo "::error::/etc/apparmor.d/curio-bucket-mounts is not this checkout's scripts/bucket-mounts/curio-bucket-mounts.apparmor. Install and load the checkout's as root: $profile_fix"
+                exit 1
+              fi
+            fi
             cat > docker-compose.site.yml <<'SITE'
           services:
             curio:
@@ -470,12 +618,29 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" >> docker-compose.site.yml
+            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$mounts_args" >> docker-compose.site.yml
+            # Curio's binds and the service's, as curio-dev writes them.
+            curio_volumes=""
             if [ -n "$weights_args" ]; then
-              printf '    volumes: ["/srv/curio-model-weights:/model-weights"]\n' >> docker-compose.site.yml
+              curio_volumes='"/srv/curio-model-weights:/model-weights"'
+            fi
+            if [ -n "$mounts_args" ]; then
+              curio_volumes="${curio_volumes:+$curio_volumes, }{type: bind, source: $mounts_dir, target: /bucket-mounts, read_only: true, bind: {propagation: rslave, create_host_path: true}}"
+            fi
+            if [ -n "$curio_volumes" ]; then
+              printf '    volumes: [%s]\n' "$curio_volumes" >> docker-compose.site.yml
             fi
             if [ -n "$llm_args" ]; then
-              printf '    secrets: [curio_llm_endpoint]\nsecrets:\n  curio_llm_endpoint:\n    file: ./.secrets/llm-endpoint\n' >> docker-compose.site.yml
+              printf '    secrets: [curio_llm_endpoint]\n' >> docker-compose.site.yml
+            fi
+            if [ -n "$mounts_args" ]; then
+              printf '  bucket-mounts:\n    volumes: [{type: bind, source: %s, target: /mounts, bind: {propagation: rshared, create_host_path: true}}]\n' "$mounts_dir" >> docker-compose.site.yml
+            fi
+            if [ -n "$llm_args" ]; then
+              printf 'secrets:\n  curio_llm_endpoint:\n    file: ./.secrets/llm-endpoint\n' >> docker-compose.site.yml
+            fi
+            if [ -n "$mounts_args" ]; then
+              export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.bucket-mounts.yml
             fi
             export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.site.yml
           else
@@ -571,6 +736,31 @@ jobs:
               exit 1
               ;;
           esac
+          # The bucket mount service, when this stack runs it, checked as
+          # curio-dev checks it.
+          if [ -n "$mounts_args" ]; then
+            echo "=== bucket mounts ==="
+            deadline=$((SECONDS + 240))
+            while true; do
+              mounts_health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$(docker compose -p curio ps -a -q bucket-mounts)" 2>/dev/null || echo missing)"
+              mounts_line="$(docker compose -p curio exec -T curio \
+                               python -c 'import json, urllib.request; d = json.load(urllib.request.urlopen("http://127.0.0.1:5002/api/monitor", timeout=10))["deployment"]; print(d["bucketMounts"] + (": " + d["bucketMountsProblem"] if d["bucketMountsProblem"] else ""))' \
+                               2>/dev/null < /dev/null || true)"
+              mounts_state="${mounts_line%%:*}"
+              if [ "$mounts_health" = "healthy" ] && [ "$mounts_state" = "passed" ]; then
+                echo "OK: bucket-mounts is healthy and its self-test passed"
+                break
+              fi
+              if [ "$mounts_state" = "unavailable" ] || [ "$mounts_state" = "none" ] || [ "$SECONDS" -ge "$deadline" ]; then
+                echo "::error::the bucket mount service is not working: bucket-mounts is $mounts_health, and /monitor's Bucket mounts reads ${mounts_line:-nothing}"
+                docker compose -p curio logs --no-color --tail=100 bucket-mounts || true
+                docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+                  'grep -i "bucket mount" .curio/messages.log 2>/dev/null | tail -20' < /dev/null || true
+                exit 1
+              fi
+              sleep 5
+            done
+          fi
 
           echo "=== docker ps (post-deploy) ==="
           docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.RunningFor}}\t{{.Ports}}\t{{.Status}}' || true

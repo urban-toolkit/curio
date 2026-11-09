@@ -102,6 +102,10 @@ On a dataflow you edit at its owner's invitation ([COLLABORATION.md](COLLABORATI
 
 Your canvas of such a dataflow draws the nodes of a package the owner added to it that you do not have from the owner's copy, and so does the canvas of anyone who watches it, where those nodes have no play button. Your palette lists that package too, without the buttons that act on your own copy (details, export, metadata, publish). A node whose package runs code on the server calls the owner's copy of it. Under fork isolation your runs also import the Python libraries the owner installed, after your own, so a library you installed yourself comes first.
 
+### Functions a node can call
+
+The header above a node's code lists, under **Functions**, what its code can call: the functions the modules of its package offer, then those of the packages in its `dependencies.packages`, then Curio's own, which need no import ([USAGE.md](USAGE.md#inside-a-node)). A module offers the functions its `__all__` names, else every public function it defines ([Modules beside your template](AUTHORING-NODES.md#modules-beside-your-template)). An Accumulated Shadow node lists `accumulated_shadow(value, season, model, output_file)` and `season_factor(season)` under `deep_umbra`, then Rasterization's under its `scout_rasters` modules. Hover a function to read its call and the first paragraph of its docstring; click it to write its call at the cursor, with its import line when the code lacks it. On a dataflow you edit at its owner's invitation, a node of a package the owner added lists the functions of the owner's copy, which your runs import. **View details** on a package lists the same functions under **Modules**, with what each one does.
+
 ---
 
 ## 4. Creating a package from a canvas node
@@ -136,7 +140,7 @@ Saving into a package you added from the catalog makes that copy your own. Curio
 A package that ships Python modules in its `sources/` folder ([Modules beside your template](AUTHORING-NODES.md#modules-beside-your-template)) can give you a node for any of their functions without writing its code:
 
 1. Open the Node Catalog drawer and click **New node from a Python function** in its footer.
-2. Pick the function. The list holds every public function of every module your installed packages ship, as `module.function(parameters)`. A function that takes `*args` or `**kwargs`, or is `async`, is listed but cannot be picked, and says why; so is a module that does not parse.
+2. Pick the function. The list holds the functions every module your installed packages ship offers, its `__all__` or else its public functions, as `module.function(parameters)`. A function that takes `*args` or `**kwargs`, or is `async`, is listed but cannot be picked, and says why; so is a module that does not parse.
 3. For each parameter, choose what it is given:
    - **A widget**: a tag in the node's **Widgets** tab ([Widgets](USAGE.md#widgets)). Curio suggests its type from the parameter's annotation or default: `bool` is a checkbox, `int` and `float` a number, `str` a text, `Literal["a", "b"]` a choice, a list of texts or numbers a list, `datetime` a date and time, `date` a date. **Edit widget** changes its type, label, default and options.
    - **A fixed value**, written as Python writes it: `2`, `'winter'`, `[1, 2]`.
@@ -147,7 +151,7 @@ A package that ships Python modules in its `sources/` folder ([Modules beside yo
 The node joins this project's palette. Its code imports the function and returns its call, with the widgets and inputs as references:
 
 ```python
-from deep_umbra.deep_umbra import season_factor
+from deep_umbra import season_factor
 
 return season_factor(season=[!! season !!])
 ```
@@ -245,7 +249,7 @@ A package can name the packages it needs in `dependencies.packages`, each as `<p
 
 A node of the package can import the Python modules those packages ship in their `sources/`. Adding the package adds them too, and the packages they name in turn: **Add to project**, **Add to all projects**, a card dropped on the canvas, and opening a dataflow whose lockfile names the package. Each one comes from the shared catalog at the highest version its entry allows, unless your account holds a copy the entry allows, which stays as it is. They go in the dataflow's lockfile beside the package, and the review before an add lists them under **Dependencies**. When a package it needs is in neither your account nor the catalog at a version its entry allows, the add is refused and nothing is added: the message names the missing package and the package that needs it. A copy in your account that the entry does not allow is not replaced: when the catalog's copy is one it allows, the message says to update it first.
 
-Agents read a template the way its manifest and its sources describe it. An agent that writes the code of a node of the template reads its whole `description`, its `source` file, the starter a new node opens with, and the functions the node's code can import: every public function of the package's modules and of the modules of the packages in `dependencies.packages`, by its signature and the first paragraph of its docstring. An agent that checks a package before adding it reads the same functions. So the description, the starter and the docstrings are what an agent knows of the template.
+Agents read a template the way its manifest and its sources describe it. An agent that writes the code of a node of the template reads its whole `description`, its `source` file, the starter a new node opens with, and the functions the node's code can import: those the package's modules offer, and those of the modules of the packages in `dependencies.packages`, each module's `__all__` or else its public functions, by their signatures and the first paragraph of their docstrings. The header above the node's code lists the same functions under **Functions** ([Functions a node can call](#functions-a-node-can-call)). An agent that checks a package before adding it reads the same functions. So the description, the starter, the `__all__` lists and the docstrings are what an agent knows of the template.
 
 A package can also tell the agents how to use its nodes, in **skills**: the folders of its `skills/`, one per skill, each holding a `SKILL.md` in the [Agent Skills format](https://agentskills.io/specification), with any files it reads beside it, such as `references/` ([EXTENDING §9](EXTENDING.md#9-writing-a-skill) says how to write one). Every agent on a dataflow that uses the package reads them, and the [Skill Catalog](SKILL-CATALOG.md#skills-from-packages) lists them with the package. Its chat lists them after the skills its own manifest names, and loads one when a task matches its description. A run that writes one of the package's nodes is handed, from its first message, each skill whose `metadata` names that node's template in `curio-templates`, by the template's `id` in the package's manifest:
 

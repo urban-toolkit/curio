@@ -5,17 +5,25 @@ at a time, and read with a plain GET (with a ``Range`` header for a probe of a
 file's header). Every request goes through the discovery transport, so the egress
 policy applies to each one, redirects included. Anonymous access only: a
 bucket that needs a signed request is not one this provider reads.
+
+Where this deployment mounts the bucket (``application/bucket_mount_sources.py``,
+which the discovery service hands this provider as *reads*), its files are
+read in place, through the mount: :meth:`S3Storage.local_path` is the file in
+the mount and :meth:`S3Storage.open` reads it there. Listings stay on HTTP.
 """
 
 from __future__ import annotations
 
 import io
+import stat
 import xml.etree.ElementTree as ET
 from datetime import datetime
+from pathlib import Path
 from typing import BinaryIO, ClassVar, Iterator
 from urllib.parse import quote
 
-from utk_curio.backend.app.discovery.domain.errors import ProviderError, ResourceNotFound
+from utk_curio.backend.app.common.safe_paths import is_within
+from utk_curio.backend.app.discovery.domain.errors import DownloadTooLarge, ProviderError, ResourceNotFound
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
 from utk_curio.backend.app.discovery.infrastructure.transport import (
     MAX_DISCOVERY_DOWNLOAD_BYTES,
@@ -39,11 +47,16 @@ PARAMETER_IDS = ("area",)
 class S3Storage:
     type: ClassVar[str] = "s3"
 
-    def __init__(self, manifest: DiscoverySourceManifest, transport) -> None:
+    def __init__(self, manifest: DiscoverySourceManifest, transport, *, reads=None) -> None:
         self.manifest = manifest
         self.transport = transport
         self.base = manifest.provider.base_url
         self.prefix = str(manifest.provider.options.get("prefix") or "")
+        #: How the bucket is read in place where this deployment mounts it
+        #: (``bucket_mount_sources.BucketReads``: ``state()``, a
+        #: ``SourceMount``, and ``forget(path)``); None reads every file over
+        #: HTTP.
+        self.reads = reads
 
     # ── urls ───────────────────────────────────────────────────────────────
 
@@ -91,6 +104,9 @@ class S3Storage:
 
     def open(self, relpath: str, *, byte_range: tuple[int, int] | None = None,
              max_bytes: int = MAX_DISCOVERY_DOWNLOAD_BYTES, ceiling: int | None = None) -> BinaryIO:
+        local = self.local_path(relpath)
+        if local is not None:
+            return _read_local(local, relpath, byte_range=byte_range, max_bytes=min(max_bytes, ceiling or max_bytes))
         headers = None
         if byte_range is not None:
             start, end = byte_range
@@ -118,8 +134,56 @@ class S3Storage:
             raise ResourceNotFound(f"{relpath}: {self.manifest.name} answered {result.status}")
         return result
 
-    def local_path(self, relpath: str):
+    def local_path(self, relpath: str) -> Path | None:
+        """The file *relpath* in the bucket's mount, ``folder / (tail +
+        relpath)``, when this deployment mounts the bucket: a regular file
+        that lies inside the mount's folder once symlinks are resolved.
+
+        A file not there may have been uploaded since rclone last listed its
+        folder, so rclone is asked to forget that listing, and the file is
+        looked for once more. None when the bucket is not mounted here
+        (Cache files serves it then) and for a file the mount does not hold.
+        """
+        validate_relpath(relpath)
+        if self.reads is None:
+            return None
+        found = self.reads.state()
+        if found.state != "mounted" or found.folder is None:
+            return None
+        path_in_mount = found.tail + relpath
+        local = _in_mount(Path(found.folder), path_in_mount)
+        if local is None and self.reads.forget(path_in_mount):
+            local = _in_mount(Path(found.folder), path_in_mount)
+        return local
+
+
+def _in_mount(folder: Path, path_in_mount: str) -> Path | None:
+    """*path_in_mount* under the mount's *folder*: a regular file inside it
+    once symlinks are resolved, or None."""
+    try:
+        root = folder.resolve(strict=True)
+        resolved = folder.joinpath(*path_in_mount.split("/")).resolve(strict=True)
+        if not is_within(resolved, root):
+            return None
+        mode = resolved.stat().st_mode
+    except (OSError, RuntimeError):
+        # Missing, a dead mount (ENOTCONN), a listing that failed, or a loop.
         return None
+    return resolved if stat.S_ISREG(mode) else None
+
+
+def _read_local(path: Path, relpath: str, *, byte_range: tuple[int, int] | None, max_bytes: int) -> BinaryIO:
+    """A file read in place, as a folder's is: a range of it, or the whole
+    file up to *max_bytes*, the bound its download over HTTP has."""
+    if byte_range is not None:
+        start, end = byte_range
+        with path.open("rb") as handle:
+            handle.seek(max(0, start))
+            return io.BytesIO(handle.read(max(0, end - start)))
+    size = path.stat().st_size
+    if size > max_bytes:
+        raise DownloadTooLarge(f"{relpath} is {size:,} bytes; the limit here is {max_bytes:,}")
+    return path.open("rb")
 
 
 def _timestamp(text: str | None) -> float:

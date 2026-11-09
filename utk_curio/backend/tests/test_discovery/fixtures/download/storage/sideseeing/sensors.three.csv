@@ -1,0 +1,4 @@
+timestamp_nano,datetime_utc,name,axis_x,axis_y,axis_z,accuracy
+226634017120751,2026-10-26T21:03:17.083Z,icm4x6xa Accelerometer Non-wakeup,-9.625,-0.5,2.375,3
+226634037266584,2026-10-26T21:03:17.103Z,icm4x6xa Gyroscope Non-wakeup,0.0125,-0.0375,0.25,3
+226634057412418,2026-10-26T21:03:17.123Z,qmc6308 Magnetometer Non-wakeup,-42.5,8.75,-31.25,3

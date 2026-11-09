@@ -64,8 +64,9 @@ modules.
 
 A frame or a window is a file the node writes beside the collection's other
 derived files, served back to Simple View by its id. The media files
-themselves are never written. A bucket collection's files must be cached first
-(**Cache files**, in the collection's details in the Data Catalog); a node
+themselves are never written. A bucket collection's files are read in place
+where the deployment mounts the bucket; elsewhere they must be cached first
+(**Cache files**, in the collection's details in the Data Catalog), and a node
 that meets an uncached file says so.
 
 ## Examples

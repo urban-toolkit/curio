@@ -245,6 +245,59 @@
   text-overflow: ellipsis;
 }
 
+/* Functions: a line per module, its name and then its functions' tags, one
+   grid, so the modules' names line up in one column, which gives way on a
+   narrow node. */
+.functionGroups {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: 4px 6px;
+}
+
+.functionGroup {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: start;
+}
+
+/* A module's name, muted, cut short with an ellipsis on a narrow node. */
+.functionModule {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--curio-font-mono);
+  font-size: 10px;
+  line-height: 22px;
+  color: var(--curio-text-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.functionTags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* A function's tag: amber, like its preview's chip. A click writes its call. */
+.functionTag {
+  composes: tag;
+  border-color: #f0d3a6;
+  background: var(--curio-accent-amber-bg);
+  color: var(--curio-accent-amber-fg);
+  cursor: pointer;
+}
+
+.functionTag:active {
+  cursor: pointer;
+}
+
+.functionTag[aria-disabled="true"] {
+  cursor: default;
+}
+
 /* A selection tag, the ids a view's selection picks: peach, like its chips. */
 .selectionTag {
   composes: tag;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 
 import "bootstrap/dist/css/bootstrap.min.css";
 import { NodeType } from "../../constants";
@@ -41,6 +41,9 @@ import { wiredInputSlots } from "../../utils/inputSlots";
 import { ICodeData } from "../../types";
 import { ReferenceStrip } from "./widgets/WidgetTag";
 import { insertReference, useCodeReferences } from "./widgets/monacoCodeReferences";
+import { functionGroups, insertFunctionCall } from "./widgets/functionCalls";
+// The module itself, not the services/packages barrel, which a code node needs none of.
+import { useNodeFunctions } from "../../services/packages/nodeFunctions";
 import { useEditorTooltip } from "./useEditorTooltip";
 import type { ChipPreviewSource } from "./widgets/chipPreviewSource";
 import type { CodeLanguage, InputScope, ReferenceScope } from "../../utils/references/codeReferences";
@@ -175,6 +178,18 @@ function CodeEditor({
         dashboardOn,
     } = useFlowContext();
     const collab = useCollab();
+    // What the node's code can call, for the header's Functions: read as a
+    // run of the node would import it, on the dataflow its runs are of. Only
+    // where the code is edited: the dashboard page mounts every node of the
+    // dataflow, and its tiles' code is read-only, so there it reads nothing.
+    const nodeFunctions = useNodeFunctions(
+        nodeType && !dashboardOn ? String(nodeType) : null,
+        agentsDataflowId(canvasRole(viewerMode, collab), projectId, getCurrentProjectId()),
+    );
+    const headerFunctions = useMemo(
+        () => (nodeFunctions.state === "ready" ? functionGroups(nodeFunctions.functions) : []),
+        [nodeFunctions],
+    );
     // The wired circles: the value on circle k is the code's input_k. A ref,
     // since the run effect below is keyed on the resolved code alone.
     const wiredSlotsRef = useRef<number[]>([]);
@@ -524,7 +539,12 @@ function CodeEditor({
             : "No output yet";
 
     return (
-        <div className="nowheel nodrag" style={{ height: inCell ? "auto" : "100%", display: "flex", flexDirection: "column", backgroundColor: "#fff", userSelect: "none" }}>
+        <div
+            className="nowheel nodrag"
+            // Whether the header's Functions are still being read, which a capture waits for.
+            data-curio-functions={nodeFunctions.state}
+            style={{ height: inCell ? "auto" : "100%", display: "flex", flexDirection: "column", backgroundColor: "#fff", userSelect: "none" }}
+        >
             {showCredentialHint ? (
                 <CredentialHint
                     findings={credentialFindings}
@@ -538,9 +558,11 @@ function CodeEditor({
                 widgets={references.widgets}
                 inputs={stripInputs}
                 selections={references.selections}
+                functions={headerFunctions}
                 language={widgetLanguage}
                 disabled={readOnly}
                 onInsert={(inner) => insertReference(widgetEditor?.editor, inner)}
+                onInsertFunction={(fn, module) => insertFunctionCall(widgetEditor?.editor, fn, module)}
                 onLoadColumns={onLoadColumns}
                 previews={chipPreviews}
             />
@@ -596,11 +618,15 @@ function CodeEditor({
                     // rule above it; a dashboard tile keeps its gray box.
                     backgroundColor: dashboardOn ? "#f7f7f7" : "#ffffff",
                     borderTop: dashboardOn ? "1px solid #e0e0e0" : "none",
+                    padding: "4px 8px",
                     // A failed node's error line (NodeOutcomeStrip) sits over
-                    // the bottom of this box: room below the last line lets it
-                    // scroll clear of the strip. In a notebook cell the strip
-                    // sits under the box instead.
-                    padding: output.code === "error" && !inCell ? "4px 8px 32px" : "4px 8px",
+                    // the bottom of the node on the canvas, 8px off its edge
+                    // and a text line tall. This box ends above that line, so
+                    // none of the output runs under it or shows in the thin
+                    // band between it and the node's edge, and the last line
+                    // scrolls clear of it. In a notebook cell the line sits
+                    // under the box, and a dashboard tile shows none.
+                    ...(output.code === "error" && !inCell && !dashboardOn ? { marginBottom: "28px" } : {}),
                     // In a notebook cell the output takes its own height.
                     ...(inCell ? { flex: "none", maxHeight: `${NOTEBOOK_OUTPUT_MAX}px`, padding: "6px 8px 0" } : {}),
                     fontSize: "11px",

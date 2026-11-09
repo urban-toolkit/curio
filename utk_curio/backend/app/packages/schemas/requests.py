@@ -73,6 +73,22 @@ def function_template(body: Mapping[str, Any]) -> tuple[str, str, str, str | Non
     return package, module, function, label, bindings
 
 
+#: The longest node type a node's functions are asked for by.
+NODE_TYPE_MAX = 200
+
+
+def node_functions_query(args: Mapping[str, Any]) -> tuple[str, str | None]:
+    """``nodeType`` and ``dataflowId`` for the functions a node's code can call:
+    a node type of at most NODE_TYPE_MAX characters, and the dataflow the node
+    is in, when it has one."""
+    node_type = args.get("nodeType")
+    if not isinstance(node_type, str) or not node_type.strip() or len(node_type) > NODE_TYPE_MAX:
+        raise PackageServiceError(f"'nodeType' must be a node type of at most {NODE_TYPE_MAX} characters")
+    dataflow_id = args.get("dataflowId")
+    dataflow_id = dataflow_id.strip() if isinstance(dataflow_id, str) else ""
+    return node_type.strip(), dataflow_id or None
+
+
 def replace_flag(body: Mapping[str, Any]) -> bool:
     return bool(body.get("replace", False))
 

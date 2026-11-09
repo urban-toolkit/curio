@@ -8,8 +8,20 @@
 import { loadInstalledPackages } from './packagesClient';
 import { getToken } from '../utils/authApi';
 import { isStandaloneDashboard } from '../standalone/dashboardPayload';
+import { forgetNodeFunctions } from '../services/packages/nodeFunctions';
 import { markOpenedFromLink } from './projectPackagesStore';
 import { registryLoadSettled, registryLoadStarted } from './registryReadiness';
+import type { NodeDescriptor } from './types';
+
+/** The packages the registry holds, each template by its id, its package's
+ * version and when its copy last changed: what a node's code can call
+ * follows them. */
+function packagesHeld(descriptors: NodeDescriptor[]): string {
+  return descriptors
+    .map((d) => `${d.id} ${d.package?.version ?? ''} ${d.package?.installUpdatedAtMs ?? ''}`)
+    .sort()
+    .join('\n');
+}
 
 function notifyTemplatesAfterPackageRefresh(): void {
   const w = window as unknown as { curio?: { fetchStarters?: () => void | Promise<void> } };
@@ -51,8 +63,12 @@ export function refreshPackageRegistry(opts?: { openedFromLink?: string }): Prom
   if (!getToken() && !isStandaloneDashboard()) return Promise.resolve();
   registryLoadStarted();
   return loadInstalledPackages()
-    .then(() => {
+    .then((descriptors) => {
       notifyTemplatesAfterPackageRefresh();
+      // What a node's code can call follows its packages: when they change,
+      // the headers read it again. A load that failed, or that a later one
+      // superseded, registers nothing and says nothing of them.
+      if (Array.isArray(descriptors) && descriptors.length > 0) forgetNodeFunctions(packagesHeld(descriptors));
     })
     .finally(registryLoadSettled);
 }

@@ -42,6 +42,13 @@
   "endpoint": "packages_api.get_package_file"
  },
  {
+  "rule": "/api/packages/<dir_name>/functions",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "packages_api.get_package_functions"
+ },
+ {
   "rule": "/api/packages/<dir_name>/usage",
   "methods": [
    "GET"
@@ -166,6 +173,13 @@
    "DELETE"
   ],
   "endpoint": "packages_api.remove_library_route"
+ },
+ {
+  "rule": "/api/packages/node-functions",
+  "methods": [
+   "GET"
+  ],
+  "endpoint": "packages_api.get_node_functions"
  },
  {
   "rule": "/api/packages/projects/<project_id>",
