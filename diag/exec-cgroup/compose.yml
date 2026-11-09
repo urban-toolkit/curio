@@ -1,0 +1,12 @@
+# The writable-cgroups container as a deployment's compose file would ask for it
+# (a diagnostic; probe_host.sh starts it under its own project name).
+services:
+  probe:
+    image: ${DIAG_IMAGE:-python:3.12-slim}
+    init: true
+    command: ["sleep", "infinity"]
+    cgroup: private
+    security_opt:
+      - writable-cgroups=true
+    volumes:
+      - .:/diag:ro

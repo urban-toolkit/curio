@@ -1,0 +1,62 @@
+name: Diag exec cgroup memory
+
+# A one-off probe for SideSeeing step 9.6.1: what a container started as
+# deploy.yml and CI start it may do with cgroups on each kind of runner, and
+# SAM 3's resident peak in a node cgroup on utk. Delete its runs when done.
+on:
+  push:
+    branches: [diag/exec-cgroup-memory]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: probe (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: utk, runs_on: '["self-hosted","utk","gpu"]', gpu: "1", gib: "20", sam3: "1" }
+          - { name: arcade-gpu, runs_on: '["self-hosted","arcade","gpu"]', gpu: "1", gib: "4", sam3: "0" }
+          - { name: arcade-cpu, runs_on: '["self-hosted","arcade","cpu"]', gpu: "0", gib: "0", sam3: "0" }
+          - { name: hosted, runs_on: '"ubuntu-latest"', gpu: "0", gib: "0", sam3: "0" }
+          - { name: desktop-03, runs_on: '["self-hosted","utk-desktop-03"]', gpu: "1", gib: "4", sam3: "0" }
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
+    timeout-minutes: 120
+    env:
+      PROBE_NAME: ${{ matrix.name }}
+      PROBE_GPU: ${{ matrix.gpu }}
+      PROBE_GPU_GIB: ${{ matrix.gib }}
+    steps:
+      - name: Reclaim root-owned files an earlier job left (self-hosted)
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+          if [ -d .git ]; then
+            git config --local --unset-all core.sparseCheckout || true
+            git config --local --unset-all core.sparseCheckoutCone || true
+            rm -f .git/info/sparse-checkout || true
+          fi
+
+      - uses: actions/checkout@v6
+
+      - name: Cgroups on this runner
+        shell: bash
+        run: bash diag/exec-cgroup/probe_host.sh 2>&1 | tee probe.log || true
+
+      - name: SAM 3 in a node cgroup (utk)
+        if: matrix.sam3 == '1'
+        shell: bash
+        run: bash diag/exec-cgroup/sam3_host.sh 2>&1 | tee sam3.log || true
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: diag-exec-cgroup-${{ matrix.name }}
+          path: |
+            probe.log
+            sam3.log
+          if-no-files-found: ignore
+          retention-days: 7
