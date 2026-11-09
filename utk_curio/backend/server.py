@@ -5,6 +5,7 @@ from werkzeug.serving import WSGIRequestHandler, is_running_from_reloader
 from utk_curio.backend import thread_stacks
 from utk_curio.backend.app import create_app
 from utk_curio.backend.config import CURIO_SEED_EXAMPLES
+from utk_curio.common import shards
 from utk_curio.common.request_deadline import RequestHeadDeadline
 
 app = create_app()
@@ -16,8 +17,16 @@ from utk_curio.backend.reloader import (  # noqa: E402,F401  (re-exported)
     RELOADER_EXCLUDE_PATTERNS,
 )
 
+# tmp/sharded-backend: the startup work is home's alone (process 0), which the
+# launcher starts and waits for before it starts the others.
+class _NotHome(Exception):
+    """This process is not home: it does no startup work."""
+
+
 with app.app_context():
     try:
+        if not shards.is_home():
+            raise _NotHome()
         from utk_curio.backend.app.users.services import _shared_guest_user
         from utk_curio.backend.app.projects.services import (
             _user_dir_key,
@@ -52,6 +61,8 @@ with app.app_context():
                 app.logger.info(
                     "Provisioned %d example dataset(s): %s", len(d), ", ".join(d)
                 )
+    except _NotHome:
+        pass
     except Exception:
         app.logger.warning("Could not ensure guest user on startup", exc_info=True)
 
@@ -128,8 +139,10 @@ def serve():
     run_kwargs = _socketio_run_kwargs()
     # The hourly sample of both servers' open files, from now, in the process
     # that serves. Under the reloader this function also runs in the process
-    # that only watches the files, which serves nothing.
-    if not run_kwargs["use_reloader"] or is_running_from_reloader():
+    # that only watches the files, which serves nothing. tmp/sharded-backend:
+    # the sampler, the bucket mount proxy on its fixed port and its check are
+    # home's alone.
+    if shards.is_home() and (not run_kwargs["use_reloader"] or is_running_from_reloader()):
         from utk_curio.backend.app.discovery import service as discovery_service
         from utk_curio.backend.app.monitor import open_files as monitor_open_files
 

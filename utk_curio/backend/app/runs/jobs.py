@@ -8,6 +8,7 @@ by another one was cut off by a restart.
 """
 from __future__ import annotations
 
+import os
 import threading
 import uuid
 
@@ -19,7 +20,9 @@ MAX_ACTIVE_RUNS_PER_USER = 2
 FINISHED_TTL_SECONDS = 15 * 60
 MAX_EVENTS_PER_RUN = 5000
 
-BOOT_ID = str(uuid.uuid4())
+# tmp/sharded-backend: every process of one start shares the launcher's boot
+# id (CURIO_BOOT_ID), so no process marks another's live runs interrupted.
+BOOT_ID = os.environ.get("CURIO_BOOT_ID") or str(uuid.uuid4())
 
 __all__ = ["JobRefused", "REGISTRY", "BOOT_ID", "cancel_flag", "drop_cancel_flag"]
 

@@ -152,9 +152,15 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.monitor.routes import monitor_bp
     app.register_blueprint(monitor_bp)
+    # tmp/sharded-backend: with several backend processes only home (process
+    # 0) does the startup work, the timers and the monitor's histories.
+    from utk_curio.common import shards as _shards
+    home = _shards.is_home()
+
     # The monitor's histories cover this process: each start writes them anew.
     from utk_curio.backend.app.monitor import history as monitor_history
-    monitor_history.start()
+    if home:
+        monitor_history.start()
 
     # Non-prod DB stub endpoints for Playwright E2E tests.
     # Lets Playwright seed users / projects directly without the signup form.
@@ -164,7 +170,7 @@ def create_app(config_class=config_class):
         # Copy fixture node packages into the guest user's package store on first
         # startup. See utk_curio/backend/app/packages/seed.py for the policy.
         try:
-            seeded = seed_dev_packages(user_key="guest")
+            seeded = seed_dev_packages(user_key="guest") if home else None
             if seeded:
                 app.logger.info("Seeded dev node packages: %s", ", ".join(seeded))
         except Exception:  # noqa: BLE001 — never block startup on seeding
@@ -232,10 +238,11 @@ def create_app(config_class=config_class):
         app.logger.setLevel(logging.INFO)
         app.logger.info('Backend startup')
 
-    from utk_curio.backend.app.projects.tasks import start_cleanup_scheduler
-    start_cleanup_scheduler(app)
-    from utk_curio.backend.app.runs.kept import start_prune_scheduler
-    start_prune_scheduler(app)
+    if home:
+        from utk_curio.backend.app.projects.tasks import start_cleanup_scheduler
+        start_cleanup_scheduler(app)
+        from utk_curio.backend.app.runs.kept import start_prune_scheduler
+        start_prune_scheduler(app)
 
     # A run an earlier backend process left going was cut off when it stopped.
     with app.app_context():
