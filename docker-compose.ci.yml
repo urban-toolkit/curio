@@ -38,9 +38,9 @@
 #    holds everything `curio.py setup --with-examples` installs, so the stack
 #    starts with CURIO_SKIP_DEP_INSTALL=1: the launcher runs no pip over
 #    requirements.txt and the package manifests, and no npm install of the
-#    sandbox's packages. test-gpu builds the image through this file; the
-#    other jobs pull the one build-image built with the same argument. Every
-#    CI overlay sets both.
+#    sandbox's packages. test-gpu builds the image through this file, with
+#    torch's CUDA build; the other jobs pull the one build-image built with
+#    the same argument and torch's CPU build. Every CI overlay sets both.
 #
 # Deliberately NOT docker-compose.deploy.yml: that overlay also passes
 # --no-allow-publish, which would disable the two catalog mutators that the
