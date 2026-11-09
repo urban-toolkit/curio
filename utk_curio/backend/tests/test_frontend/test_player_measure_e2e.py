@@ -17,7 +17,6 @@ import pytest
 
 from .test_player_linked_by_time_e2e import VIDEO, VIDEOS_CODE, _play_the_clip, _seek
 from .utils import (
-    assert_autark_map_drawn,
     dismiss_toasts,
     node_locator,
     require_owner_view,
@@ -41,7 +40,7 @@ def _walk_code(n: int) -> str:
         "random.Random(7).shuffle(order)\n"
         "return gpd.GeoDataFrame(\n"
         '    {"label": [f"w{k}" for k in order], "t_s": [k / n for k in order], "level": [k % 7 for k in order]},\n'
-        "    geometry=[Point(-87.64 + (k % 100) * 0.0001, 41.88 + (k // 100) * 0.0001) for k in order],\n"
+        "    geometry=[Point(-87.64 + 0.01 * k / n, 41.88 + 0.002 * ((k * 7) % 10) / 10) for k in order],\n"
         '    crs="EPSG:4326",\n'
         ")\n"
     )
@@ -130,7 +129,14 @@ def test_measure_one_update(app_frontend, current_server, page, n):
     require_webgpu(page)
     run_all_and_wait(page, timeout_ms=240000)
     dismiss_toasts(page)
-    assert_autark_map_drawn(page, "map", timeout=60000)
+    drawn_js = (
+        "async (id) => { const s = window.__curio_mapState ? await window.__curio_mapState(id) : null;"
+        " return s && s.input_0 ? s.input_0.drawn : null; }"
+    )
+    deadline = time.monotonic() + 60
+    while page.evaluate(drawn_js, "map") != n and time.monotonic() < deadline:
+        page.wait_for_timeout(500)
+    assert page.evaluate(drawn_js, "map") == n, "the map never drew the walk"
     page.locator("#vegachart canvas").first.wait_for(state="attached", timeout=60000)
 
     cdp = page.context.new_cdp_session(page)

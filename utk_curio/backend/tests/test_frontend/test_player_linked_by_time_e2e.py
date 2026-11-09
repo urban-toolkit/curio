@@ -42,7 +42,6 @@ from typing import TYPE_CHECKING
 
 from .test_keyed_selection_between_charts_e2e import _RED_BARS_JS
 from .utils import (
-    assert_autark_map_drawn,
     dismiss_toasts,
     frame_node,
     node_locator,
@@ -296,8 +295,20 @@ _MAP_LIT_JS = """async (id) => {
     const state = window.__curio_mapState ? await window.__curio_mapState(id) : null;
     const table = state && state.input_0;
     if (!table) return null;
-    return { pick: table.pick, lit: table.lit.map((p) => p.label) };
+    return { pick: table.pick, drawn: table.drawn, lit: table.lit.map((p) => p.label) };
 }"""
+
+
+def _wait_for_walk_drawn(page) -> None:
+    """Wait until the map draws every point of the walk, as autk-map holds
+    the layer: a map of points alone draws two colours, too few for
+    ``assert_autark_map_drawn``, which looks for a map's many."""
+    deadline = time.monotonic() + 60
+    state = page.evaluate(_MAP_LIT_JS, TARGET_ID)
+    while not (state and state["drawn"] == len(ORDER)) and time.monotonic() < deadline:
+        page.wait_for_timeout(500)
+        state = page.evaluate(_MAP_LIT_JS, TARGET_ID)
+    assert state and state["drawn"] == len(ORDER), f"the map draws {state!r}, not the walk's {len(ORDER)} points"
 
 
 def _autark_lit(page) -> list[str] | None:
@@ -325,5 +336,5 @@ def test_a_video_played_in_simple_view_lights_the_points_walked_up_to_now_on_an_
     _assert_fixture_tells_ways_apart()
     spec = _spec("Player linked to Autark", (AUTARK, AUTARK_WALK))
     _open(page, app_frontend, current_server, username="player_autark", spec=spec, autark=True)
-    assert_autark_map_drawn(page, TARGET_ID, timeout=60000)
+    _wait_for_walk_drawn(page)
     _steps(page, _autark_lit, canvas=f"#autk-grammar-map-{TARGET_ID}", closeup="autark")
