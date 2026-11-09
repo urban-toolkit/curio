@@ -375,6 +375,59 @@ def dying(args):
          removed=removed, before=before, after_rmdir=samples, after_unlink=unlinked)
 
 
+def dying10(args):
+    """Ten node cgroups, each caching a file of its own, then removed: do they linger while their cache lives?
+
+    Ten empty cgroups first, as the control. The count that matters is
+    nr_dying_descendants against the baseline: baseline plus ten means each
+    removed cgroup waits for its cache; the baseline means the cache moved up.
+    """
+    def dying():
+        return keyed(read(f"{NODES}/cgroup.stat")).get("nr_dying_descendants")
+
+    def settle(marks, label):
+        start = time.monotonic()
+        out = []
+        for mark in marks:
+            while time.monotonic() - start < mark:
+                time.sleep(0.1)
+            out.append({"t": mark, "dying": dying(), "nodes file": keyed(read(f"{NODES}/memory.stat")).get("file")})
+        return {label: out}
+
+    data = {"baseline": dying()}
+    for index in range(10):
+        path, _ = node(f"empty{index}")
+        proc = spawn(path, "pass")
+        proc.communicate(timeout=60)
+        remove(path)
+    data.update(settle((0, 2, 10), "after 10 empty ones"))
+    data["baseline 2"] = dying()
+    files = [f"/var/tmp/diag-cgroup-cache-{index}.bin" for index in range(10)]
+    cached = []
+    for index, target in enumerate(files):
+        path, _ = node(f"cache{index}")
+        code = (
+            "import os\n"
+            f"with open({target!r}, 'wb') as handle:\n"
+            f"    handle.write(b'\\x01' * {args.mb << 20})\n"
+            "    handle.flush()\n"
+            "    os.fsync(handle.fileno())\n"
+            f"with open({target!r}, 'rb') as handle:\n"
+            "    while handle.read(1 << 24):\n"
+            "        pass\n"
+        )
+        proc = spawn(path, code)
+        proc.communicate(timeout=120)
+        cached.append(keyed(read(f"{path}/memory.stat")).get("file"))
+        remove(path)
+    data["file charged to each"] = cached
+    data.update(settle((0, 2, 10, 30), "after 10 with cache"))
+    for target in files:
+        os.unlink(target)
+    data.update(settle((0, 2, 10), "after the files go"))
+    emit("dying10", mb=args.mb, **data)
+
+
 GPU_CODE = r'''
 import ctypes, json, resource
 out = {}
@@ -437,6 +490,7 @@ def main():
     sub.add_parser("checks")
     sub.add_parser("oom").add_argument("--budget-mb", type=int, default=128)
     sub.add_parser("dying").add_argument("--mb", type=int, default=256)
+    sub.add_parser("dying10").add_argument("--mb", type=int, default=50)
     sub.add_parser("gpu").add_argument("--gib", type=int, default=4)
     args = parser.parse_args()
     if args.command != "facts":
@@ -446,7 +500,8 @@ def main():
         if why:
             emit(args.command, skipped=why)
             return
-    {"facts": facts, "setup": setup, "checks": checks, "oom": oom, "dying": dying, "gpu": gpu}[args.command](args)
+    {"facts": facts, "setup": setup, "checks": checks, "oom": oom, "dying": dying, "dying10": dying10,
+     "gpu": gpu}[args.command](args)
 
 
 if __name__ == "__main__":
