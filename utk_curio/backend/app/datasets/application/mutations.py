@@ -164,7 +164,7 @@ def clearing_published(dataset_id: str) -> Any:
                 else:
                     ref["origin"] = "imported"
                     ref["publishedToHub"] = False
-                # Keep dirName – it now points to the user's store copy.
+                # Keep dirName: it now points to the user's store copy.
                 changed = True
         return refs if changed else None
 
