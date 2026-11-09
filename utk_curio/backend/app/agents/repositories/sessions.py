@@ -12,6 +12,11 @@ retention; final durations remain ``OQ-008``): every removal of attachments
 deletes their files (:func:`delete_sessions_of`). A missing or unreadable
 file reads as an empty transcript, so records that predate this store need no
 migration.
+
+Every write reads the turns, changes them and writes the file whole, holding
+the dataflow's chats lock (:func:`_writing`): a delegated task appends to its
+home attachment's chat outside that attachment's queue, so two writes of one
+chat can come at once, in two threads or two backend processes.
 """
 
 from __future__ import annotations
@@ -19,10 +24,13 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import re
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from utk_curio.backend.app.common.file_locks import exclusive_lock
 from utk_curio.backend.app.projects import storage as projects_storage
 
 log = logging.getLogger(__name__)
@@ -55,6 +63,32 @@ def _session_path(user_key: str, project_id: str, session_id: str) -> Path:
     if not (isinstance(session_id, str) and SESSION_ID_RE.match(session_id)):
         raise SessionError(f"invalid session id {session_id!r}")
     return sessions_dir(user_key, project_id) / f"{session_id}.json"
+
+
+@contextlib.contextmanager
+def _writing(user_key: str, project_id: str):
+    """Hold the dataflow's chats, across threads and processes, while one of
+    them is read, changed and written back: of two writes at once, the later
+    would drop the other's turn."""
+    folder = sessions_dir(user_key, project_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    with exclusive_lock(folder / ".sessions.lock", namespace="agent-sessions", key=f"{user_key}/{project_id}"):
+        yield
+
+
+def _write(path: Path, session_id: str, attachment_id, turns: list[dict]) -> None:
+    """Write a transcript whole, through a temporary file of this write's own,
+    so a reader sees the old turns or the new ones: a half-written file reads
+    as an empty transcript, which the next append would then write back."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+    try:
+        tmp.write_text(
+            json.dumps({"sessionId": session_id, "attachmentId": attachment_id, "turns": turns}, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def read_turns(user_key: str, project_id: str, session_id: str) -> list[dict]:
@@ -118,16 +152,10 @@ def append_turns(
     user_key: str, project_id: str, session_id: str, attachment_id: str, new_turns: list[dict]
 ) -> list[dict]:
     """Append turns and persist; returns the full transcript."""
-    turns = read_turns(user_key, project_id, session_id) + list(new_turns)
     path = _session_path(user_key, project_id, session_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {"sessionId": session_id, "attachmentId": attachment_id, "turns": turns},
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    with _writing(user_key, project_id):
+        turns = read_turns(user_key, project_id, session_id) + list(new_turns)
+        _write(path, session_id, attachment_id, turns)
     return turns
 
 
@@ -155,43 +183,37 @@ def _set_part_status(user_key: str, project_id: str, session_id: str, kind: str,
                      part_id: str, status: str) -> bool:
     """Set *status* on the transcript's parts of type *kind* whose *key* is
     *part_id*; whether any changed."""
-    turns = read_turns(user_key, project_id, session_id)
-    changed = False
-    for turn in turns:
-        for part in turn.get("content") or []:
-            if (
-                isinstance(part, dict)
-                and part.get("type") == kind
-                and part.get(key) == part_id
-                and part.get("status") != status
-            ):
-                part["status"] = status
-                changed = True
-    if not changed:
-        return False
     path = _session_path(user_key, project_id, session_id)
-    data = {}
-    with contextlib.suppress(OSError, json.JSONDecodeError):
-        data = json.loads(path.read_text(encoding="utf-8"))
-    attachment_id = data.get("attachmentId") if isinstance(data, dict) else None
-    path.write_text(
-        json.dumps(
-            {"sessionId": session_id, "attachmentId": attachment_id, "turns": turns},
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    if not path.exists():
+        return False
+    with _writing(user_key, project_id):
+        turns = read_turns(user_key, project_id, session_id)
+        changed = False
+        for turn in turns:
+            for part in turn.get("content") or []:
+                if (
+                    isinstance(part, dict)
+                    and part.get("type") == kind
+                    and part.get(key) == part_id
+                    and part.get("status") != status
+                ):
+                    part["status"] = status
+                    changed = True
+        if not changed:
+            return False
+        data = {}
+        with contextlib.suppress(OSError, json.JSONDecodeError):
+            data = json.loads(path.read_text(encoding="utf-8"))
+        attachment_id = data.get("attachmentId") if isinstance(data, dict) else None
+        _write(path, session_id, attachment_id, turns)
     return True
 
 
 def clear_turns(user_key: str, project_id: str, session_id: str, attachment_id: str) -> None:
     """Empty the transcript but keep the session file/id."""
     path = _session_path(user_key, project_id, session_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"sessionId": session_id, "attachmentId": attachment_id, "turns": []}, indent=2),
-        encoding="utf-8",
-    )
+    with _writing(user_key, project_id):
+        _write(path, session_id, attachment_id, [])
 
 
 def delete_session(user_key: str, project_id: str, session_id: str) -> None:
