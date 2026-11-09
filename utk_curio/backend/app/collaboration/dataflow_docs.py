@@ -403,7 +403,13 @@ class _OpenDoc:
 
 
 _lock = threading.RLock()
-_wake = threading.Condition(_lock)
+#: Set when the writing thread has something new to look at: a doc's first
+#: change since its write, or a doc opened or left by its last tab. An event
+#: rather than a condition on :data:`_lock`, so a tab's update wakes the thread
+#: without asking for that lock (:func:`_changed`).
+_wake = threading.Event()
+#: Guards starting the writing thread (:func:`_ensure_flusher`).
+_flusher_start = threading.Lock()
 _docs: dict[str, _OpenDoc] = {}
 _sid_docs: dict[str, set[str]] = {}
 _flusher: Optional[threading.Thread] = None
@@ -780,9 +786,8 @@ def _load_unmade(entry: _OpenDoc) -> None:
     doc_mapping.dataflow_to_doc(_owned(_in_sets(copied)), doc, doc_id=uuid.uuid4().hex)
     _attach(entry, doc)
     entry.loaded = True
-    with _wake:
+    with _lock:
         entry.idle_since = _clock()
-        _wake.notify_all()
     _ensure_flusher()
 
 
@@ -836,10 +841,9 @@ def _load(entry: _OpenDoc) -> None:
     _catch_up(entry, file)
     if not entry.tabs:
         _built_anew_if_grown(entry)
-    with _wake:
+    with _lock:
         # Idle until a tab starts its sync (a read opens a doc with none).
         entry.idle_since = _clock()
-        _wake.notify_all()
     if not doc_mapping.same(_normalized(entry.base), doc_mapping.doc_to_dataflow(entry.doc)):
         _changed(entry)  # the spec is behind the doc
     else:
@@ -977,9 +981,12 @@ def _held(project_id: str, user_key: str, *, unmade: Optional[dict] = None) -> I
 
 def _open_entry(project_id: str, user_key: Optional[str] = None) -> Optional[_OpenDoc]:
     """The dataflow's doc, if it is open; with *user_key*, only if it is that
-    account's."""
-    with _lock:
-        entry = _docs.get(project_id)
+    account's. Read without :data:`_lock`, which a dict lookup does not need,
+    since every tab's update asks it on its socket's own thread. A thread
+    given that lock waits for the GIL before it can let it go, so with many
+    threads at once a queue for it held up every room's sockets, their pings
+    included, until their tabs gave up (stress run 42550568338)."""
+    entry = _docs.get(project_id)
     if entry is None or entry.closed:
         return None
     if user_key is not None and entry.user_key != str(user_key):
@@ -991,17 +998,17 @@ def _changed(entry: _OpenDoc) -> None:
     """Note a change the spec does not have yet. The writing thread is woken
     only when the doc's write becomes due: a later change moves that time no
     sooner (:func:`_save_due`), and the thread reads it again when it wakes,
-    so steady typing does not wake it at every keystroke."""
-    with _wake:
-        now = _clock()
-        entry.changed_at = now
-        entry.changed_wall = time.time()
-        due = entry.dirty_since is None
-        if due:
-            entry.dirty_since = now
-            _wake.notify_all()
-        running = _flusher is not None and _flusher.is_alive()
-    if due or not running:
+    so steady typing does not wake it at every keystroke. Under the doc's
+    lock, which :func:`_written` holds too, and without :data:`_lock`, as
+    :func:`_open_entry` reads: a tab's update notes its change here."""
+    now = _clock()
+    entry.changed_at = now
+    entry.changed_wall = time.time()
+    due = entry.dirty_since is None
+    if due:
+        entry.dirty_since = now
+        _wake.set()
+    if due or _flusher is None or not _flusher.is_alive():
         _ensure_flusher()
 
 
@@ -1242,26 +1249,31 @@ def flush_due(now: Optional[float] = None) -> None:
 
 
 def _ensure_flusher() -> None:
+    """Wake the writing thread, started first when none runs."""
     global _flusher
     if not BACKGROUND:
         return
-    with _wake:
+    _wake.set()
+    if _flusher is not None and _flusher.is_alive():
+        return
+    with _flusher_start:
         if _flusher is None or not _flusher.is_alive():
             _flusher = threading.Thread(target=_run_flusher, name="dataflow-docs", daemon=True)
             _flusher.start()
-        _wake.notify_all()
 
 
 def _run_flusher() -> None:
     global _flusher
     while True:
+        # Before reading what is due, so a change from here on ends the wait below.
+        _wake.clear()
         failed = False
         try:
             flush_due()
         except Exception:  # noqa: BLE001 - a failed write must not stop the next ones
             logger.exception("writing the open dataflows' docs failed")
             failed = True
-        with _wake:
+        with _lock:
             if not _docs or not BACKGROUND:
                 if _flusher is threading.current_thread():
                     _flusher = None
@@ -1269,10 +1281,10 @@ def _run_flusher() -> None:
             dues = [due for entry in _docs.values()
                     for due in (_save_due(entry), _close_due(entry), history.next_due(entry))
                     if due is not None]
-            wait = max(0.0, min(dues) - _clock()) if dues else CLOSE_AFTER_S
-            if failed:
-                wait = max(wait, SAVE_IDLE_S)  # a write that fails is tried again, not in a spin
-            _wake.wait(timeout=wait)
+        wait = max(0.0, min(dues) - _clock()) if dues else CLOSE_AFTER_S
+        if failed:
+            wait = max(wait, SAVE_IDLE_S)  # a write that fails is tried again, not in a spin
+        _wake.wait(timeout=wait)
 
 
 def close_all() -> None:
@@ -2813,9 +2825,8 @@ def leave(sid: str) -> None:
                 entry.awareness.remove_awareness_states(ids, sid)
                 _relay_awareness(entry, skip_sid=sid)
             if not entry.tabs:
-                with _wake:
+                with _lock:
                     entry.idle_since = _clock()
-                    _wake.notify_all()
                 _ensure_flusher()
 
 
