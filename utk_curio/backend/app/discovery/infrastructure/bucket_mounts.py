@@ -22,7 +22,9 @@ and it proves FUSE, the service's AppArmor profile, mount propagation,
 A SOURCE'S MOUNT is rclone's ``s3`` backend on a connection string
 (:func:`s3_parameters`, :func:`connection_string`), mounted with
 :data:`SOURCE_MOUNT_OPTIONS`; ``mount/listmounts`` names it by
-:func:`listed_fs`. Which bucket a source mounts, and when, is
+:func:`listed_fs`, and so do ``vfs/forget`` and ``vfs/refresh``, which make
+rclone list a mount's folders again (:func:`forget_parameters`,
+:func:`refresh_parameters`). Which bucket a source mounts, and when, is
 ``application/bucket_mount_sources.py``'s.
 
 Nothing here imports Curio or Flask: CI's ``bucket-mounts`` job loads this
@@ -502,3 +504,47 @@ def listed_fs(backend: str, parameters: Mapping[str, str], path: str) -> str:
     digest = hashlib.md5(written.encode("utf-8"), usedforsecurity=False).digest()
     suffix = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")[:5]
     return f":{backend}{{{suffix}}}:{path.strip('/')}"
+
+
+# ── A mount's listings ────────────────────────────────────────────────────────
+#
+# rclone keeps each folder's listing of a mount for ``dir_cache_time``, so a
+# file uploaded to the bucket after rclone last listed its folder reads as
+# missing until then. ``vfs/forget`` and ``vfs/refresh`` act on one mount's
+# VFS, which their ``fs`` names as ``mount/listmounts`` does (:func:`listed_fs`):
+# rclone keeps its VFSes by that name (``vfs.New``) and looks the ``fs`` up
+# there (``getVFS``). Paths are the mount's own, with no leading ``/``; every
+# value is a string, and the paths go under keys rclone reads by their start
+# (``dir``, ``dir1``, ``file``, ``file1``, ...), in no set order.
+
+
+def _keyed(stem: str, paths) -> dict[str, str]:
+    return {stem + (str(index) if index else ""): str(path) for index, path in enumerate(paths)}
+
+
+def forget_parameters(fs: str, *, files=(), dirs=()) -> dict[str, str]:
+    """``vfs/forget``'s parameters for the mount *fs* names: for each of
+    *files*, the listing of the folder that holds it is marked stale, and
+    rclone lists that folder again when it next reads it; for each of *dirs*,
+    its own listing and every one below it are dropped, and the listing of the
+    folder that holds it is marked stale. A path may name a folder as a file:
+    the listing that holds it is the one marked."""
+    return {"fs": fs, **_keyed("file", files), **_keyed("dir", dirs)}
+
+
+def refresh_parameters(fs: str, dirs=()) -> dict[str, str]:
+    """``vfs/refresh``'s parameters for the mount *fs* names: each of *dirs* is
+    listed again now; with none, the mount's root is. rclone reaches a folder
+    through the listings it holds, so a folder made after its parent's last
+    listing is not found."""
+    return {"fs": fs, **_keyed("dir", dirs)}
+
+
+def refresh_failures(answer: Mapping) -> dict[str, str]:
+    """The folders of a ``vfs/refresh`` that rclone could not list, each with
+    rclone's words: it answers each folder in ``result``, ``OK`` or why not,
+    and fails the call itself only when it finds no such mount."""
+    result = answer.get("result") if isinstance(answer, Mapping) else None
+    if not isinstance(result, Mapping):
+        return {}
+    return {str(path): str(words) for path, words in result.items() if words != "OK"}

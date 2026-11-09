@@ -22,7 +22,7 @@ import logging
 import re
 from pathlib import Path
 
-from utk_curio.backend.app.common.safe_paths import PathTraversalError, is_within
+from utk_curio.backend.app.common.safe_paths import PathTraversalError, is_within, resolve_base
 from utk_curio.backend.app.common.user_storage import (
     user_key_segment as _user_key_segment,
     users_base as _users_base,
@@ -70,9 +70,10 @@ def agent_definition_dir(user_key: str, dir_name: str) -> Path:
     containment check before returning, mirroring ``packages.storage.package_dir``.
     """
     parse_agent_dir_name(dir_name)  # raises on malformed names
-    base = user_agents_dir(user_key).resolve()
+    base = resolve_base(user_agents_dir(user_key))
     target = (base / dir_name).resolve()
-    # Both are resolved: is_within would resolve each again, a walk of every
+    # The store is resolved once per account (resolve_base), the folder on
+    # every lookup; is_within would resolve each again, a walk of every
     # component with an lstat each, on every lookup of an agent.
     if not target.is_relative_to(base):
         raise PathTraversalError(

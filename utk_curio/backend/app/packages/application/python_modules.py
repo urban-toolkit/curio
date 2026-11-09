@@ -229,6 +229,31 @@ def modules_for_node(
     return sources[0] if len(sources) == 1 else sources
 
 
+def node_template(user_key: str | None, node_type: object, project_id: str | None = None, *, owners=None):
+    """The template a node of *node_type* is made from, as the store a run of
+    the node reads holds it (:func:`modules_for_node`'s, with *owners* as
+    there), a built-in node's too: its ``engine`` says the language of the
+    node's code. None when that store holds no such template. Never raises."""
+    user_key = _store_of_node(user_key, node_type, project_id, owners)
+    if not user_key or not isinstance(node_type, str):
+        return None
+    package_id, _, template_id = packages_templates.canonical_template_id(node_type).partition("/")
+    if not template_id:
+        return None
+    try:
+        majors_by_pkg = packages_store_reads._installed_majors_by_pkg(user_key)
+        pins = _dataflow_pins(user_key, project_id, majors_by_pkg)
+        dir_name = _installed_dir_for(node_type, package_id, majors_by_pkg, pins)
+        if dir_name is None:
+            return None
+        with package_seed_lock(user_key):
+            manifest = load_package_manifest(package_dir(user_key, dir_name))
+    except Exception as exc:  # noqa: BLE001 - a node whose template cannot be read lists nothing
+        log.warning("Could not read the template of %s: %s", node_type, exc)
+        return None
+    return next((template for template in manifest.templates if template.template_id == template_id), None)
+
+
 def _python_code_templates(manifest) -> list[dict]:
     """``{"id", "label"}`` of each template of *manifest* whose nodes hold
     Python code: the nodes that can import a module."""

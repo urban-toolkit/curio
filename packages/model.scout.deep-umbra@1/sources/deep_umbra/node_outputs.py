@@ -39,6 +39,9 @@ from scout_rasters.web_tiles import tile_bounds
 
 from .deep_umbra import TILE, predict_shadow, season_factor, shadow_fraction
 
+#: Nothing: node code imports accumulated_shadow from the package, deep_umbra.
+__all__ = []
+
 #: What Deep Umbra was trained on: zoom-16 tiles where 255 is 550 m.
 DEEP_UMBRA_ZOOM = 16
 DEEP_UMBRA_MAX_HEIGHT = 550.0

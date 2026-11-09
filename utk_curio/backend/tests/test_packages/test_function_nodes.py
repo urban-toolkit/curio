@@ -176,6 +176,166 @@ class TestReadingAModule:
 
 
 # ---------------------------------------------------------------------------
+# What a module offers: its __all__
+# ---------------------------------------------------------------------------
+
+#: A package of three modules, as a lookup reads them: ``(source, is a
+#: package's __init__.py)`` by dotted name.
+PACKAGE_SOURCES = {
+    "fn_pkg": (
+        "from .core import area as surface, perimeter\n"
+        "from fn_pkg.more import twice\n"
+        "from numpy import mean\n"
+        "__all__ = ['surface', 'twice', 'perimeter', 'mean', 'nothing_here']\n",
+        True,
+    ),
+    "fn_pkg.core": (
+        "__all__ = []\n"
+        "def area(width: float, height: float = 1.0):\n"
+        "    '''Width by height.\n\n    Both in metres.'''\n"
+        "    return width * height\n"
+        "def perimeter(width, height, *, closed, scale=1):\n"
+        "    '''Twice the sum of the sides.'''\n"
+        "    return 2 * (width + height) * scale\n",
+        False,
+    ),
+    "fn_pkg.more": ("from . import core\ndef twice(x):\n    '''Two of x.'''\n    return 2 * x\n", False),
+}
+
+
+def _lookup(name: str):
+    return PACKAGE_SOURCES.get(name)
+
+
+#: The same package's files, as an archive ships them under ``sources/``.
+OFFERING_MODULES = {
+    ("fn_pkg/__init__.py" if package else name.replace(".", "/") + ".py"): source
+    for name, (source, package) in PACKAGE_SOURCES.items()
+}
+
+
+class TestWhatAModuleOffers:
+    def test_its_all_names_what_it_offers_in_its_order_a_private_name_too(self):
+        from utk_curio.backend.app.packages.domain.function_nodes import read_functions
+
+        source = (
+            "def a():\n    pass\n"
+            "def b(x):\n    pass\n"
+            "def _c():\n    pass\n"
+            "__all__ = ['_c', 'b']\n"
+        )
+        assert [f.name for f in read_functions(source, "m")] == ["_c", "b"]
+
+    def test_a_name_it_lists_that_is_no_function_is_left_out(self):
+        from utk_curio.backend.app.packages.domain.function_nodes import read_functions
+
+        source = (
+            "import numpy as np\n"
+            "CONSTANT = 1\n"
+            "class Shape:\n    pass\n"
+            "def f(x):\n    return x\n"
+            "def g(x):\n    return x\n"
+            "def h(x):\n    return x\n"
+            "h = 3\n"
+            "__all__ = ['CONSTANT', 'Shape', 'np', 'f', 'h', 'missing']\n"
+        )
+        # h is a value once the module has run, and g is not offered.
+        assert [f.name for f in read_functions(source, "m")] == ["f"]
+
+    def test_a_tuple_and_a_plus_equals_count(self):
+        from utk_curio.backend.app.packages.domain.function_nodes import read_functions
+
+        source = (
+            "def a():\n    pass\n"
+            "def b():\n    pass\n"
+            "def c():\n    pass\n"
+            "__all__ = ('b',)\n"
+            "__all__ += ['a', 'b']\n"
+        )
+        assert [f.name for f in read_functions(source, "m")] == ["b", "a"]
+
+    @pytest.mark.parametrize("all_line", [
+        "__all__ = [name for name in ('a',)]\n",
+        "__all__ = BASE + ['a']\n",
+        "__all__ = ['a']\n__all__ += more\n",
+        "__all__: list\n",
+    ])
+    def test_an_all_only_running_the_module_could_tell_is_not_read(self, all_line):
+        from utk_curio.backend.app.packages.domain.function_nodes import offered_names, read_functions
+
+        import ast
+
+        source = "BASE = []\nmore = ['b']\ndef a():\n    pass\ndef b():\n    pass\n" + all_line
+        assert offered_names(ast.parse(source)) is None
+        # Then the module offers every public function, as one with no __all__.
+        assert [f.name for f in read_functions(source, "m")] == ["a", "b"]
+
+    def test_a_package_offers_what_it_imports_from_its_own_modules(self):
+        from utk_curio.backend.app.packages.domain.function_nodes import read_functions
+
+        source, package = PACKAGE_SOURCES["fn_pkg"]
+        offered = read_functions(source, "fn_pkg", package=package, lookup=_lookup)
+        # An alias is offered by its name here; a name from another package's
+        # module (numpy's mean) and one no module binds are left out.
+        assert [f.name for f in offered] == ["surface", "twice", "perimeter"]
+        surface, twice, perimeter = offered
+        assert surface.call == "surface(width, height=1.0)"
+        assert surface.doc == "Width by height."
+        assert (twice.call, twice.doc) == ("twice(x)", "Two of x.")
+        assert perimeter.call == "perimeter(width, height, *, closed, scale=1)"
+        # The module that defines them offers nothing of its own.
+        core, core_package = PACKAGE_SOURCES["fn_pkg.core"]
+        assert read_functions(core, "fn_pkg.core", package=core_package, lookup=_lookup) == []
+        # With no lookup, nothing another module defines is read.
+        assert read_functions(source, "fn_pkg", package=package) == []
+
+    def test_a_relative_import_starts_at_the_modules_own_package(self):
+        from utk_curio.backend.app.packages.domain.function_nodes import read_functions
+
+        sources = {
+            "fn_deep.inner": ("from .tools import tool\n__all__ = ['tool']\n", True),
+            "fn_deep.inner.tools": ("def tool(x):\n    return x\n", False),
+            "fn_deep.inner.leaf": ("from .tools import tool\nfrom .. import top\n__all__ = ['tool', 'top']\n", False),
+            "fn_deep": ("def top():\n    return 1\n", True),
+        }
+        lookup = sources.get
+        inner, leaf = sources["fn_deep.inner"], sources["fn_deep.inner.leaf"]
+        assert [f.name for f in read_functions(inner[0], "fn_deep.inner", package=True, lookup=lookup)] == ["tool"]
+        assert [f.name for f in read_functions(leaf[0], "fn_deep.inner.leaf", lookup=lookup)] == ["tool", "top"]
+        # A relative import that climbs past the top reads nothing.
+        assert read_functions("from .. import f\n__all__ = ['f']\n", "fn_top", package=True, lookup=lookup) == []
+
+    def test_imports_that_go_round_in_a_circle_end(self):
+        from utk_curio.backend.app.packages.domain.function_nodes import read_functions
+
+        sources = {
+            "fn_loop": ("from .a import f\n__all__ = ['f']\n", True),
+            "fn_loop.a": ("from fn_loop import f\n", False),
+        }
+        assert read_functions(sources["fn_loop"][0], "fn_loop", package=True, lookup=sources.get) == []
+
+    def test_a_module_an_import_reaches_that_does_not_parse_offers_nothing(self):
+        from utk_curio.backend.app.packages.domain.function_nodes import read_functions
+
+        sources = {"fn_bad": ("from .broken import f\n__all__ = ['f']\n", True), "fn_bad.broken": ("def f(:\n", False)}
+        assert read_functions(sources["fn_bad"][0], "fn_bad", package=True, lookup=sources.get) == []
+
+    def test_every_public_function_whatever_all_says(self):
+        from utk_curio.backend.app.packages.domain.function_nodes import defined_functions
+
+        source = "__all__ = []\ndef a():\n    pass\ndef _b():\n    pass\ndef c(x):\n    pass\n"
+        assert [f.name for f in defined_functions(source, "m")] == ["a", "c"]
+
+    def test_the_call_a_click_writes_gives_the_parameters_a_call_must_give(self):
+        from utk_curio.backend.app.packages.domain.function_nodes import read_function
+
+        fn = read_function("def f(a, /, b, c=1, *, d, e=2):\n    pass\n", "m", "f")
+        assert fn.call == "f(a, /, b, c=1, *, d, e=2)"
+        assert fn.required_call == "f(a, b, d=d)"
+        assert read_function("def g(x=1):\n    pass\n", "m", "g").required_call == "g()"
+
+
+# ---------------------------------------------------------------------------
 # The widget a parameter suggests
 # ---------------------------------------------------------------------------
 
@@ -429,6 +589,78 @@ class TestTheListingAndTheWrittenTemplate:
             if parameter["widget"] is not None:
                 assert check_widget_def(parameter["widget"]) is None, parameter
 
+    def test_each_module_offers_what_its_all_names_and_a_package_its_modules_functions(self, tmp_curio):
+        from utk_curio.backend.app.packages.application.function_nodes import module_functions, package_functions
+        from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+        from utk_curio.backend.app.packages.repositories.store import package_dir
+
+        install_package_from_archive("guest", _archive(modules=OFFERING_MODULES))
+        (package,) = [p for p in package_functions("guest") if p["packageId"] == SOURCE_ID]
+        listed = {m["module"]: [f["name"] for f in m["functions"]] for m in package["modules"]}
+        # fn_pkg.more has no __all__: every public function it defines.
+        assert listed == {"fn_pkg": ["surface", "twice", "perimeter"], "fn_pkg.core": [], "fn_pkg.more": ["twice"]}
+        surface = package["modules"][0]["functions"][0]
+        assert (surface["doc"], [p["name"] for p in surface["parameters"]]) == ("Width by height.", ["width", "height"])
+        # What an agent reads of the package, the same functions.
+        root = package_dir("guest", f"{SOURCE_ID}@1")
+        rows = {row["module"]: row for row in module_functions(root, load_package_manifest(root))}
+        assert rows["fn_pkg"]["functions"][0] == {
+            "name": "surface", "call": "surface(width, height=1.0)", "doc": "Width by height.",
+        }
+        assert rows["fn_pkg.core"]["functions"] == []
+
+    def test_the_template_of_a_function_a_package_offers_imports_it_from_the_package(self, tmp_curio):
+        from utk_curio.backend.app.packages.application.function_nodes import write_function_template
+        from utk_curio.backend.app.packages.domain.errors import PackageServiceError
+
+        install_package_from_archive("guest", _archive(modules=OFFERING_MODULES))
+        written = write_function_template("guest", f"{SOURCE_ID}@1", "fn_pkg", "surface", None, {
+            "width": {"use": "input"}, "height": {"use": "default"},
+        })
+        assert written["source"]["code"] == "from fn_pkg import surface\n\nreturn surface(width=[!! input_0 !!])\n"
+        assert written["template"]["description"] == "Width by height. Calls surface from fn_pkg."
+        # What the module that defines it does not offer, no template calls.
+        with pytest.raises(PackageServiceError, match="defines no public function named 'area'") as raised:
+            write_function_template("guest", f"{SOURCE_ID}@1", "fn_pkg.core", "area", None, {})
+        assert raised.value.status == 400
+
+    def test_the_description_holds_the_docstrings_words_without_their_marks(self, tmp_curio):
+        """A template's description is plain words: reST's and Markdown's marks
+        leave it (``plain_doc``), the words they set stay. The listing, which
+        the views set the marks from, and what an agent reads keep them."""
+        from utk_curio.backend.app.packages.application.function_nodes import (
+            module_functions,
+            package_functions,
+            write_function_template,
+        )
+        from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+        from utk_curio.backend.app.packages.repositories.store import package_dir
+
+        marked = (
+            "def shade(value, season):\n"
+            '    """Minutes of shade in *season*, as SCOUT\'s ``run_shadow_model``\n'
+            '    gives them (:func:`season_factor`, `curio_output_file`)."""\n'
+            "    return value\n"
+        )
+        as_written = (
+            "Minutes of shade in *season*, as SCOUT's ``run_shadow_model`` gives them "
+            "(:func:`season_factor`, `curio_output_file`)."
+        )
+        install_package_from_archive("guest", _archive(modules={"fn_shade.py": marked}))
+        written = write_function_template("guest", f"{SOURCE_ID}@1", "fn_shade", "shade", None, {
+            "value": {"use": "input"}, "season": {"use": "fixed", "value": "'summer'"},
+        })
+        assert written["template"]["description"] == (
+            "Minutes of shade in season, as SCOUT's run_shadow_model gives them (season_factor, curio_output_file). "
+            "Calls shade from fn_shade."
+        )
+        (package,) = [p for p in package_functions("guest") if p["packageId"] == SOURCE_ID]
+        (shade,) = {m["module"]: m for m in package["modules"]}["fn_shade"]["functions"]
+        assert shade["doc"] == as_written
+        root = package_dir("guest", f"{SOURCE_ID}@1")
+        rows = {row["module"]: row for row in module_functions(root, load_package_manifest(root))}
+        assert rows["fn_shade"]["functions"] == [{"name": "shade", "call": "shade(value, season)", "doc": as_written}]
+
     def test_the_template_it_writes(self, tmp_curio):
         from utk_curio.backend.app.packages.application.function_nodes import write_function_template
 
@@ -610,5 +842,59 @@ def test_the_template_runs_in_the_sandbox_and_a_new_widget_value_gives_a_new_res
 
         assert run(2) == "scaled:42"
         assert run(3) == "scaled:63"
+    finally:
+        release_connection()
+
+
+def test_a_function_a_package_offers_from_another_of_its_modules_runs_imported_from_the_package(
+    tmp_curio, monkeypatch,
+):
+    """``fn_pkg`` offers ``surface``, which ``fn_pkg.core`` defines as
+    ``area``: the template imports it from ``fn_pkg``, and its node runs."""
+    from utk_curio.backend.app.execution import runner
+    from utk_curio.backend.app.packages.application.factory_install import install_draft
+    from utk_curio.backend.app.packages.application.function_nodes import write_function_template
+    from utk_curio.sandbox.app.worker import _worker_init, execute_code
+    from utk_curio.sandbox.util.db import init_db, release_connection
+    from utk_curio.sandbox.util.package_modules import shape
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_curio / ".curio" / "data"))
+    release_connection()
+    init_db()
+    try:
+        install_package_from_archive("guest", _archive(modules=OFFERING_MODULES))
+        written = write_function_template("guest", f"{SOURCE_ID}@1", "fn_pkg", "surface", "Surface", {
+            "width": {"use": "input"},
+            "height": {"use": "widget", "widget": {"name": "height", "type": "number", "label": "Height", "default": 2}},
+        })
+        assert written["source"]["code"].startswith("from fn_pkg import surface\n")
+        install_draft("guest", _draft_into_a_new_package(written), replace=False)
+        node_type = f"{NODE_PACKAGE}/surface"
+        _worker_init()
+
+        def exec_fn(endpoint, payload):
+            assert endpoint == "/exec"
+            return execute_code(
+                payload["code"], payload["file_path"], payload["nodeType"], payload["dataType"],
+                save_dataset=False, package_modules=shape(payload.get("package_modules")),
+            )
+
+        def run(height):
+            spec = {"dataflow": {"nodes": [
+                {"id": "a", "type": "curio.builtin/python-computation", "content": "return 21"},
+                {"id": "b", "type": node_type, "content": written["source"]["code"],
+                 "metadata": {"widgets": [{**written["template"]["widgets"][0], "value": height}]}},
+            ], "edges": [{"id": "e1", "source": "a", "target": "b"}]}}
+            roster = {
+                "curio.builtin/python-computation": {"executable": True, "engine": "python"},
+                node_type: {"executable": True, "engine": "python"},
+            }
+            report = runner.run_through_node("guest", "p-offered-function", spec, "b", exec_fn=exec_fn, templates=roster)
+            assert report["ok"] is True, report
+            return load_from_duckdb(report["nodes"]["b"]["output"]["path"])
+
+        assert run(2) == 42
+        assert run(3) == 63
     finally:
         release_connection()

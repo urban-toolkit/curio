@@ -1042,8 +1042,10 @@ def _node_command(env, user=None):
     On Linux, Node starts through the exec wrapper of
     ``isolation/seccomp_filter.py``, the isolated child's filter code: Popen's
     ``start_new_session`` makes the wrapper a session and process group
-    leader, and the wrapper denies setsid and setpgid with EPERM to itself and
-    to every process it starts, then execs Node, which keeps its pid. So no
+    leader, and the wrapper denies the isolated child's denylist but its
+    network calls (``seccomp_filter.NODE_CODE_DENIED``: ptrace, namespaces and
+    mounts, setsid and setpgid among them) with EPERM to itself and to every
+    process it starts, then execs Node, which keeps its pid. So no
     process Node starts can leave Node's process group, which the run kills
     when Node exits (:func:`_end_node_run`), whatever its environment. libuv's
     ``detached: true`` ignores the EPERM its setsid gets, so a detached child

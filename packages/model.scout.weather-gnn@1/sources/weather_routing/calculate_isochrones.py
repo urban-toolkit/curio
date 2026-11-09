@@ -1,10 +1,14 @@
 """SCOUT's travel-time zones of a trip.
 
-Ported unchanged from SCOUT (https://github.com/urban-toolkit/scout),
-backend/models/routing/scripts/calculate_isochrones.py.
+Ported from SCOUT (https://github.com/urban-toolkit/scout),
+backend/models/routing/scripts/calculate_isochrones.py, unchanged but for
+``__all__``, which names nothing: node code imports
+``calculate_weather_route`` from ``weather_routing`` itself (``__init__.py``).
 """
 
 import networkx as nx
+
+__all__ = []
 
 
 def calculate_isochrones(G, orig, route):

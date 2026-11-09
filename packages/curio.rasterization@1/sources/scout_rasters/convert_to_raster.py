@@ -24,6 +24,8 @@ layer becomes the tiles SCOUT writes. Changes from SCOUT's file:
   and SCOUT's commented-out code (earlier versions of ``create_image`` and
   ``compute_tile``, single lines, and the usage example at the end) are left
   out.
+- ``__all__`` names nothing: node code calls ``rasterize_buildings``
+  (``node_outputs.py``), which runs ``convert_raster``.
 
 Each line Curio changed ends with a ``# Curio:`` comment that quotes its entry
 above, or sits in a changed block (a new function, a rewritten call) whose
@@ -49,6 +51,8 @@ from datashader.core import bypixel
 import os
 
 from pathlib import Path
+
+__all__ = []  # Curio: __all__ names nothing
 
 transformer = Transformer.from_crs(3395, 4326)
 invtransformer = Transformer.from_crs(4326,3395)

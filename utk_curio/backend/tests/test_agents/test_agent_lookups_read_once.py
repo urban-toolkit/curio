@@ -18,7 +18,10 @@ manifest's text, kept, and hand none of it out. A manifest
 ``get_builtin_manifest`` and ``list_builtin_manifests`` hand out is still a
 fresh one, which its caller owns. ``agent_definition_dir`` resolves the store
 and the folder once each, and still refuses a folder that leads out of the
-store.
+store. Since run 42534743404 (the store's resolve in 6.4% of the samples), the
+store is resolved once per account (``safe_paths.resolve_base``), so a lookup
+walks the agent's folder alone, and a store swapped for a link after its first
+use is refused.
 
 New names are read inside each test, so this module imports on a checkout
 without them and each test fails on its own.
@@ -124,8 +127,8 @@ def test_another_copy_of_the_agents_is_read_as_it_is(tmp_path, monkeypatch):
     assert EVALUATOR.split("@", 1)[0] not in builtin.internal_agent_ids()
 
 
-def test_an_agent_in_the_accounts_store_is_found_with_two_walks(tmp_curio, monkeypatch):
-    """The store, then the agent's folder: each resolved once."""
+def test_an_agent_in_the_accounts_store_is_found_with_one_walk(tmp_curio, monkeypatch):
+    """The store, known already, then the agent's folder."""
     from utk_curio.backend.app.agents.repositories import storage
 
     storage.agent_definition_dir(UKEY, BUILDER)
@@ -135,7 +138,25 @@ def test_an_agent_in_the_accounts_store_is_found_with_two_walks(tmp_curio, monke
     walks = list(resolved)
 
     assert folder.name == BUILDER and folder.parent.name == "agents"
-    assert len(walks) == 2, f"an agent's folder in the store took {len(walks)} walks: {walks}"
+    assert walks == [str(folder)], f"an agent's folder in the store took {len(walks)} walks: {walks}"
+
+
+def test_an_accounts_store_swapped_for_a_link_after_its_first_use_is_refused(tmp_curio, tmp_path):
+    """The store is kept as it was first seen, so an agent behind a link put
+    in its place lies outside it."""
+    from utk_curio.backend.app.agents.repositories import storage
+    from utk_curio.backend.app.common.safe_paths import PathTraversalError
+
+    base = storage.user_agents_dir(UKEY)
+    base.mkdir(parents=True)
+    storage.agent_definition_dir(UKEY, BUILDER)
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / BUILDER).mkdir(parents=True)
+    base.rename(base.with_name("agents-moved"))
+    base.symlink_to(elsewhere, target_is_directory=True)
+
+    with pytest.raises(PathTraversalError):
+        storage.agent_definition_dir(UKEY, BUILDER)
 
 
 def test_an_agent_folder_that_leads_out_of_the_store_is_still_refused(tmp_curio, tmp_path):
