@@ -172,7 +172,7 @@ def _note(kind: str, words: str, project_id: str, owner: int, level: int) -> Non
         seen = _by_caller[(kind, caller)] = _by_caller.get((kind, caller), 0) + 1
     if seen <= LOGGED_FIRST or seen % LOGGED_EVERY == 0:
         logger.log(
-            level, "[owner-guard] process %d of %d %s dataflow %s, which process %d owns, from %s (%d from there)",
+            level, "[owner-guard] process %d of %d: %s dataflow %s, which process %d owns, from %s (%d from there)",
             backend_processes.this_process(), backend_processes.process_count(), words, project_id, owner, caller, seen,
         )
 
