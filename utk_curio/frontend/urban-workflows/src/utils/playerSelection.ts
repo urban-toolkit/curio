@@ -31,12 +31,15 @@ export const CARD_SELECT = "images_click";
  * time every 250 ms, so a player tells at each of those, about four times a
  * second.
  *
- * Measured on CI's GPU runners (11-08, tmp/player-linked-measure), a Simple
- * View linked to a Vega-Lite chart and an Autark map of the same points: one
- * update costs the page about 20 ms of main thread with 900 points and 37 ms
- * with 10,000 (the flow's renders, Vega's change and Autark's
- * `syncHighlights`, its read of the drawn rows included), and five seconds
- * of play took 7% and 15% of the main thread, with no video frame dropped.
+ * Measured on three of CI's GPU runners (11-08, tmp/player-linked-measure),
+ * a Simple View linked to a Vega-Lite chart and an Autark map of the same
+ * points: one update costs the page 20 to 30 ms of main thread with 900
+ * points and 37 to 86 ms with 10,000 (the flow's renders, Vega's change and
+ * Autark's `syncHighlights`, its read of the drawn rows included), five
+ * seconds of play took 7 to 19% and 15 to 30% of the main thread, and no
+ * video frame was dropped. The first update after a map draws also reads
+ * the layer's rows back from autk-db once: 24 ms with 900 points, 183 ms
+ * with 10,000.
  */
 export const PLAYER_TELLS_EVERY_MS = 200;
 
