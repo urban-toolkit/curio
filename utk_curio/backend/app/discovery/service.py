@@ -830,6 +830,11 @@ class DiscoveryService:
         (``DatasetCatalogService.get_dataset``), where its owner and an editor
         the owner invited find the collections it lists, read from the owner's
         store (:meth:`collection_store`). Anyone else finds none of them.
+
+        The lookups count no dataset's usage (``consumer_counts``): only the
+        collection's own fields are read, and a node's run asks for each
+        collection it loads, while counting reads every dataflow of the
+        account.
         """
         from utk_curio.backend.app.datasets.service import DatasetCatalogError
         from utk_curio.backend.app.discovery.domain.errors import ResourceNotFound
@@ -838,7 +843,7 @@ class DiscoveryService:
         item = self._the_owners_copy(dataset_id)
         if item is None:
             try:
-                item = catalog.get_dataset(dataset_id)
+                item = catalog.get_dataset(dataset_id, consumer_counts=False)
             except DatasetCatalogError as exc:
                 item = self._listed_by_the_dataflow(dataset_id)
                 if item is None:
@@ -875,7 +880,7 @@ class DiscoveryService:
         if not self.dataflow_id or self.user is None:
             return None
         try:
-            return self._datasets().get_dataset(dataset_id, dataflow_id=self.dataflow_id)
+            return self._datasets().get_dataset(dataset_id, dataflow_id=self.dataflow_id, consumer_counts=False)
         except (DatasetCatalogError, NotFoundError):
             return None
         except Exception:  # noqa: BLE001 - the account's own collections still answer
