@@ -367,6 +367,17 @@ def test_utci_from_raster_and_weather_fails_on_an_hour_the_table_lacks(package_m
         run_node("utci-compute", [mrt, _weather()], [0, 1], TIMESTAMP=99)
 
 
+def test_the_milan_weather_dataset_says_its_temperature_is_the_air_temperature_utci_reads():
+    """``utci_grid`` hands the ``Td`` column to pythermalcomfort as ``tdb``, its
+    dry-bulb air temperature, so the dataset's description, which agents read,
+    names the air temperature and no dew point."""
+    module = (PACKAGE / "sources" / "weather_utci.py").read_text(encoding="utf-8")
+    assert re.search(r'tdb = float\(hour\["Td"\]', module), "utci_grid no longer reads Td as tdb"
+    manifest = json.loads((REPO / "datasets" / "data.utk.milan-era5-weather@1" / "manifest.json").read_text())
+    assert "air temperature" in manifest["description"], manifest["description"]
+    assert "dew point" not in manifest["description"], manifest["description"]
+
+
 # ---------------------------------------------------------------------------
 # UTCI Zonal Mean
 # ---------------------------------------------------------------------------
