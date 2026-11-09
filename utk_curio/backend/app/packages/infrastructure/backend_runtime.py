@@ -24,6 +24,7 @@ kept until an operator prunes it; nothing expires it automatically.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 from dataclasses import dataclass
@@ -36,6 +37,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+from utk_curio.backend.app.common.file_locks import exclusive_lock
 from utk_curio.backend.app.packages.domain import backend_contract as bc
 from utk_curio.backend.app.packages.domain.manifest import ManifestError
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
@@ -358,17 +360,17 @@ def remove_backend_residue(user_key: str, dir_name: str) -> dict[str, bool]:
     _remove("dataDir", _data_dir(user_key, dir_name))
     pins_path = _pins_path(user_key)
     try:
-        pins = json.loads(pins_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        pins = None
-    if isinstance(pins, dict) and dir_name in pins:
-        pins.pop(dir_name)
-        try:
-            pins_path.write_text(json.dumps(pins, indent=2, sort_keys=True) + "\n",
-                                 encoding="utf-8")
-            removed["pin"] = True
-        except OSError:
-            log.warning("backend residue: could not rewrite %s", pins_path, exc_info=True)
+        with _pins_held(user_key):
+            try:
+                pins = json.loads(pins_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                pins = None
+            if isinstance(pins, dict) and dir_name in pins:
+                pins.pop(dir_name)
+                _write_pins(pins_path, pins)
+                removed["pin"] = True
+    except OSError:
+        log.warning("backend residue: could not rewrite %s", pins_path, exc_info=True)
     return removed
 
 
@@ -406,18 +408,54 @@ def _pins_path(user_key: str) -> Path:
     return _user_root(user_key) / _PINS_FILENAME
 
 
+@contextlib.contextmanager
+def _pins_held(user_key: str):
+    """Hold the account's pins while they are read and written, across threads
+    and backend processes. Two installs at once each wrote the pins they had
+    read with their own, and the later one dropped the other's: that package's
+    entry was then no longer checked at its runs. The lock file is beside the
+    pins, in the account's own store, where no node reaches it."""
+    path = _pins_path(user_key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with exclusive_lock(path.with_name(f".{path.name}.lock"), namespace="package-backend-pins", key=str(user_key)):
+        yield
+
+
+def _write_pins(path: Path, pins: dict) -> None:
+    """Write *pins* whole, through a file of its own: a reader of them
+    (:func:`pinned_entry_digest`) sees the old pins or these, never part."""
+    part = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        part.write_text(json.dumps(pins, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        os.replace(part, path)
+    finally:
+        part.unlink(missing_ok=True)
+
+
 def record_entry_pin(user_key: str, dir_name: str) -> str | None:
     """Pin the installed package's backend entry digest (memo dev/91 §3.1) —
     called by both install authorities (build promotion and the catalog
     install) right after files land, so invocation-time verify-on-read has a
     truth to check. Returns the recorded digest, or None (and clears any
-    stale pin) when the package declares no backend."""
+    stale pin) when the package declares no backend.
+
+    Reads and writes the account's pins holding them (:func:`_pins_held`)."""
     try:
         pkg_path = package_dir(user_key, dir_name)
         manifest = load_package_manifest(pkg_path)
     except Exception:  # noqa: BLE001 — pinning never breaks an install
         log.warning("backend pin: could not read %s/%s", user_key, dir_name, exc_info=True)
         return None
+    try:
+        with _pins_held(user_key):
+            return _pin(user_key, dir_name, pkg_path, manifest)
+    except OSError:
+        log.warning("backend pin: could not pin %s/%s", user_key, dir_name, exc_info=True)
+        return None
+
+
+def _pin(user_key: str, dir_name: str, pkg_path: Path, manifest) -> str | None:
+    """:func:`record_entry_pin`, holding the account's pins."""
     pins_path = _pins_path(user_key)
     try:
         pins = json.loads(pins_path.read_text(encoding="utf-8"))
@@ -437,9 +475,7 @@ def record_entry_pin(user_key: str, dir_name: str) -> str | None:
         digest = entry_digest(entry_path.read_bytes())
         pins[dir_name] = digest
     try:
-        pins_path.parent.mkdir(parents=True, exist_ok=True)
-        pins_path.write_text(json.dumps(pins, indent=2, sort_keys=True) + "\n",
-                             encoding="utf-8")
+        _write_pins(pins_path, pins)
     except OSError:
         log.warning("backend pin: could not persist %s", pins_path, exc_info=True)
         return None
