@@ -490,13 +490,21 @@ def _serializer():
     return URLSafeTimedSerializer(_link_secret(), salt=_LINK_SALT)
 
 
-def sign(user_id: int | None, user_key: str, dataset_id: str, file_id: str, dataflow_id: str | None = None) -> str:
+def sign(
+    user_id: int | None, user_key: str, dataset_id: str, file_id: str, dataflow_id: str | None = None,
+    visitor: str | None = None,
+) -> str:
     """A link to one file, for ten minutes: *dataflow_id*, when the file was
     found through a dataflow's collections, is the dataflow its use reads
-    through again."""
+    through again, and *visitor*, for a hosted guest, the visitor it is read
+    as again (``visitor_copies.visitor_of``, the middle of the names of the
+    datasets they add). Whoever holds a link can read what it says, so it
+    never says the sign-in."""
     claims = {"u": user_id, "k": user_key, "d": dataset_id, "f": file_id}
     if dataflow_id:
         claims["df"] = dataflow_id
+    if visitor:
+        claims["v"] = visitor
     return _serializer().dumps(claims)
 
 
