@@ -46,6 +46,7 @@ from typing import Iterable, NamedTuple, Optional
 from pycrdt import Map
 
 from utk_curio.backend.app.collaboration import doc_mapping
+from utk_curio.backend.app.common.file_locks import keyed_thread_lock
 from utk_curio.backend.app.projects import storage
 
 logger = logging.getLogger(__name__)
@@ -73,9 +74,17 @@ _MODEL_REFS = "modelRefs"
 #: The entry, in :func:`entries`, of each package a lockfile names.
 _LOCKFILE = "lockfile"
 
-#: Guards each record's read-modify-write. A leaf: no other lock is asked for
-#: while it is held, and the doc's own lock may be held when it is asked for.
-_lock = threading.Lock()
+#: The namespace of each record's lock (``file_locks.keyed_thread_lock``),
+#: which guards its read-modify-write: a lock per dataflow, since one lock for
+#: every record kept each room's change waiting for every other room's read
+#: and write of its file. A leaf: no other lock is asked for while it is held,
+#: and the doc's own lock may be held when it is asked for.
+_LOCK_NAMESPACE = "owner-uses"
+
+
+def _record_lock(user_key: str, project_id: str) -> threading.Lock:
+    """The lock of the record of the dataflow *project_id* in the store *user_key*."""
+    return keyed_thread_lock(_LOCK_NAMESPACE, f"{user_key}/{project_id}")
 
 
 class Record(NamedTuple):
@@ -214,7 +223,7 @@ def recorded(user_key: str, project_id: str) -> Record:
     if not isinstance(spec, dict):
         return Record(frozenset())
     seed = Record(_items(entries(_dataflow_of(spec))))
-    with _lock:
+    with _record_lock(user_key, project_id):
         record = _read(path)
         if record is None:
             record = seed
@@ -235,7 +244,7 @@ def changed(user_key: str, project_id: str, before: Counter, after: Counter, *, 
         path = _path(user_key, project_id)
     except (OSError, ValueError):
         return
-    with _lock:
+    with _record_lock(user_key, project_id):
         held = _read(path)
         record = held if held is not None else Record(_items(before))
         if by_owner:
@@ -250,7 +259,7 @@ def changed(user_key: str, project_id: str, before: Counter, after: Counter, *, 
 def forget(user_key: str, project_id: str) -> None:
     """Drop the dataflow's record: a dataflow made anew is recorded with what
     it names when it is next read or changed."""
-    with _lock:
+    with _record_lock(user_key, project_id):
         try:
             _path(user_key, project_id).unlink()
         except FileNotFoundError:
@@ -272,7 +281,7 @@ def packages_put_in(user_key: str, project_id: str, packages: Iterable[str]) -> 
         path = _path(user_key, project_id)
     except (OSError, ValueError):
         return
-    with _lock:
+    with _record_lock(user_key, project_id):
         held = _read(path)
         if held is None:
             return

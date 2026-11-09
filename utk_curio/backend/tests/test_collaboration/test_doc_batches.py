@@ -470,13 +470,13 @@ def test_steady_typing_wakes_the_thread_that_writes_the_docs_only_when_a_write_b
     keystroke, which a burst of typing made hundreds of times a second."""
     woken = []
 
-    class _Counted(threading.Condition):
-        def notify_all(self):
+    class _Counted(threading.Event):
+        def set(self):
             woken.append(threading.current_thread())
-            super().notify_all()
+            super().set()
 
     alice = room.tab("alice")
-    monkeypatch.setattr(room.docs, "_wake", _Counted(room.docs._lock))
+    monkeypatch.setattr(room.docs, "_wake", _Counted())
     for char in "typing":
         assert alice.edit(_type(char))[0]["ok"] is True
     assert len(woken) == 1, f"the writing thread was woken {len(woken)} times for one write due"

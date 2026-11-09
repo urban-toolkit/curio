@@ -1,0 +1,86 @@
+{
+  "id": "source.sage.idot-crossings",
+  "name": "SAGE-IDOT rail crossings",
+  "version": "1.0.0",
+  "compatibility": { "major": 1 },
+  "description": "Three SAGE nodes, W042, W065 and W06E, watching Illinois Department of Transportation rail crossings from July 2025: a snapshot of each crossing every 5 minutes, and the objects YOLOv5n, YOLOv8n and YOLOv10n detected in a new image about every 3 seconds, one JSON Lines file per crossing and month. Each crossing's month is a row of its own.",
+  "publisher": "SAGE",
+  "homepage": null,
+  "tags": ["traffic", "rail crossings", "object detection", "images", "illinois", "sage"],
+  "provider": { "type": "s3", "baseUrl": "https://data.urbantk.org/idot" },
+  "auth": { "mode": "public" },
+  "resources": [
+    {
+      "id": "snapshots",
+      "name": "Crossing snapshots",
+      "description": "A snapshot every 5 minutes, named by when it was taken in nanoseconds since 1970 (ns): taken_at is that time in UTC.",
+      "kind": "images",
+      "path": "{crossing}/images/{month:%Y_%m}/{ns:int}-snapshot.jpg",
+      "time": { "capture": "ns", "unit": "ns" },
+      "datasets": "per:crossing,month"
+    },
+    {
+      "id": "detections",
+      "name": "Detections",
+      "description": "One row per object a YOLO model detected in an image: its class, confidence and box in pixels (x0, y0, x1, y1), the image's time (image_timestamp_ns) and the model's inference time. Lines of other kinds are skipped and counted.",
+      "kind": "table",
+      "format": "jsonl",
+      "path": "{crossing}/data/*_{month:%Y_%m}.jsonl",
+      "datasets": "per:crossing,month",
+      "options": {
+        "parse": ["value"],
+        "columns": {
+          "timestamp": { "path": "timestamp", "type": "timestamp" },
+          "image_timestamp_ns": "value.image_timestamp_ns"
+        },
+        "unpack": [
+          {
+            "path": "value.models_results",
+            "key": "model",
+            "columns": { "inference_time_seconds": "inference_time_seconds" }
+          },
+          {
+            "path": "detections",
+            "columns": {
+              "class": "class",
+              "confidence": "confidence",
+              "x0": "bbox.0",
+              "y0": "bbox.1",
+              "x1": "bbox.2",
+              "y1": "bbox.3"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "frames",
+      "name": "Frames by model",
+      "description": "One row per image and YOLO model, also when the model saw nothing: its total_objects, its counts by class as JSON text, and its inference time. Lines of other kinds are skipped and counted.",
+      "kind": "table",
+      "format": "jsonl",
+      "path": "{crossing}/data/*_{month:%Y_%m}.jsonl",
+      "datasets": "per:crossing,month",
+      "options": {
+        "parse": ["value"],
+        "columns": {
+          "timestamp": { "path": "timestamp", "type": "timestamp" },
+          "image_timestamp_ns": "value.image_timestamp_ns"
+        },
+        "unpack": [
+          {
+            "path": "value.models_results",
+            "key": "model",
+            "columns": {
+              "total_objects": "total_objects",
+              "counts": "counts",
+              "inference_time_seconds": "inference_time_seconds"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "createdAt": "2026-11-08T00:00:00Z",
+  "updatedAt": "2026-11-08T00:00:00Z"
+}
