@@ -476,6 +476,24 @@ def test_the_deployment_secret_cannot_be_read():
     assert outcome == "denied", "an isolated node could read " + target
 
 
+def test_the_childs_environment_holds_no_token():
+    """The sandbox's token opens every sandbox route, ``/exec`` among them,
+    which stages any absolute path it is sent. The zygote's environment used
+    to be the sandbox's whole, so every child held the token and could print
+    it. Looked for by the digest of its value, so a variable of another name
+    holding it counts too."""
+    assert TOKEN, "CURIO_LIVE_SANDBOX_TOKEN is unset, so this test cannot know the token it looks for"
+    result = assert_ran(run_node("""
+        import hashlib, json, os
+        print(json.dumps(sorted(
+            name for name, value in os.environ.items()
+            if hashlib.sha256(value.encode("utf-8", "surrogateescape")).hexdigest() == %r
+        )))
+    """ % hashlib.sha256(TOKEN.encode("utf-8")).hexdigest()), "looking for the token")
+    holding = json.loads(printed(result).splitlines()[-1])
+    assert holding == [], "an isolated node's environment holds the sandbox's token: %s" % holding
+
+
 # ---------------------------------------------------------------------------
 # A collection's files, from the child's side
 # ---------------------------------------------------------------------------

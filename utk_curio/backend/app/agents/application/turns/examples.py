@@ -15,16 +15,23 @@ cached preamble stays fixed.
 
 The ``examples.read`` tool reads the same "Used" dataflows on request: their
 list (``listing``) or one of them by key (``find``), shown as in the block.
+
+The index and the dataflows are files Curio ships. They are read once per
+examples folder and index and kept (``used_examples``), as the agents' text is
+rendered once when the backend starts; under ``curio.py start --dev`` they are
+read at each call, so an edit shows on the next run.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import posixpath
 import re
 import unicodedata
 from dataclasses import dataclass
+from functools import cached_property, lru_cache
 from pathlib import Path
 
 from utk_curio import shipped
@@ -33,6 +40,7 @@ from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
 from utk_curio.backend.app.projects import services as projects_services
+from utk_curio.backend.app.projects import shipped as projects_shipped
 
 log = logging.getLogger(__name__)
 
@@ -94,6 +102,10 @@ _LINE_RE = re.compile(r"^- \[(?P<title>[^\]]+)\]\((?P<target>[^)\s]+)\): (?P<tex
 _WORD_RE = re.compile(r"[a-z0-9]+")
 _VERSION_RE = re.compile(r"@\d+$")
 _SEP = "\n\n"
+#: What ``curio.py start --dev`` sets: the agents' text is then rendered at
+#: each read (``agent_text.read``), and the worked examples are read at each
+#: call.
+_DEV_ENV = "CURIO_DEV"
 
 _warned_missing = False
 
@@ -108,10 +120,12 @@ class IndexEntry:
     target: str
     text: str
 
-    @property
+    @cached_property
     def path(self) -> Path:
         """The linked file on this machine: the link names a repository path
-        (``docs/examples/...``), found through ``utk_curio/shipped.py``."""
+        (``docs/examples/...``), found through ``utk_curio/shipped.py``.
+        Resolved once per entry: a resolve walks every component of the path
+        with an lstat, and a run matches each example by it."""
         base = agent_text.base_dir()
         folder = f"{agent_text.AGENTS_DIR}/{base.name}" if base is not None else agent_text.AGENTS_DIR
         linked = posixpath.normpath(f"{folder}/{self.target}")
@@ -165,9 +179,14 @@ def parse_index(text: str) -> list[IndexEntry]:
     return entries
 
 
+def _index_text() -> str | None:
+    """The index's text as an agent reads it, like the prompts (``agent_text.read``); None when missing."""
+    return builtin.read_page(INDEX_FILE, wanted_by="the worked examples")
+
+
 def read_index() -> list[IndexEntry]:
     """The index as an agent reads it, like the prompts (``agent_text.read``); empty when missing."""
-    text = builtin.read_page(INDEX_FILE, wanted_by="the worked examples")
+    text = _index_text()
     return parse_index(text) if text else []
 
 
@@ -267,18 +286,35 @@ def _answer_parts(spec: object) -> set[str]:
 
 
 def used_examples() -> list[Example]:
-    """The "Used" dataflows, read now. Empty, with one warning per process,
-    when this install has no shipped dataflows."""
+    """The "Used" dataflows. Empty, with one warning per process, when this
+    install has no shipped dataflows.
+
+    They are read once per examples folder and index, and kept
+    (:func:`_used_once`): a run asks for them for its block, for what it
+    leaves out and for the ``examples.read`` tool, and reading them walks the
+    path of every dataflow Curio ships and parses each "Used" one. Under
+    ``curio.py start --dev`` they are read at each call. The examples are
+    shared: a caller reads them and never changes them."""
+    folder = projects_shipped.examples_dir()
+    index = _index_text()
+    if os.environ.get(_DEV_ENV) == "1":
+        return list(_read_used(folder, index))
+    return list(_used_once(folder, index))
+
+
+def _read_used(folder: Path, index: str | None) -> tuple[Example, ...]:
+    """The "Used" dataflows of the examples folder *folder* that the index's
+    text *index* lists, read now."""
     global _warned_missing
-    dataflows = projects_services.shipped_dataflow_paths()
+    dataflows = {s.key: s.path for s in projects_shipped.shipped_dataflows(folder)}
     if not dataflows:
         if not _warned_missing:
             _warned_missing = True
             log.warning("No shipped dataflows found, so runs get no worked examples")
-        return []
+        return ()
     keys = {path.resolve(): key for key, path in dataflows.items()}
     out = []
-    for entry in read_index():
+    for entry in parse_index(index) if index else []:
         key = keys.get(entry.path)
         if entry.section != USED or key is None:
             continue
@@ -288,7 +324,13 @@ def used_examples() -> list[Example]:
             log.warning("Worked example %s is unreadable (%s); runs go without it", entry.target, exc)
             continue
         out.append(_example(key, entry, spec))
-    return out
+    return tuple(out)
+
+
+@lru_cache(maxsize=8)
+def _used_once(folder: Path, index: str | None) -> tuple[Example, ...]:
+    """:func:`_read_used`, once per examples folder and index."""
+    return _read_used(folder, index)
 
 
 def select(query: str, *, node_type: object = None, dataset_ids=(), exclude=(),

@@ -757,9 +757,11 @@ def save_workflow_test_screenshot(
     earlier captures of the same walkthrough, taken before the run that raised
     them, passed.
 
-    The capture waits until no node on the canvas is running, so a view that
-    draws on its own after its input arrives is photographed drawn, not
-    mid-draw. Pass *allow_running* only when a run in progress is the subject.
+    On a canvas page the capture first waits for the dataflow to open
+    (:func:`wait_for_dataflow_open`), then until no node on the canvas is
+    running, so a view that draws on its own after its input arrives is
+    photographed drawn, not mid-draw. Pass *allow_running* only when a run in
+    progress is the subject.
 
     *closeup* only labels the record, for the CI report's Close-ups filter, and
     *interaction* (see :func:`save_interaction_frame`) for its Interaction pairs.

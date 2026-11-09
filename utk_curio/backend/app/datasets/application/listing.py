@@ -142,7 +142,13 @@ class CatalogListing:
         include_hub: bool = True,
         live_outputs: list[dict[str, Any]] | None = None,
         group_osm: bool = False,
+        consumer_counts: bool = True,
     ) -> dict[str, Any]:
+        """The Data Catalog's items for *dataflow_id* and its facets.
+        *consumer_counts*: whether each item's ``consumerNodeCount``, the
+        "N nodes consume" of its card, is counted, which reads every dataflow
+        of the account (:meth:`_consumer_counts`). A read that shows no count,
+        such as an agent's or a node run's, asks for none."""
         items: list[dict[str, Any]] = []
         if include_hub:
             items.extend(self.registry.list_items())
@@ -393,18 +399,22 @@ class CatalogListing:
         # ``consumerNodeIds`` ref is structurally empty, so derive the count from
         # the same cross-project graph resolver that powers ``dataset_usage``.
         # Best-effort: never fail the listing because usage couldn't be resolved.
-        try:
-            counts = self._consumer_counts(
-                {item["id"] for item in items if item.get("id")}
-            )
-        except DatasetCatalogError:
-            logger.warning(
-                "Could not resolve dataset consumer counts; browse cards will show 0.",
-                exc_info=True,
-            )
-            counts = {}
-        for item in items:
-            item["consumerNodeCount"] = counts.get(item.get("id"), 0)
+        # It reads every dataflow of the account, so only a listing that shows
+        # the count asks for it (*consumer_counts*); the others leave each item
+        # as it was built.
+        if consumer_counts:
+            try:
+                counts = self._consumer_counts(
+                    {item["id"] for item in items if item.get("id")}
+                )
+            except DatasetCatalogError:
+                logger.warning(
+                    "Could not resolve dataset consumer counts; browse cards will show 0.",
+                    exc_info=True,
+                )
+                counts = {}
+            for item in items:
+                item["consumerNodeCount"] = counts.get(item.get("id"), 0)
 
         _sort_catalog_items(items, sort)
 
@@ -466,7 +476,12 @@ class CatalogListing:
         dataflow_id: str | None = None,
         live_outputs: list[dict[str, Any]] | None = None,
         resolve_producer: bool = False,
+        consumer_counts: bool = True,
     ) -> dict[str, Any]:
+        """The Data Catalog's item *dataset_id*, as :meth:`list_catalog` lists
+        it for *dataflow_id*. *consumer_counts*, as for the listing: a lookup
+        that shows no count, such as a node run's of a collection, asks for
+        none."""
         # A synthetic OSM group id resolves to a bundle-shaped item built from
         # its member layers (which the un-collapsed listing still exposes).
         if is_layer_group_id(dataset_id):
@@ -478,7 +493,9 @@ class CatalogListing:
         # ``include_hub=True`` is a strict superset of ``include_hub=False`` (it
         # only *adds* the hub registry items), so a single pass finds any id -
         # no need for the historical two-pass scan.
-        result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True, live_outputs=live_outputs)
+        result = self._owner.list_catalog(
+            dataflow_id=dataflow_id, include_hub=True, live_outputs=live_outputs, consumer_counts=consumer_counts,
+        )
         for item in result["items"]:
             if item["id"] == dataset_id:
                 if resolve_producer:
@@ -609,7 +626,7 @@ class CatalogListing:
             return resolved
 
         try:
-            result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True)
+            result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True, consumer_counts=False)
         except Exception:  # noqa: BLE001 - what the index resolved still runs
             logger.warning(
                 "Could not list the Data Catalog of dataflow %s to resolve datasets %s; "

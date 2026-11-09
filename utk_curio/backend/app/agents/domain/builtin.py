@@ -114,8 +114,23 @@ def _parse(folder: Path, text: str) -> AgentManifest:
     return parse_agent_manifest(json.loads(text), where=str(folder / "manifest.json"))
 
 
+@lru_cache(maxsize=32)
+def _kept(folder: Path, text: str) -> AgentManifest:
+    """One parse of each manifest's text, for this module's own reads, which
+    hand none of it out: whether an agent is a helper, takes worked examples,
+    and which file each prompt is. A turn asks them many times, and a parse
+    checks every prompt's path again."""
+    return _parse(folder, text)
+
+
 def _entry(coord: str) -> tuple[Path, str] | None:
     return next(((folder, text) for folder, text in _folders() if folder.name == coord), None)
+
+
+def _read(coord: str) -> AgentManifest | None:
+    """The agent Curio ships at *coord*, as :func:`_kept` keeps it, or None."""
+    entry = _entry(str(coord or ""))
+    return _kept(*entry) if entry is not None else None
 
 
 def list_builtin_manifests() -> list[AgentManifest]:
@@ -144,7 +159,8 @@ def internal_agent_ids() -> frozenset[str]:
     """The agents Curio ships that are helpers (``catalog.listed`` false):
     they run only as other agents' delegates, and are never listed,
     installed or attached."""
-    return frozenset(m.agent_id for m in list_builtin_manifests() if not m.catalog.listed)
+    kept = (_kept(folder, text) for folder, text in _folders())
+    return frozenset(m.agent_id for m in kept if not m.catalog.listed)
 
 
 def is_internal(coord: object) -> bool:
@@ -154,7 +170,7 @@ def is_internal(coord: object) -> bool:
     shipped_coord = builtin_coord(agent_id)
     if shipped_coord is None:
         return False
-    m = get_builtin_manifest(shipped_coord)
+    m = _read(shipped_coord)
     return not m.catalog.listed and major in ("", str(m.major))
 
 
@@ -177,7 +193,7 @@ def gets_worked_examples(coord: str, capability: str | None = None) -> bool:
     """Whether a run of the agent Curio ships at *coord* gets worked examples:
     in the mode of *capability* when it has one (its ``workedExamples``), else
     as the agent says (``workedExamples``). Any other definition gets none."""
-    m = get_builtin_manifest(coord)
+    m = _read(coord)
     if m is None:
         return False
     declared = m.capability(capability) if capability else None
@@ -196,7 +212,7 @@ def read_prompt_text(coord: str, name: str) -> str | None:
     entry = _entry(str(coord or ""))
     if entry is None:
         return None
-    asset = _parse(*entry).prompts.get(name)
+    asset = _kept(*entry).prompts.get(name)
     if asset is None:
         return None
     return read_asset_text(entry[0], asset, wanted_by=f"built-in agent {coord}, prompt {name!r},")

@@ -11,6 +11,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker +
 - [1. Configure the stack](#1-configure-the-stack)
   - [LLM configurations](#llm-configurations)
   - [Model weights a package fetches](#model-weights-a-package-fetches)
+  - [Bucket mounts](#bucket-mounts)
 - [2. Configure Caddy](#2-configure-caddy)
 - [3. Build and run](#3-build-and-run)
   - [The GPU](#the-gpu)
@@ -302,6 +303,46 @@ Fetch them once on the server, from the checkout of the release you deploy:
 - Git, the image and the pip package hold none of these weights, and
   **Export**, **Publish** and **Save as package node** refuse such a model.
 
+### Bucket mounts
+
+`docker-compose.bucket-mounts.yml` runs a mount service for buckets beside
+Curio: rclone in a container of its own, `bucket-mounts`, which mounts buckets
+read-only with FUSE. It is the one container with FUSE's privileges:
+`/dev/fuse`, `SYS_ADMIN`, and an AppArmor profile of its own, Docker's default
+profile for containers with FUSE mounts and unmounts allowed under the
+service's `/mounts` alone.
+
+Before a stack starts with it, the host needs three things, set up once:
+
+1. **The FUSE device.** This prints a line that starts with `c`:
+
+   ```bash
+   ls -l /dev/fuse
+   ```
+
+2. **A shared mount where the mounts live**, as systemd makes `/`. For a
+   folder under `/srv`, this prints `shared`:
+
+   ```bash
+   findmnt -n -o PROPAGATION -T /srv
+   ```
+
+3. **The service's AppArmor profile, loaded.** Docker refuses to start the
+   service until the kernel has it. Install and load it as root, then check:
+
+   ```bash
+   cd /srv/curio
+   sudo install -m 644 scripts/bucket-mounts/curio-bucket-mounts.apparmor /etc/apparmor.d/curio-bucket-mounts
+   sudo apparmor_parser -r -W /etc/apparmor.d/curio-bucket-mounts
+   sudo aa-status | grep curio-bucket-mounts
+   ```
+
+   The last command prints `curio-bucket-mounts`. The profile loads again at
+   every boot. When an update changes
+   `scripts/bucket-mounts/curio-bucket-mounts.apparmor`, run the `install` and
+   `apparmor_parser` lines again. Every stack on the host uses this one
+   profile, the [dev stack](#optional-dev-stack-alongside-stable) too.
+
 ## 2. Configure Caddy
 
 Caddy terminates HTTPS and forwards traffic into the Docker container. The two `handle_path` blocks below split incoming requests by URL prefix: anything under `/curio/api/` goes to the backend on port 5002, everything else under `/curio/` goes to the frontend on port 8080. The `handle_path` directive strips the prefix before forwarding, so your backend code sees normal paths like `/live` and `/upload`.
@@ -490,6 +531,8 @@ Both stacks mount `/srv/curio-model-weights` read-only at `/model-weights` and s
 
 Both stacks also start with `--media-cache-max-file-gb 8`, so **Cache files** copies the SideSeeing walks, videos of up to 7 GiB, from data.urbantk.org. Each account still holds at most 20 GB of cached files.
 
+They also start with `--discovery-max-download-mb 2048`, so a download, or a file of a bucket table, may be up to 2 GiB on them: a month of detections in data.urbantk.org's `idot` bucket is a JSON Lines file of up to 1.7 GB.
+
 A merge to `main` deploys the dev stack once: Bump version bumps the patch version and dispatches the dev deploy of that commit. Stable runs manually via Actions → Deploy → Run workflow.
 
 `deploy.yml` takes two inputs: `ref` (branch, tag, or SHA; empty deploys the latest `v*` tag) and `target` (`both` / `dev` / `stable`). Both jobs check out the requested ref and rebuild with `--no-cache --force-recreate`.
@@ -602,6 +645,8 @@ flooding it cannot push real errors out of the log.
 | `could not select device driver "nvidia"` when the stack starts | The host has no NVIDIA Container Toolkit, or no NVIDIA GPU. Set up the toolkit ([The GPU](#the-gpu)), or add `deploy: !reset {}` to the `curio` service in `docker-compose.site.yml`. |
 | A node that imports torch fails with `failed to map segment from shared object` | Its memory budget is too small for PyTorch's CUDA libraries. Pass `--exec-memory-mb 24576` in `docker-compose.site.yml`. |
 | A node says *The weights of model '...' are not on this Curio* | Its model's weights are fetched, and this stack has none: run the script the message names on the host, with `--into` the folder the stack mounts at `/model-weights` ([Model weights a package fetches](#model-weights-a-package-fetches)). |
+| `docker compose up` cannot start `bucket-mounts` | The host lacks one of the three things [Bucket mounts](#bucket-mounts) checks: `/dev/fuse`, a shared mount where the mounts live, or the loaded AppArmor profile. |
+| `/monitor` shows **Bucket mounts** *unavailable* | Curio's test of the mount service failed, for the reason the line gives. Recent errors holds the details, and `docker compose logs bucket-mounts` the service's side. |
 | Nodes fail and you cannot see why | Open `/monitor`. The error log there holds the last failures with their tracebacks, and survives longer than `.curio/messages.log`, which is truncated on every launch. |
 | `/monitor` says the sandbox is unreachable | The sandbox process is down or not answering within 3s. The rest of the page stays current; check `docker compose logs curio`. |
 

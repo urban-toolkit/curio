@@ -2220,7 +2220,9 @@ jobs:
   # ten, each room one shared canvas (--shared-canvas): every member adds a
   # node of its own to the room's dataflow, takes the lock of the node it
   # types in and plays the dataflow as its tab holds it, and each room's owner
-  # runs it on the server and saves it. The browser tier is five
+  # runs it on the server and saves it; then the same ten canvases with every
+  # member's agent writing its node too (--agents), on Curio's scripted
+  # model, report in stress-agents/. The browser tier is five
   # real Chrome contexts rendering Autark on WebGPU, which is the half that
   # cannot be driven any other way and does not scale past a handful on one GPU.
   test-gpu-stress:
@@ -2382,6 +2384,27 @@ jobs:
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
             --probe "docker exec $cid python"
 
+      # The same ten canvases, and every member also asks Node Builder to put
+      # a line on top of its own node's code: 100 agent turns at once, ten in
+      # each canvas, on Curio's scripted model, which the harness makes the
+      # stack's default for the tier and puts back after (no LLM, no tokens).
+      # Where the example has a code node to type in, members ask as soon as
+      # their node is in, so the agents work while people type and drag; in
+      # the others (examples 11 and regression), where people type in the
+      # members' own nodes, they ask once the typing is over, as they play.
+      # Every turn must land its write, every tab and the save must hold each
+      # agent's code, and no agent may still be in the room or hold a lock.
+      - name: 🤖 Run 10 canvases of 10 users with agents
+        if: ${{ !cancelled() }}
+        run: |
+          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
+          bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
+            --backend "http://localhost:5072" \
+            --tiers 100 --room-size 10 --shared-canvas --agents \
+            --out "$GITHUB_WORKSPACE/stress-agents{run}" \
+            --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
+            --probe "docker exec $cid python"
+
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
       # half, and vice versa: they fail for different reasons and get fixed by
       # different changes.
@@ -2441,6 +2464,8 @@ jobs:
             stress-session.run*/
             stress-canvas/
             stress-canvas.run*/
+            stress-agents/
+            stress-agents.run*/
             stress-stacks/
             docker-stats.log
           if-no-files-found: warn

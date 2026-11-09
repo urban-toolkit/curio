@@ -69,7 +69,7 @@ def generate_package_starters(user_key: str) -> list[dict]:
     under the per-user seed lock (memo dev/99): the returned starters carry
     the code as text, so nothing here outlives the lock as a live path.
     """
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         return _generate_unlocked(user_key)
 
 
@@ -136,7 +136,7 @@ def template_starter(user_key: str, project_id: str, node_type: object) -> tuple
     if not wanted:
         return None, ""
     scope = packages_project_packages._lockfile_or_empty(user_key, project_id)  # project-spec I/O: outside
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         store = packages_store_reads._store_index(user_key)
         for dir_name, manifest in packages_templates._in_scope(scope, store):
             if isinstance(manifest, Exception):
@@ -173,7 +173,7 @@ def content_starters(user_key: str, project_id: str, node_types: Iterable[object
     scope = packages_project_packages._lockfile_or_empty(user_key, project_id)  # project-spec I/O: outside
     out: dict[str, dict] = {}
     seen: set[str] = set()
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         store = packages_store_reads._store_index(user_key)
         for dir_name, manifest in packages_templates._in_scope(scope, store):
             if isinstance(manifest, Exception):
@@ -210,7 +210,7 @@ def declared_widgets(user_key: str, project_id: str, node_types: Iterable[object
     scope = packages_project_packages._lockfile_or_empty(user_key, project_id)  # project-spec I/O: outside
     out: dict[str, list[dict]] = {}
     seen: set[str] = set()
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         store = packages_store_reads._store_index(user_key)
         for _dir_name, manifest in packages_templates._in_scope(scope, store):
             if isinstance(manifest, Exception):

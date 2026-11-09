@@ -37,7 +37,7 @@ def check_workflow_deps(user_key: str, packages: list) -> dict:
     catalog = packages_dependencies.catalog()
     # Store membership + declared deps in ONE seed-lock hold (memo dev/99);
     # the pip presence probes run after release.
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         in_store = {p.name for p in list_user_packages(user_key)}
         declared = {
             dn: packages_prune._read_python_deps(user_key, dn)
