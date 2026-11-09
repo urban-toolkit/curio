@@ -2,12 +2,13 @@
 
 Both deny calls with EPERM through libseccomp (``pyseccomp``), on Linux, and
 both set ``PR_SET_NO_NEW_PRIVS`` first, which lets an unprivileged process
-install a filter and keeps a setuid program from gaining privilege. An
-isolated Python child denies its whole denylist
-(``child._install_seccomp_filter``). Node, on Linux, is denied the two calls
-that leave a process group (:data:`LEAVING_THE_GROUP`), and so is every
-process it starts: a filter is inherited across ``fork`` and ``exec``, and
-nothing removes it.
+install a filter and keeps a setuid program from gaining privilege. Both deny
+:data:`NODE_CODE_DENIED`: debugger attachment, namespaces and mounts, kernel
+modules, raw kernel surfaces, and the two calls that leave a process group
+(:data:`LEAVING_THE_GROUP`). An isolated Python child denies the network too
+(``child._install_seccomp_filter``); Node, on Linux, keeps it. Every process
+Node starts is denied the same: a filter is inherited across ``fork`` and
+``exec``, and nothing removes it.
 
 Node gets its filter from this file run as an exec wrapper
 (:func:`exec_command`): the sandbox is threaded, so it cannot run code of its
@@ -42,6 +43,23 @@ import sys
 #: own, and ``setpgid``, for another group (glibc's ``setpgrp`` is
 #: ``setpgid(0, 0)``).
 LEAVING_THE_GROUP = ("setsid", "setpgid")
+
+#: What every process node code runs in is denied, an isolated child and a
+#: JavaScript run's Node alike: the child's denylist without its network
+#: calls, which Node keeps.
+NODE_CODE_DENIED = (
+    # Debugger attachment: ptrace on another run of the account would
+    # sidestep everything.
+    "ptrace", "process_vm_readv", "process_vm_writev",
+    # Namespace and mount games.
+    "mount", "umount", "umount2", "unshare", "setns", "pivot_root", "chroot",
+    # Kernel module loading.
+    "init_module", "finit_module", "delete_module",
+    # Raw kernel surfaces with a poor security history.
+    "bpf", "perf_event_open", "userfaultfd", "kexec_load",
+    # Leaving the process group, which every kill of a run is a killpg of.
+    *LEAVING_THE_GROUP,
+)
 
 #: The wrapper's flag for a run that must not start without its filter.
 REQUIRED = "--required"
@@ -197,7 +215,7 @@ def drop_privileges(uid, gid):
 
 def exec_command(argv, *, required, user=None):
     """The command that runs *argv*, its first item a path, through this
-    file's exec wrapper, which denies :data:`LEAVING_THE_GROUP` to it and to
+    file's exec wrapper, which denies :data:`NODE_CODE_DENIED` to it and to
     every process it starts. With *required*, a wrapper that cannot install
     the filter fails; without it, the wrapper then runs *argv* unfiltered.
     With *user*, ``(uid, gid)``, the wrapper then drops to those ids as an
@@ -210,10 +228,10 @@ def exec_command(argv, *, required, user=None):
     ]
 
 
-def _deny_leaving_the_group():
+def _install_node_filter():
     """Install the filter in this process. Whatever stops it is raised; a
     missing ``pyseccomp`` or libseccomp stops it before it changes anything."""
-    filter_ = denying(import_pyseccomp(), LEAVING_THE_GROUP)
+    filter_ = denying(import_pyseccomp(), NODE_CODE_DENIED)
     set_no_new_privs()
     filter_.load()
 
@@ -240,7 +258,7 @@ def main(args):
     if args[:1] == ["--"]:
         args = args[1:]
     try:
-        _deny_leaving_the_group()
+        _install_node_filter()
     except Exception as exc:  # noqa: BLE001 - any failure means no filter
         if required:
             os.write(2, (
