@@ -223,6 +223,7 @@ export const useVega = ({
   const applyDirectSelection = (view: any) => {
     const incoming = incomingSelectionRef.current;
     if (!view || !Array.isArray(incoming)) return;
+    const measureStart = performance.now();
     let flagOf: (t: any) => string;
     if (incoming.length > 0) {
       const picked = new Set(matchSelections(incoming, objectRows(lastValuesRef.current)));
@@ -234,7 +235,11 @@ export const useVega = ({
     } else {
       return;
     }
-    setInteracted(view, flagOf);
+    const ran = setInteracted(view, flagOf);
+    const measureSync = performance.now() - measureStart;
+    Promise.resolve(ran).then(() => (window as any).__curioPlayerMeasures?.push({
+      kind: 'vega', start: measureStart, sync: measureSync, total: performance.now() - measureStart,
+    }));
     if (heldDatasetsRef.current.some((d) => d.name === INPUTS_DATASET)) {
       setInteracted(view, (t: any) => ((t.__input__ ?? 0) === 0 ? flagOf(t) : t.interacted), INPUTS_DATASET);
     }

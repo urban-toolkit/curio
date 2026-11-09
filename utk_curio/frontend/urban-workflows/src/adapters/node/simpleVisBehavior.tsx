@@ -127,6 +127,7 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // which the flow sends over its interaction edges: a click on a card, or
   // what a card's player has played.
   const tellSelect = useCallback((name: string, select: SelectDetail) => {
+    (window as any).__curioPlayerMeasures?.push({ kind: 'tell', at: performance.now() });
     const next = latestSelect(interactionsRef.current, name, select);
     interactionsRef.current = next;
     setInteractions(next);

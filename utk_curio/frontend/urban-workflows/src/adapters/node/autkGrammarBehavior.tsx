@@ -1440,6 +1440,9 @@ export const useAutkGrammarBehavior = (
     // roads alone. A selection that names no layer (a Vega chart's) lands on the
     // first, as the Data Pool does.
     const syncHighlights = async () => {
+        const measureStart = performance.now();
+        let measureMatch = 0;
+        let measureDrawn = 0;
         const grammar = grammarRef.current;
         const spec    = specRef.current;
         const current = dataRef.current;
@@ -1462,6 +1465,7 @@ export const useAutkGrammarBehavior = (
 
         // Input rows per layer; each target turns them into its own positions.
         const rowsByLayer = new Map<string, number[]>();
+        const matchStart = performance.now();
         for (const { outputTableName: name, geojsonObject: fc } of layers) {
             const flagged = ((fc.features ?? []) as any[]).reduce<number[]>((acc, f, i) => {
                 if (f.properties?.interacted === '1') acc.push(i);
@@ -1470,6 +1474,7 @@ export const useAutkGrammarBehavior = (
             const selected = direct.has(name) ? matchSelections(direct.get(name)!, featureRows(fc)) : [];
             rowsByLayer.set(name, [...new Set([...flagged, ...selected])]);
         }
+        measureMatch = performance.now() - matchStart;
         const positions = (name: string, from: 'map' | 'load') =>
             tablePositions(rowsByLayer.get(name) ?? [], loadOrdersRef.current[name]?.[from]);
 
@@ -1479,14 +1484,20 @@ export const useAutkGrammarBehavior = (
         // A map layer names the rows it lights by the positions it drew them
         // at, read back once a draw (`drawnRowsOf`).
         const mapRefs: any[] = maps.flatMap((mapSpec: any) => mapSpec.layerRefs ?? []);
+        const drawnStart = performance.now();
         const drawnOrders = await Promise.all(mapRefs.map((lr: any) =>
             ((rowsByLayer.get(lr.dataRef) ?? []).length > 0 ? drawnRowsOf(grammar, lr.dataRef) : null)));
+        measureDrawn = performance.now() - drawnStart;
         if (grammarRef.current !== grammar) return;
         mapRefs.forEach((lr: any, at: number) => {
             const sel = tablePositions(rowsByLayer.get(lr.dataRef) ?? [], drawnOrders[at] ?? loadOrdersRef.current[lr.dataRef]?.map);
             sel.length === 0
                 ? grammar.clearHighlightOnMap?.(lr.dataRef)
                 : grammar.highlightOnMap?.(lr.dataRef, sel);
+        });
+        (window as any).__curioPlayerMeasures?.push({
+            kind: 'autark', start: measureStart, total: performance.now() - measureStart,
+            match: measureMatch, drawn: measureDrawn,
         });
         for (const plotSpec of plots) {
             const sel = positions(plotSpec.dataRef, 'load');
