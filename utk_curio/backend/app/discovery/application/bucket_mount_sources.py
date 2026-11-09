@@ -121,6 +121,13 @@ class SourceMount:
     def mounted(self) -> bool:
         return self.state == "mounted"
 
+    @property
+    def in_place(self) -> bool:
+        """Whether the source's files are read in place, through its mount:
+        mounted, or down. Its copies cached before are not read then, and
+        Cache files copies none."""
+        return self.state in ("mounted", "down")
+
 
 class _Failed(Exception):
     """A mount that failed: the kind, the reason people read, and what went
@@ -219,8 +226,8 @@ class BucketMountSources:
                  folders: Optional[MountFolders] = None, resolver=None,
                  clock: Callable[[], float] = time.monotonic,
                  list_seconds: float = LIST_SECONDS, retry_seconds: float = RETRY_SECONDS,
-                 look_seconds: float = LOOK_SECONDS, monitor=None,
-                 self_test: Optional[Callable[[], Optional[str]]] = None):
+                 look_seconds: float = LOOK_SECONDS, forget_seconds: float = FORGET_SECONDS,
+                 monitor=None, self_test: Optional[Callable[[], Optional[str]]] = None):
         self.client = client
         self.mounts_dir = Path(mounts_dir)
         self.proxy = proxy
@@ -230,6 +237,7 @@ class BucketMountSources:
         self.list_seconds = list_seconds
         self.retry_seconds = retry_seconds
         self.look_seconds = look_seconds
+        self.forget_seconds = forget_seconds
         self._monitor = monitor or _MonitorLine()
         self._self_test = self_test or bucket_mount_check.failed_self_test
         self._lock = threading.Lock()
@@ -237,6 +245,8 @@ class BucketMountSources:
         self._known: dict[str, _Known] = {}
         self._failures: dict[str, _Failure] = {}
         self._stuck: dict[str, threading.Thread] = {}
+        #: When each folder's listing, by mount and folder, was last forgotten.
+        self._forgotten: dict[tuple[str, str], float] = {}
 
     @property
     def where(self) -> tuple[Path, str]:
@@ -373,9 +383,12 @@ class BucketMountSources:
                 return str(entry.get("Fs") or "")
         return None
 
-    def _call(self, method: str, params: Optional[dict] = None) -> dict:
+    def _call(self, method: str, params: Optional[dict] = None, *, timeout: Optional[float] = None) -> dict:
         try:
-            answer = self.client.call(method, params)
+            if timeout is None:
+                answer = self.client.call(method, params)
+            else:
+                answer = self.client.call(method, params, timeout=timeout)
         except bucket_mounts.RcError as error:
             problem = _GONE.get(error.kind)
             if problem is not None:
@@ -402,6 +415,80 @@ class BucketMountSources:
     def _lock_of(self, name: str) -> threading.Lock:
         with self._lock:
             return self._locks.setdefault(name, threading.Lock())
+
+    # ── a mounted source's listings ────────────────────────────────────────
+
+    def forget(self, manifest: DiscoverySourceManifest, path: str) -> bool:
+        """rclone forgets its listing of the folder that holds *path* (a
+        file's path in *manifest*'s mount, ``tail + relpath``) and marks the
+        listing above it stale, so the next look lists them again: a file
+        uploaded, or a folder made, since rclone last listed them shows.
+
+        False when nothing was forgotten: the source does not mount, that
+        folder's listing was forgotten less than :data:`FORGET_SECONDS` ago,
+        or the service refused (logged). A file at the mount's root marks the
+        root's listing stale and drops none below it."""
+        try:
+            mount = bucket_mount(manifest)
+        except NotMountable:
+            return False
+        folder = path.rpartition("/")[0]
+        key = (mount.name, folder)
+        with self._lock:
+            now = self._clock()
+            last = self._forgotten.get(key)
+            if last is not None and now - last < self.forget_seconds:
+                return False
+            if len(self._forgotten) >= _FORGOTTEN_KEPT:
+                for old in [k for k, when in self._forgotten.items() if now - when >= self.forget_seconds]:
+                    del self._forgotten[old]
+            self._forgotten[key] = now
+        listed = listed_fs_of(mount)
+        params = (bucket_mounts.forget_parameters(listed, dirs=[folder]) if folder
+                  else bucket_mounts.forget_parameters(listed, files=[path]))
+        try:
+            self._call("vfs/forget", params)
+        except _Failed as failed:
+            log.warning("Bucket mounts: could not have %s's listing of %r read again: %s",
+                        mount.name, folder or "/", failed.reason)
+            return False
+        return True
+
+    def refresh(self, manifest: DiscoverySourceManifest, folders: Iterable[str]) -> None:
+        """rclone lists *folders* of *manifest*'s mount again now (paths in
+        the mount, ``""`` its root), after it has marked every listing above
+        them stale, so the folders it walks through to reach them are listed
+        again too: a file uploaded, or a folder made, since rclone last listed
+        them shows. At most :data:`REFRESH_FOLDERS` folders, in one call of
+        at most :data:`REFRESH_SECONDS`; a file elsewhere that reads as
+        missing is looked for again after :meth:`forget`.
+
+        Never raises: a folder rclone could not list, and a call that failed,
+        are logged, and each file is looked for as it is read."""
+        try:
+            mount = bucket_mount(manifest)
+        except NotMountable:
+            return
+        chosen = sorted(set(folders))[:REFRESH_FOLDERS]
+        if not chosen:
+            return
+        listed = listed_fs_of(mount)
+        # Each folder, and each above it, as a file of the folder holding it:
+        # every listing from the root down to the one holding each folder is
+        # stale, and the refresh reads each folder's own.
+        above = sorted({"/".join(parts[:depth]) for parts in (folder.split("/") for folder in chosen if folder)
+                        for depth in range(1, len(parts) + 1)})
+        below_root = [folder for folder in chosen if folder]
+        try:
+            if above:
+                self._call("vfs/forget", bucket_mounts.forget_parameters(listed, files=above))
+            answer = self._call("vfs/refresh", bucket_mounts.refresh_parameters(listed, below_root),
+                                timeout=REFRESH_SECONDS)
+        except _Failed as failed:
+            log.warning("Bucket mounts: could not have %s's folders listed again: %s", mount.name, failed.reason)
+            return
+        for folder, words in sorted(bucket_mounts.refresh_failures(answer).items()):
+            log.info("Bucket mounts: %s could not list %r again: %s", mount.name, folder or "/", words)
 
     # ── at backend start ───────────────────────────────────────────────────
 
@@ -520,6 +607,57 @@ def ensure(manifest: DiscoverySourceManifest) -> SourceMount:
     if the_sources is None:
         return SourceMount("none")
     return the_sources.ensure(manifest)
+
+
+def forget(manifest: DiscoverySourceManifest, path: str) -> bool:
+    """rclone lists the folder holding *path* of *manifest*'s mount again when
+    it next reads it (:meth:`BucketMountSources.forget`). Whether it will."""
+    the_sources = sources()
+    return the_sources.forget(manifest, path) if the_sources is not None else False
+
+
+def refresh(manifest: DiscoverySourceManifest, folders: Iterable[str]) -> None:
+    """rclone lists *folders* of *manifest*'s mount again now
+    (:meth:`BucketMountSources.refresh`). Never raises."""
+    the_sources = sources()
+    if the_sources is not None:
+        the_sources.refresh(manifest, folders)
+
+
+def folders_of(mount: SourceMount, relpaths: Iterable[str]) -> set[str]:
+    """The folders of a mounted source's files *relpaths*, as paths in its
+    mount (``""`` its root): what an add has listed again (:func:`refresh`)."""
+    return {(mount.tail + relpath).rpartition("/")[0] for relpath in relpaths}
+
+
+def cache_refusal(found: SourceMount) -> Optional[str]:
+    """Why Cache files copies nothing of a source read in place: its files
+    are read from its bucket, which may be down now, with the reason. None
+    for one that does not mount here, which keeps Cache files."""
+    if found.state == "mounted":
+        return "its files are read in place from the bucket"
+    if found.state == "down":
+        return f"its files are read in place from the bucket, which cannot be read now: {found.reason}"
+    return None
+
+
+class BucketReads:
+    """How a bucket's provider reads it in place (``S3Storage``): the
+    discovery service builds one for each source it builds a provider of.
+    Nothing is asked of the mount service until a file is read:
+    :meth:`state` mounts the bucket on demand (:func:`ensure`)."""
+
+    def __init__(self, manifest: DiscoverySourceManifest):
+        self.manifest = manifest
+
+    def state(self) -> SourceMount:
+        """The bucket's mount, or why there is none."""
+        return ensure(self.manifest)
+
+    def forget(self, path: str) -> bool:
+        """rclone lists the folder holding *path*, a path in the mount, again
+        when it next reads it (:func:`forget`). Whether it will."""
+        return forget(self.manifest, path)
 
 
 def reconcile_at_start() -> None:

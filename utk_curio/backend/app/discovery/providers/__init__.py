@@ -119,13 +119,19 @@ def build_provider(manifest: DiscoverySourceManifest, transport: DiscoveryTransp
     return cls(manifest, transport)
 
 
-def build_storage(manifest: DiscoverySourceManifest, transport: DiscoveryTransport) -> StorageProvider:
-    """Construct the storage provider a manifest names."""
+def build_storage(manifest: DiscoverySourceManifest, transport: DiscoveryTransport, *,
+                  reads=None) -> StorageProvider:
+    """Construct the storage provider a manifest names. *reads* is how a
+    bucket is read in place where this deployment mounts it
+    (``application/bucket_mount_sources.BucketReads``): a bucket's provider
+    takes it, and no other provider reads through a mount."""
     cls = STORAGE_PROVIDERS.get(manifest.provider.type)
     if cls is None:
         raise CapabilityUnsupported(
             f"{manifest.name} is not a storage source"
         )
+    if reads is not None and cls is S3Storage:
+        return cls(manifest, transport, reads=reads)
     return cls(manifest, transport)
 
 
