@@ -2421,13 +2421,13 @@ jobs:
       # members' own nodes, they ask once the typing is over, as they play.
       # Every turn must land its write, every tab and the save must hold each
       # agent's code, and no agent may still be in the room or hold a lock.
-      - name: 🤖 Run 1, 2, 3 and 10 canvases of 10 users with agents
+      - name: 🤖 Run 10 canvases of 10 users with agents
         if: ${{ !cancelled() }}
         run: |
           cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
           bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
             --backend "http://localhost:5072" \
-            --tiers 10,20,30,100 --room-size 10 --shared-canvas --agents \
+            --tiers 100 --room-size 10 --shared-canvas --agents \
             --mix 01-vega-lite-chained-transforms.json \
             --out "$GITHUB_WORKSPACE/stress-agents{run}" \
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \

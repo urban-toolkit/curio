@@ -1,4 +1,5 @@
 import os
+import sys
 
 from werkzeug.serving import WSGIRequestHandler, is_running_from_reloader
 
@@ -113,6 +114,9 @@ def _socketio_run_kwargs():
 
 def serve():
     """Serve the backend, Socket.IO included, until it is stopped."""
+    # tmp/backend-room-curve-1ms: a thread waiting for the GIL asks for it
+    # after 1 ms instead of 5, to measure how much of sync is that wait.
+    sys.setswitchinterval(0.001)
     # SIGUSR1 writes every thread's stack to a file (thread_stacks.py), which
     # the stress jobs ask for after a tier with failures.
     thread_stacks.register()
