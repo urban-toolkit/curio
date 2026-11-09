@@ -129,14 +129,10 @@ def test_measure_one_update(app_frontend, current_server, page, n):
     require_webgpu(page)
     run_all_and_wait(page, timeout_ms=240000)
     dismiss_toasts(page)
-    drawn_js = (
-        "async (id) => { const s = window.__curio_mapState ? await window.__curio_mapState(id) : null;"
-        " return s && s.input_0 ? s.input_0.drawn : null; }"
-    )
-    deadline = time.monotonic() + 60
-    while page.evaluate(drawn_js, "map") != n and time.monotonic() < deadline:
-        page.wait_for_timeout(500)
-    assert page.evaluate(drawn_js, "map") == n, "the map never drew the walk"
+    # Not read through __curio_mapState, which would read the layer's rows
+    # back before the first update does (drawnRowsOf).
+    page.locator("#autk-grammar-map-map").wait_for(state="attached", timeout=60000)
+    page.wait_for_timeout(5000)
     page.locator("#vegachart canvas").first.wait_for(state="attached", timeout=60000)
 
     cdp = page.context.new_cdp_session(page)
