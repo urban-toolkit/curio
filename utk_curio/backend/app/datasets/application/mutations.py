@@ -12,7 +12,9 @@ from typing import Any
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
+from utk_curio.backend.app.collaboration import owner_calls
 from utk_curio.backend.app.datasets.domain.catalog_item import autark_layer_type, item_from_manifest, loader_snippet
+from utk_curio.backend.app.datasets.application import owner_operations
 from utk_curio.backend.app.datasets.application.paths import PathResolver
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import (
     catalog_id_from_title,
@@ -97,6 +99,76 @@ def _computed_producers(user_key: str, dataset_id: str) -> list[tuple[str, str]]
         if manifest.producer_dataflow_id and manifest.producer_node_id:
             found.append((manifest.producer_dataflow_id, manifest.producer_node_id))
     return found
+
+
+def stamping_published(dataset_id: str, catalog_id: str, dir_name: str, publish_is_computed: bool,
+                       prior_producer_node_id) -> Any:
+    """What publishing *dataset_id* as *catalog_id*, kept in *dir_name*,
+    writes into a dataflow's refs: a transform the section writer runs
+    (``mutate_refs``), which stamps each matching ref published and returns
+    ``None`` when no ref matched, so nothing is written."""
+
+    def _stamp_published(refs: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+        changed = False
+        for ref in refs:
+            ref_id = ref.get("datasetId") or ref.get("id")
+            # Match by id, or (computed) any ref for the same producer node so
+            # project refs keyed as ``computed.<node>`` update when publish is
+            # invoked with the hub / remapped catalog id from the Data Catalog page.
+            matches_producer = bool(
+                publish_is_computed
+                and prior_producer_node_id
+                and ref.get("producerNodeId") == prior_producer_node_id,
+            )
+            if ref_id in (dataset_id, catalog_id) or matches_producer:
+                ref["datasetId"] = catalog_id
+                ref["dirName"] = dir_name
+                # Computed datasets keep origin="computed" always; track publish
+                # state with a separate publishedToHub flag so the frontend can
+                # show the correct Published badge without changing the origin.
+                if ref.get("origin") == "computed" or ref.get("producerNodeId"):
+                    ref["publishedToHub"] = True
+                    # Ensure origin is "computed" (not "hub") for computed datasets
+                    ref.setdefault("origin", "computed")
+                else:
+                    ref["publishedToHub"] = True
+                    # Keep provenance: published copies in the user store stay imported.
+                    if ref.get("origin") == "source_node":
+                        pass
+                    else:
+                        ref["origin"] = "imported"
+                changed = True
+        return refs if changed else None
+
+    return _stamp_published
+
+
+def clearing_published(dataset_id: str) -> Any:
+    """What unpublishing *dataset_id* writes into a dataflow's refs: a
+    transform the section writer runs (``mutate_refs``), which clears each
+    matching ref's published flag and returns ``None`` when no ref matched."""
+
+    def _clear_published(refs: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+        changed = False
+        for ref in refs:
+            ref_id = ref.get("datasetId") or ref.get("id")
+            # ``dirName`` can be a present-but-null legacy field; ``or ""``
+            # guards ``None.split`` so one bad ref doesn't abort the whole
+            # spec reconciliation.
+            if ref_id == dataset_id or (ref.get("dirName") or "").split("@")[0] == dataset_id:
+                # Computed datasets keep origin="computed"; only clear the publishedToHub flag.
+                # Non-computed datasets revert to "imported".
+                if ref.get("origin") == "computed" or ref.get("producerNodeId"):
+                    ref["publishedToHub"] = False
+                    ref.setdefault("origin", "computed")
+                else:
+                    ref["origin"] = "imported"
+                    ref["publishedToHub"] = False
+                # Keep dirName – it now points to the user's store copy.
+                changed = True
+        return refs if changed else None
+
+    return _clear_published
 
 
 class CatalogMutations:
@@ -737,41 +809,15 @@ class CatalogMutations:
         # ``imported`` / ``computed`` provenance (``publishedToHub`` for the badge).
         if dataflow_id:
             try:
-                # The stamp runs inside the section writer's lock (dev/82);
-                # returning ``None`` when no ref matched skips the write.
-                def _stamp_published(refs: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
-                    changed = False
-                    for ref in refs:
-                        ref_id = ref.get("datasetId") or ref.get("id")
-                        # Match by id, or (computed) any ref for the same producer node so
-                        # project refs keyed as ``computed.<node>`` update when publish is
-                        # invoked with the hub / remapped catalog id from the Data Catalog page.
-                        matches_producer = bool(
-                            publish_is_computed
-                            and prior_producer_node_id
-                            and ref.get("producerNodeId") == prior_producer_node_id,
-                        )
-                        if ref_id in (dataset_id, catalog_id) or matches_producer:
-                            ref["datasetId"] = catalog_id
-                            ref["dirName"] = dir_name
-                            # Computed datasets keep origin="computed" always; track publish
-                            # state with a separate publishedToHub flag so the frontend can
-                            # show the correct Published badge without changing the origin.
-                            if ref.get("origin") == "computed" or ref.get("producerNodeId"):
-                                ref["publishedToHub"] = True
-                                # Ensure origin is "computed" (not "hub") for computed datasets
-                                ref.setdefault("origin", "computed")
-                            else:
-                                ref["publishedToHub"] = True
-                                # Keep provenance: published copies in the user store stay imported.
-                                if ref.get("origin") == "source_node":
-                                    pass
-                                else:
-                                    ref["origin"] = "imported"
-                            changed = True
-                    return refs if changed else None
-
-                self.installed.mutate_refs(dataflow_id, _stamp_published)
+                # The stamp runs inside the section writer's lock (dev/82),
+                # by the backend process that owns the dataflow, which the
+                # request names in its body alone (:func:`stamping_published`).
+                owner_calls.run(
+                    owner_operations.stamp_published, self._paths._user_key(), dataflow_id,
+                    user_id=getattr(self.user, "id", None), dataset_id=dataset_id, catalog_id=catalog_id,
+                    dir_name=dir_name, publish_is_computed=publish_is_computed,
+                    prior_producer_node_id=prior_producer_node_id,
+                )
             except Exception:  # noqa: BLE001 – never block publish on a ref update failure
                 pass
 
@@ -1080,8 +1126,10 @@ class CatalogMutations:
         for project in projects_repo.list_for_user(self.user.id):
             try:
                 # install_dataset is idempotent: it replaces any existing ref
-                # for this id rather than appending a duplicate.
-                self.install_dataset(project.id, dataset_id)
+                # for this id rather than appending a duplicate. Made by the
+                # backend process that owns the dataflow: the request names none.
+                owner_calls.run(owner_operations.install, user_key, project.id,
+                                user_id=self.user.id, dataset_id=dataset_id)
                 results.append({"id": project.id, "ok": True})
             except Exception as exc:  # noqa: BLE001 - per-project failure is OK
                 logger.warning(
@@ -1123,9 +1171,9 @@ class CatalogMutations:
             try:
                 # Detach only. Left to its default this would delete the
                 # user's uploaded file the moment the last project let go of it.
-                self.uninstall_dataset(
-                    project.id, dataset_id, delete_orphaned_import=False,
-                )
+                # Made by the backend process that owns the dataflow.
+                owner_calls.run(owner_operations.uninstall, user_key, project.id, user_id=self.user.id,
+                                dataset_id=dataset_id, delete_orphaned_import=False)
                 results.append({"id": project.id, "ok": True})
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
@@ -1506,29 +1554,13 @@ class CatalogMutations:
         # therefore the title) is still readable from the user's local copy.
         if dataflow_id:
             try:
-                # Runs inside the section writer's lock (dev/82); ``None`` when
-                # no ref matched skips the write.
-                def _clear_published(refs: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
-                    changed = False
-                    for ref in refs:
-                        ref_id = ref.get("datasetId") or ref.get("id")
-                        # ``dirName`` can be a present-but-null legacy field; ``or ""``
-                        # guards ``None.split`` so one bad ref doesn't abort the whole
-                        # spec reconciliation.
-                        if ref_id == dataset_id or (ref.get("dirName") or "").split("@")[0] == dataset_id:
-                            # Computed datasets keep origin="computed"; only clear the publishedToHub flag.
-                            # Non-computed datasets revert to "imported".
-                            if ref.get("origin") == "computed" or ref.get("producerNodeId"):
-                                ref["publishedToHub"] = False
-                                ref.setdefault("origin", "computed")
-                            else:
-                                ref["origin"] = "imported"
-                                ref["publishedToHub"] = False
-                            # Keep dirName – it now points to the user's store copy.
-                            changed = True
-                    return refs if changed else None
-
-                self.installed.mutate_refs(dataflow_id, _clear_published)
+                # Runs inside the section writer's lock (dev/82), by the
+                # backend process that owns the dataflow, which the request
+                # names in its query alone (:func:`clearing_published`).
+                owner_calls.run(
+                    owner_operations.clear_published, self._paths._user_key(), dataflow_id,
+                    user_id=getattr(self.user, "id", None), dataset_id=dataset_id,
+                )
             except Exception:  # noqa: BLE001
                 pass
 
@@ -1580,9 +1612,11 @@ class CatalogMutations:
             if not df_id:
                 continue
             # Per-dataflow isolation: one unreadable spec must not abort the
-            # cascade for the others.
+            # cascade for the others. Each is written by the backend process
+            # that owns the dataflow.
             try:
-                if self.installed.remove_dataset_references(df_id, dataset_id):
+                if owner_calls.run(owner_operations.remove_references, user_key, df_id,
+                                   user_id=self.user.id, dataset_id=dataset_id):
                     removed_from.append(df_id)
             except Exception:  # noqa: BLE001
                 logger.warning(
