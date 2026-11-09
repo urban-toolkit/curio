@@ -3,8 +3,15 @@
 :func:`ensure` gives the folder a source's files are read from in place, when
 this deployment runs the mount service (``--bucket-mounts-dir`` and
 ``--bucket-mount-socket``) and the source's bucket mounts
-(``domain/bucket_mount.py``), or why not. Nothing but the tests calls it yet;
-reading mounted sources in place comes next.
+(``domain/bucket_mount.py``), or why not. A bucket's provider reads its
+files there (``S3Storage.local_path`` and ``open``, through
+:class:`BucketReads`, which the discovery service hands it); an add, media,
+node code's collections and Cache files ask :func:`ensure` themselves.
+
+rclone keeps each folder's listing for five minutes, so a file uploaded since
+reads as missing: an add first has the listings of its files' folders read
+again (:func:`refresh`), and a file not found is looked for once more after
+its folder's listing is forgotten (:func:`forget`).
 
 Mounting a source, the first time and after its mount was found dead, gone or
 changed:
@@ -66,6 +73,19 @@ LIST_SECONDS = 10.0
 RETRY_SECONDS = 60.0
 #: How long a mount found alive is taken as alive before it is looked at again.
 LOOK_SECONDS = 5.0
+#: How long a folder's listing, forgotten because a file in it was not found,
+#: is not forgotten again: a row whose file left the bucket makes rclone list
+#: its folder again at most this often.
+FORGET_SECONDS = 30.0
+#: The most folders an add has listed again before its files are read; a file
+#: in another folder that reads as missing is looked for again once its
+#: folder's listing is forgotten.
+REFRESH_FOLDERS = 64
+#: The deadline of that listing, in seconds: rclone lists the folders one
+#: after another within one call.
+REFRESH_SECONDS = 120.0
+#: The forgotten folders remembered at most, for :data:`FORGET_SECONDS`.
+_FORGOTTEN_KEPT = 1024
 
 #: Why a source's bucket is not mounted, beside the host check's own words and
 #: rclone's error.
