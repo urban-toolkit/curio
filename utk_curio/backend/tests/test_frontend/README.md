@@ -833,7 +833,7 @@ agent arriving by some other path cannot slip past.
 
 | Module | Browser | What it is for |
 |---|---|---|
-| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the change that landed or the tool round, and the persisted transcript. ~1-2 s per agent. Each agent runs twice, fenced and on native tools, and one run falls back from native to fenced. One more writes an Autark document under its reply schema, and one holds the Dataflow Builder's model call past `api_json`'s default wait: a turn is waited for until it ends (`TURN_S` bounds only a turn that never does). |
+| `test_agent_runs_e2e.py` | no | The correctness gate: install -> attach -> run -> the reply, the change that landed or the tool round, and the persisted transcript. ~1-2 s per agent. Each agent runs twice, fenced and on native tools, and one run falls back from native to fenced. One more writes an Autark document under its reply schema, and one holds the Dataflow Builder's model call past `api_json`'s default wait: a turn is waited for until it ends (`TURN_S` bounds only a turn that never does). Another answers the scripted LLM configuration's write 30 s late, through a loopback server in front of the backend, as a stalled CI disk did: setup waits for it. |
 | `test_agent_chat_e2e.py` | yes | Drives a real chat turn per agent and captures the baselines below. A mutate-capable agent's **change lands with the reply and is held to the canvas actually changing**; a report-only one is held to the canvas NOT changing. |
 
 **What gets captured, and why it differs by agent.** 3 of the 4 catalog agents

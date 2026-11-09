@@ -34,6 +34,9 @@ import json
 import re
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -41,6 +44,7 @@ from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain.manifest import AgentManifest
 
 from .utils import (
+    HTTP_TIMEOUT_S,
     api_json,
     captured_agent_offers,
     captured_agent_prompts,
@@ -610,6 +614,111 @@ def test_a_turn_that_outlasts_a_quick_call_is_waited_for_to_its_end(current_serv
     nodes = api_json(f"{current_server}/api/projects/{project_id}", token)["spec"]["dataflow"]["nodes"]
     goals = [n.get("goal") or "" for n in nodes]
     assert all(any(goal.startswith(title) for goal in goals) for title in PLAN_NODE_TITLES), goals
+
+
+#: The write a stalled disk held: a new LLM configuration, a synced write of
+#: the account's ``llm-configs.json`` (``owner_only_file.write_json``).
+CONFIG_WRITE = ("POST", "/api/agents/llm/configs")
+#: How long that write's answer comes after it is sent: longer than the 27 s
+#: it took on run 42558359012 (arcade-gpu-03), while about 43 runners pulled
+#: their images onto the host's disk and every synced write waited.
+STALLED_WRITE_S = 30.0
+
+
+class _LateAnswers:
+    """A loopback server in front of the backend that answers one request late,
+    as a host whose disk stalls does. Each request goes to the backend at once,
+    so its work is done on time; the answer to *held* (method, path) is sent
+    *hold_s* later, every other answer as it comes. ``held`` records each held
+    answer and how long it waited, ``unsent`` each answer its caller had
+    stopped waiting for."""
+
+    def __init__(self, backend: str, held: tuple[str, str], hold_s: float):
+        self.held: list[dict] = []
+        self.unsent: list[str] = []
+        self._released = released = threading.Event()
+        log, unsent = self.held, self.unsent
+
+        class Handler(BaseHTTPRequestHandler):
+            def _forward(self) -> None:
+                size = int(self.headers.get("Content-Length") or 0)
+                request = Request(
+                    backend + self.path,
+                    data=self.rfile.read(size) if size else None,
+                    headers={
+                        name: value for name, value in self.headers.items()
+                        if name.lower() in ("authorization", "content-type")
+                    },
+                    method=self.command,
+                )
+                try:
+                    with urlopen(request, timeout=HTTP_TIMEOUT_S) as answer:  # noqa: S310 (trusted local URL)
+                        status, kind, body = answer.status, answer.headers.get("Content-Type"), answer.read()
+                except HTTPError as refusal:
+                    status, kind, body = refusal.code, refusal.headers.get("Content-Type"), refusal.read()
+                if (self.command, self.path.split("?", 1)[0]) == held:
+                    began = time.monotonic()
+                    released.wait(hold_s)
+                    log.append({"request": f"{self.command} {self.path}", "held_s": time.monotonic() - began})
+                try:
+                    self.send_response(status)
+                    self.send_header("Content-Type", kind or "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                except OSError as gone:
+                    unsent.append(f"{self.command} {self.path}: {gone}")
+
+            do_GET = do_POST = do_PUT = do_DELETE = _forward
+
+            def log_message(self, *args) -> None:
+                """Quiet: the backend's log has every request."""
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self._server.server_port}"
+        self._serving = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    def __enter__(self) -> "_LateAnswers":
+        self._serving.start()
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        # A held answer goes at once, so no thread outlives the test.
+        self._released.set()
+        self._server.shutdown()
+        self._server.server_close()
+
+
+def test_a_configuration_write_a_stalled_disk_answers_late_is_waited_for(current_server: str):
+    """A scripted LLM configuration is made the account's default, though its
+    write is answered as late as a stalled CI host answered it.
+
+    On run 42558359012 (arcade-gpu-03), test_an_autark_document_is_written_under_its_schema
+    failed in its setup: ``use_scripted_llm``'s ``POST /api/agents/llm/configs``
+    answered 27 s after it was sent, while about 43 runners pulled their images
+    onto the host's disk, and ``api_json`` had given up at 10 s. Here a server in
+    front of the backend holds that answer STALLED_WRITE_S on every run."""
+    require_user_auth()
+    token = stub_db_user(current_server, username="agentrun_stalled_write", name="Stalled Write E2E")["token"]
+    with _LateAnswers(current_server, CONFIG_WRITE, STALLED_WRITE_S) as late:
+        asked = time.monotonic()
+        config = use_scripted_llm(late.url, token)
+        took = time.monotonic() - asked
+    listing = api_json(f"{current_server}/api/agents/llm", token)
+    seen = {
+        "answers held": [answer["request"] for answer in late.held],
+        "setup waited the held answer out": took >= STALLED_WRITE_S,
+        "answers no one waited for": late.unsent,
+        "the account's default": listing["default"],
+        "its configurations": [(c["label"], c["apiType"]) for c in listing["configs"]],
+    }
+    assert seen == {
+        "answers held": [" ".join(CONFIG_WRITE)],
+        "setup waited the held answer out": True,
+        "answers no one waited for": [],
+        "the account's default": config["id"],
+        "its configurations": [("Scripted", "testing")],
+    }, f"{seen}, setup took {took:.1f} s"
 
 
 @pytest.mark.parametrize("native", [False, True], ids=["fenced", "native"])
