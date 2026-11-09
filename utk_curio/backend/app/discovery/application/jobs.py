@@ -62,7 +62,8 @@ class DownloadJob:
     dependencies: dict[str, Any] | None = None
     already_present: bool = False
     unchanged: bool = False
-    #: What a completed job adds to its message: how many images could not be fetched.
+    #: What a completed job adds to its message: how many images could not be
+    #: fetched, or how many lines of a JSON Lines table were skipped.
     note: str | None = None
     created_at: float = field(default_factory=time.monotonic)
     finished_at: float | None = None

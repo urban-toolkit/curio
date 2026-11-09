@@ -22,6 +22,7 @@ import re
 
 import pytest
 
+from utk_curio.backend.app.discovery.infrastructure import bucket_mounts
 from utk_curio.backend.app.monitor import counters, llm_tokens
 
 IPV4 = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b")
@@ -40,6 +41,9 @@ ALLOWED_STRINGS |= {"fork", "off", "auto", "unavailable", "unknown", "pending"}
 ALLOWED_STRINGS |= {"dev", "prod", "test"}
 ALLOWED_STRINGS |= {"users", "data", "exec-overlays", "exec-scratch"}
 ALLOWED_STRINGS |= {"timeout", "oom", "cpu", "signal", "refused", "exit", "unknown"}
+# The bucket mount service's self-test: its states, and the words of why it
+# is unavailable, a closed list (bucket_mounts.PROBLEMS).
+ALLOWED_STRINGS |= {"none", "passed"} | set(bucket_mounts.PROBLEMS.values())
 
 
 @pytest.fixture()
@@ -146,6 +150,37 @@ def test_every_string_leaf_is_a_timestamp_or_a_known_token(client, seeded):
         f"{offenders}. Either reduce the value to a count, or add it to "
         "ALLOWED_STRINGS if it is genuinely a closed vocabulary."
     )
+
+
+def test_a_failed_bucket_mount_self_test_names_no_path_or_host(client, monkeypatch):
+    """What went wrong names paths, hosts and rclone's answer, which only the
+    errors route shows; the aggregate route says why in a closed list of words."""
+    from utk_curio.backend.app.discovery.application import bucket_mount_check
+
+    monkeypatch.setenv(bucket_mounts.DIR_VARIABLE, "/srv/zqxprobe/bucket-mounts")
+    monkeypatch.setenv(bucket_mounts.SOCKET_VARIABLE, "/srv/zqxprobe/run/rc.sock")
+    bucket_mount_check.reset()
+    try:
+        bucket_mount_check.record(bucket_mounts.SelfTest(
+            False, "not-readable",
+            "reading /srv/zqxprobe/bucket-mounts/.selftest/ok as curio-exec (uid 999) from "
+            "data.zqxprobe.example at 203.0.113.77: Permission denied (errno 13)",
+        ))
+        response = client.get("/api/monitor")
+    finally:
+        bucket_mount_check.reset()
+
+    raw = response.get_data(as_text=True)
+    assert "zqx" not in raw.lower()
+    assert IPV4.search(raw) is None
+    assert "/srv/" not in raw
+    deployment = response.get_json()["deployment"]
+    # Not vacuous: the failure was read.
+    assert (deployment["bucketMounts"], deployment["bucketMountsProblem"]) == (
+        "unavailable", bucket_mounts.PROBLEMS["not-readable"],
+    )
+    for key in ("bucketMounts", "bucketMountsProblem"):
+        assert deployment[key] in ALLOWED_STRINGS, key
 
 
 def test_the_storage_payload_is_anonymous_too(client, seeded, state_root):

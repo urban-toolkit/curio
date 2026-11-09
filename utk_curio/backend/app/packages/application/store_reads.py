@@ -31,7 +31,7 @@ def _is_installed_in_user_store(user_key: str, dir_name: str) -> bool:
     the seeder's own replacement.
     """
     try:
-        with package_seed_lock(user_key):
+        with package_seed_lock(user_key, shared=True):
             return (package_dir(user_key, dir_name) / "manifest.json").is_file()
     except Exception:  # noqa: BLE001 — invalid dir_name etc.
         return False
@@ -51,7 +51,7 @@ def _installed_majors_by_pkg(user_key: str) -> dict[str, list[int]]:
     if not base.is_dir():
         return {}
     out: dict[str, list[int]] = {}
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         names = [
             entry.name for entry in base.iterdir()
             if entry.is_dir() and PACKAGE_DIR_RE.match(entry.name)
@@ -101,7 +101,7 @@ def _locked_store_index(user_key: str) -> dict[str, object]:
     the critical section to bounded local I/O, which is what lets readers share
     a writer's lock without becoming a latency problem.
     """
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         return _store_index(user_key)
 
 

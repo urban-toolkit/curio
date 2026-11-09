@@ -145,7 +145,7 @@ def held_model_packages(user_key: str | None) -> list[ListedModelPackage]:
     if not user_key:
         return []
     held: list[ListedModelPackage] = []
-    with package_seed_lock(user_key):
+    with package_seed_lock(user_key, shared=True):
         for folder in list_user_packages(user_key):
             manifest = _model_manifest(folder)
             if manifest is not None:

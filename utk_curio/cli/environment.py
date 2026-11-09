@@ -87,7 +87,7 @@ def set_state_dir(state_dir=None):
         os.environ["CURIO_STATE_DIR"] = str(Path(state_dir).expanduser().resolve())
 
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, agent_search_url=None, backend_url=None, discovery_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None, media_cache_max_gb=None, media_cache_max_file_gb=None, db_pool_size=None, db_pool_overflow=None, db_pool_timeout=None, proxy_hops=None, package_workers=None, js_parallelism=None, js_registry_url=None, js_block_unpinned=None, shared_guest_name=None, shared_guest_username=None, collab_origins=None, collab_namespace=None, log_to_stdout=None, packages_root=None, llm_endpoint_file=None, model_weights_dir=None):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, testing=False, catalog_root=None, exec_memory_mb=None, exec_timeout=None, exec_parallelism=None, agent_search_url=None, backend_url=None, discovery_root=None, save_node_outputs=None, solve_max_attempts=None, solve_node_budget=None, solve_session_deadline=None, solve_batch_deadline=None, validation_exec_timeout=None, validation_node_limit=None, discovery_max_download_mb=None, media_cache_max_gb=None, media_cache_max_file_gb=None, db_pool_size=None, db_pool_overflow=None, db_pool_timeout=None, proxy_hops=None, package_workers=None, js_parallelism=None, js_registry_url=None, js_block_unpinned=None, shared_guest_name=None, shared_guest_username=None, collab_origins=None, collab_namespace=None, log_to_stdout=None, packages_root=None, llm_endpoint_file=None, model_weights_dir=None, bucket_mounts_dir=None, bucket_mount_socket=None):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -143,6 +143,9 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
                 "--into writes them."
             )
         os.environ["CURIO_MODEL_WEIGHTS_DIR"] = str(weights_dir)
+    # The bucket mount service (discovery/infrastructure/bucket_mounts.py):
+    # where its mounts appear here, and its control socket, both or neither.
+    _use_bucket_mounts(bucket_mounts_dir, bucket_mount_socket, deploy=deploy)
     # Respect an already-set CURIO_LAUNCH_CWD / CURIO_SHARED_DATA so the test
     # harness can point the backend at a dedicated workspace (see
     # utk_curio/backend/tests/conftest.py). Only fall back to cwd otherwise.
@@ -336,6 +339,52 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         log_always(f"CURIO_PACKAGES_ROOT={os.environ['CURIO_PACKAGES_ROOT']}")
     if model_weights_dir:
         log_always(f"CURIO_MODEL_WEIGHTS_DIR={os.environ['CURIO_MODEL_WEIGHTS_DIR']}")
+    if bucket_mounts_dir:
+        log_always(f"CURIO_BUCKET_MOUNTS_DIR={os.environ['CURIO_BUCKET_MOUNTS_DIR']}")
+        log_always(f"CURIO_BUCKET_MOUNT_SOCKET={os.environ['CURIO_BUCKET_MOUNT_SOCKET']}")
+
+
+def _use_bucket_mounts(mounts_dir, socket_path, *, deploy):
+    """``--bucket-mounts-dir`` and ``--bucket-mount-socket``: where the bucket
+    mount service's mounts appear in this container, and its control socket.
+
+    One without the other is refused: the backend needs both to reach the
+    service and to read what it mounts. Under ``--deploy`` the socket's folder
+    is made readable by its owner alone, if it is there, so node code's
+    account cannot reach the socket; the service makes it so too
+    (scripts/bucket-mounts/service.sh). Neither flag leaves the variables as
+    they are.
+    """
+    if not mounts_dir and not socket_path:
+        return
+    if not mounts_dir or not socket_path:
+        given, missing = (
+            ("--bucket-mounts-dir", "--bucket-mount-socket") if mounts_dir
+            else ("--bucket-mount-socket", "--bucket-mounts-dir")
+        )
+        raise SystemExit(
+            f"Refusing to start: {given} needs {missing} too. --bucket-mounts-dir is the "
+            "folder where the bucket mount service's mounts appear in this container, and "
+            "--bucket-mount-socket is the service's control socket "
+            "(docker-compose.bucket-mounts.yml); give both, or neither."
+        )
+    folder = Path(mounts_dir).expanduser().resolve()
+    socket_file = Path(socket_path).expanduser().resolve()
+    if not folder.is_dir():
+        log_warning(
+            f"--bucket-mounts-dir {folder} is not a directory: the bucket mount service's "
+            "mounts cannot appear there, and its self-test will say so on /monitor."
+        )
+    if deploy and socket_file.parent.is_dir():
+        try:
+            os.chmod(socket_file.parent, 0o700)
+        except OSError as exc:
+            log_warning(
+                f"Could not make {socket_file.parent}, the folder of --bucket-mount-socket, "
+                f"readable by its owner alone: {exc}"
+            )
+    os.environ["CURIO_BUCKET_MOUNTS_DIR"] = str(folder)
+    os.environ["CURIO_BUCKET_MOUNT_SOCKET"] = str(socket_file)
 
 
 def _is_testing() -> bool:

@@ -1,10 +1,10 @@
 """Node code imports nothing from Curio's own code.
 
-A node's logic is its code (docs/EXTENDING.md, "A node's logic is its code"):
-what a package's node runs is in the package's sources, and what Curio gives
-node code is the functions skills/node-functions/SKILL.md lists, which need no
-import. So no package source, and no node of a shipped example, imports from
-``utk_curio``, outside the short list of exceptions below.
+A node's logic is in its package's functions (docs/EXTENDING.md, "A node's
+logic is in its package's functions"): what a package's node runs is in the
+package's sources, and what Curio gives node code is the functions
+skills/node-functions/SKILL.md lists, which need no import. So no package
+source, and no node of a shipped example, imports from ``utk_curio``.
 """
 
 from __future__ import annotations
@@ -12,8 +12,6 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-
-import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -23,15 +21,6 @@ CURIO_IMPORT = re.compile(r"^[ \t]*(?:from|import)[ \t]+utk_curio\b", re.MULTILI
 
 #: The folders of the shipped examples' dataflows, from the repository root.
 EXAMPLE_FOLDERS = ("docs/examples", "docs/examples/dataflows")
-
-#: The files that still import Curio's code, by path from the repository root,
-#: with what they import. Each leaves this list when its import goes.
-ALLOWED = {
-    "packages/curio.media@1/sources/mosaic-rasters.py": "the mosaic, rasters.mosaic_collection",
-    "packages/curio.rasterization@1/sources/scout_rasters/web_tiles.py": "the mosaic, rasters.mosaic_rasters",
-    "packages/curio.rasterization@1/sources/scout_rasters/raster_algebra.py": "rasters.is_dataset and rasters.epsg_name",
-    "packages/model.scout.deep-umbra@1/sources/deep_umbra/node_outputs.py": "the mosaic, rasters.mosaic_rasters",
-}
 
 
 def _contents(value):
@@ -93,13 +82,9 @@ def test_the_scan_finds_imports_planted_in_node_code(tmp_path):
 
 
 def test_no_node_code_imports_curio():
-    unexpected = sorted(importers(REPO) - set(ALLOWED))
+    unexpected = sorted(importers(REPO))
     assert not unexpected, (
-        "node code imports Curio's code: " + ", ".join(unexpected) + ". A node's logic is its code: put it in the "
-        "node's source or a module of its package, and call only the functions skills/node-functions/SKILL.md lists."
+        "node code imports Curio's code: " + ", ".join(unexpected) + ". A node's logic is in its package's "
+        "functions: put it in a module of the node's package, and call only the functions "
+        "skills/node-functions/SKILL.md lists."
     )
-
-
-@pytest.mark.parametrize("where", sorted(ALLOWED))
-def test_every_allowed_import_is_still_there(where):
-    assert where in importers(REPO), f"{where} no longer imports Curio's code: take it off ALLOWED"
