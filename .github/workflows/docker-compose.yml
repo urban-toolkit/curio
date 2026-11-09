@@ -2270,7 +2270,8 @@ jobs:
        (github.event_name == 'pull_request' &&
         contains(github.event.pull_request.labels.*.name, 'stress')))
     runs-on: [self-hosted, utk, gpu]
-    timeout-minutes: ${{ inputs.repeat > 1 && 350 || 75 }}
+    # tmp/sharded-backend: three stacks in turn (1, 4 and 8 backend processes).
+    timeout-minutes: 200
     concurrency:
       group: utk-ci-stress-${{ github.ref }}
       cancel-in-progress: false
@@ -2299,29 +2300,8 @@ jobs:
       - name: 🔨 Build all service images in parallel
         run: docker compose -p curio-ci-stress build --parallel
 
-      - name: ▶️ Start containers
-        run: docker compose -p curio-ci-stress up -d
-
-      - name: 🧪 Wait for services to become healthy
-        shell: bash
-        run: |
-          set -euo pipefail
-          timeout 420 bash -euo pipefail -c '
-            while true; do
-              cid="$(docker compose -p curio-ci-stress ps -a -q curio | head -n1 || true)"
-              if [[ -z "${cid}" ]]; then sleep 2; continue; fi
-              state="$(docker inspect --format "{{.State.Status}}" "${cid}" 2>/dev/null || true)"
-              health="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" "${cid}" 2>/dev/null || true)"
-              if [[ "${health}" == "healthy" ]]; then echo "healthy"; break; fi
-              if [[ "${health}" == "no-healthcheck" && "${state}" == "running" ]]; then break; fi
-              if [[ "${state}" == "exited" ]]; then
-                echo "the stress stack exited during startup. Logs:"
-                docker compose -p curio-ci-stress logs --no-color --tail=200 curio || true
-                exit 1
-              fi
-              sleep 2
-            done
-          '
+      # tmp/sharded-backend: no stack starts here; the stages' step below
+      # starts one for each backend process count in turn.
 
       # The harness and the browser tier run on the packages of the image this
       # job built, as test-gpu's pytest runs on curio-ci-curio's: they import
@@ -2356,37 +2336,6 @@ jobs:
         with:
           node-version: "26"
 
-      # With `repeat`, each stage below runs that many times on this one stack,
-      # as the four stages already share it; every run signs up users of its
-      # own (a fresh --run-id) and writes its own report folder ({run}).
-      # The probe reads the backend in its container: the stack's .curio is
-      # its root's alone.
-      # tmp/agent-turn-profile: py-spy in the stack's container, which the two
-      # canvas stages below sample the backend with (--stacks-every, --py-spy)
-      # through `docker exec --privileged`, which may trace it. The HTTP tiers,
-      # the session profile and the browser tier do not run on this branch.
-      - name: 🔬 Install py-spy in the stack's container
-        run: |
-          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
-          docker exec "$cid" pip install --no-cache-dir --quiet py-spy==0.4.2 \
-            || echo "::warning::py-spy did not install: the samples are the backend's own dumps"
-          docker exec --privileged "$cid" py-spy --version || true
-          docker exec "$cid" python --version || true
-          # One dump now, so a py-spy that cannot attach shows before the stages.
-          probe_json="$(docker exec "$cid" python -c "$(cat utk_curio/backend/tests/stress/backend_probe.py)" || true)"
-          echo "probe: $probe_json"
-          pid="$(printf '%s' "$probe_json" | python -c 'import json,sys; print(json.load(sys.stdin).get("pid", ""))' || true)"
-          echo "backend pid: $pid"
-          if [ -n "$pid" ]; then
-            timeout 120 docker exec --privileged "$cid" py-spy dump --pid "$pid" --nonblocking > pyspy-first-dump.txt 2>&1 \
-              || echo "::warning::py-spy could not dump the backend"
-            head -n 60 pyspy-first-dump.txt || true
-            timeout 120 docker exec --privileged "$cid" py-spy dump --pid "$pid" --nonblocking --json > pyspy-first-dump.json 2>&1 \
-              || echo "::warning::py-spy dump --json failed"
-            head -c 2000 pyspy-first-dump.json || true
-            echo
-          fi
-
       # 100 users in ten rooms of ten, each room one shared canvas made from
       # the example of its number in the mix, so every example is one. Every
       # member adds a Python node of its own below a node of the dataflow,
@@ -2396,21 +2345,6 @@ jobs:
       # the server and saves it; the probe reads the file the save wrote, which
       # must hold every member's node, connection and lines, and no lock may
       # be held at the end.
-      # tmp/backend-room-curve: both stages put every room on example 01,
-      # whose members ask as soon as their node is in, so a tier's numbers
-      # change with its room count alone; no py-spy, so the timings are clean.
-      - name: 🧩 Run 10 canvases of 10 users
-        if: ${{ !cancelled() }}
-        run: |
-          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
-          bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
-            --backend "http://localhost:5072" \
-            --tiers 100 --room-size 10 --shared-canvas \
-            --mix 01-vega-lite-chained-transforms.json \
-            --out "$GITHUB_WORKSPACE/stress-canvas{run}" \
-            --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
-            --probe "docker exec $cid python"
-
       # The same ten canvases, and every member also asks Node Builder to put
       # a line on top of its own node's code: 100 agent turns at once, ten in
       # each canvas, on Curio's scripted model, which the harness makes the
@@ -2421,17 +2355,14 @@ jobs:
       # members' own nodes, they ask once the typing is over, as they play.
       # Every turn must land its write, every tab and the save must hold each
       # agent's code, and no agent may still be in the room or hold a lock.
-      - name: 🤖 Run 1, 2, 3 and 10 canvases of 10 users with agents
+      # tmp/sharded-backend: both stages, at the default mix, on a fresh stack
+      # for 1 (through nginx), 4 and 8 backend processes in turn
+      # (scripts/ci_stress_shards.sh): reports in stress-canvas.k<K>/ and
+      # stress-agents.k<K>/, logs in stress-messages.k<K>.txt and
+      # stress-container-logs.k<K>.txt, boot times in stress-boot.txt.
+      - name: 🧩 Run both stages at 1, 4 and 8 backend processes
         if: ${{ !cancelled() }}
-        run: |
-          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
-          bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
-            --backend "http://localhost:5072" \
-            --tiers 10,20,30,100 --room-size 10 --shared-canvas --agents \
-            --mix 01-vega-lite-chained-transforms.json \
-            --out "$GITHUB_WORKSPACE/stress-agents{run}" \
-            --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
-            --probe "docker exec $cid python"
+        run: bash scripts/ci_stress_shards.sh 1 4 8
 
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
       # half, and vice versa: they fail for different reasons and get fixed by
@@ -2492,10 +2423,14 @@ jobs:
             stress-session.run*/
             stress-canvas/
             stress-canvas.run*/
+            stress-canvas.k*/
             stress-agents/
             stress-agents.run*/
+            stress-agents.k*/
             stress-stacks/
+            stress-boot.txt
             docker-stats.log
+            docker-stats.k*.log
           if-no-files-found: warn
           retention-days: 7
 
@@ -2507,6 +2442,10 @@ jobs:
           path: |
             stress-container-logs.txt
             stress-messages.txt
+            stress-container-logs.k*.txt
+            stress-messages.k*.txt
+            stress-nginx.k*.conf
+            stress-boot.txt
           retention-days: 7
 
       - name: 📤 Upload browser tier diagnostics
