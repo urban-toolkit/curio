@@ -902,10 +902,11 @@ def _changed(entry: _OpenDoc) -> None:
     now = _clock()
     entry.changed_at = now
     entry.changed_wall = time.time()
-    if entry.dirty_since is None:
+    due = entry.dirty_since is None
+    if due:
         entry.dirty_since = now
-        _ensure_flusher()
-    elif _flusher is None or not _flusher.is_alive():
+        _wake.set()
+    if due or _flusher is None or not _flusher.is_alive():
         _ensure_flusher()
 
 
