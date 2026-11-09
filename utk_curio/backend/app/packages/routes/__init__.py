@@ -1,6 +1,6 @@
 """Flask blueprint mounted at ``/api/packages`` (memo dev/143, B4: one blueprint, registered
 from the resource modules that import it — ``store``, ``catalog``, ``factory``, ``dependencies``,
-``projects``, ``defaults``, ``libraries``, ``backend``; thin over ``application/``).
+``projects``, ``defaults``, ``libraries``, ``backend``, ``node_functions``; thin over ``application/``).
 
 Endpoint matrix (every route is ``@require_auth``; user storage key
 derives from ``app.projects.services._user_dir_key`` just like
@@ -40,6 +40,7 @@ from utk_curio.backend.app.packages.routes import (  # noqa: E402,F401  (handler
     dependencies,
     factory,
     libraries,
+    node_functions,
     projects,
     store,
 )

@@ -12,7 +12,8 @@ Apply would install it: its name, version, publisher, what it may do, its
 libraries and their conflicts with hers. Her Apply checks the package's files
 against the record its install wrote, copies it from his store into hers, a
 model with its weights, installs its libraries under her account and adds it
-to her dataflow as her change, so bob's runs then read it from her store. A
+to her dataflow as her change, so bob's runs then read it from her store, and
+the header above his node's code lists the functions of her copy. A
 package of the shared catalog is installed from the catalog for her. A package
 whose files changed since its install, or whose libraries conflict with hers,
 is refused, with the reason, and waits in her review. Her Dismiss leaves
@@ -229,6 +230,16 @@ def _modules(client, flow, sandbox, who: str) -> dict | None:
         "package_modules")
 
 
+def _header(client, flow, who: str) -> list:
+    """What the header above the code of *who*'s node of bob's package on
+    alice's dataflow lists under Functions, by module: (package, module, the
+    calls of its functions)."""
+    resp = client.get(f"/api/packages/node-functions?nodeType={BUS_NODE}&dataflowId={flow.pid}",
+                      headers=_auth(flow.tokens[who]))
+    assert resp.status_code == 200, f"{who}'s header answered {resp.status_code}: {resp.get_data(as_text=True)[:300]}"
+    return [(row["package"], row["module"], [f["call"] for f in row["functions"]]) for row in resp.get_json()["modules"]]
+
+
 # ---------------------------------------------------------------------------
 # Each way bob brings his package in asks alice, and installs nothing of hers
 # ---------------------------------------------------------------------------
@@ -323,6 +334,23 @@ def test_her_apply_copies_his_package_into_her_store_installs_its_libraries_and_
     assert _modules(client, flow, sandbox, "alice") == hers
     remove_package(_key(flow.bob), BUS_DIR)
     assert _modules(client, flow, sandbox, "bob") == hers
+
+
+def test_his_header_lists_the_functions_of_the_copy_his_runs_import(client, flow, sandbox):
+    """The header above the code of bob's node of his package lists the
+    functions of the copy his runs import: his own until alice applies his
+    request, then hers, even once his own copy is gone, as his play reads it."""
+    from utk_curio.backend.app.packages.application.store_install import remove_package
+
+    listed = [(BUS_DIR, "bus_helpers", ["count()"])]
+    assert _header(client, flow, "bob") == listed
+    request = _asked(client, flow, "bob", BUS_DIR, nodeId="bus-node")
+    resp = _apply(client, flow, "alice", request["proposalId"])
+    assert resp.status_code == 200, resp.get_data(as_text=True)[:300]
+    remove_package(_key(flow.bob), BUS_DIR)
+
+    assert _header(client, flow, "bob") == listed, "his header does not list the functions of her copy"
+    assert _modules(client, flow, sandbox, "bob") == {"root": _sources(flow.alice, BUS_DIR), "names": ["bus_helpers"]}
 
 
 def test_her_apply_names_his_package_in_a_lockfile_that_named_none_as_her_change(client, flow, sandbox):

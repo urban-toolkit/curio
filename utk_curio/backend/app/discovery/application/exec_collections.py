@@ -19,8 +19,10 @@ def resolve_exec_collections(
     """Where the files of each collection *code* reads are, for this execution.
 
     Returns ``({datasetId: {root, objects, kind}}, media_dir)``. A folder
-    collection's files are read in place under ``root``; a bucket collection's
-    cached copies sit in ``objects``. ``media_dir`` is where a node may write
+    collection's files are read in place under ``root``, and so are those of
+    a bucket this deployment mounts (with ``tail``, or ``unavailable`` while
+    its mount is down: :func:`resolve_collections`); another bucket
+    collection's cached copies sit in ``objects``. ``media_dir`` is where a node may write
     the frames or clips it derives. *user* is the account's ``User`` row, which
     the Data Catalog needs to find the collection. Fail-open like dataset
     paths: the injected ``curio_load_collection`` raises a clear error for anything
@@ -64,8 +66,14 @@ def resolve_collections(
     """``{datasetId: {root, objects, kind}}`` for each of *ids* that is a
     collection, as :func:`resolve_exec_collections` gives it to a run under
     *user_key*. An id that is no collection the account reads is left out.
-    One lookup per id, through the Data Catalog, which asks the database."""
-    from utk_curio.backend.app.discovery.application import cache_collection
+    One lookup per id, through the Data Catalog, which asks the database.
+
+    A bucket this deployment mounts is read in place: its ``root`` is its
+    mount's folder, and ``tail`` what each file's path there starts with
+    before its relpath (``domain/bucket_mount.py``). While its mount is down
+    it has ``unavailable``, why, which ``curio_load_collection`` raises; its
+    copies cached before are not read."""
+    from utk_curio.backend.app.discovery.application import bucket_mount_sources, cache_collection
     from utk_curio.backend.app.discovery.infrastructure import storage
     from utk_curio.backend.app.discovery.service import DiscoveryService
 
@@ -77,8 +85,14 @@ def resolve_collections(
         except Exception:  # noqa: BLE001 - one missing collection is its node's error
             continue
         entry = {"kind": (item.get("collection") or {}).get("kind")}
+        mount = None if manifest.provider.type == "folder" else bucket_mount_sources.ensure(manifest)
         if manifest.provider.type == "folder":
             entry["root"] = str(storage.storage_root(manifest))
+        elif mount is not None and mount.mounted:
+            entry["root"] = str(mount.folder)
+            entry["tail"] = mount.tail
+        elif mount is not None and mount.state == "down":
+            entry["unavailable"] = mount.reason or "its mount is down"
         else:
             # The cached copies are where the collection's store keeps
             # them; a store other than the run's is read, never made into.

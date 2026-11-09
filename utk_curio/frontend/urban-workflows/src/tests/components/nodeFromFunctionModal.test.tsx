@@ -185,6 +185,22 @@ describe("New node from a Python function", () => {
     expect(screen.getByLabelText("Destination package")).toHaveValue("__save_as_new__");
   });
 
+  test("shows what the picked function does with its docstring's marks set, never written out", async () => {
+    const marked = functionsPayload(true);
+    marked.packages[0].modules[1].functions[0].doc = "Scale *value* by ``factor``, as :func:`spread` does.";
+    mockListFunctions.mockResolvedValue(marked);
+    await openAndPick();
+    const words = "Scale value by factor, as spread does.";
+    const hint = screen.getByText((_content, el) => el?.tagName === "P" && el.textContent === words);
+    expect(Array.from(hint.querySelectorAll("code"), (el) => el.textContent)).toEqual(["factor", "spread"]);
+    expect(Array.from(hint.querySelectorAll("em"), (el) => el.textContent)).toEqual(["value"]);
+    // An option's text tooltip holds the words alone.
+    const scale = within(screen.getByLabelText("Function")).getByRole("option", {
+      name: "fn_scale.ops.scale(value, factor, label)",
+    });
+    expect(scale).toHaveAttribute("data-tooltip", words);
+  });
+
   test("writes the template and adds it to a new package that depends on the function's package", async () => {
     const { onClose, onSaved } = await openAndPick();
     fireEvent.change(screen.getByLabelText("What label is given"), { target: { value: "fixed" } });

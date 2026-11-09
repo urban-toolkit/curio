@@ -471,9 +471,10 @@ and **Download** saves it. When the node's result is out of date,
   return path
   ```
 
-Above the code or spec, one row lists every chip the node can use, by category:
-**Inputs**, **Scenarios**, **Widgets** and **Selections**, each with its count,
-and each only when it has chips. The categories start closed. Click
+Above the code or spec, one row lists every chip the node can use, and above
+code the functions it can call, by category: **Inputs**, **Functions**,
+**Scenarios**, **Widgets** and **Selections**, each with its count, and each
+only when it has something. The categories start closed. Click
 one to list its chips under the row, which closes the one open, and click it
 again to close it. A category stays open on that node while the dataflow is
 open. On the canvas the header takes at most half of the node's editor, and the
@@ -487,6 +488,14 @@ scenario box's color. An input whose node has not run says which node to run.
   chevron lists its columns under the line (see [Several inputs](#several-inputs)),
   and in a Vega-Lite spec the line of the **inputs** tag
   ([Every input in one dataset](#every-input-in-one-dataset)).
+- **Functions**, above code: what the code can call, a line for each module
+  that offers a function: the modules of the node's package, then those of the
+  packages it depends on, then Curio's own, which need no import. An
+  Accumulated Shadow node lists `accumulated_shadow` and `season_factor` under
+  `deep_umbra`, Rasterization's functions under its modules, and Curio's. Hover
+  a function to read its call and the first paragraph of its docstring; click
+  it to write its call at the cursor, with its import line when the code lacks
+  it ([Node Catalog](NODE-CATALOG.md#functions-a-node-can-call)).
 - **Scenarios**: in a Vega-Lite or Autark spec whose node has an input from a
   scenario box, the chips of the boxes' colors and names
   ([Scenario colors and order](#scenario-colors-and-order)).
@@ -1743,7 +1752,7 @@ The Data Catalog holds datasets you already have; the **Discovery Catalog** hold
 
 Sources are JSON manifests under `<repo_root>/discovery/`, relocated with **`--discovery-root`** the same way `--catalog-root` relocates the dataset catalog, and under `.curio/discovery/` for your own. Users cannot import one from the app.
 
-A Docker deployment can also run a mount service for buckets beside Curio, `docker-compose.bucket-mounts.yml`. Curio then starts with **`--bucket-mounts-dir`**, the folder where the service's mounts appear in Curio's container (`/bucket-mounts`), and **`--bucket-mount-socket`**, the service's control socket (`/run/curio-bucket-mounts/rc.sock`): both, or neither. Curio tests the service as it starts, and `/monitor` shows the outcome under Deployment, as **Bucket mounts**.
+A Docker deployment can also run a mount service for buckets beside Curio, `docker-compose.bucket-mounts.yml` ([DEPLOYMENT.md § Bucket mounts](DEPLOYMENT.md#bucket-mounts)). Curio then starts with **`--bucket-mounts-dir`**, the folder where the service's mounts appear in Curio's container (`/bucket-mounts`), and **`--bucket-mount-socket`**, the service's control socket (`/run/curio-bucket-mounts/rc.sock`): both, or neither. Curio tests the service as it starts, and `/monitor` shows the outcome under Deployment, as **Bucket mounts**. A public S3 bucket's files are then read in place, through its mount, with no **Cache files**.
 
 For the full guide, covering searching, downloading, storage sources, collections, street-level images, models, API tokens step by step, and the Dataset Finder, see [docs/DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md).
 
