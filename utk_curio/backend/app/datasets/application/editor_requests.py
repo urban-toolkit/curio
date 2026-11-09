@@ -249,6 +249,7 @@ def _copy_cached_files(from_key: str, to_key: str, dataset_id: str) -> list[Path
         cache_collection.check_room(to_key, sum(sizes), caching=dataset_id)
         target = cache_collection.objects_dir(to_key, dataset_id)
         copied: list[Path] = []
+        whole = False
         try:
             for path, size in zip(todo, sizes):
                 final = target / path.name
@@ -257,10 +258,11 @@ def _copy_cached_files(from_key: str, to_key: str, dataset_id: str) -> list[Path
                 cache_collection.land(part, final, to_key, dataset_id, size)
                 media_dirs.grant_to_child(final)
                 copied.append(final)
-        except BaseException:
-            for path in copied:
-                path.unlink(missing_ok=True)
-            raise
+            whole = True
+        finally:
+            if not whole:  # stopped partway: what it copied goes, and the failure goes on
+                for path in copied:
+                    path.unlink(missing_ok=True)
     return copied
 
 
