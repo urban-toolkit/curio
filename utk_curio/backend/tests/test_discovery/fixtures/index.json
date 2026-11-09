@@ -230,13 +230,6 @@
     },
     "status": 200
   },
-  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-15-45-51-706/consumption.csv": {
-    "file": "download/storage/sideseeing/consumption.csv",
-    "headers": {
-      "Content-Type": "application/octet-stream"
-    },
-    "status": 200
-  },
   "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-15-45-51-706/gps.csv": {
     "file": "download/storage/sideseeing/gps.csv",
     "headers": {
@@ -267,13 +260,6 @@
   },
   "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-16-03-17-016/cell.csv": {
     "file": "download/storage/sideseeing/cell.csv",
-    "headers": {
-      "Content-Type": "application/octet-stream"
-    },
-    "status": 200
-  },
-  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-16-03-17-016/consumption.csv": {
-    "file": "download/storage/sideseeing/consumption.csv",
     "headers": {
       "Content-Type": "application/octet-stream"
     },

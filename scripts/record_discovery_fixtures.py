@@ -79,7 +79,6 @@ STORAGE_PLAN = {
             "sensors-one": "download/storage/sideseeing/sensors.one.csv",
             "sensors-three": "download/storage/sideseeing/sensors.three.csv",
             "sensors-three-uncalibrated": "download/storage/sideseeing/sensors.three.uncalibrated.csv",
-            "battery": "download/storage/sideseeing/consumption.csv",
             "cell": "download/storage/sideseeing/cell.csv",
         },
     },

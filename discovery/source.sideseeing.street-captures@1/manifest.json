@@ -3,7 +3,7 @@
   "name": "SideSeeing street captures",
   "version": "1.0.0",
   "compatibility": { "major": 1 },
-  "description": "Sidewalk walks in Chicago's West Loop, recorded with the SideSeeing app on a phone, one folder per walk named by when it began in Chicago. Each walk brings its video, looking down at the sidewalk, with faces and license plates blurred by EgoBlur; its GPS track, sensor readings, battery current and cell networks as tables; and the app's and the anonymization's records of it.",
+  "description": "Sidewalk walks in Chicago's West Loop, recorded with the SideSeeing app on a phone, one folder per walk named by when it began in Chicago. Each walk brings its video, looking down at the sidewalk, with faces and license plates blurred by EgoBlur; its GPS track, sensor readings and cell networks as tables; and the app's and the anonymization's records of it.",
   "publisher": "SideSeeing",
   "homepage": null,
   "tags": ["sidewalks", "video", "sensors", "chicago", "sideseeing"],
@@ -57,14 +57,6 @@
       "kind": "table",
       "format": "csv",
       "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/sensors.three.uncalibrated.csv"
-    },
-    {
-      "id": "battery",
-      "name": "Battery current",
-      "description": "The battery's current in microamperes, about once a second. began names the walk.",
-      "kind": "table",
-      "format": "csv",
-      "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/consumption.csv"
     },
     {
       "id": "cell",

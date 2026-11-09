@@ -33,7 +33,6 @@ TABLES = {
         "timestamp_nano", "datetime_utc", "name", "axis_x", "axis_y", "axis_z",
         "delta_x", "delta_y", "delta_z", "accuracy",
     ],
-    "battery": ["datetime_utc", "battery_microamperes"],
     "cell": ["datetime_utc", "cellular_network"],
 }
 
@@ -73,9 +72,9 @@ class TestTheListing:
         assert rows["records"]["samples"] == []
         for resource_id in TABLES:
             assert (rows[resource_id]["kind"], rows[resource_id]["fileCount"]) == ("table", 2), resource_id
-        # Each walk's wifi.csv is no CSV DuckDB reads (its second column holds
-        # unquoted commas), so no resource takes it.
-        assert body["unmatched"] == 2
+        # No resource takes each walk's wifi.csv, which is no CSV DuckDB reads
+        # (its second column holds unquoted commas), or its consumption.csv.
+        assert body["unmatched"] == 4
 
 
 class TestTheWalks:
