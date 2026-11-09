@@ -11,12 +11,16 @@ import { useSimpleVisBehavior } from '../../../adapters/node/simpleVisBehavior';
 import { NodeType, VisInteractionType } from '../../../constants';
 import { CARD_SELECT, PLAYER_SELECT } from '../../../utils/playerSelection';
 
+// The flow's updateDataNode keeps its identity from render to render, as
+// FlowProvider's (a useCallback in useWorkflowOperations) does.
+const mockUpdateDataNode = jest.fn();
+
 jest.mock('reactflow', () => ({ useEdges: () => [{ source: 'up', target: 'sv-1' }] }));
 jest.mock('../../../providers/ProvenanceProvider', () => ({
   useProvenanceContext: () => ({ nodeExecProv: jest.fn() }),
 }));
 jest.mock('../../../providers/FlowProvider', () => ({
-  useFlowContext: () => ({ workflowNameRef: { current: 'wf' }, updateDataNode: jest.fn() }),
+  useFlowContext: () => ({ workflowNameRef: { current: 'wf' }, updateDataNode: mockUpdateDataNode }),
 }));
 jest.mock('../../../providers/ToastProvider', () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
