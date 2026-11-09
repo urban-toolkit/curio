@@ -19,6 +19,12 @@ root would pass where node code's reads fail. The test reaches no network,
 and it proves FUSE, the service's AppArmor profile, mount propagation,
 ``allow_other`` and the channel.
 
+A SOURCE'S MOUNT is rclone's ``s3`` backend on a connection string
+(:func:`s3_parameters`, :func:`connection_string`), mounted with
+:data:`SOURCE_MOUNT_OPTIONS`; ``mount/listmounts`` names it by
+:func:`listed_fs`. Which bucket a source mounts, and when, is
+``application/bucket_mount_sources.py``'s.
+
 Nothing here imports Curio or Flask: CI's ``bucket-mounts`` job loads this
 file by its path in a plain Python container
 (``scripts/bucket-mounts/ci_check.py``). ``socket.AF_UNIX``, ``pwd`` and
@@ -28,7 +34,9 @@ Windows too.
 
 from __future__ import annotations
 
+import base64
 import errno
+import hashlib
 import http.client
 import json
 import os
@@ -47,8 +55,8 @@ SOCKET_VARIABLE = "CURIO_BUCKET_MOUNT_SOCKET"
 EXEC_USER_VARIABLE = "CURIO_EXEC_USER"
 
 #: The port of the backend's proxy, the mount service's one way out: its
-#: ``HTTPS_PROXY`` in ``docker-compose.bucket-mounts.yml``. The proxy comes
-#: with mounting sources; nothing listens there yet.
+#: ``HTTPS_PROXY`` in ``docker-compose.bucket-mounts.yml``
+#: (``infrastructure/mount_proxy.py``).
 PROXY_PORT = 3128
 
 #: Where the service mounts, in its own container: the host folder it shares
@@ -424,3 +432,73 @@ def self_test_from_env(environ: Optional[Mapping[str, str]] = None, *,
     folder, socket_path = named
     return self_test(RcClient(socket_path), folder, account=execution_account(environ),
                      wait_seconds=wait_seconds)
+
+
+# ── A source's mount ─────────────────────────────────────────────────────────
+
+#: How a source's bucket is mounted: as the test folder is (read-only, with
+#: ``allow_other``, no cache, files 0444 and folders 0555), and with each
+#: folder's listing kept 5 minutes, so a folder read again soon asks the
+#: bucket nothing. Flat parameters, as :data:`SELFTEST_MOUNT_OPTIONS` says why.
+SOURCE_MOUNT_OPTIONS = {**SELFTEST_MOUNT_OPTIONS, "dir_cache_time": "5m"}
+
+#: What rclone's connection-string syntax ends or opens a value at, so a value
+#: holding one is quoted.
+_SPECIAL = frozenset(",:'\"=")
+
+
+def s3_parameters(endpoint: str, *, path_style: bool) -> dict[str, str]:
+    """The parameters of rclone's ``s3`` backend for a public bucket at
+    *endpoint*: anonymous (``env_auth=false`` and no keys), the bucket in the
+    URL's path or, without *path_style*, in its host; listed with
+    ListObjectsV2, as Discovery's S3 provider lists, where rclone's provider
+    ``Other`` would use V1; each file read with a GET alone, no HEAD first."""
+    return {
+        "provider": "Other",
+        "endpoint": endpoint,
+        "env_auth": "false",
+        "no_head_object": "true",
+        "force_path_style": "true" if path_style else "false",
+        "list_version": "2",
+    }
+
+
+def remote_path(bucket: str, folder: str = "") -> str:
+    """``<bucket>`` or ``<bucket>/<folder>``: what a remote's root names."""
+    return f"{bucket}/{folder}" if folder else bucket
+
+
+def connection_string(backend: str, parameters: Mapping[str, str], path: str) -> str:
+    """``:<backend>,<name>=<value>,...:<path>``, rclone's connection string of
+    a remote made on the fly. A value holding ``,``, ``:``, a quote or ``=``
+    goes in single quotes, each single quote in it doubled, as rclone's
+    syntax asks."""
+    pairs = ",".join(f"{name}={_quoted(str(value))}" for name, value in parameters.items())
+    return f":{backend},{pairs}:{path}"
+
+
+def _quoted(value: str) -> str:
+    if not _SPECIAL.intersection(value):
+        return value
+    return "'" + value.replace("'", "''") + "'"
+
+
+def listed_fs(backend: str, parameters: Mapping[str, str], path: str) -> str:
+    """What ``mount/listmounts`` names a mount of that remote by.
+
+    rclone answers with ``fs.ConfigString``: the remote's name, which for a
+    remote with parameters is ``:<backend>`` and a suffix, then ``:`` and its
+    root. The suffix is ``{`` the first five characters of the unpadded
+    URL-safe base64 of the MD5 of the parameters as rclone writes them back
+    ``}``: sorted by name, ``name='value'`` each, with each single quote
+    doubled, joined by commas (``configmap.Simple.String``). It grows longer
+    only when two remotes' suffixes collide in one service. The root is the
+    path without its outer slashes. CI's ``bucket-mounts`` job checks this
+    against the service it runs (``scripts/bucket-mounts/ci_check.py``).
+    """
+    written = ",".join(
+        "{}='{}'".format(name, str(value).replace("'", "''")) for name, value in sorted(parameters.items())
+    )
+    digest = hashlib.md5(written.encode("utf-8"), usedforsecurity=False).digest()
+    suffix = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")[:5]
+    return f":{backend}{{{suffix}}}:{path.strip('/')}"
