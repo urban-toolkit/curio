@@ -1,0 +1,4 @@
+timestamp_nano,datetime_utc,name,axis_x,axis_y,axis_z,delta_x,delta_y,delta_z,accuracy
+226634204710751,2026-10-26T21:03:17.270Z,qmc6308 Magnetometer-Uncalibrated Non-wakeup,-240.0,142.0,-317.0,-283.25,136.0,-325.25,3
+226634223960751,2026-10-26T21:03:17.289Z,qmc6308 Magnetometer-Uncalibrated Wakeup,-239.75,142.25,-316.75,-283.25,136.0,-325.25,3
+226634233689501,2026-10-26T21:03:17.299Z,icm4x6xa Gyroscope-Uncalibrated Non-wakeup,0.0125,-0.0375,0.25,0.001,-0.002,0.0005,3

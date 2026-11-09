@@ -66,10 +66,22 @@ PLAN = {
 #: Storage sources: every listing page is recorded as it arrives. The files
 #: themselves are not: a probe's Range read of a real object is indexed to a
 #: small synthetic file of the same format under ``download/storage/``, so the
-#: corpus carries a bucket's shape and none of its imagery.
+#: corpus carries a bucket's shape and none of its imagery. A table resource
+#: named under ``tables`` has each of its files indexed to a synthetic
+#: stand-in with the real files' header, so its add runs on the corpus too.
 STORAGE_PLAN = {
     "source.aws.sentinel-2-chicago@1": {"slug": "s3"},
     "source.huggingface.documentation-images@1": {"slug": "huggingface"},
+    "source.sideseeing.street-captures@1": {
+        "slug": "sideseeing",
+        "tables": {
+            "gps": "download/storage/sideseeing/gps.csv",
+            "sensors-one": "download/storage/sideseeing/sensors.one.csv",
+            "sensors-three": "download/storage/sideseeing/sensors.three.csv",
+            "sensors-three-uncalibrated": "download/storage/sideseeing/sensors.three.uncalibrated.csv",
+            "cell": "download/storage/sideseeing/cell.csv",
+        },
+    },
 }
 
 #: Synthetic stand-ins for a probed file's first bytes, by extension.
@@ -115,12 +127,21 @@ class RecordingTransport:
         self.index = index
         self.inner = HttpDiscoveryTransport()
         self.seq = 0
+        #: The file each URL of this run is kept in. Adding one resource lists
+        #: its folder again, often at a URL already asked: it is kept once.
+        self.names: dict[str, str] = {}
+
+    def _name(self, url: str, suffix: str) -> str:
+        name = self.names.get(url)
+        if name is None:
+            self.seq += 1
+            name = self.names[url] = f"{self.slug}/{self.seq:02d}.{suffix}"
+        return name
 
     def json_get(self, url, *, credential=None, headers=None):
         body = self.inner.json_get(url, credential=credential, headers=headers)
-        self.seq += 1
         suffix = "xml" if body.lstrip().startswith("<") else "json"
-        name = f"{self.slug}/{self.seq:02d}.{suffix}"
+        name = self._name(url, suffix)
         path = FIXTURES / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body, encoding="utf-8")
@@ -134,9 +155,8 @@ class RecordingTransport:
 
     def get_page(self, url, *, credential=None, headers=None):
         body, response_headers = self.inner.get_page(url, credential=credential, headers=headers)
-        self.seq += 1
         suffix = "xml" if body.lstrip().startswith("<") else "json"
-        name = f"{self.slug}/{self.seq:02d}.{suffix}"
+        name = self._name(url, suffix)
         path = FIXTURES / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body, encoding="utf-8")
@@ -170,8 +190,18 @@ def record_storage(slug_filter: str | None, index: dict) -> None:
         # different URL whenever the resources do not share one.
         for spec in manifest.resources:
             scan.scan(manifest, provider, specs=[spec])
+        tables = plan.get("tables", {})
         for group in result.groups:
+            stand_in = tables.get(group.spec.id)
             for found in group.files:
+                if stand_in is not None:
+                    # An add reads the whole file, with no Range.
+                    index[provider.file_url(found.relpath)] = {
+                        "file": stand_in,
+                        "status": 200,
+                        "headers": {"Content-Type": "application/octet-stream"},
+                    }
+                    continue
                 ext = found.relpath.rsplit(".", 1)[-1].lower()
                 head = SYNTHETIC_HEADS.get(ext)
                 if head is None:
@@ -424,6 +454,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--only",
-        help="record one provider slug (socrata, ckan, arcgis, wfs, s3, huggingface, mapillary, huggingface-models, nominatim)",
+        help="record one provider slug (socrata, ckan, arcgis, wfs, s3, huggingface, sideseeing, mapillary, "
+             "huggingface-models, nominatim)",
     )
     record(parser.parse_args().only)
