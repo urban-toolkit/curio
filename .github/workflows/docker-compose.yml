@@ -1602,8 +1602,10 @@ jobs:
   # rather than after it. See docker-compose.ci-isolated.yml for why this stack
   # drops --deploy and leaves CURIO_EXEC_USER empty.
   #
-  # Scoped to the workflows whose nodes are Python, because isolation wraps
-  # /exec only -- /execJs spawns Node either way (sandbox/app/api.py).
+  # Scoped to the workflows whose nodes are Python, because isolation forks a
+  # child for /exec only. /execJs spawns Node either way (sandbox/app/api.py),
+  # here as the sandbox, with no execution account; test-exec-user runs it as
+  # curio-exec.
   test-isolated:
     needs: [pick-runners, build-image]
     if: ${{ !cancelled() && needs.pick-runners.result == 'success' && needs.pick-runners.outputs.tested_by == '' && needs.build-image.result == 'success' && !inputs.remint && !inputs.tests }}
@@ -1828,7 +1830,8 @@ jobs:
             mkdir -p "$release/packages/model.example.local-relief@1"
             cp -R "docs/bring-your-own-model/model.example.local-relief@1/." "$release/packages/model.example.local-relief@1/"
             # A pip install's sandbox Node.js packages (node_runtime.nodejs_dir),
-            # which the boot's hardening closes too.
+            # which the boot's hardening opens to read and closes to write
+            # (hardening.open_node_packages).
             mkdir -p .curio/nodejs/node_modules
             cp package.json package-lock.json .curio/nodejs/
 

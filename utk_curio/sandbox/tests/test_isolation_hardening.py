@@ -423,37 +423,128 @@ class TestTheChildCanReachItsScratchDirectory(unittest.TestCase):
             self.assertEqual(hardening.audit(tmp, uid=1001, gid=1001), [])
 
     @posix_only
-    def test_the_sandboxs_nodejs_packages_are_closed_to_node_code(self):
-        """Hardening closes ``.curio/nodejs``, the Node.js packages a pip
-        install's sandbox runs as its own user: the execution account cannot
-        reach a module there, and the sandbox still reads it."""
+    def test_the_sandboxs_nodejs_packages_are_readable_and_never_writable(self):
+        """The boot leaves ``.curio/nodejs``, the Node.js packages a pip
+        install's sandbox runs, readable by node code, whose JavaScript nodes
+        import them as the execution account, and takes every write away from
+        everyone but their owner: a module node code could change would run in
+        every later run, and in the backend's own Node, as root. Everyone gets
+        read, and execute on a folder and on a file that had it, so a
+        package's executable keeps its execute bits and a plain file gains
+        none; a tree an earlier boot closed opens again."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
             folder = os.path.join(tmp, ".curio", "nodejs")
-            package = os.path.join(folder, "node_modules", "@urban-toolkit", "autk-db")
+            modules = os.path.join(folder, "node_modules")
+            package = os.path.join(modules, "@urban-toolkit", "autk-db")
+            binaries = os.path.join(modules, ".bin")
+            closed = os.path.join(modules, "closed-by-an-earlier-boot")
+            for directory in (package, binaries, closed):
+                os.makedirs(directory)
+            # Each folder's mode before the boot; every one ends 0755.
+            folders = {
+                folder: 0o777, modules: 0o777, os.path.dirname(package): 0o777,
+                package: 0o777, binaries: 0o755, closed: 0o700,
+            }
+            # Each file's mode before the boot, and after it.
+            files = {
+                os.path.join(package, "index.js"): (0o666, 0o644),
+                os.path.join(package, "run-by-its-owner"): (0o744, 0o755),
+                os.path.join(binaries, "tool"): (0o777, 0o755),
+                os.path.join(closed, "index.js"): (0o600, 0o644),
+            }
+            for path, (before, _after) in files.items():
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write("export const loaded = true;\n")
+                os.chmod(path, before)
+            for directory, before in folders.items():
+                os.chmod(directory, before)
+
+            hardening.apply_and_report(
+                tmp, os.path.join(tmp, ".curio", "data"), uid=1001, gid=1001, hosted=False,
+            )
+
+            for path in [*folders, *files]:
+                mode = stat.S_IMODE(os.stat(path).st_mode)
+                self.assertEqual(
+                    mode & 0o022, 0,
+                    f"hardening left {os.path.relpath(path, tmp)} at 0o{mode:03o}: node code running as "
+                    "the execution account could change a module the sandbox's Node imports",
+                )
+            for directory in folders:
+                mode = stat.S_IMODE(os.stat(directory).st_mode)
+                self.assertEqual(
+                    mode, 0o755,
+                    f"{os.path.relpath(directory, tmp)} is 0o{mode:03o}: the execution account cannot "
+                    "read the packages its JavaScript nodes import",
+                )
+                self.assertTrue(self._traversable(mode, 0, 1001))
+            for path, (before, after) in files.items():
+                mode = stat.S_IMODE(os.stat(path).st_mode)
+                self.assertEqual(
+                    mode, after,
+                    f"{os.path.relpath(path, tmp)} went from 0o{before:03o} to 0o{mode:03o}, not 0o{after:03o}",
+                )
+                with open(path, encoding="utf-8") as handle:
+                    self.assertEqual(handle.read(), "export const loaded = true;\n")
+
+    @posix_only
+    def test_the_audit_reports_nodes_packages_the_execution_account_could_write(self):
+        """The inverse audit, as for the node-library trees: Node's packages
+        must stay readable, so what is asked is whether the execution account
+        could WRITE anywhere in them, a folder (a module added) or a file (a
+        module changed). The boot's hardening takes group and other writes
+        away, after which the audit is clean; it cannot take an owner's, so an
+        account that owns a folder there is reported still, and a hosted
+        instance refuses to start."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            nodejs = os.path.join(tmp, ".curio", "nodejs")
+            package = os.path.join(nodejs, "node_modules", "@urban-toolkit", "autk-db")
             os.makedirs(package)
             entry = os.path.join(package, "index.js")
             with open(entry, "w", encoding="utf-8") as handle:
                 handle.write("export const loaded = true;\n")
-            for directory in (folder, package):
-                os.chmod(directory, 0o777)
-            os.chmod(entry, 0o666)
+            data = os.path.join(tmp, ".curio", "data")
 
-            result = hardening.harden_paths(tmp)
+            def opened():
+                """The tree as hardening leaves it: folders 0755, files 0644."""
+                for current, _directories, names in os.walk(nodejs):
+                    os.chmod(current, 0o755)
+                    for name in names:
+                        os.chmod(os.path.join(current, name), 0o644)
 
-            self.assertIn(
-                ".curio/nodejs", result["changed"],
-                "hardening left .curio/nodejs as it was: node code running as "
-                "the execution account could change a module the sandbox's "
-                "Node imports",
+            def naming(findings, path):
+                return [finding for finding in findings if os.path.relpath(path, tmp) in finding]
+
+            opened()
+            self.assertEqual(
+                naming(hardening.audit_node_packages(tmp, uid=4242, gid=4242), nodejs), [],
+                "the audit reports a tree the execution account cannot write",
             )
-            mode = stat.S_IMODE(os.stat(folder).st_mode)
-            self.assertEqual(mode, hardening.DIRECTORY_MODE)
-            self.assertFalse(self._traversable(mode, 0, 1001))
-            self.assertEqual(stat.S_IMODE(os.stat(entry).st_mode) & 0o022, 0)
-            with open(entry, encoding="utf-8") as handle:
-                self.assertEqual(handle.read(), "export const loaded = true;\n")
+            for writable, mode in ((package, 0o777), (entry, 0o646)):
+                opened()
+                os.chmod(writable, mode)
+                findings = hardening.audit_node_packages(tmp, uid=4242, gid=4242)
+                self.assertTrue(
+                    naming(findings, writable),
+                    f"the audit does not report {os.path.relpath(writable, tmp)} at 0o{mode:03o}, "
+                    f"which node code could change a module through: {findings}",
+                )
+                hardening.apply_and_report(tmp, data, uid=4242, gid=4242, hosted=False)
+                self.assertEqual(naming(hardening.audit_node_packages(tmp, uid=4242, gid=4242), nodejs), [])
+
+            if os.getuid() == 0:
+                opened()
+                os.chown(package, 4243, 4243)
+                findings, fatal = hardening.apply_and_report(tmp, data, uid=4243, gid=4244, hosted=True)
+                self.assertTrue(
+                    naming(findings, package),
+                    f"the boot does not report a package folder the execution account owns: {findings}",
+                )
+                self.assertTrue(fatal, "a hosted instance whose Node packages node code can write would start")
 
     @posix_only
     def test_the_store_directory_is_still_locked(self):
