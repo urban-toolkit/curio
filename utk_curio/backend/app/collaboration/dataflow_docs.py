@@ -1467,8 +1467,11 @@ def live(user_key: str, project_id: str) -> Optional[Live]:
     """The dataflow's spec as it is now, for a writer to change and hand to
     :func:`write`: its open doc's dataflow over what ``spec.trill.json``
     holds (a doc whose log holds changes the file does not is opened to read
-    them), without the history. ``None`` when the dataflow has no spec."""
+    them), without the history. ``None`` when the dataflow has no spec. A
+    writer's read is refused in a process that does not own the dataflow
+    (``owner_guard.NotTheOwner``): only its owner writes it."""
     user_key = str(user_key)
+    owner_guard.refuse(project_id, user_key, what="a writer's read of it")
     file = storage.read_spec_file(user_key, project_id)
     if not isinstance(file.spec, dict):
         return None
@@ -1595,9 +1598,22 @@ def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
 
     A hosted guest's copy whose doc a room opened before the copy was made
     (:attr:`_OpenDoc.unmade`) is made from that doc (:func:`_made_from_its_doc`),
-    so the tabs that hold it sync on."""
+    so the tabs that hold it sync on.
+
+    In a process that does not own the dataflow (``owner_guard.py``), as
+    signup's examples are made in one process for every process's dataflows,
+    the files are written and no doc is kept: the owner builds the doc when it
+    first opens it, or, holding one open, carries the file in as a write
+    outside its doc (:func:`_catch_up`)."""
     user_key = str(user_key)
     mine = _writable(spec)
+    owner = owner_guard.elsewhere(project_id, user_key)
+    if owner is not None:
+        owner_guard.noted("create", project_id, owner)
+        storage.write_spec(user_key, project_id, spec)
+        _drop_pointer(user_key, project_id)
+        _made_anew(user_key, project_id, actor)
+        return Live(mine, user_key=user_key, project_id=project_id)
     if _made_from_its_doc(user_key, project_id, spec, actor):
         return Live(mine, user_key=user_key, project_id=project_id)
     if _open_entry(project_id, user_key) is not None and doc_mapping.mappable(doc_mapping.owned(_dataflow_of(mine))):
@@ -1703,7 +1719,10 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
     *mine*, under the spec lock. A connection it leaves pointing at a node
     the doc no longer holds, one it draws or one a tab drew to a node it
     removes, is taken out in its own transaction
-    (:func:`_drop_dangling_connections`)."""
+    (:func:`_drop_dangling_connections`). Refused in a process that does not
+    own the dataflow (``owner_guard.NotTheOwner``), whatever it changes: the
+    owner's doc and tabs must have it."""
+    owner_guard.refuse(project_id, user_key, what="a write to it")
     if not _has_spec(user_key, project_id):
         return Written(False)
     with _spec_lock(user_key, project_id):
@@ -2250,15 +2269,23 @@ def _copied(project, user_key: str) -> Optional[dict]:
 
 
 def _start(sid: str, me: dict, project_id: str, message: bytes, held_id) -> dict:
-    """A tab's sync step 1."""
+    """A tab's sync step 1. Refused, naming the dataflow's owner and this
+    process, in a process that does not own the dataflow (``owner_guard.py``):
+    a hosted guest's copy, made or not yet, belongs with the dataflow it
+    copies."""
     from utk_curio.backend.app.projects.services import _owner_user_dir_key
 
     project = _project(project_id)
     if project is None:
         return _refused("unknown_project")
     user_key = _owner_user_dir_key(project)
+    source = getattr(project, "copies", None)
     try:
-        with _held(project_id, user_key, unmade=_copied(project, user_key)) as entry:
+        owner_guard.refuse(project_id, user_key, what="a tab's sync", source=source)
+    except owner_guard.NotTheOwner as exc:
+        return _refused("not_the_owner", message=exc.description)
+    try:
+        with _held(project_id, user_key, unmade=_copied(project, user_key), source=source) as entry:
             if held_id is not None and held_id != entry.doc_id:
                 return _refused("reload", docId=entry.doc_id)
             _framed(message[2:])  # the tab's state, which step 2 answers
