@@ -3,8 +3,8 @@ description: >-
   Tear down the compose project a job started, with start-stack or from an
   image it built (test-gpu, test-gpu-stress). On a self-hosted runner, which
   keeps its workspace and Docker daemon between jobs, also hand the files the
-  containers wrote back to the runner user, and remove the images and build
-  cache CI jobs leave on that daemon.
+  containers wrote back to the runner user, and remove the job's CI images and
+  build cache from that daemon, so none outlives the job.
 
 inputs:
   project:
@@ -28,6 +28,12 @@ runs:
         docker compose -p "$PROJECT" exec -T curio cat /sys/fs/cgroup/memory.events 2>/dev/null \
           | python3 "$GITHUB_WORKSPACE/scripts/ci_memory_budget.py" kills || true
 
+    # With the stack and its image still on the disk: how close the job came
+    # to a full one (scripts/ci_disk.sh).
+    - name: 📏 Free disk at the job's end
+      shell: bash
+      run: bash "$GITHUB_WORKSPACE/scripts/ci_disk.sh" free "at the job's end, the stack still up" || true
+
     - name: 🧹 Tear down containers
       shell: bash
       env:
@@ -40,17 +46,13 @@ runs:
     # which the runner user cannot clean otherwise. On an arcade runner the
     # image's Python packages a job used in place (./.github/actions/image-env)
     # are let go: their helper container holds its image, which the cleanup
-    # could not remove otherwise. Then the images and build cache CI jobs
-    # leave on a self-hosted daemon go, as scripts/ci_image_cleanup.sh
-    # describes: on an arcade runner the job's own image stays for the next
-    # job, and a job that has no image of its own removes none; utk-gpu, whose
-    # daemon the deployed stacks share, keeps no CI image.
-    - name: 🧹 Hand back root-owned files, remove old CI images (self-hosted)
+    # could not remove otherwise. Then every CI image on the daemon goes, this
+    # job's too, whether the job passed, failed or was cancelled, and the build
+    # cache with them, as scripts/ci_image_cleanup.sh describes.
+    - name: 🧹 Hand back root-owned files, remove CI images (self-hosted)
       if: runner.environment == 'self-hosted'
       shell: bash
-      env:
-        PROJECT: ${{ inputs.project }}
       run: |
         docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
         bash "$GITHUB_WORKSPACE/scripts/ci_image_python.sh" release || true
-        bash "$GITHUB_WORKSPACE/scripts/ci_image_cleanup.sh" "$PROJECT"
+        bash "$GITHUB_WORKSPACE/scripts/ci_image_cleanup.sh"

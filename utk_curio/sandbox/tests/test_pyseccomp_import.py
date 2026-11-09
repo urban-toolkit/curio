@@ -10,12 +10,14 @@ call runs ``ldconfig -p`` in a subprocess. So every JavaScript run paid for
 both before Node started, and every isolated child after its fork.
 
 ``seccomp_filter.import_pyseccomp`` finds both libraries by soname instead,
-and the zygote imports pyseccomp before its first fork. The first two tests
-watch the real wrapper and a real zygote's child through an audit hook, which
-a ``sitecustomize`` on PYTHONPATH installs in the interpreters they start. The
-others import pyseccomp through the helper in fresh interpreters: where the
-sonames load and where they do not, where pyseccomp reads more of
-``ctypes.util``, and what ``ctypes.util`` is left as.
+and the zygote imports pyseccomp before its first fork. Three tests watch the
+real wrapper, without a drop and with one to the execution account, and a
+real zygote's child through an audit hook, which a ``sitecustomize`` on
+PYTHONPATH installs in the interpreters they start; one more sees the wrapper
+end on a drop the kernel refuses. The others import pyseccomp through the
+helper in fresh interpreters: where the sonames load and where they do not,
+where pyseccomp reads more of ``ctypes.util``, and what ``ctypes.util`` is
+left as.
 """
 
 import importlib.util
@@ -131,6 +133,84 @@ def test_the_exec_wrapper_of_a_javascript_run_installs_its_filter_without_starti
         f"the wrapper started a process before it execed the program, as it would before every "
         f"JavaScript run's Node: {events[:-1]}"
     )
+
+
+#: A program the wrapper execs: its uids, gids and supplementary groups, and
+#: whether ``setsid`` is refused it.
+_SAYS_WHO_IT_IS = (
+    "import json, os\n"
+    "try:\n"
+    "    os.setsid()\n"
+    "    setsid = 'allowed'\n"
+    "except PermissionError:\n"
+    "    setsid = 'PermissionError'\n"
+    "print(json.dumps({'uids': list(os.getresuid()), 'gids': list(os.getresgid()),\n"
+    "                  'groups': os.getgroups(), 'setsid': setsid}))\n"
+)
+
+
+def _the_execution_account():
+    """``curio-exec``, which the Dockerfile creates, from a root process:
+    only one can drop to it."""
+    import pwd
+
+    if os.getuid() != 0:
+        pytest.skip("dropping to the execution account requires root")
+    try:
+        account = pwd.getpwnam("curio-exec")
+    except KeyError:
+        account = None
+    if account is None:
+        pytest.skip("the curio-exec account does not exist on this host")
+    return account
+
+
+def test_the_exec_wrapper_drops_to_the_account_it_is_given_without_starting_a_process(tmp_path, monkeypatch):
+    """With ``--user``, the wrapper drops to those ids after its filter, as an
+    isolated child does, and then execs: the program runs with all three uids
+    and gids the account's and no supplementary group, setsid is still
+    refused it, and nothing started a process before the exec. The wrapper is
+    given numbers, so it looks no account up."""
+    from utk_curio.sandbox.isolation import seccomp_filter
+
+    account = _the_execution_account()
+    record = _audit(tmp_path, monkeypatch, (*_STARTS_A_PROCESS, "os.exec"))
+    command = seccomp_filter.exec_command(
+        [sys.executable, "-I", "-S", "-c", _SAYS_WHO_IT_IS], required=True,
+        user=(account.pw_uid, account.pw_gid),
+    )
+    done = subprocess.run(command, capture_output=True, text=True, timeout=60)
+
+    assert done.returncode == 0, f"the wrapper, or the program it execs, failed: {done.stderr}"
+    assert json.loads(done.stdout) == {
+        "uids": [account.pw_uid] * 3, "gids": [account.pw_gid] * 3, "groups": [], "setsid": "PermissionError",
+    }, f"the program the wrapper execs did not run as curio-exec alone, under the filter: {done.stdout}"
+    events = [(event, detail) for _pid, event, detail in _recorded(record)]
+    assert events[-1:] and events[-1][0] == "os.exec", f"no exec was recorded: {events}"
+    assert events[:-1] == [], f"the wrapper started a process before it execed the program: {events[:-1]}"
+
+
+def test_a_drop_the_kernel_refuses_ends_the_wrapper_with_one_line_whatever_required_says(tmp_path):
+    """``(uid_t) -1`` names no one, and the kernel refuses setgid and setuid
+    to it. The wrapper then execs nothing and exits 1 with one line naming
+    the ids, without ``--required`` too: the program never runs as root in
+    the account's place."""
+    from utk_curio.sandbox.isolation import seccomp_filter
+
+    _the_execution_account()
+    marker = tmp_path / "the-program-ran"
+    for required in (True, False):
+        command = seccomp_filter.exec_command(
+            [sys.executable, "-I", "-S", "-c", f"open({str(marker)!r}, 'w').close()"],
+            required=required, user=(4294967295, 4294967295),
+        )
+        done = subprocess.run(command, capture_output=True, text=True, timeout=60)
+        assert not marker.exists(), f"the program ran although the drop failed (required={required})"
+        assert done.returncode == 1, f"the wrapper exited {done.returncode} (required={required}): {done.stderr}"
+        lines = done.stderr.splitlines()
+        assert len(lines) == 1 and "4294967295" in lines[0], (
+            f"the wrapper did not say in one line which ids it could not drop to (required={required}): {lines}"
+        )
 
 
 #: Node code that says whether its child may make a network socket.

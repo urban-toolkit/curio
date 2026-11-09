@@ -1387,14 +1387,17 @@ Five design points worth knowing:
   the file to the sandbox's own account at `0644`: a later child it is staged
   for reads it, and cannot write it or change its mode.
 - **One execution account, not one per Curio user.** `CURIO_EXEC_USER` names a
-  single OS account that every user's nodes run as. The boundary this buys is
+  single OS account that every user's nodes run as, a JavaScript node's Node.js
+  among them (below). The boundary this buys is
   therefore *node code against the host*, not *user A against user B*. What
   keeps two users apart is session scoping in the parent, which the child cannot
   reach at all: `staging._read_row` reports another session's artifact as
   **missing** rather than forbidden, so its existence cannot be probed. Two
   consequences follow from the shared uid, and neither is fixed by a mode bit:
   concurrent children can reach each other's scratch directories, and a node can
-  find a sibling through `/proc`. Per-user OS accounts would close that, at the
+  find a sibling through `/proc`. Node, which drops before its exec, is
+  dumpable after it, as any program is, so another run of the account can open
+  its `/proc` entries, its pipes among them. Per-user OS accounts would close that, at the
   cost of copying instead of hardlinking every staged input, because `chown`
   acts on the inode. That is the trade being made, deliberately.
 - **A node's writes go through the parent, never straight into a store.** The
@@ -1450,15 +1453,20 @@ child's own `setsid` comes before the filter.
 Starting a process in a session or process group of its own, as
 `subprocess.Popen(start_new_session=True)` does, fails with `PermissionError`.
 
-A JavaScript node's Node.js gets the same two denials on Linux, isolated or
-not, and so does every process it starts. The sandbox is threaded and cannot
+A JavaScript node's Node.js gets the child's denials on Linux, isolated or
+not, but the network's, and so does every process it starts. The sandbox is threaded and cannot
 run code between `fork` and `exec`, so Node starts through an exec wrapper,
 [`isolation/seccomp_filter.py`](../utk_curio/sandbox/isolation/seccomp_filter.py)
 run as a script (`worker._node_command`), which holds the filter code the
 child uses. Popen's `start_new_session` makes the wrapper a session and process
-group leader; the wrapper sets `PR_SET_NO_NEW_PRIVS`, installs a filter that
-denies only `setsid` and `setpgid`, since Node needs its network, and execs
-Node, which keeps its pid. So no process Node starts can leave Node's process
+group leader; the wrapper sets `PR_SET_NO_NEW_PRIVS`, installs the child's
+denylist without its network calls, since Node needs its network
+(`seccomp_filter.NODE_CODE_DENIED`: `ptrace`, `process_vm_readv` and
+`process_vm_writev`, the mount and namespace calls, module loading, `bpf`,
+`perf_event_open`, `userfaultfd`, `kexec_load`, `setsid` and `setpgid`), and
+execs Node, which keeps its pid. On a host whose `ptrace_scope` is 0, another
+run of the execution account could otherwise attach to a Node run, which is
+dumpable after its exec (`tests/test_js_node_filter.py`). So no process Node starts can leave Node's process
 group, which the run kills when Node exits (`worker._end_node_run`), whether or
 not the process carries the run's mark (`CURIO_JS_RUN`, which a process started
 with an environment of its own lacks). `child_process.spawn` with
@@ -1468,6 +1476,27 @@ stays in Node's group. Under `CURIO_ISOLATION=fork`, a run whose filter cannot
 be installed fails with the reason and Node does not start; otherwise Node runs
 without it. macOS and Windows have no such filter: on macOS the mark finds a
 process that left the group, and on Windows the kill reaches Node alone.
+
+Node drops to the execution account exactly when an isolated child does:
+under `CURIO_ISOLATION=fork`, with `CURIO_EXEC_USER` naming an account, and with
+the sandbox running as root (`worker._node_account`, read on each run). The
+sandbox looks the account up and hands the wrapper its ids (`--user UID:GID`),
+so the wrapper looks nothing up and starts no process. After the filter it
+drops with the child's own code, `seccomp_filter.drop_privileges`: groups, then
+gid, then uid, then all three uids, all three gids and the empty group list
+checked. A drop that fails ends the wrapper with one line, whatever
+`--required` says, and an account that does not exist stops the run before
+Node starts, as it stops the zygote: Node never runs as root in the account's
+place. Node keeps its network. Its working directory stays the launch folder,
+which it reads and cannot write, and its HOME and TMPDIR are a folder of that
+Node process's own (`worker._node_home`: `supervisor.make_scratch_dir`, `0700`
+and the account's), removed once the run has killed Node and what it started.
+That folder holds a link to each of Curio's DuckDB extensions where
+duckdb-wasm looks ([below](#duckdb-extensions-come-from-this-instance)). Each
+isolated child's `RLIMIT_NPROC` counts every thread of the account, Node's too,
+so the budget the children share holds 256 for each Node slot as well as for
+each isolated one (`runner.IsolationConfig.from_environment`,
+`common/exec_pool.js_parallelism`).
 
 > [!IMPORTANT]
 > **Implementation status.** The confinement code runs in CI. Three jobs cover
@@ -1493,7 +1522,11 @@ process that left the group, and on Windows the kill reaches Node alone.
 >   can neither write it nor change its mode, that the work
 >   directory is `0700` and owned by the execution account, and that
 >   `instance/`, `.curio/data`, `.curio/users`, `datasets/` and another user's
->   file named by absolute path are all denied.
+>   file named by absolute path are all denied. Its JavaScript twin,
+>   `tests/live/test_exec_user_boundary_js.py`, asks the same of a JavaScript
+>   node's Node, and that it holds no token and cannot reach the zygote's
+>   socket; `unit` drops Node to the account in the sandbox suite
+>   (`tests/test_js_run_as_exec_user.py`).
 >
 > It is a separate job because an execution account and the e2e harness cannot
 > coexist: hardening `.curio/data` breaks the host-side ground-truth step, which
@@ -1575,7 +1608,9 @@ autk-db runs in Node.js for the sandbox's JS nodes and for OpenStreetMap downloa
 - A clone, the Docker image and CI: the folder that holds `utk_curio/` and Curio's `package.json`.
 - A pip install: `nodejs/` in Curio's state directory. `setup.py` copies the repository's `package.json` and `package-lock.json` into the wheel at `utk_curio/sandbox/nodejs/`, and the launcher writes them into that folder.
 
-On every start, `cli/dependencies.py::_ensure_root_node_modules` runs `npm install --prefix <folder>` there, only in a folder that holds Curio's `package.json` and is not a link; otherwise it logs an error and runs no npm. `.curio/nodejs` is in the sandbox's `SENSITIVE_PATHS`.
+On every start, `cli/dependencies.py::_ensure_root_node_modules` runs `npm install --prefix <folder>` there, only in a folder that holds Curio's `package.json` and is not a link; otherwise it logs an error and runs no npm.
+
+A JavaScript node imports these packages as the execution account, and the backend's OpenStreetMap loader runs them as root, so they are readable by node code and never writable by it. Under isolation with an execution account, the sandbox's boot opens `.curio/nodejs` and the `node_modules` it reads (`hardening.open_node_packages`): everyone reads them, everyone executes a folder and a file that had execute, group and other lose write, and a mode already right is left alone, so the image's layer is never copied up. Links are skipped. Then `hardening.audit_node_packages` reports what the account could still write, and a hosted instance refuses to start with it.
 
 ### DuckDB extensions come from this instance
 
@@ -1598,7 +1633,11 @@ runtimes read that copy:
   start` that runs either one (`all`, `backend` or `sandbox`) calls
   `cli/dependencies.py::seed_duckdb_extensions`, which copies them into
   `~/.duckdb/extensions/extensions.duckdb.org/`, where duckdb-wasm looks before
-  downloading. Nothing is intercepted there.
+  downloading. Nothing is intercepted there. A JavaScript node whose Node runs
+  as the execution account has a HOME of its own, which
+  `node_runtime.link_duckdb_extensions` gives a link to each file of Curio's
+  copy at the same place; its folders are the account's, so a file the copy
+  lacks downloads into them.
 
 Both fall back to the CDN for a file this checkout does not carry, so a newer
 `@duckdb/duckdb-wasm` keeps working before its extensions are vendored; see

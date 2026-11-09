@@ -27,10 +27,12 @@ import threading
 import time
 
 from utk_curio.common.backend_address import backend_base_url
+from utk_curio.common.exec_pool import js_parallelism
 from utk_curio.common.redaction import redact
 from utk_curio.sandbox import run_place
 from utk_curio.sandbox.util.node_runtime import (
     OVERPASS_USER_AGENT,
+    link_duckdb_extensions,
     node_env,
     node_modules_dir,
     resolve_pkg_entry_url,
@@ -139,30 +141,9 @@ class _ExecLock:
 _exec_lock = _ExecLock()
 
 
-def _default_js_parallelism() -> int:
-    """How many Node subprocesses may run at once.
-
-    Not a lock: JS nodes are meant to run in parallel, and this leaves them
-    doing so. It is a ceiling on how many at once, which the route had none of
-    -- one Node process per request, each loading autk-db and its own DuckDB.
-    A hundred simultaneous Autark loads peaked the CI container at 51 GB and
-    1313 processes, which is how a machine dies rather than queues.
-
-    Half the cores, floor 2, cap 16: an Autark PBF load is CPU- and
-    memory-heavy, and the work the child does is what costs, not the pipe.
-    ``CURIO_JS_PARALLELISM`` overrides it.
-    """
-    try:
-        configured = int(os.environ.get("CURIO_JS_PARALLELISM", ""))
-    except (TypeError, ValueError):
-        configured = 0
-    if configured > 0:
-        return configured
-    cores = os.cpu_count() or 2
-    return max(2, min(cores // 2, 16))
-
-
-# Bounded, not serialized. Sized on first use so the env is fully populated.
+# Bounded, not serialized: how many Node subprocesses may run at once
+# (common/exec_pool.js_parallelism). Sized on first use so the env is fully
+# populated.
 _js_slots: "threading.BoundedSemaphore | None" = None
 _js_slots_lock = threading.Lock()
 
@@ -171,7 +152,7 @@ def _js_slot() -> "threading.BoundedSemaphore":
     global _js_slots
     with _js_slots_lock:
         if _js_slots is None:
-            _js_slots = threading.BoundedSemaphore(_default_js_parallelism())
+            _js_slots = threading.BoundedSemaphore(js_parallelism())
         return _js_slots
 
 # Module bindings created by user `import` statements, keyed by session. This is
@@ -1007,14 +988,64 @@ def _joined(threads, seconds):
     return not any(thread.is_alive() for thread in threads)
 
 
-def _node_command(env):
+def _node_account():
+    """``(uid, gid)`` of the execution account a JavaScript run's Node runs
+    as, or None where Node runs as the sandbox does.
+
+    Node drops exactly when an isolated Python child does: under
+    ``CURIO_ISOLATION=fork``, with ``CURIO_EXEC_USER`` naming an account, and
+    with the sandbox running as root, where the child's drop is a no-op
+    otherwise (``child._drop_privileges``). On Linux, where Node starts
+    through the exec wrapper that drops it (:func:`_node_command`). Read on
+    each run, from the environment, and looked up by name here, so the
+    wrapper is given numbers. Raises KeyError when no account has the name.
+    """
+    if not _IS_LINUX or os.getuid() != 0:
+        return None
+    from utk_curio.sandbox.isolation import mode
+
+    name = os.environ.get('CURIO_EXEC_USER') or None
+    if name is None or mode.mode_from_environment()[0].strip().lower() != mode.FORK:
+        return None
+    import pwd
+
+    entry = pwd.getpwnam(name)
+    return entry.pw_uid, entry.pw_gid
+
+
+@contextlib.contextmanager
+def _node_home(account):
+    """The HOME and TMPDIR of one Node process run as the execution account
+    *account*, ``(uid, gid)``: a folder of that process's own, 0700 and the
+    account's, removed once the run has ended it and every process it
+    started. It holds a link to each of Curio's DuckDB extensions where
+    duckdb-wasm looks (``node_runtime.link_duckdb_extensions``), and a node's
+    own files go there through ``os.tmpdir()``. None without the drop: Node
+    then keeps the sandbox's HOME and TMPDIR."""
+    if account is None:
+        yield None
+        return
+    from utk_curio.sandbox.isolation import supervisor
+    from utk_curio.sandbox.util.parsers import _shared_data_dir
+
+    home = supervisor.make_scratch_dir(str(_shared_data_dir()), exec_uid=account[0])
+    try:
+        link_duckdb_extensions(home, uid=account[0], gid=account[1])
+        yield home
+    finally:
+        supervisor.cleanup_scratch(home)
+
+
+def _node_command(env, user=None):
     """The command that starts Node for one run, *env* its environment.
 
     On Linux, Node starts through the exec wrapper of
     ``isolation/seccomp_filter.py``, the isolated child's filter code: Popen's
     ``start_new_session`` makes the wrapper a session and process group
-    leader, and the wrapper denies setsid and setpgid with EPERM to itself and
-    to every process it starts, then execs Node, which keeps its pid. So no
+    leader, and the wrapper denies the isolated child's denylist but its
+    network calls (``seccomp_filter.NODE_CODE_DENIED``: ptrace, namespaces and
+    mounts, setsid and setpgid among them) with EPERM to itself and to every
+    process it starts, then execs Node, which keeps its pid. So no
     process Node starts can leave Node's process group, which the run kills
     when Node exits (:func:`_end_node_run`), whatever its environment. libuv's
     ``detached: true`` ignores the EPERM its setsid gets, so a detached child
@@ -1023,9 +1054,13 @@ def _node_command(env):
 
     Under ``CURIO_ISOLATION=fork`` a run whose filter cannot be installed
     does not start Node and fails, saying why, as an isolated child that
-    cannot confine itself does; otherwise Node then runs without it. Node is
-    found on *env*'s PATH, as Popen finds it, so a missing Node raises
-    FileNotFoundError here, as Popen does. Off Linux, Node starts as it is.
+    cannot confine itself does; otherwise Node then runs without it. With
+    *user*, the execution account's ``(uid, gid)`` (:func:`_node_account`),
+    the wrapper then drops to it with the isolated child's code, and a run
+    it cannot drop fails: Node never starts as the sandbox's account in its
+    place. Node is found on *env*'s PATH, as Popen finds it, so a missing
+    Node raises FileNotFoundError here, as Popen does. Off Linux, Node starts
+    as it is.
     """
     import errno
     import shutil
@@ -1039,7 +1074,7 @@ def _node_command(env):
 
     requested = mode.mode_from_environment()[0].strip().lower()
     return seccomp_filter.exec_command(
-        [node, '--input-type=commonjs'], required=requested == mode.FORK)
+        [node, '--input-type=commonjs'], required=requested == mode.FORK, user=user)
 
 
 def _end_node_run(proc, threads, stop, node_type, mark, since):
@@ -1089,6 +1124,11 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
     past it, it is killed, and this raises ``subprocess.TimeoutExpired``.
     Every process Node started is killed when Node exits, or at that timeout
     (:func:`_end_node_run`), so a run always ends and gives its slot back.
+
+    Where an isolated child would drop to the execution account, Node runs
+    as that account (:func:`_node_account`), with a HOME and TMPDIR of its
+    own (:func:`_node_home`). When the account does not exist, Node does not
+    start, and this returns ``(None, [], [why])``.
     """
     import json
     import pathlib
@@ -1101,6 +1141,18 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
 
     if t0 is None:
         t0 = time.perf_counter()
+
+    # An account that does not exist stops the run here, as it stops the
+    # zygote: Node never runs as the sandbox in the account's place.
+    try:
+        account = _node_account()
+    except KeyError:
+        refused = (
+            f"Curio did not start Node.js: the execution account {os.environ.get('CURIO_EXEC_USER')!r} "
+            f"does not exist, and a JavaScript node never runs as the sandbox's own account in its place."
+        )
+        print(f"[execJs] {refused}  node={node_type}", file=_sys.__stderr__, flush=True)
+        return None, [], [refused]
 
     # Resolve bare package specifiers (e.g. '@urban-toolkit/autk-db') to an
     # ABSOLUTE file URL under the sandbox's node_modules so the dynamic ESM
@@ -1201,11 +1253,13 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
                       file=_sys.__stderr__, flush=True)
             # The run has its place: its reply goes quiet until it ends (#889).
             run_place.took_place()
-            return _run_node_holding_slot()
+            # A folder of each Node process's own, so a retry gets its own.
+            with _node_home(account) as home:
+                return _run_node_holding_slot(home)
         finally:
             slot.release()
 
-    def _run_node_holding_slot():
+    def _run_node_holding_slot(home):
         print(f"[execJs] starting Node.js  node={node_type}", file=_sys.__stderr__, flush=True)
         t_start = time.perf_counter()
 
@@ -1217,8 +1271,10 @@ def run_js_script(code, inputs, *, cwd, node_type, t0=None, node_modules=None):
         mark = secrets.token_hex(16)
         since = time.time() - 2
         env = {**node_env_vars, _RUN_MARK: mark}
+        if home is not None:
+            env.update(HOME=home, TMPDIR=home)
         proc = subprocess.Popen(
-            _node_command(env),
+            _node_command(env, user=account),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding='utf-8', errors='replace', cwd=cwd,

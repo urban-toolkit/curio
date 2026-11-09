@@ -147,17 +147,10 @@ def _install_seccomp_filter(*, required):
         # ``socket`` itself is denied below for every family but AF_UNIX.
         "socketcall", "connect", "accept", "accept4",
         "sendto", "sendmsg", "recvfrom", "recvmsg",
-        # Debugger attachment: ptrace on a sibling would sidestep everything.
-        "ptrace", "process_vm_readv", "process_vm_writev",
-        # Namespace and mount games.
-        "mount", "umount", "umount2", "unshare", "setns", "pivot_root", "chroot",
-        # Kernel module loading.
-        "init_module", "finit_module", "delete_module",
-        # Raw kernel surfaces with a poor security history.
-        "bpf", "perf_event_open", "userfaultfd", "kexec_load",
-        # Leaving the child's process group: setsid and setpgid, which a
+        # Debugger attachment, namespaces and mounts, kernel modules, raw
+        # kernel surfaces and leaving the child's process group, which a
         # JavaScript run's Node is denied too (seccomp_filter.py).
-        *seccomp_filter.LEAVING_THE_GROUP,
+        *seccomp_filter.NODE_CODE_DENIED,
     )
 
     # Each denied with EPERM, so the failure surfaces as a normal Python
@@ -174,21 +167,18 @@ def _install_seccomp_filter(*, required):
 def _drop_privileges(uid, gid):
     """Become an unprivileged user. No-op when not running as root.
 
-    Groups first: ``setgid`` and ``setgroups`` need the privilege that
-    ``setuid`` gives away, so doing the uid first would strand the child in
-    root's supplementary groups.
+    The drop is ``seccomp_filter.drop_privileges``, which a JavaScript run's
+    exec wrapper makes too before it execs Node: groups, then gid, then uid,
+    each id checked after.
     """
     if os.getuid() != 0:
         # Already unprivileged, which is the normal case outside Docker. There
         # is nothing to drop, and asking would just fail.
         return False
-    if gid is not None:
-        os.setgroups([])
-        os.setgid(gid)
-    if uid is not None:
-        os.setuid(uid)
-        if os.getuid() != uid or os.geteuid() != uid:
-            raise ChildSetupError("setuid did not take effect")
+    try:
+        seccomp_filter.drop_privileges(uid, gid)
+    except OSError as exc:
+        raise ChildSetupError(str(exc)) from exc
     return True
 
 

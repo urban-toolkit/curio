@@ -97,6 +97,7 @@ When migrating a call site, prefer :func:`safe_join` over manual
 """
 from __future__ import annotations
 
+import functools
 import re
 from pathlib import Path
 from typing import Union
@@ -107,6 +108,7 @@ __all__ = [
     "safe_join",
     "safe_child",
     "is_within",
+    "resolve_base",
 ]
 
 
@@ -253,6 +255,33 @@ def _resolved_within(resolved: Path, resolved_base: Path) -> bool:
         return False
 
 
+def resolve_base(base: Union[str, Path]) -> Path:
+    """*base*'s real path, resolved once per absolute folder.
+
+    A resolve walks each component of a path with an lstat, which under many
+    requests at once costs each of them a wait for the GIL, and the folders
+    paths are built under (the users root, an account's stores, a package's
+    folder, the launch folder) do not move while Curio runs. Only the base is
+    kept; a path joined under it is still resolved on every call. So paths
+    under a folder swapped for a link after its first use are refused, since
+    the link leads outside the base as first seen, and a base that was a link
+    at its first use keeps leading where it led then, until Curio restarts,
+    even if the link is pointed elsewhere. A relative base, read against the
+    working folder, is resolved each time.
+    """
+    path = Path(base)
+    if not path.is_absolute():
+        return path.resolve()
+    return _resolve_folder(str(path))
+
+
+@functools.lru_cache(maxsize=1024)
+def _resolve_folder(folder: str) -> Path:
+    """:func:`resolve_base` for an absolute folder, kept: at most 1024, since
+    each account's stores are bases too."""
+    return Path(folder).resolve()
+
+
 def safe_join(
     base: Union[str, Path],
     *parts: str,
@@ -303,8 +332,8 @@ def safe_join(
     Returns
     -------
     pathlib.Path
-        The fully-resolved absolute path. Guaranteed to satisfy
-        ``is_within(returned_path, Path(base).resolve())``.
+        The fully-resolved absolute path. Guaranteed to lie inside
+        ``resolve_base(base)``, the base's real path as first seen.
 
     Raises
     ------
@@ -335,13 +364,14 @@ def safe_join(
         except PathTraversalError as exc:
             return f"Invalid file path: {exc}", 403
     """
-    base_path = Path(base).resolve()
+    base_path = resolve_base(base)
     if validate:
         for part in parts:
             validate_component(part, field=field)
     target = base_path.joinpath(*parts).resolve()
-    # Both are resolved: is_within would resolve each again, a walk of every
-    # component with an lstat each, on every path the backend builds.
+    # The base is resolved once per folder (resolve_base), the target on every
+    # call; is_within would resolve each again, a walk of every component with
+    # an lstat each, on every path the backend builds.
     if not _resolved_within(target, base_path):
         _reject(f"resolved path {target!s} escapes base {base_path!s}")
     return target

@@ -2,12 +2,13 @@
 
 Both deny calls with EPERM through libseccomp (``pyseccomp``), on Linux, and
 both set ``PR_SET_NO_NEW_PRIVS`` first, which lets an unprivileged process
-install a filter and keeps a setuid program from gaining privilege. An
-isolated Python child denies its whole denylist
-(``child._install_seccomp_filter``). Node, on Linux, is denied the two calls
-that leave a process group (:data:`LEAVING_THE_GROUP`), and so is every
-process it starts: a filter is inherited across ``fork`` and ``exec``, and
-nothing removes it.
+install a filter and keeps a setuid program from gaining privilege. Both deny
+:data:`NODE_CODE_DENIED`: debugger attachment, namespaces and mounts, kernel
+modules, raw kernel surfaces, and the two calls that leave a process group
+(:data:`LEAVING_THE_GROUP`). An isolated Python child denies the network too
+(``child._install_seccomp_filter``); Node, on Linux, keeps it. Every process
+Node starts is denied the same: a filter is inherited across ``fork`` and
+``exec``, and nothing removes it.
 
 Node gets its filter from this file run as an exec wrapper
 (:func:`exec_command`): the sandbox is threaded, so it cannot run code of its
@@ -16,6 +17,13 @@ own between ``fork`` and ``exec`` (``preexec_fn``). Popen's
 and a process group of its own; the wrapper installs the filter and execs
 Node, which keeps its pid, so Node leads them, and nothing it starts can
 leave them.
+
+Both drop to the execution account the same way too (:func:`drop_privileges`):
+an isolated child after its filter, and the wrapper, when it is given the
+account's ids, after Node's filter and before its exec. So under fork
+isolation with an execution account, Node and every process it starts run as
+the account an isolated child runs as, and where the drop fails, Node never
+starts.
 
 Both import ``pyseccomp`` through :func:`import_pyseccomp`, which finds libc
 and libseccomp by soname, with neither ``ctypes.util`` nor a process: the
@@ -36,8 +44,28 @@ import sys
 #: ``setpgid(0, 0)``).
 LEAVING_THE_GROUP = ("setsid", "setpgid")
 
+#: What every process node code runs in is denied, an isolated child and a
+#: JavaScript run's Node alike: the child's denylist without its network
+#: calls, which Node keeps.
+NODE_CODE_DENIED = (
+    # Debugger attachment: ptrace on another run of the account would
+    # sidestep everything.
+    "ptrace", "process_vm_readv", "process_vm_writev",
+    # Namespace and mount games.
+    "mount", "umount", "umount2", "unshare", "setns", "pivot_root", "chroot",
+    # Kernel module loading.
+    "init_module", "finit_module", "delete_module",
+    # Raw kernel surfaces with a poor security history.
+    "bpf", "perf_event_open", "userfaultfd", "kexec_load",
+    # Leaving the process group, which every kill of a run is a killpg of.
+    *LEAVING_THE_GROUP,
+)
+
 #: The wrapper's flag for a run that must not start without its filter.
 REQUIRED = "--required"
+
+#: The wrapper's flag for the account a run drops to, ``--user UID:GID``.
+USER = "--user"
 
 #: Signals Python ignores when it starts. An ignored signal stays ignored
 #: across ``exec``, so the wrapper puts them back to their defaults first, as
@@ -159,40 +187,78 @@ def denying(seccomp, names):
     return filter_
 
 
-def exec_command(argv, *, required):
+def drop_privileges(uid, gid):
+    """Become *uid* and *gid* for good, with no supplementary group: the
+    isolated child's drop (``child._drop_privileges``), and the exec
+    wrapper's, before it execs Node. An id that is None is not changed.
+
+    Groups first: ``setgroups`` and ``setgid`` need the privilege that
+    ``setuid`` gives away, so the uid first would leave the process in root's
+    groups. Root's ``setgid`` and ``setuid`` set the real, effective and saved
+    ids at once, and each of them is checked, with the group list. Raises
+    OSError when the kernel refuses a call, or when one did not take.
+    """
+    if gid is not None:
+        os.setgroups([])
+        os.setgid(gid)
+    if uid is not None:
+        os.setuid(uid)
+    took = (gid is None or (os.getresgid() == (gid,) * 3 and not os.getgroups())) and (
+        uid is None or os.getresuid() == (uid,) * 3
+    )
+    if not took:
+        raise OSError(
+            f"the drop to uid {uid} and gid {gid} did not take: uids {os.getresuid()}, "
+            f"gids {os.getresgid()}, groups {os.getgroups()}"
+        )
+
+
+def exec_command(argv, *, required, user=None):
     """The command that runs *argv*, its first item a path, through this
-    file's exec wrapper, which denies :data:`LEAVING_THE_GROUP` to it and to
+    file's exec wrapper, which denies :data:`NODE_CODE_DENIED` to it and to
     every process it starts. With *required*, a wrapper that cannot install
-    the filter fails; without it, the wrapper then runs *argv* unfiltered."""
+    the filter fails; without it, the wrapper then runs *argv* unfiltered.
+    With *user*, ``(uid, gid)``, the wrapper then drops to those ids as an
+    isolated child does, and fails when it cannot, whatever *required* says."""
     return [
         sys.executable, "-P", os.path.abspath(__file__),
-        *([REQUIRED] if required else []), "--", *argv,
+        *([REQUIRED] if required else []),
+        *([USER, f"{user[0]}:{user[1]}"] if user is not None else []),
+        "--", *argv,
     ]
 
 
-def _deny_leaving_the_group():
+def _install_node_filter():
     """Install the filter in this process. Whatever stops it is raised; a
     missing ``pyseccomp`` or libseccomp stops it before it changes anything."""
-    filter_ = denying(import_pyseccomp(), LEAVING_THE_GROUP)
+    filter_ = denying(import_pyseccomp(), NODE_CODE_DENIED)
     set_no_new_privs()
     filter_.load()
 
 
 def main(args):
-    """The exec wrapper: ``[--required] -- <path> <arguments>``.
+    """The exec wrapper: ``[--required] [--user UID:GID] -- <path> <arguments>``.
 
-    It installs the filter, then execs *path* with *path* and *arguments* as
-    its argv. When the filter cannot be installed, it fails with one line on
-    stderr under ``--required``, and otherwise execs *path* without it,
-    writing nothing: its stderr is the run's, which the run's user reads.
+    It installs the filter, then with ``--user`` drops to that uid and gid,
+    the isolated child's order (``child.confine``), then execs *path* with
+    *path* and *arguments* as its argv. When the filter cannot be installed,
+    it fails with one line on stderr under ``--required``, and otherwise goes
+    on without it, writing nothing: its stderr is the run's, which the run's
+    user reads. When the drop fails, it fails with one line whatever
+    ``--required`` says, so *path* never runs as the wrapper's own account in
+    the execution account's place. It looks no account up: it is given the
+    numbers.
     """
-    required = args[:1] == [REQUIRED]
-    if required:
-        args = args[1:]
+    required, user = False, None
+    while args[:1] in ([REQUIRED], [USER]):
+        if args[0] == REQUIRED:
+            required, args = True, args[1:]
+        else:
+            user, args = (args[1] if len(args) > 1 else ""), args[2:]
     if args[:1] == ["--"]:
         args = args[1:]
     try:
-        _deny_leaving_the_group()
+        _install_node_filter()
     except Exception as exc:  # noqa: BLE001 - any failure means no filter
         if required:
             os.write(2, (
@@ -200,6 +266,20 @@ def main(args):
                 f"seccomp filter that keeps every process a JavaScript node starts in the "
                 f"node's process group ({type(exc).__name__}: {exc}). With "
                 f"CURIO_ISOLATION=fork no JavaScript node runs without it.\n"
+            ).encode("utf-8", "replace"))
+            return 1
+    if user is not None:
+        try:
+            uid, gid = (int(part) for part in user.split(":"))
+            # Set with the filter; again here for a run whose filter was not
+            # required and could not be installed.
+            set_no_new_privs()
+            drop_privileges(uid, gid)
+        except Exception as exc:  # noqa: BLE001 - any failure means no drop
+            os.write(2, (
+                f"Curio did not start {os.path.basename(args[0])}: it could not drop to the "
+                f"execution account's uid and gid {user} ({type(exc).__name__}: {exc}), and "
+                f"a JavaScript node never runs as the sandbox's own account in its place.\n"
             ).encode("utf-8", "replace"))
             return 1
     for name in _IGNORED_BY_PYTHON:
