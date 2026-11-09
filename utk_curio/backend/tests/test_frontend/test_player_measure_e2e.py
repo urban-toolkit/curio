@@ -137,8 +137,11 @@ def test_measure_one_update(app_frontend, current_server, page, n):
 
     cdp = page.context.new_cdp_session(page)
     cdp.send("Performance.enable")
+    # The first updates after the map drew: the clip's own start, at a click.
+    page.evaluate("() => { window.__curioPlayerMeasures = []; }")
     _play_the_clip(page)
     page.wait_for_timeout(1500)
+    first_updates = [m for m in _measures(page) if m["kind"] == "autark"][:3]
     page.evaluate("() => { window.__curioPlayerMeasures = []; }")
 
     # Seeks, each left to land on both views before the next.
@@ -189,6 +192,7 @@ def test_measure_one_update(app_frontend, current_server, page, n):
             lag.append(later[0] - told)
     result = {
         "n": n,
+        "first_autark_updates": [{k: round(m[k], 1) for k in ("total", "drawn", "match")} for m in first_updates],
         "seeks": len(times),
         "seek_wall_s": round(seek_wall, 1),
         "seek_task_ms": _delta(after, before),
