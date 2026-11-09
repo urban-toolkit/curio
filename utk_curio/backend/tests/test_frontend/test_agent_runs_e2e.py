@@ -620,8 +620,8 @@ def test_a_turn_that_outlasts_a_quick_call_is_waited_for_to_its_end(current_serv
 #: the account's ``llm-configs.json`` (``owner_only_file.write_json``).
 CONFIG_WRITE = ("POST", "/api/agents/llm/configs")
 #: How long that write's answer comes after it is sent: longer than the 27 s
-#: it took on run 42558359012 (arcade-gpu-03), while about 43 runners pulled
-#: their images onto the host's disk and every synced write waited.
+#: it took on run 42558359012 (arcade-gpu-03), while the run's 26 arcade CPU
+#: jobs pulled its image onto the host's disk and every synced write waited.
 STALLED_WRITE_S = 30.0
 
 
@@ -692,8 +692,8 @@ def test_a_configuration_write_a_stalled_disk_answers_late_is_waited_for(current
 
     On run 42558359012 (arcade-gpu-03), test_an_autark_document_is_written_under_its_schema
     failed in its setup: ``use_scripted_llm``'s ``POST /api/agents/llm/configs``
-    answered 27 s after it was sent, while about 43 runners pulled their images
-    onto the host's disk, and ``api_json`` had given up at 10 s. Here a server in
+    answered 27 s after it was sent, while the run's 26 arcade CPU jobs pulled
+    its image onto the host's disk, and ``api_json`` had given up at 10 s. Here a server in
     front of the backend holds that answer STALLED_WRITE_S on every run."""
     require_user_auth()
     token = stub_db_user(current_server, username="agentrun_stalled_write", name="Stalled Write E2E")["token"]
