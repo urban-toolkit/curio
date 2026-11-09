@@ -17,18 +17,22 @@ A package the store does not hold gives the node no model, and the sandbox's
   (``datasets/infrastructure/left_out_files.py``) is downloaded the first
   time it is needed into ``.curio/fetched/<commit>/packages/<dir>/``, checked
   against the release's record and against the package's ``integrity.json``;
-- weights a package's operator fetches (its model block's ``fetch``,
-  ``domain/model_fetch.py``) are in neither git nor the pip package:
-  ``scripts/fetch_model_weights.py`` puts them in the catalog's copy of the
+- the weights a shipped package's ``fetch`` names (its model block's
+  ``fetch``, ``domain/model_fetch.py``) are in neither git nor the pip
+  package: a node's first run downloads them through the same code
+  (``infrastructure/fetched_weights.py``), into the catalog's copy of the
   package, or under the folder ``--model-weights-dir`` names, where a node
-  reads them in place (:func:`fetched_weights_folder`). Without them the
-  model still resolves, so its node says how to fetch them; and Export,
-  Publish and Save as package node refuse it (:func:`refuse_fetched_weights`).
+  reads them in place (:func:`fetched_weights_folder`), each file stamped
+  with its digest, so a later version of the package that names other
+  digests downloads them again. ``scripts/fetch_model_weights.py`` fetches
+  them there ahead, stamped alike. A download that
+  fails is reported for the node's run, and the model still resolves. Export,
+  Publish and Save as package node refuse such a package
+  (:func:`refuse_fetched_weights`).
 
 The Model Catalog lists the model packages through the package listings,
 filtered to kind ``model``; each says whether its weights download on first use
-(:func:`weights_on_first_use`) or still wait to be fetched
-(:func:`weights_not_fetched`), and the text of its weights' license is served
+(:func:`weights_on_first_use`), and the text of its weights' license is served
 from the account's copy or the catalog's (:func:`weights_license_text`). A
 model downloaded from the Discovery Catalog becomes a model package in the
 user's store (``model_downloads``). A template that ships no ``source`` opens
@@ -48,6 +52,7 @@ from utk_curio.backend.app.packages.domain.manifest import ManifestError, Packag
 from utk_curio.backend.app.packages.domain.model_block import MODELS_DIR
 from utk_curio.backend.app.packages.domain.model_fetch import fetched_root
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
+from utk_curio.backend.app.packages.infrastructure import fetched_weights
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.repositories import catalog_dir as packages_catalog_dir
 from utk_curio.backend.app.packages.repositories.archive import is_non_content_filename
@@ -82,7 +87,7 @@ def is_model_package(folder: Path) -> bool:
 
 def holds_weights(folder: Path, manifest: PackageManifest) -> bool:
     """Whether *folder* holds the entry *manifest*'s model block names: for
-    weights its operator fetches, every file its ``fetch`` lists."""
+    weights its ``fetch`` names, every file the block lists."""
     entry = folder / manifest.model.entry
     if manifest.model.fetch is not None:
         return all((entry / item.path).is_file() for item in manifest.model.fetch.files)
@@ -91,35 +96,69 @@ def holds_weights(folder: Path, manifest: PackageManifest) -> bool:
     return entry.is_file()
 
 
-def fetched_weights_folder(manifest: PackageManifest, shipped: Path) -> Path | None:
-    """Where this Curio reads the weights the catalog's model package
-    *manifest*, in *shipped*, has its operator fetch (its model block's
-    ``fetch``): the package's folder under ``--model-weights-dir`` when that
-    flag is set, else *shipped* itself, each laid out as the package is, its
-    entry under it. None while that folder lacks a file the block lists:
-    before ``scripts/fetch_model_weights.py`` ran, or after a fetch that
-    stopped."""
+def fetched_weights_root(manifest: PackageManifest, shipped: Path) -> Path:
+    """Where this Curio keeps the weights the catalog's model package
+    *manifest*, in *shipped*, names in its model block's ``fetch``: the
+    package's folder under ``--model-weights-dir`` when that flag is set, else
+    *shipped* itself, each laid out as the package is, its entry under it."""
     weights_dir = packages_catalog_dir.model_weights_dir()
-    folder = shipped if weights_dir is None else fetched_root(weights_dir, manifest.package_id, manifest.major)
-    return folder if holds_weights(folder, manifest) else None
+    return shipped if weights_dir is None else fetched_root(weights_dir, manifest.package_id, manifest.major)
 
 
-def fetched_weights_of(manifest: PackageManifest, folder: Path) -> Path | None:
-    """Where this Curio reads the weights its operator fetches of the model
-    package *manifest*, the copy in *folder*: *folder* itself when it is an
-    account's own copy that holds them, else the catalog's copy's
-    (:func:`fetched_weights_folder`), so the catalog's own folder counts
-    only without ``--model-weights-dir``. None when they are not here."""
+def fetched_weights_folder(manifest: PackageManifest, shipped: Path) -> Path | None:
+    """:func:`fetched_weights_root` when every file the block lists is in
+    place there, stamped with the digest the block names
+    (``fetched_weights.missing_files``), else None: before their first
+    download, after one that stopped, and once the block names other digests,
+    which download again. Reads the stamps, never the weights."""
+    folder = fetched_weights_root(manifest, shipped)
+    return None if fetched_weights.missing_files(manifest.model.fetch, folder / manifest.model.entry) else folder
+
+
+def _catalog_fetch(manifest: PackageManifest) -> tuple[PackageManifest, Path] | None:
+    """The catalog's copy of the model package *manifest* and its folder,
+    when that copy names its weights in its ``fetch``, for the same entry:
+    the shipped block, whose source a download trusts. None for any other
+    package."""
     shipped = (packages_catalog_dir.catalog_root() / manifest.dir_name).resolve()
-    if Path(folder).resolve() != shipped and holds_weights(folder, manifest):
-        return folder
     catalog_manifest = _model_manifest(shipped)
     if (
         catalog_manifest is None or catalog_manifest.model.fetch is None
         or catalog_manifest.model.entry != manifest.model.entry
     ):
         return None
-    return fetched_weights_folder(catalog_manifest, shipped)
+    return catalog_manifest, shipped
+
+
+def fetched_weights_of(manifest: PackageManifest, folder: Path) -> Path | None:
+    """Where this Curio reads the weights the ``fetch`` of the model package
+    *manifest*, the copy in *folder*, names: *folder* itself when it is an
+    account's own copy that holds them, else the catalog's copy's
+    (:func:`fetched_weights_folder`), so the catalog's own folder counts
+    only without ``--model-weights-dir``. None when they are not here."""
+    shipped = (packages_catalog_dir.catalog_root() / manifest.dir_name).resolve()
+    if Path(folder).resolve() != shipped and holds_weights(folder, manifest):
+        return folder
+    found = _catalog_fetch(manifest)
+    return None if found is None else fetched_weights_folder(*found)
+
+
+def _downloaded_fetched_weights(manifest: PackageManifest) -> Path | None:
+    """The folder whose entry holds the weights the catalog's copy of the
+    model package *manifest* names in its ``fetch``, downloaded now on their
+    first use (``infrastructure/fetched_weights.py``). None for a package
+    whose catalog copy names none, and for a download that failed, which is
+    reported for the node's run (``left_out_files.failures``)."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+    found = _catalog_fetch(manifest)
+    if found is None:
+        return None
+    catalog_manifest, shipped = found
+    try:
+        return fetched_weights.download(catalog_manifest, fetched_weights_root(catalog_manifest, shipped))
+    except left_out_files.LeftOutFileUnavailable:
+        return None
 
 
 @dataclass(frozen=True)
@@ -226,7 +265,7 @@ def weights_folder(manifest: PackageManifest, folder: Path) -> Path | None:
     """The folder whose ``models/`` holds the weights of the model package
     *manifest* in *folder*: *folder* itself when it holds them, else the
     catalog's copy of the same package, else the folder a pip install fetches
-    that copy's left-out weights into, or, for weights its operator fetches,
+    that copy's left-out weights into, or, for weights a ``fetch`` names,
     :func:`fetched_weights_of`. None when none of them has them."""
     if manifest.model.fetch is not None:
         return fetched_weights_of(manifest, folder)
@@ -249,8 +288,7 @@ def weights_folder(manifest: PackageManifest, folder: Path) -> Path | None:
 def local_weights_folder(manifest: PackageManifest, folder: Path) -> Path | None:
     """:func:`weights_folder` without the download: *folder* when it holds the
     weights, else the catalog's copy of the same package when that does (or,
-    for weights its operator fetches, :func:`fetched_weights_of`), else
-    None."""
+    for weights a ``fetch`` names, :func:`fetched_weights_of`), else None."""
     if manifest.model.fetch is not None:
         return fetched_weights_of(manifest, folder)
     if holds_weights(folder, manifest):
@@ -267,10 +305,13 @@ def local_weights_folder(manifest: PackageManifest, folder: Path) -> Path | None
 def weights_on_first_use(manifest: PackageManifest, folder: Path) -> bool:
     """Whether a node's first run downloads the weights of the model package
     *manifest* in *folder*: neither the folder nor the catalog's copy holds
-    them, because a pip install leaves them out, and none has been fetched
-    yet. Nothing is downloaded to say so."""
+    them, and the catalog's copy names them in its ``fetch``, or a pip
+    install left them out and none has been fetched yet. Nothing is
+    downloaded to say so."""
     if local_weights_folder(manifest, folder) is not None:
         return False
+    if manifest.model.fetch is not None:
+        return _catalog_fetch(manifest) is not None
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
     prefix = f"packages/{manifest.dir_name}/{MODELS_DIR}/"
@@ -287,25 +328,17 @@ def weights_on_first_use(manifest: PackageManifest, folder: Path) -> bool:
     return not all((root / repo_path).is_file() for repo_path in left_out)
 
 
-def weights_not_fetched(manifest: PackageManifest, folder: Path) -> bool:
-    """Whether the model package *manifest* in *folder* has its operator fetch
-    its weights (its model block's ``fetch``) and this Curio does not have
-    them yet: a node that loads it stops, naming
-    ``scripts/fetch_model_weights.py``. Nothing is fetched to say so."""
-    return manifest.model.fetch is not None and local_weights_folder(manifest, folder) is None
-
-
 #: Why Export, Publish and Save as package node refuse a model package whose
-#: weights its operator fetches, after what was refused.
+#: weights its ``fetch`` names, after what was refused.
 FETCHED_WEIGHTS_REFUSED = (
     "{refused}: its weights come from {publisher} under their terms, and may be larger than the "
-    "2 GiB a package carries. Whoever runs a Curio fetches them for it with scripts/fetch_model_weights.py."
+    "2 GiB a package carries. Each Curio downloads them the first time a node runs the model."
 )
 
 
 def refuse_fetched_weights(manifest: PackageManifest | None, refused: str) -> None:
     """Raise a 409 that says why when *manifest* is a model package whose
-    weights its operator fetches: they never travel in an archive. *refused*
+    weights its ``fetch`` names: they never travel in an archive. *refused*
     says what was refused, ``{name}`` standing for the package's name."""
     if manifest is None or manifest.model is None or manifest.model.fetch is None:
         return
@@ -386,22 +419,27 @@ class ResolvedModel:
     """Where a node's ``curio_load_model`` reads one model: *folder* holds its
     manifest and, unless *weights* says otherwise, its weights under
     ``models/``. *weights* is the folder under ``--model-weights-dir`` whose
-    entry holds weights its operator fetched, which the sandbox reads in
+    entry holds the weights a ``fetch`` names, which the sandbox reads in
     place, never staged."""
 
     folder: Path
     weights: Path | None = None
 
 
-def _resolved(manifest: PackageManifest, folder: Path) -> ResolvedModel | None:
+def _resolved(manifest: PackageManifest, folder: Path, *, download: bool) -> ResolvedModel | None:
     """Where the model package *manifest*, the store's copy in *folder*, is
-    read from, or None when its weights cannot be had. A package whose weights
-    its operator fetches resolves to the catalog's copy even without them, so
-    its node says how to fetch them rather than to add it."""
+    read from, or None when its weights cannot be had: with *download*, a
+    pip install's left-out weights, or the weights the catalog's copy names
+    in its ``fetch``, are downloaded first when this is their first use. A
+    package whose weights a ``fetch`` names resolves to the catalog's copy
+    even without them, so its node says they are not here rather than to
+    add it."""
     if manifest.model.fetch is None:
-        weights = weights_folder(manifest, folder)
+        weights = weights_folder(manifest, folder) if download else local_weights_folder(manifest, folder)
         return None if weights is None else ResolvedModel(weights)
     weights = fetched_weights_of(manifest, folder)
+    if weights is None and download:
+        weights = _downloaded_fetched_weights(manifest)
     if weights == folder:
         return ResolvedModel(folder)
     shipped = (packages_catalog_dir.catalog_root() / manifest.dir_name).resolve()
@@ -409,15 +447,17 @@ def _resolved(manifest: PackageManifest, folder: Path) -> ResolvedModel | None:
     return ResolvedModel(home, None if weights in (None, home) else weights)
 
 
-def _resolve_models(user_key: str | None, model_ids, owners) -> dict[str, ResolvedModel]:
+def _resolve_models(user_key: str | None, model_ids, owners, *, download: bool) -> dict[str, ResolvedModel]:
     """``{model id: ResolvedModel}`` for the model packages *model_ids* name
     that *user_key*'s store holds (:func:`resolve_model_dirs`)."""
     if owners is not None:
         ids = [str(model_id) for model_id in model_ids]
         theirs = [model_id for model_id in ids if _used_by_the_dataflow(owners, model_id)]
         return {
-            **_resolve_models(user_key, [model_id for model_id in ids if model_id not in theirs], None),
-            **_resolve_models(owners.store_key, theirs, None),
+            **_resolve_models(
+                user_key, [model_id for model_id in ids if model_id not in theirs], None, download=download,
+            ),
+            **_resolve_models(owners.store_key, theirs, None, download=download),
         }
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
@@ -427,7 +467,7 @@ def _resolve_models(user_key: str | None, model_ids, owners) -> dict[str, Resolv
             found = find_model_package(user_key, model_id)
             if found is None:
                 continue
-            resolved = _resolved(*found)
+            resolved = _resolved(*found, download=download)
         except left_out_files.LeftOutFileUnavailable:
             continue
         except (ManifestError, OSError, ValueError) as exc:
@@ -441,29 +481,35 @@ def _resolve_models(user_key: str | None, model_ids, owners) -> dict[str, Resolv
 def resolve_model_dirs(user_key: str | None, model_ids, *, owners=None) -> dict[str, str]:
     """``{model id: folder}`` for the model packages *model_ids* name that
     *user_key*'s store holds: the folder whose ``manifest.json`` and
-    ``models/`` a node's ``curio_load_model`` reads. An id that names no model
-    package in the store, or whose weights cannot be had, is left out: the
+    ``models/`` a node's ``curio_load_model`` reads, its weights downloaded
+    first when this is their first use. An id that names no model package
+    in the store, or whose left-out weights cannot be had, is left out: the
     sandbox's ``curio_load_model`` says to add it, or the run fails with the
-    download's own error. A package whose weights its operator fetches gives
-    the catalog's copy, whose manifest says what to fetch, with or without
-    them; :func:`resolve_model_weights` names where they are read in place.
+    download's own error. A package whose weights its ``fetch`` names gives
+    the catalog's copy, whose manifest says what they are, with them or with
+    the failed download reported; :func:`resolve_model_weights` names where
+    they are read in place.
 
     With *owners* (``project_packages.OwnersPackages``), the run is one of an
     editor the dataflow's owner invited: an id whose model package in her
     store the dataflow uses resolves from her store, as her own run's does,
     and any other id from *user_key*'s."""
-    return {model_id: str(model.folder) for model_id, model in _resolve_models(user_key, model_ids, owners).items()}
+    return {
+        model_id: str(model.folder)
+        for model_id, model in _resolve_models(user_key, model_ids, owners, download=True).items()
+    }
 
 
 def resolve_model_weights(user_key: str | None, model_ids, *, owners=None) -> dict[str, str]:
     """``{model id: folder}`` for the models of :func:`resolve_model_dirs`
-    whose weights its operator fetched under ``--model-weights-dir``: the
+    whose weights a ``fetch`` names, kept under ``--model-weights-dir``: the
     folder whose entry holds them, which a node reads in place. Empty without
     that flag, whose weights are in the folder :func:`resolve_model_dirs`
-    gives."""
+    gives. It downloads nothing: a run asks :func:`resolve_model_dirs` first,
+    which did."""
     return {
         model_id: str(model.weights)
-        for model_id, model in _resolve_models(user_key, model_ids, owners).items()
+        for model_id, model in _resolve_models(user_key, model_ids, owners, download=False).items()
         if model.weights is not None
     }
 
@@ -473,7 +519,7 @@ def export_weights_folder(source: Path) -> Path | None:
     is a model package that does not hold them (a user's copy of a shipped
     one): downloaded first on a pip install. None for a node package or one
     that holds its weights. Raises :class:`ModelWeightsUnavailable`, and a
-    409 for a package whose weights its operator fetches
+    409 for a package whose weights its ``fetch`` names
     (:func:`refuse_fetched_weights`), which never leave this Curio."""
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
@@ -501,7 +547,7 @@ def model_copy(user_key: str | None, model_id: str) -> tuple[dict, dict[str, Pat
     pip install's left-out weight downloaded first) and its weights' license
     file. None when *user_key*'s store holds no such model, as a node's run
     finds none. Raises :class:`ModelWeightsUnavailable`, and a 409 for a
-    model whose weights its operator fetches (:func:`refuse_fetched_weights`)."""
+    model whose weights its ``fetch`` names (:func:`refuse_fetched_weights`)."""
     found = find_model_package(user_key, model_id)
     if found is None:
         return None

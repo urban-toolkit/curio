@@ -5,7 +5,10 @@ poster or the file itself to a signed-in caller, who fetches it with their
 token (the way Simple View already fetches every ``/api/`` image).
 ``<video>`` and ``<audio>`` cannot send a token, so
 ``POST .../link`` hands back a short-lived signed URL for one file, and
-``GET /api/media/<token>`` serves it, with Range, to whoever holds it.
+``GET /api/media/<token>`` serves it, with Range, to whoever holds it. A
+hosted guest's link names the visitor who asked for it as the names of their
+datasets do (``visitor_copies.visitor_of``), never by the sign-in, and its
+file is read as that visitor's (``visitor_copies.serving_visitor``).
 
 ``?dataflowId=`` reads the collection through that dataflow
 (``DiscoveryService.collection``): its owner and an editor she invited read
@@ -61,10 +64,15 @@ def collection_media(dataset_id: str, file_id: str):
 @_map_discovery_errors
 def collection_media_link(dataset_id: str, file_id: str):
     """A URL a ``<video>`` or ``<audio>`` element can play, valid for ten minutes."""
+    from utk_curio.backend.app.projects import visitor_copies
+
     service = _service(dataflow_id=_dataflow_id())
     media.original(media.locate(service, dataset_id, file_id))
     user = getattr(g, "user", None)
-    token = media.sign(getattr(user, "id", None), service.user_key, dataset_id, file_id, service.dataflow_id)
+    visitor = visitor_copies.visitor_of() if visitor_copies.copies_for(user) else None
+    token = media.sign(
+        getattr(user, "id", None), service.user_key, dataset_id, file_id, service.dataflow_id, visitor=visitor,
+    )
     return jsonify({
         "url": url_for("collection_media.signed_media", token=token),
         "expiresIn": media.LINK_TTL_SECONDS,
@@ -74,14 +82,17 @@ def collection_media_link(dataset_id: str, file_id: str):
 @media_bp.route("/media/<token>", methods=["GET"])
 @_map_discovery_errors
 def signed_media(token: str):
-    """One file, to whoever holds a link minted by its owner in the last ten minutes."""
+    """One file, to whoever holds a link minted by its owner in the last ten
+    minutes, found as the link's account finds it: a hosted guest's as the
+    visitor the link names, whatever sign-in the request sends."""
     from utk_curio.backend.app.discovery.service import DiscoveryService, _user_by_id
+    from utk_curio.backend.app.projects import visitor_copies
 
     claims = media.verify(token)
     user = _user_by_id(claims.get("u")) if claims.get("u") is not None else None
     service = DiscoveryService(claims["k"], user=user, dataflow_id=claims.get("df"))
-    found = media.locate(service, claims["d"], claims["f"])
-    path, mimetype = media.original(found)
+    with visitor_copies.serving_visitor(claims.get("v")):
+        path, mimetype = media.original(media.locate(service, claims["d"], claims["f"]))
     return _served(path, mimetype, cache_seconds=0)
 
 

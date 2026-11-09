@@ -7,10 +7,11 @@ socket, no ptrace, no escape. seccomp does not help, because reading a file is
 exactly what a data node legitimately does.
 
 So this module answers one question: **can the execution user read the things it
-must not?** (Two trees are asked the opposite, whether it could write them:
-users' node libraries, :func:`audit_node_overlays`, and Node's packages,
-:func:`audit_node_packages`, which it must read.) It answers it in two parts,
-split that way on purpose:
+must not?** (Three trees are asked the opposite, whether it could write them:
+users' node libraries, :func:`audit_node_overlays`, Node's packages,
+:func:`audit_node_packages`, and the model weights ``--model-weights-dir``
+names, :func:`audit_model_weights`, which it must read.) It answers it in two
+parts, split that way on purpose:
 
 ``audit``
     Pure. Takes mode bits, owner and group, and decides whether a given uid/gid
@@ -401,7 +402,44 @@ def audit_node_packages(launch_dir, *, uid, gid):
     return findings
 
 
-def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted):
+def open_model_weights(weights_dir):
+    """Make the model weights in *weights_dir*, the folder
+    ``--model-weights-dir`` names, readable by the execution user and
+    writable by no one but their owner, as :func:`open_node_packages` makes
+    Node's packages. Returns what changed. Best effort: what stays writable is
+    :func:`audit_model_weights`'s to report."""
+    if not weights_dir or not hasattr(os, "chmod") or sys.platform == "win32":
+        return {"changed": [], "failed": [], "skipped": "no folder, or not a POSIX host"}
+    changed, failed = [], []
+    for path, path_stat in _tree(weights_dir):
+        mode = stat_module.S_IMODE(path_stat.st_mode)
+        wanted = _opened(mode, folder=stat_module.S_ISDIR(path_stat.st_mode))
+        if wanted != mode:
+            (changed if _tighten(path, wanted) else failed).append(path)
+    return {"changed": changed, "failed": failed, "skipped": None}
+
+
+def audit_model_weights(weights_dir, *, uid, gid):
+    """Report every folder and file of *weights_dir*, the folder
+    ``--model-weights-dir`` names, the execution user could WRITE.
+
+    The inverse of :func:`audit`, as :func:`audit_node_packages` is: isolated
+    node code reads the weights there in place, so it must read them, and it
+    must never write them, where a file it changed or added would be the
+    model every account's later runs load. The server downloads them there
+    (folders 0755, files 0644, its own); a link is neither followed nor
+    reported. An execution user that is root is :func:`audit`'s finding.
+    """
+    if not weights_dir or uid is None or uid == 0:
+        return []
+    return [
+        f"the execution user can write {path}, where isolated nodes read model weights in place: node "
+        f"code could change a model every account runs. Mode is {stat_module.filemode(path_stat.st_mode)}."
+        for path, path_stat in _tree(weights_dir) if _could_write(path_stat, uid=uid, gid=gid)
+    ]
+
+
+def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted, model_weights_dir=None):
     """Harden, then audit, and say what is left. Returns (findings, fatal).
 
     *fatal* is True when a hosted instance is still exposed after hardening.
@@ -427,10 +465,13 @@ def apply_and_report(launch_dir, shared_data_dir, *, uid, gid, hosted):
     # a future change to the walk cannot silently take it away again.
     harden_paths(launch_dir)
     open_node_packages(launch_dir)
+    open_model_weights(model_weights_dir)
     prepare_scratch_root(shared_data_dir, exec_uid=uid)
     findings = audit(launch_dir, uid=uid, gid=gid)
-    # #332: the node-library trees and Node's packages must stay readable, so
-    # they are asked the opposite question.
+    # #332: the node-library trees, Node's packages and the model weights
+    # --model-weights-dir names must stay readable, so they are asked the
+    # opposite question.
     findings += audit_node_overlays(shared_data_dir, uid=uid, gid=gid)
     findings += audit_node_packages(launch_dir, uid=uid, gid=gid)
+    findings += audit_model_weights(model_weights_dir, uid=uid, gid=gid)
     return findings, bool(findings and hosted)

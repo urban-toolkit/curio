@@ -1,18 +1,18 @@
-"""Weights a model package's operator fetched: read in place, never copied into a run.
+"""Weights a model package's fetch names: read in place, never copied into a run.
 
-A model package whose operator fetches its weights (its model block's
-``fetch``) ships without them. With ``curio.py start --model-weights-dir``
-they sit in a folder of their own, which a deployment mounts read-only, and
-the backend sends that folder in ``model_weights`` beside the model's own
-folder in ``models``:
+A model package whose weights its model block's ``fetch`` names ships without
+them, and the backend downloads them before a node's first run of the model.
+With ``curio.py start --model-weights-dir`` they sit in a folder of their own,
+which a deployment mounts, and the backend sends that folder in
+``model_weights`` beside the model's own folder in ``models``:
 
 - an isolated run stages the model's folder (its manifest) into the scratch
   directory, and never the weights: a hardlink cannot cross the mount they
   sit on, so staging them would copy gigabytes into every run;
 - the child, and an in-process run, read them where they are
   (``CurioModel.path``);
-- a model whose weights were never fetched, or whose fetch stopped, stops at
-  ``curio_load_model``, naming the script that fetches them;
+- a model whose weights are not here, whose download failed or stopped,
+  stops at ``curio_load_model``, naming the script that fetches them;
 - ``curio_segment`` refuses a ``concept-segmentation`` model.
 
 New names are imported inside the tests, so a checkout without them fails
@@ -93,8 +93,9 @@ def _namespace():
 # Without the weights
 # ---------------------------------------------------------------------------
 
-def test_a_model_whose_weights_were_never_fetched_says_how_to_fetch_them(package):
-    """A fresh clone, CI, a pip install, a server nobody fetched them on."""
+def test_a_model_whose_weights_are_not_here_says_how_to_fetch_them(package):
+    """A first use whose download failed, as on a server that cannot reach
+    Hugging Face."""
     from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
     from utk_curio.sandbox.util.models import NOT_FETCHED
 
@@ -106,8 +107,8 @@ def test_a_model_whose_weights_were_never_fetched_says_how_to_fetch_them(package
         namespace["curio_load_model"](MODEL_ID)
     assert str(raised.value) == NOT_FETCHED.format(model_id=MODEL_ID)
     assert str(raised.value) == (
-        f"The weights of model '{MODEL_ID}' are not on this Curio. Whoever runs this Curio fetches them "
-        f"once, with: python scripts/fetch_model_weights.py {MODEL_ID}"
+        f"The weights of model '{MODEL_ID}' are not on this Curio, and Curio could not download them. "
+        f"Whoever runs this Curio can fetch them once, with: python scripts/fetch_model_weights.py {MODEL_ID}"
     )
 
 

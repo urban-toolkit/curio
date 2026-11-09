@@ -89,6 +89,10 @@
     },
     {
       "category": "computation",
+      "dataflowCategories": {
+        "tags": ["GeoPandas"],
+        "dataTypes": ["Geometries", "Rasters"]
+      },
       "description": "Compute zonal statistics of a UHVI raster over a polygon GeoDataFrame.",
       "editor": "code",
       "engine": "python",

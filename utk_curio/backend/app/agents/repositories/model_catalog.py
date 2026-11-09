@@ -39,9 +39,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from utk_curio.backend.app.common.file_locks import exclusive_lock
 from utk_curio.backend.app.common.user_storage import (
     user_key_segment as _user_key_segment,
     users_base as _users_base,
@@ -73,6 +76,29 @@ def _path(user_key: str) -> Path:
     return _users_base() / _user_key_segment(user_key) / _FILENAME
 
 
+@contextmanager
+def _changing(user_key: str, filename: str):
+    """Hold the account's *filename* while it is read, changed and written
+    back. Two writes at once, in two threads or two backend processes, would
+    each write what it read plus its own record, and the later one would drop
+    the other's. The lock file sits beside it, in the account's own folder."""
+    folder = _users_base() / _user_key_segment(user_key)
+    folder.mkdir(parents=True, exist_ok=True)
+    with exclusive_lock(folder / f".{filename}.lock", namespace="model-catalog", key=f"{user_key}/{filename}"):
+        yield
+
+
+def _write_whole(path: Path, payload: dict) -> None:
+    """Write *payload* to *path* through a temporary file of this write's own,
+    so a reader sees the old file or the new one, never half of one."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+    try:
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def _load(user_key: str) -> dict:
     p = _path(user_key)
     if not p.is_file():
@@ -101,21 +127,13 @@ def remember_models(
     if not clean:
         return
     try:
-        providers = _load(user_key)
-        providers[provider_key(api_type, base_url)] = {
-            "models": clean[:_MAX_REMEMBERED],
-            "seenAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        }
-        p = _path(user_key)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(p.suffix + ".tmp")
-        tmp.write_text(
-            json.dumps(
-                {"version": _SCHEMA_VERSION, "providers": providers}, indent=2
-            ),
-            encoding="utf-8",
-        )
-        os.replace(tmp, p)
+        with _changing(user_key, _FILENAME):
+            providers = _load(user_key)
+            providers[provider_key(api_type, base_url)] = {
+                "models": clean[:_MAX_REMEMBERED],
+                "seenAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+            _write_whole(_path(user_key), {"version": _SCHEMA_VERSION, "providers": providers})
     except OSError as exc:
         log.warning("Could not record model suggestions for %s: %s", user_key, exc)
 
@@ -162,12 +180,7 @@ def _write_sidecar(user_key: str, filename: str, section: str, entries: dict) ->
     try:
         p = _sidecar_path(user_key, filename)
         p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(p.suffix + ".tmp")
-        tmp.write_text(
-            json.dumps({"version": _SCHEMA_VERSION, section: entries}, indent=2),
-            encoding="utf-8",
-        )
-        os.replace(tmp, p)
+        _write_whole(p, {"version": _SCHEMA_VERSION, section: entries})
     except OSError as exc:
         log.warning("Could not record %s for %s: %s", filename, user_key, exc)
 
@@ -183,7 +196,6 @@ def remember_chat_capabilities(
     (``chat_capabilities``), and why (``cause``, when given). Never raises."""
     if not isinstance(capabilities, dict):
         return
-    entries = _load_sidecar(user_key, _CHAT_CAPABILITIES_FILENAME, "endpoints")
     entry = {
         "tools": bool(capabilities.get("tools")),
         "structuredOutput": bool(capabilities.get("structuredOutput")),
@@ -192,8 +204,13 @@ def remember_chat_capabilities(
     if capabilities.get("cause"):
         entry["cause"] = str(capabilities["cause"])
     entry["seenAt"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    entries[_chat_key(api_type, base_url, model)] = entry
-    _write_sidecar(user_key, _CHAT_CAPABILITIES_FILENAME, "endpoints", entries)
+    try:
+        with _changing(user_key, _CHAT_CAPABILITIES_FILENAME):
+            entries = _load_sidecar(user_key, _CHAT_CAPABILITIES_FILENAME, "endpoints")
+            entries[_chat_key(api_type, base_url, model)] = entry
+            _write_sidecar(user_key, _CHAT_CAPABILITIES_FILENAME, "endpoints", entries)
+    except OSError as exc:
+        log.warning("Could not record %s for %s: %s", _CHAT_CAPABILITIES_FILENAME, user_key, exc)
 
 
 def remembered_chat_capabilities(

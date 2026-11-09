@@ -9,9 +9,10 @@ The migration is *best-effort*: a legacy dir it cannot confidently attribute to
 a single producing dataflow is left as-is. The id parsers tolerate both forms,
 so an un-migrated legacy dir keeps working.
 
-Hardening (#171): the run-once guard is a lock + double-checked in-process set +
-a filesystem marker written only after a fully-successful run with no legacy
-dirs left, so a failed or partial run is retried instead of silently frozen.
+Hardening (#171): the run-once guard is a lock per account, held across
+threads and backend processes, + double-checked in-process set + a filesystem
+marker written only after a fully-successful run with no legacy dirs left, so
+a failed or partial run is retried instead of silently frozen.
 Each dir move is crash-safe: the updated manifest is staged as a sidecar inside
 the source dir, the dir is renamed atomically (``os.rename`` refuses an
 existing destination), and the manifest is swapped atomically — every crash
@@ -26,10 +27,10 @@ import dataclasses
 import json
 import logging
 import os
-import threading
 from pathlib import Path
 from typing import Optional
 
+from utk_curio.backend.app.common.file_locks import exclusive_lock
 from utk_curio.backend.app.datasets.domain.manifest import (
     ManifestError,
     build_manifest_dict,
@@ -54,14 +55,14 @@ logger = logging.getLogger(__name__)
 # failed run is retried on the next listing.
 _migrated_users: set[str] = set()
 
-# Serializes concurrent first-listings (the dev server runs threaded=True) so
-# two threads never race the same user's rename sequence.
-_migration_lock = threading.Lock()
-
 # Marker file inside the user's dataset store recording that a run completed
 # with no legacy dirs left. Invisible to ``list_user_datasets`` (not a dir) and
 # fails ``DATASET_DIR_RE``, so it can never be mistaken for a dataset.
 _MARKER_NAME = ".computed-ids-migrated"
+
+# Beside the marker: the lock a run holds (:func:`_migrating`), invisible to
+# the listing for the same reasons.
+_LOCK_NAME = ".computed-ids-migration.lock"
 
 # Staged updated manifest, written inside the SOURCE dir before the rename.
 _MANIFEST_SIDECAR = "manifest.json.migrated"
@@ -69,6 +70,22 @@ _MANIFEST_SIDECAR = "manifest.json.migrated"
 
 def _marker_path(user_key: str) -> Path:
     return user_datasets_dir(user_key) / _MARKER_NAME
+
+
+@contextlib.contextmanager
+def _migrating(user_key: str):
+    """Hold *user_key*'s migration across threads and backend processes.
+
+    Concurrent first listings (threads of one server, or two backend
+    processes listing one account) would otherwise race the same rename
+    sequence: one could discard the manifest the other had just staged, as if
+    a crash had left it, and leave a renamed dir whose manifest still names its
+    old id.
+    """
+    store = user_datasets_dir(user_key)
+    store.mkdir(parents=True, exist_ok=True)
+    with exclusive_lock(store / _LOCK_NAME, namespace="computed-id-migration", key=user_key):
+        yield
 
 
 def ensure_computed_ids_migrated(user_key: str) -> None:
@@ -79,7 +96,7 @@ def ensure_computed_ids_migrated(user_key: str) -> None:
     """
     if user_key in _migrated_users:
         return
-    with _migration_lock:
+    with _migrating(user_key):
         if user_key in _migrated_users:
             return
         if _marker_path(user_key).is_file():

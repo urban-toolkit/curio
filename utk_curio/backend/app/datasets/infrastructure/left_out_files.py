@@ -26,13 +26,18 @@ small files of its catalog folder are copied beside it, so the folder there
 reads as the folder in a clone: a model package's manifest and code beside
 its weights, a parquet's sidecar beside the parquet.
 
-- Placing is atomic. The bytes go to a file under ``.partial/`` on the same
-  file system, are checked, are made readable by every account (an isolated
-  node's execution account reads a hardlink of the file), and are renamed
-  into place. A partial download never sits where a reader looks.
+- Placing is atomic (:func:`download_checked`). The bytes go to a file under
+  ``.partial/`` on the same file system, are checked, are made readable by
+  every account (an isolated node's execution account reads a hardlink of the
+  file), and are renamed into place. A partial download never sits where a
+  reader looks, and one a process left when it died goes with the next
+  download (:func:`remove_stale_partials`).
 - One download per file at a time: a reader that finds another downloading
-  the file waits for it (``common/file_locks.exclusive_lock``), then reads
-  what it placed.
+  the file waits for it (:func:`one_download_at_a_time`), then reads what it
+  placed.
+- A download has no time limit of its own: it fails when the network sends
+  nothing for :data:`IDLE_TIMEOUT_S`, so a big file takes as long as its bytes
+  take to come.
 - ``<state>/fetched`` is its owner's alone, as the sandbox's isolation leaves
   the shipped model packages' weights (``sandbox/isolation/hardening.py``
   lists both): an
@@ -46,6 +51,11 @@ A failure raises :class:`LeftOutFileUnavailable`, whose message says what
 failed and how to get the file by hand. Readers that turn a failure into a
 missing file still report it: :func:`failures` collects them, and a node run
 fails with them (``execution/node_exec``).
+
+The weights a shipped model package's ``fetch`` names download the first time
+a node needs them through the same code: :func:`download_checked`,
+:func:`one_download_at_a_time`, :func:`remove_stale_partials` and
+:func:`unavailable` (``packages/infrastructure/fetched_weights.py``).
 """
 
 from __future__ import annotations
@@ -58,6 +68,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
@@ -78,8 +89,16 @@ REPOSITORY = "https://github.com/urban-toolkit/curio"
 RAW = "https://raw.githubusercontent.com/urban-toolkit/curio"
 #: The folder of Curio's state directory the fetched files go to.
 FETCHED = "fetched"
-#: Long enough for the biggest listed file (about 13 MB) over a slow link.
-DOWNLOAD_TIMEOUT_S = 600
+#: The longest a download waits for its connection, and then for its next
+#: bytes, before it fails: the transport's connect and read timeout
+#: (``egress.download``). It bounds a stall, never the whole download.
+IDLE_TIMEOUT_S = 600
+#: What a partial file's name ends with.
+PARTIAL_SUFFIX = ".part"
+#: A partial file no download has written for this long was left by a
+#: process that died mid-download: a live download writes at least once an
+#: idle timeout, after its connection and its first bytes.
+STALE_PARTIAL_S = 3 * IDLE_TIMEOUT_S
 
 #: The transport and the DNS resolver ``egress.download`` uses; ``None`` is
 #: the network. Tests set both, since no test may open a socket.
@@ -93,8 +112,9 @@ _failures: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVa
 
 
 class LeftOutFileUnavailable(RuntimeError):
-    """A file the pip package leaves out could not be had. The message says
-    what failed and how to get the file."""
+    """A file Curio downloads on first use could not be had: one the pip
+    package leaves out, or a file of the weights a model package's ``fetch``
+    names. The message says what failed and how to get the file."""
 
 
 @dataclass(frozen=True)
@@ -257,19 +277,19 @@ def fetch(repo_path: str, shipped: Path, *, expected_sha256: str | None = None) 
     try:
         record = read_record()
     except ValueError as exc:
-        raise _unavailable(repo_path, (
+        raise unavailable(repo_path, (
             f"Curio could not read the record of its release, {exc}, so it cannot download "
             f"{repo_path}. Start Curio from a clone of {REPOSITORY}, which holds the file."
         )) from exc
     if record is None:
-        raise _unavailable(repo_path, (
+        raise unavailable(repo_path, (
             f"{repo_path} is not in this Curio, which has no record of a release to download it "
             f"from. Start Curio from a clone of {REPOSITORY}, which holds the file "
             f"(git checkout -- {repo_path} puts it back in a clone)."
         ))
     entry = record.files.get(repo_path)
     if entry is None:
-        raise _unavailable(repo_path, (
+        raise unavailable(repo_path, (
             f"{repo_path} is not in the record of this Curio's release, so Curio cannot download "
             f"it. Start Curio from a clone of {REPOSITORY}, which holds the file."
         ))
@@ -278,15 +298,102 @@ def fetch(repo_path: str, shipped: Path, *, expected_sha256: str | None = None) 
     if target.is_file():
         return target
     _close_fetched_dir()
-    locks = root / ".locks"
-    locks.mkdir(parents=True, exist_ok=True)
-    lock = locks / f"{hashlib.sha256(repo_path.encode('utf-8')).hexdigest()[:32]}.lock"
-    with exclusive_lock(lock, namespace="left-out-files", key=f"{record.commit}/{repo_path}"):
+    lock = root / ".locks" / f"{hashlib.sha256(repo_path.encode('utf-8')).hexdigest()[:32]}.lock"
+    with one_download_at_a_time(lock, key=f"{record.commit}/{repo_path}"):
         # Another reader may have placed it while this one waited.
         if not target.is_file():
             _remove_other_releases(record.commit)
+            remove_stale_partials(root / ".partial")
             _download(repo_path, entry, record.commit, Path(shipped), target, expected_sha256=expected_sha256)
     return target
+
+
+@contextlib.contextmanager
+def one_download_at_a_time(lock: Path, *, key: str):
+    """Hold the lock under which one download places what *key* names, in
+    this process and across processes (``common/file_locks.exclusive_lock``),
+    on the file *lock*, which is made readable by every account and
+    writable by its owner alone. A second reader waits for the first, then
+    finds what it placed."""
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    os.close(os.open(lock, os.O_WRONLY | os.O_CREAT, 0o644))
+    with contextlib.suppress(OSError):
+        os.chmod(lock, 0o644)  # whatever the umask; another account's lock keeps its own mode
+    with exclusive_lock(lock, namespace="downloads-on-first-use", key=key):
+        yield
+
+
+def remove_stale_partials(folder: Path) -> None:
+    """Remove the partial files in *folder* that no download writes any more:
+    each one a process left when it died mid-download, unwritten for
+    :data:`STALE_PARTIAL_S`. A live download's partial is newer, and stays."""
+    now = time.time()
+    try:
+        entries = list(os.scandir(folder))
+    except OSError:
+        return
+    for entry in entries:
+        if not entry.name.endswith(PARTIAL_SUFFIX):
+            continue
+        try:
+            if entry.is_file(follow_symlinks=False) and now - entry.stat(follow_symlinks=False).st_mtime > STALE_PARTIAL_S:
+                os.unlink(entry.path)
+        except OSError:
+            continue  # gone already, or not this account's to remove: the next download tries again
+
+
+def download_checked(
+    url: str, target: Path, *, partial_dir: Path, max_bytes: int, check, failed, before_place=None,
+    partial_name: str | None = None,
+) -> None:
+    """Download *url* and place it at *target*, as Curio places every file it
+    downloads on first use.
+
+    The bytes stream through the egress policy (``egress.download``, which
+    waits :data:`IDLE_TIMEOUT_S` for each and has no limit on the whole) into
+    a file of *partial_dir*, on *target*'s file system, up to *max_bytes*.
+    *check(result, partial)* says why they are not the file asked for, or
+    None. Then the file is made readable by every account (an isolated node's
+    execution account reads it), *before_place* runs when given, and the file
+    is renamed into place.
+
+    The partial file has a name of its own, or *partial_name* when the
+    caller's lock is the only writer of it: then the next download writes
+    over what one that died left there.
+
+    Raises what *failed(reason)* makes of a failure, the transport's, the
+    disk's or *check*'s, and places nothing.
+    """
+    partial = None
+    try:
+        try:
+            partial_dir.mkdir(parents=True, exist_ok=True)
+            if partial_name is None:
+                handle, name = tempfile.mkstemp(dir=partial_dir, prefix=f".{target.name}.", suffix=PARTIAL_SUFFIX)
+            else:
+                name = str(partial_dir / partial_name)
+                handle = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            partial = Path(name)
+            with os.fdopen(handle, "wb") as sink:
+                result = egress.download(
+                    url, sink=sink.write, max_bytes=max_bytes,
+                    request_fn=request_fn, resolver=resolver, timeout_s=IDLE_TIMEOUT_S,
+                )
+                sink.flush()
+                os.fsync(sink.fileno())
+        except Exception as exc:  # noqa: BLE001 - the policy's refusal, the network's error, a full disk
+            raise failed(str(exc) or exc.__class__.__name__) from exc
+        reason = check(result, partial)
+        if reason is not None:
+            raise failed(reason)
+        os.chmod(partial, 0o644)
+        if before_place is not None:
+            before_place()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(partial, target)
+    finally:
+        if partial is not None:
+            partial.unlink(missing_ok=True)
 
 
 def _close_fetched_dir() -> None:
@@ -331,41 +438,27 @@ def _download(
     url = source_url(commit, repo_path)
     root = fetched_root(commit)
     partial_dir = root / ".partial"
-    partial_dir.mkdir(parents=True, exist_ok=True)
-    handle, name = tempfile.mkstemp(dir=partial_dir, suffix=".part")
-    partial = Path(name)
-    try:
-        try:
-            with os.fdopen(handle, "wb") as sink:
-                result = egress.download(
-                    url, sink=sink.write, max_bytes=entry.size,
-                    request_fn=request_fn, resolver=resolver, timeout_s=DOWNLOAD_TIMEOUT_S,
-                )
-                sink.flush()
-                os.fsync(sink.fileno())
-        except Exception as exc:  # noqa: BLE001 - the policy's refusal, the network's error, a full disk
-            reason = str(exc) or exc.__class__.__name__
-            raise _unavailable(repo_path, _could_not_download(repo_path, url, target, reason)) from exc
+
+    def check(result, _partial: Path) -> str | None:
         if result.status != 200:
-            raise _unavailable(repo_path, _could_not_download(
-                repo_path, url, target, f"GitHub answered HTTP {result.status}",
-            ))
+            return f"GitHub answered HTTP {result.status}"
         if result.bytes_written != entry.size or result.sha256 != entry.sha256:
-            raise _unavailable(repo_path, _could_not_download(repo_path, url, target, (
+            return (
                 f"the file GitHub sent ({result.bytes_written:,} bytes, sha256 {result.sha256}) is "
                 f"not the one this release recorded ({entry.size:,} bytes, sha256 {entry.sha256})"
-            )))
+            )
         if expected_sha256 is not None and result.sha256 != expected_sha256.lower():
-            raise _unavailable(repo_path, _could_not_download(repo_path, url, target, (
+            return (
                 f"the file GitHub sent (sha256 {result.sha256}) is not the one its package's "
                 f"integrity.json names (sha256 {expected_sha256})"
-            )))
-        os.chmod(partial, 0o644)
-        _copy_folder(repo_path, shipped, root, partial_dir)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(partial, target)
-    finally:
-        partial.unlink(missing_ok=True)
+            )
+        return None
+
+    download_checked(
+        url, target, partial_dir=partial_dir, max_bytes=entry.size, check=check,
+        failed=lambda reason: unavailable(repo_path, _could_not_download(repo_path, url, target, reason)),
+        before_place=lambda: _copy_folder(repo_path, shipped, root, partial_dir),
+    )
 
 
 def _copy_folder(repo_path: str, shipped: Path, root: Path, partial_dir: Path) -> None:
@@ -407,8 +500,12 @@ def _could_not_download(repo_path: str, url: str, target: Path, reason: str) -> 
     )
 
 
-def _unavailable(repo_path: str, message: str) -> LeftOutFileUnavailable:
+def unavailable(key: str, message: str) -> LeftOutFileUnavailable:
+    """The error of a file Curio could not download on first use, which
+    *message* explains, for its caller to raise. A block that collects
+    failures (:func:`failures`) keeps *message* under *key*, the first for
+    each key, so a node's run fails with it."""
     collected = _failures.get()
     if collected is not None:
-        collected.setdefault(repo_path, message)
+        collected.setdefault(key, message)
     return LeftOutFileUnavailable(message)

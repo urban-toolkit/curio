@@ -51,6 +51,29 @@ def media_cache_dir(user_key: str, dataset_id: str) -> Path:
     return path
 
 
+def cache_lock(user_key: str, dataset_id: str) -> Path:
+    """The lock file a cache of one collection holds (``cache_collection``).
+
+    In the account's own store, where no node reaches it: a node that could
+    open it could hold it, and no cache of the collection would run again.
+    Beside the collection's thumbnails, not among them, since
+    :func:`forget_media` removes their folder.
+    """
+    folder = users_base() / user_key_segment(user_key) / "media-cache"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / f".{_dataset_segment(dataset_id)}.cache.lock"
+
+
+def room_files(user_key: str) -> tuple[Path, Path]:
+    """The account's room in its media cache (``cache_collection.check_room``):
+    the file of what its running caches and adds have still to land, and the
+    lock it is read and written under. Beside the collections' cache locks,
+    for the same reasons (:func:`cache_lock`)."""
+    folder = users_base() / user_key_segment(user_key) / "media-cache"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / ".room.json", folder / ".room.lock"
+
+
 def forget_media(user_key: str, dataset_id: str) -> None:
     """Remove what Curio made from one dataset's files: its thumbnails, its
     cached bucket files, and the files nodes derived from it.

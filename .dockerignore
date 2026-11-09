@@ -13,9 +13,9 @@ __pycache__/
 /.env
 # The LLM endpoint file a deployment mounts at run time, never built in.
 /.secrets/
-# The weights a model package's operator fetches, which a deployment mounts
-# read-only: inside a folder directly under a package's models/, or in the
-# folder docker-compose.deploy.yml mounts. Never built in.
+# The weights a model package's fetch names, which download on first use:
+# inside a folder directly under a package's models/, or in the folder
+# docker-compose.deploy.yml mounts. Never built in.
 packages/*/models/*/**
 model-weights
 # The folder docker-compose.bucket-mounts.yml binds into the bucket mount

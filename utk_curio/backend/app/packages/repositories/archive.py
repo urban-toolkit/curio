@@ -223,9 +223,9 @@ def is_non_content_filename(name: str) -> bool:
 
 def fetched_entry(package_root: Path) -> str | None:
     """The entry folder of the model package at *package_root* when its
-    operator fetches its weights (its model block's ``fetch``,
-    ``domain/model_fetch.py``), read leniently: None for any other package,
-    and for a manifest that does not read."""
+    weights come from its model block's ``fetch`` (``domain/model_fetch.py``),
+    read leniently: None for any other package, and for a manifest that does
+    not read."""
     try:
         raw = json.loads((package_root / "manifest.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -240,7 +240,8 @@ def fetched_entry(package_root: Path) -> str | None:
 def _build_integrity(package_root: Path) -> dict[str, str]:
     """Compute SHA-256 of every regular file under *package_root* (sorted).
     A fetched model package's weights (:func:`fetched_entry`) are left out:
-    they are its operator's download, never part of the package."""
+    they are a download, never part of the package. So is the lock and any
+    partial file of that download (dotfiles, :func:`is_non_content_filename`)."""
     fetched = fetched_entry(package_root)
     integrity: dict[str, str] = {}
     for entry in sorted(package_root.rglob("*")):

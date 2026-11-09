@@ -280,7 +280,7 @@ A package you save or import lands in your package store:
 |---|---|---|
 | `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` | `--allow-publish` (default), `--no-allow-publish` | Allows or forbids **Publish** and **Unpublish** of node packages, model packages among them, as it does for datasets, agents and skills. When forbidden, both are refused and their buttons are hidden. |
 | `CURIO_PACKAGES_ROOT` | `--packages-root` | Reads and publishes the shared catalog in this directory instead of `<repo_root>/packages/`. Start it from a copy of `packages/`: the built-in nodes are installed from it. |
-| `CURIO_MODEL_WEIGHTS_DIR` | `--model-weights-dir` | Reads the weights a model package fetches from `<dir>/<package id>@<major>/`, as `scripts/fetch_model_weights.py --into <dir>` writes them, instead of the package's own folder ([DEPLOYMENT.md](DEPLOYMENT.md#model-weights-a-package-fetches)). |
+| `CURIO_MODEL_WEIGHTS_DIR` | `--model-weights-dir` | Downloads the weights a model package fetches on first use into `<dir>/<package id>@<major>/`, and reads them there, as `scripts/fetch_model_weights.py --into <dir>` writes them too, instead of the package's own folder. The server writes it, and every account reads it ([DEPLOYMENT.md](DEPLOYMENT.md#model-weights-a-package-fetches)). |
 
 **`curio.py start` sets the publish variable on every start**, so `--no-allow-publish` is the way to turn publishing off. A `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH=0` in `.env` has no effect when you start through `curio.py`. See [USAGE.md](USAGE.md) for the launcher reference.
 

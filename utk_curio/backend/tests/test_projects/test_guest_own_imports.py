@@ -13,6 +13,9 @@ These tests sign two visitors, A and B, in to that account, as
   listing or by id, and both go when the server starts;
 - an agent's run for A reads A's upload and A's added output by id, on the
   server's request and on a job's own thread; one for B reads neither;
+- Simple View's player plays a video of a collection A downloaded through a
+  signed link, which a ``<video>`` asks for with no sign-in: as A, through
+  whatever dataflow A's canvas shows, and that one file alone;
 - without ``--deploy`` the shared guest is the one local user, whose uploads
   and downloads are the account's.
 """
@@ -20,6 +23,8 @@ from __future__ import annotations
 
 import io
 import json
+
+import pytest
 
 from utk_curio.backend import config
 from utk_curio.backend.app.common.user_storage import GUEST_KEY
@@ -53,6 +58,9 @@ from utk_curio.backend.tests.test_projects.test_guest_store_leaks import _listin
 #: The storage source of ``storage_source``, and its row of one table.
 SOURCE = "source.example.folder@1"
 STATIONS = "stations"
+#: The shipped storage source, whose survey row holds a video, and that video.
+EXAMPLE_STORAGE = "source.curio.example-storage@1"
+CLIP = "clip_01.mp4"
 
 
 def _import(client, token: str) -> str:
@@ -66,19 +74,25 @@ def _import(client, token: str) -> str:
     return resp.get_json()["id"]
 
 
-def _download(client, token: str) -> str:
-    """The id of the dataset the visitor signed in as *token* adds to the Data
-    Catalog from the storage source's stations row, once its download's
-    worker has ended (``workers_finish_first``)."""
-    resp = client.post(f"/api/discovery/sources/{SOURCE}/resources/{STATIONS}/acquire",
+def _added(client, token: str, source: str = SOURCE, row: str = STATIONS) -> dict:
+    """The dataset the visitor signed in as *token* adds to the Data Catalog
+    from *source*'s *row*, once its download's worker has ended
+    (``workers_finish_first``)."""
+    resp = client.post(f"/api/discovery/sources/{source}/resources/{row}/acquire",
                        headers=auth_headers(token), json={})
     assert resp.status_code in (200, 202), resp.get_data(as_text=True)
     body = resp.get_json()
     if "jobId" not in body:
-        return body["dataset"]["id"]
+        return body["dataset"]
     job = client.get(f"/api/discovery/jobs/{body['jobId']}", headers=auth_headers(token)).get_json()
     assert job["status"] == "completed", job
-    return job["dataset"]["id"]
+    return job["dataset"]
+
+
+def _download(client, token: str) -> str:
+    """The id of the dataset the visitor signed in as *token* adds to the Data
+    Catalog from the storage source's stations row (:func:`_added`)."""
+    return _added(client, token)["id"]
 
 
 def _listed(client, token: str, query: dict) -> set[str]:
@@ -221,6 +235,137 @@ def test_an_agents_job_for_a_hosted_guest_reads_their_own_datasets_on_its_thread
 
     assert set(read[VISITOR_A]) == {uploaded, output}, read
     assert read[VISITOR_B] == {}, read
+
+
+# ---------------------------------------------------------------------------
+# A collection's video, as Simple View's player plays it
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def example_storage(monkeypatch):
+    """The shipped storage source, listed afresh, as ``test_storage_media.py``
+    reads it."""
+    from utk_curio.backend.app.discovery.application import scan
+    from utk_curio.backend.app.discovery.infrastructure import storage
+    from utk_curio.backend.tests.test_discovery.conftest import SHIPPED_ROOT
+
+    monkeypatch.setenv(storage.ENV_ROOT, str(SHIPPED_ROOT))
+    scan.listings.reset()
+    yield EXAMPLE_STORAGE
+    scan.listings.reset()
+
+
+def _a_video(client, token: str, source: str) -> tuple[str, str, bytes]:
+    """The collection the visitor signed in as *token* downloads from the
+    survey row of *source*, the shipped storage source: its id, its video's
+    file id, and the video's bytes, read from the source's folder."""
+    import pandas as pd
+
+    from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+    from utk_curio.backend.app.discovery.infrastructure.storage import storage_root
+    from utk_curio.backend.tests.test_discovery.conftest import SHIPPED_ROOT
+
+    dataset = _added(client, token, source, "survey")
+    row = pd.read_parquet(dataset["path"]).set_index("name").loc[CLIP]
+    video = storage_root(load_source_manifest(SHIPPED_ROOT / source)) / row["relpath"]
+    return dataset["id"], row["file_id"], video.read_bytes()
+
+
+def _link(client, token: str, collection: str, file_id: str, *, dataflow: str | None = None) -> str:
+    """The signed link Simple View's player asks for to play *file_id* of
+    *collection*, as the visitor signed in as *token*, through the dataflow
+    its canvas shows, *dataflow* (``?dataflowId=``)."""
+    query = {"dataflowId": dataflow} if dataflow else {}
+    resp = client.post(f"/api/datasets/{collection}/media/{file_id}/link", query_string=query,
+                       headers=auth_headers(token))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    return resp.get_json()["url"]
+
+
+def test_a_hosted_guests_video_plays_from_its_link_with_no_sign_in(client, example, example_storage, monkeypatch):
+    """Simple View's player asks for a link to A's video (``POST .../link``)
+    and plays it in a ``<video>``, which sends no sign-in and asks by Range:
+    the link answers with A's video, in part and whole."""
+    workers_finish_first(monkeypatch)
+    collection, clip, video = _a_video(client, VISITOR_A, example_storage)
+
+    url = _link(client, VISITOR_A, collection, clip)
+    part = client.get(url, headers={"Range": "bytes=10-19"})
+    assert part.status_code == 206, part.get_data(as_text=True)[:300]
+    assert (part.mimetype, part.data) == ("video/mp4", video[10:20])
+    whole = client.get(url)
+    assert whole.status_code == 200, whole.get_data(as_text=True)[:300]
+    assert whole.data == video
+
+
+@pytest.mark.parametrize("through", ["example", "copy", "new"])
+def test_a_hosted_guests_video_plays_from_a_link_minted_through_their_dataflow(
+    client, example, example_storage, monkeypatch, through,
+):
+    """A's canvas asks for the link through the dataflow it shows
+    (``?dataflowId=``), which the link names. A adds the collection to it
+    first: to the example, which makes A's copy of it, or to the dataflow
+    A's File > New made. The link is minted through the example, through A's
+    copy by its id, as A's agents name it, or through A's new dataflow, and
+    plays A's video with no sign-in."""
+    from utk_curio.backend.app.projects import visitor_copies
+    from utk_curio.backend.tests.test_projects.test_guest_new_dataflows import _new_dataflow
+
+    workers_finish_first(monkeypatch)
+    collection, clip, video = _a_video(client, VISITOR_A, example_storage)
+    shown = _new_dataflow(client, VISITOR_A) if through == "new" else example
+    added = client.post(f"/api/dataflows/{shown}/datasets/install", data=json.dumps({"datasetId": collection}),
+                        headers=auth_headers(VISITOR_A))
+    assert added.status_code == 200, added.get_data(as_text=True)
+    dataflow = _copy_of(VISITOR_A, example) if through == "copy" else shown
+    own = visitor_copies.is_own_copy(VISITOR_A, dataflow)
+    assert own == (through != "example"), (through, dataflow, own)
+
+    url = _link(client, VISITOR_A, collection, clip, dataflow=dataflow)
+    part = client.get(url, headers={"Range": "bytes=10-19"})
+    assert part.status_code == 206, part.get_data(as_text=True)[:300]
+    assert part.data == video[10:20]
+
+
+def test_a_hosted_guests_link_names_no_sign_in_and_plays_their_video_alone(
+    client, example, example_storage, monkeypatch,
+):
+    """A link is a bearer credential whose payload whoever holds it reads: it
+    names the visitor as their datasets' ids do (``visitor_copies.visitor_of``),
+    never by the sign-in. It plays the one file it names, as the visitor who
+    asked for it, whatever sign-in its request sends: a link signed for A that
+    names B's video finds nothing, B's own link plays B's, and A's video is
+    read no other way, with no sign-in or as B."""
+    from utk_curio.backend.app.discovery.application import media
+    from utk_curio.backend.app.projects import visitor_copies
+
+    workers_finish_first(monkeypatch)
+    collection, clip, video = _a_video(client, VISITOR_A, example_storage)
+    theirs, their_clip = _a_video(client, VISITOR_B, example_storage)[:2]
+
+    url = _link(client, VISITOR_A, collection, clip)
+    for sent in ({}, auth_headers(VISITOR_B)):
+        part = client.get(url, headers={**sent, "Range": "bytes=10-19"})
+        assert part.status_code == 206, (sent, part.get_data(as_text=True)[:300])
+        assert part.data == video[10:20], sent
+    claims = media.verify(url.rsplit("/", 1)[1])
+    payload = json.dumps(claims)
+    assert VISITOR_A not in payload, payload
+    assert (claims["d"], claims["f"]) == (collection, clip), payload
+
+    forged = media.sign(claims["u"], claims["k"], theirs, their_clip, visitor=visitor_copies.visitor_of(VISITOR_A))
+    refused = client.get(f"/api/media/{forged}", headers={"Range": "bytes=10-19"})
+    assert refused.status_code == 404, refused.get_data(as_text=True)[:300]
+    their_link = _link(client, VISITOR_B, theirs, their_clip)
+    played = client.get(their_link, headers={"Range": "bytes=10-19"})
+    assert played.status_code == 206, played.get_data(as_text=True)[:300]
+    assert played.data == video[10:20]
+
+    original = f"/api/datasets/{collection}/media/{clip}?variant=original"
+    unsigned = client.get(original)
+    assert unsigned.status_code == 401, unsigned.get_data(as_text=True)[:300]
+    as_b = client.get(original, headers=auth_headers(VISITOR_B))
+    assert as_b.status_code == 404, as_b.get_data(as_text=True)[:300]
 
 
 def test_without_deploy_the_local_guests_uploads_and_downloads_are_the_accounts(

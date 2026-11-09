@@ -263,8 +263,8 @@ DATASETS: list[Dataset] = [
         mode="recsv",
         source_sep=";",
         description=(
-            "Hourly ERA5 reanalysis weather for Milan on 2022-07-22: dew "
-            "point, wind speed and relative humidity, the meteorological "
+            "Hourly ERA5 reanalysis weather for Milan on 2022-07-22: air "
+            "temperature, wind speed and relative humidity, the meteorological "
             "inputs to a UTCI calculation. Re-saved comma-delimited from the "
             "original semicolon-delimited export."
         ),

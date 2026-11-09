@@ -55,8 +55,8 @@ docs/examples/dataflows/expected_outputs/*_actual.png
 # in the pip package; a checkout has every file and needs none.
 utk_curio/backend/app/datasets/infrastructure/left_out_files.record.json
 
-# The weights a model package's operator fetches (scripts/fetch_model_weights.py):
-# its entry, a folder directly under its models/. Weights that ship in git are
+# The weights a model package's fetch names, which download on first use: its
+# entry, a folder directly under its models/. Weights that ship in git are
 # files there. And the folder docker-compose.deploy.yml mounts for them.
 /packages/*/models/*/
 /model-weights/

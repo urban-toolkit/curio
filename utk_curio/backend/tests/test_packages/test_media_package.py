@@ -279,13 +279,19 @@ def test_mosaic_rasters_joins_adjacent_tiles(collection):
     assert np.array_equal(mosaic.read(1)[:, :32], left)
 
 
-def test_the_uhvi_zonal_node_reads_a_mosaic(collection):
+def test_the_uhvi_zonal_node_reads_a_mosaic(collection, tmp_path):
     """The mosaic is the RASTER a zonal-statistics node takes: UHVI Zonal
-    Stats averages it under a polygon, as it does any raster."""
+    Stats averages it under a polygon, as it does any raster. Its code calls
+    UHVI's module ``uhvi_statistics``, staged for the run as the sandbox
+    stages a UHVI node's modules."""
     import geopandas as gpd
     import numpy as np
     from rasterio.features import geometry_mask
     from shapely.geometry import box
+
+    from utk_curio.sandbox.util.input_names import call_as_node
+    from utk_curio.sandbox.util.package_modules import importable
+    from utk_curio.sandbox.util.staging import stage_package_modules
 
     tiles, helpers = collection("orthos")
     mosaic = run_node("mosaic-rasters", tiles[tiles["year"] == 2024], helpers)
@@ -293,12 +299,17 @@ def test_the_uhvi_zonal_node_reads_a_mosaic(collection):
     # The mosaic's left half: one tile's footprint.
     zone = box(west, south, (west + east) / 2, north)
     zones = gpd.GeoDataFrame({"zone": ["left"]}, geometry=[zone], crs=mosaic.crs)
-    code = (REPO / "packages" / "ai.utk.uhvi@1" / "sources" / "uhvi-zonal.py").read_text(encoding="utf-8")
+    uhvi = REPO / "packages" / "ai.utk.uhvi@1"
+    code = (uhvi / "sources" / "uhvi-zonal.py").read_text(encoding="utf-8")
     body = "\n".join("    " + line for line in code.splitlines())
-    from utk_curio.sandbox.util.input_names import call_as_node
+    run = tmp_path / "run-uhvi"
+    run.mkdir()
+    staged = stage_package_modules({"root": str(uhvi / "sources"), "names": ["uhvi_statistics"]}, str(run))
+    assert staged == {"root": "package_modules", "names": ["uhvi_statistics"]}, staged
 
     # The raster on circle 0 and the zones on circle 1.
-    out = call_as_node(body, {}, [mosaic, zones], [0, 1])
+    with importable(str(run / staged["root"]), staged["names"]):
+        out = call_as_node(body, {}, [mosaic, zones], [0, 1])
     band = mosaic.read(1).astype(float)
     inside = geometry_mask([zone], transform=mosaic.transform, invert=True, out_shape=band.shape)
     assert out["uhvi_mean"].iloc[0] == pytest.approx(float(np.mean(band[inside])))
