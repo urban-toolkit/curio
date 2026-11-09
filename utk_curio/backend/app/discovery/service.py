@@ -195,9 +195,14 @@ class DiscoveryService:
         )
 
     def _storage_for(self, manifest: DiscoverySourceManifest):
+        """The provider that reads *manifest*'s files: a bucket this
+        deployment mounts is read in place, through its mount
+        (``bucket_mount_sources.BucketReads``). Listings use
+        :meth:`_storage_builder`, which reads every bucket over HTTP."""
         from utk_curio.backend.app.discovery.providers import build_storage
 
-        return build_storage(manifest, self._transport_for(manifest))
+        return build_storage(manifest, self._transport_for(manifest),
+                             reads=bucket_mount_sources.BucketReads(manifest))
 
     def _service_for(self, manifest: DiscoverySourceManifest):
         from utk_curio.backend.app.discovery.providers import build_service
@@ -902,7 +907,10 @@ class DiscoveryService:
         """Where a collection's files are, and a few of them to show.
 
         A folder's files and a service's images are all on this machine; a
-        bucket's are once cached.
+        bucket's are once cached, or read in place where this deployment
+        mounts its bucket (``readInPlace``, with the bucket's ``bucketHost``),
+        when they are all readable too. ``mountProblem`` says why such a
+        bucket cannot be read now; its copies cached before are not read.
         """
         import pandas as pd
 
@@ -913,8 +921,13 @@ class DiscoveryService:
         block = item.get("collection") or {}
         total = int(block.get("fileCount") or 0)
         local = manifest.provider.type == "folder" or manifest.is_service
+        mount = None if local else bucket_mount_sources.ensure(manifest)
+        if mount is not None and mount.mounted:
+            local = True
         if local:
             cached, cached_bytes = total, int(block.get("totalBytes") or 0)
+        elif mount is not None and mount.in_place:
+            cached, cached_bytes = 0, 0
         else:
             cached, cached_bytes = cache_collection.cached_count(self.collection_store(item), dataset_id)
         rows = pd.read_parquet(item["path"], columns=["file_id", "name", "kind"])
@@ -933,6 +946,9 @@ class DiscoveryService:
             "totalBytes": int(block.get("totalBytes") or 0),
             "cachedFiles": min(cached, total),
             "cachedBytes": cached_bytes,
+            "readInPlace": bool(mount is not None and mount.mounted),
+            "bucketHost": _bucket_host(manifest) if mount is not None and mount.in_place else None,
+            "mountProblem": mount.reason if mount is not None and mount.state == "down" else None,
             "samples": [
                 {"fileId": r.file_id, "name": r.name, "kind": r.kind}
                 for r in rows.itertuples(index=False)
@@ -957,6 +973,10 @@ class DiscoveryService:
         # A folder's files and a service's downloaded images are local already.
         if manifest.provider.type == "folder" or manifest.is_service:
             raise CapabilityUnsupported(f"{item['title']} is already on this machine")
+        # A bucket this deployment mounts is read in place, even while down.
+        refusal = bucket_mount_sources.cache_refusal(bucket_mount_sources.ensure(manifest))
+        if refusal is not None:
+            raise CapabilityUnsupported(f"{item['title']} is not cached: {refusal}")
 
         def _new_job() -> str:
             ratelimit.download_slots.acquire(self.user_key)
@@ -1061,6 +1081,17 @@ def _start(job, run, user_key: str) -> dict[str, Any]:
         job_store.jobs.finish(job, "failed", error=f"{exc}"[:300], stage_message="Failed")
         raise
     return row
+
+
+def _bucket_host(manifest: DiscoverySourceManifest) -> str | None:
+    """The host a mounted bucket's files are read from, as its details name
+    it, or None for a source that does not mount."""
+    from utk_curio.backend.app.discovery.domain.bucket_mount import NotMountable, bucket_mount
+
+    try:
+        return bucket_mount(manifest).host
+    except NotMountable:
+        return None
 
 
 def _storage_matches(resource, text: str) -> bool:

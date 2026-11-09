@@ -22,6 +22,8 @@ import {
   type TemplateSaveTarget,
 } from "../../../utils/palettePackageFactoryDraft";
 import { WIDGET_KIND_LABELS, type WidgetDef } from "../../../utils/widgets/widgetModel";
+import { plainDoc } from "../../../contracts/docMarkup";
+import { DocText } from "../../editing/widgets/DocText";
 import { WidgetForm } from "../../editing/widgets/WidgetForm";
 import { WidgetTag } from "../../editing/widgets/WidgetTag";
 import { PackageTargetPicker, useWritablePackageOptions } from "./PackageTargetPicker";
@@ -282,7 +284,7 @@ export function NodeFromFunctionModal({
                             key={`${mod.module}.${fn.name}`}
                             value={`${pkg.dirName}|${mod.module}|${fn.name}`}
                             disabled={!!fn.problem}
-                            data-tooltip={fn.problem ?? fn.doc}
+                            data-tooltip={fn.problem ?? plainDoc(fn.doc)}
                           >
                             {mod.module}.{signatureText(fn)}
                           </option>
@@ -306,7 +308,11 @@ export function NodeFromFunctionModal({
 
           {choice ? (
             <>
-              {choice.fn.doc ? <p className={styles.hint}>{choice.fn.doc}</p> : null}
+              {choice.fn.doc ? (
+                <p className={styles.hint}>
+                  <DocText doc={choice.fn.doc} />
+                </p>
+              ) : null}
               <div className={styles.fieldLabel}>Parameters</div>
               {choice.fn.parameters.length === 0 ? (
                 <p className={styles.hint}>{choice.fn.name} takes no parameters.</p>

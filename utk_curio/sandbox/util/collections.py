@@ -3,8 +3,9 @@
 ``curio_load_collection("<id>")`` returns a collection's index, one row per file,
 with the columns a node needs to reach each file:
 
-- ``path``: a file this execution can open, the file itself for a folder
-  collection, its cached copy for a bucket one (``None`` until cached);
+- ``path``: a file this execution can open: the file itself for a folder
+  collection and for a bucket the deployment mounts, read in place there,
+  else its cached copy for a bucket one (``None`` until cached);
 - ``thumbnail`` and ``image_url``: URLs Simple View shows and HF CV
   Inference reads, served by id by the backend;
 - ``audio_url``: a recording's URL, for a player.
@@ -149,7 +150,9 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
 
     *resolve_index(dataset_id)* returns the local path of a collection's index,
     the same resolver ``curio_data_path`` uses. *collections* maps each id
-    the backend resolved to ``{root|objects, kind}``. *output_dir* is where a
+    the backend resolved to ``{root|objects, kind}``: a mounted bucket's
+    ``root`` is its mount's folder, where a file's path is ``tail`` and its
+    relpath, and ``unavailable`` says why its mount cannot be read now. *output_dir* is where a
     node writes a file it returns (a raster, say): the scratch directory when
     isolated, whose files the parent keeps, and the run's own folder in
     process (``util/output_files.py``); without one, the media directory's
@@ -166,6 +169,11 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
                 f"Collection '{dataset_id}' is not available in this environment - "
                 "add it from the Discovery Catalog, then run this node again."
             )
+        if entry.get("unavailable"):
+            raise RuntimeError(
+                f"Collection '{dataset_id}' is read in place from its bucket, which cannot be read now: "
+                f"{entry['unavailable']}"
+            )
         index_path = resolve_index(dataset_id)
         import pandas as pd
 
@@ -176,15 +184,18 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
         except Exception:  # noqa: BLE001 - an index without positions
             frame = pd.read_parquet(index_path)
         root, objects = entry.get("root"), entry.get("objects")
+        # A mounted bucket's prefix may end partway through a name, which
+        # every file's path in the mount then starts with.
+        tail = str(entry.get("tail") or "")
 
         def where(row):
             if root:
-                parts = str(row["relpath"]).split("/")
+                relpath = str(row["relpath"])
                 # An index lists files under its root; a row that says
                 # otherwise has no file here.
-                if any(part in ("", ".", "..") for part in parts):
+                if any(part in ("", ".", "..") for part in relpath.split("/")):
                     return None
-                return os.path.join(root, *parts)
+                return os.path.join(root, *(tail + relpath).split("/"))
             if objects:
                 name = f"{row['file_id']}.{row['ext']}" if row["ext"] else row["file_id"]
                 path = os.path.join(objects, name)

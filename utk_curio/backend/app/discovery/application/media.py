@@ -112,6 +112,9 @@ class Located:
     #: A readable path on this machine, or None for an uncached bucket file.
     local: Path | None
     provider: Any
+    #: Why a file of a bucket read in place is not readable: the bucket's
+    #: mount is down, or the file is not in the bucket. None otherwise.
+    problem: str | None = None
 
 
 def locate(service, dataset_id: str, file_id: str) -> Located:
@@ -125,9 +128,11 @@ def locate(service, dataset_id: str, file_id: str) -> Located:
     extension: ``<file_id>@<t_ms>-<tag>.mp4`` is a video a node made from a
     video. A collection the service's dataflow lists from its owner's store
     (``DiscoveryService.collection``) has its cached files read from that
-    store's media folder, and nothing else of it.
+    store's media folder, and nothing else of it. A bucket this deployment
+    mounts is read in place (``S3Storage.local_path``), and its copies cached
+    before are not read, also while its mount is down.
     """
-    from utk_curio.backend.app.discovery.application import cache_collection
+    from utk_curio.backend.app.discovery.application import bucket_mount_sources, cache_collection
     from utk_curio.sandbox.util.collections import DERIVED_ID_RE
 
     item, manifest = service.collection(dataset_id)
@@ -148,8 +153,16 @@ def locate(service, dataset_id: str, file_id: str) -> Located:
         return Located(dataset_id=dataset_id, row=row, local=Path(local) if local else None, provider=None)
     provider = service._storage_for(manifest)
     local = provider.local_path(row.relpath)
-    if local is None:
-        local = cache_collection.cached_file(service.collection_store(item), dataset_id, row.file_id, row.ext)
+    if local is not None:
+        return Located(dataset_id=dataset_id, row=row, local=Path(local), provider=provider)
+    mount = bucket_mount_sources.ensure(manifest)
+    if mount.in_place:
+        problem = (
+            f"{row.relpath} cannot be read now: {mount.reason}" if mount.state == "down"
+            else f"{row.relpath} was not found in its bucket"
+        )
+        return Located(dataset_id=dataset_id, row=row, local=None, provider=provider, problem=problem)
+    local = cache_collection.cached_file(service.collection_store(item), dataset_id, row.file_id, row.ext)
     return Located(dataset_id=dataset_id, row=row, local=Path(local) if local else None, provider=provider)
 
 
@@ -191,7 +204,8 @@ def original(found: Located) -> tuple[Path, str]:
     """The file itself and its sniffed type, when a browser can use it."""
     if found.local is None:
         raise MediaUnavailable(
-            f"{found.row.relpath} is in a bucket and not on this machine; cache the collection's files first"
+            found.problem
+            or f"{found.row.relpath} is in a bucket and not on this machine; cache the collection's files first"
         )
     with found.local.open("rb") as handle:
         kind = sniff(handle.read(32))
@@ -234,12 +248,14 @@ def _render(found: Located, variant: str, target: Path) -> None:
 
 
 def _source_path(found: Located) -> tuple[Path, bool]:
-    """A local copy to draw from: the file, or a temporary fetch of it."""
+    """A local copy to draw from: the file, or a temporary fetch of it. An
+    image or a raster of a bucket whose mount is down is fetched, as one of a
+    bucket that does not mount is."""
     if found.local is not None:
         return found.local, False
     if found.row.kind not in ("image", "frame", "raster") or found.row.bytes > MAX_REMOTE_THUMB_SOURCE_BYTES:
         raise MediaUnavailable(
-            f"{found.row.relpath} is in a bucket; cache the collection's files to preview it"
+            found.problem or f"{found.row.relpath} is in a bucket; cache the collection's files to preview it"
         )
     try:
         body = found.provider.open(
@@ -404,8 +420,18 @@ def sample_thumbnail(manifest, provider, sample, *, user_key: str | None = None)
     if target.is_file():
         return target
     local = provider.local_path(sample.relpath)
+    problem = None
+    if local is None:
+        from utk_curio.backend.app.discovery.application import bucket_mount_sources
+
+        mount = bucket_mount_sources.ensure(manifest)
+        if mount.state == "down":
+            problem = f"{sample.relpath} cannot be read now: {mount.reason}"
+        elif mount.mounted:
+            problem = f"{sample.relpath} was not found in its bucket"
     row = IndexRow(key, sample.relpath, sample.relpath.rsplit(".", 1)[-1].lower(), sample.kind, sample.bytes, "")
-    _render(Located(dataset_id="", row=row, local=Path(local) if local else None, provider=provider), "thumb", target)
+    _render(Located(dataset_id="", row=row, local=Path(local) if local else None, provider=provider,
+                    problem=problem), "thumb", target)
     return target
 
 

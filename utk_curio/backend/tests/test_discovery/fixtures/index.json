@@ -216,6 +216,83 @@
     },
     "status": 200
   },
+  "https://data.urbantk.org/sideseeing/?list-type=2&max-keys=1000&prefix=chicago%2Fwest-loop%2F": {
+    "file": "sideseeing/01.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-15-45-51-706/cell.csv": {
+    "file": "download/storage/sideseeing/cell.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-15-45-51-706/gps.csv": {
+    "file": "download/storage/sideseeing/gps.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-15-45-51-706/sensors.one.csv": {
+    "file": "download/storage/sideseeing/sensors.one.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-15-45-51-706/sensors.three.csv": {
+    "file": "download/storage/sideseeing/sensors.three.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-15-45-51-706/sensors.three.uncalibrated.csv": {
+    "file": "download/storage/sideseeing/sensors.three.uncalibrated.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-16-03-17-016/cell.csv": {
+    "file": "download/storage/sideseeing/cell.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-16-03-17-016/gps.csv": {
+    "file": "download/storage/sideseeing/gps.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-16-03-17-016/sensors.one.csv": {
+    "file": "download/storage/sideseeing/sensors.one.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-16-03-17-016/sensors.three.csv": {
+    "file": "download/storage/sideseeing/sensors.three.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-16-03-17-016/sensors.three.uncalibrated.csv": {
+    "file": "download/storage/sideseeing/sensors.three.uncalibrated.csv",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
   "https://graph.mapillary.com/images?bbox=-87.642%2C41.918%2C-87.639%2C41.92&fields=id%2Ccaptured_at%2Ccompass_angle%2Ccomputed_geometry%2Cgeometry%2Csequence%2Cis_pano%2Ccreator&is_pano=true&start_captured_at=2023-01-01T00%3A00%3A00Z&limit=2000": {
     "file": "mapillary/03.json",
     "headers": {

@@ -989,12 +989,18 @@ def exec():
     secrets = shape_secrets(request.json.get('secrets'))
     # {datasetId: {root|objects, kind}} for the code's curio_load_collection("<id>")
     # calls, and the user's media directory for the files a node derives.
-    # Resolved and containment-checked by the backend, like dataset_paths.
+    # Resolved and containment-checked by the backend, like dataset_paths. A
+    # bucket read in place through its mount has the mount's folder as its
+    # root and a tail before each relpath, or why its mount is down
+    # (unavailable). The isolated path hands the entries to the child as they are.
     collections = request.json.get('collections') or {}
     if not isinstance(collections, dict):
         collections = {}
     collections = {
-        str(key): {k: str(v) for k, v in value.items() if k in ('root', 'objects', 'kind') and v}
+        str(key): {
+            k: str(v) for k, v in value.items()
+            if k in ('root', 'objects', 'kind', 'tail', 'unavailable') and v
+        }
         for key, value in list(collections.items())[:32]
         if isinstance(value, dict)
     }

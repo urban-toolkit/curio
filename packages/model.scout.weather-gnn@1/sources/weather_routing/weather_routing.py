@@ -30,6 +30,8 @@ What Curio does instead of SCOUT:
   here, its commented-out notes and code (test origins and destinations, an
   earlier return of the routes' coordinates) and the imports nothing here
   uses are left out.
+- ``__all__`` names nothing: node code imports ``calculate_weather_route``
+  from ``weather_routing`` itself (``__init__.py``).
 
 SCOUT's bugs fixed here:
 
@@ -73,6 +75,8 @@ from shapely.geometry import LineString  # Curio: the imports nothing here uses 
 from .calculate_isochrones import calculate_isochrones
 from .road_graph import road_graph  # Curio: The roads are a Curio roads layer (road_graph.py)
 from .weight_calculation import GNN_weight_calculations
+
+__all__ = []  # Curio: __all__ names nothing
 
 #: SCOUT's route modes.
 MODES = ("Default weights", "Custom weights", "Single-factor weights")  # Curio: A mode SCOUT does not have is refused at once

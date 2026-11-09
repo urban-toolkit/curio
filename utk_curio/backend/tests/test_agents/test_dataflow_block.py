@@ -586,12 +586,16 @@ class TestPackagesResolveGivesFunctions:
         # The packages its manifest names, which adding it adds.
         assert umbra.get("packageDeps") == {"curio.rasterization@1": "*"}, umbra
         assert rasters.get("packageDeps") == {}, rasters
-        # Each module's public functions: the call and its docstring's first paragraph.
+        # The functions each module offers (its __all__): the call and its
+        # docstring's first paragraph. Deep Umbra offers its two from the
+        # package, and a module that offers nothing has no row.
         modules = {row["module"]: row for row in umbra.get("functions") or []}
-        assert "deep_umbra.node_outputs" in modules, sorted(modules)
-        shadow = next(f for f in modules["deep_umbra.node_outputs"]["functions"] if f["name"] == "accumulated_shadow")
+        assert sorted(modules) == ["deep_umbra"], sorted(modules)
+        shadow, season = modules["deep_umbra"]["functions"]
+        assert shadow["name"] == "accumulated_shadow"
         assert shadow["call"] == "accumulated_shadow(value, season, model, output_file)"
         assert shadow["doc"].startswith("The accumulated shadow of the heights")
+        assert (season["name"], season["call"]) == ("season_factor", "season_factor(season)")
         algebra = {f["name"] for row in rasters["functions"] if row["module"] == "scout_rasters.raster_algebra"
                    for f in row["functions"]}
         assert {"raster_calculate", "raster_statistics"} <= algebra
@@ -617,7 +621,7 @@ def test_the_preamble_and_curios_skills_name_no_packages_templates_or_functions(
     functions reach a run that writes one of its nodes through the dataflow
     block, from its manifest and its modules."""
     from utk_curio.backend.app.agents.domain import agent_text, skills
-    from utk_curio.backend.app.packages.domain.function_nodes import read_functions
+    from utk_curio.backend.app.packages.domain.function_nodes import defined_functions
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
     from utk_curio.backend.app.packages.repositories.python_modules import module_files
 
@@ -647,5 +651,6 @@ def test_the_preamble_and_curios_skills_name_no_packages_templates_or_functions(
     for folder in sorted(path.parent for path in (REPO_ROOT / "packages").glob("*/manifest.json")):
         manifest = load_package_manifest(folder)
         for module, path in module_files(folder, manifest):
-            for function in read_functions(path.read_text(encoding="utf-8"), module):
+            # Every public function it defines, whether its __all__ offers it or not.
+            for function in defined_functions(path.read_text(encoding="utf-8"), module):
                 assert f"{function.name}(" not in rendered, f"{manifest.dir_name}: {module}.{function.name}"

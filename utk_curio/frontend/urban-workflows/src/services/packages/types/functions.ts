@@ -62,6 +62,47 @@ export interface FunctionTemplateRequest {
   bindings: Record<string, FunctionParameterBinding>;
 }
 
+/**
+ * A function a node's code can call, as the header above its code lists it
+ * (`GET /api/packages/node-functions`), and a package's, as its details list
+ * them (`GET /api/packages/<dirName>/functions`), which carry no `insert`.
+ */
+export interface OfferedFunctionPayload {
+  name: string;
+  /** Its signature: `season_factor(season)`. */
+  call: string;
+  /** The first paragraph of its docstring; for one of Curio's, what the page that lists them says it does. */
+  doc: string;
+  /** The call a click on it writes: the arguments a call must give. */
+  insert?: string;
+}
+
+/** A module and the functions it offers: its `__all__`, else its public functions. */
+export interface OfferedModulePayload {
+  /** The `<packageId>@<major>` that ships it; left out of a package's own details. */
+  package?: string;
+  /** Dotted module name, as code imports it. */
+  module: string;
+  /** Why the module could not be read, or null. */
+  problem: string | null;
+  functions: OfferedFunctionPayload[];
+}
+
+/** What a node's code can call: Curio's functions for its engine, then, for a
+ * Python node, those of the modules a run hands it, its own package's first. */
+export interface NodeFunctionsPayload {
+  /** The engine of the node's template; null for a node that holds no code. */
+  engine: "python" | "javascript" | null;
+  curio: OfferedFunctionPayload[];
+  modules: OfferedModulePayload[];
+}
+
+/** Each module of a package with the functions it offers. */
+export interface PackageFunctionsPayload {
+  dirName: string;
+  modules: OfferedModulePayload[];
+}
+
 /** The template a function becomes: a manifest entry and its source file. */
 export interface FunctionTemplatePayload {
   template: {

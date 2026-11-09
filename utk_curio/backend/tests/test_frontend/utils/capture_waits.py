@@ -431,6 +431,30 @@ def _wait_for_changes_kept(page) -> bool:
         return False
 
 
+#: How long a capture waits for the code editors' headers to have read what
+#: their code can call.
+FUNCTIONS_READ_TIMEOUT_MS = 15000
+
+# True once no code editor's header is still reading its Functions
+# (``data-curio-functions`` on CodeEditor's root): the category shows once
+# its list has come back.
+_FUNCTIONS_READ_JS = """() => !document.querySelector('[data-curio-functions="loading"]')"""
+
+
+def _wait_for_functions_read(page) -> bool:
+    """Wait until every code editor's header has read the functions its node's
+    code can call, so a frame shows its Functions, not a row that gains one a
+    moment later. Returns whether it did.
+
+    Never raises: a read that never ends shows up as a diff.
+    """
+    try:
+        page.wait_for_function(_FUNCTIONS_READ_JS, timeout=FUNCTIONS_READ_TIMEOUT_MS)
+        return True
+    except Exception:  # noqa: BLE001 - a settle wait must never fail a test
+        return False
+
+
 #: How long a capture waits for the nodes on the canvas to stop running.
 NODE_SETTLE_TIMEOUT_MS = 180_000
 

@@ -1,0 +1,28 @@
+/* A package's details, beside the shared detail modal's look
+   (AgentDetailModal.module.css): what each of its modules offers. */
+
+/* A module's functions, under its name: each one's call, then what it does. */
+.functions {
+  margin: 2px 0 6px;
+  padding-left: 18px;
+  list-style: none;
+}
+
+.submodule {
+  display: block;
+  margin-top: 2px;
+  color: var(--curio-text-secondary);
+}
+
+.call {
+  font-family: var(--curio-font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.doc {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--curio-text-secondary);
+}

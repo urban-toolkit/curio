@@ -1,6 +1,7 @@
 /*
- * A collection's file strip and its Cache files row. Colours, type and
- * geometry come from ../../../styles/curioTokens.css.
+ * A collection's file strip and its Cache files row, or the line saying a
+ * bucket is read in place. Colours, type and geometry come from
+ * ../../../styles/curioTokens.css.
  */
 
 .strip {
@@ -58,6 +59,13 @@
 }
 
 .cacheNote {
+  font-size: var(--curio-font-size-xs);
+  color: var(--curio-text-meta);
+}
+
+/* Where the Cache files row would be, for a bucket read in place. */
+.inPlaceNote {
+  margin: 12px 0 0;
   font-size: var(--curio-font-size-xs);
   color: var(--curio-text-meta);
 }
