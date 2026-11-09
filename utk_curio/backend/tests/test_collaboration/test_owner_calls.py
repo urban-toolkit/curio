@@ -247,7 +247,7 @@ def test_a_dataset_ids_migration_renames_each_dataflows_ref_by_its_owner(owner_e
     from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
     from utk_curio.backend.tests.test_datasets.computed_test_helpers import write_legacy_computed_dir
 
-    user, key, project_id = _an_account_with_a_dataflow("jo")
+    _user, key, project_id = _an_account_with_a_dataflow("jo")
     legacy_id = write_legacy_computed_dir(key, "loader")
     spec = copy.deepcopy(SPEC)
     spec["dataflow"]["datasets"] = [{"datasetId": legacy_id, "dirName": f"{legacy_id}@1",
