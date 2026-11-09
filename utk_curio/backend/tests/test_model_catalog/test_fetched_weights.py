@@ -579,6 +579,24 @@ def test_a_partial_file_a_dead_download_left_is_removed_and_a_live_ones_kept(cat
     assert {name: (entry / name).read_bytes() for name in FILES} == FILES
 
 
+def test_a_partial_file_a_restart_left_a_moment_ago_is_written_over_by_the_next_download(catalog, monkeypatch):
+    """A restart killed a download a moment ago, as a deploy does: its partial
+    file is fresh, and the next first use, the one writer of it under the
+    model's lock, writes over it, so none is left beside the weights."""
+    from utk_curio.backend.app.packages.service import resolve_model_dirs
+
+    entry = catalog / DIR / ENTRY
+    entry.mkdir(parents=True)
+    (entry / ".model.safetensors.download.part").write_bytes(b"cut short" * 1000)
+    _hugging_face(monkeypatch)
+    _add("guest", catalog)
+
+    resolve_model_dirs("guest", [PACKAGE_ID])
+
+    assert {name: (entry / name).read_bytes() for name in FILES} == FILES
+    assert _left_in(entry) == [".download.lock"]
+
+
 @pytest.mark.parametrize("status, code, says, asks_for_a_token", [
     (401, "GatedRepo", f"Hugging Face refused it (HTTP 401): {REPOSITORY} is gated, or gone", True),
     (403, None, f"Hugging Face refused it (HTTP 403): {REPOSITORY} is gated, or gone", True),

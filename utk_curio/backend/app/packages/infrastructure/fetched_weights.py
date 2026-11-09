@@ -149,6 +149,10 @@ def _download(left_out_files, manifest: PackageManifest, item: FetchedFile, entr
         failed=lambda reason: left_out_files.unavailable(
             package, _could_not_download(manifest, item, url, reason, gated=gated),
         ),
+        # The model's lock makes this download the one writer of its partial
+        # file, so one a restart killed mid-download is written over, never
+        # left beside the weights.
+        partial_name=f".{target.name}.download{left_out_files.PARTIAL_SUFFIX}",
     )
     log.info("Placed %s of %s at %s", item.path, package, target)
 

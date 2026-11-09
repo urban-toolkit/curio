@@ -344,6 +344,7 @@ def remove_stale_partials(folder: Path) -> None:
 
 def download_checked(
     url: str, target: Path, *, partial_dir: Path, max_bytes: int, check, failed, before_place=None,
+    partial_name: str | None = None,
 ) -> None:
     """Download *url* and place it at *target*, as Curio places every file it
     downloads on first use.
@@ -356,6 +357,10 @@ def download_checked(
     execution account reads it), *before_place* runs when given, and the file
     is renamed into place.
 
+    The partial file has a name of its own, or *partial_name* when the
+    caller's lock is the only writer of it: then the next download writes
+    over what one that died left there.
+
     Raises what *failed(reason)* makes of a failure, the transport's, the
     disk's or *check*'s, and places nothing.
     """
@@ -363,7 +368,11 @@ def download_checked(
     try:
         try:
             partial_dir.mkdir(parents=True, exist_ok=True)
-            handle, name = tempfile.mkstemp(dir=partial_dir, prefix=f".{target.name}.", suffix=PARTIAL_SUFFIX)
+            if partial_name is None:
+                handle, name = tempfile.mkstemp(dir=partial_dir, prefix=f".{target.name}.", suffix=PARTIAL_SUFFIX)
+            else:
+                name = str(partial_dir / partial_name)
+                handle = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             partial = Path(name)
             with os.fdopen(handle, "wb") as sink:
                 result = egress.download(
