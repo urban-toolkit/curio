@@ -1,0 +1,4 @@
+timestamp_nano,datetime_utc,name,axis_x,accuracy
+226631968581116,2026-10-26T21:03:15.034Z,mn Ambient Light Sensor Non-wakeup,994.5,3
+226634110345803,2026-10-26T21:03:17.177Z,mn Proximity Sensor Wakeup,0.0,3
+226634578268407,2026-10-26T21:03:17.644Z,icp201xx Pressure Sensor Non-wakeup,995.25,3

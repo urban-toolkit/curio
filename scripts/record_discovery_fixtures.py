@@ -74,6 +74,16 @@ PLAN = {
 STORAGE_PLAN = {
     "source.aws.sentinel-2-chicago@1": {"slug": "s3"},
     "source.huggingface.documentation-images@1": {"slug": "huggingface"},
+    "source.sideseeing.street-captures@1": {
+        "slug": "sideseeing",
+        "tables": {
+            "gps": "download/storage/sideseeing/gps.csv",
+            "sensors-one": "download/storage/sideseeing/sensors.one.csv",
+            "sensors-three": "download/storage/sideseeing/sensors.three.csv",
+            "sensors-three-uncalibrated": "download/storage/sideseeing/sensors.three.uncalibrated.csv",
+            "cell": "download/storage/sideseeing/cell.csv",
+        },
+    },
     "source.sage.idot-crossings@1": {
         "slug": "idot",
         # 168,023 objects on 169 listing pages.
@@ -521,7 +531,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--only",
-        help="record one provider slug (socrata, ckan, arcgis, wfs, s3, huggingface, idot, mapillary, "
-             "huggingface-models, nominatim)",
+        help="record one provider slug (socrata, ckan, arcgis, wfs, s3, huggingface, sideseeing, idot, "
+             "mapillary, huggingface-models, nominatim)",
     )
     record(parser.parse_args().only)
