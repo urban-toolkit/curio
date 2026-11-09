@@ -12,6 +12,15 @@ starts each with three environment variables, which only the launcher sets
 A backend started without them, by hand or by a test, is process 0 of 1 and
 makes its own boot id.
 
+A start of several backends also gives each the two variables a backend
+reaches another with, for a change to a dataflow that other process owns
+(``backend/app/collaboration/owner_calls.py``):
+
+- ``CURIO_BACKEND_PORTS``: every process's port on 127.0.0.1, by number,
+  comma separated (:func:`port_of`);
+- ``CURIO_BACKEND_TOKEN``: the secret the start's backends show each other,
+  which only backends hold (:func:`token`).
+
 Process 0 is the home process. It alone does the startup work: the shared
 guest, the hosted guests' copies dropped, the agents and the examples put
 back, the monitor's histories started anew, the guest cleanup and the kept
@@ -45,6 +54,10 @@ PROCESS_VARIABLE = "CURIO_BACKEND_PROCESS"
 PROCESSES_VARIABLE = "CURIO_BACKEND_PROCESSES"
 #: The start's boot id.
 BOOT_ID_VARIABLE = "CURIO_BOOT_ID"
+#: Every backend process's port on 127.0.0.1, by number, comma separated.
+PORTS_VARIABLE = "CURIO_BACKEND_PORTS"
+#: The secret the start's backends show each other on a call between them.
+TOKEN_VARIABLE = "CURIO_BACKEND_TOKEN"
 
 #: The home process's number.
 HOME = 0
@@ -115,6 +128,24 @@ def environment(*, process: int, processes: int, boot_id: str) -> dict[str, str]
     if not given[BOOT_ID_VARIABLE]:
         raise ValueError("a start's backends need its boot id")
     return given
+
+
+def port_of(process: int, environ: Mapping[str, str] | None = None) -> int:
+    """The port on 127.0.0.1 the backend numbered *process* serves at, as
+    ``CURIO_BACKEND_PORTS`` lists it. A ``ValueError`` names what is missing
+    when the launcher listed no such port."""
+    environ = _environ(environ)
+    text = (environ.get(PORTS_VARIABLE) or "").strip()
+    listed = [part.strip() for part in text.split(",")] if text else []
+    if not 0 <= process < len(listed) or not listed[process].isdigit():
+        raise ValueError(f"{PORTS_VARIABLE} names no port for backend process {process}: {text!r}")
+    return int(listed[process])
+
+
+def token(environ: Mapping[str, str] | None = None) -> str:
+    """The secret the start's backends show each other, ``""`` when the
+    launcher set none."""
+    return (_environ(environ).get(TOKEN_VARIABLE) or "").strip()
 
 
 def shard_of(dataflow_id, processes: int) -> int:

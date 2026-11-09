@@ -181,7 +181,7 @@ from pycrdt import (
     write_message,
 )
 
-from utk_curio.backend.app.collaboration import doc_mapping, history, owner_uses, roles, room_state
+from utk_curio.backend.app.collaboration import doc_mapping, history, owner_guard, owner_uses, roles, room_state
 from utk_curio.backend.app.collaboration.events import (
     READ_ONLY_REFUSAL,
     _project,
@@ -413,9 +413,11 @@ def _write_atomically(path: Path, data: bytes) -> None:
                 tmp.unlink()
 
 
-def _records(data: bytes) -> list[tuple[int, bytes]]:
+def _records(data: bytes, *, quiet: bool = False) -> list[tuple[int, bytes]]:
     """The updates in a segment, each with the place its record ends at. A
-    record cut short, by a crash in the middle of an append, ends the segment."""
+    record cut short, by a crash in the middle of an append, ends the segment.
+    *quiet*: the segment is another process's, which may be appending the
+    record still, so one cut short is no damage to warn of."""
     records: list[tuple[int, bytes]] = []
     i, end = 0, len(data)
     while i < end:
@@ -430,7 +432,8 @@ def _records(data: bytes) -> list[tuple[int, bytes]]:
             if byte < 0x80:
                 break
         if i + length > end:
-            logger.warning("a segment of an update log ends with an update cut short; the rest is dropped")
+            if not quiet:
+                logger.warning("a segment of an update log ends with an update cut short; the rest is dropped")
             return records
         records.append((i + length, data[i:i + length]))
         i += length
@@ -441,9 +444,10 @@ def _segment_files(log_dir: Path, day: str) -> tuple[Path, Path]:
     return log_dir / f"{day}.bin", log_dir / f"{day}.updates"
 
 
-def _rebuild(folder: Path, doc_id: str, day: str, *, upto: Optional[int] = None):
+def _rebuild(folder: Path, doc_id: str, day: str, *, upto: Optional[int] = None, quiet: bool = False):
     """The doc *doc_id* as its log holds it at the end of *day*'s segment, or
-    *upto* bytes into its updates: the day's checkpoint, then its updates."""
+    *upto* bytes into its updates: the day's checkpoint, then its updates.
+    *quiet*: another process writes the log (:func:`_records`)."""
     checkpoint, updates = _segment_files(folder / LOG_DIR / doc_id, day)
     doc = doc_mapping.new_doc()
     doc.apply_update(checkpoint.read_bytes())
@@ -451,7 +455,7 @@ def _rebuild(folder: Path, doc_id: str, day: str, *, upto: Optional[int] = None)
         data = updates.read_bytes()
     except FileNotFoundError:
         data = b""
-    for end, record in _records(data):
+    for end, record in _records(data, quiet=quiet):
         if upto is not None and end > upto:
             break
         try:
@@ -843,14 +847,17 @@ def _built_anew_if_grown(entry: _OpenDoc) -> None:
 
 
 @contextmanager
-def _held(project_id: str, user_key: str, *, unmade: Optional[dict] = None) -> Iterator[_OpenDoc]:
+def _held(project_id: str, user_key: str, *, unmade: Optional[dict] = None,
+          source: Optional[str] = None) -> Iterator[_OpenDoc]:
     """The open doc of the dataflow, opened if it is not, with its lock held.
     A doc open under the same id for another account is not this dataflow's
     (only tests reuse an id across accounts): it is dropped, writing nothing.
     *unmade*, for a hosted guest's copy with no spec yet, is the spec of the
-    dataflow it copies, which a doc this opens is built from in memory
-    (:func:`_load_unmade`)."""
+    dataflow it copies, *source*, which a doc this opens is built from in
+    memory (:func:`_load_unmade`). Only the process that owns the dataflow
+    keeps its doc: any other is refused (``owner_guard.NotTheOwner``)."""
     user_key = str(user_key)
+    owner_guard.refuse(project_id, user_key, what="opening its doc", source=source)
     while True:
         with _lock:
             entry = _docs.get(project_id)
@@ -1224,10 +1231,18 @@ def reset_for_tests() -> None:
 def read(user_key: str, project_id: str) -> Optional[dict]:
     """The dataflow's spec as it is now: its open doc's dataflow over the file.
     A doc that is not open but whose log holds changes its spec does not, which
-    a stopped backend can leave, is opened to read them."""
+    a stopped backend can leave, is opened to read them. In a process that
+    does not own the dataflow (``owner_guard.py``), whose owner may hold the
+    doc open, the file and its log are replayed into a doc this process does
+    not keep (:func:`_replayed`)."""
+    user_key = str(user_key)
     spec = storage.read_spec(user_key, project_id)
     if spec is None:
         return None
+    owner = owner_guard.elsewhere(project_id, user_key)
+    if owner is not None:
+        owner_guard.noted("read", project_id, owner)
+        return _replayed(user_key, project_id, spec)
     if _open_entry(project_id, user_key) is None and not _behind(user_key, project_id):
         return spec
     try:
@@ -1242,10 +1257,80 @@ def _as_read(spec: dict, entry: _OpenDoc) -> dict:
     """*spec*, what the file holds, with the open doc's dataflow as its own,
     each part of it that reads as the file holds it as the file holds it: a
     read of an open doc reads as the file the doc will write."""
+    return _read_with(spec, entry.doc)
+
+
+def _read_with(spec: dict, doc) -> dict:
+    """*spec* with *doc*'s dataflow as its own, as :func:`_as_read` reads it."""
     dataflow = _dataflow_of(spec)
     out = dict(spec)
-    out["dataflow"] = _as_the_file_holds(doc_mapping.doc_to_dataflow(entry.doc), dataflow, dataflow)
+    out["dataflow"] = _as_the_file_holds(doc_mapping.doc_to_dataflow(doc), dataflow, dataflow)
     return out
+
+
+#: How many times a replay reads the pointer, the file and the pointer again
+#: before it takes the file alone: each time the owner wrote meanwhile.
+REPLAY_TRIES = 3
+
+
+def _replayed(user_key: str, project_id: str, spec: dict) -> dict:
+    """The dataflow as it is now, read by a process that does not own it:
+    *spec*, the file, with the doc its log holds as its dataflow, as the
+    owner's doc reads it (:func:`_load`, :func:`_catch_up`). The doc is built
+    in memory and dropped: nothing is opened, kept, written or relayed here.
+
+    The owner may append to the log while this reads it: a record it is
+    still writing ends the replay, and a pointer that moved between this
+    read's two looks at it, a write of the file meanwhile, has it read again.
+    A dataflow whose log is no further than its file, or whose log does not
+    read, reads as its file."""
+    if not _behind(user_key, project_id):
+        return spec
+    try:
+        folder = storage.project_dir(user_key, project_id)
+    except ValueError:
+        return spec
+    for _try in range(REPLAY_TRIES):
+        pointer = _read_pointer(folder)
+        if pointer is None:
+            return spec
+        file = storage.read_spec_file(user_key, project_id)
+        if not isinstance(file.spec, dict):
+            return spec
+        if _read_pointer(folder) != pointer:
+            continue
+        try:
+            doc = _replay_doc(folder, pointer, file)
+        except (OSError, ValueError, RuntimeError, doc_mapping.DocMappingError):
+            logger.warning("dataflow %s: its log could not be replayed here; its file is read", project_id,
+                           exc_info=True)
+            return spec
+        return spec if doc is None else _read_with(spec, doc)
+    logger.warning("dataflow %s: its owner wrote it through each of %d replays; its file is read",
+                   project_id, REPLAY_TRIES)
+    return spec
+
+
+def _replay_doc(folder: Path, pointer: dict, file: "storage.SpecFile"):
+    """The doc the log *pointer* names holds, with what *file* holds that was
+    written outside the doc since the doc last wrote it carried in, as
+    :func:`_load` and :func:`_catch_up` carry it in; ``None`` when the log
+    holds another doc than its pointer names."""
+    doc = _rebuild(folder, pointer["doc"], pointer["segment"], quiet=True)
+    if doc_mapping.doc_id(doc) != pointer["doc"]:
+        return None
+    if file.revision != pointer["specRevision"]:
+        folded = pointer["folded"]
+        try:
+            base = doc_mapping.doc_to_dataflow(
+                _rebuild(folder, pointer["doc"], folded["segment"], upto=folded["offset"], quiet=True)
+            )
+        except (OSError, ValueError, RuntimeError):
+            base = doc_mapping.doc_to_dataflow(doc)
+        with doc.transaction(origin=SPEC_ORIGIN):
+            doc_mapping.apply_dataflow(doc, base, _owned(_in_sets(file.spec)))
+            _take_out(doc, tuple(_dangling(doc)))
+    return doc
 
 
 def is_open(project_id: str) -> bool:
