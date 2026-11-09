@@ -14,7 +14,6 @@ writes its table itself, already in WGS84, and the file is moved in as it is.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import time
 import uuid
@@ -279,54 +278,56 @@ class ServiceAcquire:
             raise DiscoveryError(f"{manifest.name} has no {spec.name.lower()} in {place} that match")
         if self._install_path is None:  # pragma: no cover - wired in service.py
             raise DiscoveryError("this Curio cannot add a collection from a service")
-        # The images move into the account's media cache, under its cap.
-        cache_collection.check_room(self.user_key, sum(image.size for image in answer.images))
-        if stage is not None:
-            stage(f"Indexing {len(answer.images):,} images…")
-        now = time.time()
-        files = [
-            MatchedFile(relpath=image.relpath, size=image.size, mtime=now, values={}, etag=image.image_id)
-            for image in answer.images
-        ]
-        rows = index_collection.build_rows(manifest, _Folder(root), spec, files, cancelled=cancelled)
-        for row, image in zip(rows, answer.images):
-            # What the service says about an image is more than its pixels say:
-            # the photographer, the capture time and the corrected position.
-            row.update({key: value for key, value in image.columns.items() if value is not None})
-        frame, columns = index_collection.to_frame(spec, rows)
-        dest = root / "index.parquet"
-        has_gps = index_collection.write_index(spec, frame, columns, dest)
-        block = index_collection.collection_block(
-            manifest, spec, resource_id, _WHOLE, files, frame, has_gps=has_gps
-        )
-        provenance = {
-            "sourceId": manifest.dir_name,
-            "sourceName": manifest.name,
-            "resourceId": resource_id,
-            "fileCount": len(files),
-            "fetchedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "fingerprint": block["fingerprint"],
-            "parameters": values,
-            "parametersHash": values_hash,
-        }
-        if stage is not None:
-            stage("Adding to your Data Catalog…")
-        label = (title or "").strip() or f"{spec.name}, {place}"
-        description = f"{len(files):,} {spec.name.lower()} from {manifest.name} for {place}"
-        if note:
-            description += f"; {note}"
-        if attribution:
-            description += f". {attribution}"
-        dataset = self._install_path(
-            dest, "index.parquet", "collection",
-            title=label, discovery_source=provenance, row_count=len(rows),
-            collection=block, description=description + ".",
-        )
-        target = cache_collection.objects_dir(self.user_key, dataset["id"])
-        for row, image in zip(rows, answer.images):
-            final = target / cache_collection.cached_name(row["file_id"], row["ext"])
-            os.replace(image.path, final)
-            media_dirs.grant_to_child(final)
+        # The images move into the account's media cache, under its cap, and
+        # hold their room there from this check until each has moved in: a
+        # cache or add started meanwhile, in any backend process, counts them.
+        with cache_collection.room_for(self.user_key, sum(image.size for image in answer.images)) as room:
+            if stage is not None:
+                stage(f"Indexing {len(answer.images):,} images…")
+            now = time.time()
+            files = [
+                MatchedFile(relpath=image.relpath, size=image.size, mtime=now, values={}, etag=image.image_id)
+                for image in answer.images
+            ]
+            rows = index_collection.build_rows(manifest, _Folder(root), spec, files, cancelled=cancelled)
+            for row, image in zip(rows, answer.images):
+                # What the service says about an image is more than its pixels say:
+                # the photographer, the capture time and the corrected position.
+                row.update({key: value for key, value in image.columns.items() if value is not None})
+            frame, columns = index_collection.to_frame(spec, rows)
+            dest = root / "index.parquet"
+            has_gps = index_collection.write_index(spec, frame, columns, dest)
+            block = index_collection.collection_block(
+                manifest, spec, resource_id, _WHOLE, files, frame, has_gps=has_gps
+            )
+            provenance = {
+                "sourceId": manifest.dir_name,
+                "sourceName": manifest.name,
+                "resourceId": resource_id,
+                "fileCount": len(files),
+                "fetchedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "fingerprint": block["fingerprint"],
+                "parameters": values,
+                "parametersHash": values_hash,
+            }
+            if stage is not None:
+                stage("Adding to your Data Catalog…")
+            label = (title or "").strip() or f"{spec.name}, {place}"
+            description = f"{len(files):,} {spec.name.lower()} from {manifest.name} for {place}"
+            if note:
+                description += f"; {note}"
+            if attribution:
+                description += f". {attribution}"
+            dataset = self._install_path(
+                dest, "index.parquet", "collection",
+                title=label, discovery_source=provenance, row_count=len(rows),
+                collection=block, description=description + ".",
+            )
+            target = cache_collection.objects_dir(self.user_key, dataset["id"])
+            for row, image in zip(rows, answer.images):
+                final = target / cache_collection.cached_name(row["file_id"], row["ext"])
+                cache_collection.land(image.path, final, self.user_key, room, image.size)
+                media_dirs.grant_to_child(final)
         return dataset
 
     def _incoming_dir(self) -> Path:
