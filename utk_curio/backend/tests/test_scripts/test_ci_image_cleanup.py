@@ -4,9 +4,10 @@
 after a filtered run's collection. No CI image outlives its job, on any runner
 and whatever the job did: the CI stacks' image names (``curio-ci*-curio``) and
 every pulled CI image go, this commit's too. No other image is ever named for
-removal, and none with -f, so an image a container uses stays. An arcade
-runner, whose daemon only CI uses, also loses all its build cache; elsewhere
-only what no build used for a day goes.
+removal, and none with -f, so an image a container uses stays. An arcade CPU
+runner, whose daemon only CI uses, also loses all its build cache; elsewhere,
+an arcade GPU runner among them, only what no build used for a day goes, so
+test-gpu's next build there reuses its layers.
 """
 from __future__ import annotations
 
@@ -103,11 +104,14 @@ def test_a_job_cancelled_before_its_pull_removes_the_images_earlier_jobs_left(tm
 
 @pytest.mark.parametrize("runner,prune", [
     ("arcade-cpu-07", "builder prune -af"),
-    ("arcade-gpu-03", "builder prune -af"),
+    ("arcade-cpu-40", "builder prune -af"),
+    # 11-08: test-gpu built its image in 682 s on an arcade GPU runner with no
+    # cache, against 27 to 40 s with it.
+    ("arcade-gpu-03", "builder prune -af --filter until=24h"),
     ("utk-gpu", "builder prune -af --filter until=24h"),
     ("utk-desktop-03", "builder prune -af --filter until=24h"),
 ])
-def test_all_build_cache_goes_on_arcade_and_a_days_unused_elsewhere(tmp_path, runner, prune):
+def test_all_build_cache_goes_on_an_arcade_cpu_runner_and_a_days_unused_elsewhere(tmp_path, runner, prune):
     result, calls, _, _ = _cleanup(tmp_path, runner)
     assert result.returncode == 0, result.stderr
     assert [call for call in calls if call.startswith("builder prune")] == [prune]

@@ -7,7 +7,7 @@
 #   bash scripts/ci_disk.sh wait-tools
 #
 # free prints the room left on the file systems of Docker's data root, where
-# the CI image of about 17 GB is pulled or built, and of the job's workspace,
+# the CI image is pulled or built, and of the job's workspace,
 # under "Free disk <when>:". start-stack prints it before the pull, stop-stack
 # at the job's end with the stack still up, and the image cleanup after it, so
 # every job's log says how close it came to a full disk. An arcade runner's
@@ -16,7 +16,7 @@
 # drop-tools removes, on a GitHub-hosted runner only, the toolchains its image
 # comes with that no CI job uses (TOOLS), for room for the image: GitHub
 # promises 14 GB of disk on a standard runner, and a job holds the image plus
-# image-env's 9.4 GB copy of its packages. It prints the free disk, then runs
+# image-env's copy of its packages. It prints the free disk, then runs
 # the removal in the background, so the pull or build does not wait for it.
 # Kept: the Pythons and Nodes setup-python and setup-node pick from
 # (opt/hostedtoolcache/Python and node), and Google Chrome, which the e2e
@@ -68,7 +68,6 @@ drop_tools() {
   for tool in "${TOOLS[@]}"; do
     paths+=("$ROOT/$tool")
   done
-  paths+=("$ROOT"/usr/local/julia*)
   # shellcheck disable=SC2086
   nohup $SUDO rm -rf "${paths[@]}" > /dev/null 2>&1 &
   echo $! > "$PIDFILE"

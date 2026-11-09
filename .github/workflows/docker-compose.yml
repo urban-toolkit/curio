@@ -356,12 +356,14 @@ jobs:
   # reads main's, but a PR's or a branch's layers can be read only by that
   # PR's or branch's later runs, which almost never used them. Writing them
   # added about 20 s to each build that ran webpack, and they filled the
-  # repository's 10 GB of Actions cache, evicting main's layers. The GPU jobs
-  # keep building their own image, so the GPU path never waits on this one:
-  # from the runner's local cache, but from nothing on arcade, whose runners
-  # drop their build cache after each job (about 130 to 180 s instead of 30 to
-  # 40, scripts/ci_image_cleanup.sh). Its last step, after a build or a reuse
-  # alike, picks the runners of the jobs that wait on it.
+  # repository's 10 GB of Actions cache, evicting main's layers. It has
+  # torch's CPU build (CURIO_TORCH=cpu, see the Dockerfile): no job that pulls
+  # it reaches a GPU, and with the CUDA build an arcade runner's disk held
+  # about 17 GB of it, packed and unpacked, 44 runners at once. The GPU jobs
+  # keep building their own image, with the CUDA build, so the GPU path never
+  # waits on this one: from the runner's local cache, which
+  # scripts/ci_image_cleanup.sh keeps for a day there. Its last step, after a
+  # build or a reuse alike, picks the runners of the jobs that wait on it.
   build-image:
     needs: pick-runners
     # A tests run of Jest files alone needs no image.
@@ -439,8 +441,8 @@ jobs:
         with:
           fetch-depth: 2
 
-      # A build on a GitHub-hosted runner holds the whole image of about 17 GB
-      # and its layers; the toolchains no CI job uses go while it runs.
+      # A build on a GitHub-hosted runner holds the whole image and its
+      # layers; the toolchains no CI job uses go while it runs.
       - name: 📏 Free disk, and room for the image (GitHub-hosted)
         run: |
           bash scripts/ci_disk.sh free "before the build"
@@ -509,7 +511,9 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          build-args: CURIO_CI_SETUP=1
+          build-args: |
+            CURIO_CI_SETUP=1
+            CURIO_TORCH=cpu
           push: true
           tags: |
             ${{ steps.name.outputs.image }}

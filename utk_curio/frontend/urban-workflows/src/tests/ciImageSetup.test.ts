@@ -12,11 +12,17 @@
  * in the image, which ships no compose file or workflow, so this check lives
  * here.
  *
- * No CI image outlives its job on a self-hosted runner: the image is about
- * 17 GB, and the 44 arcade runners share one disk, which the images they kept
- * between jobs filled on 11-08. So every job that pulls, builds or takes an
- * image there runs scripts/ci_image_cleanup.sh (tested in the backend suite)
- * at its end whatever its steps did, through stop-stack or a step of its own,
+ * build-image's image has torch's CPU build (the Dockerfile's CURIO_TORCH):
+ * every job that pulls it runs on a CPU, and the CUDA build's layer was 7.5 GB
+ * of its 11.6 GB, on each of up to 44 arcade runners at once. The images built
+ * by test-gpu and test-gpu-stress, the only jobs that build their own, and
+ * the deploy's keep the CUDA build.
+ *
+ * No CI image outlives its job on a self-hosted runner: the image was about
+ * 17 GB on disk, and the 44 arcade runners share one disk, which the images
+ * they kept between jobs filled on 11-08. So every job that pulls, builds or
+ * takes an image there runs scripts/ci_image_cleanup.sh (tested in the backend
+ * suite) at its end whatever its steps did, through stop-stack or a step of its own,
  * and its first step removes what a job ended before its cleanup left. On a
  * GitHub-hosted runner start-stack and build-image make room for the image
  * first (scripts/ci_disk.sh, tested in the backend suite).
@@ -68,8 +74,26 @@ describe("CI's image and the deploy's", () => {
         expect(read("Dockerfile")).toMatch(/^ARG CURIO_CI_SETUP=0$/m);
     });
 
-    test("build-image builds the CI image", () => {
-        expect(jobs().get("build-image")).toMatch(/^ {10}build-args: CURIO_CI_SETUP=1$/m);
+    test("build-image builds the CI image, with torch's CPU build", () => {
+        expect(jobs().get("build-image")).toMatch(/^ {10}build-args: \|\n {12}CURIO_CI_SETUP=1\n {12}CURIO_TORCH=cpu$/m);
+    });
+
+    test("the Dockerfile builds torch for CUDA unless asked", () => {
+        expect(read("Dockerfile")).toMatch(/^ARG CURIO_TORCH=cuda$/m);
+    });
+
+    test.each([...CI_OVERLAYS, "docker-compose.ci-shards.yml", ...DEPLOY_FILES])(
+        "%s keeps torch's CUDA build",
+        (file) => {
+            expect(read(file)).not.toContain("CURIO_TORCH");
+        },
+    );
+
+    test("the jobs that build their own image are the GPU jobs", () => {
+        const building = Array.from(jobs())
+            .filter(([, job]) => /docker compose -p \S+ build/.test(job))
+            .map(([name]) => name);
+        expect(building.sort()).toEqual(["test-gpu", "test-gpu-stress"]);
     });
 
     test("a job that runs test.sh --skip-setup on the runner takes the image's packages first", () => {

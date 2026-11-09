@@ -42,9 +42,10 @@ runs:
       shell: bash
       run: python3 scripts/ci_memory_budget.py --github-env
 
-    # The image is about 17 GB. On a GitHub-hosted runner the toolchains no CI
-    # job uses go while it is pulled, and the step after the wait says how
-    # much room that left (scripts/ci_disk.sh).
+    # A pulled image takes its size twice on disk, packed and unpacked. On a
+    # GitHub-hosted runner the toolchains no CI job uses go while it is
+    # pulled, and the step after the wait says how much room that left
+    # (scripts/ci_disk.sh).
     - name: 📏 Free disk, and room for the image (GitHub-hosted)
       shell: bash
       run: |

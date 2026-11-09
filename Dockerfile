@@ -43,11 +43,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # driver's libcuda.so.1 and the GPU come from the host, through its NVIDIA
 # Container Toolkit, to a container that asks for a GPU
 # (docker-compose.ci-shards.yml), so the build stops on a copy of it anywhere
-# in the image, which would hide the host's.
+# in the image, which would hide the host's. CURIO_TORCH=cpu takes the CPU
+# builds on x86_64 too: build-image's image, which only jobs that never reach
+# a GPU pull. Unpacked, this layer is 7.5 GB of CI's 11.6 GB image with the
+# CUDA builds and 1 GB with the CPU builds (11-08), and up to 44 arcade
+# runners hold a copy at once.
+ARG CURIO_TORCH=cuda
 RUN set -eu; \
-    case "$(dpkg --print-architecture)" in \
-      amd64) build=cu129 ;; \
-      *) build=cpu ;; \
+    case "$CURIO_TORCH/$(dpkg --print-architecture)" in \
+      cuda/amd64) build=cu129 ;; \
+      cuda/*|cpu/*) build=cpu ;; \
+      *) echo "CURIO_TORCH is cuda or cpu, not $CURIO_TORCH" >&2; exit 1 ;; \
     esac; \
     pip install --no-cache-dir \
       --index-url "https://download.pytorch.org/whl/$build" --extra-index-url https://pypi.org/simple \

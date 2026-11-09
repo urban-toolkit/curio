@@ -32,7 +32,6 @@ DROPPED = [
     "opt/hostedtoolcache/go",
     "opt/hostedtoolcache/Ruby",
     "opt/hostedtoolcache/PyPy",
-    "usr/local/julia1.12.1",
 ]
 KEPT = [
     "opt/hostedtoolcache/Python/3.12.16",
