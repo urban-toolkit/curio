@@ -243,7 +243,7 @@ class StorageAcquire:
         # with nothing read from them.
         mount = bucket_mount_sources.ensure(manifest)
         if mount.state == "down":
-            raise StorageUnavailable(f"{manifest.name}'s bucket cannot be read now: {mount.reason}")
+            raise StorageUnavailable(f"{manifest.name} cannot be read now: {mount.reason}")
         provider = self._storage_for(manifest)
         if stage:
             stage("Finding the files…")
