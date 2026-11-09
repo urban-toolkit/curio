@@ -126,6 +126,9 @@ jest.mock("../../../utils/palettePackageFactoryDraft", () => ({
 
 import CodeEditor from "../../../components/editing/CodeEditor";
 import { SCROLLBAR_PX } from "../../../components/editing/nodeEditorScrolling";
+import { forgetNodeFunctions } from "../../../services/packages/nodeFunctions";
+import { packagesApi } from "../../../services/packages/packagesApi";
+import { clearToken, setToken } from "../../../utils/authApi";
 
 const { __editors, __setModelMarkers, __monacoStub } = jest.requireMock("@monaco-editor/react");
 const lastEditor = () => __editors[__editors.length - 1];
@@ -431,6 +434,47 @@ describe("CodeEditor's look", () => {
         expect(lastEditor().props.options.lineNumbers).toBeUndefined();
         expect(outputBox().style.backgroundColor).toBe("rgb(247, 247, 247)");
         expect(outputBox().style.borderTop).toContain("solid");
+    });
+});
+
+/**
+ * The header's Functions are read where a node's code is edited. The
+ * dashboard page mounts every node of the dataflow and asks the server for
+ * nothing but its own runs, so a code editor there reads no list, even in a
+ * browser that holds a session.
+ */
+describe("what a node's code can call is read on the canvas, never on a dashboard", () => {
+    let nodeFunctions: jest.SpyInstance;
+
+    beforeEach(() => {
+        setToken("a-session-token");
+        // The lists are kept per page: each test starts with none read.
+        forgetNodeFunctions();
+        nodeFunctions = jest.spyOn(packagesApi, "nodeFunctions").mockResolvedValue({ engine: "python", curio: [], modules: [] });
+    });
+    afterEach(() => {
+        nodeFunctions.mockRestore();
+        clearToken();
+        mockFlow.dashboardOn = false;
+    });
+
+    /** Lets a read the editor asked for reach the API and come back. */
+    const settle = () => act(async () => {
+        for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    });
+
+    test("on the canvas, with a session, the editor reads its node's list", async () => {
+        renderCodeEditor(SAVED_CODE);
+        await settle();
+        expect(nodeFunctions.mock.calls.map(([nodeType]) => nodeType)).toEqual(["curio.builtin/python-computation@1"]);
+    });
+
+    test("on a dashboard tile, with a session, it reads nothing and a capture has nothing to wait for", async () => {
+        mockFlow.dashboardOn = true;
+        renderCodeEditor(SAVED_CODE);
+        await settle();
+        expect(nodeFunctions).not.toHaveBeenCalled();
+        expect(document.querySelector("[data-curio-functions]")!.getAttribute("data-curio-functions")).toBe("ready");
     });
 });
 

@@ -29,6 +29,9 @@ import numpy as np
 import osmnx as ox
 import pandas as pd
 
+#: Nothing: node code imports calculate_weather_route from the package, weather_routing.
+__all__ = []
+
 #: ``oneway`` values that keep a line to the direction it is drawn in, and to the other.
 ONEWAY_ALONG = frozenset({"yes", "true", "1"})
 ONEWAY_AGAINST = frozenset({"-1", "reverse"})

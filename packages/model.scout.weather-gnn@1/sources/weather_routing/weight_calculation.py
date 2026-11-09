@@ -23,6 +23,8 @@ backend/models/routing/scripts/weight_calculation.py. What changed:
   calls) are left out, as are SCOUT's print lines, its first computation of
   the edge indices and lengths (its second one replaces it), its unused
   ``u_idx`` and its repeated numpy imports.
+- ``__all__`` names nothing: node code imports ``calculate_weather_route``
+  from ``weather_routing`` itself (``__init__.py``).
 
 The weather at each node is the value of the WRF cell nearest to it
 (``build_grid_kdtree``): the WRF grid is a Lambert conformal one, given cell
@@ -41,6 +43,8 @@ import networkx as nx
 import geopandas as gpd
 from shapely.geometry import Point
 from scipy.spatial import cKDTree
+
+__all__ = []  # Curio: __all__ names nothing
 
 #: The minutes each zone of a trip covers (calculate_isochrones).
 ZONE_MINUTES = 15  # Curio: A trip's 15-minute zones read the weather's hourly step each zone starts in

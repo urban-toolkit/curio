@@ -481,8 +481,8 @@ are what its scenario chips write.
   `NodeEditor` resolves the spec in (`VEGA_LITE` for the built-in node and any template
   whose `grammarId` says so), the node's inputs with their labels (`useInputScope`), its
   widgets and selection tags, never its code, so built-in and package nodes of one
-  grammar get the same header. It is one row of categories, Inputs, Scenarios, Widgets
-  and Selections, each with its count and only when it has chips. They start closed,
+  grammar get the same header. It is one row of categories, Inputs, Functions, Scenarios,
+  Widgets and Selections, each with its count and only when it has something. They start closed,
   a click opens a category's chips under the row and closes the one open, and
   `stripCategories.ts` keeps the open one per node id
   outside React, so a tab switch or a remount keeps it; `ProjectLoader` closes them all
@@ -513,6 +513,29 @@ are what its scenario chips write.
   box, and what the chip writes there: for a scale the names alone, in the grammar's
   own colors; for **order** the names of the nodes its inputs come from; for an input's
   chip its gray.
+- Functions, above code only, lists what the node's code can call, the list agents
+  read: `GET /api/packages/node-functions?nodeType=&dataflowId=`
+  (`function_nodes.functions_on_the_node` in
+  [`packages/application/function_nodes.py`](../utk_curio/backend/app/packages/application/function_nodes.py))
+  takes the engine from the node's template (`python_modules.node_template`, in the store
+  a run of the node reads), Curio's functions for that engine from
+  [`skills/node-functions/SKILL.md`](../skills/node-functions/SKILL.md) (`for_engine` in
+  `agents/domain/node_functions.py`), and, for a Python node, what
+  `function_nodes.node_functions` gives an agent that writes its code: the
+  modules `modules_for_node` hands a run, its own package's first, with `owners` as an
+  invited editor's run gets them (`node_exec.owners_packages_for`). A module offers what
+  its `__all__` names, a function it defines or imports from another module of its
+  package, else its public functions (`read_functions`). Each function comes with its
+  signature, its docstring's first paragraph and `insert`, the call with the arguments a
+  call must give. `services/packages/nodeFunctions.ts` reads a list once per dataflow and
+  node type and again when a refresh of the registry finds the installed packages changed
+  (`forgetNodeFunctions`); `CodeEditor` marks its root `data-curio-functions` while it
+  reads, which the e2e captures wait out. `FunctionsChips` draws a line per module, then
+  Curio's; a tag's hover is `FunctionPreview` (`ChipPreview.tsx`), and a click writes its
+  call at the cursor with its import line after the code's first imports when the code
+  lacks it, as one `executeEdits` (`functionCalls.insertFunctionCall`). A tag does not
+  drag. View details lists the same per package, `GET /api/packages/<dirName>/functions`
+  (`package_modules_functions`), from the account's copy, else the catalog's.
 - A change to any label's id, name, color or rank draws a chart again when what it
   draws moves: `NodeEditor.tsx` hands `applyGrammar` the spec it resolved with a
   `GrammarRedraw` (`registry/types.ts`), which writes the same code again in the same
@@ -1271,7 +1294,7 @@ When a user clicks the play button on a node, the following sequence occurs:
 
 **The owner's packages on another account's canvas.** `GET /api/packages/dataflows/<id>` lists the packages a dataflow uses as its owner's store holds them, through the same `OwnersPackages.used` (`catalog.dataflow_package_payloads`: manifests only, each `readOnly`), for anyone who may open the dataflow by its link (`routes/common.opened_dataflow_packages`, the shared read's `_opened_by_link`). The canvas asks for it only for a dataflow it opened from its link: `ProjectLoader`'s shared load refreshes the registry with the dataflow's id (`refreshPackageRegistry({ openedFromLink })`, which `projectPackagesStore.markOpenedFromLink` keeps while that dataflow is open), and `loadInstalledPackages` registers the listed packages the account does not hold, marked `ownersCopy` ([`registry/packagesClient.ts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts)). A package the account holds keeps its own copy, and only an account's own copies load behavior scripts. A node of an `ownersCopy` package has no Play on a watcher's canvas (`UniversalNode`, by `canvasRole`), since a watcher's runs read none of the owner's packages, and the palette lists its package without the actions on an account's own copy (`InstalledPackageAccordion`). A call of a package's backend handler names the dataflow its node is on (`dataflowId`, as a play names it): for an editor the owner invited (`node_exec.owners_packages_for`) and a package the dataflow uses, `backend_invoke.invoke_backend_handler` runs the owner's copy with its entry pin and its library overlay (`backend_runtime.invoke_handler`'s `package_key`), while the data dir, the ledger and the breaker stay the caller's.
 
-**New node from a Python function.** `GET /api/packages/factory/functions` lists the public functions of every module in the account's store, read with `ast` and never imported ([`packages/domain/function_nodes.py`](../utk_curio/backend/app/packages/domain/function_nodes.py)), with the widget and use each parameter suggests. `POST /api/packages/factory/function-template` reads the module again and writes the template: its code imports the function and returns its call, with `[!! name !!]` for a widget and `[!! input_k !!]` for an input ([`packages/application/function_nodes.py`](../utk_curio/backend/app/packages/application/function_nodes.py)). The dialog (`NodeFromFunctionModal`) installs it the way Save as package node does: `PackageTargetPicker`, `buildTemplateInstallDraft` and `installDraftToProject`, through `/factory/install`. A template in another package than the function's names the function's package in `dependencies.packages`.
+**New node from a Python function.** `GET /api/packages/factory/functions` lists the functions every module in the account's store offers, read with `ast` and never imported ([`packages/domain/function_nodes.py`](../utk_curio/backend/app/packages/domain/function_nodes.py)): the names its `__all__` lists, each followed through an import from another module of its package to its definition, else its public functions, as the header above a node's code and the agents list them. Each comes with the widget and use each parameter suggests. `POST /api/packages/factory/function-template` reads the module again and writes the template: its code imports the function and returns its call, with `[!! name !!]` for a widget and `[!! input_k !!]` for an input ([`packages/application/function_nodes.py`](../utk_curio/backend/app/packages/application/function_nodes.py)). The dialog (`NodeFromFunctionModal`) installs it the way Save as package node does: `PackageTargetPicker`, `buildTemplateInstallDraft` and `installDraftToProject`, through `/factory/install`. A template in another package than the function's names the function's package in `dependencies.packages`.
 
 **JavaScript execution detail:** `JS Computation` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which wraps the user code in an async function ([`util/js_wrapper.mjs`](../utk_curio/sandbox/util/js_wrapper.mjs)), pipes the script to one `node --input-type=commonjs` process on its stdin, reads the return value from the `__CURIO_JSON_RESULT__` line Node prints, and saves it to DuckDB. No separate Node.js server is needed: each run starts its own Node process, and every process Node starts ends when Node does ([Sandbox Isolation](#sandbox-isolation)).
 

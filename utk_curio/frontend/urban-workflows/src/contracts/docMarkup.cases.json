@@ -1,0 +1,76 @@
+{
+  "cases": [
+    {
+      "name": "words with no marks",
+      "doc": "Loads a Model Catalog model.",
+      "parts": [["text", "Loads a Model Catalog model."]]
+    },
+    {
+      "name": "reST's literal and emphasis",
+      "doc": "Minutes of shadow a pixel at 1 stands for, in *season* (SCOUT's ``run_shadow_model``).",
+      "parts": [
+        ["text", "Minutes of shadow a pixel at 1 stands for, in "],
+        ["emphasis", "season"],
+        ["text", " (SCOUT's "],
+        ["code", "run_shadow_model"],
+        ["text", ")."]
+      ]
+    },
+    {
+      "name": "Markdown's code",
+      "doc": "Loads a Model Catalog model: `model.run({input name: array})` runs its graph, and `model.path` is its folder.",
+      "parts": [
+        ["text", "Loads a Model Catalog model: "],
+        ["code", "model.run({input name: array})"],
+        ["text", " runs its graph, and "],
+        ["code", "model.path"],
+        ["text", " is its folder."]
+      ]
+    },
+    {
+      "name": "a role",
+      "doc": "Rasters that lie on one grid (:func:`mosaic_grid`), side by side.",
+      "parts": [["text", "Rasters that lie on one grid ("], ["code", "mosaic_grid"], ["text", "), side by side."]]
+    },
+    {
+      "name": "a role with its domain",
+      "doc": "As :py:func:`tile_bounds` gives them.",
+      "parts": [["text", "As "], ["code", "tile_bounds"], ["text", " gives them."]]
+    },
+    {
+      "name": "strong",
+      "doc": "The file is **never** written.",
+      "parts": [["text", "The file is "], ["strong", "never"], ["text", " written."]]
+    },
+    {
+      "name": "stars that mark nothing",
+      "doc": "2 * 3 * 4 cells, r0*r1*2, *args and **kwargs.",
+      "parts": [["text", "2 * 3 * 4 cells, r0*r1*2, *args and **kwargs."]]
+    },
+    {
+      "name": "stars a word goes on after",
+      "doc": "*value*s stay as written.",
+      "parts": [["text", "*value*s stay as written."]]
+    },
+    {
+      "name": "stars inside code",
+      "doc": "``f(*args)`` runs it.",
+      "parts": [["code", "f(*args)"], ["text", " runs it."]]
+    },
+    {
+      "name": "a backtick inside a literal",
+      "doc": "Splits on ``a`b``.",
+      "parts": [["text", "Splits on "], ["code", "a`b"], ["text", "."]]
+    },
+    {
+      "name": "a backtick left open",
+      "doc": "It's `odd.",
+      "parts": [["text", "It's `odd."]]
+    },
+    {
+      "name": "no words",
+      "doc": "",
+      "parts": []
+    }
+  ]
+}
