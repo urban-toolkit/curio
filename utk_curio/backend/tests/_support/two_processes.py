@@ -84,7 +84,7 @@ class Raced:
 def _child(write: Callable[[], Any], report) -> None:
     try:
         write()
-    except BaseException:  # the test fails on what is reported here
+    except Exception:  # the test fails on what is reported here
         report.send(traceback.format_exc())
         raise
     report.send("")
@@ -130,7 +130,7 @@ def race(window: Window, child_write: Callable[[], Any], here_write: Callable[[]
         def _write_here():
             try:
                 outcome["value"] = here_write()
-            except BaseException as exc:  # raised again in the test, below
+            except Exception as exc:  # raised again in the test, below
                 outcome["error"] = exc
             finally:
                 settled.set()
