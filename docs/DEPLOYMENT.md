@@ -266,10 +266,10 @@ use*. SAM 3's 3.4 GB come from an identical copy of Meta's files.
 
 Each placed file is stamped with its digest, in `.<file>.digest` beside it,
 and is in place only while its stamp names the digest the manifest names. So
-a later Curio whose manifest names other files downloads them again at the
-model's next first use, and a file placed with no stamp, by hand or by an
-older Curio, is checked once: stamped when it matches, downloaded again when
-it does not.
+a later Curio whose manifest names other files downloads them the first time
+a node runs the model on it, and a file placed with no stamp, by hand or by
+an older Curio, is checked once: stamped when it matches, downloaded again
+when it does not.
 
 1. Pass `--model-weights-dir` to `curio.py start`, so the weights go to a
    folder of their own, which isolated node code reads in place.
