@@ -112,15 +112,15 @@ BUILTIN_NODE_TYPE = "curio.builtin/python-computation"
 
 VISIBLE_PROSE = "Here is what I found."
 
-#: How long ``api_json`` waits for a quick call by default.
+#: How long ``api_json`` waits for one call by default (``HTTP_TIMEOUT_S``).
 QUICK_CALL_S = inspect.signature(api_json).parameters["timeout"].default
 #: The hold the slow turn's model call waits on.
 SLOW_HOLD = "slow-turn"
 #: How long a turn's answer is waited for. The run route answers once the
 #: turn ended, so its answer is the turn's end, however long the turn's steps
-#: take, and this bounds only a turn that never ends. A quick call's wait is
-#: no turn's: each step of a plan is a synced write of the dataflow, which a
-#: busy disk slows past it. Longer than the scripted model holds a call
+#: take, and this bounds only a turn that never ends. One call's wait is no
+#: turn's: each step of a plan is a synced write of the dataflow, and a busy
+#: disk slows every one of them. Longer than the scripted model holds a call
 #: (``testing_provider.HOLD_MAX_S``).
 TURN_S = 180.0
 
@@ -576,8 +576,8 @@ def test_agent_runs_on_native_tools(spec, current_server: str):
 
 def test_a_turn_that_outlasts_a_quick_call_is_waited_for_to_its_end(current_server: str):
     """A turn is waited for until it ends, however long that takes. The
-    Dataflow Builder's plan, on native tools, has its model call held past a
-    quick call's wait (``api_json``'s default), as a burst of synced disk
+    Dataflow Builder's plan, on native tools, has its model call held past
+    ``api_json``'s default wait for one call, as a burst of synced disk
     writes on a busy CI host once held its writes: the run still answers with
     the plan landed."""
     require_project_page()
@@ -590,7 +590,7 @@ def test_a_turn_that_outlasts_a_quick_call_is_waited_for_to_its_end(current_serv
     over = threading.Event()
 
     def release_after_a_quick_call():
-        # Once the turn waits at the model, and a quick call's wait has passed.
+        # Once the turn waits at the model, and api_json's default wait has passed.
         try:
             while not over.is_set() and not held_agent_calls(current_server).get(SLOW_HOLD):
                 over.wait(0.1)
