@@ -89,8 +89,10 @@ _INDEXES = "visitors"
 #: The namespace of the copies' ids.
 _NAMESPACE = uuid.UUID("5d3c2a4e-7f1b-4c8e-9a6d-2b0e8f4c1a37")
 
-#: One writer of the visitors' lists at a time.
-_index_lock = threading.Lock()
+#: Beside the folder of the visitors' lists, never in it (:func:`drop_all`
+#: removes that folder): the lock every write of a list takes, and the drop of
+#: them all, so one writer at a time across threads and backend processes.
+_LISTS_LOCK = ".visitors.lock"
 
 #: The sign-in of the visitor a run on a thread of its own serves, which a
 #: request that started it handed it (:func:`serving`).
@@ -445,7 +447,7 @@ def drop_all() -> int:
     # First, so a new dataflow that stays until the next start is listed in
     # no gallery meanwhile.
     try:
-        with _index_lock:
+        with _lists_held(""):
             shutil.rmtree(_indexes(), ignore_errors=True)
     except (OSError, ValueError):
         logger.warning("could not drop the hosted guests' lists of their new dataflows", exc_info=True)
@@ -627,6 +629,19 @@ def _index(sign_in: str) -> Path:
     return _indexes() / f"{uuid.uuid5(_NAMESPACE, f'{sign_in}:dataflows').hex}.json"
 
 
+@contextmanager
+def _lists_held(key: str):
+    """Hold the visitors' lists across threads and backend processes. Every
+    write of a list and the drop of them all share one lock file, beside the
+    lists' folder; *key*, the list a write changes, keys the thread lock."""
+    from utk_curio.backend.app.common.file_locks import exclusive_lock
+
+    folder = _indexes().parent
+    folder.mkdir(parents=True, exist_ok=True)
+    with exclusive_lock(folder / _LISTS_LOCK, namespace="visitor-lists", key=key):
+        yield
+
+
 def _listed(sign_in: str) -> list[str]:
     """The ids the visitor's list holds, oldest first."""
     try:
@@ -639,12 +654,13 @@ def _listed(sign_in: str) -> list[str]:
 
 def _list(sign_in: str, own: str) -> None:
     """Add *own* to the visitor's list, written whole, so a reader never
-    sees half of it."""
-    with _index_lock:
+    sees half of it, and under the lists' lock, so a write of the list in
+    another thread or process keeps its own id too."""
+    path = _index(sign_in)
+    with _lists_held(path.name):
         listed = _listed(sign_in)
         if own in listed:
             return
-        path = _index(sign_in)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
         try:
