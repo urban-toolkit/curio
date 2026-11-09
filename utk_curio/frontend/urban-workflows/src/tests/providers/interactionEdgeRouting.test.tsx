@@ -289,7 +289,7 @@ const pick = (rows: number[]) => ({
   pick: { type: VisInteractionType.POINT, data: rows, priority: 1, source: NodeType.VIS_VEGA },
 });
 
-/** A Simple View's click on a card (adapters/node/simpleVisBehavior.tsx:158-167). */
+/** A Simple View's click on a card (adapters/node/simpleVisBehavior.tsx, `clickRow`). */
 const cardClick = (row: number) => ({
   images_click: { type: VisInteractionType.POINT, data: [row], priority: 1, source: NodeType.VIS_SIMPLE },
 });
@@ -588,7 +588,7 @@ describe('a selection follows its edges as they change', () => {
 
 describe('Simple Views', () => {
   // A Simple View marks only the rows whose `interacted` flag a Data Pool set
-  // (adapters/node/simpleVisBehavior.tsx:169-174); it never reads data.interactions.
+  // (adapters/node/simpleVisBehavior.tsx, `interacted`); it never reads data.interactions.
   test("a Simple View linked to a chart sends its clicks to the chart, and none of the Simple View's rows is flagged", async () => {
     await renderFlow();
     await addNodes(makeNode('rows', LOADER), makeNode('S', SIMPLE), makeNode('A', VEGA));
