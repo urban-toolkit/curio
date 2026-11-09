@@ -6,11 +6,13 @@ loaded by its path: the stand-in has the checkout, not Curio's libraries.
 
     selftest       the self-test the backend runs as it starts, which must read
                    as an execution account that is not root
-    source-mount   mount two sources' buckets as the backend mounts them
-                   (application/bucket_mount_sources.py): rclone takes the
-                   parameters, names each mount as the backend expects, the
-                   mount shows here, and its listing fails, since nothing
-                   listens on the proxy's port in the stand-in
+    source-mount   mount two sources' buckets at once, as the backend mounts
+                   them (application/bucket_mount_sources.py): rclone takes
+                   the parameters, names each mount as the backend expects,
+                   the mount shows here, and its listing fails, since nothing
+                   listens on the proxy's port in the stand-in; vfs/forget and
+                   vfs/refresh find each mount by that name, which the
+                   backend's reads in place give them, and refuse another
     leave-mounted  mount the service's test folder, read it as that account,
                    check it refuses a write, and leave it mounted, as a service
                    that stops without unmounting leaves its mounts
@@ -81,32 +83,82 @@ SOURCE_MOUNTS = (
 )
 #: How long a source mount's listing may take to fail with no way out.
 NO_WAY_OUT_SECONDS = 60
+#: A name no mount of the service has, in the form of the names it has.
+NO_SUCH_MOUNT = ":s3{none0}:no-such-bucket"
 
 
 def source_mount(mounts) -> int:
     folder, socket_path = mounts.configured()
     client = mounts.RcClient(socket_path)
-    for name, endpoint, bucket, prefix, path_style in SOURCE_MOUNTS:
-        parameters = mounts.s3_parameters(endpoint, path_style=path_style)
-        path = mounts.remote_path(bucket, prefix)
-        fs = mounts.connection_string("s3", parameters, path)
-        point = f"{mounts.SERVICE_MOUNTS}/{name}"
-        try:
-            client.call("operations/mkdir", {"fs": mounts.SERVICE_MOUNTS, "remote": name})
-            client.call("mount/mount", {"fs": fs, "mountPoint": point, **mounts.SOURCE_MOUNT_OPTIONS})
-        except mounts.RcError as error:
-            return fail(f"mounting {fs} at {point}: {error.reason}")
-        try:
-            failed = _a_source_mount(client, folder / name, point, mounts.listed_fs("s3", parameters, path))
-        finally:
+    made = []
+    try:
+        # Both at once: a vfs/ call that named no mount would find two and fail.
+        for name, endpoint, bucket, prefix, path_style in SOURCE_MOUNTS:
+            parameters = mounts.s3_parameters(endpoint, path_style=path_style)
+            path = mounts.remote_path(bucket, prefix)
+            fs = mounts.connection_string("s3", parameters, path)
+            point = f"{mounts.SERVICE_MOUNTS}/{name}"
+            try:
+                client.call("operations/mkdir", {"fs": mounts.SERVICE_MOUNTS, "remote": name})
+                client.call("mount/mount", {"fs": fs, "mountPoint": point, **mounts.SOURCE_MOUNT_OPTIONS})
+            except mounts.RcError as error:
+                return fail(f"mounting {fs} at {point}: {error.reason}")
+            made.append((point, fs, mounts.listed_fs("s3", parameters, path), folder / name))
+        for point, fs, listed, here in made:
+            failed = _a_source_mount(client, here, point, listed)
+            if failed:
+                return failed
+            print(f"mounted {fs} at {point}; it reached no bucket with no proxy")
+        failed = _listings(mounts, client, [listed for _point, _fs, listed, _here in made])
+        if failed:
+            return failed
+    finally:
+        for point, _fs, _listed, _here in made:
             try:
                 client.call("mount/unmount", {"mountPoint": point})
             except mounts.RcError as error:
                 print(f"could not unmount {point}: {error.reason}")
-        if failed:
-            return failed
-        print(f"mounted {fs} at {point}; it reached no bucket with no proxy, and is unmounted")
+    print("both mounts are unmounted")
     return 0
+
+
+def _listings(mounts, client, names) -> int:
+    """vfs/forget and vfs/refresh, as the backend calls them on a miss and at
+    an add, find each mount by *names*, what listmounts names it by; a name
+    no mount has is refused. A refresh answers its folder's failed listing
+    inside a call that succeeds, since nothing answers on the proxy's port."""
+    active = client.call("vfs/list").get("vfses") or []
+    missing = [name for name in names if name not in active]
+    if missing:
+        return fail(f"the service's mounts are {active}, without {missing}")
+    print(f"the service names its mounts {sorted(active)}")
+    for name in names:
+        try:
+            forgot = client.call("vfs/forget", mounts.forget_parameters(name, files=["a/b.mp4"], dirs=["a/c"]))
+        except mounts.RcError as error:
+            return fail(f"vfs/forget found no mount named {name}: {error.reason}")
+        if sorted(forgot.get("forgotten") or []) != ["a/b.mp4", "a/c"]:
+            return fail(f"vfs/forget of {name} answered {forgot}")
+        print(f"vfs/forget found {name} and forgot {sorted(forgot['forgotten'])}")
+        started = time.monotonic()
+        try:
+            answer = client.call("vfs/refresh", mounts.refresh_parameters(name, ["a/c"]),
+                                 timeout=NO_WAY_OUT_SECONDS)
+        except mounts.RcError as error:
+            return fail(f"vfs/refresh found no mount named {name}: {error.reason}")
+        failures = mounts.refresh_failures(answer)
+        if "a/c" not in failures:
+            return fail(f"vfs/refresh of {name} listed a/c with no way out: {answer}")
+        print(f"vfs/refresh found {name}, and its listing failed after {time.monotonic() - started:.1f} s, "
+              f"as it must with no way out: {failures['a/c']}")
+    try:
+        client.call("vfs/forget", mounts.forget_parameters(NO_SUCH_MOUNT, dirs=["a"]))
+    except mounts.RcError as error:
+        if "no VFS found with name" not in error.reason:
+            return fail(f"vfs/forget of a name no mount has failed for another reason: {error.reason}")
+        print(f"vfs/forget of a name no mount has is refused: {error.reason}")
+        return 0
+    return fail(f"vfs/forget found a mount named {NO_SUCH_MOUNT}")
 
 
 def _a_source_mount(client, here: Path, point: str, expected: str) -> int:

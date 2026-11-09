@@ -272,6 +272,30 @@ describe("a collection's details", () => {
     expect(screen.queryByRole("button", { name: "Cache files" })).toBeNull();
     expect(screen.queryByText("On this machine")).toBeNull();
   });
+
+  it("says a bucket this deployment mounts is read in place, and offers nothing to cache", async () => {
+    apiFetch.mockResolvedValue(
+      status({ local: true, readInPlace: true, bucketHost: "data.example.org", cachedFiles: 2, cachedBytes: 4096 }),
+    );
+    await renderPanel(item());
+    expect(screen.getByText("Read in place from data.example.org")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cache files" })).toBeNull();
+    expect(screen.queryByText("On this machine")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("names why a mounted bucket cannot be read now, and offers nothing to cache", async () => {
+    apiFetch.mockResolvedValue(
+      status({ readInPlace: false, bucketHost: "data.example.org", mountProblem: "the mount service is down" }),
+    );
+    await renderPanel(item());
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "data.example.org cannot be read now: the mount service is down",
+    );
+    expect(screen.queryByRole("button", { name: "Cache files" })).toBeNull();
+    expect(screen.queryByText("On this machine")).toBeNull();
+    expect(screen.queryByText(/Read in place from/)).toBeNull();
+  });
 });
 
 describe("a table added from a storage source", () => {

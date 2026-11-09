@@ -46,11 +46,11 @@ return track_objects(
 The node hands the function Curio's plumbing: the model, whose `path` is the
 folder of its weights, and `curio_derived_file`, which says where the overlay
 and the tracks are kept. Empty `LABELS`, a part longer than `MAX_SECONDS` and a
-video not cached yet stop the node before SAM 3 loads.
+video not on the machine yet stop the node before SAM 3 loads.
 
 The input is a collection's rows, as a Data Loading node gives them with
-`curio_load_collection(...)`, each video's file cached on the machine. Rows
-that are not videos are left out.
+`curio_load_collection(...)`, each video's file on the machine, in a mounted
+bucket or cached. Rows that are not videos are left out.
 
 ## Settings
 

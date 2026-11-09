@@ -247,10 +247,11 @@ concurrency:
 # a container with a daemon of its own (uic-evl/evl-github-runners); utk-gpu
 # runs on its host as the user deploy, on the host's daemon, which also runs
 # other stacks, and each utk-desktop runner on its desktop's daemon. So every job that can run on one starts by removing the
-# curio-ci* stacks an earlier job left and handing back the files containers
-# wrote as root (build-image's first step, `&reclaim`), and a job that starts a
-# stack tears it down at its end with stop-stack, which also removes the images
-# and build cache CI jobs leave on that daemon.
+# curio-ci* stacks and CI images an earlier job left and handing back the files
+# containers wrote as root (build-image's first step, `&reclaim`), and a job
+# that starts a stack tears it down at its end with stop-stack, which also
+# removes its CI images and build cache from that daemon: no CI image outlives
+# its job (scripts/ci_image_cleanup.sh).
 #
 # Concurrency. A PR's runs share one group with cancel-in-progress, so a new
 # push cancels the PR's older run, whose result no longer says anything about
@@ -362,10 +363,14 @@ jobs:
   # reads main's, but a PR's or a branch's layers can be read only by that
   # PR's or branch's later runs, which almost never used them. Writing them
   # added about 20 s to each build that ran webpack, and they filled the
-  # repository's 10 GB of Actions cache, evicting main's layers. The GPU jobs
-  # keep building their own image from their runner's warm local cache, so the
-  # GPU path never waits on this one. Its last step, after a build or a reuse
-  # alike, picks the runners of the jobs that wait on it.
+  # repository's 10 GB of Actions cache, evicting main's layers. It has
+  # torch's CPU build (CURIO_TORCH=cpu, see the Dockerfile): no job that pulls
+  # it reaches a GPU, and with the CUDA build an arcade runner's disk held
+  # about 17 GB of it, packed and unpacked, 44 runners at once. The GPU jobs
+  # keep building their own image, with the CUDA build, so the GPU path never
+  # waits on this one: from the runner's local cache, which
+  # scripts/ci_image_cleanup.sh keeps for a day there. Its last step, after a
+  # build or a reuse alike, picks the runners of the jobs that wait on it.
   build-image:
     needs: pick-runners
     # A tests run of Jest files alone needs no image.
@@ -394,9 +399,12 @@ jobs:
       # leaves its stack running, writing into this workspace as root, and
       # compose would reuse it under a later job of the same project. So every
       # curio-ci* compose stack still on the daemon goes first, found by label,
-      # which needs no compose file and leaves every other stack alone. Then a
-      # throwaway root container hands the files containers wrote as root back
-      # to the runner user, which actions/checkout's clean needs. Last it forgets
+      # which needs no compose file and leaves every other stack alone, and so
+      # do the CI images such a job left, which its stop-stack would have
+      # removed (scripts/ci_image_cleanup.sh: the same names, never with -f, so
+      # an image a container uses stays). Then a throwaway root container hands
+      # the files containers wrote as root back to the runner user, which
+      # actions/checkout's clean needs. Last it forgets
       # a sparse checkout an earlier job made here: actions/checkout's
       # `sparse-checkout-cone-mode: false` sets core.sparseCheckout in this
       # workspace's .git/config, and a later checkout with no sparse list turns
@@ -405,7 +413,7 @@ jobs:
       # report job, every job on arcade-cpu-05 found no start-stack action). A
       # local action could not do this: it is not on disk before checkout.
       - &reclaim
-        name: 🧹 Remove stacks an earlier job left, reclaim root-owned files (self-hosted)
+        name: 🧹 Remove stacks and images an earlier job left, reclaim root-owned files (self-hosted)
         if: runner.environment == 'self-hosted'
         working-directory: ${{ github.workspace }}
         shell: bash
@@ -419,6 +427,11 @@ jobs:
             docker volume ls -q --filter "$label" | xargs -r docker volume rm
             docker network ls -q --filter "$label" | xargs -r docker network rm
           done
+          echo "removing CI images an earlier job left"
+          docker image ls --format '{{.Repository}}:{{.Tag}}' \
+            | grep -E "^(curio-ci(-[a-z-]+)?-curio|ghcr\.io/${GITHUB_REPOSITORY,,}-ci):" \
+            | xargs -r docker image rm > /dev/null 2>&1 || true
+          docker image prune -f > /dev/null 2>&1 || true
           echo "handing root-owned files back to the runner user"
           docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
           if [ -d .git ]; then
@@ -434,6 +447,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 2
+
+      # A build on a GitHub-hosted runner holds the whole image and its
+      # layers; the toolchains no CI job uses go while it runs.
+      - name: 📏 Free disk, and room for the image (GitHub-hosted)
+        run: |
+          bash scripts/ci_disk.sh free "before the build"
+          bash scripts/ci_disk.sh drop-tools
 
       - name: 🏷️ Name the image
         id: name
@@ -498,7 +518,9 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          build-args: CURIO_CI_SETUP=1
+          build-args: |
+            CURIO_CI_SETUP=1
+            CURIO_TORCH=cpu
           push: true
           tags: |
             ${{ steps.name.outputs.image }}
@@ -608,13 +630,18 @@ jobs:
 
       # On an arcade runner the image's Python above is the image's own folder,
       # mounted in place (scripts/ci_image_python.sh), and this job starts no
-      # stack whose stop-stack would let it go. It never holds up the pick
-      # below: a release that fails leaves the next job's take to finish it.
-      - name: 🧹 Let go of the image's Python
+      # stack whose stop-stack would let it go and remove the image the
+      # collection pulled, so it does both here, on every self-hosted runner.
+      # It never holds up the pick below: a release that fails leaves the next
+      # job's take to finish it, and the next job's first step removes the
+      # image.
+      - name: 🧹 Let go of the image's Python, remove the image
         if: always() && steps.suites.outputs.e2e == 'true'
-        run: bash scripts/ci_image_python.sh release
+        run: |
+          bash scripts/ci_image_python.sh release
+          if [ "$RUNNER_ENVIRONMENT" = self-hosted ]; then bash scripts/ci_image_cleanup.sh; fi
         continue-on-error: true
-        timeout-minutes: 2
+        timeout-minutes: 5
 
       # The runners of the jobs that wait on the image, picked as they are
       # about to start, whether the image was built or reused: a pick made
@@ -853,12 +880,8 @@ jobs:
           fi
           echo "OK: the image still carries the execution account isolation discovers."
 
-      # Built, the image is this job's own, which stop-stack's cleanup asks
-      # (scripts/ci_image_cleanup.sh).
       - name: 🔨 Build all service images in parallel
-        run: |
-          docker compose -p curio-ci build --parallel
-          echo "CURIO_CI_OWN_IMAGE=1" >> "$GITHUB_ENV"
+        run: docker compose -p curio-ci build --parallel
 
       # A filtered run (a re-mint with a remint_filter, or tests): this job
       # starts with the run, before build-image's collection, so it lists its
@@ -2023,9 +2046,10 @@ jobs:
       - name: 🧪 The self-test, reading as a non-root account
         run: docker compose exec -T curio python /curio/scripts/bucket-mounts/ci_check.py selftest
 
-      # Two buckets mounted as the backend mounts a source: rclone takes the
-      # parameters and names each mount as the backend expects, and with
-      # nothing on the proxy's port in the stand-in no listing reaches a bucket.
+      # Two buckets mounted at once as the backend mounts a source: rclone
+      # takes the parameters and names each mount as the backend expects, with
+      # nothing on the proxy's port in the stand-in no listing reaches a
+      # bucket, and vfs/forget and vfs/refresh find each mount by that name.
       - name: 🪣 A source's mount, with no way out but the backend's proxy
         run: docker compose exec -T curio python /curio/scripts/bucket-mounts/ci_check.py source-mount
 
@@ -2272,9 +2296,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: 🔨 Build all service images in parallel
-        run: |
-          docker compose -p curio-ci-stress build --parallel
-          echo "CURIO_CI_OWN_IMAGE=1" >> "$GITHUB_ENV"
+        run: docker compose -p curio-ci-stress build --parallel
 
       - name: ▶️ Start containers
         run: docker compose -p curio-ci-stress up -d

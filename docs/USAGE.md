@@ -1743,7 +1743,7 @@ The Data Catalog holds datasets you already have; the **Discovery Catalog** hold
 
 Sources are JSON manifests under `<repo_root>/discovery/`, relocated with **`--discovery-root`** the same way `--catalog-root` relocates the dataset catalog, and under `.curio/discovery/` for your own. Users cannot import one from the app.
 
-A Docker deployment can also run a mount service for buckets beside Curio, `docker-compose.bucket-mounts.yml`. Curio then starts with **`--bucket-mounts-dir`**, the folder where the service's mounts appear in Curio's container (`/bucket-mounts`), and **`--bucket-mount-socket`**, the service's control socket (`/run/curio-bucket-mounts/rc.sock`): both, or neither. Curio tests the service as it starts, and `/monitor` shows the outcome under Deployment, as **Bucket mounts**.
+A Docker deployment can also run a mount service for buckets beside Curio, `docker-compose.bucket-mounts.yml` ([DEPLOYMENT.md § Bucket mounts](DEPLOYMENT.md#bucket-mounts)). Curio then starts with **`--bucket-mounts-dir`**, the folder where the service's mounts appear in Curio's container (`/bucket-mounts`), and **`--bucket-mount-socket`**, the service's control socket (`/run/curio-bucket-mounts/rc.sock`): both, or neither. Curio tests the service as it starts, and `/monitor` shows the outcome under Deployment, as **Bucket mounts**. A public S3 bucket's files are then read in place, through its mount, with no **Cache files**.
 
 For the full guide, covering searching, downloading, storage sources, collections, street-level images, models, API tokens step by step, and the Dataset Finder, see [docs/DISCOVERY-CATALOG.md](DISCOVERY-CATALOG.md).
 
