@@ -57,7 +57,7 @@ discovery/
 | OpenStreetMap | OpenStreetMap (Autark) | Public. Buildings, roads, parks, water, land surface, points of interest and features by tag for a box or for named areas, loaded by Autark |
 | Example storage | Folder | Public. A small instance of each way storage is organized, which the storage examples read |
 | Sentinel-2 over Chicago | S3 bucket | Public. True-color previews and thumbnails of one month's scenes |
-| SAGE-IDOT rail crossings | S3 bucket | Public. Three SAGE nodes at Illinois Department of Transportation rail crossings, from July 2025, a row per crossing and month: a snapshot every 5 minutes, and the YOLO detections as JSON Lines tables, one row per detection, or one per image and model. A month's file is up to 1.7 GB, so most need `--discovery-max-download-mb` above its 1024 default |
+| SAGE-IDOT rail crossings | S3 bucket | Public. Three SAGE nodes at Illinois Department of Transportation rail crossings, from July 2025, a row per crossing and month: a snapshot every 5 minutes, and the YOLO detections as JSON Lines tables, one row per detection, or one per image and model. A month's file is up to 1.8 GB, so most need `--discovery-max-download-mb` above its 1024 default |
 | Hugging Face documentation images | Hugging Face | Public; a token raises the rate limit |
 | Mapillary | Mapillary | Token needed. Street-level photos for a box, each credited to its photographer (CC BY-SA 4.0), and the signs and objects detected in them, as points |
 | Google Street View | Google | Key needed; Google bills its requests to you. Street View images for a box, one per panorama and heading |
