@@ -398,10 +398,13 @@ describe('ImageCardGrid', () => {
       return { element, view };
     }
 
-    it.each(['video', 'audio'] as const)(
-      'a %s tells where it starts, where a seek takes it and where it stops, at once',
-      async (kind) => {
-        const row = fileOf(kind === 'video' ? 'clip.mp4' : 'birds.wav', kind);
+    it.each([
+      { kind: 'video' as const, file: 'a video', name: 'clip.mp4' },
+      { kind: 'audio' as const, file: 'a recording', name: 'birds.wav' },
+    ])(
+      '$file tells where it starts, where a seek takes it and where it stops, at once',
+      async ({ kind, name }) => {
+        const row = fileOf(name, kind);
         const onPlayed = jest.fn();
         const { element } = await playCard([row], row, onPlayed);
         expect(onPlayed).not.toHaveBeenCalled();
