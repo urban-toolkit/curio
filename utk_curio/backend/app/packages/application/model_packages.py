@@ -22,8 +22,10 @@ A package the store does not hold gives the node no model, and the sandbox's
   package: a node's first run downloads them through the same code
   (``infrastructure/fetched_weights.py``), into the catalog's copy of the
   package, or under the folder ``--model-weights-dir`` names, where a node
-  reads them in place (:func:`fetched_weights_folder`).
-  ``scripts/fetch_model_weights.py`` fetches them there ahead. A download that
+  reads them in place (:func:`fetched_weights_folder`), each file stamped
+  with its digest, so a later version of the package that names other
+  digests downloads them again. ``scripts/fetch_model_weights.py`` fetches
+  them there ahead, stamped alike. A download that
   fails is reported for the node's run, and the model still resolves. Export,
   Publish and Save as package node refuse such a package
   (:func:`refuse_fetched_weights`).
@@ -104,10 +106,13 @@ def fetched_weights_root(manifest: PackageManifest, shipped: Path) -> Path:
 
 
 def fetched_weights_folder(manifest: PackageManifest, shipped: Path) -> Path | None:
-    """:func:`fetched_weights_root` when it holds every file the block lists,
-    else None: before their first download, or after one that stopped."""
+    """:func:`fetched_weights_root` when every file the block lists is in
+    place there, stamped with the digest the block names
+    (``fetched_weights.missing_files``), else None: before their first
+    download, after one that stopped, and once the block names other digests,
+    which download again. Reads the stamps, never the weights."""
     folder = fetched_weights_root(manifest, shipped)
-    return folder if holds_weights(folder, manifest) else None
+    return None if fetched_weights.missing_files(manifest.model.fetch, folder / manifest.model.entry) else folder
 
 
 def _catalog_fetch(manifest: PackageManifest) -> tuple[PackageManifest, Path] | None:

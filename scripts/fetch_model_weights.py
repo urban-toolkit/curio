@@ -24,12 +24,18 @@ the folder ``curio.py start --model-weights-dir <dir>`` reads them from.
   the digest the manifest names (``sha256``, or ``gitSha1``, the git blob hash
   of a file that is not in Git LFS), is made readable by every account, and
   is then moved into place. A file that does not match is not placed.
-- A file already in place with the right digest is skipped.
+- Each placed file is stamped with that digest beside it (``.<name>.digest``),
+  as Curio's own download stamps it. A file whose stamp names the digest the
+  manifest names is skipped, unread. A file with no stamp, placed by hand or
+  by an older script, is hashed once, and stamped when it matches. Any other
+  file in place, its stamp naming another digest or its bytes not matching,
+  is removed and fetched again.
 
 It imports nothing but the standard library and two modules of Curio that do
 the same, read by their paths, so it runs with the host's own Python, outside
 Curio's environment. The second, ``model_fetch``, holds the file's URL, its
-digests and the modes, which Curio's own download on first use shares.
+digests, its stamp and the modes, which Curio's own download on first use
+shares.
 """
 
 from __future__ import annotations
@@ -183,8 +189,10 @@ class TokenOnHuggingFace(urllib.request.HTTPRedirectHandler):
 
 def _download(opener, url: str, credential: str, target: Path, item, fetch, token_given: bool, model_fetch) -> int:
     """Stream *url* into a temporary file beside *target*, check it against
-    *item*'s digest, and move it into place. Returns its size."""
+    *item*'s digest, move it into place and stamp it. What was at *target*,
+    not *item*'s file, is removed first. Returns its size."""
     _make_folder(target.parent, model_fetch.FOLDER_MODE)
+    model_fetch.discard(target)
     try:
         response = opener.open(_request(url, credential), timeout=TIMEOUT_S)
     except urllib.error.HTTPError as exc:
@@ -220,6 +228,7 @@ def _download(opener, url: str, credential: str, target: Path, item, fetch, toke
             )
         os.chmod(partial, model_fetch.FILE_MODE)
         os.replace(partial, target)
+        model_fetch.write_stamp(target, item)
         return size
     finally:
         partial.unlink(missing_ok=True)
@@ -272,12 +281,10 @@ def main(argv=None, *, opener=None, environ=None, shipped_root=None, out=None, e
     fetched = present = 0
     for item in fetch.files:
         target = entry / item.path
-        if target.is_file():
-            digest = model_fetch.digest_of(target, item)
-            if digest[1] == digest[2]:
-                print(f"  {item.path}: {size_text(target.stat().st_size)}, already here", file=out)
-                present += 1
-                continue
+        if model_fetch.checked_in_place(target, item):
+            print(f"  {item.path}: {size_text(target.stat().st_size)}, already here", file=out)
+            present += 1
+            continue
         print(f"  {item.path}: fetching", file=out, flush=True)
         try:
             size = _download(

@@ -260,6 +260,13 @@ placed. The node runs once they are in place, and later runs read them there.
 Until then the model's details in the Model Catalog say *Downloads on first
 use*. SAM 3's 3.4 GB come from an identical copy of Meta's files.
 
+Each placed file is stamped with its digest, in `.<file>.digest` beside it,
+and is in place only while its stamp names the digest the manifest names. So
+a later Curio whose manifest names other files downloads them again at the
+model's next first use, and a file placed with no stamp, by hand or by an
+older Curio, is checked once: stamped when it matches, downloaded again when
+it does not.
+
 1. Pass `--model-weights-dir` to `curio.py start`, so the weights go to a
    folder of their own, which isolated node code reads in place.
    `docker-compose.deploy.yml` mounts the checkout's `model-weights/` at
@@ -287,11 +294,13 @@ use*. SAM 3's 3.4 GB come from an identical copy of Meta's files.
 3. Recreate the stack (`docker compose up -d --force-recreate`).
 
 - **The server must be able to write the folder**, and every account read
-  it. The download makes its folders `755` and its files `644`, its own.
-  Isolated node code reads the weights in place, as `curio-exec`, and a stack
-  started with `--deploy` refuses to start while `curio-exec` could write a
-  file or a folder there. A folder the server cannot write fails the node's
-  first run, saying so.
+  it. The download makes its folders `755` and its files and their stamps
+  `644`, its own. Isolated node code reads the weights in place, as
+  `curio-exec`, and a stack started with `--deploy` refuses to start while
+  `curio-exec` could write a file or a folder there. A folder the server
+  cannot write fails the node's first run, saying so, unless every file
+  there is stamped: the script below, run on that folder, stamps the files
+  it finds in place.
 - **Fetching ahead is optional**: for a server that cannot reach
   huggingface.co, or a repository that asks for a token. Run the script in
   the stack's container, which writes the mounted folder as root, with a
@@ -305,9 +314,10 @@ use*. SAM 3's 3.4 GB come from an identical copy of Meta's files.
 
   `read -rs` takes the token without showing it or keeping it in the shell's
   history. The script prints each file's name and size as it lands, checks
-  each against the digest the manifest names, and skips a file already in
-  place. The token is read from `HF_TOKEN` alone, sent only to
-  huggingface.co, and never printed or saved.
+  each against the digest the manifest names and stamps it, as the server
+  does. It skips a file whose stamp names that digest, checks once a file
+  with no stamp, and fetches any other again. The token is read from
+  `HF_TOKEN` alone, sent only to huggingface.co, and never printed or saved.
 - **Without `--model-weights-dir`**, the weights go in the package's own
   folder, `packages/<package id>@<major>/models/`, where the script puts them
   without `--into`: for a clone run with `curio.py start`.

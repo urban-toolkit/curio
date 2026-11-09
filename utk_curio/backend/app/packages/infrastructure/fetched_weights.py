@@ -16,6 +16,15 @@ the files its package leaves out, through the same code
 - each file streamed to a partial file in the entry folder, checked against the
   digest the block names, made readable by every account and renamed into
   place; a file that does not match is never placed;
+- each placed file stamped with that digest beside it
+  (``model_fetch.write_stamp``), as ``scripts/fetch_model_weights.py`` stamps
+  it: a file is in place only when its stamp names the digest the block
+  names (:func:`missing_files`), so a block that names other digests, in a
+  later version of the package, downloads its files again. A file with no
+  stamp, placed by hand or before stamps, is hashed once under the model's
+  lock and stamped when it matches. A file that is not the one the block
+  names is removed before it downloads again, so no node reads it, even
+  when that download fails;
 - one download per model at a time, across processes and the stacks that share
   a ``--model-weights-dir``: a second first use waits, then finds what the
   first placed;
@@ -42,8 +51,12 @@ from utk_curio.backend.app.packages.domain.model_fetch import (
     MODELS_DIR,
     FetchedFile,
     ModelFetch,
+    checked_in_place,
     digest_of,
+    discard,
+    is_stamped,
     source_url,
+    write_stamp,
 )
 from utk_curio.backend.app.packages.repositories import catalog_dir as packages_catalog_dir
 
@@ -60,8 +73,10 @@ _GONE = frozenset({"RepoNotFound", "RevisionNotFound", "EntryNotFound"})
 
 
 def missing_files(fetch: ModelFetch, entry: Path) -> list[FetchedFile]:
-    """The files *fetch* lists that the folder *entry* lacks."""
-    return [item for item in fetch.files if not (entry / item.path).is_file()]
+    """The files *fetch* lists that are not in place in the folder *entry*:
+    not there, or not stamped with the digest *fetch* names
+    (``model_fetch.is_stamped``). Reads the stamps, never a file."""
+    return [item for item in fetch.files if not is_stamped(entry / item.path, item)]
 
 
 def download(manifest: PackageManifest, root: Path) -> Path:
@@ -91,9 +106,21 @@ def download(manifest: PackageManifest, root: Path) -> Path:
     with left_out_files.one_download_at_a_time(lock, key=str(entry)):
         # Another first use may have placed them while this one waited.
         left_out_files.remove_stale_partials(entry)
-        for item in missing_files(block.fetch, entry):
-            _download(left_out_files, manifest, item, entry)
+        for item in block.fetch.files:
+            if not _checked(left_out_files, manifest, item, entry):
+                _download(left_out_files, manifest, item, entry)
     return folder
+
+
+def _checked(left_out_files, manifest: PackageManifest, item: FetchedFile, entry: Path) -> bool:
+    """Under the model's lock: whether *item*'s file in *entry* is the one the
+    block names (``model_fetch.checked_in_place``), a file with no stamp
+    hashed once and stamped when it matches."""
+    try:
+        return checked_in_place(entry / item.path, item)
+    except OSError as exc:
+        package = f"{manifest.package_id}@{manifest.major}"
+        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc)) from exc
 
 
 def _make_folders(entry: Path, *, closed: Path | None) -> None:
@@ -143,6 +170,13 @@ def _download(left_out_files, manifest: PackageManifest, item: FetchedFile, entr
         return None
 
     _make_folders(target.parent, closed=None)
+    try:
+        # What is there is not this file, or has no stamp and did not match:
+        # it goes now, with its stamp, so no node reads it while the right
+        # one downloads, nor after a download that fails.
+        discard(target)
+    except OSError as exc:
+        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc)) from exc
     log.info("Downloading %s of %s from %s", item.path, package, url)
     left_out_files.download_checked(
         url, target, partial_dir=entry, max_bytes=block.size_bytes, check=check,
@@ -154,6 +188,12 @@ def _download(left_out_files, manifest: PackageManifest, item: FetchedFile, entr
         # left beside the weights.
         partial_name=f".{target.name}.download{left_out_files.PARTIAL_SUFFIX}",
     )
+    try:
+        # Only once the file is in place: a stamp never names bytes that are
+        # not there. A file a restart left unstamped is hashed once instead.
+        write_stamp(target, item)
+    except OSError as exc:
+        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc)) from exc
     log.info("Placed %s of %s at %s", item.path, package, target)
 
 
