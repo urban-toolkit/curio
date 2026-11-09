@@ -25,6 +25,10 @@ Design choices:
   Curio's requirements, the image's torch, the shipped catalog's libraries
   the launcher installs, and the user's own. Package manifests name several
   of those too, so a manifest is no evidence that Curio put a library here.
+- **One run at a time per environment.** A pip run that changes this
+  interpreter, or a ``--target`` tree, holds that environment's lock across
+  threads and backend processes (:func:`_one_run_into`), and an install
+  decides what to install inside it, after any run another process made.
 - **Captures pip's stderr/stdout** so failures surface in the install
   response with enough context to debug, not an opaque 500.
 """
@@ -32,6 +36,7 @@ Design choices:
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -40,10 +45,13 @@ import shutil
 import subprocess
 import sys
 import threading
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from importlib.metadata import PackageNotFoundError, version as installed_version
 from typing import Callable, Iterable, Mapping, Optional
+
+from utk_curio.backend.app.common.file_locks import exclusive_lock
 
 from .bounded_exec import bounded_argv
 
@@ -275,7 +283,8 @@ def _is_satisfied(name: str, spec: str) -> bool:
 #: where it held none, by PEP 503 name: the only ones a package's removal may
 #: uninstall from it (:func:`installed_here`). This process's own record, so a
 #: restart forgets it and those libraries stay, and nothing the interpreter
-#: held before this process ran pip can be in it.
+#: held before this process ran pip can be in it. A library another backend
+#: process installed is not in it either, so this one never takes it back.
 _installed_here: set[str] = set()
 _installed_here_lock = threading.Lock()
 
@@ -331,6 +340,75 @@ _import_probe_cache: dict[tuple[str, str], Optional[str]] = {}
 def forget_import_probes() -> None:
     """Drop memoised import verdicts, after anything that may have repaired one."""
     _import_probe_cache.clear()
+
+
+#: Where pip runs are kept one at a time: a folder of Curio's state that only
+#: its own account can enter, since node code may ``flock`` any file it can
+#: open, and one that held a lock file would stop every install.
+_PIP_STATE = "pip"
+
+#: Beside the interpreter's lock: a new value after each pip run that changed
+#: the interpreter (:func:`_pip_ran`).
+_RUNS_FILE = "interpreter.runs"
+
+#: The pip run the memoised import verdicts were asked after
+#: (:func:`_last_pip_run`).
+_probes_after: Optional[str] = None
+
+
+def _pip_state(*, create: bool = True) -> Path:
+    from utk_curio.backend.app.common.user_storage import curio_root
+
+    folder = curio_root() / _PIP_STATE
+    if create:
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return folder
+
+
+@contextlib.contextmanager
+def _one_run_into(target_dir: Optional[str] = None):
+    """Hold the environment a pip run changes, across threads and processes:
+    the ``--target`` tree *target_dir*, or with none this interpreter. Two
+    runs at once into one environment each decide from what they saw before
+    the other's, and land their files over each other's."""
+    if target_dir is None:
+        name = "interpreter"
+    else:
+        name = hashlib.sha256(str(Path(target_dir).resolve()).encode("utf-8")).hexdigest()[:32]
+    with exclusive_lock(_pip_state() / f"{name}.lock", namespace="pip", key=name):
+        yield
+
+
+def _pip_ran() -> None:
+    """Pip changed this interpreter. Each process drops its memoised import
+    verdicts at its next question (:func:`import_failures`), this one now: a
+    run that adds or removes what a library needs changes no version of it,
+    the memo's key. Called holding the interpreter's lock."""
+    path = _pip_state() / _RUNS_FILE
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+    try:
+        tmp.write_text(uuid.uuid4().hex, encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        log.warning("Could not tell the other backend processes of a pip run", exc_info=True)
+    finally:
+        tmp.unlink(missing_ok=True)
+    forget_import_probes()
+
+
+def _last_pip_run() -> Optional[str]:
+    """What :func:`_pip_ran` last wrote, or None before any run."""
+    try:
+        return (_pip_state(create=False) / _RUNS_FILE).read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _remember(name: str, version: str, reason: Optional[str], asked_after: Optional[str]) -> None:
+    """Memoise *name*'s verdict, unless a pip run landed while it was asked:
+    such a verdict may be of neither state, so the next question asks again."""
+    if _probes_after == asked_after == _last_pip_run():
+        _import_probe_cache[(name, version)] = reason
 
 
 def _canonical_dist_name(name: str) -> str:
@@ -481,7 +559,15 @@ def import_failures(deps: Iterable[str]) -> dict[str, str]:
 
     Uses ``sys.executable``, matching :func:`install_python_deps` — the probe
     asks about the interpreter the installs land in.
+
+    The memo starts over after any process's pip run into the interpreter
+    (:func:`_pip_ran`).
     """
+    global _probes_after
+    ran = _last_pip_run()
+    if ran != _probes_after:
+        _import_probe_cache.clear()
+        _probes_after = ran
     failures: dict[str, str] = {}
     to_probe: dict[str, str] = {}     # distribution -> module
     versions: dict[str, str] = {}
@@ -513,14 +599,14 @@ def import_failures(deps: Iterable[str]) -> dict[str, str]:
             if one is None:
                 continue          # still no answer: report nothing, cache nothing
             reason = one.get(name)
-            _import_probe_cache[(name, versions[name])] = reason
+            _remember(name, versions[name], reason, ran)
             if reason:
                 failures[name] = reason
         return failures
 
     for name in to_probe:
         reason = verdicts.get(name)
-        _import_probe_cache[(name, versions[name])] = reason
+        _remember(name, versions[name], reason, ran)
         if reason:
             failures[name] = reason
     return failures
@@ -710,10 +796,21 @@ def install_python_deps(
     Raises :class:`PipInstallError` if pip exits non-zero. Returns an
     :class:`InstallReport` describing what was installed vs. skipped so
     the caller can include it in the install-API response.
+
+    Holds this interpreter's lock (:func:`_one_run_into`), and decides what
+    to install inside it: a library another process's run installed while
+    this one waited is skipped.
     """
     if not deps:
         return InstallReport(installed=[], skipped=[])
+    with _one_run_into():
+        return _install_python_deps(deps, on_line)
 
+
+def _install_python_deps(
+    deps: Mapping[str, str], on_line: Optional[Callable[[str], None]],
+) -> InstallReport:
+    """:func:`install_python_deps`, holding this interpreter's lock."""
     skipped: list[str] = []
     to_install: list[str] = []
     # What pip installs fresh, as opposed to upgrading or downgrading a
@@ -771,8 +868,8 @@ def install_python_deps(
                 f"pip install failed (exit {rc}): {tail.strip()}"
             )
         # pip ran: a repair may have landed without the version changing, which
-        # the (name, version) memo key would otherwise hide.
-        forget_import_probes()
+        # the (name, version) memo key would otherwise hide, in every process.
+        _pip_ran()
         _note_installed_here(absent)
         return InstallReport(installed=to_install, skipped=skipped)
 
@@ -792,7 +889,7 @@ def install_python_deps(
         raise PipInstallError(
             f"pip install failed (exit {proc.returncode}): {tail.strip()}"
         )
-    forget_import_probes()
+    _pip_ran()
     _note_installed_here(absent)
     return InstallReport(installed=to_install, skipped=skipped)
 
@@ -812,9 +909,21 @@ def install_python_deps_to_target(
     wipe-before-build discipline — a fresh dir has nothing to skip, and pip's
     ``--target`` semantics over an existing tree are overwrite-ish rather
     than idempotent). Same timeout/error posture as the siblings; the
-    report's ``installed`` lists every requested spec."""
+    report's ``installed`` lists every requested spec.
+
+    Holds the tree's lock (:func:`_one_run_into`): a user's node libraries
+    are one tree that the libraries dialog and a package's install both
+    change, perhaps in two backend processes."""
     if not deps:
         return InstallReport(installed=[], skipped=[])
+    with _one_run_into(target_dir):
+        return _install_to_target(deps, target_dir, on_line)
+
+
+def _install_to_target(
+    deps: Mapping[str, str], target_dir: str, on_line: Optional[Callable[[str], None]],
+) -> InstallReport:
+    """:func:`install_python_deps_to_target`, holding the tree's lock."""
     specs = [_spec_argv(name, spec) for name, spec in sorted(deps.items())]
     base = [sys.executable, "-m", "pip", "install", "--no-input",
             "--target", str(target_dir)]
@@ -963,7 +1072,12 @@ def uninstall_python_deps(names: Iterable[str]) -> UninstallReport:
     # Same argv, same exposure: ``pip uninstall`` also reads ``-r`` and friends.
     for name in names:
         validate_python_requirement(name)
+    with _one_run_into():
+        return _uninstall_python_deps(names)
 
+
+def _uninstall_python_deps(names: list[str]) -> UninstallReport:
+    """:func:`uninstall_python_deps`, holding this interpreter's lock."""
     cmd = [sys.executable, "-m", "pip", "uninstall", "-y", *names]
     log.info("Running %s", " ".join(cmd))
     try:
@@ -981,6 +1095,7 @@ def uninstall_python_deps(names: Iterable[str]) -> UninstallReport:
         raise PipInstallError(
             f"pip uninstall failed (exit {proc.returncode}): {tail.strip()}"
         )
+    _pip_ran()
     with _installed_here_lock:
         _installed_here.difference_update(_canonical_dist_name(name) for name in names)
     return UninstallReport(removed=list(names), kept=[])
@@ -1031,24 +1146,27 @@ def uninstall_python_deps_from_target(
     those not found, or found without a readable RECORD, so the caller can log
     rather than claim something it did not do. Transitive dependencies stay, as
     they do for ``pip uninstall``.
+
+    Holds the tree's lock, as an install into it does (:func:`_one_run_into`).
     """
     from utk_curio.backend.app.common.safe_paths import is_within
 
     root = Path(target_dir).resolve()
     removed: list[str] = []
     kept: list[str] = []
-    for name in names:
-        validate_python_requirement(name)
-        dist_infos = _target_dist_infos(root, name)
-        if not dist_infos:
-            kept.append(name)
-            continue
-        complete = False
-        for dist_info in dist_infos:
-            if _remove_one_distribution(dist_info, root, is_within):
-                complete = True
-        (removed if complete else kept).append(name)
-    _prune_empty_dirs(root)
+    with _one_run_into(target_dir):
+        for name in names:
+            validate_python_requirement(name)
+            dist_infos = _target_dist_infos(root, name)
+            if not dist_infos:
+                kept.append(name)
+                continue
+            complete = False
+            for dist_info in dist_infos:
+                if _remove_one_distribution(dist_info, root, is_within):
+                    complete = True
+            (removed if complete else kept).append(name)
+        _prune_empty_dirs(root)
     return UninstallReport(removed=removed, kept=kept)
 
 
