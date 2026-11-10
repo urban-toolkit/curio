@@ -9,8 +9,9 @@
   backend writes for its model's type (``application/starters.py``): a
   segmentation model's loads it by id and calls ``curio_segment``, and runs as
   it is (the sandbox's ``test_vision.py`` runs it); an ``image-to-image`` or
-  ``node-regression`` model's is a ``model.run`` skeleton naming each array
-  its ONNX graph takes, read from the weights without onnxruntime and without
+  ``node-regression`` model's opens its ONNX file (``model.path``) in an
+  onnxruntime session on the CPU and is a ``session.run`` skeleton naming each
+  array the graph takes, read from the weights without onnxruntime and without
   downloading anything.
 
 The code under test is imported inside each test, so a tree without it fails
@@ -144,17 +145,29 @@ def test_an_added_ddrnet_opens_with_the_segmentation_cell(tmp_curio):
     assert (starter["name"], starter["code"]) == ("image-segmentation", SEGMENTATION_CELL)
 
 
+def _session_lines(model_id: str) -> str:
+    """The first lines of an ``image-to-image`` or ``node-regression`` model's
+    cell: the model by its id, its ONNX file in an onnxruntime session on the
+    CPU."""
+    return (
+        "import onnxruntime as ort\n"
+        "\n"
+        f'model = curio_load_model("{model_id}")\n'
+        'session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])\n'
+        "\n"
+    )
+
+
 def test_an_image_to_image_model_opens_with_a_run_skeleton_naming_its_input(tmp_curio):
     """Local Relief's graph takes one float32 array, ``height``, 1 by 1 by
-    rows by columns: the skeleton names it, with its type and shape."""
+    rows by columns: the cell opens the model's session on its path, and the
+    skeleton names the array, with its type and shape."""
     folder = _model_package(tmp_curio / "incoming", "ai.test.relief", "image-to-image", LOCAL_RELIEF_GRAPH,
                             model_input={"width": 64, "height": 64, "dtype": "float32"})
     _install_archive("guest", folder)
-    assert _starters("guest")["ai.test.relief/run@1"]["code"] == (
-        'model = curio_load_model("ai.test.relief")\n'
-        "\n"
+    assert _starters("guest")["ai.test.relief/run@1"]["code"] == _session_lines("ai.test.relief") + (
         "# The arrays the model reads: make each one from input_0.\n"
-        "outputs = model.run({\n"
+        "outputs = session.run(None, {\n"
         '    "height": ...,  # float32 [1, 1, rows, cols]\n'
         "})\n"
         "\n"
@@ -166,11 +179,9 @@ def test_a_node_regression_model_opens_with_a_run_skeleton_naming_each_input(tmp
     """The weather GNN's graph takes the node features and the edges."""
     folder = _model_package(tmp_curio / "incoming", "ai.test.graph", "node-regression", WEATHER_GNN_GRAPH)
     _install_archive("guest", folder)
-    assert _starters("guest")["ai.test.graph/run@1"]["code"] == (
-        'model = curio_load_model("ai.test.graph")\n'
-        "\n"
+    assert _starters("guest")["ai.test.graph/run@1"]["code"] == _session_lines("ai.test.graph") + (
         "# The arrays the model reads: make each one from input_0.\n"
-        "outputs = model.run({\n"
+        "outputs = session.run(None, {\n"
         '    "x": ...,  # float32 [nodes, 7]\n'
         '    "edge_index": ...,  # int64 [2, edges]\n'
         "})\n"
@@ -196,12 +207,10 @@ def test_a_model_whose_weights_are_not_here_opens_with_an_empty_skeleton_and_not
     monkeypatch.setattr(left_out_files, "fetch", lambda *a, **k: fetched.append(a) or None)
     install_package_from_directory("guest", folder)
 
-    assert _starters("guest")["ai.test.away/run@1"]["code"] == (
-        'model = curio_load_model("ai.test.away")\n'
-        "\n"
-        "# model.run takes {input name: array}, one array for each input of the model,\n"
-        "# made from input_0.\n"
-        "outputs = model.run({})\n"
+    assert _starters("guest")["ai.test.away/run@1"]["code"] == _session_lines("ai.test.away") + (
+        "# session.run(None, ...) takes {input name: array}, one array for each input\n"
+        "# of the model, made from input_0.\n"
+        "outputs = session.run(None, {})\n"
         "\n"
         "return outputs[0]\n"
     )
