@@ -7,6 +7,7 @@ test on its own.
 """
 from __future__ import annotations
 
+import contextlib
 import importlib
 import os
 import subprocess
@@ -235,6 +236,37 @@ def test_the_launcher_starts_the_backend_with_16_malloc_arenas_whatever_the_node
     # environment: the backend's 16 never lowers the sandbox's cap.
     leaked = [name for name in ALLOCATOR_NAMES if name in os.environ]
     assert leaked == [], f"starting the backend set {leaked} in the launcher's own environment"
+
+
+def test_the_migration_runs_when_no_flask_command_is_on_path(monkeypatch, tmp_path):
+    """A virtual environment's interpreter, started by its path with the
+    environment not active, has its ``flask`` script only in the
+    environment's ``bin``. The launcher must migrate on its own interpreter,
+    as it starts the backend and the sandbox, and not look for ``flask`` on
+    ``PATH``. This runs the real migration into an empty database."""
+    import sqlite3
+
+    import utk_curio.cli.services as services
+
+    empty_bin = tmp_path / "bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+    monkeypatch.setenv("CURIO_STATE_DIR", str(tmp_path))
+    monkeypatch.delenv("DATABASE_URL_TEST", raising=False)
+    monkeypatch.setattr(services, "_is_testing", lambda: True)
+    errors = []
+    monkeypatch.setattr(services, "log_error", errors.append)
+
+    def _shutdown():
+        raise AssertionError(f"the migration failed: {errors}")
+
+    monkeypatch.setattr(services, "clean_shutdown", _shutdown)
+    services.prepare_backend_database()
+
+    database = tmp_path / "test" / "urban_workflow_test.db"
+    with contextlib.closing(sqlite3.connect(database)) as connection:
+        (version,) = connection.execute("SELECT version_num FROM alembic_version").fetchone()
+    assert version, "the migration left no alembic version"
 
 
 def test_the_migration_before_the_backend_starts_does_none_of_the_startup_work(monkeypatch, tmp_path):
