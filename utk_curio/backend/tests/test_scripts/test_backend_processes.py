@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import subprocess
+import sys
 import uuid
 from types import SimpleNamespace
 
@@ -221,7 +222,7 @@ def test_the_migration_before_the_backend_starts_does_none_of_the_startup_work(m
         CalledProcessError=subprocess.CalledProcessError))
     services.prepare_backend_database()
     ((args, env),) = ran
-    assert args[:3] == ["flask", "db", "upgrade"]
+    assert args[:5] == [sys.executable, "-m", "flask", "db", "upgrade"]
 
     module_name, _, factory = env["FLASK_APP"].partition(":")
     asked = []

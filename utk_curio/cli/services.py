@@ -187,9 +187,13 @@ def prepare_backend_database():
 
         # `flask db upgrade` is idempotent — alembic skips already-applied
         # revisions. Running it on every startup avoids the "schema is
-        # stale" class of deploy bug.
+        # stale" class of deploy bug. The launcher's own interpreter runs it,
+        # as it runs the backend and the sandbox: a virtual environment's
+        # interpreter, started by its path with the environment not active,
+        # has no `flask` command on PATH.
         result = subprocess.run(
-            ["flask", "db", "upgrade", "--directory", "utk_curio/backend/migrations"],
+            [sys.executable, "-m", "flask", "db", "upgrade",
+             "--directory", "utk_curio/backend/migrations"],
             check=True, cwd=project_root, env=env,
             capture_output=True, text=True,
         )
