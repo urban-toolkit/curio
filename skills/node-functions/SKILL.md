@@ -81,7 +81,7 @@ Writes data to a file the node returns, a table as CSV, a GeoDataFrame as GeoJSO
 
 Engines: python.
 
-Loads a Model Catalog model: `curio_segment` runs a segmentation model, `model.run({input name: array})` runs an ONNX model's graph and returns its outputs in order, and `model.path` is its weights' folder.
+Gives a model's `id`, `folder`, `manifest` and `path`: `curio_segment` runs a segmentation model; node code opens an ONNX one with `ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])`.
 
 - `model_id` (a Model Catalog model): the model's id.
 

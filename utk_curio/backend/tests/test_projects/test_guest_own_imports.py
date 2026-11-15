@@ -16,13 +16,19 @@ These tests sign two visitors, A and B, in to that account, as
 - Simple View's player plays a video of a collection A downloaded through a
   signed link, which a ``<video>`` asks for with no sign-in: as A, through
   whatever dataflow A's canvas shows, and that one file alone;
+- a frame A's node derives from the video of a collection every guest reads,
+  on a play or in an agent's job, is A's alone: B reads it neither by its id
+  nor by a link, B's node deriving the same frame leaves A's as A's node
+  wrote it, and it goes when the server starts;
 - without ``--deploy`` the shared guest is the one local user, whose uploads
-  and downloads are the account's.
+  and downloads are the account's, and so is what its nodes derive.
 """
 from __future__ import annotations
 
 import io
 import json
+import os
+import time
 
 import pytest
 
@@ -383,3 +389,206 @@ def test_without_deploy_the_local_guests_uploads_and_downloads_are_the_accounts(
     visitor_copies.drop_all()
     for token in (VISITOR_A, VISITOR_B):
         assert held <= _listed(client, token, {}), token
+
+
+# ---------------------------------------------------------------------------
+# What a node derives from a collection's files: frames, clips, overlays
+# ---------------------------------------------------------------------------
+
+#: The time of the frame each visitor's node derives from the video, in ms.
+FRAME_MS = 500
+
+
+def _a_video_every_guest_sees(client, monkeypatch, source: str) -> tuple[str, str, bytes]:
+    """The collection of *source*'s survey row (:func:`_a_video`), added to
+    the guest account with sign-in off, as the ``example`` fixture saves the
+    example: no visitor added it, so every hosted guest reads it."""
+    from utk_curio.backend.app.projects import visitor_copies
+
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+    try:
+        collection, clip, video = _a_video(client, VISITOR_A, source)
+    finally:
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+    adder = visitor_copies.added_by(collection)
+    assert adder is None, collection
+    return collection, clip, video
+
+
+def _a_frame(color: tuple[int, int, int]) -> bytes:
+    """A JPEG frame of one *color*, as Sample Video Frames writes one."""
+    from PIL import Image
+
+    out = io.BytesIO()
+    Image.new("RGB", (64, 48), color).save(out, "JPEG")
+    return out.getvalue()
+
+
+def _written(sent: dict, collection: str, clip: str, frame: bytes) -> dict:
+    """The row of the frame of *collection*'s video *clip* at
+    :data:`FRAME_MS` that node code handed *sent*, a run's collections and
+    media folder, writes as *frame*, through the sandbox's own
+    ``curio_derived_file``, as Sample Video Frames writes one."""
+    from utk_curio.sandbox.util.collections import make_collection_helpers
+
+    derive = make_collection_helpers(None, sent.get("collections"), sent.get("media_dir"))["curio_derived_file"]
+    row = derive(collection, clip, FRAME_MS)
+    with open(row["path"], "wb") as handle:
+        handle.write(frame)
+    return row
+
+
+def _derives_in_a_play(client, sandbox, token: str, example: str, collection: str, clip: str,
+                       frame: bytes) -> dict:
+    """The visitor signed in as *token* plays the example's node a, whose
+    code writes *frame* where its run's ``curio_derived_file`` says
+    (:func:`_written`); the row it wrote."""
+    _play(client, token, example, "a")
+    return _written(sandbox["runs"]["a"], collection, clip, frame)
+
+
+def _derives_in_a_job(app, token: str, example: str, collection: str, clip: str, frame: bytes) -> dict:
+    """An agent's job for the visitor signed in as *token*, on a thread of
+    its own, which holds no request: a Solve's attempt there is handed the
+    collections its code reads and its media folder
+    (``grounding._session_collections``), and the code writes *frame* there
+    (:func:`_written`); the row it wrote."""
+    from utk_curio.backend.app.agents.application.turns import grounding
+    from utk_curio.backend.app.agents.infrastructure import agent_jobs
+    from utk_curio.backend.app.users.models import User
+
+    handed: dict = {}
+    code = f'frames = curio_load_collection("{collection}")\nreturn frames\n'
+
+    def _attempt():
+        guest = User.query.filter_by(username=config.CURIO_SHARED_GUEST_USERNAME).one()
+        handed["collections"], handed["media_dir"] = grounding._session_collections(
+            _copy_of(token, example), GUEST_KEY, guest, {}, [code],
+        )
+        yield "done", {}
+
+    with app.test_request_context(headers=auth_headers(token)):
+        job = agent_jobs.start_job(
+            user_key=GUEST_KEY, project_id=_copy_of(token, example), attachment_id=f"att-{token}",
+            kind="solve-node", job_id=f"job-{token}", events=_attempt(),
+        )
+    job.thread.join(timeout=60)
+    running = job.thread.is_alive()
+    assert not running, token
+    return _written(handed, collection, clip, frame)
+
+
+def _original(client, token: str, collection: str, file_id: str):
+    """*file_id* of *collection*, the file itself, as the visitor signed in
+    as *token* reads it."""
+    return client.get(f"/api/datasets/{collection}/media/{file_id}", query_string={"variant": "original"},
+                      headers=auth_headers(token))
+
+
+@pytest.mark.parametrize("ran", ["play", "job"])
+def test_a_frame_a_hosted_guests_node_derives_is_theirs_alone(
+    app, client, example, example_storage, sandbox, monkeypatch, ran,
+):
+    """A's node derives a frame from the video of a collection every guest
+    reads, on a play or in an agent's job. A reads it by its id. B reads the
+    video, but not the frame, its thumbnail or a link to it, though its id is
+    the video's and a time anyone can name. It goes when the server starts."""
+    from utk_curio.backend.app.projects import visitor_copies
+
+    workers_finish_first(monkeypatch)
+    collection, clip, video = _a_video_every_guest_sees(client, monkeypatch, example_storage)
+    frame = _a_frame((200, 30, 30))
+    if ran == "play":
+        row = _derives_in_a_play(client, sandbox, VISITOR_A, example, collection, clip, frame)
+    else:
+        row = _derives_in_a_job(app, VISITOR_A, example, collection, clip, frame)
+
+    mine = _original(client, VISITOR_A, collection, row["file_id"])
+    assert (mine.status_code, mine.data == frame) == (200, True), mine.status_code
+    seen = _original(client, VISITOR_B, collection, clip)
+    assert (seen.status_code, seen.data == video) == (200, True), seen.status_code
+    for variant in ("original", "thumb"):
+        theirs = client.get(f"/api/datasets/{collection}/media/{row['file_id']}",
+                            query_string={"variant": variant}, headers=auth_headers(VISITOR_B))
+        assert theirs.status_code == 404, (variant, theirs.status_code)
+    link = client.post(f"/api/datasets/{collection}/media/{row['file_id']}/link",
+                       headers=auth_headers(VISITOR_B))
+    assert link.status_code == 404, link.get_data(as_text=True)
+
+    visitor_copies.drop_all()
+    gone = _original(client, VISITOR_A, collection, row["file_id"])
+    assert gone.status_code == 404, gone.status_code
+
+
+def _two_frames() -> tuple[bytes, bytes]:
+    """A red frame and a blue one of one size: the shorter is padded after
+    its end, which no decoder reads."""
+    red, blue = _a_frame((200, 30, 30)), _a_frame((30, 30, 200))
+    size = max(len(red), len(blue))
+    return red.ljust(size, b"\0"), blue.ljust(size, b"\0")
+
+
+def _tone(jpeg: bytes) -> str:
+    """Whether a thumbnail is drawn from the red frame or the blue one."""
+    from PIL import Image
+
+    with Image.open(io.BytesIO(jpeg)) as image:
+        pixel = image.convert("RGB").getpixel((image.width // 2, image.height // 2))
+    return "red" if pixel[0] > pixel[2] else "blue"
+
+
+def test_a_hosted_guest_deriving_the_same_frame_leaves_anothers_as_their_node_wrote_it(
+    client, example, example_storage, sandbox, monkeypatch,
+):
+    """A's node, then B's, derive the frame of one video every guest reads at
+    one time, so one id names both. A's file is as A's node wrote it, and
+    each visitor reads their own: the file, its thumbnail, and a link, which
+    plays the frame of the visitor who asked for it with no sign-in or with
+    another's. The two frames are of one size and time here, as two runs at
+    once can make them, so only where each is tells their thumbnails apart."""
+    workers_finish_first(monkeypatch)
+    collection, clip = _a_video_every_guest_sees(client, monkeypatch, example_storage)[:2]
+    red, blue = _two_frames()
+    mine = _derives_in_a_play(client, sandbox, VISITOR_A, example, collection, clip, red)
+    a_link = _link(client, VISITOR_A, collection, mine["file_id"])
+    theirs = _derives_in_a_play(client, sandbox, VISITOR_B, example, collection, clip, blue)
+    assert theirs["file_id"] == mine["file_id"], (mine, theirs)
+
+    with open(mine["path"], "rb") as handle:
+        kept = handle.read()
+    assert kept == red, "B's node wrote over the frame A's node made"
+    made = time.time_ns()
+    for row in (mine, theirs):
+        os.utime(row["path"], ns=(made, made))
+    for token, frame, tone in ((VISITOR_A, red, "red"), (VISITOR_B, blue, "blue")):
+        read = _original(client, token, collection, mine["file_id"])
+        assert (read.status_code, read.data == frame) == (200, True), (token, read.status_code)
+        thumb = client.get(f"/api/datasets/{collection}/media/{mine['file_id']}", headers=auth_headers(token))
+        drawn = _tone(thumb.data) if thumb.status_code == 200 else thumb.status_code
+        assert drawn == tone, (token, drawn)
+    for sent in ({}, auth_headers(VISITOR_B)):
+        played = client.get(a_link, headers=sent)
+        assert (played.status_code, played.data == red) == (200, True), (sent, played.status_code)
+    b_link = _link(client, VISITOR_B, collection, mine["file_id"])
+    played = client.get(b_link)
+    assert (played.status_code, played.data == blue) == (200, True), played.status_code
+
+
+def test_without_deploy_what_the_local_guests_nodes_derive_is_the_accounts(
+    client, example, example_storage, sandbox, monkeypatch,
+):
+    """Without ``--deploy`` the shared guest is the one local user: what its
+    nodes derive is written in the account's media folder, as an account's
+    is, whatever sign-in plays them, and read by any."""
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
+
+    workers_finish_first(monkeypatch)
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+    collection, clip = _a_video(client, VISITOR_A, example_storage)[:2]
+    frame = _a_frame((200, 30, 30))
+    row = _derives_in_a_play(client, sandbox, VISITOR_A, example, collection, clip, frame)
+
+    sent = sandbox["runs"]["a"]["media_dir"]
+    assert sent == str(media_dirs.media_work_root(GUEST_KEY)), sent
+    read = _original(client, VISITOR_B, collection, row["file_id"])
+    assert (read.status_code, read.data == frame) == (200, True), read.status_code
