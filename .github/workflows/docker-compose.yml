@@ -895,12 +895,13 @@ jobs:
           fi
           echo "OK: the image still carries the execution account isolation discovers."
 
-      # The build writes its image's new layers to the disk all of arcade's
-      # runners share, so there it takes one of their image slots when one is
-      # free (scripts/ci_image_slots.py), as the CPU jobs' pulls do. It never
-      # waits for one: test-gpu starts with the run and is its longest job.
+      # No image slot (scripts/ci_image_slots.py) for the build: it would hold
+      # one for its 2 to 4 minutes, though a build from the runner's cache
+      # writes only its new layers, and replayed with the builds holding slots,
+      # the last CPU job of a run got its image 60 s later instead of 28
+      # (median, 11-15).
       - name: 🔨 Build all service images in parallel
-        run: python3 scripts/ci_image_slots.py run --no-wait docker compose -p curio-ci build --parallel
+        run: docker compose -p curio-ci build --parallel
 
       # A filtered run (a re-mint with a remint_filter, or tests): this job
       # starts with the run, before build-image's collection, so it lists its

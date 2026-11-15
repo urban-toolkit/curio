@@ -1,14 +1,14 @@
 """Turns among a server's runners for writing a whole image to its disk.
 
-``scripts/ci_image_slots.py`` runs start-stack's pull, and test-gpu's image
-build, in one of 8 slots: lock files in the folder every arcade runner mounts
-from the server (RUNNER_SHARED_DIR), since each runner has a Docker daemon of
-its own and 16 to 25 pulls of the CI image at once slowed every `docker run`
-on arcade from 3 s to 13 (11-15). A job takes a free slot and holds it while
-its command runs, waits for one when all are taken, goes on without one when
-its wait is over, and runs at once on a runner with no such folder. The kernel
-frees a slot when the process holding it ends, so a job killed mid-pull leaves
-none taken, and the command itself never holds it.
+``scripts/ci_image_slots.py`` runs start-stack's pull in one of 8 slots: lock
+files in the folder every arcade runner mounts from the server
+(RUNNER_SHARED_DIR), since each runner has a Docker daemon of its own and 16
+to 25 pulls of the CI image at once slowed every `docker run` on arcade from
+3 s to 13 (11-15). A job takes a free slot and holds it while its command
+runs, waits for one when all are taken, goes on without one when its wait is
+over, and runs at once on a runner with no such folder. The kernel frees a
+slot when the process holding it ends, so a job killed mid-pull leaves none
+taken, and the command itself never holds it.
 
 Other jobs' slots are held here the way the script holds them: a lock on the
 slot's file. Docker is a stand-in that logs what it is asked.
@@ -123,9 +123,22 @@ def _docker(tmp_path):
 def test_a_free_slot_is_taken_and_held_while_the_command_runs(tmp_path):
     result, _ = _run(["run", sys.executable, "-c", PROBE, str(tmp_path)], _env(tmp_path))
     assert result.returncode == 0, result.stderr
-    assert "image slot 1 of 8 taken after 0 s\n" in result.stdout
+    assert re.search(r"^image slot 1 of 8 taken after \d+ s$", result.stdout, re.M), result.stdout
+    assert "waiting" not in result.stdout
     assert "taken 1\n" in result.stdout
     _free(_hold(tmp_path, SLOTS))
+
+
+def test_a_job_takes_whichever_slot_is_free_without_waiting(tmp_path):
+    held = _hold(tmp_path, [1, 2, 4, 5, 6, 7, 8])
+    try:
+        result, _ = _run(["run", sys.executable, "-c", PROBE, str(tmp_path)], _env(tmp_path))
+    finally:
+        _free(held)
+    assert result.returncode == 0, result.stderr
+    assert re.search(r"^image slot 3 of 8 taken after \d+ s$", result.stdout, re.M), result.stdout
+    assert "waiting" not in result.stdout
+    assert "taken 1 2 3 4 5 6 7 8\n" in result.stdout
 
 
 def test_a_job_that_finds_every_slot_taken_waits_for_the_first_one_freed(tmp_path):
@@ -165,25 +178,6 @@ def test_a_job_that_finds_no_slot_within_its_wait_goes_on_without_one(tmp_path):
     assert took >= 2
 
 
-def test_no_wait_takes_a_free_slot_or_goes_on_at_once(tmp_path):
-    held = _hold(tmp_path, [1, 2, 4, 5, 6, 7, 8])
-    try:
-        result, _ = _run(["run", "--no-wait", sys.executable, "-c", PROBE, str(tmp_path)],
-                         _env(tmp_path, wait_s=600))
-        assert "image slot 3 of 8 taken after 0 s\n" in result.stdout
-        assert "taken 1 2 3 4 5 6 7 8\n" in result.stdout
-        held += _hold(tmp_path, [3])
-        # With every slot taken it goes on at once: a wait of 600 s would
-        # outlast the run's timeout.
-        result, _ = _run(["run", "--no-wait", "sh", "-c", "echo ran"], _env(tmp_path, wait_s=600))
-    finally:
-        _free(held)
-    assert result.returncode == 0, result.stderr
-    assert "image slots: all 8 are taken, and this never waits, so it goes on without one\n" in result.stdout
-    assert "::warning::" not in result.stdout
-    assert result.stdout.endswith("ran\n")
-
-
 @pytest.mark.parametrize("folder", [None, "missing"])
 def test_a_runner_with_no_shared_folder_runs_the_command_at_once(tmp_path, folder):
     shared = None if folder is None else tmp_path / folder
@@ -204,7 +198,7 @@ def test_a_killed_job_leaves_its_slot_free_and_its_command_never_held_it(tmp_pat
     out = tmp_path / "out.txt"
     proc = _start(["run", "sleep", "60"], _env(tmp_path), out)
     try:
-        _wait_for(out, "image slot 1 of 8 taken after 0 s\n")
+        _wait_for(out, "image slot 1 of 8 taken after ")
         with pytest.raises(BlockingIOError):
             _hold(tmp_path, [1])
         # The script alone, as a runner's kill of a cancelled job can leave
@@ -242,10 +236,9 @@ def test_a_failed_pull_fails_the_job_and_names_no_size(tmp_path):
     assert log.read_text().splitlines() == [f"pull --quiet {IMAGE}"]
 
 
-@pytest.mark.parametrize("args", [[], ["pull"], ["pull", IMAGE, "more"], ["run"], ["run", "--no-wait"],
-                                  ["push", IMAGE]])
+@pytest.mark.parametrize("args", [[], ["pull"], ["pull", IMAGE, "more"], ["run"], ["push", IMAGE]])
 def test_a_call_it_does_not_know_says_how_to_call_it(tmp_path, args):
     result, _ = _run(args, _env(tmp_path))
     assert result.returncode == 2
-    assert result.stderr.startswith("usage: ci_image_slots.py pull <image> | run [--no-wait]")
+    assert result.stderr.startswith("usage: ci_image_slots.py pull <image> | run <command>")
     assert not list(tmp_path.iterdir())

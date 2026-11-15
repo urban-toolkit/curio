@@ -12,14 +12,15 @@ at once on the server, whatever run they belong to: a job takes a free slot,
 or waits for one.
 
     python3 scripts/ci_image_slots.py pull <image>
-    python3 scripts/ci_image_slots.py run [--no-wait] <command> [<argument>...]
+    python3 scripts/ci_image_slots.py run <command> [<argument>...]
 
 pull is start-stack's `docker pull --quiet <image>` in a slot. It then says how
 long the pull took, the wait for the slot left out, and the image's size:
 "Pulled in N s, B bytes on this daemon". run runs any command in a slot and
-exits as the command does. With --no-wait it takes a slot only when one is free
-at once, and otherwise goes on without one: test-gpu's image build starts with
-its run and is the run's longest job, so it never waits for CPU jobs' pulls.
+exits as the command does. test-gpu's image build takes no slot: it would hold
+one for its 2 to 4 minutes, though a build from the runner's cache writes only
+its new layers, and replayed with the builds holding slots, the last CPU job of
+a run got its image 60 s later instead of 28 (median, 11-15).
 
 A job waits for a slot at most WAIT_S, then goes on without one, so a slot
 never holds a job up longer than that. A slot is a lock that the kernel frees
@@ -54,7 +55,7 @@ WAIT_S = 240
 #: How often a waiting job looks for a free slot.
 POLL_S = 1.0
 
-USAGE = "usage: ci_image_slots.py pull <image> | run [--no-wait] <command> [<argument>...]"
+USAGE = "usage: ci_image_slots.py pull <image> | run <command> [<argument>...]"
 
 
 def say(line: str) -> None:
@@ -101,11 +102,8 @@ def take(wait_s: float) -> int | None:
             say(f"image slot {number} of {SLOTS} taken after {waited:.0f} s")
             return fd
         if waited >= wait_s:
-            if wait_s > 0:
-                say(f"::warning::image slots: all {SLOTS} in {folder} stayed taken for {wait_s:.0f} s, "
-                    "so this goes on without one")
-            else:
-                say(f"image slots: all {SLOTS} are taken, and this never waits, so it goes on without one")
+            say(f"::warning::image slots: all {SLOTS} in {folder} stayed taken for {wait_s:.0f} s, "
+                "so this goes on without one")
             return None
         if not said_waiting:
             say(f"image slots: all {SLOTS} are taken; waiting up to {wait_s:.0f} s for one")
@@ -115,9 +113,6 @@ def take(wait_s: float) -> int | None:
 
 def main(argv: list[str]) -> int:
     mode, rest = (argv[1], argv[2:]) if len(argv) > 1 else ("", [])
-    no_wait = mode == "run" and rest[:1] == ["--no-wait"]
-    if no_wait:
-        rest = rest[1:]
     if mode == "pull" and len(rest) == 1:
         command = ["docker", "pull", "--quiet", rest[0]]
     elif mode == "run" and rest:
@@ -125,7 +120,7 @@ def main(argv: list[str]) -> int:
     else:
         print(USAGE, file=sys.stderr)
         return 2
-    fd = take(0.0 if no_wait else float(os.environ.get("CURIO_CI_SLOT_WAIT_S") or WAIT_S))
+    fd = take(float(os.environ.get("CURIO_CI_SLOT_WAIT_S") or WAIT_S))
     started = time.monotonic()
     try:
         code = subprocess.run(command, check=False).returncode

@@ -38,8 +38,7 @@
  * Each arcade runner has a Docker daemon of its own, so each job writes the
  * whole image to the disk the runners share, and 16 to 25 pulls at once slowed
  * every `docker run` there from 3 s to 13 (11-15). So the pull, start-stack's,
- * takes one of a few image slots the server's runners share first, and
- * test-gpu's image build takes one when one is free, never waiting
+ * takes one of a few image slots the server's runners share first
  * (scripts/ci_image_slots.py, tested in the backend suite).
  */
 import { read } from "./_support/workflowPaths";
@@ -256,12 +255,6 @@ describe("Whole images take turns on the disk arcade's runners share", () => {
         const startStack = read(START_STACK);
         expect(startStack).toContain('python3 scripts/ci_image_slots.py pull "$IMAGE"\n');
         expect(startStack).not.toMatch(OWN_PULL);
-    });
-
-    test("test-gpu's image build takes a slot when one is free, and never waits for one", () => {
-        expect(jobs().get("test-gpu")).toContain(
-            "run: python3 scripts/ci_image_slots.py run --no-wait docker compose -p curio-ci build --parallel\n",
-        );
     });
 
     test("no job that can run on a self-hosted runner pulls an image but through start-stack", () => {
