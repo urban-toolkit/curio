@@ -168,3 +168,56 @@ class ExecutionActuallyDidTestCase(unittest.TestCase):
         """The badge and the boot-time check both read it; do not break them."""
         api._isolation_state = None
         self.assertIn("isolation", self._version())
+
+
+class MemoryLimitTestCase(unittest.TestCase):
+    """``/version`` and ``/monitor`` name the memory limit isolated nodes run
+    under: ``cgroup``, ``address space`` (and, on ``/monitor``, why not a
+    cgroup), or ``none`` where nodes run in the sandbox's process.
+
+    A deploy reads ``/version`` before any node has run, so before a zygote
+    starts the answer is what its start will choose.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = app.test_client()
+
+    def setUp(self):
+        api._resolved_isolation_label = None
+
+    tearDown = setUp
+
+    def _get(self, route):
+        response = self.client.get(route)
+        self.assertEqual(response.status_code, 200)
+        return response.get_json()
+
+    def test_nodes_that_run_in_the_sandbox_have_none(self):
+        with unittest.mock.patch.object(api, "_isolation_label", lambda: "off"):
+            self.assertEqual(self._get("/version")["memory_limit"], "none")
+            monitor = self._get("/monitor")
+        self.assertEqual((monitor["memory_limit"], monitor["memory_limit_reason"]), ("none", None))
+
+    def test_isolated_nodes_have_what_their_zygote_gives_them(self):
+        from utk_curio.sandbox.isolation import lifecycle, node_cgroups
+
+        for kind, reason in ((node_cgroups.CGROUP, None), (node_cgroups.ADDRESS_SPACE, "read-only")):
+            with unittest.mock.patch.object(api, "_isolation_label", lambda: "fork"), \
+                    unittest.mock.patch.object(lifecycle, "memory_limit", return_value=(kind, reason)):
+                self.assertEqual(self._get("/version")["memory_limit"], kind)
+                monitor = self._get("/monitor")
+            self.assertEqual(monitor["memory_limit"], kind)
+            self.assertEqual(monitor["memory_limit_reason"], node_cgroups.REASONS.get(reason))
+
+    def test_before_a_zygote_starts_it_is_what_the_container_allows(self):
+        from utk_curio.sandbox.isolation import lifecycle, node_cgroups
+
+        self.assertIsNone(lifecycle._memory, "a zygote of another test is still running")
+        with unittest.mock.patch.object(api, "_isolation_label", lambda: "fork"):
+            with unittest.mock.patch.object(node_cgroups, "predicted", return_value=None):
+                self.assertEqual(self._get("/version")["memory_limit"], "cgroup")
+            with unittest.mock.patch.object(node_cgroups, "predicted", return_value="read-only"):
+                self.assertEqual(self._get("/version")["memory_limit"], "address space")
+                self.assertEqual(self._get("/monitor")["memory_limit_reason"],
+                                 node_cgroups.REASONS["read-only"])

@@ -1445,6 +1445,26 @@ Five design points worth knowing:
   Unpickling a hostile child's output in the privileged parent would hand back
   most of what isolation removed.
 
+**A node's memory is a cgroup per run.** In a container that may arrange the
+cgroups below its own (Docker Engine 28 or newer, `writable-cgroups=true` and
+a private cgroup namespace, as `docker-compose.deploy.yml` asks), the first
+zygote's start moves every process of the container to `/curio` and makes
+`/nodes`, root's and `0755` (`isolation/node_cgroups.py`). Each zygote keeps
+a place per run in flight, `/nodes/<its pid>/<k>`, reused run after run: a
+removed cgroup that page cache was charged to stays behind, dying, while the
+cache lives. A place has `memory.max` at `--exec-memory-mb`, no swap and
+`memory.oom.group`, so a node over its budget stops with everything it
+started. The child joins its place before anything else, while it is root,
+and raises its `oom_score_adj` to 500; at its end the zygote kills what is
+left in the place (`cgroup.kill`) and reports the run once the place is
+empty, with whether its `memory.events` recorded an OOM, which picks the
+node's message (`supervisor.describe_child_death`). The GPU's memory is not
+counted, page cache is. Where the container cannot (no Linux, read-only
+cgroups, the host's cgroup namespace, cgroup v1), a child keeps
+`RLIMIT_AS` at its footprint plus the budget, with its two workarounds, the
+smaller thread stacks and the zygote's arena cap and Arrow pool, and the log
+and `/monitor` say why. `/version`'s `memory_limit` names the limit in force.
+
 **Syscall confinement is not enough on its own.** seccomp does not stop
 `open()`, and reading files is what a data node legitimately does, so a
 world-readable `instance/urban_workflow.db` is readable by node code with no

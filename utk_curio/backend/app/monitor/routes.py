@@ -143,6 +143,10 @@ def _deployment(sandbox) -> dict:
         "version": __version__,
         "isolation": (sandbox or {}).get("isolation") or "unknown",
         "isolationActive": (sandbox or {}).get("isolation_active") or "unknown",
+        # The limit isolated nodes run under: cgroup, address space (and why
+        # not a cgroup, in words from a closed list), or none.
+        "memoryLimit": (sandbox or {}).get("memory_limit") or "unknown",
+        "memoryLimitReason": (sandbox or {}).get("memory_limit_reason"),
         "execUserConfigured": bool(os.environ.get("CURIO_EXEC_USER", "").strip()),
         "authEnabled": not config.CURIO_NO_AUTH,
         "projectsEnabled": not config.CURIO_NO_PROJECT,

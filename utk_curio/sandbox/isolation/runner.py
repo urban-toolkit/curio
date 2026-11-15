@@ -322,14 +322,18 @@ def execute_isolated(
             exit_code, signal_number, timed_out = client.run(
                 request, wall_timeout=config.wall_timeout
             )
+        # What the run's place said of it, when it had one: whether it was
+        # stopped at its memory budget.
+        memory = getattr(client, "memory", None)
 
         if timed_out or exit_code not in (0, None) or signal_number is not None:
             sentence = supervisor.describe_child_death(
                 exit_code, signal_number, timed_out,
                 wall_timeout=config.wall_timeout, limits=config.limits,
+                memory=memory,
             )
             metrics.record_child_death(
-                supervisor.classify_child_death(exit_code, signal_number, timed_out),
+                supervisor.classify_child_death(exit_code, signal_number, timed_out, memory=memory),
                 detail=sentence,
                 context={"nodeType": node_type},
             )

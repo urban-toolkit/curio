@@ -38,6 +38,19 @@ const LLM_POLL_MS = 60000;
 const OPEN_FILES_POLL_MS = 600000;
 
 /** The bucket mount service's line: its self-test's outcome, or none. */
+function nodeMemoryText(deployment: MonitorDeployment | undefined): string {
+  switch (deployment?.memoryLimit) {
+    case undefined:
+      return "…";
+    case "cgroup":
+      return "cgroup limit";
+    case "address space":
+      return `address-space cap: ${deployment?.memoryLimitReason ?? "see the sandbox log"}`;
+    default:
+      return deployment?.memoryLimit ?? "…";
+  }
+}
+
 function bucketMountsText(deployment: MonitorDeployment | undefined): string {
   switch (deployment?.bucketMounts) {
     case undefined:
@@ -156,6 +169,17 @@ export const MonitorContent: React.FC = () => {
               m?.deployment.isolationActive === "fork"
                 ? "good"
                 : m?.deployment.isolationActive === "off"
+                ? "warn"
+                : "neutral"
+            }
+          />
+          <Chip
+            label="Node memory"
+            value={nodeMemoryText(m?.deployment)}
+            tone={
+              m?.deployment.memoryLimit === "cgroup"
+                ? "good"
+                : m?.deployment.memoryLimit === "address space"
                 ? "warn"
                 : "neutral"
             }

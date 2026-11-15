@@ -183,8 +183,10 @@ def main():
     parser.add_argument(
         "--exec-memory-mb", type=int, default=None,
         help=(
-            "Memory a node may allocate, in MB, on top of the interpreter the "
-            "isolated child starts with (sets CURIO_EXEC_MEMORY_MB, default "
+            "Memory an isolated node's processes may use together, in MB: a "
+            "cgroup limit, or where the container cannot give each node a "
+            "cgroup, what it may allocate on top of the interpreter its child "
+            "starts with (sets CURIO_EXEC_MEMORY_MB, default "
             f"4096, floor {supervisor.MIN_EXEC_MEMORY_MB}). Note the real host "
             "ceiling is this times --exec-parallelism."
         ),
