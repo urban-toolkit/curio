@@ -304,6 +304,12 @@ class Place:
             _write(swap, 0)
         _write(os.path.join(self.path, "memory.oom.group"), 1)
 
+    def hold(self, memory_bytes):
+        """Set the place's budget to *memory_bytes*, the next run's."""
+        if memory_bytes != self.memory_bytes:
+            _write(os.path.join(self.path, "memory.max"), memory_bytes)
+            self.memory_bytes = memory_bytes
+
     def begin(self):
         """Note where the place's counters stand as a run begins: the place is
         reused, and its counters count every run it held."""
@@ -431,14 +437,17 @@ class Places:
         self._places = []
         self._free = []
 
-    def take(self):
-        """A place for the next run, emptied of the runs before it."""
+    def take(self, memory_mb=None):
+        """A place for the next run, emptied of the runs before it, at the
+        run's budget, *memory_mb*, else this zygote's."""
+        memory_bytes = int(memory_mb) * MIB if memory_mb else self.memory_bytes
         for place in self._free:
             if not place.populated():
+                place.hold(memory_bytes)
                 self._free.remove(place)
                 place.begin()
                 return place
-        place = Place(os.path.join(self.folder, str(len(self._places))), self.memory_bytes)
+        place = Place(os.path.join(self.folder, str(len(self._places))), memory_bytes)
         place.make()
         self._places.append(place)
         place.begin()

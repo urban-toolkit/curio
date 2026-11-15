@@ -380,7 +380,7 @@ class Zygote:
             connection.close()
             return
 
-        place = self._take_place()
+        place = self._take_place((request.get("limits") or {}).get("memory_mb"))
         try:
             pid = self._fork_child(request, selector, connection, place)
         except OSError as exc:
@@ -469,14 +469,15 @@ class Zygote:
         with contextlib.suppress(OSError):
             os.close(pidfd)
 
-    def _take_place(self):
-        """A place for the next run, or None: when this zygote keeps none, or
-        could not make one, and then the run's child keeps the address-space
-        cap, as where cgroups are not this container's to arrange. Said once."""
+    def _take_place(self, memory_mb=None):
+        """A place for the next run at its budget, *memory_mb* (the request's
+        ``limits``), or None: when this zygote keeps none, or could not make
+        one, and then the run's child keeps the address-space cap, as where
+        cgroups are not this container's to arrange. Said once."""
         if self._places is None:
             return None
         try:
-            return self._places.take()
+            return self._places.take(memory_mb if isinstance(memory_mb, int) and memory_mb > 0 else None)
         except OSError as exc:
             if not self._told_no_place:
                 self._told_no_place = True
