@@ -560,6 +560,14 @@ def _source(own: str) -> Optional[str]:
         return _rooms.get(own)
 
 
+def source_of(own: str) -> Optional[str]:
+    """What *own* copies, when it is a hosted guest's copy or new dataflow:
+    the dataflow, or ``new:<uuid>``. ``None`` for any other dataflow, and for
+    a copy not made yet whose room another process opened. The process a
+    copy belongs to is its source's (``collaboration/owner_guard.py``)."""
+    return _source(own)
+
+
 def _guest_account():
     """The shared guest's account, which every hosted guest signs in to and
     which owns their new dataflows. Read, never made: ``None`` with none."""

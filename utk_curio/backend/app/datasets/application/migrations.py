@@ -217,6 +217,17 @@ def _rewrite_spec_ref(
             dataflow_docs.write(user_key, dataflow_id, spec, dataflow_docs.by_curio(user_key, "migration"))
 
 
+def _ref_rewritten(user_key: str, dataflow_id: str, old_id: str, new_id: str, new_dir_name: str) -> None:
+    """:func:`_rewrite_spec_ref`, made by the backend process that owns the
+    dataflow: the migration runs for the account, on a catalog listing that
+    names no dataflow (``collaboration/owner_calls.py``)."""
+    from utk_curio.backend.app.collaboration import owner_calls
+    from utk_curio.backend.app.datasets.application import owner_operations
+
+    owner_calls.run(owner_operations.rewrite_ref, user_key, dataflow_id,
+                    old_id=old_id, new_id=new_id, new_dir_name=new_dir_name)
+
+
 def _self_heal_crashed_migration(user_key: str, dataset_root: Path) -> bool:
     """Finish (or unwind) a migration interrupted between its atomic steps.
 
@@ -248,7 +259,7 @@ def _self_heal_crashed_migration(user_key: str, dataset_root: Path) -> bool:
         manifest = load_dataset_manifest_from_dir(dataset_root)
         node_seg = node_segment_from_computed_id(manifest.id)
         if manifest.producer_dataflow_id and node_seg:
-            _rewrite_spec_ref(
+            _ref_rewritten(
                 user_key,
                 manifest.producer_dataflow_id,
                 f"computed.{node_seg}",
@@ -352,7 +363,7 @@ def migrate_computed_dataset_ids(user_key: str) -> int:
         index_repo.safe_upsert_from_dir(user_key, dest)
 
         try:
-            _rewrite_spec_ref(user_key, dataflow_id, base_id, new_id, new_dir_name)
+            _ref_rewritten(user_key, dataflow_id, base_id, new_id, new_dir_name)
         except Exception:  # noqa: BLE001 — dir is renamed; ref rewrite is best-effort
             logger.warning(
                 "Renamed %s but failed to rewrite its spec ref in %s",

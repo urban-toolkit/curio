@@ -165,6 +165,11 @@ def create_app(config_class=config_class, *, startup_work=None):
 
     from utk_curio.backend.app.monitor.routes import monitor_bp
     app.register_blueprint(monitor_bp)
+
+    # A change another backend process of this start sends the owner of a
+    # dataflow, outside /api (collaboration/owner_calls.py).
+    from utk_curio.backend.app.collaboration.owner_calls import owner_calls_bp
+    app.register_blueprint(owner_calls_bp)
     # The monitor's histories cover this start: the process that does the
     # startup work writes them anew.
     from utk_curio.backend.app.monitor import history as monitor_history
