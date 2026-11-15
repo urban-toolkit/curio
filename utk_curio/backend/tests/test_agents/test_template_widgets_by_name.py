@@ -162,7 +162,7 @@ class TestANodeCreateSetsATemplatesWidgetsByName:
             [{"name": "zoom", "type": "number", "value": 18}, {"name": "title", "type": "text", "value": "Tall"}],
         )
         assert landed.startswith("[tool result] node.create: applied"), landed
-        assert card["summary"] == "Created a new Shade node · widgets factor, zoom, title, season"
+        assert card["summary"] == "Created a new Shade node · Shade · widgets factor, zoom, title, season"
         assert created["metadata"]["widgets"] == [FACTOR, _set(ZOOM, value=18), _set(TITLE, value="Tall"), SEASON]
 
     def test_a_value_outside_the_templates_bounds_is_refused_naming_them(
