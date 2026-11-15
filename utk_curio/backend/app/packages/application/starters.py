@@ -10,8 +10,8 @@ template id ``<packageId>/<templateId>@<major>``, named for the file.
 A model package's template without ``source`` opens with the cell Curio
 writes for the package's model type (``model_packages.model_default_cell``),
 named for the template's id. Other templates without ``source`` (e.g. the
-Data Pool or Spatial Join built-ins) contribute no starter, and the editor
-opens empty.
+Data Pool or Python Computation built-ins) contribute no starter, and the
+editor opens empty.
 
 A template whose starter is a node's whole content (``starterIsContent``)
 gives it to a node an agent's plan creates too: :func:`content_starters`.

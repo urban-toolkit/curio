@@ -35,7 +35,7 @@ guest's plays do, the request's sign-in served on their threads; and what it
 keeps is kept on the copy, under a dashboard of its own, which no other
 visitor's dashboard reads or joins.
 
-A step only a browser runs (an Autark compute node, a Spatial Join) is the
+A step only a browser runs (an Autark compute node) is the
 page's. The run ends asking for it (``needs_canvas``), as a canvas's run on
 the server does, or ends ``succeeded`` when only a tile reads it; either way
 the page runs the node and sends what it made (:func:`keep_tab_result`), and
