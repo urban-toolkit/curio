@@ -306,18 +306,22 @@ def start_backend(host, port, no_server=False, *, process=0, processes=1, boot_i
         log_info(f"[Backend] Database initialization completed with --force-db-init, server not started.", COLOR_BACKEND, 0)
         return None
 
-    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    project_root = os.path.abspath(os.path.join(script_dir, ".."))
-    # backend_server = os.path.join(script_dir, "backend", "server.py")
-    env = os.environ.copy()
-    env = {**os.environ, "PYTHONPATH": project_root + os.pathsep + env.get("PYTHONPATH", "")}
     # Which backend it is, and its start's boot id, never one this launcher's
     # own environment holds: a run left going under another start's id was
     # cut off by a restart.
-    env.update(backend_processes.environment(
+    env = {**os.environ, **backend_processes.environment(
         process=process, processes=processes, boot_id=boot_id or str(uuid.uuid4()),
-    ))
+    )}
+    return spawn_backend(env, "Backend")
 
+
+def spawn_backend(env, name):
+    """Start one backend process with the environment *env*, its output kept
+    in the launcher's log under *name*: the one backend of a start
+    (:func:`start_backend`), or one of several (``backend_group.py``)."""
+    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    project_root = os.path.abspath(os.path.join(script_dir, ".."))
+    env = {**env, "PYTHONPATH": project_root + os.pathsep + env.get("PYTHONPATH", "")}
     backend = subprocess.Popen(
         [sys.executable, "-u", "-m", "backend.server"],
         stdout=subprocess.PIPE,
@@ -326,7 +330,7 @@ def start_backend(host, port, no_server=False, *, process=0, processes=1, boot_i
         cwd=script_dir,
         env=env
     )
-    threading.Thread(target=stream_output, args=(backend, "Backend", COLOR_BACKEND), daemon=True).start()
+    threading.Thread(target=stream_output, args=(backend, name, COLOR_BACKEND), daemon=True).start()
     return backend
 
 
