@@ -82,7 +82,7 @@ WALK_CODE = (
     "from shapely.geometry import Point\n"
     "\n"
     "# A walk's points, one every 0.1 s, handed over in a shuffled order, about\n"
-    "# 165 m apart: autk-map draws a point as a disc 64 m in radius.\n"
+    "# 165 m apart: autk-map draws a point as a disc 64 map units, about 48 m, in radius.\n"
     f"order = {json.dumps(ORDER)}\n"
     "return gpd.GeoDataFrame(\n"
     "    {\n"
