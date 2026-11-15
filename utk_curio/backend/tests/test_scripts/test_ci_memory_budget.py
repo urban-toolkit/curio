@@ -358,6 +358,9 @@ def test_no_kill_and_no_reading_give_no_error(monkeypatch, tmp_path, capsys):
     assert "::error::" not in out
     assert "The kernel killed no process in the CI container at its 6.1 GiB memory limit" in out
     _kills(monkeypatch, tmp_path, "")
+    out = capsys.readouterr().out
+    assert "::error::" not in out
+    assert "No memory.events reading for the CI container" in out
 
 
 #: What stop-stack reads in a container whose isolated nodes run in places:
@@ -401,6 +404,3 @@ def test_nodes_killed_at_the_containers_own_limit_are_an_error(monkeypatch, tmp_
     assert ("::error::The CI container reached its 6.1 GiB memory limit 1 time(s) "
             "(memory.events.local oom)") in out
     assert "Isolated nodes stopped at their own memory budget" not in out
-    out = capsys.readouterr().out
-    assert "::error::" not in out
-    assert "No memory.events reading for the CI container" in out
