@@ -49,7 +49,7 @@ from typing import Optional
 from flask import request
 from flask_socketio import ConnectionRefusedError, join_room
 
-from utk_curio.backend.app.collaboration import room_state
+from utk_curio.backend.app.collaboration import owner_guard, room_state
 from utk_curio.backend.app.collaboration.auth import authenticate_handshake
 from utk_curio.backend.config import COLLAB_NAMESPACE
 
@@ -227,6 +227,12 @@ def register(sio):
         project = _project(project_id)
         if project is None:
             return {"ok": False, "error": "unknown_project"}
+        # The room, its presence and its locks are kept by the process that
+        # owns the dataflow alone; a guest's copy belongs with what it copies.
+        try:
+            owner_guard.refuse(project.id, None, what="joining its room", source=getattr(project, "copies", None))
+        except owner_guard.NotTheOwner as exc:
+            return {"ok": False, "error": "not_the_owner", "message": exc.description}
         account = _account(sess)
         # A hosted guest on a dataflow its account owns joins its own copy's room.
         project = visitor_copies.room_for(account, project, account.sign_in) or project

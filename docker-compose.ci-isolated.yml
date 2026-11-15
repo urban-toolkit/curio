@@ -45,6 +45,11 @@ services:
     # The runner-sized memory limit, as in docker-compose.ci.yml.
     mem_limit: ${CURIO_CI_MEM_LIMIT:-0}
     memswap_limit: ${CURIO_CI_MEM_LIMIT:-0}
+    # Each isolated node in a cgroup at its budget, as docker-compose.ci.yml
+    # and docker-compose.deploy.yml ask; the job checks /version says so.
+    cgroup: private
+    security_opt:
+      - writable-cgroups=true
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
       - CURIO_SKIP_DEP_INSTALL=1

@@ -19,6 +19,14 @@ export interface MonitorDeployment {
   version: string;
   isolation: string;
   isolationActive: string;
+  /**
+   * The memory limit isolated nodes run under: a cgroup at each node's
+   * budget, the address-space cap where the container's cgroups cannot hold
+   * them, or none where nodes run in the sandbox's process.
+   */
+  memoryLimit: "cgroup" | "address space" | "none" | "unknown";
+  /** Why not a cgroup, in words from a closed list; null otherwise. */
+  memoryLimitReason: string | null;
   execUserConfigured: boolean;
   authEnabled: boolean;
   projectsEnabled: boolean;

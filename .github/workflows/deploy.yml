@@ -213,6 +213,13 @@ jobs:
           if grep -q -e '"--media-cache-max-file-gb"' utk_curio/main.py; then
             cache_args=', "--media-cache-max-file-gb", "8"'
           fi
+          # The catalog packages every hosted guest has, when this release's
+          # launcher has the flag: SAM 3, whose Track Objects a guest runs on
+          # this host's GPU without adding the package.
+          guest_args=""
+          if grep -q -e '"--guest-packages"' utk_curio/main.py; then
+            guest_args=', "--guest-packages", "model.curio.sam3@1"'
+          fi
           # The bucket mount service (docker-compose.bucket-mounts.yml), when
           # this release's launcher has its flags. It mounts buckets in this
           # stack's own folder outside the checkout, which the site file below
@@ -283,7 +290,7 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$mounts_args" >> docker-compose.site.yml
+          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$guest_args" "$mounts_args" >> docker-compose.site.yml
           # Curio's binds: the weights folder both stacks share, which the
           # server writes as it downloads a model's weights on first use, and
           # this stack's bucket mounts, read-only and rslave. Each replaces an
@@ -573,6 +580,12 @@ jobs:
             if grep -q -e '"--media-cache-max-file-gb"' utk_curio/main.py; then
               cache_args=', "--media-cache-max-file-gb", "8"'
             fi
+            # The packages every hosted guest has, as curio-dev names them, for
+            # a release whose launcher has the flag.
+            guest_args=""
+            if grep -q -e '"--guest-packages"' utk_curio/main.py; then
+              guest_args=', "--guest-packages", "model.curio.sam3@1"'
+            fi
             # The bucket mount service, as curio-dev runs it, in stable's own
             # folder: each stack runs its own service.
             mounts_dir=/srv/curio-bucket-mounts/stable
@@ -618,7 +631,7 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$mounts_args" >> docker-compose.site.yml
+            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$guest_args" "$mounts_args" >> docker-compose.site.yml
             # Curio's binds and the service's, as curio-dev writes them.
             curio_volumes=""
             if [ -n "$weights_args" ]; then

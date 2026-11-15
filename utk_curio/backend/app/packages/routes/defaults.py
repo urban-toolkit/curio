@@ -15,7 +15,12 @@ from utk_curio.backend.app.packages.application import (
     seeding as packages_seeding,
 )
 from utk_curio.backend.app.packages.repositories import defaults as defaults_io
-from utk_curio.backend.app.packages.routes.common import _map_package_errors, packages_bp, user_key
+from utk_curio.backend.app.packages.routes.common import (
+    _map_package_errors,
+    packages_bp,
+    refuse_a_hosted_guest,
+    user_key,
+)
 from utk_curio.backend.app.packages.schemas import requests
 
 # There is deliberately no `DELETE /defaults/<dir>` that touches projects — the
@@ -43,7 +48,8 @@ def get_defaults_route():
 @_map_package_errors
 def uninstall_from_defaults_route(dir_name: str):
     """Stop seeding a package into new projects — detach only; existing
-    projects and the user store are untouched."""
+    projects and the user store are untouched. Refused to a hosted guest."""
+    refuse_a_hosted_guest("remove packages from all projects")
     return jsonify(packages_defaults_install.uninstall_from_defaults(g.user, dir_name)), 200
 
 
@@ -51,6 +57,8 @@ def uninstall_from_defaults_route(dir_name: str):
 @require_auth
 @_map_package_errors
 def install_to_defaults_route():
-    """Install a catalog package for every existing project + future ones."""
+    """Install a catalog package for every existing project + future ones.
+    Refused to a hosted guest, even for a package its store holds."""
+    refuse_a_hosted_guest("add packages to all projects")
     dir_name = requests.dir_name(request.get_json(silent=True) or {})
     return jsonify(packages_defaults_install.install_to_defaults(g.user, dir_name)), 201

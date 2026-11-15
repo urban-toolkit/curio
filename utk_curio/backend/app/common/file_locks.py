@@ -27,6 +27,7 @@ platform quirk gets fixed once rather than per store.
 from __future__ import annotations
 
 import threading
+import weakref
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -41,15 +42,24 @@ except ImportError:  # pragma: no cover - non-Windows fallback
     msvcrt = None
 
 
-_thread_locks: dict[tuple[str, str], threading.Lock] = {}
+#: Each resource's thread lock while anything references it. A lock nothing
+#: references is held and waited on by no one (a holder keeps it to release
+#: it, a waiter to acquire it), so it goes with its last reference. Kept for
+#: good, as they were, a backend held a lock for every dataflow it ever
+#: touched and one more for its history: 191,370 locks after the stress
+#: job's 1,395 signups, which seed 61 dataflows each.
+_thread_locks: weakref.WeakValueDictionary[tuple[str, str], threading.Lock] = weakref.WeakValueDictionary()
 _thread_locks_guard = threading.Lock()
 
 
 def keyed_thread_lock(namespace: str, key: str) -> threading.Lock:
-    """The process-wide lock for one ``(namespace, key)`` resource.
+    """The process-wide lock for one ``(namespace, key)`` resource: the same
+    lock for every caller while any of them holds a reference to it, a new
+    one once none does.
 
     ``namespace`` separates unrelated consumers (``"spec"``,
     ``"package-seed"``, …) so two stores cannot collide on a shared key.
+    Keep the lock while you hold it or wait for it, as ``with`` does.
     """
     with _thread_locks_guard:
         return _thread_locks.setdefault((namespace, key), threading.Lock())
@@ -64,8 +74,10 @@ class _Readers:
         self.left = threading.Condition(threading.Lock())
 
 
-#: The readers of each ``(namespace, key)`` resource a reader ever took.
-_readers: dict[tuple[str, str], _Readers] = {}
+#: The readers of each ``(namespace, key)`` resource while a reader or a
+#: writer waiting for them references them: every reader keeps its resource's
+#: until it has left, so one that goes has no reader left in it.
+_readers: weakref.WeakValueDictionary[tuple[str, str], _Readers] = weakref.WeakValueDictionary()
 
 
 def _readers_of(namespace: str, key: str) -> _Readers:
@@ -116,6 +128,44 @@ def interprocess_lock(lock_path: Path, *, shared: bool = False):
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
     else:  # pragma: no cover - neither POSIX nor Windows locking available
         yield
+
+
+def is_held(lock_path: Path) -> bool:
+    """Whether a hold has *lock_path*'s cross-process lock now: one in another
+    process, or one in this process through another open of the file. Asks
+    without waiting, and creates nothing: a lock file that is not there is held
+    by no one.
+
+    A process's file locks go when it ends, so what a process that died held
+    reads as free. Where this platform has no file locks no holder can be
+    seen, and every lock reads as held.
+    """
+    if fcntl is not None:
+        try:
+            handle = open(lock_path, "rb")
+        except FileNotFoundError:
+            return False
+        with handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            fcntl.flock(handle, fcntl.LOCK_UN)
+        return False
+    if msvcrt is not None:  # pragma: no cover - exercised only on Windows
+        try:
+            handle = open(lock_path, "r+b")
+        except FileNotFoundError:
+            return False
+        with handle:
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError:
+                return True
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        return False
+    return True  # pragma: no cover - neither POSIX nor Windows locking available
 
 
 @contextmanager

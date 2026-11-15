@@ -25,6 +25,9 @@ export interface PackageCardDragPayload {
   kind: PackageKind;
   /** In the palette's order: the drop makes the one, or offers several in a menu. */
   nodes: PackageCardNode[];
+  /** The account's store holds the package, so adding it to a dataflow
+   *  installs nothing: a hosted guest's drop of it may add it. */
+  inAccount?: boolean;
 }
 
 export const PACKAGE_CARD_DRAG_MIME = "application/x-curio-package-card";
@@ -46,7 +49,9 @@ export function packageCardNodes(
     .map((template) => ({ nodeType: template.id, label: template.label, ...(model ? { model } : {}) }));
 }
 
-/** The drag of *pkg*'s card, or `null` when the card does not drag: its package has no node. */
+/** The drag of *pkg*'s card, or `null` when the card does not drag: its
+ *  package has no node. A drawer's row says whether the account's store holds
+ *  the package (`installed`), which the drag carries. */
 export function createPackageCardDragPayload(pkg: PackagePayload): PackageCardDragPayload | null {
   const nodes = packageCardNodes(pkg);
   if (nodes.length === 0) return null;
@@ -55,6 +60,7 @@ export function createPackageCardDragPayload(pkg: PackagePayload): PackageCardDr
     name: pkg.name,
     kind: packageKindOf(pkg),
     nodes,
+    ...(pkg.installed === true ? { inAccount: true } : {}),
   };
 }
 
@@ -71,7 +77,8 @@ function parsePackageCardDragJson(raw: string): PackageCardDragPayload | null {
     if (!Array.isArray(payload.nodes) || payload.nodes.length === 0 || !payload.nodes.every(isCardNode)) {
       return null;
     }
-    return { kind: "node", ...payload } as PackageCardDragPayload;
+    const { inAccount, ...card } = payload;
+    return { kind: "node", ...card, ...(inAccount === true ? { inAccount: true } : {}) } as PackageCardDragPayload;
   } catch {
     return null;
   }

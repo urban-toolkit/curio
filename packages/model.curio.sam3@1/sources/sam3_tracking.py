@@ -148,6 +148,10 @@ def _sample(run, video, end):
     frames, times = [], []
     with av.open(video["path"]) as container:
         stream = container.streams.video[0]
+        # Every frame up to *end* is decoded, whatever the frames looked at:
+        # FFmpeg decodes several at once with frame threading, about five
+        # times faster than with its default, slice threading, at 1080p.
+        stream.thread_type = "AUTO"
         width = 2 * (min(run.width, stream.codec_context.width) // 2)
         height = 2 * round(stream.codec_context.height * width / stream.codec_context.width / 2)
         container.seek(int(run.from_seconds / stream.time_base), stream=stream, backward=True)

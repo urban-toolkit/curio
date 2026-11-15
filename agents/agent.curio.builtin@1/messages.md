@@ -844,6 +844,22 @@ scenarios has {count} entries (max {scenarios_max})
 
 {where}.display must be one of {choice_displays}
 
+## widget.not-a-choice
+
+{where} must be one of the {widget} widget's choices: {choices}; got {value}
+
+## widget.template-choices
+
+{where}: {widget} is the template's {kind} widget, and the node keeps its type and its choices, {choices}: write it with type {kind}, no other choices, and a value among them
+
+## widget.template-bounds
+
+{where}: {widget} is the template's {kind} widget, and the node keeps its type and its bounds ({bounds}): write it with type {kind}, no other min, max or step, and a value within them
+
+## widget.template-type
+
+{where}: {widget} is the template's {kind} widget, and the node keeps its type: write it with type {kind}
+
 ## widget.option-not-number
 
 {where}.{key} must be a number
@@ -1123,6 +1139,10 @@ import {name} (line {line}): {name} is a module of the package {package}, and on
 ## grounding.import-package-not-added
 
 import {name} (line {line}): {name} is a module of the package {package}, which this account has not added; once the user adds it, these nodes import it: {nodes}
+
+## grounding.import-package-version
+
+import {name} (line {line}): {name} is a module of the package {package} at version {version}, as the catalog has it, and this account's copy of that package does not ship it; only nodes of the catalog's copy import it: {nodes}
 
 ## grounding.code-refused
 

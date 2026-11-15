@@ -363,10 +363,16 @@ def start_viewer_run(
     it (:func:`made_as_saved`), and keeps what the run makes on the copy. The
     dashboard of a hosted guest's own new dataflow, which has no row, runs it
     for that guest alone (``visitor_copies.dashboard_new``): as it is now,
-    with no saved output, kept on it; for anyone else it is not found."""
+    with no saved output, kept on it; for anyone else it is not found.
+
+    Refused first of all in a process that does not own the dataflow
+    (``collaboration/owner_guard.py``): a hosted guest's copy is its."""
     from flask import current_app
 
+    from utk_curio.backend.app.collaboration import owner_guard
     from utk_curio.backend.app.execution.node_names import template_labels
+
+    owner_guard.refuse(project_id, what="a dashboard's run")
     from utk_curio.backend.app.execution.run_engine import PlanError
     from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
     from utk_curio.backend.app.packages.service import roster_templates

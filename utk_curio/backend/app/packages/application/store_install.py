@@ -344,6 +344,22 @@ def uninstall_package(user_key: str, dir_name: str) -> bool:
     return True
 
 
+def take_back_copy(user_key: str, dir_name: str) -> bool:
+    """Remove ``<user>/packages/<dir_name>``, a copy an add made that is the
+    add's to take back, with its backend residue and its seed record. Unlike
+    :func:`uninstall_package` it leaves no tombstone: nobody uninstalled the
+    package, so the seeder may copy it in again when the examples come to
+    need it. Returns ``True`` if anything was deleted."""
+    target = package_dir(user_key, dir_name)
+    with package_seed_lock(user_key):  # memo dev/99: the seeder's lock
+        removed = target.exists()
+        if removed:
+            shutil.rmtree(target)
+        seed_state.clear(user_key, dir_name)
+    packages_backend_runtime.remove_backend_residue(user_key, dir_name)
+    return removed
+
+
 def install_package_from_directory(
     user_key: str,
     source_dir: Path,
@@ -455,11 +471,13 @@ def export_package_archive(
         ).read_bytes()
 
 
-def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
+def _ensure_user_store_install(user_key: str, dir_name: str, *, libraries: bool = True) -> InstallOutcome:
     """Copy *dir_name* from the shared catalog when it is missing, with each
     package it needs (``dependencies.packages``, and theirs in turn) that the
     store lacks, install the python deps each declares, and report whether
-    they import.
+    they import. Without *libraries* nothing is installed or probed: the
+    copies land as an add makes them, and their libraries are the launcher's,
+    as a guest package's are (``guest_packages``).
 
     The pip step runs synchronously inside the request — heavy installs like
     ``torch`` can take many minutes (see :mod:`.pip_runner`). The Install button
@@ -495,9 +513,9 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> InstallOutcome:
     ]
     if missing and not copy_it:
         packages_provisioning.assert_may_install()
-    added = _copy_from_catalog(user_key, missing + ([dir_name] if copy_it else []))
+    added = _copy_from_catalog(user_key, missing + ([dir_name] if copy_it else []), libraries=libraries)
     import_errors = dict(added.import_errors)
-    if not copy_it:
+    if not copy_it and libraries:
         import_errors.update(packages_provisioning._declared_import_failures(user_key, dir_name))
     return InstallOutcome(
         copied=copy_it,
@@ -517,17 +535,18 @@ def _catalog_copy(dir_name: str) -> Path:
     return src
 
 
-def _copy_from_catalog(user_key: str, dir_names: list[str]) -> InstallOutcome:
+def _copy_from_catalog(user_key: str, dir_names: list[str], *, libraries: bool = True) -> InstallOutcome:
     """Copy each of *dir_names* from the shared catalog, in order, and install
-    the python deps each declares. When one fails, every copy this call made
-    is taken back before the failure is raised: an add lands whole or not at
-    all. ``installed`` and ``import_errors`` are every copy's."""
+    the python deps each declares, unless *libraries* is false. When one
+    fails, every copy this call made is taken back before the failure is
+    raised: an add lands whole or not at all. ``installed`` and
+    ``import_errors`` are every copy's."""
     copied: list[str] = []
     installed: set[str] = set()
     import_errors: dict[str, str] = {}
     try:
         for dir_name in dir_names:
-            outcome = _copy_one_from_catalog(user_key, dir_name)
+            outcome = _copy_one_from_catalog(user_key, dir_name, libraries=libraries)
             copied.append(dir_name)
             installed.update(outcome.installed)
             import_errors.update(outcome.import_errors)
@@ -538,9 +557,10 @@ def _copy_from_catalog(user_key: str, dir_names: list[str]) -> InstallOutcome:
     return InstallOutcome(copied=bool(copied), installed=sorted(installed), import_errors=import_errors)
 
 
-def _copy_one_from_catalog(user_key: str, dir_name: str) -> InstallOutcome:
+def _copy_one_from_catalog(user_key: str, dir_name: str, *, libraries: bool = True) -> InstallOutcome:
     """Copy *dir_name* from the shared catalog and install the python deps its
-    manifest declares; when pip fails, the copy is taken back."""
+    manifest declares, unless *libraries* is false; when pip fails, the copy
+    is taken back."""
     src = _catalog_copy(dir_name)
     try:
         result = install_package_from_directory(user_key, src, replace=False)
@@ -552,6 +572,8 @@ def _copy_one_from_catalog(user_key: str, dir_name: str) -> InstallOutcome:
     # verifiable and a reinstall never trips a stale pin.
     packages_backend_runtime.record_entry_pin(user_key, dir_name)
 
+    if not libraries:
+        return InstallOutcome()
     try:
         return packages_provisioning.provision_python_deps(user_key, dir_name, result.manifest)
     except (PipInstallError, packages_backend_runtime.BackendRuntimeError) as exc:

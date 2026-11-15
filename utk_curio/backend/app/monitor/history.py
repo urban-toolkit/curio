@@ -8,7 +8,8 @@ old rows or the new ones, never part of them. ``<state>`` is the ``.curio``
 tree ``user_storage.curio_root`` resolves, at each write.
 
 A history covers the running process only, as the monitor's counters do: the
-backend's start (``create_app``) writes every history anew, empty, over
+start of the home backend, which does the startup work (``create_app``,
+``common/backend_processes.py``), writes every history anew, empty, over
 whatever an earlier process left (:func:`start`). Nothing carries over a
 restart.
 
@@ -124,7 +125,7 @@ class History:
 
 
 def start() -> None:
-    """Write every history anew, empty: the backend started (``create_app``)."""
+    """Write every history anew, empty: the home backend started (``create_app``)."""
     with _histories_lock:
         histories = list(_histories.values())
     for history in histories:

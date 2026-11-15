@@ -470,6 +470,76 @@ class TestTheMediaCacheHoldsThem:
         assert cache_collection.used_bytes(str(user.id)) == 0
         assert _collections(client, keyed) == before
 
+    def test_a_cache_started_while_they_are_added_counts_their_room(
+        self, client, keyed, monkeypatch, user_and_token, tmp_path
+    ):
+        """The images are fetched, checked against the cap, indexed and added,
+        then moved into the media cache. Nothing held their room from the
+        check to the move, so a cache of a bucket's collection started then
+        passed the cap with them, even in this one process. The add stops
+        after its check, on its job's thread."""
+        import threading
+
+        import pandas as pd
+
+        from utk_curio.backend.app.discovery.application import cache_collection, index_collection
+        from utk_curio.backend.app.discovery.domain.errors import DownloadTooLarge
+
+        user, _token = user_and_token
+        cap = 1024 * 1024
+        monkeypatch.setenv(cache_collection.ENV_CAP, repr(cap / 1024**3))
+        # A bucket's collection of one file the size of the cap: it fits
+        # alone, and not beside the images.
+        relpath = "frames/one.jpg"
+        (tmp_path / "bucket").mkdir()
+        index = tmp_path / "bucket" / "index.parquet"
+        pd.DataFrame([{
+            "file_id": index_collection.file_id(relpath), "relpath": relpath, "name": "one.jpg",
+            "ext": "jpg", "kind": "image", "bytes": cap,
+        }]).to_parquet(index, index=False)
+        bucket = {"id": "imported.xbucket000001", "path": str(index)}
+
+        class _OneFile:
+            type = "s3"
+
+            def local_path(self, _relpath):
+                return None
+
+            def stream(self, _relpath, sink, *, max_bytes, ceiling, progress=None):
+                sink(b"x" * cap)
+
+        checked, go = threading.Event(), threading.Event()
+        images: list[int] = []
+        build_rows = index_collection.build_rows
+
+        def _after_the_check(manifest, folder, spec, files, **kwargs):
+            images.append(sum(int(file.size) for file in files))
+            checked.set()
+            go.wait(timeout=30)
+            return build_rows(manifest, folder, spec, files, **kwargs)
+
+        monkeypatch.setattr(index_collection, "build_rows", _after_the_check)
+        res = acquire(client, keyed, SOURCE, "images", parameters=RECORDED)
+        assert res.status_code == 202, res.get_data(as_text=True)
+        try:
+            assert checked.wait(30), "the add never reached its index"
+            assert 0 < images[0] <= cap, images
+            try:
+                cached = cache_collection.cache(str(user.id), bucket, _OneFile())
+            except DownloadTooLarge as refused:
+                cached = refused
+        finally:
+            go.set()
+        job = wait_for(client, keyed, res.get_json()["jobId"], timeout=60)
+
+        assert isinstance(cached, DownloadTooLarge), (
+            f"a cache of {cap:,} bytes ran ({cached}) while {images[0]:,} bytes of images were being "
+            f"added: together past the account's {cap:,}-byte cap"
+        )
+        assert cache_collection.ENV_CAP in str(cached)
+        assert job["status"] == "completed", job
+        assert cache_collection.used_bytes(str(user.id)) == images[0]
+
 
 # ── where the files are ────────────────────────────────────────────────────
 

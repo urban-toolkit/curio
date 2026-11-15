@@ -1,6 +1,7 @@
 """Business logic for project save / load / list / delete."""
 from __future__ import annotations
 
+import dataclasses
 import logging
 import math
 import re
@@ -13,7 +14,7 @@ from typing import Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 from utk_curio.backend.extensions import db
-from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.collaboration import dataflow_docs, owner_calls
 from utk_curio.backend.app.projects import concurrency
 from utk_curio.backend.app.projects import repositories as repo
 from utk_curio.backend.app.projects import scenarios
@@ -894,6 +895,9 @@ def _seed_dataset_defaults(user, ukey: str, project_id: str, spec: dict) -> dict
 
     Returns the spec to carry forward: re-read from disk when anything was
     installed, since the installer writes refs through its own repository.
+
+    Each install is made by the backend process that owns the new dataflow
+    (``collaboration/owner_calls.py``), which the create's need not be.
     """
     from utk_curio.backend.app.datasets import defaults as dataset_defaults
 
@@ -904,13 +908,12 @@ def _seed_dataset_defaults(user, ukey: str, project_id: str, spec: dict) -> dict
     if not wanted:
         return spec
 
-    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+    from utk_curio.backend.app.datasets.application import owner_operations as dataset_operations
 
-    service = DatasetCatalogService(user)
     installed_any = False
     for dataset_id in sorted(wanted):
         try:
-            service.install_dataset(project_id, dataset_id)
+            owner_calls.run(dataset_operations.install, ukey, project_id, user_id=user.id, dataset_id=dataset_id)
             installed_any = True
         except Exception as exc:  # noqa: BLE001
             logger.warning(
@@ -1210,8 +1213,13 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
     # Drop dataset refs keyed on visualization/sink nodes (passthrough duplicates).
     effective_spec = _prune_sink_node_dataset_refs(effective_spec, ukey)
     if effective_spec is not data.spec:
-        # The history the create put on record is not written twice.
-        dataflow_docs.put(ukey, project_id, _without_history(effective_spec), over=created, actor=actor)
+        # The history the create put on record is not written twice. Written
+        # by the backend process that owns the new dataflow, which a create
+        # made where the request landed need not be.
+        owner_calls.run(
+            _write_created, ukey, project_id, spec=_without_history(effective_spec), created=dict(created),
+            actor=dataclasses.asdict(actor),
+        )
     # The dataset twin of `seed_spec_with_defaults` above: ids the user put in
     # "all projects" are installed into this brand-new project. Done HERE, after
     # the spec is on disk, and by calling the ordinary install path rather than
@@ -1255,6 +1263,19 @@ def save_project(user, data: ProjectCreate, *, sign_in: Optional[str] = None,
                       dataset_install_warnings=install_warnings,
                       spec_revision=storage.spec_revision(ukey, project_id),
                       categories=_categories(user, project_id, effective_spec))
+
+
+@owner_calls.operation("projects.write-created")
+def _write_created(ukey: str, project_id: str, *, spec: dict, created: dict, actor: dict) -> None:
+    """The write a create follows with (:func:`save_project`): *spec* over
+    *created*, the dataflow as the create wrote it, by *actor*. The
+    operation ``projects.write-created``, which the new dataflow's owner makes
+    when the create was made in another backend process
+    (``collaboration/owner_calls.py``)."""
+    dataflow_docs.put(
+        ukey, project_id, spec, over=dataflow_docs.Live(created, user_key=ukey, project_id=project_id),
+        actor=dataflow_docs.Actor(**actor),
+    )
 
 
 def _project_to_save(user, project_id: str, *, cleanup: bool = False):

@@ -162,6 +162,23 @@ def _isolation_active_label():
     return 'fork' if state else 'off'
 
 
+def _memory_limit():
+    """The memory limit isolated nodes run under, as ``(kind, why not a
+    cgroup)``: ``cgroup``, ``address space`` with its reason in words from a
+    closed list (``node_cgroups.REASONS``), or ``none`` where nodes run in
+    this process.
+
+    Before the first isolated run it is what that run's zygote will choose
+    (``lifecycle.memory_limit``), so a deploy can check it at once.
+    """
+    if _isolation_label() != 'fork':
+        return 'none', None
+    from utk_curio.sandbox.isolation import lifecycle, node_cgroups
+
+    kind, reason = lifecycle.memory_limit()
+    return kind, node_cgroups.REASONS.get(reason) if reason else None
+
+
 @app.route('/version', methods=['GET'])
 def version():
     from utk_curio import __version__
@@ -172,6 +189,7 @@ def version():
         'version': __version__,
         'isolation': _isolation_label(),
         'isolation_active': _isolation_active_label(),
+        'memory_limit': _memory_limit()[0],
     })
 
 @app.route('/monitor', methods=['GET'])
@@ -193,6 +211,7 @@ def monitor():
     payload = metrics.snapshot()
     payload['isolation'] = _isolation_label()
     payload['isolation_active'] = _isolation_active_label()
+    payload['memory_limit'], payload['memory_limit_reason'] = _memory_limit()
     payload['errors'] = metrics.errors()
 
     # The limits actually in force when a zygote is up, else the ones this

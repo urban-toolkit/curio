@@ -51,7 +51,9 @@ def _model():
 
 
 def test_local_relief_equals_numpys_5_by_5_mean_difference():
-    model = _model()
+    import onnxruntime as ort
+
+    session = ort.InferenceSession(_model().path, providers=["CPUExecutionProvider"])
     rng = np.random.default_rng(0)
     cases = {
         "64 by 64 random": rng.uniform(0, 300, (64, 64)),
@@ -61,7 +63,7 @@ def test_local_relief_equals_numpys_5_by_5_mean_difference():
     }
     for name, height in cases.items():
         heights = height.astype(np.float32)
-        (relief,) = model.run({"height": heights[np.newaxis, np.newaxis]})
+        (relief,) = session.run(None, {"height": heights[np.newaxis, np.newaxis]})
         assert relief.shape == (1, 1) + heights.shape, name
         assert np.abs(relief[0, 0] - _reference(heights)).max() <= 1e-3, name
 
@@ -121,10 +123,12 @@ def _namespace():
 
 _CODE = (
     "    import numpy as np\n"
+    "    import onnxruntime as ort\n"
     "    model = curio_load_model('model.example.local-relief')\n"
+    "    session = ort.InferenceSession(model.path, providers=['CPUExecutionProvider'])\n"
     "    heights = np.zeros((9, 9), dtype=np.float32)\n"
     "    heights[4, 4] = 25.0\n"
-    "    (relief,) = model.run({'height': heights[np.newaxis, np.newaxis]})\n"
+    "    (relief,) = session.run(None, {'height': heights[np.newaxis, np.newaxis]})\n"
     "    print('relief', round(float(relief[0, 0, 4, 4]), 4))\n"
     "    return round(float(relief[0, 0, 4, 4]), 4)\n"
 )
@@ -140,6 +144,31 @@ def test_curio_load_model_runs_a_model_package_in_process():
                           models={MODEL_ID: str(LOCAL_RELIEF)})
     assert result["stderr"] == ""
     assert "relief 24.0" in "\n".join(result["stdout"])
+
+
+def test_the_cell_curio_writes_for_its_graph_runs_once_its_array_is_given(tmp_path):
+    """The cell a node of an image-to-image model opens with when its template
+    ships no source (``packages.domain.default_cells``), for Local Relief's
+    graph, its one ``...`` given ``input_0``: it imports onnxruntime itself,
+    opens the model on its ``path`` and runs as the sandbox runs a node's
+    code, on the tower."""
+    import textwrap
+
+    from utk_curio.backend.app.datasets.domain.onnx_model import graph_inputs
+    from utk_curio.backend.app.packages.domain.default_cells import default_cell
+    from utk_curio.sandbox.util.catalog_helpers import CurioModel
+    from utk_curio.sandbox.util.user_code import compile_user_code
+
+    graph = LOCAL_RELIEF / "models" / "local_relief.onnx"
+    with graph.open("rb") as handle:
+        cell = default_cell(MODEL_ID, "image-to-image", graph_inputs(handle, graph.stat().st_size))
+    assert '    "height": ...,  # float32 [1, 1, rows, cols]\n' in cell
+    namespace = {"curio_load_model": lambda model_id: CurioModel(model_id, str(LOCAL_RELIEF))}
+    given = cell.replace('"height": ...,', '"height": input_0,')
+    exec(compile_user_code(textwrap.indent(given, "    "), str(tmp_path)), namespace)
+    relief = namespace["userCode"](input_0=_tower()[np.newaxis, np.newaxis])
+    assert relief.shape == (1, 1, 9, 9)
+    assert round(float(relief[0, 0, 4, 4]), 4) == 24.0
 
 
 def test_an_isolated_child_runs_a_staged_model_package(tmp_path):
