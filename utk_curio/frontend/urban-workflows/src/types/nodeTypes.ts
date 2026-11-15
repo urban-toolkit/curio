@@ -43,11 +43,16 @@ export interface MissingModuleNotice {
     | "install-disabled"
     // A module of a catalog package the account has not added: `package`.
     | "package-not-added"
+    // A module the catalog's copy of a package the account has ships, and
+    // the account's copy does not: `package`, with the catalog's `version`,
+    // which is newer ("package-update") or not ("package-version").
+    | "package-update"
+    | "package-version"
     // A module of a package the account has, which only `nodes` import.
     | "package-module"
     | null;
   detail: string | null;
-  /** The package that ships the module, for the two package reasons. */
+  /** The package that ships the module, for the package reasons. */
   package?: MissingModulePackage | null;
   /** "package-module": the labels of the nodes that import the module. */
   nodes?: string[];
@@ -61,6 +66,8 @@ export interface MissingModulePackage {
   kind: "node" | "model";
   /** The name its catalog lists it by. */
   name: string;
+  /** "package-update" and "package-version": the catalog's version that ships the module. */
+  version?: string | null;
 }
 
 export interface ICodeData {

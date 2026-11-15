@@ -254,14 +254,17 @@ MODULE = "tracking_helpers"
 PACKAGE_ID = "ai.test.tracker"
 
 
-def _package_files(*, kind: str = "node") -> dict[str, str]:
-    """The files of a package named Tracker that ships the module MODULE
-    beside its one template, Track, whose source imports it; *kind*
-    ``model`` makes it a model package."""
+def _package_files(
+    *, kind: str = "node", major: int = 1, version: str = "1.0.0", ships_module: bool = True,
+) -> dict[str, str]:
+    """The files of a package named Tracker, of *major* and *version*, that
+    ships the module MODULE beside its one template, Track, whose source
+    imports it; *kind* ``model`` makes it a model package. Without
+    *ships_module*, an older Tracker, whose Track imports nothing."""
     manifest = {
-        "id": PACKAGE_ID, "version": "1.0.0", "name": "Tracker", "publisher": "Test",
+        "id": PACKAGE_ID, "version": version, "name": "Tracker", "publisher": "Test",
         "description": "Test package", "license": "MIT",
-        "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+        "compatibility": {"curioRuntime": ">=0.5.0", "major": major},
         "permissions": [], "dependencies": {"packages": {}, "python": {}, "js": {}},
         "createdAt": "2026-06-01T12:00:00Z",
         "templates": [{
@@ -275,6 +278,8 @@ def _package_files(*, kind: str = "node") -> dict[str, str]:
         "sources/track.py": f"from {MODULE} import track\nreturn track()\n",
         f"sources/{MODULE}.py": "def track():\n    return 1\n",
     }
+    if not ships_module:
+        files = {"sources/track.py": "return 1\n"}
     if kind == "model":
         manifest["kind"] = "model"
         manifest["model"] = {
@@ -304,13 +309,13 @@ def catalog(tmp_curio, monkeypatch):
     return root
 
 
-def _put_in_catalog(root, *, kind: str = "node"):
-    """Put the package in the catalog at *root* as ``packages/`` holds one,
-    and return its manifest as Curio reads it."""
+def _put_in_catalog(root, *, kind: str = "node", major: int = 1, version: str = "1.0.0"):
+    """Put the package, of *major* and *version*, in the catalog at *root* as
+    ``packages/`` holds one, and return its manifest as Curio reads it."""
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
-    folder = root / f"{PACKAGE_ID}@1"
-    for relative, text in _package_files(kind=kind).items():
+    folder = root / f"{PACKAGE_ID}@{major}"
+    for relative, text in _package_files(kind=kind, major=major, version=version).items():
         path = folder / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
@@ -366,7 +371,7 @@ class TestTheReplyOfAPlay:
 
     CODE = f"from {MODULE} import track\nreturn track()\n"
 
-    def _play(self, client, token, monkeypatch):
+    def _play(self, client, token, monkeypatch, dataflow_id=None):
         stderr = _traceback(f"ModuleNotFoundError: No module named '{MODULE}'")
 
         class Reply:
@@ -380,10 +385,13 @@ class TestTheReplyOfAPlay:
             lambda method, path, **kwargs: Reply(),
         )
         monkeypatch.setattr(pip_runner, "distributions_for_module", lambda name: [])
-        resp = client.post("/processPythonCode", json={
+        body = {
             "code": self.CODE, "nodeType": "curio.builtin/python-computation", "nodeId": "n1",
             "input": {"path": "", "dataType": "str"}, "saveOutputDataset": False,
-        }, headers={"Authorization": f"Bearer {token}"})
+        }
+        if dataflow_id:
+            body["dataflowId"] = dataflow_id
+        resp = client.post("/processPythonCode", json=body, headers={"Authorization": f"Bearer {token}"})
         text = resp.get_data(as_text=True)
         assert resp.status_code == 200, text
         return resp.get_json()["missingModule"]
@@ -435,5 +443,84 @@ class TestTheReplyOfAPlay:
         assert found["installable"] is False, found
         assert found["reason"] == "package-module"
         assert found["distribution"] is None
+        assert found["package"] == {"id": PACKAGE_ID, "kind": "node", "name": "Tracker"}
+        assert found["nodes"] == ["Track"]
+
+    @pytest.mark.parametrize("major, version", [(1, "1.1.0"), (2, "2.0.0")], ids=["same-major", "next-major"])
+    def test_an_account_with_an_older_version_is_told_to_update_it(
+        self, client, user_and_token, catalog, monkeypatch, major, version,
+    ):
+        # The account holds Tracker 1.0.0, which ships no such module; only the
+        # catalog's newer Tracker does, of the same major or of the next.
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        install_package_from_archive(_user_dir_key(user), _archive(_package_files(ships_module=False)))
+        _put_in_catalog(catalog, major=major, version=version)
+        found = self._play(client, token, monkeypatch)
+        assert found["installable"] is False, found
+        assert found["reason"] == "package-update"
+        assert found["distribution"] is None
+        assert found["package"] == {"id": PACKAGE_ID, "kind": "node", "name": "Tracker", "version": version}
+
+    @pytest.mark.parametrize("held, listed", [((2, "2.0.0"), (1, "1.0.0")), ((1, "1.0.0"), (1, "1.0.0"))],
+                             ids=["older-in-catalog", "same-version"])
+    def test_a_module_of_another_copy_that_is_not_newer_is_never_offered(
+        self, client, user_and_token, catalog, monkeypatch, held, listed,
+    ):
+        # The account's Tracker ships no such module and the catalog's copy,
+        # older or of the same version, does: no update gives it, and the
+        # name is still no library's.
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        install_package_from_archive(
+            _user_dir_key(user),
+            _archive(_package_files(major=held[0], version=held[1], ships_module=False)),
+        )
+        _put_in_catalog(catalog, major=listed[0], version=listed[1])
+        found = self._play(client, token, monkeypatch)
+        assert found["installable"] is False, found
+        assert found["reason"] == "package-version"
+        assert found["distribution"] is None
+        assert found["package"] == {"id": PACKAGE_ID, "kind": "node", "name": "Tracker", "version": listed[1]}
+
+    def test_an_editor_on_a_dataflow_that_uses_the_owners_package_is_told_which_nodes_import_it(
+        self, client, db, user_and_token, catalog, monkeypatch,
+    ):
+        # alice's dataflow uses her Tracker, which no catalog holds; bob, an
+        # editor she invited, plays a built-in node on it. His runs read the
+        # packages her dataflow uses from her store, so the module is one of
+        # hers, though his own store and the catalog are empty.
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
+        from utk_curio.backend.app.projects import access
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+        from utk_curio.backend.app.users.models import User, UserSession
+
+        alice, alice_token = user_and_token
+        key = _user_dir_key(alice)
+        install_package_from_archive(key, _archive(_package_files()))
+        resp = client.post("/api/projects", json={
+            "name": "Tracking", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": [],
+        }, headers={"Authorization": f"Bearer {alice_token}"})
+        text = resp.get_data(as_text=True)
+        assert resp.status_code == 201, text
+        pid = resp.get_json()["id"]
+        spec = projects_storage.read_spec(key, pid)
+        spec["dataflow"]["packages"] = [f"{PACKAGE_ID}@1"]
+        projects_storage.write_spec(key, pid, spec)
+        bob = User(username="bob", name="Bob", email="bob@test.com")
+        db.session.add(bob)
+        db.session.flush()
+        db.session.add(UserSession(user_id=bob.id, token="bob-tracker-token"))
+        db.session.commit()
+        access.add_editor(alice, pid, "bob")
+
+        found = self._play(client, "bob-tracker-token", monkeypatch, dataflow_id=pid)
+        assert found["installable"] is False, found
+        assert found["reason"] == "package-module"
         assert found["package"] == {"id": PACKAGE_ID, "kind": "node", "name": "Tracker"}
         assert found["nodes"] == ["Track"]

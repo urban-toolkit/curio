@@ -233,6 +233,28 @@ describe("a module a package ships", () => {
     expect(screen.queryByText(/Add Tracker/)).toBeNull();
   });
 
+  it("says to update a package whose newer version ships the module", () => {
+    renderNotice({
+      module: "tracking_helpers", distribution: null, installable: false,
+      reason: "package-update", package: { ...tracker, kind: "node", version: "1.1.0" },
+    });
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText(
+      "tracking_helpers is a module of a newer version of Tracker. Update Tracker to 1.1.0 from the Node Catalog, then run the node again.",
+    )).toBeInTheDocument();
+  });
+
+  it("names the catalog's version, with no update, when that version is not newer", () => {
+    renderNotice({
+      module: "tracking_helpers", distribution: null, installable: false,
+      reason: "package-version", package: { ...tracker, kind: "model", version: "1.0.0" },
+    });
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText(
+      "tracking_helpers is a module of Tracker 1.0.0 as the Model Catalog has it, and this account's copy of Tracker does not have it.",
+    )).toBeInTheDocument();
+  });
+
   it("names the nodes that import a module of a package the account has", () => {
     renderNotice({
       module: "tracking_helpers", distribution: null, installable: false,

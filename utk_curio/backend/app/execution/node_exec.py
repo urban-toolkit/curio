@@ -1076,9 +1076,9 @@ def _missing_module(user, output, stderr, *, dataflow_id=None, owners=None):
 
     A module a package ships is read as the run of *user* on *dataflow_id*
     gets its modules (*owners*: :func:`owners_packages_for`), and is answered
-    with the package, never an install. When that package is one to add and
-    *user* may not add packages, ``detail`` says why, as an install refusal
-    does for a library (#309).
+    with the package, never an install. When that package is one to add or to
+    update and *user* may not install packages, ``detail`` says why, as an
+    install refusal does for a library (#309).
     """
     if not (isinstance(output, dict) and not output.get('path')):
         return None
@@ -1088,8 +1088,10 @@ def _missing_module(user, output, stderr, *, dataflow_id=None, owners=None):
     missing_module = missing_import.detect(
         stderr, user_key=exec_user_key(user), project_id=dataflow_id, owners=owners,
     )
-    if missing_module and missing_module.get("reason") == missing_import.PACKAGE_NOT_ADDED:
-        # Never point at an add the package routes would refuse.
+    if missing_module and missing_module.get("reason") in (
+        missing_import.PACKAGE_NOT_ADDED, missing_import.PACKAGE_UPDATE,
+    ):
+        # Never point at an add or an update the package routes would refuse.
         refusal = package_install_refusal(user)
         if refusal:
             missing_module = {**missing_module, "detail": refusal}

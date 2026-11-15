@@ -1124,6 +1124,10 @@ import {name} (line {line}): {name} is a module of the package {package}, and on
 
 import {name} (line {line}): {name} is a module of the package {package}, which this account has not added; once the user adds it, these nodes import it: {nodes}
 
+## grounding.import-package-version
+
+import {name} (line {line}): {name} is a module of the package {package} at version {version}, as the catalog has it, and this account's copy of that package does not ship it; only nodes of the catalog's copy import it: {nodes}
+
 ## grounding.code-refused
 
 code refused, {count} problem{s} with what it calls or imports:

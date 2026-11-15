@@ -100,6 +100,7 @@ When a Python node's run stops at `ModuleNotFoundError`, a notice under the trac
 
 - A library: **Install** with the library's name installs it.
 - A module a package ships: the package and the catalog to add it from, with no install. A Track Objects node in an account without SAM 3 reads *sam3_tracking is a module of SAM 3 (objects found by name). Add SAM 3 (objects found by name) to this project from the Model Catalog, then run the node again.* For a guest, the second sentence says that guests cannot install packages.
+- A module of the catalog's copy of a package your account has, which your copy does not ship: the catalog's version, with no install. When that version is newer than yours, the notice says to update the package to it from its catalog.
 - A module of a package your account has: the nodes that import it, which are the nodes of that package and of the packages that depend on it.
 
 A Python node that calls a key-gated API reads the key by name, never as a literal: `api_key = curio_secret("<name>")` returns the key saved under that name as a **Node code** key on the **API keys** tab of **API Settings** (see [USAGE.md](USAGE.md#keys-for-node-code)). Like `curio_data_path("<id>")`, the name travels with the dataflow, and the value reaches the sandbox for the run only.

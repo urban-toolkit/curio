@@ -45,8 +45,11 @@ node of an account that has not added the package, fails to import one, and
 Which package ships which module is the packages' own index
 (``python_modules.module_index``: the account's packages, an invited editor's
 owner's, and the catalog's), so the answer names the package to add
-(:data:`PACKAGE_NOT_ADDED`), or, for a package the account has, the nodes that
-import it (:data:`PACKAGE_MODULE`).
+(:data:`PACKAGE_NOT_ADDED`), the package to update when only the catalog's
+newer version of one the account has ships it (:data:`PACKAGE_UPDATE`), the
+catalog's version that ships it when that is not newer (:data:`PACKAGE_VERSION`),
+or, for a package the account has, the nodes that import it
+(:data:`PACKAGE_MODULE`).
 """
 from __future__ import annotations
 
@@ -66,6 +69,17 @@ PACKAGE_NOT_ADDED = "package-not-added"
 #: nodes of that package and of the packages that depend on it import:
 #: ``package`` says which, and ``nodes`` lists those nodes by their labels.
 PACKAGE_MODULE = "package-module"
+
+#: The reason of a module the catalog's copy of a package the account has
+#: ships, and the account's copy does not, when the catalog's is newer:
+#: ``package`` says which, with the ``version`` that ships it, and updating
+#: it from its catalog is the fix.
+PACKAGE_UPDATE = "package-update"
+
+#: The same, when the catalog's copy is not newer than the account's (an
+#: older version, or the same one with other files): ``package`` says which,
+#: with the catalog's ``version``. No update gives it.
+PACKAGE_VERSION = "package-version"
 
 #: The terminating line of a traceback, when that line is a missing module.
 #:
@@ -101,12 +115,15 @@ def _reason(module: str, distribution: str | None, reason: str, detail: str | No
 def _package_answer(module: str, home: dict) -> dict:
     """The answer for *module*, which the package *home* ships (its entry in
     ``python_modules.module_index``): never installable, with the package by
-    its id, kind and name, and for a package the account has, the nodes that
-    import the module."""
+    its id, kind and name; for a package the account has, the nodes that
+    import the module, and for another version of one, that version."""
     package = {"id": home["package"].rsplit("@", 1)[0], "kind": home["kind"], "name": home["name"]}
     if home["added"]:
         nodes = [template["label"] for template in home["templates"]]
         return {**_reason(module, None, PACKAGE_MODULE), "package": package, "nodes": nodes}
+    if home.get("another_version"):
+        reason = PACKAGE_UPDATE if home.get("newer") else PACKAGE_VERSION
+        return {**_reason(module, None, reason), "package": {**package, "version": home["version"]}}
     return {**_reason(module, None, PACKAGE_NOT_ADDED), "package": package}
 
 
@@ -117,7 +134,8 @@ def detect(
 
     Returns ``{"module", "distribution", "installable", "reason", "detail"}``,
     and for a module a package ships, ``package`` and maybe ``nodes`` (see
-    :data:`PACKAGE_NOT_ADDED` and :data:`PACKAGE_MODULE`). ``installable`` is
+    :data:`PACKAGE_NOT_ADDED`, :data:`PACKAGE_UPDATE`, :data:`PACKAGE_VERSION`
+    and :data:`PACKAGE_MODULE`). ``installable`` is
     the only field a caller needs to decide whether to offer an install;
     ``reason`` says why not when it is false.
 

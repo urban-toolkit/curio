@@ -83,6 +83,23 @@ function refusal(notice: Notice): string | null {
           ?? `Add ${name} to this project from the ${packageCatalogName(kind)}, then run the node again.`)
       );
     }
+    case "package-update": {
+      if (!notice.package) return null;
+      const { name, kind, version } = notice.package;
+      return (
+        `${notice.module} is a module of a newer version of ${name}. ` +
+        (notice.detail
+          ?? `Update ${name}${version ? ` to ${version}` : ""} from the ${packageCatalogName(kind)}, then run the node again.`)
+      );
+    }
+    case "package-version": {
+      if (!notice.package) return null;
+      const { name, kind, version } = notice.package;
+      return (
+        `${notice.module} is a module of ${name}${version ? ` ${version}` : ""} as the ` +
+        `${packageCatalogName(kind)} has it, and this account's copy of ${name} does not have it.`
+      );
+    }
     case "package-module": {
       if (!notice.package) return null;
       const nodes = notice.nodes ?? [];
