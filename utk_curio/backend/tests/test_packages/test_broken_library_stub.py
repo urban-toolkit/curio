@@ -17,6 +17,8 @@ import sys
 
 import pytest
 
+from utk_curio.backend.app.packages.infrastructure.pip_runner import install_python_deps
+
 #: The fake's name, at the start of each entry the route's ``remaining``
 #: lists: its module, ``<name>.py``, and its metadata,
 #: ``<name>-<version>.dist-info``. The route's names hold no ``-`` or ``.``.
@@ -89,7 +91,7 @@ def test_the_fake_is_the_real_shape_pip_is_satisfied_and_the_import_is_not(clien
     assert "DLL load failed" in body["importError"]
 
 
-def test_pip_skips_it_rather_than_reaching_an_index(client):
+def test_pip_skips_it_rather_than_reaching_an_index(client, monkeypatch):
     """The whole test suite stays offline because of this.
 
     ``install_python_deps`` consults the same metadata pip does, so the fake
@@ -98,10 +100,25 @@ def test_pip_skips_it_rather_than_reaching_an_index(client):
     from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     _post(client, action="install")
-    report = pip_runner.install_python_deps({"brokenlib": ""})
+    # The package conftest stubs pip_runner.install_python_deps with one that
+    # skips every library, fake or not. This module's import of it, bound
+    # before any fixture ran, is the real one: the fake's metadata decides.
+    monkeypatch.setattr(pip_runner, "install_python_deps", install_python_deps)
+    started = []
+
+    def _refuse_to_start(*args, **kwargs):
+        started.append(args[0] if args else kwargs.get("args"))
+        pytest.fail(f"install_python_deps started a process: {started[-1]}")
+
+    # Every process start is refused, not run (subprocess.run starts through
+    # Popen too), so no pip can reach an index, whatever the fake's state.
+    with monkeypatch.context() as patch:
+        patch.setattr(pip_runner.subprocess, "Popen", _refuse_to_start)
+        report = pip_runner.install_python_deps({"brokenlib": ""})
 
     assert report.skipped == ["brokenlib"]
     assert report.installed == []
+    assert started == [], f"install_python_deps started a process: {started}"
 
 
 def test_it_is_invisible_until_asked_for_and_after_removal(client):
