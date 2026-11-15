@@ -79,8 +79,12 @@ def spatial_join(left, right, operation="intersects", output="pairs"):
 def _layer(value, name):
     """*value* when it is one layer, a GeoDataFrame; else a message saying what to connect."""
     import geopandas as gpd
+    import pandas as pd
 
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, (list, tuple)) and value and all(
+        isinstance(item, pd.DataFrame) or (isinstance(item, dict) and ("geojson" in item or "layerName" in item))
+        for item in value
+    ):
         names = [layer for layer in (_layer_name(item) for item in value) if layer]
         if names:
             raise ValueError(

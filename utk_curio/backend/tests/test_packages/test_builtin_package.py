@@ -38,9 +38,11 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "note",
 })
 
+#: The behaviors the templates declare, each a hook ``builtinBehaviors.ts``
+#: registers. The Spatial Join is a code node, of ``code``.
 EXPECTED_BEHAVIORS: frozenset[str] = frozenset({
     "code", "data-export", "data-pool", "data-summary", "vega",
-    "simple-vis", "autk-grammar", "spatial-join",
+    "simple-vis", "autk-grammar",
     "edit-features", "note",
 })
 
@@ -216,23 +218,27 @@ BUILTIN_STARTERS = {
     "data-loading": "sources/data-loading.py",
     "data-export": "sources/data-export.py",
     "data-summary": "sources/data-summary.py",
+    "spatial-join": "sources/spatial-join.py",
 }
 
 
-def test_only_data_loading_data_export_and_data_summary_ship_a_starter(builtin_package_dir: Path):
+def test_only_data_loading_data_export_data_summary_and_spatial_join_ship_a_starter(builtin_package_dir: Path):
     """Data Loading opens with the code that loads what its Data widget holds,
     Data Export with the code that writes its input to the file its File name
-    widget names, and Data Summary with the code that summarizes its input, as
-    a starter file each, so the code a node runs is in the package and not in
-    the canvas's own code. Every other built-in template opens empty, and
-    ships no starter file."""
+    widget names, Data Summary with the code that summarizes its input, and
+    Spatial Join with its call of ``spatial_join``, as a starter file each, so
+    the code a node runs is in the package and not in the canvas's own code.
+    Every other built-in template opens empty, and ships no starter file. The
+    one other file is the module the join's code imports."""
     manifest = load_package_manifest(builtin_package_dir)
     for template in manifest.templates:
         assert template.source == BUILTIN_STARTERS.get(template.template_id), (
             f"built-in template {template.template_id} declares source {template.source!r}"
         )
     shipped = sorted(p.name for p in (builtin_package_dir / "sources").iterdir())
-    assert shipped == ["data-export.py", "data-loading.py", "data-summary.py"], shipped
+    assert shipped == ["data-export.py", "data-loading.py", "data-summary.py", "spatial-join.py", "spatial_join.py"], (
+        shipped
+    )
     assert (builtin_package_dir / "sources" / "data-export.py").read_text(encoding="utf-8") == (
         "return curio_export(input_0, [!! file_name !!], part=[!! part !!])\n"
     )
@@ -272,6 +278,37 @@ def test_data_export_is_a_python_code_node_that_opens_on_its_file_name(builtin_p
     assert export.opens_on_controls is True
     assert len(export.input_ports) == 1 and export.output_ports == []
     assert export.input_ports[0].types == ["DATAFRAME", "GEODATAFRAME", "RASTER", "LIST", "JSON"]
+
+
+def test_spatial_join_is_a_python_code_node_that_opens_on_its_two_widgets(builtin_package_dir: Path):
+    """Spatial Join runs its code, a call of the built-in package's
+    ``spatial_join``: it opens on its Widgets tab, Operation and Output, the
+    code being its whole content (``starterIsContent``), with its two input
+    ports, input_0 and input_1, and one output."""
+    import json
+
+    manifest = load_package_manifest(builtin_package_dir)
+    join = next(t for t in manifest.templates if t.template_id == "spatial-join")
+    assert (join.editor, join.engine, join.has_code, join.has_widgets) == ("code", "python", True, True)
+    assert join.behavior == "code"
+    assert join.widgets == [
+        {"name": "operation", "type": "choice", "label": "Operation", "default": "intersects",
+         "options": {"choices": ["intersects", "within", "contains", "touches", "overlaps", "crosses", "nearest"],
+                     "display": "dropdown"}},
+        {"name": "output", "type": "choice", "label": "Output", "default": "pairs",
+         "options": {"choices": ["pairs", "counts"], "display": "dropdown"}},
+    ]
+    assert join.opens_on_controls is True
+    raw = next(t for t in json.loads((builtin_package_dir / "manifest.json").read_text(encoding="utf-8"))["templates"]
+               if t["id"] == "spatial-join")
+    assert raw["starterIsContent"] is True
+    assert [port.types for port in join.input_ports] == [["GEODATAFRAME"], ["GEODATAFRAME"]]
+    assert [port.cardinality for port in join.input_ports] == ["1", "1"]
+    assert [port.types for port in join.output_ports] == [["GEODATAFRAME"]]
+    assert (builtin_package_dir / "sources" / "spatial-join.py").read_text(encoding="utf-8") == (
+        "from spatial_join import spatial_join\n\n"
+        "return spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n"
+    )
 
 
 def test_every_catalog_package_validates_against_schema():

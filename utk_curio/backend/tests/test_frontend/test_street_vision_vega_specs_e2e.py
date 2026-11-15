@@ -14,9 +14,9 @@ see (#276):
 
 This runs everything after the segmentation nodes for real: a stand-in for
 their output (one tagged point inside each Chicago ZIP polygon, so every class
-shows up), the real polygon loader, the real Spatial Join node and route, and
-the three specs read from the shipped example file, so the example's own text
-is what is under test.
+shows up), the real polygon loader, the real Spatial Join node and its code,
+and the three specs read from the shipped example file, so the example's own
+text is what is under test.
 
 Run::
 
@@ -39,7 +39,6 @@ from .utils import (
     require_user_auth,
     run_node_and_wait,
     stub_login_and_enter_workflow,
-    wait_for_node_done,
 )
 
 if TYPE_CHECKING:
@@ -91,13 +90,14 @@ return gdf.rename(columns={"zip": "neighborhood"})
 """
 
 
-def _shipped_join_metadata() -> dict:
+def _shipped_join() -> dict:
+    """Example 10's joins, which agree on their code and their widgets: one of them."""
     with open(EXAMPLE, encoding="utf-8") as fh:
         nodes = json.load(fh)["dataflow"]["nodes"]
     joins = [n for n in nodes if n["type"] == "curio.builtin/spatial-join"]
-    settings = {json.dumps(n["metadata"].get("spatialJoin"), sort_keys=True) for n in joins}
-    assert len(settings) == 1, f"example 10's joins disagree on their settings: {settings}"
-    return joins[0]["metadata"]
+    settings = {json.dumps([n["content"], n["metadata"].get("widgets")], sort_keys=True) for n in joins}
+    assert len(settings) == 1, f"example 10's joins disagree on their code or widgets: {settings}"
+    return joins[0]
 
 
 def _shipped_spec(node_prefix: str) -> str:
@@ -143,9 +143,9 @@ def _spec() -> dict:
             "nodes": [
                 _node(POINTS_ID, "curio.builtin/data-loading", 0, 0, POINTS_CODE),
                 _node(POLYGONS_ID, "curio.builtin/data-loading", 0, 430, POLYGONS_CODE),
-                # The join's settings, as the example sets them.
-                _node(JOIN_ID, "curio.builtin/spatial-join", 645, 215, "",
-                      _shipped_join_metadata()),
+                # The join's code and widgets, as the example sets them.
+                _node(JOIN_ID, "curio.builtin/spatial-join", 645, 215, _shipped_join()["content"],
+                      _shipped_join()["metadata"]),
                 _node(MAP_ID, "curio.builtin/vis-vega", 1045, 0, _shipped_spec(MAP_NODE)),
                 _node(BARS_ID, "curio.builtin/vis-vega", 1045, 430, _shipped_spec(BARS_NODE)),
                 _node(SECOND_BARS_ID, "curio.builtin/vis-vega", 1045, 860,
@@ -228,15 +228,13 @@ def test_the_street_vision_vega_specs_draw_from_a_spatial_join(
 
     run_node_and_wait(page, POINTS_ID, node_type="DATA_LOADING", timeout_ms=120000)
     run_node_and_wait(page, POLYGONS_ID, node_type="DATA_LOADING", timeout_ms=120000)
-    # Spatial Join fires on its own once both slots hold data.
-    wait_for_node_done(page, JOIN_ID, node_type="SPATIAL_JOIN", timeout_ms=120000)
+    # The join is a code node: its play runs its code on both circles.
+    printed = run_node_and_wait(page, JOIN_ID, node_type="SPATIAL_JOIN", timeout_ms=120000)
 
     # Every synthetic point sits inside its own ZIP polygon, so the join must
     # pair each of them with exactly one polygon (#576): 61 pairs, and every
-    # one of the 61 points matched.
-    status = node_locator(page, JOIN_ID).locator("[data-curio-spatial-join-status]")
-    status.wait_for(state="visible", timeout=30000)
-    assert status.inner_text() == "61 pairs: 61 of 61 input_0 rows matched.", status.inner_text()
+    # one of the 61 points matched, as the join's code printed.
+    assert "61 pairs: 61 of 61 input_0 rows matched." in printed, printed
 
     # The map: a geoshape layer over the joined points, coloured by the
     # per-polygon dominant class, which the spec works out itself since #576.

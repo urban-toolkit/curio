@@ -725,7 +725,7 @@ class TestDev119ExecutableFlag:
         user, _ = user_and_token
         key = projects_services._user_dir_key(user)
         rows = self._rows(key, alice_project, [
-            _template("spatial-join", "Spatial Join", editor="none", has_code=False),
+            _template("surface", "Surface", editor="none", has_code=False),
             _template("python-thing", "Python", editor="code"),
             _template("js-thing", "JS", editor="code", engine="javascript"),
             _template("look", "Look", editor="grammar", has_code=False, has_grammar=True),
@@ -734,7 +734,7 @@ class TestDev119ExecutableFlag:
         assert rows["python-thing"]["executable"] is True
         assert rows["python-thing"]["engine"] == "python" and rows["python-thing"]["hasCode"] is True
         assert rows["js-thing"]["executable"] is True and rows["js-thing"]["engine"] == "javascript"
-        assert rows["spatial-join"]["executable"] is False and rows["spatial-join"]["editor"] == "none"
+        assert rows["surface"]["executable"] is False and rows["surface"]["editor"] == "none"
         assert rows["look"]["executable"] is False and rows["look"]["hasCode"] is False
         # A code-kind NAME on a template without code is not executable: the
         # manifest decides, never the name.
@@ -755,14 +755,14 @@ class TestDev119ExecutableFlag:
         key = projects_services._user_dir_key(user)
         _write_package(key, "ai.test.exec", 1, [
             _template("js-thing", "JS", editor="code", engine="javascript"),
-            _template("spatial-join", "Spatial Join", editor="none", has_code=False),
+            _template("surface", "Surface", editor="none", has_code=False),
         ])
         _lockfile_add(key, alice_project, "ai.test.exec@1")
         snap = packages_services.roster_templates(key, alice_project)
         assert snap["ai.test.exec/js-thing"] == {
             "executable": True, "engine": "javascript", "contentKind": "code",
         }
-        assert snap["ai.test.exec/spatial-join"] == {
+        assert snap["ai.test.exec/surface"] == {
             "executable": False, "engine": "python", "contentKind": "note",
         }
         # The runner's contract, nothing more. `contentKind` joined it in

@@ -401,7 +401,7 @@
       "dataflowCategories": {
         "dataTypes": ["Geometries"]
       },
-      "description": "Pairs the rows of two inputs whose shapes meet, such as points and the polygons they fall in. Connect them to the top circle (input_0) and the bottom circle (input_1), then pick how the shapes meet in Operation: intersects, within, contains, touches, overlaps, crosses or nearest. Output gives one row per pair, with input_1's columns added, or input_1's rows with their count of pairs. Its code calls spatial_join, a function of the built-in package.",
+      "description": "Pairs the rows of two inputs whose shapes meet, such as points and the polygons they fall in. Connect them to the top circle and the bottom circle, then pick how the shapes meet in Operation: intersects, within, contains, touches, overlaps, crosses or nearest. Output gives one row per pair, with the bottom input's columns added, or the bottom input's rows with their count of pairs.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,

@@ -53,7 +53,7 @@ class TestTemplateContentKind:
         # A document: authored, validated, never executed.
         assert kinds["vis-vega"] == "grammar"
         assert kinds["autk-grammar"] == "grammar"
-        # Wired, not written — the nodes the field log found holding prose
+        # Wired, not written: the nodes the field log found holding prose
         # plus the one that would have been next.
         assert kinds["data-pool"] == "none"       # editor none + an input port
         assert kinds["vis-simple"] == "none"

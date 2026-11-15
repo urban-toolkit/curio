@@ -1,10 +1,20 @@
 """The Spatial Join pairs two inputs by an operation, on geopandas sjoin (#576).
 
-input_0 (the node's top circle) is the left side of the join and input_1 (the
-bottom circle) the right, whatever geometry each holds. The output is one row
-per matching pair, input_0's row with input_1's columns added, or input_1's
-rows with a count. A point on an edge follows shapely's rule for each
-operation. Every test goes through ``POST /spatial_join``, as the node does.
+The join is ``spatial_join``, the function of the built-in package's module
+(``packages/curio.builtin@1/sources/spatial_join.py``), which the Spatial Join
+node's code calls with its two circles and its two widgets. input_0 (the
+node's top circle) is the left side of the join and input_1 (the bottom
+circle) the right, whatever geometry each holds. The output is one row per
+matching pair, input_0's row with input_1's columns added, or input_1's rows
+with a count; the function prints how many rows it paired, and why an
+operation can never match the shapes given when it found no pair. A point on
+an edge follows shapely's rule for each operation. Every test calls the
+function, staged as the sandbox stages a node's modules.
+
+These are the tests of the route the node used to post to, ``/spatial_join``,
+on the same boards, each asserting what the route's answer said: its pairs
+and columns as the frame's rows, its counts as the line the function prints,
+its warnings as the hints it prints, its 400s as the errors it raises.
 
 The board most tests share, in plain coordinates:
 
@@ -15,14 +25,38 @@ The board most tests share, in plain coordinates:
 """
 from __future__ import annotations
 
+import ast
+import json
+from pathlib import Path
+
 import pytest
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+PACKAGE = REPO_ROOT / "packages" / "curio.builtin@1"
+MODULE = "spatial_join"
 
-def _fc(features, crs=None):
-    fc = {"type": "FeatureCollection", "features": features}
-    if crs:
-        fc["crs"] = {"type": "name", "properties": {"name": crs}}
-    return fc
+
+@pytest.fixture()
+def join(tmp_path):
+    """``spatial_join``, imported from the built-in package's module staged
+    into a folder of the run's own, as the sandbox stages it."""
+    import importlib
+
+    from utk_curio.sandbox.util.package_modules import importable
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    run = tmp_path / "run-join"
+    run.mkdir()
+    staged = stage_package_modules({"root": str(PACKAGE / "sources"), "names": [MODULE]}, str(run))
+    with importable(str(run / staged["root"]), staged["names"]):
+        yield importlib.import_module(MODULE).spatial_join
+
+
+def _frame(features, crs=None):
+    """A GeoDataFrame of GeoJSON features, as a node's output reads in the sandbox."""
+    import geopandas as gpd
+
+    return gpd.GeoDataFrame.from_features(features, crs=crs)
 
 
 def _feature(geometry, **props):
@@ -38,31 +72,27 @@ def _point(x, y, **props):
     return _feature({"type": "Point", "coordinates": [x, y]}, **props)
 
 
-SQUARES = _fc([
-    _box(0, 0, 2, 2, square="A"),
-    _box(1, 1, 3, 3, square="B"),
-    _box(2, -1, 4, 0, square="C"),
-])
-POINTS = _fc([
+SQUARES = [_box(0, 0, 2, 2, square="A"), _box(1, 1, 3, 3, square="B"), _box(2, -1, 4, 0, square="C")]
+POINTS = [
     _point(0.5, 0.5, point="inside A"),
     _point(2, 0.5, point="on A's edge"),
     _point(1.5, 1.5, point="in A and B"),
     _point(10, 10, point="far"),
-])
-LINE = _fc([_feature({"type": "LineString", "coordinates": [[-1, 1], [5, 1]]}, line="y=1")])
+]
+LINE = [_feature({"type": "LineString", "coordinates": [[-1, 1], [5, 1]]}, line="y=1")]
 
 
-def _join(client, left, right, **settings):
-    response = client.post("/spatial_join", json={"left": left, "right": right, **settings})
-    assert response.status_code == 200, response.get_json()
-    return response.get_json()
+def _run(join, capsys, left, right, **settings):
+    """The joined rows and the lines the join printed."""
+    result = join(left, right, **settings)
+    return result, capsys.readouterr().out.splitlines()
 
 
-def _pairs(body, left_key, right_key):
-    return sorted((f["properties"][left_key], f["properties"][right_key]) for f in body["features"])
+def _pairs(result, left_key, right_key):
+    return sorted(zip(result[left_key], result[right_key]))
 
 
-@pytest.mark.parametrize("predicate, expected", [
+@pytest.mark.parametrize("operation, expected", [
     # A point on an edge intersects the polygon...
     ("intersects", [("in A and B", "A"), ("in A and B", "B"), ("inside A", "A"), ("on A's edge", "A")]),
     # ...is not within it...
@@ -70,136 +100,233 @@ def _pairs(body, left_key, right_key):
     # ...and is the only point that touches it.
     ("touches", [("on A's edge", "A")]),
 ])
-def test_points_on_input_0_pair_by_the_operation_and_its_boundary_rule(client, predicate, expected):
+def test_points_on_input_0_pair_by_the_operation_and_its_boundary_rule(join, capsys, operation, expected):
     """#576: intersects, within and touches, a point on an edge included."""
-    body = _join(client, POINTS, SQUARES, predicate=predicate)
-    assert _pairs(body, "point", "square") == expected
-    assert body["metadata"]["predicate"] == predicate
+    result, lines = _run(join, capsys, _frame(POINTS), _frame(SQUARES), operation=operation)
+    assert _pairs(result, "point", "square") == expected
+    pairs = f"{len(expected)} pair{'' if len(expected) == 1 else 's'}"
+    assert lines == [f"{pairs}: {len({p for p, _ in expected})} of 4 input_0 rows matched."]
 
 
-def test_one_row_per_pair_with_input_1s_columns_and_the_counts_in_metadata(client):
+def test_one_row_per_pair_with_input_1s_columns_and_the_counts_it_prints(join, capsys):
     """#576: a point in two polygons is two rows; a point in none is left out."""
-    body = _join(client, POINTS, SQUARES)
-    rows = [f for f in body["features"] if f["properties"]["point"] == "in A and B"]
-    assert sorted(f["properties"]["square"] for f in rows) == ["A", "B"]
+    import geopandas as gpd
+
+    result, lines = _run(join, capsys, _frame(POINTS), _frame(SQUARES))
+    assert isinstance(result, gpd.GeoDataFrame)
+    assert list(result.columns) == ["geometry", "point", "square"]
+    rows = result[result["point"] == "in A and B"]
+    assert sorted(rows["square"]) == ["A", "B"]
     # The geometry of a pair is input_0's.
-    assert all(f["geometry"] == {"type": "Point", "coordinates": [1.5, 1.5]} for f in rows)
-    assert body["metadata"] == {
-        "name": "spatial_join_result", "output": "pairs", "predicate": "intersects",
-        "pairs": 4, "matched_left": 3, "matched_right": 2, "left_rows": 4, "right_rows": 3,
-    }
+    assert all(geometry.wkt == "POINT (1.5 1.5)" for geometry in rows.geometry)
+    # Four pairs of three of the four points, and of two of the three squares.
+    assert lines == ["4 pairs: 3 of 4 input_0 rows matched."]
+    _counts, counted = _run(join, capsys, _frame(POINTS), _frame(SQUARES), output="counts")
+    assert counted == ["2 of 3 input_1 rows have pairs (4 in all); each row carries point_count."]
 
 
-def test_a_polygon_on_input_0_joins_instead_of_failing(client):
+def test_a_polygon_on_input_0_joins_instead_of_failing(join, capsys):
     """#576: a polygon on the points side was an HTTP 500. Inputs follow the
     circles now, so polygons on input_0 contain the points on input_1."""
-    body = _join(client, SQUARES, POINTS, predicate="contains")
+    result, _lines = _run(join, capsys, _frame(SQUARES), _frame(POINTS), operation="contains")
     # The point on A's edge is not contained: the polygon does not hold its boundary.
-    assert _pairs(body, "square", "point") == [("A", "in A and B"), ("A", "inside A"), ("B", "in A and B")]
-    assert body["features"][0]["geometry"]["type"] == "Polygon"
-    intersects = _join(client, SQUARES, POINTS)
+    assert _pairs(result, "square", "point") == [("A", "in A and B"), ("A", "inside A"), ("B", "in A and B")]
+    assert result.geometry.iloc[0].geom_type == "Polygon"
+    intersects, _lines = _run(join, capsys, _frame(SQUARES), _frame(POINTS))
     assert _pairs(intersects, "square", "point") == [
         ("A", "in A and B"), ("A", "inside A"), ("A", "on A's edge"), ("B", "in A and B"),
     ]
 
 
-def test_polygons_with_polygons_overlap_and_touch(client):
+def test_polygons_with_polygons_overlap_and_touch(join, capsys):
     """#576: two polygon inputs join; A and B overlap, A and C meet at a corner."""
-    overlaps = _join(client, SQUARES, SQUARES, predicate="overlaps")
+    overlaps, _lines = _run(join, capsys, _frame(SQUARES), _frame(SQUARES), operation="overlaps")
     assert _pairs(overlaps, "square", "square_right") == [("A", "B"), ("B", "A")]
-    touches = _join(client, SQUARES, SQUARES, predicate="touches")
+    touches, _lines = _run(join, capsys, _frame(SQUARES), _frame(SQUARES), operation="touches")
     assert _pairs(touches, "square", "square_right") == [("A", "C"), ("C", "A")]
 
 
-def test_a_line_crosses_the_polygon_it_runs_through_not_the_one_it_runs_along(client):
+def test_a_line_crosses_the_polygon_it_runs_through_not_the_one_it_runs_along(join, capsys):
     """#576: y=1 enters and leaves A, but only runs along B's bottom edge."""
-    body = _join(client, LINE, SQUARES, predicate="crosses")
-    assert _pairs(body, "line", "square") == [("y=1", "A")]
+    result, _lines = _run(join, capsys, _frame(LINE), _frame(SQUARES), operation="crosses")
+    assert _pairs(result, "line", "square") == [("y=1", "A")]
 
 
-def test_nearest_pairs_each_row_with_the_closest_and_says_how_far_in_meters(client):
+def test_nearest_pairs_each_row_with_the_closest_and_says_how_far_in_meters(join, capsys):
     """#576: in Chicago, 0.001 degrees of longitude is about 83 m."""
-    stations = _fc([_point(-87.650, 41.90, station="west"), _point(-87.600, 41.90, station="east")])
-    photos = _fc([_point(-87.649, 41.90, photo="p1"), _point(-87.601, 41.90, photo="p2")])
-    body = _join(client, photos, stations, predicate="nearest")
-    assert _pairs(body, "photo", "station") == [("p1", "west"), ("p2", "east")]
-    for feature in body["features"]:
-        assert 80 < feature["properties"]["distance"] < 86, feature["properties"]
+    stations = _frame([_point(-87.650, 41.90, station="west"), _point(-87.600, 41.90, station="east")])
+    photos = _frame([_point(-87.649, 41.90, photo="p1"), _point(-87.601, 41.90, photo="p2")])
+    result, _lines = _run(join, capsys, photos, stations, operation="nearest")
+    assert _pairs(result, "photo", "station") == [("p1", "west"), ("p2", "east")]
+    for distance in result["distance"]:
+        assert 80 < distance < 86, distance
 
 
-def test_a_column_input_0_already_has_comes_in_with_right(client):
+def test_a_column_input_0_already_has_comes_in_with_right(join, capsys):
     """#576: input_1's columns never overwrite input_0's."""
-    photo = _fc([_point(0.5, 0.5, name="photo-1.jpg", kind="photo")])
-    area = _fc([_box(0, 0, 2, 2, name="Loop", zone="Z1")])
-    body = _join(client, photo, area)
-    assert body["features"][0]["properties"] == {
+    photo = _frame([_point(0.5, 0.5, name="photo-1.jpg", kind="photo")])
+    area = _frame([_box(0, 0, 2, 2, name="Loop", zone="Z1")])
+    result, _lines = _run(join, capsys, photo, area)
+    assert json.loads(result.to_json(drop_id=True))["features"][0]["properties"] == {
         "name": "photo-1.jpg", "kind": "photo", "name_right": "Loop", "zone": "Z1",
     }
 
 
-def test_counts_give_input_1s_rows_each_with_its_own_count(client):
+def test_counts_give_input_1s_rows_each_with_its_own_count(join, capsys):
     """#576: the per-polygon counts output stays, counted per row. Two rows
     that share a name (a ZIP drawn as two polygons) used to both get the
     name's total."""
-    zips = _fc([_box(0, 0, 2, 2, zip="60643"), _box(5, 5, 6, 6, zip="60643"), _box(1, 1, 3, 3, zip="60652")])
-    body = _join(client, POINTS, zips, output="counts")
-    assert [(f["properties"]["zip"], f["properties"]["point_count"]) for f in body["features"]] == [
-        ("60643", 3), ("60643", 0), ("60652", 1),
-    ]
-    assert body["features"][0]["geometry"]["type"] == "Polygon"
-    assert body["metadata"]["output"] == "counts"
-    assert body["metadata"]["matched_right"] == 2
+    zips = _frame([_box(0, 0, 2, 2, zip="60643"), _box(5, 5, 6, 6, zip="60643"), _box(1, 1, 3, 3, zip="60652")])
+    result, lines = _run(join, capsys, _frame(POINTS), zips, output="counts")
+    assert list(zip(result["zip"], result["point_count"])) == [("60643", 3), ("60643", 0), ("60652", 1)]
+    assert result.geometry.iloc[0].geom_type == "Polygon"
+    assert lines == ["2 of 3 input_1 rows have pairs (4 in all); each row carries point_count."]
 
 
-@pytest.mark.parametrize("left, right, predicate, words", [
+@pytest.mark.parametrize("left, right, operation, words", [
     (SQUARES, POINTS, "within", ["a polygon is never within a point", "contains", "swap"]),
     (POINTS, SQUARES, "contains", ["a point never contains a polygon", "within", "swap"]),
     (POINTS, SQUARES, "overlaps", ["overlaps pairs shapes of one kind", "intersects"]),
-    (SQUARES, _fc([_box(10, 10, 11, 11, square="D")]), "crosses", ["two polygons never cross"]),
+    (SQUARES, [_box(10, 10, 11, 11, square="D")], "crosses", ["two polygons never cross"]),
 ])
-def test_an_operation_that_can_never_match_these_shapes_says_what_to_pick(client, left, right, predicate, words):
+def test_an_operation_that_can_never_match_these_shapes_says_what_to_pick(join, capsys, left, right, operation, words):
     """#576: no pairs, and a message instead of an empty result to puzzle over."""
-    body = _join(client, left, right, predicate=predicate)
-    assert body["features"] == []
-    assert len(body["metadata"]["warnings"]) == 1
+    result, lines = _run(join, capsys, _frame(left), _frame(right), operation=operation)
+    assert len(result) == 0
+    assert lines[0] == f"0 pairs: 0 of {len(left)} input_0 rows matched."
+    assert len(lines) == 2, lines
     for word in words:
-        assert word in body["metadata"]["warnings"][0], body["metadata"]["warnings"]
+        assert word in lines[1], lines
 
 
-def test_an_input_that_is_not_geodata_is_a_400_naming_its_circle(client):
-    """#576: a table without geometry on a circle gets a message, never a 500."""
-    table = {"dataType": "dataframe", "data": {"a": [1, 2]}}
-    left = client.post("/spatial_join", json={"left": table, "right": SQUARES})
-    assert left.status_code == 400
-    assert "input_0 is not geodata" in left.get_json()["error"]
-    right = client.post("/spatial_join", json={"left": POINTS, "right": [1, 2]})
-    assert right.status_code == 400
-    assert "input_1 is not geodata" in right.get_json()["error"]
+def test_an_input_that_is_not_geodata_is_refused_naming_its_circle(join):
+    """#576: a table without geometry on a circle gets a message, never a crash."""
+    import pandas as pd
+
+    with pytest.raises(ValueError, match="input_0 is not geodata"):
+        join(pd.DataFrame({"a": [1, 2]}), _frame(SQUARES))
+    with pytest.raises(ValueError, match="input_1 is not geodata"):
+        join(_frame(POINTS), [1, 2])
+    # A circle with no edge is None in node code.
+    with pytest.raises(ValueError) as unwired:
+        join(_frame(POINTS), None)
+    assert str(unwired.value) == (
+        "input_1 is not geodata: connect a node whose output has a geometry column (a GeoDataFrame) to its circle."
+    )
 
 
-def test_an_unknown_operation_or_output_is_a_400_listing_the_choices(client):
+def test_an_input_of_several_layers_is_refused_naming_them_and_the_chip_that_picks_one(join):
+    """An Autark node hands on several layers as a list of frames, each named:
+    the join takes one, which a layer chip in its code picks."""
+    roads, parks = _frame(LINE), _frame(SQUARES)
+    roads.__dict__["metadata"] = {"name": "table_osm_roads"}
+    parks.__dict__["metadata"] = {"name": "table_osm_parks"}
+    with pytest.raises(ValueError) as refused:
+        join([roads, parks], _frame(SQUARES))
+    assert str(refused.value) == (
+        "input_0 holds several layers (table_osm_roads, table_osm_parks): pick one with its layer chip, "
+        "such as [!! input_0:table_osm_roads !!]."
+    )
+
+
+def test_an_unknown_operation_or_output_is_refused_listing_the_choices(join):
     """#576."""
-    wrong = client.post("/spatial_join", json={"left": POINTS, "right": SQUARES, "predicate": "near"})
-    assert wrong.status_code == 400
-    assert "intersects, within, contains, touches, overlaps, crosses, nearest" in wrong.get_json()["error"]
-    wrong = client.post("/spatial_join", json={"left": POINTS, "right": SQUARES, "output": "polygons"})
-    assert wrong.status_code == 400
-    assert "pairs, counts" in wrong.get_json()["error"]
+    with pytest.raises(ValueError) as wrong:
+        join(_frame(POINTS), _frame(SQUARES), operation="near")
+    assert str(wrong.value) == (
+        "The operation must be one of intersects, within, contains, touches, overlaps, crosses, nearest; got 'near'."
+    )
+    with pytest.raises(ValueError) as wrong:
+        join(_frame(POINTS), _frame(SQUARES), output="polygons")
+    assert str(wrong.value) == "The output must be one of pairs, counts; got 'polygons'."
 
 
-def test_input_1_in_another_crs_is_reprojected_to_input_0s(client):
-    """#576: the sandbox writes a GeoDataFrame's CRS as the collection's crs
-    member; input_1 in web mercator still pairs with input_0 in degrees."""
+def test_input_1_in_another_crs_is_reprojected_to_input_0s(join, capsys):
+    """#576: input_1 in web mercator still pairs with input_0 in degrees."""
     from pyproj import Transformer
 
     to_mercator = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
     corners = [to_mercator.transform(x, y) for x, y in [(-87.7, 41.8), (-87.6, 41.9)]]
-    area = _fc([_box(corners[0][0], corners[0][1], corners[1][0], corners[1][1], area="Loop")],
-               crs="urn:ogc:def:crs:EPSG::3857")
-    photos = _fc([_point(-87.65, 41.85, photo="in"), _point(-87.5, 41.85, photo="out")],
-                 crs="urn:ogc:def:crs:EPSG::4326")
-    body = _join(client, photos, area)
-    assert _pairs(body, "photo", "area") == [("in", "Loop")]
+    area = _frame([_box(corners[0][0], corners[0][1], corners[1][0], corners[1][1], area="Loop")], crs="EPSG:3857")
+    photos = _frame([_point(-87.65, 41.85, photo="in"), _point(-87.5, 41.85, photo="out")], crs="EPSG:4326")
+    result, _lines = _run(join, capsys, photos, area)
+    assert _pairs(result, "photo", "area") == [("in", "Loop")]
     # The pairs keep input_0's coordinates, and say which system they are in.
-    assert body["features"][0]["geometry"]["coordinates"] == [-87.65, 41.85]
-    assert body["crs"]["properties"]["name"] == "urn:ogc:def:crs:EPSG::4326"
+    assert (result.geometry.iloc[0].x, result.geometry.iloc[0].y) == (-87.65, 41.85)
+    assert result.crs.to_epsg() == 4326
+
+
+def test_the_inputs_are_left_as_they_were(join, capsys):
+    """The join reads its inputs and hands back new rows: a node's input is the
+    output of the node that feeds it, which other nodes read too."""
+    points, squares = _frame(POINTS), _frame(SQUARES)
+    before = (points.to_json(), squares.to_json())
+    _run(join, capsys, points, squares, output="counts")
+    _run(join, capsys, points, squares, operation="nearest")
+    assert (points.to_json(), squares.to_json()) == before
+
+
+# ---------------------------------------------------------------------------
+# The module and the node's code
+# ---------------------------------------------------------------------------
+
+def test_the_module_offers_spatial_join_and_says_what_it_does(join):
+    """What node code calls is what the module's ``__all__`` names: a function
+    it defines, whose docstring's first paragraph says what it does. It
+    imports nothing of Curio's and calls no ``curio_`` function."""
+    import importlib
+    import inspect
+
+    module = importlib.import_module(MODULE)
+    assert list(module.__all__) == ["spatial_join"]
+    public = sorted(
+        attr for attr, value in vars(module).items()
+        if inspect.isfunction(value) and value.__module__ == MODULE and not attr.startswith("_")
+    )
+    assert public == ["spatial_join"]
+    first = " ".join((inspect.getdoc(module.spatial_join) or "").split("\n\n")[0].split())
+    assert first == (
+        "Pair each row of ``left`` with the rows of ``right`` whose shapes meet by ``operation``: "
+        "intersects, within, contains, touches, overlaps, crosses or nearest."
+    )
+    tree = ast.parse(inspect.getsource(module))
+    imported = [alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names]
+    imported += [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
+    assert not [name for name in imported if name.split(".")[0] == "utk_curio"], imported
+    assert not [node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id.startswith("curio_")]
+
+
+def test_the_nodes_code_is_its_settings_and_a_short_call():
+    """A node's logic is in functions of its package's modules, and its code
+    holds its settings and a short call: the Spatial Join's is the import of
+    ``spatial_join`` and the return of its call on both circles with its two
+    widgets."""
+    code = (PACKAGE / "sources" / "spatial-join.py").read_text(encoding="utf-8")
+    assert "utk_curio" not in code
+    body = ast.parse("def node():\n" + "\n".join("    " + line.replace("[!! ", "").replace(" !!]", "")
+                                                 for line in code.splitlines())).body[0].body
+    assert [type(statement).__name__ for statement in body] == ["ImportFrom", "Return"]
+    assert ast.unparse(body[0]) == f"from {MODULE} import spatial_join"
+    assert ast.unparse(body[1].value) == "spatial_join(input_0, input_1, operation=operation, output=output)"
+
+
+def test_the_nodes_code_runs_as_the_sandbox_runs_it(join, capsys):
+    """The template's code, its chips written as a run writes them from its
+    widgets, run as the sandbox runs node code, on the two circles."""
+    from utk_curio.backend.app.execution.code_references import resolve_references
+    from utk_curio.sandbox.util.input_names import call_as_node
+
+    manifest = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
+    template = next(t for t in manifest["templates"] if t["id"] == "spatial-join")
+    widgets = [{**template["widgets"][0], "value": "within"}, {**template["widgets"][1], "value": "counts"}]
+    code, problems = resolve_references(
+        (PACKAGE / "sources" / "spatial-join.py").read_text(encoding="utf-8"), widgets, "python",
+        [{"slot": 0}, {"slot": 1}],
+    )
+    assert problems == []
+    body = "\n".join("    " + line for line in code.splitlines())
+    result = call_as_node(body, {}, [_frame(POINTS), _frame(SQUARES)], [0, 1])
+    assert list(zip(result["square"], result["point_count"])) == [("A", 2), ("B", 1), ("C", 0)]
+    assert capsys.readouterr().out.splitlines() == [
+        "2 of 3 input_1 rows have pairs (3 in all); each row carries point_count.",
+    ]

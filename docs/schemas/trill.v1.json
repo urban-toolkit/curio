@@ -407,7 +407,7 @@
         },
         "spatialJoin": {
           "type": "object",
-          "description": "Settings of a Spatial Join node (#576). `predicate` is how input_0's shape must meet input_1's; absent means `intersects`, which is also what the backend assumes. `output` picks what the node emits: one row per matching pair with input_1's columns added (`pairs`, absent, the default) or input_1's rows, each with `point_count` (`counts`).",
+          "description": "Settings of a Spatial Join saved before its join was code (#576): `predicate`, how input_0's shape must meet input_1's (absent means `intersects`), and `output`, `pairs` (absent, the default) or `counts`. Its code and its two widgets, `operation` and `output`, hold them now: a join saved with this and no code reads with its template's code and these values in its widgets (`src/contracts/savedSpatialJoin.json`), and nothing writes it any more.",
           "additionalProperties": false,
           "properties": {
             "predicate": { "type": "string", "enum": ["intersects", "within", "contains", "touches", "overlaps", "crosses", "nearest"] },
