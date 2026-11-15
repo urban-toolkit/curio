@@ -788,15 +788,19 @@ def _mint_node_settings_write(
     return agents_changes.land(user_key, project_id, loop_ctx, spec, landing, part)
 
 
-def _node_create_widgets(entry: dict, raw: object) -> tuple[list, list[str]]:
+def _node_create_widgets(entry: dict, raw: object, template_widgets: list) -> tuple[list, list[str]]:
     """#662: the widgets a created node declares, or why they are refused: a
-    widget is placed by a node's code or spec, so only such a node holds one."""
+    widget is placed by a node's code or spec, so only such a node holds one,
+    and one its template declares is judged as the node will hold it, a
+    choice among the template's choices (``widget_grammar.template_problems``),
+    as a planned node's is."""
     widgets, problems = widget_grammar.parse_widgets(raw, "params.widgets")
     if problems:
         return [], problems
     if widgets and entry.get("contentKind") not in ("code", "grammar"):
         return [], [agent_text.message("mint.widgets-not-placeable", label=entry.get('label') or entry.get('id'))]
-    return widgets, []
+    problems = widget_grammar.template_problems(widgets, template_widgets, "params.widgets")
+    return ([], problems) if problems else (widgets, [])
 
 
 def _node_create_settings(
@@ -887,11 +891,6 @@ def _mint_node_create(
     saved = projects_storage.read_spec(user_key, project_id)
     if saved is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
-    # Read before the gate: a chart's or a map's document is checked with the
-    # widgets the node declares.
-    widgets, widget_errors = _node_create_widgets(entry, params.get("widgets"))
-    if widget_errors:
-        return agents_tool_rounds._refuse_params("; ".join(widget_errors))
     # The template's widgets, each the request names set as it says, at mint,
     # so the change card shows what lands: a starter's, which it places, or
     # the ones any other template declares, which a node of it starts with on
@@ -899,6 +898,11 @@ def _mint_node_create(
     template_widgets = starter["widgets"] if starter is not None else _node_create_declared_widgets(
         user_key, project_id, entry,
     )
+    # Read before the gate: a chart's or a map's document is checked with the
+    # widgets the node declares.
+    widgets, widget_errors = _node_create_widgets(entry, params.get("widgets"), template_widgets)
+    if widget_errors:
+        return agents_tool_rounds._refuse_params("; ".join(widget_errors))
     if template_widgets:
         widgets = agents_plan_scenarios._set_over(template_widgets, widgets)
     # dev/114 (DEC-072): the source-grounding gate — BEFORE any store write.

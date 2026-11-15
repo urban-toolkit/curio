@@ -4,7 +4,9 @@ The grammar (``domain/widget_grammar.py``, ``domain/plan_scenarios.py``) checks
 what a plan says on its own and expands its duplicates into copies. This is
 what needs the saved dataflow:
 
-* at mint: a node that holds widgets is one whose code or spec places them;
+* at mint: a node that holds widgets is one whose code or spec places them,
+  and each widget its template declares is judged as the node will hold it,
+  a choice among the template's choices (``widget_grammar.template_problems``);
   an existing node a selection names is in the dataflow and in no other
   scenario; a scenario
   takes a name none of the dataflow's has, since scenario chips color and
@@ -24,7 +26,7 @@ from __future__ import annotations
 
 import uuid
 
-from utk_curio.backend.app.agents.domain import node_settings
+from utk_curio.backend.app.agents.domain import node_settings, widget_grammar
 from utk_curio.backend.app.execution.code_references import normalize_widgets
 from utk_curio.backend.app.projects.scenarios import next_scenario_color, normalize_scenarios
 from utk_curio.backend.app.scenario_catalog.domain.duplicate import lineage_of
@@ -42,10 +44,14 @@ def existing_scenarios(spec: dict) -> list[dict]:
     return normalize_scenarios(dataflow.get("scenarios"), node_ids)
 
 
-def mint_errors(plan: dict, available: dict, existing_nodes: dict, scenarios: list) -> list[str]:
-    """What the saved dataflow refuses in the plan's widgets and scenarios."""
+def mint_errors(plan: dict, available: dict, existing_nodes: dict, scenarios: list, *,
+                starters: dict | None = None, declared: dict | None = None) -> list[str]:
+    """What the saved dataflow refuses in the plan's widgets and scenarios.
+    *starters* and *declared* are the refs' templates' starters and declared
+    widgets (``plans._content_starters``, ``plans._declared_widgets``), which
+    a node of each starts with (:func:`created_node_metadata`)."""
     errors: list[str] = []
-    for node in plan["nodes"]:
+    for index, node in enumerate(plan["nodes"]):
         if not node.get("widgets"):
             continue
         entry = available.get(node["nodeType"]) or {}
@@ -55,6 +61,13 @@ def mint_errors(plan: dict, available: dict, existing_nodes: dict, scenarios: li
                     "plan.widgets-not-placeable", ref=repr(node['ref']), label=entry.get('label') or node['nodeType'],
                 )
             )
+        elif not node.get("copyOf"):
+            # A copy holds its original's widgets, judged here once.
+            errors.extend(widget_grammar.template_problems(
+                node["widgets"],
+                _template_widgets((starters or {}).get(node["ref"]), (declared or {}).get(node["ref"])),
+                f"nodes[{index}].widgets",
+            ))
     owner = {member: s["name"] for s in scenarios for member in s["nodes"]}
     taken = {s["name"] for s in scenarios}
     refs = {n["ref"] for n in plan["nodes"]}
@@ -169,7 +182,7 @@ def created_node_metadata(
     plan declares set over the one of its name, then the plan's others."""
     metadata: dict = {}
     planned = [dict(w) for w in plan_node.get("widgets") or []]
-    template_widgets = starter["widgets"] if starter else (declared or [])
+    template_widgets = _template_widgets(starter, declared)
     widgets = _set_over(template_widgets, planned) if template_widgets else planned
     if widgets:
         metadata["widgets"] = widgets
@@ -179,6 +192,13 @@ def created_node_metadata(
         original = next((n for n in nodes if isinstance(n, dict) and n.get("id") == origin_id), {})
         metadata["copiedFrom"] = [*lineage_of(original), origin_id]
     return metadata
+
+
+def _template_widgets(starter: dict | None, declared: list | None) -> list:
+    """The widgets a planned node starts with before the plan's own: its
+    template's starter's, which the starter places, else the ones its
+    template declares."""
+    return starter["widgets"] if starter else (declared or [])
 
 
 def _set_over(template_widgets: list, planned: list) -> list[dict]:

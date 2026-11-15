@@ -427,8 +427,11 @@ class TestAWrongChangeIsRefusedToTheModel:
         refused = self._refused(
             client, user, token, monkeypatch, target="chart", widgets={"combine": "median", "threshold": 12},
         )
-        # As the Widgets tab says it of a value the user types.
-        assert "params.widgets.combine: Pick one of the choices." in refused, refused
+        # As the Widgets tab says it of a value the user types, a choice's
+        # naming its choices, which the model cannot see as the tab shows them.
+        assert (
+            'params.widgets.combine must be one of the combine widget\'s choices: mean, sum, max; got "median"'
+        ) in refused, refused
         assert "params.widgets.threshold: Enter a number from 0 to 10." in refused, refused
 
     def test_widget_values_not_given_by_name(self, client, user_and_token, tmp_curio, monkeypatch):

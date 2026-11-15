@@ -909,7 +909,9 @@ class TestTypedValuesInANativeCall:
         )
         body = _run(client, headers, native_project, _attach(client, headers, native_project, NB))
         refused = _native_results()[0]
-        assert refused.startswith("refused: ") and "Pick one of the choices." in refused, refused
+        assert refused.startswith("refused: ") and (
+            'params.widgets.season must be one of the season widget\'s choices: summer, winter; got "spring"'
+        ) in refused, refused
         assert [p["tool"] for p in body["content"] if p["type"] == "change"] == ["node.settings.write"]
         assert _saved_nodes(user, native_project)["season"]["metadata"]["widgets"] == [{**season, "value": "winter"}]
 

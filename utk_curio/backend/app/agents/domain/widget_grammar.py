@@ -13,7 +13,12 @@ code's reference would then fail as naming no widget.
 The shape is ``$defs.widget`` in ``docs/schemas/trill.v1.json`` (a test pins
 these keys to it), and the rules are the Widgets tab's own: ``check_widget_def``
 and ``check_widget_value``, the twins of ``checkWidgetDef`` and
-``checkWidgetValue`` in ``widgetModel.ts``.
+``checkWidgetValue`` in ``widgetModel.ts``. A value a choice widget does not
+offer, wherever an agent writes one, is refused naming the widget and its
+choices (:func:`choice_problem`), which the model cannot see as the tab shows
+them. A widget the node's template declares is judged as the node will hold
+it, the template's with the agent's keys set over it, and a choice keeps the
+template's choices (:func:`template_problems`).
 """
 from __future__ import annotations
 
@@ -21,10 +26,11 @@ import json
 import math
 
 from utk_curio.backend.app.execution.code_references import (
+    CHOICE_KINDS,
     check_widget_def,
     check_widget_value,
     effective_value,
-    normalize_widgets,
+    widget_name_or_type_problem,
     widget_with_default,
 )
 from utk_curio.backend.app.agents.domain import agent_text
@@ -117,20 +123,70 @@ def _shape_problems(entry: object, where: str) -> list[str]:
     return problems
 
 
+def _choices_of(widget: dict) -> list:
+    """*widget*'s choices as the canvas reads them (``normalizeOptions`` in
+    ``widgetModel.ts``): the texts of its options' list."""
+    options = widget.get("options") if isinstance(widget.get("options"), dict) else {}
+    choices = options.get("choices")
+    return [c for c in choices if isinstance(c, str)] if isinstance(choices, list) else []
+
+
+def sets_by_name(entry: dict) -> bool:
+    """Whether *entry*, a widget an agent declares on a new node, is of a
+    choice kind and gives no choices: it sets the widget of its name that the
+    node's template declares, whose choices it keeps, which only the template
+    knows (:func:`template_problems`)."""
+    options = entry.get("options")
+    return entry.get("type") in CHOICE_KINDS and not (isinstance(options, dict) and "choices" in options)
+
+
+def choice_problem(widget: dict, value: object, where: str) -> str | None:
+    """Why *value*, written at *where*, is not the value of *widget*, a choice
+    that offers choices, naming the widget and its choices; None when it is one
+    of them or *widget* is no such choice."""
+    choices = _choices_of(widget)
+    if widget.get("type") != "choice" or not choices or (isinstance(value, str) and value in choices):
+        return None
+    return agent_text.message(
+        "widget.not-a-choice", where=where, widget=widget.get("name"), choices=", ".join(choices),
+        value=json.dumps(value, ensure_ascii=False, default=str),
+    )
+
+
 def value_problem(widget: dict, value: object, where: str) -> str | None:
     """Why *value* cannot be *widget*'s value, or None: as the Widgets tab
-    judges a value the user sets."""
-    problem = _size_problem(value, where)
+    judges a value the user sets, a choice's naming its choices."""
+    problem = _size_problem(value, where) or choice_problem(widget, value, where)
     if problem:
         return problem
     message = check_widget_value(widget, value)
     return f"{where}: {message}" if message else None
 
 
+def _declaration_problem(widget: dict, others: list[dict], here: str) -> str | None:
+    """What the Widgets tab refuses in *widget*, a whole declaration at *here*
+    beside the node's *others*, its value among it: a choice's default or value
+    outside its choices named with them (:func:`choice_problem`), anything else
+    in the tab's words."""
+    message = check_widget_def(widget, others)
+    if message is None and "value" in widget:
+        message = check_widget_value(widget, widget["value"])
+    if message is None:
+        return None
+    for key in ("default", "value"):
+        if key in widget and message == check_widget_value(widget, widget[key]):
+            named = choice_problem(widget, widget[key], f"{here}.{key}")
+            if named:
+                return named
+    return f"{here} ({widget['name']!r}): {message}"
+
+
 def parse_widgets(raw: object, where: str) -> tuple[list[dict], list[str]]:
     """The widgets *raw* declares, as a node stores them (each with its kind's
     default when it gives none), and an error for each one the Widgets tab
-    would not take. Absent means none."""
+    would not take. Absent means none. A choice that gives no choices
+    (:func:`sets_by_name`) is kept as written, for :func:`template_problems`
+    to judge against the template's widget of its name."""
     if raw is None:
         return [], []
     if not isinstance(raw, list):
@@ -145,17 +201,54 @@ def parse_widgets(raw: object, where: str) -> tuple[list[dict], list[str]]:
         if shape:
             problems.extend(shape)
             continue
-        widget = widget_with_default({key: entry[key] for key in WIDGET_KEYS if entry.get(key) is not None})
-        message = check_widget_def(widget, kept)
-        if message is None and "value" in widget:
-            message = check_widget_value(widget, widget["value"])
-        if message:
-            problems.append(f"{here} ({widget['name']!r}): {message}")
+        given = {key: entry[key] for key in WIDGET_KEYS if entry.get(key) is not None}
+        if sets_by_name(given):
+            message = widget_name_or_type_problem(given, kept)
+            problem = f"{here} ({given['name']!r}): {message}" if message else None
+        else:
+            given = widget_with_default(given)
+            problem = _declaration_problem(given, kept, here)
+        if problem:
+            problems.append(problem)
             continue
-        kept.append(widget)
+        kept.append(given)
     if problems:
         return [], problems
-    return normalize_widgets(kept), []
+    return kept, []
+
+
+def template_problems(widgets: list[dict], declared: list[dict], where: str) -> list[str]:
+    """Why *widgets*, the widgets an agent declares on a new node
+    (:func:`parse_widgets`, at *where*), cannot be set over *declared*, the
+    widgets its template declares, which the node starts with
+    (``plan_scenarios._set_over``). One of a name the template declares is
+    judged as the node will hold it, the template's with the keys it gives set
+    over it; the template's choice keeps its type and its choices, which its
+    value and its default must be among. A choice that gives no choices and
+    names no widget of the template is refused as the Widgets tab refuses it."""
+    held = {w.get("name"): w for w in declared if isinstance(w, dict)}
+    problems: list[str] = []
+    for index, entry in enumerate(widgets):
+        here = f"{where}[{index}]"
+        template = held.get(entry["name"])
+        if template is None:
+            message = check_widget_def(widget_with_default(entry)) if sets_by_name(entry) else None
+            if message:
+                problems.append(f"{here} ({entry['name']!r}): {message}")
+            continue
+        if template.get("type") in CHOICE_KINDS and (
+            entry["type"] != template["type"]
+            or (not sets_by_name(entry) and _choices_of(entry) != _choices_of(template))
+        ):
+            problems.append(agent_text.message(
+                "widget.template-choices", where=here, widget=entry["name"], kind=template["type"],
+                choices=", ".join(_choices_of(template)),
+            ))
+            continue
+        problem = _declaration_problem(widget_with_default({**template, **entry}), [], here)
+        if problem:
+            problems.append(problem)
+    return problems
 
 
 def with_values(widgets: list[dict], values: dict) -> list[dict]:
