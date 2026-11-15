@@ -654,17 +654,20 @@ def test_the_steps_end_before_to_seconds_however_the_frames_fall(corner, walk, t
     assert (on_the_step, just_before) == ([0.0, 0.5], [30.5]), (on_the_step, just_before)
 
 
-def test_a_part_of_no_length_looks_at_its_one_frame_or_has_none(corner, walk, tmp_path):
-    """FROM_SECONDS equal to TO_SECONDS keeps its one step: the frame at
-    FROM_SECONDS, or one at most a millisecond before it, is looked at, and
-    with neither the part has no frames."""
+def test_a_part_of_no_length_looks_at_the_first_frame_from_its_start(corner, walk, tmp_path):
+    """FROM_SECONDS equal to TO_SECONDS looks at one frame wherever the frames
+    fall: the first no more than a millisecond before FROM_SECONDS, or after
+    it. That is the frame right at 1 s of the 4 fps clip, the one 0.8 ms before
+    31 s of the walk, and the one 32 ms after 31.5 s, whose frame 1.3 ms
+    before is too early. Past the video's end there is no frame."""
     with _staged(tmp_path) as module:
-        on_it = _times(module, corner, 1.0, 1.0)
+        at_it = _times(module, corner, 1.0, 1.0)
         just_before = _times(module, walk, 31.0, 31.0)
-        with pytest.raises(ValueError) as none:
-            _times(module, walk, 31.5, 31.5)
-    assert (on_it, just_before) == ([1.0], [30.999]), (on_it, just_before)
-    assert str(none.value) == "walk.mp4 has no frames from 31.5 to 31.5 s"
+        after_it = _times(module, walk, 31.5, 31.5)
+        with pytest.raises(ValueError) as past_the_end:
+            _times(module, walk, 40, 40)
+    assert (at_it, just_before, after_it) == ([1.0], [30.999], [31.532]), (at_it, just_before, after_it)
+    assert str(past_the_end.value) == "walk.mp4 has no frames from 40 to 40 s"
 
 
 def test_with_every_shorter_than_a_frame_the_overlay_plays_in_real_time(

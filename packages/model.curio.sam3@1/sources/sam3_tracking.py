@@ -153,7 +153,8 @@ def _sample(run, video, end):
     """The frames SAM 3 looks at, read in order, and their times in seconds:
     one for each step of *every_seconds* from *from_seconds* up to *end*, the
     first frame no more than a millisecond before the step's time. A part of
-    no length keeps its one step, at *from_seconds*."""
+    no length looks at one frame wherever the frames fall: the first no more
+    than a millisecond before *from_seconds*, or after it."""
     frames, times = [], []
     with av.open(video["path"]) as container:
         stream = container.streams.video[0]
@@ -165,10 +166,13 @@ def _sample(run, video, end):
         height = 2 * round(stream.codec_context.height * width / stream.codec_context.width / 2)
         container.seek(int(run.from_seconds / stream.time_base), stream=stream, backward=True)
         steps, wanted = 0, run.from_seconds
+        # Frames past *end* are not looked at, but for the one frame of a part
+        # of no length, which may come after it.
+        last = end if end != run.from_seconds else float("inf")
         for frame in container.decode(stream):
             if frame.time is None or frame.time < wanted - EARLY_SECONDS:
                 continue
-            if frame.time > end:
+            if frame.time > last:
                 break
             frames.append(frame.to_image(width=width, height=height))
             times.append(round(float(frame.time), 3))
