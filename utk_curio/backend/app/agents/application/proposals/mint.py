@@ -714,17 +714,17 @@ def _mint_node_content_write(
 
 #: What node.settings.write changes, in the order its schema lists them: the
 #: settings ``node_settings`` walks, then the node's widget values.
-_SETTING_PARAMS = ("dataPool", "simpleVis", "spatialJoin", "widgets")
+_SETTING_PARAMS = ("dataPool", "simpleVis", "widgets")
 
 
 def _mint_node_settings_write(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
     """A change of one existing node's settings: a Data Pool's modes, a Simple
-    View's image column, a Spatial Join's operation and output, and the values
-    of its widgets, each judged by its node's own rule on a node whose
-    template keeps it, worded for the card as the node words it, then landed
-    as the agent's change (``apply.land_settings``)."""
+    View's image column and the values of its widgets, a Spatial Join's
+    operation and output among them, each judged by its node's own rule on a
+    node whose template keeps it, worded for the card as the node words it,
+    then landed as the agent's change (``apply.land_settings``)."""
     params = req.get("params") or {}
     taken = ("nodeId", *_SETTING_PARAMS)
     unknown = sorted(str(key) for key in set(params) - set(taken))
@@ -805,10 +805,9 @@ def _node_create_widgets(entry: dict, raw: object, template_widgets: list) -> tu
 def _node_create_settings(
     user_key: str, project_id: str, entry: dict, params: dict,
 ) -> tuple[dict, list[str]]:
-    """A created node's settings, by key (a Spatial Join's operation and
-    output, a Data Pool's conflict modes, a Simple View's image column), or
-    why they are refused: each node's own rule, on a node whose template
-    keeps the setting."""
+    """A created node's settings, by key (a Data Pool's conflict modes, a
+    Simple View's image column), or why they are refused: each node's own
+    rule, on a node whose template keeps the setting."""
     from utk_curio.backend.app.packages import service as packages_services
 
     settings, problems = node_settings.parse(params, "params")
@@ -878,7 +877,7 @@ def _mint_node_create(
         ))
     if starter is not None:
         proposed = starter["content"]
-    # A node that holds no content, such as a Spatial Join, is added without it.
+    # A node that holds no content, such as a Data Pool, is added without it.
     holds_none = not proposed and entry.get("contentKind") == CONTENT_KIND_NONE
     refusal = None if holds_none else _content_refusal(raw_content, proposed, entry)
     if refusal:

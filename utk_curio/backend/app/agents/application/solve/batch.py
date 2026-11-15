@@ -1279,7 +1279,7 @@ class SolveBatch:
             if self.content_kind(node) == workflow_spec.CONTENT_KIND_NONE:
                 # dev/134: this kind authors NOTHING — it renders or
                 # forwards its input and everything it does comes from
-                # the wiring (a pool, a simple view, a spatial join).
+                # the wiring (a pool, a simple view).
                 # Asking a model for its content spends a call to
                 # produce something that can only be wrong: the owner's
                 # `e72c7080` wrote the reply "not controllable" into a

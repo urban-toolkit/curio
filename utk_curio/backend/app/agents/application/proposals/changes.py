@@ -299,8 +299,8 @@ def settings_undone(node: dict, change: dict) -> list[dict]:
     changes the canvas's setters take in turn. A setting's default is the
     change ``{}`` makes as its node's select picks it
     (``node_settings.parse_change``: a Data Pool's two modes at OVERWRITE,
-    a join's defaults, a view's every image column), which the node's write
-    takes too: a bare ``{}`` there keeps what the node holds."""
+    a view's every image column), which the node's write takes too: a bare
+    ``{}`` there keeps what the node holds."""
     metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
     saved = node_settings.saved(metadata)
     keys = [key for key in change if key != "widgets"]

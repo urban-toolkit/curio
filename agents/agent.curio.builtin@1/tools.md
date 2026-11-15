@@ -8,7 +8,7 @@ is the `ref` of each entry of `nodes`, and `widgets[]` an entry of `widgets`). T
 
 ## dataflow.read
 
-Read the project's saved dataflow, structure-first: every node (id, type, goal, content length, widgets, selection tags, what a Spatial Join, a Data Pool or a Simple View is set to when it is not its default, and "pinned": true for a tile of the dataflow's dashboard) and ALL edges, plus each node's last runtime status and the dataflow's scenarios, each with its scenario set, its scenario-specific nodes, its shared context and its shared outcomes. A scenario the user dragged in from another project names its source: that project's and that scenario's names, or the status "project-gone" or "scenario-gone" when that project, or that scenario in it, no longer exists. Node content is elided: use node.read for one node's content, or params {"include": ["content"]} for the full spec (large).
+Read the project's saved dataflow, structure-first: every node (id, type, goal, content length, widgets, selection tags, what a Data Pool or a Simple View is set to when it is not its default, and "pinned": true for a tile of the dataflow's dashboard) and ALL edges, plus each node's last runtime status and the dataflow's scenarios, each with its scenario set, its scenario-specific nodes, its shared context and its shared outcomes. A scenario the user dragged in from another project names its source: that project's and that scenario's names, or the status "project-gone" or "scenario-gone" when that project, or that scenario in it, no longer exists. Node content is elided: use node.read for one node's content, or params {"include": ["content"]} for the full spec (large).
 
 ### Parameters
 
@@ -56,13 +56,12 @@ Replace one node's content. Params: {"nodeId": "...", "content": "..."}. The cha
 
 ## node.settings.write
 
-Change the settings of ONE node already on the canvas, as picking them in the node does: a Data Pool's conflict modes, a Simple View's image column, a Spatial Join's operation and output, or the values of its widgets. Params: {"nodeId": "...", "dataPool": {...}, "simpleVis": {...}, "spatialJoin": {...}, "widgets": {"<widget name>": <value>}}, each optional, at least one given. Each key a setting gives is picked and each key it leaves out stays as it is; {} puts the whole setting back to its default. The node's code, and every setting the request does not name, are left as they are. Never make a new node or rewrite content for a change these take. The change lands at once, for everyone in the dataflow, and the user can undo it from the chat.
+Change the settings of ONE node already on the canvas, as picking them in the node does: a Data Pool's conflict modes, a Simple View's image column, or the values of its widgets. Params: {"nodeId": "...", "dataPool": {...}, "simpleVis": {...}, "widgets": {"<widget name>": <value>}}, each optional, at least one given. Each key a setting gives is picked and each key it leaves out stays as it is; {} puts the whole setting back to its default. The node's code, and every setting the request does not name, are left as they are. Never make a new node or rewrite content for a change these take. The change lands at once, for everyone in the dataflow, and the user can undo it from the chat.
 
 ### Parameters
 
 - dataPool: The Data Pool's conflict modes to change: each mode given is picked, one left out stays, and {} puts both back to OVERWRITE.
 - simpleVis: The Simple View's image column: {"imageColumn": "<column>"} shows that column alone, and {} shows every image column.
-- spatialJoin: The Spatial Join's operation and output to change: each one given is picked, one left out stays, and {} puts both back to intersects and pairs.
 - widgets: A new value for each widget named, {"<widget name>": <value>}: a widget the node has, and a value its type and options take, as JSON.
 
 ## catalog.search
@@ -142,7 +141,7 @@ Resolve one or more catalog packages against this account's installed set. Param
 
 ## dataflow.plan.write
 
-Change the dataflow graph with a plan, by ending a reply with a dataflowPlan block (not a toolRequest). The plan is checked whole, then lands step by step for everyone in the dataflow, its nodes with no code, and the user can undo it from the chat as one change; when someone removes a node it joins meanwhile, it stops there and its result says what was left undone: {"dataflowPlan": {"goal": "...", "nodes": [{"ref": "n1", "nodeType": "<packageId>/<templateId>", "title": "...", "intent": "...", "widgets": [...], "spatialJoin": {...}, "dataPool": {...}, "simpleVis": {...}}], "edges": [{"from": "n1", "to": "<ref or existing node id>", "kind": "data"|"interaction"}], "scenarios": [...], "removeNodes": ["<existing node id>"], "removeEdges": ["<existing edge id>"]}}. {{include:rules/plan-rules.md}}
+Change the dataflow graph with a plan, by ending a reply with a dataflowPlan block (not a toolRequest). The plan is checked whole, then lands step by step for everyone in the dataflow, its nodes with no code, and the user can undo it from the chat as one change; when someone removes a node it joins meanwhile, it stops there and its result says what was left undone: {"dataflowPlan": {"goal": "...", "nodes": [{"ref": "n1", "nodeType": "<packageId>/<templateId>", "title": "...", "intent": "...", "widgets": [...], "dataPool": {...}, "simpleVis": {...}}], "edges": [{"from": "n1", "to": "<ref or existing node id>", "kind": "data"|"interaction"}], "scenarios": [...], "removeNodes": ["<existing node id>"], "removeEdges": ["<existing edge id>"]}}. {{include:rules/plan-rules.md}}
 
 ### Native
 
@@ -192,12 +191,12 @@ Propose installing ONE node package from the Nodes Catalog into this project. Pa
 
 ## node.create
 
-Add ONE new node to the canvas. Params: {"nodeType": "<packageId>/<templateId>", "content": "...", "title": "<the node's name, shown in its header>", "goal": "<one-line purpose>", "appearance": {"backgroundColor": "<palette name or #RRGGBB>"}, "widgets": [...], "spatialJoin": {...}, "dataPool": {...}, "simpleVis": {...}}: title, goal, appearance, widgets, spatialJoin, dataPool and simpleVis are optional; a note template renders title and backgroundColor, so give both for notes. A template whose starter is a node's whole content, such as a chart of the Vega-Lite package, gives the node that starter in a plan or a node.create: leave its content empty, set the template's widgets by name in "widgets", and its spec stays as it is. nodeType must be an id from the "Available node templates" list, never invented. The node lands at once, for everyone in the dataflow, and the user can undo it from the chat.
+Add ONE new node to the canvas. Params: {"nodeType": "<packageId>/<templateId>", "content": "...", "title": "<the node's name, shown in its header>", "goal": "<one-line purpose>", "appearance": {"backgroundColor": "<palette name or #RRGGBB>"}, "widgets": [...], "dataPool": {...}, "simpleVis": {...}}: title, goal, appearance, widgets, dataPool and simpleVis are optional; a note template renders title and backgroundColor, so give both for notes. A template whose starter is a node's whole content, such as a chart of the Vega-Lite package, gives the node that starter in a plan or a node.create: leave its content empty, set the template's widgets by name in "widgets", and its spec stays as it is. nodeType must be an id from the "Available node templates" list, never invented. The node lands at once, for everyone in the dataflow, and the user can undo it from the chat.
 
 ### Parameters
 
 - nodeType: A <packageId>/<templateId> id from the Available node templates list.
-- content: The node's content: empty for a node that holds none, such as a {{template.label:curio.builtin/spatial-join}}.
+- content: The node's content: empty for a node that holds none, such as a {{template.label:curio.builtin/data-pool}}.
 - title: The node's name, shown in its header; without one, it is its template's label. A note's title is its heading.
 - goal: The node's purpose, in one line.
 
@@ -256,7 +255,6 @@ Delegate one specialized capability to the agent that handles it, and receive it
 - widgets.label: What the Widgets tab shows beside the control.
 - widgets.default: The value until one is set, as JSON: 2.5, true, [1, 5] or "north".
 - widgets.value: The value it holds over its default, as JSON.
-- spatialJoin: A Spatial Join node's operation and output; it holds no content.
 - dataPool: A Data Pool node's conflict modes, each OVERWRITE when absent; it holds no content.
 - dataPool.insideChart: How the selects of one chart combine.
 - dataPool.betweenCharts: How the latest selections of the charts linked to the pool combine.

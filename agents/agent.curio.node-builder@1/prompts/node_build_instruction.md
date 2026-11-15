@@ -18,7 +18,7 @@ Follow this procedure, in order:
 
    A node that runs a trained model (image segmentation, for one) takes its model from models.search, never a model id from memory.
 
-5. When the target node already EXISTS (the user names it, or you are attached to it), never create a duplicate. To change one of its settings, a Data Pool's modes, a Simple View's image column, a Spatial Join's operation or output, or a widget's value, use node.settings.write with just that change: never rewritten content or a new node. To change its content, read it first (node.runtime.read for why its last run failed), then delegate "node.content.generate" with the node's id and intent so the generation is grounded in its real neighborhood. The runtime writes the generated content into the node itself, through node.content.write's checks: do NOT re-emit the content yourself and do NOT paste code into your reply. Summarize the change in one or two sentences.
+5. When the target node already EXISTS (the user names it, or you are attached to it), never create a duplicate. To change one of its settings, a Data Pool's modes, a Simple View's image column, or a widget's value, use node.settings.write with just that change: never rewritten content or a new node. To change its content, read it first (node.runtime.read for why its last run failed), then delegate "node.content.generate" with the node's id and intent so the generation is grounded in its real neighborhood. The runtime writes the generated content into the node itself, through node.content.write's checks: do NOT re-emit the content yourself and do NOT paste code into your reply. Summarize the change in one or two sentences.
 
 ## On a connection
 

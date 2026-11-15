@@ -39,6 +39,7 @@ from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+from utk_curio.backend.app.execution.code_references import normalize_widgets, widget_with_default
 from utk_curio.backend.app.projects import services as projects_services
 from utk_curio.backend.app.projects import shipped as projects_shipped
 
@@ -424,12 +425,84 @@ def find(key: str, *, exclude=()) -> Example:
 
 def trill_text(spec: object) -> str:
     """*spec* as a run is shown it: name, task, nodes and edges, one line per
-    node and per edge, without layout or empty fields. Valid JSON."""
+    node and per edge, without layout or empty fields. A widget a node holds
+    as its template declares it is shown by its name, its type and its value
+    (:func:`_shown_node`): the rest is its template's, which a run reads from
+    the template. Valid JSON."""
     dataflow = _dataflow(spec)
+    declared = _declared_widgets()
     head = [f"  {json.dumps(key)}: {_dump(value)}," for key, value in _kept(dataflow, _DATAFLOW_FIELDS).items()]
-    nodes = ",\n".join(f"    {_dump(_kept(node, _NODE_FIELDS))}" for node in _dicts(dataflow.get("nodes")))
+    nodes = ",\n".join(
+        f"    {_dump(_kept(_shown_node(node, declared), _NODE_FIELDS))}" for node in _dicts(dataflow.get("nodes"))
+    )
     edges = ",\n".join(f"    {_dump(_kept(edge, _EDGE_FIELDS))}" for edge in _dicts(dataflow.get("edges")))
     return "\n".join(['{"dataflow": {', *head, '  "nodes": [', nodes, "  ],", '  "edges": [', edges, "  ]", "}}"])
+
+
+#: What a worked example shows of a widget a node holds as its template
+#: declares it, as a plan or a node.create sets one by name.
+_TEMPLATE_WIDGET_KEYS = ("name", "type", "value")
+
+
+def _shown_node(node: dict, declared: dict) -> dict:
+    """*node* with each widget it holds as its template declares it, but for
+    its value, shown by :data:`_TEMPLATE_WIDGET_KEYS`. *declared* is the
+    widgets of each template by name (:func:`_declared_widgets`)."""
+    template = declared.get(_unversioned(node.get("type")) or "")
+    metadata = node.get("metadata")
+    if not template or not isinstance(metadata, dict) or not isinstance(metadata.get("widgets"), list):
+        return node
+    widgets = [
+        {key: widget[key] for key in _TEMPLATE_WIDGET_KEYS if key in widget}
+        if isinstance(widget, dict) and _as_declared(widget, template.get(widget.get("name"))) else widget
+        for widget in metadata["widgets"]
+    ]
+    return {**node, "metadata": {**metadata, "widgets": widgets}}
+
+
+def _as_declared(widget: dict, declared: dict | None) -> bool:
+    """Whether *widget*, a node's, is *declared*, its template's widget of its
+    name, in all but its value."""
+    if declared is None:
+        return False
+    return widget_with_default({k: v for k, v in widget.items() if k != "value"}) == declared
+
+
+def _declared_widgets() -> dict[str, dict[str, dict]]:
+    """The widgets each template of the package catalog declares, by
+    canonical template id and then by name, as a node of it starts with them.
+    Read once per catalog folder and its modification time."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    root = packages_services.catalog_root()
+    try:
+        stamp = root.stat().st_mtime_ns
+    except OSError:
+        return {}
+    return _declared_widgets_in(str(root), stamp)
+
+
+@lru_cache(maxsize=4)
+def _declared_widgets_in(root: str, _stamp: int) -> dict[str, dict[str, dict]]:
+    """:func:`_declared_widgets` of the catalog folder *root*; a manifest that
+    cannot be read declares none."""
+    found: dict[str, dict[str, dict]] = {}
+    for path in sorted(Path(root).glob("*/manifest.json")):
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        package = manifest.get("id") if isinstance(manifest, dict) else None
+        if not isinstance(package, str):
+            continue
+        for template in _dicts(manifest.get("templates")):
+            widgets = {
+                widget["name"]: {k: v for k, v in widget.items() if k != "value"}
+                for widget in normalize_widgets(template.get("widgets"))
+            }
+            if widgets:
+                found.setdefault(f"{package}/{template.get('id')}", widgets)
+    return found
 
 
 def block_for(query: str, *, node_type: object = None, dataset_ids=(), exclude=(),

@@ -448,18 +448,6 @@ the plan creates a cycle in the dataflow (data edges must form a DAG):
 
 remove one data edge of the loop, or, where it should carry selections between two views, make that edge "kind": "interaction"
 
-## spatial-join.not-object
-
-{where} must be an object, such as {"predicate": "within", "output": "counts"}
-
-## spatial-join.unknown-keys
-
-{where} has keys a Spatial Join does not: {unknown} (it has {setting_keys})
-
-## spatial-join.not-a-join
-
-{where}: a {label} node has no operation or output; only a Spatial Join node takes {key}
-
 ## data-pool.not-object
 
 {where} must be an object, such as {"betweenCharts": "MERGE_AND"}
@@ -511,6 +499,10 @@ params names no setting to change: give {keys}
 ## node-settings.changes-nothing
 
 params changes nothing: the {label} node already has {settings}
+
+## node-settings.join-widgets
+
+{where}: a Spatial Join keeps its operation and output in its widgets operation and output: set them by name in widgets, such as {"name": "operation", "type": "choice", "value": "within"}
 
 ## plan.widgets-not-placeable
 
