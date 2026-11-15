@@ -61,7 +61,6 @@
     "datasetWidgets": "datasetWidgets",
     "modelRefs": "modelRefs",
     "appearance": "appearance",
-    "spatialJoin": "spatialJoin",
     "simpleVis": "simpleVis",
     "packageTemplateConfig": "packageTemplateConfig",
     "dataPool": "dataPool",

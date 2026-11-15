@@ -328,7 +328,7 @@ def test_numbers_and_key_orders_keep_the_form_they_were_written_in():
     dataflow = {
         # In the order generateTrill writes, so the whole text compares.
         "nodes": [{"id": "n", "type": "t", "x": 1.5, "y": 2, "metadata": {
-            "spatialJoin": {"predicate": "within", "output": "counts"},
+            "dataPool": {"insideChart": "MERGE_AND", "betweenCharts": "MERGE_OR"},
             "widgets": [
                 {"name": "w", "type": "slider", "default": 5.0, "options": {"step": 0.5, "min": 0}, "value": 5},
             ],

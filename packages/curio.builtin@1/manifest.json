@@ -429,6 +429,7 @@
       ],
       "paletteOrder": 4,
       "source": "sources/spatial-join.py",
+      "starterIsContent": true,
       "widgets": [
         {
           "name": "operation",
