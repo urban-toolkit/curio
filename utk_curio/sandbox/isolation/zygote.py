@@ -43,13 +43,21 @@ execution:
     parent -> zygote   {"code": ..., "scratch_dir": ..., "wall_timeout": 300}
     zygote -> parent   {"pid": 1234}                        just after the fork
     zygote -> parent   {"exit": 0, "signal": null,
-                        "timed_out": false}                 once reaped
+                        "timed_out": false,
+                        "memory": {...}}                    once reaped
+
+``memory`` comes only with a run that had a place, a cgroup of its own at the
+node's budget (``node_cgroups``): whether the run reached its budget, and its
+peak where the kernel can say it. A zygote started with
+``--cgroup-memory-mb`` keeps its places under ``nodes/<its pid>/`` and says on
+its stdout, before it is ready, whether it could make them.
 
 This process enforces ``wall_timeout`` itself, because it is the child's parent:
 while the child is unreaped its pid cannot be recycled, so a kill is guaranteed
 to hit the right process. For the same reason it kills a child's process group
 once the child has exited, before it reaps it, so nothing a node started
-outlives the node (``_reap_children``). The parent's own socket read is only a
+outlives the node (``_reap_children``), and then every process left in the
+run's place. The parent's own socket read is only a
 liveness backstop. The parent kills only when this process died mid-run, and
 then only that run's process group (``ZygoteClient.run``). One connection per
 execution is what makes concurrent executions work without any threads on this
@@ -90,6 +98,11 @@ SOCKET_BACKLOG = 64
 # as it exits. The parent has its own timeout, so this is not a correctness
 # deadline.
 _REAP_POLL_SECONDS = 0.05
+
+# How long a run's report waits, at most, for the processes killed in its
+# place to be gone, in seconds (``Zygote._report``): a run reported as over
+# has nothing left running.
+_EMPTY_PLACE_SECONDS = 30
 
 
 def build_namespace_template():
@@ -240,7 +253,8 @@ def _import_pyseccomp():
 class Zygote:
     """Accept-and-fork loop. Single-threaded on purpose."""
 
-    def __init__(self, socket_path, *, uid=None, gid=None, require_seccomp=False):
+    def __init__(self, socket_path, *, uid=None, gid=None, require_seccomp=False,
+                 places=None):
         self.socket_path = socket_path
         self.uid = uid
         self.gid = gid
@@ -248,10 +262,17 @@ class Zygote:
         self.namespace_template = None
         # pid -> connection, so an exited child's status reaches the right caller.
         self._pending = {}
+        # pid -> the state of a reaped child whose place still holds processes
+        # being killed: its report waits for them (_report).
+        self._emptying = {}
+        # node_cgroups.Places, when each run gets a cgroup at its budget.
+        self._places = places
         self._listener = None
         self._selector = None
         # Whether a child got no pidfd yet; said once (_watch).
         self._told_no_pidfd = False
+        # Whether a run got no place yet; said once (_take_place).
+        self._told_no_place = False
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -288,7 +309,7 @@ class Zygote:
         print("ZYGOTE_READY", flush=True)
 
         while True:
-            timeout = _REAP_POLL_SECONDS if self._pending else None
+            timeout = _REAP_POLL_SECONDS if self._pending or self._emptying else None
             exited = []
             for key, _mask in selector.select(timeout=timeout):
                 if key.data == "listener":
@@ -301,6 +322,7 @@ class Zygote:
                     exited.append(key.data[1])
             self._enforce_deadlines()
             self._reap_children()
+            self._report_emptied()
             # A pidfd stays readable, so one whose child is still unreaped
             # would wake the select at once, forever. The poll finds that
             # child instead.
@@ -326,6 +348,7 @@ class Zygote:
             state["killed"] = True
             state["timed_out"] = True
             _kill_group(pid)
+            _kill_place(state)
 
     def _accept(self, selector):
         try:
@@ -357,9 +380,12 @@ class Zygote:
             connection.close()
             return
 
+        place = self._take_place()
         try:
-            pid = self._fork_child(request, selector, connection)
+            pid = self._fork_child(request, selector, connection, place)
         except OSError as exc:
+            if place is not None:
+                self._places.give_back(place)
             _reply(connection, {"error": f"fork failed: {exc}"})
             connection.close()
             return
@@ -377,6 +403,7 @@ class Zygote:
             "deadline": deadline,
             "killed": False,
             "timed_out": False,
+            "place": place,
         }
         self._pending[pid] = state
         self._watch(pid, state)
@@ -386,6 +413,7 @@ class Zygote:
             connection.close()
             state["killed"] = True
             _kill_group(pid)
+            _kill_place(state)
             print(
                 f"[zygote] the caller of child {pid} hung up before its pid "
                 "came; the child was stopped",
@@ -441,7 +469,25 @@ class Zygote:
         with contextlib.suppress(OSError):
             os.close(pidfd)
 
-    def _fork_child(self, request, selector, connection):
+    def _take_place(self):
+        """A place for the next run, or None: when this zygote keeps none, or
+        could not make one, and then the run's child keeps the address-space
+        cap, as where cgroups are not this container's to arrange. Said once."""
+        if self._places is None:
+            return None
+        try:
+            return self._places.take()
+        except OSError as exc:
+            if not self._told_no_place:
+                self._told_no_place = True
+                print(
+                    f"[zygote] a run got no cgroup ({exc}); runs without one keep "
+                    "the address-space cap",
+                    file=sys.stderr, flush=True,
+                )
+            return None
+
+    def _fork_child(self, request, selector, connection, place=None):
         from utk_curio.sandbox.isolation import child
 
         # Read before the fork: the child, once its life is tied to this
@@ -467,18 +513,24 @@ class Zygote:
         except Exception:
             waiting = []
         running = [state["connection"] for state in self._pending.values()]
-        for sock in (self._listener, connection, *waiting, *running):
+        # Those of the runs whose report waits for their place to empty.
+        emptying = [state["connection"] for state in self._emptying.values()]
+        for sock in (self._listener, connection, *waiting, *running, *emptying):
             with contextlib.suppress(Exception):
                 sock.close()
         # Then the pidfds the zygote watches the running children through,
-        # and last the selector, whose epoll this child shares with the
-        # zygote: node code could wait on another run's child through its
-        # pidfd, and add descriptors of its own to the zygote's select, which
-        # would then never sleep.
+        # the readers of its places' peaks, and last the selector, whose
+        # epoll this child shares with the zygote: node code could wait on
+        # another run's child through its pidfd, and add descriptors of its
+        # own to the zygote's select, which would then never sleep.
         for state in self._pending.values():
             if "pidfd" in state:
                 with contextlib.suppress(OSError):
                     os.close(state["pidfd"])
+        if self._places is not None:
+            for fd in self._places.descriptors():
+                with contextlib.suppress(OSError):
+                    os.close(fd)
         with contextlib.suppress(Exception):
             selector.close()
 
@@ -497,6 +549,7 @@ class Zygote:
             gid=self.gid,
             require_seccomp=self.require_seccomp,
             zygote_pid=zygote_pid,
+            place=place.path if place is not None else None,
         )
         os._exit(70)  # unreachable; child.main always exits
         return None
@@ -515,6 +568,10 @@ class Zygote:
         kill reaches that run alone. The owner's rule (11-07), with no way to
         turn it off; ``test_every_process_a_node_starts_ends_when_the_node_*``
         in ``sandbox/tests/test_isolation_linux.py`` guard it.
+
+        A run with a place has every process left in it killed as well,
+        whatever group it is in, and is reported once none is left
+        (``_report``).
         """
         while self._pending:
             try:
@@ -522,6 +579,8 @@ class Zygote:
             except ChildProcessError:
                 for state in self._pending.values():
                     self._unwatch(state)
+                    if state.get("place") is not None:
+                        self._places.give_back(state["place"])
                 self._pending.clear()
                 return
             except OSError as exc:
@@ -532,6 +591,7 @@ class Zygote:
                 return
 
             _kill_group(exited.si_pid)
+            _kill_place(self._pending.get(exited.si_pid))
             try:
                 pid, status = os.waitpid(exited.si_pid, 0)
             except ChildProcessError:
@@ -541,7 +601,6 @@ class Zygote:
             if state is None:
                 continue
             self._unwatch(state)
-            connection = state["connection"]
             if os.WIFSIGNALED(status):
                 payload = {"exit": None, "signal": os.WTERMSIG(status)}
             else:
@@ -549,12 +608,44 @@ class Zygote:
             # The parent cannot tell a deadline kill from any other SIGKILL, so
             # say which it was; the node error message differs.
             payload["timed_out"] = bool(state.get("timed_out"))
-            try:
-                _send(connection, payload)
-            except OSError:
-                pass  # the caller hung up; the child is reaped all the same
-            finally:
-                connection.close()
+            self._report(pid, state, payload)
+
+    def _report(self, pid, state, payload):
+        """Send a reaped child's *payload* to its caller, with what its place
+        says of the run, once nothing is left running in the place.
+
+        The processes killed in it take a moment to go, a big one longer, so
+        a place still holding some keeps the report back, at most
+        ``_EMPTY_PLACE_SECONDS``, and the loop looks again on its next pass
+        (``_report_emptied``) rather than wait here, where every other run
+        would wait too.
+        """
+        import time as _time
+
+        place = state.get("place")
+        if place is not None:
+            payload["memory"] = place.outcome()
+            if place.populated():
+                state["payload"] = payload
+                state["emptied_by"] = _time.monotonic() + _EMPTY_PLACE_SECONDS
+                self._emptying[pid] = state
+                return
+            self._places.give_back(place)
+        _answer(state["connection"], payload)
+
+    def _report_emptied(self):
+        """Report the runs whose places have emptied since the last pass, or
+        whose wait for that ran out."""
+        import time as _time
+
+        now = _time.monotonic()
+        for pid, state in list(self._emptying.items()):
+            place = state["place"]
+            if place.populated() and now < state["emptied_by"]:
+                continue
+            del self._emptying[pid]
+            self._places.give_back(place)
+            _answer(state["connection"], state["payload"])
 
 
 def _read_line(connection):
@@ -571,6 +662,16 @@ def _read_line(connection):
 
 def _send(connection, payload):
     connection.sendall(json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n")
+
+
+def _answer(connection, payload):
+    """Send a run's last *payload* to its caller, and close the connection."""
+    try:
+        _send(connection, payload)
+    except OSError:
+        pass  # the caller hung up; the child is reaped all the same
+    finally:
+        connection.close()
 
 
 def _reply(connection, payload):
@@ -608,6 +709,14 @@ def _kill_group(pid):
             continue
 
 
+def _kill_place(state):
+    """Kill every process in the place of the run *state* holds, if it has
+    one: what a node started is in it whatever process group it is in."""
+    place = (state or {}).get("place")
+    if place is not None:
+        place.kill()
+
+
 def _resolve_execution_identity(user):
     """Look up (uid, gid) for the configured execution user.
 
@@ -629,11 +738,31 @@ def _resolve_execution_identity(user):
     return entry.pw_uid, entry.pw_gid
 
 
+def _make_places(memory_mb):
+    """This zygote's places at *memory_mb* each, or None when it cannot make
+    them; its stdout says which (``node_cgroups.MEMORY_LINE``), and its log
+    why not."""
+    from utk_curio.sandbox.isolation import node_cgroups
+
+    try:
+        places = node_cgroups.Places(memory_mb)
+    except OSError as exc:
+        print(f"[zygote] could not make its nodes' cgroups: {exc}", file=sys.stderr, flush=True)
+        said = {"limit": node_cgroups.ADDRESS_SPACE, "reason": "places"}
+        places = None
+    else:
+        said = {"limit": node_cgroups.CGROUP}
+    print(f"{node_cgroups.MEMORY_LINE} {json.dumps(said)}", flush=True)
+    return places
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Curio node execution zygote")
     parser.add_argument("--socket", required=True)
     parser.add_argument("--exec-user", default=None)
     parser.add_argument("--require-seccomp", action="store_true")
+    parser.add_argument("--cgroup-memory-mb", type=int, default=None,
+                        help="give each run a cgroup of its own at this many MB")
     args = parser.parse_args(argv)
 
     if not hasattr(os, "fork"):
@@ -641,8 +770,11 @@ def main(argv=None):
 
     uid, gid = _resolve_execution_identity(args.exec_user)
 
+    places = _make_places(args.cgroup_memory_mb) if args.cgroup_memory_mb else None
+
     zygote = Zygote(
-        args.socket, uid=uid, gid=gid, require_seccomp=args.require_seccomp
+        args.socket, uid=uid, gid=gid, require_seccomp=args.require_seccomp,
+        places=places,
     )
     zygote.warm_up()
     zygote.bind()

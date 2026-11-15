@@ -169,6 +169,11 @@ if __name__ == '__main__':
         )
         for _finding in _findings:
             print(f"[isolation] {_finding}", file=sys.stderr, flush=True)
+        # The memory limit the first isolated run's zygote will give its
+        # nodes, which it says again, as it is, when it starts.
+        from utk_curio.sandbox.isolation import lifecycle as _lifecycle
+        print(_lifecycle.node_memory_line(*_lifecycle.memory_limit(), _config.limits.get("memory_mb")),
+              file=sys.stderr, flush=True)
         if _fatal:
             raise SystemExit(
                 "[isolation] refusing to start: this instance has user auth "

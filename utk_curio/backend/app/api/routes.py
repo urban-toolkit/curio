@@ -136,11 +136,15 @@ def version():
     the sandbox process without changing what `isolation` reports;
     `isolation_active` is what the sandbox actually did. The badge needs both
     to avoid claiming a confinement that is not there.
+
+    `memory_limit` is the limit isolated nodes run under: `cgroup`,
+    `address space`, or `none` where they run in the sandbox's process.
     """
     from utk_curio import __version__
 
     isolation = 'unknown'
     isolation_active = 'unknown'
+    memory_limit = 'unknown'
     with contextlib.suppress(SandboxTransportError, requests.RequestException, ValueError):
         response = sandbox_request(
             'get', '/version',
@@ -153,11 +157,13 @@ def version():
             # the badge only downgrades on an explicit 'off', so a missing
             # field must not be read as evidence of a failed zygote.
             isolation_active = payload.get('isolation_active', 'unknown')
+            memory_limit = payload.get('memory_limit', 'unknown')
 
     return jsonify({
         'version': __version__,
         'isolation': isolation,
         'isolation_active': isolation_active,
+        'memory_limit': memory_limit,
     })
 
 

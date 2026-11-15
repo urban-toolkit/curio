@@ -39,6 +39,11 @@ services:
     # limit is one of the things the run is measuring the distance to, so it
     # matches the other CI overlays rather than being widened for the job.
     pids_limit: 4096
+    # Each isolated node in a cgroup at its budget, as docker-compose.deploy.yml
+    # asks, so the numbers are the deployment's.
+    cgroup: private
+    security_opt:
+      - writable-cgroups=true
     environment:
       - CURIO_SANDBOX_TOKEN=${CURIO_SANDBOX_TOKEN:?CURIO_SANDBOX_TOKEN must be set for the CI overlay}
       - CURIO_SKIP_DEP_INSTALL=1

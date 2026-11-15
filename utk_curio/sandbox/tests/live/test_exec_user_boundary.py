@@ -159,6 +159,56 @@ def test_node_code_runs_as_the_unprivileged_exec_user():
     assert int(uid) != 0, "the child still has uid 0"
 
 
+def test_the_sandbox_reports_a_cgroup_memory_limit():
+    """Each node runs in a cgroup at its budget, as the deploy's do: this
+    stack's container asks Docker for writable cgroups, as
+    ``docker-compose.deploy.yml`` does."""
+    assert _request("/version").get("memory_limit") == "cgroup"
+
+
+def test_node_code_can_neither_write_nor_join_a_cgroup():
+    """In its place, a cgroup at its budget, a node changes no limit, its own
+    neither, moves into no other cgroup and makes none: every cgroup file is
+    root's, and every folder ``0755``."""
+    result = assert_ran(run_node("""
+        import errno, json, os
+        with open("/proc/self/cgroup") as handle:
+            own = [line for line in handle.read().splitlines() if line.startswith("0::")][0][3:]
+        place = "/sys/fs/cgroup" + own
+        def write(path, value):
+            try:
+                with open(path, "w") as handle:
+                    handle.write(value)
+                return "written"
+            except OSError as exc:
+                return errno.errorcode.get(exc.errno, str(exc.errno))
+        def make(path):
+            try:
+                os.mkdir(path)
+                return "made"
+            except OSError as exc:
+                return errno.errorcode.get(exc.errno, str(exc.errno))
+        print(json.dumps({
+            "cgroup": own,
+            "its memory.max": write(place + "/memory.max", "max"),
+            "its memory.swap.max": write(place + "/memory.swap.max", "max"),
+            "its memory.oom.group": write(place + "/memory.oom.group", "0"),
+            "its cgroup.procs": write(place + "/cgroup.procs", "0"),
+            "join the servers": write("/sys/fs/cgroup/curio/cgroup.procs", "0"),
+            "join the container's root": write("/sys/fs/cgroup/cgroup.procs", "0"),
+            "join nodes": write("/sys/fs/cgroup/nodes/cgroup.procs", "0"),
+            "make one in nodes": make("/sys/fs/cgroup/nodes/escape"),
+            "make one in its zygote's": make(os.path.dirname(place) + "/escape"),
+            "make one in its place": make(place + "/escape"),
+        }))
+    """))
+    seen = json.loads(printed(result))
+    assert seen["cgroup"].startswith("/nodes/"), "the node ran in %r, not a place" % seen["cgroup"]
+    allowed = {name: answer for name, answer in seen.items()
+               if name != "cgroup" and answer in ("written", "made")}
+    assert not allowed, "%s could write cgroups: %s (every answer: %s)" % (EXEC_USER, allowed, seen)
+
+
 # ---------------------------------------------------------------------------
 # What the child must still be able to do
 # ---------------------------------------------------------------------------
