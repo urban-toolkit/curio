@@ -118,10 +118,11 @@ class TestTheBlock:
                 assert node["id"] and node["type"]
 
     def test_a_widget_a_node_holds_as_its_template_declares_it_is_shown_by_name_type_and_value(self):
-        """The rest of it is the template's, which a run reads from the
-        template: a Spatial Join's choices, a loader's label and default. A
-        widget its node declares itself, or holds otherwise than its template
-        declares it, is shown whole."""
+        """As a plan or a node.create sets a template's widget: the rest of it,
+        a Spatial Join's choices, a loader's label and default, is the
+        template's, which a new node of it gets. A widget its node declares
+        itself, or holds otherwise than its template declares it, is shown
+        whole."""
         from utk_curio.backend.tests.test_agents.test_node_settings_write import JOIN_CODE, OPERATION, OUTPUT
 
         photos = {"name": "data", "type": "dataset", "label": "Photos", "default": ""}

@@ -196,8 +196,8 @@ def _solved_node(
     if kind not in (workflow_spec.CONTENT_KIND_CODE, workflow_spec.CONTENT_KIND_GRAMMAR):
         # dev/118 (DEC-075) → dev/119 → dev/134: a kind that authors nothing at
         # all (a pool, a simple view) or presentation content with no
-        # validator. No round, no sandbox, no generation —
-        # nothing this loop could verify; say so and change nothing.
+        # validator. No round, no sandbox, no generation: nothing this loop
+        # could verify; say so and change nothing.
         outcome = _not_executable_outcome(node, label, kind)
     else:
         outcome = yield from _run_node_loop(

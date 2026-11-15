@@ -427,8 +427,9 @@ def trill_text(spec: object) -> str:
     """*spec* as a run is shown it: name, task, nodes and edges, one line per
     node and per edge, without layout or empty fields. A widget a node holds
     as its template declares it is shown by its name, its type and its value
-    (:func:`_shown_node`): the rest is its template's, which a run reads from
-    the template. Valid JSON."""
+    (:func:`_shown_node`), as a plan or a node.create sets a template's widget:
+    a new node of the template gets the rest from it
+    (``widget_grammar.set_over``). Valid JSON."""
     dataflow = _dataflow(spec)
     declared = _declared_widgets()
     head = [f"  {json.dumps(key)}: {_dump(value)}," for key, value in _kept(dataflow, _DATAFLOW_FIELDS).items()]
