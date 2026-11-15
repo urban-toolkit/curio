@@ -242,7 +242,8 @@ def test_the_header_decides_then_the_query_then_the_path_and_a_request_with_none
          {"X-Curio-Dataflow": "example-06-shadow-study"}, 0),
         ("a query that names a guest's new dataflow", f"/api/projects/{three}?dataflow=new-{three}", {}, 0),
     ):
-        assert _process(router, path, headers) == owner, f"{why}: {path} {headers} did not reach process {owner}"
+        reached = _process(router, path, headers)
+        assert reached == owner, f"{why}: {path} {headers} reached process {reached}, not {owner}"
 
 
 def test_a_call_to_a_backends_internal_route_is_answered_by_nginx_and_reaches_none(router):
@@ -282,9 +283,8 @@ def test_an_upload_over_a_megabyte_reaches_its_backend_while_it_is_still_being_s
             f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n"
         ).encode("ascii"))
         sock.sendall(body[:half])
-        assert backend.got_a_megabyte.wait(PATIENCE_S), (
-            "the backend had no megabyte of an upload half sent: nginx holds an upload until it is whole"
-        )
+        streamed = backend.got_a_megabyte.wait(PATIENCE_S)
+        assert streamed, "the backend had no megabyte of an upload half sent: nginx holds an upload until it is whole"
         sock.sendall(body[half:])
         reply = _read_to_the_end(sock)
     head, _, rest = reply.partition(b"\r\n\r\n")

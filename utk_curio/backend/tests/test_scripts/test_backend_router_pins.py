@@ -190,7 +190,8 @@ def test_a_route_that_writes_a_dataflow_keeps_following_it(router):
         ("GET", "/api/discoveries", {"X-Curio-Dataflow": OWNED[2]}, 2),
         ("GET", "/api/monitoring", {"X-Curio-Dataflow": OWNED[3]}, 3),
     ):
-        assert _reached(router, method, path, headers) == owner, f"{method} {path} {headers} must reach process {owner}"
+        reached = _reached(router, method, path, headers)
+        assert reached == owner, f"{method} {path} {headers} reached process {reached}, not {owner}"
 
 
 def test_the_config_sends_each_home_route_family_to_the_home_process():

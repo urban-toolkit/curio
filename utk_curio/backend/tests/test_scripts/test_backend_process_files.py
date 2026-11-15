@@ -91,5 +91,7 @@ def test_each_process_of_several_logs_to_a_file_of_its_own(tmp_path):
     several = tmp_path / "several"
     one.mkdir()
     several.mkdir()
-    assert _log_files(one) == ["backend.log"], "a start of one process keeps its log file"
-    assert _log_files(several, CURIO_BACKEND_PROCESS="3", CURIO_BACKEND_PROCESSES="4") == ["backend-3.log"]
+    alone = _log_files(one)
+    third = _log_files(several, CURIO_BACKEND_PROCESS="3", CURIO_BACKEND_PROCESSES="4")
+    assert alone == ["backend.log"], "a start of one process keeps its log file"
+    assert third == ["backend-3.log"], f"process 3 of 4 logs to {third}"
