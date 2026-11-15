@@ -1,7 +1,8 @@
 """Read a node's traceback and say which library it was missing (#299).
 
 Application layer of the packages package (memo dev/143): a use case over the
-domain's alias table and the pip runner's metadata probes.
+domain's alias table, the pip runner's metadata probes and the index of the
+modules packages ship (``python_modules.module_index``).
 
 Running a node whose code imports something the interpreter does not have ends
 in a raw ``ModuleNotFoundError`` traceback, and the user is left to work out
@@ -27,22 +28,44 @@ the same way.
 
 **What the answer promises, and what it does not.** ``installable`` means the
 name is a legal distribution name, is not stdlib, is not something Curio itself
-provides, is not already installed under some distribution, and survives
-``pip_runner.validate_python_requirement``. It does **not** promise the
-distribution exists on PyPI: the alias table is curated, so an unknown module
-resolves to itself, and ``import totally_made_up`` yields a name no index
-carries. Checking would mean a network round trip on every failed node run,
-which breaks air-gapped and offline-wheel-cache deployments to pre-empt an
-answer pip gives a moment later anyway. So the UI offers to *try*, and pip's own
-failure is what the user sees when the name is wrong.
+provides, is not already installed under some distribution, is not a module a
+package ships, and survives ``pip_runner.validate_python_requirement``. It does
+**not** promise the distribution exists on PyPI: the alias table is curated, so
+an unknown module resolves to itself, and ``import totally_made_up`` yields a
+name no index carries. Checking would mean a network round trip on every failed
+node run, which breaks air-gapped and offline-wheel-cache deployments to
+pre-empt an answer pip gives a moment later anyway. So the UI offers to *try*,
+and pip's own failure is what the user sees when the name is wrong.
+
+**A module a package ships is never offered.** A package's modules sit beside
+its templates in ``sources/`` (#468), and a run hands them only to the nodes of
+that package and of the packages that depend on it. Any other node, and every
+node of an account that has not added the package, fails to import one, and
+``pip install <module>`` would install whatever the index has under that name.
+Which package ships which module is the packages' own index
+(``python_modules.module_index``: the account's packages, an invited editor's
+owner's, and the catalog's), so the answer names the package to add
+(:data:`PACKAGE_NOT_ADDED`), or, for a package the account has, the nodes that
+import it (:data:`PACKAGE_MODULE`).
 """
 from __future__ import annotations
 
 import re
 import sys
 
+from utk_curio.backend.app.packages.application import python_modules as packages_python_modules
 from utk_curio.backend.app.packages.domain import dependency_scanner
 from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+#: The reason of a module a package in the catalog ships, which the account
+#: has not added: ``package`` says which (its id, kind and name), and adding it
+#: from its catalog is the fix.
+PACKAGE_NOT_ADDED = "package-not-added"
+
+#: The reason of a module of a package the account has added, which only the
+#: nodes of that package and of the packages that depend on it import:
+#: ``package`` says which, and ``nodes`` lists those nodes by their labels.
+PACKAGE_MODULE = "package-module"
 
 #: The terminating line of a traceback, when that line is a missing module.
 #:
@@ -75,24 +98,48 @@ def _reason(module: str, distribution: str | None, reason: str, detail: str | No
     }
 
 
-def detect(stderr: str | None) -> dict | None:
+def _package_answer(module: str, home: dict) -> dict:
+    """The answer for *module*, which the package *home* ships (its entry in
+    ``python_modules.module_index``): never installable, with the package by
+    its id, kind and name, and for a package the account has, the nodes that
+    import the module."""
+    package = {"id": home["package"].rsplit("@", 1)[0], "kind": home["kind"], "name": home["name"]}
+    if home["added"]:
+        nodes = [template["label"] for template in home["templates"]]
+        return {**_reason(module, None, PACKAGE_MODULE), "package": package, "nodes": nodes}
+    return {**_reason(module, None, PACKAGE_NOT_ADDED), "package": package}
+
+
+def detect(
+    stderr: str | None, *, user_key: str | None = None, project_id: str | None = None, owners=None,
+) -> dict | None:
     """The missing library named by *stderr*, or ``None``.
 
-    Returns ``{"module", "distribution", "installable", "reason", "detail"}``.
-    ``installable`` is the only field a caller needs to decide whether to offer
-    an install; ``reason`` says why not when it is false.
+    Returns ``{"module", "distribution", "installable", "reason", "detail"}``,
+    and for a module a package ships, ``package`` and maybe ``nodes`` (see
+    :data:`PACKAGE_NOT_ADDED` and :data:`PACKAGE_MODULE`). ``installable`` is
+    the only field a caller needs to decide whether to offer an install;
+    ``reason`` says why not when it is false.
+
+    Which packages ship which modules is read for the run of *user_key*, on
+    the dataflow *project_id*, as a run gets its modules: with *owners*
+    (``project_packages.OwnersPackages``), an invited editor's run, which
+    takes those of the packages the dataflow uses from its owner's store.
+    Without *user_key*, the catalog's packages alone, none of them added.
 
     Never raises. This runs on the response path of a node execution that has
     already failed, and a diagnostic that turns one failure into two is worse
     than no diagnostic - the traceback is reported either way.
     """
     try:
-        return _detect(stderr)
+        return _detect(stderr, user_key, project_id, owners)
     except Exception:  # pragma: no cover - defensive; the traceback still ships
         return None
 
 
-def _detect(stderr: str | None) -> dict | None:
+def _detect(
+    stderr: str | None, user_key: str | None = None, project_id: str | None = None, owners=None,
+) -> dict | None:
     if not stderr:
         return None
     lines = stderr.rstrip().splitlines()
@@ -138,6 +185,13 @@ def _detect(stderr: str | None) -> dict | None:
         # It imports here but not there: a different interpreter, or a worker
         # holding an older state. Installing again cannot help either.
         return _reason(module, distribution, "installed-not-visible")
+
+    # A module a package ships is the package's: the index's distribution of
+    # that name is somebody else's. Asked here, after every other refusal, so
+    # only an answer that would have offered an install changes.
+    home = packages_python_modules.module_index(user_key, project_id, owners=owners).get(module)
+    if home is not None:
+        return _package_answer(module, home)
 
     distribution = dependency_scanner.pypi_name_for_import(module)
 

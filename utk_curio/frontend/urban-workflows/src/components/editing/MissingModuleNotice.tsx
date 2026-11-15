@@ -1,6 +1,7 @@
 import React from "react";
 import type { MissingModuleNotice as Notice } from "../../types/nodeTypes";
 import type { LibraryInstallVerdict } from "../../utils/libraryInstall";
+import { packageCatalogName } from "../layout/catalogSections";
 
 /**
  * What the install is doing right now. Held by the OWNER (CodeEditor), not
@@ -71,6 +72,24 @@ function refusal(notice: Notice): string | null {
         `it. Restart Curio and run the node again; if it persists, the code that ` +
         `runs nodes is using a different Python.`
       );
+    // A module a package ships is the package's: never a pip install, which
+    // would fetch whatever the index has under that name.
+    case "package-not-added": {
+      if (!notice.package) return null;
+      const { name, kind } = notice.package;
+      return (
+        `${notice.module} is a module of ${name}. ` +
+        (notice.detail
+          ?? `Add ${name} to this project from the ${packageCatalogName(kind)}, then run the node again.`)
+      );
+    }
+    case "package-module": {
+      if (!notice.package) return null;
+      const nodes = notice.nodes ?? [];
+      return nodes.length
+        ? `${notice.module} is a module of ${notice.package.name}. Only these nodes import it: ${nodes.join(", ")}.`
+        : `${notice.module} is a module of ${notice.package.name}, and only the nodes of its package import it.`;
+    }
     // "unsafe-name" deliberately says nothing: the module name came from the
     // traceback, which node code controls, so it is not echoed back to the UI.
     default:
@@ -80,6 +99,8 @@ function refusal(notice: Notice): string | null {
 
 /**
  * Names the library a node run was missing, and offers to install it (#299).
+ * A module a package ships names that package and the catalog to add it from
+ * instead, with no install.
  *
  * Rendered beneath the traceback, never instead of it: the traceback is what a
  * user pastes into a bug report, and the issue asked for a signal alongside it.

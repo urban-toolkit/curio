@@ -2440,6 +2440,8 @@ Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING
 
 The same route is reachable without opening that modal: when a node run ends in `ModuleNotFoundError`, `/processPythonCode` carries a `missingModule` field naming the import and the distribution that provides it (`packages/missing_import.py`, sharing `dependency_scanner`'s alias table and passing `pip_runner.validate_python_requirement` before it is offered), and the node's output panel renders an **Install** button beside the traceback.
 
+A module a package ships is never offered. The detector reads which package ships it from `python_modules.module_index` (the run's account's packages, an invited editor's owner's packages the dataflow uses, then the catalog's), so its answer is not installable and names the package (`package`: its id, kind and name). A package the account has not added gives the reason `package-not-added`, and the panel says to add the package to the project from its catalog, the Model Catalog for a model package and the Node Catalog for any other (`packageCatalogName` in `catalogSections.ts`); `detail` holds `capabilities.package_install_refusal` for a caller who may not add packages. A package the account has gives `package-module` with `nodes`, the labels of the nodes that import the module.
+
 ---
 
 ## Discovery Catalog

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { XYPosition } from "reactflow";
 
 import { CardContextMenu } from "../catalog/CardContextMenu";
+import { packageCatalogName } from "../layout/catalogSections";
 import { holdModalStack } from "../ModalShell";
 import {
   guestAddRefusal,
@@ -82,8 +83,7 @@ export function usePackageCardDrop({
         onAdded: () => createNode(node, position),
       };
       if (requestPackageAdd(request)) return;
-      const catalog = card.kind === "model" ? "Model Catalog" : "Node Catalog";
-      showToast(`Add ${card.name} to this dataflow from the ${catalog} first.`, "warning");
+      showToast(`Add ${card.name} to this dataflow from the ${packageCatalogName(card.kind)} first.`, "warning");
     },
     [createNode, showToast, askTheOwner],
   );

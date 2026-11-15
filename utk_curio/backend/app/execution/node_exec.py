@@ -831,6 +831,7 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         body["saved_paths"] = saved_inputs
     dataset_paths = None
     exec_secrets = None
+    owners = None
     if language == "python":
         from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
@@ -1022,7 +1023,9 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         'datasetDiagnostic': dataset_diagnostic,
     }
     if language == "python":
-        reply['missingModule'] = _missing_module(user, output, stderr)
+        reply['missingModule'] = _missing_module(
+            user, output, stderr, dataflow_id=run.dataflow_id, owners=owners,
+        )
     return reply, 200
 
 
@@ -1063,20 +1066,33 @@ def _unavailable_reply(
     }
 
 
-def _missing_module(user, output, stderr):
+def _missing_module(user, output, stderr, *, dataflow_id=None, owners=None):
     """Which library the run was missing, when that is why it failed (#299).
 
     Gated on the canonical failure contract - an EMPTY output path, not a
     non-empty stderr, because warnings land in stderr too. `detect` never
     raises: a diagnostic that turned one failure into two would be worse than
     none, and the traceback is reported either way.
+
+    A module a package ships is read as the run of *user* on *dataflow_id*
+    gets its modules (*owners*: :func:`owners_packages_for`), and is answered
+    with the package, never an install. When that package is one to add and
+    *user* may not add packages, ``detail`` says why, as an install refusal
+    does for a library (#309).
     """
     if not (isinstance(output, dict) and not output.get('path')):
         return None
     from utk_curio.backend.app.packages.application import missing_import
-    from utk_curio.backend.app.users.capabilities import library_install_refusal
+    from utk_curio.backend.app.users.capabilities import library_install_refusal, package_install_refusal
 
-    missing_module = missing_import.detect(stderr)
+    missing_module = missing_import.detect(
+        stderr, user_key=exec_user_key(user), project_id=dataflow_id, owners=owners,
+    )
+    if missing_module and missing_module.get("reason") == missing_import.PACKAGE_NOT_ADDED:
+        # Never point at an add the package routes would refuse.
+        refusal = package_install_refusal(user)
+        if refusal:
+            missing_module = {**missing_module, "detail": refusal}
     # Never offer an install the libraries route would refuse (#309).
     refusal = library_install_refusal(user)
     if missing_module and missing_module.get("installable") and refusal:

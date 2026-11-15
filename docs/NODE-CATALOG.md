@@ -96,6 +96,12 @@ Once a package is in the open project, its nodes are in the palette: the built-i
 
 A package can also be dragged onto the canvas by its card in the drawer. For a package with one node, its node appears where you drop it. For a package with several nodes, a menu of its nodes opens where you drop it: pick one and it appears there, or press Escape or click outside the menu to make none. If the project does not have the package yet, picking a node, or dropping a package with one node, first opens the same review as **Add to project**, and the node appears once the package and its Python libraries are installed. On a hosted deployment, a guest's drop of a package the project does not have is refused.
 
+When a Python node's run stops at `ModuleNotFoundError`, a notice under the traceback says what the node could not import:
+
+- A library: **Install** with the library's name installs it.
+- A module a package ships: the package and the catalog to add it from, with no install. A Track Objects node in an account without SAM 3 reads *sam3_tracking is a module of SAM 3 (objects found by name). Add SAM 3 (objects found by name) to this project from the Model Catalog, then run the node again.* For a guest, the second sentence says that guests cannot install packages.
+- A module of a package your account has: the nodes that import it, which are the nodes of that package and of the packages that depend on it.
+
 A Python node that calls a key-gated API reads the key by name, never as a literal: `api_key = curio_secret("<name>")` returns the key saved under that name as a **Node code** key on the **API keys** tab of **API Settings** (see [USAGE.md](USAGE.md#keys-for-node-code)). Like `curio_data_path("<id>")`, the name travels with the dataflow, and the value reaches the sandbox for the run only.
 
 On a dataflow you edit at its owner's invitation ([COLLABORATION.md](COLLABORATION.md#who-edits-owner-editors-and-watchers)), a run of yours of a node of a package the owner added to the dataflow, a play, a run on the server or one its agents make, takes the package's Python modules from the owner's copy, as the owner's runs do. A node of any other package runs with your own copy. Nothing is added to your account, and the owner's packages stay the owner's to publish, export and remove.

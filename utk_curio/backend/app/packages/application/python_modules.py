@@ -5,8 +5,9 @@ Application layer of the packages package. What counts as a module is
 ``domain/python_modules.py``; the install-time refusal of a name two packages
 ship is ``store_install.refuse_a_module_name_in_use``, which is also why the
 modules of a package and of the packages it depends on never share a name.
-:func:`module_index` lists every module by name, with the nodes a run hands
-it to, for the agents' grounding gate.
+:func:`module_index` lists every module by name, with the package that ships
+it and the nodes a run hands it to, for the agents' grounding gate and for a
+failed run's missing module (``missing_import``).
 """
 
 from __future__ import annotations
@@ -265,6 +266,20 @@ def _python_code_templates(manifest) -> list[dict]:
     ]
 
 
+def _shipper(folder: Path, manifests: dict) -> dict:
+    """``{"package", "kind", "name"}`` of the package in *folder*, which ships
+    modules: its ``<packageId>@<major>``, its kind (``node`` or ``model``) and
+    the name its catalog lists it by. Its manifest is read from *manifests*,
+    by ``<packageId>@<major>``, else from *folder*, and kept there."""
+    manifest = manifests.get(folder.name)
+    if manifest is None:
+        try:
+            manifest = manifests[folder.name] = load_package_manifest(folder)
+        except ManifestError:
+            return {"package": folder.name, "kind": "node", "name": folder.name.rsplit("@", 1)[0]}
+    return {"package": folder.name, "kind": manifest.kind, "name": manifest.name}
+
+
 def _store_modules(
     user_key: str, project_id: str | None, majors_by_pkg: dict[str, list[int]],
     only: AbstractSet[str] | None = None,
@@ -287,12 +302,13 @@ def _store_modules(
                 held.append((dir_name, load_package_manifest(package_dir(user_key, dir_name))))
             except ManifestError:
                 continue
+        manifests = dict(held)
         for dir_name, manifest in held:
             templates = _python_code_templates(manifest)
             for source in _module_sources(user_key, dir_name, manifest, majors_by_pkg, pins):
-                shipper = Path(source["root"]).parent.name
+                shipper = _shipper(Path(source["root"]).parent, manifests)
                 for name in source["names"]:
-                    entry = index.setdefault(name, {"package": shipper, "added": True, "templates": []})
+                    entry = index.setdefault(name, {**shipper, "added": True, "templates": []})
                     entry["templates"].extend(t for t in templates if t not in entry["templates"])
     return index
 
@@ -322,23 +338,28 @@ def _catalog_modules() -> dict[str, dict]:
         if manifest.package_id == BUILTIN_PACKAGE_ID:
             continue
         for name in module_names(folder, manifest):
-            index.setdefault(name, {"package": folder.name, "added": False, "templates": _python_code_templates(manifest)})
+            index.setdefault(name, {
+                "package": folder.name, "kind": manifest.kind, "name": manifest.name,
+                "added": False, "templates": _python_code_templates(manifest),
+            })
     _CATALOG_MODULES.clear()
     _CATALOG_MODULES[key] = index
     return index
 
 
 def module_index(user_key: str | None, project_id: str | None = None, *, owners=None) -> dict[str, dict]:
-    """Every module a package ships, by its name: ``{"package", "added",
-    "templates"}``.
+    """Every module a package ships, by its name: ``{"package", "kind",
+    "name", "added", "templates"}``.
 
-    *package* is the ``<packageId>@<major>`` that ships it, and *added* says
-    whether *user_key*'s store holds it. *templates* are the templates whose
-    nodes import it, ``{"id", "label"}`` each: for a package of the store, as
-    :func:`modules_for_node` hands modules to a run, the Python code templates
-    of that package and of every package that depends on it; for a package of
-    the catalog the store does not hold, its own. The built-in package ships
-    none. Never raises: what cannot be read adds nothing.
+    *package* is the ``<packageId>@<major>`` that ships it, *kind* and *name*
+    that package's kind (``node`` or ``model``) and the name its catalog lists
+    it by, and *added* says whether *user_key*'s store holds it. *templates*
+    are the templates whose nodes import it, ``{"id", "label"}`` each: for a
+    package of the store, as :func:`modules_for_node` hands modules to a run,
+    the Python code templates of that package and of every package that
+    depends on it; for a package of the catalog the store does not hold, its
+    own. The built-in package ships none. Never raises: what cannot be read
+    adds nothing.
 
     With *owners* (``project_packages.OwnersPackages``), the index is that of
     a run of an editor the owner of the dataflow *project_id* invited, as
