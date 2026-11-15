@@ -82,6 +82,8 @@ USERS = {
      "Curio did not start : it could not insta"): "a JavaScript node's error on Play",
     ("utk_curio/sandbox/isolation/supervisor.py", "describe_child_death",
      "This node was stopped after s. It is sti"): "a node's error on Play",
+    ("utk_curio/sandbox/util/catalog_helpers.py", "<module>",
+     "model.run was removed: open the model in"): "a node's error on Play, when its code calls model.run",
     ("utk_curio/sandbox/util/input_names.py", "<module>",
      "This node's code reads `{name}`, which C"): "a node's error on Play",
     ("utk_curio/sandbox/util/input_names.py", "<module>",

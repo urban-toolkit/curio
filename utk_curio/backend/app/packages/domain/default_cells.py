@@ -8,9 +8,10 @@ type (``application/starters.py``):
 
 - ``semantic-segmentation``: the model loaded by its id, then
   ``curio_segment``, which labels each image's pixels. It runs as it is.
-- ``image-to-image`` and ``node-regression``: the model loaded by its id, then
-  a ``model.run`` skeleton naming each array the model's graph takes, with its
-  element type and shape, for the node's author to fill from ``input_0``.
+- ``image-to-image`` and ``node-regression``: the model loaded by its id, its
+  ONNX file (``model.path``) opened in an onnxruntime session on the CPU, then
+  a ``session.run`` skeleton naming each array the model's graph takes, with
+  its element type and shape, for the node's author to fill from ``input_0``.
 
 A model downloaded from the Discovery Catalog becomes a model package with one
 template, :func:`model_template`, the same node DDRNet23-Slim's package ships.
@@ -78,23 +79,31 @@ def _shape_text(shape) -> str:
 
 def run_skeleton(model_id: str, inputs: Iterable | None) -> str:
     """The cell of an ``image-to-image`` or ``node-regression`` model's node:
-    ``model.run`` with one entry for each of *inputs* (each with ``name``,
-    ``dtype`` and ``shape``, as ``datasets.domain.onnx_model.graph_inputs``
-    reads them), or an empty one when the graph could not be read."""
-    lines = [model_loader_line(model_id), ""]
+    the model's ONNX file (``model.path``) opened in an onnxruntime session on
+    the CPU, then ``session.run`` with one entry for each of *inputs* (each
+    with ``name``, ``dtype`` and ``shape``, as
+    ``datasets.domain.onnx_model.graph_inputs`` reads them), or an empty one
+    when the graph could not be read."""
+    lines = [
+        "import onnxruntime as ort",
+        "",
+        model_loader_line(model_id),
+        'session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])',
+        "",
+    ]
     listed = [item for item in (inputs or []) if getattr(item, "name", "")]
     if listed:
         lines.append("# The arrays the model reads: make each one from input_0.")
-        lines.append("outputs = model.run({")
+        lines.append("outputs = session.run(None, {")
         for item in listed:
             notes = [note for note in (item.dtype, None if item.shape is None else _shape_text(item.shape)) if note]
             comment = f"  # {' '.join(notes)}" if notes else ""
             lines.append(f"    {json.dumps(item.name)}: ...,{comment}")
         lines.append("})")
     else:
-        lines.append("# model.run takes {input name: array}, one array for each input of the model,")
-        lines.append("# made from input_0.")
-        lines.append("outputs = model.run({})")
+        lines.append("# session.run(None, ...) takes {input name: array}, one array for each input")
+        lines.append("# of the model, made from input_0.")
+        lines.append("outputs = session.run(None, {})")
     lines.append("")
     lines.append("return outputs[0]")
     return "\n".join(lines) + "\n"

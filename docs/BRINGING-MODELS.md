@@ -38,11 +38,13 @@ your training code  --export-->  model.onnx
                                      |  Import package, or packages/ in a clone
                                      v
                      its Model Catalog card  --drag onto the canvas-->  the node:
-                                                curio_load_model("<id>"), model.run({...})
+                                                model = curio_load_model("<id>")
+                                                session = ort.InferenceSession(model.path, ...)
+                                                session.run(None, {...})
 ```
 
-Curio runs an exported model with **onnxruntime**, on the CPU. You export the model once,
-in an environment that has your training framework, and Curio reads the
+Your node runs the exported model with **onnxruntime**, on the CPU. You export the model once,
+in an environment that has your training framework, and the node reads the
 exported file.
 
 Pick the path that fits your model:
@@ -84,8 +86,8 @@ export-env/bin/pip install torch onnx onnxscript onnxruntime numpy   # PyTorch
 Whichever framework, decide three things before you export:
 
 1. **The input and output names.** The node feeds the model by name
-   (`model.run({"height": ...})`), so name every input and output, in the order
-   your model takes them.
+   (`session.run(None, {"height": ...})`), so name every input and output, in
+   the order your model takes them.
 2. **The shapes, and which dimensions are free.** A dimension you leave free
    (the number of rows of a raster, the number of nodes of a graph) lets one
    file run on inputs of any size. A dimension you fix (a 512 by 512 tile) is a
@@ -286,23 +288,26 @@ from your Model Catalog. Name the id as a literal: Curio reads the ids from the
 code before the run. A model that is not one of your models stops the node, with a message
 saying to add it with Add in the Model Catalog.
 
-The loaded model has one method for an ONNX model:
+The loaded model's `path` is its ONNX file. Open it with onnxruntime, on the
+CPU, and run it:
 
 ```python
-outputs = model.run({"height": array})   # {input name: numpy array}, every input the graph takes
+import onnxruntime as ort
+
+session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])
+outputs = session.run(None, {"height": array})   # {input name: numpy array}, every input the graph takes
 ```
 
-It returns the graph's outputs as a list, in the graph's order, so a model with
-one output is read as `(relief,) = model.run(...)`. The onnxruntime session
-opens on the first call and is kept for the next ones, so a node that runs the
-model once per tile opens it once. A missing input is refused, with the names
-the graph takes.
+`session.run(None, ...)` returns the graph's outputs as a list, in the graph's
+order, so a model with one output is read as `(relief,) = session.run(None, ...)`.
+A missing input is refused, naming it.
 
 Write the module as you would any function that takes a model. Local Relief's,
 `sources/local_relief/run.py`:
 
 ```python
 import numpy as np
+import onnxruntime as ort
 import rasterio
 
 INPUT = "height"
@@ -314,7 +319,8 @@ def local_relief(raster, model, output_file, min_height=0.0):
     heights[heights < min_height] = 0  # lower than the lowest height: ground
 
     # The model reads (1, 1, rows, columns), as it was exported: NCHW.
-    (relief,) = model.run({INPUT: heights[np.newaxis, np.newaxis]})
+    session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])
+    (relief,) = session.run(None, {INPUT: heights[np.newaxis, np.newaxis]})
     relief = relief[0, 0].astype(np.float32)
     relief[np.ma.getmaskarray(band)] = np.nan
 
@@ -351,9 +357,10 @@ What the node receives and returns:
 When the model comes with code that prepares its inputs and reads its outputs,
 as SCOUT's models did, port that code instead of rewriting it. Keep its
 functions' names and arithmetic. Take the model as an argument where the
-original took its framework's model, call `model.run` where it called the
-model, and read and return arrays where it read and wrote files. List every
-change, and every bug of the original you fix, in the module's docstring.
+original took its framework's model, open its session once, before any loop
+over tiles or batches, call `session.run` where the original called the model,
+and read and return arrays where it read and wrote files. List every change,
+and every bug of the original you fix, in the module's docstring.
 
 Match the original's dtypes: a latitude computed in float64 where the original
 used float32 shifts every prediction a little, and a comparison with the
@@ -664,7 +671,7 @@ it is the model package
 | Export | [`scripts/scout/export_deep_umbra.py`](../scripts/scout/export_deep_umbra.py), in SCOUT's environment (Python 3.11, TensorFlow 2.12, tf2onnx 1.16.1). It imports SCOUT's own `deep_umbra.py`, restores the generator with SCOUT's `get_deep_shadow()`, checks that every variable was restored, and exports with `tf2onnx.convert.from_function`: inputs `height`, `latitude` and `date`, output `shadow`, each 1 by 512 by 512 by 1, float32. |
 | The catch | SCOUT runs the generator with `training=True`, so its batch normalization uses each tile's own statistics, not the checkpoint's averages. The export keeps that ([below](#batch-normalization-in-training-mode)), so the model runs one tile per call. |
 | Checks | ONNX against TensorFlow on SCOUT's committed height tiles; ONNX far from TensorFlow's `training=False`, and unchanged by an export with scrambled averages; the port's inputs against SCOUT's; the port's shadows and metrics against SCOUT's committed ones. |
-| Node code | Three lines: `from deep_umbra import accumulated_shadow`, `model = curio_load_model("model.scout.deep-umbra")`, and `return accumulated_shadow(input_0, season=[!! season !!], model=model, output_file=curio_output_file)`. The module `deep_umbra` holds SCOUT's functions, with `model.run` for the generator ([`deep_umbra.py`](../packages/model.scout.deep-umbra@1/sources/deep_umbra/deep_umbra.py)), and the node's input checks, 8-bit height levels, 768 by 768 neighbourhoods and the shadow raster, written with Rasterization's `mosaic_rasters` ([`node_outputs.py`](../packages/model.scout.deep-umbra@1/sources/deep_umbra/node_outputs.py)). |
+| Node code | Three lines: `from deep_umbra import accumulated_shadow`, `model = curio_load_model("model.scout.deep-umbra")`, and `return accumulated_shadow(input_0, season=[!! season !!], model=model, output_file=curio_output_file)`. The module `deep_umbra` holds SCOUT's functions, with an onnxruntime session's `run` for the generator ([`deep_umbra.py`](../packages/model.scout.deep-umbra@1/sources/deep_umbra/deep_umbra.py)), and the node's input checks, 8-bit height levels, 768 by 768 neighbourhoods, the session on `model.path` that every tile runs in, and the shadow raster, written with Rasterization's `mosaic_rasters` ([`node_outputs.py`](../packages/model.scout.deep-umbra@1/sources/deep_umbra/node_outputs.py)). |
 | Widget | **Season**: spring, summer or winter. |
 | Result | Each tile within 6 gray levels of SCOUT's committed shadow tile, on at most 6% of its pixels, and the mean and median shadow within 0.1 and 0.05 minutes of SCOUT's, for both of SCOUT's scenarios ([`test_scout_shadow.py`](../utk_curio/backend/tests/test_packages/test_scout_shadow.py)). |
 
@@ -680,7 +687,7 @@ a linear head, from `rain_model.pth`. In Curio it is the model package
 |---|---|
 | Export | [`scripts/scout/export_weather_gnn.py`](../scripts/scout/export_weather_gnn.py), in SCOUT's environment (Python 3.9, torch 2.2.2, torch-geometric 2.6.1). It builds SCOUT's `NodeRegressor`, loads the weights with every key used, and exports with the TorchScript exporter (`torch.onnx.export`, opset 17): inputs `x` (nodes by 7) and `edge_index` (2 by edges, int64), output `prediction` (nodes by 5), with the node and edge counts free. Mean aggregation exports as ordinary ONNX operators, so running the model needs no torch-geometric. |
 | Checks | onnxruntime against torch on graphs of other sizes than the traced one: repeated edges, nodes without edges, a graph with no edges; and against the inputs and prediction recorded from SCOUT's own run. |
-| Node code | The cell reads the SCOUT WRF forecast with `curio_data_path("<id>")`, loads the model with `curio_load_model("model.scout.weather-gnn")` and calls the module `weather_routing`. [`weight_calculation.py`](../packages/model.scout.weather-gnn@1/sources/weather_routing/weight_calculation.py) is SCOUT's, with `model.run({"x": x, "edge_index": edge_index})` for the torch call; [`road_graph.py`](../packages/model.scout.weather-gnn@1/sources/weather_routing/road_graph.py) builds the road graph from the roads an Autark node loads. The SCOUT bugs the port fixes are listed in [`weather_routing.py`](../packages/model.scout.weather-gnn@1/sources/weather_routing/weather_routing.py). |
+| Node code | The cell reads the SCOUT WRF forecast with `curio_data_path("<id>")`, loads the model with `curio_load_model("model.scout.weather-gnn")` and calls the module `weather_routing`. [`weight_calculation.py`](../packages/model.scout.weather-gnn@1/sources/weather_routing/weight_calculation.py) is SCOUT's, with `session.run(None, {"x": x, "edge_index": edge_index})`, on a session of `model.path`, for the torch call; [`road_graph.py`](../packages/model.scout.weather-gnn@1/sources/weather_routing/road_graph.py) builds the road graph from the roads an Autark node loads. The SCOUT bugs the port fixes are listed in [`weather_routing.py`](../packages/model.scout.weather-gnn@1/sources/weather_routing/weather_routing.py). |
 | Widgets | **Origin**, **Destination**, **Mode**, **Routes per factor (K)**, **Start time (Chicago)**, **Rain weight** and **Wind weight**. |
 | Result | For each of SCOUT's 8 recorded runs, the network's input bit for bit, the routes node for node, and the metrics within 0.001 of SCOUT's ([`test_scout_routing.py`](../utk_curio/backend/tests/test_packages/test_scout_routing.py)). The [Routing around rain and wind in downtown Chicago](examples/dataflows/chicago-rain-wind-routing.json) dataflow runs it. |
 
@@ -714,7 +721,7 @@ free (`dynamic_shapes`, `dynamic_axes`) and test on another size.
 ONNX takes the dtype you exported with. Feed `float32` where the model reads
 float32 (`array.astype(np.float32)`) and `int64` for indices such as a graph's
 `edge_index`. A reshape that drops the batch dimension, or NHWC fed to a model
-exported NCHW, fails with a shape error at `model.run`.
+exported NCHW, fails with a shape error at `session.run`.
 
 ### Operators the converter cannot export
 

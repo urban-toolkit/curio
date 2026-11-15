@@ -193,7 +193,7 @@
         "type": {
           "type": "string",
           "enum": ["semantic-segmentation", "image-to-image", "node-regression", "concept-segmentation"],
-          "description": "'semantic-segmentation': one label per pixel. 'image-to-image': images in, an image out. 'node-regression': a graph in (node features and edges), values for each node out. 'concept-segmentation': labels that are text prompts, and every thing each prompt names found. The node that runs an image-to-image or node-regression model feeds it itself (model.run), and the node that runs a concept-segmentation model loads its checkpoint itself (model.path)."
+          "description": "'semantic-segmentation': one label per pixel. 'image-to-image': images in, an image out. 'node-regression': a graph in (node features and edges), values for each node out. 'concept-segmentation': labels that are text prompts, and every thing each prompt names found. The node that runs an image-to-image or node-regression model opens its ONNX file (model.path) in an onnxruntime session and feeds it itself, and the node that runs a concept-segmentation model loads its checkpoint itself (model.path)."
         },
         "runtime": {
           "type": "string",

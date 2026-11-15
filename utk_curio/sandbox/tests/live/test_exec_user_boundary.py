@@ -906,11 +906,13 @@ def test_a_model_packages_weights_run_as_the_exec_user(model_folder):
     on flat ground stands 24 m above the mean of its 5 by 5 cells."""
     body = textwrap.indent(textwrap.dedent("""
         import numpy as np
+        import onnxruntime as ort
 
         model = curio_load_model("model.example.local-relief")
+        session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])
         heights = np.zeros((9, 9), dtype=np.float32)
         heights[4, 4] = 25.0
-        (relief,) = model.run({"height": heights[np.newaxis, np.newaxis]})
+        (relief,) = session.run(None, {"height": heights[np.newaxis, np.newaxis]})
         print(round(float(relief[0, 0, 4, 4]), 4))
         print(model.folder.startswith(%r))
     """ % model_folder).strip("\n"), "    ")
