@@ -1571,8 +1571,9 @@ def test_the_guest_packages_flag_reaches_the_setting_the_backend_reads(tmp_path)
 
     set_environment_variables(**BASE, packages_root=str(root), guest_packages="ai.test.first@1, ai.test.second@1")
 
+    read = _backend("list(m.CURIO_GUEST_PACKAGES)")()
     assert os.environ["CURIO_GUEST_PACKAGES"] == "ai.test.first@1,ai.test.second@1"
-    assert _backend("list(m.CURIO_GUEST_PACKAGES)")() == ["ai.test.first@1", "ai.test.second@1"]
+    assert read == ["ai.test.first@1", "ai.test.second@1"]
 
 
 def test_without_the_guest_packages_flag_guests_have_none_whatever_the_environment_held():
@@ -1580,8 +1581,9 @@ def test_without_the_guest_packages_flag_guests_have_none_whatever_the_environme
 
     set_environment_variables(**BASE)
 
+    read = _backend("list(m.CURIO_GUEST_PACKAGES)")()
     assert os.environ["CURIO_GUEST_PACKAGES"] == ""
-    assert _backend("list(m.CURIO_GUEST_PACKAGES)")() == []
+    assert read == []
 
 
 @pytest.mark.parametrize("name", [
@@ -1605,7 +1607,8 @@ def test_a_guest_package_that_is_no_package_of_the_catalog_refuses_the_start(tmp
 
 
 def test_the_guest_packages_flag_is_a_curio_py_argument():
-    assert "--guest-packages" in _parser_flags()
+    flags = _parser_flags()
+    assert "--guest-packages" in flags
 
 
 def test_curio_py_start_hands_its_guest_packages_to_the_launcher(monkeypatch):

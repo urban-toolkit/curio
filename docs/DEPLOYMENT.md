@@ -11,6 +11,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker +
 - [1. Configure the stack](#1-configure-the-stack)
   - [LLM configurations](#llm-configurations)
   - [Model weights a package fetches](#model-weights-a-package-fetches)
+  - [Packages every guest has](#packages-every-guest-has)
   - [Bucket mounts](#bucket-mounts)
 - [2. Configure Caddy](#2-configure-caddy)
 - [3. Build and run](#3-build-and-run)
@@ -328,6 +329,28 @@ when it does not.
 - Git, the image and the pip package hold none of these weights, and
   **Export**, **Publish** and **Save as package node** refuse such a model.
 
+### Packages every guest has
+
+A guest adds no package and installs no library. Its nodes are those of the
+built-in package, of the examples' packages with `--with-examples`, and of the
+packages `--guest-packages` names, each by its folder in the catalog, with
+commas between them. To give every guest SAM 3, add to the `command` in
+`docker-compose.site.yml`:
+
+```yaml
+    command: ["--backend-url", "https://lab-name.your-uni.edu/curio/api", "--base-path", "/curio", "--exec-memory-mb", "24576", "--model-weights-dir", "/model-weights", "--guest-packages", "model.curio.sam3@1"]
+```
+
+- Each start adds the packages, with the packages they need, to the shared
+  guest's account. The Node Catalog and Model Catalog pages show them in all
+  projects, a dataflow a guest makes with **File > New** starts with them, and
+  a guest adds them to an example from the catalog drawer, or by dropping one
+  of their cards on the canvas.
+- Their libraries install with the examples' as the stack starts.
+- A start takes off what an earlier start added that the list no longer
+  names, unless an example uses it.
+- A name that is not a package of the catalog stops the start.
+
 ### Bucket mounts
 
 `docker-compose.bucket-mounts.yml` runs a mount service for buckets beside
@@ -610,6 +633,8 @@ Both stacks mount `/srv/curio-model-weights` at `/model-weights` and start with 
 Both stacks also start with `--media-cache-max-file-gb 8`, so **Cache files** copies the SideSeeing walks, videos of up to 7 GiB, from data.urbantk.org. Each account still holds at most 20 GB of cached files.
 
 They also start with `--discovery-max-download-mb 2048`, so a download, or a file of a bucket table, may be up to 2 GiB on them: a month of detections in data.urbantk.org's `idot` bucket is a JSON Lines file of up to 1.7 GB.
+
+Both stacks start with `--guest-packages model.curio.sam3@1`, so every guest runs SAM 3's **Track Objects** on the host's GPU ([Packages every guest has](#packages-every-guest-has)).
 
 Each stack runs its own [bucket mount service](#bucket-mounts) when the deployed release has it, mounting in `/srv/curio-bucket-mounts/dev` or `/srv/curio-bucket-mounts/stable`. Before a deploy stops the running stack, it checks the host: `/dev/fuse`, a shared mount at `/srv`, and the AppArmor profile, loaded and with `/etc/apparmor.d/curio-bucket-mounts` the same as the checkout's `scripts/bucket-mounts/curio-bucket-mounts.apparmor`. A failed check fails the deploy with the command to run. Once the new stack is up, the deploy fails unless `bucket-mounts` is healthy and **Bucket mounts** says *on, self-test passed*.
 

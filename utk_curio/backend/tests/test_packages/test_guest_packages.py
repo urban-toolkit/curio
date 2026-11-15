@@ -11,7 +11,10 @@ projects puts it there, with the packages it needs, and into its defaults: a
 hosted guest's catalog then lists it added, and a guest's run of its node is
 handed its modules. Its libraries are the launcher's to install, with the
 examples' (``test_scripts/test_launcher_manifest_deps.py``), so the start runs
-no pip. Without the flag the start leaves the account as it was.
+no pip. Without the flag the start leaves the account as it was, and a later
+start takes off what the flag added and no longer names: never what the
+account held before, a package a dataflow of the account uses, or one the
+shipped examples need.
 
 Also here: a hosted guest's account-wide changes to the shared account's
 packages are refused (``capabilities.catalog_entry_refusal``), as its changes
@@ -220,6 +223,14 @@ def _sandbox_bodies(monkeypatch) -> list:
     return sent
 
 
+def _the_run_sent(sent: list) -> dict:
+    """The body of the one run the sandbox was asked, which went to ``/exec``."""
+    assert len(sent) == 1, sent
+    path, body = sent[0]
+    assert path == "/exec", path
+    return body
+
+
 def _play(client, headers: dict, node_type: str):
     """A hosted guest's Play of a node of *node_type* on a canvas of its own."""
     return client.post("/processPythonCode", data=json.dumps({
@@ -255,9 +266,12 @@ def test_after_the_start_a_hosted_guests_catalog_lists_the_package_added(catalog
 
     start(tracker)
 
-    assert tracker in _defaults(client, hosted_guest), "the catalog pages read the defaults as added"
-    assert _catalog_rows(client, hosted_guest)[tracker]["installed"] is True
-    assert tracker in _held(client, hosted_guest)
+    defaults = _defaults(client, hosted_guest)
+    rows = _catalog_rows(client, hosted_guest)
+    held = _held(client, hosted_guest)
+    assert tracker in defaults, "the catalog pages read the defaults as added"
+    assert rows[tracker]["installed"] is True
+    assert tracker in held
 
 
 def test_after_the_start_a_hosted_guests_run_of_its_node_is_handed_the_packages_modules(
@@ -270,8 +284,7 @@ def test_after_the_start_a_hosted_guests_run_of_its_node_is_handed_the_packages_
     resp = _play(client, hosted_guest, TRACKER_NODE)
 
     assert resp.status_code == 200, resp.get_data(as_text=True)
-    ((path, body),) = sent
-    assert path == "/exec"
+    body = _the_run_sent(sent)
     assert body.get("package_modules") == _sources(tracker, "tracker_helpers"), (
         "a hosted guest's run of the package's node was not handed its modules, so its import fails "
         "as it fails for a package the account lacks"
@@ -284,11 +297,14 @@ def test_the_packages_a_guest_package_needs_come_with_it(catalog, start, client,
 
     start(tracker)
 
-    assert {base, tracker} <= _store(), _store()
-    assert {base, tracker} <= set(_defaults(client, hosted_guest))
+    store = _store()
+    defaults = _defaults(client, hosted_guest)
     sent = _sandbox_bodies(monkeypatch)
-    assert _play(client, hosted_guest, TRACKER_NODE).status_code == 200
-    ((_path, body),) = sent
+    resp = _play(client, hosted_guest, TRACKER_NODE)
+    assert {base, tracker} <= store, store
+    assert {base, tracker} <= set(defaults), defaults
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = _the_run_sent(sent)
     assert body.get("package_modules") == [
         _sources(tracker, "tracker_helpers"),
         _sources(base, "tracking_base"),
@@ -302,7 +318,8 @@ def test_the_start_installs_no_library_and_runs_no_import_probe(catalog, start, 
 
     start(tracker)
 
-    assert tracker in _store(), "the start did not add the package"
+    store = _store()
+    assert tracker in store, "the start did not add the package"
     assert pip_runs == []
 
 
@@ -313,8 +330,10 @@ def test_a_name_no_catalog_package_has_is_left_out_and_the_others_are_added(cata
 
     start("ai.test.nowhere@1", tracker)
 
-    assert _store() == {tracker}
-    assert defaults_io.load_defaults(GUEST_KEY) == {tracker}
+    store = _store()
+    defaults = defaults_io.load_defaults(GUEST_KEY)
+    assert store == {tracker}
+    assert defaults == {tracker}
 
 
 def test_the_guests_copy_is_the_catalogs_which_an_upgrade_of_the_catalog_reaches(catalog, start):
@@ -328,7 +347,106 @@ def test_the_guests_copy_is_the_catalogs_which_an_upgrade_of_the_catalog_reaches
 
     seed_dev_packages(user_key=GUEST_KEY)
 
-    assert _manifest_version(tracker) == "1.1.0"
+    version = _manifest_version(tracker)
+    assert version == "1.1.0"
+
+
+# ---------------------------------------------------------------------------
+# A later start takes off what the flag added and no longer names
+# ---------------------------------------------------------------------------
+#
+# The operator's list is what guests get (owner, 11-15). What the flag added is
+# recorded in the guest store (``.guest-packages.json``); a later start takes
+# off only that, never a package the store or the defaults held before, one a
+# dataflow of the account uses or one the shipped examples need.
+
+RECORD = ".guest-packages.json"
+
+
+def test_a_later_start_takes_off_what_the_flag_added_and_no_longer_names(catalog, start):
+    base = _publish(catalog, "ai.test.tracking-base", module="tracking_base")
+    tracker = _publish(catalog, "ai.test.tracker", needs={base: "*"}, module="tracker_helpers")
+    other = _publish(catalog, "ai.test.other", module="other_helpers")
+    start(tracker, other)
+    added = _store()
+    assert added == {base, tracker, other}, "the start did not add the packages"
+
+    start(other)
+
+    store, defaults = _store(), defaults_io.load_defaults(GUEST_KEY)
+    assert store == {other}
+    assert defaults == {other}
+
+    start()
+
+    store, defaults = _store(), defaults_io.load_defaults(GUEST_KEY)
+    recorded = (user_packages_dir(GUEST_KEY) / RECORD).exists()
+    assert store == set()
+    assert defaults == set()
+    assert not recorded, "nothing is given, and the record is still there"
+
+
+def test_a_later_start_keeps_what_the_account_held_before_the_flag_named_it(catalog, start):
+    """A package the store and the defaults held keeps both; one the store
+    held keeps its copy, and only the defaults entry the flag wrote goes."""
+    from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+
+    tracker = _publish(catalog, "ai.test.tracker", module="tracker_helpers")
+    other = _publish(catalog, "ai.test.other", module="other_helpers")
+    third = _publish(catalog, "ai.test.third", module="third_helpers")
+    install_package_from_directory(GUEST_KEY, catalog / other)
+    install_package_from_directory(GUEST_KEY, catalog / third)
+    defaults_io.add_to_defaults(GUEST_KEY, other)
+    start(tracker, other, third)
+    store, defaults = _store(), defaults_io.load_defaults(GUEST_KEY)
+    assert store == {tracker, other, third}, "the start did not add the package"
+    assert defaults == {tracker, other, third}
+
+    start()
+
+    store, defaults = _store(), defaults_io.load_defaults(GUEST_KEY)
+    assert store == {other, third}
+    assert defaults == {other}
+
+
+def test_a_later_start_keeps_a_package_a_dataflow_of_the_account_uses(catalog, start, client, hosted_guest, monkeypatch):
+    """Such as an example whose lockfile names it: its store copy stays, and
+    the defaults entry the flag wrote goes."""
+    tracker = _publish(catalog, "ai.test.tracker", module="tracker_helpers")
+    start(tracker)
+    added = _store()
+    assert tracker in added, "the start did not add the package"
+    # Made as the local guest makes one, while the defaults name the package.
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+    created = client.post(
+        "/api/projects",
+        json={"name": "example", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []},
+        headers=hosted_guest,
+    )
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+    assert created.status_code == 201, created.get_data(as_text=True)
+
+    start()
+
+    store, defaults = _store(), defaults_io.load_defaults(GUEST_KEY)
+    assert tracker in store
+    assert tracker not in defaults
+
+
+def test_a_later_start_keeps_a_package_the_shipped_examples_need(catalog, start, monkeypatch):
+    tracker = _publish(catalog, "ai.test.tracker", module="tracker_helpers")
+    start(tracker)
+    added = _store()
+    assert tracker in added, "the start did not add the package"
+    monkeypatch.setattr(
+        "utk_curio.backend.app.packages.application.seeding.example_dep_package_ids", lambda: ("ai.test.tracker",),
+    )
+
+    start()
+
+    store, defaults = _store(), defaults_io.load_defaults(GUEST_KEY)
+    assert tracker in store
+    assert tracker not in defaults
 
 
 # ---------------------------------------------------------------------------
@@ -343,12 +461,16 @@ def test_without_the_flag_the_start_leaves_the_guests_account_as_it_was(
 
     start()
 
-    assert _guest_files() == before
-    assert tracker not in _defaults(client, hosted_guest)
-    assert _catalog_rows(client, hosted_guest)[tracker]["installed"] is False
+    after = _guest_files()
+    defaults = _defaults(client, hosted_guest)
+    rows = _catalog_rows(client, hosted_guest)
     sent = _sandbox_bodies(monkeypatch)
-    assert _play(client, hosted_guest, TRACKER_NODE).status_code == 200
-    ((_path, body),) = sent
+    resp = _play(client, hosted_guest, TRACKER_NODE)
+    assert after == before
+    assert tracker not in defaults
+    assert rows[tracker]["installed"] is False
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = _the_run_sent(sent)
     assert "package_modules" not in body
 
 
@@ -405,9 +527,10 @@ def test_a_hosted_guest_changes_none_of_the_shared_accounts_packages(
 
     resp = client.open(url, method=method, json=payload, headers=hosted_guest)
 
+    after = _guest_files()
     assert resp.status_code == 403, resp.get_data(as_text=True)
     assert resp.get_json()["error"] == REFUSAL.format(action=action)
-    assert _guest_files() == before, "a refused change still changed the shared guest's account"
+    assert after == before, "a refused change still changed the shared guest's account"
 
 
 def test_without_deploy_the_shared_guest_still_adds_a_package_to_all_projects(
@@ -419,5 +542,6 @@ def test_without_deploy_the_shared_guest_still_adds_a_package_to_all_projects(
 
     resp = client.post("/api/packages/defaults", json={"dirName": shared_account.other}, headers=hosted_guest)
 
+    defaults = defaults_io.load_defaults(GUEST_KEY)
     assert resp.status_code == 201, resp.get_data(as_text=True)
-    assert shared_account.other in defaults_io.load_defaults(GUEST_KEY)
+    assert shared_account.other in defaults

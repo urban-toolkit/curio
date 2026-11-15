@@ -398,6 +398,21 @@ def _walk_manifests(
 
     per_pkg: list[tuple[str, dict[str, str]]] = []
     seen: set[str] = set()  # dir_name dedupe across users
+    # The libraries of each package this walk binds for this interpreter, for
+    # every account's nodes: the built-in, the examples' and the guest packages.
+    for_everyone: dict[str, dict[str, str]] = {}
+
+    def bind_for_everyone(pkg_dir) -> None:
+        try:
+            m = load_package_manifest(pkg_dir)
+        except (ManifestError, OSError):
+            return
+        if m.dir_name in seen:
+            return
+        seen.add(m.dir_name)
+        for_everyone[m.dir_name] = dict(m.python_deps or {})
+        if m.python_deps:
+            per_pkg.append((m.dir_name, dict(m.python_deps)))
 
     # Catalog walk is scoped to ``curio.builtin@*`` by default — the
     # catalog lists every *available* package, but only the built-in is
@@ -420,15 +435,13 @@ def _walk_manifests(
     if catalog.is_dir():
         for pattern in catalog_globs:
             for pkg_dir in sorted(catalog.glob(pattern)):
-                try:
-                    m = load_package_manifest(pkg_dir)
-                except ManifestError:
-                    continue
-                if m.dir_name in seen:
-                    continue
-                seen.add(m.dir_name)
-                if m.python_deps:
-                    per_pkg.append((m.dir_name, dict(m.python_deps)))
+                bind_for_everyone(pkg_dir)
+    # The packages --guest-packages names, with every package they need, by
+    # folder in the catalog the backend copies them from (--packages-root),
+    # which the start puts in the shared guest's account: their libraries
+    # install here with the examples', so no hosted guest installs any.
+    for pkg_dir in _guest_package_dirs():
+        bind_for_everyone(pkg_dir)
 
     # Per-user store walk — every package any user has actually installed.
     #
@@ -472,6 +485,13 @@ def _walk_manifests(
             if not m.python_deps:
                 continue
             if scoped:
+                # A store's copy of a package bound above for every account,
+                # with the same libraries, adds nothing to its account's tree:
+                # node code imports this interpreter behind that tree, and
+                # pip --target ignores what this interpreter holds, so each
+                # start would download them into the tree again.
+                if for_everyone.get(m.dir_name) == dict(m.python_deps):
+                    continue
                 user_key = mf.parent.parent.parent.name
                 per_user.setdefault(user_key, []).append(
                     (m.dir_name, dict(m.python_deps))
@@ -480,6 +500,19 @@ def _walk_manifests(
                 per_pkg.append((m.dir_name, dict(m.python_deps)))
 
     return per_pkg, per_user
+
+
+def _guest_package_dirs() -> list[Path]:
+    """The folders of the packages ``--guest-packages`` names
+    (``CURIO_GUEST_PACKAGES``) and of every package they need, in the shared
+    catalog the backend copies them from (``--packages-root``)."""
+    names = [name.strip() for name in os.environ.get("CURIO_GUEST_PACKAGES", "").split(",") if name.strip()]
+    if not names:
+        return []
+    from utk_curio.backend.app.packages.service import PACKAGE_DIR_RE, catalog_packages_to_add, catalog_root
+
+    root = catalog_root()
+    return [root / dir_name for dir_name in catalog_packages_to_add([name for name in names if PACKAGE_DIR_RE.match(name)])]
 
 
 def _report_unimportable_deps(merged, *, block: bool) -> None:
