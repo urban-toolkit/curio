@@ -34,6 +34,27 @@ def _fresh():
     scan.listings.reset()
 
 
+@pytest.fixture()
+def segment(tmp_path, monkeypatch):
+    """The Segmentation package's ``segment_images``, staged and imported as a
+    run of a segmentation model's node imports it, running each model on the
+    runner the test's model carries instead of opening its runtime."""
+    import importlib
+    from pathlib import Path
+
+    from utk_curio.sandbox.util.package_modules import importable
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    sources = Path(__file__).resolve().parents[4] / "packages" / "curio.segmentation@1" / "sources"
+    run = tmp_path / "run-segmentation"
+    run.mkdir()
+    staged = stage_package_modules({"root": str(sources), "names": ["semantic_segmentation"]}, str(run))
+    with importable(str(run / staged["root"]), staged["names"]):
+        module = importlib.import_module("semantic_segmentation")
+        monkeypatch.setattr(module, "_runner", lambda model: model.runner)
+        yield module.segment_images
+
+
 def wait_for(client, auth, job_id, timeout=15.0):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -277,7 +298,9 @@ class TestDerivedFiles:
         # One never written is not found either.
         assert media(client, auth, dataset["id"], f"{photo}@500").status_code == 404
 
-    def test_two_models_on_one_photo_keep_an_overlay_each(self, client, auth, app, shipped_root, user_and_token):
+    def test_two_models_on_one_photo_keep_an_overlay_each(
+        self, client, auth, app, shipped_root, user_and_token, segment,
+    ):
         """#621: example 10 segments one sample with two models. An overlay was
         named by its photo alone, so the second model's overlay replaced the
         first's and both rows pointed at one file. Each model's overlay is a
@@ -291,7 +314,6 @@ class TestDerivedFiles:
         from utk_curio.backend.app.discovery.infrastructure.storage import storage_root
         from utk_curio.backend.tests.test_discovery.conftest import SHIPPED_ROOT
         from utk_curio.sandbox.util.collections import make_collection_helpers
-        from utk_curio.sandbox.util.vision import make_curio_segment
 
         user, _token = user_and_token
         dataset, _index = collection(client, auth, "survey")
@@ -303,26 +325,27 @@ class TestDerivedFiles:
         )
         rows = helpers["curio_load_collection"](dataset["id"])
         photo = rows[rows["name"] == "IMG_0001.jpg"].head(1)
-        segment = make_curio_segment(helpers["curio_derived_file"])
+        derive = helpers["curio_derived_file"]
 
         def a_model(model_id, label):
-            """A model that labels every pixel *label*, as curio_load_model gives one."""
+            """A model that labels every pixel *label*, as curio_load_model gives
+            one, with the runner ``segment`` runs it on."""
             class Runner:
                 labels = ["road", "sky"]
 
                 def __call__(self, image):
                     return np.full((image.height, image.width), self.labels.index(label))
 
-            return SimpleNamespace(id=model_id, manifest={}, runner=Runner())
+            return SimpleNamespace(id=model_id, manifest={}, path="", runner=Runner())
 
         def served(url):
             res = client.get(url, headers=auth)
             assert res.status_code == 200 and res.mimetype == "image/png", res.get_data()[:300]
             return res.data
 
-        road_url = segment(photo, a_model("model.test.road@1", "road"))["overlay_url"].iloc[0]
+        road_url = segment(photo, a_model("model.test.road@1", "road"), derive)["overlay_url"].iloc[0]
         by_road = served(road_url)
-        sky_url = segment(photo, a_model("model.test.sky@1", "sky"))["overlay_url"].iloc[0]
+        sky_url = segment(photo, a_model("model.test.sky@1", "sky"), derive)["overlay_url"].iloc[0]
         by_sky = served(sky_url)
         assert road_url != sky_url, f"both models' overlays are {road_url}"
         assert by_road != by_sky
@@ -420,7 +443,7 @@ class TestDerivedFiles:
         assert overlay.status_code == 200 and overlay.mimetype == "image/png", overlay.get_data(as_text=True)[:300]
 
     def test_an_overlay_of_a_frame_sampled_from_a_video_is_served(
-        self, client, auth, app, shipped_root, user_and_token
+        self, client, auth, app, shipped_root, user_and_token, segment,
     ):
         """Image Segmentation on Sample Video Frames' rows, whose ids name a
         video and a time (``<videoId>@<t_ms>``): the node stopped with "not a
@@ -433,7 +456,6 @@ class TestDerivedFiles:
 
         from utk_curio.backend.app.discovery.infrastructure import media_dirs
         from utk_curio.sandbox.util.collections import make_collection_helpers
-        from utk_curio.sandbox.util.vision import make_curio_segment
 
         user, _token = user_and_token
         dataset, index = collection(client, auth, "survey")
@@ -453,8 +475,8 @@ class TestDerivedFiles:
             def __call__(self, image):
                 return np.zeros((image.height, image.width))
 
-        model = SimpleNamespace(id="model.test.road@1", manifest={}, runner=Road())
-        url = make_curio_segment(derive)(frames, model)["overlay_url"].iloc[0]
+        model = SimpleNamespace(id="model.test.road@1", manifest={}, path="", runner=Road())
+        url = segment(frames, model, derive)["overlay_url"].iloc[0]
         overlay = client.get(url, headers=auth)
         assert overlay.status_code == 200 and overlay.mimetype == "image/png", overlay.get_data(as_text=True)[:300]
         assert url.startswith(f"/api/datasets/{dataset['id']}/media/{video_id}@500-")

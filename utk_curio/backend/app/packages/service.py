@@ -108,15 +108,17 @@ from utk_curio.backend.app.packages.application.model_packages import (
     resolve_model_weights,
 )
 from utk_curio.backend.app.packages.application.model_downloads import (
+    ModelNode,
     downloaded_model_ids,
     downloaded_model_package,
     install_downloaded_model,
     install_downloaded_model_deps,
     model_add_refusal,
     model_library_refusal,
+    model_node,
     model_package_row,
 )
-from utk_curio.backend.app.packages.domain.default_cells import model_loader_line, model_template
+from utk_curio.backend.app.packages.domain.default_cells import model_loader_line
 
 # The names other features take from the package (memo dev/143 B5: the agents, the
 # projects service, the launcher and the testing routes import THESE from here, never
@@ -265,5 +267,6 @@ __all__ = [
     "model_library_refusal",
     "model_package_row",
     "model_loader_line",
-    "model_template",
+    "ModelNode",
+    "model_node",
 ]

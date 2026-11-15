@@ -64,8 +64,11 @@ A model package declares one of four types of model:
 | `node-regression` | a graph: node features and edges | values for each node | the weather GNN, run by **Weather Routing** |
 | `concept-segmentation` | images or video, and text prompts, its labels | every thing each prompt names | SAM 3, a Transformers checkpoint its package's module loads from `model.path`, run by **Track Objects** |
 
-A segmentation model's node calls Curio's `curio_segment` and needs no code of
-yours ([MODEL-CATALOG.md](MODEL-CATALOG.md#3-using-a-model-in-a-dataflow)). An
+A segmentation model runs in an **Image Segmentation** node, whose code calls
+the Segmentation package's `segment_images` and needs no code of yours: drop
+your model on one, or copy DDRNet23-Slim's node, its `source` and its
+`dependencies.packages`, into your package
+([MODEL-CATALOG.md](MODEL-CATALOG.md#3-using-a-model-in-a-dataflow)). An
 image-to-image or node-regression model is run by the node you write for it,
 which prepares the model's inputs itself. That is the case this guide covers.
 A concept-segmentation model is always run by the node you write for it.
@@ -241,9 +244,13 @@ The manifest is a node package's ([NODE-CATALOG.md](NODE-CATALOG.md)), with:
   module are not detected, so list every library.
 - `templates`: one template, the node that runs the model. Dragging the model's
   card onto the canvas drops it. Its `source` is the node's code; a template
-  with no `source` opens with the cell Curio writes for the model's type, and
-  a `concept-segmentation` model's template must have one. Its `widgets` are
+  with no `source` opens with an onnxruntime session on the model and a
+  `session.run` skeleton naming its inputs, whatever the model's type, and a
+  `concept-segmentation` model's template must have one. Its `widgets` are
   what the user sets ([section 6](#6-widgets-what-the-user-sets)).
+- `dependencies.packages`: the packages whose modules the node's code
+  imports, such as `"curio.segmentation@1": "*"` for a segmentation model's
+  node. Adding the model adds them.
 
 The `model` block describes the weights:
 

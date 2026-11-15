@@ -1206,7 +1206,8 @@ DDRNET = os.path.join(
 )
 
 #: Example 10's shipped model, DDRNet23-Slim's model package, run once at its
-#: own input size with *THREADS* intra-op threads, as ``curio_segment`` runs it.
+#: own input size with *THREADS* intra-op threads, as the Segmentation
+#: package's ``segment_images`` runs it.
 _RUN_DDRNET = r'''
     import json, os
     import numpy as np

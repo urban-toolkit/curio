@@ -12,8 +12,10 @@ which a deployment mounts, and the backend sends that folder in
 - the child, and an in-process run, read them where they are
   (``CurioModel.path``);
 - a model whose weights are not here, whose download failed or stopped,
-  stops at ``curio_load_model``, naming the script that fetches them;
-- ``curio_segment`` refuses a ``concept-segmentation`` model.
+  stops at ``curio_load_model``, naming the script that fetches them.
+
+The Segmentation package's ``segment_images`` refuses such a
+``concept-segmentation`` model (``test_segmentation_package.py``).
 
 New names are imported inside the tests, so a checkout without them fails
 each test on its own.
@@ -129,7 +131,8 @@ def test_a_fetch_that_stopped_halfway_is_not_fetched(package, tmp_path):
 def test_the_weights_are_read_where_they_are_and_the_labels_are_the_prompts(package, weights):
     """The manifest from the model's folder, the weights from theirs. The
     labels a manifest lists, a concept segmentation model's prompts, come back
-    as every model's do, with no runner opened."""
+    in its manifest, as every model's do, and the model opens no runtime of
+    its own: its node's code loads the checkpoint at its path."""
     from utk_curio.sandbox.util.catalog_helpers import CurioModel
 
     model = CurioModel(MODEL_ID, str(package), str(weights))
@@ -137,8 +140,8 @@ def test_the_weights_are_read_where_they_are_and_the_labels_are_the_prompts(pack
     assert model.folder == str(package)
     assert model.path == str(weights / ENTRY)
     assert sorted(os.listdir(model.path)) == sorted(FILES)
-    assert model.labels == ["person", "bicycle"]
-    assert model._runner is None
+    assert model.manifest["labels"] == ["person", "bicycle"]
+    assert not hasattr(model, "runner") and not hasattr(model, "_runner")
 
 
 def test_weights_fetched_into_the_models_own_folder_are_read_there(package):
@@ -146,14 +149,6 @@ def test_weights_fetched_into_the_models_own_folder_are_read_there(package):
 
     _fetch_into(package)
     assert CurioModel(MODEL_ID, str(package)).path == str(package / ENTRY)
-
-
-def test_curio_segment_refuses_a_concept_segmentation_model(package, weights):
-    from utk_curio.sandbox.util.catalog_helpers import CurioModel
-    from utk_curio.sandbox.util.vision import make_curio_segment
-
-    with pytest.raises(ValueError, match="finds the things text prompts name"):
-        make_curio_segment()(None, CurioModel(MODEL_ID, str(package), str(weights)))
 
 
 def test_an_in_process_run_reads_them_in_place(package, weights):

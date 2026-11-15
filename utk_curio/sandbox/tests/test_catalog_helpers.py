@@ -361,7 +361,10 @@ class TestLoadModel:
         folder = self._model(tmp_path, {"runtime": "onnx", "labels": ["road", "sky"]})
         model = _helpers({}, models={"m": str(folder)})["curio_load_model"]("m")
         assert isinstance(model, CurioModel)
-        assert model.folder == str(folder) and model.labels == ["road", "sky"]
+        assert model.folder == str(folder) and model.manifest["labels"] == ["road", "sky"]
+        # The files node code opens, and no runtime of Curio's: the Segmentation
+        # package's module runs a segmentation model.
+        assert not hasattr(model, "runner") and not hasattr(model, "labels")
 
     def test_a_folder_without_a_manifest_is_refused_when_loaded(self, tmp_path):
         folder = tmp_path / "empty"
@@ -381,7 +384,7 @@ class TestLoadModel:
         package's starter writes it, feeds the graph the arrays it made, by
         input name, and gets the graph's outputs in order, again on new
         arrays; a missing input is refused, naming it (onnxruntime is
-        imported, not skipped, as ``test_vision.py`` imports it)."""
+        imported, not skipped, as ``test_segmentation_package.py`` imports it)."""
         import numpy as np
         import onnxruntime as ort
 
@@ -421,16 +424,30 @@ class TestLoadModel:
             assert 'session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])' in said, said
             assert "session.run(None, {input name: array})" in said, said
 
-    def test_curio_segment_refuses_an_image_to_image_model(self, tmp_path):
-        folder = self._model(tmp_path, {"runtime": "onnx", "task": "image-to-image", "labels": []})
-        helpers = _helpers({}, models={"m": str(folder)})
-        with pytest.raises(ValueError, match="does not label pixels"):
-            helpers["curio_segment"](pd.DataFrame({"path": []}), helpers["curio_load_model"]("m"))
+    @pytest.mark.parametrize("args", [
+        (),
+        ("rows", "model", ["vegetation"]),
+        ("rows", "model", None),
+    ], ids=["no-arguments", "classes", "every-class"])
+    def test_curio_segment_refuses_and_names_the_segmentation_packages_function(self, tmp_path, args):
+        """A saved dataflow's ``curio_segment(...)``, which was Curio's, raises
+        whatever it is handed, in one sentence that names the Segmentation
+        package's module and the call a segmentation model's node returns
+        (:data:`SEGMENT_REMOVED`). Segmenting images is the package's work
+        now (``test_segmentation_package.py`` runs it)."""
+        from utk_curio.sandbox.util.catalog_helpers import SEGMENT_REMOVED
 
-    def test_curio_segment_runs_a_loaded_model_not_a_folder(self, tmp_path):
-        segment = _helpers({})["curio_segment"]
-        with pytest.raises(TypeError, match="curio_load_model"):
-            segment(pd.DataFrame({"path": []}), str(tmp_path))
+        folder = self._model(tmp_path, {"runtime": "onnx", "labels": ["road", "sky"]})
+        helpers = _helpers({}, models={"m": str(folder)})
+        handed = [helpers["curio_load_model"]("m") if arg == "model" else arg for arg in args]
+        with pytest.raises(RuntimeError) as refused:
+            helpers["curio_segment"](*handed)
+        said = str(refused.value)
+        assert said == SEGMENT_REMOVED, said
+        assert said.startswith("curio_segment was removed: "), said
+        assert "from semantic_segmentation import segment_images" in said, said
+        assert "return segment_images(input_0, model, curio_derived_file, classes=classes)" in said, said
+        assert said.count(". ") == 0 and said.endswith("."), "one sentence"
 
 
 def test_an_in_process_node_loads_by_format(tmp_path):

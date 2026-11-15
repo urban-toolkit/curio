@@ -1,20 +1,16 @@
-"""The cell a model package's node opens with when its template ships none, and the node a downloaded model gets.
+"""The cell a model package's node opens with when its template ships none.
 
 A model package's template names its own ``source`` when its node has code of
-its own (Deep Umbra's Accumulated Shadow). A template that ships none
-(DDRNet23-Slim's Image Segmentation, the node of a model downloaded from the
-Discovery Catalog) opens with the cell Curio writes for the package's model
-type (``application/starters.py``):
-
-- ``semantic-segmentation``: the model loaded by its id, then
-  ``curio_segment``, which labels each image's pixels. It runs as it is.
-- ``image-to-image`` and ``node-regression``: the model loaded by its id, its
-  ONNX file (``model.path``) opened in an onnxruntime session on the CPU, then
-  a ``session.run`` skeleton naming each array the model's graph takes, with
-  its element type and shape, for the node's author to fill from ``input_0``.
-
-A model downloaded from the Discovery Catalog becomes a model package with one
-template, :func:`model_template`, the same node DDRNet23-Slim's package ships.
+its own: DDRNet23-Slim's Image Segmentation, and the node of a model
+downloaded from the Discovery Catalog, call the Segmentation package's
+``segment_images``; Deep Umbra's Accumulated Shadow calls its package's
+module. A template that ships none (a person's own package) opens with
+:func:`run_skeleton` (``application/starters.py``): the model loaded by its
+id, its ONNX file (``model.path``) opened in an onnxruntime session on the
+CPU, then a ``session.run`` skeleton naming each array the model's graph
+takes, with its element type and shape, for the node's author to fill from
+``input_0``. A new model type's node is its package's own source, never a
+cell of its own here.
 """
 
 from __future__ import annotations
@@ -22,55 +18,10 @@ from __future__ import annotations
 import json
 from typing import Iterable
 
-#: The model type whose node Curio writes in full.
-SEGMENTATION = "semantic-segmentation"
-
-#: The node of a segmentation model package.
-_SEGMENTATION_TEMPLATE = {
-    "behavior": "code",
-    "category": "computation",
-    "description": (
-        "Label every pixel of each image with a Model Catalog model: drag a model onto the node to choose it. "
-        "Input: a collection's rows, each with a path (Data Loading on street-level images). Output: the same "
-        "rows with one column per class asked for (its share of the image's pixels, in percent), "
-        "dominant_class, dominant_pct and an overlay_url a Simple View shows."
-    ),
-    "editor": "code",
-    "engine": "python",
-    "hasCode": True,
-    "hasGrammar": False,
-    "hasWidgets": False,
-    "iconRef": "fa-solid:wand-magic-sparkles",
-    "id": "image-segmentation",
-    "inputPorts": [{"cardinality": "1", "types": ["GEODATAFRAME", "DATAFRAME"]}],
-    "label": "Image Segmentation",
-    "outputPorts": [{"cardinality": "1", "types": ["GEODATAFRAME"]}],
-    "paletteOrder": 0,
-}
-
-
-def model_template(model_type: str) -> dict:
-    """The template of a model package of *model_type* that Curio writes, as a
-    manifest holds it: its node has no ``source``, so it opens with
-    :func:`default_cell`. Only a segmentation model has one."""
-    if model_type != SEGMENTATION:
-        raise ValueError(f"Curio writes a node only for a {SEGMENTATION} model, not for {model_type!r}")
-    return json.loads(json.dumps(_SEGMENTATION_TEMPLATE))
-
 
 def model_loader_line(model_id: str) -> str:
     """The line node code loads the model package *model_id* with."""
     return f'model = curio_load_model("{model_id}")'
-
-
-def segmentation_cell(model_id: str) -> str:
-    """The cell of a segmentation model's node: it runs as it is."""
-    return (
-        f"{model_loader_line(model_id)}\n"
-        "classes = None  # every class the model names\n"
-        "\n"
-        "return curio_segment(input_0, model, classes)\n"
-    )
 
 
 def _shape_text(shape) -> str:
@@ -78,10 +29,10 @@ def _shape_text(shape) -> str:
 
 
 def run_skeleton(model_id: str, inputs: Iterable | None) -> str:
-    """The cell of an ``image-to-image`` or ``node-regression`` model's node:
-    the model's ONNX file (``model.path``) opened in an onnxruntime session on
-    the CPU, then ``session.run`` with one entry for each of *inputs* (each
-    with ``name``, ``dtype`` and ``shape``, as
+    """The cell of a model package's node whose template ships no
+    ``source``: the model's ONNX file (``model.path``) opened in an
+    onnxruntime session on the CPU, then ``session.run`` with one entry for
+    each of *inputs* (each with ``name``, ``dtype`` and ``shape``, as
     ``datasets.domain.onnx_model.graph_inputs`` reads them), or an empty one
     when the graph could not be read."""
     lines = [
@@ -107,12 +58,3 @@ def run_skeleton(model_id: str, inputs: Iterable | None) -> str:
     lines.append("")
     lines.append("return outputs[0]")
     return "\n".join(lines) + "\n"
-
-
-def default_cell(model_id: str, model_type: str, inputs: Iterable | None = None) -> str:
-    """The cell a node of a model package of *model_type* opens with when its
-    template ships none: :func:`segmentation_cell`, else :func:`run_skeleton`
-    over the model's *inputs*."""
-    if model_type == SEGMENTATION:
-        return segmentation_cell(model_id)
-    return run_skeleton(model_id, inputs)

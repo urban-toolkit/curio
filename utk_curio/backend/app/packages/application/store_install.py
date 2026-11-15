@@ -618,13 +618,40 @@ def install_to_store(user_key: str, dir_name: str) -> InstallOutcome:
         repaired = packages_provisioning.provision_python_deps(user_key, dir_name, manifest)
     except (PipInstallError, packages_backend_runtime.BackendRuntimeError) as exc:
         raise PackageServiceError(f"pip install failed: {exc}", 502) from exc
-    brought = _copy_from_catalog(user_key, [
-        other for other in needed
-        if other != dir_name and not packages_store_reads._is_installed_in_user_store(user_key, other)
-    ])
+    brought = _copy_the_missing(user_key, dir_name, needed)
     return InstallOutcome(
         installed=sorted({*repaired.installed, *brought.installed}),
         import_errors={**brought.import_errors, **repaired.import_errors},
+        packages=tuple(needed),
+    )
+
+
+def _copy_the_missing(user_key: str, dir_name: str, needed: list[str]) -> InstallOutcome:
+    """:func:`_copy_from_catalog` of each of *needed*, the packages
+    *dir_name* needs, but *dir_name* and those the store holds."""
+    return _copy_from_catalog(user_key, [
+        other for other in needed
+        if other != dir_name and not packages_store_reads._is_installed_in_user_store(user_key, other)
+    ])
+
+
+def bring_needed_packages(user_key: str, dir_name: str) -> InstallOutcome:
+    """Copy from the shared catalog each package *dir_name*, which the store
+    holds, needs (``dependencies.packages``, and theirs in turn) that the
+    store lacks, with the python deps each declares, those it needs first, as
+    ``install_to_store`` brings them: what a model downloaded from the
+    Discovery Catalog needs, its node's code importing their modules. A
+    package neither the store nor the catalog holds at a version its entry
+    allows refuses the whole step (a ``PackageServiceError``, 409); when one
+    copy fails, every copy this call made is taken back. ``packages`` is
+    *dir_name* with every package it needs."""
+    packages_provisioning.assert_may_install()
+    needed = packages_dependencies.packages_to_add(user_key, dir_name)
+    brought = _copy_the_missing(user_key, dir_name, needed)
+    return InstallOutcome(
+        copied=brought.copied,
+        installed=brought.installed,
+        import_errors=brought.import_errors,
         packages=tuple(needed),
     )
 

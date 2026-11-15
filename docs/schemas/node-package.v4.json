@@ -10,7 +10,7 @@
     "required": ["kind"],
     "properties": { "kind": { "const": "model" } }
   },
-  "then": { "required": ["model"] },
+  "then": { "required": ["model"], "properties": { "templates": { "minItems": 1 } } },
   "else": { "not": { "anyOf": [{ "required": ["model"] }, { "required": ["downloadOnFirstUse"] }] } },
   "allOf": [
     {
@@ -137,8 +137,7 @@
     },
     "templates": {
       "type": "array",
-      "description": "Node templates this package defines. Each entry becomes a draggable node in the canvas palette.",
-      "minItems": 1,
+      "description": "Node templates this package defines. Each entry becomes a draggable node in the canvas palette. A package that ships only modules in sources/, for the packages that name it in dependencies.packages, defines none; a model package defines at least one, the node that runs its model.",
       "items": { "$ref": "#/$defs/template" }
     },
     "backend": {

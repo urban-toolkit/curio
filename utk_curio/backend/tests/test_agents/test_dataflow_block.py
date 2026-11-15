@@ -180,16 +180,15 @@ def _write_packages(user_key, algebra=ALGEBRA):
 
 def _add_models(user_key, tmp_path):
     """Two models in the account's Model Catalog, as the Discovery Catalog adds one."""
-    from utk_curio.backend.app.packages.service import install_downloaded_model, model_template
+    from utk_curio.backend.tests._support.downloaded_models import install_downloaded_segmentation_model
 
     for model_id, name in ((MODEL_ID, "Tree canopy"), (OTHER_MODEL_ID, "Facades")):
         files = tmp_path / f"incoming-{model_id}"
         files.mkdir()
         (files / "m.onnx").write_bytes(b"onnx")
-        install_downloaded_model(user_key, files, {
+        install_downloaded_segmentation_model(user_key, files, {
             "id": model_id, "kind": "model", "name": name, "version": "1.0.0",
             "compatibility": {"major": 1}, "publisher": "org", "license": "MIT",
-            "templates": [model_template("semantic-segmentation")],
             "model": {
                 "type": "semantic-segmentation", "runtime": "onnx", "entry": "models/m.onnx",
                 "labels": ["tree"], "input": {"width": 64, "height": 32, "dtype": "float32", "scale": 0.00392},

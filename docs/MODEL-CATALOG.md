@@ -116,18 +116,20 @@ An agent writes only models your store holds into a node, and asks you to add an
 
 ## 3. Using a model in a dataflow
 
-A node's code loads its model with `curio_load_model("<id>")`. **Image Segmentation** passes the model to `curio_segment`:
+A node's code loads its model with `curio_load_model("<id>")`. **Image Segmentation** passes the model to `segment_images`, the function of the **Segmentation** package's module `semantic_segmentation` ([`curio.segmentation@1`](../packages/curio.segmentation@1/README.md)), with `curio_derived_file`, where each overlay goes:
 
 ```python
+from semantic_segmentation import segment_images
+
 model = curio_load_model("model.curio.ddrnet23-slim")
 classes = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
 
-return curio_segment(input_0, model, classes)
+return segment_images(input_0, model, curio_derived_file, classes=classes)
 ```
 
-A new Image Segmentation node opens with `classes = None`, every class the model names.
+A new Image Segmentation node opens with `classes = None`, every class the model names. DDRNet23-Slim's package, and the package of every segmentation model you add from the Discovery Catalog, name the Segmentation package in `dependencies.packages`: adding the model adds it, and the header above the node's code lists `segment_images` under **Functions**. A dataflow saved with a call of `curio_segment`, which was Curio's, stops when the node runs, with a message naming `segment_images`.
 
-`curio_segment` reads a collection's rows, each with a `path`, as a Data Loading node gives them for images from the Data or Discovery Catalog. Each row comes back with the results as its first columns:
+`segment_images` reads a collection's rows, each with a `path`, as a Data Loading node gives them for images from the Data or Discovery Catalog, and runs the model the way its manifest says: an `onnx` graph on onnxruntime, a `transformers` checkpoint with its own image processor and torch, both on the CPU. Each row comes back with the results as its first columns:
 
 | Column | What it holds |
 |---|---|
@@ -136,13 +138,15 @@ A new Image Segmentation node opens with `classes = None`, every class the model
 | `overlay_url` | The image tinted by class, which **Simple View** shows beside the image. |
 | `segment_error` | Empty, or why the row was skipped: *the image is not on this machine* when the row's file is missing, *the image could not be read* when the file is not an image Curio can open or is cut short. |
 
-Every input column follows. A class the model does not label stops the node, with a message naming the labels it has. `curio_load_model`, `curio_segment` and their arguments are in [Functions node code calls](../skills/node-functions/SKILL.md).
+Every input column follows. A class the model does not label stops the node, with a message naming the labels it has. `curio_load_model`, `curio_derived_file` and their arguments are in [Functions node code calls](../skills/node-functions/SKILL.md); `segment_images` and its arguments are in the [Segmentation package's README](../packages/curio.segmentation@1/README.md).
 
 Dragging a model onto a node rewrites the id in its first `curio_load_model(...)` call and nothing else, so `classes` stays as you set it. The model must be of the type the node runs, the type of the model its code names: a segmentation model takes another segmentation model's place. The dataflow saves the node's code, so it reopens with the same model.
 
-An image-to-image or node-regression model is run by the node made for it, whose code, or the package's module it calls, opens the model's ONNX file in an onnxruntime session, `session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])` after `import onnxruntime as ort`, prepares the model's inputs itself and calls `session.run(None, {input name: array})`, which returns the graph's outputs in order. **Accumulated Shadow** runs Deep Umbra this way, one map tile at a time in one session, and **Weather Routing** runs the weather GNN on its road graph's node features and edges. A model package whose node ships no code of its own opens with that session and a `session.run` skeleton that names each array the model's graph takes. `curio_segment` refuses these models.
+An image-to-image or node-regression model is run by the node made for it, whose code, or the package's module it calls, opens the model's ONNX file in an onnxruntime session, `session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])` after `import onnxruntime as ort`, prepares the model's inputs itself and calls `session.run(None, {input name: array})`, which returns the graph's outputs in order. **Accumulated Shadow** runs Deep Umbra this way, one map tile at a time in one session, and **Weather Routing** runs the weather GNN on its road graph's node features and edges. A model package whose node ships no code of its own opens with that session and a `session.run` skeleton that names each array the model's graph takes, whatever the model's type. `segment_images` refuses these models.
 
-A concept segmentation model is run by the node its package ships, whose code, or the package's module it calls, loads the checkpoint at `model.path` with the library its package declares and finds what each prompt names; the model's labels are the prompts it ships with. Each template of such a package names its `source`. **Track Objects** runs SAM 3 this way: its code hands the model to `track_objects` of the package's module `sam3_tracking`, which loads it with Transformers' `Sam3VideoModel`. `curio_segment` refuses these models as well.
+A concept segmentation model is run by the node its package ships, whose code, or the package's module it calls, loads the checkpoint at `model.path` with the library its package declares and finds what each prompt names; the model's labels are the prompts it ships with. Each template of such a package names its `source`. **Track Objects** runs SAM 3 this way: its code hands the model to `track_objects` of the package's module `sam3_tracking`, which loads it with Transformers' `Sam3VideoModel`. `segment_images` refuses these models as well.
+
+A new type of model's node is its package's own: the template's `source`, calling a function of its package's module, or of a package it names in `dependencies.packages`, as Image Segmentation calls Segmentation's. Curio writes no cell for a type.
 
 The first run of a node that loads a model whose `fetch` names its weights downloads them before the node runs, which can take minutes for a model of gigabytes; later runs read them where they were placed, until a later version of the package names other weights, which its first run downloads in turn. A download that fails stops the node with what failed, in an agent's run of the node too, *Curio could not download `<file>`, a file of the weights of `<id>`, from `<url>`: `<reason>`*, and the command that fetches them ahead, `python scripts/fetch_model_weights.py <id>`.
 
@@ -195,7 +199,7 @@ A model package's `manifest.json` is a node package's ([NODE-CATALOG.md](NODE-CA
 | `dataflowCategories` | | The tags and data types a dataflow is filed under on the **Projects** page when it has a node of the package or loads the model with `curio_load_model`, as in a node package ([NODE-CATALOG.md](NODE-CATALOG.md#6-the-manifest)). A `semantic-segmentation` or `concept-segmentation` model puts the dataflow under Computer vision and Imagery without declaring them. |
 | `dependencies.packages` | | The packages the model's node needs, named as a node package names them ([NODE-CATALOG.md](NODE-CATALOG.md#6-the-manifest)). Adding the model adds them too, and the packages they name in turn, and its node can import the Python modules they ship. A model whose needed package is in neither your account nor the catalog is not added, and the message names that package. |
 
-A template with no `source` opens with the cell Curio writes for the model's type. A `concept-segmentation` model has no such cell: each of its templates names its `source`, and a manifest whose template does not is refused.
+A template with no `source` opens with the cell Curio writes for a model package's node: the model's ONNX file in an onnxruntime session and a `session.run` skeleton naming the arrays its graph takes, whatever the model's type. A `concept-segmentation` model's templates each name their `source`, and a manifest whose template does not is refused. A model package defines at least one template; a package of modules alone, such as Segmentation, defines none.
 
 ---
 
