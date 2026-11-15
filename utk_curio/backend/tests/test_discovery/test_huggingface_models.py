@@ -510,7 +510,7 @@ class TestTheNodeAModelGets:
             def plan(self, repo):
                 raise AssertionError(f"the Hub was asked for {repo}, which this source gives no node")
 
-        acquire_ = ModelAcquire(user=None, user_key="alice", provider_for=lambda m: Unasked())
+        acquire_ = ModelAcquire(user=None, user_key="guest", provider_for=lambda m: Unasked())
         with pytest.raises(CapabilityUnsupported, match=refusal):
             acquire_.acquire(source, ONNX_REPO)
 
