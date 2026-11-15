@@ -1159,7 +1159,7 @@ def _reachable_modules(user_key: str, node_type: object, project_id: str,
     """The modules a run hands a node of *node_type* (``packages.modules_for_node``,
     the run's own reader): those of its package and of the packages it
     depends on, for an editor's run (*keys*) as that run gets them. A
-    built-in node gets none."""
+    built-in Python node gets the built-in package's."""
     from utk_curio.backend.app.packages import service as packages_services
 
     owners = _editors_owners(user_key, project_id, keys)

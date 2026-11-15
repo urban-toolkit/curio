@@ -187,6 +187,7 @@ from utk_curio.backend.app.collaboration.events import (
     _project,
     _valid_project_id,
 )
+from utk_curio.backend.app.projects import saved_joins
 from utk_curio.backend.app.projects import scenarios as project_scenarios
 from utk_curio.backend.app.projects import storage
 from utk_curio.backend.config import COLLAB_NAMESPACE
@@ -821,6 +822,7 @@ def _load(entry: _OpenDoc) -> None:
     history.first_points(entry)
     _catch_up(entry, file)
     if not entry.tabs:
+        _built_anew_with_saved_joins(entry)
         _built_anew_if_grown(entry)
     with _lock:
         # Idle until a tab starts its sync (a read opens a doc with none).
@@ -829,6 +831,21 @@ def _load(entry: _OpenDoc) -> None:
         _changed(entry)  # the spec is behind the doc
     else:
         _ensure_flusher()
+
+
+def _built_anew_with_saved_joins(entry: _OpenDoc) -> None:
+    """Build anew a doc its log kept from before the Spatial Join had code
+    that holds a join saved so: from its dataflow with each such join's code
+    and widgets (``saved_joins``), as a read of the doc gives it, so the doc
+    the tabs edit holds them. A doc built from the spec file holds them
+    already (``storage.read_spec_file``)."""
+    dataflow = doc_mapping.doc_to_dataflow(entry.doc)
+    converted = saved_joins.converted_dataflow(dataflow)
+    if converted is dataflow:
+        return
+    logger.info("the doc of dataflow %s holds a Spatial Join saved before its code; it is built anew",
+                entry.project_id)
+    _built_anew(entry, converted)
 
 
 def _built_anew_if_grown(entry: _OpenDoc) -> None:
@@ -1261,10 +1278,13 @@ def _as_read(spec: dict, entry: _OpenDoc) -> dict:
 
 
 def _read_with(spec: dict, doc) -> dict:
-    """*spec* with *doc*'s dataflow as its own, as :func:`_as_read` reads it."""
+    """*spec* with *doc*'s dataflow as its own, as :func:`_as_read` reads it.
+    A doc its log kept from before the Spatial Join had code reads with each
+    join saved so converted (``saved_joins``), as the spec file reads."""
     dataflow = _dataflow_of(spec)
     out = dict(spec)
-    out["dataflow"] = _as_the_file_holds(doc_mapping.doc_to_dataflow(doc), dataflow, dataflow)
+    read = saved_joins.converted_dataflow(doc_mapping.doc_to_dataflow(doc))
+    out["dataflow"] = _as_the_file_holds(read, dataflow, dataflow)
     return out
 
 
