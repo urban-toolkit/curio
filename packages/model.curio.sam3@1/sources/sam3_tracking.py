@@ -31,6 +31,12 @@ PER_FILE = frozenset({
 TRACK_COLUMNS = ["object_id", "label", "start_s", "end_s", "frames", "largest_share", "mean_score"]
 #: The tag of the overlay and the tracks a video gets.
 TAG = "sam3"
+#: How long before a step's time a frame may come and still be the frame
+#: looked at for that step.
+EARLY_SECONDS = 1e-3
+#: The overlay's time base: each of its frames plays at its own time in the
+#: video, to the millisecond.
+MILLISECOND = Fraction(1, 1000)
 
 
 @dataclass(frozen=True)
@@ -144,27 +150,38 @@ def _part_end(video, from_seconds, to_seconds, max_seconds):
 
 
 def _sample(run, video, end):
-    """The frames SAM 3 looks at, read in order up to *end*, and their times in seconds."""
+    """The frames SAM 3 looks at, read in order, and their times in seconds:
+    one for each step of *every_seconds* from *from_seconds* up to *end*, the
+    first frame no more than a millisecond before the step's time. A part of
+    no length keeps its one step, at *from_seconds*."""
     frames, times = [], []
     with av.open(video["path"]) as container:
         stream = container.streams.video[0]
-        # Every frame up to *end* is decoded, whatever the frames looked at:
+        # Every frame up to the last one looked at is decoded, not only those:
         # FFmpeg decodes several at once with frame threading, about five
         # times faster than with its default, slice threading, at 1080p.
         stream.thread_type = "AUTO"
         width = 2 * (min(run.width, stream.codec_context.width) // 2)
         height = 2 * round(stream.codec_context.height * width / stream.codec_context.width / 2)
         container.seek(int(run.from_seconds / stream.time_base), stream=stream, backward=True)
-        wanted = run.from_seconds
+        steps, wanted = 0, run.from_seconds
         for frame in container.decode(stream):
-            if frame.time is None or frame.time < wanted - 1e-3:
+            if frame.time is None or frame.time < wanted - EARLY_SECONDS:
                 continue
             if frame.time > end:
                 break
             frames.append(frame.to_image(width=width, height=height))
             times.append(round(float(frame.time), 3))
-            steps = int((frame.time - run.from_seconds) / run.every_seconds + 1e-6) + 1
+            # On by whole steps, at least one, to the first this frame comes
+            # more than a millisecond before: a frame just before a step's
+            # time is that step's, and the next frame is not looked at for it.
+            steps = max(steps + 1, int((frame.time - run.from_seconds + EARLY_SECONDS) / run.every_seconds) + 1)
             wanted = run.from_seconds + steps * run.every_seconds
+            # The steps end before *end*, never at it, so a part of W seconds
+            # has W / every_seconds steps however its frames fall; the 1e-9 s
+            # is for the float rounding of the sum above.
+            if wanted >= end - 1e-9:
+                break
     if not frames:
         raise ValueError(f"{video['relpath']} has no frames from {run.from_seconds} to {end} s")
     return frames, times
@@ -196,13 +213,25 @@ def _track(run, video, end):
     overlay = run.derived_file(video["dataset_id"], video["file_id"], start_ms, "mp4", tag=TAG)
     tracks_file = run.derived_file(video["dataset_id"], video["file_id"], start_ms, "parquet", tag=TAG)
     width, height = frames[0].size
+    # Each frame of the overlay plays at its own time in the video, from the
+    # first, in milliseconds, so the overlay plays in real time whatever
+    # every_seconds is; the last plays for the frames' mean gap, or for
+    # every_seconds when it is the only one.
+    shown = [round(1000 * (t - times[0])) for t in times]
+    gaps = [later - sooner for sooner, later in zip(shown, shown[1:])]
+    gaps.append(round(shown[-1] / len(gaps)) if gaps else round(1000 * run.every_seconds))
+    lasting = dict(zip(shown, gaps))
+    duration_s = (shown[-1] + gaps[-1]) / 1000
     tracks, label_of = {}, {}
-    # H.264 in yuv420p, its index first: what browsers play as the file arrives.
+    # H.264 in yuv420p, its index first: what browsers play as the file
+    # arrives. With no B-frames each frame is written in the order it plays,
+    # with how long it plays, so the file lasts duration_s.
     with av.open(overlay["path"], "w", options={"movflags": "+faststart"}) as out:
-        rate = 1 / Fraction(run.every_seconds).limit_denominator(1000)
+        rate = Fraction(1000 * len(frames), shown[-1] + gaps[-1]).limit_denominator(1000)
         drawn = out.add_stream("h264", rate=rate)
         drawn.width, drawn.height, drawn.pix_fmt = width, height, "yuv420p"
-        drawn.codec_context.time_base = 1 / rate
+        drawn.codec_context.time_base = MILLISECOND
+        drawn.codec_context.max_b_frames = 0
         # SAM 3 holds each frame back until it has seen a few after it, so it
         # can drop an object that was never really there.
         with torch.inference_mode():
@@ -222,10 +251,12 @@ def _track(run, video, end):
                     seen["largest_share"] = max(seen["largest_share"], round(float(share), 4))
                     seen["scores"].append(float(score))
                 picture = av.VideoFrame.from_image(_draw(run, frames[output.frame_idx], found, label_of))
-                picture.pts, picture.time_base = output.frame_idx, 1 / rate
+                picture.pts, picture.time_base = shown[output.frame_idx], MILLISECOND
                 for packet in drawn.encode(picture):
+                    packet.duration = lasting[packet.pts]
                     out.mux(packet)
         for packet in drawn.encode():
+            packet.duration = lasting[packet.pts]
             out.mux(packet)
     table = pd.DataFrame([
         {**{k: v for k, v in seen.items() if k != "scores"}, "mean_score": round(float(np.mean(seen["scores"])), 4)}
@@ -241,7 +272,7 @@ def _track(run, video, end):
     row.update(overlay)
     row.update({
         "kind": "video", "video_file_id": video["file_id"], "name": video["name"], "t_s": times[0],
-        "duration_s": float(len(frames) * run.every_seconds), "width": width, "height": height, "fps": float(rate),
+        "duration_s": duration_s, "width": width, "height": height, "fps": round(len(frames) / duration_s, 3),
         "tracks": tracks_file["path"],
     })
     for label in run.labels:
