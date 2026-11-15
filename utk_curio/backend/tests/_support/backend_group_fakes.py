@@ -28,11 +28,12 @@ _pids = itertools.count(40000)
 
 class FakeProcess:
     """A server that never ran: ``poll`` answers :attr:`exit_code`, None while
-    it is said to run."""
+    it is said to run. :attr:`env` is the environment it was given, None when
+    it was given none and so would inherit the launcher's."""
 
     def __init__(self, args, env):
         self.args = list(args)
-        self.env = dict(env or {})
+        self.env = None if env is None else dict(env)
         self.pid = next(_pids)
         self.stdout = None
         self.stderr = None
@@ -65,7 +66,8 @@ class Booted:
     backends: dict = field(default_factory=dict)
     #: nginx's faked process, once started.
     nginx: Optional[FakeProcess] = None
-    #: Each ``nginx -t``: its command and its environment.
+    #: Each ``nginx -t``: its command and its environment, None when it was
+    #: given none.
     checks: list = field(default_factory=list)
     #: Where each wait for a server asked: ``(name, host, port)``.
     asked: list = field(default_factory=list)
@@ -103,7 +105,8 @@ def boot(monkeypatch, *, processes: int = 2, host: str = "127.0.0.1", port: int 
         return process
 
     def check(args, **kwargs):
-        booted.checks.append((list(args), dict(kwargs.get("env") or {})))
+        env = kwargs.get("env")
+        booted.checks.append((list(args), None if env is None else dict(env)))
         booted.events.append(("check", "nginx -t"))
         return SimpleNamespace(returncode=check_status, stdout="", stderr="")
 

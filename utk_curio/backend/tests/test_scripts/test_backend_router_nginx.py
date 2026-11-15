@@ -310,6 +310,7 @@ def test_an_event_reaches_the_page_while_its_stream_is_open(router):
                     break
                 got += chunk
         except socket.timeout:
+            # No first event in time: the assertion below says nginx held it.
             pass
         assert b"data: first" in got, (
             f"no event reached the page while its stream was open: nginx holds a stream's events: {got[:500]!r}"

@@ -123,7 +123,8 @@ def test_the_router_keeps_the_flows_the_backend_serves_today(tmp_path):
         ("proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;", "the limits per visitor address"),
         ("daemon off;", "the launcher holds nginx as one of its servers"),
     ):
-        assert line in text, f"the config lacks {line!r}: {why}"
+        # Each a directive of its own: send_timeout is also the end of proxy_send_timeout.
+        assert re.search(rf"^\s*{re.escape(line)}", text, re.M), f"the config lacks {line!r}: {why}"
     for number in range(4):
         upstream = _block(text, f"upstream curio_backend_{number} ")
         assert re.search(r"^\s*keepalive \d+;", upstream, re.M), f"no kept connections to process {number}"

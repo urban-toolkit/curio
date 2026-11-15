@@ -126,6 +126,7 @@ def test_the_starts_secret_is_in_the_backends_environments_alone(monkeypatch, tm
     secret = booted.env(0)["CURIO_BACKEND_TOKEN"]
     assert secret not in os.environ.values(), "the start's secret is in the launcher's environment, which the sandbox starts from"
     for args, env in [*booted.checks, (booted.nginx.args, booted.nginx.env)]:
+        assert env is not None, f"{args} started with the launcher's own environment, the outer shell's secret in it"
         assert "CURIO_BACKEND_TOKEN" not in env, "nginx holds a backend's secret"
         assert secret not in " ".join(args) and secret not in env.values()
     for path in (tmp_path / "state").rglob("*"):
@@ -184,11 +185,13 @@ def test_any_server_that_exits_stops_them_all_with_an_error(monkeypatch, caplog,
     booted = boot(monkeypatch, processes=3)
     process = dict(booted.started)[which]
     process.exit_code = 9
+    caplog.clear()
 
     backend_group.watch(booted.started)
 
     assert booted.stopped == [1]
-    assert any(which in record.getMessage() and "9" in record.getMessage() for record in caplog.records), (
+    assert any(which in record.getMessage() and "exited with code 9" in record.getMessage()
+               for record in caplog.records), (
         f"the launcher did not say that {which} exited, and with which code: {caplog.text}"
     )
 
