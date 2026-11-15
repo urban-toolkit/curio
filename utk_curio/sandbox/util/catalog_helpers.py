@@ -21,10 +21,11 @@
 ``curio_load_collection("<id>")``
     A collection's index, one row per file with a readable ``path``.
 ``curio_load_model("<id>")``
-    A Model Catalog model, ready for ``curio_segment``, or, for an
-    ``image-to-image`` model, for ``model.run({input name: array})``. Its
-    ``path`` is where its weights are, for a node that loads them itself
-    (a ``concept-segmentation`` model's checkpoint folder).
+    A Model Catalog model: its ``id``, ``folder``, ``manifest`` and ``path``,
+    the ``.onnx`` file or checkpoint folder its manifest's entry names. Node
+    code opens it itself, an ONNX model in an onnxruntime session
+    (``ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])``),
+    or hands a segmentation model to ``curio_segment``.
 
 The backend resolves each id a node's code names, for the account running it,
 and sends the paths, the formats, the collections and the models with the
@@ -37,7 +38,9 @@ The names these replaced (``curio_dataset_path``, ``curio_collection``,
 replacement, so a saved dataflow says what to change. So do the raster math
 helpers every Python node used to have (``curio_raster_calculate``,
 ``curio_raster_statistics``): raster math is the Rasterization package's, in the
-Raster Calculator's code (``scout_rasters.raster_algebra``).
+Raster Calculator's code (``scout_rasters.raster_algebra``). So does a loaded
+model's ``run`` (:data:`RUN_REMOVED`): node code runs a model's graph in an
+onnxruntime session of its own.
 """
 
 from __future__ import annotations
@@ -314,8 +317,18 @@ def read_dataset(path: str, fmt: str | None, *, layer_type: str | None = None):
     )
 
 
+#: What a call of a loaded model's ``run`` raises: node code opens the model
+#: in its own onnxruntime session (:class:`CurioModel`).
+RUN_REMOVED = (
+    "model.run was removed: open the model in its node's code with onnxruntime (import onnxruntime as ort), "
+    'session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"]), '
+    "then session.run(None, {input name: array})."
+)
+
+
 class CurioModel:
-    """A Model Catalog model, loaded: what ``curio_segment`` runs.
+    """A Model Catalog model, loaded: the files node code opens, and what
+    ``curio_segment`` runs.
 
     ``folder`` is where its files are and ``manifest`` what its manifest says;
     both are read when the model is loaded, so a folder that is not a model
@@ -324,11 +337,14 @@ class CurioModel:
     *weights*, the folder the backend names for weights a ``fetch`` names,
     kept under ``--model-weights-dir``, read where they are. A model whose
     weights are not here stops at loading, saying how to fetch them
-    (``models.NOT_FETCHED``). ``runner``, the callable that labels one image's
+    (``models.NOT_FETCHED``). Node code, or its package's module, runs an
+    ONNX model in a session it opens on ``path``,
+    ``ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])``,
+    then ``session.run(None, {input name: array})``; ``run`` only refuses,
+    naming those calls (:data:`RUN_REMOVED`), so a saved dataflow that calls
+    it says what to write. ``runner``, the callable that labels one image's
     pixels, opens the model's runtime the first time it is used, and
-    ``labels`` are the classes it can name. ``run`` feeds an ONNX model's
-    graph the arrays the node prepared itself, as an ``image-to-image`` model
-    is run.
+    ``labels`` are the classes it can name.
     """
 
     def __init__(self, model_id: str, folder: str, weights: str | None = None):
@@ -347,7 +363,6 @@ class CurioModel:
             raise RuntimeError(NOT_FETCHED.format(model_id=model_id))
         self.path = os.path.join(self._weights, str(self.manifest.get("entry") or ""))
         self._runner = None
-        self._session = None
 
     @property
     def runner(self):
@@ -357,27 +372,9 @@ class CurioModel:
             self._runner, _ = load_runner(self.folder, weights=self._weights)
         return self._runner
 
-    def run(self, feeds: dict) -> list:
-        """The outputs of an ONNX model's graph for *feeds*, ``{input name:
-        array}``, in the graph's output order. The session opens on the CPU
-        the first time, as ``curio_segment`` opens one, and is kept for the
-        next call; its thread count is onnxruntime's own."""
-        if self.manifest.get("runtime") != "onnx":
-            raise RuntimeError(f"Model '{self.id}' is not an ONNX model, so it has no graph to run.")
-        if self._session is None:
-            try:
-                import onnxruntime as ort
-            except ImportError as exc:
-                raise RuntimeError(
-                    f"Model '{self.id}' runs on onnxruntime, which is not installed here: "
-                    "add the model with Add in the Model Catalog, which installs it."
-                ) from exc
-            self._session = ort.InferenceSession(self.path, providers=["CPUExecutionProvider"])
-        names = [spec.name for spec in self._session.get_inputs()]
-        missing = [name for name in names if name not in feeds]
-        if missing:
-            raise ValueError(f"Model '{self.id}' needs the inputs {', '.join(names)}; missing {', '.join(missing)}")
-        return self._session.run(None, {name: feeds[name] for name in names})
+    def run(self, *_args, **_kwargs):
+        """Refuses, naming what node code writes instead (:data:`RUN_REMOVED`)."""
+        raise RuntimeError(RUN_REMOVED)
 
     @property
     def labels(self) -> list:
