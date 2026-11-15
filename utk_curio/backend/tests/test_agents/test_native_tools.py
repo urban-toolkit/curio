@@ -870,6 +870,69 @@ class TestTypedValuesInANativeCall:
 
         assert created(project) == created(fenced_project) == {"widgets": [SCALE]}
 
+    def test_a_widgets_value_in_a_created_node_lands_as_its_block_does(
+        self, client, user_and_token, headers, project,
+    ):
+        """A widget's value, which a node.create gives a widget as a plan
+        does, is JSON text in the schema as its default is, so the 3 Gemma 4
+        writes bare reaches the widget's rule as the number it is."""
+        user, _ = user_and_token
+        params = {"nodeType": CA, "content": "return input_0 * [!! scale !!]", "widgets": [{**SCALE, "value": 3}]}
+        testing_provider.script_chat_capabilities(tools=False)
+        fenced_project = _new_dataflow(client, headers)
+        testing_provider.push_replies(_block("node.create", params), "Added it.")
+        _run(client, headers, fenced_project, _attach(client, headers, fenced_project, NB))
+        testing_provider.script_chat_capabilities(tools=True)
+        testing_provider.push_replies({"toolCalls": [_as_gemma4_calls("node.create", params)]}, "Added it.")
+        body = _run(client, headers, project, _attach(client, headers, project, NB))
+        assert [p["tool"] for p in body["content"] if p["type"] == "change"] == ["node.create"], _native_results()
+
+        def created(where):
+            (node,) = [n for n in _saved_nodes(user, where).values() if n["id"] != "n1"]
+            return node["metadata"]
+
+        assert created(project) == created(fenced_project) == {"widgets": [{**SCALE, "value": 3}]}
+
+    def test_a_widgets_value_past_its_bounds_is_refused_by_the_widgets_rule(
+        self, client, user_and_token, headers, project,
+    ):
+        params = {"nodeType": CA, "content": "return input_0 * [!! scale !!]", "widgets": [{**SCALE, "value": 9}]}
+        testing_provider.push_replies({"toolCalls": [_as_gemma4_calls("node.create", params)]}, "I could not.")
+        body = _run(client, headers, project, _attach(client, headers, project, NB))
+        refused = _native_results()[0]
+        assert refused.startswith("refused: ") and "params.widgets[0] ('scale'): Enter a number from 0.5 to 4." in (
+            refused), refused
+        assert not [p for p in body["content"] if p["type"] == "change"]
+
+    def test_a_planned_widgets_value_lands_as_its_block_does(self, client, user_and_token, headers, project):
+        user, _ = user_and_token
+        plan = scenario_routes._plan(scenarios=None)
+        plan["nodes"][1]["widgets"] = [{**scenario_routes.FACTOR, "value": 3}]
+        testing_provider.script_chat_capabilities(tools=False)
+        fenced_project = _new_dataflow(client, headers)
+        testing_provider.push_replies(scenario_routes._reply(plan))
+        fenced = routes_proposals._landed_plan(
+            _run(client, headers, fenced_project, _attach(client, headers, fenced_project, DFB)))
+        testing_provider.script_chat_capabilities(tools=True)
+        testing_provider.push_replies(
+            {"toolCalls": [_as_gemma4_calls("dataflow.plan.write", plan)]}, "The plan is on the canvas.",
+        )
+        body = _run(client, headers, project, _attach(client, headers, project, DFB))
+        assert [p["tool"] for p in body["content"] if p["type"] == "change"] == ["dataflow.plan.write"], (
+            _native_results())
+        assert routes_proposals._landed_plan(body)["plan"] == fenced["plan"]
+        saved = [n["metadata"]["widgets"] for n in _saved_nodes(user, project).values()
+                 if (n.get("metadata") or {}).get("widgets")]
+        assert saved == [[{**scenario_routes.FACTOR, "value": 3}]]
+
+    def test_the_schema_offers_a_widgets_value_as_json_as_it_offers_its_default(self):
+        plan = _offered_schema("dataflow.plan.write")["properties"]
+        created = _offered_schema("node.create")["properties"]
+        for widget in (plan["nodes"]["items"]["properties"]["widgets"]["items"], created["widgets"]["items"]):
+            value, default = widget["properties"]["value"], widget["properties"]["default"]
+            assert value.get("contentMediaType") == default.get("contentMediaType") == "application/json"
+            assert value["type"] == default["type"] == "string"
+
     def test_a_widget_value_set_on_the_canvas_lands_as_its_block_does(
         self, client, user_and_token, headers, project,
     ):
@@ -909,7 +972,9 @@ class TestTypedValuesInANativeCall:
         )
         body = _run(client, headers, native_project, _attach(client, headers, native_project, NB))
         refused = _native_results()[0]
-        assert refused.startswith("refused: ") and "Pick one of the choices." in refused, refused
+        assert refused.startswith("refused: ") and (
+            'params.widgets.season must be one of the season widget\'s choices: summer, winter; got "spring"'
+        ) in refused, refused
         assert [p["tool"] for p in body["content"] if p["type"] == "change"] == ["node.settings.write"]
         assert _saved_nodes(user, native_project)["season"]["metadata"]["widgets"] == [{**season, "value": "winter"}]
 

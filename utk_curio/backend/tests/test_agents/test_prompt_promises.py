@@ -332,7 +332,7 @@ def test_a_spec_is_kept_as_it_is_and_a_templates_widgets_set_in_a_plan_or_a_node
     """A plan and a ``node.create`` both start a node of a template whose
     starter is its whole content from that starter, and set the template's
     widgets by name (``plans._content_starters`` and the node.create mint,
-    both through ``plan_scenarios._set_over``); ``node.content.write`` carries
+    both through ``widget_grammar.set_over``); ``node.content.write`` carries
     no widgets. ``test_routes_starter_templates.py::TestACreatedTemplateStartsFromItsStarter``
     checks the node.create half, and ``TestAPlannedTemplateKeepsItsStarter``
     the plan's. So a sentence that tells an agent to keep a spec as it is, or

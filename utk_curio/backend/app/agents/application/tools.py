@@ -262,7 +262,8 @@ def _widget_options() -> dict:
 
 def _widgets(say: Say) -> dict:
     """#662: the widgets a node declares (``$defs.widget``): every key a run is
-    told of, each typed, its default as JSON text; the server checks the rest."""
+    told of, each typed, its default and its value as JSON text; the server
+    checks the rest."""
     return {
         "type": "array",
         "items": {
@@ -272,6 +273,7 @@ def _widgets(say: Say) -> dict:
                     "type": {"type": "string", "enum": list(WIDGET_KINDS)},
                     "label": _text(say("widgets.label")),
                     "default": _json_value(say("widgets.default")),
+                    "value": _json_value(say("widgets.value")),
                     "options": _widget_options(),
                 },
                 "name", "type",

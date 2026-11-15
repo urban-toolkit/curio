@@ -4,8 +4,12 @@ The grammar (``domain/widget_grammar.py``, ``domain/plan_scenarios.py``) checks
 what a plan says on its own and expands its duplicates into copies. This is
 what needs the saved dataflow:
 
-* at mint: a node that holds widgets is one whose code or spec places them;
-  an existing node a selection names is in the dataflow and in no other
+* at mint: a node that holds widgets is one whose code or spec places them,
+  and each widget its template declares is judged as the node will hold it,
+  keeping the template's type, choices and bounds
+  (``widget_grammar.template_problems``); a duplicate's values are judged
+  against the widgets the node it copies will hold, its template's among
+  them; an existing node a selection names is in the dataflow and in no other
   scenario; a scenario
   takes a name none of the dataflow's has, since scenario chips color and
   order scenarios by name; each scenario takes its color, as a scenario made
@@ -24,8 +28,8 @@ from __future__ import annotations
 
 import uuid
 
-from utk_curio.backend.app.agents.domain import node_settings
-from utk_curio.backend.app.execution.code_references import normalize_widgets
+from utk_curio.backend.app.agents.domain import node_settings, widget_grammar
+from utk_curio.backend.app.execution.code_references import widget_with_default
 from utk_curio.backend.app.projects.scenarios import next_scenario_color, normalize_scenarios
 from utk_curio.backend.app.scenario_catalog.domain.duplicate import lineage_of
 from utk_curio.backend.app.agents.domain import agent_text
@@ -42,10 +46,18 @@ def existing_scenarios(spec: dict) -> list[dict]:
     return normalize_scenarios(dataflow.get("scenarios"), node_ids)
 
 
-def mint_errors(plan: dict, available: dict, existing_nodes: dict, scenarios: list) -> list[str]:
-    """What the saved dataflow refuses in the plan's widgets and scenarios."""
+def mint_errors(plan: dict, available: dict, existing_nodes: dict, scenarios: list, *,
+                starters: dict | None = None, declared: dict | None = None) -> list[str]:
+    """What the saved dataflow refuses in the plan's widgets and scenarios.
+    *starters* and *declared* are the refs' templates' starters and declared
+    widgets (``plans._content_starters``, ``plans._declared_widgets``), which
+    a node of each starts with (:func:`created_node_metadata`)."""
     errors: list[str] = []
-    for node in plan["nodes"]:
+
+    def template_of(ref: str) -> list:
+        return _template_widgets((starters or {}).get(ref), (declared or {}).get(ref))
+
+    for index, node in enumerate(plan["nodes"]):
         if not node.get("widgets"):
             continue
         entry = available.get(node["nodeType"]) or {}
@@ -55,6 +67,13 @@ def mint_errors(plan: dict, available: dict, existing_nodes: dict, scenarios: li
                     "plan.widgets-not-placeable", ref=repr(node['ref']), label=entry.get('label') or node['nodeType'],
                 )
             )
+        elif not node.get("copyOf"):
+            # A copy holds its original's widgets, judged here once, and the
+            # values its duplicate sets, judged below.
+            errors.extend(widget_grammar.template_problems(
+                node["widgets"], template_of(node["ref"]), f"nodes[{index}].widgets",
+            ))
+    errors.extend(_duplicate_value_errors(plan, template_of))
     owner = {member: s["name"] for s in scenarios for member in s["nodes"]}
     taken = {s["name"] for s in scenarios}
     refs = {n["ref"] for n in plan["nodes"]}
@@ -73,6 +92,34 @@ def mint_errors(plan: dict, available: dict, existing_nodes: dict, scenarios: li
                     "plan.scenario-member-taken", index=index, name=repr(scenario['name']), member=repr(member),
                     owner=repr(owner[member]),
                 ))
+    return errors
+
+
+def _duplicate_value_errors(plan: dict, template_of) -> list[str]:
+    """Why a duplicate's values cannot be set on its copies: each judged
+    against the widget of its name the node the copy copies will hold
+    (``widget_grammar.set_over``), a widget its template declares among them,
+    as the Widgets tab judges a value."""
+    nodes = {n["ref"]: n for n in plan["nodes"]}
+    errors: list[str] = []
+    for index, scenario in enumerate(plan.get("scenarios") or []):
+        for ref, chosen in (scenario.get("values") or {}).items():
+            original = nodes.get((nodes.get(ref) or {}).get("copyOf")) or {}
+            held = {w["name"]: w for w in widget_grammar.set_over(
+                template_of(original.get("ref")), original.get("widgets") or [])}
+            here = f"scenarios[{index}].values.{ref}"
+            for name, value in chosen.items():
+                if name not in held:
+                    errors.append(agent_text.message(
+                        "scenario.values-unknown-widget", here=here, name=name, widget=repr(name),
+                        widgets_it_has=" " + agent_text.message(
+                            "scenario.values-widgets-it-has", widgets=", ".join(held),
+                        ) if held else "",
+                    ))
+                    continue
+                problem = widget_grammar.value_problem(held[name], value, f"{here}.{name}")
+                if problem:
+                    errors.append(problem)
     return errors
 
 
@@ -96,11 +143,15 @@ def node_display(node: dict, names: dict) -> dict:
     Simple View's image column), the scenario it is in, and the node it
     copies."""
     shown: dict = {}
-    if node.get("widgets"):
-        shown["widgets"] = [
-            {key: w[key] for key in ("name", "type", "label", "default", "value") if key in w}
-            for w in node["widgets"]
-        ]
+    # Each widget the plan writes on the node, as it stands on its own; a
+    # duplicate's value for its template's widget is on the scenario's row.
+    rows = [
+        {key: widget[key] for key in ("name", "type", "label", "default", "value") if key in widget}
+        for widget in (w if widget_grammar.sets_by_name(w) else widget_with_default(w)
+                       for w in node.get("widgets") or [] if w.get("type"))
+    ]
+    if rows:
+        shown["widgets"] = rows
     shown.update(node_settings.of(node))
     if node["ref"] in names:
         shown["scenario"] = names[node["ref"]]
@@ -166,11 +217,11 @@ def created_node_metadata(
     A node holds the widgets its template declares (*declared*, from the
     packages' ``declared_widgets``; for a node that starts with its
     template's starter, *starter*'s, which the starter places), each one the
-    plan declares set over the one of its name, then the plan's others."""
+    plan declares set over the one of its name, then the plan's others
+    (``widget_grammar.set_over``)."""
     metadata: dict = {}
     planned = [dict(w) for w in plan_node.get("widgets") or []]
-    template_widgets = starter["widgets"] if starter else (declared or [])
-    widgets = _set_over(template_widgets, planned) if template_widgets else planned
+    widgets = widget_grammar.set_over(_template_widgets(starter, declared), planned)
     if widgets:
         metadata["widgets"] = widgets
     metadata.update(node_settings.of(plan_node))
@@ -181,14 +232,11 @@ def created_node_metadata(
     return metadata
 
 
-def _set_over(template_widgets: list, planned: list) -> list[dict]:
-    """*template_widgets* in their order, each with the keys of the *planned*
-    widget of its name set over its own, then the planned widgets of other
-    names."""
-    by_name = {w["name"]: w for w in planned}
-    names = {w["name"] for w in template_widgets}
-    merged = [{**w, **by_name.get(w["name"], {})} for w in template_widgets]
-    return normalize_widgets(merged + [w for w in planned if w["name"] not in names])
+def _template_widgets(starter: dict | None, declared: list | None) -> list:
+    """The widgets a planned node starts with before the plan's own: its
+    template's starter's, which the starter places, else the ones its
+    template declares."""
+    return starter["widgets"] if starter else (declared or [])
 
 
 def apply_scenarios(spec: dict, proposal: dict, ref_to_id: dict, *, final: bool) -> list[dict]:
