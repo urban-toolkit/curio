@@ -99,7 +99,7 @@ class TestTheWidgetsDefinitionJudgesTheValue:
         declared = _bars_widgets()
 
         def judged(*raw):
-            widgets, errors = wg.parse_widgets(list(raw), "params.widgets")
+            widgets, errors = wg.read_widgets(list(raw), "params.widgets")
             assert errors == [], errors
             return wg.template_problems(widgets, declared, "params.widgets")
 
@@ -122,14 +122,12 @@ class TestTheWidgetsDefinitionJudgesTheValue:
                       {"name": "stat", "type": "choice", "value": "max"}) == [
             "params.widgets[1] ('stat'): Give at least one choice.",
         ]
-        assert wg.template_problems(
-            wg.parse_widgets([{"name": "stat", "type": "choice", "value": "max"}], "w")[0], [], "w",
-        ) == ["w[0] ('stat'): Give at least one choice."]
-        # Any other widget of the template, declared whole, stays judged as the
-        # grammar judged it: a number's own default, 0, is no template bound's.
-        bounded = [{"name": "factor", "type": "number", "default": 2, "options": {"min": 1, "max": 5}}]
-        widgets, errors = wg.parse_widgets([{"name": "factor", "type": "number", "value": 3}], "params.widgets")
-        assert errors == [] and wg.template_problems(widgets, bounded, "params.widgets") == []
+        assert wg.parse_widgets([{"name": "stat", "type": "choice", "value": "max"}], "w") == (
+            [], ["w[0] ('stat'): Give at least one choice."])
+        # The node holds the template's Combine with the value set over it.
+        assert wg.parse_widgets([{"name": "combine", "type": "choice", "value": "max"}], "w", declared)[0] == [
+            declared[0], {**_combine(), "value": "max"}, declared[2],
+        ]
 
 
 class TestANodeCreate:

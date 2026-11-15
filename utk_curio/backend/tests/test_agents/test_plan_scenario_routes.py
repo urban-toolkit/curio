@@ -181,6 +181,24 @@ class TestThePlanCard:
         assert "plan node 'pool' (Data Pool) cannot hold widgets" in calls[1][-1]["content"]
         assert "pool" not in {n["ref"] for n in card["plan"]["nodes"]}
 
+    def test_a_value_for_a_widget_the_node_has_not_is_refused_naming_its_widgets(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch
+    ):
+        """A duplicate's value for a widget neither the plan nor the node's
+        template declares is refused to the model, naming the widgets the
+        node holds, and the fixed plan lands."""
+        user, token = user_and_token
+        unknown = _plan()
+        unknown["scenarios"][1]["values"] = {"shadows_tall": {"height": 2}}
+        _, card, calls = _land(
+            client, user, token, alice_project, monkeypatch, replies=[_reply(unknown), _reply(_plan())],
+        )
+        assert len(calls) == 2, "a plan setting a widget the node has not landed"
+        assert (
+            "scenarios[1].values.shadows_tall.height: the node has no widget named 'height' (it has height_factor)"
+        ) in calls[1][-1]["content"]
+        assert card["plan"]["scenarios"][1]["values"] == {"shadows_tall": {"height_factor": 2}}
+
 
 class TestThePlanLands:
     def test_the_plan_writes_the_widgets_the_lineage_and_both_scenarios(

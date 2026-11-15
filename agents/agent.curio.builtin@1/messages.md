@@ -852,6 +852,14 @@ scenarios has {count} entries (max {scenarios_max})
 
 {where}: {widget} is the template's {kind} widget, and the node keeps its type and its choices, {choices}: write it with type {kind}, no other choices, and a value among them
 
+## widget.template-bounds
+
+{where}: {widget} is the template's {kind} widget, and the node keeps its type and its bounds ({bounds}): write it with type {kind}, no other min, max or step, and a value within them
+
+## widget.template-type
+
+{where}: {widget} is the template's {kind} widget, and the node keeps its type: write it with type {kind}
+
 ## widget.option-not-number
 
 {where}.{key} must be a number
