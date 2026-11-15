@@ -5,8 +5,9 @@
  * Simple View's image column) and the values of its widgets, a Spatial Join's
  * operation and output among them, and the control that changes one makes the
  * change its own way: the pool resolves its selections again, a widget's new
- * value leaves its node out of date and runs it when automatic runs are on. A node registers each of its setters here while it is on the
- * canvas, so a setting changed from outside the node, an agent's applied
+ * value leaves its node out of date and runs it when automatic runs are on.
+ * A node registers each of its setters here while it is on the canvas, so a
+ * setting changed from outside the node, an agent's applied
  * change (`applyNodeSettings`), is made the way a pick in the node makes it,
  * as `nodeCodeWriters` does for a node whose code is its state.
  *
