@@ -121,8 +121,10 @@ def _manifest(dir_name: str) -> dict:
 def _relief_code(model_id: str) -> str:
     return (
         "import numpy as np\n"
+        "import onnxruntime as ort\n"
         f'model = curio_load_model("{model_id}")\n'
-        'relief = model.run({"height": np.arange(64, dtype=np.float32).reshape(1, 1, 8, 8)})[0]\n'
+        'session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])\n'
+        'relief = session.run(None, {"height": np.arange(64, dtype=np.float32).reshape(1, 1, 8, 8)})[0]\n'
         f'print("{MARKER}", tuple(relief.shape))\n'
         "return float(np.abs(relief).sum())\n"
     )

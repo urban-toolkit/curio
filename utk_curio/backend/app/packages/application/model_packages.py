@@ -395,8 +395,9 @@ def _graph_inputs(manifest: PackageManifest, folder: Path):
 def model_default_cell(manifest: PackageManifest, folder: Path) -> str:
     """The cell a node of the model package *manifest* in *folder* opens with
     when its template ships no ``source`` (``domain/default_cells.py``): a
-    segmentation model's runs as it is; another type's is a ``model.run``
-    skeleton naming the arrays its graph takes. Nothing is downloaded for it."""
+    segmentation model's runs as it is; another type's opens the model in an
+    onnxruntime session and is a ``session.run`` skeleton naming the arrays
+    its graph takes. Nothing is downloaded for it."""
     block = manifest.model
     inputs = None if block.type == SEGMENTATION else _graph_inputs(manifest, folder)
     return default_cell(manifest.package_id, block.type, inputs)

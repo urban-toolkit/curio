@@ -7,8 +7,9 @@ Application layer of the packages package. What counts as a module is
 ``domain/python_modules.py``; the install-time refusal of a name two packages
 ship is ``store_install.refuse_a_module_name_in_use``, which is also why the
 modules of a package and of the packages it depends on never share a name.
-:func:`module_index` lists every module by name, with the nodes a run hands
-it to, for the agents' grounding gate.
+:func:`module_index` lists every module by name, with the package that ships
+it and the nodes a run hands it to, for the agents' grounding gate and for a
+failed run's missing module (``missing_import``).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from typing import AbstractSet
 from utk_curio.backend.app.packages.domain.manifest import ManifestError
 from utk_curio.backend.app.packages.domain.package_id import BUILTIN_PACKAGE_ID, PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.domain.spec_packages import dir_name_from_node_type
+from utk_curio.backend.app.packages.domain.versions import parse_version
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.repositories import catalog_dir as packages_catalog_dir
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
@@ -277,14 +279,51 @@ def _python_code_templates(manifest) -> list[dict]:
     ]
 
 
+def _shipper(folder: Path, manifests: dict) -> dict:
+    """``{"package", "kind", "name", "version"}`` of the package in *folder*,
+    which ships modules: its ``<packageId>@<major>``, its kind (``node`` or
+    ``model``), the name its catalog lists it by and its version. Its manifest
+    is read from *manifests*, by ``<packageId>@<major>``, else from *folder*,
+    and kept there."""
+    manifest = manifests.get(folder.name)
+    if manifest is None:
+        try:
+            manifest = manifests[folder.name] = load_package_manifest(folder)
+        except ManifestError:
+            return {"package": folder.name, "kind": "node", "name": folder.name.rsplit("@", 1)[0], "version": None}
+    return {"package": folder.name, "kind": manifest.kind, "name": manifest.name, "version": manifest.version}
+
+
+def _release(dir_name: str, version: object) -> tuple | None:
+    """``(major, (major, minor, patch))`` of the copy of a package installed
+    as *dir_name* whose manifest says *version*: what orders two copies of
+    one package. None when either does not read."""
+    try:
+        return int(dir_name.rsplit("@", 1)[1]), parse_version(str(version))
+    except (IndexError, ValueError):
+        return None
+
+
+def _newer(entry: dict, held) -> bool:
+    """Whether the copy of a package that *entry*, a catalog module's,
+    names is newer than every copy of that package in *held*, the
+    :func:`_release` of each copy a run's stores hold: of the same major at
+    a later version, or of a later major. A store copy that does not read
+    is older than any."""
+    mine = _release(entry["package"], entry["version"])
+    known = [release for release in held or () if release is not None]
+    return mine is not None and all(mine > release for release in known)
+
+
 def _store_modules(
     user_key: str, project_id: str | None, majors_by_pkg: dict[str, list[int]],
-    only: AbstractSet[str] | None = None,
+    only: AbstractSet[str] | None = None, releases: dict[str, list] | None = None,
 ) -> dict[str, dict]:
     """:func:`module_index` for the packages of *user_key*'s store: each
     package as an unversioned node type finds it, with the modules a run
     hands its nodes (:func:`_module_sources`). With *only*, the packages of
-    those ``<packageId>@<major>`` alone."""
+    those ``<packageId>@<major>`` alone. *releases*, when given, gets the
+    :func:`_release` of each of those packages, by its id."""
     pins = _dataflow_pins(user_key, project_id, majors_by_pkg)
     index: dict[str, dict] = {}
     with package_seed_lock(user_key, shared=True):
@@ -299,12 +338,15 @@ def _store_modules(
                 held.append((dir_name, load_package_manifest(package_dir(user_key, dir_name))))
             except ManifestError:
                 continue
+        manifests = dict(held)
         for dir_name, manifest in held:
+            if releases is not None:
+                releases.setdefault(manifest.package_id, []).append(_release(dir_name, manifest.version))
             templates = _python_code_templates(manifest)
             for source in _module_sources(user_key, dir_name, manifest, majors_by_pkg, pins):
-                shipper = Path(source["root"]).parent.name
+                shipper = _shipper(Path(source["root"]).parent, manifests)
                 for name in source["names"]:
-                    entry = index.setdefault(name, {"package": shipper, "added": True, "templates": []})
+                    entry = index.setdefault(name, {**shipper, "added": True, "templates": []})
                     entry["templates"].extend(t for t in templates if t not in entry["templates"])
     return index
 
@@ -332,24 +374,34 @@ def _catalog_modules() -> dict[str, dict]:
         except (ManifestError, OSError, ValueError):
             continue
         for name in module_names(folder, manifest):
-            index.setdefault(name, {"package": folder.name, "added": False, "templates": _python_code_templates(manifest)})
+            index.setdefault(name, {
+                "package": folder.name, "kind": manifest.kind, "name": manifest.name, "version": manifest.version,
+                "added": False, "templates": _python_code_templates(manifest),
+            })
     _CATALOG_MODULES.clear()
     _CATALOG_MODULES[key] = index
     return index
 
 
 def module_index(user_key: str | None, project_id: str | None = None, *, owners=None) -> dict[str, dict]:
-    """Every module a package ships, by its name: ``{"package", "added",
-    "templates"}``.
+    """Every module a package ships, by its name: ``{"package", "kind",
+    "name", "version", "added", "templates"}``, and ``"another_version"`` and
+    ``"newer"`` for a module of the catalog's copy of a package the store
+    holds, which the store's copy does not ship.
 
-    *package* is the ``<packageId>@<major>`` that ships it, and *added* says
-    whether *user_key*'s store holds it. *templates* are the templates whose
-    nodes import it, ``{"id", "label"}`` each: for a package of the store, as
+    *package* is the ``<packageId>@<major>`` that ships it, *kind*, *name* and
+    *version* that package's kind (``node`` or ``model``), the name its
+    catalog lists it by and its version, and *added* says whether *user_key*'s
+    store holds it. *templates* are the templates whose nodes import it,
+    ``{"id", "label"}`` each: for a package of the store, as
     :func:`modules_for_node` hands modules to a run, the Python code templates
-    of that package and of every package that depends on it; for a package of
-    the catalog the store does not hold, its own. The built-in package's
-    modules are its Python nodes'. Never raises: what cannot be read adds
-    nothing.
+    of that package and of every package that depends on it; for a package
+    of the catalog, its own. A module of the catalog's copy of a package the
+    store holds is listed whatever version the store holds, with
+    *another_version*, and *newer* says whether the catalog's copy is newer
+    than the store's: of the same major at a later version, or of a later
+    major. The built-in package's modules are its Python nodes'. Never
+    raises: what cannot be read adds nothing.
 
     With *owners* (``project_packages.OwnersPackages``), the index is that of
     a run of an editor the owner of the dataflow *project_id* invited, as
@@ -358,12 +410,13 @@ def module_index(user_key: str | None, project_id: str | None = None, *, owners=
     *user_key*'s, then the catalog's. Her other packages add nothing."""
     index: dict[str, dict] = {}
     installed: set[str] = set()
+    releases: dict[str, list] = {}
     if owners is not None:
         try:
             used = owners.used
             index = _store_modules(
                 owners.store_key, project_id,
-                packages_store_reads._installed_majors_by_pkg(owners.store_key), only=used,
+                packages_store_reads._installed_majors_by_pkg(owners.store_key), only=used, releases=releases,
             )
             installed = {dir_name.rsplit("@", 1)[0] for dir_name in used}
         except Exception as exc:  # noqa: BLE001 - the dataflow's packages add nothing then
@@ -372,7 +425,7 @@ def module_index(user_key: str | None, project_id: str | None = None, *, owners=
         try:
             majors_by_pkg = packages_store_reads._installed_majors_by_pkg(user_key)
             installed |= set(majors_by_pkg)
-            for name, entry in _store_modules(user_key, project_id, majors_by_pkg).items():
+            for name, entry in _store_modules(user_key, project_id, majors_by_pkg, releases=releases).items():
                 index.setdefault(name, entry)
         except Exception as exc:  # noqa: BLE001 - an unreadable store ships no module
             log.warning("Could not read the modules of %s's packages: %s", user_key, exc)
@@ -382,6 +435,10 @@ def module_index(user_key: str | None, project_id: str | None = None, *, owners=
         log.warning("Could not read the modules of the catalog's packages: %s", exc)
         catalog = {}
     for name, entry in catalog.items():
-        if name not in index and entry["package"].rsplit("@", 1)[0] not in installed:
-            index[name] = {**entry, "templates": list(entry["templates"])}
+        if name in index:
+            continue
+        package_id = entry["package"].rsplit("@", 1)[0]
+        index[name] = {**entry, "templates": list(entry["templates"])}
+        if package_id in installed:
+            index[name].update(another_version=True, newer=_newer(entry, releases.get(package_id)))
     return index

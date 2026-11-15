@@ -124,7 +124,8 @@ def locate(service, dataset_id: str, file_id: str) -> Located:
     derived from one of the collection's: a video's frame, a recording's
     window or an image's overlay (its tag names the model that drew it),
     written where ``curio_derived_file`` put it, in this account's media
-    folder. A file of any type but the first its kind derives adds its
+    folder, a hosted guest's in their own folder in it (:func:`_locate_derived`).
+    A file of any type but the first its kind derives adds its
     extension: ``<file_id>@<t_ms>-<tag>.mp4`` is a video a node made from a
     video. A collection the service's dataflow lists from its owner's store
     (``DiscoveryService.collection``) has its cached files read from that
@@ -172,7 +173,14 @@ def _locate_derived(
     """The file *file_id* names, which ``curio_derived_file`` wrote from the
     collection's file *source_id*: one type of what a file of its kind
     derives (``DERIVED``), the one its id's extension names, and only under
-    the id ``curio_derived_file`` gives it."""
+    the id ``curio_derived_file`` gives it.
+
+    It is read where the reader's runs write it (``media_dirs.derived_root``):
+    a hosted guest's in their own folder, else in the account's, where only a
+    run that serves no visitor writes, such as a run of an example's
+    dashboard, whose outputs every viewer of it reads. Never in another
+    visitor's folder: one id names a file in each visitor's."""
+    from utk_curio.backend.app.projects import visitor_copies
     from utk_curio.sandbox.util.collections import DERIVED, derived_id, derived_relpath, derived_type
 
     source = rows.get(source_id)
@@ -184,10 +192,13 @@ def _locate_derived(
         raise ResourceNotFound(f"{file_id!r} names no file a node derives from a {source.kind}") from None
     if derived_id(source_id, t_ms, tag, suffix) != file_id:
         raise ResourceNotFound(f"{file_id!r} names no file a node derives from a {source.kind}")
-    path = media_dirs.media_work_root(service.user_key) / derived_relpath(
-        folder, dataset_id, source_id, t_ms, ext, tag
-    )
-    if not path.is_file():
+    relpath = derived_relpath(folder, dataset_id, source_id, t_ms, ext, tag)
+    visitor = visitor_copies.media_visitor(service.user_key)
+    roots = [media_dirs.derived_root(service.user_key, visitor)]
+    if visitor:
+        roots.append(media_dirs.derived_root(service.user_key))
+    path = next((root / relpath for root in roots if (root / relpath).is_file()), None)
+    if path is None:
         raise ResourceNotFound("this file has not been made; run the node that makes it again")
     stat = path.stat()
     row = IndexRow(
@@ -215,8 +226,14 @@ def original(found: Located) -> tuple[Path, str]:
 
 
 def thumbnail(service, found: Located, *, variant: str = "thumb") -> Path:
-    """A cached JPEG for the file, drawn on first request."""
-    stamp = hashlib.sha1(f"{found.row.bytes}:{found.row.mtime}".encode()).hexdigest()[:10]
+    """A cached JPEG for the file, drawn on first request, keyed by the
+    file's size and time. A file a node derived is keyed by where it is too:
+    its id names a file in each hosted guest's own folder
+    (:func:`_locate_derived`), and each guest's is drawn from their own."""
+    from utk_curio.sandbox.util.collections import DERIVED_ID_RE
+
+    where = f":{found.local}" if DERIVED_ID_RE.match(found.row.file_id) else ""
+    stamp = hashlib.sha1(f"{found.row.bytes}:{found.row.mtime}{where}".encode()).hexdigest()[:10]
     cache = media_dirs.media_cache_dir(service.user_key, found.dataset_id)
     target = cache / f"{found.row.file_id}-{variant}-{stamp}.jpg"
     if target.is_file():

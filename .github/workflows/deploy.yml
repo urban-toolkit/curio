@@ -67,6 +67,12 @@ name: Deploy
 #      job checks all three before it stops the old stack, the installed
 #      profile against its checkout's too, and fails naming the command to
 #      run.
+#
+#   9. Docker Engine 28 or newer on the server: docker-compose.deploy.yml asks
+#      for writable cgroups and a private cgroup namespace, so that each
+#      isolated node runs in a cgroup at its budget (--exec-memory-mb). Each
+#      job checks the engine's version before it stops the old stack, and
+#      fails unless the new stack's /version says "memory_limit": "cgroup".
 
 # A merge to main deploys curio-dev once: bump-version.yml runs on the merge
 # (its paths list what the deployed image holds), pushes the bump commit, and
@@ -181,6 +187,21 @@ jobs:
             echo "::error::Docker Compose $compose_version is older than 2.24.4, which docker-compose.site.yml needs"
             exit 1
           fi
+          # Each isolated node's memory is a cgroup at its budget, which the
+          # deploy overlay's writable cgroups give, when this checkout's
+          # overlay asks for them: Docker Engine 28 or newer grants the
+          # option, an older one refuses it and the container does not start.
+          # Checked before the running stack is touched, and the new stack's
+          # /version is checked once it is up.
+          cgroups=""
+          if grep -q -e 'writable-cgroups=true' docker-compose.deploy.yml; then
+            cgroups=1
+            engine_version="$(docker version --format '{{.Server.Version}}')"
+            if [ "$(printf '%s\n' 28.0.0 "$engine_version" | sort -V | head -n1)" != 28.0.0 ]; then
+              echo "::error::Docker Engine $engine_version is older than 28.0.0, which docker-compose.deploy.yml's writable cgroups need"
+              exit 1
+            fi
+          fi
           # The LLM endpoints the job sent, when this release reads them:
           # Compose mounts the file read-only, so only its path is on the
           # command line.
@@ -212,6 +233,13 @@ jobs:
           cache_args=""
           if grep -q -e '"--media-cache-max-file-gb"' utk_curio/main.py; then
             cache_args=', "--media-cache-max-file-gb", "8"'
+          fi
+          # The catalog packages every hosted guest has, when this release's
+          # launcher has the flag: SAM 3, whose Track Objects a guest runs on
+          # this host's GPU without adding the package.
+          guest_args=""
+          if grep -q -e '"--guest-packages"' utk_curio/main.py; then
+            guest_args=', "--guest-packages", "model.curio.sam3@1"'
           fi
           # The bucket mount service (docker-compose.bucket-mounts.yml), when
           # this release's launcher has its flags. It mounts buckets in this
@@ -283,7 +311,7 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$mounts_args" >> docker-compose.site.yml
+          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$guest_args" "$mounts_args" >> docker-compose.site.yml
           # Curio's binds: the weights folder both stacks share, which the
           # server writes as it downloads a model's weights on first use, and
           # this stack's bucket mounts, read-only and rslave. Each replaces an
@@ -414,6 +442,25 @@ jobs:
               exit 1
               ;;
           esac
+          # Each node's memory limit, a cgroup at its budget when the overlay
+          # asks for writable cgroups. A sandbox whose container has none
+          # falls back to the address-space cap and says why on /monitor, so
+          # the deploy fails here. /version answers before any node has run:
+          # it says what the first run's zygote will choose.
+          if [ -n "$cgroups" ]; then
+            echo "=== node memory limit ==="
+            case "$version_json" in
+              *'"memory_limit":"cgroup"'*)
+                echo "OK: each isolated node runs in a cgroup at its budget"
+                ;;
+              *)
+                echo "::error::the deployed stack's nodes get no cgroup at their budget. /version said: ${version_json:-nothing}. /monitor's Node memory says why."
+                docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+                  'grep -i "node memory" .curio/messages.log 2>/dev/null | tail -5' || true
+                exit 1
+                ;;
+            esac
+          fi
           # The bucket mount service, when this stack runs it: its container
           # healthy and Curio's self-test of it passed, as /monitor's
           # Deployment reads it. The self-test waits up to a minute for the
@@ -536,6 +583,9 @@ jobs:
           # Set below for a release whose launcher has the bucket mount
           # service's flags, and read again once the stack is up.
           mounts_args=""
+          # Set below for a release whose deploy overlay asks for writable
+          # cgroups, and read again once the stack is up.
+          cgroups=""
           if grep -q -e '"--backend-url"' utk_curio/main.py 2>/dev/null; then
             # Releases after v0.16.0 take the site's arguments, container name
             # and host ports from docker-compose.site.yml, as curio-dev does.
@@ -547,6 +597,18 @@ jobs:
             if [ "$(printf '%s\n' 2.24.4 "$compose_version" | sort -V | head -n1)" != 2.24.4 ]; then
               echo "::error::Docker Compose $compose_version is older than 2.24.4, which docker-compose.site.yml needs"
               exit 1
+            fi
+            # Each isolated node's memory is a cgroup at its budget, when this
+            # release's overlay asks for writable cgroups, as curio-dev's
+            # deploy checks: Docker Engine 28 or newer, before the running
+            # stack is touched.
+            if grep -q -e 'writable-cgroups=true' docker-compose.deploy.yml; then
+              cgroups=1
+              engine_version="$(docker version --format '{{.Server.Version}}')"
+              if [ "$(printf '%s\n' 28.0.0 "$engine_version" | sort -V | head -n1)" != 28.0.0 ]; then
+                echo "::error::Docker Engine $engine_version is older than 28.0.0, which docker-compose.deploy.yml's writable cgroups need"
+                exit 1
+              fi
             fi
             # The LLM endpoints the job sent, when this release reads them, as
             # curio-dev mounts them.
@@ -572,6 +634,12 @@ jobs:
             cache_args=""
             if grep -q -e '"--media-cache-max-file-gb"' utk_curio/main.py; then
               cache_args=', "--media-cache-max-file-gb", "8"'
+            fi
+            # The packages every hosted guest has, as curio-dev names them, for
+            # a release whose launcher has the flag.
+            guest_args=""
+            if grep -q -e '"--guest-packages"' utk_curio/main.py; then
+              guest_args=', "--guest-packages", "model.curio.sam3@1"'
             fi
             # The bucket mount service, as curio-dev runs it, in stable's own
             # folder: each stack runs its own service.
@@ -618,7 +686,7 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$mounts_args" >> docker-compose.site.yml
+            printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$guest_args" "$mounts_args" >> docker-compose.site.yml
             # Curio's binds and the service's, as curio-dev writes them.
             curio_volumes=""
             if [ -n "$weights_args" ]; then
@@ -736,6 +804,22 @@ jobs:
               exit 1
               ;;
           esac
+          # Each node's memory limit, when this release's overlay asks for
+          # writable cgroups, checked as curio-dev checks it.
+          if [ -n "$cgroups" ]; then
+            echo "=== node memory limit ==="
+            case "$version_json" in
+              *'"memory_limit":"cgroup"'*)
+                echo "OK: each isolated node runs in a cgroup at its budget"
+                ;;
+              *)
+                echo "::error::the deployed stack's nodes get no cgroup at their budget. /version said: ${version_json:-nothing}. /monitor's Node memory says why."
+                docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+                  'grep -i "node memory" .curio/messages.log 2>/dev/null | tail -5' || true
+                exit 1
+                ;;
+            esac
+          fi
           # The bucket mount service, when this stack runs it, checked as
           # curio-dev checks it.
           if [ -n "$mounts_args" ]; then

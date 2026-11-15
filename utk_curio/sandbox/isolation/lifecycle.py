@@ -14,13 +14,21 @@ isolated execution rather than at import time. Lazy matters for two reasons:
 It is started with ``subprocess``, not ``fork``, on purpose: see the note at
 the top of ``zygote.py``. A fork of the Flask process would inherit its threads
 and its DuckDB handle, which is exactly what this is meant to avoid.
+
+Its start also settles the memory limit isolated nodes run under
+(:func:`ensure_running`): a cgroup at the node's budget for each run where the
+container's cgroups can hold them, laid out then (``node_cgroups``), else the
+address-space cap, with the reason in the log and on /monitor.
 """
 
 import contextlib
+import json
 import os
 import subprocess
 import sys
 import threading
+
+from utk_curio.sandbox.isolation import node_cgroups
 
 _lock = threading.Lock()
 _process = None
@@ -28,6 +36,9 @@ _socket_path = None
 # ensure_running's arguments for the zygote it last started, so
 # restart_if_exited starts the next one the same way.
 _started_with = None
+# The memory limit the running zygote's children have, (kind, reason), once
+# one started; memory_limit() reads it.
+_memory = None
 
 # The zygote imports geopandas/pandas/shapely/duckdb before it can serve, which
 # is the cost being amortised. Generous, because a cold import on a loaded
@@ -64,13 +75,18 @@ def malloc_arena_cap(memory_mb):
     return max(2, int(memory_mb) // MALLOC_ARENA_SHARE // MALLOC_ARENA_MB)
 
 
-def zygote_environment(limits, environ=None):
+def zygote_environment(limits, environ=None, *, memory_limit=None):
     """The zygote's environment: this process's, without what node code may
     not hold, with its allocators fitted to the cap.
 
     Every isolated child inherits it, and node code runs in the child, so the
     sandbox's token, which opens every sandbox route, is left out, as it is of
     a JavaScript run's Node (``common/llm_endpoint.for_node_code``).
+
+    With *memory_limit* ``node_cgroups.CGROUP`` the children have no
+    address-space cap, and neither fitting below is theirs: they keep the
+    sandbox server's allocator settings (:func:`server_environment`), an
+    operator's own among them. Below is the cap's.
 
     glibc gives every thread that mallocs an arena of its own, up to eight per
     core, and each one reserves ``MALLOC_ARENA_MB`` of address space up front.
@@ -105,7 +121,7 @@ def zygote_environment(limits, environ=None):
 
     env = for_node_code(os.environ if environ is None else environ)
     memory_mb = (limits or {}).get("memory_mb")
-    if memory_mb:
+    if memory_mb and memory_limit != node_cgroups.CGROUP:
         _cap_arenas(env, memory_mb)
         env["ARROW_DEFAULT_MEMORY_POOL"] = ARROW_POOL_UNDER_A_CAP
     return env
@@ -194,14 +210,61 @@ def server_environment(environ=None):
     return env
 
 
-def ensure_running(config, *, exec_user=None, require_seccomp=True):
+def memory_limit():
+    """The memory limit isolated nodes run under, as ``(kind, reason)``:
+    ``node_cgroups.CGROUP`` and None, or ``node_cgroups.ADDRESS_SPACE`` and
+    why not a cgroup, a key of ``node_cgroups.REASONS``.
+
+    The running zygote's children's once one started, else what the next
+    start would choose: /version answers before any node has run."""
+    if _memory is not None:
+        return _memory
+    reason = node_cgroups.predicted()
+    if reason is None:
+        return node_cgroups.CGROUP, None
+    return node_cgroups.ADDRESS_SPACE, reason
+
+
+def node_memory_line(kind, reason, memory_mb):
+    """What the sandbox log says of the memory limit isolated nodes run under."""
+    if kind == node_cgroups.CGROUP:
+        return f"[isolation] node memory: a cgroup limit of {memory_mb} MB for each run (--exec-memory-mb)"
+    why = node_cgroups.REASONS.get(reason, reason)
+    return (f"[isolation] node memory: the address-space cap (RLIMIT_AS), {memory_mb} MB above the "
+            f"zygote's footprint, not a cgroup limit: {why}")
+
+
+def _choose_node_memory(requested):
+    """``(kind, reason)`` for the zygote about to start: a cgroup where the
+    container's cgroups can hold its nodes, laid out now, else the
+    address-space cap. *requested* ``node_cgroups.ADDRESS_SPACE`` asks for the
+    cap whatever the container allows."""
+    if requested == node_cgroups.ADDRESS_SPACE:
+        return node_cgroups.ADDRESS_SPACE, "requested"
+    reason = node_cgroups.unavailable()
+    if reason is not None:
+        return node_cgroups.ADDRESS_SPACE, reason
+    try:
+        node_cgroups.lay_out()
+    except OSError as exc:
+        print(f"[isolation] the container's cgroups could not be laid out: {exc}",
+              file=sys.stderr, flush=True)
+        return node_cgroups.ADDRESS_SPACE, "layout"
+    return node_cgroups.CGROUP, None
+
+
+def ensure_running(config, *, exec_user=None, require_seccomp=True, memory_limit=None):
     """Start the zygote if it is not already up. Returns the socket path.
 
     Idempotent and safe to call from several request threads at once: the lock
     means only the first caller spawns, and a process that has since died is
     replaced rather than reused.
+
+    Each start settles the memory limit its children run under
+    (:func:`_choose_node_memory`), *memory_limit* ``node_cgroups.ADDRESS_SPACE``
+    asking for the address-space cap, and says it in the log.
     """
-    global _process, _socket_path, _started_with
+    global _process, _socket_path, _started_with, _memory
 
     with _lock:
         if _process is not None and _process.poll() is None:
@@ -219,6 +282,9 @@ def ensure_running(config, *, exec_user=None, require_seccomp=True):
         socket_path = config.socket_path
         os.makedirs(os.path.dirname(socket_path), exist_ok=True)
 
+        memory_mb = (config.limits or {}).get("memory_mb")
+        kind, reason = _choose_node_memory(memory_limit if memory_mb else node_cgroups.ADDRESS_SPACE)
+
         command = [
             sys.executable, "-u", "-m", "utk_curio.sandbox.isolation.zygote",
             "--socket", socket_path,
@@ -227,6 +293,8 @@ def ensure_running(config, *, exec_user=None, require_seccomp=True):
             command += ["--exec-user", exec_user]
         if require_seccomp:
             command.append("--require-seccomp")
+        if kind == node_cgroups.CGROUP:
+            command += ["--cgroup-memory-mb", str(memory_mb)]
 
         try:
             process = subprocess.Popen(
@@ -234,7 +302,7 @@ def ensure_running(config, *, exec_user=None, require_seccomp=True):
                 stdout=subprocess.PIPE,
                 stderr=None,          # inherit, so its errors reach the log
                 text=True,
-                env=zygote_environment(config.limits),
+                env=zygote_environment(config.limits, memory_limit=kind),
                 # Its own process group, so a signal aimed at the sandbox's
                 # group does not race the zygote's own children.
                 start_new_session=True,
@@ -242,11 +310,17 @@ def ensure_running(config, *, exec_user=None, require_seccomp=True):
         except OSError as exc:
             raise ZygoteStartupError(f"could not spawn the execution zygote: {exc}")
 
-        _wait_for_ready(process, socket_path)
+        said = _wait_for_ready(process, socket_path)
+        # A zygote that could not make its places runs its children under
+        # the address-space cap, and said so.
+        if kind == node_cgroups.CGROUP and (said or {}).get("limit") != node_cgroups.CGROUP:
+            kind, reason = node_cgroups.ADDRESS_SPACE, (said or {}).get("reason") or "places"
 
         _process = process
         _socket_path = socket_path
-        _started_with = (config, exec_user, require_seccomp)
+        _started_with = (config, exec_user, require_seccomp, memory_limit)
+        _memory = (kind, reason)
+        print(node_memory_line(kind, reason, memory_mb), file=sys.stderr, flush=True)
         return socket_path
 
 
@@ -263,14 +337,16 @@ def restart_if_exited():
         # answers None while another thread is inside it, as if still alive.
         if _process is None or _started_with is None or _process.poll() is None:
             return
-        config, exec_user, require_seccomp = _started_with
+        config, exec_user, require_seccomp, memory_limit = _started_with
     # It takes the lock and asks again, so the runs that found the zygote
     # gone together start one zygote between them.
-    ensure_running(config, exec_user=exec_user, require_seccomp=require_seccomp)
+    ensure_running(config, exec_user=exec_user, require_seccomp=require_seccomp,
+                   memory_limit=memory_limit)
 
 
 def _wait_for_ready(process, socket_path):
-    """Block until the zygote prints ZYGOTE_READY, or fail loudly.
+    """Block until the zygote prints ZYGOTE_READY, or fail loudly. Returns
+    what the zygote said of its nodes' memory limit before it, or None.
 
     Reading a line is better than polling for the socket file: the socket
     exists before the imports finish, so a connect could succeed against a
@@ -281,6 +357,7 @@ def _wait_for_ready(process, socket_path):
     selector = selectors.DefaultSelector()
     selector.register(process.stdout, selectors.EVENT_READ)
     remaining = _READY_TIMEOUT_SECONDS
+    said = None
 
     while remaining > 0:
         if process.poll() is not None:
@@ -297,7 +374,11 @@ def _wait_for_ready(process, socket_path):
             continue
         if line.strip() == "ZYGOTE_READY":
             _drain_in_background(process)
-            return
+            return said
+        if line.startswith(node_cgroups.MEMORY_LINE + " "):
+            with contextlib.suppress(ValueError):
+                said = json.loads(line[len(node_cgroups.MEMORY_LINE) + 1:])
+            continue
         # Anything else it printed is diagnostic; pass it through.
         print(f"[zygote] {line.rstrip()}", file=sys.stderr, flush=True)
 
@@ -335,12 +416,13 @@ def _terminate(process):
 
 def shutdown():
     """Stop the zygote. Registered with atexit by the sandbox."""
-    global _process
+    global _process, _memory
     with _lock:
         if _process is None:
             return
         _terminate(_process)
         _process = None
+        _memory = None
 
 
 def is_running():
