@@ -1,9 +1,10 @@
 {
   "sha256": {
-    "README.md": "adc47df3821f83608d9c1a6688d4024ed5b303d654cd827c115eec31ded78429",
-    "manifest.json": "0d71361c9893bdb67944cf7fe91b7b35ff80cf618dd1a1140b24ad3892e376c4",
+    "README.md": "fa6c96bf009967c9f0cdd1245822655f8608e7d7057607eb091a173ef3a894e9",
+    "manifest.json": "a858d3ef6f28315a8206f3904e6c2d3669dc1c76a0a2063831e12089de2686ce",
     "sources/uhvi-load.py": "2f7d4ae7627009763e303f04153b58bed2bad45218227b7138e5aca8211237e0",
-    "sources/uhvi-zonal.py": "0b78ffab2e81b28d7b1907894b52348cd7f0c1f3a3603ac6c25831dc6b79f4c4",
-    "sources/uhvi-zones.py": "f35af09e0023e14bf8dd453fb8bdd91b72b086c6f867b8c50a279eab590853aa"
+    "sources/uhvi-zonal.py": "bb7830568937c2c5271179433625d87ae65a894d627cbe901e4145443ee1be86",
+    "sources/uhvi-zones.py": "f35af09e0023e14bf8dd453fb8bdd91b72b086c6f867b8c50a279eab590853aa",
+    "sources/uhvi_statistics.py": "b52ffd33ba85dd369f619a016680f73f97c179f51c39a676f3651c331b98c42d"
   }
 }

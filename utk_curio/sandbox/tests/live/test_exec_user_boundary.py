@@ -641,7 +641,7 @@ def test_a_library_numba_caches_imports_as_the_exec_user():
 
 
 def test_utci_computes_as_the_exec_user():
-    """What example 09's UTCI node (``curio.weather/utci-compute``) does with
+    """What example 09's UTCI node (a built-in Python Computation node) does with
     the library, in a run of its own: the import, then the call with
     ``limit_inputs=False``. The NaN cell stands for the raster's nodata, which
     the node turns into NaN before the call."""

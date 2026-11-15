@@ -32,7 +32,7 @@ from utk_curio.backend.app.agents.repositories import sessions
 from utk_curio.backend.app.agents.repositories import storage
 from utk_curio.backend.app.agents.application import catalog as agents_catalog
 from utk_curio.backend.app.agents.repositories import project_agents as agents_project_agents
-from utk_curio.backend.app.collaboration import dataflow_docs
+from utk_curio.backend.app.collaboration import dataflow_docs, owner_calls
 from utk_curio.backend.app.projects import storage as projects_storage
 from utk_curio.backend.app.users.capabilities import catalog_entry_refusal
 
@@ -68,6 +68,10 @@ def _fan_out_imports(user, user_key: str, coord: str, *, install: bool) -> list[
     rest, and never fails the import itself. Each result names its project
     (``id``, ``name``); a project with no spec has nothing to remove, so an
     uninstall there succeeds.
+
+    Each project's install or uninstall is made by the backend process that
+    owns the dataflow (``collaboration/owner_calls.py``): the request that
+    asks names no dataflow, so it may reach any process.
     """
     if user is None:
         return []
@@ -77,10 +81,10 @@ def _fan_out_imports(user, user_key: str, coord: str, *, install: bool) -> list[
     for project in projects_repo.list_for_user(user.id):
         try:
             if install:
-                install_in_project(user_key, project.id, coord)
+                owner_calls.run(install_in_project, user_key, project.id, coord=coord)
             else:
                 try:
-                    uninstall_from_project(user_key, project.id, coord)
+                    owner_calls.run(uninstall_from_project, user_key, project.id, coord=coord)
                 except AgentServiceError as exc:
                     if exc.status != 404:  # a project with no spec: nothing to remove
                         raise
@@ -313,9 +317,11 @@ def seed_spec_with_imported_agents(spec: dict | None, coords) -> dict | None:
     return project_agents.set_project_agents(spec, [*project_agents.project_agents(spec), *coords])
 
 
+@owner_calls.operation("agents.install", error=AgentServiceError)
 def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
     """Add *coord* AND its ``requiresAgents`` closure to the project's lockfile
-    (explicit; never auto-imports).
+    (explicit; never auto-imports). The operation ``agents.install``, which
+    the dataflow's owner makes when another backend process sends it.
 
     dev/106: the closure (``delegation.required_closure``) is resolved BEFORE
     anything is written — a dependency visible nowhere refuses with 409 and
@@ -451,10 +457,12 @@ def _disclose_closure_repair(
         log.warning("Could not disclose the closure repair for %s", coord, exc_info=True)
 
 
+@owner_calls.operation("agents.uninstall", error=AgentServiceError)
 def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
     """Remove *coord* from the project's lockfile, with its attachments and
     their transcripts, once the write lands (``sessions.delete_sessions_of``),
-    as a detach deletes one's.
+    as a detach deletes one's. The operation ``agents.uninstall``, which the
+    dataflow's owner makes when another backend process sends it.
 
     dev/106: refused (409) while another INSTALLED template lists *coord*'s
     agent in ``requiresAgents`` — the dependents are named. No cascade."""

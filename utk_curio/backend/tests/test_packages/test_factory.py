@@ -232,7 +232,10 @@ def test_saving_into_curio_weather_scans_the_sources_that_read_their_inputs_thro
     manifest = json.loads((weather / "manifest.json").read_text(encoding="utf-8"))
     code = (weather / "sources" / "utci-compute.py").read_text(encoding="utf-8")
     assert "[!! input_0 !!]" in code, "utci-compute no longer holds a chip; this test needs a source that does"
-    edited = code.replace("import numpy as np\n", "import numpy as np\nfrom scipy import ndimage\n", 1)
+    # Its import of the package's own module, weather_utci, which no scan
+    # takes for a library.
+    imported = "from weather_utci import utci_grid\n"
+    edited = code.replace(imported, imported + "from scipy import ndimage\n", 1)
     assert edited != code
     draft = {
         "manifest": manifest,

@@ -1,60 +1,22 @@
-"""Compute the Universal Thermal Climate Index per raster pixel.
+"""UTCI from raster + weather.
 
-input_0 is the rasterio dataset (opened upstream by `mrt-load`), and
-input_1 the meteorological DataFrame (loaded by `weather-load`). The output is a `(grid, shape)`
-tuple — Curio serialises numpy arrays poorly across the sandbox
-boundary, so we return Python lists + an explicit `[width, height]`
-shape that `utci-zonal` rebuilds on the other side.
+Input: the mean radiant temperature raster on input_0, as Milan MRT Loader
+returns it, and the hourly weather table on input_1, as ERA5 Milan Weather
+returns it. Returns `(grid, shape)`: the Universal Thermal Climate Index of
+each cell, as a list of rows, and the grid's `[width, height]`, which UTCI
+Zonal Mean takes with the raster.
 
-Two non-obvious details preserved from
-``docs/examples/09-heterogeneous-data-linked-views.md``:
-
-* ``data.filled(np.nan)`` collapses the rasterio MaskedArray to a plain
-  float array with NaN nodata regardless of the raster's sentinel.
-* ``limit_inputs=False`` keeps UTCI valid where ``tr - tdb > 30``,
-  which is common at noon in Milan (MRT ~60-70 °C, air ~30 °C). The
-  default ``limit_inputs=True`` silently NaNs those pixels and the
-  downstream map renders half-empty.
+Settings:
+- TIMESTAMP: the hour, the weather table's `it`, whose weather is used.
+- UPSCALE_FACTOR: the raster is read at this times its width and height.
 """
 
-import numpy as np
-from pythermalcomfort import models
-from rasterio.warp import Resampling
+from weather_utci import utci_grid
 
-src = [!! input_0 !!]
-sensor = [!! input_1 !!]
-timestamp = 12
+TIMESTAMP = 12
+UPSCALE_FACTOR = 1.0
 
-upscale_factor = 1.0
-data = src.read(
-    out_shape=(
-        src.count,
-        int(src.height * upscale_factor),
-        int(src.width * upscale_factor),
-    ),
-    resampling=Resampling.nearest,
-    masked=True,
+return utci_grid(
+    [!! input_0 !!], [!! input_1 !!],
+    timestamp=TIMESTAMP, upscale_factor=UPSCALE_FACTOR,
 )
-data = data.astype(float).filled(np.nan)
-
-sensor_filtered = sensor[sensor["it"] == timestamp]
-tdb = float(sensor_filtered["Td"].values[0])
-v = float(sensor_filtered["Wind"].values[0])
-rh = float(sensor_filtered["RH"].values[0])
-
-utci_result = models.utci(
-    tdb=tdb, tr=data[0], v=v, rh=rh, units="SI", limit_inputs=False,
-)
-utci_grid = np.asarray(getattr(utci_result, "utci", utci_result), dtype=float)
-
-if utci_grid.ndim == 3 and utci_grid.shape[0] == 1:
-    utci_grid = utci_grid[0]
-if utci_grid.ndim != 2:
-    raise ValueError(
-        f"UTCI must be 2D, got shape={utci_grid.shape}, ndim={utci_grid.ndim}"
-    )
-
-utci_list = utci_grid.tolist()
-utci_shape = [utci_grid.shape[1], utci_grid.shape[0]]
-
-return (utci_list, utci_shape)

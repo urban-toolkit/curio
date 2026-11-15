@@ -34,6 +34,9 @@ CATALOG = REPO / "packages"
 #: Every declaration the shipped packages make, by ``(package folder, template
 #: id)``, the template id None for one at the top of the manifest.
 SHIPPED = {
+    # UHVI Zonal Stats and UTCI from raster + weather: what the imports in
+    # their code gave before it became a call into their package's module.
+    ("ai.utk.uhvi@1", "uhvi-zonal"): {"tags": ["GeoPandas"], "dataTypes": ["Geometries", "Rasters"]},
     ("curio.builtin@1", "spatial-join"): {"dataTypes": ["Geometries"]},
     ("curio.media@1", "video-frames"): {
         "tags": ["GeoPandas", "Pandas"], "dataTypes": ["Tables", "Geometries", "Imagery", "Video"],
@@ -45,6 +48,7 @@ SHIPPED = {
     ("curio.rasterization@1", None): {"tags": ["SCOUT"]},
     ("curio.rasterization@1", "raster-calculator"): {"dataTypes": ["Rasters"]},
     ("curio.rasterization@1", "rasterize-buildings"): {"dataTypes": ["Rasters"]},
+    ("curio.weather@1", "utci-compute"): {"dataTypes": ["Rasters"]},
     ("model.scout.deep-umbra@1", None): {"tags": ["SCOUT"]},
     ("model.scout.weather-gnn@1", None): {"tags": ["SCOUT"]},
 }

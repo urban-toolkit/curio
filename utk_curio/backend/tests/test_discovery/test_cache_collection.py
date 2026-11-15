@@ -435,3 +435,118 @@ class TestOneWriterPerFile:
         assert fetched_here == [], f"this process fetched again what the other was caching: {fetched_here}"
         assert raced.here["cached"] == 0, raced.here
         assert cache_collection.cached_count("9", dataset["id"]) == (2, 8)
+
+
+# ── the account's cap, across processes ────────────────────────────────────
+
+
+def _cache_or_refusal(dataset):
+    """Cache *dataset* for account 9 here; what the cache returned, or the
+    refusal it raised."""
+    from utk_curio.backend.app.discovery.application import cache_collection
+    from utk_curio.backend.app.discovery.domain.errors import DownloadTooLarge
+
+    try:
+        return cache_collection.cache("9", dataset, _Bucket())
+    except DownloadTooLarge as refused:
+        return refused
+
+
+def _two_collections_past_a_cap(tmp_path, monkeypatch) -> tuple[dict, dict]:
+    """Two collections of two 4-byte files each, under a 12-byte cap: either
+    fits alone, both together do not."""
+    from utk_curio.backend.app.discovery.application import cache_collection
+
+    (tmp_path / "theirs").mkdir()
+    (tmp_path / "ours").mkdir()
+    theirs = _index(tmp_path / "theirs", ["walks/a.mp4", "walks/b.mp4"])
+    ours = _index(tmp_path / "ours", ["walks/c.mp4", "walks/d.mp4"])
+    monkeypatch.setenv(cache_collection.ENV_CAP, repr(12 / 1024**3))
+    assert cache_collection.cap_bytes() == 12
+    return theirs, ours
+
+
+class TestTheCapAcrossProcesses:
+    def test_another_processes_cache_holds_its_room_while_it_runs_and_none_once_it_died(
+        self, app, tmp_path, monkeypatch
+    ):
+        """Each process counted only its own running caches against the
+        account's cap, so a cache here passed it while a cache in another
+        backend process still had its files to fetch. That process then
+        dies in its fetch, and the room it held is free again. The other
+        process is a forked child (``_support/two_processes.py``)."""
+        from utk_curio.backend.app.discovery.application import cache_collection
+        from utk_curio.backend.app.discovery.domain.errors import DownloadTooLarge
+        from utk_curio.backend.tests._support.two_processes import Window, race
+
+        theirs, ours = _two_collections_past_a_cap(tmp_path, monkeypatch)
+        window = Window()
+        test_process = os.getpid()
+
+        def dies_in_its_first_fetch(_relpath):
+            window.stop_here()
+            if os.getpid() != test_process:
+                os._exit(9)  # as a crash would: nothing after it runs
+
+        raced = race(
+            window,
+            lambda: cache_collection.cache("9", theirs, _Bucket(before=dies_in_its_first_fetch)),
+            lambda: _cache_or_refusal(ours),
+            monkeypatch,
+        )
+
+        assert isinstance(raced.here, DownloadTooLarge), (
+            f"this process cached its 8 bytes ({raced.here}) while another process's cache had 8 more "
+            "to fetch: together past the account's 12-byte cap"
+        )
+        assert cache_collection.ENV_CAP in str(raced.here)
+        assert raced.child_exit == 9, f"the other process did not end where it was made to: {raced.child_error}"
+        again = _cache_or_refusal(ours)
+        assert not isinstance(again, DownloadTooLarge), (
+            f"the other process died, and its cache still held its room: {again}"
+        )
+        assert again["cached"] == 2, again
+        assert cache_collection.used_bytes("9") == 8
+
+    def test_an_owners_apply_copying_an_editors_cached_files_holds_their_room(self, app, tmp_path, monkeypatch):
+        """An owner's Apply of an editor's collection copies his cached files
+        into her media cache (``editor_requests._copy_cached_files``). It
+        checked her cap but held no room while it copied, so a cache of hers
+        that started meanwhile, here in another process, passed the cap with
+        it. The copy is a forked child that stops after its first file."""
+        import shutil
+        import types
+
+        from utk_curio.backend.app.datasets.application import editor_requests
+        from utk_curio.backend.app.discovery.application import cache_collection
+        from utk_curio.backend.app.discovery.domain.errors import DownloadTooLarge
+        from utk_curio.backend.tests._support.two_processes import Window, race
+
+        his, hers = _two_collections_past_a_cap(tmp_path, monkeypatch)
+        for name in ("a.mp4", "b.mp4"):  # the editor's cached files
+            (cache_collection.objects_dir("8", his["id"]) / name).write_bytes(b"walk")
+        window = Window()
+
+        def _copies_then_stops(source, part):
+            copied = shutil.copyfile(source, part)
+            window.stop_here()
+            return copied
+
+        monkeypatch.setattr(
+            editor_requests, "shutil", types.SimpleNamespace(**{**vars(shutil), "copyfile": _copies_then_stops})
+        )
+
+        raced = race(
+            window,
+            lambda: editor_requests._copy_cached_files("8", "9", his["id"]),
+            lambda: _cache_or_refusal(hers),
+            monkeypatch,
+        )
+
+        assert isinstance(raced.here, DownloadTooLarge), (
+            f"her cache ran ({raced.here}) while another process copied 8 bytes of the editor's files "
+            "into her media cache: together past its 12-byte cap"
+        )
+        assert cache_collection.ENV_CAP in str(raced.here)
+        assert raced.child_exit == 0, f"the copy in the other process failed: {raced.child_error}"
+        assert cache_collection.cached_count("9", his["id"]) == (2, 8)

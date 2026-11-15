@@ -1,47 +1,11 @@
-"""Spatially join UTCI pixels into census polygons.
+"""UTCI Zonal Mean.
 
-Its input circles, in order:
-
-* input_0: rasterio dataset (carries the CRS / transform).
-* input_1: ``(utci_list, utci_shape)`` from the ``utci-compute`` step.
-* input_2: census polygon GeoDataFrame.
-
-We rebuild the UTCI grid from the list-of-lists + shape, scale the
-raster transform to match the (downsampled) grid, replace NaNs with an
-explicit nodata sentinel so ``rasterstats`` does not emit a warning
-(the sandbox treats non-empty stderr as a node failure during e2e),
-and attach the per-polygon mean back to the GeoDataFrame.
+Input, in order: the mean radiant temperature raster on input_0, which places
+the grid; UTCI from raster + weather's `(grid, shape)` on input_1; the census
+polygons on input_2, with their `gt_65`. Returns the polygons' geometry, `mean`,
+the mean UTCI over each polygon, and `gt_65`.
 """
 
-import numpy as np
-from rasterstats import zonal_stats
+from weather_census import utci_zonal_mean
 
-dataset = [!! input_0 !!]
-utci_list = [!! input_1 !!][0]
-utci_shape = [!! input_1 !!][1]
-gdf = [!! input_2 !!]
-
-utci = np.asarray(utci_list, dtype=float)
-if utci.ndim != 2:
-    raise ValueError(
-        f"Expected 2D UTCI array, got shape={utci.shape}, ndim={utci.ndim}"
-    )
-
-transform = dataset.transform * dataset.transform.scale(
-    (dataset.width / utci_shape[0]),
-    (dataset.height / utci_shape[1]),
-)
-
-nodata_value = -999.0
-utci_for_stats = np.where(np.isnan(utci), nodata_value, utci)
-
-joined = zonal_stats(
-    gdf,
-    utci_for_stats,
-    stats=["min", "max", "mean", "median"],
-    affine=transform,
-    nodata=nodata_value,
-)
-
-gdf["mean"] = [d["mean"] for d in joined]
-return gdf.loc[:, [gdf.geometry.name, "mean", "gt_65"]]
+return utci_zonal_mean([!! input_0 !!], [!! input_1 !!], [!! input_2 !!])

@@ -1,24 +1,16 @@
-"""Reproject the merged census table and tag it for downstream views.
+"""Reproject census to EPSG:3395.
 
-The Milan census GeoJSON ships in UTM 32632, so we reset the CRS and
-reproject to EPSG:3395. Polygons that
-ended up with a non-positive UTCI mean are dropped (they overlap nodata
-pixels and would otherwise clip the colour scale).
+Input: UTCI Zonal Mean's polygons. Returns them in TARGET_CRS, those whose mean
+UTCI is not above 0 left out, named `census` for the views.
 
-The ``metadata`` assignment goes through ``__dict__`` rather than plain
-attribute syntax: pandas emits a ``UserWarning`` when setting an
-unknown attribute on a sliced DataFrame, and curio's sandbox treats any
-non-empty stderr as a node failure during e2e. Curio reads ``.metadata``
-back through ``getattr`` (parsers.py), so both write paths work — but
-only the dict path stays warning-free.
+Settings:
+- SOURCE_CRS: the CRS the census polygons are in.
+- TARGET_CRS: the CRS the views draw them in.
 """
 
-gdf = input_0
+from weather_census import reproject_census
 
-filtered_gdf = gdf.set_crs(32632)
-filtered_gdf = filtered_gdf.to_crs(3395)
-filtered_gdf = filtered_gdf[filtered_gdf["mean"] > 0]
+SOURCE_CRS = 32632
+TARGET_CRS = 3395
 
-filtered_gdf.__dict__["metadata"] = {"name": "census"}
-
-return filtered_gdf
+return reproject_census(input_0, source_crs=SOURCE_CRS, target_crs=TARGET_CRS)

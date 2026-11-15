@@ -97,6 +97,9 @@
     },
     {
       "category": "computation",
+      "dataflowCategories": {
+        "dataTypes": ["Rasters"]
+      },
       "description": "Compute the Universal Thermal Climate Index per raster pixel using pythermalcomfort. Reads raster + weather DataFrame on its two input circles (input_0 / input_1) and returns the UTCI grid + shape so the zonal-stats step can rebuild it.",
       "editor": "code",
       "engine": "python",

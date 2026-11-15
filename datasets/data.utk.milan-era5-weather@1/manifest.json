@@ -3,7 +3,7 @@
   "name": "Milan ERA5 Hourly Weather",
   "version": "1.0.0",
   "format": "csv",
-  "description": "Hourly ERA5 reanalysis weather for Milan on 2022-07-22: dew point, wind speed and relative humidity, the meteorological inputs to a UTCI calculation. Re-saved comma-delimited from the original semicolon-delimited export.",
+  "description": "Hourly ERA5 reanalysis weather for Milan on 2022-07-22: air temperature, wind speed and relative humidity, the meteorological inputs to a UTCI calculation. Re-saved comma-delimited from the original semicolon-delimited export.",
   "license": "Copernicus licence",
   "tags": [
     "weather",

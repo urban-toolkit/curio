@@ -118,6 +118,44 @@ def interprocess_lock(lock_path: Path, *, shared: bool = False):
         yield
 
 
+def is_held(lock_path: Path) -> bool:
+    """Whether a hold has *lock_path*'s cross-process lock now: one in another
+    process, or one in this process through another open of the file. Asks
+    without waiting, and creates nothing: a lock file that is not there is held
+    by no one.
+
+    A process's file locks go when it ends, so what a process that died held
+    reads as free. Where this platform has no file locks no holder can be
+    seen, and every lock reads as held.
+    """
+    if fcntl is not None:
+        try:
+            handle = open(lock_path, "rb")
+        except FileNotFoundError:
+            return False
+        with handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            fcntl.flock(handle, fcntl.LOCK_UN)
+        return False
+    if msvcrt is not None:  # pragma: no cover - exercised only on Windows
+        try:
+            handle = open(lock_path, "r+b")
+        except FileNotFoundError:
+            return False
+        with handle:
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError:
+                return True
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        return False
+    return True  # pragma: no cover - neither POSIX nor Windows locking available
+
+
 @contextmanager
 def exclusive_lock(lock_path: Path, *, namespace: str, key: str):
     """Both layers at once: thread lock, then cross-process lock. A writer's
