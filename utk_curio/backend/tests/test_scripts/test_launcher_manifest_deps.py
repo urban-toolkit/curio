@@ -22,7 +22,7 @@ import os
 import pytest
 
 from utk_curio.cli import dependencies as launcher
-from utk_curio.backend.app.common.user_storage import users_base
+from utk_curio.backend.app.common.user_storage import GUEST_KEY, users_base
 
 BASE_TEMPLATE = {
     "id": "demo-node",
@@ -37,8 +37,9 @@ BASE_TEMPLATE = {
 
 
 def _write_package(store: "object", dir_name: str, *, deps: dict,
-                   backend: bool, python_template: bool) -> None:
-    """A minimal installed package under ``<user>/packages/<dir_name>/``.
+                   backend: bool, python_template: bool, needs: dict | None = None) -> None:
+    """A minimal installed package under ``<user>/packages/<dir_name>/``, or
+    under a catalog's folder; *needs* is its ``dependencies.packages``.
 
     ``templates`` is always non-empty - the loader refuses an empty list, and a
     refused manifest is skipped by the walk, which would make these tests pass
@@ -62,7 +63,7 @@ def _write_package(store: "object", dir_name: str, *, deps: dict,
             dict(BASE_TEMPLATE) if python_template
             else {**BASE_TEMPLATE, "id": "demo-js", "engine": "javascript"}
         ],
-        "dependencies": {"js": {}, "packages": {}, "python": deps},
+        "dependencies": {"js": {}, "packages": dict(needs or {}), "python": deps},
     }
     if backend:
         # The loader is strict about this shape: entry must be a .py under
@@ -456,3 +457,67 @@ def test_listing_installs_nothing(launch_cwd, installed, installed_per_user, iso
 
     assert installed == [] and installed_per_user == []
     assert not [req for req in listed if req.startswith("inflection")]
+
+
+# ── --guest-packages: their libraries install at launch, for every account ──
+
+
+@pytest.fixture
+def guest_catalog(tmp_path, monkeypatch):
+    """A shared catalog of this module's own, the one ``--packages-root``
+    names, which the backend copies a guest package from."""
+    root = tmp_path / "catalog"
+    root.mkdir()
+    monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(root))
+    monkeypatch.delenv("CURIO_GUEST_PACKAGES", raising=False)
+    return root
+
+
+def test_a_guest_packages_libraries_install_at_launch_with_those_of_the_packages_it_needs(
+    launch_cwd, installed, in_process, guest_catalog, monkeypatch,
+):
+    """With the examples' libraries, into the interpreter every account's
+    nodes import from, so no hosted guest installs any; without the flag,
+    not."""
+    _write_package(guest_catalog, "acme.base@1", deps={"tabulate": ">=0.9"}, backend=False, python_template=True)
+    _write_package(
+        guest_catalog, "acme.tracker@1", deps={"inflection": ">=0.5"}, backend=False, python_template=True,
+        needs={"acme.base@1": "*"},
+    )
+
+    launcher.install_manifest_dependencies()
+    without = {name for call in installed for name in call}
+    installed.clear()
+    monkeypatch.setenv("CURIO_GUEST_PACKAGES", "acme.tracker@1")
+    launcher.install_manifest_dependencies()
+    named = {name for call in installed for name in call}
+
+    assert not {"inflection", "tabulate"} & without
+    assert {"inflection", "tabulate"} <= named
+
+
+def test_with_isolation_a_store_copy_of_a_package_the_launch_installs_for_everyone_adds_nothing_to_its_tree(
+    launch_cwd, installed, installed_per_user, isolated, guest_catalog, monkeypatch,
+):
+    """Under isolation an account's nodes import its own tree, then the
+    interpreter the launch installs the examples' and the guest packages'
+    libraries into. A store's copy of such a package, with the same
+    libraries, adds nothing to its account's tree: ``pip --target`` ignores
+    what the interpreter holds, so every start downloaded them again, into
+    each account's tree, the shared guest's among them. A copy whose
+    libraries differ still goes to its account's tree."""
+    deps = {"inflection": ">=0.5"}
+    _write_package(guest_catalog, "acme.tracker@1", deps=deps, backend=False, python_template=True)
+    for user in (GUEST_KEY, "7"):
+        _write_package(_user_store(launch_cwd, user), "acme.tracker@1", deps=deps, backend=False, python_template=True)
+    _write_package(
+        _user_store(launch_cwd, "8"), "acme.tracker@1", deps={**deps, "tabulate": ">=0.9"},
+        backend=False, python_template=True,
+    )
+    monkeypatch.setenv("CURIO_GUEST_PACKAGES", "acme.tracker@1")
+
+    launcher.install_manifest_dependencies()
+
+    assert "inflection" in {name for call in installed for name in call}
+    trees = {os.path.basename(target): set(tree_deps) for tree_deps, target in installed_per_user}
+    assert trees == {"8": {"inflection", "tabulate"}}, trees

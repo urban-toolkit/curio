@@ -27,6 +27,7 @@ from utk_curio.backend.app.packages.application.defaults_install import (
     install_to_defaults,
     uninstall_from_defaults,
 )
+from utk_curio.backend.app.packages.application.guest_packages import add_guest_packages
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.application.project_packages import (
     OwnersPackages,
@@ -156,6 +157,7 @@ from utk_curio.backend.app.packages.infrastructure.backend_runtime import (
 )
 from utk_curio.backend.app.packages.infrastructure.pip_runner import install_python_deps
 from utk_curio.backend.app.packages.application.seeding import example_dep_package_ids
+from utk_curio.backend.app.packages.application.package_dependencies import catalog_packages_to_add
 
 __all__ = [
     "PACKAGE_DIR_RE",
@@ -179,6 +181,7 @@ __all__ = [
     "dep_destinations_raw",
     "install_python_deps",
     "example_dep_package_ids",
+    "catalog_packages_to_add",
     "content_starters",
     "declared_widgets",
     "generate_package_starters",
@@ -194,6 +197,7 @@ __all__ = [
     "template_landscape",
     "install_to_defaults",
     "uninstall_from_defaults",
+    "add_guest_packages",
     "PackageServiceError",
     "InstallerError",
     "get_project_lockfile",

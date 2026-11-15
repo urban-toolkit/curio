@@ -3461,7 +3461,7 @@ so a dataset dropped on an upstream loader is progress.
 
 | File | Purpose |
 |---|---|
-| `backend/server.py` | Builds the Flask app from `create_app` (`backend/app/__init__.py`); the startup work, done by the home process when it serves (the shared guest, the hosted guests' copies dropped, the agents and examples put back, the monitor's histories started anew, the timers, the open-files sampler, the bucket mount service's proxy and check); Werkzeug reloader exclude patterns |
+| `backend/server.py` | Builds the Flask app from `create_app` (`backend/app/__init__.py`); the startup work, done by the home process when it serves (the shared guest, the hosted guests' copies dropped, the agents, the packages `--guest-packages` names and the examples put back, the monitor's histories started anew, the timers, the open-files sampler, the bucket mount service's proxy and check); Werkzeug reloader exclude patterns |
 | `common/backend_processes.py` | Which backend process this is (`CURIO_BACKEND_PROCESS` of `CURIO_BACKEND_PROCESSES`, process 0 the home process), the start's boot id (`CURIO_BOOT_ID`), which the launcher gives every backend of a start, and `shard_of`, the process a dataflow belongs to among several |
 | `backend/app/api/routes.py` | REST endpoints for sandbox proxies, starters, and file serving |
 | `backend/app/packages/domain/manifest.py` | Parse `manifest.json` into typed `PackageManifest` dataclass |
