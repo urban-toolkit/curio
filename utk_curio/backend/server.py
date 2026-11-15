@@ -4,6 +4,7 @@ from werkzeug.serving import WSGIRequestHandler, is_running_from_reloader
 
 from utk_curio.backend import thread_stacks
 from utk_curio.backend.app import create_app
+from utk_curio.backend.app.collaboration import owner_guard
 from utk_curio.backend.config import CURIO_SEED_EXAMPLES
 from utk_curio.common import backend_processes
 from utk_curio.common.request_deadline import RequestHeadDeadline
@@ -22,8 +23,6 @@ def _uses_reloader():
 DOES_STARTUP_WORK = backend_processes.is_home() and (
     not _uses_reloader() or is_running_from_reloader()
 )
-
-app = create_app(startup_work=DOES_STARTUP_WORK)
 
 
 # Shared with sandbox/server.py; see utk_curio/backend/reloader.py.
@@ -78,8 +77,14 @@ def _seed_the_shared_guest():
             app.logger.warning("Could not ensure guest user on startup", exc_info=True)
 
 
-if DOES_STARTUP_WORK:
-    _seed_the_shared_guest()
+# In a start of several processes the launcher starts the others once this
+# one serves, so while it does the startup work it owns every dataflow, then
+# keeps no doc of one another process owns (owner_guard.py).
+with owner_guard.before_the_others_serve(DOES_STARTUP_WORK):
+    app = create_app(startup_work=DOES_STARTUP_WORK)
+    if DOES_STARTUP_WORK:
+        _seed_the_shared_guest()
+
 
 @app.route('/health', methods=['GET'])
 def health():
