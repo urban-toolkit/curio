@@ -33,6 +33,7 @@ from utk_curio.backend.app.packages.repositories import (
     guest_record,
 )
 from utk_curio.backend.app.packages.repositories.store import list_user_packages
+from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.application import (
     prune as packages_prune,
     seeding as packages_seeding,
@@ -94,8 +95,13 @@ def _give(user_key: str, dir_name: str) -> tuple[tuple[str, ...], set[str], set[
     """Put *dir_name* and every package it needs into the store of
     *user_key* as an add does, without their libraries, and into its
     defaults: the packages it brought, those of them the add copied in, and
-    those whose defaults entry this wrote."""
-    held = {path.name for path in list_user_packages(user_key)}
+    those whose defaults entry this wrote.
+
+    A lock owner (memo dev/99): what the store held before the add is a
+    names-only snapshot under the per-user seed lock, released before the
+    add, which takes the lock itself."""
+    with package_seed_lock(user_key, shared=True):
+        held = {path.name for path in list_user_packages(user_key)}
     outcome = packages_store_install._ensure_user_store_install(user_key, dir_name, libraries=False)
     brought = tuple(outcome.packages) or (dir_name,)
     defaults = defaults_io.load_defaults(user_key)

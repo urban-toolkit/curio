@@ -296,6 +296,7 @@ _ACCOUNTED_ENUMERATORS = {
     "app/packages/builder/deps.py": {"installed_manifests"},  # lock owner
     "app/packages/application/function_nodes.py": {"package_functions"},  # lock owner
     "app/packages/application/model_packages.py": {"held_model_packages"},  # lock owner
+    "app/packages/application/guest_packages.py": {"_give"},  # lock owner
 }
 
 

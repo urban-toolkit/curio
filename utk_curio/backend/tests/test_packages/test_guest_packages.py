@@ -104,7 +104,22 @@ def _publish(
 
 
 @pytest.fixture()
-def catalog(tmp_path, monkeypatch) -> Path:
+def builtin(app) -> str:
+    """The built-in package every store holds, by its folder as the seeder
+    names it (``seeding._latest_builtin_dir``): the app's own startup work
+    seeded it into the shared guest's store from the suite's catalog
+    (``create_app``'s ``seed_dev_packages``), before this module's catalog
+    takes that catalog's place."""
+    from utk_curio.backend.app.packages.application.seeding import _latest_builtin_dir
+    from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root
+
+    found = _latest_builtin_dir(catalog_root())
+    assert found is not None, "the suite's catalog holds no built-in package"
+    return found.name
+
+
+@pytest.fixture()
+def catalog(builtin, tmp_path, monkeypatch) -> Path:
     """A shared catalog holding this module's packages and nothing else."""
     root = tmp_path / "catalog"
     root.mkdir()
@@ -323,7 +338,7 @@ def test_the_start_installs_no_library_and_runs_no_import_probe(catalog, start, 
     assert pip_runs == []
 
 
-def test_a_name_no_catalog_package_has_is_left_out_and_the_others_are_added(catalog, start):
+def test_a_name_no_catalog_package_has_is_left_out_and_the_others_are_added(catalog, start, builtin):
     """The launcher refuses such a name; the backend's start, handed one all
     the same, still adds the others."""
     tracker = _publish(catalog, "ai.test.tracker", module="tracker_helpers")
@@ -332,7 +347,7 @@ def test_a_name_no_catalog_package_has_is_left_out_and_the_others_are_added(cata
 
     store = _store()
     defaults = defaults_io.load_defaults(GUEST_KEY)
-    assert store == {tracker}
+    assert store == {builtin, tracker}
     assert defaults == {tracker}
 
 
@@ -363,30 +378,34 @@ def test_the_guests_copy_is_the_catalogs_which_an_upgrade_of_the_catalog_reaches
 RECORD = ".guest-packages.json"
 
 
-def test_a_later_start_takes_off_what_the_flag_added_and_no_longer_names(catalog, start):
+def test_a_later_start_takes_off_what_the_flag_added_and_no_longer_names(catalog, start, builtin):
+    """Only the flag's own packages go: the built-in the store held before
+    stays through every start."""
     base = _publish(catalog, "ai.test.tracking-base", module="tracking_base")
     tracker = _publish(catalog, "ai.test.tracker", needs={base: "*"}, module="tracker_helpers")
     other = _publish(catalog, "ai.test.other", module="other_helpers")
+    held = _store()
+    assert held == {builtin}, "the store held more than the built-in before the start"
     start(tracker, other)
     added = _store()
-    assert added == {base, tracker, other}, "the start did not add the packages"
+    assert added == {builtin, base, tracker, other}, "the start did not add the packages"
 
     start(other)
 
     store, defaults = _store(), defaults_io.load_defaults(GUEST_KEY)
-    assert store == {other}
+    assert store == {builtin, other}
     assert defaults == {other}
 
     start()
 
     store, defaults = _store(), defaults_io.load_defaults(GUEST_KEY)
     recorded = (user_packages_dir(GUEST_KEY) / RECORD).exists()
-    assert store == set()
+    assert store == {builtin}
     assert defaults == set()
     assert not recorded, "nothing is given, and the record is still there"
 
 
-def test_a_later_start_keeps_what_the_account_held_before_the_flag_named_it(catalog, start):
+def test_a_later_start_keeps_what_the_account_held_before_the_flag_named_it(catalog, start, builtin):
     """A package the store and the defaults held keeps both; one the store
     held keeps its copy, and only the defaults entry the flag wrote goes."""
     from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
@@ -399,13 +418,13 @@ def test_a_later_start_keeps_what_the_account_held_before_the_flag_named_it(cata
     defaults_io.add_to_defaults(GUEST_KEY, other)
     start(tracker, other, third)
     store, defaults = _store(), defaults_io.load_defaults(GUEST_KEY)
-    assert store == {tracker, other, third}, "the start did not add the package"
+    assert store == {builtin, tracker, other, third}, "the start did not add the package"
     assert defaults == {tracker, other, third}
 
     start()
 
     store, defaults = _store(), defaults_io.load_defaults(GUEST_KEY)
-    assert store == {other, third}
+    assert store == {builtin, other, third}
     assert defaults == {other}
 
 
