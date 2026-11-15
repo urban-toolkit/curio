@@ -554,14 +554,14 @@ def package_manifest_from_dict(raw: object, *, manifest_path: Path, dir_name: st
     if not isinstance(publisher, str):
         raise ManifestError(f"{manifest_path}.publisher must be a string")
 
-    # A package of modules alone defines no node: the packages that name it in
-    # ``dependencies.packages`` import its modules. A model package's node is
-    # what runs its model, so it defines at least one.
+    # A package of modules alone may define no node: the packages that name it
+    # in ``dependencies.packages`` import its modules, and the loader, which
+    # reads its folder, refuses one with no module either
+    # (``repositories/manifests.py``). A model package's node is what runs its
+    # model, so it defines at least one.
     templates_raw = raw.get("templates")
-    if not isinstance(templates_raw, list):
-        raise ManifestError(f"{manifest_path}.templates must be a list")
-    if not templates_raw and raw.get("kind") == "model":
-        raise ManifestError(f"{manifest_path}.templates: a model package defines the node that runs its model")
+    if not isinstance(templates_raw, list) or (not templates_raw and raw.get("kind") == "model"):
+        raise ManifestError(f"{manifest_path}.templates must be a non-empty list")
     templates = [
         TemplateManifest.from_json(t, where=f"{manifest_path}.templates[{i}]")
         for i, t in enumerate(templates_raw)

@@ -130,37 +130,83 @@ def test_the_package_validates_and_is_one_module_and_no_node():
     assert (PACKAGE / "README.md").is_file()
 
 
-def test_only_a_package_that_runs_no_model_may_define_no_node(tmp_path):
-    """The parser and the schema agree: a package of modules alone defines no
-    template, while a model package with none is refused, since its node is
-    what runs its model, and ``templates`` stays a list."""
+#: Words the loader refuses a package with no node and no module with, as it
+#: refused every package with no template before there were libraries.
+NO_TEMPLATES = r"manifest\.json\.templates must be a non-empty list"
+#: A module of a package of modules alone.
+A_MODULE = {"street_shares.py": "def share(part, whole):\n    return 100.0 * part / whole\n"}
+
+
+def _written(tmp_path, package_id: str, raw: dict, sources: dict | None = None) -> Path:
+    """A package folder holding *raw* as its manifest, with *package_id* as
+    its ``id``, and each of *sources* under ``sources/``."""
+    folder = tmp_path / f"{package_id}@1"
+    folder.mkdir()
+    (folder / "manifest.json").write_text(json.dumps({**raw, "id": package_id}), encoding="utf-8")
+    for relative, text in (sources or {}).items():
+        path = folder / "sources" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return folder
+
+
+def _schema_errors(raw: dict) -> list[list]:
     from jsonschema import Draft202012Validator
 
+    schema = json.loads((REPO / "docs" / "schemas" / "node-package.v4.json").read_text(encoding="utf-8"))
+    return [list(error.absolute_path) for error in Draft202012Validator(schema).iter_errors(raw)]
+
+
+def test_a_package_with_no_node_and_a_module_is_a_library(tmp_path):
+    """A package that is not a model package may define no template when it
+    ships a Python module in ``sources/``, as Segmentation does: the packages
+    that name it import the module. Main refused every package with no
+    template."""
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+    from utk_curio.backend.app.packages.repositories.python_modules import module_names
+
+    library = _written(tmp_path, "ai.test.library", _manifest(PACKAGE), A_MODULE)
+    manifest = load_package_manifest(library)
+    assert manifest.templates == []
+    assert module_names(library, manifest) == frozenset({"street_shares"})
+    assert _schema_errors(_manifest(library)) == []
+
+
+@pytest.mark.parametrize("sources", [
+    None,
+    {"notes.txt": "no Python here\n"},
+    {"not-a-name.py": "X = 1\n"},
+    {"class.py": "X = 1\n"},
+], ids=["no-sources", "no-python", "not-a-name", "a-keyword"])
+def test_a_package_with_no_node_and_no_module_is_refused_as_before(tmp_path, sources):
+    """With no module either, the package is refused with the words main
+    refuses any package with no template with."""
     from utk_curio.backend.app.packages.domain.manifest import ManifestError
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
-    validator = Draft202012Validator(
-        json.loads((REPO / "docs" / "schemas" / "node-package.v4.json").read_text(encoding="utf-8"))
-    )
+    nothing = _written(tmp_path, "ai.test.nothing", _manifest(PACKAGE), sources)
+    with pytest.raises(ManifestError, match=NO_TEMPLATES):
+        load_package_manifest(nothing)
 
-    def written(package_id: str, raw: dict) -> Path:
-        folder = tmp_path / f"{package_id}@1"
-        folder.mkdir()
-        (folder / "manifest.json").write_text(json.dumps({**raw, "id": package_id}), encoding="utf-8")
-        return folder
 
-    modules = written("ai.test.modules", _manifest(PACKAGE))
-    assert load_package_manifest(modules).templates == []
-    assert not list(validator.iter_errors(_manifest(modules)))
+def test_a_model_package_defines_the_node_that_runs_its_model(tmp_path):
+    """A model package with no template is refused, modules or not, with
+    main's words, and the schema says so of its ``templates``; ``templates``
+    is still a list."""
+    from utk_curio.backend.app.packages.domain.manifest import ManifestError
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
-    nodeless_model = written("model.test.nodeless", {**_manifest(DDRNET), "templates": []})
-    with pytest.raises(ManifestError, match="a model package defines the node that runs its model"):
+    nodeless_model = _written(tmp_path, "model.test.nodeless", {**_manifest(DDRNET), "templates": []}, A_MODULE)
+    with pytest.raises(ManifestError, match=NO_TEMPLATES):
         load_package_manifest(nodeless_model)
-    assert [list(e.absolute_path) for e in validator.iter_errors(_manifest(nodeless_model))] == [["templates"]]
+    assert _schema_errors(_manifest(nodeless_model)) == [["templates"]]
 
-    not_a_list = written("ai.test.not-a-list", {**_manifest(PACKAGE), "templates": {"id": "x"}})
-    with pytest.raises(ManifestError, match="templates must be a list"):
+    not_a_list = _written(tmp_path, "ai.test.not-a-list", {**_manifest(PACKAGE), "templates": {"id": "x"}}, A_MODULE)
+    with pytest.raises(ManifestError, match=NO_TEMPLATES):
         load_package_manifest(not_a_list)
+    unnamed = {key: value for key, value in _manifest(PACKAGE).items() if key != "templates"}
+    with pytest.raises(ManifestError, match=NO_TEMPLATES):
+        load_package_manifest(_written(tmp_path, "ai.test.unnamed", unnamed, A_MODULE))
 
 
 def test_the_module_offers_segment_images_and_imports_nothing_of_curios():
@@ -306,6 +352,33 @@ def test_adding_ddrnet_adds_the_package(tmp_curio):
     assert outcome.packages == (PACKAGE.name, DDRNET.name), outcome
     assert (package_dir("guest", PACKAGE.name) / "sources" / f"{MODULE}.py").is_file()
     assert (package_dir("guest", DDRNET.name) / "sources" / "image-segmentation.py").is_file()
+
+
+def test_an_install_of_ddrnet_from_the_catalog_brings_the_package(client, user_and_token, tmp_curio):
+    """``POST /api/packages/catalog/install``, a catalog's Update and the
+    models a skill evaluation's account holds, brings the package too: on
+    main it copied DDRNet23-Slim alone. An Update brings it back to an
+    account that removed it."""
+    from utk_curio.backend.app.packages.repositories.store import package_dir
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    key = _user_dir_key(user)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def install(replace: bool):
+        return client.post(
+            "/api/packages/catalog/install", json={"dirName": DDRNET.name, "replace": replace}, headers=headers,
+        )
+
+    added = install(False)
+    assert added.status_code == 201, added.get_data(as_text=True)
+    assert (package_dir(key, PACKAGE.name) / "sources" / f"{MODULE}.py").is_file()
+    assert client.delete(f"/api/packages/{PACKAGE.name}", headers=headers).status_code == 204
+    assert not package_dir(key, PACKAGE.name).exists()
+    updated = install(True)
+    assert updated.status_code == 201, updated.get_data(as_text=True)
+    assert (package_dir(key, PACKAGE.name) / "sources" / f"{MODULE}.py").is_file()
 
 
 def test_the_examples_seeding_brings_it():

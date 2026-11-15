@@ -626,27 +626,34 @@ def install_to_store(user_key: str, dir_name: str) -> InstallOutcome:
     )
 
 
-def _copy_the_missing(user_key: str, dir_name: str, needed: list[str]) -> InstallOutcome:
-    """:func:`_copy_from_catalog` of each of *needed*, the packages
-    *dir_name* needs, but *dir_name* and those the store holds."""
-    return _copy_from_catalog(user_key, [
+def _the_missing(user_key: str, dir_name: str, needed: list[str]) -> list[str]:
+    """Each of *needed*, the packages *dir_name* needs, but *dir_name* and
+    those the store holds."""
+    return [
         other for other in needed
         if other != dir_name and not packages_store_reads._is_installed_in_user_store(user_key, other)
-    ])
+    ]
 
 
-def bring_needed_packages(user_key: str, dir_name: str) -> InstallOutcome:
+def _copy_the_missing(user_key: str, dir_name: str, needed: list[str]) -> InstallOutcome:
+    """:func:`_copy_from_catalog` of :func:`_the_missing`."""
+    return _copy_from_catalog(user_key, _the_missing(user_key, dir_name, needed))
+
+
+def bring_needed_packages(user_key: str, dir_name: str, *, its_catalog_copy: bool = False) -> InstallOutcome:
     """Copy from the shared catalog each package *dir_name*, which the store
     holds, needs (``dependencies.packages``, and theirs in turn) that the
     store lacks, with the python deps each declares, those it needs first, as
     ``install_to_store`` brings them: what a model downloaded from the
-    Discovery Catalog needs, its node's code importing their modules. A
-    package neither the store nor the catalog holds at a version its entry
-    allows refuses the whole step (a ``PackageServiceError``, 409); when one
-    copy fails, every copy this call made is taken back. ``packages`` is
-    *dir_name* with every package it needs."""
+    Discovery Catalog needs, its node's code importing their modules. With
+    *its_catalog_copy*, what the catalog's copy of *dir_name* needs, which the
+    store need not hold and which is not copied itself. A package neither the
+    store nor the catalog holds at a version its entry allows refuses the
+    whole step (a ``PackageServiceError``, 409); when one copy fails, every
+    copy this call made is taken back. ``packages`` is *dir_name* with every
+    package it needs."""
     packages_provisioning.assert_may_install()
-    needed = packages_dependencies.packages_to_add(user_key, dir_name)
+    needed = packages_dependencies.packages_to_add(user_key, dir_name, its_catalog_copy=its_catalog_copy)
     brought = _copy_the_missing(user_key, dir_name, needed)
     return InstallOutcome(
         copied=brought.copied,
@@ -656,21 +663,42 @@ def bring_needed_packages(user_key: str, dir_name: str) -> InstallOutcome:
     )
 
 
-def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> InstallResult:
-    """Install a catalog package by its on-disk directory name (the Node
-    Catalog's Update, with ``replace``). Copies ``<repo_root>/packages/<dir_name>/`` into the
-    user's store through the same validator, size caps and integrity writer the
-    sideload uses; ``InstallerError`` propagates. A missing catalog entry is a
-    :class:`PackageServiceError` 404."""
+def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> tuple[InstallResult, InstallOutcome]:
+    """Install a catalog package by its on-disk directory name (a catalog's
+    Update, with ``replace``, and the models a skill evaluation's account
+    holds, ``skill_eval_worker._hold_models``). Copies
+    ``<repo_root>/packages/<dir_name>/`` into the user's store through the same
+    validator, size caps and integrity writer the sideload uses;
+    ``InstallerError`` propagates. A missing catalog entry is a
+    :class:`PackageServiceError` 404.
+
+    The packages the catalog's copy names in ``dependencies.packages``, and
+    theirs in turn, that the store lacks land first, with the python deps each
+    declares, as an add brings them: an Update whose new version names a
+    package anew brings it. They are resolved from that copy before anything
+    is copied, so a package neither the store nor the catalog holds at a
+    version its entry allows refuses the install (409) and nothing lands. When
+    one of their copies fails, every copy this call made is taken back
+    (:func:`_copy_from_catalog`), and so they are when the package's own copy
+    fails. Answers the package's install and what the packages brought for it
+    did (their libraries, for ``provisioning.with_brought``)."""
     packages_provisioning.assert_may_install()
     src = packages_catalog_dir.catalog_root() / dir_name
     if not src.is_dir():
         raise PackageServiceError(f"catalog has no package {dir_name}", 404)
-    result = install_package_from_directory(user_key, src, replace=replace)
+    needed = packages_dependencies.packages_to_add(user_key, dir_name, its_catalog_copy=True)
+    missing = _the_missing(user_key, dir_name, needed)
+    brought = _copy_from_catalog(user_key, missing)
+    try:
+        result = install_package_from_directory(user_key, src, replace=replace)
+    except Exception:
+        for other in reversed(missing):
+            _take_back(user_key, other)
+        raise
     # Same as the first copy in _ensure_user_store_install: a replaced backend
     # entry keeps its old pin otherwise, and every invocation is refused.
     packages_backend_runtime.record_entry_pin(user_key, dir_name)
-    return result
+    return result, brought
 
 
 def remove_package(user_key: str, dir_name: str) -> None:

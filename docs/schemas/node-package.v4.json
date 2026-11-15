@@ -137,7 +137,7 @@
     },
     "templates": {
       "type": "array",
-      "description": "Node templates this package defines. Each entry becomes a draggable node in the canvas palette. A package that ships only modules in sources/, for the packages that name it in dependencies.packages, defines none; a model package defines at least one, the node that runs its model.",
+      "description": "Node templates this package defines. Each entry becomes a draggable node in the canvas palette. A package that defines none is a library: it ships at least one Python module in sources/, for the packages that name it in dependencies.packages, and Curio refuses one that ships neither. A model package defines at least one, the node that runs its model.",
       "items": { "$ref": "#/$defs/template" }
     },
     "backend": {

@@ -40,20 +40,23 @@
     },
     {
       "id": 3,
-      "dataflow": "docs/examples/dataflows/default-workflow.json",
+      "dataflow": "evals/files/street-photos-segmentation.json",
       "models": ["model.curio.ddrnet23-slim@1"],
-      "prompt": "In a Python node, label the Lincoln Park street photos with the street-scene segmentation model in my Model Catalog, and give me each photo's share of vegetation and of sky, with a link to its overlay.",
-      "expected_output": "One new Python node whose code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), loads the model with curio_load_model(\"model.curio.ddrnet23-slim\"), opens its ONNX file in an onnxruntime session on model.path, labels each photo's pixels as the model's manifest says to feed it, writes each photo's overlay where curio_derived_file(dataset_id, file_id, 0, \"png\", kind=\"image\") says, and returns one row per photo with vegetation_pct, sky_pct and overlay_url.",
+      "prompt": "In an Image Segmentation node, label the Lincoln Park street photos with the street-scene segmentation model in my Model Catalog, and give me each photo's share of vegetation and of sky, with a link to its overlay.",
+      "expected_output": "One new node of DDRNet23-Slim's Image Segmentation template (model.curio.ddrnet23-slim/image-segmentation) whose code is its settings and one call, as the template's own code is: it reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), loads the model with curio_load_model(\"model.curio.ddrnet23-slim\"), sets classes to [\"vegetation\", \"sky\"], and returns segment_images(photos, model, curio_derived_file, classes=classes), the Segmentation package's function, imported from semantic_segmentation, whose rows carry each photo's vegetation_pct, sky_pct and overlay_url.",
       "assertions": [
-        "The answer creates one new node (node.create) of a Python code template.",
+        "The answer creates one new node (node.create) of DDRNet23-Slim's Image Segmentation template, model.curio.ddrnet23-slim/image-segmentation.",
         "The code it writes reads the photos with curio_load_collection(\"data.curio.mapillary-sample\").",
         "The code loads the model with curio_load_model and the model's id written as a string, model.curio.ddrnet23-slim (with or without @1).",
-        "The code runs the model itself, in an onnxruntime session it opens on model.path: it feeds each photo at the width, height and dtype its manifest's input names and takes each pixel's class from the scores, finding vegetation and sky among the manifest's labels; it opens no model file by a path of its own.",
-        "The code writes each photo's overlay where curio_derived_file(dataset_id, file_id, 0, \"png\", kind=\"image\", ...) says, and returns one row per photo with vegetation_pct and sky_pct, each the class's share of all the photo's pixels in percent, and overlay_url, the overlay's link."
+        "The code labels the photos with the Segmentation package's function: it imports segment_images from semantic_segmentation and returns segment_images(photos, model, curio_derived_file, ...) of the photos and the model it loaded; it runs no model of its own, opening no onnxruntime session.",
+        "The code names vegetation and sky as the classes to report (classes=[\"vegetation\", \"sky\"]), so each photo's row carries vegetation_pct and sky_pct, each the class's share of the photo's pixels in percent, and overlay_url, its overlay's link."
       ],
       "checks": [
+        {"assertion": 1, "kind": "node-added", "type": "model.curio.ddrnet23-slim/image-segmentation", "count": 1},
         {"assertion": 2, "kind": "code", "pattern": "curio_load_collection\\(\\s*[\"']data\\.curio\\.mapillary-sample[\"']"},
-        {"assertion": 3, "kind": "code", "pattern": "curio_load_model\\(\\s*[\"']model\\.curio\\.ddrnet23-slim(?:@1)?[\"']"}
+        {"assertion": 3, "kind": "code", "pattern": "curio_load_model\\(\\s*[\"']model\\.curio\\.ddrnet23-slim(?:@1)?[\"']"},
+        {"assertion": 4, "kind": "code", "pattern": "\\bsemantic_segmentation\\b[\\s\\S]*\\bsegment_images\\s*\\([\\s\\S]*?\\bcurio_derived_file\\b"},
+        {"assertion": 4, "kind": "code", "pattern": "^[^#\\n]*\\b(?:onnxruntime|InferenceSession)\\b", "absent": true}
       ]
     },
     {

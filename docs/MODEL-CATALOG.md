@@ -127,7 +127,7 @@ classes = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
 return segment_images(input_0, model, curio_derived_file, classes=classes)
 ```
 
-A new Image Segmentation node opens with `classes = None`, every class the model names. DDRNet23-Slim's package, and the package of every segmentation model you add from the Discovery Catalog, name the Segmentation package in `dependencies.packages`: adding the model adds it, and the header above the node's code lists `segment_images` under **Functions**. A dataflow saved with a call of `curio_segment`, which was Curio's, stops when the node runs, with a message naming `segment_images`.
+A new Image Segmentation node opens with `classes = None`, every class the model names. DDRNet23-Slim's package, and the package of every segmentation model you add from the Discovery Catalog, name the Segmentation package in `dependencies.packages`: adding the model adds it, and the header above the node's code lists `segment_images` under **Functions**. A segmentation model you added from the Discovery Catalog before its node had this code gets it, with the Segmentation package, the next time you open a dataflow or a catalog. A dataflow saved with a call of `curio_segment`, which was Curio's, stops when the node runs, with a message naming `segment_images`.
 
 `segment_images` reads a collection's rows, each with a `path`, as a Data Loading node gives them for images from the Data or Discovery Catalog, and runs the model the way its manifest says: an `onnx` graph on onnxruntime, a `transformers` checkpoint with its own image processor and torch, both on the CPU. Each row comes back with the results as its first columns:
 

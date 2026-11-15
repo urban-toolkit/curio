@@ -16,7 +16,9 @@ from the shared catalog, and its libraries install by the packages' own path
 (:func:`install_downloaded_model_deps`).
 
 Its id is ``imported.x<hex>``. A refresh installs over the package it
-replaces, under the same id, so a node naming it runs the new files.
+replaces, under the same id, so a node naming it runs the new files. A package
+a download made before its source named a node is brought to that node when
+the store is read (:func:`upgrade_downloaded_models`).
 
 The Discovery Catalog asks here whether an account already holds a source
 row's model (:func:`downloaded_model_package`), whether it may add one, and
@@ -26,6 +28,8 @@ what to tell a client about the package it added (:func:`model_package_row`).
 from __future__ import annotations
 
 import json
+import logging
+import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -35,14 +39,18 @@ from utk_curio.backend.app.packages.application import provisioning as packages_
 from utk_curio.backend.app.packages.application import store_install as packages_store_install
 from utk_curio.backend.app.packages.builder.factory import rename_model_calls
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
-from utk_curio.backend.app.packages.domain.manifest import ManifestError, PackageManifest
+from utk_curio.backend.app.packages.domain.manifest import ManifestError, PackageManifest, package_manifest_from_dict
 from utk_curio.backend.app.packages.domain.model_block import MODELS_DIR
 from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
 from utk_curio.backend.app.packages.domain.spec_packages import dir_name_from_node_type, is_package_node_type
+from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.repositories import catalog_dir as packages_catalog_dir
-from utk_curio.backend.app.packages.repositories.archive import zip_package_tree_to
+from utk_curio.backend.app.packages.repositories.archive import refresh_integrity_of, zip_package_tree_to
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+from utk_curio.backend.app.packages.repositories.store import list_user_packages
 from utk_curio.backend.app.users.capabilities import install_refusal, package_install_refusal
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -57,6 +65,8 @@ class ModelNode:
     model_id: str
     #: Its package's ``dependencies.packages``, which the node's code imports.
     packages: dict = field(default_factory=dict)
+    #: Its package in the shared catalog, ``<packageId>@<major>``.
+    package: str = ""
 
     def code_for(self, model_id: str) -> str:
         """The node's code with every ``curio_load_model`` call naming *model_id*."""
@@ -102,6 +112,7 @@ def model_node(node_type: object) -> ModelNode:
         code=path.read_text(encoding="utf-8"),
         model_id=package_id,
         packages=dict(deps.get("packages") or {}),
+        package=folder.name,
     )
 
 
@@ -145,12 +156,127 @@ def install_downloaded_model_deps(user_key: str, manifest: PackageManifest) -> d
         report = packages_provisioning.provision_declared_deps(user_key, manifest.dir_name, manifest)
         return {**report, "dependencyError": str(exc)}
     report = packages_provisioning.provision_declared_deps(user_key, manifest.dir_name, manifest)
-    if brought.import_errors:
-        report["importErrors"] = {**brought.import_errors, **(report.get("importErrors") or {})}
-    if brought.installed:
-        libs = sorted({*brought.installed, *((report.get("restartRecommended") or {}).get("libs") or [])})
-        report["restartRecommended"] = {"libs": libs}
-    return report
+    return packages_provisioning.with_brought(report, brought)
+
+
+def upgrade_downloaded_models(user_key: str) -> list[str]:
+    """Bring each model package *user_key* downloaded from the Discovery
+    Catalog before its source named the node a model gets
+    (``provider.options.node``) to the form a download makes now, and answer
+    the dirNames brought. Such a package holds one template with no
+    ``source``, the node Curio wrote then for a segmentation model, which
+    opened with a ``curio_segment`` call, and names no package. It gets the
+    node its source names (:func:`model_node`) in that template's place, that
+    node's code naming the model, and the packages that node's package names,
+    which are copied into the store first
+    (``store_install.bring_needed_packages``). Nothing else of the package
+    changes, its ``model`` block and weights among it, and its
+    ``integrity.json`` is rewritten for the two files written. A package whose
+    template is another node, or which holds a file where the node's code
+    goes, is left as it is, and so is one whose node needs a package that
+    cannot be had. A package brought has a ``source``, so another pass leaves
+    it alone. The seeder runs this on each read of the store."""
+    found = []
+    for folder in list_user_packages(user_key):
+        raw = _manifest_of(folder)
+        source_id = _downloaded_before_its_node(raw)
+        if source_id is not None:
+            found.append((folder, raw, source_id))
+    nodes: dict[str, ModelNode | None] = {}
+    brought: list[str] = []
+    for folder, raw, source_id in found:
+        if source_id not in nodes:
+            nodes[source_id] = _node_its_source_names(user_key, source_id)
+        node = nodes[source_id]
+        if node is None or not _takes(folder, raw, node):
+            continue
+        try:
+            packages_store_install.bring_needed_packages(user_key, node.package, its_catalog_copy=True)
+        except PackageServiceError as exc:
+            log.info("Left the model %s as it was downloaded: %s", folder.name, exc)
+            continue
+        with package_seed_lock(user_key):
+            raw = _manifest_of(folder)
+            if _downloaded_before_its_node(raw) == source_id and _takes(folder, raw, node) and _bring(folder, raw, node):
+                brought.append(folder.name)
+    return brought
+
+
+def _manifest_of(folder: Path) -> dict | None:
+    try:
+        raw = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
+def _downloaded_before_its_node(raw: dict | None) -> str | None:
+    """The Discovery Catalog source the model package whose manifest is *raw*
+    was downloaded from, when it holds one template and that template names
+    no ``source``; else None."""
+    model = raw.get("model") if raw is not None and raw.get("kind") == "model" else None
+    source = model.get("discoverySource") if isinstance(model, dict) else None
+    source_id = source.get("sourceId") if isinstance(source, dict) else None
+    templates = raw.get("templates") if isinstance(source_id, str) and source_id else None
+    if not isinstance(templates, list) or len(templates) != 1 or not isinstance(templates[0], dict):
+        return None
+    return None if "source" in templates[0] else source_id
+
+
+def _node_its_source_names(user_key: str, source_id: str) -> ModelNode | None:
+    """The node the Discovery Catalog source *source_id* names for the models
+    it adds, or None when the source is gone or names no node the shared
+    catalog holds."""
+    # In the function: the Discovery Catalog's modules import this one.
+    from utk_curio.backend.app.discovery import service as discovery_service
+
+    try:
+        options = discovery_service.DiscoveryService(user_key).get_manifest(source_id).provider.options
+    except discovery_service.SourceNotFound:
+        return None
+    try:
+        return model_node(options.get("node"))
+    except PackageServiceError:
+        return None
+
+
+def _takes(folder: Path, raw: dict, node: ModelNode) -> bool:
+    """Whether the package in *folder*, whose manifest is *raw*, takes *node*:
+    its one template has *node*'s id, and no file is where *node*'s code goes."""
+    [template] = raw["templates"]
+    code = folder / PurePosixPath(node.template["source"])
+    return template.get("id") == node.template.get("id") and not code.exists() and not code.is_symlink()
+
+
+def _bring(folder: Path, raw: dict, node: ModelNode) -> bool:
+    """Write *node* into the package in *folder*, whose manifest is *raw*: its
+    code, naming the package's model, its template in place of the one the
+    package holds, and the packages its package names beside those the
+    package names. Answers whether it was written: a manifest the parser
+    refuses is not."""
+    dependencies = dict(raw.get("dependencies") or {})
+    dependencies["packages"] = {**node.packages, **dict(dependencies.get("packages") or {})}
+    upgraded = {**raw, "dependencies": dependencies, "templates": [json.loads(json.dumps(node.template))]}
+    try:
+        package_manifest_from_dict(upgraded, manifest_path=folder / "manifest.json", dir_name=folder.name)
+    except ManifestError as exc:
+        log.warning("Left the model %s as it was downloaded: %s", folder.name, exc)
+        return False
+    relative = PurePosixPath(node.template["source"]).as_posix()
+    (folder / relative).parent.mkdir(parents=True, exist_ok=True)
+    _write(folder / relative, node.code_for(str(raw.get("id") or "")))
+    _write(folder / "manifest.json", json.dumps(upgraded, indent=2) + "\n")
+    refresh_integrity_of(folder, ["manifest.json", relative])
+    log.info("Brought the model %s to the node %s/%s", folder.name, node.package, node.template.get("id"))
+    return True
+
+
+def _write(path: Path, text: str) -> None:
+    """Write *text* to *path* through a file beside it, so a reader finds the
+    old file or the new one."""
+    partial = path.with_name(f".{path.name}.part")
+    partial.write_text(text, encoding="utf-8")
+    os.replace(partial, path)
 
 
 def model_package_row(manifest: PackageManifest) -> dict:
