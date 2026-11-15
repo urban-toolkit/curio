@@ -19,6 +19,7 @@ import {
   MissingModuleNotice,
   type InstallState,
 } from "../../../components/editing/MissingModuleNotice";
+import { CATALOG_SECTIONS } from "../../../components/layout/catalogSections";
 import type { MissingModuleNotice as Notice } from "../../../types/nodeTypes";
 
 function notice(over: Partial<Notice> = {}): Notice {
@@ -193,5 +194,53 @@ describe("when the caller may not install (#309)", () => {
     expect(screen.getByText(/scikit-learn is not installed/)).toBeInTheDocument();
     expect(screen.getByText(/not available for guest users/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Install/ })).toBeNull();
+  });
+});
+
+describe("a module a package ships", () => {
+  // Never a pip install: the index's distribution of that name is not the
+  // package's module. The notice names the package and where to add it.
+  const tracker = { id: "ai.test.tracker", name: "Tracker" };
+
+  it.each([
+    ["model", "Model Catalog"],
+    ["node", "Node Catalog"],
+  ] as const)("says to add a %s package from the %s", (kind, catalog) => {
+    renderNotice({
+      module: "tracking_helpers", distribution: null, installable: false,
+      reason: "package-not-added", package: { ...tracker, kind },
+    });
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText(
+      `tracking_helpers is a module of Tracker. Add Tracker to this project from the ${catalog}, then run the node again.`,
+    )).toBeInTheDocument();
+    // The name the top bar gives the catalog, whose button opens its drawer.
+    expect(CATALOG_SECTIONS.map((section) => section.name)).toContain(catalog);
+  });
+
+  it("says why a caller who may not add packages cannot, in place of the add", () => {
+    renderNotice({
+      module: "tracking_helpers", distribution: null, installable: false,
+      reason: "package-not-added", package: { ...tracker, kind: "model" },
+      detail:
+        "Installing packages is not available for guest users, because every "
+        + "guest shares one account. Sign in with an account to install one.",
+    });
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText(
+      /^tracking_helpers is a module of Tracker\. Installing packages is not available for guest users/,
+    )).toBeInTheDocument();
+    expect(screen.queryByText(/Add Tracker/)).toBeNull();
+  });
+
+  it("names the nodes that import a module of a package the account has", () => {
+    renderNotice({
+      module: "tracking_helpers", distribution: null, installable: false,
+      reason: "package-module", package: { ...tracker, kind: "node" }, nodes: ["Track", "Follow"],
+    });
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText(
+      "tracking_helpers is a module of Tracker. Only these nodes import it: Track, Follow.",
+    )).toBeInTheDocument();
   });
 });

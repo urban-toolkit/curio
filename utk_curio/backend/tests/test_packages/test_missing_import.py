@@ -14,10 +14,16 @@ Three claims, in descending order of how easy they are to get wrong:
 3. **It shares one alias table with the manifest scanner.** ``sklearn`` must
    resolve to ``scikit-learn`` in both places or a package built from a node's
    imports would declare a dependency the install button cannot install.
+4. **A module a package ships is the package's, never pip's.** Offering
+   ``pip install <module>`` for it installs whatever the index has under that
+   name; the answer names the package to add, or the nodes that import it.
 """
 from __future__ import annotations
 
+import io
+import json
 import sys
+import zipfile
 
 import pytest
 
@@ -233,3 +239,199 @@ def test_never_raises_on_malformed_input(monkeypatch):
         lambda module: (_ for _ in ()).throw(RuntimeError("boom")),
     )
     assert detect(_traceback("ModuleNotFoundError: No module named 'sklearn'")) is None
+
+
+# ── 5. A module a package ships ─────────────────────────────────────────────
+#
+# A package's modules sit beside its templates in ``sources/`` (#468), and a
+# run hands them only to the nodes of that package and of the packages that
+# depend on it. Any other node, or any node of an account that has not added
+# the package, ends in ModuleNotFoundError for one. The package here is built
+# as tests build a catalog's: a folder in a ``CURIO_PACKAGES_ROOT`` of the
+# test's own, or an archive installed into an account.
+
+MODULE = "tracking_helpers"
+PACKAGE_ID = "ai.test.tracker"
+
+
+def _package_files(*, kind: str = "node") -> dict[str, str]:
+    """The files of a package named Tracker that ships the module MODULE
+    beside its one template, Track, whose source imports it; *kind*
+    ``model`` makes it a model package."""
+    manifest = {
+        "id": PACKAGE_ID, "version": "1.0.0", "name": "Tracker", "publisher": "Test",
+        "description": "Test package", "license": "MIT",
+        "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+        "permissions": [], "dependencies": {"packages": {}, "python": {}, "js": {}},
+        "createdAt": "2026-06-01T12:00:00Z",
+        "templates": [{
+            "id": "track", "label": "Track", "category": "computation", "engine": "python",
+            "editor": "code", "hasCode": True, "hasWidgets": False, "hasGrammar": False,
+            "inputPorts": [], "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+            "source": "sources/track.py",
+        }],
+    }
+    files = {
+        "sources/track.py": f"from {MODULE} import track\nreturn track()\n",
+        f"sources/{MODULE}.py": "def track():\n    return 1\n",
+    }
+    if kind == "model":
+        manifest["kind"] = "model"
+        manifest["model"] = {
+            "type": "node-regression", "runtime": "onnx", "entry": "models/w.onnx",
+            "labels": [], "license": "MIT", "sizeBytes": 1,
+        }
+        files["models/w.onnx"] = "0"
+    files["manifest.json"] = json.dumps(manifest)
+    return files
+
+
+def _archive(files: dict[str, str]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w") as zf:
+        for relative, text in files.items():
+            zf.writestr(relative, text)
+    return buf.getvalue()
+
+
+@pytest.fixture()
+def catalog(tmp_curio, monkeypatch):
+    """A package catalog of the test's own, empty until a test puts the
+    package in it."""
+    root = tmp_curio / "catalog"
+    root.mkdir()
+    monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(root))
+    return root
+
+
+def _put_in_catalog(root, *, kind: str = "node"):
+    """Put the package in the catalog at *root* as ``packages/`` holds one,
+    and return its manifest as Curio reads it."""
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+
+    folder = root / f"{PACKAGE_ID}@1"
+    for relative, text in _package_files(kind=kind).items():
+        path = folder / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return load_package_manifest(folder)
+
+
+@pytest.mark.parametrize("kind", ["node", "model"])
+def test_a_module_a_catalog_package_ships_names_the_package_to_add(catalog, monkeypatch, kind):
+    # The premise, stated: no library installed here provides it, and the
+    # package reads as the kind it is (a manifest that does not read ships
+    # nothing).
+    monkeypatch.setattr(pip_runner, "distributions_for_module", lambda name: [])
+    manifest = _put_in_catalog(catalog, kind=kind)
+    assert manifest.kind == kind
+
+    found = detect(_traceback(f"ModuleNotFoundError: No module named '{MODULE}'"))
+    assert found["installable"] is False, found
+    assert found["reason"] == "package-not-added"
+    assert found["distribution"] is None
+    assert found["package"] == {"id": PACKAGE_ID, "kind": kind, "name": "Tracker"}
+
+
+def test_a_submodule_of_a_package_module_names_the_package(catalog, monkeypatch):
+    monkeypatch.setattr(pip_runner, "distributions_for_module", lambda name: [])
+    _put_in_catalog(catalog)
+    found = detect(_traceback(
+        f"ModuleNotFoundError: No module named '{MODULE}.paths'; '{MODULE}' is not a package"
+    ))
+    assert found["module"] == MODULE
+    assert found["installable"] is False, found
+    assert found["reason"] == "package-not-added"
+
+
+@pytest.mark.parametrize("module", ["curio_absent_for_this_test", "track"])
+def test_a_module_no_package_ships_is_still_offered(catalog, monkeypatch, module):
+    # The guard: with the package in the catalog, a name it does not ship is
+    # a library's as before. ``sources/track.py`` is its template's code, not
+    # a module (``domain/python_modules.py``), so ``track`` is one of those.
+    monkeypatch.setattr(pip_runner, "distributions_for_module", lambda name: [])
+    _put_in_catalog(catalog)
+    found = detect(_traceback(f"ModuleNotFoundError: No module named '{module}'"))
+    assert found["installable"] is True, found
+    assert found["reason"] is None
+    assert found["distribution"] == module
+    assert "package" not in found
+
+
+class TestTheReplyOfAPlay:
+    """What ``/processPythonCode`` answers when a built-in Python node that
+    imports MODULE fails for it: the package, by the account's packages and
+    the catalog's, and never an install of the module's name. The sandbox
+    answers with that run's traceback."""
+
+    CODE = f"from {MODULE} import track\nreturn track()\n"
+
+    def _play(self, client, token, monkeypatch):
+        stderr = _traceback(f"ModuleNotFoundError: No module named '{MODULE}'")
+
+        class Reply:
+            status_code = 200
+
+            def json(self):
+                return {"stdout": [], "stderr": stderr, "output": {"path": "", "dataType": "str"}}
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.execution.node_exec.sandbox_request",
+            lambda method, path, **kwargs: Reply(),
+        )
+        monkeypatch.setattr(pip_runner, "distributions_for_module", lambda name: [])
+        resp = client.post("/processPythonCode", json={
+            "code": self.CODE, "nodeType": "curio.builtin/python-computation", "nodeId": "n1",
+            "input": {"path": "", "dataType": "str"}, "saveOutputDataset": False,
+        }, headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        return resp.get_json()["missingModule"]
+
+    def test_an_account_without_the_package_is_told_to_add_it(
+        self, client, user_and_token, catalog, monkeypatch,
+    ):
+        _put_in_catalog(catalog, kind="model")
+        found = self._play(client, user_and_token[1], monkeypatch)
+        assert found["installable"] is False, found
+        assert found["reason"] == "package-not-added"
+        assert found["distribution"] is None
+        assert found["package"] == {"id": PACKAGE_ID, "kind": "model", "name": "Tracker"}
+        assert found["detail"] is None
+
+    def test_a_guest_who_may_not_add_packages_is_told_why(self, client, db, catalog, monkeypatch):
+        # The run on dev (11-15): a guest's Track Objects. Guests may install
+        # neither libraries nor packages, so the package is named with the
+        # reason it cannot be added here.
+        from utk_curio.backend import config
+        from utk_curio.backend.app.users.models import User, UserSession
+
+        monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+        guest = User(username="guest_tracker", name="Guest", is_guest=True)
+        db.session.add(guest)
+        db.session.flush()
+        db.session.add(UserSession(user_id=guest.id, token="guest-tracker-token"))
+        db.session.commit()
+        _put_in_catalog(catalog, kind="model")
+
+        found = self._play(client, "guest-tracker-token", monkeypatch)
+        assert found["installable"] is False, found
+        assert found["reason"] == "package-not-added"
+        assert found["package"] == {"id": PACKAGE_ID, "kind": "model", "name": "Tracker"}
+        assert "guest" in found["detail"].lower()
+
+    def test_an_account_with_the_package_is_told_which_nodes_import_it(
+        self, client, user_and_token, catalog, monkeypatch,
+    ):
+        # The account added the package, and a node of another kind imports
+        # its module: only the package's nodes get it.
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        install_package_from_archive(_user_dir_key(user), _archive(_package_files()))
+        found = self._play(client, token, monkeypatch)
+        assert found["installable"] is False, found
+        assert found["reason"] == "package-module"
+        assert found["distribution"] is None
+        assert found["package"] == {"id": PACKAGE_ID, "kind": "node", "name": "Tracker"}
+        assert found["nodes"] == ["Track"]
