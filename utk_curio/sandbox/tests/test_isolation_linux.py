@@ -65,6 +65,40 @@ MEMORY_HEADROOM_MB = 256
 # Created by the Dockerfile. Only exists inside the image.
 EXEC_USER = "curio-exec"
 
+#: Where the container's cgroups are.
+CGROUP_ROOT = "/sys/fs/cgroup"
+
+
+def _node_memory(request):
+    """The memory limit a test's zygote gives its nodes: the address-space cap
+    for a test marked ``address_space``, which runs as it ran before nodes had
+    a cgroup, else what the container allows (``lifecycle.ensure_running``)."""
+    if request.node.get_closest_marker("address_space") is None:
+        return None
+    from utk_curio.sandbox.isolation import node_cgroups
+
+    return node_cgroups.ADDRESS_SPACE
+
+
+def _require_places():
+    """Fail, never skip, where the zygote gave its nodes no cgroup: CI's
+    containers ask Docker for writable cgroups (docker-compose.ci.yml)."""
+    from utk_curio.sandbox.isolation import lifecycle, node_cgroups
+
+    kind, reason = lifecycle.memory_limit()
+    if kind != node_cgroups.CGROUP:
+        pytest.fail(
+            f"the zygote's nodes have no cgroup here: {node_cgroups.REASONS.get(reason, reason)}. "
+            "A container needs Docker's writable-cgroups option and a private cgroup namespace "
+            "(docker-compose.ci.yml)."
+        )
+
+
+def _own_place(seen):
+    """The place a node said it ran in (its ``/proc/self/cgroup``), as a path."""
+    assert seen.startswith("/nodes/"), f"the node ran in the cgroup {seen!r}, not a place under /nodes"
+    return CGROUP_ROOT + seen
+
 
 def _memory_bytes(text):
     """Parse a DuckDB memory_limit reading into bytes.
@@ -108,6 +142,10 @@ def isolated(request, workspace, monkeypatch):
     Parametrize indirectly to run a test at a different memory budget; the
     tests that care read it back off ``config.limits`` rather than the module
     constant, so they stay true whichever budget they were given.
+
+    Its nodes run in a cgroup each where the container allows it, as a
+    deployment's do, and under the address-space cap in a test marked
+    ``address_space``.
     """
     from utk_curio.sandbox.isolation import lifecycle, runner
 
@@ -121,7 +159,8 @@ def isolated(request, workspace, monkeypatch):
     monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", str(budget_mb))
 
     config = runner.IsolationConfig.from_environment()
-    lifecycle.ensure_running(config, exec_user=None, require_seccomp=HAS_PYSECCOMP)
+    lifecycle.ensure_running(config, exec_user=None, require_seccomp=HAS_PYSECCOMP,
+                             memory_limit=_node_memory(request))
     try:
         yield config
     finally:
@@ -129,7 +168,15 @@ def isolated(request, workspace, monkeypatch):
 
 
 @pytest.fixture
-def isolated_dropped(tmp_path_factory, monkeypatch):
+def isolated_in_places(isolated):
+    """``isolated``, whose nodes must each run in a place: a cgroup at its
+    budget."""
+    _require_places()
+    return isolated
+
+
+@pytest.fixture
+def isolated_dropped(request, tmp_path_factory, monkeypatch):
     """A zygote whose children run as an unprivileged user.
 
     The default ``isolated`` fixture configures no execution user, so inside the
@@ -178,7 +225,8 @@ def isolated_dropped(tmp_path_factory, monkeypatch):
 
     config = runner.IsolationConfig.from_environment()
     lifecycle.ensure_running(
-        config, exec_user=EXEC_USER, require_seccomp=HAS_PYSECCOMP
+        config, exec_user=EXEC_USER, require_seccomp=HAS_PYSECCOMP,
+        memory_limit=_node_memory(request),
     )
     try:
         yield config
@@ -731,6 +779,7 @@ def test_the_child_can_write_inside_its_own_scratch_directory(isolated_dropped):
 # Resource limits
 # ---------------------------------------------------------------------------
 
+@pytest.mark.address_space
 def test_the_limits_are_actually_applied_in_the_child(isolated):
     """Read the limits back from inside the child.
 
@@ -861,6 +910,7 @@ def resource_unlimited():
     return resource.RLIM_INFINITY
 
 
+@pytest.mark.address_space
 @pytest.mark.parametrize("isolated", [128, 256, 1024], indirect=True)
 def test_a_dataframe_writes_parquet_under_the_memory_cap(isolated):
     """#334's actual failure mode, exercised rather than approximated (#358).
@@ -1098,6 +1148,7 @@ def test_a_capped_zygote_gives_arrow_the_system_allocator():
     assert lifecycle.zygote_environment({"memory_mb": None}, inherited) == inherited
 
 
+@pytest.mark.address_space
 def test_arrow_allocates_through_glibc_in_a_capped_child(isolated):
     """The pool the zygote's environment names is the one a child's Arrow uses.
 
@@ -1131,7 +1182,8 @@ def isolated_deployed(request, workspace, monkeypatch):
     monkeypatch.setenv("CURIO_EXEC_TIMEOUT", str(supervisor.DEFAULT_WALL_TIMEOUT_SECONDS))
     monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", str(supervisor.DEFAULT_LIMITS["memory_mb"]))
     config = runner.IsolationConfig.from_environment()
-    lifecycle.ensure_running(config, exec_user=None, require_seccomp=HAS_PYSECCOMP)
+    lifecycle.ensure_running(config, exec_user=None, require_seccomp=HAS_PYSECCOMP,
+                             memory_limit=_node_memory(request))
     try:
         yield config
     finally:
@@ -1174,6 +1226,7 @@ _COUNT_MALLOC_ARENAS = r'''
 '''
 
 
+@pytest.mark.address_space
 @pytest.mark.parametrize("isolated_deployed", ["many-core"], indirect=True)
 def test_threads_share_a_bounded_number_of_malloc_arenas(isolated_deployed):
     """However many threads a node's libraries start, the arenas are capped.
@@ -1227,6 +1280,7 @@ _RUN_DDRNET = r'''
 '''
 
 
+@pytest.mark.address_space
 @pytest.mark.parametrize("isolated_deployed", ["many-core"], indirect=True)
 def test_the_street_vision_model_runs_on_a_many_core_host(isolated_deployed):
     """Example 10's Image Segmentation, DDRNet23-Slim's node, at the default
@@ -1315,6 +1369,7 @@ _RUN_DDRNET_REPORTING = r'''
 '''
 
 
+@pytest.mark.address_space
 @pytest.mark.parametrize("isolated_deployed", ["many-core"], indirect=True)
 def test_an_onnx_session_starts_all_its_threads_inside_the_budget(isolated_deployed):
     """#743: an ONNX session with a thread per core, on any host size.
@@ -1369,6 +1424,7 @@ def python_thread_stack_kib():
 '''
 
 
+@pytest.mark.address_space
 def test_python_threads_keep_their_stack_in_a_capped_child(isolated_deployed):
     """A capped child gives library threads a smaller default stack (#743),
     and Python's own threads keep the one they have in process, so deep
@@ -1394,6 +1450,7 @@ def test_python_threads_keep_their_stack_in_a_capped_child(isolated_deployed):
     )
 
 
+@pytest.mark.address_space
 def test_a_runaway_allocation_hits_the_memory_limit(isolated):
     """RLIMIT_AS turns this into a MemoryError instead of an OOM kill.
 
@@ -1418,6 +1475,253 @@ def test_a_runaway_allocation_hits_the_memory_limit(isolated):
     # And specifically a memory failure, not a crash: a SIGSEGV here would mean
     # the child died for an unrelated reason and this test proved nothing.
     assert "signal" not in result["stderr"].lower(), result["stderr"][:300]
+
+
+# ---------------------------------------------------------------------------
+# A node's memory in its place: a cgroup at its budget
+# ---------------------------------------------------------------------------
+
+#: A node's code that returns its cgroup, from its /proc/self/cgroup.
+_OWN_CGROUP = (
+    "    with open('/proc/self/cgroup') as handle:\n"
+    "        return [line for line in handle.read().splitlines() if line.startswith('0::')][0][3:]\n"
+)
+
+
+def _ran_in(config, code=_OWN_CGROUP):
+    """The cgroup a node of *code* returned, run in *config*'s zygote."""
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    result = run_isolated(config, code)
+    assert result["stderr"] == "", result["stderr"]
+    return load_from_duckdb(result["output"]["path"])
+
+
+def test_a_nodes_place_holds_its_budget_in_place_of_the_address_space_cap(isolated_in_places):
+    """Read back from inside the child: its cgroup is a place of its zygote's,
+    at its budget, with no swap and one kill for all; no address-space cap;
+    the other limits as they were; and a score that puts it before the
+    servers when the host runs out of memory."""
+    from utk_curio.sandbox.isolation import lifecycle
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    result = run_isolated(
+        isolated_in_places,
+        "    import resource\n"
+        "    with open('/proc/self/cgroup') as handle:\n"
+        "        own = [line for line in handle.read().splitlines() if line.startswith('0::')][0][3:]\n"
+        "    def read(name):\n"
+        "        try:\n"
+        "            with open('/sys/fs/cgroup' + own + '/' + name) as handle:\n"
+        "                return handle.read().strip()\n"
+        "        except OSError:\n"
+        "            return None\n"
+        "    with open('/proc/self/oom_score_adj') as handle:\n"
+        "        score = int(handle.read())\n"
+        "    return {\n"
+        "        'cgroup': own, 'max': read('memory.max'), 'swap': read('memory.swap.max'),\n"
+        "        'group': read('memory.oom.group'), 'score': score,\n"
+        "        'as_unlimited': resource.getrlimit(resource.RLIMIT_AS)[0] == resource.RLIM_INFINITY,\n"
+        "        'cpu': resource.getrlimit(resource.RLIMIT_CPU)[0],\n"
+        "        'nproc': resource.getrlimit(resource.RLIMIT_NPROC)[0],\n"
+        "        'core': resource.getrlimit(resource.RLIMIT_CORE)[0],\n"
+        "    }\n",
+    )
+    assert result["stderr"] == "", result["stderr"]
+    seen = load_from_duckdb(result["output"]["path"])
+
+    assert seen["cgroup"].startswith(f"/nodes/{lifecycle._process.pid}/"), seen
+    assert seen["max"] == str(isolated_in_places.limits["memory_mb"] * 1024 * 1024), seen
+    # No swap where the kernel accounts for it, so a node over its budget
+    # stops rather than swaps.
+    assert seen["swap"] in (None, "0"), seen
+    assert seen["group"] == "1", seen
+    assert seen["score"] == 500, seen
+    assert seen["as_unlimited"] is True, f"the child still has an address-space cap: {seen}"
+    assert seen["cpu"] == isolated_in_places.limits["cpu_seconds"], seen
+    assert seen["nproc"] == isolated_in_places.limits["nproc"], seen
+    assert seen["core"] == 0, seen
+
+
+#: A node that starts a process of its own, says where it runs, then allocates
+#: ASK_MB and touches every page of it.
+_OVER_ITS_BUDGET = r'''
+    import subprocess
+    helper = subprocess.Popen(["sleep", "300"])
+    with open("/proc/self/cgroup") as handle:
+        own = [line for line in handle.read().splitlines() if line.startswith("0::")][0][3:]
+    with open(RECORD, "w") as handle:
+        handle.write(f"{helper.pid} {own}")
+    block = bytearray(b"\x01") * (ASK_MB * 1024 * 1024)
+    return len(block)
+'''
+
+
+def test_a_node_over_its_budget_stops_with_all_it_started_and_names_its_budget(isolated_in_places, workspace):
+    """A node that uses twice its budget stops, with the process it started,
+    and is told its budget, while a node beside it runs on, the zygote stays
+    up and the next node runs. Its place holds no process when its run is
+    reported.
+
+    Before, the address-space cap made the allocation a MemoryError at its
+    line, and SIGKILL, which a cgroup at its budget sends, read as "the usual
+    cause is exceeding the memory limit".
+    """
+    import threading
+
+    from utk_curio.sandbox.isolation import lifecycle
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    zygote = lifecycle._process.pid
+    budget_mb = isolated_in_places.limits["memory_mb"]
+    beside = {}
+
+    def run_beside():
+        beside["result"] = run_isolated(isolated_in_places, "    time.sleep(4)\n    return 7\n")
+
+    thread = threading.Thread(target=run_beside)
+    thread.start()
+    try:
+        record = workspace / "over-its-budget.txt"
+        result = run_isolated(
+            isolated_in_places,
+            _OVER_ITS_BUDGET.replace("RECORD", repr(str(record))).replace("ASK_MB", str(2 * budget_mb)),
+        )
+    finally:
+        thread.join(timeout=120)
+
+    assert result["output"]["path"] == ""
+    assert result["stderr"].startswith(
+        f"This node used more than its memory budget of {budget_mb} MB (--exec-memory-mb), "
+        "so it was stopped."
+    ), result["stderr"][:500]
+    helper, own = record.read_text().split()
+    place = _own_place(own)
+    assert not _alive(int(helper)), f"the process the node started ({helper}) outlived it"
+    with open(os.path.join(place, "cgroup.procs")) as handle:
+        left = handle.read().split()
+    assert left == [], f"its place {own} still holds {left} as its run is reported"
+    with open(os.path.join(place, "memory.events")) as handle:
+        assert re.search(r"^oom [1-9]", handle.read(), re.MULTILINE), "its place recorded no OOM"
+
+    assert beside["result"]["stderr"] == "", beside["result"]["stderr"]
+    assert load_from_duckdb(beside["result"]["output"]["path"]) == 7
+    assert lifecycle._process.pid == zygote and lifecycle._process.poll() is None, (
+        "the zygote did not survive a node stopped at its budget"
+    )
+    following = run_isolated(isolated_in_places, "    return 1\n")
+    assert following["stderr"] == "", following["stderr"]
+
+
+def test_a_node_killed_by_sigkill_below_its_budget_reads_signal_9(isolated_in_places):
+    """Its place recorded no OOM, so the node is not told it ran out of
+    memory: before, every SIGKILL read as the memory limit."""
+    result = run_isolated(
+        isolated_in_places,
+        "    import os, signal\n    os.kill(os.getpid(), signal.SIGKILL)\n    return 1\n",
+    )
+    assert result["output"]["path"] == ""
+    assert result["stderr"] == "This node was killed by signal 9.", result["stderr"][:500]
+
+
+#: --exec-memory-mb's floor (supervisor.MIN_EXEC_MEMORY_MB) and its default
+#: (supervisor.DEFAULT_LIMITS), which the test checks.
+@pytest.mark.parametrize("isolated", [64, 4096], indirect=True)
+def test_a_small_dataframe_node_runs_in_its_place_at_the_floor_and_the_default(isolated):
+    """A forked child pays for each of the zygote's pages it writes to, and
+    those count against its budget, the parquet writer's among them: a small
+    DataFrame node fits the launcher's 64 MB floor, and its 4096 MB default."""
+    from utk_curio.sandbox.isolation import supervisor
+    from utk_curio.sandbox.util.parsers import load_from_duckdb
+
+    _require_places()
+    assert isolated.limits["memory_mb"] in (supervisor.MIN_EXEC_MEMORY_MB, supervisor.DEFAULT_LIMITS["memory_mb"])
+    result = run_isolated(
+        isolated,
+        "    import pandas as pd\n"
+        "    with open('/proc/self/cgroup') as handle:\n"
+        "        print([line for line in handle.read().splitlines() if line.startswith('0::')][0][3:])\n"
+        "    return pd.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})\n",
+    )
+    assert result["stderr"] == "", f"budget {isolated.limits['memory_mb']} MB: {result['stderr'][:2000]}"
+    _own_place(result["stdout"][0])
+    frame = load_from_duckdb(result["output"]["path"])
+    assert list(frame["a"]) == [1, 2, 3], frame
+
+
+def test_a_place_is_reused_by_the_runs_after_it(isolated_in_places):
+    """One run after another takes the same place: a cgroup removed while page
+    cache it was charged for lives stays behind until the cache goes."""
+    first = _ran_in(isolated_in_places)
+    second = _ran_in(isolated_in_places)
+    _own_place(first)
+    assert second == first, f"the second run took {second}, not the first's {first}"
+
+
+def test_a_new_zygote_clears_the_places_of_one_that_died(isolated_in_places):
+    from utk_curio.sandbox.isolation import lifecycle
+
+    old = lifecycle._process.pid
+    folder = os.path.dirname(_own_place(_ran_in(isolated_in_places)))
+    assert folder == os.path.join(CGROUP_ROOT, "nodes", str(old))
+    lifecycle._process.kill()
+    lifecycle._process.wait(timeout=10)
+    lifecycle.restart_if_exited()
+    assert lifecycle._process.pid != old
+    assert not os.path.exists(folder), f"the dead zygote's places, {folder}, are still there"
+    _own_place(_ran_in(isolated_in_places))
+
+
+#: Every cgroup write a node might try: its own limits, joining another
+#: cgroup, leaving its own, and making one. Each answers the error it got.
+_EVERY_CGROUP_WRITE = r'''
+    import errno, os
+    with open("/proc/self/cgroup") as handle:
+        own = [line for line in handle.read().splitlines() if line.startswith("0::")][0][3:]
+    place = "/sys/fs/cgroup" + own
+    def write(path, value):
+        try:
+            with open(path, "w") as handle:
+                handle.write(value)
+            return "written"
+        except OSError as exc:
+            return errno.errorcode.get(exc.errno, str(exc.errno))
+    def make(path):
+        try:
+            os.mkdir(path)
+            return "made"
+        except OSError as exc:
+            return errno.errorcode.get(exc.errno, str(exc.errno))
+    return {
+        "cgroup": own,
+        "uid": os.getuid(),
+        "its memory.max": write(place + "/memory.max", "max"),
+        "its memory.swap.max": write(place + "/memory.swap.max", "max"),
+        "its memory.oom.group": write(place + "/memory.oom.group", "0"),
+        "its cgroup.procs": write(place + "/cgroup.procs", "0"),
+        "join the servers": write("/sys/fs/cgroup/curio/cgroup.procs", "0"),
+        "join the container's root": write("/sys/fs/cgroup/cgroup.procs", "0"),
+        "join nodes": write("/sys/fs/cgroup/nodes/cgroup.procs", "0"),
+        "make one in nodes": make("/sys/fs/cgroup/nodes/escape"),
+        "make one in its zygote's": make(os.path.dirname(place) + "/escape"),
+        "make one in its place": make(place + "/escape"),
+    }
+'''
+
+
+def test_the_execution_user_can_neither_write_nor_join_a_cgroup(isolated_dropped):
+    """As ``curio-exec``, a node changes no limit, its own neither, moves into
+    no other cgroup and makes none: every cgroup file is root's, and every
+    folder ``0755``, whatever the umask the stack runs under."""
+    import pwd
+
+    _require_places()
+    seen = _ran_in(isolated_dropped, _EVERY_CGROUP_WRITE)
+    assert seen["uid"] == pwd.getpwnam(EXEC_USER).pw_uid, seen
+    _own_place(seen["cgroup"])
+    allowed = {name: answer for name, answer in seen.items()
+               if name not in ("cgroup", "uid") and answer in ("written", "made")}
+    assert not allowed, f"{EXEC_USER} could write cgroups: {allowed} (every answer: {seen})"
 
 
 def test_an_infinite_loop_is_killed_and_the_sandbox_survives(isolated):

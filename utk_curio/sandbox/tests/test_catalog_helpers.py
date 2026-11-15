@@ -3,7 +3,9 @@
 
 ``curio_load_data`` reads a dataset the way its format is read, the reading the
 Data Catalog's loader snippets used to spell out in each node. The names these
-replaced are not aliases: each raises an error naming its replacement.
+replaced are not aliases: each raises an error naming its replacement, and so
+does a loaded model's ``run``, whose graph the node's code runs in an
+onnxruntime session of its own.
 """
 
 from __future__ import annotations
@@ -373,11 +375,15 @@ class TestLoadModel:
         with pytest.raises(RuntimeError, match="Model 'gone' is not one of your models: add it with Add in the Model Catalog"):
             _helpers({})["curio_load_model"]("gone")
 
-    def test_an_image_to_image_model_is_run_with_its_own_inputs(self, tmp_path):
-        """``model.run`` feeds the graph the arrays the node made, by input
-        name, and hands back its outputs in order (onnxruntime is imported,
-        not skipped, as ``test_vision.py`` imports it)."""
+    def test_an_image_to_image_model_runs_in_the_session_its_node_opens_on_its_path(self, tmp_path):
+        """``model.path`` is the ``.onnx`` file the manifest's entry names: the
+        node's code opens it in an onnxruntime session on the CPU, as a model
+        package's starter writes it, feeds the graph the arrays it made, by
+        input name, and gets the graph's outputs in order, again on new
+        arrays; a missing input is refused, naming it (onnxruntime is
+        imported, not skipped, as ``test_vision.py`` imports it)."""
         import numpy as np
+        import onnxruntime as ort
 
         folder = self._model(tmp_path, {
             "runtime": "onnx", "task": "image-to-image", "labels": [], "entry": "files/m.onnx",
@@ -385,18 +391,35 @@ class TestLoadModel:
         (folder / "files").mkdir()
         (folder / "files" / "m.onnx").write_bytes(tiny_onnx_model())
         model = _helpers({}, models={"m": str(folder)})["curio_load_model"]("m")
-        (out,) = model.run({"X": np.zeros((1, 3), dtype=np.float32)})
+        assert model.path == str(folder / "files" / "m.onnx")
+        session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])
+        (out,) = session.run(None, {"X": np.zeros((1, 3), dtype=np.float32)})
         assert out.tolist() == [list(ADDEND)]
-        (again,) = model.run({"X": np.ones((1, 3), dtype=np.float32)})
+        (again,) = session.run(None, {"X": np.ones((1, 3), dtype=np.float32)})
         assert again.tolist() == [[value + 1 for value in ADDEND]]
-        with pytest.raises(ValueError, match="needs the inputs X; missing X"):
-            model.run({"Y": np.zeros((1, 3), dtype=np.float32)})
+        with pytest.raises(ValueError) as refused:
+            session.run(None, {"Y": np.zeros((1, 3), dtype=np.float32)})
+        assert "missing" in str(refused.value) and "'X'" in str(refused.value), refused.value
 
-    def test_only_an_onnx_model_has_a_graph_to_run(self, tmp_path):
-        folder = self._model(tmp_path, {"runtime": "transformers", "entry": "files"})
+    @pytest.mark.parametrize("manifest", [
+        {"runtime": "onnx", "task": "image-to-image", "labels": [], "entry": "files/m.onnx"},
+        {"runtime": "transformers", "entry": "files"},
+    ], ids=["onnx", "transformers"])
+    def test_model_run_refuses_and_names_the_session_its_node_opens_instead(self, tmp_path, manifest):
+        """A saved dataflow's ``model.run(...)`` raises, whatever the model and
+        whatever it is handed, with the lines the node's code writes instead."""
+        import numpy as np
+
+        folder = self._model(tmp_path, manifest)
         model = _helpers({}, models={"m": str(folder)})["curio_load_model"]("m")
-        with pytest.raises(RuntimeError, match="not an ONNX model"):
-            model.run({})
+        for args in (({"X": np.zeros((1, 3), dtype=np.float32)},), ()):
+            with pytest.raises(RuntimeError) as refused:
+                model.run(*args)
+            said = str(refused.value)
+            assert said.startswith("model.run was removed: "), said
+            assert "import onnxruntime as ort" in said, said
+            assert 'session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])' in said, said
+            assert "session.run(None, {input name: array})" in said, said
 
     def test_curio_segment_refuses_an_image_to_image_model(self, tmp_path):
         folder = self._model(tmp_path, {"runtime": "onnx", "task": "image-to-image", "labels": []})

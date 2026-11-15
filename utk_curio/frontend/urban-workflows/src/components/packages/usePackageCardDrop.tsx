@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { XYPosition } from "reactflow";
 
 import { CardContextMenu } from "../catalog/CardContextMenu";
+import { packageCatalogName } from "../layout/catalogSections";
 import { holdModalStack } from "../ModalShell";
 import {
   guestAddRefusal,
@@ -19,7 +20,9 @@ import type { AskForPackage } from "./useAskForPackage";
  * model's from the Model Catalog drawer (a model package has one node).
  *
  * A hosted guest's drop of a package the dataflow has not added is refused
- * first, before any menu: guests never install. Otherwise a package with one
+ * first, before any menu: guests never install. One the guest's account holds
+ * (the card's `inAccount`) is added as an account's is, which installs
+ * nothing. Otherwise a package with one
  * node makes it, and a package with several offers them in a menu at the drop
  * point, Curio's one dark pop-up menu (`CardContextMenu`); the node picked is
  * made. Escape or a click outside makes none. A package the dataflow has not
@@ -82,8 +85,7 @@ export function usePackageCardDrop({
         onAdded: () => createNode(node, position),
       };
       if (requestPackageAdd(request)) return;
-      const catalog = card.kind === "model" ? "Model Catalog" : "Node Catalog";
-      showToast(`Add ${card.name} to this dataflow from the ${catalog} first.`, "warning");
+      showToast(`Add ${card.name} to this dataflow from the ${packageCatalogName(card.kind)} first.`, "warning");
     },
     [createNode, showToast, askTheOwner],
   );
@@ -94,6 +96,7 @@ export function usePackageCardDrop({
       const action = packageDropAction({
         inDataflow: (dataflowPackages ?? []).includes(card.dirName),
         hostedGuest,
+        inAccount: card.inAccount === true,
         asksTheOwner: !!askTheOwner,
       });
       if (action === "refuse") {

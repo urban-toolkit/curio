@@ -39,6 +39,7 @@ SCOUT's only in quotes, spacing, line breaks, order or punctuation, have none.
 
 import numpy as np
 import networkx as nx
+import onnxruntime as ort  # Curio: The graph network runs as an ONNX model through onnxruntime
 
 import geopandas as gpd
 from shapely.geometry import Point
@@ -52,9 +53,12 @@ ZONE_MINUTES = 15  # Curio: A trip's 15-minute zones read the weather's hourly s
 
 def gnn_predict(model, x, edge_index):  # Curio: The graph network runs as an ONNX model through onnxruntime
     """The graph network's five weather values at each node: this package's
-    model, model.scout.weather-gnn, as ``curio_load_model`` returns it, run
-    on SCOUT's node features and edges. Its one output is ``prediction``."""
-    (prediction,) = model.run({"x": x, "edge_index": edge_index})
+    model, model.scout.weather-gnn, as ``curio_load_model`` returns it, its
+    ONNX file (``model.path``) opened in an onnxruntime session on the CPU
+    and run on SCOUT's node features and edges. Its one output is
+    ``prediction``."""
+    session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])
+    (prediction,) = session.run(None, {"x": x, "edge_index": edge_index})
     return prediction
 
 

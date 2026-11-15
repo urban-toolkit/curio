@@ -361,3 +361,46 @@ def test_no_kill_and_no_reading_give_no_error(monkeypatch, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "::error::" not in out
     assert "No memory.events reading for the CI container" in out
+
+
+#: What stop-stack reads in a container whose isolated nodes run in places:
+#: its memory.events, its memory.events.local and the nodes' memory.events.
+#: The container's counts hold its nodes' too (cgroup v2 counts an event in
+#: every cgroup above the one it happened in), as on run 42708730576, where a
+#: node stopped at its 128 MB budget read oom 1 and oom_kill 3 in all of them.
+SECTIONS = (
+    "low 0\nhigh 0\nmax {max}\noom {oom}\noom_kill {kills}\n"
+    "# memory.events.local\n"
+    "low 0\nhigh 0\nmax {local_max}\noom {local_oom}\noom_kill {local_kills}\n"
+    "# nodes\n"
+    "low 0\nhigh 0\nmax 18\noom {node_oom}\noom_kill {node_kills}\n"
+)
+
+
+def test_a_node_stopped_at_its_budget_is_no_kill_at_the_containers_limit(monkeypatch, tmp_path, capsys):
+    summary = _kills(monkeypatch, tmp_path, SECTIONS.format(
+        max=18, oom=1, kills=3, local_max=0, local_oom=0, local_kills=0, node_oom=1, node_kills=3))
+    out = capsys.readouterr().out
+    assert "::error::" not in out
+    assert "The kernel killed no process in the CI container at its 6.1 GiB memory limit" in out
+    assert "Isolated nodes stopped at their own memory budget (--exec-memory-mb): 1" in out
+    assert "Isolated nodes stopped at their own memory budget" in summary
+
+
+def test_a_server_killed_beside_a_node_at_its_budget_is_still_an_error(monkeypatch, tmp_path, capsys):
+    _kills(monkeypatch, tmp_path, SECTIONS.format(
+        max=40, oom=2, kills=4, local_max=22, local_oom=1, local_kills=0, node_oom=1, node_kills=3))
+    out = capsys.readouterr().out
+    assert ("::error::The kernel killed 1 process(es) in the CI container at its "
+            "6.1 GiB memory limit (memory.events oom_kill)") in out
+
+
+def test_nodes_killed_at_the_containers_own_limit_are_an_error(monkeypatch, tmp_path, capsys):
+    """The container's limit reached, and the kernel took a node first (its
+    oom_score_adj is the highest): no server went, but the container ran out."""
+    _kills(monkeypatch, tmp_path, SECTIONS.format(
+        max=30, oom=1, kills=2, local_max=30, local_oom=1, local_kills=0, node_oom=0, node_kills=2))
+    out = capsys.readouterr().out
+    assert ("::error::The CI container reached its 6.1 GiB memory limit 1 time(s) "
+            "(memory.events.local oom)") in out
+    assert "Isolated nodes stopped at their own memory budget" not in out

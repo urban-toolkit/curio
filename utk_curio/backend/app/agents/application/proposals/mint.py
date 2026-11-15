@@ -22,7 +22,6 @@ from utk_curio.backend.app.agents.application import tool_rounds as agents_tool_
 from utk_curio.backend.app.agents.application.proposals import acquire as agents_acquire
 from utk_curio.backend.app.agents.application.proposals import cards as agents_cards
 from utk_curio.backend.app.agents.application.proposals import changes as agents_changes
-from utk_curio.backend.app.agents.application.proposals import plan_scenarios as agents_plan_scenarios
 from utk_curio.backend.app.agents.application.proposals import plans as agents_plans
 from utk_curio.backend.app.agents.application.proposals import store as agents_store
 from utk_curio.backend.app.agents.application.turns import delegates as agents_delegates
@@ -788,13 +787,17 @@ def _mint_node_settings_write(
     return agents_changes.land(user_key, project_id, loop_ctx, spec, landing, part)
 
 
-def _node_create_widgets(entry: dict, raw: object) -> tuple[list, list[str]]:
-    """#662: the widgets a created node declares, or why they are refused: a
-    widget is placed by a node's code or spec, so only such a node holds one."""
-    widgets, problems = widget_grammar.parse_widgets(raw, "params.widgets")
+def _node_create_widgets(entry: dict, raw: object, template_widgets: list) -> tuple[list, list[str]]:
+    """#662: the widgets a created node holds, its template's (*template_widgets*)
+    with the ones the request declares set over them, or why they are
+    refused: one its template declares keeps the template's type, choices and
+    bounds and is judged as the node will hold it, as a planned node's is
+    (``widget_grammar.parse_widgets``), and a widget is placed by a node's
+    code or spec, so only such a node takes one."""
+    widgets, problems = widget_grammar.parse_widgets(raw, "params.widgets", template_widgets)
     if problems:
         return [], problems
-    if widgets and entry.get("contentKind") not in ("code", "grammar"):
+    if raw and entry.get("contentKind") not in ("code", "grammar"):
         return [], [agent_text.message("mint.widgets-not-placeable", label=entry.get('label') or entry.get('id'))]
     return widgets, []
 
@@ -887,11 +890,6 @@ def _mint_node_create(
     saved = projects_storage.read_spec(user_key, project_id)
     if saved is None:
         return "refused", agent_text.message("mint.no-saved-spec"), None
-    # Read before the gate: a chart's or a map's document is checked with the
-    # widgets the node declares.
-    widgets, widget_errors = _node_create_widgets(entry, params.get("widgets"))
-    if widget_errors:
-        return agents_tool_rounds._refuse_params("; ".join(widget_errors))
     # The template's widgets, each the request names set as it says, at mint,
     # so the change card shows what lands: a starter's, which it places, or
     # the ones any other template declares, which a node of it starts with on
@@ -899,8 +897,11 @@ def _mint_node_create(
     template_widgets = starter["widgets"] if starter is not None else _node_create_declared_widgets(
         user_key, project_id, entry,
     )
-    if template_widgets:
-        widgets = agents_plan_scenarios._set_over(template_widgets, widgets)
+    # Read before the gate: a chart's or a map's document is checked with the
+    # widgets the node holds.
+    widgets, widget_errors = _node_create_widgets(entry, params.get("widgets"), template_widgets)
+    if widget_errors:
+        return agents_tool_rounds._refuse_params("; ".join(widget_errors))
     # dev/114 (DEC-072): the source-grounding gate — BEFORE any store write.
     # A same-run node.create after the runtime minted dataset candidates is
     # refused too: the user reviews and confirms a source first (DEC-006).

@@ -18,14 +18,18 @@ runs:
     # (scripts/ci_memory_budget.py), and the kernel ends a stack that outgrows
     # it by killing a process in it, which a test sees only as a server that
     # stopped answering. Its memory.events counts those kills: an error line
-    # names them before the containers go.
+    # names them before the containers go. It counts an isolated node stopped
+    # at its own budget too, in its place under nodes/, which is told apart:
+    # a line of its own, and no error.
     - name: 📏 Processes killed at the container's memory limit
       if: runner.environment == 'self-hosted'
       shell: bash
       env:
         PROJECT: ${{ inputs.project }}
       run: |
-        docker compose -p "$PROJECT" exec -T curio cat /sys/fs/cgroup/memory.events 2>/dev/null \
+        docker compose -p "$PROJECT" exec -T curio sh -c 'cat /sys/fs/cgroup/memory.events;
+            echo "# memory.events.local"; cat /sys/fs/cgroup/memory.events.local;
+            echo "# nodes"; cat /sys/fs/cgroup/nodes/memory.events' 2>/dev/null \
           | python3 "$GITHUB_WORKSPACE/scripts/ci_memory_budget.py" kills || true
 
     # With the stack and its image still on the disk: how close the job came

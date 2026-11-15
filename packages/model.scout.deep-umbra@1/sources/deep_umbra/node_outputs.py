@@ -29,6 +29,7 @@ import hashlib
 import math
 
 import numpy as np
+import onnxruntime as ort
 import rasterio
 from pyproj import Transformer
 
@@ -164,16 +165,20 @@ def neighbourhood(padded, column, row):
 
 def shadow_tiles(raster, season, model):
     """Deep Umbra on every tile of *raster* that holds a height: ``{(column,
-    row): shadow}``, each tile's shadow from 0 to 1, 256 by 256."""
+    row): shadow}``, each tile's shadow from 0 to 1, 256 by 256. *model* is
+    Deep Umbra as ``curio_load_model`` gives it: its ONNX file
+    (``model.path``) opens in one onnxruntime session on the CPU, which every
+    tile runs in."""
     zoom, x, y, columns, rows = tile_grid(raster)
     written = tiles_with_heights(raster, columns, rows)
     if not written:
         raise ValueError("The height raster holds no height: every cell is no data, so no tile has buildings.")
     padded = np.pad(gray_levels(raster), TILE)
+    generator = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])
     shadows = {}
     for column, row in written:
         _input_height, prediction = predict_shadow(
-            model, neighbourhood(padded, column, row), season, zoom, x + column, y + row
+            generator, neighbourhood(padded, column, row), season, zoom, x + column, y + row
         )
         shadows[(column, row)] = shadow_fraction(prediction)
     return shadows

@@ -11,6 +11,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker +
 - [1. Configure the stack](#1-configure-the-stack)
   - [LLM configurations](#llm-configurations)
   - [Model weights a package fetches](#model-weights-a-package-fetches)
+  - [Packages every guest has](#packages-every-guest-has)
   - [Bucket mounts](#bucket-mounts)
 - [2. Configure Caddy](#2-configure-caddy)
 - [3. Build and run](#3-build-and-run)
@@ -328,6 +329,28 @@ when it does not.
 - Git, the image and the pip package hold none of these weights, and
   **Export**, **Publish** and **Save as package node** refuse such a model.
 
+### Packages every guest has
+
+A guest adds no package and installs no library. Its nodes are those of the
+built-in package, of the examples' packages with `--with-examples`, and of the
+packages `--guest-packages` names, each by its folder in the catalog, with
+commas between them. To give every guest SAM 3, add to the `command` in
+`docker-compose.site.yml`:
+
+```yaml
+    command: ["--backend-url", "https://lab-name.your-uni.edu/curio/api", "--base-path", "/curio", "--exec-memory-mb", "24576", "--model-weights-dir", "/model-weights", "--guest-packages", "model.curio.sam3@1"]
+```
+
+- Each start adds the packages, with the packages they need, to the shared
+  guest's account. The Node Catalog and Model Catalog pages show them in all
+  projects, a dataflow a guest makes with **File > New** starts with them, and
+  a guest adds them to an example from the catalog drawer, or by dropping one
+  of their cards on the canvas.
+- Their libraries install with the examples' as the stack starts.
+- A start takes off what an earlier start added that the list no longer
+  names, unless an example uses it.
+- A name that is not a package of the catalog stops the start.
+
 ### Bucket mounts
 
 `docker-compose.bucket-mounts.yml` runs a mount service for buckets beside
@@ -613,6 +636,8 @@ Both stacks also start with `--media-cache-max-file-gb 8`, so **Cache files** co
 
 They also start with `--discovery-max-download-mb 2048`, so a download, or a file of a bucket table, may be up to 2 GiB on them: a month of detections in data.urbantk.org's `idot` bucket is a JSON Lines file of up to 1.7 GB.
 
+Both stacks start with `--guest-packages model.curio.sam3@1`, so every guest runs SAM 3's **Track Objects** on the host's GPU ([Packages every guest has](#packages-every-guest-has)).
+
 Each stack runs its own [bucket mount service](#bucket-mounts) when the deployed release has it, mounting in `/srv/curio-bucket-mounts/dev` or `/srv/curio-bucket-mounts/stable`. Before a deploy stops the running stack, it checks the host: `/dev/fuse`, a shared mount at `/srv`, and the AppArmor profile, loaded and with `/etc/apparmor.d/curio-bucket-mounts` the same as the checkout's `scripts/bucket-mounts/curio-bucket-mounts.apparmor`. A failed check fails the deploy with the command to run. Once the new stack is up, the deploy fails unless `bucket-mounts` is healthy and **Bucket mounts** says *on, self-test passed*.
 
 A merge to `main` deploys the dev stack once: Bump version bumps the patch version and dispatches the dev deploy of that commit. Stable runs manually via Actions → Deploy → Run workflow.
@@ -737,7 +762,7 @@ flooding it cannot push real errors out of the log.
 
 - **Decide who may read `/monitor`.** It is public and unauthenticated on every instance, and its error log carries raw tracebacks including server paths and fragments of user node code. Block it at the reverse proxy if that is not acceptable; see [The monitor page](#the-monitor-page).
 - **Anyone with a dashboard link can start runs**, whatever the guest setting. A tile with no saved output runs the nodes before it when the page opens, and a viewer who changes a pinned control runs the dataflow again, on the server, with its owner's data, models and packages and never the owner's keys; a viewer never changes the dataflow. The limits are fixed: 10 runs a minute per visitor address of the values visitors try and 120 overall (opening the page costs nothing), two runs at once per dashboard, and half the isolated pool (`--exec-parallelism`) for every viewer's nodes together. What a run makes is kept 7 days, at most 2 GiB of viewers' runs per dashboard, and made again by the next visit that needs it. To refuse such runs, block the backend's `/api/projects/<id>/dashboard/runs` at the reverse proxy.
-- **Guests' work is kept until the backend starts again.** Every guest signs in to one shared account. What a guest changes in an example, and each dataflow it makes with File > New, is a folder of its own under `.curio/users/guest/projects/` that only that guest's sign-in opens, and the files it uploads and the datasets it downloads go to that account's store, listed for that guest alone. Each start of the backend deletes them all, and there is no quota between two starts. A guest's agents run its own dataflows on the server, under the limits of isolated node execution below.
+- **Guests' work is kept until the backend starts again.** Every guest signs in to one shared account. What a guest changes in an example, and each dataflow it makes with File > New, is a folder of its own under `.curio/users/guest/projects/` that only that guest's sign-in opens, and the files it uploads and the datasets it downloads go to that account's store, listed for that guest alone. The frames, clips and overlays its nodes derive from a collection's files go to a media folder of its own, which only that guest reads. Each start of the backend deletes them all, and there is no quota between two starts. A guest's agents run its own dataflows on the server, under the limits of isolated node execution below.
 - **Say how many proxies add `X-Forwarded-For`.** The limits per visitor address (sign-in attempts, the monitor's error reports, a dashboard's runs) read the address there when `--proxy-hops N` names the proxies in front of the backend that add it; the overlay passes 1, for the site's Caddy. Pass one more for each other proxy that adds it, such as a CDN in front of Caddy, and keep the backend reachable only through them. The nginx of `--backend-processes` is not one to count: the backend processes count it themselves. Without the flag the header is not read, and each request counts as the address it came from.
 - **Verify auth is on**: `docker compose logs curio | grep CURIO_NO_AUTH` must print `CURIO_NO_AUTH=0`. If it prints `1`, you started without the `docker-compose.deploy.yml` overlay and the instance is open to anyone.
 - Keep `--no-allow-publish` (the overlay supplies it). Without it, any signed-in user can publish into the shared node catalog, including over a package already there. See [NODE-CATALOG.md § Operator notes](NODE-CATALOG.md#operator-notes).

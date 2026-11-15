@@ -52,12 +52,16 @@ def media_dir_for(user_key: str | None) -> str | None:
     """Where a node run under *user_key* writes the frames, clips and
     overlays it derives; None with no key. Every node gets it, not only one
     that loads a collection: a node downstream of a Data Loading node writes
-    the frames or the mosaic, and never names the collection itself."""
+    the frames or the mosaic, and never names the collection itself. A
+    hosted guest's run writes in the folder of the visitor it serves, in
+    their request or on a thread of its own (``visitor_copies.media_visitor``),
+    which the media route reads for that visitor alone."""
     if not user_key:
         return None
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
+    from utk_curio.backend.app.projects import visitor_copies
 
-    return str(media_dirs.media_work_root(user_key))
+    return str(media_dirs.derived_root(user_key, visitor_copies.media_visitor(user_key)))
 
 
 def resolve_collections(

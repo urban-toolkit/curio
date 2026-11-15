@@ -35,8 +35,9 @@ from utk_curio.backend.reloader import (  # noqa: E402,F401  (re-exported)
 def _seed_the_shared_guest():
     """The shared guest at a start: its row, its hosted guests' copies
     dropped, its projects read back from the files, the agents every account
-    has, and with ``--with-examples`` the examples and their datasets put
-    back. Startup work (``DOES_STARTUP_WORK``)."""
+    has, the packages ``--guest-packages`` names, and with ``--with-examples``
+    the examples and their datasets put back. Startup work
+    (``DOES_STARTUP_WORK``)."""
     with app.app_context():
         try:
             from utk_curio.backend.app.users.services import _shared_guest_user
@@ -57,6 +58,17 @@ def _seed_the_shared_guest():
             # The agents every account has by default, before the examples are put
             # back, so each example gets them, and every guest's copy of one too.
             seed_default_agents(guest)
+            # The catalog packages every hosted guest has, put in the account as
+            # an add puts them there; what the flag no longer names is taken off.
+            # A failure here leaves the examples to be put back all the same.
+            try:
+                from utk_curio.backend.app.packages.service import add_guest_packages
+
+                given = add_guest_packages(_user_dir_key(guest))
+                if given:
+                    app.logger.info("Hosted guests have the package(s) %s", ", ".join(given))
+            except Exception:
+                app.logger.warning("Could not give hosted guests the --guest-packages packages", exc_info=True)
             if CURIO_SEED_EXAMPLES:
                 from utk_curio.backend.app.projects.seed import seed_example_projects
                 s = seed_example_projects(guest)

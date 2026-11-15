@@ -48,8 +48,10 @@ def _local_relief_archive() -> bytes:
 def _code(model_id: str) -> str:
     return (
         "import numpy as np\n"
+        "import onnxruntime as ort\n"
         f'model = curio_load_model("{model_id}")\n'
-        'return float(np.abs(model.run({"height": np.zeros((1, 1, 8, 8), dtype=np.float32)})[0]).sum())\n'
+        'session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])\n'
+        'return float(np.abs(session.run(None, {"height": np.zeros((1, 1, 8, 8), dtype=np.float32)})[0]).sum())\n'
     )
 
 
@@ -104,7 +106,8 @@ def test_a_new_package_of_a_node_that_loads_a_model_is_a_model_package_with_a_co
     assert (built.manifest.kind, manifest.get("kind")) == ("model", "model")
     assert manifest["model"] == _source_model_block()
     assert (folder / WEIGHTS).read_bytes() == (LOCAL_RELIEF_FOLDER / WEIGHTS).read_bytes()
-    # The model's runtime is the package's library, beside what its code imports.
+    # The model's runtime is the package's library, at its package's range, beside
+    # what its code imports.
     assert manifest["dependencies"]["python"] == {"numpy": "*", "onnxruntime": ">=1.17"}
     # Its node names the new package.
     code = (folder / "sources" / "python-computation.py").read_text(encoding="utf-8")

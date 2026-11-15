@@ -29,6 +29,8 @@ function monitor(): MonitorPayload {
       version: "0.16.114",
       isolation: "fork",
       isolationActive: "fork",
+      memoryLimit: "cgroup",
+      memoryLimitReason: null,
       execUserConfigured: true,
       authEnabled: true,
       projectsEnabled: true,
