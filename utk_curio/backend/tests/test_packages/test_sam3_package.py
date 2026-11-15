@@ -654,6 +654,16 @@ def test_the_steps_end_before_to_seconds_however_the_frames_fall(corner, walk, t
     assert (on_the_step, just_before) == ([0.0, 0.5], [30.5]), (on_the_step, just_before)
 
 
+def test_a_step_before_to_seconds_looks_at_its_frame_even_after_it(walk, tmp_path):
+    """Every step from FROM_SECONDS up to TO_SECONDS gets its frame: the first
+    from a millisecond before its time to a millisecond before the next
+    step's, even when that frame comes after TO_SECONDS. From 30 s to 31.51 s
+    of the walk, the step at 31.5 s looks at the frame at 31.532 s."""
+    with _staged(tmp_path) as module:
+        times = _times(module, walk, 30, 31.51)
+    assert times == [30.0, 30.5, 30.999, 31.532], f"looked at {times}, not 30.0, 30.5, 30.999, 31.532"
+
+
 def test_a_part_of_no_length_looks_at_the_first_frame_from_its_start(corner, walk, tmp_path):
     """FROM_SECONDS equal to TO_SECONDS looks at one frame wherever the frames
     fall: the first no more than a millisecond before FROM_SECONDS, or after

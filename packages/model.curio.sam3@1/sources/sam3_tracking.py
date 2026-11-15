@@ -9,6 +9,7 @@ says where a file made from a collection's video is kept and served.
 
 import colorsys
 import datetime
+import math
 from dataclasses import dataclass
 from fractions import Fraction
 
@@ -151,10 +152,12 @@ def _part_end(video, from_seconds, to_seconds, max_seconds):
 
 def _sample(run, video, end):
     """The frames SAM 3 looks at, read in order, and their times in seconds:
-    one for each step of *every_seconds* from *from_seconds* up to *end*, the
-    first frame no more than a millisecond before the step's time. A part of
-    no length looks at one frame wherever the frames fall: the first no more
-    than a millisecond before *from_seconds*, or after it."""
+    one for each step of *every_seconds* from *from_seconds* up to *end*, never
+    the step at *end*. Each is the first frame from a millisecond before its
+    step's time to a millisecond before the next step's, even one that comes
+    after *end*. A part of no length looks at one frame wherever the frames
+    fall: the first no more than a millisecond before *from_seconds*, or after
+    it."""
     frames, times = [], []
     with av.open(video["path"]) as container:
         stream = container.streams.video[0]
@@ -165,14 +168,21 @@ def _sample(run, video, end):
         width = 2 * (min(run.width, stream.codec_context.width) // 2)
         height = 2 * round(stream.codec_context.height * width / stream.codec_context.width / 2)
         container.seek(int(run.from_seconds / stream.time_base), stream=stream, backward=True)
+        # The part's steps, ceil(W / every_seconds) of a part of W seconds (the
+        # 1e-9 is for float rounding), and where the frames of the step at
+        # *end* would start; a part of no length has one step and no such end.
+        if end > run.from_seconds:
+            count = math.ceil((end - run.from_seconds) / run.every_seconds - 1e-9)
+            stop = run.from_seconds + count * run.every_seconds - EARLY_SECONDS
+        else:
+            count, stop = int(end == run.from_seconds), float("inf")
         steps, wanted = 0, run.from_seconds
-        # Frames past *end* are not looked at, but for the one frame of a part
-        # of no length, which may come after it.
-        last = end if end != run.from_seconds else float("inf")
         for frame in container.decode(stream):
+            if steps >= count:
+                break
             if frame.time is None or frame.time < wanted - EARLY_SECONDS:
                 continue
-            if frame.time > last:
+            if frame.time >= stop:
                 break
             frames.append(frame.to_image(width=width, height=height))
             times.append(round(float(frame.time), 3))
@@ -181,11 +191,6 @@ def _sample(run, video, end):
             # time is that step's, and the next frame is not looked at for it.
             steps = max(steps + 1, int((frame.time - run.from_seconds + EARLY_SECONDS) / run.every_seconds) + 1)
             wanted = run.from_seconds + steps * run.every_seconds
-            # The steps end before *end*, never at it, so a part of W seconds
-            # has W / every_seconds steps however its frames fall; the 1e-9 s
-            # is for the float rounding of the sum above.
-            if wanted >= end - 1e-9:
-                break
     if not frames:
         raise ValueError(f"{video['relpath']} has no frames from {run.from_seconds} to {end} s")
     return frames, times
