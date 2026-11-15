@@ -33,13 +33,6 @@ export interface AgentPlanWidget {
   options?: Record<string, unknown>;
 }
 
-/** A Spatial Join's operation and output, as a planned or created one sets
- * them (`metadata.spatialJoin`). */
-export interface AgentSpatialJoinSetting {
-  predicate?: string;
-  output?: "pairs" | "counts";
-}
-
 /** A Data Pool's conflict modes, as a planned or created one sets them
  * (`metadata.dataPool`): each a ResolutionType other than OVERWRITE. */
 export interface AgentDataPoolSetting {
@@ -57,11 +50,11 @@ export interface AgentSimpleVisSetting {
  * key the node keeps each at: each key a setting gives is picked as the
  * node's select picks it (OVERWRITE among a pool's modes), a key it leaves
  * out stays, and a Simple View's setting without a column picks every image
- * column; widget values are by widget name. */
+ * column; widget values are by widget name, a Spatial Join's operation and
+ * output among them. */
 export interface AgentNodeSettings {
   dataPool?: AgentDataPoolSetting;
   simpleVis?: AgentSimpleVisSetting;
-  spatialJoin?: AgentSpatialJoinSetting;
   widgets?: Record<string, unknown>;
 }
 
@@ -239,12 +232,11 @@ export interface AgentProposalPart {
       /** dev/67-5: expected input/output one-liner for the plan card. */
       expects?: string;
       /** #662: the widgets it declares, the scenario it is in, and for a
-       * copy the ref of the node it copies. A Spatial Join's operation and
-       * output, a Data Pool's modes, a Simple View's image column. */
+       * copy the ref of the node it copies. A Data Pool's modes, a Simple
+       * View's image column. */
       widgets?: AgentPlanWidget[];
       scenario?: string;
       copyOf?: string;
-      spatialJoin?: AgentSpatialJoinSetting;
       dataPool?: AgentDataPoolSetting;
       simpleVis?: AgentSimpleVisSetting;
     }>;
@@ -346,14 +338,12 @@ export interface AgentCreatedNodePayload {
    * carries none. */
   agent?: string;
   /** dev/89: canonical persisted appearance (backend-normalized). #662: the
-   * node's widgets, and for a copy the ids it descends from. A Spatial
-   * Join's operation and output, a Data Pool's modes, a Simple View's image
-   * column. */
+   * node's widgets, and for a copy the ids it descends from. A Data Pool's
+   * modes, a Simple View's image column. */
   metadata?: {
     appearance?: { backgroundColor?: string };
     widgets?: AgentPlanWidget[];
     copiedFrom?: string[];
-    spatialJoin?: AgentSpatialJoinSetting;
     dataPool?: AgentDataPoolSetting;
     simpleVis?: AgentSimpleVisSetting;
   };
