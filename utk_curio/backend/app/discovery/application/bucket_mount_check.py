@@ -4,8 +4,8 @@ When ``--bucket-mounts-dir`` and ``--bucket-mount-socket`` name a mount
 service, the backend runs its self-test
 (``infrastructure/bucket_mounts.py``) once, on a thread of its own
 (:func:`start`, which ``server.py``'s ``serve()`` calls through the discovery
-service, in the process that serves, as it starts the monitor's sampler of
-open files). Its outcome is /monitor's Deployment line (:func:`status`), and
+service, in the home process when it serves, as it starts the monitor's
+sampler of open files). Its outcome is /monitor's Deployment line (:func:`status`), and
 a failure is also one of the monitor's Recent errors, with what went wrong
 (:func:`record`). After a passed self-test, the same thread looks at the
 service's mounts of sources (``bucket_mount_sources.reconcile_at_start``).

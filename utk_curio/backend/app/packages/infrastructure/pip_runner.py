@@ -28,7 +28,9 @@ Design choices:
 - **One run at a time per environment.** A pip run that changes this
   interpreter, or a ``--target`` tree, holds that environment's lock across
   threads and backend processes (:func:`_one_run_into`), and an install
-  decides what to install inside it, after any run another process made.
+  decides what to install inside it, after any run another process made. A
+  change of a tree that is no pip run, a wipe or a removal, holds the same
+  lock (:func:`holding_tree`).
 - **Captures pip's stderr/stdout** so failures surface in the install
   response with enough context to debug, not an opaque 500.
 """
@@ -365,18 +367,43 @@ def _pip_state(*, create: bool = True) -> Path:
     return folder
 
 
+#: The environments each thread holds now (:func:`_one_run_into`).
+_holding = threading.local()
+
+
 @contextlib.contextmanager
 def _one_run_into(target_dir: Optional[str] = None):
     """Hold the environment a pip run changes, across threads and processes:
     the ``--target`` tree *target_dir*, or with none this interpreter. Two
     runs at once into one environment each decide from what they saw before
-    the other's, and land their files over each other's."""
+    the other's, and land their files over each other's.
+
+    A thread that holds it already holds it on, so a rebuild's pip run inside
+    the hold of its wipe (:func:`holding_tree`) does not wait for itself."""
     if target_dir is None:
         name = "interpreter"
     else:
         name = hashlib.sha256(str(Path(target_dir).resolve()).encode("utf-8")).hexdigest()[:32]
-    with exclusive_lock(_pip_state() / f"{name}.lock", namespace="pip", key=name):
+    held = getattr(_holding, "names", None)
+    if held is None:
+        held = _holding.names = set()
+    if name in held:
         yield
+        return
+    with exclusive_lock(_pip_state() / f"{name}.lock", namespace="pip", key=name):
+        held.add(name)
+        try:
+            yield
+        finally:
+            held.discard(name)
+
+
+def holding_tree(target_dir) -> contextlib.AbstractContextManager:
+    """Hold the ``--target`` tree *target_dir* as a pip run into it does, for a
+    change of it that is no pip run: a wipe, a removal, or a rebuild from its
+    wipe to the check of what pip left. A pip run into it from inside the hold,
+    on the same thread, holds it on."""
+    return _one_run_into(str(target_dir))
 
 
 def _pip_ran() -> None:

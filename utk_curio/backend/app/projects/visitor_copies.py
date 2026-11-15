@@ -460,7 +460,7 @@ def drop_all() -> int:
     they made, with the outputs their plays kept on it and the node outputs
     they added to it as datasets; how many. The files they uploaded and the
     datasets they downloaded go too, and so do the visitors' lists of their
-    new dataflows. The server does when it starts, as it puts the shared
+    new dataflows. The home backend does when it starts, as it puts the shared
     examples back."""
     from utk_curio.backend.app.common.user_storage import user_key_segment, users_base
     from utk_curio.backend.app.runs import kept
@@ -558,6 +558,14 @@ def _source(own: str) -> Optional[str]:
         return source
     with _rooms_lock:
         return _rooms.get(own)
+
+
+def source_of(own: str) -> Optional[str]:
+    """What *own* copies, when it is a hosted guest's copy or new dataflow:
+    the dataflow, or ``new:<uuid>``. ``None`` for any other dataflow, and for
+    a copy not made yet whose room another process opened. The process a
+    copy belongs to is its source's (``collaboration/owner_guard.py``)."""
+    return _source(own)
 
 
 def _guest_account():

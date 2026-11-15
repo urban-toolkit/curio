@@ -5,7 +5,7 @@ limit (``RLIMIT_NOFILE``). At the limit, each file or connection it opens fails
 with "[Errno 24] Too many open files". A leak climbs over hours or days, so the
 backend samples both servers every :data:`INTERVAL_SECONDS`, the first time as
 it starts (:func:`start_sampler`, which ``server.py``'s ``serve()`` calls in the
-process that serves): its own count and limit (``common/open_files.py``'s
+home process when it serves): its own count and limit (``common/open_files.py``'s
 ``in_use``), and the sandbox's, which its ``/monitor`` reply carries beside its
 memory. ``GET /api/monitor/open-files`` publishes every sample kept
 (:func:`snapshot`): timestamps and numbers only.

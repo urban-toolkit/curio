@@ -227,33 +227,42 @@ def _copy_cached_files(from_key: str, to_key: str, dataset_id: str) -> list[Path
     store *to_key*, each one it does not hold yet, within that cache's bound
     (``cache_collection.check_room``), each handed to the node that reads it.
     A collection of a folder holds none: its files are read where they are.
-    Returns the files copied."""
+    Returns the files copied.
+
+    The copy is the one writer of the collection's files in that cache
+    (``cache_collection.writing``), and holds their room until each lands: a
+    cache of it waits for the copy, and no cache or add started meanwhile, in
+    any backend process, passes the cap with it."""
     from utk_curio.backend.app.discovery.application import cache_collection
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
 
     source = cache_collection.objects_dir(from_key, dataset_id, create=False)
     if not source.is_dir():
         return []
-    held = cache_collection.objects_dir(to_key, dataset_id, create=False)
-    todo = [path for path in sorted(source.iterdir())
-            if path.is_file() and not path.name.endswith(".part") and not (held / path.name).is_file()]
-    if not todo:
-        return []
-    cache_collection.check_room(to_key, sum(path.stat().st_size for path in todo))
-    target = cache_collection.objects_dir(to_key, dataset_id)
-    copied: list[Path] = []
-    try:
-        for path in todo:
-            final = target / path.name
-            part = final.with_name(final.name + ".part")
-            shutil.copyfile(path, part)
-            os.replace(part, final)
-            media_dirs.grant_to_child(final)
-            copied.append(final)
-    except BaseException:
-        for path in copied:
-            path.unlink(missing_ok=True)
-        raise
+    with cache_collection.writing(to_key, dataset_id):
+        held = cache_collection.objects_dir(to_key, dataset_id, create=False)
+        todo = [path for path in sorted(source.iterdir())
+                if path.is_file() and not path.name.endswith(".part") and not (held / path.name).is_file()]
+        if not todo:
+            return []
+        sizes = [path.stat().st_size for path in todo]
+        cache_collection.check_room(to_key, sum(sizes), caching=dataset_id)
+        target = cache_collection.objects_dir(to_key, dataset_id)
+        copied: list[Path] = []
+        whole = False
+        try:
+            for path, size in zip(todo, sizes):
+                final = target / path.name
+                part = final.with_name(final.name + ".part")
+                shutil.copyfile(path, part)
+                cache_collection.land(part, final, to_key, dataset_id, size)
+                media_dirs.grant_to_child(final)
+                copied.append(final)
+            whole = True
+        finally:
+            if not whole:  # stopped partway: what it copied goes, and the failure goes on
+                for path in copied:
+                    path.unlink(missing_ok=True)
     return copied
 
 
