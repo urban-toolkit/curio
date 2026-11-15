@@ -869,6 +869,21 @@ jobs:
           fi
           echo "OK: the deploy configuration pins isolation fail-closed."
 
+          # Each isolated node's memory is a cgroup at its budget, which the
+          # container may arrange only with a private cgroup namespace and
+          # writable cgroups. Without either line the live instances fall
+          # back to the address-space cap, which SAM 3 cannot run under.
+          if ! echo "$config" | grep -qE '^ +cgroup: "?private"?$'; then
+            echo "::error::docker-compose.deploy.yml no longer asks for a private cgroup namespace (cgroup: private); the live instances' nodes would fall back to the address-space cap" >&2
+            exit 1
+          fi
+          if ! echo "$config" | grep -qE '^ +- "?writable-cgroups=true"?$'; then
+            echo "::error::docker-compose.deploy.yml no longer asks for writable cgroups (security_opt: writable-cgroups=true); the live instances' nodes would fall back to the address-space cap" >&2
+            echo "$config" | grep -A 3 'security_opt:' >&2 || true
+            exit 1
+          fi
+          echo "OK: the deploy configuration gives each node a cgroup at its budget."
+
           # The execution account is DISCOVERED by name rather than passed as a
           # flag, so the command line can no longer be the thing that proves it
           # exists. The image is. Without it the sandbox still refuses to serve
