@@ -12,9 +12,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 
 import pytest
+
+#: The fake's name, at the start of each entry the route's ``remaining``
+#: lists: its module, ``<name>.py``, and its metadata,
+#: ``<name>-<version>.dist-info``. The route's names hold no ``-`` or ``.``.
+_FAKE_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 
 
 def _auth(token):
@@ -40,7 +46,7 @@ def _import_path() -> dict[str, list[str]]:
 
 @pytest.fixture(autouse=True)
 def _cleanup(client, tmp_curio):
-    """Remove what a test staged, then check that no fake outlived it.
+    """Remove every fake a test staged, then check that none outlived it.
 
     Each test stages its fakes in a folder of its own, which the route keeps
     on ``sys.path`` and ``PYTHONPATH`` while a fake is left in it. A fake left
@@ -52,11 +58,15 @@ def _cleanup(client, tmp_curio):
     from utk_curio.backend.app.testing.routes import _broken_lib_root
 
     yield
-    _post(client, action="remove")
+    # The default fake, then every one the route still lists. A test that
+    # closes the route (test_it_is_not_mounted_outside_a_test_rig, whose patch
+    # outlives this teardown) gets a 404 with no list, so the checks below
+    # read the folder and the import path, not the route's answer.
+    answer = _post(client, action="remove")
+    remaining = answer.get_json()["remaining"] if answer.status_code == 200 else []
+    for name in sorted({_FAKE_NAME.match(entry).group() for entry in remaining}):
+        _post(client, action="remove", name=name)
 
-    # The checks read the folder and the import path, not the route's answer:
-    # a test that closes the route (test_it_is_not_mounted_outside_a_test_rig,
-    # whose patch outlives this teardown) gets a 404 from it.
     folder = _broken_lib_root()
     on = [where for where, entries in _import_path().items() if str(folder) in entries]
     assert on == [], f"{folder} outlived its test on {on}"
