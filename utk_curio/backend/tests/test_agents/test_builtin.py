@@ -1206,8 +1206,9 @@ class TestResearcher:
         # 2026-11-15: a planned Spatial Join starts with its template's code
         # and the plan sets its operation and output widgets by name; its
         # "spatialJoin" setting is gone, and a change of them is a widget's
-        # value.
-        "8cb4831ad7ee511c947a64e3f5e74966c7cba2d1d0d01838f40a1ee206755b78"
+        # value. Its widgets are set by name in a plan or a node.create, the
+        # words test_prompt_promises.py holds every such sentence to.
+        "3fa724e9923117e595da029f85d339c4c352557ae775f8f04488352b318bb2d6"
     )
 
     def test_manifest_surface(self):

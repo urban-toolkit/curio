@@ -869,11 +869,13 @@ def test_a_doc_kept_from_before_the_join_had_code_opens_built_anew_with_its_code
     from ._ydoc_client import DocClient
 
     before = DocClient(socket, room.project_id)
-    assert before.sync()["ok"] is True
+    synced = before.sync()
+    assert synced["ok"] is True
     old = before.doc_id
     assert _code(before.dataflow(), "join") == "", "the doc was not made as the old Curio made it"
     socket.disconnect(namespace=NAMESPACE)
-    assert room.docs.close(room.project_id) is True
+    closed = room.docs.close(room.project_id)
+    assert closed is True
 
     # This Curio reads it converted.
     monkeypatch.setattr(saved_joins, "converted_spec", converted_spec)

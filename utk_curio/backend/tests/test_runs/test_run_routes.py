@@ -749,7 +749,12 @@ class TestAPackageNodesModules:
         run_id = _start(client, token, project_id).get_json()["id"]
         _wait(run_id)
         assert _get(client, token, run_id)["status"] == "succeeded"
-        assert "package_modules" not in sandbox.bodies["a"]
+        # A built-in Python node gets the built-in package's module, the
+        # Spatial Join's spatial_join; the package's node its own package's.
+        assert sandbox.bodies["a"]["package_modules"] == {
+            "root": str(package_dir(key, "curio.builtin@1") / "sources"),
+            "names": ["spatial_join"],
+        }
         assert sandbox.bodies["b"]["package_modules"] == {
             "root": str(package_dir(key, "ai.test.heights@1") / "sources"),
             "names": ["building_height"],

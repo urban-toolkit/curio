@@ -382,7 +382,10 @@ class TestModelPackagesInTheModelCatalog:
         user, _ = user_and_token
         catalog = _rows(client, auth, "/api/packages/catalog?kind=node")
         assert catalog[f"{RASTERIZATION}@1"]["modules"] == ["scout_rasters"]
-        assert catalog["curio.builtin@1"]["modules"] == []
+        # The built-in package's one module is the Spatial Join's.
+        assert catalog["curio.builtin@1"]["modules"] == ["spatial_join"]
+        # The Vega-Lite package's charts are specs, beside no module.
+        assert catalog["curio.vega-lite@1"]["modules"] == []
         install_package_from_directory(_user_key(user), PACKAGES / f"{RASTERIZATION}@1")
         _add(user, DEEP_UMBRA)
         assert _rows(client, auth, "/api/packages?kind=node")[f"{RASTERIZATION}@1"]["modules"] == [

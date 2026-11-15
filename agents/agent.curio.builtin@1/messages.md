@@ -502,7 +502,7 @@ params changes nothing: the {label} node already has {settings}
 
 ## node-settings.join-widgets
 
-{where}: a Spatial Join keeps its operation and output in its widgets operation and output: set them by name in widgets, such as {"name": "operation", "type": "choice", "value": "within"}
+{where}: a Spatial Join keeps its operation and output in its widgets operation and output: set them by name in widgets in a plan or a node.create, such as {"name": "operation", "type": "choice", "value": "within"}
 
 ## plan.widgets-not-placeable
 

@@ -31,7 +31,7 @@ WITHIN_COUNTS = [{"name": "operation", "type": "choice", "value": "within"},
 #: What the model is told, after where it gives the join's old setting.
 OLD_SETTING = (
     ": a Spatial Join keeps its operation and output in its widgets operation and output: set them by name "
-    'in widgets, such as {"name": "operation", "type": "choice", "value": "within"}'
+    'in widgets in a plan or a node.create, such as {"name": "operation", "type": "choice", "value": "within"}'
 )
 
 

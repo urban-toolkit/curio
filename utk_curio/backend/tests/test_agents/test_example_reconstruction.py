@@ -194,6 +194,8 @@ class TestReachability:
             "widget", "scenarios", "quad-cities-flood-vulnerability", "06-back-bay-road-sunlight",
             "chicago-loop-shadow-towers", "24-scout-shadow-model-chicago-loop", "chicago-rain-wind-routing", "lower-manhattan-park-shade",
             "scenario-comparison-charts", "crown-heights-1550-bedford-shadow", "filter-rows-with-widgets",
+            # Each Spatial Join's Operation and Output.
+            "10-street-vision-cv-analysis", "15-vega-lite-spec-forms-and-catalogs", "25-spatial-join-operations",
         }
         for fixture in with_widgets:
             example = _example(fixture)

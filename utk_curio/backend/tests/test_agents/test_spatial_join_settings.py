@@ -34,7 +34,7 @@ OPERATIONS = "intersects, within, contains, touches, overlaps, crosses, nearest"
 #: What a plan or a node.create is told, after where it gives the join's old setting.
 OLD_SETTING = (
     ": a Spatial Join keeps its operation and output in its widgets operation and output: set them by name "
-    'in widgets, such as {"name": "operation", "type": "choice", "value": "within"}'
+    'in widgets in a plan or a node.create, such as {"name": "operation", "type": "choice", "value": "within"}'
 )
 
 
@@ -157,8 +157,8 @@ def test_no_tool_offers_the_old_setting():
 
 def test_every_agent_reads_what_a_join_holds_and_how_its_widgets_are_set():
     """The preamble places the nodes skill: the join's code calls
-    spatial_join with its two widgets, a plan or a node.create gives a new
-    join that code and sets them by name, and node.settings.write changes
+    spatial_join with its two widgets, a new join starts with that code and a
+    plan or a node.create sets them by name, and node.settings.write changes
     them. Its Trill block shows no setting of the join's own."""
     from utk_curio.backend.app.agents.domain import builtin
 
@@ -166,8 +166,8 @@ def test_every_agent_reads_what_a_join_holds_and_how_its_widgets_are_set():
         preamble = builtin.read_prompt_text(coord, "system")
         assert (
             "A Spatial Join node's python code calls `spatial_join` to pair the rows of the GeoDataFrames on its two "
-            "input circles whose shapes meet, as its choice widgets operation and output say. A plan or a "
-            "node.create gives a new one that code: set those widgets by name, and one already on the canvas "
+            "input circles whose shapes meet, as its choice widgets operation and output say. A new one starts "
+            "with that code: set those widgets by name in a plan or a node.create, and one already on the canvas "
             "changes them through node.settings.write's widgets."
         ) in preamble, coord
         assert "spatialJoin" not in preamble, coord
@@ -178,8 +178,8 @@ def test_the_builders_set_a_joins_widgets_and_never_its_old_setting():
 
     instruction = builtin.read_prompt_text(DATAFLOW_BUILDER, "instruction")
     told = (
-        "A planned Spatial Join starts with its template's code: set its operation and output widgets by name, "
-        'such as {"name": "operation", "type": "choice", "value": "within"}.'
+        "A planned Spatial Join starts with its template's code: set its operation and output widgets by name "
+        'in a plan or a node.create, such as {"name": "operation", "type": "choice", "value": "within"}.'
     )
     assert told in instruction
     # The example it gives is one a plan's join takes.
