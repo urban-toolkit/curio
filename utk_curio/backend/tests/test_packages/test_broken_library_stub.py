@@ -11,6 +11,8 @@ bug it does not reproduce.
 from __future__ import annotations
 
 import json
+import os
+import sys
 
 import pytest
 
@@ -27,10 +29,39 @@ def _post(client, **body):
     )
 
 
+def _import_path() -> dict[str, list[str]]:
+    """Where this process imports from, and where every child it starts
+    does: pip's and the import probe's among them."""
+    return {
+        "sys.path": list(sys.path),
+        "PYTHONPATH": os.environ.get("PYTHONPATH", "").split(os.pathsep),
+    }
+
+
 @pytest.fixture(autouse=True)
 def _cleanup(client, tmp_curio):
+    """Remove what a test staged, then check that no fake outlived it.
+
+    Each test stages its fakes in a folder of its own, which the route keeps
+    on ``sys.path`` and ``PYTHONPATH`` while a fake is left in it. A fake left
+    behind keeps that folder on both for the rest of this worker process, and
+    every pip and probe child a later test starts inherits it: pip run as the
+    execution account then fails on a folder in pytest's 0700 temporary tree
+    (``test_pip_target_as_exec_user.py``).
+    """
+    from utk_curio.backend.app.testing.routes import _broken_lib_root
+
     yield
     _post(client, action="remove")
+
+    # The checks read the folder and the import path, not the route's answer:
+    # a test that closes the route (test_it_is_not_mounted_outside_a_test_rig,
+    # whose patch outlives this teardown) gets a 404 from it.
+    folder = _broken_lib_root()
+    on = [where for where, entries in _import_path().items() if str(folder) in entries]
+    assert on == [], f"{folder} outlived its test on {on}"
+    left = sorted(os.listdir(folder)) if folder.exists() else []
+    assert left == [], f"fakes outlived their test in {folder}: {left}"
 
 
 def test_the_fake_is_the_real_shape_pip_is_satisfied_and_the_import_is_not(client):
@@ -143,8 +174,15 @@ def test_removing_one_fake_leaves_the_others(client):
     """The API invites naming a distribution, so removal has to honour it."""
     from utk_curio.backend.app.packages.infrastructure import pip_runner
 
-    _post(client, action="install", name="brokenlib")
-    _post(client, action="install", name="notrasterio", version="1.3.9")
+    staged = [
+        _post(client, action="install", name="brokenlib"),
+        _post(client, action="install", name="notrasterio", version="1.3.9"),
+    ]
+    # Both must stage, or there is no other fake to leave. The route refuses a
+    # name that already resolves, and the name of a fake that another test
+    # left on the import path does.
+    refused = [answer.get_json() for answer in staged if answer.status_code != 200]
+    assert refused == [], f"a fake was not staged: {refused}"
 
     body = _post(client, action="remove", name="notrasterio").get_json()
 
