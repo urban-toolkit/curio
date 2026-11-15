@@ -125,6 +125,11 @@ class TestTheWidgetsDefinitionJudgesTheValue:
         assert wg.template_problems(
             wg.parse_widgets([{"name": "stat", "type": "choice", "value": "max"}], "w")[0], [], "w",
         ) == ["w[0] ('stat'): Give at least one choice."]
+        # Any other widget of the template, declared whole, stays judged as the
+        # grammar judged it: a number's own default, 0, is no template bound's.
+        bounded = [{"name": "factor", "type": "number", "default": 2, "options": {"min": 1, "max": 5}}]
+        widgets, errors = wg.parse_widgets([{"name": "factor", "type": "number", "value": 3}], "params.widgets")
+        assert errors == [] and wg.template_problems(widgets, bounded, "params.widgets") == []
 
 
 class TestANodeCreate:

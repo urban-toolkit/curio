@@ -221,11 +221,12 @@ def template_problems(widgets: list[dict], declared: list[dict], where: str) -> 
     """Why *widgets*, the widgets an agent declares on a new node
     (:func:`parse_widgets`, at *where*), cannot be set over *declared*, the
     widgets its template declares, which the node starts with
-    (``plan_scenarios._set_over``). One of a name the template declares is
-    judged as the node will hold it, the template's with the keys it gives set
-    over it; the template's choice keeps its type and its choices, which its
-    value and its default must be among. A choice that gives no choices and
-    names no widget of the template is refused as the Widgets tab refuses it."""
+    (``plan_scenarios._set_over``). The template's choice keeps its type and
+    its choices: one of its name is judged as the node will hold it, the
+    template's with the keys it gives set over it, so its value and its
+    default must be among those choices. A choice that gives no choices is
+    judged so over any other widget of its name, and refused as the Widgets
+    tab refuses it when the template declares none."""
     held = {w.get("name"): w for w in declared if isinstance(w, dict)}
     problems: list[str] = []
     for index, entry in enumerate(widgets):
@@ -244,6 +245,9 @@ def template_problems(widgets: list[dict], declared: list[dict], where: str) -> 
                 "widget.template-choices", where=here, widget=entry["name"], kind=template["type"],
                 choices=", ".join(_choices_of(template)),
             ))
+            continue
+        if template.get("type") not in CHOICE_KINDS and not sets_by_name(entry):
+            # A whole declaration over any other widget: parse_widgets judged it.
             continue
         problem = _declaration_problem(widget_with_default({**template, **entry}), [], here)
         if problem:

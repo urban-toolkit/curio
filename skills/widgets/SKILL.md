@@ -22,6 +22,6 @@ A dataset widget's value is the id of a Data Catalog dataset, layer group or col
 
 A value several nodes read is a widget on one {{template.label:curio.builtin/python-computation}} node that returns it, wired into each reader.
 
-A new node of a template that declares widgets starts with them: in a plan or a node.create, give one its name, its type and its value, and the rest stays the template's; a choice keeps the template's choices, and its value must be one of them.
+A new node of a template that declares widgets starts with them: in a plan or a node.create, give one its name, its type and its value; a choice keeps the template's choices, and its value must be one of them.
 
 A node already on the canvas takes new widget values through node.settings.write: its "widgets" maps each widget's name to the new value, which must fit the widget's type and options as a value typed in the Widgets tab must. The node's code stays as it was. Only the user adds a widget to a node already on the canvas, in its Widgets tab.
