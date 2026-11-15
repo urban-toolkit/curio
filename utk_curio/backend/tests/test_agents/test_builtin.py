@@ -1203,7 +1203,11 @@ class TestResearcher:
         # 2026-11-04: a selection is a scenario's scenario-specific nodes, the
         # loaders the scenarios read their shared context, and the comparison
         # step their shared outcome (PR #1252, step 7).
-        "1a67956dc8584f53ac90fbad2af386f46c81b805cbdafd0122f56d2b231126c8"
+        # 2026-11-15: a planned Spatial Join starts with its template's code
+        # and the plan sets its operation and output widgets by name; its
+        # "spatialJoin" setting is gone, and a change of them is a widget's
+        # value.
+        "8cb4831ad7ee511c947a64e3f5e74966c7cba2d1d0d01838f40a1ee206755b78"
     )
 
     def test_manifest_surface(self):

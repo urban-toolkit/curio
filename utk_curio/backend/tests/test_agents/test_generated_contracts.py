@@ -663,12 +663,13 @@ class TestTheTrillBlock:
         text = contracts.render_trill_block(_trill())
         for phantom in ('"annotations"', '"Data"', '"warnings"'):
             assert phantom not in text, phantom
-        # "output" is a field of a Spatial Join's setting, and of nothing else.
+        # A Spatial Join's operation and output are its widgets: the setting
+        # it kept before, the one place "predicate" and "output" were fields,
+        # is no field of a node's metadata the block shows.
         block = json.loads(text)
         metadata = block["properties"]["dataflow"]["properties"]["nodes"]["items"]["properties"]["metadata"]
-        spatial_join = metadata["properties"].pop("spatialJoin")
-        assert list(spatial_join["properties"]) == ["predicate", "output"]
-        assert '"output"' not in json.dumps(block)
+        assert "spatialJoin" not in metadata["properties"]
+        assert '"predicate"' not in text and '"output"' not in text
         assert "description" not in text
 
     def test_the_preamble_carries_it(self):

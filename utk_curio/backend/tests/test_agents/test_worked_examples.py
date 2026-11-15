@@ -117,6 +117,38 @@ class TestTheBlock:
                 assert not LAYOUT & set(node), (example.key, node.get("id"))
                 assert node["id"] and node["type"]
 
+    def test_a_widget_a_node_holds_as_its_template_declares_it_is_shown_by_name_type_and_value(self):
+        """The rest of it is the template's, which a run reads from the
+        template: a Spatial Join's choices, a loader's label and default. A
+        widget its node declares itself, or holds otherwise than its template
+        declares it, is shown whole."""
+        from utk_curio.backend.tests.test_agents.test_node_settings_write import JOIN_CODE, OPERATION, OUTPUT
+
+        photos = {"name": "data", "type": "dataset", "label": "Photos", "default": ""}
+        factor = {"name": "factor", "type": "number", "default": 2}
+        spec = {"dataflow": {"nodes": [
+            {"id": "join", "type": "curio.builtin/spatial-join@1", "content": JOIN_CODE,
+             "metadata": {"widgets": [{**OPERATION, "value": "within"}, OUTPUT]}},
+            {"id": "load", "type": "curio.builtin/data-loading",
+             "metadata": {"widgets": [{"name": "data", "type": "dataset", "label": "Data", "default": "", "value": "data.x"}]}},
+            {"id": "photos", "type": "curio.builtin/data-loading", "metadata": {"widgets": [photos]}},
+            {"id": "calc", "type": "curio.builtin/python-computation", "metadata": {"widgets": [factor]}},
+        ], "edges": []}}
+        shown = {n["id"]: n for n in json.loads(examples.trill_text(spec))["dataflow"]["nodes"]}
+        assert shown["join"]["metadata"]["widgets"] == [
+            {"name": "operation", "type": "choice", "value": "within"}, {"name": "output", "type": "choice"},
+        ]
+        assert shown["join"]["content"] == JOIN_CODE
+        assert shown["load"]["metadata"]["widgets"] == [{"name": "data", "type": "dataset", "value": "data.x"}]
+        assert shown["photos"]["metadata"]["widgets"] == [photos]
+        assert shown["calc"]["metadata"]["widgets"] == [factor]
+
+    def test_the_street_vision_example_fits_the_block(self):
+        """The largest example a run's block holds: its Spatial Joins' widgets,
+        shown by name, type and value, keep it within the bound."""
+        block = examples.render([_pool()["10-street-vision-cv-analysis"]])
+        assert block is not None and len(block) <= examples.MAX_BLOCK_CHARS
+
     def test_exclude_leaves_an_example_out(self):
         assert NINE in _keys(examples.select(MILAN))
         for name in (NINE, f"{NINE}.json", f"docs/examples/{NINE}.json"):

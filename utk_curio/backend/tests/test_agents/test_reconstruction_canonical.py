@@ -336,12 +336,23 @@ class TestRoles:
                 assert role_for_template(facts, has_incoming_data_edge=incoming) in ROLES, facts
 
     def test_a_template_with_no_code_is_an_endpoint_never_executable(self):
-        """dev/119 (DEC-076): spatial-join has no code the sandbox could run --
-        a backend endpoint does its work. The harness must not credit or
-        penalise it as an executable node."""
-        facts = TEMPLATES["curio.builtin/spatial-join"]
+        """dev/119 (DEC-076): a Note has no code the sandbox could run. The
+        harness must not credit or penalise it as an executable node."""
+        facts = TEMPLATES["curio.builtin/note"]
+        assert facts.has_code is False and facts.category == "flow"
         assert facts.executable is False
-        assert role_for_template(facts, has_incoming_data_edge=True) == "endpoint"
+        for incoming in (False, True):
+            assert role_for_template(facts, has_incoming_data_edge=incoming) == "endpoint", incoming
+
+    def test_the_spatial_join_is_code_a_transform_once_fed(self):
+        """Its code calls the built-in package's spatial_join, so the sandbox
+        runs it: a data step, a loader at the head of a flow and a transform
+        once fed, as every data step whose template declares no loadsDataset."""
+        facts = TEMPLATES["curio.builtin/spatial-join"]
+        assert (facts.category, facts.engine, facts.editor, facts.has_code) == ("data", "python", "code", True)
+        assert facts.executable is True
+        assert role_for_template(facts, has_incoming_data_edge=True) == "transform"
+        assert role_for_template(facts, has_incoming_data_edge=False) == "loader"
 
     def test_an_unknown_template_claims_nothing(self):
         assert role_for_template(None, has_incoming_data_edge=True) == "endpoint"
