@@ -47,7 +47,7 @@ function nodeMemoryText(deployment: MonitorDeployment | undefined): string {
     case "address space":
       return `address-space cap: ${deployment?.memoryLimitReason ?? "see the sandbox log"}`;
     default:
-      return deployment.memoryLimit;
+      return deployment?.memoryLimit ?? "…";
   }
 }
 
