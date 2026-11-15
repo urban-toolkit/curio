@@ -384,7 +384,8 @@ class TestTheReplyOfAPlay:
             "code": self.CODE, "nodeType": "curio.builtin/python-computation", "nodeId": "n1",
             "input": {"path": "", "dataType": "str"}, "saveOutputDataset": False,
         }, headers={"Authorization": f"Bearer {token}"})
-        assert resp.status_code == 200, resp.get_data(as_text=True)
+        text = resp.get_data(as_text=True)
+        assert resp.status_code == 200, text
         return resp.get_json()["missingModule"]
 
     def test_an_account_without_the_package_is_told_to_add_it(
@@ -417,7 +418,8 @@ class TestTheReplyOfAPlay:
         assert found["installable"] is False, found
         assert found["reason"] == "package-not-added"
         assert found["package"] == {"id": PACKAGE_ID, "kind": "model", "name": "Tracker"}
-        assert "guest" in found["detail"].lower()
+        detail = found["detail"].lower()
+        assert "guest" in detail
 
     def test_an_account_with_the_package_is_told_which_nodes_import_it(
         self, client, user_and_token, catalog, monkeypatch,
