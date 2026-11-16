@@ -415,7 +415,7 @@ class TestSolveProgressAndReconnection:
         project_id = _new_project(session, "Reconstruction solve")
         _provision(session, project_id)
         _attach_builder(session, project_id)
-        _script_the_oracle(session)
+        _script_the_oracle(session, project_id)
 
         page.goto(f"{session['frontend']}/dataflow/{project_id}")
         page.wait_for_load_state("domcontentloaded")
