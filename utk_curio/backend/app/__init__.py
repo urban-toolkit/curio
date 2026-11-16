@@ -242,7 +242,10 @@ def create_app(config_class=config_class, *, startup_work=None):
         else:
             if not os.path.exists('logs'):
                 os.mkdir('logs')
-            file_handler = RotatingFileHandler('logs/backend.log',
+            # Each process of a start of several logs to a file of its own:
+            # one renames a rotating log that the others still write.
+            from utk_curio.common.backend_processes import own_file
+            file_handler = RotatingFileHandler(os.path.join('logs', own_file('backend.log')),
                                                maxBytes=10240, backupCount=10)
             file_handler.setFormatter(logging.Formatter(
                 '%(asctime)s %(levelname)s: %(message)s '

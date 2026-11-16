@@ -112,6 +112,8 @@ CODE = {
      "\nimport importlib, json, sys\nmapping = j"): "the Python pip's probe runs",
     ("utk_curio/backend/app/packages/infrastructure/pip_runner.py", "<module>",
      "\nimport importlib, json, re, sys\nfrom im"): "the Python pip's probe runs",
+    ("utk_curio/cli/backend_group.py", "nginx_config",
+     "# The router of a start of  backend proc"): "nginx's config, which the launcher writes for the router",
     ("utk_curio/sandbox/util/db.py", "_init_db_locked",
      "\n        CREATE TABLE IF NOT EXISTS arti"): "SQL",
     ("utk_curio/sandbox/util/edit_expr.py", "<module>",

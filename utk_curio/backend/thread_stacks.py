@@ -14,8 +14,10 @@ the server's accept loop, between two of its bytecodes, so it takes no lock
 (no ``threading.enumerate()``, no logging) that the code it interrupted may
 hold. Each dump is appended to ``backend-thread-stacks.txt`` in the state
 folder: ``CURIO_STATE_DIR``, else ``.curio`` in the launch folder, which the
-probe finds from the backend's environment. A dump starts with a line naming
-the process, the time and the thread count, and ends with :func:`end_line`.
+probe finds from the backend's environment. Each process of a start of
+several has its own, ``backend-thread-stacks-<number>.txt``
+(``backend_processes.own_file``). A dump starts with a line naming the
+process, the time and the thread count, and ends with :func:`end_line`.
 """
 
 from __future__ import annotations
@@ -28,18 +30,20 @@ import time
 import traceback
 from pathlib import Path
 
+from utk_curio.common.backend_processes import own_file
+
 FILE_NAME = "backend-thread-stacks.txt"
 
 
 def stacks_path(environ=None, cwd=None) -> Path:
     """Where the dumps go, from *environ* and *cwd* (this process's by
     default): the state folder ``user_storage.curio_root`` starts from,
-    without its ``test`` folder."""
+    without its ``test`` folder, in this process's own file."""
     environ = os.environ if environ is None else environ
     cwd = os.getcwd() if cwd is None else cwd
     override = environ.get("CURIO_STATE_DIR")
     root = Path(cwd, override) if override else Path(environ.get("CURIO_LAUNCH_CWD") or cwd, ".curio")
-    return root / FILE_NAME
+    return root / own_file(FILE_NAME, environ)
 
 
 def end_line(pid: int) -> str:
