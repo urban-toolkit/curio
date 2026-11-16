@@ -18,10 +18,10 @@ and its DuckDB handle, which is exactly what this is meant to avoid.
 The memory limit isolated nodes run under is settled as the sandbox starts,
 before it serves (:func:`lay_out_at_start`, called by ``server.py``): a cgroup
 at the node's budget for each run where the container's cgroups can hold
-them, laid out then (``node_cgroups``), else the address-space cap, with the
-reason in the log and on /monitor. So /version says the outcome before any
-node has run. Each zygote's start keeps it (:func:`ensure_running`), unless
-the zygote cannot make its places.
+them, laid out then and tried with one place (``node_cgroups``), else the
+address-space cap, with the reason in the log and on /monitor. So /version
+says the outcome before any node has run. Each zygote's start keeps it
+(:func:`ensure_running`), unless the zygote cannot make its places.
 """
 
 import contextlib
@@ -253,16 +253,27 @@ def lay_out_at_start(memory_mb):
     Laid out here, not at the first zygote's start, so that /version and
     /monitor say the outcome from the sandbox's first answer, and a deploy
     that checks it checks what its nodes get, not what the container would
-    allow. Every zygote this process starts keeps it
-    (:func:`_choose_node_memory`): a layout that failed is not tried again
+    allow. Once the layout is made, a place is made as a zygote makes its
+    runs' and removed (``node_cgroups.try_a_place``): cgroups that could not
+    hold a run give the address-space cap, for ``places``, from the start
+    too. Every zygote this process starts keeps the outcome
+    (:func:`_choose_node_memory`): a start that failed is not tried again
     while the sandbox runs. Nodes with no budget, *memory_mb*, have the
     address-space cap, as :func:`ensure_running` gives them.
     """
     global _laid_out
-    if memory_mb:
-        _laid_out = _lay_out()
-    else:
+    if not memory_mb:
         _laid_out = node_cgroups.ADDRESS_SPACE, "requested"
+        return _laid_out
+    outcome = _lay_out()
+    if outcome[0] == node_cgroups.CGROUP:
+        try:
+            node_cgroups.try_a_place(memory_mb)
+        except OSError as exc:
+            print(f"[isolation] a run's cgroup could not be made: {exc}",
+                  file=sys.stderr, flush=True)
+            outcome = node_cgroups.ADDRESS_SPACE, "places"
+    _laid_out = outcome
     return _laid_out
 
 
