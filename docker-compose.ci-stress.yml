@@ -79,7 +79,11 @@ services:
       - --sandbox-port
       - "2000"
       # How many backend processes serve, behind nginx past one: the job's
-      # CURIO_BACKEND_PROCESSES, 1 when it sets none. Only in the command: a
-      # backend that inherited the variable would take itself for one of N.
+      # CURIO_STRESS_BACKEND_PROCESSES, 1 when it sets none. test-gpu-stress
+      # sets 8, the count chosen for dev and stable; test-desktop-stress, a
+      # laptop, sets none. The count goes only in the command, under a name of
+      # its own: a process that inherited the backends' own
+      # CURIO_BACKEND_PROCESSES, the job's host-side harness and browser tier
+      # among them, would take itself for one of N.
       - --backend-processes
-      - "${CURIO_BACKEND_PROCESSES:-1}"
+      - "${CURIO_STRESS_BACKEND_PROCESSES:-1}"
