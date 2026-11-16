@@ -192,27 +192,31 @@ def present_in(activity) -> dict:
     return here
 
 
-def room_headers(user) -> dict:
-    """The headers of a member's agent work: its own, naming its room's
-    dataflow, where its turns run. A member asks before its own work moves to
-    the room's dataflow (``VirtualUser.on_the_canvas``), and with several
-    backend processes nginx sends each call to the one that owns it: the
-    attach, the script of its replies, the ask and its stream."""
+def room_headers(user, dataflow: Optional[str] = None) -> dict:
+    """The headers of a member's agent work: its own, naming the dataflow
+    whose agents it asks, *dataflow*, else its room's, where its turns run.
+    A member asks before its own work moves to the room's dataflow
+    (``VirtualUser.on_the_canvas``), and with several backend processes
+    nginx sends each call to the one that owns it: the attach, the script of
+    its replies, the ask and its stream. A hosted guest's name the example
+    its page opened, as the page names it (``guests.py``)."""
     headers = user._headers()
-    if user.room.project_id:
-        headers[ROUTE_HEADER] = user.room.project_id
+    named = dataflow or user.room.project_id
+    if named:
+        headers[ROUTE_HEADER] = named
     return headers
 
 
 def _request(user, session, method: str, label: str, path: str, *, json_body=None,
-             expect=200, timeout: float = API_TIMEOUT_S) -> dict:
+             expect=200, timeout: float = API_TIMEOUT_S, dataflow: Optional[str] = None) -> dict:
     """One call of a member's agent work on *session*, recorded on the
     member's result as its own calls are (``VirtualUser._call``), under
-    *label*; raises ``UserFailed`` on anything but *expect*."""
+    *label*, naming *dataflow* (:func:`room_headers`); raises
+    ``UserFailed`` on anything but *expect*."""
     started = time.time()
     try:
         resp = session.request(method, f"{user.backend_url}{path}", json=json_body,
-                               headers=room_headers(user), timeout=timeout)
+                               headers=room_headers(user, dataflow), timeout=timeout)
     except requests.Timeout:
         user._record(label, None, None, started, False, f"no response in {timeout:.0f}s", "timeout")
         raise UserFailed(f"{label} timed out")
@@ -238,13 +242,17 @@ class MemberTurn:
     """One member's agent at work on its node: attached, scripted, asked and
     followed on a thread of its own (:meth:`run`), then judged
     (:meth:`judge`). *early*: it asked as its node was in, not once the
-    room's typing was over."""
+    room's typing was over. *dataflow*: the dataflow whose agents it asks,
+    which its calls name in their paths and headers: a hosted guest's, the
+    example its page opened (``guests.py``); its room's when None."""
 
-    def __init__(self, member: str, node_id: str, content: str, *, early: bool):
+    def __init__(self, member: str, node_id: str, content: str, *, early: bool,
+                 dataflow: Optional[str] = None):
         self.member = member
         self.node_id = node_id
         self.content = content
         self.early = early
+        self.dataflow = dataflow
         self.attachment_id: Optional[str] = None
         #: The ask's id, chosen here as a tab chooses one, to follow it by.
         self.ask_id = uuid.uuid4().hex
@@ -331,10 +339,11 @@ class MemberTurn:
         failure is recorded on *user*'s result, never raised. *on_over* is
         told once the work is over."""
         session = requests.Session()
-        base = f"/api/agents/projects/{user.room.project_id}"
+        dataflow = self.dataflow or user.room.project_id
+        base = f"/api/agents/projects/{dataflow}"
         try:
             attached = _request(user, session, "POST", "/api/agents/projects/:id/attachments",
-                                f"{base}/attachments", expect=201,
+                                f"{base}/attachments", expect=201, dataflow=dataflow,
                                 json_body={"coord": COORD, "target": {"kind": "node", "targetId": self.node_id}})
             self.attachment_id = attached.get("attachmentId")
             if not self.attachment_id:
@@ -342,13 +351,13 @@ class MemberTurn:
                            f"attaching {COORD} to its node answered no attachment: {attached!r}", "agent_turn")
                 return
             _request(user, session, "POST", "/api/testing/agent-script", "/api/testing/agent-script",
-                     json_body=script_body(self.attachment_id, self.node_id, self.content))
+                     dataflow=dataflow, json_body=script_body(self.attachment_id, self.node_id, self.content))
             turns = f"{base}/attachments/{self.attachment_id}/turns"
             self.asked_at = time.perf_counter()
             _request(user, session, "POST", "/api/agents/projects/:id/attachments/:id/turns", turns,
-                     expect=202, json_body={"message": MESSAGE, "askId": self.ask_id})
+                     expect=202, dataflow=dataflow, json_body={"message": MESSAGE, "askId": self.ask_id})
             self.asked = True
-            self._follow(user, session, f"{turns}/{self.ask_id}")
+            self._follow(user, session, f"{turns}/{self.ask_id}", dataflow)
         except UserFailed:
             pass  # its Sample says why
         except Exception as exc:  # noqa: BLE001 - a crashed agent thread is a finding too
@@ -361,17 +370,18 @@ class MemberTurn:
                 self.over.set()
                 on_over(self)
 
-    def _follow(self, user, session, ask: str) -> None:
+    def _follow(self, user, session, ask: str, dataflow: Optional[str] = None) -> None:
         """Follow the ask to its end (``turns/<askId>/stream``), as a tab no
         room holds does, and again after a stream that broke, until
         :data:`TURN_TIMEOUT_S` after the ask; a turn still going then is
-        stopped (``.../stop``), so it never leaks into a later run."""
+        stopped (``.../stop``), so it never leaks into a later run. Each
+        call names *dataflow* (:func:`room_headers`)."""
         label = "/api/agents/projects/:id/attachments/:id/turns/:id/stream"
         deadline = self.asked_at + TURN_TIMEOUT_S
         while self.end is None and time.perf_counter() < deadline and self.broken <= FOLLOW_AGAIN:
             started = time.time()
             try:
-                with session.get(f"{user.backend_url}{ask}/stream", headers=room_headers(user), stream=True,
+                with session.get(f"{user.backend_url}{ask}/stream", headers=room_headers(user, dataflow), stream=True,
                                  timeout=(API_TIMEOUT_S, max(1.0, deadline - time.perf_counter()))) as resp:
                     if resp.status_code != 200:
                         user._record(label, None, resp.status_code, started, False, resp.text[:500], "http_error")
@@ -395,7 +405,8 @@ class MemberTurn:
                              "transport")
         if self.end is None:
             try:
-                session.post(f"{user.backend_url}{ask}/stop", headers=room_headers(user), timeout=API_TIMEOUT_S)
+                session.post(f"{user.backend_url}{ask}/stop", headers=room_headers(user, dataflow),
+                             timeout=API_TIMEOUT_S)
             except requests.RequestException:
                 pass  # what is judged is the turn's end, or that none came
 

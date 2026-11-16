@@ -5,7 +5,9 @@ summary for the CI step summary. Both answer the same three questions -- what
 broke, how slow did it get, and how close to a resource ceiling did the stack
 come -- for the users' dataflow runs and for their tabs of the shared
 dataflows: how long an update took to be in every other tab, and the backend's
-threads, memory and doc files on disk.
+threads, memory and doc files on disk; and for hosted guests on one example,
+each on its own copy: their sync, their agents' turns, what their copies held,
+and each copy's backend process.
 """
 
 from __future__ import annotations
@@ -112,6 +114,16 @@ def room_process(room: dict, processes: int) -> int:
     """The backend process that owns *room*'s dataflow among *processes*, by
     the rule nginx routes it by (``backend_processes.shard_of``)."""
     return shard_of(room.get("project_id"), processes)
+
+
+def copy_process(guest: dict, processes: int) -> int:
+    """The backend process that owns a hosted guest's copy of an example
+    among *processes*, from the guest's outcome (``guests.GuestVisit.outcome``),
+    by the rule the owner guard keeps (``owner_guard.room_key``): today the
+    example's (``shard_of`` of the id of the example it copies), the id its
+    page names in its calls and its socket's handshake, so every guest of one
+    example works on one process. The one place the report reads that rule."""
+    return shard_of(guest.get("example_id"), processes)
 
 
 def socket_summary(rooms: list[dict], processes: int = 1) -> dict | None:
@@ -263,6 +275,67 @@ def agents_summary(rooms: list[dict], processes: int = 1) -> dict | None:
     }
 
 
+def guests_summary(guests: list[dict], processes: int = 1) -> dict | None:
+    """What a tier's hosted guests did (``--guests``), from each guest's
+    outcome (``guests.GuestVisit.outcome``): the guests whose tab joined a
+    room of their own copy, and how many rooms those were; the updates their
+    tabs sent and each one's time to the server's answer (``sync_ms``, the
+    copy's doc holding it; None when none was answered); their agents'
+    turns, how they ended, how long each took from its ask to its end
+    (``turn_s``) and its phases (``phases_s``), and their writes; the copies
+    read back, with their work missing (``not_in_copy``) and work that was
+    not their own in them (``leaked``); the agents and locks the server still
+    had in a room at the end (None when no room was read); and each guest's
+    copy with its backend process among *processes* (:func:`copy_process`).
+    None for a tier with no guests."""
+    if not guests:
+        return None
+    turns = [guest["turn"] for guest in guests if (guest.get("turn") or {}).get("asked")]
+    ends = {"done": 0, "error": 0, "withdrawn": 0, "never": 0}
+    writes = {"landed": 0, "changed_meanwhile": 0, "refused": 0, "none": 0}
+    for turn in turns:
+        end, write = turn.get("end") or "never", turn.get("write") or "none"
+        ends[end] = ends.get(end, 0) + 1
+        writes[write] = writes.get(write, 0) + 1
+    copies = [guest["copy"] for guest in guests if guest.get("copy")]
+    present = [guest["present_at_end"] for guest in guests if guest.get("present_at_end") is not None]
+    locks = [guest["locks_at_end"] for guest in guests if guest.get("locks_at_end") is not None]
+    rooms = [guest["project_id"] for guest in guests if guest.get("project_id")]
+    return {
+        "guests": len(guests),
+        "examples": sorted({guest["example"] for guest in guests if guest.get("example")}),
+        "joined": len(rooms),
+        "rooms": len(set(rooms)),
+        "transports": sorted({(guest.get("tab") or {}).get("transport") for guest in guests
+                              if (guest.get("tab") or {}).get("transport")}),
+        "updates": sum(guest.get("updates") or 0 for guest in guests),
+        "sync_ms": distribution([value for guest in guests for value in guest.get("sync_seconds") or []], 1000.0),
+        "asked": len(turns),
+        "ends": ends,
+        "turn_s": distribution([turn["seconds"] for turn in turns if isinstance(turn.get("seconds"), (int, float))],
+                               digits=2),
+        "phases_s": {phase: distribution([turn["phases"][phase] for turn in turns
+                                          if phase in (turn.get("phases") or {})], digits=2)
+                     for phase in TURN_PHASES},
+        "writes": writes,
+        "copies": {
+            "read": sum(1 for copy in copies if copy.get("read")),
+            "not_in_copy": sum(1 for copy in copies if copy.get("not_in_copy")),
+            "leaked": sum(1 for copy in copies if copy.get("leaked")),
+        },
+        "present_at_end": sum(len(names) for names in present) if present else None,
+        "locks_at_end": sum(len(held) for held in locks) if locks else None,
+        "rooms_read": len(present),
+        "per_guest": [
+            {"guest": guest.get("guest"), "copy_id": guest.get("project_id"),
+             "process": copy_process(guest, processes) if guest.get("project_id") else None,
+             "turn_s": (guest.get("turn") or {}).get("seconds"), "end": (guest.get("turn") or {}).get("end"),
+             "write": (guest.get("turn") or {}).get("write"), "copy": guest.get("copy")}
+            for guest in guests
+        ],
+    }
+
+
 def cpu_track(readings: list, seconds_key: str, at_key: str) -> dict | None:
     """A process's CPU over the *readings* that carry its CPU seconds
     (*seconds_key*) and the moment each was read (*at_key*): the seconds it
@@ -358,18 +431,20 @@ def backend_summary(start: dict | None, samples: list[dict], end: dict | None,
     }
 
 
-def process_summary(rooms: list[dict], processes: int, backend: dict | None = None) -> list[dict]:
+def process_summary(rooms: list[dict], processes: int, backend: dict | None = None,
+                    process_of=room_process) -> list[dict]:
     """Each backend process's share of a tier, home first: the rooms whose
-    dataflow it owns (:func:`room_process`), their sync (``sync_ms``), their
-    agents' turns (``turn_s``) and phases (``phases_s``), and the process's
-    own threads, memory and CPU as the probe read them (``backend``, from
-    :func:`backend_summary`; None when not read). A process holding no room
-    is there too: hashing puts several rooms on one process and none on
-    another."""
+    dataflow it owns (*process_of*: :func:`room_process`, or for hosted
+    guests, each guest's copy a room of its own, :func:`copy_process`), their
+    sync (``sync_ms``), their agents' turns (``turn_s``) and phases
+    (``phases_s``), and the process's own threads, memory and CPU as the
+    probe read them (``backend``, from :func:`backend_summary`; None when not
+    read). A process holding no room is there too: hashing puts several rooms
+    on one process and none on another."""
     measured = {one.get("process"): one for one in (backend or {}).get("processes") or []}
     block = []
     for number in range(max(1, processes)):
-        owned = [room for room in rooms if room_process(room, processes) == number]
+        owned = [room for room in rooms if process_of(room, processes) == number]
         groups = [room["agents"] for room in owned if room.get("agents")]
         block.append({
             "process": number,
@@ -415,8 +490,13 @@ def tier_summary(tier: int, results: list[UserResult], seconds: float,
                  profile: str = "burst", exec_lock: dict | None = None,
                  sockets: dict | None = None, backend: dict | None = None,
                  doc_files: dict | None = None, harness: dict | None = None,
-                 canvas: dict | None = None) -> dict:
-    failures = [(r, s) for r in results for s in r.failures]
+                 canvas: dict | None = None, checks: list[UserResult] | None = None) -> dict:
+    """The tier's numbers and failures from its users' *results*. *checks*
+    are the results of what the harness checks beside its users once the
+    tier is over, such as the hosted guests' example read again
+    (``guests.ExampleReader.check``): their failures fail the tier, and they
+    are no users of it."""
+    failures = [(r, s) for r in [*results, *(checks or [])] for s in r.failures]
     kinds = {kind: 0 for kind in FAILURE_KINDS}
     for _, sample in failures:
         kinds[sample.kind] = kinds.get(sample.kind, 0) + 1
@@ -538,13 +618,14 @@ def peak_container_stats(stats_log: str | None) -> dict | None:
 def build_report(run_id: str, backend_url: str, tiers: list[dict],
                  stats_log: str | None = None, profile: str = "burst",
                  room_size: int | None = None, shared_canvas: bool = False,
-                 backend_processes: int = 1) -> dict:
+                 backend_processes: int = 1, guests: str | None = None) -> dict:
     report = {
         "run_id": run_id,
         "backend_url": backend_url,
         "profile": profile,
         "room_size": room_size,
         "shared_canvas": shared_canvas,
+        "guests": guests,
         "backend_processes": backend_processes,
         "tiers": tiers,
         "failed": any(t["failure_count"] for t in tiers),
@@ -656,11 +737,65 @@ def _agents_table(tiers: list[dict]) -> list[str]:
     return lines + _turn_phases_table(tiers)
 
 
-def _turn_phases_table(tiers: list[dict]) -> list[str]:
+def _guests_table(tiers: list[dict]) -> list[str]:
+    """What each tier's hosted guests did on their copies of one example
+    (``--guests``), their turns phase by phase, and each copy's process."""
+    if not any(tier.get("guests") for tier in tiers):
+        return []
+    lines = ["", ("Hosted guests: each signs in as a guest, opens one example as its page does, types two lines in "
+                  "a node's code in a copy of its own through its tab, and asks Node Builder, on Curio's scripted "
+                  "model (no LLM, no tokens), to put a line naming it on top of that code. A copy's room holds its "
+                  "guest's one tab, so sync is each keystroke's and drag's time from the tab to the server's "
+                  "answer, once the copy's doc holds it; a turn is timed from its ask to its end. Each guest reads "
+                  "its copy back as a reload does, which must hold its own work and nothing else, and once the "
+                  "tier is over the example must be as it was. A turn that fails, a write missing from a tab or a "
+                  "copy, work found outside its guest's copy, or an agent or a lock left in a room fails the tier."),
+             ""]
+    lines.append("| Tier | Guests | Rooms | Updates | Sync p50 | Sync p95 | Sync max | Turns | Done | Turn p50 "
+                 "| Turn p95 | Turn max | Writes landed | Copies read back | Work missing | Work outside its copy "
+                 "| In a room at end |")
+    lines.append("| ---: | -----: | ----: | ------: | -------: | -------: | -------: | ----: | ---: | -------: "
+                 "| -------: | -------: | ------------: | ---------------: | -----------: | --------------------: "
+                 "| ---------------: |")
+    for tier in tiers:
+        guests = tier.get("guests")
+        if not guests:
+            continue
+        sync, took, copies = guests["sync_ms"], guests["turn_s"], guests["copies"]
+        cells = [f"{sync[key]} ms" for key in ("p50", "p95", "max")] if sync else ["none answered"] * 3
+        cells += [str(guests["asked"]), str(guests["ends"]["done"])]
+        cells += [f"{took[key]} s" for key in ("p50", "p95", "max")] if took else ["no turn ended"] * 3
+        at_end = [f"{guests[key]} {what}" for key, what in (("present_at_end", "agent(s)"), ("locks_at_end", "lock(s)"))
+                  if guests[key] is not None]
+        cells += [str(guests["writes"]["landed"]), f"{copies['read']} of {guests['joined']}",
+                  str(copies["not_in_copy"]), str((tier.get("failures_by_kind") or {}).get("leaked", 0)),
+                  ", ".join(at_end) or "not read"]
+        lines.append(f"| {tier['tier']} | {guests['guests']} | {guests['rooms']} | {guests['updates']} "
+                     f"| {' | '.join(cells)} |")
+    return lines + _turn_phases_table(tiers, "guests") + _copies_details(tiers)
+
+
+def _copies_details(tiers: list[dict]) -> list[str]:
+    """Each hosted guest's copy and the backend process that owns it, a
+    folded list for each tier."""
+    lines = []
+    for tier in tiers:
+        placed = [guest for guest in (tier.get("guests") or {}).get("per_guest") or [] if guest.get("copy_id")]
+        if not placed:
+            continue
+        lines += ["", f"<details><summary>{tier['tier']} guests: each one's copy and its backend process</summary>",
+                  ""]
+        lines += [f"- `{guest['guest']}`: copy `{guest['copy_id']}` on process {guest['process']}" for guest in placed]
+        lines += ["", "</details>"]
+    return lines
+
+
+def _turn_phases_table(tiers: list[dict], block: str = "agents") -> list[str]:
     """Where an agent's turn spends its time: from each ask, the seconds to
     the turn's first event, once it is prepared and its run reserved; to its
-    write's result; and to its end."""
-    if not any(any(((tier.get("agents") or {}).get("phases_s") or {}).values()) for tier in tiers):
+    write's result; and to its end. *block* is the tier's part the phases are
+    read from: its agents', or its hosted guests'."""
+    if not any(any(((tier.get(block) or {}).get("phases_s") or {}).values()) for tier in tiers):
         return []
     lines = ["", ("Agents' turns, phase by phase: the seconds from each ask to the turn's first event, once "
                   "it is prepared and its run reserved; to its write's result, landed or refused; and to "
@@ -670,7 +805,7 @@ def _turn_phases_table(tiers: list[dict]) -> list[str]:
     lines.append("| ---: | -----------: | -----------: | -----------: | ----------: | ----------: | ----------: "
                  "| --------: | --------: | --------: |")
     for tier in tiers:
-        phases = (tier.get("agents") or {}).get("phases_s") or {}
+        phases = (tier.get(block) or {}).get("phases_s") or {}
         if not any(phases.values()):
             continue
         cells = []
@@ -713,8 +848,11 @@ def _processes_table(tiers: list[dict]) -> list[str]:
     CPU, memory and threads."""
     if not any(len(tier.get("processes") or []) > 1 for tier in tiers):
         return []
-    lines = ["", ("Backend processes: each room's dataflow belongs to one, by the first two hex digits of its id, "
-                  "as nginx routes it. Each process's rooms, their sync and turns, and its own CPU and memory."), ""]
+    rooms = ("Backend processes: each room's dataflow belongs to one, by the first two hex digits of its id, "
+             "as nginx routes it")
+    if any(tier.get("guests") for tier in tiers):
+        rooms += "; each hosted guest's copy is a room of its own, on the process the list of copies above names"
+    lines = ["", f"{rooms}. Each process's rooms, their sync and turns, and its own CPU and memory.", ""]
     lines.append("| Tier | Process | Rooms | Sync p50 | Sync p95 | Turn p50 | Turn p95 | Prepared p50 "
                  "| Cores (tier / peak) | RSS peak (MiB) | Threads peak |")
     lines.append("| ---: | ------: | ----: | -------: | -------: | -------: | -------: | -----------: "
@@ -770,13 +908,16 @@ def markdown(report: dict) -> str:
     # older one needs to know the wire changed.
     transports = sorted({
         name for tier in report["tiers"]
-        for name in ((tier.get("sockets") or {}).get("transports") or [])
+        for part in ("sockets", "guests")
+        for name in ((tier.get(part) or {}).get("transports") or [])
     })
     wire = "arrow artifacts" + (f", tabs over {' and '.join(transports)}" if transports else "")
     if any(tier.get("canvas") for tier in report["tiers"]):
         wire += ", shared canvases"
     if any(tier.get("agents") for tier in report["tiers"]):
         wire += ", agents on the scripted model"
+    if any(tier.get("guests") for tier in report["tiers"]):
+        wire += ", hosted guests on one example with agents on the scripted model"
     lines = [f"## Stress run `{report['run_id']}` "
              f"({report.get('profile', 'burst')} profile, {wire})", ""]
     lines.append("| Tier | Users | Completed | Wall | Failures | User p95 |")
@@ -804,6 +945,7 @@ def markdown(report: dict) -> str:
     lines += _tabs_table(report["tiers"])
     lines += _canvas_table(report["tiers"])
     lines += _agents_table(report["tiers"])
+    lines += _guests_table(report["tiers"])
     lines += _backend_table(report["tiers"])
     lines += _cpu_table(report["tiers"])
     lines += _processes_table(report["tiers"])

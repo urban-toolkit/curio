@@ -8,6 +8,7 @@ of a few users, each also opens a tab of a shared dataflow, a pycrdt doc synced
 over Socket.IO as the canvas syncs it, and types and drags in it.
 
 See ``run.py`` for the entry point, ``driver.py`` for one user's session,
-``sockets.py`` for its tab, and ``backend_probe.py`` for what is read of the
-backend's process and its doc files.
+``sockets.py`` for its tab, ``agents.py`` for its agent, ``guests.py`` for
+hosted guests on one example, each on its own copy, and ``backend_probe.py``
+for what is read of the backend's process and its doc files.
 """
