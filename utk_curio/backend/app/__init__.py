@@ -8,13 +8,13 @@ from logging.handlers import RotatingFileHandler
 from utk_curio.backend.config import Config as config_class
 from utk_curio.backend.config import _is_dev
 from utk_curio.backend.extensions import db, migrate
-from utk_curio.common import shared_constants
+from utk_curio.common import backend_processes, shared_constants
 
 #: The header a dashboard viewer's tab sends its run's token in.
 RUN_TOKEN_HEADER = shared_constants.read("dashboardRuns")["runTokenHeader"]
 #: The header every request of a dataflow's page names that dataflow in, by
 #: which a start of several backend processes routes it (``cli/backend_group.py``).
-DATAFLOW_HEADER = shared_constants.read("dataflowRoute")["header"]
+DATAFLOW_HEADER = backend_processes.ROUTE_HEADER
 
 
 CORS_HEADERS = {

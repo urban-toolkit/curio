@@ -170,11 +170,12 @@ def test_the_router_keys_on_the_header_and_the_query_the_file_names(tmp_path):
     the backend's CORS list names the file's header."""
     from utk_curio.backend.app import DATAFLOW_HEADER
     from utk_curio.cli import backend_group
-    from utk_curio.common import shared_constants
+    from utk_curio.common import backend_processes, shared_constants
 
     route = _file("dataflowRoute")
     read = shared_constants.read("dataflowRoute")
     assert read == route
+    assert (backend_processes.ROUTE_HEADER, backend_processes.ROUTE_QUERY) == (route["header"], route["query"])
     assert (backend_group.ROUTE_HEADER, backend_group.ROUTE_QUERY) == (route["header"], route["query"])
     assert DATAFLOW_HEADER == route["header"]
     text = backend_group.nginx_config(host="127.0.0.1", port=5999, ports=[7000, 7001], folder=tmp_path)
@@ -193,7 +194,7 @@ def test_a_page_on_another_origin_may_send_the_dataflow_header(tmp_path, monkeyp
     from utk_curio.backend.app import CORS_HEADERS, create_app
     from utk_curio.backend.extensions import db
     from utk_curio.backend.tests._unit_fixtures import TestConfig
-    from utk_curio.cli.backend_group import ROUTE_HEADER as header
+    from utk_curio.common.backend_processes import ROUTE_HEADER as header
 
     allowed = {name.strip().lower() for name in CORS_HEADERS["Access-Control-Allow-Headers"].split(",")}
     exposed = {name.strip().lower() for name in CORS_HEADERS["Access-Control-Expose-Headers"].split(",")}
