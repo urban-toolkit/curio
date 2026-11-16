@@ -371,7 +371,11 @@ def start_viewer_run(
     with no saved output, kept on it; for anyone else it is not found.
 
     Refused first of all in a process that does not own the dataflow
-    (``collaboration/owner_guard.py``): a hosted guest's copy is its."""
+    (``collaboration/owner_guard.py``), the one the dashboard's page names. A
+    hosted guest's run of its own copy is a run of the dashboard too, kept by
+    the dashboard's dataflow's owner, which reads the copy as any process
+    reads a dataflow it does not own (``dataflow_docs.read``) and keeps what
+    the run makes on it."""
     from flask import current_app
 
     from utk_curio.backend.app.collaboration import owner_guard

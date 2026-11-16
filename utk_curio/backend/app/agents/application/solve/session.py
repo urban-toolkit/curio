@@ -230,7 +230,7 @@ def solve_attachment_stream(
 
     # Only the process that owns the dataflow runs its Solves, refused before
     # anything is read or repaired.
-    owner_guard.refuse(project_id, user_key, what="a Solve")
+    owner_guard.refuse(project_id, what="a Solve")
     spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     # DEC-080 (dev/126): Solve hard-invokes node.content.generate and, for a
