@@ -65,7 +65,7 @@ Under `utk_curio/backend/app/`:
 - `notebooks/`: Jupyter notebook import (`analyzer.py`).
 - `api/routes.py`: sandbox proxies, starters, file serving.
 - `testing/`: test-only routes for Playwright, registered only in dev mode.
-- `common/`: shared helpers (safe paths, file locks, owner-only files, user storage, egress policy, the background job registry, `record_clock.py`: the clock catalog records are dated by, `token_bucket.py`: the token bucket behind the discovery and monitor rate limits, `address_limiter.py`: a budget per visitor address under an overall one, behind the monitor's error reports and a dashboard viewer's runs).
+- `common/`: shared helpers (safe paths, file locks, owner-only files, user storage, egress policy, the background job registry, `record_clock.py`: the clock catalog records are dated by, `token_bucket.py`: the token bucket behind the discovery and monitor rate limits, `address_limiter.py`: a budget per visitor address under an overall one, behind the monitor's error reports and a dashboard viewer's runs, `shared_budgets.py`: the budgets over what a start's backend processes share, one for all of them when it runs several (a viewer's step slots and runs a minute, package handler slots and breakers, an account's runs, Solves, builds and downloads, a portal's requests a minute, Nominatim's pace), kept in `.curio/budgets` under a lock, a holder counting only while its own lock is held; in memory with one process).
 
 ## Frontend core
 
