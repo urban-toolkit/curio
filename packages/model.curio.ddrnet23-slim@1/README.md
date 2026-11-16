@@ -3,14 +3,15 @@
 DDRNet23-Slim labels every pixel of a street photo with one of the 19
 Cityscapes classes: road, sidewalk, building, wall, fence, pole, traffic light,
 traffic sign, vegetation, terrain, sky, person, rider, car, truck, bus, train,
-motorcycle and bicycle. It runs on the CPU with onnxruntime.
+motorcycle and bicycle. It runs on the CPU with onnxruntime, and gives the same
+results on every x86 CPU.
 
 This is a model package: the model's weights and its node. The
 [Model Catalog](../../docs/MODEL-CATALOG.md) lists it.
 
 | Part | What it is | License |
 |---|---|---|
-| `models/ddrnet23_slim.onnx`, `models/ddrnet23_slim.data` | The weights: the w8a8 ONNX export published by Qualcomm AI Hub Models | MIT; trained on Cityscapes (`LICENSE`) |
+| `models/ddrnet23_slim.onnx`, `models/ddrnet23_slim.data` | The weights: the w8a8 ONNX export published by Qualcomm AI Hub Models, its int8 zero points stored as uint8 by [`scripts/onnx_zero_points_to_uint8.py`](../../scripts/onnx_zero_points_to_uint8.py), which computes the same values | MIT; trained on Cityscapes (`LICENSE`) |
 | `sources/image-segmentation.py` | The Image Segmentation node's code: its settings and a call of the [Segmentation](../curio.segmentation@1/README.md) package's `segment_images` | MIT |
 
 ## Nodes

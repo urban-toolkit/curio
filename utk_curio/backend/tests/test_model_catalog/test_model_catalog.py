@@ -339,7 +339,10 @@ class TestModelPackagesInTheModelCatalog:
         block = ddrnet["model"]
         assert (ddrnet["name"], ddrnet["license"], block["license"], block["licenseFile"]) == (
             "DDRNet23-Slim (street scenes)", "MIT", "MIT; trained on Cityscapes", "LICENSE")
-        assert block["publisher"] == "DDRNet authors; ONNX export by Qualcomm AI Hub Models (v0.63.0, w8a8)"
+        assert block["publisher"] == (
+            "DDRNet authors; ONNX export by Qualcomm AI Hub Models (v0.63.0, w8a8), its int8 zero points stored "
+            "as uint8 by Curio"
+        )
         assert block["homepage"] == "https://huggingface.co/qualcomm/DDRNet23-Slim"
         assert {key: block["input"][key] for key in ("width", "height", "dtype")} == {
             "width": 2048, "height": 1024, "dtype": "uint8"}
