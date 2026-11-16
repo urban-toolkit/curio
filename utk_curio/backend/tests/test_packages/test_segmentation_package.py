@@ -374,7 +374,8 @@ def test_an_install_of_ddrnet_from_the_catalog_brings_the_package(client, user_a
     added = install(False)
     assert added.status_code == 201, added.get_data(as_text=True)
     assert (package_dir(key, PACKAGE.name) / "sources" / f"{MODULE}.py").is_file()
-    assert client.delete(f"/api/packages/{PACKAGE.name}", headers=headers).status_code == 204
+    removed = client.delete(f"/api/packages/{PACKAGE.name}", headers=headers)
+    assert removed.status_code == 204, removed.get_data(as_text=True)
     assert not package_dir(key, PACKAGE.name).exists()
     updated = install(True)
     assert updated.status_code == 201, updated.get_data(as_text=True)
