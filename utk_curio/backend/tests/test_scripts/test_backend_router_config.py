@@ -81,6 +81,35 @@ def test_every_two_digit_prefix_goes_to_the_process_shard_of_names(processes, tm
     assert "upstream curio_backend_" + str(processes) + " " not in text
 
 
+def _routed(owners: str, key: str) -> int:
+    """The process the map *owners* sends the key *key* to, as nginx reads a
+    map: its regular expressions in order, case aside, the first that
+    matches; with none, its default."""
+    for prefixes, number in _MAP_LINE.findall(owners):
+        if re.match(rf"(?:{prefixes})", key, re.IGNORECASE):
+            return int(number)
+    return int(re.search(r"default curio_backend_(\d+);", owners).group(1))
+
+
+@pytest.mark.parametrize("processes", [1, 2, 4, 8])
+def test_an_id_made_for_a_process_goes_to_that_process(processes, tmp_path):
+    """A new dataflow's id is made for the process the placement of new
+    dataflows picks (``backend_processes.dataflow_id_on``), and the router
+    sends it there, as it sends every id."""
+    from utk_curio.common.backend_processes import dataflow_id_on
+
+    text, _ = _config(processes, tmp_path)
+    owners = _block(text, "map $curio_key $curio_backend")
+
+    wrong = {}
+    for process in range(processes):
+        for _ in range(16):
+            made = dataflow_id_on(process, processes)
+            if _routed(owners, made) != process:
+                wrong[made] = (process, _routed(owners, made))
+    assert wrong == {}, f"the router sends these ids elsewhere, (made for, sent to): {wrong}"
+
+
 def test_the_key_is_the_header_else_the_query_else_a_dataflow_id_in_the_path(tmp_path):
     text, _ = _config(2, tmp_path)
 
