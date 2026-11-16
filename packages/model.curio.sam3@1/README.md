@@ -62,7 +62,7 @@ the argument of its name in lowercase:
 | `LABELS` | curb ramp, curb cut, tactile paving, bollard, pole, construction barrier, traffic cone, person | What to look for, in plain words. SAM 3 takes any short noun phrase, not only the package's labels below. |
 | `EVERY_SECONDS` | `0.5` | The gap between two frames SAM 3 looks at. |
 | `FROM_SECONDS`, `TO_SECONDS` | `0`, `None` | The part of each video to track, in seconds from its start; `None` is its end. |
-| `MAX_SECONDS` | `300` | The most video one run takes. SAM 3 keeps every frame it looked at until the video's end, so a longer part stops the node, with a message naming the limit and the two settings above. |
+| `MAX_SECONDS` | `300` | The most video one run takes: a longer part stops the node, with a message naming the limit and the two settings above. |
 | `WIDTH` | `960` | The widest frames are read and drawn at. A narrower video keeps its size. |
 
 The node runs on the GPU when the machine has one (CUDA, in bfloat16, or
