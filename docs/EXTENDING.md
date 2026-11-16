@@ -133,9 +133,11 @@ every key with booleans only: `present` (this account saved one) and
 `has_source_keys` maps the `secretId` of each key the account saved to `true`.
 
 A package whose backend needs to know *who* is calling must send the bearer
-token: read `window.curio.getAuthToken()` (a getter, because a package bundle
-evaluates once at boot, before sign-in) and pass it as an `Authorization`
-header. Never check secrets into git.
+token: send `window.curio.requestHeaders()` as its call's headers. It holds
+the token as an `Authorization` header and the dataflow the page shows, which
+a Curio started with several backend processes routes the call by. It is a
+function, because a package bundle evaluates once at boot, before sign-in.
+Never check secrets into git.
 
 ### 3.3 Public APIs without auth
 

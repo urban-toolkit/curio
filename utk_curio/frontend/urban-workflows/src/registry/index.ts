@@ -22,6 +22,7 @@ import '../adapters/autkGrammarAdapter';
 // completes deterministically.
 import * as ReactNS from 'react';
 import { getToken } from '../utils/authApi';
+import { requestHeaders } from '../utils/requestHeaders';
 import * as ReactFlowNS from 'reactflow';
 import { fetchData, storeOutput } from '../services/api';
 import { registerBehavior } from './behaviorRegistry';
@@ -48,6 +49,10 @@ if (typeof window !== 'undefined') {
     // whose backend needs to know WHO is calling (for the caller's own keys)
     // send this as a Bearer header.
     getAuthToken: () => getToken(),
+    // The headers every request of the page sends, for a package's own call
+    // to the backend: the sign-in, and the dataflow the page shows, by which a
+    // start of several backend processes sends the call to its process.
+    requestHeaders: () => requestHeaders(getToken()),
     // The canvas's own reader of an output, so a package's node reads one as
     // a built-in node does: from what a dashboard page carries or a viewer's
     // run made, else on the open dataflow's route (services/dataflowReads.ts),

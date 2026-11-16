@@ -99,6 +99,8 @@ export const runsApi = {
   /**
    * Run the dataflow as its doc holds it, one node of it (`target`), or
    * several (`targets`). A 409 carries `runId` when the dataflow already runs.
+   * The request names that dataflow, which may not be the page's: a scenario
+   * drop runs its context in the scenario's own project.
    */
   start(
     projectId: string,
@@ -111,7 +113,7 @@ export const runsApi = {
     return apiFetch<Run>(`/api/projects/${projectId}/runs`, {
       method: "POST",
       body: JSON.stringify(body),
-    });
+    }, projectId);
   },
 
   /**
@@ -121,6 +123,8 @@ export const runsApi = {
   async listForProject(projectId: string, { limit = 1, mine = false } = {}): Promise<Run[]> {
     const body = await apiFetch<{ runs: Run[] }>(
       `/api/projects/${projectId}/runs?limit=${limit}${mine ? "&mine=1" : ""}`,
+      {},
+      projectId,
     );
     return body.runs ?? [];
   },
@@ -142,8 +146,16 @@ export const runsApi = {
     });
   },
 
-  /** Follow a run: its state, then its events replayed and live. Resolves when the stream ends. */
-  follow(runId: string, onEvent: (event: RunEvent) => void, signal?: AbortSignal): Promise<void> {
+  /**
+   * Follow a run: its state, then its events replayed and live. Resolves when
+   * the stream ends. *dataflow* is the run's, when it is not the page's.
+   */
+  follow(
+    runId: string,
+    onEvent: (event: RunEvent) => void,
+    signal?: AbortSignal,
+    dataflow?: string | null,
+  ): Promise<void> {
     return postSseStream(
       `/api/runs/${runId}/stream`,
       undefined,
@@ -153,6 +165,8 @@ export const runsApi = {
       },
       signal,
       "GET",
+      {},
+      dataflow,
     );
   },
 };

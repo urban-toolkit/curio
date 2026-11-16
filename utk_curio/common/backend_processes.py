@@ -54,6 +54,8 @@ import re
 import uuid
 from collections.abc import Mapping
 
+from utk_curio.common import shared_constants
+
 #: This process's number among the start's backends, from 0.
 PROCESS_VARIABLE = "CURIO_BACKEND_PROCESS"
 #: How many backend processes the start runs.
@@ -67,9 +69,11 @@ TOKEN_VARIABLE = "CURIO_BACKEND_TOKEN"
 
 #: The header a request names its dataflow in, and the query argument a
 #: socket's handshake names it in, which nginx routes by
-#: (``cli/backend_group.py``).
-ROUTE_HEADER = "X-Curio-Dataflow"
-ROUTE_QUERY = "dataflow"
+#: (``cli/backend_group.py``): the names the canvas and the dashboard send
+#: them by (``src/contracts/dataflowRoute.json``).
+_ROUTE = shared_constants.read("dataflowRoute")
+ROUTE_HEADER = _ROUTE["header"]
+ROUTE_QUERY = _ROUTE["query"]
 
 #: The home process's number.
 HOME = 0
