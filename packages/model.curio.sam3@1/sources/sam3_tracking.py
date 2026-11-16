@@ -23,8 +23,7 @@ import numpy as np
 import pandas as pd
 import torch
 from PIL import Image, ImageDraw
-from transformers import Sam3VideoModel as TransformersSam3VideoModel
-from transformers import Sam3VideoProcessor
+from transformers import Sam3VideoModel as TransformersSam3VideoModel, Sam3VideoProcessor
 
 __all__ = ["track_objects"]
 
