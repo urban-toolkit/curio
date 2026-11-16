@@ -59,7 +59,12 @@ runs:
         password: ${{ inputs.token }}
 
     # Tagged with the name compose gives the service's image, so `up` finds it
-    # and builds nothing. stop-stack removes both names at the job's end.
+    # and builds nothing. stop-stack removes both names at the job's end. On
+    # an arcade runner the pull first takes one of a few image slots that all
+    # the server's runners share (scripts/ci_image_slots.py): each runner has a
+    # Docker daemon of its own, so each job writes the whole image to the disk
+    # they share, and 16 to 25 pulls at once slowed every `docker run` there
+    # from 3 s to 13 (11-15). Elsewhere it pulls at once, as before.
     - name: 📥 Pull the image
       shell: bash
       env:
@@ -67,9 +72,7 @@ runs:
         PROJECT: ${{ inputs.project }}
       run: |
         set -euo pipefail
-        started=$(date +%s)
-        docker pull --quiet "$IMAGE"
-        echo "Pulled in $(( $(date +%s) - started )) s, $(docker image inspect --format '{{.Size}}' "$IMAGE") bytes on this daemon"
+        python3 scripts/ci_image_slots.py pull "$IMAGE"
         docker tag "$IMAGE" "$PROJECT-curio"
 
     - name: 🌱 Seed the workspace

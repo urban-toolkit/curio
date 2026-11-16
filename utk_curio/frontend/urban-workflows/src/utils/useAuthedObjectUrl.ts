@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { backendUrl } from './backendUrl';
 import { getToken } from './authApi';
+import { requestHeaders } from './requestHeaders';
 
 /**
  * An object URL for a same-origin `/api/...` file, fetched with the token.
@@ -23,9 +24,8 @@ export function useAuthedObjectUrl(path: string | null): { url: string | null; f
     // requests stop holding the browser's few connections to the server
     // while the next page asks for its own.
     const controller = new AbortController();
-    const token = getToken();
     fetch(`${backendUrl()}${path}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: requestHeaders(getToken()),
       signal: controller.signal,
     })
       .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))

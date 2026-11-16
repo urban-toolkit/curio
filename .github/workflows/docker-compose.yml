@@ -895,6 +895,11 @@ jobs:
           fi
           echo "OK: the image still carries the execution account isolation discovers."
 
+      # No image slot (scripts/ci_image_slots.py) for the build: it would hold
+      # one for its 2 to 4 minutes, though a build from the runner's cache
+      # writes only its new layers, and replayed with the builds holding slots,
+      # the last CPU job of a run got its image 60 s later instead of 28
+      # (median, 11-15).
       - name: 🔨 Build all service images in parallel
         run: docker compose -p curio-ci build --parallel
 
@@ -1531,6 +1536,9 @@ jobs:
       FLASK_SANDBOX_HOST: localhost
       FLASK_SANDBOX_PORT: "2020"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      # Two backend processes behind nginx (docker-compose.ci.yml's command),
+      # where every other job's stack runs one.
+      CURIO_E2E_BACKEND_PROCESSES: "2"
       # A tests run: only the selected e2e tests (scripts/test.sh).
       CURIO_TESTS: ${{ inputs.tests }}
       # Whether this part holds a selected test (build-image's holding, empty

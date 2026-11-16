@@ -1,6 +1,7 @@
 import Cookies from "js-cookie";
 import { backendUrl } from "./backendUrl";
 import { basePath } from "./basePath";
+import { requestHeaders } from "./requestHeaders";
 
 const BACKEND_URL = backendUrl();
 
@@ -47,19 +48,21 @@ export function mayPassAgain(error: unknown): boolean {
   return typeof status !== "number" || status >= 500;
 }
 
+/**
+ * A request to the backend, signed in. *dataflow* is the one it names when it
+ * is about a dataflow other than the page's, as a run of another dataflow is
+ * (`requestHeaders`).
+ */
 export async function apiFetch<T = unknown>(
   path: string,
-  opts: RequestInit = {}
+  opts: RequestInit = {},
+  dataflow?: string | null,
 ): Promise<T> {
-  const token = getToken();
-  const headers: Record<string, string> = {
+  const headers = requestHeaders(getToken(), {
     ...(opts.headers as Record<string, string>),
-  };
+  }, dataflow);
   if (opts.body != null && !("Content-Type" in headers)) {
     headers["Content-Type"] = "application/json";
-  }
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
   }
   const res = await fetch(`${BACKEND_URL}${path}`, { ...opts, headers });
   if (!res.ok) {

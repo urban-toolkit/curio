@@ -38,6 +38,7 @@ import {
 } from '../adapters/node';
 import { packagesApi } from '../services/packages';
 import { getToken } from '../utils/authApi';
+import { requestHeaders } from '../utils/requestHeaders';
 import {
   getEmbeddedDashboard,
   isStandaloneDashboard,
@@ -431,8 +432,7 @@ async function loadPackageBehaviorScripts(packages: RawPackage[]): Promise<void>
       // then blocks the resulting 401 response and the bundle never
       // evaluates. Fetch via ``fetch`` (with the Bearer token) and
       // inject the body as inline script text instead.
-      const headers: Record<string, string> = {};
-      if (token) headers.Authorization = `Bearer ${token}`;
+      const headers = requestHeaders(token);
       // ``cache: 'no-store'`` bypasses the HTTP cache entirely. Without it,
       // a stale bundle (e.g. an earlier broken build still in the disk
       // cache) gets re-evaluated forever — the file-serving endpoint

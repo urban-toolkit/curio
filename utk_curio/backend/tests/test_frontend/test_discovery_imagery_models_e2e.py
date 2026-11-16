@@ -415,4 +415,4 @@ def test_a_model_dropped_on_the_canvas_becomes_a_node_that_runs_it(
     )
     code = read_node_code(page, added[0]["id"])
     assert f'curio_load_model("{DDRNET}")' in code, code
-    assert "curio_segment(" in code, "the node opens with its template's code"
+    assert "segment_images(" in code, "the node opens with its template's code"

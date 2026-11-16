@@ -40,7 +40,8 @@ from utk_curio.backend.app.common.job_registry import Job, JobRefused, JobRegist
 
 JOB_KINDS = ("solve-batch", "solve-node")
 
-#: Backpressure: concurrent live jobs per user (each drives ≤3 sandbox runs).
+#: Backpressure: concurrent live jobs per user (each drives ≤3 sandbox runs),
+#: in every backend process of a start that runs several.
 MAX_ACTIVE_JOBS_PER_USER = 2
 #: A finished job stays subscribable this long so a reload can replay it.
 FINISHED_TTL_SECONDS = 15 * 60
@@ -60,6 +61,7 @@ _REGISTRY = JobRegistry(
         f"at most {MAX_ACTIVE_JOBS_PER_USER} background jobs may run at once; "
         "wait for one to finish"
     ),
+    shared=True,
 )
 
 

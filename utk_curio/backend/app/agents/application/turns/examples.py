@@ -57,7 +57,7 @@ TOP_K = 2
 #: cached, so every opted-in run pays for it; at this size every "Used"
 #: example but the four largest can be shown, usually one large example or two
 #: small ones: 06, 05, 04 and 25 take about 25,000 to 33,000 characters each
-#: alone, and the largest that fits, 10, about 13,700. An example that does not
+#: alone, and the largest that fits, 10, about 13,900. An example that does not
 #: fit is left out; the next one in rank order may still fit.
 MAX_BLOCK_CHARS = 14_000
 #: Words shorter than this never count.

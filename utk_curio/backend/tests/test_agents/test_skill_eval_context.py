@@ -339,6 +339,7 @@ def test_a_case_s_models_reach_its_account_so_models_search_lists_them(
     import dataclasses
 
     from utk_curio.backend.app.agents.application import tools
+    from utk_curio.backend.app.packages.repositories.store import package_dir
     from utk_curio.backend.app.projects.services import _user_dir_key
 
     # The package catalog Curio ships, as the worker's runner copies it.
@@ -361,3 +362,5 @@ def test_a_case_s_models_reach_its_account_so_models_search_lists_them(
         status, _body, _project, _before = worker._attempt(task, task.message, tmp_path, record)
         assert status == 200 and "error" not in record, (attempt, record)
         assert listed() == ["model.curio.ddrnet23-slim"], attempt
+        # With the package its node's code imports, which the Add brings.
+        assert (package_dir(key, "curio.segmentation@1") / "sources" / "semantic_segmentation.py").is_file(), attempt

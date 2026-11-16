@@ -28,6 +28,14 @@ TWO BUFFERS, NOT ONE
 reports shared a deque with server-side failures, anyone could evict every real
 error by posting junk. They get their own, smaller window instead, so the worst
 a flooder can do is drown out other browser reports.
+
+SEVERAL BACKEND PROCESSES
+-------------------------
+In a start of several backend processes each holds its own log, and the home
+process's errors route lists them together (`processes.py`): each other
+process sends its `part`, and `merged` lists every entry newest first, each
+naming the process that holds it, as many server and browser entries as one
+process's windows hold, the newest of them all.
 """
 
 from __future__ import annotations
@@ -151,6 +159,70 @@ def snapshot(sandbox_entries=None) -> dict:
         "droppedClient": dropped,
         "errors": cleaned,
     }
+
+
+def part() -> dict:
+    """This process's log as another backend process of its start sends it to
+    the home process (``processes.py``): its server and browser entries as it
+    holds them, each with its time, and its refused browser reports. Never
+    raises."""
+    try:
+        with _LOCK:
+            return {
+                "server": [dict(entry) for entry in _server],
+                "client": [dict(entry) for entry in _client],
+                "droppedClient": _dropped_client,
+            }
+    except Exception:  # noqa: BLE001 - the route lists the other processes' all the same
+        return {"server": [], "client": [], "droppedClient": 0}
+
+
+def merged(parts: dict, sandbox_entries=None) -> dict:
+    """What the errors route returns in a start of several backend processes,
+    from the :func:`part` of each process that answered, by its number: every
+    entry naming its process (``process``), the newest :data:`SERVER_WINDOW`
+    server entries and :data:`CLIENT_WINDOW` browser entries of them all, the
+    sandbox's (``sandbox_entries``) as :func:`snapshot` takes them, newest
+    first by time, and the refused reports summed. Never raises."""
+    server: list = []
+    client: list = []
+    dropped = 0
+    for number, each in sorted(parts.items()):
+        if not isinstance(each, dict):
+            continue
+        server.extend(_of_process(each.get("server"), number))
+        client.extend(_of_process(each.get("client"), number))
+        dropped += _count(each.get("droppedClient"))
+    entries = (sorted(server, key=_by_time, reverse=True)[:SERVER_WINDOW]
+               + sorted(client, key=_by_time, reverse=True)[:CLIENT_WINDOW])
+    entries.extend(dict(entry) for entry in (sandbox_entries or []) if isinstance(entry, dict))
+    entries.sort(key=_by_time, reverse=True)
+    return {
+        "serverWindow": SERVER_WINDOW,
+        "clientWindow": CLIENT_WINDOW,
+        "droppedClient": dropped,
+        "errors": [{k: v for k, v in entry.items() if k not in ("_at", "_seq")} for entry in entries],
+    }
+
+
+def _of_process(entries, number: int) -> list:
+    """A part's *entries*, each naming the process *number* that holds it."""
+    if not isinstance(entries, list):
+        return []
+    return [{**entry, "process": number} for entry in entries if isinstance(entry, dict)]
+
+
+def _by_time(entry: dict) -> tuple:
+    """When an entry of any process last happened: its stamp, then the time
+    within the second, which the sandbox's entries do not carry."""
+    at = entry.get("_at")
+    return str(entry.get("at") or ""), at if isinstance(at, (int, float)) and not isinstance(at, bool) else 0.0
+
+
+def _count(value) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(0, value)
 
 
 def reset() -> None:

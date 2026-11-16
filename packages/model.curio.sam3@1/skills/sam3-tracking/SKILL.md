@@ -21,7 +21,7 @@ SAM 3 is a model of the Model Catalog that finds every object a short phrase nam
 
 - Objects named in words, followed through a collection's videos, are a Track Objects node, wired from the Data Loading node that loads the collection (`curio_load_collection(...)`). Rows that are not videos are left out.
 - Its code holds its settings and one call of `track_objects`, from the package's module `sam3_tracking`. Change what it does through the settings, and keep the call, which hands it `curio_load_model("model.curio.sam3")`, a literal id Curio reads, and `curio_derived_file`.
-- An Image Segmentation node does not run SAM 3: `curio_segment` refuses a concept segmentation model, and a model dropped on a node swaps only for one of the node's type.
+- An Image Segmentation node does not run SAM 3: its `segment_images` refuses a concept segmentation model, and a model dropped on a node swaps only for one of the node's type.
 - A table of the objects is a Python Computation node that reads the tracks (below); a chart of them is a Vega-Lite node on that table.
 
 ### Its settings
@@ -31,7 +31,7 @@ The constants at the top of its code, each passed to `track_objects` as the argu
 - `LABELS`: the phrases to look for, a list of short noun phrases. Any phrase works; the 35 labels of the model are the prompts its package names, such as sidewalk, crosswalk, curb ramp, tactile paving, pole, bollard, trash bin, traffic cone, construction barrier, pothole, person, car and bicycle.
 - `EVERY_SECONDS`, 0.5 by default: the gap between two frames SAM 3 looks at. A longer gap runs faster and can miss what passes quickly.
 - `FROM_SECONDS` and `TO_SECONDS`, 0 and None by default (None is the video's end): the part of each video to track, in seconds from its start.
-- `MAX_SECONDS`, 300 by default: the most video one run takes. SAM 3 keeps every frame it looked at until the video's end, so a larger value can run out of memory: pick a part with `FROM_SECONDS` and `TO_SECONDS` instead.
+- `MAX_SECONDS`, 300 by default: the most video one run takes. Keep it, and track a longer video in parts with `FROM_SECONDS` and `TO_SECONDS`.
 - `WIDTH`, 960 by default: the widest frames are read and drawn at.
 
 ### What it returns

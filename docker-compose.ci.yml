@@ -42,6 +42,14 @@
 #    torch's CUDA build; the other jobs pull the one build-image built with
 #    the same argument and torch's CPU build. Every CI overlay sets both.
 #
+# 5. The backend's process count is the job's CURIO_E2E_BACKEND_PROCESSES, 1
+#    when it sets none. e2e-desktop sets 2, so its tests reach dataflows split
+#    over two backends behind nginx, and a request that names no dataflow, or
+#    another one, fails there. The count goes only in the command, under a
+#    name of its own: a process that inherited the backends' own
+#    CURIO_BACKEND_PROCESSES, the job's host-side pytest among them, would
+#    take itself for one of N.
+#
 # Deliberately NOT docker-compose.deploy.yml: that overlay also passes
 # --no-allow-publish, which would disable the two catalog mutators that the
 # publish-catalog tests exercise. CI wants auth on and publish still allowed.
@@ -125,3 +133,4 @@ services:
         umask 000 && exec python curio.py start all --deploy --testing --with-examples
         --backend-host 0.0.0.0 --backend-port 5002 --backend-url "${CURIO_E2E_BACKEND_URL:?the host address of this stack's backend}"
         --sandbox-host 0.0.0.0 --sandbox-port 2000
+        --backend-processes "${CURIO_E2E_BACKEND_PROCESSES:-1}"

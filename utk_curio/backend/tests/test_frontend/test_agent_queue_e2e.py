@@ -322,7 +322,7 @@ def _assert_dragged_one_at_a_time(log: list, saved: dict, att: str, labels: list
 
 def test_a_second_tab_sees_the_agent_drag_a_plans_nodes_one_at_a_time_then_its_connections_land(room):
     planner, _owner, editor = _ready(room)
-    script_agent_replies(room.backend, _plan_reply(), attachment=planner)
+    script_agent_replies(room.backend, _plan_reply(), attachment=planner, dataflow=room.project_id)
 
     reply = room.ask(planner, "Plan the parks' analysis.")
 
@@ -352,7 +352,7 @@ def test_a_second_tab_sees_the_agent_drag_a_plans_nodes_one_at_a_time_then_its_c
 
 def test_a_node_removed_under_a_queued_action_stops_the_queue_with_a_chat_line(room):
     planner, owner, editor = _ready(room)
-    script_agent_replies(room.backend, _plan_reply(), attachment=planner)
+    script_agent_replies(room.backend, _plan_reply(), attachment=planner, dataflow=room.project_id)
     replies: dict = {}
     asking = threading.Thread(
         target=lambda: replies.update(plan=room.ask(planner, "Plan the parks' analysis.")), daemon=True,
@@ -389,9 +389,9 @@ def test_a_node_removed_under_a_queued_action_stops_the_queue_with_a_chat_line(r
 def test_two_agents_queues_play_side_by_side_without_mixing(room):
     planner, _owner, editor = _ready(room)
     builder = room.attach(BUILDER, {"kind": "node", "targetId": SINK})
-    script_agent_replies(room.backend, _plan_reply(), attachment=planner)
+    script_agent_replies(room.backend, _plan_reply(), attachment=planner, dataflow=room.project_id)
     script_agent_replies(room.backend, _create_tail("One"), _create_tail("Two"), "Added two nodes.",
-                         attachment=builder, reset=False)
+                         attachment=builder, reset=False, dataflow=room.project_id)
     replies: dict = {}
 
     def ask(name: str, attachment_id: str, message: str) -> None:

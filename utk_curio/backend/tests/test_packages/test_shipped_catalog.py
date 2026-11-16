@@ -50,9 +50,22 @@ def test_manifest_loads(package_root: Path):
 
 @pytest.mark.parametrize("package_root", PACKAGE_DIRS, ids=IDS)
 def test_manifest_serializes_to_a_catalog_payload(package_root: Path):
-    payload = package_payload(load_package_manifest(package_root))
+    """A package adds a node to the palette, or it is modules alone, which
+    the nodes of a shipped package that names it in ``dependencies.packages``
+    import, as Segmentation's are DDRNet23-Slim's. One that does neither adds
+    nothing; a model package always defines the node that runs its model."""
+    manifest = load_package_manifest(package_root)
+    payload = package_payload(manifest)
     assert payload["dirName"] == package_root.name
-    assert payload["templates"], "a package with no templates adds nothing to the palette"
+    if payload["templates"]:
+        return
+    assert manifest.kind != "model", "a model package defines the node that runs its model"
+    assert module_names(package_root, manifest), "a package with no templates and no modules adds nothing"
+    dependents = [other.name for other in PACKAGE_DIRS if package_root.name in _raw_package_deps(other)]
+    assert dependents, (
+        "a package of modules alone that no shipped package names in dependencies.packages adds nothing"
+    )
+    assert all(load_package_manifest(CATALOG / name).templates for name in dependents), dependents
 
 
 @pytest.mark.parametrize("package_root", PACKAGE_DIRS, ids=IDS)
@@ -153,9 +166,11 @@ def test_each_shipped_dataflow_lists_the_packages_its_packages_need():
     ``dependencies.packages`` to its lockfile too
     (``project_packages.install_to_project``), and a dataflow keeps the
     packages its lockfile lists: each shipped dataflow lists every package a
-    package it lists needs, such as Rasterization beside Media or Deep Umbra."""
+    package it lists needs, such as Rasterization beside Media or Deep Umbra,
+    and Segmentation beside DDRNet23-Slim."""
     needs = {p.name: sorted(_raw_package_deps(p)) for p in PACKAGE_DIRS}
     assert needs["curio.media@1"] == needs["model.scout.deep-umbra@1"] == ["curio.rasterization@1"], needs
+    assert needs["model.curio.ddrnet23-slim@1"] == ["curio.segmentation@1"], needs
     examples = CATALOG.parent / "docs" / "examples"
     read, missing = 0, []
     for path in sorted(examples.rglob("*.json")):

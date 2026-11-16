@@ -6,6 +6,7 @@ import {
   fetchMonitorLlm,
   fetchMonitorOpenFiles,
   fetchMonitorStorage,
+  type MonitorBackendProcesses,
   type MonitorDeployment,
   type MonitorErrorsPayload,
   type MonitorLlmPayload,
@@ -67,6 +68,28 @@ function bucketMountsText(deployment: MonitorDeployment | undefined): string {
 }
 
 /**
+ * The backend processes any of *payloads* left out, in a start of several
+ * (`curio.py start --backend-processes N`), once each and in order.
+ */
+function missingProcesses(
+  payloads: Array<{ backendProcesses?: MonitorBackendProcesses } | null | undefined>
+): number[] {
+  const missing = new Set<number>();
+  for (const payload of payloads) {
+    for (const number of payload?.backendProcesses?.missing ?? []) missing.add(number);
+  }
+  return Array.from(missing).sort((a, b) => a - b);
+}
+
+/** The line naming the backend processes that did not answer, or null. */
+function missingProcessesText(missing: number[]): string | null {
+  if (missing.length === 0) return null;
+  if (missing.length === 1) return `Backend process ${missing[0]} did not answer; its numbers are left out.`;
+  const named = `${missing.slice(0, -1).join(", ")} and ${missing[missing.length - 1]}`;
+  return `Backend processes ${named} did not answer; their numbers are left out.`;
+}
+
+/**
  * What the monitor shows: the toolbar, the deployment, hardware (each
  * server's open files over time among it), execution, LLM tokens, accounts
  * and storage sections, and the recent errors. The /monitor page and the
@@ -114,6 +137,9 @@ export const MonitorContent: React.FC = () => {
   const sandbox = m?.execution.sandbox;
   const hw = m?.hardware;
   const stale = monitor.error != null;
+  const missingText = missingProcessesText(
+    missingProcesses([monitor.data, errors.data, llm.data, openFiles.data])
+  );
 
   return (
     <>
@@ -127,6 +153,11 @@ export const MonitorContent: React.FC = () => {
           {stale ? (
             <span className={styles.staleBanner} role="status">
               Could not reach the backend; showing the last values received.
+            </span>
+          ) : null}
+          {missingText ? (
+            <span className={styles.staleBanner} role="status">
+              {missingText}
             </span>
           ) : null}
         </div>

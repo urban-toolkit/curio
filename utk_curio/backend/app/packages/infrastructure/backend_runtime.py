@@ -37,6 +37,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+from utk_curio.backend.app.common import shared_budgets
 from utk_curio.backend.app.common.file_locks import exclusive_lock
 from utk_curio.backend.app.packages.domain import backend_contract as bc
 from utk_curio.backend.app.packages.domain.manifest import ManifestError
@@ -68,7 +69,9 @@ log = logging.getLogger(__name__)
 #: run a package node gets a 503 after ten seconds, however idle the host is.
 #: Sized to the machine instead, with the same cap-and-refuse behaviour, and
 #: overridable with CURIO_PACKAGE_WORKERS for an operator who has measured
-#: their own workload.
+#: their own workload. The machine's, so a start of several backend processes
+#: has that many in all (``common/shared_budgets.py``): a dataflow's handlers
+#: run in the process that owns it.
 
 
 def _default_worker_slots() -> int:
@@ -84,7 +87,7 @@ def _default_worker_slots() -> int:
 
 MAX_CONCURRENT_WORKERS = _default_worker_slots()
 _SLOT_WAIT_SECONDS = 10.0
-_worker_slots = threading.BoundedSemaphore(MAX_CONCURRENT_WORKERS)
+_worker_slots = shared_budgets.Semaphore("package-workers", MAX_CONCURRENT_WORKERS)
 
 #: The persistent per-package data dir's byte cap (memo dev/91 §6.7): an
 #: over-cap dir refuses the NEXT invocation until the handler (or an
@@ -114,19 +117,41 @@ _USER_NODE_OVERLAY_SUBDIR = "exec-overlays"
 #: (user, package, handler): only INFRASTRUCTURE failures count
 #: (worker timeout/kill/nonzero-exit, missing or contract-violating reply);
 #: a well-formed ``handler-error`` reply is the handler working as designed
-#: and never trips it. In-process by design — a server restart clears the
+#: and never trips it. Held by the start: a server restart clears the
 #: breaker, which is the correct semantic anyway; the ledger keeps history.
+#: A start of several backend processes holds one breaker per key for all of
+#: them (``common/shared_budgets.py``), since an account's dataflows run its
+#: handlers in several: a crash loop stops after the same failures in all.
 QUARANTINE_THRESHOLD = 3
 QUARANTINE_SECONDS = 120.0
 _now = time.monotonic  # test seam (injectable clock)
 _breaker_guard = threading.Lock()
-_breakers: dict[tuple[str, str, str], dict[str, Any]] = {}
+_breakers: dict[str, dict[str, Any]] = {}
+_SHARED_BREAKERS = shared_budgets.State("package-breakers")
 
 
 def reset_breakers() -> None:
     """Test seam: drop all quarantine state."""
     with _breaker_guard:
         _breakers.clear()
+        _SHARED_BREAKERS.clear()
+
+
+@contextlib.contextmanager
+def _breaker_table():
+    """The breakers, by key, held: this process's own, or in a start of
+    several processes the start's."""
+    with _breaker_guard:
+        if not shared_budgets.across_processes():
+            yield _breakers
+            return
+        with _SHARED_BREAKERS.held() as table:
+            yield table
+
+
+def _breaker_name(key: tuple[str, str, str]) -> str:
+    """*key*, (user, package, handler), as the breakers' table names it."""
+    return "\n".join(key)
 
 
 def _breaker_check(key: tuple[str, str, str], pin: str) -> float | None:
@@ -136,12 +161,13 @@ def _breaker_check(key: tuple[str, str, str], pin: str) -> float | None:
     new code deserves a fresh start. An expired cooldown goes HALF-OPEN: the
     call proceeds, the consecutive counter is kept, and one more
     infrastructure failure re-quarantines at once."""
-    with _breaker_guard:
-        state = _breakers.get(key)
+    name = _breaker_name(key)
+    with _breaker_table() as breakers:
+        state = breakers.get(name)
         if state is None:
             return None
         if state.get("pin") != pin:
-            del _breakers[key]
+            del breakers[name]
             return None
         remaining = state.get("until", 0.0) - _now()
         return remaining if remaining > 0 else None
@@ -149,14 +175,15 @@ def _breaker_check(key: tuple[str, str, str], pin: str) -> float | None:
 
 def _breaker_record(key: tuple[str, str, str], pin: str, *,
                     infrastructure_failure: bool) -> None:
-    with _breaker_guard:
+    name = _breaker_name(key)
+    with _breaker_table() as breakers:
         if not infrastructure_failure:
-            _breakers.pop(key, None)
+            breakers.pop(name, None)
             return
-        state = _breakers.get(key)
+        state = breakers.get(name)
         if state is None or state.get("pin") != pin:
             state = {"pin": pin, "consecutive": 0, "until": 0.0}
-            _breakers[key] = state
+            breakers[name] = state
         state["consecutive"] += 1
         if state["consecutive"] >= QUARANTINE_THRESHOLD:
             state["until"] = _now() + QUARANTINE_SECONDS

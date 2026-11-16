@@ -23,9 +23,11 @@ reaches another with, for a change to a dataflow that other process owns
 
 Process 0 is the home process. It alone does the startup work: the shared
 guest, the hosted guests' copies dropped, the agents and the examples put
-back, the monitor's histories started anew, the guest cleanup and the kept
-outputs' sweep, the open-files sampler, and the bucket mount service's proxy
-and check (``backend/server.py`` and ``create_app``). The launcher starts home
+back, the monitor's histories started anew and the other processes' files of
+them removed, the guest cleanup and the kept outputs' sweep, the open-files
+sampler, and the bucket mount service's proxy and check (``backend/server.py``
+and ``create_app``). Each other process starts its own monitor histories and
+samples its own open files (``backend/app/monitor/``). The launcher starts home
 first and the others once it serves, so that work is done before they serve;
 until then home owns every dataflow (``collaboration/owner_guard.py``).
 
@@ -52,6 +54,8 @@ import re
 import uuid
 from collections.abc import Mapping
 
+from utk_curio.common import shared_constants
+
 #: This process's number among the start's backends, from 0.
 PROCESS_VARIABLE = "CURIO_BACKEND_PROCESS"
 #: How many backend processes the start runs.
@@ -62,6 +66,14 @@ BOOT_ID_VARIABLE = "CURIO_BOOT_ID"
 PORTS_VARIABLE = "CURIO_BACKEND_PORTS"
 #: The secret the start's backends show each other on a call between them.
 TOKEN_VARIABLE = "CURIO_BACKEND_TOKEN"
+
+#: The header a request names its dataflow in, and the query argument a
+#: socket's handshake names it in, which nginx routes by
+#: (``cli/backend_group.py``): the names the canvas and the dashboard send
+#: them by (``src/contracts/dataflowRoute.json``).
+_ROUTE = shared_constants.read("dataflowRoute")
+ROUTE_HEADER = _ROUTE["header"]
+ROUTE_QUERY = _ROUTE["query"]
 
 #: The home process's number.
 HOME = 0

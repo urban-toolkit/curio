@@ -209,7 +209,8 @@ def test_a_skill_added_to_an_agent_reaches_its_chat(page, frontend_server, curre
     # holds none of the core skills, which its preamble places.
     spec = builtin.get_builtin_manifest(FINDER)
     assert not {"nodes", "node-control", "compatibility"} & set(spec.skills)
-    _open_dataflow_with_agent(session, spec, project_name="Skills reach the chat", replies=(VISIBLE_PROSE,))
+    project_id, _attachment_id, _base = _open_dataflow_with_agent(
+        session, spec, project_name="Skills reach the chat", replies=(VISIBLE_PROSE,))
     panel = _open_chat(page, spec)
     box = panel.get_by_role("textbox", name="Message this agent")
 
@@ -246,7 +247,7 @@ def test_a_skill_added_to_an_agent_reaches_its_chat(page, frontend_server, curre
     expect(line.locator("[data-tooltip]").last).to_have_attribute("data-tooltip", "Named with / in the message")
 
     # The run listed the added skill in its catalog, and was handed it.
-    system = captured_system_prompt(current_server)
+    system = captured_system_prompt(current_server, dataflow=project_id)
     catalog = system[system.index("<available_skills>"):system.index("</available_skills>")]
     assert re.findall(r"<name>([^<]+)</name>", catalog) == offered, catalog[:600]
     assert f'<skill_content name="{ADDED}">' in system

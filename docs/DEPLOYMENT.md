@@ -533,7 +533,7 @@ Then load `https://lab-name.your-uni.edu/curio/` in a browser. If something look
 
 **One backend process for each dataflow.** The backend keeps each open dataflow's live copy, the one everyone editing it shares, in its own memory. So one backend process serves each dataflow: never run a second Curio, worker or replica on a deployment's data directories, where each would keep its own copy of a dataflow and the two would drift apart.
 
-`--backend-processes N` runs N backend processes in the one container, each keeping the dataflows it owns, behind nginx on the backend's port, which sends each request to the process that owns its dataflow. The Docker image has nginx. A desktop runs one, the default, with no nginx; a hosted stack adds `"--backend-processes", "N"` to the `command` of its `docker-compose.site.yml`, and Caddy needs no change. Each process holds its own memory, so N processes take about N times what one idle backend does. If any of them exits, Curio stops them all and exits, and Docker starts the container again.
+`--backend-processes N` runs N backend processes in the one container, each keeping the dataflows it owns, behind nginx on the backend's port, which sends each request to the process that owns its dataflow. The Docker image has nginx. A desktop runs one, the default, with no nginx; a hosted stack adds `"--backend-processes", "N"` to the `command` of its `docker-compose.site.yml`, and Caddy needs no change. Each process holds its own memory, so N processes take about N times what one idle backend does. Limits stay those of one process at any N: a dashboard's visitors, an account, a portal and Nominatim are allowed what one backend allows them. If any of them exits, Curio stops them all and exits, and Docker starts the container again.
 
 ### The GPU
 
@@ -713,6 +713,12 @@ and a restart resets them. The LLM tokens are also written to
 `.curio/monitor/llm-tokens.json` as they are counted, and the open-files
 samples to `.curio/monitor/open-files.json`. Each file holds at most the last
 90 days, and a restart starts it over.
+
+With `--backend-processes N` the page shows the whole backend: node runs,
+backend memory, errors and LLM tokens of every process, and in each hour the
+open files of the busiest process against its own limit. Process 1 and the
+others write their own files, such as `llm-tokens.1.json`. A process that
+does not answer is named at the top of the page, and its numbers are left out.
 
 ### What the page exposes, and who can read it
 

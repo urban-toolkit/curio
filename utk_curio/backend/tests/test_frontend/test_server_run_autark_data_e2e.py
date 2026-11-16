@@ -39,7 +39,7 @@ LAYERS = ["table_osm_surface", "table_osm_parks", "table_osm_water", "table_osm_
 def _latest_run(backend: str, token: str, project_id: str) -> dict:
     runs = api_json(f"{backend}/api/projects/{project_id}/runs?limit=1", token)["runs"]
     assert runs, "playing the loader started no run on the server"
-    return api_json(f"{backend}/api/runs/{runs[0]['id']}", token)
+    return api_json(f"{backend}/api/runs/{runs[0]['id']}", token, dataflow=project_id)
 
 
 def _wait_for_run_to_end(backend: str, token: str, project_id: str, *, timeout_s: float = 180) -> dict:
