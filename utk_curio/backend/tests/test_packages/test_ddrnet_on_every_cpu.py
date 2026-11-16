@@ -120,7 +120,7 @@ def _scores(command: list[str], model: Path, out: Path, inputs: list[Path], time
             capture_output=True, text=True, timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        pytest.fail(f"DDRNet23-Slim did not score {len(inputs)} photos in {timeout} s under {what}")
+        raise AssertionError(f"DDRNet23-Slim did not score {len(inputs)} photos in {timeout} s under {what}") from None
     assert run.returncode == 0, f"DDRNet23-Slim's run under {what} exited {run.returncode}:\n{run.stderr[-3000:]}"
     return [np.load(out / path.name) for path in inputs]
 
