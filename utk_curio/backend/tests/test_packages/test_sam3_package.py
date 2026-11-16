@@ -1137,14 +1137,14 @@ def test_on_a_frame_where_sam3_drops_an_object_each_other_object_keeps_its_own_m
     keeps missing it. Transformers drops it before it pairs the frame's
     masks, one per object SAM 3 followed as the frame started, with the
     objects left, so on that frame each object after the one dropped got the
-    mask of the object before it: on utk's GPU, through the SideSeeing walk
-    at a frame every second, 279 masks on the wrong object in 28 of 865
-    frames. Here SAM 3 finds two poles and a person at frame 0, and the third
-    pole at frame 1; its detector finds the second pole only at frame 0, so
-    SAM 3 drops it at frame 3, where the third pole is out of view. In every
-    frame each object SAM 3 shows has its own box, and at frame 3 each object
-    it follows has its own score, which decides which of two objects of a
-    label keeps the pixels both cover."""
+    mask of the object before it. On utk's GPU, through the SideSeeing walk
+    at a frame every second, SAM 3 dropped an object with others after it in
+    28 of 865 frames, 279 objects in all. Here SAM 3 finds two poles and a
+    person at frame 0, and the third pole at frame 1; its detector finds the
+    second pole only at frame 0, so SAM 3 drops it at frame 3, where the
+    third pole is out of view. In every frame each object SAM 3 shows has its
+    own box, and at frame 3 each object it follows has its own score, which
+    decides which of two objects of a label keeps the pixels both cover."""
     import torch
     from PIL import Image
 
