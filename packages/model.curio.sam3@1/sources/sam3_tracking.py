@@ -5,6 +5,10 @@ Track Objects calls :func:`track_objects`, with its settings and Curio's
 plumbing: the model ``curio_load_model("model.curio.sam3")`` gives, whose
 ``path`` is the folder of SAM 3's weights, and ``curio_derived_file``, which
 says where a file made from a collection's video is kept and served.
+
+Its SAM 3 is Transformers' video model with one correction
+(:class:`Sam3VideoModel`): on a frame where SAM 3 drops an object that showed
+up for a moment, each other object keeps its own mask and score.
 """
 
 import colorsys
@@ -19,7 +23,7 @@ import numpy as np
 import pandas as pd
 import torch
 from PIL import Image, ImageDraw
-from transformers import Sam3VideoModel, Sam3VideoProcessor
+from transformers import Sam3VideoModel as TransformersSam3VideoModel, Sam3VideoProcessor
 
 __all__ = ["track_objects"]
 
@@ -219,6 +223,46 @@ def _draw(run, image, found, label_of):
     return picture
 
 
+class Sam3VideoModel(TransformersSam3VideoModel):
+    """SAM 3's video model as Transformers has it, but for the frames where
+    SAM 3 drops an object that showed up for a moment: there each other
+    object keeps its own mask and score.
+
+    SAM 3's tracker gives each frame a mask and a score for each object it
+    follows as the frame starts, in order. Transformers drops the objects the
+    frame rules out before it pairs those masks and scores with the objects
+    it follows, so each object after one dropped got the mask and score of
+    the object before it, for that frame. Here SAM 3 drops them once the
+    frame's masks and scores are paired, as SAM 3's own code pairs them with
+    the objects it followed as the frame started, and the frame's output
+    leaves the objects dropped out, as Transformers' does."""
+
+    def run_tracker_update_execution_phase(self, inference_session, frame_idx, det_out, tracker_update_plan,
+                                           reverse=False):
+        """Take in the frame's new objects, and drop none yet: the frame's
+        masks and scores are still to be paired with their objects
+        (:meth:`_det_track_one_frame`)."""
+        keeping = {**tracker_update_plan, "obj_ids_newly_removed": set()}
+        return super().run_tracker_update_execution_phase(
+            inference_session=inference_session, frame_idx=frame_idx, det_out=det_out,
+            tracker_update_plan=keeping, reverse=reverse,
+        )
+
+    def _det_track_one_frame(self, inference_session, frame_idx, reverse, streaming=False):
+        """SAM 3 through one frame, each of its masks and scores paired with
+        its own object; then the objects SAM 3 no longer follows are dropped,
+        as Transformers drops them before it pairs them, and left out of the
+        frame's masks."""
+        masks, scores, metadata, tracker_scores = super()._det_track_one_frame(
+            inference_session=inference_session, frame_idx=frame_idx, reverse=reverse, streaming=streaming,
+        )
+        following = set(metadata["obj_ids"])
+        for object_id in [object_id for object_id in inference_session.obj_ids if object_id not in following]:
+            inference_session.remove_object(object_id, strict=False)
+            masks.pop(object_id, None)
+        return masks, scores, metadata, tracker_scores
+
+
 class _Frames:
     """The frames of a SAM 3 session, as SAM 3 asks for them: each is made
     ready, as a session handed the whole video makes it, only when SAM 3 comes
@@ -298,7 +342,10 @@ class _Sightings:
     def note(self, _sam3, _args, output):
         """Note the objects SAM 3's *output* of a frame shows: each with a mask
         SAM 3 does not hide there, and each new object, at the frame SAM 3
-        found it."""
+        found it. And put back the labels of the objects let go that outputs
+        SAM 3 holds back show: dropping the last object it follows, SAM 3
+        clears every label."""
+        self._session.obj_id_to_prompt_id.update({object_id: label for object_id, (label, _) in self._held.items()})
         masks = output.obj_id_to_mask
         if not masks:
             return
