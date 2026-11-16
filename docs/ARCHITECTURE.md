@@ -1353,7 +1353,10 @@ The sandbox runs as a separate Flask process. It:
   environment sets them. glibc allows eight arenas a core, the release above
   cannot trim the top of any arena but the main one, Arrow's default pool kept
   what it freed, and glibc raises its thresholds after a run's first big frees,
-  after which each arena keeps up to 64 MiB of free top.
+  after which each arena keeps up to 64 MiB of free top. The launcher starts
+  the backend with the same settings, but with its arenas capped at 16 whatever
+  the budget, since it runs no node code
+  (`sandbox/isolation/lifecycle.py::backend_server_environment`).
 
 > [!WARNING]
 > **By default this is a network boundary, not an execution boundary.** Unless
