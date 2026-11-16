@@ -179,8 +179,12 @@ def create_app(config_class=config_class, *, startup_work=None):
     # Non-prod DB stub endpoints for Playwright E2E tests.
     # Lets Playwright seed users / projects directly without the signup form.
     if _is_dev():
+        from utk_curio.backend.app.testing.every_process import internal_bp as testing_internal_bp
         from utk_curio.backend.app.testing.routes import testing_bp
         app.register_blueprint(testing_bp)
+        # The same changes, sent by another backend process of the start,
+        # outside /api (testing/every_process.py).
+        app.register_blueprint(testing_internal_bp)
         # Copy fixture node packages into the guest user's package store on first
         # startup. See utk_curio/backend/app/packages/seed.py for the policy.
         if startup_work:

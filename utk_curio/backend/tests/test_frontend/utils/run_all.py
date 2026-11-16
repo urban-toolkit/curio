@@ -308,7 +308,9 @@ def wait_for_server_part_to_end(page, token: str, project_id: str, *,
         try:
             runs = api_json(f"{backend_url}/api/projects/{project_id}/runs?limit=1&mine=1", token)["runs"]
             if runs:
-                record = api_json(f"{backend_url}/api/runs/{runs[0]['id']}", token)
+                # Named by its dataflow, which its path does not hold: the
+                # run is live in the backend process that owns it.
+                record = api_json(f"{backend_url}/api/runs/{runs[0]['id']}", token, dataflow=project_id)
                 if record["status"] not in SERVER_PART_GOING:
                     return record
                 seen = f"run {record['id']} is {record['status']}"
@@ -374,7 +376,8 @@ class SandboxRuns:
         steps: list[dict] = []
         for summary in reversed(self._runs()):
             if summary["id"] not in self._earlier_runs:
-                steps += api_json(f"{self._backend}/api/runs/{summary['id']}", self._token)["steps"]
+                steps += api_json(f"{self._backend}/api/runs/{summary['id']}", self._token,
+                                  dataflow=self._project_id)["steps"]
         return steps
 
     def stop(self) -> list[str]:

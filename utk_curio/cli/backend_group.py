@@ -64,8 +64,8 @@ from utk_curio.common.request_deadline import REQUEST_START_TIMEOUT_S
 MAX_PROCESSES = 256
 #: The header the canvas and the dashboard name their dataflow in, and the
 #: query argument of a socket's handshake that does.
-ROUTE_HEADER = "X-Curio-Dataflow"
-ROUTE_QUERY = "dataflow"
+ROUTE_HEADER = backend_processes.ROUTE_HEADER
+ROUTE_QUERY = backend_processes.ROUTE_QUERY
 #: The router's folder in the state folder: its config, its pid and the
 #: folders nginx makes.
 ROUTER_FOLDER = "backend-router"
