@@ -897,23 +897,27 @@ def street_weights(tmp_path_factory):
 class _Street:
     """A street SAM 3 is made to see, whatever its random weights would find:
     objects, each of a label, at a place of its own, each in view at the
-    frames given. SAM 3's detector finds each object in view, and its tracker
-    shows each object it follows where the object is while it is in view, and
-    nothing while it is not. The rest of SAM 3 runs as it is: it matches what
-    it detects with what it follows, takes what it does not follow as a new
-    object, and holds each frame back.
+    frames given. SAM 3's detector finds each object in view, or at the
+    frames *detected* gives it, and its tracker shows each object it follows
+    where the object is while it is in view, and nothing while it is not. The
+    rest of SAM 3 runs as it is: it matches what it detects with what it
+    follows, takes what it does not follow as a new object, and holds each
+    frame back.
 
     After each frame SAM 3 hands back, :attr:`followed` notes the last frame
     SAM 3 has looked at, which of the street's objects it follows, and the
     ids of objects it no longer follows but still keeps entries of, such as
     their scores and first frames."""
 
-    def __init__(self, monkeypatch, module, objects):
+    def __init__(self, monkeypatch, module, objects, detected=None):
         import torch
 
         street, sam3 = self, module.Sam3VideoModel
         #: Each object: its label, and the frames it is in view at.
         self.objects = [(label, set(frames)) for label, frames in objects]
+        #: Each object: the frames SAM 3's detector finds it at, those it is
+        #: in view at unless *detected* gives the object's own.
+        self.detected = [set((detected or {}).get(index, frames)) for index, (_, frames) in enumerate(self.objects)]
         #: Each id SAM 3 gave an object: which of the street's it is.
         self.follows = {}
         self.followed = []
@@ -936,8 +940,8 @@ class _Street:
         def detect(self, inference_session, vision_embeds):
             found = {}
             for prompt_id, text in inference_session.prompts.items():
-                masks = [street._masks[index] for index, (label, frames) in enumerate(street.objects)
-                         if label == text and street._frame in frames]
+                masks = [street._masks[index] for index, (label, _) in enumerate(street.objects)
+                         if label == text and street._frame in street.detected[index]]
                 found[prompt_id] = {
                     "bbox": torch.tensor([[0.1, 0.1, 0.2, 0.2]] * len(masks)).reshape(-1, 4).to(self.device),
                     "mask": (torch.stack(masks) if masks else torch.zeros(0, LOW_RES, LOW_RES)).to(self.device),
@@ -1107,3 +1111,87 @@ def test_letting_go_of_an_object_leaves_what_sam3_finds_of_every_other(
         assert found["prompt_to_obj_ids"] == followed_to_the_end["prompt_to_obj_ids"], f"frame {index}: the labels differ"
         for key in ("object_ids", "scores", "boxes", "masks"):
             assert torch.equal(found[key], followed_to_the_end[key]), f"frame {index}: the {key} differ"
+
+
+# ---------------------------------------------------------------------------
+# Objects SAM 3 drops in their first frames
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def dropping_weights(tmp_path_factory):
+    """A tiny SAM 3 that holds each frame back until it has seen seven after
+    it, as ``street_weights`` does, and drops an object it found in those
+    frames once its detector has missed the object in three."""
+    return _tiny_weights(tmp_path_factory, _tiny_config(
+        max_num_objects=40, hotstart_delay=8, hotstart_unmatch_thresh=3))
+
+
+#: A street of 12 frames: two poles and a person in view throughout, and a
+#: third pole in view from frame 1, but at frame 3.
+DROPPING = [("pole", range(12)), ("pole", range(12)), ("person", range(12)), ("pole", [1, 2, *range(4, 12)])]
+
+
+def test_on_a_frame_where_sam3_drops_an_object_each_other_object_keeps_its_own_mask_and_score(
+        dropping_weights, catalog_copy, few_threads, tmp_path, monkeypatch):
+    """SAM 3 drops an object it found in its first frames once its detector
+    keeps missing it. Transformers drops it before it pairs the frame's
+    masks, one per object SAM 3 followed as the frame started, with the
+    objects left, so on that frame each object after the one dropped got the
+    mask of the object before it: on utk's GPU, through the SideSeeing walk
+    at a frame every second, 279 masks on the wrong object in 28 of 865
+    frames. Here SAM 3 finds two poles and a person at frame 0, and the third
+    pole at frame 1; its detector finds the second pole only at frame 0, so
+    SAM 3 drops it at frame 3, where the third pole is out of view. In every
+    frame each object SAM 3 shows has its own box, and at frame 3 each object
+    it follows has its own score, which decides which of two objects of a
+    label keeps the pixels both cover."""
+    import torch
+    from PIL import Image
+
+    frames = [Image.fromarray(_street(index)) for index in range(12)]
+    path = _loaded(catalog_copy, dropping_weights)(MODEL_ID).path
+    outputs = {}
+
+    def keep(_sam3, _args, output):
+        outputs[output.frame_idx] = output
+
+    with _staged(tmp_path) as module:
+        street = _Street(monkeypatch, module, DROPPING, detected={1: [0]})
+        processor = module.Sam3VideoProcessor.from_pretrained(path, local_files_only=True)
+        sam3 = module.Sam3VideoModel.from_pretrained(path, local_files_only=True).eval()
+        run = SimpleNamespace(processor=processor, sam3=sam3, device="cpu", dtype=torch.float32, labels=TWO_LABELS)
+        hook = sam3.register_forward_hook(keep)
+        try:
+            with torch.inference_mode():
+                followed = list(module._follow(run, frames))
+        finally:
+            hook.remove()
+
+    # SAM 3's ids are the street's objects, in the order it found them; at
+    # frame 3 it drops the second pole, with the person and a pole after it.
+    assert street.follows == {0: 0, 1: 1, 2: 2, 3: 3}, street.follows
+    assert [(outputs[f].object_ids, sorted(outputs[f].removed_obj_ids)) for f in (2, 3)] == [
+        ([0, 1, 2, 3], []), ([0, 2, 3], [1])], [(outputs[f].object_ids, outputs[f].removed_obj_ids) for f in (2, 3)]
+    assert [index for index, _ in followed] == list(range(len(frames)))
+    # Each object's box, as SAM 3's processor sizes a mask to the frame.
+    width, height = frames[0].size
+    boxes = [
+        torch.nn.functional.interpolate(mask[None, None], size=(height, width), mode="bilinear",
+                                        align_corners=False)[0, 0] > 0
+        for mask in street._masks
+    ]
+    # Each object shown, with the street's object whose box its mask is.
+    shown = [
+        (index, {street.follows[object_id]: next((own for own, box in enumerate(boxes) if torch.equal(mask, box)), None)
+                 for object_id, mask in zip(found["object_ids"].tolist(), found["masks"])})
+        for index, found in followed
+    ]
+    in_view = [
+        (index, {own: own for own, (_, at) in enumerate(street.objects) if index in at and own != 1})
+        for index, _ in followed
+    ]
+    assert shown == in_view, "objects SAM 3 showed, each with the object whose box it had, where they differ: " + str(
+        [(index, got, want) for (index, got), (_, want) in zip(shown, in_view) if got != want])
+    scores = {street.follows[object_id]: round(outputs[3].obj_id_to_tracker_score[object_id], 3)
+              for object_id in outputs[3].object_ids}
+    assert scores == {0: 1.0, 2: 1.0, 3: 0.0}, f"each object's tracker score at frame 3: {scores}"
