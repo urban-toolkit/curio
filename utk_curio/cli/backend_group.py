@@ -55,7 +55,7 @@ from typing import Mapping, Optional, Sequence
 from utk_curio.cli import lifecycle, services
 from utk_curio.cli.lifecycle import clean_shutdown, shutdown_flag, stream_output
 from utk_curio.cli.logs import COLOR_BACKEND, log_error, log_info
-from utk_curio.common import backend_processes, shared_constants
+from utk_curio.common import backend_processes
 from utk_curio.common.llm_endpoint import without_backend_only
 from utk_curio.common.request_deadline import REQUEST_START_TIMEOUT_S
 
@@ -63,15 +63,9 @@ from utk_curio.common.request_deadline import REQUEST_START_TIMEOUT_S
 #: digits name its process.
 MAX_PROCESSES = 256
 #: The header the canvas and the dashboard name their dataflow in, and the
-#: query argument of a socket's handshake that does: the names the frontend
-#: sends them by (``src/contracts/dataflowRoute.json``).
-_ROUTE = shared_constants.read("dataflowRoute")
-ROUTE_HEADER = _ROUTE["header"]
-ROUTE_QUERY = _ROUTE["query"]
-#: nginx's variables of the two: a request header's is ``$http_`` and its name
-#: in lower case with ``-`` as ``_``, a query argument's ``$arg_`` and its name.
-_HEADER_VARIABLE = "$http_" + ROUTE_HEADER.lower().replace("-", "_")
-_QUERY_VARIABLE = "$arg_" + ROUTE_QUERY
+#: query argument of a socket's handshake that does.
+ROUTE_HEADER = "X-Curio-Dataflow"
+ROUTE_QUERY = "dataflow"
 #: The router's folder in the state folder: its config, its pid and the
 #: folders nginx makes.
 ROUTER_FOLDER = "backend-router"
@@ -237,13 +231,13 @@ http {{
     # The route key: the dataflow the {ROUTE_HEADER} header names, else the
     # {ROUTE_QUERY} query argument (a socket's handshake), else a dataflow id
     # after /projects/ or /dataflows/ in the path.
-    map {_HEADER_VARIABLE} $curio_key {{
+    map $http_x_curio_dataflow $curio_key {{
         "" $curio_key_from_query;
-        default {_HEADER_VARIABLE};
+        default $http_x_curio_dataflow;
     }}
-    map {_QUERY_VARIABLE} $curio_key_from_query {{
+    map $arg_{ROUTE_QUERY} $curio_key_from_query {{
         "" $curio_key_from_path;
-        default {_QUERY_VARIABLE};
+        default $arg_{ROUTE_QUERY};
     }}
     map $uri $curio_key_from_path {{
         "~/(?:projects|dataflows)/(?<curio_path_id>[0-9A-Fa-f]{{8}}-[0-9A-Fa-f]{{4}}-[0-9A-Fa-f]{{4}}-[0-9A-Fa-f]{{4}}-[0-9A-Fa-f]{{12}})(?:/|$)" $curio_path_id;
