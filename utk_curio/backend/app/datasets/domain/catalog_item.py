@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from functools import lru_cache
 from pathlib import Path
 from stat import S_ISREG
 from typing import Any
@@ -341,6 +342,28 @@ def loader_snippet(
         "code": f"dataset_path = {expr}",
         "returnVariable": None,
     }
+
+
+#: The formats :func:`loader_snippet` writes a loader of: the table's, and a collection.
+_SNIPPET_FORMATS = (*LOADED_VARIABLES, "collection")
+
+
+@lru_cache(maxsize=1)
+def generic_loader_lines() -> frozenset[str]:
+    """The lines :func:`loader_snippet` writes whatever the dataset is,
+    stripped: those its code holds alike for two datasets of each format,
+    named by id and by path. The line that names the dataset, its id or its
+    path expression, differs between the two, so it is never one; nor is a
+    layer's type, which a dataset of a layer gives. A node that loads a
+    dataset through its snippet holds these lines whoever wrote the node."""
+    lines: set[str] = set()
+    for fmt in _SNIPPET_FORMATS:
+        for one, two in (({"path": "one.data"}, {"path": "two.data"}),
+                         ({"path": None, "dataset_id": "one"}, {"path": None, "dataset_id": "two"})):
+            first = {line.strip() for line in loader_snippet(fmt, **one)["code"].splitlines()}
+            second = {line.strip() for line in loader_snippet(fmt, **two)["code"].splitlines()}
+            lines |= first & second
+    return frozenset(line for line in lines if line)
 
 
 def base_item(**overrides: Any) -> dict[str, Any]:

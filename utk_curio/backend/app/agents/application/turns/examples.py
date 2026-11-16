@@ -83,8 +83,9 @@ STOP_WORDS = frozenset({
 
 #: How long a code line must be to count as part of an evaluation's answer: an
 #: example that holds one of the scored dataflow's is not shown to its runs.
-#: A line a node holds only because its template's code or the canvas starts
-#: it with it is no part of an answer (:func:`_answer_parts`).
+#: A line Curio writes into a node, because its template's code or the canvas
+#: starts it with it or a dataset's loader snippet writes it whatever the
+#: dataset, is no part of an answer (:func:`_answer_parts`).
 SHARED_LINE_CHARS = 25
 
 # An evaluation marks the project it builds with ``dataflow.evaluation``
@@ -238,10 +239,9 @@ def excluded_by(spec: object, examples: list[Example] | None = None) -> set[str]
     An evaluation scores the run against one shipped dataflow, named by its
     marker's ``fixtureId``. The run is shown neither that dataflow nor any
     example that holds a piece of it (a node or edge id, or a code line of
-    ``SHARED_LINE_CHARS`` or more but one its node holds only because its
-    template's code or the canvas starts it with it, :func:`_answer_parts`):
-    either would hand the run part of the answer, and the score would measure
-    copying."""
+    ``SHARED_LINE_CHARS`` or more but one Curio writes into a node whatever
+    the dataflow, :func:`_answer_parts`): either would hand the run part of
+    the answer, and the score would measure copying."""
     own = _ids(spec)
     pool = (used_examples() if examples is None else examples) if own else []
     excluded = {e.key for e in pool if _ids(e.spec) & own}
@@ -279,20 +279,25 @@ def _ids(spec: object) -> set[str]:
 
 def _answer_parts(spec: object) -> set[str]:
     """A scored dataflow's node and edge ids, and its code lines of
-    ``SHARED_LINE_CHARS`` or more but those a node holds only because its
-    template's code or the canvas starts it with them (:func:`_starter_lines`),
-    such as a Data Loading node's loader line, a Vega-Lite spec's ``$schema``
-    or an Autark layer's coloring: every node of the template starts with
-    those, so they give nothing away. A line that names the node's own data,
-    a layer, a table or a dataset, stays."""
+    ``SHARED_LINE_CHARS`` or more but those Curio writes into a node: those
+    a node holds only because its template's code or the canvas starts it
+    with them (:func:`_starter_lines`), such as a Data Loading node's loader
+    line, a Vega-Lite spec's ``$schema`` or an Autark layer's coloring, and
+    those a dataset's loader snippet writes whatever the dataset is, in any
+    node (``catalog_item.generic_loader_lines``). Every node of the template,
+    or every node that loads a dataset so, holds those, so they give nothing
+    away. A line that names the node's own data, a layer, a table or a
+    dataset by its id or path, stays."""
+    from utk_curio.backend.app.datasets.domain.catalog_item import generic_loader_lines
     from utk_curio.backend.app.packages import service as packages_services
 
     dataflow = _dataflow(spec)
     parts = _ids(spec)
     starters = _starter_lines()
+    written = generic_loader_lines()
     for node in _dicts(dataflow.get("nodes")):
         own = starters.get(packages_services.canonical_template_id(node.get("type")), frozenset())
-        parts.update(line for line in _long_lines(node.get("content")) if line not in own)
+        parts.update(line for line in _long_lines(node.get("content")) if line not in own and line not in written)
     return parts
 
 

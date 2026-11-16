@@ -89,6 +89,21 @@ def _starter_lines() -> dict[str, set[str]]:
     return starters
 
 
+def _loader_lines() -> set[str]:
+    """The lines the Data Catalog's loader snippet writes whatever the
+    dataset is: those its code holds alike for two datasets of a format, by
+    path and by id, for each format of its table and a collection."""
+    from utk_curio.backend.app.datasets.domain import catalog_item
+
+    lines: set[str] = set()
+    for fmt in (*catalog_item.LOADED_VARIABLES, "collection"):
+        for one, two in ((("a/one.data", None), ("b/two.data", None)), ((None, "one"), (None, "two"))):
+            first = catalog_item.loader_snippet(fmt, one[0], dataset_id=one[1])["code"]
+            second = catalog_item.loader_snippet(fmt, two[0], dataset_id=two[1])["code"]
+            lines |= _long_lines(first) & _long_lines(second)
+    return lines
+
+
 def _code_lines(spec: dict, starters: dict | None = None) -> set[str]:
     """The code lines of SHARED_LINE_CHARS or more *spec*'s nodes hold; with
     *starters* (:func:`_starter_lines`), but those a node holds because its
@@ -265,20 +280,22 @@ class TestAnEvaluationNeverSeesItsExample:
         """Every node of a template starts with its template's code, such as a
         Data Loading node's loader line or a Spatial Join's call, a Vega-Lite
         node's spec with the "$schema" line the canvas writes and an Autark
-        layer with the coloring it writes, so a line a node holds for that
-        alone is no part of an answer. An example
+        layer with the coloring it writes, and a node that loads a dataset
+        through its loader snippet holds the lines the snippet writes whatever
+        the dataset, so a line a node holds for that alone is no part of an
+        answer. An example
         is left out of an evaluation's runs when it holds one of the scored
         dataflow's ids or one of its other code lines of SHARED_LINE_CHARS or
         more, and is shown when it shares only such lines. Before, every long
         line counted: an evaluation scored against example 06 was shown none
         of the examples whose Vega-Lite specs hold the "$schema" line its
         Vega-Lite package's nodes start with."""
-        starters = _starter_lines()
+        starters, loader = _starter_lines(), _loader_lines()
         pool = list(_pool().values())
         held = {e.key: examples._ids(e.spec) | _code_lines(e.spec) for e in pool}
         shown_though_sharing = []
         for scored in pool:
-            answer = examples._ids(scored.spec) | _code_lines(scored.spec, starters)
+            answer = examples._ids(scored.spec) | (_code_lines(scored.spec, starters) - loader)
             excluded = examples.excluded_by(self._marked(scored.key), pool)
             for example in pool:
                 if example.key == scored.key:
@@ -297,14 +314,14 @@ class TestAnEvaluationNeverSeesItsExample:
         evaluation scored against one of the 27 "Used" examples with a
         Vega-Lite spec was shown none of the 26 others."""
         schema = _schema_line()
-        starters = _starter_lines()
+        starters, loader = _starter_lines(), _loader_lines()
         pool = list(_pool().values())
         held = {e.key: examples._ids(e.spec) | _code_lines(e.spec) for e in pool}
         shown = []
         for scored in pool:
             if schema not in _code_lines(scored.spec):
                 continue
-            answer = examples._ids(scored.spec) | _code_lines(scored.spec, starters)
+            answer = examples._ids(scored.spec) | (_code_lines(scored.spec, starters) - loader)
             excluded = examples.excluded_by(self._marked(scored.key), pool)
             for example in pool:
                 if example.key != scored.key and schema in held[example.key] and not held[example.key] & answer:
@@ -338,6 +355,37 @@ class TestAnEvaluationNeverSeesItsExample:
         written = {line for coloring in contracts.AUTK_STARTER_COLORING.values()
                    for line in _long_lines(json.dumps(coloring, indent=2))}
         assert written == AUTARK_COLORING
+
+    def test_the_lines_a_loader_snippet_writes_whatever_the_dataset_give_nothing_away(self):
+        """The Data Catalog's loader snippet writes the same lines for every
+        dataset of a format past the one that names it (``loader_snippet``),
+        such as a parquet dataset's try of gpd.read_parquet, then
+        pd.read_parquet: an example whose node loads another dataset through
+        the snippet shares nothing but those lines with an answer that loads
+        one so, and is shown. One that holds the line naming the answer's
+        dataset is left out. Before, every long line counted: an evaluation
+        scored against 20 was shown no example that loads a parquet dataset
+        so."""
+        from utk_curio.backend.app.datasets.domain.catalog_item import loader_snippet
+
+        scored = _pool()["20-storage-folder-of-csv-files"]
+        named = [line for line in _code_lines(scored.spec) if "curio_data_path(" in line]
+        assert len(named) == 1, named
+
+        def example(key: str, code: str):
+            spec = {"dataflow": {"nodes": [
+                {"id": f"{key}-loader", "type": "curio.builtin/data-loading", "content": code},
+            ], "edges": []}}
+            entry = examples.IndexEntry(examples.USED, key, f"{key}.json", "loads a dataset")
+            return examples.Example(key=key, entry=entry, spec=spec, words=frozenset(),
+                                    node_types=frozenset(), dataset_ids=frozenset())
+
+        another = example("another-parquet", loader_snippet("parquet", "elsewhere/other.parquet")["code"])
+        same = example("the-same-dataset", named[0])
+        assert _code_lines(another.spec) & _code_lines(scored.spec), "20 holds no line of the snippet; vacuous"
+        excluded = examples.excluded_by(self._marked(scored.key), [another, same])
+        assert another.key not in excluded
+        assert same.key in excluded
 
     def test_every_fixture_id_names_its_example(self):
         from utk_curio.backend.app.agents.evaluation.fixtures import load_fixtures
