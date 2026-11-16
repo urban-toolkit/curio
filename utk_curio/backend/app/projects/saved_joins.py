@@ -21,6 +21,11 @@ read of another process's doc (``dataflow_docs._read_with``) and a version
 read. The canvas's twin is ``src/contracts/savedSpatialJoin.ts``, through which
 ``hook/codeNodes.ts`` reads each node of a load and of the doc; both run
 ``src/contracts/savedSpatialJoin.cases.json``.
+
+An agent's change to a join, kept on its attachment from before, undoes by
+the same rule (``agents/application/proposals/changes.py``): a join it created
+is compared as it reads now, and a change of its setting puts back the values
+the rule gives its widgets (:func:`widget_values`).
 """
 
 from __future__ import annotations
@@ -31,10 +36,43 @@ from typing import Any
 from utk_curio.common import shared_constants
 
 _SAVED = shared_constants.read("savedSpatialJoin")
+#: Where a join saved before its code kept its settings, in its ``metadata``.
+SETTING = _SAVED["setting"]
 
 
 def _unversioned(node_type: Any) -> Any:
     return node_type.split("@", 1)[0] if isinstance(node_type, str) else node_type
+
+
+def _held_values(saved: Any) -> dict[str, str]:
+    """The values *saved*, a join's saved setting, gives its widgets, by
+    widget name: each setting saved for a widget (``widgetOf``) that is one
+    of the widget's choices."""
+    saved = saved if isinstance(saved, dict) else {}
+    setting_of = {widget: setting for setting, widget in _SAVED["widgetOf"].items()}
+    held = {}
+    for widget in _SAVED["widgets"]:
+        value = saved.get(setting_of.get(widget["name"]))
+        if isinstance(value, str) and value in widget["options"]["choices"]:
+            held[widget["name"]] = value
+    return held
+
+
+def widget_values(setting: Any) -> dict[str, str]:
+    """The value each widget of a join holds once *setting*, a saved
+    ``metadata.spatialJoin``, is converted (:func:`converted_node`), by
+    widget name: the setting saved for it when that is one of its choices,
+    else its default."""
+    held = _held_values(setting)
+    return {widget["name"]: held.get(widget["name"], widget["default"]) for widget in _SAVED["widgets"]}
+
+
+def widgets_of(setting: Any) -> list[str]:
+    """The widgets the keys of *setting*, a join's saved setting or a change
+    of it, are saved for (``widgetOf``), in the template's order."""
+    keys = set(setting) if isinstance(setting, dict) else set()
+    named = {name for key, name in _SAVED["widgetOf"].items() if key in keys}
+    return [widget["name"] for widget in _SAVED["widgets"] if widget["name"] in named]
 
 
 def is_saved_join(node: Any) -> bool:
@@ -55,15 +93,12 @@ def converted_node(node: Any) -> Any:
     if not is_saved_join(node):
         return node
     metadata = dict(node["metadata"]) if isinstance(node.get("metadata"), dict) else {}
-    saved = metadata.pop(_SAVED["setting"], None)
-    saved = saved if isinstance(saved, dict) else {}
-    setting_of = {widget: setting for setting, widget in _SAVED["widgetOf"].items()}
+    held = _held_values(metadata.pop(SETTING, None))
     widgets = []
     for template_widget in _SAVED["widgets"]:
         widget = copy.deepcopy(template_widget)
-        value = saved.get(setting_of.get(widget["name"]))
-        if isinstance(value, str) and value in widget["options"]["choices"]:
-            widget["value"] = value
+        if widget["name"] in held:
+            widget["value"] = held[widget["name"]]
         widgets.append(widget)
     metadata["widgets"] = widgets
     return {**node, "content": _SAVED["code"], "metadata": metadata}

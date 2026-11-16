@@ -38,6 +38,13 @@ history's checked writes:
   outside its own nodes changed since: so a node it removed comes back with
   its connections.
 
+A change kept from before a Spatial Join's operation and output were its
+widgets, when the join kept them at ``metadata.spatialJoin``, is undone as the
+saved-join rule converts the join (``projects/saved_joins.py``): a join it
+created is compared as it reads now, with its code, and its change of the
+setting is a change of the widgets the setting's keys are saved for, put back
+to the values the rule gives them.
+
 Refused, nothing changes, and the answer says who changed it.
 """
 
@@ -63,6 +70,7 @@ from utk_curio.backend.app.collaboration import agent_peers
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.collaboration import history
 from utk_curio.backend.app.execution.code_references import normalize_widgets
+from utk_curio.backend.app.projects import saved_joins
 from utk_curio.common import shared_constants
 
 #: The kinds of change, by the tool that makes each.
@@ -392,7 +400,9 @@ def _undo_node(user_key, project_id, attachment_id, change, by, label) -> list[d
         node = _node(spec, created["id"])
         if node is None:
             continue
-        if node.get("type") != created.get("type") or (node.get("content") or "") != (created.get("content") or ""):
+        # A join created before it had code reads with its code now.
+        made = saved_joins.converted_node(created)
+        if node.get("type") != made.get("type") or (node.get("content") or "") != (made.get("content") or ""):
             raise _refused(_last_by(user_key, project_id, created["id"]))
         gone.append(created["id"])
     if not gone:
@@ -414,14 +424,45 @@ def _undo_settings(user_key, project_id, attachment_id, change, by, label) -> li
     node = _node(spec, change["nodeId"])
     if node is None:
         raise AgentServiceError("the node this change set is not on the canvas any more; nothing was undone.", 409)
-    if settings_basis(node, change["settings"]) != change.get("basisAfter"):
+    if saved_joins.SETTING in (change.get("settings") or {}):
+        holds, steps = _join_change_from_before(node, change)
+    else:
+        holds, steps = settings_basis(node, change["settings"]) == change.get("basisAfter"), change.get("undo") or []
+    if not holds:
         raise _refused(_last_by(user_key, project_id, change["nodeId"]))
-    for step in change.get("undo") or []:
+    for step in steps:
         write_settings(node, step)
     dataflow_docs.write(user_key, project_id, spec, agents_spec_reads._person(user_key, "undo"),
                         point={"kind": history.EDIT, "what": label, "by": by})
-    return [{"kind": "node-settings-applied", "nodeId": change["nodeId"], "settings": step}
-            for step in change.get("undo") or []]
+    return [{"kind": "node-settings-applied", "nodeId": change["nodeId"], "settings": step} for step in steps]
+
+
+def _join_change_from_before(node: dict, change: dict) -> tuple[bool, list[dict]]:
+    """A change of a Spatial Join's setting kept from before its operation
+    and output were its widgets, as the saved-join rule converts the join
+    (``saved_joins.widget_values``): whether *node*, the join now, still holds
+    in each widget the change's keys are saved for the value the change set,
+    and the steps that put back the values they held before it, a widget
+    change as any widget change's Undo writes.
+
+    The change kept what it set (``settings``) and the steps back to the
+    setting before it (``undo``: the join's defaults, then its own setting),
+    each in the old shape."""
+    given = change["settings"].get(saved_joins.SETTING)
+    given = given if isinstance(given, dict) else {}
+    before: dict = {}
+    for step in change.get("undo") or []:
+        setting = step.get(saved_joins.SETTING) if isinstance(step, dict) else None
+        before.update(setting if isinstance(setting, dict) else {})
+    names = saved_joins.widgets_of(given)
+    if not names:
+        return True, []
+    after, back = saved_joins.widget_values({**before, **given}), saved_joins.widget_values(before)
+    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
+    now = {widget["name"]: widget.get("value", widget.get("default"))
+           for widget in normalize_widgets(metadata.get("widgets"))}
+    holds = all(now.get(name) == after[name] for name in names)
+    return holds, [{"widgets": {name: back[name] for name in names}}]
 
 
 def _undo_plan(user_key, project_id, attachment_id, change, by, label) -> list[dict]:
