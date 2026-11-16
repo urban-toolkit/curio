@@ -1,14 +1,15 @@
-"""New dataflows go to the backend process with the fewest open rooms
-(``collaboration/placement.py``).
+"""New dataflows go to the backend process with the least load, its open
+rooms and its recent placements (``collaboration/placement.py``).
 
 ``curio.py start --backend-processes N`` runs N backends, and a dataflow
 belongs to the process its id's first two hex digits name
 (``backend_processes.shard_of``). A new dataflow's id was a plain uuid4, so
 the rooms of a start fell on its processes by chance: 10 rooms on 8
 processes put 3 or more on one in most runs. A dataflow an account makes
-now gets an id made for the process with the fewest open rooms, a room
-being open while a tab or an agent at work is in it, and processes with as
-few take new dataflows in turn.
+now gets an id made for the process with the least load: its open rooms, a
+room being open while a tab or an agent at work is in it, plus the new
+dataflows it was given in the last 10 minutes. Processes with as little take
+new dataflows in turn.
 
 Each test names a start of its own, this test's process its home process,
 with a state folder of its own. Another process of the start is a forked child
@@ -117,9 +118,11 @@ def test_ten_dataflows_made_together_on_eight_processes_go_two_two_one_one_one_o
 
 
 def test_a_new_dataflow_goes_to_the_process_with_the_fewest_open_rooms(start_of):
-    """Process 1 has two rooms open, process 2 one, and home three: new
-    dataflows go to process 2, whatever the turn, until it no longer has the
-    fewest. Once home's tabs leave, home has."""
+    """Process 1 has two rooms open, process 2 one, and home three: the next
+    new dataflow goes to process 2, whatever the turn. Each one placed counts
+    toward its process's load, so the one after goes to process 1, as loaded
+    as process 2 by then and first in turn, and the third to process 2 again.
+    Once home's tabs leave, home has the least."""
     placement = start_of(3)
     _process_with_rooms(1, rooms=2)
     _process_with_rooms(2, rooms=1)
@@ -132,29 +135,81 @@ def test_a_new_dataflow_goes_to_the_process_with_the_fewest_open_rooms(start_of)
     after = placement.open_rooms()
 
     assert counted == [3, 2, 1], counted
-    assert chosen == [2, 2, 2], f"new dataflows went to {chosen}, not to the process with the fewest open rooms"
+    assert chosen == [2, 1, 2], f"new dataflows went to {chosen}, not to the process with the least load"
     assert after == [0, 2, 1], f"home's last tabs left and its count is {after[0]}"
+    assert placement.loads() == [0, 3, 3]
     assert placement.choose() == 0
 
 
 def test_processes_with_as_few_open_rooms_take_new_dataflows_in_turn(start_of):
-    """Home and process 3 have a room open, processes 1 and 2 none: new
-    dataflows go to 1 and 2 in turn."""
+    """Home and process 3 have a room open, processes 1 and 2 none: the first
+    new dataflow goes to process 1, the first after the turn of the two, and
+    the next to process 2. Each placed counts toward its process's load, so
+    all four are then as loaded, and the next go to each in turn: 3, 0 and
+    1."""
     placement = start_of(4)
     _process_with_rooms(3, rooms=1)
     _tabs_in(["project:home"])
 
     counted = placement.open_rooms()
-    chosen = [placement.choose() for _ in range(3)]
+    chosen = [placement.choose() for _ in range(5)]
 
     assert counted == [1, 0, 0, 1], counted
-    assert chosen == [1, 2, 1], chosen
+    assert chosen == [1, 2, 3, 0, 1], chosen
+
+
+def test_a_burst_of_new_dataflows_spreads_over_the_processes_by_their_load(start_of):
+    """Processes 1, 2 and 3 have a room open each and home none. Four new
+    dataflows made at once, before any of their rooms opens, go to each
+    process once, not all four to home: each counts toward its process's load
+    as it is placed."""
+    from utk_curio.common.backend_processes import shard_of
+
+    placement = start_of(4)
+    for number in (1, 2, 3):
+        _process_with_rooms(number, rooms=1)
+
+    counted = placement.open_rooms()
+    made = [placement.new_dataflow_id() for _ in range(4)]
+
+    assert counted == [0, 1, 1, 1], counted
+    went = [shard_of(dataflow, 4) for dataflow in made]
+    assert went == [0, 1, 2, 3], f"a burst of new dataflows went to {went}"
+    assert placement.loads() == [1, 2, 2, 2]
+
+
+def test_placements_older_than_the_window_no_longer_count(start_of, monkeypatch):
+    """Home has no room open, and processes 1 and 2 two each: two new
+    dataflows go to home, which is then as loaded as they are. Once the window
+    has passed, those two count no more, so the next new dataflow goes to home
+    again, not to process 1, whose turn it is, and the document keeps no
+    placement older than the window."""
+    placement = start_of(3)
+    _process_with_rooms(1, rooms=2)
+    _process_with_rooms(2, rooms=2)
+    now = [1000.0]
+    monkeypatch.setattr(placement, "_clock", lambda: now[0])
+
+    burst = [placement.choose(), placement.choose()]
+    within = placement.loads()
+    now[0] += placement.RECENT_S + 1
+    past = placement.loads()
+    chosen = placement.choose()
+    with placement._SHARED.held() as state:
+        kept = state.get(placement.PLACED)
+
+    assert burst == [0, 0], burst
+    assert within == [2, 2, 2], within
+    assert past == [0, 2, 2], f"placements older than the window still count: {past}"
+    assert chosen == 0, f"the next new dataflow went to {chosen}: home's old placements still count"
+    assert kept == {"0": [now[0]]}, f"the document keeps placements older than the window: {kept}"
 
 
 def test_an_agent_at_work_keeps_its_room_open(doc_app, no_one_in_any_room, monkeypatch):
     """An agent at work in a dataflow with no tab open: its room is open as
-    long as the agent works in it, so new dataflows go to the other
-    process."""
+    long as the agent works in it, so the next new dataflow goes to the other
+    process, whatever the turn. That placement then weighs as much as the
+    agent's room, and the one after goes to home, whose turn it is."""
     from utk_curio.backend.app.collaboration import agent_peers, placement
     from utk_curio.common.backend_processes import dataflow_id_on
 
@@ -165,11 +220,13 @@ def test_an_agent_at_work_keeps_its_room_open(doc_app, no_one_in_any_room, monke
     with agent_peers.at_work(str(alice.id), project_id, attachment_id="att-1", coord=NB, name="Node Builder",
                              category="node", asked_by=agent_peers.asker(alice)):
         during = placement.open_rooms()
-        chosen = [placement.choose(), placement.choose()]
+        first = placement.choose()
+        then = placement.choose()
     after = placement.open_rooms()
 
     assert during == [1, 0], during
-    assert chosen == [1, 1], "a new dataflow went to the process an agent is at work in, which has more open rooms"
+    assert first == 1, "a new dataflow went to the process an agent is at work in, which has more open rooms"
+    assert then == 0, f"with the agent's room and a placement as one each, a new dataflow went to {then}, not home"
     assert after == [0, 0], f"the agent left and its room still counts: {after}"
 
 
@@ -236,7 +293,8 @@ def test_two_processes_making_dataflows_at_once_take_two_turns(start_of, monkeyp
 
 def test_each_start_begins_with_no_open_rooms_and_the_turn_at_home(start_of, monkeypatch):
     """What one start counted is its own: the next start's processes count
-    their rooms anew, and its first new dataflow goes to home."""
+    their rooms anew, it holds none of the start before's placements, and its
+    first new dataflow goes to home."""
     from utk_curio.backend.app.collaboration import room_state
     from utk_curio.backend.app.common import shared_budgets
 
@@ -250,6 +308,7 @@ def test_each_start_begins_with_no_open_rooms_and_the_turn_at_home(start_of, mon
 
     assert (first, kept) == (1, [1, 0, 0])
     assert placement.open_rooms() == [0, 0, 0], "a start counts the rooms the start before it had open"
+    assert placement.loads() == [0, 0, 0], "a start counts the placements the start before it made"
     assert placement.choose() == 0, "a start takes the turn the start before it left"
 
 

@@ -1,4 +1,5 @@
-"""The backend process a new dataflow goes to: the one with the fewest open rooms.
+"""The backend process a new dataflow goes to: the one with the least load,
+its open rooms and its recent placements.
 
 ``curio.py start --backend-processes N`` runs N backend processes, and each
 dataflow belongs to the one its id names (``backend_processes.shard_of``):
@@ -11,18 +12,28 @@ dataflow an account makes, new, imported or duplicated
 may be retried. Seeded examples and hosted guests' copies keep the ids they
 are made with.
 
-A room is open in a process while a tab (``room_state.py``) or an agent at
-work (``agent_peers.py``) is in it. As a tab or an agent joins or leaves a
-room, the process counts its open rooms again (:func:`changed`) and writes
-the count into one document the start's processes share
-(``common/shared_budgets.State``) when it changed: as a room's first tab or
-agent joins it, and as its last one leaves. Nothing is written on a timer.
-The document also holds whose turn is next. :func:`choose` takes the process
-with the fewest open rooms, the first at or after the turn among those with
-as few, and gives the turn to the process after it, in one step under the
+A process's load is its open rooms plus its recent placements:
+
+* A room is open in a process while a tab (``room_state.py``) or an agent at
+  work (``agent_peers.py``) is in it. As a tab or an agent joins or leaves a
+  room, the process counts its open rooms again (:func:`changed`) and writes
+  the count when it changed: as a room's first tab or agent joins it, and as
+  its last one leaves. Nothing is written on a timer.
+* A placement is a new dataflow :func:`choose` gave the process. It counts for
+  :data:`RECENT_S` after it, so a burst of new dataflows made before any of
+  their rooms opens spreads over the processes, rather than all going to the
+  one with the fewest open rooms. A placement whose room has opened since
+  counts twice for the rest of that window, as an open room and as a
+  placement, and that is fine: it ends with the window.
+
+Both are kept in one document the start's processes share
+(``common/shared_budgets.State``), with whose turn is next. :func:`choose`
+drops the placements older than the window, takes the process with the least
+load, the first at or after the turn among those with as little, notes its
+placement, and gives the turn to the process after it, in one step under the
 document's lock, so two processes making dataflows at once take two turns.
-The document is the start's: each start begins with no open rooms and the turn
-at the home process.
+The document is the start's: each start begins with no open rooms, no
+placements and the turn at the home process.
 
 With one process every new dataflow is home's, its id a plain uuid4, and
 nothing is counted or kept.
@@ -31,6 +42,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 import uuid
 from typing import Optional
 
@@ -42,9 +54,17 @@ logger = logging.getLogger(__name__)
 
 #: The document the start's processes share.
 _SHARED = shared_budgets.State("dataflow-placement")
-#: Its fields: each process's open rooms, by its number, and whose turn is next.
+#: Its fields: each process's open rooms and the times of its placements, by
+#: its number, and whose turn is next.
 ROOMS = "rooms"
+PLACED = "placed"
 TURN = "turn"
+
+#: How long a placement counts toward its process's load, in seconds.
+RECENT_S = 600.0
+#: The clock placements are timed by, which every process of a start reads
+#: alike (as ``discovery/application/places.py``'s shared pace does).
+_clock = time.monotonic
 
 #: Held while this process counts its open rooms and writes the count, so the
 #: count written last is the one counted last.
@@ -79,14 +99,18 @@ def changed() -> None:
 
 
 def choose() -> int:
-    """The process a new dataflow goes to: the one with the fewest open
-    rooms, the first at or after the turn among those with as few. The turn
-    passes to the process after it."""
+    """The process a new dataflow goes to: the one with the least load, its
+    open rooms plus its placements of the last :data:`RECENT_S`, the first at
+    or after the turn among those with as little. The placement is noted, the
+    older ones dropped, and the turn passes to the process after it."""
     processes = backend_processes.process_count()
     if processes <= 1:
         return backend_processes.HOME
     with _SHARED.held() as state:
+        now = _clock()
+        placed = state[PLACED] = _recent(state, now)
         chosen = _pick(state, processes)
+        placed.setdefault(str(chosen), []).append(now)
         state[TURN] = (chosen + 1) % processes
     return chosen
 
@@ -112,6 +136,17 @@ def open_rooms() -> list[int]:
         return [len(_open_here())]
     with _SHARED.held() as state:
         return _rooms(state, processes)
+
+
+def loads() -> list[int]:
+    """Each process's load, by its number: its open rooms plus its placements
+    of the last :data:`RECENT_S`, as the start's document holds them, or with
+    one process, this one's open rooms, counted now."""
+    processes = backend_processes.process_count()
+    if processes <= 1:
+        return [len(_open_here())]
+    with _SHARED.held() as state:
+        return _load({**state, PLACED: _recent(state, _clock())}, processes)
 
 
 def reset_for_tests() -> None:
@@ -146,11 +181,35 @@ def _rooms(state: dict, processes: int) -> list[int]:
     return [_count(kept.get(str(number))) for number in range(processes)]
 
 
+def _recent(state: dict, now: float) -> dict:
+    """The placements in *state* made in the last :data:`RECENT_S` before
+    *now*, each process's times by its number; the older ones are left out."""
+    kept = state.get(PLACED)
+    kept = kept if isinstance(kept, dict) else {}
+    recent = {}
+    for number, times in kept.items():
+        fresh = [at for at in (times if isinstance(times, list) else ())
+                 if isinstance(at, (int, float)) and not isinstance(at, bool) and at > now - RECENT_S]
+        if fresh:
+            recent[str(number)] = fresh
+    return recent
+
+
+def _load(state: dict, processes: int) -> list[int]:
+    """Each process's load in *state*, by its number: its open rooms plus the
+    placements *state* holds of it, those of the window."""
+    placed = state.get(PLACED)
+    placed = placed if isinstance(placed, dict) else {}
+    times = [placed.get(str(number)) for number in range(processes)]
+    return [rooms + (len(at) if isinstance(at, list) else 0) for rooms, at in zip(_rooms(state, processes), times)]
+
+
 def _pick(state: dict, processes: int) -> int:
-    """The process with the fewest open rooms in *state*, the first at or
-    after its turn among those with as few. The document is held."""
-    rooms = _rooms(state, processes)
-    fewest = min(rooms)
+    """The process with the least load in *state*, the first at or after its
+    turn among those with as little. The document is held, and holds only the
+    placements of the window."""
+    load = _load(state, processes)
+    least = min(load)
     turn = _count(state.get(TURN)) % processes
     return next(number for number in ((turn + step) % processes for step in range(processes))
-                if rooms[number] == fewest)
+                if load[number] == least)

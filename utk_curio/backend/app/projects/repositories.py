@@ -70,9 +70,9 @@ def upsert_project(
     that -- 25 of the failures in the first 100-user run were this flush.
 
     A new dataflow's id is taken once, before that write: it names the backend
-    process with the fewest open rooms, and each take passes the placement's
-    turn on (``collaboration/placement.py``), which a retried write must not
-    do again.
+    process with the fewest open rooms and recent placements, and each take
+    counts as one of those placements and passes the turn on
+    (``collaboration/placement.py``), which a retried write must not do again.
     """
     new_id = None if project_id else placement.new_dataflow_id()
 
