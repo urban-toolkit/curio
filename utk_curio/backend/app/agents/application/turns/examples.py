@@ -55,9 +55,10 @@ NOT_USED = "Not used"
 TOP_K = 2
 #: The block's size bound, in characters, about 3,500 tokens. The block is not
 #: cached, so every opted-in run pays for it; at this size every "Used"
-#: example but the three largest (04, 05, 06) can be shown, usually one large
-#: example or two small ones. An example that does not fit is left out; the
-#: next one in rank order may still fit.
+#: example but the four largest can be shown, usually one large example or two
+#: small ones: 06, 05, 04 and 25 take about 25,000 to 33,000 characters each
+#: alone, and the largest that fits, 10, about 13,700. An example that does not
+#: fit is left out; the next one in rank order may still fit.
 MAX_BLOCK_CHARS = 14_000
 #: Words shorter than this never count.
 MIN_WORD_LEN = 3
@@ -81,7 +82,9 @@ STOP_WORDS = frozenset({
 })
 
 #: How long a code line must be to count as part of an evaluation's answer: an
-#: example that shares one with the scored dataflow is not shown to its runs.
+#: example that holds one of the scored dataflow's is not shown to its runs.
+#: A line a node holds only because its template's code starts with it is no
+#: part of an answer (:func:`_answer_parts`).
 SHARED_LINE_CHARS = 25
 
 # An evaluation marks the project it builds with ``dataflow.evaluation``
@@ -234,9 +237,10 @@ def excluded_by(spec: object, examples: list[Example] | None = None) -> set[str]
 
     An evaluation scores the run against one shipped dataflow, named by its
     marker's ``fixtureId``. The run is shown neither that dataflow nor any
-    example that shares a piece of it (a node or edge id, or a code line of
-    ``SHARED_LINE_CHARS`` or more): either would hand the run part of the
-    answer, and the score would measure copying."""
+    example that holds a piece of it (a node or edge id, or a code line of
+    ``SHARED_LINE_CHARS`` or more but one its node holds only because its
+    template's code starts with it, :func:`_answer_parts`): either would hand
+    the run part of the answer, and the score would measure copying."""
     own = _ids(spec)
     pool = (used_examples() if examples is None else examples) if own else []
     excluded = {e.key for e in pool if _ids(e.spec) & own}
@@ -248,7 +252,7 @@ def excluded_by(spec: object, examples: list[Example] | None = None) -> set[str]
     answer = _scored_parts(fixture_id)
     if answer:
         pool = pool or (used_examples() if examples is None else examples)
-        excluded.update(e.key for e in pool if _answer_parts(e.spec) & answer)
+        excluded.update(e.key for e in pool if _shown_parts(e.spec) & answer)
     return excluded
 
 
@@ -273,17 +277,47 @@ def _ids(spec: object) -> set[str]:
 
 
 def _answer_parts(spec: object) -> set[str]:
-    """A dataflow's node and edge ids, and its code lines of ``SHARED_LINE_CHARS`` or more."""
+    """A scored dataflow's node and edge ids, and its code lines of
+    ``SHARED_LINE_CHARS`` or more but those a node holds only because its
+    template's code starts with them (:func:`_starter_lines`), such as a Data
+    Loading node's loader line: every node of the template starts with those,
+    so they give nothing away."""
+    from utk_curio.backend.app.packages import service as packages_services
+
     dataflow = _dataflow(spec)
     parts = _ids(spec)
+    starters = _starter_lines()
     for node in _dicts(dataflow.get("nodes")):
-        content = node.get("content")
-        if isinstance(content, str):
-            parts.update(
-                line.strip() for line in content.splitlines()
-                if len(line.strip()) >= SHARED_LINE_CHARS
-            )
+        own = starters.get(packages_services.canonical_template_id(node.get("type")), frozenset())
+        parts.update(line for line in _long_lines(node.get("content")) if line not in own)
     return parts
+
+
+def _shown_parts(spec: object) -> set[str]:
+    """What a run shown the dataflow *spec* reads that an answer can hold:
+    its node and edge ids and every code line of ``SHARED_LINE_CHARS`` or
+    more, those its templates start its nodes with among them."""
+    parts = _ids(spec)
+    for node in _dicts(_dataflow(spec).get("nodes")):
+        parts.update(_long_lines(node.get("content")))
+    return parts
+
+
+def _long_lines(code: object) -> list[str]:
+    """The lines of *code* of ``SHARED_LINE_CHARS`` or more, stripped."""
+    if not isinstance(code, str):
+        return []
+    return [line.strip() for line in code.splitlines() if len(line.strip()) >= SHARED_LINE_CHARS]
+
+
+def _starter_lines() -> dict[str, frozenset[str]]:
+    """The code lines of ``SHARED_LINE_CHARS`` or more each template's
+    starter holds, by canonical template id: the code a node of it starts
+    with, as the starters feed reads it, from the package catalog
+    (``packages.catalog_starters``)."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    return {template: frozenset(_long_lines(code)) for template, code in packages_services.catalog_starters().items()}
 
 
 def used_examples() -> list[Example]:

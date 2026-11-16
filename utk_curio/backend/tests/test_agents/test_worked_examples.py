@@ -37,6 +37,48 @@ def _pool() -> dict:
     return {example.key: example for example in examples.used_examples()}
 
 
+def _starter_lines() -> dict[str, set[str]]:
+    """The code lines of SHARED_LINE_CHARS or more each template of the
+    package catalog starts a node with, by template: its source file's, or,
+    for a model package's template without one, the cell Curio writes for its
+    model."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    starters: dict[str, set[str]] = {}
+    for folder in sorted(packages_services.catalog_root().iterdir()):
+        if not (folder / "manifest.json").is_file():
+            continue
+        manifest = packages_services.load_package_manifest(folder)
+        for template in manifest.templates:
+            if template.source:
+                code = (folder / template.source).read_text(encoding="utf-8")
+            elif manifest.kind == "model" and manifest.model is not None:
+                code = packages_services.model_default_cell(manifest, folder)
+            else:
+                continue
+            starters.setdefault(f"{manifest.package_id}/{template.template_id}", _long_lines(code))
+    return starters
+
+
+def _code_lines(spec: dict, starters: dict | None = None) -> set[str]:
+    """The code lines of SHARED_LINE_CHARS or more *spec*'s nodes hold; with
+    *starters* (:func:`_starter_lines`), but those a node holds because its
+    template starts it with them."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    lines: set[str] = set()
+    for node in spec["dataflow"]["nodes"]:
+        own = (starters or {}).get(packages_services.canonical_template_id(node.get("type")), set())
+        lines |= _long_lines(node.get("content")) - own
+    return lines
+
+
+def _long_lines(code: object) -> set[str]:
+    if not isinstance(code, str):
+        return set()
+    return {line.strip() for line in code.splitlines() if len(line.strip()) >= examples.SHARED_LINE_CHARS}
+
+
 class TestTheChoice:
     def test_a_milan_heat_and_thermal_comfort_question_picks_example_09(self):
         assert _keys(examples.select(MILAN))[:1] == [NINE]
@@ -179,16 +221,41 @@ class TestAnEvaluationNeverSeesItsExample:
         assert NINE not in _keys(examples.select(MILAN, exclude=excluded))
 
     def test_an_evaluation_is_shown_no_part_of_its_answer(self):
-        # Exactly the examples that share a node or edge id, or a code line of
-        # SHARED_LINE_CHARS or more, with the scored dataflow are left out.
+        # Exactly the examples that hold a node or edge id, or a code line of
+        # SHARED_LINE_CHARS or more, of the scored dataflow are left out.
         answer = examples._answer_parts(_pool()[NINE].spec)
         assert answer, "example 09 has no answer parts; this test would be vacuous"
         excluded = examples.excluded_by(self._marked(NINE))
         for example in _pool().values():
-            shares = bool(examples._answer_parts(example.spec) & answer)
+            shares = bool(examples._shown_parts(example.spec) & answer)
             assert (example.key in excluded) == shares, example.key
         block = examples.block_for(MILAN, exclude=excluded) or ""
         assert not [part for part in answer if part in block]
+
+    def test_a_line_a_node_holds_because_its_template_starts_it_with_it_gives_nothing_away(self):
+        """Every node of a template starts with its template's code, such as a
+        Data Loading node's loader line or a Spatial Join's call, so a line a
+        node holds for that alone is no part of an answer. An example is left
+        out of an evaluation's runs when it holds one of the scored dataflow's
+        ids or one of its other code lines of SHARED_LINE_CHARS or more, and
+        is shown when it shares only such lines. Before, every long line
+        counted: an evaluation scored against example 06 was shown none of the
+        examples whose Vega-Lite specs hold the "$schema" line its Vega-Lite
+        package's nodes start with."""
+        starters = _starter_lines()
+        pool = list(_pool().values())
+        held = {e.key: examples._ids(e.spec) | _code_lines(e.spec) for e in pool}
+        shown_though_sharing = []
+        for scored in pool:
+            answer = examples._ids(scored.spec) | _code_lines(scored.spec, starters)
+            excluded = examples.excluded_by(self._marked(scored.key), pool)
+            for example in pool:
+                if example.key == scored.key:
+                    continue
+                assert (example.key in excluded) == bool(held[example.key] & answer), (scored.key, example.key)
+                if example.key not in excluded and _code_lines(example.spec) & _code_lines(scored.spec):
+                    shown_though_sharing.append((scored.key, example.key))
+        assert shown_though_sharing, "no example shares only starter lines with an answer; this test would be vacuous"
 
     def test_every_fixture_id_names_its_example(self):
         from utk_curio.backend.app.agents.evaluation.fixtures import load_fixtures

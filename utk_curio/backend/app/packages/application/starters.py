@@ -16,14 +16,19 @@ editor opens empty.
 A template whose starter is a node's whole content (``starterIsContent``)
 gives it to a node an agent's plan creates too: :func:`content_starters`.
 Every template's declared widgets go to such a node: :func:`declared_widgets`.
+The shipped catalog's starters, read the same way with no account's store,
+are :func:`catalog_starters`.
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
+from functools import lru_cache
+from pathlib import Path
 from typing import Iterable
 
+from utk_curio.backend.app.common.safe_paths import is_within, validate_component
 from utk_curio.backend.app.execution.code_references import normalize_widgets
 from utk_curio.backend.app.packages.application import (
     project_packages as packages_project_packages,
@@ -32,7 +37,9 @@ from utk_curio.backend.app.packages.application import (
 )
 from utk_curio.backend.app.packages.application.model_packages import model_default_cell
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
-from utk_curio.backend.app.packages.domain.manifest import ManifestError, TemplateManifest
+from utk_curio.backend.app.packages.domain.manifest import ManifestError, PackageManifest, TemplateManifest
+from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
+from utk_curio.backend.app.packages.repositories import catalog_dir as packages_catalog_dir
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 from utk_curio.backend.app.packages.repositories.store import (
     list_user_packages,
@@ -153,6 +160,72 @@ def template_starter(user_key: str, project_id: str, node_type: object) -> tuple
                 return model_default_cell(manifest, package_dir(user_key, dir_name)), "python"
             return None, ""
     return None, ""
+
+
+def catalog_starters() -> dict[str, str]:
+    """The starter of each template of the shipped catalog (``catalog_root``)
+    that has one, by canonical template id, as :func:`template_starter` reads
+    a project's: its ``source`` file's text, or, for a model package's
+    template without one, the cell Curio writes for its model. A package, a
+    source or a model that cannot be read gives none, and of two versions of
+    a package the first folder's. Read once per catalog folder and its
+    modification time."""
+    root = packages_catalog_dir.catalog_root()
+    try:
+        stamp = root.stat().st_mtime_ns
+    except OSError:
+        return {}
+    return dict(_catalog_starters_in(str(root), stamp))
+
+
+@lru_cache(maxsize=4)
+def _catalog_starters_in(root: str, _stamp: int) -> tuple[tuple[str, str], ...]:
+    """:func:`catalog_starters` of the catalog folder *root*."""
+    found: dict[str, str] = {}
+    for folder in sorted(Path(root).iterdir()):
+        if not PACKAGE_DIR_RE.match(folder.name) or not folder.is_dir():
+            continue
+        try:
+            manifest = load_package_manifest(folder)
+        except (ManifestError, OSError, ValueError) as exc:
+            log.warning("Catalog package %s has no readable manifest, so no starters: %s", folder.name, exc)
+            continue
+        for template in manifest.templates:
+            canonical = f"{manifest.package_id}/{template.template_id}"
+            if canonical not in found:
+                code = _catalog_starter(folder, manifest, template)
+                if code is not None:
+                    found[canonical] = code
+    return tuple(found.items())
+
+
+def _catalog_starter(folder: Path, manifest: PackageManifest, template: TemplateManifest) -> str | None:
+    """The starter of *template*, of the catalog package *folder* holds, or
+    None: its ``source`` file's text, each segment of its path checked as a
+    store package's is (``package_asset_path``), or a model's cell."""
+    if template.source:
+        parts = [p for p in template.source.replace("\\", "/").split("/") if p]
+        try:
+            for part in parts:
+                validate_component(part, field="source")
+        except (ValueError, PermissionError) as exc:
+            log.warning("Catalog package %s template %s has unsafe source %r: %s",
+                        folder.name, template.template_id, template.source, exc)
+            return None
+        entry = folder.joinpath(*parts).resolve()
+        if not is_within(entry, folder.resolve()) or not entry.is_file():
+            return None
+        try:
+            return entry.read_text(encoding="utf-8")
+        except OSError as exc:
+            log.warning("Cannot read %s: %s", entry, exc)
+            return None
+    if manifest.kind == "model" and manifest.model is not None:
+        try:
+            return model_default_cell(manifest, folder)
+        except Exception as exc:  # noqa: BLE001 - a model whose graph cannot be read gives no starter
+            log.warning("Catalog model %s has no cell to start with: %s", folder.name, exc)
+    return None
 
 
 def content_starters(user_key: str, project_id: str, node_types: Iterable[object]) -> dict[str, dict]:
