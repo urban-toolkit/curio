@@ -175,13 +175,19 @@ def upgrade_downloaded_models(user_key: str) -> list[str]:
     template is another node, or which holds a file where the node's code
     goes, is left as it is, and so is one whose node needs a package that
     cannot be had. A package brought has a ``source``, so another pass leaves
-    it alone. The seeder runs this on each read of the store."""
+    it alone. The seeder runs this on each read of the store.
+
+    A lock owner: it walks the store under the seed lock, held shared, and
+    writes each package under it, held exclusive, once it has read the
+    package again. ``bring_needed_packages`` takes the lock itself, so
+    neither hold spans it (the lock is not reentrant)."""
     found = []
-    for folder in list_user_packages(user_key):
-        raw = _manifest_of(folder)
-        source_id = _downloaded_before_its_node(raw)
-        if source_id is not None:
-            found.append((folder, raw, source_id))
+    with package_seed_lock(user_key, shared=True):
+        for folder in list_user_packages(user_key):
+            raw = _manifest_of(folder)
+            source_id = _downloaded_before_its_node(raw)
+            if source_id is not None:
+                found.append((folder, raw, source_id))
     nodes: dict[str, ModelNode | None] = {}
     brought: list[str] = []
     for folder, raw, source_id in found:
