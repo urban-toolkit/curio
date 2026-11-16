@@ -8,6 +8,7 @@ test on its own.
 from __future__ import annotations
 
 import importlib
+import os
 import subprocess
 import uuid
 from types import SimpleNamespace
@@ -169,6 +170,35 @@ def test_the_backends_of_one_start_share_its_boot_id(monkeypatch):
         {"CURIO_BACKEND_PROCESS": "0", "CURIO_BACKEND_PROCESSES": "2", "CURIO_BOOT_ID": "start-1"},
         {"CURIO_BACKEND_PROCESS": "1", "CURIO_BACKEND_PROCESSES": "2", "CURIO_BOOT_ID": "start-1"},
     ]
+
+
+ALLOCATOR_NAMES = ("MALLOC_ARENA_MAX", "MALLOC_MMAP_THRESHOLD_", "MALLOC_TRIM_THRESHOLD_",
+                   "ARROW_DEFAULT_MEMORY_POOL")
+
+
+def test_the_launcher_starts_the_backend_with_16_malloc_arenas_whatever_the_node_code_budget(monkeypatch):
+    """The backend starts with the sandbox server's allocator settings, but
+    with a fixed 16 malloc arenas (``sandbox/isolation/lifecycle.py``,
+    ``backend_server_environment``): it runs no node code, so the 24576 MB dev
+    and stable give node code, from which the sandbox's rule makes 96, does
+    not reach it."""
+    for name in ALLOCATOR_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CURIO_EXEC_MEMORY_MB", "24576")
+
+    env = _backend_environment(monkeypatch)
+
+    given = {name: env.get(name) for name in ALLOCATOR_NAMES}
+    assert given == {
+        "MALLOC_ARENA_MAX": "16",
+        "MALLOC_MMAP_THRESHOLD_": str(8 * 2**20),
+        "MALLOC_TRIM_THRESHOLD_": str(16 * 2**20),
+        "ARROW_DEFAULT_MEMORY_POOL": "system",
+    }, f"the launcher starts the backend with {given}"
+    # The sandbox and the page server start from the launcher's own
+    # environment: the backend's 16 never lowers the sandbox's cap.
+    leaked = [name for name in ALLOCATOR_NAMES if name in os.environ]
+    assert leaked == [], f"starting the backend set {leaked} in the launcher's own environment"
 
 
 def test_the_migration_before_the_backend_starts_does_none_of_the_startup_work(monkeypatch, tmp_path):

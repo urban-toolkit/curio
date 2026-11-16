@@ -36,6 +36,7 @@ import os
 import re
 import shutil
 import tempfile
+from fractions import Fraction
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -86,6 +87,9 @@ SIZE = 224
 #: The synthetic clip: 2 s at 4 frames a second, sampled every half second.
 CLIP_SECONDS, CLIP_RATE, EVERY = 2.0, 4, 0.5
 SAMPLED = [0.0, 0.5, 1.0, 1.5]
+#: The frame rate of the SideSeeing walk Track Objects ran on in dev's check,
+#: 30.033 frames a second, at which a frame can come just before a step's time.
+WALK_RATE = Fraction(30033, 1000)
 
 
 def _manifest() -> dict:
@@ -263,6 +267,45 @@ def videos(tmp_path):
     resource = {"id": "walk", "name": "Walk", "kind": "videos", "path": "*", "extensions": ["mp4"]}
     source = write_source(tmp_path / "discovery", "source.example.folder@1", a_storage_manifest(root, [resource]))
     return collection_rows(load_source_manifest(source), "walk", tmp_path)
+
+
+@pytest.fixture
+def walk(tmp_path):
+    """A 33 s clip at the walk's rate, as ``_sample`` reads a video: from 30 s,
+    its frames come 0.2 ms before 30.5 s, 0.8 ms before 31 s and 1.3 ms before
+    31.5 s, each followed by the next frame 33 ms later."""
+    import av
+    import numpy as np
+
+    path = tmp_path / "walk.mp4"
+    image = np.full((32, 32, 3), 40, dtype=np.uint8)
+    with av.open(str(path), "w") as out:
+        stream = out.add_stream("mpeg4", rate=WALK_RATE)
+        stream.width, stream.height, stream.pix_fmt = 32, 32, "yuv420p"
+        for _ in range(int(33 * WALK_RATE)):
+            for packet in stream.encode(av.VideoFrame.from_ndarray(image, format="rgb24")):
+                out.mux(packet)
+        for packet in stream.encode():
+            out.mux(packet)
+    # The clip's own times, so a writer that moved them fails here, not later.
+    with av.open(str(path)) as clip:
+        times = [float(frame.time) for frame in clip.decode(video=0)]
+    early = [round(1000 * (step - max(t for t in times if t < step)), 1) for step in (30.5, 31.0, 31.5)]
+    assert early == [0.2, 0.8, 1.3], f"the clip's frames come {early} ms before 30.5, 31 and 31.5 s"
+    return {"path": str(path), "relpath": "walk.mp4"}
+
+
+@pytest.fixture
+def corner(tmp_path):
+    """The 2 s clip at 4 frames a second, as ``_sample`` reads a video."""
+    _clip(tmp_path / "corner.mp4")
+    return {"path": str(tmp_path / "corner.mp4"), "relpath": "corner.mp4"}
+
+
+def _times(module, video, from_seconds, end):
+    """The times of the frames ``_sample`` looks at in *video*, every EVERY
+    seconds from *from_seconds* up to *end*."""
+    return module._sample(SimpleNamespace(width=960, from_seconds=from_seconds, every_seconds=EVERY), video, end)[1]
 
 
 def _node_source(**settings) -> str:
@@ -575,6 +618,89 @@ def test_every_frame_up_to_the_parts_end_decodes_with_frame_threading(videos, tm
 
     assert times == SAMPLED and len(frames) == len(SAMPLED)
     assert [getattr(kind, "name", kind) for kind in decoded_as] == ["AUTO"], decoded_as
+
+
+def test_one_frame_is_looked_at_for_each_step_never_two_for_one(walk, tmp_path):
+    """Track Objects looks at one frame every EVERY_SECONDS. On dev, 10 s of a
+    30.033 fps walk at 0.5 s gave 22 frames, not 20: a frame just before a
+    step's time was looked at for it, and the next frame too, so the overlay
+    played 9.5 s of video as 11 s and drifted from the video's times. From 30 s
+    to 31.75 s of a clip at that rate, each of the four steps gets one frame."""
+    with _staged(tmp_path) as module:
+        run = SimpleNamespace(width=960, from_seconds=30, every_seconds=EVERY)
+        frames, times = module._sample(run, walk, 31.75)
+    steps = [round((t - 30) / EVERY) for t in times]
+    assert times == [30.0, 30.5, 30.999, 31.532], f"looked at {times}, in steps {steps}, not 30.0, 30.5, 30.999, 31.532"
+    assert len(frames) == len(times)
+
+
+def test_a_frame_just_before_a_steps_time_is_the_one_looked_at_for_it(walk, tmp_path):
+    """A frame at most a millisecond before a step's time is that step's frame:
+    the one 0.8 ms before 31 s is looked at."""
+    with _staged(tmp_path) as module:
+        run = SimpleNamespace(width=960, from_seconds=30, every_seconds=EVERY)
+        times = module._sample(run, walk, 31.75)[1]
+    assert 30.999 in times, f"looked at {times}, not the frame at 30.999 s"
+
+
+def test_the_steps_end_before_to_seconds_however_the_frames_fall(corner, walk, tmp_path):
+    """A part of W seconds has W / EVERY_SECONDS steps, from FROM_SECONDS up
+    to TO_SECONDS: the step at TO_SECONDS is not one, whether a frame comes
+    right at it, as at 1 s of the 4 fps clip, or 0.8 ms before it, as before
+    31 s of the walk."""
+    with _staged(tmp_path) as module:
+        on_the_step = _times(module, corner, 0, 1.0)
+        just_before = _times(module, walk, 30.5, 31.0)
+    assert (on_the_step, just_before) == ([0.0, 0.5], [30.5]), (on_the_step, just_before)
+
+
+def test_a_step_before_to_seconds_looks_at_its_frame_even_after_it(walk, tmp_path):
+    """Every step from FROM_SECONDS up to TO_SECONDS gets its frame: the first
+    from a millisecond before its time to a millisecond before the next
+    step's, even when that frame comes after TO_SECONDS. From 30 s to 31.51 s
+    of the walk, the step at 31.5 s looks at the frame at 31.532 s."""
+    with _staged(tmp_path) as module:
+        times = _times(module, walk, 30, 31.51)
+    assert times == [30.0, 30.5, 30.999, 31.532], f"looked at {times}, not 30.0, 30.5, 30.999, 31.532"
+
+
+def test_a_part_of_no_length_looks_at_the_first_frame_from_its_start(corner, walk, tmp_path):
+    """FROM_SECONDS equal to TO_SECONDS looks at one frame wherever the frames
+    fall: the first no more than a millisecond before FROM_SECONDS, or after
+    it. That is the frame right at 1 s of the 4 fps clip, the one 0.8 ms before
+    31 s of the walk, and the one 32 ms after 31.5 s, whose frame 1.3 ms
+    before is too early. Past the video's end there is no frame."""
+    with _staged(tmp_path) as module:
+        at_it = _times(module, corner, 1.0, 1.0)
+        just_before = _times(module, walk, 31.0, 31.0)
+        after_it = _times(module, walk, 31.5, 31.5)
+        with pytest.raises(ValueError) as past_the_end:
+            _times(module, walk, 40, 40)
+    assert (at_it, just_before, after_it) == ([1.0], [30.999], [31.532]), (at_it, just_before, after_it)
+    assert str(past_the_end.value) == "walk.mp4 has no frames from 40 to 40 s"
+
+
+def test_with_every_shorter_than_a_frame_the_overlay_plays_in_real_time(
+        videos, catalog_copy, weights, few_threads, tmp_path):
+    """With EVERY_SECONDS shorter than the gap between two of the video's
+    frames, SAM 3 looks at every frame, and the overlay plays each at its own
+    time: the 2 s clip at 4 frames a second, looked at every 0.1 s, is an
+    overlay of its 8 frames over 2 s. At 1 / EVERY_SECONDS frames a second it
+    would play them in 0.8 s."""
+    import av
+
+    rows, helpers = videos
+    model = _loaded(catalog_copy, weights)(MODEL_ID)
+    with _staged(tmp_path) as module:
+        out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
+                                   every_seconds=0.1)
+    (row,) = out.to_dict("records")
+    with av.open(row["path"]) as overlay:
+        stream = overlay.streams.video[0]
+        shown = [round(float(frame.time), 3) for frame in overlay.decode(stream)]
+        plays_for = float(stream.duration * stream.time_base)
+    assert shown == [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75], f"the overlay shows its frames at {shown} s"
+    assert (row["t_s"], row["duration_s"], row["fps"], plays_for) == (0.0, 2.0, 4.0, 2.0)
 
 
 def test_each_stop_comes_before_sam3_loads_and_writes_nothing(videos, tmp_path):

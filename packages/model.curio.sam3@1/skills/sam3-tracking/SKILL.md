@@ -36,7 +36,7 @@ The constants at the top of its code, each passed to `track_objects` as the argu
 
 ### What it returns
 
-One row per video, its overlay: the frames SAM 3 looked at, each object's mask and box drawn in its label's color with its label and id, which Simple View plays, a frame every `EVERY_SECONDS`. The row keeps the video's own columns, its fields and its position, and has:
+One row per video, its overlay: the frames SAM 3 looked at, each object's mask and box drawn in its label's color with its label and id, which Simple View plays in real time, each frame at its own time in the video. The row keeps the video's own columns, its fields and its position, and has:
 
 - `file_id`, `path`, `thumbnail` and `image_url`: the overlay's;
 - `video_file_id` and `name`: the video tracked;

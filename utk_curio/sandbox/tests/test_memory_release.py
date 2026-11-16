@@ -11,7 +11,8 @@ fitted as its isolated children's are: arenas capped, Arrow allocating in them,
 and glibc's thresholds held fixed, so a block of 8 MiB or more is unmapped when
 a thread frees it, and an arena whose free top passes 16 MiB gives it back
 rather than keeping it. ``test_rerun_memory.py`` measures the whole effect on a
-real sandbox.
+real sandbox. The launcher starts the backend server with the same settings,
+its arenas held at 16 whatever the node-code budget, since it runs no node code.
 """
 
 import ctypes
@@ -418,3 +419,76 @@ def test_the_sandbox_server_fits_its_allocators_as_its_isolated_children_do():
     operator = server_environment({"MALLOC_MMAP_THRESHOLD_": "65536"})
     assert (operator.get("MALLOC_MMAP_THRESHOLD_"), operator.get("MALLOC_TRIM_THRESHOLD_")) == (
         "65536", fixed["MALLOC_TRIM_THRESHOLD_"]), "an operator's threshold stands"
+
+
+#: The backend server's allocators as the launcher fits them
+#: (``lifecycle.backend_server_environment``): 16 malloc arenas whatever the
+#: node-code budget, glibc's two thresholds held at 8 and 16 MiB, and Arrow
+#: allocating in glibc's arenas.
+BACKEND_ALLOCATORS = {
+    "MALLOC_ARENA_MAX": "16",
+    "MALLOC_MMAP_THRESHOLD_": str(8 * 2**20),
+    "MALLOC_TRIM_THRESHOLD_": str(16 * 2**20),
+    "ARROW_DEFAULT_MEMORY_POOL": "system",
+}
+
+
+@pytest.mark.parametrize("budget", [
+    pytest.param(None, id="no budget"),
+    pytest.param("4096", id="the default 4096 MB"),
+    pytest.param("24576", id="24576 MB as on dev and stable"),
+])
+def test_the_backend_server_holds_16_malloc_arenas_whatever_the_node_code_budget(budget):
+    """The backend runs no node code, so its arena cap does not follow the
+    node-code budget as the sandbox server's does: from the 24576 MB dev and
+    stable give node code, the sandbox's rule makes 96. With no settings, a
+    backend on 64 cores made 512 arenas over a stress job, which kept 2635 MiB
+    resident against 135 MiB in use (run 43752339941); with these it ended the
+    job at 656 MiB instead of 2908 (run 43762927879)."""
+    from utk_curio.sandbox.isolation.lifecycle import backend_server_environment
+
+    inherited = {"PATH": "/bin"}
+    if budget is not None:
+        inherited["CURIO_EXEC_MEMORY_MB"] = budget
+    env = backend_server_environment(inherited)
+    given = {name: env.get(name) for name in BACKEND_ALLOCATORS}
+    assert given == BACKEND_ALLOCATORS, (
+        f"node-code budget {budget!r}: the backend server's allocators are {given}"
+    )
+    assert env["PATH"] == "/bin", "the rest of its environment is the launcher's"
+
+
+@pytest.mark.parametrize("operator, held", [
+    pytest.param("4", "4", id="a lower cap stands"),
+    pytest.param("16", "16", id="the same cap stands"),
+    pytest.param("512", "16", id="a higher cap is held at 16"),
+    pytest.param("0", "16", id="0 is held at 16"),
+    pytest.param("oops", "16", id="not a number is held at 16"),
+])
+def test_an_operators_lower_arena_cap_stands_in_the_backend_server_and_a_higher_one_is_held_at_16(
+        operator, held):
+    """The sandbox server's rule, with 16 in place of the budget's cap: at the
+    24576 MB dev and stable give node code, a higher cap is held at 16, not at
+    the sandbox's 96."""
+    from utk_curio.sandbox.isolation.lifecycle import backend_server_environment
+
+    env = backend_server_environment({"MALLOC_ARENA_MAX": operator, "CURIO_EXEC_MEMORY_MB": "24576"})
+    arena_max = env.get("MALLOC_ARENA_MAX")
+    assert arena_max == held, f"an operator's MALLOC_ARENA_MAX {operator!r} became {arena_max!r}"
+
+
+def test_an_operators_own_thresholds_and_arrow_pool_stand_in_the_backend_server():
+    from utk_curio.sandbox.isolation.lifecycle import backend_server_environment
+
+    operator = {"MALLOC_MMAP_THRESHOLD_": "65536", "MALLOC_TRIM_THRESHOLD_": "131072",
+                "ARROW_DEFAULT_MEMORY_POOL": "jemalloc"}
+    env = backend_server_environment(operator)
+    given = {name: env.get(name) for name in BACKEND_ALLOCATORS}
+    assert given == {**BACKEND_ALLOCATORS, **operator}, (
+        f"an operator's thresholds and pool stand, and the arenas are still held at 16: {given}"
+    )
+    one = backend_server_environment({"MALLOC_MMAP_THRESHOLD_": "65536"})
+    thresholds = (one.get("MALLOC_MMAP_THRESHOLD_"), one.get("MALLOC_TRIM_THRESHOLD_"))
+    assert thresholds == ("65536", BACKEND_ALLOCATORS["MALLOC_TRIM_THRESHOLD_"]), (
+        f"an operator's mmap threshold stands, and the trim threshold is still held: {thresholds}"
+    )

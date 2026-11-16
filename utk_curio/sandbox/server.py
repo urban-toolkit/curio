@@ -169,11 +169,6 @@ if __name__ == '__main__':
         )
         for _finding in _findings:
             print(f"[isolation] {_finding}", file=sys.stderr, flush=True)
-        # The memory limit the first isolated run's zygote will give its
-        # nodes, which it says again, as it is, when it starts.
-        from utk_curio.sandbox.isolation import lifecycle as _lifecycle
-        print(_lifecycle.node_memory_line(*_lifecycle.memory_limit(), _config.limits.get("memory_mb")),
-              file=sys.stderr, flush=True)
         if _fatal:
             raise SystemExit(
                 "[isolation] refusing to start: this instance has user auth "
@@ -182,6 +177,14 @@ if __name__ == '__main__':
                 "CURIO_EXEC_USER to an unprivileged account, or set "
                 "CURIO_ISOLATION=off to accept the risk explicitly."
             )
+        # The container's cgroups, laid out before this serves, so that
+        # /version and /monitor say from the first request the memory limit
+        # isolated nodes run under, which a deploy checks. Each zygote's
+        # start says it again, as it is.
+        from utk_curio.sandbox.isolation import lifecycle as _lifecycle
+        _memory_mb = _config.limits.get("memory_mb")
+        print(_lifecycle.node_memory_line(*_lifecycle.lay_out_at_start(_memory_mb), _memory_mb),
+              file=sys.stderr, flush=True)
 
     # The connection DuckDB 1.x's import opens holds a thread per core and
     # serves nothing here (2.0 opens it on first use only): node code that

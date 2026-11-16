@@ -1673,6 +1673,66 @@ def test_a_new_zygote_clears_the_places_of_one_that_died(isolated_in_places):
     _own_place(_ran_in(isolated_in_places))
 
 
+def test_the_starts_trial_place_is_a_zygotes_and_leaves_nothing_behind(isolated_in_places, monkeypatch):
+    """The run's cgroup the sandbox's start tries (``node_cgroups.try_a_place``)
+    is made by the code a zygote makes its runs' with: at the budget, no swap,
+    one kill for all, ``0755`` in a folder of the start's pid. Once it is
+    removed, nothing of it is left."""
+    from utk_curio.sandbox.isolation import node_cgroups
+
+    budget_mb = isolated_in_places.limits["memory_mb"]
+    folder = os.path.join(CGROUP_ROOT, "nodes", str(os.getpid()))
+    seen = {}
+    make = node_cgroups.Place.make
+
+    def made(place):
+        make(place)
+        seen["place"] = place.path
+        seen["modes"] = [os.stat(path).st_mode & 0o777 for path in (os.path.dirname(place.path), place.path)]
+        for name in ("memory.max", "memory.swap.max", "memory.oom.group"):
+            try:
+                with open(os.path.join(place.path, name)) as handle:
+                    seen[name] = handle.read().strip()
+            except FileNotFoundError:
+                seen[name] = None
+
+    monkeypatch.setattr(node_cgroups.Place, "make", made)
+    node_cgroups.try_a_place(budget_mb)
+
+    assert seen.get("place") == os.path.join(folder, "0"), seen
+    assert seen["modes"] == [0o755, 0o755], seen
+    assert seen["memory.max"] == str(budget_mb * 1024 * 1024), seen
+    assert seen["memory.swap.max"] in (None, "0"), seen
+    assert seen["memory.oom.group"] == "1", seen
+    assert not os.path.exists(folder), f"the trial's folder {folder} is still there"
+
+
+def test_a_host_limit_on_the_nodes_cgroups_stops_the_starts_trial_place(isolated_in_places):
+    """A cap on how many cgroups the nodes may have, as a host may set on the
+    container's cgroups, stops the run's cgroup the sandbox's start tries,
+    which is how the start knows its runs would get none: ``try_a_place``
+    raises, and leaves nothing behind."""
+    import errno
+
+    from utk_curio.sandbox.isolation import node_cgroups
+
+    nodes = os.path.join(CGROUP_ROOT, "nodes")
+    folder = os.path.join(nodes, str(os.getpid()))
+    limit = os.path.join(nodes, "cgroup.max.descendants")
+    with open(limit) as handle:
+        before = handle.read().strip()
+    with open(limit, "w") as handle:
+        handle.write("0")
+    try:
+        with pytest.raises(OSError) as caught:
+            node_cgroups.try_a_place(isolated_in_places.limits["memory_mb"])
+    finally:
+        with open(limit, "w") as handle:
+            handle.write(before)
+    assert caught.value.errno == errno.EAGAIN, caught.value
+    assert not os.path.exists(folder), f"the trial's folder {folder} is still there"
+
+
 #: Every cgroup write a node might try: its own limits, joining another
 #: cgroup, leaving its own, and making one. Each answers the error it got.
 _EVERY_CGROUP_WRITE = r'''

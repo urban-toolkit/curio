@@ -72,9 +72,10 @@ Apple's MPS), else on the CPU.
 
 Each video comes back as one row: its overlay, a video of the frames SAM 3
 looked at, each object's mask and box drawn in its label's color with its label
-and id. Simple View plays it, a frame every `EVERY_SECONDS`, so it runs as long
-as the part it tracked. It is H.264, which every browser plays. The row keeps
-the video's own columns, its fields and its position, and has:
+and id. Simple View plays it in real time, each frame at its own time in the
+video, so it runs as long as the part it tracked. It is H.264, which every
+browser plays. The row keeps the video's own columns, its fields and its
+position, and has:
 
 | Column | What it holds |
 |---|---|

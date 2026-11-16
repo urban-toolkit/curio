@@ -15,10 +15,13 @@ It is started with ``subprocess``, not ``fork``, on purpose: see the note at
 the top of ``zygote.py``. A fork of the Flask process would inherit its threads
 and its DuckDB handle, which is exactly what this is meant to avoid.
 
-Its start also settles the memory limit isolated nodes run under
-(:func:`ensure_running`): a cgroup at the node's budget for each run where the
-container's cgroups can hold them, laid out then (``node_cgroups``), else the
-address-space cap, with the reason in the log and on /monitor.
+The memory limit isolated nodes run under is settled as the sandbox starts,
+before it serves (:func:`lay_out_at_start`, called by ``server.py``): a cgroup
+at the node's budget for each run where the container's cgroups can hold
+them, laid out then and tried with one place (``node_cgroups``), else the
+address-space cap, with the reason in the log and on /monitor. So /version
+says the outcome before any node has run. Each zygote's start keeps it
+(:func:`ensure_running`), unless the zygote cannot make its places.
 """
 
 import contextlib
@@ -39,6 +42,10 @@ _started_with = None
 # The memory limit the running zygote's children have, (kind, reason), once
 # one started; memory_limit() reads it.
 _memory = None
+# The memory limit the sandbox's start settled, (kind, reason), as it laid out
+# the container's cgroups (lay_out_at_start), or None in a process that did
+# not start as the sandbox server, as the unit suites' app.
+_laid_out = None
 
 # The zygote imports geopandas/pandas/shapely/duckdb before it can serve, which
 # is the cost being amortised. Generous, because a cold import on a loaded
@@ -57,13 +64,18 @@ MALLOC_ARENA_SHARE = 4
 #: glibc's malloc, in the arenas capped above.
 ARROW_POOL_UNDER_A_CAP = "system"
 
-#: glibc's mmap threshold in the sandbox server, held fixed: a block of this
-#: size or more is mapped on its own, and unmapped as soon as it is freed.
+#: glibc's mmap threshold in the sandbox and backend servers, held fixed: a
+#: block of this size or more is mapped on its own, and unmapped as soon as it
+#: is freed.
 SERVER_MMAP_THRESHOLD_BYTES = 8 * 1024 * 1024
 
-#: glibc's trim threshold in the sandbox server, held fixed: an arena gives
-#: its free top back once a free leaves it bigger than this.
+#: glibc's trim threshold in the sandbox and backend servers, held fixed: an
+#: arena gives its free top back once a free leaves it bigger than this.
 SERVER_TRIM_THRESHOLD_BYTES = 16 * 1024 * 1024
+
+#: How many malloc arenas the backend server may hold, whatever the node-code
+#: budget: it runs no node code.
+BACKEND_MALLOC_ARENAS = 16
 
 
 class ZygoteStartupError(RuntimeError):
@@ -122,20 +134,34 @@ def zygote_environment(limits, environ=None, *, memory_limit=None):
     env = for_node_code(os.environ if environ is None else environ)
     memory_mb = (limits or {}).get("memory_mb")
     if memory_mb and memory_limit != node_cgroups.CGROUP:
-        _cap_arenas(env, memory_mb)
+        _cap_arenas(env, malloc_arena_cap(memory_mb))
         env["ARROW_DEFAULT_MEMORY_POOL"] = ARROW_POOL_UNDER_A_CAP
     return env
 
 
-def _cap_arenas(env, memory_mb):
-    """Cap *env*'s malloc arenas for *memory_mb* of budget; a lower
-    ``MALLOC_ARENA_MAX`` already in *env* stands."""
-    cap = malloc_arena_cap(memory_mb)
+def _cap_arenas(env, cap):
+    """Cap *env*'s malloc arenas at *cap*; a lower ``MALLOC_ARENA_MAX``
+    already in *env* stands."""
     try:
         current = int(env.get("MALLOC_ARENA_MAX", ""))
     except ValueError:
         current = 0
     env["MALLOC_ARENA_MAX"] = str(min(current, cap) if current > 0 else cap)
+
+
+def _fit_server_allocators(env, arenas):
+    """Fit *env*'s allocators as a server's: its malloc arenas capped at
+    *arenas*, Arrow allocating through glibc, in those arenas, and glibc's two
+    thresholds held fixed. An operator's lower cap, own pool and own
+    thresholds stand."""
+    _cap_arenas(env, arenas)
+    if not env.get("ARROW_DEFAULT_MEMORY_POOL"):
+        env["ARROW_DEFAULT_MEMORY_POOL"] = ARROW_POOL_UNDER_A_CAP
+    for name, value in (("MALLOC_MMAP_THRESHOLD_", SERVER_MMAP_THRESHOLD_BYTES),
+                        ("MALLOC_TRIM_THRESHOLD_", SERVER_TRIM_THRESHOLD_BYTES)):
+        if not env.get(name):
+            env[name] = str(value)
+    return env
 
 
 def server_environment(environ=None):
@@ -200,14 +226,44 @@ def server_environment(environ=None):
         memory_mb = int(env.get("CURIO_EXEC_MEMORY_MB") or DEFAULT_LIMITS["memory_mb"])
     except ValueError:
         memory_mb = DEFAULT_LIMITS["memory_mb"]
-    _cap_arenas(env, memory_mb)
-    if not env.get("ARROW_DEFAULT_MEMORY_POOL"):
-        env["ARROW_DEFAULT_MEMORY_POOL"] = ARROW_POOL_UNDER_A_CAP
-    for name, value in (("MALLOC_MMAP_THRESHOLD_", SERVER_MMAP_THRESHOLD_BYTES),
-                        ("MALLOC_TRIM_THRESHOLD_", SERVER_TRIM_THRESHOLD_BYTES)):
-        if not env.get(name):
-            env[name] = str(value)
-    return env
+    return _fit_server_allocators(env, malloc_arena_cap(memory_mb))
+
+
+def backend_server_environment(environ=None):
+    """The backend server's environment: its allocators fitted as the sandbox
+    server's are (:func:`server_environment`), but with its malloc arenas
+    capped at ``BACKEND_MALLOC_ARENAS``, 16, whatever the node-code budget.
+    Arrow allocates through glibc, in those arenas, unless the environment
+    names another pool, and glibc's two thresholds are held at the sandbox
+    server's 8 and 16 MiB.
+
+    The backend runs no node code, so its cap does not follow that budget
+    (``CURIO_EXEC_MEMORY_MB``). Dev and stable start with
+    ``--exec-memory-mb 24576``, from which the sandbox server's rule gives
+    96 arenas: a case never measured, in which a backend could keep about
+    1.5 GB of free memory.
+
+    The backend serves each request and socket on a thread of its own, about
+    700 at the stress job's peak, and glibc gives each thread that allocates
+    an arena of its own, up to eight per core. With no settings, a backend on
+    utk's 64 cores made 512 arenas. Over every stress stage run three times
+    on one stack its RSS went from 120 to 2908 MiB, growing 30 to 630 MiB a
+    pass and never levelling off, with 2635 MiB resident in its arenas
+    against 135 MiB in use, and ``malloc_trim(0)`` gave back 330 MiB (run
+    43752339941 on ``tmp/backend-rss-probe``). Started with these settings,
+    the same job ended at 656 MiB, 601 after a trim, growing 8 to 23 MiB a
+    pass, with at most about 255 MiB of free memory held in its 16 arenas
+    (run 43762927879). Turns, sync with and without agents, the HTTP tiers'
+    times, node runs and the backend's CPU stayed within the passes' own
+    spread.
+
+    An operator's lower ``MALLOC_ARENA_MAX`` stands, and so do an operator's
+    own thresholds and Arrow pool. Set in the environment the server starts
+    with, because glibc settles its arena limit and thresholds, and Arrow its
+    pool, once per process.
+    """
+    env = dict(os.environ if environ is None else environ)
+    return _fit_server_allocators(env, BACKEND_MALLOC_ARENAS)
 
 
 def memory_limit():
@@ -215,10 +271,14 @@ def memory_limit():
     ``node_cgroups.CGROUP`` and None, or ``node_cgroups.ADDRESS_SPACE`` and
     why not a cgroup, a key of ``node_cgroups.REASONS``.
 
-    The running zygote's children's once one started, else what the next
-    start would choose: /version answers before any node has run."""
+    The running zygote's children's once one started, else the one the
+    sandbox's start laid out (:func:`lay_out_at_start`): /version answers with
+    the outcome before any node has run. In a process that laid nothing out,
+    as the unit suites' app, what the container would allow."""
     if _memory is not None:
         return _memory
+    if _laid_out is not None:
+        return _laid_out
     reason = node_cgroups.predicted()
     if reason is None:
         return node_cgroups.CGROUP, None
@@ -234,13 +294,55 @@ def node_memory_line(kind, reason, memory_mb):
             f"zygote's footprint, not a cgroup limit: {why}")
 
 
+def lay_out_at_start(memory_mb):
+    """Lay out the container's cgroups as the sandbox starts, before it
+    serves (``server.py``), and return the memory limit isolated nodes run
+    under, ``(kind, reason)`` as :func:`memory_limit` gives it.
+
+    Laid out here, not at the first zygote's start, so that /version and
+    /monitor say the outcome from the sandbox's first answer, and a deploy
+    that checks it checks what its nodes get, not what the container would
+    allow. Once the layout is made, a place is made as a zygote makes its
+    runs' and removed (``node_cgroups.try_a_place``): cgroups that could not
+    hold a run give the address-space cap, for ``places``, from the start
+    too. Every zygote this process starts keeps the outcome
+    (:func:`_choose_node_memory`): a start that failed is not tried again
+    while the sandbox runs. Nodes with no budget, *memory_mb*, have the
+    address-space cap, as :func:`ensure_running` gives them.
+    """
+    global _laid_out
+    if not memory_mb:
+        _laid_out = node_cgroups.ADDRESS_SPACE, "requested"
+        return _laid_out
+    outcome = _lay_out()
+    if outcome[0] == node_cgroups.CGROUP:
+        try:
+            node_cgroups.try_a_place(memory_mb)
+        except OSError as exc:
+            print(f"[isolation] a run's cgroup could not be made: {exc}",
+                  file=sys.stderr, flush=True)
+            outcome = node_cgroups.ADDRESS_SPACE, "places"
+    _laid_out = outcome
+    return _laid_out
+
+
 def _choose_node_memory(requested):
-    """``(kind, reason)`` for the zygote about to start: a cgroup where the
-    container's cgroups can hold its nodes, laid out now, else the
-    address-space cap. *requested* ``node_cgroups.ADDRESS_SPACE`` asks for the
-    cap whatever the container allows."""
+    """``(kind, reason)`` for the zygote about to start: the limit the
+    sandbox's start laid out, else, in a process that laid nothing out, a
+    cgroup where the container's cgroups can hold its nodes, laid out now,
+    else the address-space cap. *requested* ``node_cgroups.ADDRESS_SPACE``
+    asks for the cap whatever the container allows."""
     if requested == node_cgroups.ADDRESS_SPACE:
         return node_cgroups.ADDRESS_SPACE, "requested"
+    if _laid_out is not None:
+        return _laid_out
+    return _lay_out()
+
+
+def _lay_out():
+    """``(kind, reason)`` once the container's cgroups are laid out for
+    isolated nodes: a cgroup where they can hold its nodes, else the
+    address-space cap and why."""
     reason = node_cgroups.unavailable()
     if reason is not None:
         return node_cgroups.ADDRESS_SPACE, reason
@@ -260,9 +362,10 @@ def ensure_running(config, *, exec_user=None, require_seccomp=True, memory_limit
     means only the first caller spawns, and a process that has since died is
     replaced rather than reused.
 
-    Each start settles the memory limit its children run under
-    (:func:`_choose_node_memory`), *memory_limit* ``node_cgroups.ADDRESS_SPACE``
-    asking for the address-space cap, and says it in the log.
+    Each start gives its children the memory limit the sandbox's start laid
+    out (:func:`_choose_node_memory`), *memory_limit*
+    ``node_cgroups.ADDRESS_SPACE`` asking for the address-space cap, and says
+    it in the log.
     """
     global _process, _socket_path, _started_with, _memory
 
