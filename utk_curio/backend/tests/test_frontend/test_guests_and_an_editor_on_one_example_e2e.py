@@ -169,7 +169,8 @@ def _two_tabs_of_the_local_guest(browser, contexts, base: str, example: str) -> 
     wait_for_changes_kept(second.page)
     wait_for_node_code(first.page, NODE, SECOND_GUESTS)
     run_node_and_wait(first.page, NODE)
-    assert first.sent_to("/processPythonCode"), "the first tab's play sent no /processPythonCode"
+    played = first.sent_to("/processPythonCode")
+    assert played, "the first tab's play sent no /processPythonCode"
     first.names_only(example)
     second.names_only(example)
 
@@ -182,8 +183,9 @@ def test_two_hosted_guests_keep_their_own_edits_and_an_editor_shares_the_owners_
     tab names the dataflow its page shows. Without sign-in, two tabs of the
     local guest share the example (:func:`_two_tabs_of_the_local_guest`)."""
     hosted = auth_enabled_env()
+    guests = allow_guest_login_env()
     if hosted:
-        assert allow_guest_login_env(), "this stack turns guest login off, so it has no hosted guest"
+        assert guests, "this stack turns guest login off, so it has no hosted guest"
     base, backend = app_frontend.base_url, current_server
     example = _example(backend, hosted)
     contexts: list = []
@@ -224,13 +226,16 @@ def test_two_hosted_guests_keep_their_own_edits_and_an_editor_shares_the_owners_
             tab.page.reload()
             node_locator(tab.page, NODE).wait_for(timeout=30000)
             wait_for_node_code(tab.page, NODE, code)
-            assert _spec_code(backend, tab.token(), example) == code, f"{tab.who}'s canvas opens without its change"
-        assert first.token() != second.token()
+            opened = _spec_code(backend, tab.token(), example)
+            assert opened == code, f"{tab.who}'s canvas opens {opened!r}, not its change"
+        tokens = {first.token(), second.token()}
+        assert len(tokens) == 2, "the two visitors share one sign-in"
 
         # A play in the first visitor's tab, which names no dataflow in its path.
         run_node_and_wait(first.page, NODE)
-        assert first.sent_to("/processPythonCode"), "the first guest's play sent no /processPythonCode"
-        assert first.sent_to("/nodeRuntime"), "the first guest's play reported no outcome to /nodeRuntime"
+        played, reported = first.sent_to("/processPythonCode"), first.sent_to("/nodeRuntime")
+        assert played, "the first guest's play sent no /processPythonCode"
+        assert reported, "the first guest's play reported no outcome to /nodeRuntime"
 
         # The owner and the editor each see what the other writes, on her dataflow.
         owner.open(base, dataflow, "owner")
@@ -243,17 +248,28 @@ def test_two_hosted_guests_keep_their_own_edits_and_an_editor_shares_the_owners_
         wait_for_changes_kept(editor.page)
         wait_for_node_code(owner.page, NODE, EDITORS)
         run_node_and_wait(editor.page, NODE)
-        assert editor.sent_to("/processPythonCode"), "the editor's play sent no /processPythonCode"
-        assert _spec_code(backend, owners["token"], dataflow) == EDITORS
+        played = editor.sent_to("/processPythonCode")
+        assert played, "the editor's play sent no /processPythonCode"
+        kept = _spec_code(backend, owners["token"], dataflow)
+        assert kept == EDITORS, f"the owner's dataflow holds {kept!r}"
 
         # Neither visitor sees what the owner and the editor wrote, nor each
         # other's change, and the example itself is as it was.
-        assert read_node_code(first.page, NODE) == FIRST_GUESTS
-        assert read_node_code(second.page, NODE) == SECOND_GUESTS
-        assert _spec_code(backend, first.token(), example) == FIRST_GUESTS
-        assert _spec_code(backend, second.token(), example) == SECOND_GUESTS
         newcomer = api_json(f"{backend}/api/auth/signin/guest", "", method="POST", payload={})["token"]
-        assert _spec_code(backend, newcomer, example) == ORIGINAL
+        seen = {
+            "the first guest's canvas": read_node_code(first.page, NODE),
+            "the second guest's canvas": read_node_code(second.page, NODE),
+            "the first guest's copy": _spec_code(backend, first.token(), example),
+            "the second guest's copy": _spec_code(backend, second.token(), example),
+            "the example": _spec_code(backend, newcomer, example),
+        }
+        assert seen == {
+            "the first guest's canvas": FIRST_GUESTS,
+            "the second guest's canvas": SECOND_GUESTS,
+            "the first guest's copy": FIRST_GUESTS,
+            "the second guest's copy": SECOND_GUESTS,
+            "the example": ORIGINAL,
+        }
 
         # Every tab named the dataflow its page shows, the guests' never their copies'.
         for tab in (first, second):
