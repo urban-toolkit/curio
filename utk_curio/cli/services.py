@@ -30,7 +30,7 @@ from utk_curio.cli.logs import (
 )
 from utk_curio.common import backend_processes
 from utk_curio.common.llm_endpoint import without_backend_only
-from utk_curio.sandbox.isolation.lifecycle import server_environment
+from utk_curio.sandbox.isolation.lifecycle import backend_server_environment, server_environment
 
 
 def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=False, base_path=""):
@@ -328,7 +328,10 @@ def spawn_backend(env, name):
         stderr=subprocess.STDOUT,
         text=True,
         cwd=script_dir,
-        env=env
+        # Its allocators fitted before it starts, as the sandbox's are but with
+        # 16 malloc arenas: glibc and Arrow settle theirs once per process
+        # (isolation/lifecycle.py).
+        env=backend_server_environment(env),
     )
     threading.Thread(target=stream_output, args=(backend, name, COLOR_BACKEND), daemon=True).start()
     return backend
