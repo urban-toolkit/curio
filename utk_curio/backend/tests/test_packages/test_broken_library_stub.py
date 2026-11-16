@@ -11,8 +11,18 @@ bug it does not reproduce.
 from __future__ import annotations
 
 import json
+import os
+import re
+import sys
 
 import pytest
+
+from utk_curio.backend.app.packages.infrastructure.pip_runner import install_python_deps
+
+#: The fake's name, at the start of each entry the route's ``remaining``
+#: lists: its module, ``<name>.py``, and its metadata,
+#: ``<name>-<version>.dist-info``. The route's names hold no ``-`` or ``.``.
+_FAKE_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 
 
 def _auth(token):
@@ -27,10 +37,43 @@ def _post(client, **body):
     )
 
 
+def _import_path() -> dict[str, list[str]]:
+    """Where this process imports from, and where every child it starts
+    does: pip's and the import probe's among them."""
+    return {
+        "sys.path": list(sys.path),
+        "PYTHONPATH": os.environ.get("PYTHONPATH", "").split(os.pathsep),
+    }
+
+
 @pytest.fixture(autouse=True)
 def _cleanup(client, tmp_curio):
+    """Remove every fake a test staged, then check that none outlived it.
+
+    Each test stages its fakes in a folder of its own, which the route keeps
+    on ``sys.path`` and ``PYTHONPATH`` while a fake is left in it. A fake left
+    behind keeps that folder on both for the rest of this worker process, and
+    every pip and probe child a later test starts inherits it: pip run as the
+    execution account then fails on a folder in pytest's 0700 temporary tree
+    (``test_pip_target_as_exec_user.py``).
+    """
+    from utk_curio.backend.app.testing.routes import _broken_lib_root
+
     yield
-    _post(client, action="remove")
+    # The default fake, then every one the route still lists. A test that
+    # closes the route (test_it_is_not_mounted_outside_a_test_rig, whose patch
+    # outlives this teardown) gets a 404 with no list, so the checks below
+    # read the folder and the import path, not the route's answer.
+    answer = _post(client, action="remove")
+    remaining = answer.get_json()["remaining"] if answer.status_code == 200 else []
+    for name in sorted({_FAKE_NAME.match(entry).group() for entry in remaining}):
+        _post(client, action="remove", name=name)
+
+    folder = _broken_lib_root()
+    on = [where for where, entries in _import_path().items() if str(folder) in entries]
+    assert on == [], f"{folder} outlived its test on {on}"
+    left = sorted(os.listdir(folder)) if folder.exists() else []
+    assert left == [], f"fakes outlived their test in {folder}: {left}"
 
 
 def test_the_fake_is_the_real_shape_pip_is_satisfied_and_the_import_is_not(client):
@@ -48,7 +91,7 @@ def test_the_fake_is_the_real_shape_pip_is_satisfied_and_the_import_is_not(clien
     assert "DLL load failed" in body["importError"]
 
 
-def test_pip_skips_it_rather_than_reaching_an_index(client):
+def test_pip_skips_it_rather_than_reaching_an_index(client, monkeypatch):
     """The whole test suite stays offline because of this.
 
     ``install_python_deps`` consults the same metadata pip does, so the fake
@@ -57,10 +100,25 @@ def test_pip_skips_it_rather_than_reaching_an_index(client):
     from utk_curio.backend.app.packages.infrastructure import pip_runner
 
     _post(client, action="install")
-    report = pip_runner.install_python_deps({"brokenlib": ""})
+    # The package conftest stubs pip_runner.install_python_deps with one that
+    # skips every library, fake or not. This module's import of it, bound
+    # before any fixture ran, is the real one: the fake's metadata decides.
+    monkeypatch.setattr(pip_runner, "install_python_deps", install_python_deps)
+    started = []
+
+    def _refuse_to_start(*args, **kwargs):
+        started.append(args[0] if args else kwargs.get("args"))
+        pytest.fail(f"install_python_deps started a process: {started[-1]}")
+
+    # Every process start is refused, not run (subprocess.run starts through
+    # Popen too), so no pip can reach an index, whatever the fake's state.
+    with monkeypatch.context() as patch:
+        patch.setattr(pip_runner.subprocess, "Popen", _refuse_to_start)
+        report = pip_runner.install_python_deps({"brokenlib": ""})
 
     assert report.skipped == ["brokenlib"]
     assert report.installed == []
+    assert started == [], f"install_python_deps started a process: {started}"
 
 
 def test_it_is_invisible_until_asked_for_and_after_removal(client):
@@ -143,8 +201,15 @@ def test_removing_one_fake_leaves_the_others(client):
     """The API invites naming a distribution, so removal has to honour it."""
     from utk_curio.backend.app.packages.infrastructure import pip_runner
 
-    _post(client, action="install", name="brokenlib")
-    _post(client, action="install", name="notrasterio", version="1.3.9")
+    staged = [
+        _post(client, action="install", name="brokenlib"),
+        _post(client, action="install", name="notrasterio", version="1.3.9"),
+    ]
+    # Both must stage, or there is no other fake to leave. The route refuses a
+    # name that already resolves, and the name of a fake that another test
+    # left on the import path does.
+    refused = [answer.get_json() for answer in staged if answer.status_code != 200]
+    assert refused == [], f"a fake was not staged: {refused}"
 
     body = _post(client, action="remove", name="notrasterio").get_json()
 
