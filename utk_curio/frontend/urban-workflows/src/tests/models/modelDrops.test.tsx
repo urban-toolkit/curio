@@ -56,13 +56,17 @@ function fakeDataTransfer() {
   } as unknown as DataTransfer;
 }
 
-/** The cell the backend writes for a segmentation model's node (`domain/default_cells.py`). */
+/** A segmentation model's node's code: DDRNet23-Slim's source
+ *  (`sources/image-segmentation.py`) and a downloaded model's copy of it, a
+ *  call of the Segmentation package's `segment_images`. */
 function segmentationCell(modelId: string): string {
   return (
+    "from semantic_segmentation import segment_images\n" +
+    "\n" +
     `model = curio_load_model("${modelId}")\n` +
     "classes = None  # every class the model names\n" +
     "\n" +
-    "return curio_segment(input_0, model, classes)\n"
+    "return segment_images(input_0, model, curio_derived_file, classes=classes)\n"
   );
 }
 
@@ -105,7 +109,7 @@ describe("the node a model card's drop makes", () => {
     return card.nodes[0];
   }
 
-  test("opens with its type's default cell, which names the model, and is bound to it", () => {
+  test("opens with its template's code, which names the model, and is bound to it", () => {
     const cell = segmentationCell("model.curio.ddrnet23-slim");
     expect(packageCardNodeOptions(ddrnetNode(), cell)).toEqual({
       code: cell,

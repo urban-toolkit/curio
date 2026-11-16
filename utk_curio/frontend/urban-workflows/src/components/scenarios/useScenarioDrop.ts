@@ -70,7 +70,7 @@ async function runContext(
     } else if (event.kind === "run_finished") {
       ended = event.status;
     }
-  });
+  }, undefined, plan.project.id);
   if (ended === "succeeded") return null;
   return `${nodes} did not run${errors.length > 0 ? `: ${errors.join(" ")}` : "."}`;
 }

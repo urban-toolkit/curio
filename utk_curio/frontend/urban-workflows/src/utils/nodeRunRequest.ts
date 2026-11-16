@@ -1,5 +1,6 @@
 import { getToken } from "./authApi";
 import { backendUrl } from "./backendUrl";
+import { requestHeaders } from "./requestHeaders";
 
 // One node run on the backend, as both interpreters send it.
 //
@@ -74,17 +75,13 @@ export function runNodeOnBackend(
     onReply: (json: any) => void,
     onFailure: (message: string) => void,
 ): void {
-    const token = getToken();
     const url = backendUrl() + path;
     const sentAt = performance.now();
     countOpenRun(nodeId, 1);
     fetch(url, {
         method: "POST",
         body: JSON.stringify(body),
-        headers: {
-            "Content-type": "application/json; charset=UTF-8",
-            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-        },
+        headers: requestHeaders(getToken(), { "Content-type": "application/json; charset=UTF-8" }),
     })
         .then(readReply)
         .then(onReply)

@@ -1,5 +1,6 @@
 import { getToken } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
+import { requestHeaders } from "../utils/requestHeaders";
 import { embeddedArtifact, EmbeddedEnvelope, embeddedRaster, EmbeddedRaster } from "../standalone/dashboardPayload";
 import { dashboardRunRead } from "./runs/dashboardRunFiles";
 import { askedOfPage, keepPageResult } from "./runs/dashboardRunSteps";
@@ -23,14 +24,13 @@ async function fetchArtifactAsArrow(
     extraHeaders: Record<string, string> = {},
 ) {
     const response = await fetch(url, {
-        headers: {
+        headers: requestHeaders(token, {
             ...extraHeaders,
             Accept: ARROW_IPC_MIME,
             // Geometry arrives as WKB on this path, so the sandbox refuses a
             // geodataframe unless the client says it can decode it (utils/wkb).
             "X-Curio-Accept-Geometry": "wkb",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        }),
     });
     if (!response.ok) {
         // 415 is the sandbox saying "not a tabular kind" (or geometry without
@@ -155,11 +155,10 @@ export async function fetchData(fileName: string) {
         }
 
         const response = await fetch(url, {
-            headers: {
+            headers: requestHeaders(_token, {
                 ...extraHeaders,
                 'Content-Type': 'application/json',
-                ...(_token ? { 'Authorization': `Bearer ${_token}` } : {}),
-            },
+            }),
         });
 
         if (!response.ok) {
@@ -192,13 +191,9 @@ export interface NodeRows {
  */
 export async function storeOutput(nodeId: string, value: NodeRows): Promise<{ path: string; dataType: string }> {
     if (askedOfPage(nodeId)) return keepPageResult(nodeId, value);
-    const token = getToken();
     const response = await fetch(`${backendUrl()}/storeOutput`, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: requestHeaders(getToken(), { "Content-Type": "application/json" }),
         body: JSON.stringify({ value }),
     });
     const answer = await response.json().catch(() => ({}));
@@ -233,11 +228,10 @@ export async function fetchPreviewData(fileName: string) {
         console.log(`[fetchPreviewData] Fetching preview from ${url}`);
         const _token = getToken();
         const response = await fetch(url, {
-            headers: {
+            headers: requestHeaders(_token, {
                 ...(dashboard?.headers ?? {}),
                 'Content-Type': 'application/json',
-                ...(_token ? { 'Authorization': `Bearer ${_token}` } : {}),
-            },
+            }),
         });
 
         if (!response.ok) {
@@ -303,10 +297,7 @@ export async function fetchRaster(
     const dashboard = dashboardRunRead(fileName, "raster", params);
     const url = dashboard?.url ?? dataflowRead("raster", params) ?? `${backendUrl()}/raster?${params.toString()}`;
     const response = await fetch(url, {
-        headers: {
-            ...(dashboard?.headers ?? {}),
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: requestHeaders(token, { ...(dashboard?.headers ?? {}) }),
     });
     if (!response.ok) {
         let body: any = null;

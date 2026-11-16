@@ -1,0 +1,15 @@
+{
+  "dataflow": {
+    "categories": {"city": ["Chicago"], "complexity": ["Beginner"]},
+    "nodes": [],
+    "edges": [],
+    "packages": [
+      "curio.segmentation@1",
+      "model.curio.ddrnet23-slim@1"
+    ],
+    "name": "Street photos segmentation",
+    "task": "",
+    "timestamp": 1794700800000,
+    "provenance_id": "street-photos-segmentation"
+  }
+}

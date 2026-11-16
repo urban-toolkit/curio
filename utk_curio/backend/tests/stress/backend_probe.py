@@ -9,8 +9,13 @@ JSON object:
 
 * ``pid``, ``threads``, ``rss_bytes`` and ``cpu_seconds`` (user plus system,
   which psutil reads from ``/proc/<pid>/stat`` on Linux): the backend's
-  process, the one that serves ``-m backend.server`` (``cli/services.py``),
-  the reloader's child when there is one;
+  processes, those that serve ``-m backend.server`` (``cli/services.py``),
+  the reloader's child when there is one, summed; ``pid`` is the home
+  process's. A start of several (``--backend-processes``) runs each with its
+  number and the count (``CURIO_BACKEND_PROCESS``, ``CURIO_BACKEND_PROCESSES``),
+  so ``processes`` lists each process's own, by its ``process`` number,
+  ``count`` is how many the start runs, and ``missing`` the numbers of
+  those not found;
 * ``docs``, for each dataflow id it is given: the segments of each of its
   docs' logs, ``ydoc/<doc id>/<day>.bin`` and ``<day>.updates``
   (``collaboration/dataflow_docs.py``), with their sizes, under the backend's
@@ -21,7 +26,8 @@ Given ``--thread-stacks``, it asks the backend for every thread's stack
 instead (:func:`ask_for_stacks`): it sends SIGUSR1, which the backend answers
 by appending a dump to a file in its state folder (``backend/thread_stacks.py``),
 and prints ``pid``, ``path`` and ``stacks``, the dump, with ``problem`` when no
-whole dump came in time.
+whole dump came in time; each backend process's, in a start of several
+(:func:`combined_stacks`).
 
 Given ``--saved-specs`` and dataflow ids, it prints ``specs``: what each
 dataflow's file (``spec.trill.json``) holds of its nodes' code and its
@@ -80,6 +86,80 @@ def pick_backend(processes: list, own_pid: int):
     if children:
         return children[0]
     return min(backends) if backends else None
+
+
+def serving_backends(processes: list, own_pid: int) -> list:
+    """Every backend process that serves among *processes*, ``(pid, ppid,
+    cmdline)`` each, by pid: each of a start of several, which none runs
+    under Werkzeug's reloader, or with the reloader its child alone."""
+    backends = {pid: ppid for pid, ppid, cmdline in processes
+                if pid != own_pid and is_backend(cmdline or [])}
+    children = sorted(pid for pid, ppid in backends.items() if ppid in backends)
+    return children or sorted(backends)
+
+
+def number_of(environ: dict) -> int:
+    """A backend's number among its start's, as the launcher named it
+    (``CURIO_BACKEND_PROCESS``): 0, the home process, when it named none."""
+    text = str(environ.get("CURIO_BACKEND_PROCESS") or "").strip()
+    return int(text) if text.isdigit() else 0
+
+
+def count_of(environ: dict) -> int:
+    """How many backend processes a backend's start runs, as the launcher
+    named it (``CURIO_BACKEND_PROCESSES``): 1 when it named none."""
+    text = str(environ.get("CURIO_BACKEND_PROCESSES") or "").strip()
+    return int(text) if text.isdigit() and int(text) > 0 else 1
+
+
+def combined(each: list) -> dict:
+    """One reading of a start's backends from each process's own
+    (:func:`process_reading`, with its ``process`` number and the start's
+    ``count``): their threads, resident bytes and CPU seconds summed, the home
+    process's pid, each process's own by its number, and the numbers of those
+    not found (``missing``)."""
+    each = sorted(each, key=lambda one: (one["process"], one["pid"]))
+    count = max([one.get("count") or 1 for one in each] or [1])
+    reading = {
+        "pid": each[0]["pid"],
+        "threads": sum(one["threads"] for one in each),
+        "rss_bytes": sum(one["rss_bytes"] for one in each),
+        "cpu_seconds": round(sum(one["cpu_seconds"] for one in each), 3),
+        "count": count,
+        "processes": [{key: one[key] for key in ("process", "pid", "threads", "rss_bytes", "cpu_seconds")}
+                      for one in each],
+    }
+    missing = sorted(set(range(count)) - {one["process"] for one in each})
+    if missing:
+        reading["missing"] = missing
+    return reading
+
+
+def combined_stacks(answers: list) -> dict:
+    """Each backend process's answer to an ask for its thread stacks
+    (:func:`ask_for_stacks`, with its ``process`` number), as one: the home
+    process's pid and file, every dump in the order of the processes' numbers,
+    and each process's problem named with its number. One process's answer
+    as it came; only errors, an error."""
+    answers = sorted(answers, key=lambda one: (one.get("process") is None, one.get("process") or 0))
+    if len(answers) == 1:
+        return {key: value for key, value in answers[0].items() if key != "process"}
+    asked = [one for one in answers if "error" not in one]
+    if not asked:
+        return {"error": "; ".join(f"process {one.get('process')}: {one['error']}" for one in answers)}
+    problems = [f"process {one.get('process')}: {one.get('error') or one.get('problem')}"
+                for one in answers if one.get("error") or one.get("problem")]
+    together = {
+        "pid": asked[0]["pid"],
+        "path": asked[0]["path"],
+        "stacks": "".join(f"--- backend process {one.get('process')} (pid {one['pid']}, {one['path']})\n"
+                          f"{one.get('stacks') or ''}\n" for one in asked),
+        "processes": [{key: one[key] for key in ("process", "pid", "path", "problem", "error") if key in one}
+                      for one in answers],
+    }
+    if problems:
+        together["problem"] = "; ".join(problems)
+    return together
 
 
 def state_roots(environ: dict, cwd: str) -> list:
@@ -232,30 +312,50 @@ def ask_for_stacks(pid: int, path, wait_s: float = STACKS_WAIT_S) -> dict:
         time.sleep(0.1)
 
 
-def find_backend(psutil):
-    """The backend's pid here, or None."""
+def _listed(psutil) -> list:
+    """Every process here, ``(pid, ppid, cmdline)`` each."""
     processes = []
     for process in psutil.process_iter(["pid", "ppid", "cmdline"]):
         info = process.info
         processes.append((info.get("pid"), info.get("ppid"), info.get("cmdline") or []))
-    return pick_backend(processes, os.getpid())
+    return processes
+
+
+def find_backend(psutil):
+    """The backend's pid here, or None."""
+    return pick_backend(_listed(psutil), os.getpid())
 
 
 def thread_stacks_here() -> dict:
-    """The backend's thread stacks, asked for here (:func:`ask_for_stacks`)."""
+    """Each backend process's thread stacks, asked for here, all at once
+    (:func:`ask_for_stacks`), as one answer (:func:`combined_stacks`)."""
     try:
         import psutil
     except ImportError:
         return {"error": "psutil is not installed where the probe runs"}
-    pid = find_backend(psutil)
-    if pid is None:
+    pids = serving_backends(_listed(psutil), os.getpid())
+    if not pids:
         return {"error": "no process here serves -m backend.server"}
-    try:
-        backend = psutil.Process(pid)
-        environ, cwd = backend.environ(), backend.cwd()
-    except psutil.Error as exc:
-        return {"error": f"the backend (pid {pid}) could not be read: {type(exc).__name__}: {exc}"}
-    return ask_for_stacks(pid, stacks_file(environ, cwd))
+    answers: list = []
+
+    def ask(pid: int, environ: dict, cwd: str) -> None:
+        answers.append({**ask_for_stacks(pid, stacks_file(environ, cwd)), "process": number_of(environ)})
+
+    asking = []
+    for pid in pids:
+        try:
+            backend = psutil.Process(pid)
+            environ, cwd = backend.environ(), backend.cwd()
+        except psutil.Error as exc:
+            answers.append({"error": f"the backend (pid {pid}) could not be read: {type(exc).__name__}: {exc}",
+                            "process": None})
+            continue
+        thread = threading.Thread(target=ask, args=(pid, environ, cwd), daemon=True)
+        thread.start()
+        asking.append(thread)
+    for thread in asking:
+        thread.join()
+    return combined_stacks(answers)
 
 
 def saved_specs_here(project_ids: list) -> dict:
@@ -277,23 +377,30 @@ def saved_specs_here(project_ids: list) -> dict:
 
 
 def read(project_ids: list) -> dict:
-    """One reading of the backend, here."""
+    """One reading of the backend's processes, here (:func:`combined`), and
+    the doc files of *project_ids* under the home process's state root."""
     try:
         import psutil
     except ImportError:
         return {"error": "psutil is not installed where the probe runs"}
-    pid = find_backend(psutil)
-    if pid is None:
+    pids = serving_backends(_listed(psutil), os.getpid())
+    if not pids:
         return {"error": "no process here serves -m backend.server"}
+    each, home = [], None
     try:
-        backend = psutil.Process(pid)
-        reading = process_reading(backend)
-        if project_ids:
-            environ, cwd = backend.environ(), backend.cwd()
+        for pid in pids:
+            backend = psutil.Process(pid)
+            one = process_reading(backend)
+            environ = backend.environ()
+            one["process"], one["count"] = number_of(environ), count_of(environ)
+            each.append(one)
+            if project_ids and (home is None or one["process"] == 0):
+                home = (environ, backend.cwd())
     except psutil.Error as exc:
-        return {"error": f"the backend (pid {pid}) could not be read: {type(exc).__name__}: {exc}"}
+        return {"error": f"a backend process (of pids {pids}) could not be read: {type(exc).__name__}: {exc}"}
+    reading = combined(each)
     if project_ids:
-        reading["docs"] = doc_files(state_roots(environ, cwd), project_ids)
+        reading["docs"] = doc_files(state_roots(*home), project_ids)
     return reading
 
 

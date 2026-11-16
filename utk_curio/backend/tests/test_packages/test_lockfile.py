@@ -799,6 +799,10 @@ class TestRemoveFromAccount:
 
 DDRNET_DIR = "model.curio.ddrnet23-slim@1"
 DDRNET_ID = "model.curio.ddrnet23-slim"
+#: The package DDRNet23-Slim names in ``dependencies.packages``: adding the
+#: model adds it to the lockfile beside it, as its own entry, which removing
+#: the model leaves.
+SEGMENTATION_DIR = "curio.segmentation@1"
 
 
 def _python_node(node_id: str, *, bound: bool, model_ref: str = DDRNET_ID, runs: str = DDRNET_ID) -> dict:
@@ -855,12 +859,13 @@ class TestModelRefsCountAsInUse:
     ):
         user, _ = user_and_token
         user_key = _user_key_for(user)
-        packages_services.install_to_project(user_key, alice_project, DDRNET_DIR)
+        added = packages_services.install_to_project(user_key, alice_project, DDRNET_DIR)
+        assert added["packages"] == [SEGMENTATION_DIR, DDRNET_DIR]
         _with_nodes(user_key, alice_project, [_python_node("edited", bound=True, runs="model.example.local-relief")])
 
         result = packages_services.uninstall_from_project(user_key, alice_project, DDRNET_DIR)
 
-        assert result["packages"] == []
+        assert result["packages"] == [SEGMENTATION_DIR]
         assert result["pruned"] == [DDRNET_DIR]
 
     def test_remove_from_project_is_refused_while_a_node_is_bound_to_the_model(
@@ -880,12 +885,13 @@ class TestModelRefsCountAsInUse:
     def test_a_call_in_code_alone_keeps_no_model(self, app, user_and_token, alice_project):
         user, _ = user_and_token
         user_key = _user_key_for(user)
-        packages_services.install_to_project(user_key, alice_project, DDRNET_DIR)
+        added = packages_services.install_to_project(user_key, alice_project, DDRNET_DIR)
+        assert added["packages"] == [SEGMENTATION_DIR, DDRNET_DIR]
         _with_nodes(user_key, alice_project, [_python_node("in-code-only", bound=False)])
 
         result = packages_services.uninstall_from_project(user_key, alice_project, DDRNET_DIR)
 
-        assert result["packages"] == []
+        assert result["packages"] == [SEGMENTATION_DIR]
         assert result["pruned"] == [DDRNET_DIR]
 
     def test_remove_from_account_is_refused_while_a_node_is_bound_to_the_model(

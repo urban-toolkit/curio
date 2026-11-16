@@ -274,6 +274,21 @@ def test_build_deps_review_is_one_snapshot(
     assert counter["shared"] == [True], "a read of the store holds the lock shared"
 
 
+def test_the_downloaded_models_upgrade_walks_the_store_under_a_shared_hold(
+    user_and_token, alice_project, tmp_curio, monkeypatch
+):
+    """The seeder brings old downloads to their node on each read of the
+    store (``model_downloads.upgrade_downloaded_models``). Its walk of the
+    store is a reader's: one shared hold, and none exclusive when no package
+    needs bringing."""
+    from utk_curio.backend.app.packages.application import model_downloads
+
+    key, _ = _two_packages(user_and_token, alice_project)
+    counter = _count_acquisitions(monkeypatch, model_downloads)
+    assert model_downloads.upgrade_downloaded_models(key) == []
+    assert counter["shared"] == [True], "a walk of the store holds the lock shared"
+
+
 # ---------------------------------------------------------------------------
 # §7.8 — structural audit: every raw store enumeration is accounted for
 # ---------------------------------------------------------------------------
@@ -299,6 +314,7 @@ _ACCOUNTED_ENUMERATORS = {
     "app/packages/builder/deps.py": {"installed_manifests"},  # lock owner
     "app/packages/application/function_nodes.py": {"package_functions"},  # lock owner
     "app/packages/application/model_packages.py": {"held_model_packages"},  # lock owner
+    "app/packages/application/model_downloads.py": {"upgrade_downloaded_models"},  # lock owner
     "app/packages/application/guest_packages.py": {"_give"},  # lock owner
 }
 

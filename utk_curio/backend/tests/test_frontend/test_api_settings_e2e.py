@@ -587,13 +587,13 @@ def test_the_default_chosen_here_answers_the_next_run(signed_in):
         f"{base}/attachments", session.token, method="POST",
         payload={"coord": coord, "target": {"kind": "canvas"}},
     )["attachmentId"]
-    script_agent_replies(session.backend, "Answered by the default.")
+    script_agent_replies(session.backend, "Answered by the default.", dataflow=project)
     api_json(
         f"{base}/attachments/{attachment}/run", session.token, method="POST",
         payload={"message": "hello"}, timeout=60.0,
     )
 
-    calls = captured_agent_calls(session.backend)
+    calls = captured_agent_calls(session.backend, dataflow=project)
     assert calls, "the run never reached the scripted provider"
     assert calls[0] == {"configId": made["Scripted B"]["id"], "model": "scripted-b"}, calls
 
@@ -668,13 +668,14 @@ def test_each_agent_runs_on_the_configuration_chosen_for_it(signed_in):
         _delegate_tail("node.content.generate", {"intent": "sum a column"}),
         "result = df.sum(axis=0)",
         "The content is ready.",
+        dataflow=project,
     )
     reply = api_json(
         f"{base}/attachments/{attachment}/run", session.token, method="POST",
         payload={"message": "write the content"}, timeout=60.0,
     )
 
-    calls = captured_agent_calls(session.backend)
+    calls = captured_agent_calls(session.backend, dataflow=project)
     builder = {"configId": made["Scripted A"]["id"], "model": "scripted-a"}
     content = {"configId": made["Scripted B"]["id"], "model": "scripted-b"}
     assert [c for c in calls if c != builder] == [content], calls

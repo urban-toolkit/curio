@@ -164,15 +164,23 @@ class TestModelIds:
     def test_a_model_the_account_never_added_is_refused_naming_the_model_catalogs_add(self, app, tmp_curio):
         _add_package(USER, f"{DDRNET}@1")
         for added in (DDRNET, f"{DDRNET}@1"):
-            assert _gate(f'model = curio_load_model("{added}")\nreturn curio_segment(input_0, model)') is None, added
+            assert _gate(f'model = curio_load_model("{added}")\nreturn model.path') is None, added
         for made_up in ("model.curio.ghost-segmenter", f"{DDRNET}@2"):
-            refusal = _gate(f'model = curio_load_model("{made_up}")\nreturn curio_segment(input_0, model)')
+            refusal = _gate(f'model = curio_load_model("{made_up}")\nreturn model.path')
             assert refusal and f"curio_load_model({made_up!r}) (line 1)" in refusal, (made_up, refusal)
             assert "Add in the Model Catalog" in refusal, refusal
             # The refusal lists the models the account has, to load one of them,
             # and asks for no data source: none is missing.
             assert DDRNET in refusal, refusal
             assert "Allowed sources" not in refusal and "ask the user for a path" not in refusal, refusal
+
+    def test_curio_segment_is_no_function_node_code_has(self, app, tmp_curio):
+        """Segmentation is the Segmentation package's ``segment_images``: code
+        that calls ``curio_segment`` is refused as a ``curio_`` name the
+        functions page does not give, naming those it does."""
+        _add_package(USER, f"{DDRNET}@1")
+        refusal = _gate(f'model = curio_load_model("{DDRNET}")\nreturn curio_segment(input_0, model)')
+        assert refusal and "curio_segment (line 2)" in refusal and "curio_load_model" in refusal, refusal
 
     def test_node_create_with_a_made_up_model_id_proposes_nothing(
         self, client, user_and_token, tmp_curio, project, monkeypatch,
@@ -183,7 +191,7 @@ class TestModelIds:
         _add_package(_user_dir_key(user), f"{DDRNET}@1")
         grounding_routes._install(client, token, project, NB)
         att = grounding_routes._attach(client, token, project, NB)
-        code = 'model = curio_load_model("model.curio.ghost-segmenter")\nreturn curio_segment(input_0, model)'
+        code = 'model = curio_load_model("model.curio.ghost-segmenter")\nreturn model.path'
         calls = grounding_routes._script(monkeypatch, [
             grounding_routes._create_tail(code, node_type=CA), "That model is not in your account.",
         ])
@@ -338,7 +346,7 @@ class TestChips:
 
     def test_a_chip_names_the_model_its_widget_holds(self, app, tmp_curio):
         _add_package(verified_rounds.KEY, f"{DDRNET}@1")
-        code = "model = curio_load_model([!! model !!])\nreturn curio_segment(input_0, model)"
+        code = "model = curio_load_model([!! model !!])\nreturn model.path"
 
         def solve(model_id):
             node = {

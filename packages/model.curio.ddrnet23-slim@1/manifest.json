@@ -7,12 +7,12 @@
   "createdAt": "2026-10-01T00:00:00Z",
   "dependencies": {
     "js": {},
-    "packages": {},
+    "packages": {"curio.segmentation@1": "*"},
     "python": {
       "onnxruntime": ">=1.17"
     }
   },
-  "description": "Labels every pixel of a street photo with one of the 19 Cityscapes classes: road, sidewalk, building, vegetation, terrain, sky, cars, people and more. Small and fast: it runs on a CPU with onnxruntime, about a fifth of a second per image, and needs no download.",
+  "description": "Labels every pixel of a street photo with one of the 19 Cityscapes classes: road, sidewalk, building, vegetation, terrain, sky, cars, people and more. Small and fast: it runs on a CPU with onnxruntime, a fraction of a second per image, and needs no download.",
   "id": "model.curio.ddrnet23-slim",
   "kind": "model",
   "license": "MIT",
@@ -33,7 +33,7 @@
     ],
     "license": "MIT; trained on Cityscapes",
     "licenseFile": "LICENSE",
-    "publisher": "DDRNet authors; ONNX export by Qualcomm AI Hub Models (v0.63.0, w8a8)",
+    "publisher": "DDRNet authors; ONNX export by Qualcomm AI Hub Models (v0.63.0, w8a8), its int8 zero points stored as uint8 by Curio",
     "runtime": "onnx",
     "sizeBytes": 23076949,
     "type": "semantic-segmentation"
@@ -67,7 +67,8 @@
           "types": ["GEODATAFRAME"]
         }
       ],
-      "paletteOrder": 0
+      "paletteOrder": 0,
+      "source": "sources/image-segmentation.py"
     }
   ],
   "version": "1.0.0"

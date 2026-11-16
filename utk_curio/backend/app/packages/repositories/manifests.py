@@ -15,14 +15,17 @@ from utk_curio.backend.app.packages.domain.manifest import (
     PackageManifest,
     _parse_created_at_from_manifest,
 )
+from utk_curio.backend.app.packages.repositories.python_modules import module_names
 
 
-def load_package_manifest(package_dir_path: Path) -> PackageManifest:
+def load_package_manifest(package_dir_path: Path, *, sources_from: Path | None = None) -> PackageManifest:
     """Read ``<package_dir>/manifest.json`` and validate the supported subset.
 
     Cross-checks the directory name against the manifest's ``id`` and
     ``compatibility.major`` (the on-disk dir is authoritative for which
-    package is being loaded; the manifest must agree).
+    package is being loaded; the manifest must agree). *sources_from* is the
+    folder whose ``sources/`` the package ships, when the manifest was copied
+    away from it to be checked (``archive.load_package_manifest_from_dir``).
     """
     manifest_path = package_dir_path / "manifest.json"
     if not manifest_path.is_file():
@@ -34,6 +37,11 @@ def load_package_manifest(package_dir_path: Path) -> PackageManifest:
     manifest = package_manifest_from_dict(
         raw, manifest_path=manifest_path, dir_name=package_dir_path.name,
     )
+    if not manifest.templates and not module_names(Path(sources_from or package_dir_path), manifest):
+        # A package with no node is a library, such as Segmentation, whose
+        # modules the packages that name it in ``dependencies.packages``
+        # import. One that ships no module either is refused.
+        raise ManifestError(f"{manifest_path}.templates must be a non-empty list")
     _refuse_widgets_the_widgets_tab_refuses(manifest, manifest_path)
     return manifest
 

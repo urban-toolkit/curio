@@ -8,9 +8,10 @@ transport with the model ceiling, into what becomes the package's
 ``models/``. The package's ``model`` block is written from what the repo says:
 its labels from ``config.json``, an ONNX graph's input from
 ``preprocessor_config.json``, the weights' license from the model card. Its
-node is the one Curio writes for a segmentation model
-(``packages.service.model_template``), and the packages install it
-(``packages.service.install_downloaded_model``) and its libraries.
+node is the one the source's manifest names (``provider.options.node``), read
+from the shared catalog (``packages.service.model_node``), its code naming the
+model; the packages install it (``packages.service.install_downloaded_model``),
+the packages that node's package names, and the libraries.
 """
 
 from __future__ import annotations
@@ -134,6 +135,12 @@ class ModelAcquire:
         refusal = packages.model_add_refusal(self.user)
         if refusal:
             raise CapabilityUnsupported(refusal)
+        # The node the package gets, before anything is fetched: a source that
+        # names none, or a node the catalog does not hold, adds no model.
+        try:
+            node = packages.model_node(manifest.provider.options.get("node"))
+        except packages.PackageServiceError as exc:
+            raise CapabilityUnsupported(str(exc)) from exc
         provider = self._provider_for(manifest)
         if stage is not None:
             stage("Reading the model's files…")
@@ -154,10 +161,13 @@ class ModelAcquire:
         weights = files if plan.runtime == "onnx" else files / CHECKPOINT_DIR
         try:
             self._fetch(provider, plan, weights, progress=progress, stage=stage, cancelled=cancelled)
-            package = self._package_manifest(manifest, plan, weights, held=held)
+            package = self._package_manifest(manifest, plan, weights, held=held, node=node)
             if stage is not None:
                 stage("Adding to your Model Catalog…")
-            installed = packages.install_downloaded_model(self.user_key, files, package, replace=held is not None)
+            installed = packages.install_downloaded_model(
+                self.user_key, files, package, sources={node.template["source"]: node.code_for(package["id"])},
+                replace=held is not None,
+            )
         except packages.InstallerError as exc:
             raise DiscoveryError(f"{plan.repo} could not be added: {exc}") from exc
         finally:
@@ -216,11 +226,13 @@ class ModelAcquire:
 
     def _package_manifest(
         self, manifest: DiscoverySourceManifest, plan: ModelPlan, weights: Path, *, held: dict[str, Any] | None,
+        node: Any,
     ) -> dict[str, Any]:
         """The model package's manifest for *plan*'s files in *weights*: a new
-        ``imported.x<hex>`` id, or *held*'s id and date for a refresh."""
+        ``imported.x<hex>`` id, or *held*'s id and date for a refresh, and
+        *node* (``packages.service.ModelNode``) its node, with the packages
+        that node's package names."""
         from utk_curio.backend.app.common.record_clock import utc_now
-        from utk_curio.backend.app.packages import service as packages
 
         def read(name: str) -> dict[str, Any]:
             try:
@@ -266,10 +278,11 @@ class ModelAcquire:
             "createdAt": str((held or {}).get("createdAt") or now),
             "description": f"{plan.repo} from Hugging Face, commit {plan.revision[:12]}.",
             "publisher": publisher,
-            # The package's code is its node's cell, which Curio writes.
+            # The package's code is its node's, copied from the node its
+            # source names, as that node's package licenses it.
             "license": "MIT",
             "permissions": [],
-            "dependencies": {"js": {}, "packages": {}, "python": dict(RUNTIME_DEPS[plan.runtime])},
+            "dependencies": {"js": {}, "packages": dict(node.packages), "python": dict(RUNTIME_DEPS[plan.runtime])},
             "model": block,
-            "templates": [packages.model_template(MODEL_TYPE)],
+            "templates": [dict(node.template)],
         }

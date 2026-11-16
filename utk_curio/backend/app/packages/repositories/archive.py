@@ -290,6 +290,29 @@ def refresh_package_integrity(package_root: Path) -> dict[str, str]:
     return integrity
 
 
+def refresh_integrity_of(package_root: Path, relatives) -> dict[str, str]:
+    """Rewrite ``integrity.json`` after Curio wrote *relatives*, files of the
+    package at *package_root* as package-relative paths: each gets its digest
+    now, and every other entry stays as the record holds it, so a model
+    package's weights are not read again. A package whose record does not
+    read gets the whole record anew (:func:`refresh_package_integrity`)."""
+    try:
+        raw = json.loads((package_root / "integrity.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raw = None
+    listed = raw.get("sha256") if isinstance(raw, dict) else None
+    if not isinstance(listed, dict) or not listed:
+        return refresh_package_integrity(package_root)
+    integrity = dict(listed)
+    for rel in relatives:
+        integrity[str(rel)] = _hash_file(package_root / str(rel))
+    (package_root / "integrity.json").write_text(
+        json.dumps({"sha256": integrity}, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return integrity
+
+
 def integrity_mismatch(package_root: Path) -> str | None:
     """Why the files of the package at *package_root* are not the ones the
     record its install wrote names (``integrity.json``, rewritten by each of
@@ -413,8 +436,9 @@ def load_package_manifest_from_dir(package_root: Path) -> PackageManifest:
     # is deliberately not ``_STAGING_PREFIX``, so ``_purge_stale_staging``
     # leaves it alone.
     #
-    # Only the manifest is copied: the validator reads nothing else, and a model
-    # package's weights may run to gigabytes.
+    # Only the manifest is copied: a model package's weights may run to
+    # gigabytes. The validator reads the modules a package with no template
+    # ships where they are.
     side_parent = Path(
         tempfile.mkdtemp(prefix=".validate-", dir=str(package_root.parent))
     )
@@ -422,7 +446,7 @@ def load_package_manifest_from_dir(package_root: Path) -> PackageManifest:
         validate_root = side_parent / expected
         validate_root.mkdir()
         shutil.copyfile(manifest_path, validate_root / "manifest.json")
-        manifest = load_package_manifest(validate_root)
+        manifest = load_package_manifest(validate_root, sources_from=package_root)
     finally:
         shutil.rmtree(side_parent, ignore_errors=True)
     refuse_unreadable_skills(package_root)
