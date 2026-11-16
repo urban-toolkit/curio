@@ -2294,7 +2294,8 @@ jobs:
   # real Chrome contexts rendering Autark on WebGPU, which is the half that
   # cannot be driven any other way and does not scale past a handful on one GPU.
   # The stack runs 8 backend processes behind nginx, each owning the dataflows
-  # that hash to it, as the hosted stacks do (CURIO_STRESS_BACKEND_PROCESSES).
+  # that hash to it: the count chosen for dev and stable
+  # (CURIO_STRESS_BACKEND_PROCESSES).
   test-gpu-stress:
     needs: test-gpu
     # Not on every push: on the cron above, on a PR labelled `stress`, or on a
@@ -2332,9 +2333,9 @@ jobs:
       CURIO_STRESS: "1"
       CURIO_WEBGPU_BACKEND: hardware
       # The stack's backend processes behind nginx, read only by the overlay's
-      # command: 8, the count chosen for the hosted stacks, so every stage
-      # measures and guards the shape they run. Each report gives every
-      # process its rooms, sync and turns.
+      # command: 8, the count chosen for dev and stable, so every stage
+      # measures and guards that shape. Each report gives every process its
+      # rooms, sync and turns.
       CURIO_STRESS_BACKEND_PROCESSES: "8"
 
     steps:

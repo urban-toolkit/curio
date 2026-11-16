@@ -80,7 +80,7 @@ services:
       - "2000"
       # How many backend processes serve, behind nginx past one: the job's
       # CURIO_STRESS_BACKEND_PROCESSES, 1 when it sets none. test-gpu-stress
-      # sets 8, the count chosen for the hosted stacks; test-desktop-stress, a
+      # sets 8, the count chosen for dev and stable; test-desktop-stress, a
       # laptop, sets none. The count goes only in the command, under a name of
       # its own: a process that inherited the backends' own
       # CURIO_BACKEND_PROCESSES, the job's host-side harness and browser tier

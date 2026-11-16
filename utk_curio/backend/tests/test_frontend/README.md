@@ -126,8 +126,8 @@ A test that needs an adapter asks with `require_webgpu(page)` (fails on CI's GPU
 
 `test-gpu-stress` in CI runs the shipped examples with 5, 10, 50 and 100 users
 at once. It has two halves, because a dataflow does. Its stack runs 8 backend
-processes behind nginx, as the hosted stacks do, and each report gives every
-process its rooms, sync and turns.
+processes behind nginx, the count chosen for dev and stable, and each report
+gives every process its rooms, sync and turns.
 
 It is not part of every run. It holds the single GPU runner for ~30 minutes,
 which roughly doubles a build, so it runs on a schedule (3 AM Chicago time on
