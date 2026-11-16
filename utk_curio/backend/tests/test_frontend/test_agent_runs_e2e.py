@@ -57,6 +57,7 @@ from .utils import (
     stub_db_user,
     use_scripted_llm,
 )
+from .utils.servers import relayed_headers
 
 # The nodes every project in this module is seeded with. Two, not one: an agent
 # whose compatibleTargets[].requires names "data-loading" can only attach to a
@@ -654,10 +655,8 @@ class _LateAnswers:
                 request = Request(
                     backend + self.path,
                     data=self.rfile.read(size) if size else None,
-                    headers={
-                        name: value for name, value in self.headers.items()
-                        if name.lower() in ("authorization", "content-type")
-                    },
+                    # The dataflow's key among them, which nginx routes by.
+                    headers=relayed_headers(self.headers),
                     method=self.command,
                 )
                 try:

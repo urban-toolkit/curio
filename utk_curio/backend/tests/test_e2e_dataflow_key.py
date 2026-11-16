@@ -8,16 +8,20 @@ their path, and the scripted model answers in the process that runs the turn.
 So the helpers under ``test_frontend/utils/`` send the header: ``api_json``
 when it is given a dataflow or its path names one, the scripted model's helpers
 always, with ``dataflow=None`` for the home process's own calls, and the waits
-on a run's part on the server.
+on a run's part on the server. A server a test puts in front of the backend
+passes the header on.
 
-Browser-free: each request is caught where the helpers send it
-(``db_stubs.urlopen``), so nothing opens a socket.
+Browser-free: each request the helpers send is caught where they send it
+(``db_stubs.urlopen``). The relay's test opens sockets only to 127.0.0.1
+servers it starts.
 """
 from __future__ import annotations
 
 import json
+import threading
 from types import SimpleNamespace
 from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -132,3 +136,39 @@ def test_a_runs_record_is_read_with_the_dataflow_it_runs(sent):
         ("GET", f"/api/projects/{DATAFLOW}/runs", DATAFLOW), ("GET", f"/api/projects/{DATAFLOW}/runs", DATAFLOW),
         ("GET", "/api/runs/r2", DATAFLOW),
     ]
+
+
+def test_a_relay_in_front_of_the_backend_passes_the_dataflow_key_on():
+    """A server a test puts in front of the backend (``test_agent_runs_e2e``'s
+    late answers) passes on the header that names a call's dataflow, beside
+    the sign-in, and nothing of its own connection: a relay that dropped it
+    would send the call to the home process."""
+    from werkzeug.serving import make_server
+
+    from utk_curio.backend.tests.test_frontend.test_agent_runs_e2e import _LateAnswers
+    from utk_curio.backend.tests.test_frontend.utils.servers import relayed_headers
+
+    reached: list = []
+
+    def backend(environ, start_response):
+        reached.append((environ.get("PATH_INFO"), environ.get("HTTP_X_CURIO_DATAFLOW"),
+                        environ.get("HTTP_AUTHORIZATION")))
+        start_response("200 OK", [("Content-Type", "application/json"), ("Content-Length", "2")])
+        return [b"{}"]
+
+    server = make_server("127.0.0.1", 0, backend, threaded=True)
+    serving = threading.Thread(target=server.serve_forever, name="backend-stand-in", daemon=True)
+    serving.start()
+    try:
+        with _LateAnswers(f"http://127.0.0.1:{server.server_port}", ("GET", "/never"), 0.0) as late:
+            asked = Request(f"{late.url}/api/runs/r1", headers={"Authorization": "Bearer t", "X-Curio-Dataflow": DATAFLOW})
+            with urlopen(asked, timeout=30) as answer:  # noqa: S310 - the test's own servers
+                answer.read()
+    finally:
+        server.shutdown()
+        serving.join(timeout=5)
+    passed = relayed_headers({"Authorization": "Bearer t", "Content-Type": "application/json",
+                              "X-Curio-Dataflow": DATAFLOW, "Connection": "close", "Host": "127.0.0.1:9"})
+
+    assert reached == [("/api/runs/r1", DATAFLOW, "Bearer t")], reached
+    assert passed == {"Authorization": "Bearer t", "Content-Type": "application/json", "X-Curio-Dataflow": DATAFLOW}
