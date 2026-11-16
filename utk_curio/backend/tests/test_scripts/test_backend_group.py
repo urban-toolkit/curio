@@ -72,6 +72,8 @@ def test_each_backend_is_told_its_number_the_count_one_boot_id_every_port_and_th
     monkeypatch.setenv("CURIO_BACKEND_TOKEN", "an-earlier-starts-secret")
     # --proxy-hops 1, as the hosted stacks pass for their Caddy.
     monkeypatch.setenv("CURIO_PROXY_HOPS", "1")
+    # No arena cap of this process's own, so each backend's is the launcher's.
+    monkeypatch.delenv("MALLOC_ARENA_MAX", raising=False)
 
     booted = boot(monkeypatch, processes=4, host="0.0.0.0", port=5999)
 
@@ -92,6 +94,7 @@ def test_each_backend_is_told_its_number_the_count_one_boot_id_every_port_and_th
         assert env["FLASK_BACKEND_PORT"] == str(ports[number])
         assert env["FLASK_USE_RELOADER"] == "0", "under Werkzeug's reloader each backend would make a boot id of its own"
         assert env["CURIO_PROXY_HOPS"] == "2", "nginx adds the address it was reached from: one more proxy hop"
+        assert env["MALLOC_ARENA_MAX"] == "16", "each backend of several starts with the backend's 16 malloc arenas"
     # Each process is waited for where it serves; nginx, which listens on every
     # address, where this host reaches it.
     assert booted.asked == [
