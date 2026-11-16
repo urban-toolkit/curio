@@ -895,6 +895,11 @@ jobs:
           fi
           echo "OK: the image still carries the execution account isolation discovers."
 
+      # No image slot (scripts/ci_image_slots.py) for the build: it would hold
+      # one for its 2 to 4 minutes, though a build from the runner's cache
+      # writes only its new layers, and replayed with the builds holding slots,
+      # the last CPU job of a run got its image 60 s later instead of 28
+      # (median, 11-15).
       - name: 🔨 Build all service images in parallel
         run: docker compose -p curio-ci build --parallel
 

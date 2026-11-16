@@ -34,6 +34,12 @@
  * image and the mount holds its files, so every job that takes them on a
  * self-hosted runner lets them go, and stop-stack does so before the image
  * cleanup.
+ *
+ * Each arcade runner has a Docker daemon of its own, so each job writes the
+ * whole image to the disk the runners share, and 16 to 25 pulls at once slowed
+ * every `docker run` there from 3 s to 13 (11-15). So the pull, start-stack's,
+ * takes one of a few image slots the server's runners share first
+ * (scripts/ci_image_slots.py, tested in the backend suite).
  */
 import { read } from "./_support/workflowPaths";
 
@@ -222,7 +228,7 @@ describe("No CI image outlives its job on a self-hosted runner", () => {
         const startStack = read(START_STACK);
         const drop = startStack.indexOf("bash scripts/ci_disk.sh drop-tools");
         expect(drop).toBeGreaterThan(-1);
-        expect(drop).toBeLessThan(startStack.indexOf('docker pull --quiet "$IMAGE"'));
+        expect(drop).toBeLessThan(startStack.indexOf('python3 scripts/ci_image_slots.py pull "$IMAGE"'));
         expect(startStack.indexOf("bash scripts/ci_disk.sh wait-tools")).toBeGreaterThan(
             startStack.indexOf("did not become healthy"),
         );
@@ -237,5 +243,24 @@ describe("No CI image outlives its job on a self-hosted runner", () => {
         const free = text.indexOf('scripts/ci_disk.sh" free');
         expect(free).toBeGreaterThan(-1);
         expect(free).toBeLessThan(text.indexOf('docker compose -p "$PROJECT" down'));
+    });
+});
+
+describe("Whole images take turns on the disk arcade's runners share", () => {
+    const START_STACK = ".github/actions/start-stack/action.yml";
+    /** A line that pulls an image itself, outside the slots. */
+    const OWN_PULL = /^\s*docker pull /m;
+
+    test("start-stack pulls the image in one of the server's image slots", () => {
+        const startStack = read(START_STACK);
+        expect(startStack).toContain('python3 scripts/ci_image_slots.py pull "$IMAGE"\n');
+        expect(startStack).not.toMatch(OWN_PULL);
+    });
+
+    test("no job that can run on a self-hosted runner pulls an image but through start-stack", () => {
+        const pulling = Array.from(jobs())
+            .filter(([, job]) => OWN_PULL.test(job) && !/^ {4}runs-on: ubuntu-latest$/m.test(job))
+            .map(([name]) => name);
+        expect(pulling).toEqual([]);
     });
 });
