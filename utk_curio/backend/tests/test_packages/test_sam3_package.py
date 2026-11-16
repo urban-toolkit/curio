@@ -116,11 +116,13 @@ def _tiny_tokenizer(folder: Path):
     )
 
 
-def _tiny_config():
+def _tiny_config(tracking=None, **video):
     """A Sam3VideoConfig of about 5.8 M parameters that tracks text prompts:
     four FPN scale factors as SAM 3's; a hidden size of 128, a multiple of the
     64-wide memory, as SAM 3's 256 is; ``image_size`` on the video config;
-    detection thresholds at 0, so random weights detect; six objects at most."""
+    detection thresholds at 0, so random weights detect; six objects at most.
+    *tracking* sets the tracker's own settings, and keywords the video's, such
+    as ``max_num_objects``."""
     from transformers import (
         Sam3Config,
         Sam3DETRDecoderConfig,
@@ -161,36 +163,39 @@ def _tiny_config():
         ),
         mask_decoder_config=Sam3MaskDecoderConfig(hidden_size=hidden, num_upsampling_stages=2),
     )
-    tracker = Sam3TrackerVideoConfig(
-        vision_config=vision,
-        prompt_encoder_config=Sam3TrackerVideoPromptEncoderConfig(hidden_size=hidden, image_size=SIZE, patch_size=14),
-        mask_decoder_config=Sam3TrackerVideoMaskDecoderConfig(hidden_size=hidden),
-        num_maskmem=2,
-        memory_attention_hidden_size=hidden,
-        memory_attention_num_layers=1,
-        memory_attention_feed_forward_hidden_size=2 * hidden,
-        memory_attention_rope_feat_sizes=[SIZE // 14, SIZE // 14],
-        memory_encoder_hidden_size=hidden,
-        memory_encoder_output_channels=64,
-        mask_downsampler_embed_dim=hidden,
-        memory_fuser_embed_dim=hidden,
-        memory_fuser_intermediate_dim=2 * hidden,
-        max_object_pointers_in_encoder=4,
-    )
-    config = Sam3VideoConfig(
-        detector_config=detector, tracker_config=tracker,
-        score_threshold_detection=0.0, new_det_thresh=0.0, hotstart_delay=0,
-        low_res_mask_size=SIZE * 288 // 1008,
-    )
+    tracker = Sam3TrackerVideoConfig(**{
+        "vision_config": vision,
+        "prompt_encoder_config": Sam3TrackerVideoPromptEncoderConfig(hidden_size=hidden, image_size=SIZE, patch_size=14),
+        "mask_decoder_config": Sam3TrackerVideoMaskDecoderConfig(hidden_size=hidden),
+        "num_maskmem": 2,
+        "memory_attention_hidden_size": hidden,
+        "memory_attention_num_layers": 1,
+        "memory_attention_feed_forward_hidden_size": 2 * hidden,
+        "memory_attention_rope_feat_sizes": [SIZE // 14, SIZE // 14],
+        "memory_encoder_hidden_size": hidden,
+        "memory_encoder_output_channels": 64,
+        "mask_downsampler_embed_dim": hidden,
+        "memory_fuser_embed_dim": hidden,
+        "memory_fuser_intermediate_dim": 2 * hidden,
+        "max_object_pointers_in_encoder": 4,
+        **(tracking or {}),
+    })
+    objects = video.pop("max_num_objects", 6)
+    config = Sam3VideoConfig(**{
+        "detector_config": detector, "tracker_config": tracker,
+        "score_threshold_detection": 0.0, "new_det_thresh": 0.0, "hotstart_delay": 0,
+        "low_res_mask_size": SIZE * 288 // 1008,
+        **video,
+    })
     config.image_size = SIZE
-    config.max_num_objects = 6
+    config.max_num_objects = objects
     return config
 
 
-@pytest.fixture(scope="module")
-def weights(tmp_path_factory):
+def _tiny_weights(tmp_path_factory, config):
     """The package's folder under ``--model-weights-dir``, its entry holding a
-    tiny SAM 3 and its processor: every file the package's ``fetch`` lists."""
+    tiny SAM 3 of *config* and its processor: every file the package's
+    ``fetch`` lists."""
     import torch
     from transformers import Sam2VideoVideoProcessor, Sam3ImageProcessor, Sam3VideoModel, Sam3VideoProcessor
 
@@ -203,7 +208,7 @@ def weights(tmp_path_factory):
         Sam3ImageProcessor(size=size), Sam2VideoVideoProcessor(size=size), _tiny_tokenizer(words),
     )
     torch.manual_seed(0)
-    Sam3VideoModel(_tiny_config()).save_pretrained(checkpoint)
+    Sam3VideoModel(config).save_pretrained(checkpoint)
     processor.save_pretrained(checkpoint)
     # The checkpoint as Hugging Face holds SAM 3's: the tokenizer's vocabulary
     # and merges beside its tokenizer.json, and its special tokens.
@@ -214,6 +219,42 @@ def weights(tmp_path_factory):
         "pad_token": "<|endoftext|>", "unk_token": "<|endoftext|>",
     }), encoding="utf-8")
     return root
+
+
+@pytest.fixture(scope="module")
+def weights(tmp_path_factory):
+    """The tiny SAM 3, saved where ``--model-weights-dir`` puts the package's
+    weights."""
+    return _tiny_weights(tmp_path_factory, _tiny_config())
+
+
+@pytest.fixture(scope="module")
+def steady_weights(tmp_path_factory):
+    """A tiny SAM 3 whose objects stay the same from the first frame: its
+    first frame's detections, all kept, fill its three objects, and it takes
+    no object again from a detection nor drops one in its first frames."""
+    return _tiny_weights(tmp_path_factory, _tiny_config(
+        det_nms_thresh=0.0, max_num_objects=3, recondition_every_nth_frame=0,
+    ))
+
+
+#: The windows of the tiny SAM 3 ``windowed_weights`` saves: what SAM 3 reads
+#: again of the frames before the one it looks at.
+WINDOWS = {"num_maskmem": 3, "max_object_pointers_in_encoder": 4, "max_cond_frame_num": 2}
+
+
+@pytest.fixture(scope="module")
+def windowed_weights(tmp_path_factory):
+    """A tiny SAM 3 that reads again the memory of its last two frames and of
+    each object's last two conditioning frames, and pointers of its last
+    three; that holds each frame back until it has seen three after it; and
+    that takes every object it follows again from a detection every second
+    frame, so each gains more conditioning frames than SAM 3 reads memory of."""
+    return _tiny_weights(tmp_path_factory, _tiny_config(
+        WINDOWS, det_nms_thresh=0.0, max_num_objects=3,
+        hotstart_delay=3, hotstart_unmatch_thresh=3, hotstart_dup_thresh=3,
+        recondition_every_nth_frame=2, high_conf_thresh=-1e4, high_iou_thresh=0.0,
+    ))
 
 
 @pytest.fixture
@@ -234,39 +275,51 @@ def few_threads(monkeypatch):
 # The clip and the node
 # ---------------------------------------------------------------------------
 
-def _clip(path: Path) -> None:
-    """A clip of an orange box crossing a dark street, in MPEG-4 Part 2, which
-    every FFmpeg build reads and writes, so the overlay alone needs H.264."""
-    import av
+def _street(index: int):
+    """Frame *index* of the clip: an orange box crossing a dark street, 8
+    pixels further each frame, as an RGB array."""
     import numpy as np
 
-    width, height = 96, 64
+    image = np.full((64, 96, 3), 40, dtype=np.uint8)
+    image[20:44, 8 + 8 * index:24 + 8 * index] = (230, 120, 40)
+    return image
+
+
+def _clip(path: Path, seconds: float = CLIP_SECONDS) -> None:
+    """A clip of :func:`_street`, *seconds* long, in MPEG-4 Part 2, which every
+    FFmpeg build reads and writes, so the overlay alone needs H.264."""
+    import av
+
     with av.open(str(path), "w") as out:
         stream = out.add_stream("mpeg4", rate=CLIP_RATE)
-        stream.width, stream.height, stream.pix_fmt = width, height, "yuv420p"
-        for index in range(int(CLIP_SECONDS * CLIP_RATE)):
-            image = np.full((height, width, 3), 40, dtype=np.uint8)
-            image[20:44, 8 + 8 * index:24 + 8 * index] = (230, 120, 40)
-            for packet in stream.encode(av.VideoFrame.from_ndarray(image, format="rgb24")):
+        stream.width, stream.height, stream.pix_fmt = 96, 64, "yuv420p"
+        for index in range(int(seconds * CLIP_RATE)):
+            for packet in stream.encode(av.VideoFrame.from_ndarray(_street(index), format="rgb24")):
                 out.mux(packet)
         for packet in stream.encode():
             out.mux(packet)
 
 
-@pytest.fixture
-def videos(tmp_path):
+def _collection(tmp_path: Path, seconds: float = CLIP_SECONDS):
     """``(rows, helpers)``: what Data Loading's ``curio_load_collection`` gives
-    for a folder holding one clip, and the helpers a node runs with."""
+    for a folder holding one clip *seconds* long, and the helpers a node runs
+    with."""
     from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
     from utk_curio.backend.tests.test_discovery.conftest import a_storage_manifest, write_source
     from utk_curio.backend.tests.test_packages.test_media_package import collection_rows
 
     root = tmp_path / "walk"
     root.mkdir()
-    _clip(root / "corner.mp4")
+    _clip(root / "corner.mp4", seconds)
     resource = {"id": "walk", "name": "Walk", "kind": "videos", "path": "*", "extensions": ["mp4"]}
     source = write_source(tmp_path / "discovery", "source.example.folder@1", a_storage_manifest(root, [resource]))
     return collection_rows(load_source_manifest(source), "walk", tmp_path)
+
+
+@pytest.fixture
+def videos(tmp_path):
+    """``(rows, helpers)`` for a folder holding the 2 s clip."""
+    return _collection(tmp_path)
 
 
 @pytest.fixture
@@ -727,3 +780,98 @@ def test_each_stop_comes_before_sam3_loads_and_writes_nothing(videos, tmp_path):
     )
     assert str(not_cached.value) == f"{relpath} is not on this machine yet; cache the collection's files first"
     assert not (tmp_path / "media" / "videos").exists() and not (tmp_path / "media" / "tables").exists()
+
+
+# ---------------------------------------------------------------------------
+# What SAM 3 holds
+# ---------------------------------------------------------------------------
+
+#: Two labels, which keep a run of the tiny SAM 3 to seconds.
+TWO_LABELS = ["pole", "person"]
+
+
+def _held(session) -> int:
+    """The bytes of the tensors a SAM 3 *session* holds, each storage counted
+    once: a slice holds all of what it is a slice of."""
+    import torch
+
+    storages, items = {}, [vars(session), vars(session.cache)]
+    while items:
+        item = items.pop()
+        if isinstance(item, torch.Tensor):
+            storage = item.untyped_storage()
+            storages[storage.data_ptr()] = storage.nbytes()
+        elif isinstance(item, dict):
+            items.extend(item.values())
+        elif isinstance(item, (list, tuple, set)):
+            items.extend(item)
+    return sum(storages.values())
+
+
+def test_what_sam3_holds_stops_growing_once_it_has_seen_what_it_reads_again(
+        steady_weights, catalog_copy, few_threads, tmp_path, monkeypatch):
+    """SAM 3 reads again only a few frames back: the tiny SAM 3 here, the
+    memory of its last frame and the pointers of its last three. On dev,
+    Track Objects held every frame's state on the GPU to the video's end, 5.5
+    GiB at 50 frames, 20 at 150 and 67 at 300, so 300 s of the walk at a frame
+    every 0.5 s filled the 96 GB card at about 350 frames. Through 24 frames
+    of three objects, what SAM 3's session holds after each frame stops
+    growing once SAM 3 has seen the frames it reads again."""
+    frames = 24
+    rows, helpers = _collection(tmp_path, seconds=frames / CLIP_RATE)
+    model = _loaded(catalog_copy, steady_weights)(MODEL_ID)
+    held, objects = [], []
+    with _staged(tmp_path) as module:
+        real = module.Sam3VideoModel.propagate_in_video_iterator
+
+        def recording(self, inference_session, **kwargs):
+            for output in real(self, inference_session=inference_session, **kwargs):
+                yield output
+                held.append(_held(inference_session))
+                objects.append(len(inference_session.obj_ids))
+
+        monkeypatch.setattr(module.Sam3VideoModel, "propagate_in_video_iterator", recording)
+        module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS,
+                             every_seconds=1 / CLIP_RATE)
+
+    assert len(held) == frames, f"SAM 3 looked at {len(held)} frames, not {frames}"
+    warm = 8
+    assert objects[warm:] == [3] * (frames - warm), f"the objects SAM 3 followed changed: {objects}"
+    mib = [round(value / 2**20, 2) for value in held]
+    assert max(held[warm:]) <= held[warm], f"after each frame SAM 3's session held {mib} MiB"
+
+
+def test_sam3_finds_in_each_frame_what_it_finds_holding_every_frame(
+        windowed_weights, catalog_copy, few_threads, tmp_path):
+    """Track Objects hands SAM 3 one frame at a time and drops, after each
+    frame, what SAM 3 never reads again: SAM 3 finds in every frame the same
+    objects, scores, boxes and masks as when its session holds the whole video
+    and all it saw of it. The tiny SAM 3 here reads again a few frames back,
+    holds each frame back three, and takes objects again from detections every
+    second frame: through 16 frames an object gains more conditioning frames
+    than SAM 3 reads the memory of, and frames pass out of every window."""
+    import torch
+    from PIL import Image
+
+    frames = [Image.fromarray(_street(index)) for index in range(16)]
+    path = _loaded(catalog_copy, windowed_weights)(MODEL_ID).path
+    with _staged(tmp_path) as module:
+        processor = module.Sam3VideoProcessor.from_pretrained(path, local_files_only=True)
+        sam3 = module.Sam3VideoModel.from_pretrained(path, local_files_only=True).eval()
+        run = SimpleNamespace(processor=processor, sam3=sam3, device="cpu", dtype=torch.float32, labels=TWO_LABELS)
+        with torch.inference_mode():
+            followed = list(module._follow(run, frames))
+            whole = processor.init_video_session(video=frames, inference_device="cpu", dtype=torch.float32)
+            processor.add_text_prompt(whole, TWO_LABELS)
+            expected = [
+                (output.frame_idx, processor.postprocess_outputs(whole, output))
+                for output in sam3.propagate_in_video_iterator(inference_session=whole)
+            ]
+
+    conditioning = [len(outputs["cond_frame_outputs"]) for outputs in whole.output_dict_per_obj.values()]
+    assert max(conditioning) > WINDOWS["max_cond_frame_num"], f"conditioning frames per object: {conditioning}"
+    assert [index for index, _ in followed] == [index for index, _ in expected] == list(range(len(frames)))
+    for (index, found), (_, holding_all) in zip(followed, expected):
+        assert found["prompt_to_obj_ids"] == holding_all["prompt_to_obj_ids"], f"frame {index}: the labels differ"
+        for key in ("object_ids", "scores", "boxes", "masks"):
+            assert torch.equal(found[key], holding_all[key]), f"frame {index}: the {key} differ"

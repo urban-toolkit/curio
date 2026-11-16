@@ -38,6 +38,10 @@ EARLY_SECONDS = 1e-3
 #: The overlay's time base: each of its frames plays at its own time in the
 #: video, to the millisecond.
 MILLISECOND = Fraction(1, 1000)
+#: What SAM 3 reads again of an object at a frame before the one it looks at:
+#: its memory there, and its pointer.
+MEMORY = ("maskmem_features", "maskmem_pos_enc")
+POINTER = "object_pointer"
 
 
 @dataclass(frozen=True)
@@ -70,9 +74,9 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, from
     ``curio_derived_file``. SAM 3 looks at one frame every *every_seconds*,
     from *from_seconds* to *to_seconds* (None: the video's end), read at most
     *width* wide, and follows each object it finds from frame to frame under
-    one id. It keeps every frame it looked at until the video's end, so a part
-    longer than *max_seconds* stops the call before SAM 3 loads, as do empty
-    *labels* and a video not on this machine.
+    one id. A part longer than *max_seconds*, the most one run takes, stops the
+    call before SAM 3 loads, as do empty *labels* and a video not on this
+    machine.
 
     Each row keeps the video's own columns, its overlay's (``file_id``,
     ``path``, ``thumbnail``, ``image_url``, ``duration_s``, ``fps``, ``width``,
@@ -210,14 +214,98 @@ def _draw(run, image, found, label_of):
     return picture
 
 
+class _Frames:
+    """The frames of a SAM 3 session, as SAM 3 asks for them: each is made
+    ready, as a session handed the whole video makes it, only when SAM 3 comes
+    to it, and none is kept. The session still counts every frame of the part,
+    since SAM 3 reads how many there are to know how far back to look."""
+
+    def __init__(self, run, frames):
+        self._run = run
+        self._frames = frames
+        #: The last frame SAM 3 has looked at.
+        self.latest = -1
+
+    def __len__(self):
+        return len(self._frames)
+
+    def __getitem__(self, index):
+        self.latest = max(self.latest, index)
+        ready = self._run.processor.video_processor(
+            videos=[self._frames[index]], device=self._run.device, return_tensors="pt",
+        )
+        return ready.pixel_values_videos[0][0].to(self._run.device, dtype=self._run.dtype)
+
+
+def _follow(run, frames):
+    """SAM 3 through *frames*, in order: each frame's index, with what SAM 3
+    found in it, as ``postprocess_outputs`` gives it.
+
+    SAM 3 runs as over a whole video, and holds a frame back until it has seen
+    a few after it. It is handed one frame at a time, and after each frame it
+    forgets what it never reads again (:func:`_forget`), so what it holds grows
+    with the objects it follows, not with the frames."""
+    seen = _Frames(run, frames)
+    session = run.processor.init_video_session(inference_device=run.device, dtype=run.dtype)
+    session.processed_frames = seen
+    # The size masks are drawn at, as a session handed the whole video has it.
+    session.video_width, session.video_height = frames[0].size
+    run.processor.add_text_prompt(session, run.labels)
+    for output in run.sam3.propagate_in_video_iterator(inference_session=session):
+        found = run.processor.postprocess_outputs(session, output)
+        _forget(session, seen.latest, run.sam3.tracker_model)
+        yield output.frame_idx, found
+
+
+def _forget(session, latest, tracker):
+    """Drop from a SAM 3 *session* what SAM 3 never reads again once it has
+    looked at frame *latest*.
+
+    Of the frames before the one it looks at, SAM 3 reads only an object's
+    memory (:data:`MEMORY`) of the last ``num_maskmem - 1`` frames and of its
+    last ``max_cond_frame_num`` conditioning frames, where SAM 3 took the
+    object from a detection; and the object's pointer (:data:`POINTER`) of the
+    last ``max_object_pointers_in_encoder - 1`` frames and of every
+    conditioning frame. Of a past frame it never reads again the object's
+    masks and scores, the mask it was found with, or the frame's scores and
+    suppressed objects. An object's memory of a frame is a slice of all the
+    objects' at that frame, so a memory kept after the others' is copied out of
+    it."""
+    memory_after = latest - (tracker.num_maskmem - 1)
+    pointer_after = latest - (tracker.config.max_object_pointers_in_encoder - 1)
+    recent = tracker.config.max_cond_frame_num
+    for outputs in session.output_dict_per_obj.values():
+        tracked, conditioning = outputs["non_cond_frame_outputs"], outputs["cond_frame_outputs"]
+        for frame in [frame for frame in tracked if frame <= min(memory_after, pointer_after)]:
+            del tracked[frame]
+        for frame, output in tracked.items():
+            _keep(output, memory=frame > memory_after)
+        last = set(sorted(conditioning)[-recent:]) if recent >= 1 else set(conditioning)
+        for frame, output in conditioning.items():
+            _keep(output, memory=frame > memory_after or frame in last, alone=frame <= memory_after)
+    per_frame = [*session.frames_tracked_per_obj.values(), *session.mask_inputs_per_obj.values(),
+                 session.obj_id_to_tracker_score_frame_wise, session.suppressed_obj_ids]
+    for frames in per_frame:
+        for frame in [frame for frame in frames if frame < latest]:
+            del frames[frame]
+
+
+def _keep(output, *, memory, alone=False):
+    """Keep of an object's *output* at a past frame only its pointer, and its
+    memory when *memory*; a memory kept *alone*, after the other objects' at
+    its frame, is copied out of theirs."""
+    for key in [key for key in output if key != POINTER and not (memory and key in MEMORY)]:
+        del output[key]
+    if memory and alone:
+        for key in MEMORY:
+            value = output.get(key)
+            if value is not None and value.untyped_storage().nbytes() > value.nbytes:
+                output[key] = value.clone()
+
+
 def _track(run, video, end):
     """Run SAM 3 through one video: its overlay's row, with its tracks file."""
     frames, times = _sample(run, video, end)
-    session = run.processor.init_video_session(
-        video=frames, inference_device=run.device, processing_device=run.device,
-        video_storage_device=run.device, dtype=run.dtype,
-    )
-    run.processor.add_text_prompt(session, run.labels)
     start_ms = round(run.from_seconds * 1000)
     overlay = run.derived_file(video["dataset_id"], video["file_id"], start_ms, "mp4", tag=TAG)
     tracks_file = run.derived_file(video["dataset_id"], video["file_id"], start_ms, "parquet", tag=TAG)
@@ -244,9 +332,8 @@ def _track(run, video, end):
         # SAM 3 holds each frame back until it has seen a few after it, so it
         # can drop an object that was never really there.
         with torch.inference_mode():
-            for output in run.sam3.propagate_in_video_iterator(inference_session=session):
-                found = run.processor.postprocess_outputs(session, output)
-                t_s = times[output.frame_idx]
+            for index, found in _follow(run, frames):
+                t_s = times[index]
                 for label, ids in found["prompt_to_obj_ids"].items():
                     label_of.update({object_id: label for object_id in ids})
                 shares = found["masks"].flatten(1).sum(1).cpu().numpy() / (width * height)
@@ -259,8 +346,8 @@ def _track(run, video, end):
                     seen["frames"] += 1
                     seen["largest_share"] = max(seen["largest_share"], round(float(share), 4))
                     seen["scores"].append(float(score))
-                picture = av.VideoFrame.from_image(_draw(run, frames[output.frame_idx], found, label_of))
-                picture.pts, picture.time_base = shown[output.frame_idx], MILLISECOND
+                picture = av.VideoFrame.from_image(_draw(run, frames[index], found, label_of))
+                picture.pts, picture.time_base = shown[index], MILLISECOND
                 for packet in drawn.encode(picture):
                     packet.duration = lasting[packet.pts]
                     out.mux(packet)
