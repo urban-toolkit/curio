@@ -1536,6 +1536,9 @@ jobs:
       FLASK_SANDBOX_HOST: localhost
       FLASK_SANDBOX_PORT: "2020"
       CURIO_SANDBOX_TOKEN: ci-sandbox-token-not-a-secret
+      # Two backend processes behind nginx (docker-compose.ci.yml's command),
+      # where every other job's stack runs one.
+      CURIO_E2E_BACKEND_PROCESSES: "2"
       # A tests run: only the selected e2e tests (scripts/test.sh).
       CURIO_TESTS: ${{ inputs.tests }}
       # Whether this part holds a selected test (build-image's holding, empty
