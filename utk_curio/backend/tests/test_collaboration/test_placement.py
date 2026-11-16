@@ -256,9 +256,11 @@ def test_each_start_begins_with_no_open_rooms_and_the_turn_at_home(start_of, mon
 def test_a_retried_write_of_a_new_dataflow_takes_no_second_turn(doc_app, no_one_in_any_room, monkeypatch):
     """A create's write is replayed when it loses a race to another writer
     (``retry_on_write_conflict``). Its id is taken once, before the write, so
-    the replay takes no second turn: the next create takes the next one."""
+    the replay takes no second turn: the next create takes the next one, and
+    the two creates took two turns."""
     from sqlalchemy.exc import OperationalError
 
+    from utk_curio.backend.app.collaboration import placement
     from utk_curio.backend.app.projects import repositories
     from utk_curio.common.backend_processes import shard_of
 
@@ -278,12 +280,14 @@ def test_a_retried_write_of_a_new_dataflow_takes_no_second_turn(doc_app, no_one_
 
     first = repositories.upsert_project(user_id=dana.id, name="First", folder_path="")
     second = repositories.upsert_project(user_id=dana.id, name="Second", folder_path="")
+    third = placement.choose()
 
     assert len(asked) == 3, "the first create's write was not replayed"
     assert [shard_of(first.id, 3), shard_of(second.id, 3)] == [0, 1], (
         f"the creates went to processes {shard_of(first.id, 3)} and {shard_of(second.id, 3)}: "
         "the replay of the first took a turn of its own"
     )
+    assert third == 2, f"after two creates the turn is process {third}'s, not process 2's"
 
 
 def test_with_one_process_every_new_dataflow_is_a_uuid4_of_home_and_nothing_is_kept(start_of):
