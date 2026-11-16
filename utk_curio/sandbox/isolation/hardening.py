@@ -54,6 +54,7 @@ SENSITIVE_PATHS = (
     (".curio/fetched", "the catalog files a pip install downloaded, staged into a child that reads one"),
     (".env", "the deployment's keys and tokens"),
     (".curio/discovery", "the operator's source manifests: each names a folder or host the server reads"),
+    (".curio/budgets", "the backend processes' shared budgets: a node holding a lock there would hold a place"),
 )
 
 # Directories whose contents reach a child as a hardlink, and which therefore
