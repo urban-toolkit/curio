@@ -62,4 +62,17 @@ describe(`the paths filters of ${WORKFLOW}`, () => {
         expect(guides.length).toBeGreaterThan(5);
         expect(guides.filter((file) => !startsARun(file, patterns(event)))).toEqual([]);
     });
+
+    // ciSparseCheckout.test.ts reads every workflow, and the deploy and CI
+    // tests pin lines of deploy.yml, bump-version.yml, skill-evals.yml and
+    // weekly-flake-hunt.yml: a change to one that starts no build leaves its
+    // failure to the next unrelated PR's Jest.
+    test.each(EVENTS)("on %s, a change to any workflow starts a build", (event) => {
+        const workflows = fs
+            .readdirSync(path.join(REPO_ROOT, ".github", "workflows"))
+            .filter((name) => /\.ya?ml$/.test(name))
+            .map((name) => `.github/workflows/${name}`);
+        expect(workflows.length).toBeGreaterThan(5);
+        expect(workflows.filter((file) => !startsARun(file, patterns(event)))).toEqual([]);
+    });
 });
