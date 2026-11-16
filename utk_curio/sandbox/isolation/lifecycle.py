@@ -57,13 +57,18 @@ MALLOC_ARENA_SHARE = 4
 #: glibc's malloc, in the arenas capped above.
 ARROW_POOL_UNDER_A_CAP = "system"
 
-#: glibc's mmap threshold in the sandbox server, held fixed: a block of this
-#: size or more is mapped on its own, and unmapped as soon as it is freed.
+#: glibc's mmap threshold in the sandbox and backend servers, held fixed: a
+#: block of this size or more is mapped on its own, and unmapped as soon as it
+#: is freed.
 SERVER_MMAP_THRESHOLD_BYTES = 8 * 1024 * 1024
 
-#: glibc's trim threshold in the sandbox server, held fixed: an arena gives
-#: its free top back once a free leaves it bigger than this.
+#: glibc's trim threshold in the sandbox and backend servers, held fixed: an
+#: arena gives its free top back once a free leaves it bigger than this.
 SERVER_TRIM_THRESHOLD_BYTES = 16 * 1024 * 1024
+
+#: How many malloc arenas the backend server may hold, whatever the node-code
+#: budget: it runs no node code.
+BACKEND_MALLOC_ARENAS = 16
 
 
 class ZygoteStartupError(RuntimeError):
@@ -122,20 +127,34 @@ def zygote_environment(limits, environ=None, *, memory_limit=None):
     env = for_node_code(os.environ if environ is None else environ)
     memory_mb = (limits or {}).get("memory_mb")
     if memory_mb and memory_limit != node_cgroups.CGROUP:
-        _cap_arenas(env, memory_mb)
+        _cap_arenas(env, malloc_arena_cap(memory_mb))
         env["ARROW_DEFAULT_MEMORY_POOL"] = ARROW_POOL_UNDER_A_CAP
     return env
 
 
-def _cap_arenas(env, memory_mb):
-    """Cap *env*'s malloc arenas for *memory_mb* of budget; a lower
-    ``MALLOC_ARENA_MAX`` already in *env* stands."""
-    cap = malloc_arena_cap(memory_mb)
+def _cap_arenas(env, cap):
+    """Cap *env*'s malloc arenas at *cap*; a lower ``MALLOC_ARENA_MAX``
+    already in *env* stands."""
     try:
         current = int(env.get("MALLOC_ARENA_MAX", ""))
     except ValueError:
         current = 0
     env["MALLOC_ARENA_MAX"] = str(min(current, cap) if current > 0 else cap)
+
+
+def _fit_server_allocators(env, arenas):
+    """Fit *env*'s allocators as a server's: its malloc arenas capped at
+    *arenas*, Arrow allocating through glibc, in those arenas, and glibc's two
+    thresholds held fixed. An operator's lower cap, own pool and own
+    thresholds stand."""
+    _cap_arenas(env, arenas)
+    if not env.get("ARROW_DEFAULT_MEMORY_POOL"):
+        env["ARROW_DEFAULT_MEMORY_POOL"] = ARROW_POOL_UNDER_A_CAP
+    for name, value in (("MALLOC_MMAP_THRESHOLD_", SERVER_MMAP_THRESHOLD_BYTES),
+                        ("MALLOC_TRIM_THRESHOLD_", SERVER_TRIM_THRESHOLD_BYTES)):
+        if not env.get(name):
+            env[name] = str(value)
+    return env
 
 
 def server_environment(environ=None):
@@ -200,14 +219,44 @@ def server_environment(environ=None):
         memory_mb = int(env.get("CURIO_EXEC_MEMORY_MB") or DEFAULT_LIMITS["memory_mb"])
     except ValueError:
         memory_mb = DEFAULT_LIMITS["memory_mb"]
-    _cap_arenas(env, memory_mb)
-    if not env.get("ARROW_DEFAULT_MEMORY_POOL"):
-        env["ARROW_DEFAULT_MEMORY_POOL"] = ARROW_POOL_UNDER_A_CAP
-    for name, value in (("MALLOC_MMAP_THRESHOLD_", SERVER_MMAP_THRESHOLD_BYTES),
-                        ("MALLOC_TRIM_THRESHOLD_", SERVER_TRIM_THRESHOLD_BYTES)):
-        if not env.get(name):
-            env[name] = str(value)
-    return env
+    return _fit_server_allocators(env, malloc_arena_cap(memory_mb))
+
+
+def backend_server_environment(environ=None):
+    """The backend server's environment: its allocators fitted as the sandbox
+    server's are (:func:`server_environment`), but with its malloc arenas
+    capped at ``BACKEND_MALLOC_ARENAS``, 16, whatever the node-code budget.
+    Arrow allocates through glibc, in those arenas, unless the environment
+    names another pool, and glibc's two thresholds are held at the sandbox
+    server's 8 and 16 MiB.
+
+    The backend runs no node code, so its cap does not follow that budget
+    (``CURIO_EXEC_MEMORY_MB``). Dev and stable start with
+    ``--exec-memory-mb 24576``, from which the sandbox server's rule gives
+    96 arenas: a case never measured, in which a backend could keep about
+    1.5 GB of free memory.
+
+    The backend serves each request and socket on a thread of its own, about
+    700 at the stress job's peak, and glibc gives each thread that allocates
+    an arena of its own, up to eight per core. With no settings, a backend on
+    utk's 64 cores made 512 arenas. Over every stress stage run three times
+    on one stack its RSS went from 120 to 2908 MiB, growing 30 to 630 MiB a
+    pass and never levelling off, with 2635 MiB resident in its arenas
+    against 135 MiB in use, and ``malloc_trim(0)`` gave back 330 MiB (run
+    43752339941 on ``tmp/backend-rss-probe``). Started with these settings,
+    the same job ended at 656 MiB, 601 after a trim, growing 8 to 23 MiB a
+    pass, with at most about 255 MiB of free memory held in its 16 arenas
+    (run 43762927879). Turns, sync with and without agents, the HTTP tiers'
+    times, node runs and the backend's CPU stayed within the passes' own
+    spread.
+
+    An operator's lower ``MALLOC_ARENA_MAX`` stands, and so do an operator's
+    own thresholds and Arrow pool. Set in the environment the server starts
+    with, because glibc settles its arena limit and thresholds, and Arrow its
+    pool, once per process.
+    """
+    env = dict(os.environ if environ is None else environ)
+    return _fit_server_allocators(env, BACKEND_MALLOC_ARENAS)
 
 
 def memory_limit():
