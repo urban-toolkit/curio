@@ -23,7 +23,10 @@ on:
       # The bucket mount service, which the bucket-mounts job starts.
       - 'docker-compose.bucket-mounts.yml'
       - 'docker-compose.ci-bucket-mounts.yml'
-      - '.github/workflows/docker-compose.yml'
+      # Every workflow, this one among them: Jest reads them all
+      # (ciSparseCheckout.test.ts), and the deploy and CI tests pin lines of
+      # deploy.yml, bump-version.yml, skill-evals.yml and weekly-flake-hunt.yml.
+      - '.github/workflows/**'
       - '.github/actions/**'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
@@ -78,7 +81,10 @@ on:
       # The bucket mount service, which the bucket-mounts job starts.
       - 'docker-compose.bucket-mounts.yml'
       - 'docker-compose.ci-bucket-mounts.yml'
-      - '.github/workflows/docker-compose.yml'
+      # Every workflow, this one among them: Jest reads them all
+      # (ciSparseCheckout.test.ts), and the deploy and CI tests pin lines of
+      # deploy.yml, bump-version.yml, skill-evals.yml and weekly-flake-hunt.yml.
+      - '.github/workflows/**'
       - '.github/actions/**'
       # scripts/test.sh is this workflow's entry point; the authoring helpers
       # (new_package.py, regen_integrity.py) are covered by the test suite too.
