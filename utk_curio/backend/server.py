@@ -169,15 +169,18 @@ def serve():
     )
 
     run_kwargs = _socketio_run_kwargs()
-    # The hourly sample of both servers' open files, from now: startup work,
-    # in the home process when it serves (DOES_STARTUP_WORK). Under the
-    # reloader this function also runs in the process that only watches the
-    # files, which serves nothing.
+    # The hourly sample of this process's open files, from now: in the home
+    # process when it serves (DOES_STARTUP_WORK), the sandbox's with it, and
+    # in every other process of a start of several. Under the reloader this
+    # function also runs in the process that only watches the files, which
+    # serves nothing.
+    from utk_curio.backend.app.monitor import open_files as monitor_open_files
+
+    if monitor_open_files.sampler_starts_here(DOES_STARTUP_WORK):
+        monitor_open_files.start_sampler(app)
     if DOES_STARTUP_WORK:
         from utk_curio.backend.app.discovery import service as discovery_service
-        from utk_curio.backend.app.monitor import open_files as monitor_open_files
 
-        monitor_open_files.start_sampler(app)
         # When --bucket-mounts-dir and --bucket-mount-socket name a bucket
         # mount service: its one way out, a proxy on the backend's own host,
         # then its self-test, once; /monitor shows how it went.

@@ -23,9 +23,11 @@ reaches another with, for a change to a dataflow that other process owns
 
 Process 0 is the home process. It alone does the startup work: the shared
 guest, the hosted guests' copies dropped, the agents and the examples put
-back, the monitor's histories started anew, the guest cleanup and the kept
-outputs' sweep, the open-files sampler, and the bucket mount service's proxy
-and check (``backend/server.py`` and ``create_app``). The launcher starts home
+back, the monitor's histories started anew and the other processes' files of
+them removed, the guest cleanup and the kept outputs' sweep, the open-files
+sampler, and the bucket mount service's proxy and check (``backend/server.py``
+and ``create_app``). Each other process starts its own monitor histories and
+samples its own open files (``backend/app/monitor/``). The launcher starts home
 first and the others once it serves, so that work is done before they serve;
 until then home owns every dataflow (``collaboration/owner_guard.py``).
 

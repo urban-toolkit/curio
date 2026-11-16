@@ -714,6 +714,12 @@ and a restart resets them. The LLM tokens are also written to
 samples to `.curio/monitor/open-files.json`. Each file holds at most the last
 90 days, and a restart starts it over.
 
+With `--backend-processes N` the page shows the whole backend: node runs,
+backend memory, errors and LLM tokens of every process, and in each hour the
+open files of the busiest process against its own limit. Process 1 and the
+others write their own files, such as `llm-tokens.1.json`. A process that
+does not answer is named at the top of the page, and its numbers are left out.
+
 ### What the page exposes, and who can read it
 
 **`/monitor` and its six routes are public and unauthenticated**, like
