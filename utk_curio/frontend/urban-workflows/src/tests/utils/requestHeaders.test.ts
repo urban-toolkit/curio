@@ -32,6 +32,7 @@ import { fetchOutputFile } from "../../services/outputFiles";
 import { reportNodeRuntime, resetNodeRuntimeReports } from "../../services/nodeRuntimeReport";
 import { datasetCatalogApi } from "../../services/datasetCatalog/datasetCatalogApi";
 import { forgetDashboardRunFiles, rememberDashboardRunFiles } from "../../services/runs/dashboardRunFiles";
+import { runsApi } from "../../services/runs/runsApi";
 import useStarters from "../../providers/starters";
 
 const HEADER = "X-Curio-Dataflow";
@@ -244,6 +245,24 @@ describe("what each client sends", () => {
 
     expect(asked).toHaveLength(1);
     expect(asked[0].headers[HEADER]).toBe(A);
+  });
+
+  test("a run of another dataflow names that one, and so do its list and its stream", async () => {
+    // A scenario drop runs its context in the scenario's own project, B, from
+    // the canvas of A (components/scenarios/useScenarioDrop.ts), and follows
+    // that run to its end.
+    await runsApi.start(B, { targets: ["n1"] });
+    await runsApi.listForProject(B);
+    await runsApi.follow("r1", () => {}, undefined, B);
+    // A run the page's own canvas follows names the page's.
+    await runsApi.follow("r2", () => {});
+
+    expect(asked.map(({ url, headers }) => [new URL(url, "http://backend").pathname, headers[HEADER]])).toEqual([
+      [`/api/projects/${B}/runs`, B],
+      [`/api/projects/${B}/runs`, B],
+      ["/api/runs/r1/stream", B],
+      ["/api/runs/r2/stream", A],
+    ]);
   });
 
   test("the same client on a page with no dataflow names none", async () => {
