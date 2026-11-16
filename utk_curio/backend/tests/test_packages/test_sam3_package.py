@@ -51,8 +51,8 @@ MODULE = "sam3_tracking"
 MODULE_SOURCE = PACKAGE / "sources" / f"{MODULE}.py"
 #: The node's settings, in its code tab's order, and the arguments they are.
 SETTINGS = {
-    "LABELS": "labels", "EVERY_SECONDS": "every_seconds", "FROM_SECONDS": "from_seconds",
-    "TO_SECONDS": "to_seconds", "MAX_SECONDS": "max_seconds", "WIDTH": "width",
+    "LABELS": "labels", "EVERY_SECONDS": "every_seconds", "FORGET_SECONDS": "forget_seconds",
+    "FROM_SECONDS": "from_seconds", "TO_SECONDS": "to_seconds", "MAX_SECONDS": "max_seconds", "WIDTH": "width",
 }
 #: Meta's SAM 3 is gated (``facebook/sam3``, at the revision sideseeing-tools
 #: pins, 3c879f39826c281e95690f02c7821c4de09afae7). Its weights download from
@@ -511,6 +511,7 @@ def test_the_code_tab_holds_its_settings_and_one_call_of_the_packages_module():
     assert settings["LABELS"] == DEFAULT_LABELS
     assert set(DEFAULT_LABELS) <= set(_manifest()["model"]["labels"])
     assert (settings["EVERY_SECONDS"], settings["FROM_SECONDS"], settings["TO_SECONDS"]) == (0.5, 0, None)
+    assert settings["FORGET_SECONDS"] == 10
     assert settings["MAX_SECONDS"] > 0 and settings["WIDTH"] % 2 == 0
     assert isinstance(returned, ast.Return) and isinstance(returned.value, ast.Call), ast.unparse(returned)
     call = returned.value
@@ -875,3 +876,234 @@ def test_sam3_finds_in_each_frame_what_it_finds_holding_every_frame(
         assert found["prompt_to_obj_ids"] == holding_all["prompt_to_obj_ids"], f"frame {index}: the labels differ"
         for key in ("object_ids", "scores", "boxes", "masks"):
             assert torch.equal(found[key], holding_all[key]), f"frame {index}: the {key} differ"
+
+
+# ---------------------------------------------------------------------------
+# Objects SAM 3 has not seen for a while
+# ---------------------------------------------------------------------------
+
+#: The side of the tiny SAM 3's low-res masks, the masks it detects and
+#: follows objects with.
+LOW_RES = SIZE * 288 // 1008
+
+
+@pytest.fixture(scope="module")
+def street_weights(tmp_path_factory):
+    """A tiny SAM 3 that follows up to 40 objects and holds each frame back
+    until it has seen seven after it, as SAM 3 holds a frame back fourteen."""
+    return _tiny_weights(tmp_path_factory, _tiny_config(max_num_objects=40, hotstart_delay=8))
+
+
+class _Street:
+    """A street SAM 3 is made to see, whatever its random weights would find:
+    objects, each of a label, at a place of its own, each in view at the
+    frames given. SAM 3's detector finds each object in view, and its tracker
+    shows each object it follows where the object is while it is in view, and
+    nothing while it is not. The rest of SAM 3 runs as it is: it matches what
+    it detects with what it follows, takes what it does not follow as a new
+    object, and holds each frame back.
+
+    After each frame SAM 3 hands back, :attr:`followed` notes the last frame
+    SAM 3 has looked at, which of the street's objects it follows, and the
+    ids of objects it no longer follows but still keeps entries of, such as
+    their scores and first frames."""
+
+    def __init__(self, monkeypatch, module, objects):
+        import torch
+
+        street, sam3 = self, module.Sam3VideoModel
+        #: Each object: its label, and the frames it is in view at.
+        self.objects = [(label, set(frames)) for label, frames in objects]
+        #: Each id SAM 3 gave an object: which of the street's it is.
+        self.follows = {}
+        self.followed = []
+        self._frame = None
+        self._masks = []
+        for index in range(len(objects)):
+            mask = torch.full((LOW_RES, LOW_RES), -10.0)
+            top, left = 2 + 9 * (index // 7), 2 + 9 * (index % 7)
+            mask[top:top + 6, left:left + 6] = 10.0
+            self._masks.append(mask)
+        real = {name: getattr(sam3, name) for name in (
+            "_det_track_one_frame", "_tracker_add_new_objects", "run_tracker_propagation",
+            "propagate_in_video_iterator")}
+
+        def one_frame(self, inference_session, frame_idx, reverse, streaming=False):
+            street._frame = frame_idx
+            return real["_det_track_one_frame"](
+                self, inference_session=inference_session, frame_idx=frame_idx, reverse=reverse, streaming=streaming)
+
+        def detect(self, inference_session, vision_embeds):
+            found = {}
+            for prompt_id, text in inference_session.prompts.items():
+                masks = [street._masks[index] for index, (label, frames) in enumerate(street.objects)
+                         if label == text and street._frame in frames]
+                found[prompt_id] = {
+                    "bbox": torch.tensor([[0.1, 0.1, 0.2, 0.2]] * len(masks)).reshape(-1, 4).to(self.device),
+                    "mask": (torch.stack(masks) if masks else torch.zeros(0, LOW_RES, LOW_RES)).to(self.device),
+                    "scores": torch.full((len(masks),), 0.9).to(self.device),
+                }
+            return found
+
+        def take(self, inference_session, frame_idx, new_obj_ids, new_obj_masks, reverse=False):
+            for object_id, mask in zip(new_obj_ids, new_obj_masks):
+                street.follows[object_id] = next(
+                    index for index, own in enumerate(street._masks) if torch.equal((mask > 0).cpu(), own > 0))
+            return real["_tracker_add_new_objects"](
+                self, inference_session=inference_session, frame_idx=frame_idx, new_obj_ids=new_obj_ids,
+                new_obj_masks=new_obj_masks, reverse=reverse)
+
+        def track(self, inference_session, frame_idx, reverse):
+            masks, scores = real["run_tracker_propagation"](
+                self, inference_session=inference_session, frame_idx=frame_idx, reverse=reverse)
+            masks, scores = masks.clone(), scores.clone()
+            for row, object_id in enumerate(inference_session.obj_ids):
+                index = street.follows[object_id]
+                in_view = frame_idx in street.objects[index][1]
+                masks[row] = street._masks[index].to(masks.device) if in_view else -10.0
+                scores[row] = 10.0 if in_view else -10.0
+            return masks, scores
+
+        def handed_back(self, inference_session, **kwargs):
+            for output in real["propagate_in_video_iterator"](self, inference_session=inference_session, **kwargs):
+                yield output
+                session = inference_session
+                ids = set(session.obj_ids)
+                kept = {*session.obj_first_frame_idx, *session.trk_keep_alive, *session.unmatched_frame_inds,
+                        *session.obj_id_to_score, *(i for pair in session.overlap_pair_to_frame_inds for i in pair)}
+                street.followed.append(
+                    (street._frame, sorted(street.follows[i] for i in ids), sorted(kept - ids)))
+
+        monkeypatch.setattr(sam3, "_det_track_one_frame", one_frame)
+        monkeypatch.setattr(sam3, "run_detection", detect)
+        monkeypatch.setattr(sam3, "_tracker_add_new_objects", take)
+        monkeypatch.setattr(sam3, "run_tracker_propagation", track)
+        monkeypatch.setattr(sam3, "propagate_in_video_iterator", handed_back)
+
+    def seen_within(self, frame, frames):
+        """The street's objects in view at *frame* or at one of the *frames*
+        before it."""
+        return [index for index, (_, at) in enumerate(self.objects) if any(frame - frames < f <= frame for f in at)]
+
+    def tracks(self, row):
+        """Each of the street's objects SAM 3 found in the video of *row*:
+        its tracks, in order, each as (start_s, end_s, frames)."""
+        import pandas as pd
+
+        found = {}
+        for track in pd.read_parquet(row["tracks"]).sort_values("start_s").itertuples():
+            found.setdefault(self.follows[track.object_id], []).append(
+                (float(track.start_s), float(track.end_s), int(track.frames)))
+        return dict(sorted(found.items()))
+
+
+def test_the_objects_sam3_follows_stop_adding_up_once_forget_seconds_has_passed(
+        street_weights, catalog_copy, few_threads, tmp_path, monkeypatch):
+    """SAM 3 drops an object only in its first frames, and follows every other
+    to the video's end, seen or not. On utk's GPU, through the 864 s
+    SideSeeing walk at a frame every second, the objects it followed added up
+    to 517 by 750 s, and a frame took 8 s, against 0.35 s with 11 objects.
+    FORGET_SECONDS, 10 by default, lets go of an object SAM 3 has not seen for
+    that long: between two frames, SAM 3 follows only the objects it saw in
+    the last 10 s, and keeps nothing of the others. Here an object passes
+    every 2 s through 30 s of a street, and a person stays in view."""
+    rows, helpers = _collection(tmp_path, seconds=30)
+    model = _loaded(catalog_copy, street_weights)(MODEL_ID)
+    passing = [("pole" if index % 2 else "person", [2 * index, 2 * index + 1]) for index in range(14)]
+    with _staged(tmp_path) as module:
+        street = _Street(monkeypatch, module, [*passing, ("person", range(30))])
+        module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS, every_seconds=1)
+
+    # Once SAM 3 has looked at the last frame, 29, nothing is let go.
+    between = [(frame, followed) for frame, followed, _ in street.followed if frame < 29]
+    seen = [(frame, street.seen_within(frame, 10)) for frame, _ in between]
+    assert between == seen, (
+        "objects SAM 3 followed after each frame, against those it saw in the last 10 frames: "
+        f"{[(frame, len(followed)) for frame, followed in between]}, not {[(f, len(s)) for f, s in seen]}")
+    leftovers = [(frame, kept) for frame, _, kept in street.followed if kept]
+    assert not leftovers, f"SAM 3 keeps entries of objects it no longer follows: {leftovers}"
+
+
+#: A street of 24 s: a pole out of view from 4 s to 17 s, a person out of view
+#: from 6 s to 13 s, and a person in view throughout.
+BACK_AGAIN = [("pole", [*range(4), *range(18, 24)]), ("person", [*range(6), *range(14, 24)]), ("person", range(24))]
+
+
+def test_an_object_back_after_forget_seconds_is_a_new_object_its_first_track_ending_where_it_was_last_seen(
+        street_weights, catalog_copy, few_threads, tmp_path, monkeypatch):
+    """The pole out of view for 14 s, longer than FORGET_SECONDS, 10 by
+    default, is let go: its track ends at 3 s, where SAM 3 last saw it, and at
+    18 s SAM 3 finds it again as a new object, with a new id, so it is counted
+    twice. The person out of view for 8 s keeps its id and its one track,
+    though SAM 3 hands its frames back seven frames late: whether SAM 3 has
+    seen an object is judged at the last frame it has looked at, not at the
+    last it has handed back."""
+    rows, helpers = _collection(tmp_path, seconds=24)
+    model = _loaded(catalog_copy, street_weights)(MODEL_ID)
+    with _staged(tmp_path) as module:
+        street = _Street(monkeypatch, module, BACK_AGAIN)
+        (row,) = module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS,
+                                      every_seconds=1).to_dict("records")
+
+    tracks = street.tracks(row)
+    assert tracks == {0: [(0.0, 3.0, 4), (18.0, 23.0, 6)], 1: [(0.0, 23.0, 16)], 2: [(0.0, 23.0, 24)]}, tracks
+    # SAM 3's ids, each with the street's object it is: the pole's second is its newest.
+    assert street.follows[max(street.follows)] == 0, street.follows
+    assert (row["pole_objects"], row["person_objects"]) == (2, 2)
+
+
+def test_with_forget_seconds_none_sam3_follows_every_object_to_the_end(
+        street_weights, catalog_copy, few_threads, tmp_path, monkeypatch):
+    """With FORGET_SECONDS None, SAM 3 follows every object it finds to the
+    part's end, seen or not: the pole out of view for 14 s keeps its id, and
+    has one track, from 0 s to 23 s."""
+    rows, helpers = _collection(tmp_path, seconds=24)
+    model = _loaded(catalog_copy, street_weights)(MODEL_ID)
+    with _staged(tmp_path) as module:
+        street = _Street(monkeypatch, module, BACK_AGAIN)
+        (row,) = module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS,
+                                      every_seconds=1, forget_seconds=None).to_dict("records")
+
+    tracks = street.tracks(row)
+    assert tracks == {0: [(0.0, 23.0, 10)], 1: [(0.0, 23.0, 16)], 2: [(0.0, 23.0, 24)]}, tracks
+    assert (row["pole_objects"], row["person_objects"]) == (1, 2)
+    assert {frame: followed for frame, followed, _ in street.followed}[23] == [0, 1, 2]
+
+
+def test_letting_go_of_an_object_leaves_what_sam3_finds_of_every_other(
+        street_weights, catalog_copy, few_threads, tmp_path, monkeypatch):
+    """Letting go of an object that does not come back changes nothing SAM 3
+    finds: in each frame, the same objects, with the same ids, labels, scores,
+    boxes and masks, as when SAM 3 follows it to the end. Here SAM 3 lets go
+    of an object three frames after it last saw it, fewer than the seven
+    frames it holds back, so the frames it still holds back show objects it
+    has let go; at 15 s it lets go of the only object it follows; and the
+    person it finds at 16 s gets the id it gets when SAM 3 lets go of
+    nothing."""
+    import torch
+    from PIL import Image
+
+    frames = [Image.fromarray(_street(index)) for index in range(20)]
+    path = _loaded(catalog_copy, street_weights)(MODEL_ID).path
+    objects = [("pole", range(5)), ("person", range(2, 10)), ("pole", range(11, 13)), ("person", range(16, 20))]
+    with _staged(tmp_path) as module:
+        street = _Street(monkeypatch, module, objects)
+        processor = module.Sam3VideoProcessor.from_pretrained(path, local_files_only=True)
+        sam3 = module.Sam3VideoModel.from_pretrained(path, local_files_only=True).eval()
+        run = SimpleNamespace(processor=processor, sam3=sam3, device="cpu", dtype=torch.float32, labels=TWO_LABELS)
+        with torch.inference_mode():
+            kept = list(module._follow(run, frames))
+            kept_followed, street.followed = street.followed, []
+            let_go = list(module._follow(run, frames, 3))
+
+    assert kept_followed[-1][1] == [0, 1, 2, 3], kept_followed
+    between = [(frame, followed) for frame, followed, _ in street.followed if frame < 19]
+    assert between == [(frame, street.seen_within(frame, 3)) for frame, _ in between], between
+    assert ({frame: followed for frame, followed in between}[15], street.followed[-1][1]) == ([], [3])
+    assert [index for index, _ in let_go] == [index for index, _ in kept] == list(range(len(frames)))
+    shown = [found["object_ids"].tolist() for _, found in let_go]
+    assert shown[1:5] == [[0], [0, 1], [0, 1], [0, 1]] and shown[11:13] == [[2], [2]], shown
+    for (index, found), (_, followed_to_the_end) in zip(let_go, kept):
+        assert found["prompt_to_obj_ids"] == followed_to_the_end["prompt_to_obj_ids"], f"frame {index}: the labels differ"
+        for key in ("object_ids", "scores", "boxes", "masks"):
+            assert torch.equal(found[key], followed_to_the_end[key]), f"frame {index}: the {key} differ"
