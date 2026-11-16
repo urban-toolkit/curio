@@ -342,7 +342,10 @@ class _Sightings:
     def note(self, _sam3, _args, output):
         """Note the objects SAM 3's *output* of a frame shows: each with a mask
         SAM 3 does not hide there, and each new object, at the frame SAM 3
-        found it."""
+        found it. And put back the labels of the objects let go that outputs
+        SAM 3 holds back show: dropping the last object it follows, SAM 3
+        clears every label."""
+        self._session.obj_id_to_prompt_id.update({object_id: label for object_id, (label, _) in self._held.items()})
         masks = output.obj_id_to_mask
         if not masks:
             return
