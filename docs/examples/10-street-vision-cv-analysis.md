@@ -125,7 +125,7 @@ return gdf
 
 ## Step 5: Pair each photo with its neighborhood and chart it (`Spatial Join`, `Vega-Lite`)
 
-The Spatial Join node (built-in, in `curio.builtin@1`) has two input circles on its left edge, each a hollow ring that fills in once wired: **input_0** (the upper, blue one) and **input_1** (the lower, green one). Wire the `Simple View` output to the blue circle and the `Python Computation` output to the green circle, and run them. The operation stays at **intersects** and the output at **One row per pair**, the defaults.
+The Spatial Join node (built-in, in `curio.builtin@1`) has two input circles on its left edge: **input_0** (the upper one) and **input_1** (the lower one). Wire the `Simple View` output to the upper circle and the `Python Computation` output to the lower circle, and run the join. Its **Operation** stays at **intersects** and its **Output** at **pairs**, the defaults; its code calls `spatial_join` with them.
 
 The node emits one row per photo and neighborhood that meet: the photo's own columns, with the neighborhood's columns (`neighborhood`, `sec_neigh`, `shape_area`, `shape_len`) added. A photo outside every neighborhood has no pair and is left out; every one of the 40 sample photos has one.
 

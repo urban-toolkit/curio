@@ -1,9 +1,11 @@
 {
   "sha256": {
-    "README.md": "4f403ab48b71d2bf96bb0a5c5d01c67a2b1fddb125206132ea5fb169c1bad698",
-    "manifest.json": "0e64c80c49b6f2775519c45d111769ce2589dfd8ce9a4b471da521462ba402c1",
+    "README.md": "b15ebeccfd15ee0c4942437f8e58fa46a69f9d5619c620881118d28ce6230573",
+    "manifest.json": "cdc886675f0eccb0e77eee9d46c9ef5e502214b8948a31ed0b0c766df6ba87e9",
     "sources/data-export.py": "355737904ed4868836d74fb6b9c8cfdc6b3bc7150a6da401d7c8a382a747b155",
     "sources/data-loading.py": "d53681dfdb38b6dba78d2d7b04b21ed75d985b88bc6843805b5cd271351aca9a",
-    "sources/data-summary.py": "e118c6f4ad7dcb4dd58a1986b2efc1449860ce10b52f55e8849596370452b5f0"
+    "sources/data-summary.py": "e118c6f4ad7dcb4dd58a1986b2efc1449860ce10b52f55e8849596370452b5f0",
+    "sources/spatial-join.py": "94547d808d02f68b867c2dd329431f9b6820bf50f1c90c888476945943151399",
+    "sources/spatial_join.py": "6690cd609ff61389a96a904a32fb77fa5b38566f5de9b721c1649baa038e7421"
   }
 }

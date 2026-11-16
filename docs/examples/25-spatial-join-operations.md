@@ -57,9 +57,15 @@ return gdf
 
 ## How the node joins
 
-The `Spatial Join` node has two input circles: **input_0** (the upper, blue one) and **input_1** (the lower, green one). input_0 is the left side of the join, and either circle takes any shapes. The body reads as a sentence, *Pair each input_0 row with the input_1 rows it ...*, finished by the operation you pick.
+The `Spatial Join` node has two input circles: **input_0** (the upper one) and **input_1** (the lower one). input_0 is the left side of the join, and either circle takes any shapes. It opens on its two controls, **Operation**, which pairs each input_0 row with the input_1 rows it meets, and **Output**. Its code is the call they set, of `spatial_join`, a function of the built-in package:
 
-Its output is either:
+```python
+from spatial_join import spatial_join
+
+return spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])
+```
+
+It prints how many rows it paired, such as *359 pairs: 359 of 359 input_0 rows matched.* Its output is either:
 - **one row per pair**, input_0's row and shape with input_1's columns added. A column whose name input_0 already has comes in as `<column>_right`.
 - **counts**: input_1's rows, each with `point_count`, the number of input_0 rows paired with it.
 

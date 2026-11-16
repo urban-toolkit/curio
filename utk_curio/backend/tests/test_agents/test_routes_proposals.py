@@ -1617,7 +1617,7 @@ class TestPlanFanInValidation:
     #: edge each, on the circles "in" (input_0) and "in_1" (input_1).
     TWO_PORT_TEMPLATES = BOUNDED_TEMPLATES[:1] + [
         {"id": "spatial-join", "label": "Spatial Join",
-         "category": "data", "engine": "python", "editor": "none", "hasCode": False,
+         "category": "data", "engine": "python", "editor": "code", "hasCode": True,
          "description": "Pair the rows of two inputs whose shapes meet.",
          "inputPorts": [{"types": ["GEODATAFRAME"], "cardinality": "1"},
                         {"types": ["GEODATAFRAME"], "cardinality": "1"}],

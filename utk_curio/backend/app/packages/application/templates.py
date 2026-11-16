@@ -360,19 +360,20 @@ _CATALOG_FACTS: dict[tuple[str, int], dict[str, dict]] = {}
 def _catalog_facts() -> dict[str, dict]:
     """What the templates of the package catalog's own copies
     (``catalog_root``) declare, by canonical template id: ``flags``, the flags
-    each declares, ``behaviors``, the behavior each names, and ``labels``,
-    the label each shows."""
+    each declares, ``behaviors``, the behavior each names, ``labels``, the
+    label each shows, and ``grammars``, the grammar each writes."""
     root = catalog_root()
     try:
         key = (str(root), root.stat().st_mtime_ns)
     except OSError:
-        return {"flags": {}, "behaviors": {}, "labels": {}}
+        return {"flags": {}, "behaviors": {}, "labels": {}, "grammars": {}}
     cached = _CATALOG_FACTS.get(key)
     if cached is not None:
         return cached
     flags: dict[str, frozenset[str]] = {}
     behaviors: dict[str, str] = {}
     labels: dict[str, str] = {}
+    grammars: dict[str, str] = {}
     for package_dir in sorted(root.iterdir()):
         if not package_dir.is_dir():
             continue
@@ -389,7 +390,9 @@ def _catalog_facts() -> dict[str, dict]:
                 behaviors.setdefault(canonical, template.behavior)
             if isinstance(template.label, str) and template.label:
                 labels.setdefault(canonical, template.label)
-    facts = {"flags": flags, "behaviors": behaviors, "labels": labels}
+            if isinstance(template.grammar_id, str) and template.grammar_id:
+                grammars.setdefault(canonical, template.grammar_id)
+    facts = {"flags": flags, "behaviors": behaviors, "labels": labels, "grammars": grammars}
     _CATALOG_FACTS.clear()
     _CATALOG_FACTS[key] = facts
     return facts
@@ -405,6 +408,13 @@ def catalog_template_behaviors() -> dict[str, str]:
     """``{canonical template id: the behavior it names}`` for the templates of
     the package catalog's own copies (``catalog_root``) that name one."""
     return _catalog_facts()["behaviors"]
+
+
+def catalog_template_grammars() -> dict[str, str]:
+    """``{canonical template id: the grammar its document is written in}``
+    (``grammarId``, such as ``vega-lite``) for the templates of the package
+    catalog's own copies (``catalog_root``) that name one."""
+    return _catalog_facts()["grammars"]
 
 
 def catalog_template_labels() -> dict[str, str]:

@@ -624,7 +624,7 @@ function generateCells(
       : nodeType === NodeType.JS_COMPUTATION
         ? "A JavaScript computation. Its source is preserved below; it cannot run in this notebook's Python kernel."
         : nodeType === SPATIAL_JOIN_TYPE
-          ? "A spatial join, configured on the canvas rather than in code."
+          ? "A spatial join. Its code calls spatial_join, a function of Curio's built-in package, which this notebook's Python kernel does not have."
           : nodeType === NodeType.VIS_SIMPLE
             ? "A Simple View node, which displays its input rather than computing anything."
             : "This node is provided by a package and has no Python equivalent here.";

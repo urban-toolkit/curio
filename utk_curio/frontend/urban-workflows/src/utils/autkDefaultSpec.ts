@@ -15,6 +15,7 @@
  *
  * Pure, with no autk import, so it is testable under jest.
  */
+import autkGrammar from "../contracts/autkGrammar.json";
 import visDefaults from "../contracts/visDefaults.json";
 import { autkTableName } from "./autkInput";
 import { resolveGeometryField } from "./geometryField";
@@ -48,7 +49,10 @@ export interface AutkStarterRule {
  * place in the ladder, the layers and columns it needs and the family it
  * writes) is in `autkStarterLadder` of contracts/visDefaults.json, which the
  * agents' shared preamble states too; a test holds these ids to the ladder's,
- * one builder per rule.
+ * one builder per rule. A rule that colors its layer by a column writes the
+ * column's type and color map of `starterColoring` in contracts/autkGrammar.json,
+ * whatever the input, which the backend reads too (the agents' worked examples
+ * leave those lines out of an evaluation's answer).
  */
 export const AUTK_STARTER_BUILDERS: Readonly<
   Record<string, (layers: StarterLayer[]) => Record<string, unknown>>
@@ -59,8 +63,7 @@ export const AUTK_STARTER_BUILDERS: Readonly<
       dataRef: layer.name,
       title: layer.columns.quantitative[0],
       getFnv: layer.columns.quantitative[0],
-      getFnvType: "quantitative",
-      colorMapInterpolator: "interpolateViridis",
+      ...autkGrammar.starterColoring["geometry+quantitative"],
     }],
   }),
   "geometry+nominal": ([layer]) => ({
@@ -68,8 +71,7 @@ export const AUTK_STARTER_BUILDERS: Readonly<
       dataRef: layer.name,
       title: layer.columns.nominal[0],
       getFnv: layer.columns.nominal[0],
-      getFnvType: "categorical",
-      colorMapInterpolator: "schemeTableau10",
+      ...autkGrammar.starterColoring["geometry+nominal"],
     }],
   }),
   geometry: ([layer]) => ({ layerRefs: [{ dataRef: layer.name }] }),

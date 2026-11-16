@@ -1,23 +1,22 @@
 /**
- * A Spatial Join whose two inputs land in one render keeps both.
+ * A node with several input ports reads each input on its port's circle,
+ * whatever order and render the inputs land in.
  *
- * Example 10's Run All e2e (`test_run_all_draws_every_chart_without_an_empty_render`)
- * failed now and then with one join saying "The Spatial Join has no polygons to
- * join" (or "no points"), while the node feeding it read Done and the twin
- * join, fed seconds apart, worked. In each of the five failed runs the Data
- * Transformation, which hands both joins their polygons, finished 46 to 57 ms
- * after the Image Segmentation above the failing join, whose Simple View
- * hands that join its points. Both inputs then reached the join in one render,
- * and the failing join never fetched the input it lost: where the run kept a
- * browser log, that artifact was fetched once, by another node only.
+ * The Spatial Join's two ports are input_0 (`in`) and input_1 (`in_1`). Its
+ * body used to resolve each port's input itself; it is a code node now, and
+ * its code reads `data.input` as any code node does. Example 10's Run All
+ * e2e once lost one of a join's inputs when both landed in one render (the
+ * Data Transformation's polygons 46 to 57 ms after the Image Segmentation's
+ * points): `input` names only the latest arrival. So a node with several
+ * ports keeps each port's input (`data.portInputs`) and reads them, port k on
+ * circle k, as a growing node reads its circles (`nodeInputFromPorts`).
  *
  * Drives the REAL FlowProvider (applyNewOutput -> propagateDownstreamInputs,
- * hydrateRestoredOutputs) and the real React Flow store, with the join's real
- * behavior rendered as its canvas node, and asks the join as Run All does
- * (its sendCodeOverride). Two outputs in one `act` are one render, as two
- * outputs landing before React renders are in the browser.
+ * hydrateRestoredOutputs, onEdgesDelete) and the real React Flow store. Two
+ * outputs in one `act` are one render, as two outputs landing before React
+ * renders are in the browser.
  */
-import React, { useRef } from 'react';
+import React from 'react';
 import { render, act } from '@testing-library/react';
 import { Position, ReactFlow, ReactFlowProvider } from 'reactflow';
 import { faCircle } from '@fortawesome/free-solid-svg-icons';
@@ -80,42 +79,14 @@ jest.mock('../../hook/useVega', () => ({
 jest.mock('vega', () => ({}), { virtual: true });
 jest.mock('vega-lite', () => ({}), { virtual: true });
 
-// The artifact fetch the join resolves `{ path, dataType }` inputs with. The
-// join's own POST goes through `global.fetch`, stubbed in beforeEach.
-const mockFetchData = jest.fn();
-jest.mock('../../services/api', () => ({
-  ...jest.requireActual('../../services/api'),
-  fetchData: (...args: unknown[]) => mockFetchData(...args),
-}));
-
 import FlowProvider, { useFlowContext } from '../../providers/FlowProvider';
 import { CURIO_UNIVERSAL_NODE_TYPE, NodeType, SupportedType } from '../../constants';
 import { registerNode } from '../../registry/nodeRegistry';
 import type { NodeDescriptor } from '../../registry/types';
-import { useSpatialJoinBehavior } from '../../adapters/node/spatialJoinBehavior';
-import { behaviorDataView } from '../../utils/behaviorDataView';
+import { normalizeFlowInput } from '../../utils/flowOutputRef';
 
-/** The node type example 10 and example 15 give their joins. */
+/** The Spatial Join's type: a code node with two input ports. */
 const JOIN_TYPE = 'curio.builtin/spatial-join';
-
-const PHOTOS = {
-  type: 'FeatureCollection',
-  features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [-87.63, 41.88] }, properties: { name: 'photo-1.jpg' } }],
-};
-const NEIGHBORHOODS = {
-  type: 'FeatureCollection',
-  features: [{
-    type: 'Feature',
-    geometry: { type: 'Polygon', coordinates: [[[-88, 41], [-87, 41], [-87, 42], [-88, 42], [-88, 41]]] },
-    properties: { neighborhood: 'Loop' },
-  }],
-};
-
-/** What each input's artifact holds, as `/get` answers it. */
-const ARTIFACTS: Record<string, unknown> = {
-  'photos-artifact': { dataType: 'geodataframe', data: PHOTOS, schema: {} },
-  'neighborhoods-artifact': { dataType: 'geodataframe', data: NEIGHBORHOODS, schema: {} },
-};
 
 /** What a Simple View hands on: the Image Segmentation's artifact, as it received it. */
 const POINTS_OUT = { path: 'photos-artifact', dataType: 'geodataframe' };
@@ -134,11 +105,11 @@ beforeAll(() => {
       { types: [SupportedType.GEODATAFRAME], cardinality: '1' },
     ],
     outputPorts: [{ types: [SupportedType.GEODATAFRAME] }],
-    editor: 'none',
+    editor: 'code',
     inPalette: true,
     description: '',
-    hasCode: false,
-    hasWidgets: false,
+    hasCode: true,
+    hasWidgets: true,
     hasGrammar: false,
     adapter: {
       handles: [
@@ -146,9 +117,9 @@ beforeAll(() => {
         { id: 'in_1', type: 'target', position: Position.Left },
         { id: 'out', type: 'source', position: Position.Right },
       ],
-      editor: { code: false, grammar: false, widgets: false },
+      editor: { code: true, grammar: false, widgets: true },
       container: {},
-      useNodeBehavior: useSpatialJoinBehavior,
+      useNodeBehavior: () => ({}),
     },
   };
   registerNode(descriptor);
@@ -157,32 +128,15 @@ beforeAll(() => {
 type FlowApi = ReturnType<typeof useFlowContext>;
 let api: FlowApi;
 
-/** Each rendered join: its behavior as last rendered, and every outcome it set. */
-const joins = new Map<string, { behavior: any; outcomes: any[] }>();
+/** The data each rendered node last held, by node id. */
+const seen = new Map<string, any>();
 
-/** The join as its canvas node runs it: the store's node data, through the behavior. */
-const JoinNode: React.FC<{ data: any }> = ({ data }) => {
-  const held = useRef<{ outcomes: any[]; nodeState: any } | null>(null);
-  if (!held.current) {
-    const outcomes: any[] = [];
-    held.current = {
-      outcomes,
-      // Stable for the node's lifetime, as useNodeState's is.
-      nodeState: {
-        output: { code: '', content: '' },
-        setOutput: (output: any) => { outcomes.push(output); },
-        code: '',
-        setCode: () => {},
-        templateData: {},
-      },
-    };
-  }
-  const behavior = useSpatialJoinBehavior(behaviorDataView(data), held.current.nodeState);
-  joins.set(data.nodeId, { behavior, outcomes: held.current.outcomes });
-  return <div data-testid={`join-${data.nodeId}`}>{behavior.contentComponent}</div>;
+const ProbeNode: React.FC<{ data: any }> = ({ data }) => {
+  seen.set(data.nodeId, data);
+  return <div data-testid={`node-${data.nodeId}`} />;
 };
 
-const NODE_TYPES = { join: JoinNode };
+const NODE_TYPES = { probe: ProbeNode };
 
 const Bridge: React.FC = () => {
   const ctx = useFlowContext();
@@ -210,7 +164,6 @@ function makeNode(id: string, nodeType: string, type: string = CURIO_UNIVERSAL_N
       nodeType,
       input: '',
       inputTypes: [],
-      // What a canvas node's data carries (useCode): its output, downstream.
       outputCallback: (nodeId: string, output: unknown, options?: object) =>
         api.applyNewOutput({ nodeId, output, ...options } as any),
     },
@@ -241,7 +194,7 @@ async function addEdge(source: string, target: string, targetHandle: string) {
   await flush();
 }
 
-/** A join with *points* wired to input_0, its blue circle, and *polygons* to input_1, its green one. */
+/** A join with *points* wired to input_0 and *polygons* to input_1. */
 async function openJoin(points: { id: string; type: string }, polygons: { id: string; type: string }) {
   render(
     <ReactFlowProvider>
@@ -252,13 +205,13 @@ async function openJoin(points: { id: string; type: string }, polygons: { id: st
   );
   await flush();
   await act(async () => {
-    [makeNode(points.id, points.type), makeNode(polygons.id, polygons.type), makeNode('join', JOIN_TYPE, 'join')]
+    [makeNode(points.id, points.type), makeNode(polygons.id, polygons.type), makeNode('join', JOIN_TYPE, 'probe')]
       .forEach((n) => api.addNode(n, undefined, false));
   });
   await flush();
   await addEdge(points.id, 'join', 'in');
   await addEdge(polygons.id, 'join', 'in_1');
-  expect(joins.has('join')).toBe(true);
+  expect(seen.has('join')).toBe(true);
 }
 
 /** Example 10's route: a Simple View's points and the Python Computation's polygons. */
@@ -267,51 +220,17 @@ const ROUTE = {
   polygons: { id: 'transform', type: 'curio.builtin/python-computation' },
 };
 
-/** What the join answers when a run asks it, as Run All asks it. */
-async function askTheJoin(): Promise<any> {
-  const join = joins.get('join')!;
-  await act(async () => {
-    await join.behavior.sendCodeOverride();
-  });
-  return join.outcomes.at(-1);
+/** What the join's code reads: the points on circle 0, the polygons on circle 1. */
+function bothOnTheirCircles(points: unknown, polygons: unknown) {
+  return { dataType: 'outputs', data: [normalizeFlowInput(points), normalizeFlowInput(polygons)] };
 }
 
-/** The inputs of every join posted to the backend. */
-const posted: Array<{ left: unknown; right: unknown }> = [];
-
 beforeEach(() => {
-  joins.clear();
-  posted.length = 0;
-  mockFetchData.mockImplementation(async (path: string) => ARTIFACTS[path]);
-  (global as any).fetch = jest.fn(async (url: string, init?: { body?: string }) => {
-    // The join keeps its pairs as an output before it hands them on (#1333).
-    if (String(url).endsWith('/storeOutput')) {
-      return { ok: true, status: 200, json: async () => ({ output: { path: 'art-joined', dataType: 'geodataframe' } }) };
-    }
-    if (!String(url).endsWith('/spatial_join')) return { ok: false, status: 404, json: async () => ({}) };
-    const body = JSON.parse(init?.body ?? '{}');
-    posted.push({ left: body.left, right: body.right });
-    const features = body.left.features.map((f: any) => ({ ...f, properties: { ...f.properties, neighborhood: 'Loop' } }));
-    return {
-      ok: true,
-      json: async () => ({
-        type: 'FeatureCollection',
-        features,
-        metadata: { output: 'pairs', predicate: 'intersects', pairs: features.length, matched_left: features.length,
-                    left_rows: features.length, matched_right: 1, right_rows: 1 },
-      }),
-    };
-  });
+  seen.clear();
 });
 
-afterEach(() => {
-  jest.clearAllMocks();
-});
-
-const JOINED = { asked: { code: 'success', content: '' }, posted: [{ left: PHOTOS, right: NEIGHBORHOODS }] };
-
-describe('a Spatial Join whose two inputs land in one render', () => {
-  test('the polygons, then the points: the join gets both and joins them', async () => {
+describe('a node with several ports whose inputs land in one render', () => {
+  test('the polygons, then the points: the code reads both, each on its circle', async () => {
     // Run 37238862475 (#717), twice: the polygons were lost.
     await openJoin(ROUTE.points, ROUTE.polygons);
 
@@ -321,10 +240,10 @@ describe('a Spatial Join whose two inputs land in one render', () => {
     });
     await flush();
 
-    expect({ asked: await askTheJoin(), posted }).toEqual(JOINED);
+    expect(seen.get('join').input).toEqual(bothOnTheirCircles(POINTS_OUT, POLYGONS_OUT));
   });
 
-  test('the points, then the polygons: the join gets both and joins them', async () => {
+  test('the points, then the polygons: the code reads both, each on its circle', async () => {
     // Runs 37196358465 (#703), 37224332761 and 37480444036 (#760): the points were lost.
     await openJoin(ROUTE.points, ROUTE.polygons);
 
@@ -334,26 +253,30 @@ describe('a Spatial Join whose two inputs land in one render', () => {
     });
     await flush();
 
-    expect({ asked: await askTheJoin(), posted }).toEqual(JOINED);
+    expect(seen.get('join').input).toEqual(bothOnTheirCircles(POINTS_OUT, POLYGONS_OUT));
   });
 
-  test('the two inputs in two renders: the join gets both and joins them', async () => {
-    // The order every passing run had: the Python Computation seconds apart.
+  test('the two inputs in two renders: one on its circle, then both', async () => {
     await openJoin(ROUTE.points, ROUTE.polygons);
 
     await act(async () => {
       api.applyNewOutput({ nodeId: 'transform', output: POLYGONS_OUT } as any);
     });
     await flush();
+    // Until every wired circle holds a value the node reads nothing, as a
+    // growing node does: it never runs on part of its inputs.
+    expect(seen.get('join').input).toBe('');
+    expect(seen.get('join').portInputs).toEqual({ in_1: normalizeFlowInput(POLYGONS_OUT) });
+
     await act(async () => {
       api.applyNewOutput({ nodeId: 'view', output: POINTS_OUT } as any);
     });
     await flush();
 
-    expect({ asked: await askTheJoin(), posted }).toEqual(JOINED);
+    expect(seen.get('join').input).toEqual(bothOnTheirCircles(POINTS_OUT, POLYGONS_OUT));
   });
 
-  test('a reopened dataflow: both restored inputs reach the join, and a play of it joins them', async () => {
+  test('a reopened dataflow: both restored inputs reach the join, each on its circle', async () => {
     // Example 15's shape: two Data Loading nodes feed the join. A load
     // restores every saved output in one tick (hydrateRestoredOutputs).
     await openJoin(
@@ -370,15 +293,20 @@ describe('a Spatial Join whose two inputs land in one render', () => {
     });
     await flush();
 
-    expect({ asked: await askTheJoin(), posted }).toEqual(JOINED);
+    expect(seen.get('join').input).toEqual(bothOnTheirCircles('photos-artifact', 'neighborhoods-artifact'));
   });
 });
 
-describe("a Spatial Join's circles keep their inputs (#576)", () => {
-  test('deleting input_0 leaves input_1 on its own circle', async () => {
+describe("a node's several ports keep their inputs (#576)", () => {
+  test('deleting input_0 leaves input_1 on its own circle, and the code reads it there alone', async () => {
     // A growing node closes its circles up when an edge goes; a node with
     // several ports must not, or input_1 would become the join's left side.
     await openJoin(ROUTE.points, ROUTE.polygons);
+    await act(async () => {
+      api.applyNewOutput({ nodeId: 'view', output: POINTS_OUT } as any);
+      api.applyNewOutput({ nodeId: 'transform', output: POLYGONS_OUT } as any);
+    });
+    await flush();
     const doomed = api.edges.filter((e: any) => e.targetHandle === 'in');
     await act(async () => {
       api.onEdgesDelete(doomed);
@@ -387,5 +315,8 @@ describe("a Spatial Join's circles keep their inputs (#576)", () => {
     await flush();
 
     expect(api.edges.map((e: any) => [e.source, e.targetHandle])).toEqual([['transform', 'in_1']]);
+    expect(seen.get('join').portInputs).toEqual({ in_1: normalizeFlowInput(POLYGONS_OUT) });
+    // One wired circle, circle 1: its value alone, which the run names input_1.
+    expect(seen.get('join').input).toEqual(normalizeFlowInput(POLYGONS_OUT));
   });
 });

@@ -110,12 +110,45 @@
         "type": "curio.builtin/spatial-join",
         "x": 678,
         "y": 860,
-        "content": "",
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Pair each green roof with the neighborhood it intersects.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              }
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
         }
       },
       {
@@ -123,16 +156,47 @@
         "type": "curio.builtin/spatial-join",
         "x": 678,
         "y": 1620,
-        "content": "",
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Count the sidewalk labels within each neighborhood.",
         "metadata": {
           "keywords": [],
-          "spatialJoin": {
-            "predicate": "within",
-            "output": "counts"
-          }
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              },
+              "value": "within"
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              },
+              "value": "counts"
+            }
+          ]
         }
       },
       {
@@ -140,15 +204,46 @@
         "type": "curio.builtin/spatial-join",
         "x": 1290,
         "y": 1208,
-        "content": "",
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Pair each neighborhood with the sidewalk labels it contains.",
         "metadata": {
           "keywords": [],
-          "spatialJoin": {
-            "predicate": "contains"
-          }
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              },
+              "value": "contains"
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
         }
       },
       {
@@ -156,15 +251,46 @@
         "type": "curio.builtin/spatial-join",
         "x": 1290,
         "y": 1588,
-        "content": "",
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Pair each neighborhood with the neighborhoods it touches.",
         "metadata": {
           "keywords": [],
-          "spatialJoin": {
-            "predicate": "touches"
-          }
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              },
+              "value": "touches"
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
         }
       },
       {
@@ -172,15 +298,46 @@
         "type": "curio.builtin/spatial-join",
         "x": 678,
         "y": 1240,
-        "content": "",
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Pair each neighborhood with the ZIP codes it overlaps.",
         "metadata": {
           "keywords": [],
-          "spatialJoin": {
-            "predicate": "overlaps"
-          }
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              },
+              "value": "overlaps"
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
         }
       },
       {
@@ -188,15 +345,46 @@
         "type": "curio.builtin/spatial-join",
         "x": 1902,
         "y": 25,
-        "content": "",
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Pair each ZIP border with the neighborhoods it crosses.",
         "metadata": {
           "keywords": [],
-          "spatialJoin": {
-            "predicate": "crosses"
-          }
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              },
+              "value": "crosses"
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
         }
       },
       {
@@ -204,15 +392,46 @@
         "type": "curio.builtin/spatial-join",
         "x": 678,
         "y": 480,
-        "content": "",
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Pair each green roof with its nearest sidewalk label, and how far it is.",
         "metadata": {
           "keywords": [],
-          "spatialJoin": {
-            "predicate": "nearest"
-          }
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              },
+              "value": "nearest"
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
         }
       },
       {
@@ -220,12 +439,45 @@
         "type": "curio.builtin/spatial-join",
         "x": 1290,
         "y": 1968,
-        "content": "",
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Pair the points with the squares they intersect: the edge point meets both.",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              }
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
         }
       },
       {
@@ -233,15 +485,46 @@
         "type": "curio.builtin/spatial-join",
         "x": 1290,
         "y": 2348,
-        "content": "",
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Pair the points with the squares they lie within: the edge point is in neither.",
         "metadata": {
           "keywords": [],
-          "spatialJoin": {
-            "predicate": "within"
-          }
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              },
+              "value": "within"
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
         }
       },
       {

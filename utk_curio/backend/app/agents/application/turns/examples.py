@@ -39,6 +39,7 @@ from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+from utk_curio.backend.app.execution.code_references import VEGA_LITE, normalize_widgets, widget_with_default
 from utk_curio.backend.app.projects import services as projects_services
 from utk_curio.backend.app.projects import shipped as projects_shipped
 
@@ -54,9 +55,10 @@ NOT_USED = "Not used"
 TOP_K = 2
 #: The block's size bound, in characters, about 3,500 tokens. The block is not
 #: cached, so every opted-in run pays for it; at this size every "Used"
-#: example but the three largest (04, 05, 06) can be shown, usually one large
-#: example or two small ones. An example that does not fit is left out; the
-#: next one in rank order may still fit.
+#: example but the four largest can be shown, usually one large example or two
+#: small ones: 06, 05, 04 and 25 take about 25,000 to 33,000 characters each
+#: alone, and the largest that fits, 10, about 13,900. An example that does not
+#: fit is left out; the next one in rank order may still fit.
 MAX_BLOCK_CHARS = 14_000
 #: Words shorter than this never count.
 MIN_WORD_LEN = 3
@@ -80,7 +82,10 @@ STOP_WORDS = frozenset({
 })
 
 #: How long a code line must be to count as part of an evaluation's answer: an
-#: example that shares one with the scored dataflow is not shown to its runs.
+#: example that holds one of the scored dataflow's is not shown to its runs.
+#: A line Curio writes into a node, because its template's code or the canvas
+#: starts it with it or a dataset's loader snippet writes it whatever the
+#: dataset, is no part of an answer (:func:`_answer_parts`).
 SHARED_LINE_CHARS = 25
 
 # An evaluation marks the project it builds with ``dataflow.evaluation``
@@ -233,9 +238,10 @@ def excluded_by(spec: object, examples: list[Example] | None = None) -> set[str]
 
     An evaluation scores the run against one shipped dataflow, named by its
     marker's ``fixtureId``. The run is shown neither that dataflow nor any
-    example that shares a piece of it (a node or edge id, or a code line of
-    ``SHARED_LINE_CHARS`` or more): either would hand the run part of the
-    answer, and the score would measure copying."""
+    example that holds a piece of it (a node or edge id, or a code line of
+    ``SHARED_LINE_CHARS`` or more but one Curio writes into a node whatever
+    the dataflow, :func:`_answer_parts`): either would hand the run part of
+    the answer, and the score would measure copying."""
     own = _ids(spec)
     pool = (used_examples() if examples is None else examples) if own else []
     excluded = {e.key for e in pool if _ids(e.spec) & own}
@@ -247,7 +253,7 @@ def excluded_by(spec: object, examples: list[Example] | None = None) -> set[str]
     answer = _scored_parts(fixture_id)
     if answer:
         pool = pool or (used_examples() if examples is None else examples)
-        excluded.update(e.key for e in pool if _answer_parts(e.spec) & answer)
+        excluded.update(e.key for e in pool if _shown_parts(e.spec) & answer)
     return excluded
 
 
@@ -272,17 +278,86 @@ def _ids(spec: object) -> set[str]:
 
 
 def _answer_parts(spec: object) -> set[str]:
-    """A dataflow's node and edge ids, and its code lines of ``SHARED_LINE_CHARS`` or more."""
+    """A scored dataflow's node and edge ids, and its code lines of
+    ``SHARED_LINE_CHARS`` or more but those Curio writes into a node: those
+    a node holds only because its template's code or the canvas starts it
+    with them (:func:`_starter_lines`), such as a Data Loading node's loader
+    line, a Vega-Lite spec's ``$schema`` or an Autark layer's coloring, and
+    those a dataset's loader snippet writes whatever the dataset is, in any
+    node (``catalog_item.generic_loader_lines``). Every node of the template,
+    or every node that loads a dataset so, holds those, so they give nothing
+    away. A line that names the node's own data, a layer, a table or a
+    dataset by its id or path, stays."""
+    from utk_curio.backend.app.datasets.domain.catalog_item import generic_loader_lines
+    from utk_curio.backend.app.packages import service as packages_services
+
     dataflow = _dataflow(spec)
     parts = _ids(spec)
+    starters = _starter_lines()
+    written = generic_loader_lines()
     for node in _dicts(dataflow.get("nodes")):
-        content = node.get("content")
-        if isinstance(content, str):
-            parts.update(
-                line.strip() for line in content.splitlines()
-                if len(line.strip()) >= SHARED_LINE_CHARS
-            )
+        own = starters.get(packages_services.canonical_template_id(node.get("type")), frozenset())
+        parts.update(line for line in _long_lines(node.get("content")) if line not in own and line not in written)
     return parts
+
+
+def _shown_parts(spec: object) -> set[str]:
+    """What a run shown the dataflow *spec* reads that an answer can hold:
+    its node and edge ids and every code line of ``SHARED_LINE_CHARS`` or
+    more, those its templates start its nodes with among them."""
+    parts = _ids(spec)
+    for node in _dicts(_dataflow(spec).get("nodes")):
+        parts.update(_long_lines(node.get("content")))
+    return parts
+
+
+def _long_lines(code: object) -> list[str]:
+    """The lines of *code* of ``SHARED_LINE_CHARS`` or more, stripped."""
+    if not isinstance(code, str):
+        return []
+    return [line.strip() for line in code.splitlines() if len(line.strip()) >= SHARED_LINE_CHARS]
+
+
+def _starter_lines() -> dict[str, frozenset[str]]:
+    """The code lines of ``SHARED_LINE_CHARS`` or more a node of each
+    template starts with, by canonical template id: its template's starter,
+    as the starters feed reads it from the package catalog
+    (``packages.catalog_starters``), and the lines the canvas starts its
+    document with (:func:`_canvas_starter_lines`)."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    lines = {template: set(_long_lines(code)) for template, code in packages_services.catalog_starters().items()}
+    for template, canvas in _canvas_starter_lines().items():
+        lines.setdefault(template, set()).update(canvas)
+    return {template: frozenset(held) for template, held in lines.items()}
+
+
+def _canvas_starter_lines() -> dict[str, frozenset[str]]:
+    """The code lines of ``SHARED_LINE_CHARS`` or more the canvas starts a
+    node's document with whatever its input, by canonical template id, for
+    each template of the package catalog by its grammar (``grammarId``), from
+    the shared contracts:
+
+    - Vega-Lite: the ``$schema`` Curio writes and a mark of the starter
+      ladder (``vegaDefaultSpec.ts``; ``contracts.VEGA_SCHEMA_URL``,
+      ``contracts.VEGA_STARTER_LADDER``);
+    - Autark: the type and color map of a layer the starter colors by a
+      column (``autkDefaultSpec.ts``; ``contracts.AUTK_STARTER_COLORING``).
+
+    Each as the canvas's JSON text holds it."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    vega = frozenset(
+        line for rule in contracts.VEGA_STARTER_LADDER
+        for line in _long_lines(json.dumps({"$schema": contracts.VEGA_SCHEMA_URL, "mark": rule.produces}, indent=2))
+    )
+    autark = frozenset(
+        line for coloring in contracts.AUTK_STARTER_COLORING.values()
+        for line in _long_lines(json.dumps(coloring, indent=2))
+    )
+    by_grammar = {VEGA_LITE: vega, contracts.AUTK_GRAMMAR_ID: autark}
+    grammars = packages_services.catalog_template_grammars()
+    return {template: by_grammar[grammar] for template, grammar in grammars.items() if grammar in by_grammar}
 
 
 def used_examples() -> list[Example]:
@@ -424,12 +499,85 @@ def find(key: str, *, exclude=()) -> Example:
 
 def trill_text(spec: object) -> str:
     """*spec* as a run is shown it: name, task, nodes and edges, one line per
-    node and per edge, without layout or empty fields. Valid JSON."""
+    node and per edge, without layout or empty fields. A widget a node holds
+    as its template declares it is shown by its name, its type and its value
+    (:func:`_shown_node`), as a plan or a node.create sets a template's widget:
+    a new node of the template gets the rest from it
+    (``widget_grammar.set_over``). Valid JSON."""
     dataflow = _dataflow(spec)
+    declared = _declared_widgets()
     head = [f"  {json.dumps(key)}: {_dump(value)}," for key, value in _kept(dataflow, _DATAFLOW_FIELDS).items()]
-    nodes = ",\n".join(f"    {_dump(_kept(node, _NODE_FIELDS))}" for node in _dicts(dataflow.get("nodes")))
+    nodes = ",\n".join(
+        f"    {_dump(_kept(_shown_node(node, declared), _NODE_FIELDS))}" for node in _dicts(dataflow.get("nodes"))
+    )
     edges = ",\n".join(f"    {_dump(_kept(edge, _EDGE_FIELDS))}" for edge in _dicts(dataflow.get("edges")))
     return "\n".join(['{"dataflow": {', *head, '  "nodes": [', nodes, "  ],", '  "edges": [', edges, "  ]", "}}"])
+
+
+#: What a worked example shows of a widget a node holds as its template
+#: declares it, as a plan or a node.create sets one by name.
+_TEMPLATE_WIDGET_KEYS = ("name", "type", "value")
+
+
+def _shown_node(node: dict, declared: dict) -> dict:
+    """*node* with each widget it holds as its template declares it, but for
+    its value, shown by :data:`_TEMPLATE_WIDGET_KEYS`. *declared* is the
+    widgets of each template by name (:func:`_declared_widgets`)."""
+    template = declared.get(_unversioned(node.get("type")) or "")
+    metadata = node.get("metadata")
+    if not template or not isinstance(metadata, dict) or not isinstance(metadata.get("widgets"), list):
+        return node
+    widgets = [
+        {key: widget[key] for key in _TEMPLATE_WIDGET_KEYS if key in widget}
+        if isinstance(widget, dict) and _as_declared(widget, template.get(widget.get("name"))) else widget
+        for widget in metadata["widgets"]
+    ]
+    return {**node, "metadata": {**metadata, "widgets": widgets}}
+
+
+def _as_declared(widget: dict, declared: dict | None) -> bool:
+    """Whether *widget*, a node's, is *declared*, its template's widget of its
+    name, in all but its value."""
+    if declared is None:
+        return False
+    return widget_with_default({k: v for k, v in widget.items() if k != "value"}) == declared
+
+
+def _declared_widgets() -> dict[str, dict[str, dict]]:
+    """The widgets each template of the package catalog declares, by
+    canonical template id and then by name, as a node of it starts with them.
+    Read once per catalog folder and its modification time."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    root = packages_services.catalog_root()
+    try:
+        stamp = root.stat().st_mtime_ns
+    except OSError:
+        return {}
+    return _declared_widgets_in(str(root), stamp)
+
+
+@lru_cache(maxsize=4)
+def _declared_widgets_in(root: str, _stamp: int) -> dict[str, dict[str, dict]]:
+    """:func:`_declared_widgets` of the catalog folder *root*; a manifest that
+    cannot be read declares none."""
+    found: dict[str, dict[str, dict]] = {}
+    for path in sorted(Path(root).glob("*/manifest.json")):
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        package = manifest.get("id") if isinstance(manifest, dict) else None
+        if not isinstance(package, str):
+            continue
+        for template in _dicts(manifest.get("templates")):
+            widgets = {
+                widget["name"]: {k: v for k, v in widget.items() if k != "value"}
+                for widget in normalize_widgets(template.get("widgets"))
+            }
+            if widgets:
+                found.setdefault(f"{package}/{template.get('id')}", widgets)
+    return found
 
 
 def block_for(query: str, *, node_type: object = None, dataset_ids=(), exclude=(),

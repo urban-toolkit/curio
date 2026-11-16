@@ -703,8 +703,8 @@ def artifact_sessions_store():
         abort(400, "value must be an object")
     node_type = body.get('nodeType') if isinstance(body.get('nodeType'), str) else None
     if value.get('dataType') in STORABLE_KINDS and 'layerName' not in value:
-        # A Spatial Join's pairs: kept as a frame, as /artifacts/store keeps
-        # them, so a Python node after it reads a frame, not their envelope.
+        # Rows a node made in the browser: kept as a frame, as /artifacts/store
+        # keeps them, so a Python node after it reads a frame, not their envelope.
         # An Autark layer keeps its envelope, which names the layer.
         try:
             frame = stored_frame(value)
