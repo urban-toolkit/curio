@@ -181,7 +181,6 @@ function everyFieldNode(): any {
             datasetWidgets: { data: { id: "data.utk.parks@1", title: "Parks", format: "csv", refs: ["data.utk.parks@1"] } },
             modelRefs: [{ id: "model.utk.trees@1", name: "Trees" }],
             appearance: { backgroundColor: "#ffefb0" },
-            spatialJoin: { predicate: "within", output: "counts" },
             simpleVis: { imageColumn: "image" },
             packageTemplateConfig: { description: "configured" },
             dataPool: { insideChart: "MERGE_AND", betweenCharts: "MERGE_OR" },
@@ -309,7 +308,7 @@ describe("the rules the shipped dataflows do not all exercise", () => {
     test("an object keeps the order of its keys", () => {
         const dataflow = {
             nodes: [{ id: "n", type: "t", x: 1.5, y: 2, metadata: {
-                spatialJoin: { predicate: "within", output: "counts" },
+                dataPool: { insideChart: "MERGE_AND", betweenCharts: "MERGE_OR" },
                 widgets: [{ name: "w", type: "slider", default: 5, options: { step: 0.5, min: 0 }, value: 5 }],
             } }],
             edges: [],

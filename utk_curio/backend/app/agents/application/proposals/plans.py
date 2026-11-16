@@ -1012,8 +1012,7 @@ def _plan_review_part(proposal_id: str, plan: dict, existing_nodes: dict, existi
         f"{node['title']} · {node['nodeType']} — {node['intent']}" for node in plan["nodes"]
     ]
     # A node's settings, each in its node's words, on its own line's end: a
-    # Spatial Join's operation and output, a Data Pool's modes, a Simple
-    # View's image column.
+    # Data Pool's modes, a Simple View's image column.
     for index, node in enumerate(plan["nodes"]):
         for words in node_settings.describe(node):
             preview_lines[index] += f" · {words}"

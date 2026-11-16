@@ -544,8 +544,8 @@ saved is saved under its title by its first run.
   compute step) runs on the server, like a code node.
 - A Data Export node writes its file and downloads nothing: its **Download**
   button saves the file.
-- A node that needs data only the browser makes (an Autark compute node, a
-  Spatial Join) runs, with the nodes below it, in a tab. The tab that
+- A node that needs data only the browser makes (an Autark compute node)
+  runs, with the nodes below it, in a tab. The tab that
   started the run runs them by itself; otherwise opening the dataflow offers
   **Finish run**.
 - While a run goes, **Run All** stops it. The run ends before its next node
@@ -556,8 +556,8 @@ any browser and after signing in again, each code node of your own dataflow
 shows the last result you ran it to, for 7 days, as long as its code, its
 inputs, your packages and the datasets it reads are unchanged; charts and maps
 below it draw from it. A node with no such result shows its saved output, if its
-**Save output dataset** toggle is on. Nodes below an Autark compute node or a
-Spatial Join wait for a run. After Curio is upgraded, only saved outputs come
+**Save output dataset** toggle is on. Nodes below an Autark compute node wait
+for a run. After Curio is upgraded, only saved outputs come
 back. A dashboard shows its saved outputs.
 
 An invited editor's runs are the editor's own: their results show on the
@@ -1515,13 +1515,24 @@ The first matching rule wins:
 ## Spatial Join node
 
 The `Spatial Join` node pairs the rows of two GeoDataFrames whose shapes meet.
-It has two input circles: **input_0**, the upper, blue one, and **input_1**,
-the lower, green one. input_0 is the left side of the join and input_1 the
-right. Either circle takes points, lines or polygons, and one node can feed
-both.
+It has two input circles: **input_0**, the upper one, and **input_1**, the
+lower one. input_0 is the left side of the join and input_1 the right, each
+by its circle, whatever order they arrive in. Either circle takes points,
+lines or polygons, and one node can feed both.
 
-Its body reads as a sentence, *Pair each input_0 row with the input_1 rows
-it ...*, finished by the operation you pick. A point on an edge follows
+It opens on its two controls, **Operation** and **Output**. Its code, on the
+Code tab, is the call they set:
+
+```python
+from spatial_join import spatial_join
+
+return spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])
+```
+
+`spatial_join` is a function of the built-in package, listed under
+**Functions** above the code of every built-in Python node. Play, Run All, a
+run on the server and a dashboard's runs all join. **Operation** pairs each
+input_0 row with the input_1 rows it meets. A point on an edge follows
 [shapely](https://shapely.readthedocs.io/)'s rule for each:
 
 | Operation | Pairs input_0's shape with input_1's when | A point on a polygon's edge |
@@ -1534,19 +1545,21 @@ it ...*, finished by the operation you pick. A point on an edge follows
 | crosses | a line runs through the other shape, partly inside and partly outside it | |
 | nearest | input_1's is the closest to input_0's, ties included | |
 
-The output is one of:
-- **One row per pair**, the default: input_0's row and shape, with input_1's
-  columns added. A column whose name input_0 already has comes in as
+**Output** is one of:
+- **pairs**, the default: one row per pair, input_0's row and shape, with
+  input_1's columns added. A column whose name input_0 already has comes in as
   `<column>_right`. A row with no pair is left out. `nearest` also adds
   `distance`, in meters.
-- **Counts**: input_1's rows, each with `point_count`, the number of input_0
+- **counts**: input_1's rows, each with `point_count`, the number of input_0
   rows paired with it.
 
-When an operation can never match the shapes given, such as polygons within
-points, the node says so and names the operation or the swap that would.
-Example 25 runs every operation, one flow each
-([Spatial Join operations](examples/25-spatial-join-operations.md)). On a
-dashboard the node shows the output saved with the dataflow and never joins.
+The node prints how many rows it paired, such as *359 pairs: 359 of 359
+input_0 rows matched.* When an operation can never match the shapes given,
+such as polygons within points, it prints that too and names the operation or
+the swap that would. Example 25 runs every operation, one flow each
+([Spatial Join operations](examples/25-spatial-join-operations.md)). A join
+saved before it had code opens with its code and its saved operation and
+output in its two controls.
 
 ## Rasters
 

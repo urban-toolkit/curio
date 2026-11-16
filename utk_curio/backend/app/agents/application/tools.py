@@ -58,7 +58,6 @@ from utk_curio.backend.app.agents.domain.tool_names import (
 from utk_curio.backend.app.agents.domain.manifest import ToolRequirement
 from utk_curio.backend.app.agents.domain import dashboards
 from utk_curio.backend.app.agents.domain import skills as skill_format
-from utk_curio.backend.app.common import spatial
 from utk_curio.backend.app.execution.code_references import WIDGET_KINDS
 
 _EFFECTS = ("read", "mutate")
@@ -284,18 +283,6 @@ def _widgets(say: Say) -> dict:
     }
 
 
-def _spatial_join(say: Say) -> dict:
-    """A Spatial Join's operation and output (``$defs.nodeMetadata.spatialJoin``),
-    with the join's own choices; the server checks the rest."""
-    return {
-        **_object({
-            "predicate": {"type": "string", "enum": list(spatial.PREDICATES)},
-            "output": {"type": "string", "enum": list(spatial.OUTPUTS)},
-        }),
-        "description": say("spatialJoin"),
-    }
-
-
 def _data_pool(say: Say) -> dict:
     """A Data Pool's conflict modes (``$defs.nodeMetadata.dataPool``), with the
     pool's own modes; the server checks the rest."""
@@ -469,10 +456,10 @@ REGISTRY: dict[str, ToolContract] = {
         ),
     ),
     # Consumers: the Node Builder and the Dataflow Builder. A node already on
-    # the canvas: a Data Pool's modes, a Simple View's image column, a Spatial
-    # Join's operation and output and its widget values, each judged by its
-    # node's own rule; the change lands at once, and the canvas makes it
-    # through the node's own setters.
+    # the canvas: a Data Pool's modes, a Simple View's image column and its
+    # widget values, a Spatial Join's operation and output among them, each
+    # judged by its node's own rule; the change lands at once, and the canvas
+    # makes it through the node's own setters.
     "node.settings.write": ToolContract(
         id="node.settings.write",
         contract_version="1",
@@ -482,7 +469,6 @@ REGISTRY: dict[str, ToolContract] = {
             "nodeId": _node_id(say),
             "dataPool": _data_pool(say),
             "simpleVis": _simple_vis(say),
-            "spatialJoin": _spatial_join(say),
             "widgets": _values_map(say("widgets")),
         }),
     ),
@@ -620,7 +606,6 @@ REGISTRY: dict[str, ToolContract] = {
                             "intent": _text(say("nodes.intent")),
                             "expects": _text(say("nodes.expects")),
                             "widgets": _widgets(say),
-                            "spatialJoin": _spatial_join(say),
                             "dataPool": _data_pool(say),
                             "simpleVis": _simple_vis(say),
                         },
@@ -701,7 +686,6 @@ REGISTRY: dict[str, ToolContract] = {
                 "goal": _text(say("goal")),
                 "appearance": _appearance(say),
                 "widgets": _widgets(say),
-                "spatialJoin": _spatial_join(say),
                 "dataPool": _data_pool(say),
                 "simpleVis": _simple_vis(say),
             },
@@ -1188,8 +1172,8 @@ def _node_row(node: dict, goal_cap: int | None, *, lineage: bool = True, values:
         row["copiedFrom"] = [str(i) for i in copied_from]
     if values:
         # What its body's settings make it do, each only when it is not the
-        # node's default: a Spatial Join's operation and output, a Data Pool's
-        # conflict modes, a Simple View's image column.
+        # node's default: a Data Pool's conflict modes, a Simple View's image
+        # column.
         row.update(node_settings.saved(node.get("metadata")))
     return row
 

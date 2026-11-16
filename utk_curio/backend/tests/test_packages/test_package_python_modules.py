@@ -27,6 +27,9 @@ from utk_curio.backend.app.packages.application.store_install import install_pac
 from utk_curio.backend.app.packages.repositories.archive import InstallerError
 from utk_curio.backend.app.packages.repositories.store import package_dir
 
+#: The built-in package as it ships: its one module is the Spatial Join's.
+BUILTIN_PACKAGE = Path(__file__).resolve().parents[4] / "packages" / "curio.builtin@1"
+
 HEIGHTS = {
     "building_height/__init__.py": "",
     "building_height/convert_to_raster.py": "def convert_raster(value):\n    return value * 2\n",
@@ -276,20 +279,80 @@ class TestARunIsHandedItsPackagesModules:
         assert modules_for_node("guest", "ai.test.heights/caller@1") == expected
 
     @pytest.mark.parametrize("node_type", [
-        "curio.builtin/python-computation",
-        "curio.builtin/python-computation@1",
-        "PYTHON_COMPUTATION",
         "ai.test.absent/caller",
         "ai.test.heights/not-a-template",
         "ai.test.heights/caller@2",
         "ai.test.plain/caller",
+        # A built-in node with no Python code: it imports nothing.
+        "curio.builtin/js-computation",
+        "curio.builtin/vis-vega",
+        "curio.builtin/vis-simple",
+        "curio.builtin/data-pool",
+        "curio.builtin/autk-grammar",
+        "curio.builtin/note",
+        "curio.builtin/not-a-template",
     ])
     def test_nothing_for_every_other_node(self, tmp_curio, node_type):
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
         from utk_curio.backend.app.packages.service import modules_for_node
 
+        install_package_from_directory("guest", BUILTIN_PACKAGE)
         install_package_from_archive("guest", _archive("ai.test.heights", modules=HEIGHTS))
         install_package_from_archive("guest", _archive("ai.test.plain"))
         assert modules_for_node("guest", node_type) is None
+
+    @pytest.mark.parametrize("node_type", [
+        "curio.builtin/python-computation",
+        "curio.builtin/python-computation@1",
+        "PYTHON_COMPUTATION",
+        "curio.builtin/data-loading",
+        "curio.builtin/data-export",
+        "curio.builtin/data-summary",
+        "curio.builtin/spatial-join",
+        "curio.builtin/spatial-join@1",
+        "curio.builtin/edit-features",
+    ])
+    def test_a_built_in_python_node_gets_the_built_in_packages_module(self, tmp_curio, node_type):
+        """The Spatial Join's code imports ``spatial_join`` from the built-in
+        package, and every built-in Python node can: a run of one is handed the
+        package's ``sources/`` folder and its one module."""
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+        from utk_curio.backend.app.packages.service import modules_for_node
+
+        install_package_from_directory("guest", BUILTIN_PACKAGE)
+        install_package_from_archive("guest", _archive("ai.test.heights", modules=HEIGHTS))
+        assert modules_for_node("guest", node_type) == {
+            "root": str(package_dir("guest", "curio.builtin@1") / "sources"),
+            "names": ["spatial_join"],
+        }
+
+    def test_a_package_node_is_not_handed_the_built_in_packages_module(self, tmp_curio):
+        """Only the built-in package's own Python nodes get its module: a
+        package's node gets its own package's, as before."""
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+        from utk_curio.backend.app.packages.service import modules_for_node
+
+        install_package_from_directory("guest", BUILTIN_PACKAGE)
+        install_package_from_archive("guest", _archive("ai.test.heights", modules=HEIGHTS))
+        assert modules_for_node("guest", "ai.test.heights/caller") == {
+            "root": str(package_dir("guest", "ai.test.heights@1") / "sources"),
+            "names": ["building_height"],
+        }
+
+    def test_the_module_index_names_the_built_in_module_with_its_python_templates(self, tmp_curio):
+        """The agents' grounding gate reads every module by name with the
+        templates whose nodes import it (``module_index``): ``spatial_join``
+        is the built-in package's, imported by its Python code templates."""
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
+        from utk_curio.backend.app.packages.service import module_index
+
+        install_package_from_directory("guest", BUILTIN_PACKAGE)
+        entry = module_index("guest")["spatial_join"]
+        assert (entry["package"], entry["added"]) == ("curio.builtin@1", True)
+        assert sorted(t["id"] for t in entry["templates"]) == [
+            "curio.builtin/data-export", "curio.builtin/data-loading", "curio.builtin/data-summary",
+            "curio.builtin/edit-features", "curio.builtin/python-computation", "curio.builtin/spatial-join",
+        ]
 
     def test_nothing_without_an_account(self, tmp_curio):
         from utk_curio.backend.app.packages.service import modules_for_node

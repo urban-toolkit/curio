@@ -1,7 +1,7 @@
 """An agent changes a setting of a node already on the canvas
 (``node.settings.write``): a Data Pool's conflict modes, a Simple View's image
-column, a Spatial Join's operation and output, or the values of a node's
-widgets, a value node's among them: a Python node that returns its widget's
+column, or the values of a node's widgets, a Spatial Join's operation and
+output among them, and a value node's: a Python node that returns its widget's
 value to the nodes wired after it.
 
 Each change is judged by its node's own rule, the one a planned or created
@@ -42,6 +42,17 @@ COMBINE = {"name": "combine", "type": "choice", "label": "Combine", "default": "
 THRESHOLD = {"name": "threshold", "type": "slider", "label": "Threshold", "default": 2,
              "options": {"min": 0, "max": 10}}
 SEASON = {"name": "season", "type": "choice", "default": "summer", "options": {"choices": ["summer", "winter"]}}
+#: A Spatial Join's two widgets and its code, as the built-in package declares
+#: them (``test_spatial_join_settings`` holds them to it).
+OPERATION = {"name": "operation", "type": "choice", "label": "Operation", "default": "intersects",
+             "options": {"choices": ["intersects", "within", "contains", "touches", "overlaps", "crosses", "nearest"],
+                         "display": "dropdown"}}
+OUTPUT = {"name": "output", "type": "choice", "label": "Output", "default": "pairs",
+          "options": {"choices": ["pairs", "counts"], "display": "dropdown"}}
+JOIN_CODE = (
+    "from spatial_join import spatial_join\n\n"
+    "return spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n"
+)
 
 
 def _nodes() -> list[dict]:
@@ -51,8 +62,8 @@ def _nodes() -> list[dict]:
          "metadata": {"dataPool": {"insideChart": "MERGE_OR"}}},
         {"id": "view", "type": "curio.builtin/vis-simple", "title": "Overlays", "content": "", "x": 400, "y": 0,
          "metadata": {"simpleVis": {"imageColumn": "image_url"}}},
-        {"id": "join", "type": "curio.builtin/spatial-join", "title": "Trees in parks", "content": "",
-         "x": 800, "y": 0, "metadata": {"spatialJoin": {"output": "counts"}}},
+        {"id": "join", "type": "curio.builtin/spatial-join", "title": "Trees in parks", "content": JOIN_CODE,
+         "x": 800, "y": 0, "metadata": {"widgets": [dict(OPERATION), {**OUTPUT, "value": "counts"}]}},
         {"id": "chart", "type": "curio.builtin/python-computation", "title": "Shadow by tract",
          "content": "return input_0.groupby('tract')['shadow'].agg([!! combine !!])", "x": 1200, "y": 0,
          "metadata": {"widgets": [dict(COMBINE), dict(THRESHOLD)]}},
@@ -115,14 +126,14 @@ def _resave(client, token, project, nodes) -> None:
 
 
 def _modules():
-    from utk_curio.backend.app.agents.domain import data_pool_settings, simple_vis_settings, spatial_join_settings
+    from utk_curio.backend.app.agents.domain import data_pool_settings, simple_vis_settings
 
-    return data_pool_settings, simple_vis_settings, spatial_join_settings
+    return data_pool_settings, simple_vis_settings
 
 
 class TestAChangeIsReadByItsNodesOwnRule:
     def test_each_key_given_is_picked_and_an_empty_setting_is_its_default(self):
-        pool, view, join = _modules()
+        pool, view = _modules()
         assert pool.parse_change({"betweenCharts": "MERGE_AND"}, "w") == ({"betweenCharts": "MERGE_AND"}, [])
         # OVERWRITE is a pick of its own on a pool that merges.
         assert pool.parse_change({"insideChart": "OVERWRITE"}, "w") == ({"insideChart": "OVERWRITE"}, [])
@@ -130,9 +141,7 @@ class TestAChangeIsReadByItsNodesOwnRule:
         # The view reads the name trimmed, and no name as every image column.
         assert view.parse_change({"imageColumn": " overlay_url "}, "w") == ({"imageColumn": "overlay_url"}, [])
         assert view.parse_change({}, "w") == ({}, [])
-        assert join.parse_change({"predicate": "within"}, "w") == ({"predicate": "within"}, [])
-        assert join.parse_change({}, "w") == ({"predicate": "intersects", "output": "pairs"}, [])
-        for module in (pool, view, join):
+        for module in (pool, view):
             assert module.parse_change(None, "w") == (None, []), module.KEY
 
     @pytest.mark.parametrize(
@@ -144,9 +153,6 @@ class TestAChangeIsReadByItsNodesOwnRule:
             (0, {"propagate": "MERGE_OR"}, "w has keys a Data Pool does not: propagate (it has insideChart, betweenCharts)"),
             (1, {"imageColumn": ""}, "w.imageColumn must name a column, such as"),
             (1, "overlay_url", "w must be an object, such as"),
-            (2, {"predicate": "near"},
-             "w: The operation must be one of intersects, within, contains, touches, overlaps, crosses, nearest; "
-             "got 'near'."),
         ],
     )
     def test_a_change_the_node_would_not_take_is_named_as_a_new_nodes_setting_is(self, module, raw, expected):
@@ -155,7 +161,7 @@ class TestAChangeIsReadByItsNodesOwnRule:
         assert any(expected in error for error in errors), errors
 
     def test_a_change_is_stored_as_the_node_writes_it(self):
-        pool, view, join = _modules()
+        pool, view = _modules()
         # The pool keeps the mode the change leaves out, and writes no OVERWRITE.
         assert pool.after({"insideChart": "MERGE_OR"}, {"betweenCharts": "MERGE_AND"}) == {
             "insideChart": "MERGE_OR", "betweenCharts": "MERGE_AND",
@@ -167,9 +173,6 @@ class TestAChangeIsReadByItsNodesOwnRule:
         # The view keeps the column it names, and none for every image column.
         assert view.after({"imageColumn": "image_url"}, {"imageColumn": "overlay_url"}) == {"imageColumn": "overlay_url"}
         assert view.after({"imageColumn": "image_url"}, {}) is None
-        # The join keeps the key the change leaves out, and writes neither of its defaults.
-        assert join.after({"output": "counts"}, {"predicate": "within"}) == {"predicate": "within", "output": "counts"}
-        assert join.after({"predicate": "within", "output": "counts"}, {"predicate": "intersects", "output": "pairs"}) is None
 
     def test_the_card_says_each_change_in_the_nodes_own_words(self):
         from utk_curio.backend.app.agents.domain import node_settings, widget_grammar
@@ -177,13 +180,13 @@ class TestAChangeIsReadByItsNodesOwnRule:
         assert node_settings.describe_change({
             "dataPool": {"insideChart": "OVERWRITE"},
             "simpleVis": {},
-            "spatialJoin": {"predicate": "intersects", "output": "pairs"},
-        }) == ["operation intersects, output pairs", "Conflict inside visualization: Overwrite", "Image column: all"]
+        }) == ["Conflict inside visualization: Overwrite", "Image column: all"]
         assert node_settings.describe_change({"simpleVis": {"imageColumn": "overlay_url"}}) == [
             "Image column: overlay_url",
         ]
         # A widget as its row in the Widgets tab names it: its label, else its name.
         assert widget_grammar.describe_value(COMBINE, "max") == "Combine: max"
+        assert widget_grammar.describe_value(OPERATION, "within") == "Operation: within"
         assert widget_grammar.describe_value(SEASON, "winter") == "season: winter"
         assert widget_grammar.describe_value({"name": "years", "type": "number-list"}, [2020, 2050]) == (
             "years: [2020, 2050]"
@@ -199,25 +202,22 @@ class TestAChangeIsReadByItsNodesOwnRule:
 
 def test_the_tool_offers_each_setting_with_the_nodes_choices_and_widget_values_by_name():
     from utk_curio.backend.app.agents.application import tools
-    from utk_curio.backend.app.common import spatial
 
     contract = tools.REGISTRY[TOOL]
     assert contract.effect == "mutate"
     assert contract.label == "Change a node's settings"
     params = contract.parameters
-    assert list(params["properties"]) == ["nodeId", "dataPool", "simpleVis", "spatialJoin", "widgets"]
+    # A Spatial Join's operation and output are widget values, by name.
+    assert list(params["properties"]) == ["nodeId", "dataPool", "simpleVis", "widgets"]
     assert "required" not in params
     pool = params["properties"]["dataPool"]["properties"]
     assert pool["insideChart"]["enum"] == pool["betweenCharts"]["enum"] == ["OVERWRITE", "MERGE_AND", "MERGE_OR"]
-    join = params["properties"]["spatialJoin"]["properties"]
-    assert join["predicate"]["enum"] == list(spatial.PREDICATES)
-    assert join["output"]["enum"] == list(spatial.OUTPUTS)
     assert params["properties"]["simpleVis"]["properties"]["imageColumn"]["type"] == "string"
     assert params["properties"]["widgets"]["type"] == "object"
     # A change keeps what it leaves out, where a new node starts at the
     # default: the change tool says so in its own words.
     created = tools.REGISTRY["node.create"].parameters["properties"]
-    for key in ("dataPool", "simpleVis", "spatialJoin", "widgets"):
+    for key in ("dataPool", "simpleVis", "widgets"):
         assert params["properties"][key]["description"] != created[key]["description"], key
         assert f'"{key}"' in contract.description, key
 
@@ -234,17 +234,17 @@ def test_both_builders_are_told_to_change_an_existing_nodes_setting_in_place():
 
 def test_every_agent_reads_how_an_existing_nodes_settings_change(tmp_curio):
     """The skills say it of each setting where they describe it: the core
-    skills the preamble places, of the view's column and the join's operation
-    and output; the pool's skill, of its modes, and the widgets' skill, of
-    widget values, which both builders' chats list and a chat on such a node
-    is handed."""
+    skills the preamble places, of the view's column and of the join's
+    widgets, its operation and output; the pool's skill, of its modes, and the
+    widgets' skill, of widget values, which both builders' chats list and a
+    chat on such a node is handed."""
     from utk_curio.backend.app.agents.application import skill_runs
     from utk_curio.backend.app.agents.domain import agent_text, builtin
 
     preamble = builtin.read_prompt_text(DFB, "system")
     for words in (
         "A view already on the canvas changes its column through node.settings.write",
-        "one already on the canvas changes them through node.settings.write",
+        "one already on the canvas changes them through node.settings.write's widgets",
     ):
         assert words in preamble, words
     spec = {"dataflow": {"nodes": [{"id": "pool", "type": "curio.builtin/data-pool"},
@@ -323,14 +323,20 @@ class TestAChangeLandsInTheNodeAndOnItsCard:
         assert "simpleVis" not in (_saved(user, project)["view"].get("metadata") or {})
         assert landed[0]["canvas"]["settings"] == {"simpleVis": {}}
 
-    def test_a_joins_operation_keeps_its_output(self, client, user_and_token, tmp_curio, monkeypatch):
+    def test_a_joins_operation_widget_keeps_its_output(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
-        project, _att, change, _, _ = _change(
-            client, user, token, monkeypatch, target="join", spatialJoin={"predicate": "within"},
+        project, _att, change, [said], landed = _change(
+            client, user, token, monkeypatch, target="join", widgets={"operation": "within"},
         )
+        assert said.startswith(f"[tool result] {TOOL}: applied"), said
         assert change["summary"] == "Changed the settings of the Spatial Join node · Trees in parks"
-        assert change["settingLines"] == ["operation within"]
-        assert _saved(user, project)["join"]["metadata"]["spatialJoin"] == {"predicate": "within", "output": "counts"}
+        assert change["settingLines"] == ["Operation: within"]
+        saved = _saved(user, project)["join"]
+        assert saved["metadata"]["widgets"] == [{**OPERATION, "value": "within"}, {**OUTPUT, "value": "counts"}]
+        assert "spatialJoin" not in saved["metadata"]
+        # Its code stays as it was: the widgets are what it reads.
+        assert saved["content"] == JOIN_CODE
+        assert landed[0]["canvas"]["settings"] == {"widgets": {"operation": "within"}}
 
     def test_a_code_nodes_widget_value(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
@@ -388,10 +394,20 @@ class TestAWrongChangeIsRefusedToTheModel:
 
     def test_an_operation_the_join_has_not(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
-        refused = self._refused(client, user, token, monkeypatch, target="join", spatialJoin={"predicate": "near"})
+        refused = self._refused(client, user, token, monkeypatch, target="join", widgets={"operation": "near"})
         assert (
-            "params.spatialJoin: The operation must be one of intersects, within, contains, touches, overlaps, "
-            "crosses, nearest; got 'near'."
+            "params.widgets.operation must be one of the operation widget's choices: intersects, within, contains, "
+            'touches, overlaps, crosses, nearest; got "near"'
+        ) in refused, refused
+
+    def test_the_joins_old_setting_is_no_key_the_tool_takes(self, client, user_and_token, tmp_curio, monkeypatch):
+        """Its operation and output are its widgets: the setting it kept
+        before its code is refused as any key the tool does not take."""
+        user, token = user_and_token
+        refused = self._refused(client, user, token, monkeypatch, target="join", spatialJoin={"predicate": "within"})
+        assert (
+            "params has keys node.settings.write does not take: spatialJoin "
+            "(it takes nodeId, dataPool, simpleVis, widgets)"
         ) in refused, refused
 
     def test_a_setting_the_nodes_template_does_not_take(self, client, user_and_token, tmp_curio, monkeypatch):
@@ -403,10 +419,9 @@ class TestAWrongChangeIsRefusedToTheModel:
             "params.dataPool: a Simple View node has no conflict modes; only a Data Pool node takes dataPool"
         ) in refused, refused
         # An empty setting too: it would put a setting the node has not back to its default.
-        refused = self._refused(client, user, token, monkeypatch, target="pool", spatialJoin={})
+        refused = self._refused(client, user, token, monkeypatch, target="pool", simpleVis={})
         assert (
-            "params.spatialJoin: a Data Pool node has no operation or output; only a Spatial Join node takes "
-            "spatialJoin"
+            "params.simpleVis: a Data Pool node has no image column; only a Simple View node takes simpleVis"
         ) in refused, refused
 
     def test_a_widget_the_node_has_not(self, client, user_and_token, tmp_curio, monkeypatch):
@@ -449,13 +464,11 @@ class TestAWrongChangeIsRefusedToTheModel:
     def test_a_request_that_changes_no_setting(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         refused = self._refused(client, user, token, monkeypatch, target="pool")
-        assert "params names no setting to change: give dataPool, simpleVis, spatialJoin or widgets" in refused, (
-            refused
-        )
+        assert "params names no setting to change: give dataPool, simpleVis or widgets" in refused, refused
         refused = self._refused(client, user, token, monkeypatch, target="chart", content="return 1")
         assert (
             "params has keys node.settings.write does not take: content "
-            "(it takes nodeId, dataPool, simpleVis, spatialJoin, widgets)"
+            "(it takes nodeId, dataPool, simpleVis, widgets)"
         ) in refused, refused
 
 
@@ -492,15 +505,19 @@ class TestUndoPutsTheOldValuesBack:
     def test_undo_takes_back_a_joins_operation_the_change_picked(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token
         project, att, change, _, _ = _change(
-            client, user, token, monkeypatch, target="join", spatialJoin={"predicate": "within"},
+            client, user, token, monkeypatch, target="join", widgets={"operation": "within"},
         )
-        assert _saved(user, project)["join"]["metadata"]["spatialJoin"] == {"predicate": "within", "output": "counts"}
+        assert _saved(user, project)["join"]["metadata"]["widgets"][0] == {**OPERATION, "value": "within"}
         response = _undo(client, token, project, att, change)
         assert response.status_code == 200, response.get_json()
-        # The operation goes back to the join's default, which the node holds as
-        # none; the output it kept was never the change's.
-        assert _saved(user, project)["join"]["metadata"]["spatialJoin"] == {"output": "counts"}
-        assert response.get_json()["canvas"][-1]["settings"]["spatialJoin"] == {"output": "counts"}
+        # The operation goes back to what the node held, the join's default;
+        # the output it kept was never the change's.
+        assert _saved(user, project)["join"]["metadata"]["widgets"] == [
+            {**OPERATION, "value": "intersects"}, {**OUTPUT, "value": "counts"},
+        ]
+        assert [(step["kind"], step["nodeId"], step["settings"]) for step in response.get_json()["canvas"]] == [
+            ("node-settings-applied", "join", {"widgets": {"operation": "intersects"}}),
+        ]
 
     def test_undo_puts_a_widgets_value_back_to_its_default(self, client, user_and_token, tmp_curio, monkeypatch):
         user, token = user_and_token

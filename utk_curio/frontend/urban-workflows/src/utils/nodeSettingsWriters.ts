@@ -2,12 +2,12 @@
  * The setters of nodes' settings, by node id and setting.
  *
  * A node keeps choices its body offers (a Data Pool's conflict modes, a
- * Simple View's image column, a Spatial Join's operation and output) and the
- * values of its widgets, and the control that changes one makes the change its
- * own way: the pool resolves its selections again, the join joins again, a
- * widget's new value leaves its node out of date and runs it when automatic
- * runs are on. A node registers each of its setters here while it is on the
- * canvas, so a setting changed from outside the node, an agent's applied
+ * Simple View's image column) and the values of its widgets, a Spatial Join's
+ * operation and output among them, and the control that changes one makes the
+ * change its own way: the pool resolves its selections again, a widget's new
+ * value leaves its node out of date and runs it when automatic runs are on.
+ * A node registers each of its setters here while it is on the canvas, so a
+ * setting changed from outside the node, an agent's applied
  * change (`applyNodeSettings`), is made the way a pick in the node makes it,
  * as `nodeCodeWriters` does for a node whose code is its state.
  *
@@ -27,7 +27,6 @@ import { normalizeWidgets, type WidgetDef, type WidgetValue } from "./widgets/wi
 export interface NodeSettings {
   dataPool?: { insideChart?: string; betweenCharts?: string };
   simpleVis?: { imageColumn?: string };
-  spatialJoin?: { predicate?: string; output?: string };
   widgets?: Record<string, unknown>;
 }
 
@@ -37,7 +36,7 @@ export type NodeSettingKey = keyof NodeSettings;
 export type NodeSettingWriter<K extends NodeSettingKey> = (setting: NonNullable<NodeSettings[K]>) => void;
 
 /** The settings, in the order a change makes them. */
-const KEYS: readonly NodeSettingKey[] = ["spatialJoin", "dataPool", "simpleVis", "widgets"];
+const KEYS: readonly NodeSettingKey[] = ["dataPool", "simpleVis", "widgets"];
 
 type AnyWriter = (setting: any) => void;
 const writers = new Map<string, Partial<Record<NodeSettingKey, AnyWriter>>>();
@@ -82,7 +81,6 @@ export function withWidgetValues(widgets: WidgetDef[], values: Record<string, un
 export function withNodeSettings(data: Record<string, any>, settings: NodeSettings): Record<string, any> {
   const next: Record<string, any> = { ...data };
   if (settings.dataPool) next.dataPool = { ...(data.dataPool ?? {}), ...settings.dataPool };
-  if (settings.spatialJoin) next.spatialJoin = { ...(data.spatialJoin ?? {}), ...settings.spatialJoin };
   if (settings.simpleVis) {
     const simpleVis = { ...(data.simpleVis ?? {}) };
     if (settings.simpleVis.imageColumn) simpleVis.imageColumn = settings.simpleVis.imageColumn;

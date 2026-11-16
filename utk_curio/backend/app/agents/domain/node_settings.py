@@ -1,37 +1,47 @@
 """The settings an agent sets on a node a plan or a node.create places, or
 changes on a node already on the canvas (``node.settings.write``).
 
-Three nodes keep a choice their body offers at ``metadata.<key>``: a Spatial
-Join its operation and output (``spatial_join_settings``), a Data Pool its
-conflict modes (``data_pool_settings``) and a Simple View its image column
+Two nodes keep a choice their body offers at ``metadata.<key>``: a Data Pool
+its conflict modes (``data_pool_settings``) and a Simple View its image column
 (``simple_vis_settings``). Each module parses its setting by its node's own
 rule, says why a template keeps none (only one whose ``behavior`` is the
 node's does), words it as the node does for the change card, and reads what a
 saved node's setting makes it do. A change of a node on the canvas is parsed
 by the same rule, each key it gives picked as the node's select picks it and
 each key it leaves out kept (``parse_change``, ``after``). This module walks
-the three, so a plan's grammar and mint, a node.create, a settings change, the
+the two, so a plan's grammar and mint, a node.create, a settings change, the
 card, the applies and ``dataflow.read`` treat each one the same way.
+
+A Spatial Join's operation and output are its widgets, set as any widgets
+are. The key they once went by on a planned node and in node.create's params
+(:data:`OLD_JOIN_KEY`) is refused there, so a request that still gives it is
+told where they went rather than landing a join at its defaults.
 """
 from __future__ import annotations
 
 from collections.abc import Callable
 
-from utk_curio.backend.app.agents.domain import data_pool_settings, simple_vis_settings, spatial_join_settings
+from utk_curio.backend.app.agents.domain import agent_text, data_pool_settings, simple_vis_settings
 
 #: Each setting's module, in the order a node's card names them.
-SETTINGS = (spatial_join_settings, data_pool_settings, simple_vis_settings)
+SETTINGS = (data_pool_settings, simple_vis_settings)
 #: The keys they go by: on a planned node, in node.create's params, on a
 #: proposal and in a node's ``metadata``.
 KEYS = tuple(module.KEY for module in SETTINGS)
+#: The key a Spatial Join's operation and output went by before they were
+#: its widgets.
+OLD_JOIN_KEY = "spatialJoin"
 
 
 def parse(raw: dict, prefix: str) -> tuple[dict, list[str]]:
     """The settings *raw* (a planned node, or node.create's params) gives, by
     key, each as its node stores it, or the errors; *prefix* is where they
-    are, such as ``nodes[2]`` or ``params``."""
+    are, such as ``nodes[2]`` or ``params``. A Spatial Join's old setting
+    (:data:`OLD_JOIN_KEY`) is one of the errors."""
     found: dict = {}
     problems: list[str] = []
+    if raw.get(OLD_JOIN_KEY) is not None:
+        problems.append(agent_text.message("node-settings.join-widgets", where=f"{prefix}.{OLD_JOIN_KEY}"))
     for module in SETTINGS:
         setting, errors = module.parse(raw.get(module.KEY), f"{prefix}.{module.KEY}")
         problems.extend(errors)

@@ -42,6 +42,7 @@ from utk_curio.backend.app.common.safe_paths import (
     safe_join,
     validate_component,
 )
+from utk_curio.backend.app.projects import saved_joins
 from utk_curio.backend.app.projects.schemas import OutputRef
 
 
@@ -357,17 +358,18 @@ def read_spec_in(folder: Path) -> Optional[dict]:
     the section into the log. ``None`` when there is no spec file.
 
     The files are read under the history lock, so a write is seen whole or
-    not at all, and parsed once it is released.
+    not at all, and parsed once it is released. A Spatial Join saved before
+    its code reads with its code and widgets (:func:`_parsed`).
     """
     p = folder / SPEC_FILE
     if not p.exists():
         return None
     if not (folder / HISTORY_DIR).is_dir():
-        return json.loads(p.read_text(encoding="utf-8"))
+        return _parsed(p.read_text(encoding="utf-8"))
     with _history_lock(folder):
         text = p.read_text(encoding="utf-8")
         logs = {key: _read_log_bytes(folder, key) for key in HISTORY_KEYS}
-    spec = json.loads(text)
+    spec = _parsed(text)
     if isinstance(spec, dict):
         for key in HISTORY_KEYS:
             if key in spec or logs[key] is None:
@@ -376,6 +378,13 @@ def read_spec_in(folder: Path) -> Optional[dict]:
             if value is not _ABSENT:
                 spec[key] = value
     return spec
+
+
+def _parsed(text: str):
+    """A spec file's text as its readers read it: a Spatial Join saved before
+    its code with its code and widgets (``saved_joins.converted_spec``), as
+    every read of a spec file and of a doc reads one."""
+    return saved_joins.converted_spec(json.loads(text))
 
 
 class SpecFile(NamedTuple):
@@ -388,7 +397,8 @@ class SpecFile(NamedTuple):
 
 def read_spec_file(user_key: str, project_id: str) -> SpecFile:
     """The project's spec file as it is, its document without the history the
-    logs keep, which this does not replay, with its revision. For a reader that
+    logs keep, which this does not replay, with its revision; a Spatial Join
+    saved before its code reads with its code (:func:`_parsed`). For a reader that
     needs only what the file holds, as each open dataflow's doc does
     (``collaboration/dataflow_docs.py``).
 
@@ -404,7 +414,7 @@ def read_spec_file(user_key: str, project_id: str) -> SpecFile:
         except FileNotFoundError:
             text = None
         revision = spec_revision(user_key, project_id)
-    return SpecFile(None if text is None else json.loads(text), revision)
+    return SpecFile(None if text is None else _parsed(text), revision)
 
 
 def list_project_ids(user_key: str) -> list[str]:

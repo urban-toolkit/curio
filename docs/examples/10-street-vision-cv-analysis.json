@@ -82,12 +82,45 @@
         "type": "curio.builtin/spatial-join",
         "x": 1935,
         "y": 585,
-        "content": "",
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Pair each photo with the neighborhood it falls in, adding the neighborhood's columns. Wire Simple View to input_0 (the top circle) and Python Computation to input_1 (the bottom circle).",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              }
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
         }
       },
       {
@@ -151,12 +184,45 @@
         "type": "curio.builtin/spatial-join",
         "x": 1935,
         "y": 965,
-        "content": "",
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Pair the second model's photos with their neighborhood. Wire Simple View to input_0 (the top circle) and Python Computation to input_1 (the bottom circle).",
         "metadata": {
-          "keywords": []
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              }
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
         }
       },
       {

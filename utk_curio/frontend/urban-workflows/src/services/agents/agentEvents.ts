@@ -23,7 +23,6 @@ import type {
   AgentNodeSettings,
   AgentPlanWidget,
   AgentSimpleVisSetting,
-  AgentSpatialJoinSetting,
 } from "./types/proposal";
 import { agentsSeenThroughAwareness, holdAgentsOfChange } from "../../providers/collab/agentHolds";
 import { playChangeDrag } from "../../providers/collab/agentDrags";
@@ -44,15 +43,14 @@ export type AgentCreatedNode = {
   /** dev/89: canonical persisted appearance (normalized by the backend's
    * shared node-appearance utility) — carried into live ``data.appearance``
    * so the next canvas save round-trips it. #662: the same for the node's
-   * widgets and, on a copy, its lineage (``data.widgets``, ``data.copiedFrom``),
-   * for a Spatial Join its operation and output (``data.spatialJoin``), for a
-   * Data Pool its modes (``data.dataPool``) and for a Simple View its image
-   * column (``data.simpleVis``). */
+   * widgets, a Spatial Join's operation and output among them, and, on a
+   * copy, its lineage (``data.widgets``, ``data.copiedFrom``), for a Data Pool
+   * its modes (``data.dataPool``) and for a Simple View its image column
+   * (``data.simpleVis``). */
   metadata?: {
     appearance?: { backgroundColor?: string };
     widgets?: AgentPlanWidget[];
     copiedFrom?: string[];
-    spatialJoin?: AgentSpatialJoinSetting;
     dataPool?: AgentDataPoolSetting;
     simpleVis?: AgentSimpleVisSetting;
   };

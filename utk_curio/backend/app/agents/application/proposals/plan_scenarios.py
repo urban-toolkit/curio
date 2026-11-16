@@ -16,9 +16,9 @@ what needs the saved dataflow:
   on the canvas does;
 * on the plan's card: each scenario with its nodes by name, and each node in
   one labelled with it, so a copy and its original read apart;
-* at apply: a created node carries its widgets, its settings (a Spatial
-  Join's operation and output, a Data Pool's modes, a Simple View's image
-  column, ``node_settings``), and, for a copy, where it came from
+* at apply: a created node carries its widgets, its settings (a Data Pool's
+  modes, a Simple View's image column, ``node_settings``), and, for a copy,
+  where it came from
   (``metadata.copiedFrom``); a scenario is saved once all its nodes exist,
   by the whole-plan apply and the per-node one alike, and checked against the
   dataflow's scenarios, their nodes and their names, again then, since the
@@ -139,9 +139,8 @@ def scenario_names(plan: dict) -> dict[str, str]:
 
 def node_display(node: dict, names: dict) -> dict:
     """What the plan's card shows of a node beside its title: its widgets, its
-    settings (a Spatial Join's operation and output, a Data Pool's modes, a
-    Simple View's image column), the scenario it is in, and the node it
-    copies."""
+    settings (a Data Pool's modes, a Simple View's image column), the scenario
+    it is in, and the node it copies."""
     shown: dict = {}
     # Each widget the plan writes on the node, as it stands on its own; a
     # duplicate's value for its template's widget is on the scenario's row.
@@ -209,10 +208,10 @@ def created_node_metadata(
     declared: list | None = None,
 ) -> dict:
     """The ``metadata`` a planned node is created with: its widgets, its
-    settings (a Spatial Join's operation and output, a Data Pool's modes, a
-    Simple View's image column, each at its own key), and for a copy the ids
-    it descends from, the original's own lineage then the original (as
-    Duplicate selection writes it). Empty when it has none of them.
+    settings (a Data Pool's modes, a Simple View's image column, each at its
+    own key), and for a copy the ids it descends from, the original's own
+    lineage then the original (as Duplicate selection writes it). Empty when
+    it has none of them.
 
     A node holds the widgets its template declares (*declared*, from the
     packages' ``declared_widgets``; for a node that starts with its

@@ -448,19 +448,36 @@ describe("#662: a plan's widgets, copies and scenarios reach the live canvas", (
     expect("copiedFrom" in options).toBe(false);
   });
 
-  it("a created Spatial Join carries its operation and output into the factory, as a load reads them", () => {
+  it("a created Spatial Join carries its code and its operation and output, its widgets, into the factory", () => {
+    const code = "from spatial_join import spatial_join\n\n"
+      + "return spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n";
+    const widgets = [
+      {
+        name: "operation", type: "choice", label: "Operation", default: "intersects", value: "within",
+        options: {
+          choices: ["intersects", "within", "contains", "touches", "overlaps", "crosses", "nearest"], display: "dropdown",
+        },
+      },
+      {
+        name: "output", type: "choice", label: "Output", default: "pairs", value: "counts",
+        options: { choices: ["pairs", "counts"], display: "dropdown" },
+      },
+    ];
     const join = {
-      id: "join-id", type: "curio.builtin/spatial-join", content: "", goal: "Labels per neighborhood",
-      x: 500, y: 60, metadata: { spatialJoin: { predicate: "within", output: "counts" } },
+      id: "join-id", type: "curio.builtin/spatial-join", content: code, goal: "Labels per neighborhood",
+      x: 500, y: 60, metadata: { widgets },
     };
     render(<Host />);
-    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: join as never }));
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: join }));
     expect(mockCreateCodeNode).toHaveBeenCalledWith(
       "curio.builtin/spatial-join",
-      expect.objectContaining({ nodeId: "join-id", spatialJoin: { predicate: "within", output: "counts" } }),
+      expect.objectContaining({ nodeId: "join-id", code, widgets }),
     );
-    // A node that sets none gets none, so the node keeps its own defaults.
-    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: NODE }));
+    expect("spatialJoin" in mockCreateCodeNode.mock.calls[0][1]).toBe(false);
+    // A node that still carries the join's old setting hands the factory none of it.
+    const old = { ...join, id: "old-join-id", metadata: { spatialJoin: { predicate: "within", output: "counts" } } };
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: old as never }));
+    expect(mockCreateCodeNode.mock.calls[1][1].nodeId).toBe("old-join-id");
     expect("spatialJoin" in mockCreateCodeNode.mock.calls[1][1]).toBe(false);
   });
 

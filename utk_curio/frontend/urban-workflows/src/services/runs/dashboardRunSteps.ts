@@ -1,6 +1,6 @@
 /**
  * The steps a dashboard viewer's run leaves to the page (#1117): nodes only a
- * browser runs, such as an Autark compute node or a Spatial Join. While the
+ * browser runs, such as an Autark compute node. While the
  * page runs one for the run, the node's result goes to the run, which keeps it
  * for this page alone (`runs/viewer.py`), and not where a signed-in canvas
  * saves it: a viewer has no session to save it with.

@@ -50,8 +50,8 @@ The rules (all runtime-enforced; prompt wording only teaches them):
   hold code (:func:`code_engine`); a ``curio_`` name it does not give, which
   the code neither defines nor imports, is no function at all;
 - an **import** of a module a package ships is grounded only in a node a run
-  hands that module to (``packages.modules_for_node``): a built-in node gets
-  none. An import of a library is the sandbox's to judge;
+  hands that module to (``packages.modules_for_node``): a built-in Python node
+  gets the built-in package's. An import of a library is the sandbox's to judge;
 - anything else is **refused with the correction named**: never landed,
   never written, never described as existing.
 

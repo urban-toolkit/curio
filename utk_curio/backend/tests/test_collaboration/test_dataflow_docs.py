@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -53,6 +54,9 @@ SPEC = {
 
 #: What a backend that serves no Socket.IO fails with.
 NO_SOCKETS = "the backend serves no Socket.IO"
+
+#: The constants the canvas shares with the backend: the saved join's code and widgets.
+REPO_CONTRACTS = Path(__file__).resolve().parents[3] / "frontend" / "urban-workflows" / "src" / "contracts"
 
 
 class _Room:
@@ -838,3 +842,69 @@ def test_a_connection_its_drawer_took_out_with_the_node_he_removed_in_the_same_b
         assert seen["edges"] == []
     assert _dropped(bob) == [], "bob was told of a connection he took out with the node he removed"
     assert _dropped(alice) == []
+
+
+#: A Spatial Join as one saved before its join was code: no code, its settings
+#: at metadata.spatialJoin.
+SAVED_JOIN = {
+    "id": "join", "type": "curio.builtin/spatial-join", "x": 600, "y": 20, "content": "",
+    "out": "DEFAULT", "in": "DEFAULT", "goal": "",
+    "metadata": {"keywords": [], "spatialJoin": {"predicate": "within"}},
+}
+
+
+def test_a_doc_kept_from_before_the_join_had_code_opens_built_anew_with_its_code_and_widgets(room, monkeypatch):
+    """A doc its log kept from a Curio that read a Spatial Join as it was saved,
+    with no code, opens built anew from its dataflow with the join's code and
+    its setting in its widget, as a read of the spec file gives it: a new id
+    and a new log, the old log kept. The doc the tabs edit then holds the code."""
+    from utk_curio.backend.app.projects import saved_joins
+
+    converted_spec, converted_dataflow = saved_joins.converted_spec, saved_joins.converted_dataflow
+    # The Curio that made the doc read the join as it was saved.
+    monkeypatch.setattr(saved_joins, "converted_spec", lambda spec: spec)
+    monkeypatch.setattr(saved_joins, "converted_dataflow", lambda dataflow: dataflow)
+    room.write_elsewhere({**SPEC, "dataflow": {**SPEC["dataflow"], "nodes": SPEC["dataflow"]["nodes"] + [SAVED_JOIN]}})
+    socket = room.socket("alice")
+    from ._ydoc_client import DocClient
+
+    before = DocClient(socket, room.project_id)
+    synced = before.sync()
+    assert synced["ok"] is True
+    old = before.doc_id
+    assert _code(before.dataflow(), "join") == "", "the doc was not made as the old Curio made it"
+    socket.disconnect(namespace=NAMESPACE)
+    closed = room.docs.close(room.project_id)
+    assert closed is True
+
+    # This Curio reads it converted.
+    monkeypatch.setattr(saved_joins, "converted_spec", converted_spec)
+    monkeypatch.setattr(saved_joins, "converted_dataflow", converted_dataflow)
+    fresh = room.tab("alice")
+    ack = fresh.sync()
+    assert ack["ok"] is True and ack["docId"] != old, "the kept doc was not built anew"
+    shared = json.loads((REPO_CONTRACTS / "savedSpatialJoin.json").read_text(encoding="utf-8"))
+    join = next(node for node in fresh.dataflow()["nodes"] if node["id"] == "join")
+    assert join["content"] == shared["code"]
+    assert join["metadata"] == {
+        "keywords": [],
+        "widgets": [{**shared["widgets"][0], "value": "within"}, shared["widgets"][1]],
+    }
+    assert _code(fresh.dataflow()) == "x = 1\n", "the other nodes changed"
+    assert room.pointer()["doc"] == ack["docId"]
+    assert room.docs.segments(room.owner_key, room.project_id, old) == [room.day], "the old log went"
+
+
+def test_a_read_of_another_processs_doc_kept_from_before_reads_the_join_converted(room, monkeypatch):
+    """A read that replays a doc's log into a doc of its own, as a process
+    that does not own the dataflow reads it, reads a join a doc kept from
+    before holds with its code and widgets (``_read_with``)."""
+    from utk_curio.backend.app.collaboration import doc_mapping
+    from utk_curio.backend.app.projects import saved_joins
+
+    doc = doc_mapping.new_doc()
+    doc_mapping.dataflow_to_doc({**SPEC["dataflow"], "nodes": [SAVED_JOIN]}, doc, doc_id="kept")
+    read = room.docs._read_with(dict(SPEC), doc)
+    join = read["dataflow"]["nodes"][0]
+    assert join == saved_joins.converted_node(SAVED_JOIN)
+    assert join["content"] != "" and "spatialJoin" not in join["metadata"]

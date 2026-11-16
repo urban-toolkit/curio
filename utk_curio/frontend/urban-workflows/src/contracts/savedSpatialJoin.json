@@ -1,0 +1,32 @@
+{
+  "description": "A Spatial Join saved before its join was code: a node of nodeType with no code and no widgets, whose settings were saved at metadata[setting] (predicate and output). It reads as a join made now: the template's code, and its two widgets, each holding the setting saved for it (widgetOf names the widget of each setting) when that setting is one of the widget's choices. code and widgets are the template's source and widgets (packages/curio.builtin@1, held equal by test_saved_spatial_join.py and savedSpatialJoin.test.ts). Read by the canvas (savedSpatialJoin.ts, through hook/codeNodes.ts) and by the backend (projects/saved_joins.py, through utk_curio/common/shared_constants.py); both run savedSpatialJoin.cases.json.",
+  "nodeType": "curio.builtin/spatial-join",
+  "setting": "spatialJoin",
+  "widgetOf": {
+    "predicate": "operation",
+    "output": "output"
+  },
+  "code": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
+  "widgets": [
+    {
+      "name": "operation",
+      "type": "choice",
+      "label": "Operation",
+      "default": "intersects",
+      "options": {
+        "choices": ["intersects", "within", "contains", "touches", "overlaps", "crosses", "nearest"],
+        "display": "dropdown"
+      }
+    },
+    {
+      "name": "output",
+      "type": "choice",
+      "label": "Output",
+      "default": "pairs",
+      "options": {
+        "choices": ["pairs", "counts"],
+        "display": "dropdown"
+      }
+    }
+  ]
+}

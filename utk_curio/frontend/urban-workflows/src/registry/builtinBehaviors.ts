@@ -18,7 +18,6 @@ import {
   useDataPoolBehavior,
   useDataSummaryBehavior,
   useAutkViewBehavior,
-  useSpatialJoinBehavior,
   useEditFeaturesBehavior,
   useNoteBehavior,
 } from '../adapters/node';
@@ -32,9 +31,6 @@ registerBehavior('vega', useVegaBehavior);
 registerBehavior('simple-vis', useSimpleVisBehavior);
 // The Autark node, whose selection tags are emptied each time it draws (#884).
 registerBehavior('autk-grammar', useAutkViewBehavior);
-// curio.builtin@1 spatial-join node (stays in core because the builtin
-// package's behaviors must be registered before ANY package registry runs).
-registerBehavior('spatial-join', useSpatialJoinBehavior);
 // curio.builtin@1 edit-features node: features picked on its map, removed,
 // given a value or restored, as a list its code applies by id (#662).
 registerBehavior('edit-features', useEditFeaturesBehavior);

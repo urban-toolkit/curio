@@ -797,9 +797,9 @@ def _plan_node_widgets(node: dict, raw: object, where: str) -> list[str]:
 
 def _plan_node_settings(node: dict, node_raw: dict, where: str) -> list[str]:
     """A planned node's settings, set on *node* (each absent when it sets
-    none), or the errors: a Spatial Join's operation and output, a Data Pool's
-    conflict modes, a Simple View's image column (``node_settings``). Which
-    template takes one is the mint's question: the grammar knows no roster."""
+    none), or the errors: a Data Pool's conflict modes, a Simple View's image
+    column (``node_settings``). Which template takes one is the mint's
+    question: the grammar knows no roster."""
     from utk_curio.backend.app.agents.domain import node_settings
 
     settings, problems = node_settings.parse(node_raw, where)

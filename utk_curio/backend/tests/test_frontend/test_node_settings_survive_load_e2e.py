@@ -4,7 +4,10 @@
 it to a node factory that builds ``node.data`` from an explicit option list the
 setting was not on, so the Spatial Join's setting survived every save and died
 on every load (#262). ``metadata.simpleVis`` (#276) took the same path. Since
-#576 the Spatial Join's settings are its operation and its output.
+#576 the Spatial Join's settings are its operation and its output, and now
+its two widgets, Operation and Output, which its code reads: a join saved
+before that, with no code and its settings at ``metadata.spatialJoin``, opens
+with its template's code and those settings in its widgets.
 
 This asks the loaded node, not the file: right after the canvas opens, the
 control on the Spatial Join must already read the persisted value. No run is
@@ -21,9 +24,11 @@ Run::
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 from .utils import (
+    REPO_ROOT,
     api_json,
     node_locator,
     require_owner_view,
@@ -35,6 +40,9 @@ from .utils import (
 
 if TYPE_CHECKING:
     from .utils import FrontendPage
+
+#: The Spatial Join's code, its template's source.
+JOIN_SOURCE = os.path.join(REPO_ROOT, "packages", "curio.builtin@1", "sources", "spatial-join.py")
 
 JOIN_ID = "settings-join"
 CONFIGURED_ID = "settings-configured"
@@ -66,17 +74,30 @@ def _spec() -> dict:
     }
 
 
+#: The code and the widgets' values a canvas node holds, read off React Flow's store.
+_NODE_CODE_AND_VALUES_JS = """(id) => {
+    const node = window.__curio_reactFlow.getNodes().find((n) => n.id === id);
+    const widgets = (node && node.data && node.data.widgets) || [];
+    return {
+        code: node && node.data ? node.data.code : null,
+        values: Object.fromEntries(widgets.map((w) => [w.name, w.value === undefined ? null : w.value])),
+        oldSettingGone: node && node.data ? node.data.spatialJoin === undefined : null,
+    };
+}"""
+
+
 def test_the_spatial_join_settings_are_live_after_the_load(
     app_frontend: "FrontendPage",
     current_server: str,
     page,
 ):
-    """#576: the operation and the output, as the spec saved them."""
+    """#576: the operation and the output, as the spec saved them before the
+    join had code, in its two widgets, and the template's code beside them."""
     require_project_page()
     require_user_auth()
 
     page.emulate_media(reduced_motion="reduce")
-    stub_login_and_enter_workflow(
+    session = stub_login_and_enter_workflow(
         page,
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
@@ -87,18 +108,33 @@ def test_the_spatial_join_settings_are_live_after_the_load(
     )
     require_owner_view(page)
 
+    # It opens on its controls: the two widgets its code reads.
     control = node_locator(page, JOIN_ID).locator('select[aria-label="Operation"]')
     control.wait_for(state="visible", timeout=45000)
     assert control.input_value() == "within", (
         "the Spatial Join opened with "
         f"{control.input_value()!r} although the spec persisted 'within': the "
-        "setting was dropped between loadTrill and the node factory"
+        "setting was dropped between the saved join and its widget"
     )
 
     # The second setting rides in the same metadata object and must survive too.
     output = node_locator(page, JOIN_ID).locator('select[aria-label="Output"]')
     output.wait_for(state="visible", timeout=15000)
     assert output.input_value() == "counts", output.input_value()
+
+    with open(JOIN_SOURCE, encoding="utf-8") as handle:
+        source = handle.read()
+    held = page.evaluate(_NODE_CODE_AND_VALUES_JS, JOIN_ID)
+    assert held == {"code": source, "values": {"operation": "within", "output": "counts"}, "oldSettingGone": True}, held
+
+    # The server reads it so too: what a run, an agent or a dashboard reads.
+    saved = api_json(f"{current_server}/api/projects/{session['project']['id']}", session["token"])["spec"]
+    join = next(n for n in saved["dataflow"]["nodes"] if n["id"] == JOIN_ID)
+    assert join["content"] == source
+    assert "spatialJoin" not in join["metadata"], join["metadata"]
+    assert {w["name"]: w.get("value") for w in join["metadata"]["widgets"]} == {
+        "operation": "within", "output": "counts",
+    }, join["metadata"]["widgets"]
 
 
 def _python_node(node_id: str, x: int, metadata: dict) -> dict:

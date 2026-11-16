@@ -7,14 +7,16 @@ package's functions, as its details list them.
   other modules nothing; Rasterization's modules the calls its README lists,
   the mosaics in ``scout_rasters.mosaic``; Media's ``media_collections`` the
   two its video and audio nodes call; the weather model's ``weather_routing``
-  its route. Every name a shipped ``__all__`` lists is a function its module
-  offers, with a docstring.
+  its route; the built-in package's ``spatial_join`` the Spatial Join's join.
+  Every name a shipped ``__all__`` lists is a function its module offers, with
+  a docstring.
 - ``GET /api/packages/node-functions?nodeType=``: the engine of the node's
   template, Curio's functions for that engine from the page that lists them
   (``skills/node-functions/SKILL.md``), and, for a Python node, the functions
   the modules a run hands it offer, its own package's first, as Accumulated
   Shadow's and Mosaic Rasters' headers list Rasterization's after their own
-  package's. Each with the call a click on it writes.
+  package's, and a built-in Python node's the built-in package's. Each with
+  the call a click on it writes.
 - ``GET /api/packages/<dir>/functions``: each module of a package with the
   functions it offers, from the account's copy, else the catalog's.
 
@@ -104,6 +106,13 @@ def test_rasterization_offers_the_calls_its_readme_lists_and_the_weather_model_i
         "weather_routing.road_graph": [],
         "weather_routing.weather_routing": [],
         "weather_routing.weight_calculation": [],
+    }
+
+
+def test_the_built_in_package_offers_the_spatial_joins_join():
+    """Its one module, whose function the Spatial Join's code calls."""
+    assert _offered(PACKAGES / "curio.builtin@1") == {
+        "spatial_join": [("spatial_join", "spatial_join(left, right, operation='intersects', output='pairs')")],
     }
 
 
@@ -263,11 +272,52 @@ def test_a_javascript_node_lists_curios_functions_for_javascript_and_a_spec_noth
     assert javascript["curio"][0]["insert"] == "curio_layer(value, layer)"
 
     python = _get(client, token, "?nodeType=curio.builtin/python-computation").get_json()
-    assert python["engine"] == "python" and python["modules"] == []
+    assert python["engine"] == "python" and python["modules"] == [BUILTIN_LISTED]
     assert [f["name"] for f in python["curio"]] == [f.name for f in node_functions.for_engine("python")]
 
     for spec in ("curio.builtin/vis-vega", "curio.builtin/autk-grammar", "ai.nobody/nothing"):
         assert _get(client, token, f"?nodeType={spec}").get_json() == {"engine": None, "curio": [], "modules": []}
+
+
+#: What the header lists for a built-in Python node besides Curio's own
+#: functions: the built-in package's one module, whose function the Spatial
+#: Join's code calls.
+BUILTIN_LISTED = {
+    "package": "curio.builtin@1",
+    "module": "spatial_join",
+    "problem": None,
+    "functions": [{
+        "name": "spatial_join",
+        "call": "spatial_join(left, right, operation='intersects', output='pairs')",
+        "doc": "Pair each row of ``left`` with the rows of ``right`` whose shapes meet by ``operation``: "
+               "intersects, within, contains, touches, overlaps, crosses or nearest.",
+        "insert": "spatial_join(left, right)",
+    }],
+}
+
+
+@pytest.mark.parametrize("node_type", [
+    "curio.builtin/python-computation",
+    "curio.builtin/data-loading",
+    "curio.builtin/data-export",
+    "curio.builtin/data-summary",
+    "curio.builtin/spatial-join",
+    "curio.builtin/edit-features",
+])
+def test_every_built_in_python_node_lists_spatial_join_after_curios_functions(client, user_and_token, node_type):
+    """Every built-in Python node's header lists Curio's functions for Python
+    and the built-in package's module: one more function than Curio's own."""
+    from utk_curio.backend.app.agents.domain import node_functions
+
+    user, token = user_and_token
+    _account(user)
+    listed = _get(client, token, f"?nodeType={node_type}").get_json()
+    assert listed["engine"] == "python"
+    assert listed["modules"] == [BUILTIN_LISTED]
+    assert len(listed["curio"]) == len(node_functions.for_engine("python"))
+    assert len(listed["curio"]) + sum(len(row["functions"]) for row in listed["modules"]) == (
+        len(node_functions.for_engine("python")) + 1
+    )
 
 
 @pytest.mark.parametrize("query", ["", "?nodeType=", "?nodeType=" + "x" * 201])
