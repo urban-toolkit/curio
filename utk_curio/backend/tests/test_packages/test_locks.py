@@ -77,10 +77,13 @@ def test_lock_file_path_namespace_and_key_are_the_seeders(tmp_curio, monkeypatch
 
 
 def test_lock_is_released_when_the_body_raises(tmp_curio):
+    # Taken first and kept, so it is the very lock the hold below takes: a
+    # resource's lock goes once nothing references it (file_locks.py).
+    thread_lock = file_locks.keyed_thread_lock("package-seed", "guest")
     with pytest.raises(RuntimeError):
         with package_seed_lock("guest"):
+            assert thread_lock.locked(), "the hold took another lock than the resource's"
             raise RuntimeError("snapshot code failed")
-    thread_lock = file_locks.keyed_thread_lock("package-seed", "guest")
     assert not thread_lock.locked(), "the in-process layer must be released"
     # And the interprocess layer: re-acquisition on this thread must not block.
     acquired = threading.Event()
@@ -312,6 +315,7 @@ _ACCOUNTED_ENUMERATORS = {
     "app/packages/application/function_nodes.py": {"package_functions"},  # lock owner
     "app/packages/application/model_packages.py": {"held_model_packages"},  # lock owner
     "app/packages/application/model_downloads.py": {"upgrade_downloaded_models"},  # lock owner
+    "app/packages/application/guest_packages.py": {"_give"},  # lock owner
 }
 
 

@@ -151,6 +151,18 @@ def main():
         ),
     )
     parser.add_argument(
+        "--guest-packages", default=None, metavar="PACKAGES",
+        help=(
+            "Comma-separated catalog packages, each by its folder name "
+            "(<id>@<major>), that every guest has: each start adds them, with "
+            "the packages they need, to the shared guest's account, installs "
+            "their libraries with the examples', and takes off what an earlier "
+            "start added that the list no longer names (sets "
+            "CURIO_GUEST_PACKAGES). A name that is not a package of the "
+            "catalog stops the start."
+        ),
+    )
+    parser.add_argument(
         "--testing", action="store_true",
         help=(
             "Run against the dedicated test database under .curio/test/ and "
@@ -183,8 +195,10 @@ def main():
     parser.add_argument(
         "--exec-memory-mb", type=int, default=None,
         help=(
-            "Memory a node may allocate, in MB, on top of the interpreter the "
-            "isolated child starts with (sets CURIO_EXEC_MEMORY_MB, default "
+            "Memory an isolated node's processes may use together, in MB: a "
+            "cgroup limit, or where the container cannot give each node a "
+            "cgroup, what it may allocate on top of the interpreter its child "
+            "starts with (sets CURIO_EXEC_MEMORY_MB, default "
             f"4096, floor {supervisor.MIN_EXEC_MEMORY_MB}). Note the real host "
             "ceiling is this times --exec-parallelism."
         ),
@@ -530,6 +544,7 @@ def main():
         js_block_unpinned=args.js_block_unpinned,
         shared_guest_name=args.shared_guest_name,
         shared_guest_username=args.shared_guest_username,
+        guest_packages=args.guest_packages,
         collab_origins=args.collab_origins,
         collab_namespace=args.collab_namespace,
         log_to_stdout=args.log_to_stdout,

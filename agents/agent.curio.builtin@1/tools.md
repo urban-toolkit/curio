@@ -251,10 +251,11 @@ Delegate one specialized capability to the agent that handles it, and receive it
 - nodeId: The node's id. Defaults to the node this agent is attached to.
 - appearance.backgroundColor: A palette name or #RRGGBB.
 - widgets: The node's widgets: values the user sets in its Widgets tab, which its code reads.
-- widgets[]: A widget: name, type, label, default, and options (choices, display, min, max, step, units).
+- widgets[]: A widget: name, type, label, default, value, and options (choices, display, min, max, step, units).
 - widgets.name: Letters, digits and underscores: the code places it as {{widgets.reference:name}}.
 - widgets.label: What the Widgets tab shows beside the control.
 - widgets.default: The value until one is set, as JSON: 2.5, true, [1, 5] or "north".
+- widgets.value: The value it holds over its default, as JSON.
 - spatialJoin: A Spatial Join node's operation and output; it holds no content.
 - dataPool: A Data Pool node's conflict modes, each OVERWRITE when absent; it holds no content.
 - dataPool.insideChart: How the selects of one chart combine.

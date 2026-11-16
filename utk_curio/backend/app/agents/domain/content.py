@@ -782,11 +782,12 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
 
 
 def _plan_node_widgets(node: dict, raw: object, where: str) -> list[str]:
-    """#662: a planned node's widgets, set on *node* (absent when it has none),
-    or the errors."""
+    """#662: a planned node's widgets, set on *node* as written (absent when
+    it has none), or the errors. The mint sets them over its template's
+    widgets (``widget_grammar.template_problems``, ``set_over``)."""
     from utk_curio.backend.app.agents.domain import widget_grammar
 
-    widgets, problems = widget_grammar.parse_widgets(raw, f"{where}.widgets")
+    widgets, problems = widget_grammar.read_widgets(raw, f"{where}.widgets")
     if problems:
         return problems
     if widgets:

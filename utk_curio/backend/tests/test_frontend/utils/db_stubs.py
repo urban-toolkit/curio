@@ -50,8 +50,10 @@ def _request_json(
 
 # 60 s, not 10: under ``--parallel`` four backends share the CPU with four
 # Chromiums, and a stub-login that seeds the examples for a fresh user was
-# measured taking 15-48 s to answer. The server does finish; a client that
-# gives up at 10 s turns that into a class-wide setup error.
+# measured taking 15-48 s to answer. A CI host whose disk stalls holds a synced
+# write as long: an LLM configuration's took 27 s on arcade (run 42558359012).
+# The server does finish; a client that gives up at 10 s turns that into a
+# class-wide setup error. ``api_json`` waits as long.
 HTTP_TIMEOUT_S = 60.0
 
 
@@ -71,7 +73,7 @@ def api_json(
     *,
     method: str = "GET",
     payload: dict | None = None,
-    timeout: float = 10.0,
+    timeout: float = HTTP_TIMEOUT_S,
     raw: bool = False,
     extra_headers: dict | None = None,
 ):
@@ -80,7 +82,8 @@ def api_json(
     The escape hatch for asserting backend state from a browser test: it makes a
     seeding or persistence problem fail in about a second with the offending
     payload, instead of as a 15-second locator timeout that says nothing about
-    which side broke.
+    which side broke. An answer that is only late is waited for, up to
+    ``HTTP_TIMEOUT_S``.
 
     ``extra_headers`` carries anything the target needs beyond the bearer token.
     The sandbox is the case that needs it: its code-execution routes require a

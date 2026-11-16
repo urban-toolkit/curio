@@ -432,6 +432,31 @@ class TestImports:
         refusal = _gate("from deep_umbra.deep_umbra import season_factor\nreturn season_factor(1)", node_type=CA)
         assert refusal and "import deep_umbra (line 1)" in refusal and "has not added" in refusal, refusal
 
+    def test_a_module_only_the_catalogs_newer_version_ships_is_refused_with_that_version(
+        self, app, tmp_curio, monkeypatch,
+    ):
+        # The account holds a package's 1.0.0, which ships no such module; the
+        # catalog's 1.1.0 does. The refusal names that version, not an add.
+        from utk_curio.backend.app.packages import service as packages_service
+        from utk_curio.backend.app.packages.application.store_install import install_package_from_archive
+        from utk_curio.backend.tests.test_packages import test_missing_import as missing
+
+        catalog = tmp_curio / "catalog"
+        catalog.mkdir()
+        monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(catalog))
+        install_package_from_archive(USER, missing._archive(missing._package_files(ships_module=False)))
+        missing._put_in_catalog(catalog, version="1.1.0")
+        index = packages_service.module_index(USER, PROJECT)
+        home = index.get(missing.MODULE)
+        assert home and home.get("another_version") is True and home.get("newer") is True, index
+
+        ctx = sg.GroundingContext(code_engine="python", reachable_modules=frozenset(), package_modules=index)
+        refusals = sg._import_refusals(f"from {missing.MODULE} import track\nreturn track()", ctx)
+        count = len(refusals)
+        assert count == 1, refusals
+        assert f"import {missing.MODULE} (line 1)" in refusals[0], refusals
+        assert "at version 1.1.0" in refusals[0] and "has not added" not in refusals[0], refusals
+
     def test_solve_refuses_the_import_before_the_sandbox(self, app, tmp_curio):
         routes_proposals.TestNodeCreate()._write_builtin_package(verified_rounds.KEY, templates=verified_rounds.TEMPLATES)
         _add_package(verified_rounds.KEY, "curio.rasterization@1")

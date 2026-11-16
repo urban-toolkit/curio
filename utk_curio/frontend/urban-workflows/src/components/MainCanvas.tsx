@@ -568,7 +568,8 @@ export function MainCanvas() {
     // drawer's own Add first (the review, then the install of its libraries),
     // and the node is made once it is added; the Models palette lists only
     // the dataflow's models, so its rows make their nodes at once. A hosted
-    // guest's drop is refused, since guests never install. On the owner's
+    // guest's drop of a package its account does not hold is refused, since
+    // guests never install; one it holds goes through the Add. On the owner's
     // dataflow an invited editor's drop of a package the dataflow does not use
     // makes its node at once and asks her to add the package
     // (useAskForPackage): the node waits for her review.

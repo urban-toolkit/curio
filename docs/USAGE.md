@@ -96,7 +96,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--testing` | off | Run against the dedicated test database under `.curio/test/` and mount the test-only `/api/testing/*` routes. Also the one exemption to `--deploy` requiring isolated execution. Never for a real instance: those routes reset the database and sign in as any user without a password |
 | `--with-examples` | off | Seed the use cases, examples and tests from `docs/examples/` |
 | `--reseed` | off | Force re-seeding catalog packages into the guest package store |
-| `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / half the host's cores, from 2 to 8 | Limits for isolated execution. `exec-memory-mb` is what a node may allocate on top of the interpreter its child starts with, with a floor of 64. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
+| `--exec-memory-mb` / `--exec-timeout` / `--exec-parallelism` | 4096 / 300 / half the host's cores, from 2 to 8 | Limits for isolated execution. `exec-memory-mb` is the memory a node and the processes it starts may use together, the files they read included and the GPU's memory not, with a floor of 64: past it the node is stopped and says so. Where Curio's container cannot give each node a cgroup, it is instead what a node may allocate on top of the interpreter its child starts with. The real host memory ceiling is `exec-memory-mb x exec-parallelism` |
 
 `--deploy` turns on node-execution isolation, and refuses to start on a host that cannot provide it: isolation needs Linux and an unprivileged execution account, which the Docker image creates as `curio-exec`. Two environment variables override that, for test stacks and for an operator who wants it off: `CURIO_ISOLATION=off|fork` and `CURIO_EXEC_USER=<account>` (empty means none). `CURIO_ISOLATION=fork` is fail-closed: a host that cannot provide isolation refuses to start. See [ARCHITECTURE.md](ARCHITECTURE.md#isolated-node-execution-opt-in-linux-only).
 
@@ -112,6 +112,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 | `--db-pool-size N` / `--db-pool-overflow N` / `--db-pool-timeout SECONDS` | 64 / 128 / 30 | The backend's database connections: how many it keeps open, how many more it may open while those are all in use, and how long a request waits for one |
 | `--proxy-hops N` | 0 | How many reverse proxies in front of the backend add the visitor's address to `X-Forwarded-For`. The limits per address (sign-in attempts, error reports, a dashboard's runs) then read it there. See [DEPLOYMENT.md](DEPLOYMENT.md#security-checklist) |
 | `--shared-guest-name NAME` / `--shared-guest-username NAME` | `Shared Guest` / `guest_shared` | The shared guest, the one account every guest sign-in uses. A new username gives guests a new, empty account |
+| `--guest-packages PACKAGES` | none | The catalog packages every guest has, by folder name with commas between them, such as `model.curio.sam3@1`. Each start adds them, with the packages they need, to the shared guest's account, installs their libraries with the examples', and takes off what an earlier start added that the list no longer names. A name that is not a package of the catalog stops the start. See [DEPLOYMENT.md](DEPLOYMENT.md#packages-every-guest-has) |
 | `--log-to-stdout` / `--no-log-to-stdout` | on | Whether the backend and sandbox write their logs to their output, which the launcher keeps in its own log, or to `utk_curio/logs/` |
 | `--collab-origins ORIGINS` / `--collab-namespace NAMESPACE` | `*` / `/collab` | The origins whose pages may connect to the backend's Socket.IO, which [real-time collaboration](#real-time-collaboration) travels over, and its namespace. See [COLLABORATION.md](COLLABORATION.md) |
 
@@ -125,7 +126,7 @@ Curio needs Node.js 26 and refuses to start on an earlier version, naming the on
 > [!NOTE]
 > `--force-rebuild` deletes `node_modules/`, `dist/` and `build/` and rebuilds from source, so it needs the frontend sources and a working npm; the Docker image ships only the built `dist/` and cannot rebuild in place.
 
-Some flags set their variable on every start, passed or not: the backend and sandbox host and port flags, `--backend-url`, `--dev`, `--with-examples`, `--reseed`, `--allow-publish`, `--save-node-outputs`, `--deploy` and `--no-project`. For those, the matching variable in a `.env` has no effect when you launch through `curio.py`; use the flag. Every other flag sets its variable only when it is passed.
+Some flags set their variable on every start, passed or not: the backend and sandbox host and port flags, `--backend-url`, `--dev`, `--with-examples`, `--reseed`, `--allow-publish`, `--save-node-outputs`, `--guest-packages`, `--deploy` and `--no-project`. For those, the matching variable in a `.env` has no effect when you launch through `curio.py`; use the flag. Every other flag sets its variable only when it is passed.
 
 `CURIO_BACKEND_DEBUG=1` turns on Flask's debug mode for the backend, which is off by default. It has no flag of its own, so, unlike the variables above, setting it in a `.env` does work when you launch through `curio.py`. Auto-reload is a separate switch (`FLASK_USE_RELOADER`) and is unaffected.
 
@@ -1331,6 +1332,8 @@ Removing an interaction edge, or a node at either end, removes the highlight it 
 
 A point selection over fields (`"select": {"type": "point", "fields": ["unit_id"]}`) sends the values of the points picked, such as `{"unit_id": 103}`, and the receiving chart marks every row that holds them, in whatever order it holds its rows. A point selection without fields matches rows by position, so both charts must read the same rows in the same order. An interval selection matches by column name, so the receiving chart needs the columns the interval names.
 
+A Simple View's player is a selection too, an interval on `t_s`, the time in seconds. Draw an interaction edge from the Simple View to a chart or a map: while a video or a recording plays in one of its cards, the view at the other end marks the rows whose `t_s` lies between the file's start and where the player stands, such as a walk's points up to where the walker is. The marks follow the player as it plays and when you seek, and stay where it stands when you pause. They go when another card plays, when the Simple View's rows change, or when the edge or either node is removed. `t_s` is the time in the video as Sample Video Frames and Split Audio write it; a table that holds clock times gets its `t_s` in a Python node before it is linked. A file cut from a longer one, such as Track Objects' overlay or Split Audio's clip, holds where it starts in its own `t_s`, and its player's range is then in the longer file's time.
+
 When several selections reach a Data Pool, the two selects at the top of the pool decide which rows it marks. **Conflict inside visualization** combines the selections of one chart, and **Conflict between visualizations** combines the latest selection of each linked chart:
 
 - **Overwrite**: the most recent selection alone.
@@ -1339,7 +1342,7 @@ When several selections reach a Data Pool, the two selects at the top of the poo
 
 The chosen modes are saved with the dataflow.
 
-An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive.
+An Autark map takes part the same way: a selection highlights its features, and a pick on the map, or a selection in an Autark plot, is a selection the others receive. A selection from a chart or a Simple View highlights the features of the map's first input table, on the layer marked `"isPick": true`, the one layer a map highlights.
 
 A Map Editor node and the map it edits on are linked the same way, by an interaction edge that carries selections both ways: a feature picked on the map is picked in the node, and what the node picks lights up on the map.
 

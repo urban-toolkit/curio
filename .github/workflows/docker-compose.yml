@@ -869,6 +869,21 @@ jobs:
           fi
           echo "OK: the deploy configuration pins isolation fail-closed."
 
+          # Each isolated node's memory is a cgroup at its budget, which the
+          # container may arrange only with a private cgroup namespace and
+          # writable cgroups. Without either line the live instances fall
+          # back to the address-space cap, which SAM 3 cannot run under.
+          if ! echo "$config" | grep -qE '^ +cgroup: "?private"?$'; then
+            echo "::error::docker-compose.deploy.yml no longer asks for a private cgroup namespace (cgroup: private); the live instances' nodes would fall back to the address-space cap" >&2
+            exit 1
+          fi
+          if ! echo "$config" | grep -qE '^ +- "?writable-cgroups=true"?$'; then
+            echo "::error::docker-compose.deploy.yml no longer asks for writable cgroups (security_opt: writable-cgroups=true); the live instances' nodes would fall back to the address-space cap" >&2
+            echo "$config" | grep -A 3 'security_opt:' >&2 || true
+            exit 1
+          fi
+          echo "OK: the deploy configuration gives each node a cgroup at its budget."
+
           # The execution account is DISCOVERED by name rather than passed as a
           # flag, so the command line can no longer be the thing that proves it
           # exists. The image is. Without it the sandbox still refuses to serve
@@ -1239,7 +1254,8 @@ jobs:
           passed = [c.get("name") for c in cases if not any(c.find(k) is not None for k in ("failure", "error", "skipped"))]
           needed = {"test_a_tiny_mlp_runs_on_the_gpu_and_matches_numpy",
                     "test_torch_is_the_cuda_12_9_build_and_multiplies_on_the_gpu",
-                    "test_a_node_in_an_isolated_child_reaches_the_gpu_through_torch"}
+                    "test_a_node_in_an_isolated_child_reaches_the_gpu_through_torch",
+                    "test_a_node_holds_more_of_the_gpu_than_the_address_space_cap_allowed"}
           if len(passed) != len(cases) or not needed <= set(passed):
               sys.exit(f"::error::the CUDA tests did not all pass: {len(passed)} of {len(cases)}")
           print(f"OK: {len(passed)} CUDA tests passed")
@@ -1686,13 +1702,15 @@ jobs:
 
       # The whole point of the job: prove the stack is actually isolated before
       # reading anything into the test results. /version reports the mode the
-      # sandbox resolved, the same answer the UI badge shows.
+      # sandbox resolved, the same answer the UI badge shows, and the memory
+      # limit its nodes get: a cgroup each, as the deploy's, where the
+      # container's cgroups are writable (docker-compose.ci-isolated.yml).
       - name: 🔒 Assert the stack came up configured for isolation
         shell: bash
         run: |
           set -euo pipefail
-          mode="$(curl -sf "http://localhost:${CURIO_E2E_SANDBOX_PORT}/version" \
-                  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("isolation",""))')"
+          version="$(curl -sf "http://localhost:${CURIO_E2E_SANDBOX_PORT}/version")"
+          mode="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("isolation",""))' <<<"$version")"
           if [ "$mode" != "fork" ]; then
             echo "::error::the stack did not come up isolated (/version reported '${mode:-nothing}')" >&2
             docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
@@ -1700,6 +1718,14 @@ jobs:
             exit 1
           fi
           echo "OK: the sandbox reports node execution isolation = fork"
+          limit="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("memory_limit",""))' <<<"$version")"
+          if [ "$limit" != "cgroup" ]; then
+            echo "::error::the stack's nodes get no cgroup at their budget (/version reported memory_limit '${limit:-nothing}')" >&2
+            docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+              'grep -i "node memory" .curio/messages.log 2>/dev/null | tail -5' >&2 || true
+            exit 1
+          fi
+          echo "OK: the sandbox reports each node's memory limit = cgroup"
 
       - name: 🔧 Give .curio/ permissions for host-side tests
         run: |
@@ -2197,14 +2223,21 @@ jobs:
         run: kill "$(cat "$GITHUB_WORKSPACE/stats-sampler.pid")" 2>/dev/null || true
 
       # The verdict a laptop user would have given: the OOM killer took nothing.
+      # Docker's OOMKilled and the kernel's log count an isolated node stopped
+      # at its own budget too, so the container's counters say first which it
+      # was (scripts/ci_memory_budget.py kills).
       - name: 🔒 Assert nothing was OOM-killed
         if: always()
         shell: bash
         run: |
           set -euo pipefail
           cid="$(docker compose -p curio-ci-stress ps -a -q curio | head -n1)"
+          docker compose -p curio-ci-stress exec -T curio sh -c 'cat /sys/fs/cgroup/memory.events;
+              echo "# memory.events.local"; cat /sys/fs/cgroup/memory.events.local;
+              echo "# nodes"; cat /sys/fs/cgroup/nodes/memory.events' 2>/dev/null \
+            | python3 scripts/ci_memory_budget.py kills || true
           if [ "$(docker inspect --format '{{.State.OOMKilled}}' "$cid")" = true ]; then
-            echo "::error::the stack's container was OOM-killed" >&2
+            echo "::error::the stack's container was OOM-killed, or an isolated node in it was stopped at its memory budget (the lines above say which)" >&2
             exit 1
           fi
           if sudo dmesg 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process'; then

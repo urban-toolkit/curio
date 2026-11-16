@@ -6,6 +6,7 @@
  * dataflow has the package, after the drawer's Add review when it has not.
  * Escape or a click outside makes no node. A hosted guest's drop of a package
  * the dataflow has not added is refused before any menu: guests never install.
+ * One its account holds goes through the drawer's Add, which installs nothing.
  */
 import React from "react";
 import { act, render, screen } from "@testing-library/react";
@@ -211,5 +212,27 @@ describe("a hosted guest's drop", () => {
     await userEvent.click(screen.getByRole("menuitem", { name: "Pair First Probe" }));
     expect(createNode).toHaveBeenCalledWith(FIRST, POSITION);
     expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it("of a package its account holds goes through the drawer's Add, and its node is made once the package is added", () => {
+    // Such as a package the operator gives every guest (--guest-packages):
+    // adding it to the dataflow installs nothing.
+    const requests = openDrawer();
+    const { createNode, showToast, drop } = canvas({ hostedGuest: true });
+    drop({ ...PROBE, inAccount: true });
+    expect(showToast).not.toHaveBeenCalled();
+    expect(requests.map((r) => [r.dirName, r.kind])).toEqual([[PROBE.dirName, "node"]]);
+    expect(createNode).not.toHaveBeenCalled();
+    act(() => requests[0].onAdded());
+    expect(createNode).toHaveBeenCalledWith(PROBE.nodes[0], POSITION);
+  });
+
+  it("of a package its account does not hold is refused, as one the drag says nothing of", () => {
+    const requests = openDrawer();
+    const { createNode, showToast, drop } = canvas({ hostedGuest: true });
+    drop({ ...PROBE, inAccount: false });
+    expect(showToast).toHaveBeenCalledWith(guestAddRefusal("Wheelhouse Probe"), "warning");
+    expect(requests).toEqual([]);
+    expect(createNode).not.toHaveBeenCalled();
   });
 });

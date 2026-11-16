@@ -3,9 +3,10 @@ process that serves.
 
 With several backend processes, the launcher names each (``CURIO_BACKEND_PROCESS``
 of ``CURIO_BACKEND_PROCESSES``), and process 0, home, alone does the startup
-work: the shared guest, the hosted guests' copies dropped, the agents and the
-examples put back, the monitor's histories started anew, the timers, the
-open-files sampler and the bucket mount service's proxy and check. Under
+work: the shared guest, the hosted guests' copies dropped, the agents, the
+packages ``--guest-packages`` names and the examples put back, the monitor's
+histories started anew, the timers, the open-files sampler and the bucket
+mount service's proxy and check. Under
 Werkzeug's reloader the process the launcher started only watches the files
 and starts the process that serves, which does that work.
 
@@ -34,6 +35,7 @@ STARTUP_WORK = {
     "utk_curio.backend.app.projects.visitor_copies.drop_all": 0,
     "utk_curio.backend.app.projects.services.reconcile_guest_projects": 0,
     "utk_curio.backend.app.projects.services.seed_default_agents": None,
+    "utk_curio.backend.app.packages.service.add_guest_packages": [],
     "utk_curio.backend.app.projects.seed.seed_example_projects": 0,
     "utk_curio.backend.app.datasets.seed.seed_example_datasets": [],
     # serve()
