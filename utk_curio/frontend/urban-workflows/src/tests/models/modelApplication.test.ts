@@ -139,12 +139,12 @@ describe("applyModelToNodeData", () => {
 });
 
 describe("modelNodeForCanvas", () => {
-  // DDRNet23-Slim's model package's node, which opens with the segmentation
-  // cell the backend writes for it.
+  // DDRNet23-Slim's model package's node, which opens with its source: a
+  // call of the Segmentation package's segment_images.
   const segmentation = {
     nodeType: "model.curio.ddrnet23-slim/image-segmentation@1",
     label: "Image Segmentation",
-    code: 'model = curio_load_model("model.curio.ddrnet23-slim")\nreturn curio_segment(input_0, model)',
+    code: 'model = curio_load_model("model.curio.ddrnet23-slim")\nreturn segment_images(input_0, model, curio_derived_file)',
     packageName: "DDRNet23-Slim (street scenes)",
   };
   const loader = { nodeType: "curio.builtin/data-loading", label: "Data Loading", code: undefined };
@@ -154,7 +154,7 @@ describe("modelNodeForCanvas", () => {
     const node = modelNodeForCanvas([loader, transform, segmentation], segformer);
     expect(node).toEqual({
       ...segmentation,
-      code: 'model = curio_load_model("imported.xabc123def456")\nreturn curio_segment(input_0, model)',
+      code: 'model = curio_load_model("imported.xabc123def456")\nreturn segment_images(input_0, model, curio_derived_file)',
       modelRefs: [{ id: segformer.packageId, name: segformer.name }],
     });
   });

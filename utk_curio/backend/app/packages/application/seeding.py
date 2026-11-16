@@ -77,6 +77,7 @@ from utk_curio.backend.app.packages.repositories.store import (
 )
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.application import (
+    model_downloads as packages_model_downloads,
     model_packages as packages_model_packages,
     package_dependencies as packages_dependencies,
 )
@@ -474,8 +475,18 @@ def seed_dev_packages(*, user_key: str = "guest") -> list[str]:
     and each package is swapped into place atomically, so the request
     handlers that call this can overlap freely. That lock supersedes an
     in-process ``threading.Lock`` that guarded the same race.
+
+    After the pass, a model the store downloaded from the Discovery Catalog
+    before its source named the node a model gets is brought to that node
+    (``model_downloads.upgrade_downloaded_models``), as the pass refreshes a
+    catalog copy the catalog moved on from.
     """
-    return _seed_dev_packages_locked(user_key=user_key)
+    seeded = _seed_dev_packages_locked(user_key=user_key)
+    try:
+        packages_model_downloads.upgrade_downloaded_models(user_key)
+    except Exception:  # noqa: BLE001 - an old download's upgrade never blocks a read of the store
+        log.warning("Bringing the downloaded models of user_key=%s to their nodes failed", user_key, exc_info=True)
+    return seeded
 
 
 def _seed_dev_packages_locked(*, user_key: str) -> list[str]:

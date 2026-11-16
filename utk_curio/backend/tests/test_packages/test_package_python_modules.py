@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -189,6 +190,56 @@ class TestTheInstallerRefusesAModuleNameInUse:
         install_package_from_archive("guest", _archive("ai.test.first", modules=HEIGHTS))
         install_package_from_archive("7", _archive("ai.test.second", modules=HEIGHTS))
         assert package_dir("7", "ai.test.second@1").is_dir()
+
+
+# ---------------------------------------------------------------------------
+# A package with no node, at install
+# ---------------------------------------------------------------------------
+
+#: The words an install of a package with no template and no module is
+#: refused with, the words main refuses every package with no template with.
+NO_TEMPLATES = r"manifest\.json\.templates must be a non-empty list"
+
+
+class TestAPackageWithNoNode:
+    """A package that defines no template is a library, such as Segmentation:
+    it installs when it ships a module (main refused it), and one that ships
+    no module either is refused as main refuses it."""
+
+    def test_a_package_of_modules_alone_installs(self, tmp_curio):
+        result = install_package_from_archive("guest", _archive("ai.test.library", templates=(), modules=HEIGHTS))
+        assert result.manifest.templates == []
+        assert (package_dir("guest", "ai.test.library@1") / "sources" / "building_height" / "__init__.py").is_file()
+
+    @pytest.mark.parametrize("modules", [
+        None,
+        {"notes/readme.txt": "no Python here\n"},
+        {"not-a-name.py": "X = 1\n"},
+    ], ids=["no-sources", "no-python", "not-a-name"])
+    def test_one_with_no_module_either_is_refused_as_before(self, tmp_curio, modules):
+        with pytest.raises(InstallerError, match=NO_TEMPLATES):
+            install_package_from_archive("guest", _archive("ai.test.nothing", templates=(), modules=modules))
+        assert not package_dir("guest", "ai.test.nothing@1").exists()
+
+    def test_the_upload_route_installs_the_one_and_refuses_the_other(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        headers = {"Authorization": f"Bearer {token}"}
+
+        def upload(package_id: str, modules):
+            return client.post(
+                "/api/packages/upload",
+                data={"file": (io.BytesIO(_archive(package_id, templates=(), modules=modules)), "p.curio.zip")},
+                headers=headers,
+                content_type="multipart/form-data",
+            )
+
+        library = upload("ai.test.library", HEIGHTS)
+        assert library.status_code == 201, library.get_data(as_text=True)
+        package = library.get_json()["package"]
+        assert (package["dirName"], package["templates"]) == ("ai.test.library@1", [])
+        nothing = upload("ai.test.nothing", None)
+        assert nothing.status_code == 400, nothing.get_data(as_text=True)
+        assert re.search(NO_TEMPLATES, nothing.get_json()["error"]), nothing.get_json()
 
 
 class TestArchivesCarryPythonPackages:

@@ -298,6 +298,96 @@ class TestAMissingPackageRefusesTheWholeAdd:
 
 
 # ---------------------------------------------------------------------------
+# An install from the catalog: a catalog's Update, and the models a skill
+# evaluation's account holds
+# ---------------------------------------------------------------------------
+
+def _from_catalog(client, account, dir_name: str, *, replace: bool = False):
+    return client.post(
+        "/api/packages/catalog/install", json={"dirName": dir_name, "replace": replace}, headers=account.auth,
+    )
+
+
+class TestAnInstallFromTheCatalogBringsThePackagesItNeeds:
+    """``POST /api/packages/catalog/install`` brings the packages the catalog's
+    copy names, as an add brings them; main copied the package alone, so an
+    Update whose new version names a package left its nodes without it."""
+
+    def test_the_package_it_needs_lands_in_the_store_with_it(self, catalog, account, client):
+        base = _publish(catalog, "ai.test.base", modules=_helpers("base_helpers"))
+        mid = _publish(catalog, "ai.test.mid", needs={base: "*"}, modules=_helpers("mid_helpers"))
+        top = _publish(catalog, "ai.test.top", needs={mid: "*"})
+
+        installed = _from_catalog(client, account, top)
+
+        assert installed.status_code == 201, installed.get_data(as_text=True)
+        assert {base, mid, top} <= _store(account.key), _store(account.key)
+
+    def test_its_answer_says_what_the_libraries_of_the_packages_it_brought_did(
+        self, catalog, account, client, monkeypatch,
+    ):
+        """As an add's does: a library pip installed asks for the restart, and
+        one that does not import is named, for the package brought as for
+        the package itself."""
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+        monkeypatch.setattr(
+            pip_runner, "install_python_deps",
+            lambda deps: pip_runner.InstallReport(installed=sorted(deps or {}), skipped=[]),
+        )
+        base = _publish(catalog, "ai.test.base", python={"curio-test-unimportable": "*"},
+                        modules=_helpers("base_helpers"))
+        top = _publish(catalog, "ai.test.top", needs={base: "*"})
+
+        installed = _from_catalog(client, account, top)
+
+        assert installed.status_code == 201, installed.get_data(as_text=True)
+        body = installed.get_json()
+        assert "curio-test-unimportable" in body["restartRecommended"]["libs"], body
+        assert "curio-test-unimportable" in body["importErrors"], body
+
+    def test_an_update_brings_the_package_its_new_version_names(self, catalog, account, client):
+        top = _publish(catalog, "ai.test.top", version="1.0.0")
+        assert _from_catalog(client, account, top).status_code == 201
+        base = _publish(catalog, "ai.test.base", modules=_helpers("base_helpers"))
+        _publish(catalog, "ai.test.top", version="1.1.0", needs={base: "*"})
+
+        updated = _from_catalog(client, account, top, replace=True)
+
+        assert updated.status_code == 201, updated.get_data(as_text=True)
+        assert _manifest_version(account.key, top) == "1.1.0"
+        assert base in _store(account.key), _store(account.key)
+
+    def test_a_package_that_cannot_be_had_refuses_it_and_nothing_lands(self, catalog, account, client):
+        top = _publish(catalog, "ai.test.top", version="1.0.0")
+        assert _from_catalog(client, account, top).status_code == 201
+        _publish(catalog, "ai.test.top", version="1.1.0", needs={"ai.test.absent@1": "*"})
+        fresh = _publish(catalog, "ai.test.fresh", needs={"ai.test.absent@1": "*"})
+
+        for dir_name, replace in ((fresh, False), (top, True)):
+            refused = _from_catalog(client, account, dir_name, replace=replace)
+            assert refused.status_code == 409, refused.get_data(as_text=True)
+            error = refused.get_json()["error"]
+            assert "ai.test.absent@1" in error and dir_name in error, error
+
+        assert fresh not in _store(account.key)
+        assert _manifest_version(account.key, top) == "1.0.0"
+
+    def test_when_its_own_copy_fails_the_packages_it_brought_are_taken_back(self, catalog, account, client):
+        top = _publish(catalog, "ai.test.top", version="1.0.0")
+        assert _from_catalog(client, account, top).status_code == 201
+        base = _publish(catalog, "ai.test.base", modules=_helpers("base_helpers"))
+        _publish(catalog, "ai.test.top", version="1.1.0", needs={base: "*"})
+
+        # Without replace, the copy of a package the store holds is refused.
+        refused = _from_catalog(client, account, top)
+
+        assert refused.status_code == 400, refused.get_data(as_text=True)
+        assert base not in _store(account.key), _store(account.key)
+        assert _manifest_version(account.key, top) == "1.0.0"
+
+
+# ---------------------------------------------------------------------------
 # Every path that adds a package
 # ---------------------------------------------------------------------------
 

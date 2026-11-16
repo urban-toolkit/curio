@@ -370,3 +370,16 @@ def provision_declared_deps(user_key: str, dir_name: str, manifest) -> dict:
     if outcome.installed:
         fields["restartRecommended"] = {"libs": outcome.installed}
     return fields
+
+
+def with_brought(report: dict, brought: InstallOutcome) -> dict:
+    """*report*, the fields :func:`provision_declared_deps` answers for a
+    package, with what the packages copied in for it did (*brought*): a
+    library of theirs that does not import joins ``importErrors``, and one
+    their pip runs installed joins ``restartRecommended``."""
+    if brought.import_errors:
+        report["importErrors"] = {**brought.import_errors, **(report.get("importErrors") or {})}
+    if brought.installed:
+        libs = sorted({*brought.installed, *((report.get("restartRecommended") or {}).get("libs") or [])})
+        report["restartRecommended"] = {"libs": libs}
+    return report

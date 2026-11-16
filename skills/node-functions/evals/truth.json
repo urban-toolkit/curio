@@ -24,11 +24,11 @@
     {
       "case": 3,
       "assertions": [
-        "The answer creates one new node (node.create) of a Python code template.",
+        "The answer creates one new node (node.create) of DDRNet23-Slim's Image Segmentation template, model.curio.ddrnet23-slim/image-segmentation.",
         "The code it writes reads the photos with curio_load_collection(\"data.curio.mapillary-sample\").",
         "The code loads the model with curio_load_model and the model's id written as a string, model.curio.ddrnet23-slim (with or without @1).",
-        "The code labels the photos by calling curio_segment with the collection's rows and the loaded model, with classes naming vegetation and sky; it runs no model session and counts no pixels itself.",
-        "The code returns the rows curio_segment gives, or a part of them that keeps vegetation_pct, sky_pct and overlay_url."
+        "The code labels the photos with the Segmentation package's function: it imports segment_images from semantic_segmentation and returns segment_images(photos, model, curio_derived_file, ...) of the photos and the model it loaded; it runs no model of its own, opening no onnxruntime session.",
+        "The code names vegetation and sky as the classes to report (classes=[\"vegetation\", \"sky\"]), so each photo's row carries vegetation_pct and sky_pct, each the class's share of the photo's pixels in percent, and overlay_url, its overlay's link."
       ]
     },
     {
@@ -290,19 +290,19 @@
       "case": 3,
       "name": "golden",
       "kind": "golden",
-      "source": "docs/examples/10-street-vision-cv-analysis.json nodes 5988175e-84aa-4964-84de-aba7d55cf122 (its content's curio_load_collection line) and 4067fb98-3ed5-497a-97a5-41a98ce1085b (its content's curio_load_model line and its curio_segment call), with the two classes the prompt names; the model in the account, as the case's models field adds it, which models.search lists",
+      "source": "packages/model.curio.ddrnet23-slim@1/sources/image-segmentation.py, the code of DDRNet23-Slim's Image Segmentation template, which docs/examples/10-street-vision-cv-analysis.json node 4067fb98-3ed5-497a-97a5-41a98ce1085b runs: its settings and one call of the Segmentation package's segment_images (packages/curio.segmentation@1/sources/semantic_segmentation.py), here with the two classes the prompt names and, since the new node has no input, the collection read as node 5988175e-84aa-4964-84de-aba7d55cf122's content reads it, curio_load_collection(\"data.curio.mapillary-sample\"); the model in the account, as the case's models field adds it, which models.search lists, and both packages in the dataflow, as the case's dataflow names them",
       "fails": [],
-      "reply": "I added a Python Computation node, Vegetation and sky. Its code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), loads the model with curio_load_model(\"model.curio.ddrnet23-slim\"), and labels them with curio_segment(photos, model, classes=[\"vegetation\", \"sky\"]), returning its rows: each photo's vegetation_pct and sky_pct, and overlay_url, the link to its overlay.",
+      "reply": "I added an Image Segmentation node, Vegetation and sky. Its code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), loads the model with curio_load_model(\"model.curio.ddrnet23-slim\"), and returns segment_images(photos, model, curio_derived_file, classes=classes), the Segmentation package's function from semantic_segmentation, with classes [\"vegetation\", \"sky\"]: one row per photo with its vegetation_pct and sky_pct, each the class's share of the photo's pixels in percent, and overlay_url, the link to its overlay.",
       "changes": {
         "changed": {
           "nodes": {
             "added": [
               {
-                "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nreturn curio_segment(photos, model, classes=[\"vegetation\", \"sky\"])",
+                "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nfrom semantic_segmentation import segment_images\n\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nclasses = [\"vegetation\", \"sky\"]  # each becomes a <class>_pct column\n\nreturn segment_images(photos, model, curio_derived_file, classes=classes)",
                 "goal": "Label the Lincoln Park street photos with the segmentation model and give each photo's share of vegetation and of sky, with its overlay.",
                 "id": "6c0e4336-3009-4e8c-8a5b-413af693af6d",
                 "title": "Vegetation and sky",
-                "type": "curio.builtin/python-computation"
+                "type": "model.curio.ddrnet23-slim/image-segmentation"
               }
             ]
           }
@@ -311,13 +311,13 @@
           {
             "tool": "node.create",
             "kind": "node",
-            "summary": "Created a new Python Computation node · Vegetation and sky",
+            "summary": "Created a new Image Segmentation node · Vegetation and sky",
             "lines": [
-              "Python Computation · curio.builtin/python-computation",
+              "Image Segmentation · model.curio.ddrnet23-slim/image-segmentation",
               "node 6c0e4336-3009-4e8c-8a5b-413af693af6d"
             ],
             "nodeId": "6c0e4336-3009-4e8c-8a5b-413af693af6d",
-            "nodeType": "curio.builtin/python-computation",
+            "nodeType": "model.curio.ddrnet23-slim/image-segmentation",
             "undo": true
           }
         ],
@@ -336,10 +336,10 @@
           "tool": "node.create",
           "status": "applied",
           "arguments": {
-            "nodeType": "curio.builtin/python-computation",
+            "nodeType": "model.curio.ddrnet23-slim/image-segmentation",
             "title": "Vegetation and sky",
             "goal": "Label the Lincoln Park street photos with the segmentation model and give each photo's share of vegetation and of sky, with its overlay.",
-            "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nreturn curio_segment(photos, model, classes=[\"vegetation\", \"sky\"])\n"
+            "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nfrom semantic_segmentation import segment_images\n\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nclasses = [\"vegetation\", \"sky\"]  # each becomes a <class>_pct column\n\nreturn segment_images(photos, model, curio_derived_file, classes=classes)\n"
           }
         }
       ]
@@ -356,7 +356,7 @@
         4,
         5
       ],
-      "reply": "Here is the code for a Python node that labels the photos:\n\n```python\n# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nreturn curio_segment(photos, model, classes=[\"vegetation\", \"sky\"])\n\n```",
+      "reply": "Here is the code for an Image Segmentation node that labels the photos:\n\n```python\n# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nfrom semantic_segmentation import segment_images\n\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ddrnet23-slim\")\nclasses = [\"vegetation\", \"sky\"]  # each becomes a <class>_pct column\n\nreturn segment_images(photos, model, curio_derived_file, classes=classes)\n\n```",
       "changes": {
         "changed": {},
         "cards": [],
@@ -385,17 +385,17 @@
       "fails": [
         3
       ],
-      "reply": "I added a Python Computation node, Vegetation and sky. Its code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), loads the model with curio_load_model(\"model.curio.ddrnet23-slim\"), and labels them with curio_segment(photos, model, classes=[\"vegetation\", \"sky\"]), returning its rows: each photo's vegetation_pct and sky_pct, and overlay_url, the link to its overlay.",
+      "reply": "I added an Image Segmentation node, Vegetation and sky. Its code reads the photos with curio_load_collection(\"data.curio.mapillary-sample\"), loads the model with curio_load_model(\"model.curio.ddrnet23-slim\"), and returns segment_images(photos, model, curio_derived_file, classes=classes), the Segmentation package's function from semantic_segmentation, with classes [\"vegetation\", \"sky\"]: one row per photo with its vegetation_pct and sky_pct, each the class's share of the photo's pixels in percent, and overlay_url, the link to its overlay.",
       "changes": {
         "changed": {
           "nodes": {
             "added": [
               {
-                "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ghost-segmenter\")\nreturn curio_segment(photos, model, classes=[\"vegetation\", \"sky\"])",
+                "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nfrom semantic_segmentation import segment_images\n\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ghost-segmenter\")\nclasses = [\"vegetation\", \"sky\"]  # each becomes a <class>_pct column\n\nreturn segment_images(photos, model, curio_derived_file, classes=classes)",
                 "goal": "Label the Lincoln Park street photos with the segmentation model and give each photo's share of vegetation and of sky, with its overlay.",
                 "id": "6c0e4336-3009-4e8c-8a5b-413af693af6d",
                 "title": "Vegetation and sky",
-                "type": "curio.builtin/python-computation"
+                "type": "model.curio.ddrnet23-slim/image-segmentation"
               }
             ]
           }
@@ -404,13 +404,13 @@
           {
             "tool": "node.create",
             "kind": "node",
-            "summary": "Created a new Python Computation node · Vegetation and sky",
+            "summary": "Created a new Image Segmentation node · Vegetation and sky",
             "lines": [
-              "Python Computation · curio.builtin/python-computation",
+              "Image Segmentation · model.curio.ddrnet23-slim/image-segmentation",
               "node 6c0e4336-3009-4e8c-8a5b-413af693af6d"
             ],
             "nodeId": "6c0e4336-3009-4e8c-8a5b-413af693af6d",
-            "nodeType": "curio.builtin/python-computation",
+            "nodeType": "model.curio.ddrnet23-slim/image-segmentation",
             "undo": true
           }
         ],
@@ -429,10 +429,10 @@
           "tool": "node.create",
           "status": "applied",
           "arguments": {
-            "nodeType": "curio.builtin/python-computation",
+            "nodeType": "model.curio.ddrnet23-slim/image-segmentation",
             "title": "Vegetation and sky",
             "goal": "Label the Lincoln Park street photos with the segmentation model and give each photo's share of vegetation and of sky, with its overlay.",
-            "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ghost-segmenter\")\nreturn curio_segment(photos, model, classes=[\"vegetation\", \"sky\"])\n"
+            "content": "# The Lincoln Park street photos, labeled with the street-scene segmentation\n# model: each photo's share of vegetation and of sky, with a link to its overlay.\nfrom semantic_segmentation import segment_images\n\nphotos = curio_load_collection(\"data.curio.mapillary-sample\")\nmodel = curio_load_model(\"model.curio.ghost-segmenter\")\nclasses = [\"vegetation\", \"sky\"]  # each becomes a <class>_pct column\n\nreturn segment_images(photos, model, curio_derived_file, classes=classes)\n"
           }
         }
       ]

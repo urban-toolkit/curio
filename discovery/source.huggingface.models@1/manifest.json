@@ -11,7 +11,7 @@
   "provider": {
     "type": "huggingface-models",
     "baseUrl": "https://huggingface.co",
-    "options": { "pipelineTag": "image-segmentation" }
+    "options": { "pipelineTag": "image-segmentation", "node": "model.curio.ddrnet23-slim/image-segmentation" }
   },
   "auth": {
     "mode": "optional-token",
