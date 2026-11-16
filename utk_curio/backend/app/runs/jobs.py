@@ -14,7 +14,8 @@ import threading
 from utk_curio.backend.app.common.job_registry import JobRefused, JobRegistry
 from utk_curio.common import backend_processes
 
-#: Runs one account may have going at once.
+#: Runs one account may have going at once, in every backend process of a
+#: start that runs several: its dataflows can sit on different ones.
 MAX_ACTIVE_RUNS_PER_USER = 2
 #: A finished run stays subscribable this long; after that its steps replay it.
 FINISHED_TTL_SECONDS = 15 * 60
@@ -37,6 +38,7 @@ REGISTRY = JobRegistry(
         f"At most {MAX_ACTIVE_RUNS_PER_USER} runs may go at once on your account; "
         "wait for one to finish."
     ),
+    shared=True,
 )
 
 _CANCEL_LOCK = threading.Lock()
