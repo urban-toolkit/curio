@@ -22,6 +22,10 @@ survive a backend restart — the artifact staging store and the immutable
 request do, so a lost job is re-run by digest, landing on the identical
 artifact (dev/89 §3.1). Agent services observe jobs through these functions;
 they never control worker processes directly.
+
+An agent's build runs in its dataflow's process, so a start of several backend
+processes counts an account's builds in flight in all of them
+(``common/shared_budgets.py``): each job holds a place until it ends.
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from utk_curio.backend.app.common import shared_budgets
 from utk_curio.backend.app.packages.builder.models import (
     PackageBuildRequest,
     PackageBuildResult,
@@ -81,6 +86,9 @@ class BuildJob:
     events: list[dict[str, Any]] = field(default_factory=list)
     result: PackageBuildResult | None = None
     cancel_event: threading.Event = field(default_factory=threading.Event)
+    #: Its place among its account's builds in flight in a start of several
+    #: processes (``shared_budgets.Place``), until it ends.
+    place: Any = field(default=None, repr=False, compare=False)
 
     def to_payload(self) -> dict[str, Any]:
         """The status payload routes/agents may see — no request bodies, no
@@ -98,12 +106,24 @@ class BuildJob:
 
 _LOCK = threading.Lock()
 _JOBS: dict[tuple[str, str], BuildJob] = {}
+#: The account's builds in flight, in a start of several backend processes.
+_IN_FLIGHT = shared_budgets.Places("package-builds")
 
 
 def reset_registry() -> None:
-    """Test seam: drop every job."""
+    """Test seam: drop every job, and give back the places they held."""
     with _LOCK:
+        dropped = list(_JOBS.values())
         _JOBS.clear()
+    for job in dropped:
+        _ended(job)
+
+
+def _ended(job: BuildJob) -> None:
+    """*job* is terminal: it holds no place among its account's builds."""
+    place, job.place = job.place, None
+    if place is not None:
+        place.release()
 
 
 def _record_event(job: BuildJob, phase: str, message: str) -> None:
@@ -157,12 +177,18 @@ def create_job(user_key: str, request: PackageBuildRequest) -> tuple[BuildJob, b
                 return existing, False
             # failed/cancelled/expired: a retry supersedes it.
             del _JOBS[key]
-        if _active_count(user_key) >= MAX_ACTIVE_JOBS_PER_USER:
+        place = None
+        if shared_budgets.across_processes():
+            place = _IN_FLIGHT.take(user_key, MAX_ACTIVE_JOBS_PER_USER)
+            full = place is None
+        else:
+            full = _active_count(user_key) >= MAX_ACTIVE_JOBS_PER_USER
+        if full:
             raise JobRefused(
                 f"too many active builds ({MAX_ACTIVE_JOBS_PER_USER}); wait for "
                 "one to finish or cancel it"
             )
-        job = BuildJob(build_id=digest, user_key=user_key, request=request)
+        job = BuildJob(build_id=digest, user_key=user_key, request=request, place=place)
         _record_event(job, "queued", "build queued")
         _JOBS[key] = job
         _prune_terminal(user_key)
@@ -200,6 +226,8 @@ def advance(job: BuildJob, phase: str, message: str = "") -> None:
             )
         job.phase = phase
         _record_event(job, phase, message or f"entered {phase}")
+        if phase in TERMINAL_PHASES:
+            _ended(job)
 
 
 def fail(job: BuildJob, message: str) -> None:
@@ -208,6 +236,7 @@ def fail(job: BuildJob, message: str) -> None:
             raise JobError(f"job {job.build_id} is terminal ({job.phase})")
         job.phase = "failed"
         _record_event(job, "failed", message)
+        _ended(job)
 
 
 def cancel_job(user_key: str, build_id: str) -> bool:
@@ -225,6 +254,7 @@ def cancel_job(user_key: str, build_id: str) -> bool:
         if job.phase == "queued":
             job.phase = "cancelled"
             _record_event(job, "cancelled", "cancelled before execution")
+            _ended(job)
         return True
 
 
@@ -249,6 +279,7 @@ def execute(job: BuildJob, steps: list[tuple[str, Callable[[BuildJob], None]]]) 
                 if job.phase not in TERMINAL_PHASES:
                     job.phase = "cancelled"
                     _record_event(job, "cancelled", "cancelled between phases")
+                    _ended(job)
             return job
         try:
             advance(job, phase)
@@ -261,6 +292,7 @@ def execute(job: BuildJob, steps: list[tuple[str, Callable[[BuildJob], None]]]) 
                     if job.phase not in TERMINAL_PHASES:
                         job.phase = "cancelled"
                         _record_event(job, "cancelled", "cancelled mid-phase")
+                        _ended(job)
                 return job
             fail(job, f"{phase} failed: {exc}")
             return job
@@ -269,6 +301,7 @@ def execute(job: BuildJob, steps: list[tuple[str, Callable[[BuildJob], None]]]) 
             if job.phase not in TERMINAL_PHASES:
                 job.phase = "cancelled"
                 _record_event(job, "cancelled", "cancelled after the last phase")
+                _ended(job)
         return job
     advance(job, "ready", "build ready for review")
     return job
