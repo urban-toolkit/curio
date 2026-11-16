@@ -27,6 +27,14 @@ IMAGES = "How do I show images in a table?"
 NINE = "09-heterogeneous-data-linked-views"
 SIXTEEN = "16-simple-view-tables-and-images"
 LAYOUT = {"x", "y", "width", "height", "dashboardX", "dashboardY", "dashboardWidth", "dashboardHeight"}
+#: The lines the canvas's Autark starter writes in a layer it colors by a
+#: column, whatever the input, as its JSON text holds them: the column's type,
+#: then the color map, last in the layer (utils/autkDefaultSpec.ts, from
+#: autkGrammar.json's starterColoring).
+AUTARK_COLORING = frozenset({
+    '"getFnvType": "quantitative",', '"colorMapInterpolator": "interpolateViridis"',
+    '"getFnvType": "categorical",', '"colorMapInterpolator": "schemeTableau10"',
+})
 
 
 def _keys(chosen) -> list[str]:
@@ -50,8 +58,11 @@ def _starter_lines() -> dict[str, set[str]]:
     """The code lines of SHARED_LINE_CHARS or more a node of each template of
     the package catalog starts with, by template: its template's source
     file's, or, for a model package's template without one, the cell Curio
-    writes for its model; and for a template whose grammar is Vega-Lite, the
-    "$schema" line the canvas starts its spec with (:func:`_schema_line`)."""
+    writes for its model; for a template whose grammar is Vega-Lite, the
+    "$schema" line the canvas starts its spec with (:func:`_schema_line`); and
+    for one whose grammar is Autark's, the lines the canvas colors a layer
+    with (:data:`AUTARK_COLORING`)."""
+    from utk_curio.backend.app.agents.domain import contracts
     from utk_curio.backend.app.execution.code_references import VEGA_LITE
     from utk_curio.backend.app.packages import service as packages_services
 
@@ -71,6 +82,8 @@ def _starter_lines() -> dict[str, set[str]]:
                 lines |= _long_lines(packages_services.model_default_cell(manifest, folder))
             if template.grammar_id == VEGA_LITE:
                 lines.add(_schema_line())
+            if template.grammar_id == contracts.AUTK_GRAMMAR_ID:
+                lines |= AUTARK_COLORING
             if lines:
                 starters[canonical] = lines
     return starters
@@ -250,9 +263,10 @@ class TestAnEvaluationNeverSeesItsExample:
 
     def test_a_line_a_node_holds_because_its_template_starts_it_with_it_gives_nothing_away(self):
         """Every node of a template starts with its template's code, such as a
-        Data Loading node's loader line or a Spatial Join's call, and a
-        Vega-Lite node's spec with the "$schema" line the canvas writes, so a
-        line a node holds for that alone is no part of an answer. An example
+        Data Loading node's loader line or a Spatial Join's call, a Vega-Lite
+        node's spec with the "$schema" line the canvas writes and an Autark
+        layer with the coloring it writes, so a line a node holds for that
+        alone is no part of an answer. An example
         is left out of an evaluation's runs when it holds one of the scored
         dataflow's ids or one of its other code lines of SHARED_LINE_CHARS or
         more, and is shown when it shares only such lines. Before, every long
@@ -297,6 +311,33 @@ class TestAnEvaluationNeverSeesItsExample:
                     assert example.key not in excluded, (scored.key, example.key)
                     shown.append((scored.key, example.key))
         assert shown, "no evaluation's answer holds the schema line alone; this test would be vacuous"
+
+    def test_the_coloring_the_canvas_starts_an_autark_layer_with_gives_nothing_away(self):
+        """The canvas's Autark starter colors a layer by a column with that
+        column's type and a color map it writes whatever the input
+        (:data:`AUTARK_COLORING`), so an Autark node holds those lines
+        whatever its data: an evaluation is shown the examples that share
+        nothing but them with its answer. The lines that name the node's own
+        layers and tables stay part of it. Before, every long line counted:
+        an evaluation scored against 07 was shown none of the examples whose
+        Autark maps color a layer by a quantitative column."""
+        pool = list(_pool().values())
+        held = {e.key: examples._ids(e.spec) | _code_lines(e.spec) for e in pool}
+        shown = []
+        for scored in pool:
+            excluded = examples.excluded_by(self._marked(scored.key), pool)
+            for example in pool:
+                shared = held[example.key] & held[scored.key]
+                if example.key != scored.key and shared and shared <= AUTARK_COLORING:
+                    assert example.key not in excluded, (scored.key, example.key)
+                    shown.append((scored.key, example.key))
+        assert shown, "no two examples share only the coloring; this test would be vacuous"
+        # The lines are the shared contract's, which the canvas writes them from.
+        from utk_curio.backend.app.agents.domain import contracts
+
+        written = {line for coloring in contracts.AUTK_STARTER_COLORING.values()
+                   for line in _long_lines(json.dumps(coloring, indent=2))}
+        assert written == AUTARK_COLORING
 
     def test_every_fixture_id_names_its_example(self):
         from utk_curio.backend.app.agents.evaluation.fixtures import load_fixtures

@@ -122,6 +122,9 @@ def test_the_autark_facts_are_the_files_and_its_families_the_vendored_schemas():
     assert contracts.autk_one_view_problem({"map": {}, "plot": {}}) == data["oneView"]
     # The node routes the families the file lists; the grammar defines them.
     assert data["families"] == list(contracts.autk_families(contracts.load_autk_schema()))
+    # What the starter colors a layer with, by the ladder's rules that color one.
+    assert contracts.AUTK_STARTER_COLORING == data["starterColoring"]
+    assert set(data["starterColoring"]) <= {rule.id for rule in contracts.AUTK_STARTER_LADDER}
 
 
 def _rule(rule) -> dict:

@@ -281,9 +281,10 @@ def _answer_parts(spec: object) -> set[str]:
     """A scored dataflow's node and edge ids, and its code lines of
     ``SHARED_LINE_CHARS`` or more but those a node holds only because its
     template's code or the canvas starts it with them (:func:`_starter_lines`),
-    such as a Data Loading node's loader line or a Vega-Lite spec's
-    ``$schema``: every node of the template starts with those, so they give
-    nothing away."""
+    such as a Data Loading node's loader line, a Vega-Lite spec's ``$schema``
+    or an Autark layer's coloring: every node of the template starts with
+    those, so they give nothing away. A line that names the node's own data,
+    a layer, a table or a dataset, stays."""
     from utk_curio.backend.app.packages import service as packages_services
 
     dataflow = _dataflow(spec)
@@ -328,19 +329,30 @@ def _starter_lines() -> dict[str, frozenset[str]]:
 
 def _canvas_starter_lines() -> dict[str, frozenset[str]]:
     """The code lines of ``SHARED_LINE_CHARS`` or more the canvas starts a
-    node's document with, by canonical template id: each template of the
-    package catalog whose grammar is Vega-Lite (``grammarId``), whose spec
-    the canvas starts with the ``$schema`` Curio writes and a mark of the
-    starter ladder (``vegaDefaultSpec.ts``, from the shared contract:
-    ``contracts.VEGA_SCHEMA_URL``, ``contracts.VEGA_STARTER_LADDER``)."""
+    node's document with whatever its input, by canonical template id, for
+    each template of the package catalog by its grammar (``grammarId``), from
+    the shared contracts:
+
+    - Vega-Lite: the ``$schema`` Curio writes and a mark of the starter
+      ladder (``vegaDefaultSpec.ts``; ``contracts.VEGA_SCHEMA_URL``,
+      ``contracts.VEGA_STARTER_LADDER``);
+    - Autark: the type and color map of a layer the starter colors by a
+      column (``autkDefaultSpec.ts``; ``contracts.AUTK_STARTER_COLORING``).
+
+    Each as the canvas's JSON text holds it."""
     from utk_curio.backend.app.packages import service as packages_services
 
     vega = frozenset(
         line for rule in contracts.VEGA_STARTER_LADDER
         for line in _long_lines(json.dumps({"$schema": contracts.VEGA_SCHEMA_URL, "mark": rule.produces}, indent=2))
     )
-    return {template: vega for template, grammar in packages_services.catalog_template_grammars().items()
-            if grammar == VEGA_LITE}
+    autark = frozenset(
+        line for coloring in contracts.AUTK_STARTER_COLORING.values()
+        for line in _long_lines(json.dumps(coloring, indent=2))
+    )
+    by_grammar = {VEGA_LITE: vega, contracts.AUTK_GRAMMAR_ID: autark}
+    grammars = packages_services.catalog_template_grammars()
+    return {template: by_grammar[grammar] for template, grammar in grammars.items() if grammar in by_grammar}
 
 
 def used_examples() -> list[Example]:
