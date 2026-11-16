@@ -1,5 +1,9 @@
 {
   "families": ["compute", "data", "map", "plot"],
   "inputTablePrefix": "input_",
-  "oneView": "An Autark node draws one view: one map or one plot. Put each in its own Autark node, and link them with interaction edges."
+  "oneView": "An Autark node draws one view: one map or one plot. Put each in its own Autark node, and link them with interaction edges.",
+  "starterColoring": {
+    "geometry+quantitative": { "getFnvType": "quantitative", "colorMapInterpolator": "interpolateViridis" },
+    "geometry+nominal": { "getFnvType": "categorical", "colorMapInterpolator": "schemeTableau10" }
+  }
 }

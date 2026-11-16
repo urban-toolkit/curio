@@ -13,8 +13,8 @@
   loads data (``autk_spec_kind``); ``forward`` passes its input on, as a chart,
   a pool or a download does on the canvas, or has nothing to run, as a Note;
   ``browser`` makes data only the browser can (an Autark compute node, an
-  Autark node with no data of its own to load, a Spatial Join), so nothing
-  below it can run until a tab does; ``missing`` is a node whose type names a
+  Autark node with no data of its own to load), so nothing below it can run
+  until a tab does; ``missing`` is a node whose type names a
   package's template that no installed package provides (a saved Compare
   Scenarios node, a node of a package only another account's store holds):
   the canvas cannot run it either, so a run fails it, naming the

@@ -208,9 +208,9 @@ export interface NodeBehaviorResult {
   dynamicHandles?: HandleDef[];
   /**
    * Fully replaces `adapter.handles` at render time. Used by behaviors that
-   * want exact control over handle ids / positions (e.g. multi-input nodes
-   * like Spatial Join where the default `standardInOut()` "in"
-   * handle would leak through and render an unwanted gray circle at top:50%).
+   * want exact control over handle ids / positions (a template's several
+   * input ports already get one fixed circle each, `in`, `in_1`, ..., from
+   * `buildDescriptor`).
    * When set, both `adapter.handles` AND `dynamicHandles` are ignored.
    */
   handlesOverride?: HandleDef[];

@@ -142,6 +142,13 @@ _AUTK_GRAMMAR = shared_constants.read("autkGrammar")
 AUTK_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "autk-grammar.v1.json"
 #: The template whose content is an Autark document.
 AUTK_TEMPLATE = "curio.builtin/autk-grammar"
+#: The grammar an Autark document is written in, as a template names it (``grammarId``).
+AUTK_GRAMMAR_ID = "autk-grammar"
+#: What the Autark starter writes in a layer it colors by a column, past the
+#: column itself, by the starter ladder's rule id (``AUTK_STARTER_LADDER``,
+#: ``utils/autkDefaultSpec.ts``): the column's type and the color map,
+#: whatever the input.
+AUTK_STARTER_COLORING: dict[str, dict[str, str]] = _AUTK_GRAMMAR["starterColoring"]
 #: What a Vega-Lite or Autark node calls its inputs: ``input_0``, ``input_1``,
 #: ... in circle order. An upstream Autark node's layers keep their table names.
 INPUT_TABLE_PREFIX: str = _AUTK_GRAMMAR["inputTablePrefix"]
@@ -459,10 +466,10 @@ TRILL_PROMPT_FIELDS: dict[str, tuple[str, ...]] = {
     "dataflowBase": ("nodes", "edges", "name", "task", "scenarios"),
     "node": ("id", "type", "content", "goal", "title", "x", "y", "in", "out", "metadata"),
     # #662: a node's widgets are what an agent declares for its code to read,
-    # and a copy's lineage is how two scenarios' levers pair. A Spatial Join's
-    # operation and output, a Data Pool's conflict modes and a Simple View's
-    # image column are what an agent sets on one.
-    "nodeMetadata": ("keywords", "widgets", "copiedFrom", "spatialJoin", "dataPool", "simpleVis"),
+    # and a copy's lineage is how two scenarios' levers pair. A Data Pool's
+    # conflict modes and a Simple View's image column are what an agent sets
+    # on one.
+    "nodeMetadata": ("keywords", "widgets", "copiedFrom", "dataPool", "simpleVis"),
     "edge": ("id", "source", "target", "type", "sourceHandle", "targetHandle", "metadata"),
     # Where a scenario sits on the canvas and where it came from are the
     # canvas's own bookkeeping, and its description is for people.

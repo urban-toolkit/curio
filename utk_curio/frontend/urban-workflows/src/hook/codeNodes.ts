@@ -8,6 +8,7 @@ import type { Node } from "reactflow";
 import { v4 as uuid } from "uuid";
 
 import { AccessLevelType, CURIO_UNIVERSAL_NODE_TYPE, EdgeType } from "../constants";
+import { convertedSavedJoin } from "../contracts/savedSpatialJoin";
 import type { DatasetNodeSource } from "../services/datasetCatalog";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { canvasTemplateConfigFromSpec } from "../utils/canvasTemplateConfigSpec";
@@ -59,12 +60,10 @@ export type CreateCodeNodeOptions = {
     // The node's one name, its header (utils/nodeTitle.ts); its template's
     // label when not given.
     title?: string;
-    // #576: the Spatial Join's operation and output (canonical shape
-    // metadata.spatialJoin). #276: Simple View's image column
-    // (metadata.simpleVis). Both were read off the spec in loadTrill and then
-    // dropped here, because this factory builds node data from an explicit
-    // list: the setting survived a save and never a load.
-    spatialJoin?: { predicate?: string; output?: "pairs" | "counts" };
+    // #276: Simple View's image column (metadata.simpleVis). It was read off
+    // the spec in loadTrill and then dropped here, because this factory
+    // builds node data from an explicit list: the setting survived a save and
+    // never a load.
     simpleVis?: { imageColumn?: string };
     // #412: the rest of what the node settings modal saved
     // (metadata.packageTemplateConfig), which the editor tabs read.
@@ -100,9 +99,11 @@ export interface CodeNodeRuntime {
 /**
  * The options a Trill node is built with: its place, code and every setting
  * the spec holds for it. *fallbackPosition* places a node the spec gives no
- * place.
+ * place. A Spatial Join saved before its code is read with its code and its
+ * two widgets (`contracts/savedSpatialJoin.ts`), as the server reads it.
  */
-export function nodeMetaFromTrill(node: any, fallbackPosition: () => { x: number; y: number }): CreateCodeNodeOptions {
+export function nodeMetaFromTrill(saved: any, fallbackPosition: () => { x: number; y: number }): CreateCodeNodeOptions {
+    const node = convertedSavedJoin(saved);
     let x = node.x;
     let y = node.y;
     const parsedWidth =
@@ -173,10 +174,6 @@ export function nodeMetaFromTrill(node: any, fallbackPosition: () => { x: number
     // fall back at render, never here).
     if (node.metadata != undefined && node.metadata.appearance != undefined)
         nodeMeta.appearance = node.metadata.appearance;
-
-    // #262: the Spatial Join's polygon property round-trips into node data.
-    if (node.metadata != undefined && node.metadata.spatialJoin != undefined)
-        nodeMeta.spatialJoin = node.metadata.spatialJoin;
 
     // #276: the Simple View's chosen image column round-trips too.
     if (node.metadata != undefined && node.metadata.simpleVis != undefined)
@@ -277,7 +274,6 @@ export function buildCodeNode(nodeType: string, options: CreateCodeNodeOptions, 
         saveOutputDataset = undefined,
         appearance = undefined,
         title = undefined,
-        spatialJoin = undefined,
         simpleVis = undefined,
         packageTemplateConfig = undefined,
         dataPool = undefined,
@@ -330,7 +326,6 @@ export function buildCodeNode(nodeType: string, options: CreateCodeNodeOptions, 
             datasetWidgets,
             appearance,
             title: initialNodeTitle(nodeType, title),
-            spatialJoin,
             simpleVis,
             packageTemplateConfig,
             dataPool,

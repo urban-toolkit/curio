@@ -11,7 +11,7 @@
 // (dashboardRunFiles). A node a later change no longer reaches gets its saved
 // output back, and so does every node when the values are the saved ones.
 //
-// A step only a browser runs (an Autark compute node, a Spatial Join) is the
+// A step only a browser runs (an Autark compute node) is the
 // page's. The run ends asking for it (`needs_canvas`); the page runs the node
 // as a canvas's run on the server walks its browser part
 // (usePlayAll.playNodes), sends what it made to the run (dashboardRunSteps),
@@ -138,7 +138,7 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
     /**
      * What the page made of *nodeId*, which it just ran for a run: the output
      * the node sent the run itself (an Autark node does), or its output held
-     * on the page, sent to the run now (a Spatial Join's rows).
+     * on the page, sent to the run now (rows a node made on the page).
      */
     const pageResultOf = async (nodeId: string): Promise<string | null> => {
         const output: any = outputsRef.current.find((o) => o.nodeId === nodeId)?.output;

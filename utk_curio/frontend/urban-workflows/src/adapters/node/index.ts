@@ -7,13 +7,12 @@ export { useDataPoolBehavior } from './dataPoolBehavior';
 export { useDataSummaryBehavior } from './dataSummaryBehavior';
 export { useAutkGrammarBehavior } from './autkGrammarBehavior';
 export { useAutkViewBehavior } from './autkViewBehavior';
-export { useSpatialJoinBehavior } from './spatialJoinBehavior';
 export { useEditFeaturesBehavior } from './editFeaturesBehavior';
 export { useNoteBehavior } from './noteBehavior';
 // Note: a package's own behavior hooks live IN its package directory and
 // ship as a pre-built `behaviors.js` loaded dynamically by the package
 // registry bootstrap. They are intentionally NOT re-exported here.
 
-export { standardInOut, outputOnly, inputOnly, withBidirectional } from './handleHelpers';
+export { standardInOut, outputOnly, inputOnly, withBidirectional, withInputCircles } from './handleHelpers';
 
 export { ContentTable, DataPoolContent, ImageCardGrid } from './components';

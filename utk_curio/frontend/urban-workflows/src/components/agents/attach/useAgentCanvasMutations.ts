@@ -111,7 +111,6 @@ export function useAgentCanvasMutations(): void {
     // what the spec does and the next save writes them back.
     const widgets = normalizeWidgets(node.metadata?.widgets);
     const copiedFrom = lineageFromSpec(node.metadata?.copiedFrom);
-    const spatialJoin = node.metadata?.spatialJoin;
     // A Data Pool's modes, the ones that name a mode, and a Simple View's
     // image column, as loadTrill reads them.
     const dataPool = dataPoolFromSpec(node.metadata?.dataPool);
@@ -127,7 +126,6 @@ export function useAgentCanvasMutations(): void {
       title: node.title,
       ...(widgets.length ? { widgets } : {}),
       ...(copiedFrom.length ? { copiedFrom } : {}),
-      ...(spatialJoin ? { spatialJoin } : {}),
       ...(dataPool ? { dataPool } : {}),
       ...(simpleVis ? { simpleVis } : {}),
     });

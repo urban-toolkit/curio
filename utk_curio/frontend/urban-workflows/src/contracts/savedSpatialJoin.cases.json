@@ -1,0 +1,58 @@
+{
+  "description": "Saved nodes and what they read as (savedSpatialJoin.ts and projects/saved_joins.py run each). In converted, the content <code> is the template's code (savedSpatialJoin.json), and when content is <code>, each widget is the template's widget of its place with the fields given: its value is the setting saved for it.",
+  "cases": [
+    {
+      "name": "a join saved with both settings takes the code and holds them in its widgets",
+      "node": {"id": "j1", "type": "curio.builtin/spatial-join", "x": 10, "y": 20, "content": "", "goal": "",
+               "metadata": {"keywords": [], "spatialJoin": {"predicate": "within", "output": "counts"}}},
+      "converted": {"id": "j1", "type": "curio.builtin/spatial-join", "x": 10, "y": 20, "content": "<code>", "goal": "",
+                    "metadata": {"keywords": [], "widgets": [{"value": "within"}, {"value": "counts"}]}}
+    },
+    {
+      "name": "an operation alone leaves Output at its default",
+      "node": {"id": "j2", "type": "curio.builtin/spatial-join", "content": "", "metadata": {"spatialJoin": {"predicate": "nearest"}}},
+      "converted": {"id": "j2", "type": "curio.builtin/spatial-join", "content": "<code>", "metadata": {"widgets": [{"value": "nearest"}, {}]}}
+    },
+    {
+      "name": "an output alone leaves Operation at its default",
+      "node": {"id": "j3", "type": "curio.builtin/spatial-join", "content": "", "metadata": {"spatialJoin": {"output": "counts"}}},
+      "converted": {"id": "j3", "type": "curio.builtin/spatial-join", "content": "<code>", "metadata": {"widgets": [{}, {"value": "counts"}]}}
+    },
+    {
+      "name": "a join saved with no settings takes the defaults, as a new join",
+      "node": {"id": "j4", "type": "curio.builtin/spatial-join", "content": "", "metadata": {"keywords": []}},
+      "converted": {"id": "j4", "type": "curio.builtin/spatial-join", "content": "<code>", "metadata": {"keywords": [], "widgets": [{}, {}]}}
+    },
+    {
+      "name": "a setting that is none of the widget's choices leaves the widget at its default",
+      "node": {"id": "j5", "type": "curio.builtin/spatial-join", "content": "",
+               "metadata": {"spatialJoin": {"predicate": "near", "output": ["counts"]}}},
+      "converted": {"id": "j5", "type": "curio.builtin/spatial-join", "content": "<code>", "metadata": {"widgets": [{}, {}]}}
+    },
+    {
+      "name": "a join with no content, no metadata and a versioned type",
+      "node": {"id": "j6", "type": "curio.builtin/spatial-join@1"},
+      "converted": {"id": "j6", "type": "curio.builtin/spatial-join@1", "content": "<code>", "metadata": {"widgets": [{}, {}]}}
+    },
+    {
+      "name": "blank code is no code",
+      "node": {"id": "j7", "type": "curio.builtin/spatial-join", "content": "  \n", "metadata": {"spatialJoin": {"predicate": "touches"}}},
+      "converted": {"id": "j7", "type": "curio.builtin/spatial-join", "content": "<code>", "metadata": {"widgets": [{"value": "touches"}, {}]}}
+    },
+    {
+      "name": "a join with code is left as it is, its saved settings too",
+      "node": {"id": "j8", "type": "curio.builtin/spatial-join", "content": "return input_0\n", "metadata": {"spatialJoin": {"predicate": "within"}}},
+      "converted": {"id": "j8", "type": "curio.builtin/spatial-join", "content": "return input_0\n", "metadata": {"spatialJoin": {"predicate": "within"}}}
+    },
+    {
+      "name": "a join with widgets is left as it is",
+      "node": {"id": "j9", "type": "curio.builtin/spatial-join", "content": "", "metadata": {"widgets": [], "spatialJoin": {"predicate": "within"}}},
+      "converted": {"id": "j9", "type": "curio.builtin/spatial-join", "content": "", "metadata": {"widgets": [], "spatialJoin": {"predicate": "within"}}}
+    },
+    {
+      "name": "another node with the setting is left as it is",
+      "node": {"id": "p1", "type": "curio.builtin/python-computation", "content": "", "metadata": {"spatialJoin": {"predicate": "within"}}},
+      "converted": {"id": "p1", "type": "curio.builtin/python-computation", "content": "", "metadata": {"spatialJoin": {"predicate": "within"}}}
+    }
+  ]
+}

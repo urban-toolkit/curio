@@ -9,7 +9,7 @@
  *
  * `OutputContent` and `CodeEditor` already solve this with `userSelect: "text"`
  * plus `nodrag`; the pane here is where several nodes' errors land
- * (spatialJoinBehavior, dataExportBehavior, UniversalNode all route through
+ * (dataExportBehavior, UniversalNode and every code node route through
  * `setOutput({code: 'error'})`), so it is the one surface worth pinning.
  */
 import React from 'react';

@@ -9,7 +9,10 @@
  * move up one.
  *
  * A template with several input ports (the Spatial Join's `in` and `in_1`)
- * keeps what each port holds the same way, by handle.
+ * has one fixed circle per port, port k on circle k, and keeps what each port
+ * holds by handle (`data.portInputs`). Its code reads them as a growing node's
+ * code reads its circles, by circle, whatever order the inputs arrive in; a
+ * deleted edge empties its circle and moves no other.
  *
  * Duck-typed edges, so this module needs no `reactflow` import.
  */
@@ -192,6 +195,20 @@ export function nodeInputFromSlots(inputSlots: unknown, wired: number[]): unknow
     if (!values.every(isFilledSlot)) return "";
     if (values.length === 1) return values[0];
     return { dataType: "outputs", data: values };
+}
+
+/**
+ * The one value a node with several input ports reads, from what each port
+ * holds (`data.portInputs`): its circles' values as `nodeInputFromSlots` reads
+ * a growing node's, port k on circle k.
+ */
+export function nodeInputFromPorts(portInputs: unknown, wired: number[]): unknown {
+    const ports = portInputs && typeof portInputs === "object" && !Array.isArray(portInputs)
+        ? (portInputs as Record<string, unknown>)
+        : {};
+    const slots: unknown[] = [];
+    for (const slot of wired) slots[slot] = ports[slotHandleId(slot)];
+    return nodeInputFromSlots(slots, wired);
 }
 
 /** The wired circles that hold no value yet. */

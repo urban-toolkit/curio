@@ -58,17 +58,15 @@ test("each setting goes to the setter its node registered for it, and nothing in
 });
 
 test("a setting no setter takes goes into the node's data through updateDataNode, as a load of its metadata puts it there", () => {
-  const flow = canvas([node("n1", "curio.builtin/spatial-join@1", {
+  const flow = canvas([node("n1", "curio.builtin/data-pool@1", {
     dataPool: { insideChart: "MERGE_OR" },
     simpleVis: { imageColumn: "image_url" },
-    spatialJoin: { output: "counts" },
     widgets: [COMBINE],
   })]);
 
   writeNodeSettings(flow, "n1", {
     dataPool: { betweenCharts: "MERGE_AND" },
     simpleVis: {},
-    spatialJoin: { predicate: "within" },
   });
 
   expect(flow.updateDataNode).toHaveBeenCalledTimes(1);
@@ -76,13 +74,39 @@ test("a setting no setter takes goes into the node's data through updateDataNode
   expect(nodeId).toBe("n1");
   // Each key the change gives, beside the ones it leaves as they were.
   expect(data.dataPool).toEqual({ insideChart: "MERGE_OR", betweenCharts: "MERGE_AND" });
-  expect(data.spatialJoin).toEqual({ output: "counts", predicate: "within" });
   // No column is every image column.
   expect(data.simpleVis?.imageColumn).toBeUndefined();
   // What the change does not name stays as it is.
   expect(data.widgets).toEqual([COMBINE]);
-  expect(data.nodeType).toBe("curio.builtin/spatial-join@1");
+  expect(data.nodeType).toBe("curio.builtin/data-pool@1");
   expect(flow.markNodeStale).not.toHaveBeenCalled();
+});
+
+test("a Spatial Join's operation and output change as its widgets do, and its old setting is no setting", () => {
+  const OPERATION = {
+    name: "operation", type: "choice", label: "Operation", default: "intersects",
+    options: { choices: ["intersects", "within", "contains", "touches", "overlaps", "crosses", "nearest"], display: "dropdown" },
+  };
+  const OUTPUT = {
+    name: "output", type: "choice", label: "Output", default: "pairs",
+    options: { choices: ["pairs", "counts"], display: "dropdown" },
+  };
+  const flow = canvas([node("join", "curio.builtin/spatial-join@1", { widgets: [OPERATION, { ...OUTPUT, value: "counts" }] })]);
+
+  writeNodeSettings(flow, "join", { widgets: { operation: "within" } });
+
+  expect(flow.updateDataNode).toHaveBeenCalledTimes(1);
+  const [, data] = flow.updateDataNode.mock.calls[0];
+  expect(data.widgets).toEqual([{ ...OPERATION, value: "within" }, { ...OUTPUT, value: "counts" }]);
+  expect("spatialJoin" in data).toBe(false);
+  expect(flow.markNodeStale).toHaveBeenCalledWith("join");
+  expect(flow.requestAutoRun).toHaveBeenCalledWith(["join"]);
+
+  // The Undo of a change made when they were the join's own setting names
+  // that setting: nothing takes it, and the node's data is left as it is.
+  flow.updateDataNode.mockClear();
+  writeNodeSettings(flow, "join", { spatialJoin: { predicate: "within" } } as never);
+  expect(flow.updateDataNode).not.toHaveBeenCalled();
 });
 
 test("a widget's new value on a node with no setter leaves it out of date, the dataflow Unsaved, and asks for an automatic run", () => {

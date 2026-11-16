@@ -175,7 +175,6 @@ const NATURAL_HEIGHT_KINDS: ReadonlySet<string> = new Set([
   NodeType.DATA_POOL,
   NodeType.VIS_SIMPLE,
   NodeType.DATA_SUMMARY,
-  "curio.builtin/spatial-join",
   "curio.builtin/note",
 ]);
 const MAP_KINDS: ReadonlySet<string> = new Set([NodeType.AUTK_GRAMMAR]);

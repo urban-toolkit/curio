@@ -442,28 +442,34 @@ describe("TrillGenerator Spatial Join settings (#576)", () => {
     TrillGenerator.reset();
   });
 
-  test("persists the operation and the output at metadata.spatialJoin, leaving the defaults out", () => {
-    const join = (nodeId: string, spatialJoin?: Record<string, unknown>) => ({
+  test("persists the operation and the output as its two widgets, and never metadata.spatialJoin", () => {
+    const widgets = [
+      { name: "operation", type: "choice", default: "intersects", value: "within",
+        options: { choices: ["intersects", "within"], display: "dropdown" } },
+      { name: "output", type: "choice", default: "pairs", value: "counts",
+        options: { choices: ["pairs", "counts"], display: "dropdown" } },
+    ];
+    const join = (nodeId: string, data: Record<string, unknown>) => ({
       type: "CURIO_UNIVERSAL_NODE",
       position: { x: 0, y: 0 },
-      data: { nodeId, nodeType: "curio.builtin/spatial-join", ...(spatialJoin ? { spatialJoin } : {}) },
+      data: { nodeId, nodeType: "curio.builtin/spatial-join", code: "return input_0\n", ...data },
     });
     const spec = TrillGenerator.generateTrill(
       [
-        join("sj-1", { predicate: "within", output: "counts" }),
-        join("sj-2", { predicate: "nearest" }),
-        join("sj-3", { predicate: "intersects", output: "pairs" }),
-        join("sj-4"),
+        join("sj-1", { widgets }),
+        // Data a canvas from before held: the setting goes unwritten.
+        join("sj-2", { widgets, spatialJoin: { predicate: "nearest" } }),
       ],
       [],
       "Imported Workflow"
     );
 
     const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
-    expect(byId["sj-1"].metadata.spatialJoin).toEqual({ predicate: "within", output: "counts" });
-    expect(byId["sj-2"].metadata.spatialJoin).toEqual({ predicate: "nearest" });
-    expect(byId["sj-3"].metadata).toBeUndefined();
-    expect(byId["sj-4"].metadata).toBeUndefined();
+    for (const id of ["sj-1", "sj-2"]) {
+      expect(byId[id].metadata.widgets).toEqual(widgets);
+      expect("spatialJoin" in byId[id].metadata).toBe(false);
+      expect(byId[id].content).toBe("return input_0\n");
+    }
   });
 });
 

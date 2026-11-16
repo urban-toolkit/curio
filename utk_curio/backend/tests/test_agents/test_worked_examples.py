@@ -27,6 +27,14 @@ IMAGES = "How do I show images in a table?"
 NINE = "09-heterogeneous-data-linked-views"
 SIXTEEN = "16-simple-view-tables-and-images"
 LAYOUT = {"x", "y", "width", "height", "dashboardX", "dashboardY", "dashboardWidth", "dashboardHeight"}
+#: The lines the canvas's Autark starter writes in a layer it colors by a
+#: column, whatever the input, as its JSON text holds them: the column's type,
+#: then the color map, last in the layer (utils/autkDefaultSpec.ts, from
+#: autkGrammar.json's starterColoring).
+AUTARK_COLORING = frozenset({
+    '"getFnvType": "quantitative",', '"colorMapInterpolator": "interpolateViridis"',
+    '"getFnvType": "categorical",', '"colorMapInterpolator": "schemeTableau10"',
+})
 
 
 def _keys(chosen) -> list[str]:
@@ -35,6 +43,84 @@ def _keys(chosen) -> list[str]:
 
 def _pool() -> dict:
     return {example.key: example for example in examples.used_examples()}
+
+
+def _schema_line() -> str:
+    """The "$schema" line the canvas starts a Vega-Lite spec with, as its JSON
+    text holds it: the shared contract's URL (visDefaults' vegaSchemaUrl),
+    before the spec's other keys."""
+    from utk_curio.backend.app.agents.domain import contracts
+
+    return f'"$schema": {json.dumps(contracts.VEGA_SCHEMA_URL)},'
+
+
+def _starter_lines() -> dict[str, set[str]]:
+    """The code lines of SHARED_LINE_CHARS or more a node of each template of
+    the package catalog starts with, by template: its template's source
+    file's, or, for a model package's template without one, the cell Curio
+    writes for its model; for a template whose grammar is Vega-Lite, the
+    "$schema" line the canvas starts its spec with (:func:`_schema_line`); and
+    for one whose grammar is Autark's, the lines the canvas colors a layer
+    with (:data:`AUTARK_COLORING`)."""
+    from utk_curio.backend.app.agents.domain import contracts
+    from utk_curio.backend.app.execution.code_references import VEGA_LITE
+    from utk_curio.backend.app.packages import service as packages_services
+
+    starters: dict[str, set[str]] = {}
+    for folder in sorted(packages_services.catalog_root().iterdir()):
+        if not (folder / "manifest.json").is_file():
+            continue
+        manifest = packages_services.load_package_manifest(folder)
+        for template in manifest.templates:
+            canonical = f"{manifest.package_id}/{template.template_id}"
+            if canonical in starters:
+                continue
+            lines: set[str] = set()
+            if template.source:
+                lines |= _long_lines((folder / template.source).read_text(encoding="utf-8"))
+            elif manifest.kind == "model" and manifest.model is not None:
+                lines |= _long_lines(packages_services.model_default_cell(manifest, folder))
+            if template.grammar_id == VEGA_LITE:
+                lines.add(_schema_line())
+            if template.grammar_id == contracts.AUTK_GRAMMAR_ID:
+                lines |= AUTARK_COLORING
+            if lines:
+                starters[canonical] = lines
+    return starters
+
+
+def _loader_lines() -> set[str]:
+    """The lines the Data Catalog's loader snippet writes whatever the
+    dataset is: those its code holds alike for two datasets of a format, by
+    path and by id, for each format of its table and a collection."""
+    from utk_curio.backend.app.datasets.domain import catalog_item
+
+    lines: set[str] = set()
+    for fmt in (*catalog_item.LOADED_VARIABLES, "collection"):
+        for one, two in ((("a/one.data", None), ("b/two.data", None)), ((None, "one"), (None, "two"))):
+            first = catalog_item.loader_snippet(fmt, one[0], dataset_id=one[1])["code"]
+            second = catalog_item.loader_snippet(fmt, two[0], dataset_id=two[1])["code"]
+            lines |= _long_lines(first) & _long_lines(second)
+    return lines
+
+
+def _code_lines(spec: dict, starters: dict | None = None) -> set[str]:
+    """The code lines of SHARED_LINE_CHARS or more *spec*'s nodes hold; with
+    *starters* (:func:`_starter_lines`), but those a node holds because its
+    template starts it with them."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    lines: set[str] = set()
+    for node in spec["dataflow"]["nodes"]:
+        own = (starters or {}).get(packages_services.canonical_template_id(node.get("type")), set())
+        lines |= _long_lines(node.get("content")) - own
+    return lines
+
+
+def _long_lines(code: object) -> set[str]:
+    if not isinstance(code, str):
+        return set()
+    return {line.strip() for line in code.splitlines() if len(line.strip()) >= examples.SHARED_LINE_CHARS}
 
 
 class TestTheChoice:
@@ -117,6 +203,39 @@ class TestTheBlock:
                 assert not LAYOUT & set(node), (example.key, node.get("id"))
                 assert node["id"] and node["type"]
 
+    def test_a_widget_a_node_holds_as_its_template_declares_it_is_shown_by_name_type_and_value(self):
+        """As a plan or a node.create sets a template's widget: the rest of it,
+        a Spatial Join's choices, a loader's label and default, is the
+        template's, which a new node of it gets. A widget its node declares
+        itself, or holds otherwise than its template declares it, is shown
+        whole."""
+        from utk_curio.backend.tests.test_agents.test_node_settings_write import JOIN_CODE, OPERATION, OUTPUT
+
+        photos = {"name": "data", "type": "dataset", "label": "Photos", "default": ""}
+        factor = {"name": "factor", "type": "number", "default": 2}
+        spec = {"dataflow": {"nodes": [
+            {"id": "join", "type": "curio.builtin/spatial-join@1", "content": JOIN_CODE,
+             "metadata": {"widgets": [{**OPERATION, "value": "within"}, OUTPUT]}},
+            {"id": "load", "type": "curio.builtin/data-loading",
+             "metadata": {"widgets": [{"name": "data", "type": "dataset", "label": "Data", "default": "", "value": "data.x"}]}},
+            {"id": "photos", "type": "curio.builtin/data-loading", "metadata": {"widgets": [photos]}},
+            {"id": "calc", "type": "curio.builtin/python-computation", "metadata": {"widgets": [factor]}},
+        ], "edges": []}}
+        shown = {n["id"]: n for n in json.loads(examples.trill_text(spec))["dataflow"]["nodes"]}
+        assert shown["join"]["metadata"]["widgets"] == [
+            {"name": "operation", "type": "choice", "value": "within"}, {"name": "output", "type": "choice"},
+        ]
+        assert shown["join"]["content"] == JOIN_CODE
+        assert shown["load"]["metadata"]["widgets"] == [{"name": "data", "type": "dataset", "value": "data.x"}]
+        assert shown["photos"]["metadata"]["widgets"] == [photos]
+        assert shown["calc"]["metadata"]["widgets"] == [factor]
+
+    def test_the_street_vision_example_fits_the_block(self):
+        """The largest example a run's block holds: its Spatial Joins' widgets,
+        shown by name, type and value, keep it within the bound."""
+        block = examples.render([_pool()["10-street-vision-cv-analysis"]])
+        assert block is not None and len(block) <= examples.MAX_BLOCK_CHARS
+
     def test_exclude_leaves_an_example_out(self):
         assert NINE in _keys(examples.select(MILAN))
         for name in (NINE, f"{NINE}.json", f"docs/examples/{NINE}.json"):
@@ -146,16 +265,127 @@ class TestAnEvaluationNeverSeesItsExample:
         assert NINE not in _keys(examples.select(MILAN, exclude=excluded))
 
     def test_an_evaluation_is_shown_no_part_of_its_answer(self):
-        # Exactly the examples that share a node or edge id, or a code line of
-        # SHARED_LINE_CHARS or more, with the scored dataflow are left out.
+        # Exactly the examples that hold a node or edge id, or a code line of
+        # SHARED_LINE_CHARS or more, of the scored dataflow are left out.
         answer = examples._answer_parts(_pool()[NINE].spec)
         assert answer, "example 09 has no answer parts; this test would be vacuous"
         excluded = examples.excluded_by(self._marked(NINE))
         for example in _pool().values():
-            shares = bool(examples._answer_parts(example.spec) & answer)
+            shares = bool(examples._shown_parts(example.spec) & answer)
             assert (example.key in excluded) == shares, example.key
         block = examples.block_for(MILAN, exclude=excluded) or ""
         assert not [part for part in answer if part in block]
+
+    def test_a_line_a_node_holds_because_its_template_starts_it_with_it_gives_nothing_away(self):
+        """Every node of a template starts with its template's code, such as a
+        Data Loading node's loader line or a Spatial Join's call, a Vega-Lite
+        node's spec with the "$schema" line the canvas writes and an Autark
+        layer with the coloring it writes, and a node that loads a dataset
+        through its loader snippet holds the lines the snippet writes whatever
+        the dataset, so a line a node holds for that alone is no part of an
+        answer. An example
+        is left out of an evaluation's runs when it holds one of the scored
+        dataflow's ids or one of its other code lines of SHARED_LINE_CHARS or
+        more, and is shown when it shares only such lines. Before, every long
+        line counted: an evaluation scored against example 06 was shown none
+        of the examples whose Vega-Lite specs hold the "$schema" line its
+        Vega-Lite package's nodes start with."""
+        starters, loader = _starter_lines(), _loader_lines()
+        pool = list(_pool().values())
+        held = {e.key: examples._ids(e.spec) | _code_lines(e.spec) for e in pool}
+        shown_though_sharing = []
+        for scored in pool:
+            answer = examples._ids(scored.spec) | (_code_lines(scored.spec, starters) - loader)
+            excluded = examples.excluded_by(self._marked(scored.key), pool)
+            for example in pool:
+                if example.key == scored.key:
+                    continue
+                assert (example.key in excluded) == bool(held[example.key] & answer), (scored.key, example.key)
+                if example.key not in excluded and _code_lines(example.spec) & _code_lines(scored.spec):
+                    shown_though_sharing.append((scored.key, example.key))
+        assert shown_though_sharing, "no example shares only starter lines with an answer; this test would be vacuous"
+
+    def test_the_schema_line_the_canvas_starts_a_vega_lite_spec_with_gives_nothing_away(self):
+        """The canvas starts every Vega-Lite spec with the "$schema" line it
+        writes from the shared contract (visDefaults' vegaSchemaUrl), so a
+        Vega-Lite node holds it whether or not its template has a starter: an
+        evaluation whose answer holds it is shown the examples that share
+        nothing else with that answer. Before, it was shown none of them: an
+        evaluation scored against one of the 27 "Used" examples with a
+        Vega-Lite spec was shown none of the 26 others."""
+        schema = _schema_line()
+        starters, loader = _starter_lines(), _loader_lines()
+        pool = list(_pool().values())
+        held = {e.key: examples._ids(e.spec) | _code_lines(e.spec) for e in pool}
+        shown = []
+        for scored in pool:
+            if schema not in _code_lines(scored.spec):
+                continue
+            answer = examples._ids(scored.spec) | (_code_lines(scored.spec, starters) - loader)
+            excluded = examples.excluded_by(self._marked(scored.key), pool)
+            for example in pool:
+                if example.key != scored.key and schema in held[example.key] and not held[example.key] & answer:
+                    assert example.key not in excluded, (scored.key, example.key)
+                    shown.append((scored.key, example.key))
+        assert shown, "no evaluation's answer holds the schema line alone; this test would be vacuous"
+
+    def test_the_coloring_the_canvas_starts_an_autark_layer_with_gives_nothing_away(self):
+        """The canvas's Autark starter colors a layer by a column with that
+        column's type and a color map it writes whatever the input
+        (:data:`AUTARK_COLORING`), so an Autark node holds those lines
+        whatever its data: an evaluation is shown the examples that share
+        nothing but them with its answer. The lines that name the node's own
+        layers and tables stay part of it. Before, every long line counted:
+        an evaluation scored against 07 was shown none of the examples whose
+        Autark maps color a layer by a quantitative column."""
+        pool = list(_pool().values())
+        held = {e.key: examples._ids(e.spec) | _code_lines(e.spec) for e in pool}
+        shown = []
+        for scored in pool:
+            excluded = examples.excluded_by(self._marked(scored.key), pool)
+            for example in pool:
+                shared = held[example.key] & held[scored.key]
+                if example.key != scored.key and shared and shared <= AUTARK_COLORING:
+                    assert example.key not in excluded, (scored.key, example.key)
+                    shown.append((scored.key, example.key))
+        assert shown, "no two examples share only the coloring; this test would be vacuous"
+        # The lines are the shared contract's, which the canvas writes them from.
+        from utk_curio.backend.app.agents.domain import contracts
+
+        written = {line for coloring in contracts.AUTK_STARTER_COLORING.values()
+                   for line in _long_lines(json.dumps(coloring, indent=2))}
+        assert written == AUTARK_COLORING
+
+    def test_the_lines_a_loader_snippet_writes_whatever_the_dataset_give_nothing_away(self):
+        """The Data Catalog's loader snippet writes the same lines for every
+        dataset of a format past the one that names it (``loader_snippet``),
+        such as a parquet dataset's try of gpd.read_parquet, then
+        pd.read_parquet: an example whose node loads another dataset through
+        the snippet shares nothing but those lines with an answer that loads
+        one so, and is shown. One that holds the line naming the answer's
+        dataset is left out. Before, every long line counted: an evaluation
+        scored against 20 was shown no example that loads a parquet dataset
+        so."""
+        from utk_curio.backend.app.datasets.domain.catalog_item import loader_snippet
+
+        scored = _pool()["20-storage-folder-of-csv-files"]
+        named = [line for line in _code_lines(scored.spec) if "curio_data_path(" in line]
+        assert len(named) == 1, named
+
+        def example(key: str, code: str):
+            spec = {"dataflow": {"nodes": [
+                {"id": f"{key}-loader", "type": "curio.builtin/data-loading", "content": code},
+            ], "edges": []}}
+            entry = examples.IndexEntry(examples.USED, key, f"{key}.json", "loads a dataset")
+            return examples.Example(key=key, entry=entry, spec=spec, words=frozenset(),
+                                    node_types=frozenset(), dataset_ids=frozenset())
+
+        another = example("another-parquet", loader_snippet("parquet", "elsewhere/other.parquet")["code"])
+        same = example("the-same-dataset", named[0])
+        assert _code_lines(another.spec) & _code_lines(scored.spec), "20 holds no line of the snippet; vacuous"
+        excluded = examples.excluded_by(self._marked(scored.key), [another, same])
+        assert another.key not in excluded
+        assert same.key in excluded
 
     def test_every_fixture_id_names_its_example(self):
         from utk_curio.backend.app.agents.evaluation.fixtures import load_fixtures
