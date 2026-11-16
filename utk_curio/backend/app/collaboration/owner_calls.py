@@ -22,6 +22,10 @@ A call is never made while this thread holds the dataflow's spec lock, which
 the owner takes to make the change across processes, nor while it holds a
 database write not committed, which the owner's own write would wait for
 (#909): either would wait until the call gave up.
+
+:func:`post_to_process` and :func:`signed` are the one way the start's
+backends reach each other and know a call is one of theirs; the test rig's
+calls to every process use them too (``testing/every_process.py``).
 """
 
 from __future__ import annotations
@@ -123,33 +127,66 @@ def _sent(owner: int, op: _Operation, user_key: str, dataflow_id: str, arguments
     if session_holds_write_lock():
         raise OwnerCallFailed(f"{asked} was asked while this thread holds a database write not committed, "
                               "which its owner's write would wait for", 500)
-    secret = backend_processes.token()
-    if not secret:
-        raise OwnerCallFailed(f"{asked} cannot be sent: {backend_processes.TOKEN_VARIABLE} is not set", 500)
     try:
-        port = backend_processes.port_of(owner)
-    except ValueError as exc:
-        raise OwnerCallFailed(f"{asked} cannot be sent: {exc}", 500) from None
+        port, secret = _address_of(owner)
+    except OwnerCallFailed as exc:
+        raise OwnerCallFailed(f"{asked} {exc}", exc.status) from None
     owner_guard.sent(op.name, dataflow_id, owner)
-    call = urllib.request.Request(
-        f"http://127.0.0.1:{port}{path_of(dataflow_id, op.name)}", method="POST",
-        data=json.dumps({"account": user_key, "arguments": arguments}).encode("utf-8"),
-        headers={"Content-Type": "application/json", TOKEN_HEADER: secret},
-    )
     try:
-        with _OPENER.open(call, timeout=CALL_TIMEOUT_S) as reply:
-            answer = json.loads(reply.read() or b"{}")
-    except urllib.error.HTTPError as exc:
-        refusal = _error_of(exc)
-        raise OwnerCallFailed(f"{asked} was refused there: {refusal}", exc.code) from None
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        raise OwnerCallFailed(f"{asked} got no answer from it: {exc}", 503) from None
+        answer = _post(port, secret, path_of(dataflow_id, op.name),
+                       {"account": user_key, "arguments": arguments}, CALL_TIMEOUT_S)
+    except OwnerCallFailed as exc:
+        raise OwnerCallFailed(f"{asked} {exc}", exc.status) from None
     if answer.get("ok"):
         return answer.get("result")
     message, status = str(answer.get("error") or "the change failed"), int(answer.get("status") or 500)
     if op.error is not None:
         raise op.error(message, status)
     raise OwnerCallFailed(message, status)
+
+
+def post_to_process(process: int, path: str, payload: dict, *, timeout: float = CALL_TIMEOUT_S) -> dict:
+    """POST *payload* as JSON to *path* on the backend process numbered
+    *process* of this start, over 127.0.0.1 at its port, signed with the
+    start's secret: its JSON answer. :class:`OwnerCallFailed` when the call
+    cannot be sent, is refused there or gets no answer, its message going on
+    from what was asked ("cannot be sent: ...")."""
+    port, secret = _address_of(process)
+    return _post(port, secret, path, payload, timeout)
+
+
+def signed(given: str) -> bool:
+    """Whether *given*, a call's :data:`TOKEN_HEADER`, is this start's secret:
+    never when the start set none."""
+    secret = backend_processes.token()
+    return bool(secret) and hmac.compare_digest(given.encode("utf-8"), secret.encode("utf-8"))
+
+
+def _address_of(process: int) -> tuple[int, str]:
+    """The port of backend process *process* on 127.0.0.1, and the start's
+    secret; :class:`OwnerCallFailed` (500) saying which the start lacks."""
+    secret = backend_processes.token()
+    if not secret:
+        raise OwnerCallFailed(f"cannot be sent: {backend_processes.TOKEN_VARIABLE} is not set", 500)
+    try:
+        port = backend_processes.port_of(process)
+    except ValueError as exc:
+        raise OwnerCallFailed(f"cannot be sent: {exc}", 500) from None
+    return port, secret
+
+
+def _post(port: int, secret: str, path: str, payload: dict, timeout: float) -> dict:
+    call = urllib.request.Request(
+        f"http://127.0.0.1:{port}{path}", method="POST", data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", TOKEN_HEADER: secret},
+    )
+    try:
+        with _OPENER.open(call, timeout=timeout) as reply:
+            return json.loads(reply.read() or b"{}")
+    except urllib.error.HTTPError as exc:
+        raise OwnerCallFailed(f"was refused there: {_error_of(exc)}", exc.code) from None
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise OwnerCallFailed(f"got no answer from it: {exc}", 503) from None
 
 
 def _error_of(exc: urllib.error.HTTPError) -> str:
@@ -174,9 +211,7 @@ def made_here(dataflow_id: str, name: str):
     or the error it raised, as ``{ok, result}`` or ``{ok, error, status}``."""
     if backend_processes.process_count() <= 1:
         return jsonify({"ok": False, "error": "a start of one backend process takes no call from another"}), 404
-    secret = backend_processes.token()
-    given = request.headers.get(TOKEN_HEADER) or ""
-    if not secret or not hmac.compare_digest(given.encode("utf-8"), secret.encode("utf-8")):
+    if not signed(request.headers.get(TOKEN_HEADER) or ""):
         return jsonify({"ok": False, "error": "not signed with this start's secret"}), 403
     op = _operations.get(name)
     if op is None:

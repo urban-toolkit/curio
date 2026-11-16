@@ -57,7 +57,7 @@ from . import sockets
 from .agents import TURN_WAIT_S, RoomAgents, on_the_scripted_model
 from .autk import compile_autk_data
 from .backend_probe import (
-    BackendProbe, Sampler, reading_now, save_thread_stacks, track_worker, worker_finished,
+    BackendProbe, ProbeError, Sampler, reading_now, save_thread_stacks, track_worker, worker_finished,
 )
 from .driver import AUTK_GRAMMAR, BURST, JS_COMPUTATION, PASS_ON, Pacing, VirtualUser, new_user_name
 
@@ -442,6 +442,24 @@ def make_probe(args) -> BackendProbe | None:
     return BackendProbe(command)
 
 
+def backend_process_count(given: int | None, probe) -> int:
+    """How many backend processes the stack runs (``curio.py start
+    --backend-processes``), which maps each room to the process that owns its
+    dataflow: what the probe reads of the stack, else *given*
+    (``--backend-processes``), else 1. A *given* count the stack does not run
+    is said in the log, since it would map every room to the wrong process."""
+    read = None
+    if probe is not None:
+        try:
+            read = int(probe.read().get("count") or 0) or None
+        except (ProbeError, TypeError, ValueError):
+            read = None
+    if read and given and read != given:
+        print(f"[stress] --backend-processes says {given}, but the stack runs {read} backend "
+              f"process(es): each room is mapped to one of its {read}", flush=True)
+    return read or given or 1
+
+
 def probe_tier(probe: BackendProbe | None, run):
     """Run *run* (a tier) between two readings, sampling while it runs:
     ``(what run returned, backend summary, doc files summary, harness
@@ -544,6 +562,30 @@ def tier_lines(summary: dict) -> list[str]:
             f".updates {files['updates_bytes']['total']} B"
             + (f"; no log for {', '.join(files['without_log'])}" if files["without_log"] else "")
         )
+    return lines + process_lines(summary)
+
+
+def process_lines(summary: dict) -> list[str]:
+    """Each backend process's share of the tier, for the log, when the stack
+    runs several: the rooms it owns (the room-to-process map), their sync and
+    turns, and its own CPU and memory."""
+    block = summary.get("processes") or []
+    if len(block) <= 1:
+        return []
+    lines = []
+    for entry in block:
+        parts = [f"backend process {entry['process']}: room(s) {entry['rooms'] or 'none'}"]
+        sync, turn = entry.get("sync_ms"), entry.get("turn_s")
+        if sync:
+            parts.append(f"sync p50 {sync['p50']} ms, p95 {sync['p95']} ms")
+        if turn:
+            parts.append(f"turn p50 {turn['p50']} s, p95 {turn['p95']} s")
+        measured = entry.get("backend") or {}
+        if measured.get("cpu"):
+            parts.append(f"{measured['cpu']['cores_busy']} cores (peak {measured['cpu']['peak_cores_busy']})")
+        if measured:
+            parts.append(f"RSS peak {measured['rss_mib']['peak']} MiB, threads peak {measured['threads']['peak']}")
+        lines.append("; ".join(parts))
     return lines
 
 
@@ -587,6 +629,13 @@ def main(argv: list[str] | None = None) -> int:
                              "Python by default, for a stack on this machine")
     parser.add_argument("--no-probe", action="store_true",
                         help="read nothing of the backend's process")
+    parser.add_argument("--backend-processes", type=int, metavar="N",
+                        default=int(os.environ.get("CURIO_BACKEND_PROCESSES") or 0) or None,
+                        help="how many backend processes the stack runs (curio.py start "
+                             "--backend-processes), so the report names the process that owns "
+                             "each room's dataflow; what the probe reads of the stack wins, and "
+                             "this is for a stack the probe cannot read (CURIO_BACKEND_PROCESSES, "
+                             "else 1)")
     parser.add_argument("--run-id", default=uuid.uuid4().hex[:6])
     parser.add_argument("--stacks-only", metavar="NAME", default="",
                         help="run no tier: only ask the backend, through the "
@@ -619,11 +668,13 @@ def main(argv: list[str] | None = None) -> int:
     wait_for_backend(backend_url)
     namespace = read_namespace(backend_url) if room_size else None
     probe = make_probe(args)
+    processes = backend_process_count(args.backend_processes, probe)
     print(f"[stress] run {args.run_id} against {backend_url}; "
           f"tiers {tiers}; profile {args.profile}; "
           + (f"rooms of {room_size} on {namespace}" if room_size else "no tabs")
           + ("; each room one shared canvas" if args.shared_canvas else "")
-          + ("; each member's agent at work on it" if args.agents else ""),
+          + ("; each member's agent at work on it" if args.agents else "")
+          + f"; {processes} backend process(es)",
           flush=True)
 
     baselines = run_baseline(backend_url, args.run_id, examples, shared_canvas=args.shared_canvas)
@@ -651,13 +702,14 @@ def main(argv: list[str] | None = None) -> int:
             probe, functools.partial(tier_run, tier, position))
         all_results.extend(results)
         lock = reporting.exec_lock_delta(lock_before, read_exec_lock(backend_url))
-        tabs = reporting.socket_summary(outcomes)
+        tabs = reporting.socket_summary(outcomes, processes)
         summary = reporting.tier_summary(tier, results, seconds, args.profile,
                                          exec_lock=lock, sockets=tabs,
                                          backend=backend, doc_files=doc_files,
                                          harness=harness,
                                          canvas=reporting.canvas_summary(outcomes))
-        summary["agents"] = reporting.agents_summary(outcomes)
+        summary["agents"] = reporting.agents_summary(outcomes, processes)
+        summary["processes"] = reporting.process_summary(outcomes, processes, backend)
         tier_reports.append(summary)
         print(f"[stress] tier {tier}: {summary['completed']}/{tier} completed in "
               f"{seconds:.1f}s, {summary['failure_count']} failure(s)", flush=True)
@@ -675,7 +727,8 @@ def main(argv: list[str] | None = None) -> int:
 
     report = reporting.build_report(args.run_id, backend_url, tier_reports,
                                     args.stats_log, profile=args.profile,
-                                    room_size=room_size, shared_canvas=args.shared_canvas)
+                                    room_size=room_size, shared_canvas=args.shared_canvas,
+                                    backend_processes=processes)
     report["agents"] = args.agents
     json_path, md_path = reporting.write_outputs(report, args.out)
     with open(os.path.join(args.out, "samples.json"), "w", encoding="utf-8") as fh:

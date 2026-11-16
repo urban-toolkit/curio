@@ -175,7 +175,7 @@ def _attach_builder(session, project_id: str) -> str:
     return attachment["attachmentId"]
 
 
-def _script_the_oracle(session, *, solve_content: bool = True) -> dict:
+def _script_the_oracle(session, project_id: str, *, solve_content: bool = True) -> dict:
     """Script the plan and, optionally, one content reply per node.
 
     The plan is the first queued reply. Content replies are keyed by each
@@ -205,6 +205,7 @@ def _script_the_oracle(session, *, solve_content: bool = True) -> dict:
     script_agent_replies(
         session["backend"], plan.as_reply(),
         by_intent=dict(contents) if solve_content else None,
+        dataflow=project_id,
     )
     return {"plan": plan, "contents": contents, "example": example}
 
@@ -309,7 +310,7 @@ class TestThePlansCard:
         project_id = _new_project(session, "Reconstruction review")
         _provision(session, project_id)
         _attach_builder(session, project_id)
-        _script_the_oracle(session, solve_content=False)
+        _script_the_oracle(session, project_id, solve_content=False)
 
         page.goto(f"{session['frontend']}/dataflow/{project_id}")
         page.wait_for_load_state("domcontentloaded")
@@ -414,7 +415,7 @@ class TestSolveProgressAndReconnection:
         project_id = _new_project(session, "Reconstruction solve")
         _provision(session, project_id)
         _attach_builder(session, project_id)
-        _script_the_oracle(session)
+        _script_the_oracle(session, project_id)
 
         page.goto(f"{session['frontend']}/dataflow/{project_id}")
         page.wait_for_load_state("domcontentloaded")

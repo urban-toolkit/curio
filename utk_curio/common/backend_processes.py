@@ -23,9 +23,11 @@ reaches another with, for a change to a dataflow that other process owns
 
 Process 0 is the home process. It alone does the startup work: the shared
 guest, the hosted guests' copies dropped, the agents and the examples put
-back, the monitor's histories started anew, the guest cleanup and the kept
-outputs' sweep, the open-files sampler, and the bucket mount service's proxy
-and check (``backend/server.py`` and ``create_app``). The launcher starts home
+back, the monitor's histories started anew and the other processes' files of
+them removed, the guest cleanup and the kept outputs' sweep, the open-files
+sampler, and the bucket mount service's proxy and check (``backend/server.py``
+and ``create_app``). Each other process starts its own monitor histories and
+samples its own open files (``backend/app/monitor/``). The launcher starts home
 first and the others once it serves, so that work is done before they serve;
 until then home owns every dataflow (``collaboration/owner_guard.py``).
 
@@ -62,6 +64,12 @@ BOOT_ID_VARIABLE = "CURIO_BOOT_ID"
 PORTS_VARIABLE = "CURIO_BACKEND_PORTS"
 #: The secret the start's backends show each other on a call between them.
 TOKEN_VARIABLE = "CURIO_BACKEND_TOKEN"
+
+#: The header a request names its dataflow in, and the query argument a
+#: socket's handshake names it in, which nginx routes by
+#: (``cli/backend_group.py``).
+ROUTE_HEADER = "X-Curio-Dataflow"
+ROUTE_QUERY = "dataflow"
 
 #: The home process's number.
 HOME = 0

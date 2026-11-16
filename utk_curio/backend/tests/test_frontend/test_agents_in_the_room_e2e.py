@@ -179,7 +179,7 @@ class _Room:
     def ask(self, *replies: str) -> dict:
         """Ana asks the Node Builder, through its chat's route, which answers
         once the turn is over; the model's replies are *replies*."""
-        script_agent_replies(self.backend, *replies)
+        script_agent_replies(self.backend, *replies, dataflow=self.project_id)
         return api_json(
             f"{self.backend}/api/agents/projects/{self.project_id}/attachments/{self.attachment_id}/run",
             self.tokens[OWNER], method="POST", payload={"message": "Put a line in each node's code."}, timeout=120,

@@ -30,3 +30,16 @@ def set_now(moment: datetime | None) -> None:
     """
     global _offset
     _offset = timedelta(0) if moment is None else moment - datetime.now(timezone.utc)
+
+
+def offset() -> timedelta:
+    """How far the record clock is from the system clock."""
+    return _offset
+
+
+def set_offset(delta: timedelta) -> None:
+    """Put the record clock *delta* from the system clock: what another
+    backend process of the start set, so both read the same time. Only the
+    testing routes call this."""
+    global _offset
+    _offset = delta

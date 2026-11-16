@@ -152,7 +152,7 @@ def test_an_agents_change_to_map_edits_is_an_entry_named_after_it_that_a_reload_
         f"{base}/attachments", token, method="POST",
         payload={"coord": agent.dir_name, "target": {"kind": "node", "targetId": EDIT}},
     )
-    script_agent_replies(current_server, _write_reply(), "Building 2 is removed in the node.")
+    script_agent_replies(current_server, _write_reply(), "Building 2 is removed in the node.", dataflow=project_id)
 
     _goto_when_served(page, f"{frontend_server}/dataflow/{project_id}")
     page.wait_for_url(f"**/dataflow/{project_id}", timeout=20000)
