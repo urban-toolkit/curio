@@ -17,8 +17,8 @@ which the host's ``nsdelegate`` keeps, and an unprivileged account, as
 :func:`unavailable` says why, and a child keeps the address-space cap
 (``child._apply_rlimits``).
 
-The layout, which the sandbox makes at the first zygote's start
-(:func:`lay_out`)::
+The layout, which the sandbox makes as it starts, before it serves
+(:func:`lay_out`, ``lifecycle.lay_out_at_start``)::
 
     /sys/fs/cgroup                  the container's own cgroup
     /sys/fs/cgroup/curio            every process of the container
@@ -34,6 +34,10 @@ A place is reused run after run (:class:`Places`): a cgroup removed while page
 cache it was charged for lives stays behind, "dying", until that cache goes,
 so a cgroup per run would leave one behind every run that read a file
 (diagnostic run 42715453736, on kernels 5.15, 6.8 and 7.0).
+
+Once the layout is made, the sandbox's start makes a place as a zygote makes
+its runs' and removes it (:func:`try_a_place`), so that cgroups that could not
+hold a run say so before any node runs.
 """
 
 import contextlib
@@ -77,7 +81,7 @@ REASONS = {
     "outside": "the sandbox runs outside its cgroup namespace",
     "no-memory": "the memory controller is not the container's to hand out",
     "layout": "the container's cgroups could not be laid out (the sandbox log says why)",
-    "places": "the zygote could not make its nodes' cgroups (the sandbox log says why)",
+    "places": "the nodes' cgroups could not be made (the sandbox log says why)",
     "requested": "the address-space cap was asked for",
 }
 
@@ -225,7 +229,9 @@ _predicted = []
 
 def predicted():
     """:func:`unavailable` for this process, asked once: what /version says
-    before a zygote has started."""
+    in a process that laid nothing out, as the unit suites' app. The sandbox
+    server lays out as it starts (``lifecycle.lay_out_at_start``) and says
+    the outcome."""
     if not _predicted:
         _predicted.append(unavailable())
     return _predicted[0]
@@ -254,8 +260,10 @@ def lay_out(root=ROOT):
     """Move every process of the container to ``curio``, hand memory and pids
     to the root's children, and make ``nodes``. Raises OSError.
 
-    Made once, and harmless again: a later zygote's start finds it made. Only
-    where :func:`unavailable` says nothing against it.
+    Made once, as the sandbox starts (``lifecycle.lay_out_at_start``), and
+    harmless again: a zygote started in a process that laid nothing out, as
+    in the tests, finds it made. Only where :func:`unavailable` says nothing
+    against it.
     """
     servers = os.path.join(root, SERVERS)
     nodes = os.path.join(root, NODES)
@@ -399,7 +407,9 @@ def _wait_empty(place, seconds):
 
 def clear_dead(nodes, *, keep):
     """Remove the places of zygotes that have exited, each one's processes
-    stopped first; *keep* is the pid of the zygote that asks."""
+    stopped first; *keep* is the pid of the zygote that asks, or None. A
+    folder whose pid is no running zygote's is a dead one's, the sandbox's
+    own trial among them (:func:`try_a_place`)."""
     try:
         names = os.listdir(nodes)
     except OSError:
@@ -463,3 +473,21 @@ class Places:
         """The readers of the places' peaks this zygote holds, which a child
         it forks closes."""
         return [place.peak_fd for place in self._places if place.peak_fd is not None]
+
+
+def try_a_place(memory_mb, *, root=ROOT):
+    """Make a place at *memory_mb* as a zygote makes its runs' (:class:`Places`),
+    then remove it: what the sandbox does as it starts, once the layout is
+    made, so that cgroups that could not hold a run say so before any node
+    runs. Raises OSError.
+
+    The place's folder is under this process's pid, which is no zygote's, so
+    it goes as a dead zygote's places go (:func:`clear_dead`), and whatever of
+    it a failure leaves, the next zygote's start removes. The place never
+    holds a process, so nothing of it stays behind, dying.
+    """
+    try:
+        places = Places(memory_mb, root=root)
+        places.give_back(places.take())
+    finally:
+        clear_dead(os.path.join(root, NODES), keep=None)

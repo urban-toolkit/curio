@@ -1450,9 +1450,11 @@ Five design points worth knowing:
 
 **A node's memory is a cgroup per run.** In a container that may arrange the
 cgroups below its own (Docker Engine 28 or newer, `writable-cgroups=true` and
-a private cgroup namespace, as `docker-compose.deploy.yml` asks), the first
-zygote's start moves every process of the container to `/curio` and makes
-`/nodes`, root's and `0755` (`isolation/node_cgroups.py`). Each zygote keeps
+a private cgroup namespace, as `docker-compose.deploy.yml` asks), the sandbox,
+as it starts and before it serves, moves every process of the container to
+`/curio` and makes `/nodes`, root's and `0755` (`isolation/node_cgroups.py`,
+`lifecycle.lay_out_at_start`), then makes one place as a zygote makes a run's
+and removes it (`try_a_place`). Each zygote keeps
 a place per run in flight, `/nodes/<its pid>/<k>`, reused run after run: a
 removed cgroup that page cache was charged to stays behind, dying, while the
 cache lives. A place has `memory.max` at `--exec-memory-mb`, no swap and
@@ -1466,7 +1468,9 @@ counted, page cache is. Where the container cannot (no Linux, read-only
 cgroups, the host's cgroup namespace, cgroup v1), a child keeps
 `RLIMIT_AS` at its footprint plus the budget, with its two workarounds, the
 smaller thread stacks and the zygote's arena cap and Arrow pool, and the log
-and `/monitor` say why. `/version`'s `memory_limit` names the limit in force.
+and `/monitor` say why. `/version`'s `memory_limit` names the limit in force,
+from the sandbox's first answer: before any node has run, the outcome of the
+layout and its trial place; once a zygote has started, its children's.
 
 **Syscall confinement is not enough on its own.** seccomp does not stop
 `open()`, and reading files is what a data node legitimately does, so a

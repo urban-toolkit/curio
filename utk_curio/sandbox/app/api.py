@@ -141,8 +141,9 @@ def _isolation_active_label():
     The two can disagree, and nothing used to report it. The zygote is started
     lazily, on the first ``/exec`` (``_isolated_runner`` below), and a later
     run that finds it exited starts it again
-    (``_restart_the_zygote_if_it_died``); ``server.py`` hardens at boot but
-    starts nothing. A first spawn that fails is not fatal by design - the
+    (``_restart_the_zygote_if_it_died``); ``server.py`` hardens and lays out
+    the container's cgroups at boot but starts no zygote. A first spawn that
+    fails is not fatal by design - the
     node still has to run - so the sandbox degrades to in-process and caches
     that for the life of the process, while the resolved label goes on saying
     ``fork``.
@@ -168,8 +169,9 @@ def _memory_limit():
     closed list (``node_cgroups.REASONS``), or ``none`` where nodes run in
     this process.
 
-    Before the first isolated run it is what that run's zygote will choose
-    (``lifecycle.memory_limit``), so a deploy can check it at once.
+    Before the first isolated run it is the outcome of the layout the
+    sandbox made as it started (``lifecycle.memory_limit``), so a deploy
+    checks at once what its nodes get.
     """
     if _isolation_label() != 'fork':
         return 'none', None
