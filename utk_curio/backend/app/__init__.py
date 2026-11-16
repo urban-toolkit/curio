@@ -12,6 +12,9 @@ from utk_curio.common import shared_constants
 
 #: The header a dashboard viewer's tab sends its run's token in.
 RUN_TOKEN_HEADER = shared_constants.read("dashboardRuns")["runTokenHeader"]
+#: The header every request of a dataflow's page names that dataflow in, by
+#: which a start of several backend processes routes it (``cli/backend_group.py``).
+DATAFLOW_HEADER = shared_constants.read("dataflowRoute")["header"]
 
 
 CORS_HEADERS = {
@@ -23,12 +26,14 @@ CORS_HEADERS = {
     # rejected, the fetch throws, and the canvas falls back to JSON. That
     # failure is invisible from the outside -- the data still arrives -- which
     # is exactly how it shipped green until an e2e test watched the wire.
-    # RUN_TOKEN_HEADER is what a dashboard viewer's tab follows its run with.
+    # RUN_TOKEN_HEADER is what a dashboard viewer's tab follows its run with,
+    # and DATAFLOW_HEADER what every request of a dataflow's page names it in.
     "Access-Control-Allow-Headers": ",".join((
         "Content-Type",
         "Authorization",
         "X-Curio-Accept-Geometry",
         RUN_TOKEN_HEADER,
+        DATAFLOW_HEADER,
     )),
     "Access-Control-Allow-Methods": "GET,PUT,POST,PATCH,DELETE,OPTIONS",
     # Expose Content-Disposition so cross-origin clients (e.g. dataset export)
