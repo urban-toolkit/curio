@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 
 import requests
 
+from utk_curio.common.backend_processes import ROUTE_HEADER
+
 from ..test_frontend.workflow_spec import (
     PY_CODE_TYPES,
     parse_workflow_dict,
@@ -368,6 +370,12 @@ class VirtualUser:
         h = {"Content-Type": "application/json"}
         if self.token:
             h["Authorization"] = f"Bearer {self.token}"
+        # Once the user has a dataflow, each call names it, as the canvas
+        # does: with several backend processes nginx sends the call to the
+        # one that owns it, and a run's stream and /processPythonCode name
+        # none in their path.
+        if self.project_id:
+            h[ROUTE_HEADER] = self.project_id
         return h
 
     def _call(
