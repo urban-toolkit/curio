@@ -163,6 +163,57 @@ def test_what_a_dashboard_viewer_never_changes_and_the_run_token_header_are_the_
     assert viewer.RUN_TOKEN_HEADER == RUN_TOKEN_HEADER == data["runTokenHeader"]
 
 
+def test_the_router_keys_on_the_header_and_the_query_the_file_names(tmp_path):
+    """Every request of the canvas and the dashboard names its dataflow in
+    the file's header, and the room's socket in the file's query argument of
+    its handshake: nginx routes each by them (``cli/backend_group.py``)."""
+    from utk_curio.cli import backend_group
+    from utk_curio.common import shared_constants
+
+    route = _file("dataflowRoute")
+    assert shared_constants.read("dataflowRoute") == route
+    assert (backend_group.ROUTE_HEADER, backend_group.ROUTE_QUERY) == (route["header"], route["query"])
+    text = backend_group.nginx_config(host="127.0.0.1", port=5999, ports=[7000, 7001], folder=tmp_path)
+    variable = "$http_" + route["header"].lower().replace("-", "_")
+    assert f"map {variable} $curio_key" in text
+    assert f"map $arg_{route['query']} $curio_key_from_query" in text
+
+
+def test_a_page_on_another_origin_may_send_the_dataflow_header(tmp_path, monkeypatch):
+    """The canvas and the backend sit on two origins wherever a deployment
+    gives the backend an address of its own, as CI's stacks do, so every
+    request that names its dataflow is preflighted: the header must be one a
+    page may send (Allow-Headers), or each such request fails before it is
+    sent."""
+    from utk_curio.backend.app import CORS_HEADERS, DATAFLOW_HEADER, create_app
+    from utk_curio.backend.extensions import db
+    from utk_curio.backend.tests._unit_fixtures import TestConfig
+
+    header = _file("dataflowRoute")["header"]
+    assert DATAFLOW_HEADER == header
+    allowed = {name.strip().lower() for name in CORS_HEADERS["Access-Control-Allow-Headers"].split(",")}
+    exposed = {name.strip().lower() for name in CORS_HEADERS["Access-Control-Expose-Headers"].split(",")}
+    assert header.lower() in allowed
+    assert header.lower() not in exposed, "a request header, not one the page reads off an answer"
+
+    (tmp_path / ".curio" / "data").mkdir(parents=True)
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+    application = create_app(TestConfig, startup_work=False)
+    with application.app_context():
+        db.create_all()
+        try:
+            preflight = application.test_client().options("/api/runs/r1/stream", headers={
+                "Origin": "http://localhost:8080", "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": f"authorization,{header.lower()}",
+            })
+        finally:
+            db.session.remove()
+            db.drop_all()
+    assert preflight.status_code == 204
+    answered = {name.strip().lower() for name in preflight.headers["Access-Control-Allow-Headers"].split(",")}
+    assert {"authorization", header.lower()} <= answered
+
+
 def test_the_installs_a_dataflows_owner_reviews_are_the_files():
     """The tools whose Apply installs into an account, which an editor the
     owner invited leaves to the owner: each is a mutate tool an agent asks for."""
