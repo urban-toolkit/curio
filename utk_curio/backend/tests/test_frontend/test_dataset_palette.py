@@ -80,6 +80,7 @@ def _save_a_node_output(backend_url: str, token: str, node_id: str, dataflow_id:
             "saveOutputDataset": True,
         },
         timeout=120,
+        dataflow=dataflow_id,
     )
     installed = reply.get("installedDataset") or {}
     assert installed.get("id") == dataset_id, (

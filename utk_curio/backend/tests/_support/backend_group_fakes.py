@@ -8,14 +8,20 @@ its environment), and the starts, the waits for each server and nginx's check
 of its config are kept in the order they came. The launcher's modules are
 imported inside :func:`boot`, so a checkout without them fails each test that
 boots, on its own.
+
+:class:`AnotherBackend` is another backend process of a start, as the process
+under test reaches it over 127.0.0.1: a server in the test that keeps each
+call it gets.
 """
 
 from __future__ import annotations
 
 import importlib
 import itertools
+import json
 import subprocess
 import threading
+import time
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Callable, Optional
@@ -136,3 +142,61 @@ def boot(monkeypatch, *, processes: int = 2, host: str = "127.0.0.1", port: int 
     monkeypatch.setattr(lifecycle, "processes", [])
     booted.started = backend_group.boot(host, port, processes, nginx=NGINX)
     return booted
+
+
+class AnotherBackend:
+    """Another backend process of a start, as the process under test reaches
+    it over 127.0.0.1 at the port ``CURIO_BACKEND_PORTS`` names for it: a
+    server in the test that keeps each call it gets in :attr:`calls` and
+    answers it as a backend's internal route does, ``{"ok": true, "result":
+    ...}``. The last part of a call's path is its step. :attr:`results` says
+    what a step answers, a value or a function of the call's ``arguments``,
+    and ``{}`` otherwise; :attr:`failing` names the steps that fail, with
+    their error. A context manager: it serves inside the block."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+        self.results: dict = {}
+        self.failing: dict = {}
+        self._lock = threading.Lock()
+        self._server = None
+        self._thread: Optional[threading.Thread] = None
+
+    @property
+    def port(self) -> int:
+        return self._server.server_port
+
+    def steps(self) -> list:
+        """Each call's step and arguments, in the order they came."""
+        with self._lock:
+            return [(call["step"], call["arguments"]) for call in self.calls]
+
+    def __call__(self, environ, start_response):
+        length = int(environ.get("CONTENT_LENGTH") or 0)
+        body = json.loads(environ["wsgi.input"].read(length) or b"{}")
+        path = environ.get("PATH_INFO", "")
+        step, arguments = path.rsplit("/", 1)[-1], body.get("arguments")
+        with self._lock:
+            self.calls.append({"path": path, "step": step, "arguments": arguments, "at": time.monotonic(),
+                               "token": environ.get("HTTP_X_CURIO_BACKEND_TOKEN")})
+        if step in self.failing:
+            answer = {"ok": False, "error": self.failing[step]}
+        else:
+            result = self.results.get(step, {})
+            answer = {"ok": True, "result": result(arguments) if callable(result) else result}
+        reply = json.dumps(answer).encode("utf-8")
+        start_response("200 OK", [("Content-Type", "application/json"), ("Content-Length", str(len(reply)))])
+        return [reply]
+
+    def __enter__(self) -> "AnotherBackend":
+        from werkzeug.serving import make_server
+
+        self._server = make_server("127.0.0.1", 0, self, threaded=True)
+        self._thread = threading.Thread(target=self._server.serve_forever, name="another-backend", daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_exc) -> bool:
+        self._server.shutdown()
+        self._thread.join(timeout=5)
+        return False

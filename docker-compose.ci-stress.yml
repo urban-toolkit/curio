@@ -37,8 +37,11 @@ services:
     # 100 users means up to 100 concurrent Node subprocesses for the Autark
     # data loads (/execJs has no cap), each of them a real process tree. This
     # limit is one of the things the run is measuring the distance to, so it
-    # matches the other CI overlays rather than being widened for the job.
-    pids_limit: 4096
+    # matches another CI overlay rather than being widened for this job alone:
+    # docker-compose.ci-shards.yml's, whose container holds up to eight stacks. The
+    # stack may run up to 8 backend processes (--backend-processes below), each
+    # with its own threads, beside the sandbox's.
+    pids_limit: 16384
     # Each isolated node in a cgroup at its budget, as docker-compose.deploy.yml
     # asks, so the numbers are the deployment's.
     cgroup: private
@@ -75,3 +78,8 @@ services:
       - 0.0.0.0
       - --sandbox-port
       - "2000"
+      # How many backend processes serve, behind nginx past one: the job's
+      # CURIO_BACKEND_PROCESSES, 1 when it sets none. Only in the command: a
+      # backend that inherited the variable would take itself for one of N.
+      - --backend-processes
+      - "${CURIO_BACKEND_PROCESSES:-1}"

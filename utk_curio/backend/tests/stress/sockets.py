@@ -72,7 +72,7 @@ import uuid
 from collections import deque
 from dataclasses import dataclass
 from typing import Callable, Optional
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import engineio
 import socketio
@@ -90,6 +90,7 @@ from pycrdt import (
 )
 
 from utk_curio.backend.app.collaboration import doc_mapping
+from utk_curio.common.backend_processes import ROUTE_HEADER, ROUTE_QUERY
 
 #: Tabs per room: its owner and the editors it invites.
 ROOM_SIZE = 5
@@ -294,10 +295,14 @@ class SocketLink:
     again; a drop is a failure instead. *on_yjs* takes the doc's messages and
     the answers to the tab's queued updates (:data:`KEPT_EVENT`); *on_room*,
     given, takes each of :data:`ROOM_EVENTS` and :data:`AGENT_EVENTS` as
-    ``on_room(name, payload)``."""
+    ``on_room(name, payload)``. Its handshake names *dataflow*, the tab's, in
+    its ``dataflow`` query argument, as a browser's does, and in the
+    ``X-Curio-Dataflow`` header: with several backend processes nginx sends
+    the socket to the one that owns it, whose room it joins."""
 
     def __init__(self, backend_url: str, namespace: str, token: str,
-                 on_yjs: Callable, on_close: Callable, on_room: Optional[Callable] = None):
+                 on_yjs: Callable, on_close: Callable, on_room: Optional[Callable] = None,
+                 dataflow: Optional[str] = None):
         self.namespace = namespace
         # emit() is not thread-safe for a message of several packets, which
         # every binary event is; the tab's thread and the socket's both send.
@@ -314,8 +319,12 @@ class SocketLink:
                 self._client.on(name, lambda *args, name=name: on_room(name, args[0] if args else None),
                                 namespace=namespace)
         origin, path = socket_target(backend_url)
+        headers = {}
+        if dataflow:
+            origin = f"{origin}?{urlencode({ROUTE_QUERY: dataflow})}"
+            headers[ROUTE_HEADER] = dataflow
         self._client.connect(
-            origin, namespaces=[namespace], auth={"token": token},
+            origin, headers=headers, namespaces=[namespace], auth={"token": token},
             transports=["websocket"], socketio_path=path,
             wait_timeout=CONNECT_TIMEOUT_S,
         )
@@ -1320,7 +1329,8 @@ def run_tab(user, room: Room, *, backend_url: str, namespace: str, pacing,
                   on_drop=lambda: room.leave(user.name))
         on_room = tab.room_event
         tab.connect(make_link or (lambda on_yjs, on_close: SocketLink(
-            backend_url, namespace, user.token, on_yjs, on_close, on_room=on_room)))
+            backend_url, namespace, user.token, on_yjs, on_close, on_room=on_room,
+            dataflow=room.project_id)))
         tab.join()
         tab.sync()
         room.ledger.synced(user.name)

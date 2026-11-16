@@ -65,6 +65,12 @@ PORTS_VARIABLE = "CURIO_BACKEND_PORTS"
 #: The secret the start's backends show each other on a call between them.
 TOKEN_VARIABLE = "CURIO_BACKEND_TOKEN"
 
+#: The header a request names its dataflow in, and the query argument a
+#: socket's handshake names it in, which nginx routes by
+#: (``cli/backend_group.py``).
+ROUTE_HEADER = "X-Curio-Dataflow"
+ROUTE_QUERY = "dataflow"
+
 #: The home process's number.
 HOME = 0
 
