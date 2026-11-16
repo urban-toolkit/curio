@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Kill ghost Curio server processes (backend, sandbox, frontend / vite).
+# Kill ghost Curio server processes (backend, sandbox, frontend / vite, and
+# the nginx that `curio.py start --backend-processes N` puts in front of the
+# backend processes).
 #
 # Use this when ``curio start`` falls back to an alternate port (e.g. 8082
 # instead of 8080) because a previous run left orphaned listeners — or before
@@ -38,6 +40,7 @@ if is_windows; then
               \$_.CommandLine -match 'curio\.py' -or
               \$_.CommandLine -match 'utk_curio.*main' -or
               \$_.CommandLine -match 'backend\.server' -or
+              \$_.CommandLine -match 'backend-router' -or
               \$_.CommandLine -match 'sandbox\.server' -or
               \$_.CommandLine -match 'vite' -or
               \$_.CommandLine -match 'webpack' -or
@@ -52,6 +55,8 @@ else
     pkill -f 'curio\.py'        2>/dev/null || true
     pkill -f 'utk_curio.*main'  2>/dev/null || true
     pkill -f 'backend\.server'  2>/dev/null || true
+    # The router's nginx: its master names its config; its workers end with it.
+    pkill -f 'backend-router/nginx\.conf' 2>/dev/null || true
     pkill -f 'sandbox\.server'  2>/dev/null || true
     pkill -f 'vite'             2>/dev/null || true
     pkill -f 'webpack'          2>/dev/null || true

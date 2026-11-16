@@ -13,6 +13,9 @@ shell_required = platform.system() == "Windows"
 
 shutdown_flag = threading.Event()
 processes = []
+#: What the launcher exits with once every server stopped: 0, or the status
+#: of the stop a server's exit asked for (:func:`clean_shutdown`).
+exit_status = 0
 
 
 def stream_output(process, name, color):
@@ -40,7 +43,14 @@ def signal_handler(sig, frame):
     log_always("\nReceived shutdown signal (SIGINT or SIGTERM). Cleaning up...")
     clean_shutdown()
 
-def clean_shutdown():
+def clean_shutdown(status=0):
+    """Stop every server and exit with *status*: 0 when asked to stop, an
+    error when a server stopped by itself. Called on another thread than the
+    main one, it ends that thread, and the main one exits with *status* once
+    it sees the servers stopped (``main.py``)."""
+    global exit_status
+    if status:
+        exit_status = status
     log_always("\nShutting down all servers...")
     shutdown_flag.set()  # Signal threads to stop
 
@@ -54,6 +64,4 @@ def clean_shutdown():
             process.kill()
 
     log_always("All servers have been shut down.")
-    # sys.stdout.flush()
-    # sys.stderr.flush()
-    sys.exit(0)  # Clean exit status (0)
+    sys.exit(exit_status)

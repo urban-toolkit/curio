@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 
-from utk_curio.cli import lifecycle, logs
+from utk_curio.cli import backend_group, lifecycle, logs
 from utk_curio.cli.arguments import backend_url_arg, base_path_arg, get_command_prefix
 from utk_curio.cli.dependencies import (
     _skip_dep_install,
@@ -26,6 +26,16 @@ from utk_curio.cli.logs import COLOR_FRONTEND, log_always, log_info, print_outpu
 from utk_curio.cli.services import start_backend, start_frontend, start_sandbox
 from utk_curio.cli.test_runner import run_tests
 from utk_curio.common.open_files import raise_limit as raise_open_files_limit
+
+
+def _start_backends(args) -> None:
+    """One backend on the backend's host and port, or with
+    --backend-processes above 1, several behind nginx there
+    (``cli/backend_group.py``)."""
+    if args.backend_processes > 1:
+        backend_group.start_backend_group(args.backend_host, args.backend_port, args.backend_processes)
+    else:
+        lifecycle.processes.append(start_backend(args.backend_host, args.backend_port))
 
 
 def main():
@@ -235,6 +245,15 @@ def main():
             "How many package backend handlers run at once (sets "
             "CURIO_PACKAGE_WORKERS). Defaults to half the host's cores, from 2 "
             "to 8."
+        ),
+    )
+    parser.add_argument(
+        "--backend-processes", type=int, default=1, metavar="N",
+        help=(
+            "How many backend processes serve, each keeping the dataflows it "
+            "owns (default 1). Above 1 they serve behind nginx on the "
+            "backend's host and port, which sends each request to the process "
+            "that owns its dataflow; nginx must be on PATH. Not with --dev."
         ),
     )
     parser.add_argument(
@@ -487,6 +506,22 @@ def main():
 
     args = parser.parse_args()
 
+    # Before anything is set up, installed or started.
+    if args.backend_processes < 1:
+        parser.error("--backend-processes must be at least 1")
+    if args.backend_processes > backend_group.MAX_PROCESSES:
+        parser.error(
+            f"--backend-processes is at most {backend_group.MAX_PROCESSES}: "
+            "a dataflow id's first two hex digits name its process"
+        )
+    if args.backend_processes > 1 and args.dev:
+        parser.error(
+            "--backend-processes above 1 runs the backends without Werkzeug's "
+            "reloader; --dev runs one backend"
+        )
+    if args.command == "start" and args.server in ("all", "backend"):
+        backend_group.refuse_without_nginx(args.backend_processes)
+
     # CURIO_DEV stays the mechanism every other launcher already sets -- the
     # Dockerfile pins it to 0, scripts/test.sh and the e2e fixtures to 1 -- so an
     # inherited value still applies when the flag is absent. The flag wins.
@@ -612,13 +647,13 @@ def main():
             raise
 
         if args.server == "all":
-            lifecycle.processes.append(start_backend(args.backend_host, args.backend_port))
+            _start_backends(args)
             lifecycle.processes.append(start_sandbox(args.sandbox_host, args.sandbox_port))
             if not frontend_first:
                 lifecycle.processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild, base_path=args.base_path))
         else:
             if args.server == "backend":
-                lifecycle.processes.append(start_backend(args.backend_host, args.backend_port))
+                _start_backends(args)
             elif args.server == "sandbox":
                 lifecycle.processes.append(start_sandbox(args.sandbox_host, args.sandbox_port))
             elif args.server == "frontend":
@@ -633,6 +668,8 @@ def main():
                 time.sleep(1)
         except KeyboardInterrupt:
             clean_shutdown()
+        # Stopped from another thread: with an error when a server exited by itself.
+        sys.exit(lifecycle.exit_status)
     else:
         parser.print_help()
 

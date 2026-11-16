@@ -27,6 +27,12 @@ Each refusal, read, create and call is counted (:func:`counts`) and logged as
 an ``[owner-guard]`` line naming its caller, so a deployment shows which
 callers reach across processes. With one process every check is one
 comparison, and nothing is refused, looked up or counted.
+
+The home process does the startup work before the launcher starts the others
+(``cli/backend_group.py``), so while it does, no other process listens and a
+change sent to a dataflow's owner would reach no one. So home owns every
+dataflow until that work is done (:func:`before_the_others_serve`), then
+writes and drops every doc it opened of a dataflow another process owns.
 """
 
 from __future__ import annotations
@@ -35,7 +41,8 @@ import logging
 import os
 import sys
 import threading
-from typing import Optional
+from contextlib import contextmanager
+from typing import Iterator, Optional
 
 from werkzeug.exceptions import MisdirectedRequest
 
@@ -58,6 +65,9 @@ _by_caller: dict[tuple[str, str], int] = {}
 #: Each hosted guest's copy's source, once known: a copy's id is made from the
 #: dataflow it copies, so it names that dataflow for good.
 _sources: dict[str, str] = {}
+#: Whether this process owns every dataflow for now: the home process while it
+#: does the startup work, before the start's other processes serve.
+_alone = False
 
 #: Where the lines' callers are not: this module, the doc server's, and the
 #: blocks they run in.
@@ -133,12 +143,41 @@ def owner_of(project_id: str, user_key=None, *, source: Optional[str] = None) ->
 def elsewhere(project_id: str, user_key=None, *, source: Optional[str] = None) -> Optional[int]:
     """The process that owns *project_id* when it is not this one; ``None``
     when this process owns it, as the one process of a start owns every
-    dataflow."""
+    dataflow, and the home process does while it does the startup work
+    (:func:`before_the_others_serve`)."""
     processes = backend_processes.process_count()
-    if processes <= 1:
+    if processes <= 1 or _alone:
         return None
     owner = backend_processes.shard_of(room_key(project_id, user_key, source=source), processes)
     return None if owner == backend_processes.this_process() else owner
+
+
+@contextmanager
+def before_the_others_serve(does_startup_work: bool) -> Iterator[None]:
+    """The home process's startup work, in a start of several processes:
+    inside, this process owns every dataflow, so the agents and the examples
+    it puts back write each dataflow here rather than send a change to an
+    owner that does not listen yet. When the work ends, the dataflows are
+    their owners' again, and every doc this process opened of one another
+    process owns is written and dropped (``dataflow_docs.close_others``):
+    its owner opens it once it serves. Nothing changes in a process that does
+    no startup work, or in a start of one process."""
+    global _alone
+    if not does_startup_work or backend_processes.process_count() <= 1:
+        yield
+        return
+    _alone = True
+    try:
+        yield
+    finally:
+        _alone = False
+        from utk_curio.backend.app.collaboration import dataflow_docs
+
+        closed = dataflow_docs.close_others()
+        if closed:
+            logger.info("[owner-guard] process %d of %d wrote and dropped the docs of %d dataflow(s) other "
+                        "processes own, opened by its startup work", backend_processes.this_process(),
+                        backend_processes.process_count(), len(closed))
 
 
 def refuse(project_id: str, user_key=None, *, what: str, source: Optional[str] = None) -> None:
@@ -200,7 +239,9 @@ def counts() -> dict[str, int]:
 
 def reset_for_tests() -> None:
     """Forget the counts and the copies' sources, as a process that starts."""
+    global _alone
     with _lock:
         _counts.clear()
         _by_caller.clear()
         _sources.clear()
+        _alone = False

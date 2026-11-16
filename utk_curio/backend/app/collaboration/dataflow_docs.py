@@ -1206,6 +1206,31 @@ def close_all() -> None:
         _sid_docs.clear()
 
 
+def close_others() -> list[str]:
+    """Write and take out of memory every open doc of a dataflow another
+    process owns (``owner_guard.elsewhere``): what the home process holds
+    once it has done the startup work alone
+    (``owner_guard.before_the_others_serve``), which no tab syncs since
+    nothing served yet. The ids of the dataflows it closed."""
+    with _lock:
+        entries = list(_docs.values())
+    closed: list[str] = []
+    for entry in entries:
+        if entry.closed or owner_guard.elsewhere(entry.project_id, entry.user_key) is None:
+            continue
+        if entry.dirty_since is not None:
+            _flush(entry)
+        with entry.lock:
+            if not entry.closed:
+                history.close_typing(entry)
+            entry.closed = True
+            with _lock:
+                if _docs.get(entry.project_id) is entry:
+                    del _docs[entry.project_id]
+        closed.append(entry.project_id)
+    return closed
+
+
 def reset_for_tests() -> None:
     """Forget every open doc, writing nothing, as a backend that stopped does.
     A doc's thread still draining its queue refuses what is left and ends
