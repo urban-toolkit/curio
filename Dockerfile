@@ -88,6 +88,12 @@ FROM python_base AS ci_deps_0
 # launcher's (install_python_deps). No browser: the e2e suite drives each
 # runner's own Chrome (browser_type_launch_args in the tests' conftest).
 FROM python_base AS ci_deps_1
+# qemu-user, for its qemu-x86_64: test_packages/test_ddrnet_on_every_cpu.py
+# runs DDRNet23-Slim under it on an emulated AVX2 CPU without VNNI (-cpu
+# Haswell), whose scores must equal this CPU's. Before the requirements, so a
+# change to them reuses this layer.
+RUN apt-get update && apt-get install -y --no-install-recommends qemu-user \
+    && rm -rf /var/lib/apt/lists/*
 COPY scripts/ci-requirements.txt /ci-requirements.txt
 RUN pip install --no-input --no-cache-dir -r /ci-requirements.txt
 
