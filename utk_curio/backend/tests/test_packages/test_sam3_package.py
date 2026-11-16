@@ -1195,3 +1195,47 @@ def test_on_a_frame_where_sam3_drops_an_object_each_other_object_keeps_its_own_m
     scores = {street.follows[object_id]: round(outputs[3].obj_id_to_tracker_score[object_id], 3)
               for object_id in outputs[3].object_ids}
     assert scores == {0: 1.0, 2: 1.0, 3: 0.0}, f"each object's tracker score at frame 3: {scores}"
+
+
+#: A street of 12 frames: a pole in view to frame 2, and a person in view from
+#: frame 5.
+ONLY_ONE_LEFT = [("pole", range(3)), ("person", range(5, 12))]
+
+
+def test_objects_let_go_keep_their_labels_when_sam3_drops_the_last_object_it_follows(
+        dropping_weights, catalog_copy, few_threads, tmp_path, monkeypatch):
+    """Dropping the last object it follows, SAM 3 clears every label of its
+    session, those of objects let go that frames it still holds back show
+    among them, so Track Objects stopped with a KeyError as SAM 3 handed one
+    of those frames back. Here the pole, last seen at frame 2, is let go
+    after frame 7, three frames on, while SAM 3 still holds frames 1 and 2
+    back; at frame 8 SAM 3 drops the person, the only object it then
+    follows, whom its detector found only at frame 5. Every frame is handed
+    back, and frames 0 to 2 show the pole with its label."""
+    import torch
+    from PIL import Image
+
+    frames = [Image.fromarray(_street(index)) for index in range(12)]
+    path = _loaded(catalog_copy, dropping_weights)(MODEL_ID).path
+    outputs = {}
+
+    def keep(_sam3, _args, output):
+        outputs[output.frame_idx] = output
+
+    with _staged(tmp_path) as module:
+        street = _Street(monkeypatch, module, ONLY_ONE_LEFT, detected={1: [5]})
+        processor = module.Sam3VideoProcessor.from_pretrained(path, local_files_only=True)
+        sam3 = module.Sam3VideoModel.from_pretrained(path, local_files_only=True).eval()
+        run = SimpleNamespace(processor=processor, sam3=sam3, device="cpu", dtype=torch.float32, labels=TWO_LABELS)
+        hook = sam3.register_forward_hook(keep)
+        try:
+            with torch.inference_mode():
+                shown = [(index, found["prompt_to_obj_ids"]) for index, found in module._follow(run, frames, 3)]
+        finally:
+            hook.remove()
+
+    assert street.follows == {0: 0, 1: 1}, street.follows
+    # After frame 8 SAM 3 follows nothing: it dropped the person.
+    assert (outputs[8].object_ids, sorted(outputs[8].removed_obj_ids)) == ([], [1]), (
+        outputs[8].object_ids, outputs[8].removed_obj_ids)
+    assert shown == [(index, {"pole": [0]} if index < 3 else {}) for index in range(len(frames))], shown
