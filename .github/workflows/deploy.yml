@@ -446,7 +446,8 @@ jobs:
           # asks for writable cgroups. A sandbox whose container has none
           # falls back to the address-space cap and says why on /monitor, so
           # the deploy fails here. /version answers before any node has run:
-          # it says what the first run's zygote will choose.
+          # the sandbox lays out the container's cgroups as it starts, before
+          # it serves, so it says how that went.
           if [ -n "$cgroups" ]; then
             echo "=== node memory limit ==="
             case "$version_json" in

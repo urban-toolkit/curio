@@ -17,8 +17,8 @@ which the host's ``nsdelegate`` keeps, and an unprivileged account, as
 :func:`unavailable` says why, and a child keeps the address-space cap
 (``child._apply_rlimits``).
 
-The layout, which the sandbox makes at the first zygote's start
-(:func:`lay_out`)::
+The layout, which the sandbox makes as it starts, before it serves
+(:func:`lay_out`, ``lifecycle.lay_out_at_start``)::
 
     /sys/fs/cgroup                  the container's own cgroup
     /sys/fs/cgroup/curio            every process of the container
@@ -225,7 +225,9 @@ _predicted = []
 
 def predicted():
     """:func:`unavailable` for this process, asked once: what /version says
-    before a zygote has started."""
+    in a process that laid nothing out, as the unit suites' app. The sandbox
+    server lays out as it starts (``lifecycle.lay_out_at_start``) and says
+    the outcome."""
     if not _predicted:
         _predicted.append(unavailable())
     return _predicted[0]
@@ -254,8 +256,10 @@ def lay_out(root=ROOT):
     """Move every process of the container to ``curio``, hand memory and pids
     to the root's children, and make ``nodes``. Raises OSError.
 
-    Made once, and harmless again: a later zygote's start finds it made. Only
-    where :func:`unavailable` says nothing against it.
+    Made once, as the sandbox starts (``lifecycle.lay_out_at_start``), and
+    harmless again: a zygote started in a process that laid nothing out, as
+    in the tests, finds it made. Only where :func:`unavailable` says nothing
+    against it.
     """
     servers = os.path.join(root, SERVERS)
     nodes = os.path.join(root, NODES)

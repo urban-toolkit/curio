@@ -15,10 +15,13 @@ It is started with ``subprocess``, not ``fork``, on purpose: see the note at
 the top of ``zygote.py``. A fork of the Flask process would inherit its threads
 and its DuckDB handle, which is exactly what this is meant to avoid.
 
-Its start also settles the memory limit isolated nodes run under
-(:func:`ensure_running`): a cgroup at the node's budget for each run where the
-container's cgroups can hold them, laid out then (``node_cgroups``), else the
-address-space cap, with the reason in the log and on /monitor.
+The memory limit isolated nodes run under is settled as the sandbox starts,
+before it serves (:func:`lay_out_at_start`, called by ``server.py``): a cgroup
+at the node's budget for each run where the container's cgroups can hold
+them, laid out then (``node_cgroups``), else the address-space cap, with the
+reason in the log and on /monitor. So /version says the outcome before any
+node has run. Each zygote's start keeps it (:func:`ensure_running`), unless
+the zygote cannot make its places.
 """
 
 import contextlib
@@ -39,6 +42,10 @@ _started_with = None
 # The memory limit the running zygote's children have, (kind, reason), once
 # one started; memory_limit() reads it.
 _memory = None
+# The memory limit the sandbox's start settled, (kind, reason), as it laid out
+# the container's cgroups (lay_out_at_start), or None in a process that did
+# not start as the sandbox server, as the unit suites' app.
+_laid_out = None
 
 # The zygote imports geopandas/pandas/shapely/duckdb before it can serve, which
 # is the cost being amortised. Generous, because a cold import on a loaded
@@ -215,10 +222,14 @@ def memory_limit():
     ``node_cgroups.CGROUP`` and None, or ``node_cgroups.ADDRESS_SPACE`` and
     why not a cgroup, a key of ``node_cgroups.REASONS``.
 
-    The running zygote's children's once one started, else what the next
-    start would choose: /version answers before any node has run."""
+    The running zygote's children's once one started, else the one the
+    sandbox's start laid out (:func:`lay_out_at_start`): /version answers with
+    the outcome before any node has run. In a process that laid nothing out,
+    as the unit suites' app, what the container would allow."""
     if _memory is not None:
         return _memory
+    if _laid_out is not None:
+        return _laid_out
     reason = node_cgroups.predicted()
     if reason is None:
         return node_cgroups.CGROUP, None
@@ -234,13 +245,44 @@ def node_memory_line(kind, reason, memory_mb):
             f"zygote's footprint, not a cgroup limit: {why}")
 
 
+def lay_out_at_start(memory_mb):
+    """Lay out the container's cgroups as the sandbox starts, before it
+    serves (``server.py``), and return the memory limit isolated nodes run
+    under, ``(kind, reason)`` as :func:`memory_limit` gives it.
+
+    Laid out here, not at the first zygote's start, so that /version and
+    /monitor say the outcome from the sandbox's first answer, and a deploy
+    that checks it checks what its nodes get, not what the container would
+    allow. Every zygote this process starts keeps it
+    (:func:`_choose_node_memory`): a layout that failed is not tried again
+    while the sandbox runs. Nodes with no budget, *memory_mb*, have the
+    address-space cap, as :func:`ensure_running` gives them.
+    """
+    global _laid_out
+    if memory_mb:
+        _laid_out = _lay_out()
+    else:
+        _laid_out = node_cgroups.ADDRESS_SPACE, "requested"
+    return _laid_out
+
+
 def _choose_node_memory(requested):
-    """``(kind, reason)`` for the zygote about to start: a cgroup where the
-    container's cgroups can hold its nodes, laid out now, else the
-    address-space cap. *requested* ``node_cgroups.ADDRESS_SPACE`` asks for the
-    cap whatever the container allows."""
+    """``(kind, reason)`` for the zygote about to start: the limit the
+    sandbox's start laid out, else, in a process that laid nothing out, a
+    cgroup where the container's cgroups can hold its nodes, laid out now,
+    else the address-space cap. *requested* ``node_cgroups.ADDRESS_SPACE``
+    asks for the cap whatever the container allows."""
     if requested == node_cgroups.ADDRESS_SPACE:
         return node_cgroups.ADDRESS_SPACE, "requested"
+    if _laid_out is not None:
+        return _laid_out
+    return _lay_out()
+
+
+def _lay_out():
+    """``(kind, reason)`` once the container's cgroups are laid out for
+    isolated nodes: a cgroup where they can hold its nodes, else the
+    address-space cap and why."""
     reason = node_cgroups.unavailable()
     if reason is not None:
         return node_cgroups.ADDRESS_SPACE, reason
@@ -260,9 +302,10 @@ def ensure_running(config, *, exec_user=None, require_seccomp=True, memory_limit
     means only the first caller spawns, and a process that has since died is
     replaced rather than reused.
 
-    Each start settles the memory limit its children run under
-    (:func:`_choose_node_memory`), *memory_limit* ``node_cgroups.ADDRESS_SPACE``
-    asking for the address-space cap, and says it in the log.
+    Each start gives its children the memory limit the sandbox's start laid
+    out (:func:`_choose_node_memory`), *memory_limit*
+    ``node_cgroups.ADDRESS_SPACE`` asking for the address-space cap, and says
+    it in the log.
     """
     global _process, _socket_path, _started_with, _memory
 

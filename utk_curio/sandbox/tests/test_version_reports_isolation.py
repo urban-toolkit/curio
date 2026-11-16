@@ -20,11 +20,19 @@ watching whether node code can open a socket.
 Run:  pytest utk_curio/sandbox/tests/test_version_reports_isolation.py -v
 """
 
+import json
 import os
+import subprocess
+import sys
+import tempfile
+import textwrap
 import unittest.mock
 
 from utk_curio.sandbox.app import api, app
 from utk_curio.sandbox.isolation import mode as isolation_mode
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))))
 
 
 class VersionIsolationTestCase(unittest.TestCase):
@@ -175,8 +183,10 @@ class MemoryLimitTestCase(unittest.TestCase):
     under: ``cgroup``, ``address space`` (and, on ``/monitor``, why not a
     cgroup), or ``none`` where nodes run in the sandbox's process.
 
-    A deploy reads ``/version`` before any node has run, so before a zygote
-    starts the answer is what its start will choose.
+    A deploy reads ``/version`` before any node has run. The sandbox server
+    lays out the container's cgroups as it starts, so its answer is the
+    outcome (``MemoryLimitAtTheSandboxsStartTestCase``). In a process that
+    laid nothing out, as this suite's app, it is what the container allows.
     """
 
     @classmethod
@@ -221,3 +231,121 @@ class MemoryLimitTestCase(unittest.TestCase):
                 self.assertEqual(self._get("/version")["memory_limit"], "address space")
                 self.assertEqual(self._get("/monitor")["memory_limit_reason"],
                                  node_cgroups.REASONS["read-only"])
+
+
+#: Starts the sandbox server as a deployment does (``python -m
+#: utk_curio.sandbox.server``, fork isolation) in a container whose cgroups
+#: can hold isolated nodes: ``node_cgroups.unavailable`` says nothing against
+#: them, and ``node_cgroups.lay_out`` stands in for the kernel's answer to the
+#: layout, which works or fails as the first argument asks. Flask.run stands
+#: in for serving: it asks /version and /monitor what the first request would
+#: get, and prints it as one ``RESULT`` line of JSON.
+_START_SCRIPT = textwrap.dedent("""
+    import errno
+    import json
+    import runpy
+    import sys
+
+    import flask
+
+    from utk_curio.sandbox.isolation import lifecycle, node_cgroups
+
+    layout = sys.argv[1]
+    laid_out = []
+
+    def lay_out(root=node_cgroups.ROOT):
+        laid_out.append(root)
+        if layout == "fails":
+            raise OSError(errno.EBUSY, "Device or resource busy", root + "/cgroup.subtree_control")
+
+    node_cgroups.unavailable = lambda **_: None
+    node_cgroups.lay_out = lay_out
+    seen = {}
+
+    def serve(self, *args, **kwargs):
+        client = self.test_client()
+        seen["version"] = client.get("/version").get_json()
+        monitor = client.get("/monitor")
+        seen["monitor"] = [monitor.status_code, (monitor.get_json() or {}).get("memory_limit_reason")]
+        seen["laid_out"] = len(laid_out)
+        seen["zygote"] = lifecycle._process is not None
+
+    flask.Flask.run = serve
+    runpy.run_module("utk_curio.sandbox.server", run_name="__main__", alter_sys=True)
+    print("RESULT " + json.dumps(seen))
+""")
+
+
+class MemoryLimitAtTheSandboxsStartTestCase(unittest.TestCase):
+    """The sandbox lays out the container's cgroups as it starts, before it
+    serves, so /version and /monitor say the outcome before any node runs,
+    and a deploy that fails unless /version says ``cgroup`` checks what its
+    nodes get.
+
+    Before, the layout waited for the first zygote's start, which the first
+    isolated run makes, and until then /version said what the container
+    would allow: a layout that failed read ``cgroup`` until a node ran.
+    """
+
+    def _start(self, layout):
+        """What the sandbox's first request gets, and the sandbox's log, as it
+        starts in a container whose layout works or fails (*layout*)."""
+        with tempfile.TemporaryDirectory() as launch:
+            data = os.path.join(launch, "data")
+            os.makedirs(data)
+            # Nothing of this process's own stack: the start hardens the
+            # launch folder and the shared data, and those are the temporary
+            # folder's.
+            environ = {name: value for name, value in os.environ.items()
+                       if not name.startswith(("CURIO_", "FLASK_", "WERKZEUG_"))}
+            environ.update({
+                "CURIO_ISOLATION": "fork",
+                "CURIO_NO_AUTH": "1",
+                "FLASK_USE_RELOADER": "0",
+                "CURIO_LAUNCH_CWD": launch,
+                "CURIO_SHARED_DATA": data,
+                "CURIO_EXEC_MEMORY_MB": "4096",
+                "PYTHONPATH": os.pathsep.join(p for p in (REPO_ROOT, os.environ.get("PYTHONPATH")) if p),
+            })
+            result = subprocess.run(
+                [sys.executable, "-c", _START_SCRIPT, layout],
+                cwd=REPO_ROOT, env=environ, capture_output=True, text=True, timeout=300,
+            )
+        lines = [line for line in result.stdout.splitlines() if line.startswith("RESULT ")]
+        self.assertTrue(
+            result.returncode == 0 and lines,
+            f"the sandbox did not reach serving (exit {result.returncode}):\n"
+            f"{result.stdout[-2000:]}\n{result.stderr[-4000:]}",
+        )
+        seen = json.loads(lines[-1][len("RESULT "):])
+        # Before any node: an isolated sandbox whose zygote has not started.
+        self.assertEqual(seen["version"]["isolation"], "fork", f"{seen}\n{result.stderr[-2000:]}")
+        self.assertEqual(seen["version"]["isolation_active"], "pending", seen)
+        self.assertFalse(seen["zygote"], f"a zygote started before any node ran: {seen}")
+        self.assertEqual(seen["monitor"][0], 200, seen)
+        return seen, result.stderr
+
+    def test_a_layout_that_fails_is_reported_by_version_before_any_node_runs(self):
+        from utk_curio.sandbox.isolation import node_cgroups
+
+        seen, log = self._start("fails")
+        self.assertEqual(
+            seen["version"]["memory_limit"], "address space",
+            "/version said the nodes run in a cgroup before any node ran, though the "
+            f"container's cgroups could not be laid out: {seen}\n{log[-2000:]}",
+        )
+        self.assertEqual(seen["monitor"][1], node_cgroups.REASONS["layout"], seen)
+        self.assertEqual(seen["laid_out"], 1, seen)
+        self.assertIn("[isolation] the container's cgroups could not be laid out:", log)
+        self.assertIn("[isolation] node memory: the address-space cap", log)
+
+    def test_the_sandbox_lays_out_the_containers_cgroups_before_it_serves(self):
+        seen, log = self._start("works")
+        self.assertEqual(
+            seen["laid_out"], 1,
+            "the sandbox began serving without laying out the container's cgroups, so "
+            f"/version said what a layout would give: {seen}\n{log[-2000:]}",
+        )
+        self.assertEqual(seen["version"]["memory_limit"], "cgroup", seen)
+        self.assertIsNone(seen["monitor"][1], seen)
+        self.assertIn("[isolation] node memory: a cgroup limit of 4096 MB", log)

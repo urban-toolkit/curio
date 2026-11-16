@@ -8,8 +8,9 @@ here, and each case names why nodes keep the address-space cap.
 
 The rest is what a run's place says of it: a node stopped at its budget is
 told its budget, and a SIGKILL with no budget reached is a signal like any
-other. And a zygote whose children have a cgroup leaves their allocators as
-the sandbox server set them.
+other. A zygote gives its nodes the limit the sandbox's start laid out. And a
+zygote whose children have a cgroup leaves their allocators as the sandbox
+server set them.
 
 What needs a container's cgroups is in ``test_isolation_linux.py``.
 
@@ -88,6 +89,32 @@ def test_every_reason_is_short_enough_for_the_monitor():
 
     for key, words in node_cgroups.REASONS.items():
         assert 0 < len(words) <= 120, key
+
+
+def test_a_zygote_keeps_the_limit_the_sandboxs_start_laid_out(monkeypatch):
+    """The sandbox lays out the container's cgroups as it starts. A layout
+    that failed then is not tried again at a zygote's start: its nodes keep
+    the address-space cap /version said before any node ran, for the reason
+    /monitor gave."""
+    import errno
+
+    from utk_curio.sandbox.isolation import lifecycle, node_cgroups
+
+    tries = []
+
+    def lay_out(root=node_cgroups.ROOT):
+        tries.append(root)
+        raise OSError(errno.EBUSY, "Device or resource busy")
+
+    monkeypatch.setattr(node_cgroups, "unavailable", lambda **_: None)
+    monkeypatch.setattr(node_cgroups, "lay_out", lay_out)
+    monkeypatch.setattr(lifecycle, "_laid_out", None)
+    monkeypatch.setattr(lifecycle, "_memory", None)
+    failed = (node_cgroups.ADDRESS_SPACE, "layout")
+    assert lifecycle.lay_out_at_start(4096) == failed
+    assert lifecycle.memory_limit() == failed
+    assert lifecycle._choose_node_memory(None) == failed
+    assert tries == [node_cgroups.ROOT], f"the container's cgroups were laid out {len(tries)} times"
 
 
 def test_memory_events_are_read_as_counters():
