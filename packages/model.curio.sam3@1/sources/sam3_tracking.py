@@ -244,7 +244,8 @@ def _follow(run, frames):
     SAM 3 runs as over a whole video, and holds a frame back until it has seen
     a few after it. It is handed one frame at a time, and after each frame it
     forgets what it never reads again (:func:`_forget`), so what it holds grows
-    with the objects it follows, not with the frames."""
+    with the objects it follows, not with the frames, and the memory the frame
+    used goes back to the device (:func:`_give_back`)."""
     seen = _Frames(run, frames)
     session = run.processor.init_video_session(inference_device=run.device, dtype=run.dtype)
     session.processed_frames = seen
@@ -254,7 +255,20 @@ def _follow(run, frames):
     for output in run.sam3.propagate_in_video_iterator(inference_session=session):
         found = run.processor.postprocess_outputs(session, output)
         _forget(session, seen.latest, run.sam3.tracker_model)
+        _give_back(run.device)
         yield output.frame_idx, found
+
+
+def _give_back(device):
+    """Give the memory torch keeps on *device* for tensors to come, and no
+    tensor uses, back to the device. Each frame's work asks for more than the
+    frame before as SAM 3 follows more objects, so what torch kept from one
+    frame does not fit the next, and it would stay held from the device's other
+    users."""
+    if device == "cuda":
+        torch.cuda.empty_cache()
+    elif device == "mps":
+        torch.mps.empty_cache()
 
 
 def _forget(session, latest, tracker):
