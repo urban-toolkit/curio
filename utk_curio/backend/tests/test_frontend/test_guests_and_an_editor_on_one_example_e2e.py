@@ -13,13 +13,17 @@ each changes its node: each sees its own change, after a reload too, and never
 the other's. An account holds the same example as a dataflow of its own, and
 its owner invites an editor: each sees what the other writes there, and
 neither guest does. Every tab names the dataflow its page shows on every
-request that carries its sign-in, and on its socket. A play in a guest's tab
-and one in the editor's send ``/processPythonCode``, whose path names no
-dataflow, and the guest's play reports to ``/nodeRuntime``.
+request that carries its sign-in, and on its socket. A hosted guest's play
+runs in the browser: it sends ``/processPythonCode`` and reports to
+``/nodeRuntime``, paths that name no dataflow. The editor's play is a run on
+the server, as an owner's is (``FlowProvider``'s ``runsOnServer``), which
+the tab follows at ``/api/runs/<run>``, a path that names none either. An
+editor has no save status (saving is the owner's), so the owner's canvas
+showing the editor's change is the wait for the server to have it.
 
 On a stack without sign-in (CI's test-isolated job) every tab is the shared
 guest, the one local user, which owns the example: no copy is made, two tabs
-of it share its edits, and each names it.
+of it share its edits, each names it, and its play is a run on the server.
 """
 
 from __future__ import annotations
@@ -114,6 +118,11 @@ class _Tab:
     def sent_to(self, path: str) -> bool:
         return any(urlparse(url).path.endswith(path) for _method, url, _named in self.signed)
 
+    def followed_a_run(self) -> bool:
+        """Whether this tab followed a run on the server, at
+        ``/api/runs/<run>``, a path that names no dataflow."""
+        return any("/api/runs/" in urlparse(url).path for _method, url, _named in self.signed)
+
     def names_only(self, dataflow: str) -> None:
         """Every request this tab sent with its sign-in named *dataflow*, and
         so did the handshake of every socket it opened."""
@@ -168,9 +177,9 @@ def _two_tabs_of_the_local_guest(browser, contexts, base: str, example: str) -> 
     set_node_code(second.page, NODE, SECOND_GUESTS)
     wait_for_changes_kept(second.page)
     wait_for_node_code(first.page, NODE, SECOND_GUESTS)
+    # The local guest owns the example, so its play is a run on the server.
     run_node_and_wait(first.page, NODE)
-    played = first.sent_to("/processPythonCode")
-    assert played, "the first tab's play sent no /processPythonCode"
+    assert first.followed_a_run(), "the first tab's play followed no run at /api/runs/<run>"
     first.names_only(example)
     second.names_only(example)
 
@@ -245,11 +254,12 @@ def test_two_hosted_guests_keep_their_own_edits_and_an_editor_shares_the_owners_
         wait_for_changes_kept(owner.page)
         wait_for_node_code(editor.page, NODE, OWNERS)
         set_node_code(editor.page, NODE, EDITORS)
-        wait_for_changes_kept(editor.page)
+        # An editor has no save status: the owner's canvas showing the change
+        # is the wait for the server to have it.
         wait_for_node_code(owner.page, NODE, EDITORS)
+        # The editor's play, as an owner's, is a run on the server.
         run_node_and_wait(editor.page, NODE)
-        played = editor.sent_to("/processPythonCode")
-        assert played, "the editor's play sent no /processPythonCode"
+        assert editor.followed_a_run(), "the editor's play followed no run at /api/runs/<run>"
         kept = _spec_code(backend, owners["token"], dataflow)
         assert kept == EDITORS, f"the owner's dataflow holds {kept!r}"
 
