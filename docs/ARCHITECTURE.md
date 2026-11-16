@@ -180,9 +180,11 @@ reads `GET /api/monitor/llm`: the hourly rows `monitor/llm_tokens.py` keeps of
 each model's tokens, which `agents/infrastructure/providers.py` records once
 per request, right after it (`_counted`). Those rows are a monitor history
 (`monitor/history.py`): the process holds them, every change writes them
-whole to `.curio/monitor/<name>.json` through a temporary file, the home
-backend's start (`create_app`) writes the file anew, and a history holds at
-most 90 days of hours. Its charts are `LinesOverTime` (`MonitorCharts.tsx`), a line per
+whole to its own file through a temporary file (`.curio/monitor/<name>.json`
+in the home process, `<name>.<number>.json` in each other process of a start
+of several), the home backend's start (`create_app`) removes the other
+processes' files and writes its own anew, each other process writes its own
+anew as it starts, and a history holds at most 90 days of hours. Its charts are `LinesOverTime` (`MonitorCharts.tsx`), a line per
 series over time, with a log y axis and dashed series as options.
 
 API Settings is `ApiSettingsPanel` (`src/components/apiSettings/`), which the
@@ -2906,6 +2908,8 @@ The server keeps one Yjs doc per open dataflow: a pycrdt `Doc` and an `Awareness
 
 Each process keeps its own budgets (a dashboard viewer's slots and runs a minute, the package handlers), as one process does.
 
+Each process also keeps its own monitor: its counters, its error log, its LLM token rows and its open-files samples, which every process takes for itself every hour (only home asks the sandbox). The monitor's routes in home ask every other process for its part at once, a POST signed with the start's secret to `/internal/monitor/<part>` (`backend`, `errors`, `llm`, `open-files`; [`monitor/processes.py`](../utk_curio/backend/app/monitor/processes.py), over `owner_calls.post_to_process`), and merge them: node runs and memory summed, node types counted once, the newest 200 runs and the newest 200 server errors of them all, each error naming its process, token rows by hour and model counted against home's clock, and in each hour the open files of the busiest process against its own limit. A process that does not answer within 3 s is left out and named in the route's `backendProcesses`, and its failure goes to the error log; with one process nothing is asked.
+
 **The rules the server applies.** After each update a tab sends, `_drop_dangling_connections` (called from `_apply_updates`, after each socket's updates in a batch) removes every connection whose node at either end the doc no longer holds, with its `edgeOrder` entry, as one transaction of origin `rules`, logged and relayed to every tab with the rest of the batch. A writer's change (`_write`) and a spec written outside the doc (`_catch_up`) meet the same rule inside their own transaction. Then the tab that drew it is told `connection_dropped`, `{projectId, edgeIds, by}`, `by` naming whoever removed the node: a person, or an agent at work by its name. Only the server takes such a connection out: a canvas stops drawing it, but its writer leaves it in the doc (`useDataflowDoc.ts`, `withoutDangling`), so a tab that sends it with its later changes as one update, as one that reconnects does, still sends it. One the doc took out already stays out: a canvas whose load was read before the node went still draws it at its bind, and its writer never puts it back.
 
 **The history's points** ([`collaboration/history.py`](../utk_curio/backend/app/collaboration/history.py)). The log is the dataflow's one history, and a point is a place in it: who made the change there, when, and what it was, one JSON line each in `history/points.jsonl`, in the order they were made. A point names its doc, its segment and where its change starts and ends in the segment's updates, so the dataflow at a point is the doc rebuilt up to its end, and the code a change replaced is the doc at its start. One pass over a segment gives every point in it, and the dataflows rebuilt at points are cached by place. A canvas bound to the doc records nothing itself ([The provenance drawer](#the-provenance-drawer), [Provenance Tracking](#provenance-tracking)).
@@ -3481,7 +3485,7 @@ so a dataset dropped on an upstream loader is progress.
 
 | File | Purpose |
 |---|---|
-| `backend/server.py` | Builds the Flask app from `create_app` (`backend/app/__init__.py`); the startup work, done by the home process when it serves, owning every dataflow while it does (the shared guest, the hosted guests' copies dropped, the agents, the packages `--guest-packages` names and the examples put back, the monitor's histories started anew, the timers, the open-files sampler, the bucket mount service's proxy and check); Werkzeug reloader exclude patterns |
+| `backend/server.py` | Builds the Flask app from `create_app` (`backend/app/__init__.py`); the startup work, done by the home process when it serves, owning every dataflow while it does (the shared guest, the hosted guests' copies dropped, the agents, the packages `--guest-packages` names and the examples put back, the monitor's histories started anew and the other processes' files of them removed, the timers, the open-files sampler, the bucket mount service's proxy and check; each other process of a start of several starts its own histories and samples its own open files); Werkzeug reloader exclude patterns |
 | `common/backend_processes.py` | Which backend process this is (`CURIO_BACKEND_PROCESS` of `CURIO_BACKEND_PROCESSES`, process 0 the home process), the start's boot id (`CURIO_BOOT_ID`), which the launcher gives every backend of a start, every process's port and the start's secret, `shard_of`, the process a dataflow belongs to among several, and `own_file`, a file of this process's own |
 | `backend/app/api/routes.py` | REST endpoints for sandbox proxies, starters, and file serving |
 | `backend/app/packages/domain/manifest.py` | Parse `manifest.json` into typed `PackageManifest` dataclass |
