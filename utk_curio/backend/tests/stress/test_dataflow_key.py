@@ -16,8 +16,8 @@ Names are imported in each test, so a checkout without them fails test by test.
 
 import json
 import unittest
+import unittest.mock as mock
 from types import SimpleNamespace
-from unittest import mock
 from urllib.parse import parse_qs, urlsplit
 
 DATAFLOW = "0f8fad5b-d9cb-469f-a165-70867728950e"
