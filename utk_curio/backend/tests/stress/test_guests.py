@@ -453,6 +453,8 @@ class TheExampleReaderTest(unittest.TestCase):
         self.assertEqual([(s.endpoint, s.kind) for s in changed.failures], [("the example", "leaked")])
         self.assertIn("# g3's Node Builder wrote this line", changed.failures[0].error)
         self.assertEqual((changed.user, changed.completed), ("the example's reader", False))
+        signed_in = [header for _method, path, header, _params in server.http if path == "/api/auth/signin/guest"]
+        self.assertEqual(signed_in, [None] * 4, "each check signs in anew, naming no dataflow")
 
 
 class TheReportTest(unittest.TestCase):
@@ -566,7 +568,7 @@ class TheCommandLineTest(unittest.TestCase):
             with self.subTest(extra=extra), contextlib.redirect_stderr(io.StringIO()) as said:
                 with self.assertRaises(SystemExit):
                     main(["--tiers", "1", "--guests", *extra])
-                self.assertIn("--guests", said.getvalue())
+                self.assertIn("so it takes no --shared-canvas or --agents", said.getvalue())
 
     def test_guests_with_no_example_opens_the_mixs_first(self):
         import argparse

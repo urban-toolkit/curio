@@ -721,9 +721,11 @@ def on_the_scripted_model(backend_url: str, run):
         resp = requests.post(url, json={"scripted": True}, timeout=API_TIMEOUT_S)
         endpoints = (resp.json() or {}).get("endpoints") if resp.status_code == 200 else None
     except (requests.RequestException, ValueError) as exc:
-        raise SystemExit(f"[stress] --agents could not make the scripted model Curio's default: {exc}") from exc
+        raise SystemExit(f"[stress] the tier's agents (--agents, --guests) could not make the scripted model "
+                         f"Curio's default: {exc}") from exc
     if not endpoints or [endpoint.get("name") for endpoint in endpoints] != ["Scripted"]:
-        raise SystemExit(f"[stress] --agents needs a stack started with --testing: {url} answered "
+        raise SystemExit(f"[stress] the tier's agents (--agents, --guests) need a stack started with --testing: "
+                         f"{url} answered "
                          f"{resp.status_code} {resp.text[:200]}")
     print("[stress] Curio's default model is the scripted one for the tier", flush=True)
     try:

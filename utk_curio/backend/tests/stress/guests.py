@@ -219,7 +219,7 @@ class _Guest(VirtualUser):
 class ExampleReader(_Guest):
     """A guest of the stage's own, which changes nothing and so never has a
     copy: it finds the example the tier's guests open (:meth:`open_example`)
-    and, after each tier, opens it again (:meth:`check`)."""
+    and, after each tier, signs in anew and opens it again (:meth:`check`)."""
 
     def __init__(self, backend_url: str, example: str, name: str):
         super().__init__(backend_url, READER, example)
@@ -256,6 +256,11 @@ class ExampleReader(_Guest):
         self.result = UserResult(user=READER, example=self.example, started_at=time.time())
         started = time.time()
         try:
+            # A visit of its own each time, a fresh sign-in that has a copy of
+            # nothing, so what it opens is the example itself, however long
+            # the tiers before it took.
+            self.token = self.project_id = None
+            self.sign_in()
             after = node_codes(self.open(self.job["id"]))
             changed = changed_nodes(self.job["codes"], after)
             if changed:
