@@ -9,7 +9,11 @@
  * backend serves the socket, and the dataflow's Yjs doc travels on it
  * (``collab/docProvider.ts``). Its handshake names the dataflow too, in the
  * ``dataflow`` query argument (``utils/requestHeaders.ts``): a start of
- * several backend processes sends the socket to the process that owns it.
+ * several backend processes sends the socket to the process that owns it. A
+ * hosted guest's canvas of an example names its own copy there, the room it
+ * joins, which the server keeps on the process the copy's id names: a
+ * dataflow the canvas is loading gets its socket once its load has answered
+ * with the id the page names it by (``dataflowNameKnown``).
  *
  * Identity is anchored in the backend Bearer token sent through the
  * Socket.IO ``auth`` handshake. We never trust user-supplied identity
@@ -24,11 +28,11 @@
  * refuses closes the socket for that dataflow, and its canvas stays its own,
  * bound to no doc.
  *
- * The join also answers with the id the room's events name (``projectId``):
- * the dataflow's, or, for a hosted guest on an example, its own copy's, whose
- * room it owns. The tab's events name that id, and the room's events that
- * name it reach the rest of the page as the dataflow's, which the canvas
- * opened.
+ * The join names the dataflow the canvas opened, and answers with the id the
+ * room's events name (``projectId``): the dataflow's, or, for a hosted guest
+ * on an example, its own copy's, whose room it owns. The tab's events name
+ * that id, and the room's events that name it reach the rest of the page as
+ * the dataflow's, which the canvas opened.
  *
  * Once joined, the tab syncs the dataflow's doc, which ``DataflowDocContext``
  * hands the canvas. A change of the tab's role, either way, and a doc the
@@ -60,7 +64,12 @@ import {
 } from "../registry/projectPackagesStore";
 import { backendUrl } from "../utils/backendUrl";
 import { collabSocketTarget } from "../utils/collabSocketTarget";
-import { socketQuery } from "../utils/requestHeaders";
+import {
+    dataflowName,
+    dataflowNameKnown,
+    socketQuery,
+    subscribeDataflowNames,
+} from "../utils/requestHeaders";
 import { roleIn, writesDoc, type RoomRole } from "./collab/participants";
 import { DataflowDocProvider, KEPT_WAIT_MS } from "./collab/docProvider";
 import {
@@ -275,6 +284,8 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     const [docBinding, setDocBinding] = useState<DocBinding | null>(null);
 
     const socketRef = useRef<Socket | null>(null);
+    // The id the socket's handshake named its dataflow by (`dataflowName`).
+    const socketNameRef = useRef<string | undefined>(undefined);
     const namespaceRef = useRef<string>(DEFAULT_NAMESPACE);
     // The room's list as this tab last drew it, which a change to the editors
     // is read against.
@@ -359,6 +370,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         const s = socketRef.current;
         const provider = docProviderRef.current;
         socketRef.current = null;
+        socketNameRef.current = undefined;
         docProviderRef.current = null;
         roomIdRef.current = undefined;
         setDocBinding(null);
@@ -535,17 +547,19 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             const s = io(url, {
                 path,
                 auth: { token },
-                // The dataflow the socket joins, which the page shows: a start
+                // The dataflow the socket joins, which the page shows, by the
+                // id the page names it by, a hosted guest's own copy's: a start
                 // of several backend processes sends the socket by it to the
-                // process that keeps the dataflow's room. A connection of its
-                // own, since one socket.io-client kept for another dataflow's
-                // socket would send that one's.
+                // process that keeps the room. A connection of its own, since
+                // one socket.io-client kept for another dataflow's socket
+                // would send that one's.
                 query: socketQuery(projectId),
                 forceNew: true,
                 transports: ["websocket", "polling"],
                 reconnection: true,
             });
             socketRef.current = s;
+            socketNameRef.current = dataflowName(projectId);
             installSocketListeners(s);
         },
         [closeSocket, installSocketListeners],
@@ -557,6 +571,12 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     // (``retire``); the backend's ``disconnect`` handler then releases this
     // sid's locks, emits ``user_left`` to the old room and clears its
     // presence in the doc, so there is nothing else to send first.
+    //
+    // A dataflow the canvas is loading has no socket until its load answers
+    // with the id the page names it by (``dataflowNameKnown``): a hosted
+    // guest's copy is kept on the process its own id names, and a socket
+    // that named the dataflow would reach another. The id changing, the
+    // socket opens again by the new one.
     useEffect(() => {
         if (!configLoaded) return;
         const reconcile = () => {
@@ -564,19 +584,26 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             const prevId = projectIdRef.current;
             projectIdRef.current = nextId;
             if (nextId !== prevId) refusedProjectRef.current = undefined;
-            if (nextId === prevId && socketRef.current) return;
             if (!nextId) {
                 closeSocket();
                 return;
             }
+            if (nextId === prevId && socketRef.current && socketNameRef.current === dataflowName(nextId)) return;
             // The room refused this tab: it stays out until another dataflow opens.
             if (nextId === refusedProjectRef.current) return;
+            if (!dataflowNameKnown(nextId)) {
+                // The socket of the dataflow before it closes meanwhile.
+                if (nextId !== prevId) closeSocket();
+                return;
+            }
             connectFor(nextId);
         };
-        const unsub = subscribeProject(reconcile);
+        const unsubProject = subscribeProject(reconcile);
+        const unsubNames = subscribeDataflowNames(reconcile);
         reconcile();
         return () => {
-            unsub();
+            unsubProject();
+            unsubNames();
             closeSocket();
         };
     }, [configLoaded, closeSocket, connectFor]);

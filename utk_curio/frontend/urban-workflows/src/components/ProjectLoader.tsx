@@ -42,6 +42,7 @@ import { SHARE_UUID_RE as UUID_RE } from "../utils/shareLinks";
 import { dashboardRefusal, getEmbeddedDashboard } from "../standalone/dashboardPayload";
 import { mayEditServedDashboard } from "../standalone/servedDashboardAccess";
 import { setOpenDataflow } from "../services/dataflowReads";
+import { awaitDataflowName, releaseDataflowName } from "../utils/requestHeaders";
 import { ProjectLoadStateContext, type ProjectLoadState } from "./projectLoadState";
 
 export { useProjectLoadState, type ProjectLoadState } from "./projectLoadState";
@@ -175,6 +176,11 @@ export const ProjectLoader: React.FC<{
     loaded.current = id;
     closeEveryCategory();
 
+    // The room's socket waits for the load's answer, which names the id the
+    // canvas names this dataflow by: a hosted guest's own copy's, kept on
+    // the backend process that id names (utils/requestHeaders.ts). Before the
+    // id is pinned below, which the room follows.
+    awaitDataflowName(id);
     // Pin the project id immediately with an empty lockfile so the palette
     // filter knows we're in a project; loadProject below will replace the
     // package set via setPackages → projectPackagesStore.
@@ -380,6 +386,9 @@ export const ProjectLoader: React.FC<{
       // caught a moment earlier, which would be a wipe rather than a fork.
     })().finally(() => {
       settled = true;
+      // A load that named nothing (from the link, refused, a served
+      // dashboard's): the socket waits no more, and names the dataflow.
+      releaseDataflowName(id);
       settleProjectLoad(id);
     });
 
@@ -392,6 +401,7 @@ export const ProjectLoader: React.FC<{
     return () => {
       if (settled) return;
       opening.abort();
+      releaseDataflowName(id);
       if (loaded.current === id) loaded.current = null;
       setLoadState("idle");
     };
