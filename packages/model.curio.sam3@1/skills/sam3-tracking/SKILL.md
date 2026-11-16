@@ -31,7 +31,7 @@ The constants at the top of its code, each passed to `track_objects` as the argu
 - `LABELS`: the phrases to look for, a list of short noun phrases. Any phrase works; the 35 labels of the model are the prompts its package names, such as sidewalk, crosswalk, curb ramp, tactile paving, pole, bollard, trash bin, traffic cone, construction barrier, pothole, person, car and bicycle.
 - `EVERY_SECONDS`, 0.5 by default: the gap between two frames SAM 3 looks at. A longer gap runs faster and can miss what passes quickly.
 - `FROM_SECONDS` and `TO_SECONDS`, 0 and None by default (None is the video's end): the part of each video to track, in seconds from its start.
-- `MAX_SECONDS`, 300 by default: the most video one run takes. SAM 3 keeps every frame it looked at until the video's end, so a larger value can run out of memory: pick a part with `FROM_SECONDS` and `TO_SECONDS` instead.
+- `MAX_SECONDS`, 300 by default: the most video one run takes. Keep it, and track a longer video in parts with `FROM_SECONDS` and `TO_SECONDS`.
 - `WIDTH`, 960 by default: the widest frames are read and drawn at.
 
 ### What it returns

@@ -167,8 +167,14 @@ def process_reading(process) -> dict:
 
 def stacks_file(environ: dict, cwd: str) -> Path:
     """The backend's file of thread stacks, as ``thread_stacks.stacks_path``
-    finds it from the backend's environment."""
-    return state_roots(environ, cwd)[0] / STACKS_FILE
+    finds it from the backend's environment: in a start of several
+    processes, the one named with this process's number
+    (``backend_processes.own_file``)."""
+    name = STACKS_FILE
+    if int(environ.get("CURIO_BACKEND_PROCESSES") or 1) > 1:
+        stem, _, suffix = STACKS_FILE.rpartition(".")
+        name = f"{stem}-{int(environ.get('CURIO_BACKEND_PROCESS') or 0)}.{suffix}"
+    return state_roots(environ, cwd)[0] / name
 
 
 def stacks_end_line(pid: int) -> str:

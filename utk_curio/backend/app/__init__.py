@@ -70,15 +70,17 @@ def create_app(config_class=config_class, *, startup_work=None):
     """The backend's Flask app.
 
     *startup_work* says whether this process does the startup work held here:
-    the monitor's histories started anew, the dev packages seeded, the guest
-    cleanup and the kept outputs' sweep. None, the default, means it does when
-    it is the home process (``common/backend_processes.py``). ``server.py``
-    says, since under Werkzeug's reloader only the process that serves does
-    it, and the migration before a start says no.
+    the monitor's histories started anew, every other process's files of them
+    removed, the dev packages seeded, the guest cleanup and the kept outputs'
+    sweep. None, the default, means it does when it is the home process
+    (``common/backend_processes.py``). ``server.py`` says, since under
+    Werkzeug's reloader only the process that serves does it, and the
+    migration before a start says no. Each other process of a start of
+    several starts its own histories anew.
     """
-    if startup_work is None:
-        from utk_curio.common import backend_processes
+    from utk_curio.common import backend_processes
 
+    if startup_work is None:
         startup_work = backend_processes.is_home()
 
     # Flask app
@@ -170,10 +172,19 @@ def create_app(config_class=config_class, *, startup_work=None):
     # dataflow, outside /api (collaboration/owner_calls.py).
     from utk_curio.backend.app.collaboration.owner_calls import owner_calls_bp
     app.register_blueprint(owner_calls_bp)
+    # This process's part of the monitor, which the home process of a start
+    # of several asks for, outside /api (monitor/processes.py).
+    from utk_curio.backend.app.monitor.processes import internal_bp as monitor_processes_bp
+    app.register_blueprint(monitor_processes_bp)
     # The monitor's histories cover this start: the process that does the
-    # startup work writes them anew.
+    # startup work removes what every other process of an earlier start left
+    # and writes its own anew, and each other process of a start of several
+    # writes its own anew (monitor/history.py).
     from utk_curio.backend.app.monitor import history as monitor_history
     if startup_work:
+        monitor_history.clear_other_processes()
+        monitor_history.start()
+    elif not backend_processes.is_home():
         monitor_history.start()
 
     # Non-prod DB stub endpoints for Playwright E2E tests.
@@ -242,7 +253,10 @@ def create_app(config_class=config_class, *, startup_work=None):
         else:
             if not os.path.exists('logs'):
                 os.mkdir('logs')
-            file_handler = RotatingFileHandler('logs/backend.log',
+            # Each process of a start of several logs to a file of its own:
+            # one renames a rotating log that the others still write.
+            from utk_curio.common.backend_processes import own_file
+            file_handler = RotatingFileHandler(os.path.join('logs', own_file('backend.log')),
                                                maxBytes=10240, backupCount=10)
             file_handler.setFormatter(logging.Formatter(
                 '%(asctime)s %(levelname)s: %(message)s '

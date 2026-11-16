@@ -116,9 +116,22 @@ export interface MonitorHardware {
   };
 }
 
+/**
+ * Which backend processes a payload holds the part of, in a start of several
+ * (`curio.py start --backend-processes N`): the home process asks every other
+ * one for its part and merges them. Those that did not answer are left out.
+ * Absent with one process.
+ */
+export interface MonitorBackendProcesses {
+  count: number;
+  answered: number[];
+  missing: number[];
+}
+
 export interface MonitorPayload {
   generatedAt: string;
   uptimeSeconds: number;
+  backendProcesses?: MonitorBackendProcesses;
   deployment: MonitorDeployment;
   hardware: MonitorHardware;
   execution: {
@@ -219,6 +232,7 @@ export interface MonitorLlmPayload {
   hourlyTo: string;
   hourly: MonitorLlmHour[];
   models: MonitorLlmModel[];
+  backendProcesses?: MonitorBackendProcesses;
 }
 
 /** One server's open files and its soft limit on them; null where unknown. */
@@ -235,6 +249,8 @@ export interface MonitorOpenFilesSample {
   at: string;
   backend: MonitorOpenFilesCounts | null;
   sandbox: MonitorOpenFilesCounts | null;
+  /** With several backend processes, the busiest one in this hour, whose counts `backend` is. */
+  backendProcess?: number;
 }
 
 /**
@@ -251,6 +267,7 @@ export interface MonitorOpenFilesPayload {
   warnAbovePercent: number;
   clearBelowPercent: number;
   samples: MonitorOpenFilesSample[];
+  backendProcesses?: MonitorBackendProcesses;
 }
 
 export type MonitorErrorSource = "node" | "sandbox" | "backend" | "client";
@@ -262,6 +279,8 @@ export interface MonitorError {
   detail: string;
   context: Record<string, unknown>;
   count: number;
+  /** With several backend processes, the process that holds the entry; none on the sandbox's. */
+  process?: number;
 }
 
 export interface MonitorErrorsPayload {
@@ -271,6 +290,7 @@ export interface MonitorErrorsPayload {
   sandboxWindow: number | null;
   droppedClient: number;
   errors: MonitorError[];
+  backendProcesses?: MonitorBackendProcesses;
 }
 
 export function fetchMonitor(signal?: AbortSignal): Promise<MonitorPayload> {

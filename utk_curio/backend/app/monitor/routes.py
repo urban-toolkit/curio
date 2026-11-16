@@ -9,6 +9,14 @@ Read ``errors.py``'s module docstring before changing what the errors route
 returns. It is deliberately exempt from the anonymity rule the other four GETs
 are tested against. The LLM route's model names are the one free text those
 four carry (``llm_tokens.py``).
+
+In a start of several backend processes nginx sends these routes to the home
+process, and four of them answer for the whole backend: ``/api/monitor`` (its
+node runs and memory), ``/errors``, ``/llm`` and ``/open-files`` ask every
+other process for its part and merge it with this one's, and say which
+processes answered in ``backendProcesses`` (``processes.py``). The parts each
+process answers with are registered here. With one process they answer as
+they always have.
 """
 
 from __future__ import annotations
@@ -20,7 +28,16 @@ import time
 from flask import Blueprint, jsonify, request
 
 from utk_curio.backend.app.common.address_limiter import AddressLimiter
-from utk_curio.backend.app.monitor import counters, errors, hardware, llm_tokens, open_files, stats, storage
+from utk_curio.backend.app.monitor import (
+    counters,
+    errors,
+    hardware,
+    llm_tokens,
+    open_files,
+    processes,
+    stats,
+    storage,
+)
 
 monitor_bp = Blueprint("monitor", __name__, url_prefix="/api/monitor")
 
@@ -174,9 +191,12 @@ def _deployment(sandbox) -> dict:
 @monitor_bp.route("", methods=["GET"])
 @monitor_bp.route("/", methods=["GET"])
 def monitor_route():
-    """Deployment config, execution health, accounts and content. Aggregates."""
+    """Deployment config, execution health, accounts and content. Aggregates.
+    In a start of several backend processes, the node runs and the backend's
+    memory are every process's that answered."""
+    asking = processes.ask("backend")
     sandbox = _sandbox_monitor()
-    return jsonify({
+    payload = {
         "generatedAt": _iso_now(),
         "uptimeSeconds": counters.uptime_seconds(),
         "deployment": _deployment(sandbox),
@@ -184,12 +204,20 @@ def monitor_route():
             sandbox_rss=(sandbox or {}).get("rss_bytes"),
         ),
         "execution": {
-            "backend": counters.snapshot(),
             "sandbox": _sandbox_section(sandbox),
         },
         "accounts": stats.accounts(),
         "content": stats.content(),
-    })
+    }
+    if asking is None:
+        payload["execution"]["backend"] = counters.snapshot()
+        return jsonify(payload)
+    asked = asking.wait()
+    parts = [_backend_part({}), *asked.parts.values()]
+    payload["execution"]["backend"] = counters.merged([each.get("execution") for each in parts])
+    payload["hardware"]["processes"]["backendRssBytes"] = _sum_of(each.get("rssBytes") for each in parts)
+    payload["backendProcesses"] = asked.line()
+    return jsonify(payload)
 
 
 @monitor_bp.route("/storage", methods=["GET"])
@@ -201,28 +229,83 @@ def monitor_storage_route():
 @monitor_bp.route("/llm", methods=["GET"])
 def monitor_llm_route():
     """Each model's LLM tokens per hour and in total, since the backend
-    started. Aggregates, naming models (``llm_tokens.py``)."""
-    return jsonify(llm_tokens.snapshot())
+    started. Aggregates, naming models (``llm_tokens.py``). In a start of
+    several backend processes, every process's that answered, computed at
+    each call."""
+    arguments = llm_tokens.asked_at()
+    asking = processes.ask("llm", arguments)
+    if asking is None:
+        return jsonify(llm_tokens.snapshot())
+    asked = asking.wait()
+    body = llm_tokens.merged(arguments, list(asked.parts.values()))
+    body["backendProcesses"] = asked.line()
+    return jsonify(body)
 
 
 @monitor_bp.route("/open-files", methods=["GET"])
 def monitor_open_files_route():
     """The backend's and the sandbox's open files and limits, sampled every
     hour since the backend started. Timestamps and numbers only
-    (``open_files.py``)."""
-    return jsonify(open_files.snapshot())
+    (``open_files.py``). In a start of several backend processes, each hour
+    shows the busiest process that answered, against its own limit."""
+    asking = processes.ask("open-files")
+    if asking is None:
+        return jsonify(open_files.snapshot())
+    asked = asking.wait()
+    body = open_files.merged({asked.here: open_files.part(), **asked.parts})
+    body["backendProcesses"] = asked.line()
+    return jsonify(body)
 
 
 @monitor_bp.route("/errors", methods=["GET"])
 def monitor_errors_route():
-    """Recent failures, RAW. See errors.py for what this exposes and why."""
+    """Recent failures, RAW. See errors.py for what this exposes and why. In
+    a start of several backend processes, every process's that answered,
+    each entry naming its process."""
+    asking = processes.ask("errors")
     sandbox = _sandbox_monitor()
-    payload = errors.snapshot(
-        sandbox_entries=(sandbox or {}).get("errors") if sandbox else None,
-    )
+    sandbox_entries = (sandbox or {}).get("errors") if sandbox else None
+    if asking is None:
+        payload = errors.snapshot(sandbox_entries=sandbox_entries)
+    else:
+        asked = asking.wait()
+        payload = errors.merged({asked.here: errors.part(), **asked.parts}, sandbox_entries=sandbox_entries)
+        payload["backendProcesses"] = asked.line()
     payload["generatedAt"] = _iso_now()
     payload["sandboxWindow"] = (sandbox or {}).get("errorWindow")
     return jsonify(payload)
+
+
+# -- each process's part, which the home process of a start of several asks for
+
+@processes.part("backend")
+def _backend_part(_arguments: dict) -> dict:
+    """This process's node runs and its memory: its part of ``/api/monitor``."""
+    return {"execution": counters.part(), "rssBytes": hardware.process_rss_bytes()}
+
+
+@processes.part("errors")
+def _errors_part(_arguments: dict) -> dict:
+    """This process's error log."""
+    return errors.part()
+
+
+@processes.part("llm")
+def _llm_part(arguments: dict) -> dict:
+    """This process's LLM tokens, against the home process's clock."""
+    return llm_tokens.part(arguments)
+
+
+@processes.part("open-files")
+def _open_files_part(_arguments: dict) -> dict:
+    """This process's open-files samples."""
+    return open_files.part()
+
+
+def _sum_of(values) -> int | None:
+    """The sum of the whole numbers among *values*; None when there is none."""
+    numbers = [value for value in values if isinstance(value, int) and not isinstance(value, bool)]
+    return sum(numbers) if numbers else None
 
 
 @monitor_bp.route("/errors/client", methods=["POST"])

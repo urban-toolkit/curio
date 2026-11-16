@@ -7,11 +7,18 @@ whole, through a temporary file and a rename, so a reader of the file sees the
 old rows or the new ones, never part of them. ``<state>`` is the ``.curio``
 tree ``user_storage.curio_root`` resolves, at each write.
 
+Each backend process of a start keeps its own rows and writes its own file
+(``common/backend_processes.py``): the home process, and a start of one
+process, ``<name>.json``, and each other process ``<name>.<number>.json``, so
+none writes over another's. The monitor's routes in the home process merge
+them (``processes.py``).
+
 A history covers the running process only, as the monitor's counters do: the
-start of the home backend, which does the startup work (``create_app``,
-``common/backend_processes.py``), writes every history anew, empty, over
-whatever an earlier process left (:func:`start`). Nothing carries over a
-restart.
+start of the home backend, which does the startup work (``create_app``),
+removes the files every other process of an earlier start left
+(:func:`clear_other_processes`) and writes its own anew, empty, over whatever
+an earlier process left (:func:`start`); each other process of a start of
+several writes its own anew as it starts. Nothing carries over a restart.
 
 A history holds at most :attr:`History.max_days` days of hours, counted back
 from its newest row's hour (:data:`MAX_DAYS` by default): once it spans more,
@@ -64,8 +71,10 @@ class History:
             _histories[name] = self
 
     def path(self) -> Path:
-        """The history's file."""
-        return _folder() / f"{self.name}.json"
+        """The history's file in this process: ``<name>.json`` in the home
+        process, ``<name>.<number>.json`` in each other process of a start of
+        several, read at each call."""
+        return _folder() / f"{self.name}{_own_suffix()}.json"
 
     def rows(self) -> list[dict]:
         """A copy of every row, in the order the rows were added."""
@@ -125,11 +134,33 @@ class History:
 
 
 def start() -> None:
-    """Write every history anew, empty: the home backend started (``create_app``)."""
+    """Write every history of this process anew, empty: a backend started
+    (``create_app``)."""
     with _histories_lock:
         histories = list(_histories.values())
     for history in histories:
         history.start()
+
+
+def clear_other_processes() -> None:
+    """Remove every history's files that the other backend processes of an
+    earlier start left, ``<name>.<number>.json``, of any number of processes:
+    the home process's start, before the others start (``create_app``). A
+    file no history names stays. Never raises."""
+    with _histories_lock:
+        names = sorted(_histories)
+    left = [re.compile(rf"{re.escape(name)}\.\d+\.json") for name in names]
+    try:
+        paths = list(_folder().iterdir())
+    except OSError:  # no folder yet, so no file to remove
+        return
+    for path in paths:
+        if not any(pattern.fullmatch(path.name) for pattern in left):
+            continue
+        try:
+            path.unlink()
+        except OSError as exc:
+            log.warning("Could not remove %s, which an earlier start's backend process left: %s", path, exc)
 
 
 def hour_of(text) -> datetime | None:
@@ -161,6 +192,15 @@ def _folder() -> Path:
     from utk_curio.backend.app.common import user_storage
 
     return user_storage.curio_root() / "monitor"
+
+
+def _own_suffix() -> str:
+    """What this process's files add to a history's name: nothing in the home
+    process, ``.<number>`` in each other process of a start of several."""
+    from utk_curio.common import backend_processes
+
+    number = backend_processes.this_process()
+    return "" if number == backend_processes.HOME else f".{number}"
 
 
 def _now() -> datetime:

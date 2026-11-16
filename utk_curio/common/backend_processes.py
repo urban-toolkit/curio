@@ -1,9 +1,9 @@
 """Which backend process this is, the start's boot id, and the process a
 dataflow belongs to.
 
-``curio.py start`` may run several backend processes, and runs one today. It
-starts each with three environment variables, which only the launcher sets
-(:func:`environment`):
+``curio.py start --backend-processes N`` runs N backend processes behind nginx
+(``cli/backend_group.py``), and one by default. It starts each with three
+environment variables, which only the launcher sets (:func:`environment`):
 
 - ``CURIO_BACKEND_PROCESS``: this process's number, from 0;
 - ``CURIO_BACKEND_PROCESSES``: how many backend processes the start runs;
@@ -19,15 +19,21 @@ reaches another with, for a change to a dataflow that other process owns
 - ``CURIO_BACKEND_PORTS``: every process's port on 127.0.0.1, by number,
   comma separated (:func:`port_of`);
 - ``CURIO_BACKEND_TOKEN``: the secret the start's backends show each other,
-  which only backends hold (:func:`token`).
+  made at each start, which only backends hold (:func:`token`).
 
 Process 0 is the home process. It alone does the startup work: the shared
 guest, the hosted guests' copies dropped, the agents and the examples put
-back, the monitor's histories started anew, the guest cleanup and the kept
-outputs' sweep, the open-files sampler, and the bucket mount service's proxy
-and check (``backend/server.py`` and ``create_app``). A launcher that starts
-several backends starts home first and the others once it serves, so that
-work is done before they serve.
+back, the monitor's histories started anew and the other processes' files of
+them removed, the guest cleanup and the kept outputs' sweep, the open-files
+sampler, and the bucket mount service's proxy and check (``backend/server.py``
+and ``create_app``). Each other process starts its own monitor histories and
+samples its own open files (``backend/app/monitor/``). The launcher starts home
+first and the others once it serves, so that work is done before they serve;
+until then home owns every dataflow (``collaboration/owner_guard.py``).
+
+Each process of a start of several writes files of its own, named with its
+number (:func:`own_file`): its thread-stack file, and its log file when it
+logs to one rather than to its output.
 
 The boot id names a start. A run left queued or running under another one was
 cut off by a restart, and a backend's start or any run read marks it
@@ -116,9 +122,12 @@ def boot_id(environ: Mapping[str, str] | None = None) -> str:
     return str(uuid.uuid4())
 
 
-def environment(*, process: int, processes: int, boot_id: str) -> dict[str, str]:
+def environment(*, process: int, processes: int, boot_id: str,
+                ports=None, token: str | None = None) -> dict[str, str]:
     """The variables the launcher adds to a backend's environment: it is
-    *process* of *processes*, of the start whose boot id is *boot_id*."""
+    *process* of *processes*, of the start whose boot id is *boot_id*; for a
+    start of several, *ports* lists every process's port on 127.0.0.1, by
+    number, and *token* is the start's secret."""
     given = {
         PROCESS_VARIABLE: str(process),
         PROCESSES_VARIABLE: str(processes),
@@ -127,7 +136,28 @@ def environment(*, process: int, processes: int, boot_id: str) -> dict[str, str]
     this_process(given)
     if not given[BOOT_ID_VARIABLE]:
         raise ValueError("a start's backends need its boot id")
+    if ports is not None:
+        listed = [int(port) for port in ports]
+        if len(listed) != processes:
+            raise ValueError(f"{len(listed)} port(s) for {processes} backend process(es)")
+        given[PORTS_VARIABLE] = ",".join(str(port) for port in listed)
+    if token is not None:
+        if not token.strip():
+            raise ValueError("a start's secret is empty")
+        given[TOKEN_VARIABLE] = token
     return given
+
+
+def own_file(name: str, environ: Mapping[str, str] | None = None) -> str:
+    """This process's own file named *name*: *name* itself in a start of one
+    process, else with this process's number before its suffix
+    (``backend.log`` is process 2's ``backend-2.log``)."""
+    environ = _environ(environ)
+    if process_count(environ) <= 1:
+        return name
+    stem, dot, suffix = name.rpartition(".")
+    number = this_process(environ)
+    return f"{stem}-{number}.{suffix}" if dot and stem else f"{name}-{number}"
 
 
 def port_of(process: int, environ: Mapping[str, str] | None = None) -> int:

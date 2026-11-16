@@ -4,6 +4,7 @@ from werkzeug.serving import WSGIRequestHandler, is_running_from_reloader
 
 from utk_curio.backend import thread_stacks
 from utk_curio.backend.app import create_app
+from utk_curio.backend.app.collaboration import owner_guard
 from utk_curio.backend.config import CURIO_SEED_EXAMPLES
 from utk_curio.common import backend_processes
 from utk_curio.common.request_deadline import RequestHeadDeadline
@@ -22,8 +23,6 @@ def _uses_reloader():
 DOES_STARTUP_WORK = backend_processes.is_home() and (
     not _uses_reloader() or is_running_from_reloader()
 )
-
-app = create_app(startup_work=DOES_STARTUP_WORK)
 
 
 # Shared with sandbox/server.py; see utk_curio/backend/reloader.py.
@@ -90,8 +89,14 @@ def _seed_the_shared_guest():
             app.logger.warning("Could not ensure guest user on startup", exc_info=True)
 
 
-if DOES_STARTUP_WORK:
-    _seed_the_shared_guest()
+# In a start of several processes the launcher starts the others once this
+# one serves, so while it does the startup work it owns every dataflow, then
+# keeps no doc of one another process owns (owner_guard.py).
+with owner_guard.before_the_others_serve(DOES_STARTUP_WORK):
+    app = create_app(startup_work=DOES_STARTUP_WORK)
+    if DOES_STARTUP_WORK:
+        _seed_the_shared_guest()
+
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -164,15 +169,18 @@ def serve():
     )
 
     run_kwargs = _socketio_run_kwargs()
-    # The hourly sample of both servers' open files, from now: startup work,
-    # in the home process when it serves (DOES_STARTUP_WORK). Under the
-    # reloader this function also runs in the process that only watches the
-    # files, which serves nothing.
+    # The hourly sample of this process's open files, from now: in the home
+    # process when it serves (DOES_STARTUP_WORK), the sandbox's with it, and
+    # in every other process of a start of several. Under the reloader this
+    # function also runs in the process that only watches the files, which
+    # serves nothing.
+    from utk_curio.backend.app.monitor import open_files as monitor_open_files
+
+    if monitor_open_files.sampler_starts_here(DOES_STARTUP_WORK):
+        monitor_open_files.start_sampler(app)
     if DOES_STARTUP_WORK:
         from utk_curio.backend.app.discovery import service as discovery_service
-        from utk_curio.backend.app.monitor import open_files as monitor_open_files
 
-        monitor_open_files.start_sampler(app)
         # When --bucket-mounts-dir and --bucket-mount-socket name a bucket
         # mount service: its one way out, a proxy on the backend's own host,
         # then its self-test, once; /monitor shows how it went.

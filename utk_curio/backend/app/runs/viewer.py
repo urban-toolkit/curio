@@ -49,7 +49,11 @@ overall (``common/address_limiter.py``) of the runs of values a visitor tries
 (opening the page costs nothing, nor does the one start that goes on from the
 steps a run left to its page), a few live runs per dashboard, and at most half
 the sandbox's isolated pool running a viewer's node at once, so viewers never
-take every slot from signed-in users.
+take every slot from signed-in users. In a start of several backend processes
+the budget per address, the overall one and the slots hold across them all
+(``common/shared_budgets.py``), since a visitor's dashboards and every viewer's
+steps reach several processes and one pool. A dashboard's live runs are its
+owner process's alone: no other process starts one (``owner_guard``).
 """
 from __future__ import annotations
 
@@ -63,6 +67,7 @@ import time
 import uuid
 from typing import Iterator, Optional
 
+from utk_curio.backend.app.common import shared_budgets
 from utk_curio.backend.app.common.address_limiter import AddressLimiter
 from utk_curio.backend.app.common.job_registry import JobRefused, JobRegistry
 from utk_curio.backend.app.execution.sandbox_client import SANDBOX_STORE_TIMEOUT, sandbox_request
@@ -127,11 +132,11 @@ REGISTRY = JobRegistry(
     ),
 )
 
-_LIMITER = AddressLimiter(RUNS_PER_ADDRESS_PER_MINUTE, RUNS_PER_MINUTE)
+_LIMITER = AddressLimiter(RUNS_PER_ADDRESS_PER_MINUTE, RUNS_PER_MINUTE, shared="viewer-runs")
 
 #: Nodes a viewer's runs may have running at once, across the server.
 STEP_SLOTS = max(1, exec_parallelism() // 2)
-_SLOTS = threading.BoundedSemaphore(STEP_SLOTS)
+_SLOTS = shared_budgets.Semaphore("viewer-steps", STEP_SLOTS)
 
 _RUNS_LOCK = threading.Lock()
 #: ``{run id: {"projectId", "token", "browserSteps"}}`` of the runs this

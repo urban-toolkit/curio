@@ -531,7 +531,9 @@ curl https://lab-name.your-uni.edu/curio/api/live
 
 Then load `https://lab-name.your-uni.edu/curio/` in a browser. If something looks off, `docker compose logs -f` shows the running container's output.
 
-**Run one backend process.** The backend keeps each open dataflow's live copy, the one everyone editing it shares, in its own memory. So one backend process serves a deployment's data directories: never run a second process, worker or replica on them, where each would keep its own copy of a dataflow and the two would drift apart.
+**One backend process for each dataflow.** The backend keeps each open dataflow's live copy, the one everyone editing it shares, in its own memory. So one backend process serves each dataflow: never run a second Curio, worker or replica on a deployment's data directories, where each would keep its own copy of a dataflow and the two would drift apart.
+
+`--backend-processes N` runs N backend processes in the one container, each keeping the dataflows it owns, behind nginx on the backend's port, which sends each request to the process that owns its dataflow. The Docker image has nginx. A desktop runs one, the default, with no nginx; a hosted stack adds `"--backend-processes", "N"` to the `command` of its `docker-compose.site.yml`, and Caddy needs no change. Each process holds its own memory, so N processes take about N times what one idle backend does. Limits stay those of one process at any N: a dashboard's visitors, an account, a portal and Nominatim are allowed what one backend allows them. If any of them exits, Curio stops them all and exits, and Docker starts the container again.
 
 ### The GPU
 
@@ -712,6 +714,12 @@ and a restart resets them. The LLM tokens are also written to
 samples to `.curio/monitor/open-files.json`. Each file holds at most the last
 90 days, and a restart starts it over.
 
+With `--backend-processes N` the page shows the whole backend: node runs,
+backend memory, errors and LLM tokens of every process, and in each hour the
+open files of the busiest process against its own limit. Process 1 and the
+others write their own files, such as `llm-tokens.1.json`. A process that
+does not answer is named at the top of the page, and its numbers are left out.
+
 ### What the page exposes, and who can read it
 
 **`/monitor` and its six routes are public and unauthenticated**, like
@@ -769,7 +777,7 @@ flooding it cannot push real errors out of the log.
 - **Decide who may read `/monitor`.** It is public and unauthenticated on every instance, and its error log carries raw tracebacks including server paths and fragments of user node code. Block it at the reverse proxy if that is not acceptable; see [The monitor page](#the-monitor-page).
 - **Anyone with a dashboard link can start runs**, whatever the guest setting. A tile with no saved output runs the nodes before it when the page opens, and a viewer who changes a pinned control runs the dataflow again, on the server, with its owner's data, models and packages and never the owner's keys; a viewer never changes the dataflow. The limits are fixed: 10 runs a minute per visitor address of the values visitors try and 120 overall (opening the page costs nothing), two runs at once per dashboard, and half the isolated pool (`--exec-parallelism`) for every viewer's nodes together. What a run makes is kept 7 days, at most 2 GiB of viewers' runs per dashboard, and made again by the next visit that needs it. To refuse such runs, block the backend's `/api/projects/<id>/dashboard/runs` at the reverse proxy.
 - **Guests' work is kept until the backend starts again.** Every guest signs in to one shared account. What a guest changes in an example, and each dataflow it makes with File > New, is a folder of its own under `.curio/users/guest/projects/` that only that guest's sign-in opens, and the files it uploads and the datasets it downloads go to that account's store, listed for that guest alone. The frames, clips and overlays its nodes derive from a collection's files go to a media folder of its own, which only that guest reads. Each start of the backend deletes them all, and there is no quota between two starts. A guest's agents run its own dataflows on the server, under the limits of isolated node execution below.
-- **Say how many proxies add `X-Forwarded-For`.** The limits per visitor address (sign-in attempts, the monitor's error reports, a dashboard's runs) read the address there when `--proxy-hops N` names the proxies in front of the backend that add it; the overlay passes 1, for the site's Caddy. Pass one more for each other proxy that adds it, such as a CDN in front of Caddy, and keep the backend reachable only through them. Without the flag the header is not read, and each request counts as the address it came from.
+- **Say how many proxies add `X-Forwarded-For`.** The limits per visitor address (sign-in attempts, the monitor's error reports, a dashboard's runs) read the address there when `--proxy-hops N` names the proxies in front of the backend that add it; the overlay passes 1, for the site's Caddy. Pass one more for each other proxy that adds it, such as a CDN in front of Caddy, and keep the backend reachable only through them. The nginx of `--backend-processes` is not one to count: the backend processes count it themselves. Without the flag the header is not read, and each request counts as the address it came from.
 - **Verify auth is on**: `docker compose logs curio | grep CURIO_NO_AUTH` must print `CURIO_NO_AUTH=0`. If it prints `1`, you started without the `docker-compose.deploy.yml` overlay and the instance is open to anyone.
 - Keep `--no-allow-publish` (the overlay supplies it). Without it, any signed-in user can publish into the shared node catalog, including over a package already there. See [NODE-CATALOG.md § Operator notes](NODE-CATALOG.md#operator-notes).
 - `--no-allow-publish` covers the shared Data Catalog too. Without it, any signed-in user other than a guest can publish a dataset there; only the original publisher can unpublish or delete it. See [DATA-CATALOG.md](DATA-CATALOG.md#operator-notes).
