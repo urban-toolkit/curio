@@ -39,7 +39,7 @@ from utk_curio.backend.app.agents.domain import agent_text
 from utk_curio.backend.app.agents.domain import builtin
 from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
-from utk_curio.backend.app.execution.code_references import normalize_widgets, widget_with_default
+from utk_curio.backend.app.execution.code_references import VEGA_LITE, normalize_widgets, widget_with_default
 from utk_curio.backend.app.projects import services as projects_services
 from utk_curio.backend.app.projects import shipped as projects_shipped
 
@@ -83,8 +83,8 @@ STOP_WORDS = frozenset({
 
 #: How long a code line must be to count as part of an evaluation's answer: an
 #: example that holds one of the scored dataflow's is not shown to its runs.
-#: A line a node holds only because its template's code starts with it is no
-#: part of an answer (:func:`_answer_parts`).
+#: A line a node holds only because its template's code or the canvas starts
+#: it with it is no part of an answer (:func:`_answer_parts`).
 SHARED_LINE_CHARS = 25
 
 # An evaluation marks the project it builds with ``dataflow.evaluation``
@@ -239,8 +239,9 @@ def excluded_by(spec: object, examples: list[Example] | None = None) -> set[str]
     marker's ``fixtureId``. The run is shown neither that dataflow nor any
     example that holds a piece of it (a node or edge id, or a code line of
     ``SHARED_LINE_CHARS`` or more but one its node holds only because its
-    template's code starts with it, :func:`_answer_parts`): either would hand
-    the run part of the answer, and the score would measure copying."""
+    template's code or the canvas starts it with it, :func:`_answer_parts`):
+    either would hand the run part of the answer, and the score would measure
+    copying."""
     own = _ids(spec)
     pool = (used_examples() if examples is None else examples) if own else []
     excluded = {e.key for e in pool if _ids(e.spec) & own}
@@ -279,9 +280,10 @@ def _ids(spec: object) -> set[str]:
 def _answer_parts(spec: object) -> set[str]:
     """A scored dataflow's node and edge ids, and its code lines of
     ``SHARED_LINE_CHARS`` or more but those a node holds only because its
-    template's code starts with them (:func:`_starter_lines`), such as a Data
-    Loading node's loader line: every node of the template starts with those,
-    so they give nothing away."""
+    template's code or the canvas starts it with them (:func:`_starter_lines`),
+    such as a Data Loading node's loader line or a Vega-Lite spec's
+    ``$schema``: every node of the template starts with those, so they give
+    nothing away."""
     from utk_curio.backend.app.packages import service as packages_services
 
     dataflow = _dataflow(spec)
@@ -311,13 +313,34 @@ def _long_lines(code: object) -> list[str]:
 
 
 def _starter_lines() -> dict[str, frozenset[str]]:
-    """The code lines of ``SHARED_LINE_CHARS`` or more each template's
-    starter holds, by canonical template id: the code a node of it starts
-    with, as the starters feed reads it, from the package catalog
-    (``packages.catalog_starters``)."""
+    """The code lines of ``SHARED_LINE_CHARS`` or more a node of each
+    template starts with, by canonical template id: its template's starter,
+    as the starters feed reads it from the package catalog
+    (``packages.catalog_starters``), and the lines the canvas starts its
+    document with (:func:`_canvas_starter_lines`)."""
     from utk_curio.backend.app.packages import service as packages_services
 
-    return {template: frozenset(_long_lines(code)) for template, code in packages_services.catalog_starters().items()}
+    lines = {template: set(_long_lines(code)) for template, code in packages_services.catalog_starters().items()}
+    for template, canvas in _canvas_starter_lines().items():
+        lines.setdefault(template, set()).update(canvas)
+    return {template: frozenset(held) for template, held in lines.items()}
+
+
+def _canvas_starter_lines() -> dict[str, frozenset[str]]:
+    """The code lines of ``SHARED_LINE_CHARS`` or more the canvas starts a
+    node's document with, by canonical template id: each template of the
+    package catalog whose grammar is Vega-Lite (``grammarId``), whose spec
+    the canvas starts with the ``$schema`` Curio writes and a mark of the
+    starter ladder (``vegaDefaultSpec.ts``, from the shared contract:
+    ``contracts.VEGA_SCHEMA_URL``, ``contracts.VEGA_STARTER_LADDER``)."""
+    from utk_curio.backend.app.packages import service as packages_services
+
+    vega = frozenset(
+        line for rule in contracts.VEGA_STARTER_LADDER
+        for line in _long_lines(json.dumps({"$schema": contracts.VEGA_SCHEMA_URL, "mark": rule.produces}, indent=2))
+    )
+    return {template: vega for template, grammar in packages_services.catalog_template_grammars().items()
+            if grammar == VEGA_LITE}
 
 
 def used_examples() -> list[Example]:
