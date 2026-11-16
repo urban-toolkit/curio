@@ -38,8 +38,8 @@ EVERY_SECONDS = 0.5
 
 return track_objects(
     input_0, curio_load_model("model.curio.sam3"), curio_derived_file,
-    labels=LABELS, every_seconds=EVERY_SECONDS, from_seconds=FROM_SECONDS,
-    to_seconds=TO_SECONDS, max_seconds=MAX_SECONDS, width=WIDTH,
+    labels=LABELS, every_seconds=EVERY_SECONDS, forget_seconds=FORGET_SECONDS,
+    from_seconds=FROM_SECONDS, to_seconds=TO_SECONDS, max_seconds=MAX_SECONDS, width=WIDTH,
 )
 ```
 
@@ -61,6 +61,7 @@ the argument of its name in lowercase:
 |---|---|---|
 | `LABELS` | curb ramp, curb cut, tactile paving, bollard, pole, construction barrier, traffic cone, person | What to look for, in plain words. SAM 3 takes any short noun phrase, not only the package's labels below. |
 | `EVERY_SECONDS` | `0.5` | The gap between two frames SAM 3 looks at. |
+| `FORGET_SECONDS` | `10` | How long SAM 3 follows an object it no longer sees. An object it has not seen for that long is let go: its track ends where it was last seen, and if it comes back SAM 3 finds it again as a new object, with a new id, and counts it again. `None` follows every object to the end of the part. |
 | `FROM_SECONDS`, `TO_SECONDS` | `0`, `None` | The part of each video to track, in seconds from its start; `None` is its end. |
 | `MAX_SECONDS` | `300` | The most video one run takes: a longer part stops the node, with a message naming the limit and the two settings above. |
 | `WIDTH` | `960` | The widest frames are read and drawn at. A narrower video keeps its size. |

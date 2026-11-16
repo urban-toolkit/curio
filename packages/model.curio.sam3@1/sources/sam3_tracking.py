@@ -55,13 +55,14 @@ class _Run:
     labels: list
     colors: dict
     every_seconds: float
+    forget_seconds: object
     from_seconds: float
     width: int
     derived_file: object
 
 
-def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, from_seconds=0, to_seconds=None,
-                  max_seconds=300, width=960):
+def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forget_seconds=10, from_seconds=0,
+                  to_seconds=None, max_seconds=300, width=960):
     """Follow what *labels* name, such as curb ramp or traffic cone, through
     each video of a collection with SAM 3: each video comes back as its
     overlay, its frames with each object's mask and id drawn, which Simple View
@@ -74,9 +75,12 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, from
     ``curio_derived_file``. SAM 3 looks at one frame every *every_seconds*,
     from *from_seconds* to *to_seconds* (None: the video's end), read at most
     *width* wide, and follows each object it finds from frame to frame under
-    one id. A part longer than *max_seconds*, the most one run takes, stops the
-    call before SAM 3 loads, as do empty *labels* and a video not on this
-    machine.
+    one id. It lets go of an object it has not seen for *forget_seconds*
+    (None: it follows every object to the part's end): the object's track ends
+    where it was last seen, and an object that comes back is found again, as a
+    new object with a new id. A part longer than *max_seconds*, the most one
+    run takes, stops the call before SAM 3 loads, as do empty *labels* and a
+    video not on this machine.
 
     Each row keeps the video's own columns, its overlay's (``file_id``,
     ``path``, ``thumbnail``, ``image_url``, ``duration_s``, ``fps``, ``width``,
@@ -98,7 +102,8 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, from
             processor=Sam3VideoProcessor.from_pretrained(model.path, local_files_only=True),
             sam3=Sam3VideoModel.from_pretrained(model.path, local_files_only=True, dtype=dtype).to(device).eval(),
             device=device, dtype=dtype, labels=list(labels), colors=_colors(labels),
-            every_seconds=every_seconds, from_seconds=from_seconds, width=width, derived_file=derived_file,
+            every_seconds=every_seconds, forget_seconds=forget_seconds, from_seconds=from_seconds, width=width,
+            derived_file=derived_file,
         )
         rows = [_track(run, video, end) for video, end in zip(videos, ends)]
     result = pd.DataFrame(rows)
@@ -237,7 +242,7 @@ class _Frames:
         return ready.pixel_values_videos[0][0].to(self._run.device, dtype=self._run.dtype)
 
 
-def _follow(run, frames):
+def _follow(run, frames, let_go_after=None):
     """SAM 3 through *frames*, in order: each frame's index, with what SAM 3
     found in it, as ``postprocess_outputs`` gives it.
 
@@ -245,18 +250,101 @@ def _follow(run, frames):
     a few after it. It is handed one frame at a time, and after each frame it
     forgets what it never reads again (:func:`_forget`), so what it holds grows
     with the objects it follows, not with the frames, and the memory the frame
-    used goes back to the device (:func:`_give_back`)."""
+    used goes back to the device (:func:`_give_back`). With *let_go_after*, a
+    number of frames, it also lets go between two frames of each object it has
+    not shown in the last *let_go_after* frames (:class:`_Sightings`), so the
+    objects it follows stop adding up over a long video."""
     seen = _Frames(run, frames)
     session = run.processor.init_video_session(inference_device=run.device, dtype=run.dtype)
     session.processed_frames = seen
     # The size masks are drawn at, as a session handed the whole video has it.
     session.video_width, session.video_height = frames[0].size
     run.processor.add_text_prompt(session, run.labels)
-    for output in run.sam3.propagate_in_video_iterator(inference_session=session):
-        found = run.processor.postprocess_outputs(session, output)
-        _forget(session, seen.latest, run.sam3.tracker_model)
-        _give_back(run.device)
-        yield output.frame_idx, found
+    sightings = None if let_go_after is None else _Sightings(session)
+    hook = None if sightings is None else run.sam3.register_forward_hook(sightings.note)
+    try:
+        for output in run.sam3.propagate_in_video_iterator(inference_session=session):
+            found = run.processor.postprocess_outputs(session, output)
+            _forget(session, seen.latest, run.sam3.tracker_model)
+            # Once SAM 3 has looked at the last frame, it has no frame left to
+            # follow an object through.
+            if sightings is not None and seen.latest < len(frames) - 1:
+                sightings.let_go(seen.latest - let_go_after, output.frame_idx)
+            _give_back(run.device)
+            yield output.frame_idx, found
+    finally:
+        if hook is not None:
+            hook.remove()
+
+
+class _Sightings:
+    """The last frame SAM 3 showed each object it follows at, to let go of an
+    object it has not seen for a while.
+
+    SAM 3 holds each frame's output back until it has seen a few frames after
+    it, so the frames an object is shown at are noted from each frame's output
+    as SAM 3 makes it (:meth:`note`, a forward hook of SAM 3), not from the
+    outputs it hands back: an object shown again in a frame SAM 3 still holds
+    back is seen."""
+
+    def __init__(self, session):
+        self._session = session
+        #: Each object SAM 3 follows: the last frame it was shown at.
+        self.last = {}
+        #: Each object let go that an output SAM 3 holds back shows: the id of
+        #: its label's prompt, and the last frame it was shown at.
+        self._held = {}
+
+    def note(self, _sam3, _args, output):
+        """Note the objects SAM 3's *output* of a frame shows: each with a mask
+        SAM 3 does not hide there, and each new object, at the frame SAM 3
+        found it."""
+        masks = output.obj_id_to_mask
+        if not masks:
+            return
+        hidden = output.suppressed_obj_ids or ()
+        has_mask = torch.stack([(mask > 0).any() for mask in masks.values()]).tolist()
+        for object_id, shown in zip(masks, has_mask):
+            if (shown and object_id not in hidden) or object_id not in self.last:
+                self.last[object_id] = output.frame_idx
+
+    def let_go(self, before, handed_back):
+        """Let go of each object SAM 3 follows and last showed at frame
+        *before* or earlier, as SAM 3 removes an object it drops
+        (``remove_object``), and drop the entries SAM 3 keeps of it to decide
+        whether to drop an object, which it copies at every frame. SAM 3 has
+        handed back its outputs up to frame *handed_back*; those it still holds
+        back show the object as it was, so its label stays until they are
+        handed back."""
+        session = self._session
+        for object_id in [held for held, (_, last) in self._held.items() if last <= handed_back]:
+            del self._held[object_id]
+            session.obj_id_to_prompt_id.pop(object_id, None)
+        last = {object_id: self.last[object_id] for object_id in session.obj_ids if object_id in self.last}
+        gone = {object_id: frame for object_id, frame in last.items() if frame <= before}
+        self.last = {object_id: frame for object_id, frame in last.items() if frame > before}
+        if not gone:
+            return
+        for object_id, frame in gone.items():
+            if frame > handed_back:
+                self._held[object_id] = (session.obj_id_to_prompt_id[object_id], frame)
+            session.remove_object(object_id)
+        # Removing the last object SAM 3 follows clears every label, those
+        # still held among them.
+        session.obj_id_to_prompt_id.update({object_id: label for object_id, (label, _) in self._held.items()})
+        for kept in (session.obj_first_frame_idx, session.unmatched_frame_inds, session.trk_keep_alive):
+            for object_id in gone:
+                kept.pop(object_id, None)
+        # A pair goes with both its objects' first frames, which SAM 3 reads
+        # for each pair it keeps.
+        pairs = session.overlap_pair_to_frame_inds
+        for pair in [pair for pair in pairs if not gone.keys().isdisjoint(pair)]:
+            del pairs[pair]
+        # The latest output's scores are the session's own dict: a new dict
+        # leaves them as they were.
+        session.obj_id_to_score = {
+            object_id: score for object_id, score in session.obj_id_to_score.items() if object_id not in gone
+        }
 
 
 def _give_back(device):
@@ -333,6 +421,10 @@ def _track(run, video, end):
     gaps.append(round(shown[-1] / len(gaps)) if gaps else round(1000 * run.every_seconds))
     lasting = dict(zip(shown, gaps))
     duration_s = (shown[-1] + gaps[-1]) / 1000
+    # An object SAM 3 has not seen for forget_seconds is let go: so many
+    # frames, at least one (the 1e-9 is for float rounding).
+    let_go_after = None if run.forget_seconds is None else max(
+        1, math.ceil(run.forget_seconds / run.every_seconds - 1e-9))
     tracks, label_of = {}, {}
     # H.264 in yuv420p, its index first: what browsers play as the file
     # arrives. With no B-frames each frame is written in the order it plays,
@@ -346,7 +438,7 @@ def _track(run, video, end):
         # SAM 3 holds each frame back until it has seen a few after it, so it
         # can drop an object that was never really there.
         with torch.inference_mode():
-            for index, found in _follow(run, frames):
+            for index, found in _follow(run, frames, let_go_after):
                 t_s = times[index]
                 for label, ids in found["prompt_to_obj_ids"].items():
                     label_of.update({object_id: label for object_id in ids})
