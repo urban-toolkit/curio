@@ -8,6 +8,7 @@
  */
 import { getToken } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
+import { requestHeaders } from "../utils/requestHeaders";
 import { dashboardRunRead } from "./runs/dashboardRunFiles";
 
 export type FetchedOutputFile =
@@ -18,12 +19,8 @@ export async function fetchOutputFile(fileName: string): Promise<FetchedOutputFi
   const params = new URLSearchParams({ fileName });
   const dashboard = dashboardRunRead(fileName, "output-file", params);
   const url = dashboard?.url ?? `${backendUrl()}/output-file?${params.toString()}`;
-  const token = getToken();
   const response = await fetch(url, {
-    headers: {
-      ...(dashboard?.headers ?? {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: requestHeaders(getToken(), { ...(dashboard?.headers ?? {}) }),
   });
   if (!response.ok) {
     let message = `HTTP ${response.status}`;

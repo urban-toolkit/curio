@@ -7,7 +7,9 @@
  * socket down when the user navigates to a different project (or away from
  * the canvas), once the server has the tab's last change on it. Every
  * backend serves the socket, and the dataflow's Yjs doc travels on it
- * (``collab/docProvider.ts``).
+ * (``collab/docProvider.ts``). Its handshake names the dataflow too, in the
+ * ``dataflow`` query argument (``utils/requestHeaders.ts``): a start of
+ * several backend processes sends the socket to the process that owns it.
  *
  * Identity is anchored in the backend Bearer token sent through the
  * Socket.IO ``auth`` handshake. We never trust user-supplied identity
@@ -58,6 +60,7 @@ import {
 } from "../registry/projectPackagesStore";
 import { backendUrl } from "../utils/backendUrl";
 import { collabSocketTarget } from "../utils/collabSocketTarget";
+import { socketQuery } from "../utils/requestHeaders";
 import { roleIn, writesDoc, type RoomRole } from "./collab/participants";
 import { DataflowDocProvider, KEPT_WAIT_MS } from "./collab/docProvider";
 import {
@@ -532,6 +535,13 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             const s = io(url, {
                 path,
                 auth: { token },
+                // The dataflow the socket joins, which the page shows: a start
+                // of several backend processes sends the socket by it to the
+                // process that keeps the dataflow's room. A connection of its
+                // own, since one socket.io-client kept for another dataflow's
+                // socket would send that one's.
+                query: socketQuery(projectId),
+                forceNew: true,
                 transports: ["websocket", "polling"],
                 reconnection: true,
             });

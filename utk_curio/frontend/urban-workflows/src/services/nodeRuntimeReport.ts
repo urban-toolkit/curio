@@ -1,5 +1,6 @@
 import { getToken } from "../utils/authApi";
 import { backendUrl } from "../utils/backendUrl";
+import { requestHeaders } from "../utils/requestHeaders";
 
 /**
  * Report a node's own execution outcome to the runtime journal (memo dev/135).
@@ -79,13 +80,10 @@ export async function reportNodeRuntime(report: NodeRuntimeReport): Promise<bool
   if (lastReported.get(key) === mark) return false;
   lastReported.set(key, mark);
   try {
-    const token = getToken();
     await fetch(`${backendUrl()}/nodeRuntime`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      // The report's own dataflow: one sent as its canvas closes is still about it.
+      headers: requestHeaders(getToken(), { "Content-Type": "application/json" }, dataflowId),
       body: JSON.stringify({
         dataflowId,
         nodeId,

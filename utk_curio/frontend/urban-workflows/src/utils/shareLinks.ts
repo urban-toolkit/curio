@@ -17,12 +17,18 @@ export const SHARE_UUID_RE =
 // (the app's base path, see basePath.ts), so a prefixed deployment must still match.
 // Anchored on the right by a delimiter so ``/dashboards/<uuid>`` does not.
 const SHARE_PATH_RE =
-  /\/(?:dataflow|dashboard)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[/?#]|$)/i;
+  /\/(?:dataflow|dashboard)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[/?#]|$)/i;
 
 /** Is this pathname a link to one specific dataflow or its dashboard? */
 export function isShareLinkPath(pathname: string | null | undefined): boolean {
   if (!pathname) return false;
   return SHARE_PATH_RE.test(pathname);
+}
+
+/** The id of the dataflow this pathname links to, by its canvas or its
+ *  dashboard; null for any other pathname. */
+export function sharedDataflowOf(pathname: string | null | undefined): string | null {
+  return (pathname && SHARE_PATH_RE.exec(pathname)?.[1]) || null;
 }
 
 /** Router path for a dataflow's canvas. */

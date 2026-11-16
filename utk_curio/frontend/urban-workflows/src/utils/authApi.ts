@@ -1,6 +1,7 @@
 import Cookies from "js-cookie";
 import { backendUrl } from "./backendUrl";
 import { basePath } from "./basePath";
+import { requestHeaders } from "./requestHeaders";
 
 const BACKEND_URL = backendUrl();
 
@@ -51,15 +52,11 @@ export async function apiFetch<T = unknown>(
   path: string,
   opts: RequestInit = {}
 ): Promise<T> {
-  const token = getToken();
-  const headers: Record<string, string> = {
+  const headers = requestHeaders(getToken(), {
     ...(opts.headers as Record<string, string>),
-  };
+  });
   if (opts.body != null && !("Content-Type" in headers)) {
     headers["Content-Type"] = "application/json";
-  }
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
   }
   const res = await fetch(`${BACKEND_URL}${path}`, { ...opts, headers });
   if (!res.ok) {

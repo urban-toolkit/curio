@@ -5,6 +5,7 @@
 
 import { getToken } from "./authApi";
 import { backendUrl } from "./backendUrl";
+import { requestHeaders } from "./requestHeaders";
 
 const BACKEND_URL = backendUrl();
 
@@ -24,10 +25,8 @@ export async function postSseStream(
   /** Sent as well: a dashboard viewer's run is followed with its token (#1117). */
   extraHeaders: Record<string, string> = {}
 ): Promise<void> {
-  const token = getToken();
-  const headers: Record<string, string> = { ...extraHeaders };
+  const headers = requestHeaders(getToken(), { ...extraHeaders });
   if (method === "POST") headers["Content-Type"] = "application/json";
-  if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`${BACKEND_URL}${path}`, {
     method,
     headers,
