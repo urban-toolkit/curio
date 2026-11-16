@@ -380,11 +380,13 @@ def boot(host: str, port: int, processes: int, *, nginx: str):
 
     _, name, home = start(0)
     if not _answers(name, "127.0.0.1", ports[0], home):
-        return _stop("the home process, backend process 0, never answered /health")
+        _stop("the home process, backend process 0, never answered /health")
+        return None
     others = [start(number) for number in range(1, processes)]
     for number, name, process in others:
         if not _answers(name, "127.0.0.1", ports[number], process):
-            return _stop(f"backend process {number} never answered /health")
+            _stop(f"backend process {number} never answered /health")
+            return None
 
     folder = router_folder()
     folder.mkdir(parents=True, exist_ok=True)
@@ -399,13 +401,15 @@ def boot(host: str, port: int, processes: int, *, nginx: str):
     if checked.returncode != 0:
         for line in f"{checked.stdout}{checked.stderr}".splitlines():
             log_error(f"[nginx -t] {line}")
-        return _stop(f"nginx refused its config, {config}")
+        _stop(f"nginx refused its config, {config}")
+        return None
     proxy = _kept(subprocess.Popen([nginx, "-c", str(config), "-e", "stderr"],
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env))
     threading.Thread(target=stream_output, args=(proxy, "nginx", COLOR_BACKEND), daemon=True).start()
     started.append(("nginx", proxy))
     if not _answers("nginx", _reach(host), port, proxy):
-        return _stop("nginx never answered /health")
+        _stop("nginx never answered /health")
+        return None
     log_info(f"[backend-group] {processes} backend processes answer behind nginx on {host}:{port} "
              f"(boot id {boot_id}, config {config})", COLOR_BACKEND, 0)
     return started
