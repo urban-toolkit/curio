@@ -635,8 +635,8 @@ what changed in a node since a run.
 
 A widget is a value a node's code reads that you set in a form, without editing
 the code: a threshold, a season, a list of years. Python, Vega-Lite and Autark
-nodes have them. A Data Loading or Data Export node keeps the widgets it comes
-with: its **Widgets** tab shows only their controls.
+nodes have them. A Data Loading, Data Export or Spatial Join node keeps the
+widgets it comes with: its **Widgets** tab shows only their controls.
 
 1. Open the node's **Widgets** tab (toolbox icon) and click **Add widget**.
 2. Give it a name (letters, digits and underscores), a type, a label, and a
