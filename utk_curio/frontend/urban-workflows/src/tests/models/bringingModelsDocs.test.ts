@@ -26,7 +26,6 @@ const PACKAGE_TESTS = path.join(REPO_ROOT, "utk_curio", "backend", "tests", "tes
 const HELPER_SOURCES = [
   "utk_curio/sandbox/util/catalog_helpers.py",
   "utk_curio/sandbox/util/collections.py",
-  "utk_curio/sandbox/util/vision.py",
   "utk_curio/sandbox/app/worker.py",
 ];
 /** What the guide must not name: APIs, fields and files that do not exist. */
@@ -45,6 +44,8 @@ const GONE = [
   "mosaic.py",
   "test_bring_your_own_model",
   "model.run(",
+  "curio_segment",
+  "vision.py",
 ];
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };

@@ -25,6 +25,11 @@ class _Probe:
     def __init__(self):
         self.asked = 0
 
+    def read(self, project_ids=()):
+        """A reading of a stack of one backend process, which the harness
+        takes before its tiers to map each room to its process."""
+        return {"pid": 7, "threads": 2, "rss_bytes": 1, "cpu_seconds": 0.0, "count": 1}
+
     def thread_stacks(self):
         self.asked += 1
         return {"pid": 7, "path": "/app/.curio/backend-thread-stacks.txt", "stacks": _DUMP}

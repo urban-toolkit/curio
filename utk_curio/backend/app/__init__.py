@@ -8,10 +8,13 @@ from logging.handlers import RotatingFileHandler
 from utk_curio.backend.config import Config as config_class
 from utk_curio.backend.config import _is_dev
 from utk_curio.backend.extensions import db, migrate
-from utk_curio.common import shared_constants
+from utk_curio.common import backend_processes, shared_constants
 
 #: The header a dashboard viewer's tab sends its run's token in.
 RUN_TOKEN_HEADER = shared_constants.read("dashboardRuns")["runTokenHeader"]
+#: The header every request of a dataflow's page names that dataflow in, by
+#: which a start of several backend processes routes it (``cli/backend_group.py``).
+DATAFLOW_HEADER = backend_processes.ROUTE_HEADER
 
 
 CORS_HEADERS = {
@@ -23,12 +26,14 @@ CORS_HEADERS = {
     # rejected, the fetch throws, and the canvas falls back to JSON. That
     # failure is invisible from the outside -- the data still arrives -- which
     # is exactly how it shipped green until an e2e test watched the wire.
-    # RUN_TOKEN_HEADER is what a dashboard viewer's tab follows its run with.
+    # RUN_TOKEN_HEADER is what a dashboard viewer's tab follows its run with,
+    # and DATAFLOW_HEADER what every request of a dataflow's page names it in.
     "Access-Control-Allow-Headers": ",".join((
         "Content-Type",
         "Authorization",
         "X-Curio-Accept-Geometry",
         RUN_TOKEN_HEADER,
+        DATAFLOW_HEADER,
     )),
     "Access-Control-Allow-Methods": "GET,PUT,POST,PATCH,DELETE,OPTIONS",
     # Expose Content-Disposition so cross-origin clients (e.g. dataset export)
@@ -190,8 +195,12 @@ def create_app(config_class=config_class, *, startup_work=None):
     # Non-prod DB stub endpoints for Playwright E2E tests.
     # Lets Playwright seed users / projects directly without the signup form.
     if _is_dev():
+        from utk_curio.backend.app.testing.every_process import internal_bp as testing_internal_bp
         from utk_curio.backend.app.testing.routes import testing_bp
         app.register_blueprint(testing_bp)
+        # The same changes, sent by another backend process of the start,
+        # outside /api (testing/every_process.py).
+        app.register_blueprint(testing_internal_bp)
         # Copy fixture node packages into the guest user's package store on first
         # startup. See utk_curio/backend/app/packages/seed.py for the policy.
         if startup_work:

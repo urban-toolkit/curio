@@ -36,7 +36,7 @@ filtered to kind ``model``; each says whether its weights download on first use
 from the account's copy or the catalog's (:func:`weights_license_text`). A
 model downloaded from the Discovery Catalog becomes a model package in the
 user's store (``model_downloads``). A template that ships no ``source`` opens
-with the cell Curio writes for its model's type (:func:`model_default_cell`).
+with the cell Curio writes for it (:func:`model_default_cell`).
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from utk_curio.backend.app.packages.domain.default_cells import SEGMENTATION, default_cell
+from utk_curio.backend.app.packages.domain.default_cells import run_skeleton
 from utk_curio.backend.app.packages.domain.errors import PackageServiceError
 from utk_curio.backend.app.packages.domain.manifest import ManifestError, PackageManifest
 from utk_curio.backend.app.packages.domain.model_block import MODELS_DIR
@@ -394,13 +394,11 @@ def _graph_inputs(manifest: PackageManifest, folder: Path):
 
 def model_default_cell(manifest: PackageManifest, folder: Path) -> str:
     """The cell a node of the model package *manifest* in *folder* opens with
-    when its template ships no ``source`` (``domain/default_cells.py``): a
-    segmentation model's runs as it is; another type's opens the model in an
-    onnxruntime session and is a ``session.run`` skeleton naming the arrays
-    its graph takes. Nothing is downloaded for it."""
-    block = manifest.model
-    inputs = None if block.type == SEGMENTATION else _graph_inputs(manifest, folder)
-    return default_cell(manifest.package_id, block.type, inputs)
+    when its template ships no ``source`` (``domain/default_cells.py``),
+    whatever its model's type: the model opened in an onnxruntime session,
+    and a ``session.run`` skeleton naming the arrays its graph takes.
+    Nothing is downloaded for it."""
+    return run_skeleton(manifest.package_id, _graph_inputs(manifest, folder))
 
 
 def _used_by_the_dataflow(owners, model_id: str) -> bool:

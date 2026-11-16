@@ -5,6 +5,7 @@
 
 import { getToken } from "./authApi";
 import { backendUrl } from "./backendUrl";
+import { requestHeaders } from "./requestHeaders";
 
 const BACKEND_URL = backendUrl();
 
@@ -22,12 +23,12 @@ export async function postSseStream(
   /** dev/115: a re-attach stream (an agent job, a run) is a GET (no body). */
   method: "POST" | "GET" = "POST",
   /** Sent as well: a dashboard viewer's run is followed with its token (#1117). */
-  extraHeaders: Record<string, string> = {}
+  extraHeaders: Record<string, string> = {},
+  /** The dataflow the stream is of, when not the page's (`requestHeaders`). */
+  dataflow?: string | null,
 ): Promise<void> {
-  const token = getToken();
-  const headers: Record<string, string> = { ...extraHeaders };
+  const headers = requestHeaders(getToken(), { ...extraHeaders }, dataflow);
   if (method === "POST") headers["Content-Type"] = "application/json";
-  if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(`${BACKEND_URL}${path}`, {
     method,
     headers,

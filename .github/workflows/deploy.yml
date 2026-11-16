@@ -241,6 +241,16 @@ jobs:
           if grep -q -e '"--guest-packages"' utk_curio/main.py; then
             guest_args=', "--guest-packages", "model.curio.sam3@1"'
           fi
+          # 8 backend processes behind nginx, when this release's launcher has
+          # the flag: each keeps the dataflows that hash to it, so people at
+          # work in different dataflows, and their agents, wait on different
+          # processes. Checked once the stack is up.
+          backend_processes=""
+          processes_args=""
+          if grep -q -e '"--backend-processes"' utk_curio/main.py; then
+            backend_processes=8
+            processes_args=", \"--backend-processes\", \"$backend_processes\""
+          fi
           # The bucket mount service (docker-compose.bucket-mounts.yml), when
           # this release's launcher has its flags. It mounts buckets in this
           # stack's own folder outside the checkout, which the site file below
@@ -311,7 +321,7 @@ jobs:
               ulimits:
                 nofile: {soft: 65536, hard: 65536}
           SITE
-          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$guest_args" "$mounts_args" >> docker-compose.site.yml
+          printf '    command: ["--backend-url", "/api", "--exec-memory-mb", "24576"%s%s%s%s%s%s%s]\n' "$llm_args" "$weights_args" "$cache_args" "$download_args" "$guest_args" "$mounts_args" "$processes_args" >> docker-compose.site.yml
           # Curio's binds: the weights folder both stacks share, which the
           # server writes as it downloads a model's weights on first use, and
           # this stack's bucket mounts, read-only and rslave. Each replaces an
@@ -401,7 +411,7 @@ jobs:
           # the site shows nothing until the frontend server is up.
           echo "=== boot timeline ==="
           docker logs -t curio-dev 2>&1 \
-            | grep -E "Starting (all|backend|sandbox|frontend)|Frontend server started" || true
+            | grep -E "Starting (all|backend|sandbox|frontend)|\[backend-group\]|Frontend server started" || true
           # Isolation is fail-closed, so a healthy stack has already proved
           # it came up isolated. Assert it anyway: a stack booted WITHOUT
           # the deploy overlay would have neither auth nor isolation and
@@ -487,6 +497,29 @@ jobs:
                 docker compose -p curio-dev logs --no-color --tail=100 bucket-mounts || true
                 docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
                   'grep -i "bucket mount" .curio/messages.log 2>/dev/null | tail -20' < /dev/null || true
+                exit 1
+              fi
+              sleep 5
+            done
+          fi
+          # The backend processes, when this stack runs several: /monitor's
+          # home process asks every other one for its part and names those
+          # that answered in backendProcesses (count, answered, missing), so
+          # every one of them must have. `< /dev/null` as above.
+          if [ -n "$processes_args" ]; then
+            echo "=== backend processes ==="
+            deadline=$((SECONDS + 120))
+            while true; do
+              processes_line="$(docker compose -p curio-dev exec -T curio \
+                                  python -c 'import json, urllib.request; p = json.load(urllib.request.urlopen("http://127.0.0.1:5002/api/monitor", timeout=30)).get("backendProcesses") or {}; print(p.get("count"), len(p.get("answered") or []), len(p.get("missing") or []))' \
+                                  2>/dev/null < /dev/null || true)"
+              if [ "$processes_line" = "$backend_processes $backend_processes 0" ]; then
+                echo "OK: $backend_processes backend processes answer behind nginx"
+                break
+              fi
+              if [ "$SECONDS" -ge "$deadline" ]; then
+                echo "::error::the stack does not serve on $backend_processes backend processes that all answer: /monitor's backendProcesses reads ${processes_line:-nothing} (processes, answered, missing)"
+                docker compose -p curio-dev logs --no-color --tail=100 curio || true
                 exit 1
               fi
               sleep 5

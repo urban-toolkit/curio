@@ -1,9 +1,10 @@
 {
   "sha256": {
     "LICENSE": "8616f6d26e7bb5a90328988b634529ac69cb3807ac0e2796870282c8ba769e48",
-    "README.md": "e421d202966a532488098848163471fde024867dad6cd40146cb30e7234eb86f",
-    "manifest.json": "7a018c2efe99dec4238eb80117efab97da8a65a31241f81cf70b9e315912030e",
+    "README.md": "3e3ed2a19f06bdb54a58db2aaaad81ba19cb99927f579dced15a2dcee132c152",
+    "manifest.json": "5b9cdf88a7bf9e19f0a97080267180a072761f1621baa3df56c1681511407357",
     "models/ddrnet23_slim.data": "38add9668036fed6d244e266ffb8e454adefce48ef39e57e0b868d91846bd173",
-    "models/ddrnet23_slim.onnx": "379f34b81f33a703c3d8acdbf2a40c7dd178d72e15daf8018471bd3ebc8f385f"
+    "models/ddrnet23_slim.onnx": "6a8f9937496acdd738171b84b2b8cc7cc0dbdacb5259bc2b934383706a82195a",
+    "sources/image-segmentation.py": "05164e92fd7821f23f8c9fac872c8342f6cfc544c0a9cfd70152588fb1eafd29"
   }
 }

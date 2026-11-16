@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-10-01T00:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "numpy": "",
+      "pandas": ">=3.0.2",
+      "pillow": ">=12.2.0"
+    }
+  },
+  "description": "The code a segmentation model's node runs: segment_images, in its module semantic_segmentation, labels every pixel of a collection's images with a Model Catalog model, on onnxruntime or Transformers as the model's manifest says, and gives each image the share of its pixels each class covers and an overlay tinted by class. It has no node of its own: DDRNet23-Slim's Image Segmentation and the node of a segmentation model added from the Discovery Catalog call it, and their packages name this one, so adding either adds it.",
+  "id": "curio.segmentation",
+  "license": "MIT",
+  "name": "Segmentation",
+  "permissions": [],
+  "publisher": "Curio",
+  "readOnly": true,
+  "templates": [],
+  "version": "1.0.0"
+}

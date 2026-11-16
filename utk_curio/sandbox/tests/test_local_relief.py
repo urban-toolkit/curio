@@ -73,7 +73,7 @@ def test_the_loaded_model_reads_its_block():
     assert model.manifest["runtime"] == "onnx"
     assert model.manifest["entry"] == "models/local_relief.onnx"
     assert model.manifest["task"] == "image-to-image"
-    assert model.labels == []
+    assert model.manifest["labels"] == []
 
 
 def test_the_nodes_module_writes_the_relief_on_the_input_grid(tmp_path):
@@ -147,21 +147,21 @@ def test_curio_load_model_runs_a_model_package_in_process():
 
 
 def test_the_cell_curio_writes_for_its_graph_runs_once_its_array_is_given(tmp_path):
-    """The cell a node of an image-to-image model opens with when its template
-    ships no source (``packages.domain.default_cells``), for Local Relief's
-    graph, its one ``...`` given ``input_0``: it imports onnxruntime itself,
-    opens the model on its ``path`` and runs as the sandbox runs a node's
-    code, on the tower."""
+    """The cell a node of a model package opens with when its template ships
+    no source (``packages.domain.default_cells``), for Local Relief's graph,
+    its one ``...`` given ``input_0``: it imports onnxruntime itself, opens
+    the model on its ``path`` and runs as the sandbox runs a node's code, on
+    the tower."""
     import textwrap
 
     from utk_curio.backend.app.datasets.domain.onnx_model import graph_inputs
-    from utk_curio.backend.app.packages.domain.default_cells import default_cell
+    from utk_curio.backend.app.packages.domain.default_cells import run_skeleton
     from utk_curio.sandbox.util.catalog_helpers import CurioModel
     from utk_curio.sandbox.util.user_code import compile_user_code
 
     graph = LOCAL_RELIEF / "models" / "local_relief.onnx"
     with graph.open("rb") as handle:
-        cell = default_cell(MODEL_ID, "image-to-image", graph_inputs(handle, graph.stat().st_size))
+        cell = run_skeleton(MODEL_ID, graph_inputs(handle, graph.stat().st_size))
     assert '    "height": ...,  # float32 [1, 1, rows, cols]\n' in cell
     namespace = {"curio_load_model": lambda model_id: CurioModel(model_id, str(LOCAL_RELIEF))}
     given = cell.replace('"height": ...,', '"height": input_0,')

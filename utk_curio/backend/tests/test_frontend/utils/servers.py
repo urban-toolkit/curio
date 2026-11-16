@@ -5,6 +5,20 @@ import time
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
+from utk_curio.common.backend_processes import ROUTE_HEADER
+
+#: What a server a test puts in front of the backend passes on of each request:
+#: who asks, what it sends, and the dataflow the call is about. nginx sends a
+#: call to the backend process that owns that dataflow (``--backend-processes``),
+#: so a relay that dropped the header would send the call to the home process.
+RELAYED_HEADERS = ("authorization", "content-type", ROUTE_HEADER.lower())
+
+
+def relayed_headers(headers) -> dict:
+    """The headers of *headers*, a request's (name to value), that a relay in
+    front of the backend passes on (:data:`RELAYED_HEADERS`)."""
+    return {name: value for name, value in headers.items() if name.lower() in RELAYED_HEADERS}
+
 
 # ---------------------------------------------------------------------------
 # Network / server helpers

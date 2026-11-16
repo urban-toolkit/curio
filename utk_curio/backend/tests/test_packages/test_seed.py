@@ -187,10 +187,11 @@ def test_example_10s_model_package_is_declared_and_reaches_the_boot_install():
     unversioned, the backend's backfill had no way to name the package the
     dataflow needed, so its nodes rendered "Loading node…" forever.
 
-    It is DDRNet23-Slim's model package, whose node runs the segmentation. It
-    needs only onnxruntime, the boot install brings it as it brings every
-    package a shipped dataflow declares, and the examples' seeding puts it in
-    each store, where its model runs from.
+    It is DDRNet23-Slim's model package, whose node runs the segmentation, with
+    the Segmentation package its node's code calls, which DDRNet23-Slim names
+    in ``dependencies.packages``. It needs only onnxruntime, the boot install
+    brings both as it brings every package a shipped dataflow declares, and
+    the examples' seeding puts them in each store, where its model runs from.
     """
     from pathlib import Path
 
@@ -199,9 +200,9 @@ def test_example_10s_model_package_is_declared_and_reaches_the_boot_install():
     repo_root = Path(__file__).resolve().parents[4]
     example = repo_root / "docs" / "examples" / "10-street-vision-cv-analysis.json"
     declared = json.loads(example.read_text(encoding="utf-8"))["dataflow"]["packages"]
-    assert declared == ["model.curio.ddrnet23-slim@1"], (
-        "example 10 must declare the package its nodes need, or nothing can "
-        "resolve them (#233)"
+    assert declared == ["curio.segmentation@1", "model.curio.ddrnet23-slim@1"], (
+        "example 10 must declare the package its nodes need, and the package "
+        "their code imports, or nothing can resolve them (#233)"
     )
 
     ddrnet = json.loads(
@@ -209,7 +210,8 @@ def test_example_10s_model_package_is_declared_and_reaches_the_boot_install():
     )
     assert ddrnet["kind"] == "model"
     assert set(ddrnet["dependencies"]["python"]) == {"onnxruntime"}
-    assert "model.curio.ddrnet23-slim" in seeding.example_dep_package_ids()
+    assert ddrnet["dependencies"]["packages"] == {"curio.segmentation@1": "*"}
+    assert {"model.curio.ddrnet23-slim", "curio.segmentation"} <= set(seeding.example_dep_package_ids())
 
 
 def test_examples_flag_seeds_weather(tmp_curio, real_fixtures_root, seed_examples_flag):

@@ -68,6 +68,8 @@ from typing import Callable, Optional
 
 import requests
 
+from utk_curio.common.backend_processes import ROUTE_HEADER
+
 from . import sockets
 from .driver import API_TIMEOUT_S, Sample, UserFailed
 
@@ -190,6 +192,18 @@ def present_in(activity) -> dict:
     return here
 
 
+def room_headers(user) -> dict:
+    """The headers of a member's agent work: its own, naming its room's
+    dataflow, where its turns run. A member asks before its own work moves to
+    the room's dataflow (``VirtualUser.on_the_canvas``), and with several
+    backend processes nginx sends each call to the one that owns it: the
+    attach, the script of its replies, the ask and its stream."""
+    headers = user._headers()
+    if user.room.project_id:
+        headers[ROUTE_HEADER] = user.room.project_id
+    return headers
+
+
 def _request(user, session, method: str, label: str, path: str, *, json_body=None,
              expect=200, timeout: float = API_TIMEOUT_S) -> dict:
     """One call of a member's agent work on *session*, recorded on the
@@ -198,7 +212,7 @@ def _request(user, session, method: str, label: str, path: str, *, json_body=Non
     started = time.time()
     try:
         resp = session.request(method, f"{user.backend_url}{path}", json=json_body,
-                               headers=user._headers(), timeout=timeout)
+                               headers=room_headers(user), timeout=timeout)
     except requests.Timeout:
         user._record(label, None, None, started, False, f"no response in {timeout:.0f}s", "timeout")
         raise UserFailed(f"{label} timed out")
@@ -357,7 +371,7 @@ class MemberTurn:
         while self.end is None and time.perf_counter() < deadline and self.broken <= FOLLOW_AGAIN:
             started = time.time()
             try:
-                with session.get(f"{user.backend_url}{ask}/stream", headers=user._headers(), stream=True,
+                with session.get(f"{user.backend_url}{ask}/stream", headers=room_headers(user), stream=True,
                                  timeout=(API_TIMEOUT_S, max(1.0, deadline - time.perf_counter()))) as resp:
                     if resp.status_code != 200:
                         user._record(label, None, resp.status_code, started, False, resp.text[:500], "http_error")
@@ -381,7 +395,7 @@ class MemberTurn:
                              "transport")
         if self.end is None:
             try:
-                session.post(f"{user.backend_url}{ask}/stop", headers=user._headers(), timeout=API_TIMEOUT_S)
+                session.post(f"{user.backend_url}{ask}/stop", headers=room_headers(user), timeout=API_TIMEOUT_S)
             except requests.RequestException:
                 pass  # what is judged is the turn's end, or that none came
 

@@ -81,20 +81,9 @@ Writes data to a file the node returns, a table as CSV, a GeoDataFrame as GeoJSO
 
 Engines: python.
 
-Gives a model's `id`, `folder`, `manifest` and `path`: `curio_segment` runs a segmentation model; node code opens an ONNX one with `ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])`.
+Gives a model's `id`, `folder`, `manifest` and `path`, which node code or its package's module opens: an ONNX model with `ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])`.
 
 - `model_id` (a Model Catalog model): the model's id.
-
-### curio_segment(images, model, classes=None, *, overlays=True)
-
-Engines: python.
-
-Labels the pixels of each image with a segmentation model and returns the images' rows with the results as their first columns: `dominant_class`, `dominant_pct`, a `<class>_pct` per class, `overlay_url` and `segment_error`.
-
-- `images`: rows with a `path`, as `curio_load_collection` gives them.
-- `model`: a model `curio_load_model` loaded.
-- `classes`: the classes to report; every class the model labels when it is None.
-- `overlays`: whether to write each image's overlay, linked in `overlay_url`.
 
 ### curio_secret(name)
 

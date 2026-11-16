@@ -15,6 +15,8 @@ import json
 import os
 from dataclasses import asdict
 
+from utk_curio.common.backend_processes import shard_of
+
 from .driver import FAILURE_KINDS, UserResult
 
 
@@ -106,13 +108,20 @@ def distribution(values: list[float], scale: float = 1.0, digits: int = 1) -> di
     }
 
 
-def socket_summary(rooms: list[dict]) -> dict | None:
+def room_process(room: dict, processes: int) -> int:
+    """The backend process that owns *room*'s dataflow among *processes*, by
+    the rule nginx routes it by (``backend_processes.shard_of``)."""
+    return shard_of(room.get("project_id"), processes)
+
+
+def socket_summary(rooms: list[dict], processes: int = 1) -> dict | None:
     """What a tier's tabs did, from each room's ``sockets.Room.outcome``: the
     updates they sent, how long each took to be in every other tab of its room
     (``sync_ms``; None when no room had a second tab), the updates that never
     were (``unsynced``), the rooms whose tabs ended with different docs, and
-    the size of the doc a tab joining at the end would download. None for a
-    tier with no rooms."""
+    the size of the doc a tab joining at the end would download; and each
+    room's backend process among *processes* (:func:`room_process`). None for
+    a tier with no rooms."""
     if not rooms:
         return None
     seconds = [value for room in rooms for value in room["sync_seconds"]]
@@ -132,6 +141,7 @@ def socket_summary(rooms: list[dict]) -> dict | None:
         "per_room": [
             {
                 "room": room["room"], "project_id": room["project_id"], "tabs": room["tabs"],
+                "process": room_process(room, processes),
                 "doc_ids": room["doc_ids"], "updates": room["updates"],
                 "sync_ms": distribution(room["sync_seconds"], 1000.0),
                 "unsynced": room["unsynced"], "diverged": room["diverged"],
@@ -204,7 +214,7 @@ def canvas_summary(rooms: list[dict]) -> dict | None:
 TURN_PHASES = ("prepared", "written", "ended")
 
 
-def agents_summary(rooms: list[dict]) -> dict | None:
+def agents_summary(rooms: list[dict], processes: int = 1) -> dict | None:
     """What a tier's agents did (``--agents``), from each room's ``agents``
     (``agents.RoomAgents.outcome``): the turns asked, how they ended and how
     long each took from its ask to its end (``turn_s``: None when none
@@ -212,8 +222,10 @@ def agents_summary(rooms: list[dict]) -> dict | None:
     otherwise, never made), the landed writes and turn ends missing from a
     tab, the agents the server still had in a room at the end (None when no
     room read them) and the tabs that still showed one, and the rooms whose
-    tabs differed once every turn had ended. None for a tier with no agents."""
-    groups = [room["agents"] for room in rooms if room.get("agents")]
+    tabs differed once every turn had ended; and each room's dataflow and
+    backend process among *processes*. None for a tier with no agents."""
+    with_agents = [room for room in rooms if room.get("agents")]
+    groups = [room["agents"] for room in with_agents]
     if not groups:
         return None
     present = [group["present_at_end"] for group in groups if group.get("present_at_end") is not None]
@@ -243,9 +255,10 @@ def agents_summary(rooms: list[dict]) -> dict | None:
         "turn_events_told": sum(group["turn_events_told"] for group in groups),
         "diverged_rooms": sum(1 for group in groups if group.get("diverged")),
         "per_room": [
-            {key: group.get(key) for key in ("early", "asked", "ends", "writes", "unsynced", "present_at_end",
-                                             "diverged", "turns")}
-            for group in groups
+            {"project_id": room.get("project_id"), "process": room_process(room, processes),
+             **{key: room["agents"].get(key) for key in ("early", "asked", "ends", "writes", "unsynced",
+                                                         "present_at_end", "diverged", "turns")}}
+            for room in with_agents
         ],
     }
 
@@ -282,40 +295,94 @@ def harness_summary(start: dict | None, samples: list[dict], end: dict | None) -
     return {"cpu": cpu_track([start, *samples, end], "harness_cpu_seconds", "harness_at")}
 
 
+def _track(readings: list, start: dict | None, end: dict | None, key: str, scale: float,
+           digits: int | None) -> dict:
+    """*key* of the reading before a tier, the highest of *readings*, and of
+    the reading after it, times *scale*; a missing reading is None."""
+    def value(reading):
+        number = (reading or {}).get(key)
+        if not isinstance(number, (int, float)):
+            return None
+        return round(number * scale, digits) if digits else int(number * scale)
+
+    values = [v for v in (value(reading) for reading in readings) if v is not None]
+    return {"start": value(start), "peak": max(values) if values else None, "end": value(end)}
+
+
+def _process_tracks(start: dict | None, readings: list, end: dict | None) -> list[dict]:
+    """Each backend process's threads, resident memory and CPU over a tier,
+    by its number, from the readings' ``processes`` (``backend_probe.combined``);
+    none for readings that list none."""
+    by_number: dict = {}
+    for reading in readings:
+        for one in reading.get("processes") or []:
+            by_number.setdefault(one.get("process"), []).append({**one, "at": reading.get("at")})
+    before = {one.get("process"): one for one in (start or {}).get("processes") or []}
+    after = {one.get("process"): one for one in (end or {}).get("processes") or []}
+    return [
+        {
+            "process": number,
+            "pid": by_number[number][-1].get("pid"),
+            "threads": _track(by_number[number], before.get(number), after.get(number), "threads", 1, None),
+            "rss_mib": _track(by_number[number], before.get(number), after.get(number), "rss_bytes", 1 / MIB, 1),
+            "cpu": cpu_track(by_number[number], "cpu_seconds", "at"),
+        }
+        for number in sorted(by_number, key=lambda value: (value is None, value))
+    ]
+
+
 def backend_summary(start: dict | None, samples: list[dict], end: dict | None,
                     every_s: float, problem: str | None = None) -> dict:
     """The backend's threads, resident memory and CPU over a tier, from the
     probe (``backend_probe.py``): the reading before the tier, the highest of
     all readings, those taken while it ran (every *every_s* seconds) included,
     and the reading after it; and the CPU it ran over the tier
-    (:func:`cpu_track`). Not measured, with *problem* as the reason, when the
-    probe read nothing; a missing reading is None, never a zero."""
+    (:func:`cpu_track`); the same of each backend process in ``processes``.
+    Not measured, with *problem* as the reason, when the probe read nothing;
+    a missing reading is None, never a zero."""
     readings = [reading for reading in (start, *samples, end) if reading and "threads" in reading]
     if not readings:
         return {"measured": False, "problem": problem or "the probe read nothing"}
     start = start if start and "threads" in start else None
     end = end if end and "threads" in end else None
-
-    def track(key: str, scale: float, digits: int | None) -> dict:
-        def value(reading):
-            number = (reading or {}).get(key)
-            if not isinstance(number, (int, float)):
-                return None
-            return round(number * scale, digits) if digits else int(number * scale)
-
-        values = [v for v in (value(reading) for reading in readings) if v is not None]
-        return {"start": value(start), "peak": max(values) if values else None, "end": value(end)}
-
     return {
         "measured": True,
         "pid": (end or start or readings[-1]).get("pid"),
-        "threads": track("threads", 1, None),
-        "rss_mib": track("rss_bytes", 1 / MIB, 1),
+        "threads": _track(readings, start, end, "threads", 1, None),
+        "rss_mib": _track(readings, start, end, "rss_bytes", 1 / MIB, 1),
         "cpu": cpu_track(readings, "cpu_seconds", "at"),
         "samples": sum(1 for sample in samples if sample and "threads" in sample),
         "every_s": every_s,
         "problem": problem,
+        "processes": _process_tracks(start, readings, end),
     }
+
+
+def process_summary(rooms: list[dict], processes: int, backend: dict | None = None) -> list[dict]:
+    """Each backend process's share of a tier, home first: the rooms whose
+    dataflow it owns (:func:`room_process`), their sync (``sync_ms``), their
+    agents' turns (``turn_s``) and phases (``phases_s``), and the process's
+    own threads, memory and CPU as the probe read them (``backend``, from
+    :func:`backend_summary`; None when not read). A process holding no room
+    is there too: hashing puts several rooms on one process and none on
+    another."""
+    measured = {one.get("process"): one for one in (backend or {}).get("processes") or []}
+    block = []
+    for number in range(max(1, processes)):
+        owned = [room for room in rooms if room_process(room, processes) == number]
+        groups = [room["agents"] for room in owned if room.get("agents")]
+        block.append({
+            "process": number,
+            "rooms": [room.get("room") for room in owned],
+            "sync_ms": distribution([value for room in owned for value in room.get("sync_seconds") or []], 1000.0),
+            "turn_s": distribution([value for group in groups for value in group.get("turn_seconds") or []],
+                                   digits=2),
+            "phases_s": {phase: distribution([value for group in groups
+                                              for value in (group.get("phases") or {}).get(phase) or []], digits=2)
+                         for phase in TURN_PHASES},
+            "backend": measured.get(number),
+        })
+    return block
 
 
 def doc_files_summary(listing: dict | None, problem: str | None = None) -> dict:
@@ -470,13 +537,15 @@ def peak_container_stats(stats_log: str | None) -> dict | None:
 
 def build_report(run_id: str, backend_url: str, tiers: list[dict],
                  stats_log: str | None = None, profile: str = "burst",
-                 room_size: int | None = None, shared_canvas: bool = False) -> dict:
+                 room_size: int | None = None, shared_canvas: bool = False,
+                 backend_processes: int = 1) -> dict:
     report = {
         "run_id": run_id,
         "backend_url": backend_url,
         "profile": profile,
         "room_size": room_size,
         "shared_canvas": shared_canvas,
+        "backend_processes": backend_processes,
         "tiers": tiers,
         "failed": any(t["failure_count"] for t in tiers),
     }
@@ -638,6 +707,36 @@ def _backend_table(tiers: list[dict]) -> list[str]:
     return lines
 
 
+def _processes_table(tiers: list[dict]) -> list[str]:
+    """Each backend process's share of each tier, when the stack ran several
+    (``--backend-processes``): its rooms, their sync and turns, and its own
+    CPU, memory and threads."""
+    if not any(len(tier.get("processes") or []) > 1 for tier in tiers):
+        return []
+    lines = ["", ("Backend processes: each room's dataflow belongs to one, by the first two hex digits of its id, "
+                  "as nginx routes it. Each process's rooms, their sync and turns, and its own CPU and memory."), ""]
+    lines.append("| Tier | Process | Rooms | Sync p50 | Sync p95 | Turn p50 | Turn p95 | Prepared p50 "
+                 "| Cores (tier / peak) | RSS peak (MiB) | Threads peak |")
+    lines.append("| ---: | ------: | ----: | -------: | -------: | -------: | -------: | -----------: "
+                 "| ------------------: | -------------: | -----------: |")
+    for tier in tiers:
+        for entry in tier.get("processes") or []:
+            sync, turn = entry.get("sync_ms"), entry.get("turn_s")
+            prepared = (entry.get("phases_s") or {}).get("prepared")
+            measured = entry.get("backend") or {}
+            cpu = measured.get("cpu")
+            cells = [str(len(entry.get("rooms") or [])),
+                     *([f"{sync['p50']} ms", f"{sync['p95']} ms"] if sync else ["-", "-"]),
+                     *([f"{turn['p50']} s", f"{turn['p95']} s"] if turn else ["-", "-"]),
+                     f"{prepared['p50']} s" if prepared else "-",
+                     f"{cpu['cores_busy']} / {'-' if cpu.get('peak_cores_busy') is None else cpu['peak_cores_busy']}"
+                     if cpu else "not read",
+                     "-" if (measured.get("rss_mib") or {}).get("peak") is None else str(measured["rss_mib"]["peak"]),
+                     "-" if (measured.get("threads") or {}).get("peak") is None else str(measured["threads"]["peak"])]
+            lines.append(f"| {tier['tier']} | {entry['process']} | {' | '.join(cells)} |")
+    return lines
+
+
 def _cpu_cells(track: dict | None, missing: str) -> list[str]:
     """A CPU track's seconds, and its cores busy over the tier and at the peak."""
     if not track:
@@ -707,6 +806,7 @@ def markdown(report: dict) -> str:
     lines += _agents_table(report["tiers"])
     lines += _backend_table(report["tiers"])
     lines += _cpu_table(report["tiers"])
+    lines += _processes_table(report["tiers"])
 
     for tier in report["tiers"]:
         lines += ["", f"### {tier['tier']} users", ""]

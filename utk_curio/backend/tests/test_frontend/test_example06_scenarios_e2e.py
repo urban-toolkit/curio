@@ -233,7 +233,7 @@ def _ran_on_the_server(backend: str, token: str, project_id: str) -> list[str]:
     that ran there and kept an output. A node a tab ran and reported keeps none."""
     runs = api_json(f"{backend}/api/projects/{project_id}/runs?limit=1", token)["runs"]
     assert runs, "Run All started no run on the server"
-    run = api_json(f"{backend}/api/runs/{runs[0]['id']}", token)
+    run = api_json(f"{backend}/api/runs/{runs[0]['id']}", token, dataflow=project_id)
     return [step["nodeId"] for step in run["steps"] if step["role"] == "run" and step["outputPath"]]
 
 

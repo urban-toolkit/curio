@@ -1,18 +1,19 @@
 """DDRNet23-Slim as a model package, and the cell a model package's node opens with.
 
 - DDRNet23-Slim is ``packages/model.curio.ddrnet23-slim@1``: its weights, their
-  license, and one node, Image Segmentation, with no ``sources/``. The node is
-  the one Curio writes for a segmentation model, the same a model downloaded
-  from the Discovery Catalog gets. It replaces ``curio.streetvision@1`` and
+  license, and one node, Image Segmentation, whose code is its own source,
+  ``sources/image-segmentation.py``: its settings and a call of the
+  Segmentation package's ``segment_images``, a package it names in
+  ``dependencies.packages`` (``test_segmentation_package.py`` runs it). A
+  model downloaded from the Discovery Catalog gets the same node, with its
+  code naming that model. It replaces ``curio.streetvision@1`` and
   ``models/``, which are gone, and example 10 runs it.
 - A model package's template that ships no ``source`` opens with the cell the
-  backend writes for its model's type (``application/starters.py``): a
-  segmentation model's loads it by id and calls ``curio_segment``, and runs as
-  it is (the sandbox's ``test_vision.py`` runs it); an ``image-to-image`` or
-  ``node-regression`` model's opens its ONNX file (``model.path``) in an
-  onnxruntime session on the CPU and is a ``session.run`` skeleton naming each
-  array the graph takes, read from the weights without onnxruntime and without
-  downloading anything.
+  backend writes (``application/starters.py``), whatever its model's type: it
+  opens the model's ONNX file (``model.path``) in an onnxruntime session on
+  the CPU and is a ``session.run`` skeleton naming each array the graph takes,
+  read from the weights without onnxruntime and without downloading anything.
+  The backend writes no cell of its own for a segmentation model.
 
 The code under test is imported inside each test, so a tree without it fails
 test by test.
@@ -30,13 +31,10 @@ DDRNET = REPO / "packages" / f"{DDRNET_ID}@1"
 EXAMPLE_10 = REPO / "docs" / "examples" / "10-street-vision-cv-analysis.json"
 LOCAL_RELIEF_GRAPH = REPO / "docs" / "bring-your-own-model" / "model.example.local-relief@1" / "models" / "local_relief.onnx"
 WEATHER_GNN_GRAPH = REPO / "packages" / "model.scout.weather-gnn@1" / "models" / "weather_gnn.onnx"
-
-SEGMENTATION_CELL = (
-    f'model = curio_load_model("{DDRNET_ID}")\n'
-    "classes = None  # every class the model names\n"
-    "\n"
-    "return curio_segment(input_0, model, classes)\n"
-)
+#: The source of DDRNet23-Slim's one node.
+DDRNET_SOURCE = DDRNET / "sources" / "image-segmentation.py"
+#: The package whose function that node calls.
+SEGMENTATION_DIR = "curio.segmentation@1"
 
 
 def _manifest(folder: Path) -> dict:
@@ -49,13 +47,16 @@ def _starters(user_key: str) -> dict[str, dict]:
     return {starter["type"]: starter for starter in generate_package_starters(user_key)}
 
 
-def _model_package(root: Path, package_id: str, model_type: str, graph: Path, *, model_input: dict | None = None) -> Path:
+def _model_package(
+    root: Path, package_id: str, model_type: str, graph: Path, *, model_input: dict | None = None,
+    labels: list | None = None,
+) -> Path:
     """A model package of *model_type* around *graph*, whose one template
     ships no ``source``."""
     folder = root / f"{package_id}@1"
     (folder / "models").mkdir(parents=True)
     shutil.copyfile(graph, folder / "models" / "graph.onnx")
-    block = {"type": model_type, "runtime": "onnx", "entry": "models/graph.onnx", "labels": [],
+    block = {"type": model_type, "runtime": "onnx", "entry": "models/graph.onnx", "labels": list(labels or []),
              "license": "MIT", "sizeBytes": graph.stat().st_size}
     if model_input is not None:
         block["input"] = model_input
@@ -96,53 +97,92 @@ def test_ddrnet_is_a_read_only_model_package_that_validates():
         DDRNET_ID, "model", "MIT", "Curio", True,
     )
     assert dict(manifest.python_deps) == {"onnxruntime": ">=1.17"}
+    assert dict(manifest.package_deps) == {SEGMENTATION_DIR: "*"}
     assert (manifest.model.license, manifest.model.license_file) == ("MIT; trained on Cityscapes", "LICENSE")
     assert (DDRNET / "LICENSE").is_file() and (DDRNET / "README.md").is_file()
 
 
-def test_ddrnet_ships_no_code_and_its_node_is_the_one_curio_writes_for_a_segmentation_model():
-    """No ``sources/``: its Image Segmentation node is the template a
-    downloaded segmentation model gets, field for field, with no ``source``."""
-    from utk_curio.backend.app.packages.domain.default_cells import model_template
+def test_ddrnets_node_is_its_own_source_and_the_one_a_downloaded_segmentation_model_gets(tmp_curio):
+    """Its Image Segmentation node names its ``source``, the code a new node
+    opens with, and it is the node the Hugging Face models source names for a
+    model it adds (``provider.options.node``): a download's template is
+    DDRNet23-Slim's field for field, its source DDRNet23-Slim's with the
+    ``curio_load_model`` call naming the download, and it names the packages
+    DDRNet23-Slim names. The core holds no copy of it."""
+    from utk_curio.backend.app.packages import service as packages
+    from utk_curio.backend.tests._support.downloaded_models import download_node
 
     raw = _manifest(DDRNET)
-    assert not (DDRNET / "sources").exists()
     [template] = raw["templates"]
-    assert template == model_template("semantic-segmentation")
-    assert (template["id"], template["label"], template["category"]) == (
-        "image-segmentation", "Image Segmentation", "computation")
-    assert "source" not in template
+    assert (template["id"], template["label"], template["category"], template["source"]) == (
+        "image-segmentation", "Image Segmentation", "computation", "sources/image-segmentation.py")
+    assert sorted(path.name for path in (DDRNET / "sources").iterdir()) == ["image-segmentation.py"]
+    node = download_node()
+    assert node.template == template
+    assert node.packages == raw["dependencies"]["packages"] == {SEGMENTATION_DIR: "*"}
+    code = DDRNET_SOURCE.read_text(encoding="utf-8")
+    assert node.code == code and node.model_id == DDRNET_ID
+    renamed = node.code_for("imported.xabc123def456")
+    assert renamed == code.replace(f'curio_load_model("{DDRNET_ID}")', 'curio_load_model("imported.xabc123def456")')
+    assert DDRNET_ID not in renamed
+    assert not hasattr(packages, "model_template")
 
 
 def test_ddrnet_replaces_the_street_vision_package_and_the_models_folder():
     """``curio.streetvision@1`` is retired and ``models/`` is gone; example 10's
     two Image Segmentation nodes are DDRNet23-Slim's, and its lockfile and its
-    prompt fixture name DDRNet23-Slim's package."""
+    prompt fixture name DDRNet23-Slim's package and the Segmentation package
+    its nodes' code calls."""
     assert not (REPO / "packages" / "curio.streetvision@1").exists()
     assert not (REPO / "models").exists()
     spec = json.loads(EXAMPLE_10.read_text(encoding="utf-8"))["dataflow"]
     segmentation = [node for node in spec["nodes"] if node["type"].endswith("/image-segmentation")]
     assert [node["type"] for node in segmentation] == [f"{DDRNET_ID}/image-segmentation"] * 2
-    assert spec["packages"] == [f"{DDRNET_ID}@1"]
+    assert spec["packages"] == [SEGMENTATION_DIR, f"{DDRNET_ID}@1"]
     fixture = json.loads(
         (REPO / "docs" / "examples" / "prompts" / "10-street-vision-cv-analysis.prompt.json").read_text(encoding="utf-8")
     )
-    assert fixture["required"]["packages"] == [f"{DDRNET_ID}@1"]
+    assert fixture["required"]["packages"] == [SEGMENTATION_DIR, f"{DDRNET_ID}@1"]
 
 
 # ---------------------------------------------------------------------------
 # The default cells
 # ---------------------------------------------------------------------------
 
-def test_an_added_ddrnet_opens_with_the_segmentation_cell(tmp_curio):
-    """Added (its copy holds no weights), DDRNet23-Slim's node opens with the
-    cell that loads it by id and segments every class it names, named for the
-    template's id, as the starters the canvas fills a fresh node from."""
+def test_an_added_ddrnet_opens_with_its_own_source(tmp_curio):
+    """Added (its copy holds no weights), DDRNet23-Slim's node opens with its
+    template's source, the starters the canvas fills a fresh node from list
+    under the file's name: the code that loads it by id and segments every
+    class it names with the Segmentation package's function."""
     from utk_curio.backend.app.packages.application.store_install import install_package_from_directory
 
     install_package_from_directory("guest", DDRNET)
     starter = _starters("guest")[f"{DDRNET_ID}/image-segmentation@1"]
-    assert (starter["name"], starter["code"]) == ("image-segmentation", SEGMENTATION_CELL)
+    assert (starter["name"], starter["code"]) == ("image-segmentation", DDRNET_SOURCE.read_text(encoding="utf-8"))
+    assert f'model = curio_load_model("{DDRNET_ID}")\nclasses = None' in starter["code"]
+    assert "return segment_images(input_0, model, curio_derived_file, classes=classes)" in starter["code"]
+
+
+def test_a_segmentation_template_with_no_source_opens_with_the_session_skeleton(tmp_curio):
+    """A person's own segmentation model package whose template ships no
+    ``source`` (a model added from the Discovery Catalog before its node
+    shipped as code): the backend writes no segmentation cell, so it opens
+    with the cell every model package's node without one opens with, the
+    model's session and a ``session.run`` skeleton naming the arrays its graph
+    takes, here DDRNet23-Slim's graph, its ``image``."""
+    folder = _model_package(tmp_curio / "incoming", "ai.test.segmenter", "semantic-segmentation",
+                            DDRNET / "models" / "ddrnet23_slim.onnx",
+                            model_input={"width": 2048, "height": 1024, "dtype": "uint8"},
+                            labels=_manifest(DDRNET)["model"]["labels"])
+    _install_archive("guest", folder)
+    assert _starters("guest")["ai.test.segmenter/run@1"]["code"] == _session_lines("ai.test.segmenter") + (
+        "# The arrays the model reads: make each one from input_0.\n"
+        "outputs = session.run(None, {\n"
+        '    "image": ...,  # uint8 [1, 3, 1024, 2048]\n'
+        "})\n"
+        "\n"
+        "return outputs[0]\n"
+    )
 
 
 def _session_lines(model_id: str) -> str:

@@ -236,7 +236,8 @@ def test_solve_writes_a_planned_chart_and_map_whose_inputs_have_run(
     attachment_id = api_json(f"{agents}/attachments", token, method="POST",
                              payload={"coord": DFB_COORD, "target": {"kind": "canvas"}})["attachmentId"]
     reply = "A chart and a map of the loaded points.\n```curio.v1\n" + json.dumps({"dataflowPlan": PLAN}) + "\n```"
-    script_agent_replies(current_server, reply, "The points, charted and mapped", by_intent=SOLVED)
+    script_agent_replies(current_server, reply, "The points, charted and mapped", by_intent=SOLVED,
+                         dataflow=project_id)
     _enter(page, app_frontend, project_id)
 
     opener = page.get_by_role("button", name=re.compile(rf"^Open chat with {re.escape(DFB_NAME)}")).first

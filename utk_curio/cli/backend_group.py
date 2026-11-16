@@ -64,8 +64,12 @@ from utk_curio.common.request_deadline import REQUEST_START_TIMEOUT_S
 MAX_PROCESSES = 256
 #: The header the canvas and the dashboard name their dataflow in, and the
 #: query argument of a socket's handshake that does.
-ROUTE_HEADER = "X-Curio-Dataflow"
-ROUTE_QUERY = "dataflow"
+ROUTE_HEADER = backend_processes.ROUTE_HEADER
+ROUTE_QUERY = backend_processes.ROUTE_QUERY
+#: nginx's variables of the two: a request header's is ``$http_`` and its name
+#: in lower case with ``-`` as ``_``, a query argument's ``$arg_`` and its name.
+_HEADER_VARIABLE = "$http_" + ROUTE_HEADER.lower().replace("-", "_")
+_QUERY_VARIABLE = "$arg_" + ROUTE_QUERY
 #: The router's folder in the state folder: its config, its pid and the
 #: folders nginx makes.
 ROUTER_FOLDER = "backend-router"
@@ -231,13 +235,13 @@ http {{
     # The route key: the dataflow the {ROUTE_HEADER} header names, else the
     # {ROUTE_QUERY} query argument (a socket's handshake), else a dataflow id
     # after /projects/ or /dataflows/ in the path.
-    map $http_x_curio_dataflow $curio_key {{
+    map {_HEADER_VARIABLE} $curio_key {{
         "" $curio_key_from_query;
-        default $http_x_curio_dataflow;
+        default {_HEADER_VARIABLE};
     }}
-    map $arg_{ROUTE_QUERY} $curio_key_from_query {{
+    map {_QUERY_VARIABLE} $curio_key_from_query {{
         "" $curio_key_from_path;
-        default $arg_{ROUTE_QUERY};
+        default {_QUERY_VARIABLE};
     }}
     map $uri $curio_key_from_path {{
         "~/(?:projects|dataflows)/(?<curio_path_id>[0-9A-Fa-f]{{8}}-[0-9A-Fa-f]{{4}}-[0-9A-Fa-f]{{4}}-[0-9A-Fa-f]{{4}}-[0-9A-Fa-f]{{12}})(?:/|$)" $curio_path_id;

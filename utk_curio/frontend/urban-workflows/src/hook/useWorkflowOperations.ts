@@ -37,6 +37,7 @@ import { scenarioDashboard } from "../utils/scenarios/scenarioDashboard";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
 import type { InstallSyncOutcome, PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
+import { setOpenDataflow } from "../services/dataflowReads";
 import {
     getCurrentProjectId,
     getCurrentProjectPackagesList,
@@ -1184,6 +1185,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             // finds the new id (setProjectId only reaches the ref on the next
             // render).
             projectIdRef.current = detail.id;
+            // And the dataflow the page names on every request
+            // (utils/requestHeaders.ts) and reads its outputs on: what the
+            // caller sends next, an import or an install into it, reaches its
+            // process before ProjectLoader's next render names it.
+            setOpenDataflow(detail.id);
             // The server built the dataflow's doc from what it stored.
             noteLoadedDataflow(detail?.spec?.dataflow ?? spec.dataflow, detail.id, sent);
             syncDatasetsFromSavedSpec(detail.spec);

@@ -174,7 +174,7 @@ DOWNLOADED = "imported.xa1b2c3d4e5f6"
 def _downloaded(user, tmp_path, *, source: dict | None = None) -> str:
     """A model package of *user*'s own with its weights, written into their
     store as the Discovery Catalog writes one; its id."""
-    from utk_curio.backend.app.packages.service import install_downloaded_model, model_template
+    from utk_curio.backend.tests._support.downloaded_models import install_downloaded_segmentation_model
 
     files = tmp_path / "incoming"
     files.mkdir(parents=True)
@@ -185,10 +185,9 @@ def _downloaded(user, tmp_path, *, source: dict | None = None) -> str:
         "license": "MIT", "publisher": "org", "sizeBytes": 4,
         **({"discoverySource": source} if source else {}),
     }
-    install_downloaded_model(_user_key(user), files, {
+    install_downloaded_segmentation_model(_user_key(user), files, {
         "id": DOWNLOADED, "kind": "model", "name": "Tiny", "version": "1.0.0", "compatibility": {"major": 1},
-        "publisher": "org", "license": "MIT", "templates": [model_template("semantic-segmentation")],
-        "model": block,
+        "publisher": "org", "license": "MIT", "model": block,
     })
     return DOWNLOADED
 
@@ -340,7 +339,10 @@ class TestModelPackagesInTheModelCatalog:
         block = ddrnet["model"]
         assert (ddrnet["name"], ddrnet["license"], block["license"], block["licenseFile"]) == (
             "DDRNet23-Slim (street scenes)", "MIT", "MIT; trained on Cityscapes", "LICENSE")
-        assert block["publisher"] == "DDRNet authors; ONNX export by Qualcomm AI Hub Models (v0.63.0, w8a8)"
+        assert block["publisher"] == (
+            "DDRNet authors; ONNX export by Qualcomm AI Hub Models (v0.63.0, w8a8), its int8 zero points stored "
+            "as uint8 by Curio"
+        )
         assert block["homepage"] == "https://huggingface.co/qualcomm/DDRNet23-Slim"
         assert {key: block["input"][key] for key in ("width", "height", "dtype")} == {
             "width": 2048, "height": 1024, "dtype": "uint8"}

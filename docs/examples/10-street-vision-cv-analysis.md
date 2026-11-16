@@ -6,7 +6,7 @@ It runs two routes over the same photos. Route 1 uses **DDRNet23-Slim**, the mod
 
 > [!NOTE]
 > **Setup required**
-> The example declares DDRNet23-Slim's model package, which Curio installs when you open it; the package brings `onnxruntime` and the **Image Segmentation** node. The photos and DDRNet23-Slim ship with Curio, so route 1 runs as it opens. Route 2 needs a model from the Discovery Catalog: see [Step 6](#step-6-a-second-model-from-hugging-face).
+> The example declares DDRNet23-Slim's model package and the **Segmentation** package its node's code calls, which Curio installs when you open it; they bring `onnxruntime` and the **Image Segmentation** node. The photos and DDRNet23-Slim ship with Curio, so route 1 runs as it opens. Route 2 needs a model from the Discovery Catalog: see [Step 6](#step-6-a-second-model-from-hugging-face).
 
 ## Pipeline overview
 
@@ -48,7 +48,7 @@ return photos
 
 ## Step 2: Label every pixel (`Image Segmentation`)
 
-The node comes from DDRNet23-Slim's model package. Its code names a model in the Model Catalog and the classes to report:
+The node comes from DDRNet23-Slim's model package. Its code names a model in the Model Catalog and the classes to report, and calls `segment_images`, the function of the Segmentation package's module `semantic_segmentation`, which the header above the code lists under **Functions**:
 
 ```python
 """Label every pixel of each image with a Model Catalog model.
@@ -64,13 +64,15 @@ reports every label.
 and ``overlay_url`` shows the image tinted by class.
 """
 
+from semantic_segmentation import segment_images
+
 model = curio_load_model("model.curio.ddrnet23-slim")
 classes = ["vegetation", "terrain", "sky", "road", "sidewalk", "building"]
 
-return curio_segment(input_0, model, classes)
+return segment_images(input_0, model, curio_derived_file, classes=classes)
 ```
 
-Each row comes back with the results first: `dominant_class` and `dominant_pct`, then `vegetation_pct`, `terrain_pct` and the other classes asked for, each as a share of all the photo's pixels, then `overlay_url` and `segment_error` (empty unless the photo could not be read). Every input column follows, so the photo keeps its place and its credit.
+`curio_derived_file` says where each photo's overlay goes. Each row comes back with the results first: `dominant_class` and `dominant_pct`, then `vegetation_pct`, `terrain_pct` and the other classes asked for, each as a share of all the photo's pixels, then `overlay_url` and `segment_error` (empty unless the photo could not be read). Every input column follows, so the photo keeps its place and its credit.
 
 DDRNet23-Slim labels the 19 Cityscapes classes; the Model Catalog's page for it lists them. A class the model does not label stops the node with a message naming the ones it has.
 
@@ -220,10 +222,12 @@ openmmlab/upernet-convnext-tiny), then drag it from the Model Catalog onto
 this node. Until then it runs DDRNet23-Slim, the model that ships with Curio.
 """
 
+from semantic_segmentation import segment_images
+
 model = curio_load_model("model.curio.ddrnet23-slim")
 classes = None  # every class the model names
 
-return curio_segment(input_0, model, classes)
+return segment_images(input_0, model, curio_derived_file, classes=classes)
 ```
 
 To give it a model of its own:

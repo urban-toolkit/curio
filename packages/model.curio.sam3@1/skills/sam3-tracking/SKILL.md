@@ -21,7 +21,7 @@ SAM 3 is a model of the Model Catalog that finds every object a short phrase nam
 
 - Objects named in words, followed through a collection's videos, are a Track Objects node, wired from the Data Loading node that loads the collection (`curio_load_collection(...)`). Rows that are not videos are left out.
 - Its code holds its settings and one call of `track_objects`, from the package's module `sam3_tracking`. Change what it does through the settings, and keep the call, which hands it `curio_load_model("model.curio.sam3")`, a literal id Curio reads, and `curio_derived_file`.
-- An Image Segmentation node does not run SAM 3: `curio_segment` refuses a concept segmentation model, and a model dropped on a node swaps only for one of the node's type.
+- An Image Segmentation node does not run SAM 3: its `segment_images` refuses a concept segmentation model, and a model dropped on a node swaps only for one of the node's type.
 - A table of the objects is a Python Computation node that reads the tracks (below); a chart of them is a Vega-Lite node on that table.
 
 ### Its settings
