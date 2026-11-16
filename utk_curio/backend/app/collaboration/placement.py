@@ -69,9 +69,10 @@ _clock = time.monotonic
 #: Held while this process counts its open rooms and writes the count, so the
 #: count written last is the one counted last.
 _lock = threading.Lock()
-#: Where this process last wrote its count (the start, its state folder and
-#: this process's number), with the count.
-_written: Optional[tuple] = None
+#: What this process last wrote, under ``"count"``: where it wrote its count
+#: (the start, its state folder and this process's number) with the count,
+#: or ``None`` before its first write. Held under :data:`_lock`.
+_written: dict[str, Optional[tuple]] = {"count": None}
 
 
 def changed() -> None:
@@ -79,21 +80,20 @@ def changed() -> None:
     process's open rooms again, and write the count when it changed. A count
     that cannot be written is logged, and written with the next change: no
     join and no agent's work fails for it."""
-    global _written
     if not shared_budgets.across_processes():
         return
     try:
         with _lock:
             count = len(_open_here())
             where = _where()
-            if _written == (where, count):
+            if _written["count"] == (where, count):
                 return
             with _SHARED.held() as state:
                 rooms = state.get(ROOMS)
                 rooms = dict(rooms) if isinstance(rooms, dict) else {}
                 rooms[str(backend_processes.this_process())] = count
                 state[ROOMS] = rooms
-            _written = (where, count)
+            _written["count"] = (where, count)
     except Exception:  # noqa: BLE001 - a room's count never fails a tab's join or an agent's work
         logger.exception("this backend process's open rooms could not be written for the placement of new dataflows")
 
@@ -151,9 +151,8 @@ def loads() -> list[int]:
 
 def reset_for_tests() -> None:
     """Forget the count this process last wrote, as a process that starts."""
-    global _written
     with _lock:
-        _written = None
+        _written["count"] = None
 
 
 def _open_here() -> set:
