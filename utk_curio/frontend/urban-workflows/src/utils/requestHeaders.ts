@@ -49,8 +49,9 @@ export function pageDataflow(): string | null {
 
 /**
  * *headers*, with the session's *token* and the dataflow the request names:
- * *dataflow*, for a request that names its own in its body or its query,
- * else the page's. A header with nothing to say is left out.
+ * *dataflow*, for a request that names its own in its path, its body or its
+ * query, as a run of another dataflow does, else the page's. A header with
+ * nothing to say is left out.
  */
 export function requestHeaders(
   token: string | null | undefined,

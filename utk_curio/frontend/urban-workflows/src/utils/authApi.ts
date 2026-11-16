@@ -48,13 +48,19 @@ export function mayPassAgain(error: unknown): boolean {
   return typeof status !== "number" || status >= 500;
 }
 
+/**
+ * A request to the backend, signed in. *dataflow* is the one it names when it
+ * is about a dataflow other than the page's, as a run of another dataflow is
+ * (`requestHeaders`).
+ */
 export async function apiFetch<T = unknown>(
   path: string,
-  opts: RequestInit = {}
+  opts: RequestInit = {},
+  dataflow?: string | null,
 ): Promise<T> {
   const headers = requestHeaders(getToken(), {
     ...(opts.headers as Record<string, string>),
-  });
+  }, dataflow);
   if (opts.body != null && !("Content-Type" in headers)) {
     headers["Content-Type"] = "application/json";
   }
