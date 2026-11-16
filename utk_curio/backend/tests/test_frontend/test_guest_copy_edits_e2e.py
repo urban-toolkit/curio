@@ -212,13 +212,14 @@ def test_a_hosted_guests_edit_is_kept_for_it_alone_and_its_agent_reads_it(app_fr
         listed = api_json(f"{backend}/api/agents/projects/{example}/attachments", my_token)["attachments"]
         attached = [a for a in listed if (a.get("target") or {}).get("targetId") == NODE]
         assert attached, f"the guest's drop on the node attached no agent to it: {listed}"
-        script_agent_replies(backend, READ_THE_DATAFLOW, QUOTE)
+        # The example its page shows names it: its copy is owned with it.
+        script_agent_replies(backend, READ_THE_DATAFLOW, QUOTE, dataflow=example)
         answered = api_json(
             f"{backend}/api/agents/projects/{example}/attachments/{attached[0]['attachmentId']}/run",
             my_token, method="POST", payload={"message": "Quote this node's code."}, timeout=120,
         )
         assert QUOTE in json.dumps(answered), answered
-        prompts = captured_agent_prompts(backend)
+        prompts = captured_agent_prompts(backend, dataflow=example)
         # Its read on the server is of the visitor's own copy, not the example.
         read = _code_the_read_returned(prompts)
         assert read == EDITED, f"the Researcher's read of the dataflow holds {read!r}, not the visitor's own code"

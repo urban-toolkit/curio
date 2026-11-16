@@ -132,6 +132,12 @@ def _run(base: str, attachment_id: str, token: str, message: str) -> dict:
                     payload={"message": message}, timeout=TURN_S)
 
 
+def _dataflow_of(base: str) -> str:
+    """The dataflow an agents base URL (``.../api/agents/projects/<id>``)
+    is about, whose turns the scripted model answers."""
+    return base.rstrip("/").rsplit("/", 1)[-1]
+
+
 def _spec_id(spec: AgentManifest) -> str:
     return spec.agent_id
 
@@ -368,7 +374,7 @@ def test_agent_installs_attaches_and_runs(spec, current_server: str):
 
     # 3. Script the turn and run it.
     leg, tool, replies = _scripted_replies(spec)
-    script_agent_replies(current_server, *replies)
+    script_agent_replies(current_server, *replies, dataflow=project_id)
     run = _run(base, attachment_id, token, f"Hello {spec.name}, do your job.")
 
     # 4. The scripted reply came back through the real route.
@@ -382,7 +388,7 @@ def test_agent_installs_attaches_and_runs(spec, current_server: str):
     assert run["usage"]["inputTokens"] > 0
 
     # 5. THE PER-AGENT CLAIM: this agent's own prompt bytes composed the turn.
-    system = captured_system_prompt(current_server)
+    system = captured_system_prompt(current_server, dataflow=project_id)
     instruction = builtin.read_instruction_text(coord)
     assert instruction, f"{coord} has no instruction prompt on disk"
     assert instruction.strip() in system, (
@@ -445,7 +451,7 @@ def test_agent_installs_attaches_and_runs(spec, current_server: str):
     elif leg == "read":
         # Two provider calls: the request, then the re-prompt carrying its
         # result. One call would mean the tool round never happened.
-        captured = captured_agent_prompts(current_server)
+        captured = captured_agent_prompts(current_server, dataflow=project_id)
         assert len(captured) >= 2, (
             f"{coord} requested {tool!r} but the run never re-prompted with a "
             f"result ({len(captured)} provider call(s))"
@@ -545,16 +551,17 @@ def test_agent_runs_on_native_tools(spec, current_server: str):
     require_project_page()
     require_user_auth()
     token, base, attachment_id = _attached(spec, current_server, "native")
+    dataflow = _dataflow_of(base)
     leg, tool, replies = _native_replies(spec)
-    script_agent_replies(current_server, *replies, native_tools=True)
+    script_agent_replies(current_server, *replies, native_tools=True, dataflow=dataflow)
     run = _run(base, attachment_id, token, f"Hello {spec.name}, do your job.")
     assert VISIBLE_PROSE in run["reply"], run["reply"]
 
-    system = captured_system_prompt(current_server)
+    system = captured_system_prompt(current_server, dataflow=dataflow)
     assert '"toolRequest"' not in system and '"delegateRequest"' not in system, (
         "a run on native tools was still taught the fenced request syntax"
     )
-    offers = captured_agent_offers(current_server)
+    offers = captured_agent_offers(current_server, dataflow=dataflow)
     # Its tools, skill.read, which a chat that lists skills holds, and the
     # delegation tool when it delegates.
     skill_read = tools.wire_name("skill.read")
@@ -564,7 +571,7 @@ def test_agent_runs_on_native_tools(spec, current_server: str):
     if leg == "prompts":
         return
     assert tools.wire_name(tool) in offers[0]["tools"], offers[0]
-    result = captured_agent_prompts(current_server)[1][-1]
+    result = captured_agent_prompts(current_server, dataflow=dataflow)[1][-1]
     assert result["role"] == "tool" and result["is_error"] is False, result
     if leg == "mint":
         changes = [p for p in run["content"] if p.get("type") == "change"]
@@ -584,19 +591,21 @@ def test_a_turn_that_outlasts_a_quick_call_is_waited_for_to_its_end(current_serv
     require_user_auth()
     spec = next(s for s in _CARDS if s.agent_id == "agent.curio.dataflow-builder")
     token, base, attachment_id = _attached(spec, current_server, "slow")
+    dataflow = _dataflow_of(base)
     _leg, tool, (call, follow_up) = _native_replies(spec)
-    script_agent_replies(current_server, {**call, "hold": SLOW_HOLD}, follow_up, native_tools=True)
+    script_agent_replies(current_server, {**call, "hold": SLOW_HOLD}, follow_up, native_tools=True,
+                         dataflow=dataflow)
     asked = time.monotonic()
     over = threading.Event()
 
     def release_after_a_quick_call():
         # Once the turn waits at the model, and api_json's default wait has passed.
         try:
-            while not over.is_set() and not held_agent_calls(current_server).get(SLOW_HOLD):
+            while not over.is_set() and not held_agent_calls(current_server, dataflow=dataflow).get(SLOW_HOLD):
                 over.wait(0.1)
             over.wait(max(0.0, asked + QUICK_CALL_S + 2.0 - time.monotonic()))
         finally:
-            release_agent_hold(current_server, SLOW_HOLD)
+            release_agent_hold(current_server, SLOW_HOLD, dataflow=dataflow)
 
     releaser = threading.Thread(target=release_after_a_quick_call, daemon=True)
     releaser.start()
@@ -729,14 +738,15 @@ def test_a_chat_loads_a_skill_and_holds_it_for_its_next_turn(native: bool, curre
     require_user_auth()
     spec = next(s for s in _CARDS if s.agent_id == "agent.curio.node-builder")
     token, base, attachment_id = _attached(spec, current_server, "skill" + ("n" if native else "f"))
+    dataflow = _dataflow_of(base)
     if native:
         ask = {"text": VISIBLE_PROSE, "toolCalls": [{"name": "skill.read", "arguments": {"name": "widgets"}}]}
     else:
         ask = _tail({"toolRequest": {"tool": "skill.read", "params": {"name": "widgets"}}})
 
-    script_agent_replies(current_server, ask, "Loaded.", native_tools=native)
+    script_agent_replies(current_server, ask, "Loaded.", native_tools=native, dataflow=dataflow)
     _run(base, attachment_id, token, "Which widgets can a chart have?")
-    first = captured_agent_prompts(current_server)
+    first = captured_agent_prompts(current_server, dataflow=dataflow)
     assert '<available_skills>' in first[0][0]["content"] and "<name>widgets</name>" in first[0][0]["content"]
     result = first[1][-1]
     assert result["role"] == ("tool" if native else "user"), result
@@ -744,9 +754,9 @@ def test_a_chat_loads_a_skill_and_holds_it_for_its_next_turn(native: bool, curre
     turns = api_json(f"{base}/attachments/{attachment_id}/session", token)["turns"]
     assert turns[-1]["execution"]["skillsLoaded"] == ["widgets"], turns[-1]["execution"]
 
-    script_agent_replies(current_server, ask, "Still loaded.", native_tools=native)
+    script_agent_replies(current_server, ask, "Still loaded.", native_tools=native, dataflow=dataflow)
     _run(base, attachment_id, token, "And for a map?")
-    second = captured_agent_prompts(current_server)
+    second = captured_agent_prompts(current_server, dataflow=dataflow)
     assert second[0][0]["content"].count('<skill_content name="widgets">') == 1
     again = second[1][-1]["content"]
     assert "already in this conversation" in again and "<skill_content" not in again, again
@@ -762,18 +772,20 @@ def test_a_refusal_of_native_tools_falls_back_to_the_fenced_protocol(current_ser
     require_user_auth()
     spec = next(s for s in _CARDS if s.agent_id == "agent.curio.researcher")
     token, base, attachment_id = _attached(spec, current_server, "fallback")
+    dataflow = _dataflow_of(base)
     script_agent_replies(
         current_server,
         {"error": "this model does not support tools", "status": 400},
         _tail({"toolRequest": {"tool": "dataflow.read", "params": {}}}),
         "That is what the project currently contains.",
         native_tools=True,
+        dataflow=dataflow,
     )
     run = _run(base, attachment_id, token, "What is in this project?")
     assert run["reply"].endswith("That is what the project currently contains.")
-    offers = captured_agent_offers(current_server)
+    offers = captured_agent_offers(current_server, dataflow=dataflow)
     assert offers[0]["tools"] and offers[1] == {"tools": [], "toolChoice": None, "replySchema": None}, offers
-    assert '"toolRequest"' in captured_system_prompt(current_server, call=1)
+    assert '"toolRequest"' in captured_system_prompt(current_server, dataflow=dataflow, call=1)
     turns = api_json(f"{base}/attachments/{attachment_id}/session", token)["turns"]
     pins = turns[-1]["execution"]["pins"]
     assert pins["toolProtocol"] == "fenced" and pins["nativeToolsRefused"] is True
@@ -810,6 +822,7 @@ def test_an_autark_document_is_written_under_its_schema(current_server: str):
     # node.content.generate is the Node Builder's own mode, so the agent
     # attached here is the delegate too.
     token, base, attachment_id = _attached(spec, current_server, "autkschema", project_spec=project)
+    dataflow = _dataflow_of(base)
     constrained, _ = reply_schemas.autk_reply_schema(reply_schemas.FLAVOR_STRICT).encode(AUTK_DOCUMENT)
     script_agent_replies(
         current_server,
@@ -818,11 +831,12 @@ def test_an_autark_document_is_written_under_its_schema(current_server: str):
         json.dumps(constrained),
         "The map is in the node.",
         structured_output=True,
+        dataflow=dataflow,
     )
     run = _run(base, attachment_id, token, "Write the map for the Autark node.")
-    offers = captured_agent_offers(current_server)
+    offers = captured_agent_offers(current_server, dataflow=dataflow)
     assert [o["replySchema"] for o in offers[:3]] == [None, "autk_grammar_document", None], offers
-    assert "held to the Autark document's schema" in captured_system_prompt(current_server, call=1)
+    assert "held to the Autark document's schema" in captured_system_prompt(current_server, dataflow=dataflow, call=1)
     (entry,) = [p for p in run["content"] if p.get("type") == "delegation"]
     assert entry["status"] == "ok", entry
     assert entry["coord"] == builtin.builtin_coord("agent.curio.node-builder"), entry
