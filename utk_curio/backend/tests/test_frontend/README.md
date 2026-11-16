@@ -125,11 +125,13 @@ A test that needs an adapter asks with `require_webgpu(page)` (fails on CI's GPU
 ## Multi-user stress tiers
 
 `test-gpu-stress` in CI runs the shipped examples with 5, 10, 50 and 100 users
-at once. It has two halves, because a dataflow does.
+at once. It has two halves, because a dataflow does. Its stack runs 8 backend
+processes behind nginx, as the hosted stacks do, and each report gives every
+process its rooms, sync and turns.
 
 It is not part of every run. It holds the single GPU runner for ~30 minutes,
-which roughly doubles a build, so it runs on a schedule (08:00 UTC on Monday,
-Wednesday and Friday) and on demand: tick `stress` when dispatching the
+which roughly doubles a build, so it runs on a schedule (3 AM Chicago time on
+Monday, Wednesday and Friday) and on demand: tick `stress` when dispatching the
 workflow by hand, or put the `stress` label on a PR. Label the PR whenever the
 change is concurrency-shaped - the sandbox, the queue, the session or user
 handling - or touches this harness, since the schedule will not cover it
