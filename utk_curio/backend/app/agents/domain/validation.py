@@ -101,6 +101,7 @@ def validate_candidate(
     available_templates: dict | None = None,
     dataset_paths: dict | None = None,
     dataset_formats: dict | None = None,
+    dataset_problems: dict | None = None,
     exec_user_key: str | None = None,
     secrets: dict | None = None,
     prior_outputs: dict | None = None,
@@ -114,7 +115,9 @@ def validate_candidate(
     return ``{"verdict", "evidence"}`` (see module docstring). dev/115:
     ``dataset_paths`` / ``dataset_formats`` / ``exec_user_key`` ride through
     to the runner so the Data Catalog's ``curio_data_path("<id>")`` loaders
-    resolve exactly as on Play. ``acting_user`` (#485) is the account's
+    resolve exactly as on Play, and ``dataset_problems``, why each dataset
+    whose file failed to download could not be had, fails the node that
+    reads it with that reason, as on Play. ``acting_user`` (#485) is the account's
     ``User`` row, captured in
     the request: validation runs on a thread of its own, where the account's
     collections and added models cannot be found without it. With
@@ -153,7 +156,7 @@ def validate_candidate(
         user_key, project_id, spec_dict, node_id,
         candidate_content=candidate_content,
         session_id=session_id, exec_fn=exec_fn, progress=progress,
-        dataset_paths=dataset_paths, dataset_formats=dataset_formats,
+        dataset_paths=dataset_paths, dataset_formats=dataset_formats, dataset_problems=dataset_problems,
         exec_user_key=exec_user_key, secrets=secrets,
         collections=collections, media_dir=media_dir,
         prior_outputs=prior_outputs,

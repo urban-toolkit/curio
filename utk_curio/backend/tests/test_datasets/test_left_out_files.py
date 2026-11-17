@@ -16,7 +16,9 @@ Curio's state directory.
   file of the release names a dataset or a package.
 - The fetch: a missing listed file is fetched, verified and placed, then read
   where it was placed; a wrong sha256, a refused address, a dropped
-  connection or a checkout without a record places nothing; a file the
+  connection or a checkout without a record places nothing; a dropped
+  connection keeps what came, which the next read goes on from, checking
+  the whole file; a download says how far it has come; a file the
   package holds is never fetched; two readers fetch a file once; the fetched
   folder is its owner's alone; a download removes other releases' files.
 - The readers: the Data Catalog's details, preview, download and install, and
@@ -518,6 +520,9 @@ def test_the_download_goes_through_the_egress_policy(pip_tree, monkeypatch):
 
 
 def test_a_partial_download_never_counts_as_present(pip_tree, monkeypatch):
+    """A cut places nothing where a reader looks: under the release's folder
+    there is nothing but the locks and the one partial file the next read
+    goes on from, which then places the file whole, asking once."""
     m = pip_tree.module
     FakeGitHub(contents={SIDEWALK: PAYLOAD}, cut=OSError("Connection reset by peer")).serve(monkeypatch)
 
@@ -525,13 +530,93 @@ def test_a_partial_download_never_counts_as_present(pip_tree, monkeypatch):
         m.fetch(SIDEWALK, pip_tree.shipped)
 
     assert "Connection reset by peer" in str(raised.value)
-    assert not (m.fetched_root(COMMIT) / SIDEWALK).exists()
-    assert _only_locks(m.fetched_root(COMMIT))
+    root = m.fetched_root(COMMIT)
+    assert not (root / SIDEWALK).exists()
+    kept = _partials(root)
+    assert [path.parent for path in kept] == [root / ".partial"], kept
+    assert all(path.suffix == ".lock" for path in root.rglob("*") if path.is_file() and path not in kept)
 
-    # The next read fetches it whole.
+    # The next read completes it.
     github = FakeGitHub(contents={SIDEWALK: PAYLOAD}).serve(monkeypatch)
     assert m.fetch(SIDEWALK, pip_tree.shipped).read_bytes() == PAYLOAD
     assert len(github.urls) == 1
+    assert _partials(root) == []
+
+
+def _partials(root: Path) -> list[Path]:
+    """The partial files under *root*: what downloads that did not end left."""
+    return sorted(path for path in root.rglob("*.part") if path.is_file())
+
+
+def test_a_download_cut_halfway_resumes_from_its_partial_file(pip_tree, monkeypatch):
+    """A dropped connection, or a restart, halfway through: the bytes that
+    came are kept in a partial file, never where a reader looks, and the
+    next read asks GitHub for the rest alone, from where that file ends,
+    then checks the whole file against the record before placing it."""
+    m = pip_tree.module
+    FakeGitHub(contents={SIDEWALK: PAYLOAD}, cut=OSError("Connection reset by peer")).serve(monkeypatch)
+
+    with pytest.raises(m.LeftOutFileUnavailable) as raised:
+        m.fetch(SIDEWALK, pip_tree.shipped)
+
+    assert "Connection reset by peer" in str(raised.value)
+    root = m.fetched_root(COMMIT)
+    half = len(PAYLOAD) // 2
+    assert not (root / SIDEWALK).exists()
+    kept = _partials(root)
+    assert [path.read_bytes() for path in kept] == [PAYLOAD[:half]], (
+        f"the cut left no partial file to go on from, so the next read downloads the file from zero: {kept}"
+    )
+
+    github = FakeGitHub(contents={SIDEWALK: PAYLOAD}).serve(monkeypatch)
+    placed = m.fetch(SIDEWALK, pip_tree.shipped)
+
+    assert placed.read_bytes() == PAYLOAD
+    assert [request.headers.get("Range") for request in github.requests] == [f"bytes={half}-"], (
+        "the next read did not go on from the partial file"
+    )
+    assert _partials(root) == []
+
+
+def test_a_resumed_file_that_does_not_match_the_record_is_downloaded_again_whole(pip_tree, monkeypatch):
+    """A partial file whose bytes are not the start of the file makes, with
+    the rest, a file the record does not name: it is never placed, and the
+    same read downloads the file again from its first byte."""
+    m = pip_tree.module
+    half = len(PAYLOAD) // 2
+    FakeGitHub(contents={SIDEWALK: PAYLOAD}, cut=OSError("Connection reset by peer")).serve(monkeypatch)
+    with pytest.raises(m.LeftOutFileUnavailable):
+        m.fetch(SIDEWALK, pip_tree.shipped)
+    kept = _partials(m.fetched_root(COMMIT))
+    assert len(kept) == 1, f"the cut left no partial file to go on from: {kept}"
+    kept[0].write_bytes(PAYLOAD[::-1][:half])
+    github = FakeGitHub(contents={SIDEWALK: PAYLOAD}).serve(monkeypatch)
+
+    assert m.fetch(SIDEWALK, pip_tree.shipped).read_bytes() == PAYLOAD
+
+    assert [request.headers.get("Range") for request in github.requests] == [f"bytes={half}-", None]
+    assert _partials(m.fetched_root(COMMIT)) == []
+
+
+def test_a_download_says_how_far_it_has_come(pip_tree, monkeypatch):
+    """Whoever reads the file is told, as it downloads, which file comes and
+    how many of its bytes have, from the first to the last, in steps of a
+    whole percent at most, however many chunks the bytes come in."""
+    m = pip_tree.module
+    reporting = getattr(m, "reporting", None)
+    assert reporting is not None, "a download on first use says nothing of how far it has come"
+    FakeGitHub(contents={SIDEWALK: PAYLOAD}, chunk_size=64).serve(monkeypatch)
+    seen = []
+
+    with reporting(seen.append):
+        m.fetch(SIDEWALK, pip_tree.shipped)
+
+    assert seen and all(progress is not None for progress in seen), seen
+    assert (seen[0].done, seen[-1].done) == (0, len(PAYLOAD))
+    assert {progress.total for progress in seen} == {len(PAYLOAD)}
+    assert [progress.done for progress in seen] == sorted(progress.done for progress in seen)
+    assert 3 <= len(seen) <= 101, len(seen)
+    assert SIDEWALK in seen[-1].message and "100%" in seen[-1].message, seen[-1].message
 
 
 def test_two_readers_fetch_a_file_once(pip_tree, monkeypatch):

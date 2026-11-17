@@ -6,9 +6,10 @@ pip install's left-out files use (``left_out_files.request_fn`` and
 ``resolver``). No test may open a socket (``tests/netguard.py``), so
 ``FakeHuggingFace`` stands in for both. As Hugging Face does, it answers
 ``GET https://huggingface.co/<repo>/resolve/<revision>/<path>`` with the file's
-bytes, sends a big file through a redirect to another host, and refuses a
-gated or gone repository with a status and an ``x-error-code``. It keeps every
-request, with the headers and the timeout it was sent with.
+bytes, sends a big file through a redirect to another host, answers a
+``Range`` with the rest of a file, and refuses a gated or gone repository
+with a status and an ``x-error-code``. It keeps every request, with the
+headers and the timeout it was sent with.
 
 The module under test is imported inside the functions that need it.
 """
@@ -17,6 +18,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from urllib.parse import quote, unquote
+
+from utk_curio.backend.tests._support.left_out_files import answer_with
 
 HUGGING_FACE = "https://huggingface.co"
 #: Where a big file is served from after the redirect, as Hugging Face's CDN.
@@ -35,11 +38,16 @@ class FakeHuggingFace:
     *redirect* names the paths served from :data:`CDN` after a 302. *status*,
     with *error_code*, refuses every file of the repository. *fail*, an
     exception, is raised instead of answering; *cut* sends the first half of
-    a body, then raises it, as a dropped connection does. *before*, when
-    given, is called with each URL before it is answered."""
+    a body, then raises it, as a dropped connection does, for the paths
+    *cut_only* names, or every path. A ``Range: bytes=<n>-`` gets the rest of
+    the file, 206, or 416 past its end, as Hugging Face's CDN answers one;
+    with *ranges* False the fake sends the whole file instead. *chunk_size*
+    sends a body in chunks of that many bytes. *before*, when given, is called
+    with each URL before it is answered."""
 
     def __init__(self, repository: str, revision: str, files: dict, *, redirect=(), status=None,
-                 error_code=None, fail=None, cut=None, before=None):
+                 error_code=None, fail=None, cut=None, cut_only=None, before=None, ranges=True,
+                 chunk_size=None):
         self.prefix = f"{HUGGING_FACE}/{repository}/resolve/{revision}/"
         self.files = dict(files)
         self.redirect = set(redirect)
@@ -47,7 +55,10 @@ class FakeHuggingFace:
         self.error_code = error_code
         self.fail = fail
         self.cut = cut
+        self.cut_only = None if cut_only is None else set(cut_only)
         self.before = before
+        self.ranges = ranges
+        self.chunk_size = chunk_size
         self.requests: list[SimpleNamespace] = []
         self.hosts: list[str] = []
 
@@ -59,17 +70,9 @@ class FakeHuggingFace:
         self.hosts.append(host)
         return [ADDRESS]
 
-    def _body(self, body: bytes):
-        half = len(body) // 2
-        cut = self.cut
-
-        def chunks():
-            yield body[:half]
-            if cut is not None:
-                raise cut
-            yield body[half:]
-
-        return 200, {"Content-Length": str(len(body))}, None, chunks()
+    def _body(self, path: str, headers=None):
+        cut = self.cut if self.cut_only is None or path in self.cut_only else None
+        return answer_with(self.files[path], headers, ranges=self.ranges, cut=cut, chunk_size=self.chunk_size)
 
     def request(self, method, url, *, trusted_host=None, headers=None, timeout_s=None):
         self.requests.append(SimpleNamespace(method=method, url=url, headers=dict(headers or {}), timeout_s=timeout_s))
@@ -78,7 +81,7 @@ class FakeHuggingFace:
         if self.fail is not None:
             raise self.fail
         if method == "GET" and url.startswith(f"{CDN}/"):
-            return self._body(self.files[unquote(url[len(CDN) + 1:])])
+            return self._body(unquote(url[len(CDN) + 1:]), headers)
         if method != "GET" or not url.startswith(self.prefix):
             return 404, {"x-error-code": "RepoNotFound"}, None, iter([b'{"error":"Repository not found"}'])
         path = unquote(url[len(self.prefix):])
@@ -90,7 +93,7 @@ class FakeHuggingFace:
         if path in self.redirect:
             location = f"{CDN}/{quote(path)}"
             return 302, {"Location": location}, location, iter([])
-        return self._body(self.files[path])
+        return self._body(path, headers)
 
     def serve(self, monkeypatch) -> "FakeHuggingFace":
         """Make this the Hugging Face the code under test downloads from."""

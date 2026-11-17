@@ -14,8 +14,13 @@ for one:
 It reads the shipped package's manifest (``utk_curio/shipped.py``) and
 downloads each file from ``https://huggingface.co/<repo>/resolve/<revision>/
 <path>`` into the package's entry folder, ``packages/<id>@<major>/models/
-<name>/``; with ``--into <dir>``, into ``<dir>/<id>@<major>/models/<name>/``,
-the folder ``curio.py start --model-weights-dir <dir>`` reads them from.
+<name>/``; with ``--into <dir>``, into ``<dir>/<id>@<major>/<revision>/models/
+<name>/``, the folder ``curio.py start --model-weights-dir <dir>`` reads them
+from: a folder per revision, so stacks that share ``<dir>`` and run other
+versions of the package keep their own files. There a file that another
+folder of the package holds with the digest the manifest names, another
+revision's or the one an older Curio placed in ``<dir>/<id>@<major>/models/
+<name>/``, is linked in rather than fetched again.
 
 - The token is read from ``HF_TOKEN`` alone. It goes to Hugging Face's own
   host, never to the host it redirects a large file to, and is never printed
@@ -234,6 +239,21 @@ def _download(opener, url: str, credential: str, target: Path, item, fetch, toke
         partial.unlink(missing_ok=True)
 
 
+def _linked(model_fetch, root: Path, entry: str, item, target: Path) -> bool:
+    """Whether *item*'s file was linked into *target* from another folder of
+    the package under ``--into``'s folder that holds it with its digest
+    (``model_fetch.placed_elsewhere``), so that nothing is fetched."""
+    source = model_fetch.placed_elsewhere(root, entry, item)
+    if source is None:
+        return False
+    try:
+        _make_folder(target.parent, model_fetch.FOLDER_MODE)
+        model_fetch.link_into_place(source, target, item)
+    except OSError:
+        return False
+    return True
+
+
 def _readable_by_all(folder: Path) -> bool:
     mode = folder.stat().st_mode
     return mode & 0o005 == 0o005
@@ -253,7 +273,7 @@ def main(argv=None, *, opener=None, environ=None, shipped_root=None, out=None, e
     parser.add_argument("package", help="the package id, such as model.example.name, or with its major, @1")
     parser.add_argument(
         "--into", metavar="DIR",
-        help="write <DIR>/<package id>@<major>/<entry> instead of the package's own folder: "
+        help="write <DIR>/<package id>@<major>/<revision>/<entry> instead of the package's own folder: "
              "the folder curio.py start --model-weights-dir DIR reads",
     )
     args = parser.parse_args(argv)
@@ -268,7 +288,7 @@ def main(argv=None, *, opener=None, environ=None, shipped_root=None, out=None, e
         if not _readable_by_all(into):
             print(f"Note: {into} is not open to every account, and an isolated node reads the weights "
                   f"there: run chmod 755 {into}.", file=err)
-        root = model_fetch.fetched_root(into, package_id, major)
+        root = model_fetch.fetched_root(into, package_id, major, fetch.revision)
     else:
         root = folder
     entry = root / str(model["entry"])
@@ -283,6 +303,11 @@ def main(argv=None, *, opener=None, environ=None, shipped_root=None, out=None, e
         target = entry / item.path
         if model_fetch.checked_in_place(target, item):
             print(f"  {item.path}: {size_text(target.stat().st_size)}, already here", file=out)
+            present += 1
+            continue
+        if args.into and _linked(model_fetch, root, str(model["entry"]), item, target):
+            print(f"  {item.path}: {size_text(target.stat().st_size)}, already here, "
+                  "linked from another folder of the package", file=out)
             present += 1
             continue
         print(f"  {item.path}: fetching", file=out, flush=True)
