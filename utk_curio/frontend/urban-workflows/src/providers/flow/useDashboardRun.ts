@@ -23,6 +23,7 @@ import type { ReactFlowInstance } from "reactflow";
 import type { useToastContext } from "../ToastProvider";
 import { dashboardRunsApi, type DashboardRunEvent } from "../../services/runs/dashboardRunsApi";
 import { forgetDashboardRunFiles, rememberDashboardRunFiles } from "../../services/runs/dashboardRunFiles";
+import { forgetDashboardMedia } from "../../services/runs/dashboardMedia";
 import { askPage, forgetPageSteps, keepPageResult, pageResultNotKept } from "../../services/runs/dashboardRunSteps";
 import { dashboardSourceNodeIds } from "../../utils/dashboardLayout";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
@@ -347,11 +348,13 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         if ([...sources].some((nodeId) => !savedRef.current?.outputs.has(nodeId))) void start();
     };
 
-    // Leaving the page stops following; what the runs made is not read again.
+    // Leaving the page stops following; what the runs made is not read again,
+    // nor are the files the dashboard's outputs name.
     useEffect(() => () => {
         const run = followedRef.current;
         if (run) { run.done = true; run.controller.abort(); }
         forgetDashboardRunFiles();
+        forgetDashboardMedia();
         forgetPageSteps();
     }, []);
 

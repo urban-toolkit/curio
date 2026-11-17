@@ -5,7 +5,10 @@ poster or the file itself to a signed-in caller, who fetches it with their
 token (the way Simple View already fetches every ``/api/`` image).
 ``<video>`` and ``<audio>`` cannot send a token, so
 ``POST .../link`` hands back a short-lived signed URL for one file, and
-``GET /api/media/<token>`` serves it, with Range, to whoever holds it. A
+``GET /api/media/<token>`` serves it, with Range, or its thumbnail or poster,
+to whoever holds it. A dashboard's page, whose viewers need no sign-in, has
+links of the same kind for the files its tiles' rows name
+(``projects/services.dashboard_media_links``). A
 hosted guest's link names the visitor who asked for it as the names of their
 datasets do (``visitor_copies.visitor_of``), never by the sign-in, and its
 file is read as that visitor's (``visitor_copies.serving_visitor``).
@@ -93,15 +96,22 @@ def signed_media(token: str):
     """One file, to whoever holds a link minted by its owner in the last ten
     minutes, found as the link's account finds it: a hosted guest's as the
     visitor the link names, whatever sign-in the request sends, and one a
-    dashboard viewer's step derived in the folder the link names."""
+    dashboard viewer's step derived in the folder the link names.
+    ``?variant=`` asks for its ``thumb`` or ``poster``, as the media route
+    serves them; the file itself, ``original``, with none."""
     from utk_curio.backend.app.discovery.service import DiscoveryService, _user_by_id
     from utk_curio.backend.app.projects import visitor_copies
 
+    variant = request.args.get("variant") or "original"
+    if variant not in _VARIANTS:
+        return jsonify({"error": f"variant must be one of {', '.join(_VARIANTS)}"}), 400
     claims = media.verify(token)
     user = _user_by_id(claims.get("u")) if claims.get("u") is not None else None
     service = DiscoveryService(claims["k"], user=user, dataflow_id=claims.get("df"))
     with visitor_copies.serving_visitor(claims.get("v")):
         found = media.locate(service, claims["d"], claims["f"], kept=claims.get("kept"))
+        if variant != "original":
+            return _served(media.thumbnail(service, found, variant=variant), "image/jpeg", cache_seconds=0)
         path, mimetype = media.original(found)
     return _served(path, mimetype, cache_seconds=0)
 

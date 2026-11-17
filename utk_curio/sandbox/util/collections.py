@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import os
 import re
+from urllib.parse import parse_qsl
 
 # A catalog item's id, as ``catalogCode.json`` (the frontend's contracts) has
 # it: the sandbox reads no contract file, so this is its copy, which
@@ -105,6 +106,48 @@ def media_url(dataset_id, file_id, variant="thumb", kept=None):
     viewer's step that derived it (``KEPT_MEDIA``)."""
     url = f"/api/datasets/{dataset_id}/media/{file_id}?variant={variant}"
     return f"{url}&kept={kept}" if kept else url
+
+
+#: A URL :func:`media_url` writes: the collection, the file's id, the query.
+_MEDIA_URL_RE = re.compile(r"^/api/datasets/([A-Za-z0-9][A-Za-z0-9._@-]{0,199})/media/([^/?#]+)(?:\?([^#]*))?$")
+
+
+def media_ref(text):
+    """``(dataset_id, file_id, kept)`` of the file *text* names, a URL
+    :func:`media_url` writes, *kept* None for a file no dashboard viewer's
+    step derived; None for any other text."""
+    if not isinstance(text, str) or not text.startswith("/api/datasets/"):
+        return None
+    found = _MEDIA_URL_RE.match(text)
+    if found is None:
+        return None
+    dataset_id, file_id, query = found.groups()
+    if not (_FILE_ID_RE.match(file_id) or DERIVED_ID_RE.match(file_id)):
+        return None
+    kept = dict(parse_qsl(query or "")).get("kept")
+    if kept is not None and not KEPT_NAME_RE.match(kept):
+        return None
+    return dataset_id, file_id, kept
+
+
+def media_refs(value):
+    """Every file the media URLs anywhere in *value*, an output's envelope as
+    ``/get`` sends it, name (:func:`media_ref`): in any column, cell, list,
+    property or part, as a set of ``(dataset_id, file_id, kept)``. A
+    feature's ``geometry`` holds no URL, and is not read."""
+    found = set()
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            ref = media_ref(item)
+            if ref is not None:
+                found.add(ref)
+        elif isinstance(item, dict):
+            stack.extend(each for key, each in item.items() if key != "geometry")
+        elif isinstance(item, (list, tuple)):
+            stack.extend(item)
+    return found
 
 
 def media_urls(dataset_id, file_id, kind, kept=None):

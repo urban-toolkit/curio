@@ -3,9 +3,10 @@ import CSS from 'csstype';
 import { ImageSource, resolveImageSources } from '../../../utils/imageColumns';
 import { backendUrl } from '../../../utils/backendUrl';
 import { apiFetch } from '../../../utils/authApi';
-import { collectionMediaPath, keptOfRow } from '../../../utils/collectionMedia';
+import { collectionMediaPath, collectionMediaRef, mediaPathOfRow } from '../../../utils/collectionMedia';
 import { useAuthedObjectUrl } from '../../../utils/useAuthedObjectUrl';
 import { PLAYER_TELLS_EVERY_MS } from '../../../utils/playerSelection';
+import { dashboardMediaLink, heldOnADashboard } from '../../../services/runs/dashboardMedia';
 
 /**
  * One card per row: every image column of that row side by side, above the
@@ -20,6 +21,10 @@ import { PLAYER_TELLS_EVERY_MS } from '../../../utils/playerSelection';
  * fetches one page of thumbnails, not all of them. A video or recording of a
  * collection plays in its card, and where its player stands goes to
  * `onPlayed`, which Simple View sends as a selection (utils/playerSelection).
+ *
+ * On a dashboard, whose viewers need no sign-in, a file an output of the
+ * dashboard names is read through the dashboard's link to it
+ * (services/runs/dashboardMedia), the cards' images and the players alike.
  */
 
 /** Cards per page. */
@@ -80,12 +85,39 @@ const fieldStyle: CSS.Properties = {
 };
 
 /**
+ * Where a card reads a same-origin image *path*: on a dashboard, through the
+ * dashboard's link to a file an output of it names (`dashboardMediaLink`),
+ * null while the link is asked for; else, and when the dashboard gives no
+ * link, the path itself, read through the canvas's dataflow
+ * (`collectionMediaPath`).
+ */
+function useCardImagePath(path: string | null, dataflowId: string | null): string | null {
+  const onDashboard = path !== null && heldOnADashboard(path);
+  const [linked, setLinked] = useState<{ path: string; url: string | null } | null>(null);
+  useEffect(() => {
+    if (path === null || !onDashboard) return undefined;
+    let cancelled = false;
+    dashboardMediaLink(path)?.then((link) => {
+      if (!cancelled) setLinked({ path, url: link?.url ?? null });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [path, onDashboard]);
+  if (path === null) return null;
+  if (!onDashboard) return collectionMediaPath(path, dataflowId);
+  if (linked?.path !== path) return null;
+  return linked.url ?? collectionMediaPath(path, dataflowId);
+}
+
+/**
  * An `<img>` for one cell. A same-origin `/api/...` image is fetched with the
  * token; see useAuthedObjectUrl. A collection's file is read through the
- * canvas's dataflow (`collectionMediaPath`).
+ * canvas's dataflow (`collectionMediaPath`), or on a dashboard through the
+ * dashboard's link (`useCardImagePath`).
  */
 function FrameImage({ source, alt, dataflowId }: { source: ImageSource; alt: string; dataflowId: string | null }) {
-  const authed = useAuthedObjectUrl(source.kind === 'authed' ? collectionMediaPath(source.path, dataflowId) : null);
+  const authed = useAuthedObjectUrl(useCardImagePath(source.kind === 'authed' ? source.path : null, dataflowId));
   const src = source.kind === 'direct' ? source.src : authed.url;
   if (!src) {
     // Still fetching, or the fetch failed. Hold the slot either way so the
@@ -104,17 +136,19 @@ function FrameImage({ source, alt, dataflowId }: { source: ImageSource; alt: str
   );
 }
 
-/** A collection row that plays: a video or a recording, named by its ids,
- *  and the folder of the dashboard viewer's step that derived it, which its
- *  URLs name (`keptOfRow`). */
-function playable(
-  row: Record<string, unknown>,
-): { datasetId: string; fileId: string; kind: 'video' | 'audio'; kept: string | null } | null {
+/** A collection row that plays: a video or a recording, named by its ids;
+ *  the row's media URL of it (`mediaPathOfRow`), which a dashboard links;
+ *  and the folder of the dashboard viewer's step that derived it, which that
+ *  URL names. */
+function playable(row: Record<string, unknown>): {
+  datasetId: string; fileId: string; kind: 'video' | 'audio'; kept: string | null; mediaPath: string | null;
+} | null {
   const { kind, dataset_id: datasetId, file_id: fileId } = row;
   if ((kind !== 'video' && kind !== 'audio') || typeof datasetId !== 'string' || typeof fileId !== 'string') {
     return null;
   }
-  return { datasetId, fileId, kind, kept: keptOfRow(row, datasetId, fileId) };
+  const mediaPath = mediaPathOfRow(row, datasetId, fileId);
+  return { datasetId, fileId, kind, kept: collectionMediaRef(mediaPath)?.kept ?? null, mediaPath };
 }
 
 const playButtonStyle: CSS.Properties = {
@@ -170,13 +204,16 @@ const playerStyle: CSS.Properties = { width: '100%', display: 'block' };
  * the player closes it is told null.
  *
  * *kept* is the folder of the dashboard viewer's step that derived the file,
- * which the link names, so it plays that step's file.
+ * which the link names, so it plays that step's file. On a dashboard, a file
+ * an output of it names (*mediaPath*, the row's URL of it) plays from the
+ * dashboard's link, asked for again as it lapses.
  */
-function Player({ datasetId, fileId, kind, kept, dataflowId, onTime }: {
+function Player({ datasetId, fileId, kind, kept, mediaPath, dataflowId, onTime }: {
   datasetId: string;
   fileId: string;
   kind: 'video' | 'audio';
   kept: string | null;
+  mediaPath: string | null;
   dataflowId: string | null;
   onTime?: (at: number | null) => void;
 }) {
@@ -201,24 +238,28 @@ function Player({ datasetId, fileId, kind, kept, dataflowId, onTime }: {
   useEffect(() => {
     let cancelled = false;
     const where = kept ? `?kept=${encodeURIComponent(kept)}` : '';
-    apiFetch<{ url: string; expiresIn: number }>(
+    const signed = (): Promise<{ url: string; lapsesAt: number }> => apiFetch<{ url: string; expiresIn: number }>(
       collectionMediaPath(
         `/api/datasets/${encodeURIComponent(datasetId)}/media/${encodeURIComponent(fileId)}/link${where}`,
         dataflowId,
       ),
       { method: 'POST' },
-    )
-      .then((res) => {
-        if (cancelled) return;
-        // A link whose answer gives no life is never taken for lapsed.
-        const life = Number.isFinite(res.expiresIn) ? res.expiresIn * 1000 : Infinity;
-        setLink({ url: `${backendUrl()}${res.url}`, lapsesAt: Date.now() + life, resume: lapse });
+    ).then((res) => {
+      // A link whose answer gives no life is never taken for lapsed.
+      const life = Number.isFinite(res.expiresIn) ? res.expiresIn * 1000 : Infinity;
+      return { url: res.url, lapsesAt: Date.now() + life };
+    });
+    // On a dashboard, the dashboard's link; one it does not give is asked as on a canvas.
+    const onDashboard = mediaPath ? dashboardMediaLink(mediaPath, { variant: 'original', fresh: lapse !== null }) : null;
+    (onDashboard ? onDashboard.then((given) => given ?? signed()) : signed())
+      .then((given) => {
+        if (!cancelled) setLink({ url: `${backendUrl()}${given.url}`, lapsesAt: given.lapsesAt, resume: lapse });
       })
       .catch((err: Error) => !cancelled && setError(err.message || 'This file cannot be played.'));
     return () => {
       cancelled = true;
     };
-  }, [datasetId, fileId, kept, dataflowId, lapse]);
+  }, [datasetId, fileId, kept, mediaPath, dataflowId, lapse]);
 
   if (error) return <div style={{ ...captionStyle, color: '#b42318' }}>{error}</div>;
   if (!link) return <div style={{ ...imgStyle, background: '#f8fafc' }} />;

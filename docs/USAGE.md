@@ -1683,8 +1683,10 @@ the page opens.
   value, and a node that reads a connection key stops with a message. A code node without widgets shows
   its code, read-only.
 - **What a run makes**, on opening the page or after a change, is kept for 7 days and
-  shown to every later viewer with the same values, without running again. After 7 days
-  it is deleted, and the next viewer who needs it runs the nodes again.
+  shown to every later viewer with the same values, without running again. A frame or
+  overlay it draws is kept apart from the ones your own runs draw, which it never
+  changes. After 7 days it is deleted, and the next viewer who needs it runs the nodes
+  again.
 - **A node only a browser runs**, such as an Autark compute on the GPU, runs in each
   viewer's own browser, which needs WebGPU for it. What it makes there, and what the
   nodes below make from it, serve that viewer's page alone, for an hour.
@@ -1698,8 +1700,10 @@ the page opens.
   layout, **Arrange by scenario** puts every tile back in its column.
 - **Sharing**: the page is served with its data inside it, whether `--backend-url` is an
   address or a path such as `/api`, so a viewer needs no account and the saved tiles draw
-  even when the server is unreachable; a change to a control needs the server. Only its
-  owner edits its layout.
+  even when the server is unreachable; a change to a control needs the server. The images
+  and videos a Simple View tile shows come from the server, to a viewer with no account
+  too: the page reads each through a link to that one file, and no other file of yours.
+  Only its owner edits its layout.
 
 Two dashboards cannot be served this way: one whose data is too large to travel with the
 page (25 MB), and one with a pinned Autark tile that loads its own data. Opening either

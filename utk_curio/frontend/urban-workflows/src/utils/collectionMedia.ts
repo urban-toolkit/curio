@@ -47,13 +47,13 @@ export function collectionMediaRef(path: unknown): CollectionMediaRef | null {
   };
 }
 
-/** The folder of the dashboard viewer's step that derived *row*'s file
- *  *fileId* of *datasetId*, as one of the row's media URLs names it; null for
- *  a file no such step derived. */
-export function keptOfRow(row: Record<string, unknown>, datasetId: string, fileId: string): string | null {
+/** The first of *row*'s media URLs that names its file *fileId* of
+ *  *datasetId* (its thumbnail, say), which names the folder of the dashboard
+ *  viewer's step that derived it too; null when none does. */
+export function mediaPathOfRow(row: Record<string, unknown>, datasetId: string, fileId: string): string | null {
   for (const value of Object.values(row)) {
     const ref = collectionMediaRef(value);
-    if (ref && ref.datasetId === datasetId && ref.fileId === fileId && ref.kept) return ref.kept;
+    if (ref && ref.datasetId === datasetId && ref.fileId === fileId) return value as string;
   }
   return null;
 }
