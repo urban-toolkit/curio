@@ -45,6 +45,13 @@ STARTERS = {
         "split_audio(input_0, curio_derived_file, window_seconds=WINDOW_SECONDS, "
         "max_windows_per_recording=MAX_WINDOWS_PER_RECORDING)",
     ),
+    # Its bottom circle, where to cut, is input_1: None when nothing is wired there.
+    "split-video": (
+        "from media_collections import split_video",
+        {"BLOCK_SECONDS": 60.0, "WIDTH": 960, "MAX_FRAMES": 30000},
+        "split_video(input_0, curio_derived_file, input_1, block_seconds=BLOCK_SECONDS, width=WIDTH, "
+        "max_frames=MAX_FRAMES)",
+    ),
     "mosaic-rasters": (
         "from scout_rasters.mosaic import mosaic_collection",
         {},
@@ -53,7 +60,7 @@ STARTERS = {
 }
 #: What each module the starters import offers node code: its ``__all__``.
 OFFERED = {
-    "media_collections": ["sample_video_frames", "split_audio"],
+    "media_collections": ["sample_video_frames", "split_audio", "split_video"],
     "scout_rasters.mosaic": ["mosaic_rasters", "mosaic_collection"],
 }
 
@@ -145,13 +152,28 @@ def folder_collection(tmp_path, package_modules):
     return rows_over
 
 
-def test_the_manifest_validates_and_names_three_nodes():
+def test_the_manifest_validates_and_names_four_nodes():
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
     manifest = load_package_manifest(PACKAGE)
     raw = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
-    assert [t["id"] for t in raw["templates"]] == ["video-frames", "split-audio", "mosaic-rasters"]
+    assert [t["id"] for t in raw["templates"]] == ["video-frames", "split-audio", "split-video", "mosaic-rasters"]
     assert manifest.python_deps["av"] and manifest.python_deps["rasterio"]
+
+
+def test_split_video_has_a_top_circle_and_an_optional_bottom_one():
+    """Split Video's two circles: the collection's rows on top, one edge; where
+    to cut below, which nothing need be wired to (``[0,1]``). A node of two
+    ports takes one edge on each, and the roster says the bottom one may
+    stay empty."""
+    from utk_curio.backend.app.packages.application.templates import _input_arity
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+
+    (template,) = [t for t in load_package_manifest(PACKAGE).templates if t.template_id == "split-video"]
+    assert [port.cardinality for port in template.input_ports] == ["1", "[0,1]"]
+    inputs, capacity = _input_arity(template)
+    assert [(port["min"], port["max"]) for port in inputs] == [(1, 1), (0, 1)]
+    assert capacity == 2
 
 
 def test_media_names_rasterization_and_ships_one_module():
@@ -413,6 +435,256 @@ def test_split_audio_measures_every_channel_and_keeps_them(folder_collection, tm
     assert windows["peak_dbfs"].iloc[0] == pytest.approx(20 * math.log10(0.5), abs=0.3)
     with wave.open(windows["path"].iloc[0]) as clip:
         assert clip.getnchannels() == 2 and clip.getnframes() == 4000
+
+
+# ---------------------------------------------------------------------------
+# Split Video
+# ---------------------------------------------------------------------------
+
+def _clip(path: Path, seconds: float, rate: int = 10, size: tuple[int, int] = (96, 64)) -> None:
+    """A clip *seconds* long at *rate* frames a second, an orange box crossing a
+    dark street, in MPEG-4 Part 2, which every FFmpeg build reads and writes."""
+    import av
+    import numpy as np
+
+    width, height = size
+    with av.open(str(path), "w") as out:
+        stream = out.add_stream("mpeg4", rate=rate)
+        stream.width, stream.height, stream.pix_fmt = width, height, "yuv420p"
+        for index in range(round(seconds * rate)):
+            image = np.full((height, width, 3), 40, dtype=np.uint8)
+            left = (4 * index) % (width - 16)
+            image[20:44, left:left + 16] = (230, 120, 40)
+            for packet in stream.encode(av.VideoFrame.from_ndarray(image, format="rgb24")):
+                out.mux(packet)
+        for packet in stream.encode():
+            out.mux(packet)
+
+
+def _walks(folder_collection, tmp_path: Path, clips: dict[str, float]):
+    """``(rows, helpers)`` for a folder of clips, each ``{name: seconds}``."""
+    root = tmp_path / "walks"
+    root.mkdir()
+    for name, seconds in clips.items():
+        _clip(root / name, seconds)
+    return folder_collection(
+        root, {"id": "walks", "name": "Walks", "kind": "videos", "path": "*", "extensions": ["mp4"]}
+    )
+
+
+def run_split(media, helpers, cuts=None, **settings):
+    """Split Video's code run as the canvas runs it: the collection on its top
+    circle, and *cuts* on its bottom one, or nothing wired there when None,
+    which its code reads as ``input_1`` None."""
+    from utk_curio.sandbox.util.input_names import call_as_node
+
+    body = "\n".join("    " + line for line in node_source("split-video", **settings).splitlines())
+    if cuts is None:
+        return call_as_node(body, dict(helpers), media, [0])
+    return call_as_node(body, dict(helpers), [media, cuts], [0, 1])
+
+
+def _played(path) -> tuple:
+    """``(codec, pixel format, width, height, frame times)`` of a block's file."""
+    import av
+
+    with av.open(str(path)) as video:
+        context = video.streams.video[0].codec_context
+        times = [round(float(frame.time), 3) for frame in video.decode(video=0)]
+        return context.name, context.pix_fmt, context.width, context.height, times
+
+
+def _written(tmp_path: Path) -> list[str]:
+    """The names of the blocks written under the media directory."""
+    return sorted(path.name for path in (tmp_path / "media").rglob("*.mp4"))
+
+
+def test_with_nothing_on_its_bottom_circle_split_video_cuts_every_block_seconds(folder_collection, tmp_path):
+    """Nothing wired below is ``input_1`` None, and each video is cut every
+    BLOCK_SECONDS, the last block what is left. Each block is an H.264 file in
+    yuv420p no wider than its video, whose frames play at their own times from
+    its start, named after the video, where the block starts and ends and the
+    width; its row leads with block, t_s and end_s, where it starts and ends
+    in the video, and Simple View plays it."""
+    media, helpers = _walks(folder_collection, tmp_path, {"corner.mp4": 7.0})
+    video = media.iloc[0]
+    blocks = run_split(media, helpers, BLOCK_SECONDS=2.0)
+    assert list(blocks.columns[:3]) == ["block", "t_s", "end_s"]
+    assert list(blocks["block"]) == [1, 2, 3, 4]
+    assert list(blocks["t_s"]) == [0.0, 2.0, 4.0, 6.0]
+    assert list(blocks["end_s"]) == [2.0, 4.0, 6.0, 7.0]
+    assert list(blocks["duration_s"]) == [2.0, 2.0, 2.0, 1.0]
+    assert list(blocks["file_id"]) == [
+        f"{video['file_id']}@{start}-to{end}w960.mp4"
+        for start, end in ((0, 2000), (2000, 4000), (4000, 6000), (6000, 7000))
+    ]
+    assert set(blocks["kind"]) == {"video"} and set(blocks["video_file_id"]) == {video["file_id"]}
+    assert set(blocks["name"]) == {"corner.mp4"} and set(blocks["dataset_id"]) == {video["dataset_id"]}
+    assert blocks["thumbnail"].str.contains("variant=thumb").all() and blocks["audio_url"].isna().all()
+    for row in blocks.itertuples():
+        codec, pixels, width, height, times = _played(row.path)
+        assert (codec, pixels, width, height) == ("h264", "yuv420p", 96, 64)
+        assert times == [round(k / 10, 3) for k in range(round(row.duration_s * 10))]
+
+
+def test_a_block_keeps_its_videos_fields_and_time(collection, folder_collection, tmp_path):
+    """A block keeps the video's own fields, as a frame does, and its
+    taken_at moves forward by where the block starts."""
+    import pandas as pd
+
+    media, helpers = collection("survey")
+    blocks = run_split(media, helpers, BLOCK_SECONDS=0.5)
+    assert list(blocks["t_s"]) == [0.0, 0.5]
+    assert "year" in blocks.columns  # the video's own field travels with its blocks
+
+    media, helpers = _walks(folder_collection, tmp_path, {"corner.mp4": 3.0})
+    began = pd.Timestamp("2026-10-26 21:03:17.016")
+    blocks = run_split(media.assign(taken_at=began), helpers, BLOCK_SECONDS=1.5)
+    assert list(blocks["taken_at"]) == [began, began + pd.Timedelta(seconds=1.5)]
+
+
+def test_split_video_cuts_where_its_bottom_circle_says_and_keeps_each_cuts_columns(folder_collection, tmp_path):
+    """Each row on the bottom circle is a block: from its t_s to its end_s,
+    else to where the next starts, else to the video's end, in the order of
+    t_s. Its own columns, a street's name say, come right after block, so a
+    card's caption leads with them; a cut's columns that a block has of its
+    own, such as a frame's width, describe another file and stay out."""
+    import pandas as pd
+
+    media, helpers = _walks(folder_collection, tmp_path, {"walk.mp4": 7.0})
+    cuts = pd.DataFrame([
+        {"t_s": 0.0, "street": "N Halsted St", "from": "W Washington St", "to": "W Randolph St"},
+        {"t_s": 4.0, "end_s": 5.0, "street": "N Union Ave", "from": "W Randolph St", "to": "W Lake St"},
+        {"t_s": 2.5, "street": "W Randolph St", "from": "N Halsted St", "to": "N Union Ave"},
+    ]).assign(width=1920, path="frame.jpg")
+    blocks = run_split(media, helpers, cuts, BLOCK_SECONDS=2.0)
+    assert list(blocks.columns[:6]) == ["block", "street", "from", "to", "t_s", "end_s"]
+    assert list(blocks["street"]) == ["N Halsted St", "W Randolph St", "N Union Ave"]
+    assert list(blocks["t_s"]) == [0.0, 2.5, 4.0]
+    assert list(blocks["end_s"]) == [2.5, 4.0, 5.0]
+    assert list(blocks["width"]) == [96, 96, 96] and "frame.jpg" not in set(blocks["path"])
+    assert [len(_played(path)[4]) for path in blocks["path"]] == [25, 15, 10]
+    assert blocks["file_id"].iloc[1].endswith("@2500-to4000w960.mp4")
+
+
+def test_a_cut_with_a_video_file_id_cuts_that_video_and_one_without_every_video(folder_collection, tmp_path):
+    import pandas as pd
+
+    media, helpers = _walks(folder_collection, tmp_path, {"a.mp4": 3.0, "b.mp4": 3.0})
+    a, b = (media.loc[media["name"] == name, "file_id"].iloc[0] for name in ("a.mp4", "b.mp4"))
+    blocks = run_split(media, helpers, pd.DataFrame([{"t_s": 0.0, "video_file_id": a}, {"t_s": 1.0, "video_file_id": a}]))
+    # b is no row's: it gets no block.
+    assert list(zip(blocks["video_file_id"], blocks["t_s"])) == [(a, 0.0), (a, 1.0)]
+    blocks = run_split(media, helpers, pd.DataFrame([{"t_s": 1.0}]))
+    assert sorted(blocks["video_file_id"]) == sorted([a, b]) and set(blocks["t_s"]) == {1.0}
+
+
+EMPTY = object()
+
+
+@pytest.mark.parametrize(("cuts", "settings", "says"), [
+    pytest.param([{"start": 1.0}], {}, "need a t_s column", id="no-t_s"),
+    pytest.param(EMPTY, {}, "hold no row", id="no-row"),
+    pytest.param([{"t_s": "soon"}], {}, "is a number of seconds", id="t_s-not-a-number"),
+    pytest.param([{"t_s": -1.0}], {}, "a block starts at -1 s", id="before-the-start"),
+    pytest.param([{"t_s": 9.0}], {}, "lasts 7.000 s, and a block starts at 9 s", id="past-the-end"),
+    pytest.param([{"t_s": 0.0, "end_s": 3.0}, {"t_s": 2.0}], {}, "overlaps the one from 2 s", id="overlap"),
+    pytest.param([{"t_s": 1.0}, {"t_s": 1.0}], {}, "two blocks start at 1 s", id="same-start"),
+    pytest.param([{"t_s": 1.0, "end_s": 0.5}], {}, "before it starts", id="ends-first"),
+    pytest.param([{"t_s": 1.0, "end_s": 1.05}], {}, "shorter than one of its frames", id="under-a-frame"),
+    pytest.param([{"t_s": 0.0, "video_file_id": "ffffffffffffffff"}], {}, "No row of the cuts", id="no-video"),
+    pytest.param(None, {"MAX_FRAMES": 50}, "hold about 70 frames", id="max-frames"),
+    pytest.param(None, {"BLOCK_SECONDS": 0}, "BLOCK_SECONDS is the length", id="no-block-length"),
+    pytest.param(None, {"WIDTH": 1}, "WIDTH is the widest", id="too-narrow"),
+])
+def test_split_video_stops_before_it_writes_a_block(folder_collection, tmp_path, cuts, settings, says):
+    import re
+
+    import pandas as pd
+
+    media, helpers = _walks(folder_collection, tmp_path, {"corner.mp4": 7.0})
+    table = pd.DataFrame(columns=["t_s"]) if cuts is EMPTY else None if cuts is None else pd.DataFrame(cuts)
+    with pytest.raises(ValueError, match=re.escape(says)):
+        run_split(media, helpers, table, **settings)
+    assert _written(tmp_path) == []
+
+
+def test_split_video_names_a_video_not_on_this_machine(collection, tmp_path):
+    media, helpers = collection("survey")
+    media = media.copy()
+    media["path"] = None
+    with pytest.raises(ValueError, match="cache the collection's files first"):
+        run_split(media, helpers)
+    assert _written(tmp_path) == []
+
+
+def _no_length(folder_collection, tmp_path: Path):
+    root = tmp_path / "clips"
+    root.mkdir()
+    _raw_mjpeg(root / "raw.mjpeg")
+    return folder_collection(
+        root, {"id": "clips", "name": "Clips", "kind": "videos", "path": "*", "extensions": ["mjpeg"]}
+    )
+
+
+def test_a_video_that_gives_no_length_is_cut_as_its_frames_come(folder_collection, tmp_path):
+    """Raw MJPEG says nothing of its length, 25 frames at 25 a second: its
+    blocks are made as its frames come, the last one what is left."""
+    media, helpers = _no_length(folder_collection, tmp_path)
+    blocks = run_split(media, helpers, BLOCK_SECONDS=0.4)
+    assert list(blocks["t_s"]) == [0.0, 0.4, 0.8]
+    assert [len(_played(path)[4]) for path in blocks["path"]] == [10, 10, 5]
+
+
+def test_a_cut_past_the_end_of_a_video_that_gives_no_length_stops_the_node_at_its_end(folder_collection, tmp_path):
+    import pandas as pd
+
+    media, helpers = _no_length(folder_collection, tmp_path)
+    with pytest.raises(ValueError, match="has no frame from 5 s on, where a block starts"):
+        run_split(media, helpers, pd.DataFrame([{"t_s": 0.0}, {"t_s": 5.0}]))
+
+
+def test_past_max_frames_a_video_that_gives_no_length_stops_and_its_half_written_block_goes(
+    folder_collection, tmp_path,
+):
+    """Its frames cannot be counted before it is read: the 13th of MAX_FRAMES
+    12 stops the node, and the block it would have gone in is removed."""
+    media, helpers = _no_length(folder_collection, tmp_path)
+    with pytest.raises(ValueError, match="re-encodes in one run"):
+        run_split(media, helpers, BLOCK_SECONDS=0.4, MAX_FRAMES=12)
+    # Block 1, ten frames, was done; block 2 had two when the 13th frame came.
+    assert _written(tmp_path) == ["0-to400w960.mp4"]
+
+
+def test_the_same_blocks_write_the_same_files_and_another_end_or_width_others(folder_collection, tmp_path):
+    media, helpers = _walks(folder_collection, tmp_path, {"corner.mp4": 4.0})
+    first = run_split(media, helpers, BLOCK_SECONDS=2.0)
+    assert list(run_split(media, helpers, BLOCK_SECONDS=2.0)["path"]) == list(first["path"])
+    longer = run_split(media, helpers, BLOCK_SECONDS=3.0)
+    narrower = run_split(media, helpers, BLOCK_SECONDS=2.0, WIDTH=48)
+    # Each starts at 0, and the files differ by the block's end or the width.
+    assert len({first["path"].iloc[0], longer["path"].iloc[0], narrower["path"].iloc[0]}) == 3
+    assert len({*first["path"], *longer["path"], *narrower["path"]}) == 6
+    assert _played(narrower["path"].iloc[0])[2:4] == (48, 32)
+    assert _played(first["path"].iloc[0])[2:4] == (96, 64)
+
+
+def test_a_tail_shorter_than_a_frame_is_the_last_blocks(folder_collection, tmp_path):
+    """2.1 s cut every 2.05 s leaves 0.05 s, half a frame: no block of its own."""
+    media, helpers = _walks(folder_collection, tmp_path, {"corner.mp4": 2.1})
+    blocks = run_split(media, helpers, BLOCK_SECONDS=2.05)
+    assert list(blocks["t_s"]) == [0.0] and list(blocks["duration_s"]) == [2.1]
+    assert len(_played(blocks["path"].iloc[0])[4]) == 21
+
+
+def test_the_blocks_of_a_video_with_a_position_keep_it(folder_collection, tmp_path):
+    import geopandas as gpd
+
+    media, helpers = _walks(folder_collection, tmp_path, {"corner.mp4": 3.0})
+    placed = gpd.GeoDataFrame(media, geometry=gpd.points_from_xy([-87.6475], [41.8842]), crs="EPSG:4326")
+    blocks = run_split(placed, helpers, BLOCK_SECONDS=1.5)
+    assert isinstance(blocks, gpd.GeoDataFrame) and blocks.crs == placed.crs
+    assert list(blocks.geometry.x) == [-87.6475, -87.6475]
 
 
 def _tile(path: Path, x0: float, values, nodata=None) -> None:
