@@ -460,6 +460,9 @@ function CodeEditor({
             ),
             resolveNodeDisplayLabel(data),
             wiredSlotsRef.current,
+            // While the run waits, how far what the node reads has downloaded
+            // on its first use, as a run on the server says it (useServerRun).
+            (message: string) => setOutputCallback({ code: "exec", content: message }),
         );
     }, [replacedCodeDirty]);
 

@@ -66,25 +66,90 @@ function describeFailure(error: any, url: string, sentAt: number): string {
     return summary;
 }
 
+/** How long a run waits before it first asks how far its node's downloads
+ *  have come, and then between two asks: a run answered sooner asks nothing. */
+export const PROGRESS_ASK_MS = 1000;
+
+/** The id a run is posted with, which its asks of its progress name. */
+function newProgressId(): string {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+/**
+ * Ask the backend, every PROGRESS_ASK_MS while a run waits, how far the
+ * downloads on first use of what its node reads have come
+ * (`GET <path>/progress?play=<progressId>`), and hand each new message to
+ * *show*: an empty one once they are over. Returns what stops the asking.
+ */
+function askProgress(path: string, progressId: string, show: (message: string) => void): () => void {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let shown = "";
+    const ask = async () => {
+        timer = null;
+        try {
+            const response = await fetch(
+                `${backendUrl()}${path}/progress?play=${encodeURIComponent(progressId)}`,
+                { headers: requestHeaders(getToken()) },
+            );
+            // A backend that answers no such ask is asked no more.
+            if (!response.ok) stopped = true;
+            const answer = stopped ? null : await response.json();
+            const message = typeof answer?.message === "string" ? answer.message : "";
+            if (!stopped && message !== shown) {
+                shown = message;
+                show(message);
+            }
+        } catch {
+            // An ask that did not get through: the next one tries again.
+        }
+        if (!stopped) timer = setTimeout(ask, PROGRESS_ASK_MS);
+    };
+    timer = setTimeout(ask, PROGRESS_ASK_MS);
+    return () => {
+        stopped = true;
+        if (timer !== null) clearTimeout(timer);
+    };
+}
+
 /** POST one node run to *path* and hand its reply to *onReply*, or a sentence
- *  saying why it failed to *onFailure*. */
+ *  saying why it failed to *onFailure*. With *onProgress*, while the run
+ *  waits, each new word of how far its node's downloads on first use have
+ *  come is handed to it (an empty one once they are over), until the run is
+ *  answered. */
 export function runNodeOnBackend(
     path: "/processPythonCode" | "/processJavaScriptCode",
     body: Record<string, unknown>,
     nodeId: string,
     onReply: (json: any) => void,
     onFailure: (message: string) => void,
+    onProgress?: (message: string) => void,
 ): void {
     const url = backendUrl() + path;
     const sentAt = performance.now();
+    const progressId = onProgress ? newProgressId() : null;
+    let answered = false;
+    const stopAsking = progressId && onProgress
+        ? askProgress(path, progressId, (message) => { if (!answered) onProgress(message); })
+        : () => undefined;
+    const settle = () => {
+        answered = true;
+        stopAsking();
+    };
     countOpenRun(nodeId, 1);
     fetch(url, {
         method: "POST",
-        body: JSON.stringify(body),
+        body: JSON.stringify(progressId ? { ...body, progressId } : body),
         headers: requestHeaders(getToken(), { "Content-type": "application/json; charset=UTF-8" }),
     })
         .then(readReply)
-        .then(onReply)
-        .catch((error: any) => onFailure(describeFailure(error, url, sentAt)))
+        .then((json) => {
+            settle();
+            onReply(json);
+        })
+        .catch((error: any) => {
+            settle();
+            onFailure(describeFailure(error, url, sentAt));
+        })
         .finally(() => countOpenRun(nodeId, -1));
 }
