@@ -27,6 +27,7 @@ from utk_curio.backend.tests.test_agents.test_document_validation import (
     AUTK,
     VEGA,
     _flood_depth_map,
+    _gps_fixes_map,
     _shipped_autk_documents,
 )
 from utk_curio.backend.tests.test_agents.test_verified_rounds import _drive, _Exec
@@ -139,6 +140,19 @@ class TestTheProjection:
         not declare is dropped from the reply."""
         reply = rs.autk_reply_schema(flavor)
         document = _flood_depth_map(colorMapRange=[-2, 2], colorMapCenter=0, colorMapReverse=True)
+        encoded, dropped = reply.encode(document)
+        assert dropped == []
+        assert jsonschema.Draft202012Validator(reply.schema).is_valid(encoded)
+        assert json.loads(reply.decode(json.dumps(encoded))) == document
+        assert document_validation.validate(AUTK, json.dumps(document))["status"] == "valid"
+
+    def test_a_layers_point_size_is_written_and_read_back(self, flavor):
+        """A constrained reply keeps autk-grammar 4.5.0's ``pointSize``, the
+        radius of a points layer's points in meters. Every projected object is
+        closed, so a key the vendored schema does not declare is dropped from
+        the reply."""
+        reply = rs.autk_reply_schema(flavor)
+        document = _gps_fixes_map(pointSize=2)
         encoded, dropped = reply.encode(document)
         assert dropped == []
         assert jsonschema.Draft202012Validator(reply.schema).is_valid(encoded)

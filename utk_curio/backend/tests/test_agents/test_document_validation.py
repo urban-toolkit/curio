@@ -67,6 +67,15 @@ def _flood_depth_map(**options) -> dict:
     }]}}
 
 
+def _gps_fixes_map(**options) -> dict:
+    """A map of one points layer, GPS fixes drawn in one color, with *options*
+    added to the layer."""
+    return {"map": {"layerRefs": [{
+        "dataRef": "input_0", "title": "GPS fixes", "color": "#f28e2b",
+        **options,
+    }]}}
+
+
 class TestVegaLite:
     def test_the_owners_spec_is_invalid_and_the_message_names_the_property(self):
         verdict = dv.validate(VEGA, OWNERS_VEGA)
@@ -209,6 +218,20 @@ class TestAutkGrammar:
         assert verdict["status"] == dv.STATUS_INVALID
         assert verdict["detail"].startswith("map.layerRefs[0]: ")
         assert "colorMapDomain" in verdict["detail"]
+
+    def test_a_points_layer_takes_a_point_size_in_meters(self):
+        """autk-grammar 4.5.0's ``pointSize`` is the radius of each point of a
+        points layer, in meters on the ground."""
+        assert dv.validate(AUTK, json.dumps(_gps_fixes_map(pointSize=2))) == {"status": dv.STATUS_VALID}
+
+    @pytest.mark.parametrize("value", [0, -1, "2"], ids=["zero", "negative", "text"])
+    def test_a_point_size_is_a_number_above_zero(self, value):
+        """A radius of 0 or less, or one written as text, is refused where it
+        is. Keys the schema does not name are allowed, so under a schema
+        without ``pointSize`` any value passed."""
+        verdict = dv.validate(AUTK, json.dumps(_gps_fixes_map(pointSize=value)))
+        assert verdict["status"] == dv.STATUS_INVALID
+        assert verdict["detail"].startswith("map.layerRefs[0].pointSize: ")
 
     def test_at_most_five_complaints_are_reported(self):
         grammar = {"map": {"layerRefs": [{} for _ in range(8)]}}

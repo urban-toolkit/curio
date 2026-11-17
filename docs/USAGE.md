@@ -1473,8 +1473,12 @@ a table the document loads. Two layers of one map cannot have the same title.
 ```
 
 A layer can also be drawn in one `color` (`"#d62728"`), with no legend. A
-line layer takes a `width` in meters, and a polygon layer a `stroke` color, or
-`"stroke": false` for no outline. A raster layer takes `colorMapReverse` to
+line layer takes a `width` in the map's planar units, about three quarters of
+a meter on the ground at Chicago, and a polygon layer a `stroke` color, or
+`"stroke": false` for no outline. A points layer takes a `pointSize`, the
+radius of each point in meters on the ground: `"pointSize": 2` draws each
+point as a disc 4 m across, where without it a point is a disc 64 planar units
+in radius, about 96 m across at Chicago. A raster layer takes `colorMapReverse` to
 run its scheme from its highest value to its lowest, `colorMapCenter` to put a
 value at the middle of its scheme, and `transferFunction` for how opaque its
 cells are; every cell with a value is opaque unless it says otherwise. A
