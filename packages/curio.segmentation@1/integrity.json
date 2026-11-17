@@ -1,7 +1,7 @@
 {
   "sha256": {
-    "README.md": "83637c3b48ba52f962e98ebdb3becfedd0d7dd3e11cc38c749e644c315711ff1",
+    "README.md": "eefc7e34d28f32def05a2214097864274a3740e79b19de96ce883e33804ea411",
     "manifest.json": "add0619361128eb1b49ea3e6e89720014e787253dcfb76353a852a5bfc734e98",
-    "sources/semantic_segmentation.py": "4b6ffc4b39a48a704e4423441061181f34655e67ed20c5c144f46dc32ff1f818"
+    "sources/semantic_segmentation.py": "c2688447f89ea34e943b9338e9c40e91d6530de3dfe6a4a6533bca60d28dbd75"
   }
 }
