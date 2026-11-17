@@ -23,11 +23,14 @@
  * request's header, a request that names the dataflow itself included, and in
  * its room's socket's query. Until that answer the canvas names the dataflow,
  * on the reads of its load, which any process answers, and its room's socket
- * waits for it (`dataflowNameKnown`). Ids in paths and bodies are the
- * dataflow's, and a dashboard names its own route's dataflow. A request sent
- * once the page has left the canvas, a node's outcome as its canvas closes,
- * names the dataflow itself: the record it writes is a file beside the copy,
- * which any process writes.
+ * waits for it: `ProjectLoader` marks a hosted guest's load
+ * (`awaitDataflowName`), and the socket opens once the name is known
+ * (`dataflowNameKnown`). An account's load is not marked, as its answer names
+ * no copy: its socket opens at once, apart from the load. Ids in paths and
+ * bodies are the dataflow's, and a dashboard names its own route's dataflow.
+ * A request sent once the page has left the canvas, a node's outcome as its
+ * canvas closes, names the dataflow itself: the record it writes is a file
+ * beside the copy, which any process writes.
  *
  * Every client writes the token's header here and nowhere else
  * (`tests/utils/authorizationHeaderByHand.test.ts`), so none sends the
@@ -85,9 +88,9 @@ function changed(): void {
 }
 
 /**
- * The canvas starts loading *dataflow* (`ProjectLoader`): until the load
- * answers with the id the dataflow is named by (`nameDataflow`), or ends
- * (`releaseDataflowName`), its room's socket waits (`dataflowNameKnown`).
+ * A hosted guest's canvas starts loading *dataflow* (`ProjectLoader`): until
+ * the load answers with the id the dataflow is named by (`nameDataflow`), or
+ * ends (`releaseDataflowName`), its room's socket waits (`dataflowNameKnown`).
  * What the page already knew of the dataflow's name stays meanwhile.
  */
 export function awaitDataflowName(dataflow: string): void {

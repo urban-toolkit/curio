@@ -1,13 +1,14 @@
 /**
- * ProjectLoader starts a canvas's load of a dataflow by making the room's
- * socket wait for the id the page names the dataflow by
+ * ProjectLoader starts a hosted guest's load of a dataflow by making the
+ * room's socket wait for the id the page names the dataflow by
  * (`awaitDataflowName`, `utils/requestHeaders.ts`), before it pins the
- * dataflow, which the room follows: for a hosted guest on an example that is
- * the guest's own copy's id, which the load's answer gives
- * (`useWorkflowOperations.loadProject`), and which the server keeps on the
- * backend process that id names. So no socket ever opens naming the example.
- * However the load ends, answered, failed, from the link, a served
- * dashboard's or left, the socket waits no more.
+ * dataflow, which the room follows: on an example that is the guest's own
+ * copy's id, which the load's answer gives (`useWorkflowOperations.loadProject`),
+ * and which the server keeps on the backend process that id names. So no
+ * guest's socket opens naming the example. However the load ends, answered,
+ * failed, from the link, a served dashboard's or left, the socket waits no
+ * more. An account's load names no copy: its socket opens at once, apart
+ * from the load.
  *
  * The helper is loaded in each test, so a checkout without it fails each test
  * on its own.
@@ -22,7 +23,12 @@ const mockLoadTrill = jest.fn();
 const mockKnownWhenPinned: boolean[] = [];
 
 let mockRouteId = "new";
+/** Whether the signed-in user is a hosted guest (`useHostedGuest`). */
+let mockHostedGuest = true;
 
+jest.mock("../../components/apiSettings/useHostedGuest", () => ({
+  useHostedGuest: () => mockHostedGuest,
+}));
 jest.mock("react-router-dom", () => ({
   useParams: () => ({ id: mockRouteId }),
   useNavigate: () => jest.fn(),
@@ -84,12 +90,13 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockKnownWhenPinned.length = 0;
   mockRouteId = ROUTE_ID;
+  mockHostedGuest = true;
   mockLoadTrill.mockReturnValue({ nodes: SPEC.dataflow.nodes, edges: [] });
 });
 
 afterEach(() => names().resetDataflowNames?.());
 
-test("the socket waits from before the dataflow is pinned until its load ends", async () => {
+test("a hosted guest's socket waits from before the dataflow is pinned until its load ends", async () => {
   let answer!: (value: unknown) => void;
   mockLoadProject.mockImplementation(() => new Promise((resolve) => {
     answer = resolve;
@@ -136,6 +143,17 @@ test("a load the page leaves lets the socket go on", async () => {
 
   unmount();
 
+  expect(names().dataflowNameKnown(ROUTE_ID)).toBe(true);
+});
+
+test("an account's socket waits for nothing: it opens at once, apart from the load", async () => {
+  mockHostedGuest = false;
+  mockLoadProject.mockImplementation(() => new Promise(() => {}));
+
+  renderLoader();
+
+  expect(mockKnownWhenPinned).toEqual([true]);
+  await waitFor(() => expect(mockLoadProject).toHaveBeenCalled());
   expect(names().dataflowNameKnown(ROUTE_ID)).toBe(true);
 });
 

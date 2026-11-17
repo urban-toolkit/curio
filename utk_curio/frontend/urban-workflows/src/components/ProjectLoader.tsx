@@ -43,6 +43,7 @@ import { dashboardRefusal, getEmbeddedDashboard } from "../standalone/dashboardP
 import { mayEditServedDashboard } from "../standalone/servedDashboardAccess";
 import { setOpenDataflow } from "../services/dataflowReads";
 import { awaitDataflowName, releaseDataflowName } from "../utils/requestHeaders";
+import { useHostedGuest } from "./apiSettings/useHostedGuest";
 import { ProjectLoadStateContext, type ProjectLoadState } from "./projectLoadState";
 
 export { useProjectLoadState, type ProjectLoadState } from "./projectLoadState";
@@ -96,6 +97,11 @@ export const ProjectLoader: React.FC<{
   // on the server depends on the signed-in user, which can arrive in between.
   const attachLatestRunRef = useRef(attachLatestRun);
   attachLatestRunRef.current = attachLatestRun;
+  // A hosted guest's load may answer with the guest's own copy of the
+  // dataflow, which the canvas names from then on (utils/requestHeaders.ts).
+  const hostedGuest = useHostedGuest();
+  const hostedGuestRef = useRef(hostedGuest);
+  hostedGuestRef.current = hostedGuest;
   const { loadTrill } = useCode();
   // Warn + auto-install missing Python deps. SECURITY: only called for the
   // OWNER's own project below — never for a foreign/shared spec, since the
@@ -176,11 +182,12 @@ export const ProjectLoader: React.FC<{
     loaded.current = id;
     closeEveryCategory();
 
-    // The room's socket waits for the load's answer, which names the id the
-    // canvas names this dataflow by: a hosted guest's own copy's, kept on
-    // the backend process that id names (utils/requestHeaders.ts). Before the
-    // id is pinned below, which the room follows.
-    awaitDataflowName(id);
+    // A hosted guest's room's socket waits for the load's answer, which names
+    // the id the canvas names this dataflow by: the guest's own copy's, kept
+    // on the backend process that id names (utils/requestHeaders.ts). Before
+    // the id is pinned below, which the room follows. An account's answer
+    // names no copy, so its socket opens at once, apart from the load.
+    if (hostedGuestRef.current) awaitDataflowName(id);
     // Pin the project id immediately with an empty lockfile so the palette
     // filter knows we're in a project; loadProject below will replace the
     // package set via setPackages → projectPackagesStore.
@@ -386,8 +393,8 @@ export const ProjectLoader: React.FC<{
       // caught a moment earlier, which would be a wipe rather than a fork.
     })().finally(() => {
       settled = true;
-      // A load that named nothing (from the link, refused, a served
-      // dashboard's): the socket waits no more, and names the dataflow.
+      // A hosted guest's load that named nothing (from the link, refused, a
+      // served dashboard's): the socket waits no more, and names the dataflow.
       releaseDataflowName(id);
       settleProjectLoad(id);
     });

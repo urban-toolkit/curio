@@ -12,8 +12,9 @@
  * several backend processes sends the socket to the process that owns it. A
  * hosted guest's canvas of an example names its own copy there, the room it
  * joins, which the server keeps on the process the copy's id names: a
- * dataflow the canvas is loading gets its socket once its load has answered
- * with the id the page names it by (``dataflowNameKnown``).
+ * dataflow a hosted guest's canvas is loading gets its socket once its load
+ * has answered with the id the page names it by (``dataflowNameKnown``), and
+ * a socket the room refused opens again when that id changes.
  *
  * Identity is anchored in the backend Bearer token sent through the
  * Socket.IO ``auth`` handshake. We never trust user-supplied identity
@@ -294,9 +295,11 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     // The id the room's events name, once the join answered: the dataflow's,
     // or a hosted guest's own copy's.
     const roomIdRef = useRef<string | undefined>(undefined);
-    // The dataflow whose room refused this tab: no socket is opened for it
-    // again until another dataflow opens.
+    // The dataflow whose room refused this tab, and the id its socket named it
+    // by: no socket is opened for it again until another dataflow opens, or
+    // the page names this one by another id (a hosted guest's copy's).
     const refusedProjectRef = useRef<string | undefined>(undefined);
+    const refusedNameRef = useRef<string | undefined>(undefined);
     const remoteHandlersRef = useRef<Map<string, Set<RemoteHandler>>>(new Map());
     const docProviderRef = useRef<DataflowDocProvider | null>(null);
 
@@ -418,8 +421,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                         } else if (ack && ack.ok === false && socketRef.current === socket) {
                             // Refused: this tab is not in the room, so it keeps
                             // no socket for it. Nothing is retried for the
-                            // same dataflow.
+                            // same dataflow by the same name.
                             refusedProjectRef.current = projectId;
+                            refusedNameRef.current = socketNameRef.current;
                             closeSocket();
                         }
                     },
@@ -572,9 +576,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     // sid's locks, emits ``user_left`` to the old room and clears its
     // presence in the doc, so there is nothing else to send first.
     //
-    // A dataflow the canvas is loading has no socket until its load answers
-    // with the id the page names it by (``dataflowNameKnown``): a hosted
-    // guest's copy is kept on the process its own id names, and a socket
+    // A dataflow a hosted guest's canvas is loading has no socket until its
+    // load answers with the id the page names it by (``dataflowNameKnown``):
+    // the guest's copy is kept on the process its own id names, and a socket
     // that named the dataflow would reach another. The id changing, the
     // socket opens again by the new one.
     useEffect(() => {
@@ -589,8 +593,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
                 return;
             }
             if (nextId === prevId && socketRef.current && socketNameRef.current === dataflowName(nextId)) return;
-            // The room refused this tab: it stays out until another dataflow opens.
-            if (nextId === refusedProjectRef.current) return;
+            // The room refused this tab: it stays out until another dataflow
+            // opens, or the page names this one by another id.
+            if (nextId === refusedProjectRef.current && dataflowName(nextId) === refusedNameRef.current) return;
             if (!dataflowNameKnown(nextId)) {
                 // The socket of the dataflow before it closes meanwhile.
                 if (nextId !== prevId) closeSocket();
