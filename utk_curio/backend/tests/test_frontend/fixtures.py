@@ -788,11 +788,12 @@ def loaded_workflow(
         "H3,H4",
     )
     token = stub_result["token"]
-    cache_bucket_collections(current_server, token, declared_bucket_collections(wf_data))
     with fetched_weights_planted(current_server, token, declared_stand_ins(wf_data)):
         upload_workflow(
             workflow_page, workflow_frontend, seeded_tmp.name, spec.nodes_count,
         )
+        # Once the dataflow is open, as a person caches a collection it reads.
+        cache_bucket_collections(current_server, token, declared_bucket_collections(wf_data))
         request.cls.spec = spec
         request.cls.page = workflow_page
         # The ground-truth run resolves datasets as this user too, so the files a
