@@ -14,9 +14,14 @@ keeps at most :data:`MAX_KEPT_BYTES` of what its viewers made; past it the
 least recently used go. What the owner's and the editors' runs made
 (``made_by``) is bounded by its days alone: their open canvases show it. An
 output goes with its artifacts: the sandbox forgets the session that made them
-(``common/kept_sessions.py``).
+(``common/kept_sessions.py``); the files a viewer's step derived, in that
+step's own folder (``media_dirs.derived_root``), go once no kept output names
+the folder: its step's, or a later step's that read it and so may hand its
+rows on (``media_folders``, :func:`forget_kept_media`).
 The sweep runs every :data:`PRUNE_INTERVAL_HOURS` (:func:`start_prune_scheduler`),
-at the end of each run, and at the first start after a restart.
+at the end of each run, and at the first start after a restart. Every
+:data:`PRUNE_INTERVAL_HOURS` it also removes a step's folder that no kept
+output names and nothing has written in for an hour (:func:`sweep_kept_media`).
 
 An output built on what one tab's browser sent is kept for that tab alone
 (``private_to``, the digest of its run's token), for :data:`TAB_OWN_HOURS`.
@@ -557,15 +562,19 @@ def kept_output(project_id: str, key: str, private_to: Optional[str] = None) -> 
 def keep(
     project_id: str, node_id: str, key: str, session_id: str, output: dict,
     private_to: Optional[str] = None, made_by: str = MADE_BY_VIEWER,
+    media_folders=None,
 ) -> list:
     """Keep a step's output under *key*, with what its session made, as one
-    *made_by* made; its artifact ids."""
+    *made_by* made; its artifact ids. *media_folders* are the folders of the
+    viewers' steps besides its own whose files its rows may name, which stay
+    while it does (:func:`forget_kept_media`)."""
     try:
         described = describe_session(session_id)
     except Exception:  # noqa: BLE001 - the output is kept with what is known of it
         described = {}
     path = str(output.get("path") or "")
     ids = [str(i) for i in described.get("ids") or []] or [path]
+    folders = json.dumps(sorted(set(media_folders))) if media_folders else None
     # Dated by the clock its lookup and its sweep read.
     now = naive_utc_now()
 
@@ -574,25 +583,167 @@ def keep(
             project_id=project_id, node_id=node_id, step_key=key, session_id=session_id,
             output=json.dumps(output), output_path=path, artifact_ids=json.dumps(ids),
             size_bytes=int(described.get("bytes") or 0), private_to=private_to, made_by=made_by,
-            created_at=now, used_at=now,
+            media_folders=folders, created_at=now, used_at=now,
         ))
 
     commit_with_retry(_apply)
     return ids
 
 
+#: A viewer's step's folder that no kept output names goes once nothing has
+#: been written in it for this long (:func:`sweep_kept_media`): a step still
+#: running has kept no output yet, and one runs for minutes at most.
+KEPT_MEDIA_GRACE_SECONDS = 60 * 60
+
+
+def _media_of(session_id: str, made_by: str, media_folders: Optional[str]) -> set:
+    """The folders of the viewers' steps whose files the rows of one kept
+    output may name (``media_dirs.derived_root``): its own step's, when a
+    viewer's step made it, and those it was kept naming, the ones the outputs
+    its step read name (:func:`folders_named_by`)."""
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
+
+    named = {media_dirs.kept_media_name(session_id)} if made_by == MADE_BY_VIEWER else set()
+    try:
+        named.update(str(name) for name in json.loads(media_folders or "[]"))
+    except (TypeError, ValueError):
+        log.warning("a kept output's folders could not be read: %r", media_folders)
+    return named
+
+
+def _named_folders(query) -> set:
+    """Every folder the kept outputs of *query* name (:func:`_media_of`)."""
+    named: set = set()
+    for session_id, made_by, media_folders in query.with_entities(
+        KeptStepOutput.session_id, KeptStepOutput.made_by, KeptStepOutput.media_folders,
+    ).all():
+        named |= _media_of(session_id, made_by, media_folders)
+    return named
+
+
+def folders_named_by(project_id: str, names) -> set:
+    """The folders of the viewers' steps that the rows of the outputs *names*,
+    kept on *project_id*, may name: what the rows of a step that reads them
+    may name too, since a step hands on rows it read (a filter, a join). A
+    name no kept output holds, a saved output's, names none."""
+    names = [str(name) for name in names or () if name]
+    if not names:
+        return set()
+    holding = db.or_(
+        KeptStepOutput.output_path.in_(names),
+        *[KeptStepOutput.artifact_ids.contains(json.dumps(name)) for name in names],
+    )
+    return _named_folders(KeptStepOutput.query.filter(KeptStepOutput.project_id == project_id).filter(holding))
+
+
+def _viewers_media(entries) -> list:
+    """``(project_id, folders)`` of the *entries* a viewer's step made: the
+    folders their rows may name (:func:`_media_of`), read before they go."""
+    return [
+        (entry.project_id, _media_of(entry.session_id, entry.made_by, entry.media_folders))
+        for entry in entries if entry.made_by == MADE_BY_VIEWER
+    ]
+
+
+def forget_kept_media(gone, *, user_key: Optional[str] = None) -> None:
+    """Remove the folders of the viewers' steps that the kept outputs that
+    went named, *gone* being their ``(project_id, folders)``
+    (:func:`_viewers_media`), with the files the steps derived, but a folder
+    an output left on the dataflow names: a step's output can go before the
+    output of a later step that handed on its rows, and that one's rows still
+    read the files. In *user_key*'s media folder when given, else in that of
+    each dataflow's owner, the shared guest's for a hosted guest's copy or new
+    dataflow, which has no row. Best effort: a sweep never fails on it."""
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
+
+    by_dataflow: dict = {}
+    for project_id, folders in gone or ():
+        by_dataflow.setdefault(project_id, set()).update(folders)
+    for project_id, folders in by_dataflow.items():
+        try:
+            still = _named_folders(KeptStepOutput.query.filter(KeptStepOutput.project_id == project_id))
+            key = user_key or _media_owner(project_id)
+            media_dirs.forget_kept(key, sorted(folders - still))
+        except Exception:  # noqa: BLE001 - the files stay, and nothing fails
+            log.warning("could not remove what the viewers' steps of %s derived", project_id)
+            try:
+                db.session.rollback()
+            except Exception:  # noqa: BLE001 - no database to roll back
+                pass
+
+
+def sweep_kept_media(now: Optional[float] = None) -> int:
+    """Remove the folder of every viewer's step, in every account's media
+    folder, that no kept output names and nothing has written in for
+    :data:`KEPT_MEDIA_GRACE_SECONDS`, with what the step derived: the folder
+    of a step whose output was never kept (the backend stopped between the
+    step's write and its keep), or of entries that went without it (a
+    dataflow whose row was dropped, its spec file gone). *now* is a time as
+    ``time.time()`` gives it. Returns how many went."""
+    import shutil
+    import time
+
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
+
+    named = _named_folders(KeptStepOutput.query)
+    cutoff = (time.time() if now is None else now) - KEPT_MEDIA_GRACE_SECONDS
+    gone = 0
+    for folder in media_dirs.kept_folders():
+        if folder.name in named or media_dirs.last_written(folder) > cutoff:
+            continue
+        shutil.rmtree(folder, ignore_errors=True)
+        gone += 1
+    return gone
+
+
+def sweep_kept_media_quietly() -> None:
+    """:func:`sweep_kept_media`, logging a failure rather than raising it."""
+    try:
+        sweep_kept_media()
+    except Exception:  # noqa: BLE001 - the next sweep tries again
+        log.exception("could not sweep the viewers' steps' folders")
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001 - no database to roll back
+            pass
+
+
+def _media_owner(project_id: str) -> str:
+    """The store whose media folder holds what the viewers' steps on
+    *project_id* derived: its owner's, as the steps run as the owner, or the
+    shared guest's for a hosted guest's copy or new dataflow."""
+    from utk_curio.backend.app.common.user_storage import GUEST_KEY
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.projects.services import _owner_user_dir_key
+
+    project = db.session.get(Project, project_id)
+    return _owner_user_dir_key(project) if project is not None else GUEST_KEY
+
+
+def viewers_media(project_id: str) -> list:
+    """``(project_id, folders)`` of the outputs viewers' steps kept on
+    *project_id*, whose folders a delete of the dataflow removes
+    (:func:`forget_kept_media`)."""
+    return _viewers_media(KeptStepOutput.query.filter_by(project_id=project_id, made_by=MADE_BY_VIEWER).all())
+
+
 def forget_node(project_id: str, node_id: str) -> int:
     """Drop every output kept for *node_id* of *project_id*, whoever made it,
     as deleting the node's saved output asks; their artifacts go once the
-    delete commits (:func:`_note_deleted_entry`). Returns how many went."""
+    delete commits (:func:`_note_deleted_entry`), and the files the viewers'
+    steps derived with them. Returns how many went."""
+    media: list = []
 
     def _apply():
         entries = KeptStepOutput.query.filter_by(project_id=project_id, node_id=node_id).all()
+        media[:] = _viewers_media(entries)
         for entry in entries:
             db.session.delete(entry)
         return len(entries)
 
-    return commit_with_retry(_apply)
+    gone = commit_with_retry(_apply)
+    forget_kept_media(media)
+    return gone
 
 
 def forget_dataflows(project_ids) -> int:
@@ -600,18 +751,23 @@ def forget_dataflows(project_ids) -> int:
     the server's start drops the hosted guests' copies of dataflows
     (``projects/visitor_copies.drop_all``), which have no row whose delete
     would take them; their artifacts go once the delete commits
-    (:func:`_note_deleted_entry`). Returns how many went."""
+    (:func:`_note_deleted_entry`), and the files the viewers' steps derived
+    with them. Returns how many went."""
     ids = list(dict.fromkeys(str(project_id) for project_id in project_ids or () if project_id))
     if not ids:
         return 0
+    media: list = []
 
     def _apply():
         entries = KeptStepOutput.query.filter(KeptStepOutput.project_id.in_(ids)).all()
+        media[:] = _viewers_media(entries)
         for entry in entries:
             db.session.delete(entry)
         return len(entries)
 
-    return commit_with_retry(_apply)
+    gone = commit_with_retry(_apply)
+    forget_kept_media(media)
+    return gone
 
 
 def readable_output(project_id: str, file_name: str, token: Optional[str]) -> KeptStepOutput:
@@ -651,8 +807,9 @@ def prune(now=None) -> int:
     """Drop the kept outputs past their time (:data:`KEPT_DAYS`, or
     :data:`TAB_OWN_HOURS` for a tab's own), and, on a dataflow whose outputs
     from one maker pass :data:`MAX_KEPT_BYTES`, that maker's least recently
-    used until they are under. Their artifacts go with them. Returns how many
-    went."""
+    used until they are under. Their artifacts go with them, and so do the
+    files the viewers' steps derived (:func:`forget_kept_media`). Returns how
+    many went."""
     now = now or naive_utc_now()
     expired = KeptStepOutput.query.filter(db.not_(_alive(now))).all()
     going = {entry.id: entry for entry in expired}
@@ -684,6 +841,7 @@ def prune(now=None) -> int:
     if not going:
         return 0
     sessions = [entry.session_id for entry in going.values()]
+    media = _viewers_media(going.values())
     ids = list(going)
 
     def _apply():
@@ -692,6 +850,7 @@ def prune(now=None) -> int:
 
     commit_with_retry(_apply)
     forget_sessions(sessions)
+    forget_kept_media(media)
     return len(ids)
 
 
@@ -748,6 +907,7 @@ def start_prune_scheduler(app) -> None:
             with app.app_context():
                 prune_quietly()
                 sweep_store_quietly()
+                sweep_kept_media_quietly()
         finally:
             _schedule(PRUNE_INTERVAL_HOURS * 3600)
 

@@ -429,3 +429,63 @@ def test_a_hosted_guests_own_upload_reaches_their_dashboards_runs_alone(client, 
     assert set(mine.get("dataset_paths") or {}) == {uploaded}, mine.get("dataset_paths")
     assert uploaded not in (theirs.get("dataset_paths") or {}), theirs.get("dataset_paths")
     assert _example(example) == before
+
+
+def _png(colour) -> bytes:
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (8, 8), colour).save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+def test_a_hosted_guests_dashboard_links_name_the_visitor_who_asks(client, dashboard, monkeypatch):
+    """The links a dashboard's page reads a tile's files through name the
+    hosted guest who asks for them, as their own links do (``v``,
+    ``visitor_copies.visitor_of``), never by the sign-in, and read a file as
+    that visitor reads it: a photo's overlay A drew on their own canvas is
+    A's own, in A's folder, and B, and a visitor who sends no sign-in, read
+    the example's, which its saved run drew."""
+    from pathlib import Path
+
+    from utk_curio.backend.app.discovery.application import media
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
+    from utk_curio.backend.app.discovery.infrastructure import storage as discovery_storage
+    from utk_curio.backend.app.projects import services, visitor_copies
+    from utk_curio.sandbox.util.collections import make_collection_helpers
+
+    survey = "data.curio.storage-survey"
+    example, saved = dashboard
+    monkeypatch.setenv(discovery_storage.ENV_ROOT, str(Path(__file__).resolve().parents[4] / "discovery"))
+    item = client.get(f"/api/datasets/{survey}", headers=auth_headers(VISITOR_A))
+    assert item.status_code == 200, item.get_data(as_text=True)
+    index = pd.read_parquet(item.get_json()["path"])
+    photo = index[index["kind"] == "image"]["file_id"].iloc[0]
+
+    def draw(root, colour) -> dict:
+        derive = make_collection_helpers(None, {}, str(root))["curio_derived_file"]
+        row = derive(survey, photo, 0, "png", kind="image", tag="seg")
+        Path(row["path"]).write_bytes(_png(colour))
+        return row
+
+    shipped = draw(media_dirs.derived_root(GUEST_KEY), (30, 30, 200))
+    draw(media_dirs.derived_root(GUEST_KEY, visitor_copies.visitor_of(VISITOR_A)), (200, 30, 30))
+    rows = {"dataType": "dataframe", "data": {key: [shipped[key]] for key in ("dataset_id", "file_id", "kind", "image_url")}}
+    monkeypatch.setattr(services, "_dashboard_envelope_reader", lambda _saved_path_of: lambda filename: rows)
+    asked = json.dumps({"fileName": saved, "files": [{"datasetId": survey, "fileId": shipped["file_id"], "kept": None}]})
+
+    def linked(token) -> tuple:
+        """What the visitor signed in as *token* is linked to: the visitor
+        the link names and the file it reads. No link says a sign-in."""
+        res = client.post(f"/api/projects/{example}/dashboard/media", data=asked, headers=_headers(token))
+        assert res.status_code == 200, res.get_data(as_text=True)
+        [link] = res.get_json()["links"]
+        claims = media.verify(link["url"].rsplit("/", 1)[1])
+        assert not {VISITOR_A, VISITOR_B} & set(map(str, claims.values())), f"a link says a sign-in: {claims}"
+        read = client.get(f"{link['url']}?variant=original")
+        assert read.status_code == 200, read.get_data(as_text=True)
+        return claims.get("v"), read.data
+
+    assert linked(VISITOR_A) == (visitor_copies.visitor_of(VISITOR_A), _png((200, 30, 30)))
+    assert linked(VISITOR_B) == (visitor_copies.visitor_of(VISITOR_B), _png((30, 30, 200)))
+    assert linked(None) == (None, _png((30, 30, 200)))
