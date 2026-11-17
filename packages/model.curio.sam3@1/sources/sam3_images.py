@@ -8,7 +8,8 @@ plumbing: the model ``curio_load_model("model.curio.sam3")`` gives, whose
 says where a file made from a collection's image or video is kept and served.
 SAM 3 on images is Transformers' ``Sam3Model``, the detector of the video
 checkpoint Track Objects reads, loaded from the same folder. It runs on the
-device Track Objects picks and draws each object as Track Objects draws one
+device Track Objects picks, cleans what SAM 3 finds as Track Objects' SAM 3
+cleans it, and draws each object as Track Objects draws one
 (``sam3_tracking``).
 """
 
@@ -21,10 +22,10 @@ from dataclasses import dataclass
 import pandas as pd
 import torch
 from PIL import Image
-from transformers import Sam3Model, Sam3Processor
+from transformers import Sam3Model, Sam3Processor, Sam3VideoConfig
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 
-from sam3_tracking import _colors, _device, _draw
+from sam3_tracking import _cleaned, _colors, _device, _draw, _kept_by_nms
 
 #: What node code calls.
 __all__ = ["find_in_images"]
@@ -46,7 +47,9 @@ _DERIVED_ID_RE = re.compile(r"^([0-9a-f]{16})@([0-9]{1,12})(?:-([0-9a-z]{1,32}))
 @dataclass(frozen=True)
 class _Run:
     """SAM 3, loaded once, and what one call asked of it: the labels' text
-    features are read once for every image."""
+    features are read once for every image. *overlap* and *fill* are SAM 3's
+    own settings of its clean-up, ``det_nms_thresh`` and ``fill_hole_area``,
+    as Track Objects' SAM 3 reads them (:func:`_clean`)."""
 
     processor: object
     sam3: object
@@ -58,6 +61,8 @@ class _Run:
     words_mask: object
     threshold: float
     width: int
+    overlap: float
+    fill: int
 
 
 def find_in_images(images, model, derived_file, *, labels, threshold=0.5, width=960, max_images=300):
@@ -71,13 +76,17 @@ def find_in_images(images, model, derived_file, *, labels, threshold=0.5, width=
     sampled from its videos. *model* is SAM 3 as
     ``curio_load_model("model.curio.sam3")`` gives it, and *derived_file* is
     ``curio_derived_file``. Each image is read at most *width* wide, and SAM 3
-    keeps an object whose score is above *threshold*.
+    keeps an object whose score is above *threshold*. It cleans what it finds
+    as Track Objects' SAM 3 does, by SAM 3's own settings: of a label's objects
+    whose masks overlap, it keeps the one it scores higher, and it fills the
+    small holes and removes the small specks of each mask.
 
     Returns *images* with the results as its first columns, as Image
     Segmentation's are: ``dominant_class`` and ``dominant_pct``, the label
     whose objects cover the most of the image and that share in percent
-    (missing and 0 where SAM 3 found nothing); for each label, ``<label>_pct``, the
-    share of the image its objects cover together, and ``<label>_objects``,
+    (missing and 0 where SAM 3 found nothing); for each label,
+    ``<label>_pct``, the share of the image its objects cover together, and
+    ``<label>_objects``,
     how many it found, a space written as ``_`` as Track Objects writes it;
     ``overlay_url``, the image with each object's mask, box and label drawn;
     and ``segment_error``. An overlay is a PNG written where *derived_file*
@@ -126,10 +135,13 @@ def find_in_images(images, model, derived_file, *, labels, threshold=0.5, width=
 
 def _loaded(model, labels, threshold, width):
     """SAM 3's processor and image model from ``model.path``, on the device
-    Track Objects picks, with the labels' text features read once."""
+    Track Objects picks, with the labels' text features read once, and SAM 3's
+    settings of its clean-up from the checkpoint's own, as Track Objects' SAM 3
+    reads them."""
     device, dtype = _device()
     processor = Sam3Processor.from_pretrained(model.path, local_files_only=True)
     sam3 = Sam3Model.from_pretrained(model.path, local_files_only=True, dtype=dtype).to(device).eval()
+    settings = Sam3VideoConfig.from_pretrained(model.path, local_files_only=True)
     with torch.inference_mode():
         words = processor(text=labels, return_tensors="pt")
         mask = words["attention_mask"].to(device)
@@ -137,6 +149,7 @@ def _loaded(model, labels, threshold, width):
     return _Run(
         processor=processor, sam3=sam3, device=device, dtype=dtype, labels=labels, colors=_colors(labels),
         words=text, words_mask=mask, threshold=float(threshold), width=int(width),
+        overlap=float(settings.det_nms_thresh), fill=int(settings.fill_hole_area),
     )
 
 
@@ -194,7 +207,9 @@ def _within(image, width):
 def _found(run, image):
     """What each label names in *image*: ``{label: {masks, boxes, scores}}``,
     each object's mask as booleans the image's size. The image's features are
-    read once, and the labels look at them ``LABELS_AT_ONCE`` at a time."""
+    read once, and the labels look at them ``LABELS_AT_ONCE`` at a time; what
+    SAM 3 finds is cleaned (:func:`_clean`) before its masks are made the
+    image's size."""
     found = {}
     with torch.inference_mode():
         pixels = run.processor(images=image, return_tensors="pt")
@@ -202,17 +217,51 @@ def _found(run, image):
         size = [(image.height, image.width)]
         for start in range(0, len(run.labels), LABELS_AT_ONCE):
             chunk = run.labels[start:start + LABELS_AT_ONCE]
-            outputs = run.sam3(
+            outputs = _clean(run, run.sam3(
                 vision_embeds=_repeated(vision, len(chunk)),
                 text_embeds=BaseModelOutputWithPooling(pooler_output=run.words[start:start + len(chunk)]),
                 attention_mask=run.words_mask[start:start + len(chunk)],
-            )
+            ))
             kept = run.processor.post_process_instance_segmentation(
                 outputs, threshold=run.threshold, mask_threshold=MASK_THRESHOLD, target_sizes=size * len(chunk),
             )
             for label, result in zip(chunk, kept):
                 found[label] = {"masks": result["masks"].bool(), "boxes": result["boxes"], "scores": result["scores"]}
     return found
+
+
+def _clean(run, outputs):
+    """*outputs*, SAM 3's detections of a few labels in one image, one label a
+    row, cleaned as Track Objects' SAM 3 cleans a frame's (``sam3_tracking``),
+    by the same code. Of a label's detections whose score passes the
+    threshold, scored as SAM 3 scores them, each that a detection of the label
+    scored higher overlaps by a mask IoU above ``det_nms_thresh`` is dropped
+    (:func:`_kept_by_nms`); then in the masks kept, each hole and each speck
+    of ``fill_hole_area`` pixels or fewer is filled or removed
+    (:func:`_cleaned`). Both work on the low-resolution masks, as SAM 3's do,
+    and the masks of the labels looked at together are cleaned at once."""
+    scores = outputs.pred_logits.sigmoid()
+    if outputs.presence_logits is not None:
+        scores = scores * outputs.presence_logits.sigmoid()
+    passing = (scores > run.threshold).cpu()
+    logits, masks = outputs.pred_logits.clone(), outputs.pred_masks.clone()
+    rows, queries = [], []
+    for row in range(passing.shape[0]):
+        found = torch.nonzero(passing[row]).squeeze(1).tolist()
+        if run.overlap > 0.0 and len(found) > 1:
+            index = torch.tensor(found, device=scores.device)
+            kept = _kept_by_nms(scores[row, index], masks[row, index], run.overlap).tolist()
+            # Post-processing keeps a score above the threshold, and a
+            # dropped detection's is 0.
+            logits[row, [query for query, keep in zip(found, kept) if not keep]] = float("-inf")
+            found = [query for query, keep in zip(found, kept) if keep]
+        rows += [row] * len(found)
+        queries += found
+    if rows:
+        at = (torch.tensor(rows, device=masks.device), torch.tensor(queries, device=masks.device))
+        masks[at] = _cleaned(masks[at].unsqueeze(1), run.fill).squeeze(1)
+    outputs.pred_logits, outputs.pred_masks = logits, masks
+    return outputs
 
 
 def _repeated(vision, n):

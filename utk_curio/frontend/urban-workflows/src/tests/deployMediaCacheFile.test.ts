@@ -24,13 +24,12 @@ describe("The deploy's limit on one cached file", () => {
             .split(/^ {2}deploy-(?:dev|stable):$/m)
             .slice(1)
             .map((job) => job.match(/printf ' {4}command: \[[^\n]*/)?.[0] ?? "");
-        // Dev's also names its backend processes, after the mounts.
-        expect(dev).toMatch(
-            /"24576"%s%s%s%s%s%s%s\]\\n' "\$llm_args" "\$weights_args" "\$cache_args" "\$download_args" "\$guest_args" "\$mounts_args" "\$processes_args" >> docker-compose\.site\.yml$/,
-        );
-        expect(stable).toMatch(
-            /"24576"%s%s%s%s%s%s\]\\n' "\$llm_args" "\$weights_args" "\$cache_args" "\$download_args" "\$guest_args" "\$mounts_args" >> docker-compose\.site\.yml$/,
-        );
+        // Each also names its backend processes, after the mounts.
+        for (const command of [dev, stable]) {
+            expect(command).toMatch(
+                /"24576"%s%s%s%s%s%s%s\]\\n' "\$llm_args" "\$weights_args" "\$cache_args" "\$download_args" "\$guest_args" "\$mounts_args" "\$processes_args" >> docker-compose\.site\.yml$/,
+            );
+        }
     });
 
     test("each stack sets it before its command line names it", () => {
