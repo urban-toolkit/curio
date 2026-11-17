@@ -99,6 +99,10 @@ class InstallResult:
     manifest: PackageManifest
     integrity: dict[str, str]
     replaced_existing: bool
+    #: The libraries the install of the copy it replaced put where node code
+    #: imports from (``libraries.node_libraries_of``); empty when it replaced
+    #: none.
+    replaced_libraries: frozenset[str] = frozenset()
 
 
 def _safe_member_path(raw_name: str) -> tuple[str, ...]:

@@ -183,6 +183,7 @@ def install_package_from_archive(
     *,
     replace: bool = False,
     from_catalog: bool = False,
+    take_back: bool = True,
 ) -> InstallResult:
     """Install (or replace) a ``.curio.zip`` archive for *user_key*.
 
@@ -216,14 +217,26 @@ def install_package_from_archive(
         ``True`` when the archive is the shared catalog's copy, which keeps
         the store copy on the catalog's refresh track (#194). Everything
         else is the user's own content, and the seeder leaves it alone (#564).
+    take_back:
+        An install over a copy is a removal of that copy as much as an add
+        of the new one. So once the copy is replaced, the libraries its
+        install put where node code imports from are taken back when nothing
+        asks for them now, and the account's tree gives way to the image
+        (:func:`take_back_what_it_replaced`), whichever path replaced it: an
+        Update, Import package with replace, the wizard's Save and install,
+        a model downloaded again, an applied build's rollback. The caller
+        installs the new version's libraries after. An applied build passes
+        ``False``, and takes them back once it can no longer roll back
+        (``builder/promotion.confirm_nodes_created``).
 
     Returns
     -------
     InstallResult
         ``manifest`` (the validated :class:`PackageManifest`),
-        ``integrity`` (the ``{relative_path: sha256_hex}`` map), and
+        ``integrity`` (the ``{relative_path: sha256_hex}`` map),
         ``replaced_existing`` (whether *replace* actually displaced an
-        existing package).
+        existing package), and ``replaced_libraries`` (what the displaced
+        copy's install put where node code imports from).
 
     Raises
     ------
@@ -292,12 +305,15 @@ def install_package_from_archive(
             with package_seed_lock(user_key):
                 refuse_a_module_name_in_use(user_key, staging_root, manifest)
                 replaced = False
+                replaced_libraries: frozenset[str] = frozenset()
                 if final_dest.exists():
                     if not replace:
                         raise InstallerError(
                             f"package {dir_name} already installed; pass replace=True "
                             f"to overwrite"
                         )
+                    # Read before its files go: the copy this one replaces.
+                    replaced_libraries = frozenset(packages_libraries.node_libraries_of(user_key, dir_name))
                     shutil.rmtree(final_dest)
                     replaced = True
                 staging_root.replace(final_dest)
@@ -315,14 +331,35 @@ def install_package_from_archive(
                 except Exception:  # noqa: BLE001: bookkeeping is best-effort
                     log.exception("Failed to record the install of %s/%s", user_key, dir_name)
 
-            return InstallResult(
+            result = InstallResult(
                 manifest=merged_manifest,
                 integrity=integrity,
                 replaced_existing=replaced,
+                replaced_libraries=replaced_libraries,
             )
         except Exception:
             shutil.rmtree(staging_root, ignore_errors=True)
             raise
+    # Once the store lock is let go: the take-back takes it to walk the
+    # store, and it is a leaf.
+    if result.replaced_existing and take_back:
+        take_back_what_it_replaced(user_key, result.replaced_libraries)
+    return result
+
+
+def take_back_what_it_replaced(user_key: str, libraries) -> None:
+    """After an install replaced a copy of a package in *user_key*'s store,
+    what a removal of that copy gets: *libraries*, those the copy's install
+    put where node code imports from (``InstallResult.replaced_libraries``),
+    are taken back when nothing asks for them now, and the account's tree
+    gives way to the image (``libraries.take_back_after_a_removal``). The
+    copy is replaced already and the install stands, so a failure is
+    logged, and the next start gives way instead."""
+    try:
+        packages_libraries.take_back_after_a_removal(user_key, libraries)
+    except Exception:  # noqa: BLE001 - the new copy is in place, and its install must stand
+        log.warning("Could not take back the libraries %s of a copy an install replaced for %s",
+                    sorted(libraries), user_key, exc_info=True)
 
 
 def uninstall_package(user_key: str, dir_name: str) -> bool:
@@ -709,12 +746,13 @@ def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> tupl
     did (their libraries, for ``provisioning.with_brought``).
 
     An Update, which replaces the store's copy, is a removal of the version
-    it replaced as much as an add of the new one: the libraries the replaced
-    version's install put where node code imports from are taken back when
-    nothing asks for them now, and a copy in the account's tree that the new
-    version's ranges let the image's win over goes at once, not at the next
-    start (``libraries.take_back_after_a_removal``). The caller installs the
-    new version's libraries after."""
+    it replaced as much as an add of the new one, as every install over a
+    copy is: the libraries the replaced version's install put where node
+    code imports from are taken back when nothing asks for them now, and a
+    copy in the account's tree that the new version's ranges let the image's
+    win over goes at once, not at the next start
+    (:func:`install_package_from_archive`, *take_back*). The caller installs
+    the new version's libraries after."""
     packages_provisioning.assert_may_install()
     src = packages_catalog_dir.catalog_root() / dir_name
     if not src.is_dir():
@@ -722,8 +760,6 @@ def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> tupl
     needed = packages_dependencies.packages_to_add(user_key, dir_name, its_catalog_copy=True)
     missing = _the_missing(user_key, dir_name, needed)
     brought = _copy_from_catalog(user_key, missing)
-    # Read before the replace, which takes the version they came with.
-    replaced_libraries = packages_libraries.node_libraries_of(user_key, dir_name) if replace else set()
     try:
         result = install_package_from_directory(user_key, src, replace=replace)
     except Exception:
@@ -733,8 +769,6 @@ def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> tupl
     # Same as the first copy in _ensure_user_store_install: a replaced backend
     # entry keeps its old pin otherwise, and every invocation is refused.
     packages_backend_runtime.record_entry_pin(user_key, dir_name)
-    if result.replaced_existing:
-        packages_libraries.take_back_after_a_removal(user_key, replaced_libraries)
     return result, brought
 
 
