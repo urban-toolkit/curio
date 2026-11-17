@@ -584,11 +584,13 @@ def test_track_objects_follows_each_object_through_a_clip(videos, catalog_copy, 
     with _staged(tmp_path) as module:
         out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
                                    every_seconds=EVERY)
+        tag = module._tag(DEFAULT_LABELS, EVERY, 10, module._part_end(video, 0, None, 300), 960)
 
     assert len(out) == 1
     row = out.iloc[0]
-    # The row is the overlay, a video Simple View plays, made from the clip.
-    assert (row["kind"], row["file_id"]) == ("video", f"{video['file_id']}@0-sam3.mp4")
+    # The row is the overlay, a video Simple View plays, made from the clip,
+    # named by where it starts and by what the call asked.
+    assert (row["kind"], row["file_id"]) == ("video", f"{video['file_id']}@0-{tag}.mp4")
     assert (row["video_file_id"], row["name"], row["dataset_id"]) == (video["file_id"], video["name"], video["dataset_id"])
     assert row["thumbnail"].endswith(f"/media/{row['file_id']}?variant=thumb")
     assert (row["t_s"], row["duration_s"], row["fps"]) == (0.0, len(SAMPLED) * EVERY, 1 / EVERY)
@@ -628,9 +630,50 @@ def test_a_part_of_a_video_is_tracked_from_where_it_starts(videos, catalog_copy,
     with _staged(tmp_path) as module:
         out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
                                    every_seconds=EVERY, from_seconds=1, to_seconds=2, max_seconds=1)
+        tag = module._tag(DEFAULT_LABELS, EVERY, 10, 2, 960)
     (row,) = out.to_dict("records")
     assert (row["file_id"], row["t_s"], row["duration_s"]) == (
-        f"{rows['file_id'].iloc[0]}@1000-sam3.mp4", 1.0, 2 * EVERY)
+        f"{rows['file_id'].iloc[0]}@1000-{tag}.mp4", 1.0, 2 * EVERY)
+
+
+def test_two_calls_that_ask_differently_of_one_video_keep_files_of_their_own(
+        videos, catalog_copy, weights, few_threads, tmp_path):
+    """Two Track Objects runs on one video from one start, with other
+    settings, as two dataflows of one account run them: each keeps its own
+    overlay and tracks, which the other's run leaves as they were. On dev a
+    run of 0 to 300 s at a frame every 0.5 s overwrote another dataflow's
+    overlay of the whole walk at a frame every 2 s, which then played 300 s
+    instead of 866 s. A call that asks the same as an earlier one writes that
+    call's files again."""
+    import av
+    import pandas as pd
+
+    rows, helpers = videos
+    model = _loaded(catalog_copy, weights)(MODEL_ID)
+
+    def frames_of(path):
+        with av.open(path) as overlay:
+            return sum(1 for _ in overlay.decode(overlay.streams.video[0]))
+
+    with _staged(tmp_path) as module:
+        def track(every):
+            return module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
+                                        every_seconds=every).iloc[0]
+
+        first = track(EVERY)
+        first_tracks = pd.read_parquet(first["tracks"])
+        other = track(2 * EVERY)
+        assert first["path"] != other["path"] and first["tracks"] != other["tracks"], (
+            f"two calls that ask differently of one video wrote one overlay ({first['path']}) "
+            f"and one tracks file ({first['tracks']})")
+        assert frames_of(first["path"]) == len(SAMPLED), "the other call's run changed the first call's overlay"
+        assert frames_of(other["path"]) == len(SAMPLED[::2])
+        assert pd.read_parquet(first["tracks"]).equals(first_tracks), (
+            "the other call's run changed the first call's tracks")
+        again = track(EVERY)
+
+    assert (again["path"], again["tracks"]) == (first["path"], first["tracks"]), (
+        "a call that asks the same as an earlier one got files of its own")
 
 
 def test_every_frame_up_to_the_parts_end_decodes_with_frame_threading(videos, tmp_path, monkeypatch):
