@@ -147,7 +147,7 @@ first, the ones Image Segmentation gives, then its own:
 
 | Column | What it holds |
 |---|---|
-| `dominant_class`, `dominant_pct` | The label whose objects cover the most of the image, and that share in percent; None and 0 where SAM 3 found nothing |
+| `dominant_class`, `dominant_pct` | The label whose objects cover the most of the image, and that share in percent; where SAM 3 found nothing, `dominant_class` is empty and `dominant_pct` is 0 |
 | `<label>_pct` | The share of the image the label's objects cover together, in percent, the label as written, such as `curb ramp_pct` |
 | `<label>_objects` | How many objects of the label SAM 3 found, such as `curb_ramp_objects` |
 | `overlay_url` | The image with each object's mask, box and label drawn, which Simple View shows beside it |

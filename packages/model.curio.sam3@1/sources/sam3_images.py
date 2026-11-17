@@ -75,8 +75,8 @@ def find_in_images(images, model, derived_file, *, labels, threshold=0.5, width=
 
     Returns *images* with the results as its first columns, as Image
     Segmentation's are: ``dominant_class`` and ``dominant_pct``, the label
-    whose objects cover the most of the image and that share in percent (None
-    and 0 where SAM 3 found nothing); for each label, ``<label>_pct``, the
+    whose objects cover the most of the image and that share in percent
+    (missing and 0 where SAM 3 found nothing); for each label, ``<label>_pct``, the
     share of the image its objects cover together, and ``<label>_objects``,
     how many it found, a space written as ``_`` as Track Objects writes it;
     ``overlay_url``, the image with each object's mask, box and label drawn;

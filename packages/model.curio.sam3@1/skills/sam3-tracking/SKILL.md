@@ -82,10 +82,10 @@ Its code holds its settings and one call of `find_in_images`, from the package's
 
 The input's rows, each with the results first, the columns Image Segmentation gives:
 
-- `dominant_class` and `dominant_pct`: the label whose objects cover the most of the image, and that share in percent; None and 0 where SAM 3 found nothing;
+- `dominant_class` and `dominant_pct`: the label whose objects cover the most of the image, and that share in percent; where SAM 3 found nothing, `dominant_class` is missing (NaN, so test it with `.isna()`) and `dominant_pct` is 0;
 - for each label of `LABELS`, `<label>_pct`, the share of the image its objects cover together, in percent, the label spelled as written (`curb ramp_pct`), and `<label>_objects`, how many objects of it SAM 3 found, a space written as `_` (`curb_ramp_objects`);
 - `overlay_url`: the image with each object's mask, box and label drawn, which Simple View shows beside the image;
-- `segment_error`: why a row has no results, such as an image not on this machine; None otherwise.
+- `segment_error`: why a row has no results, such as an image not on this machine; missing otherwise, so `input_0[input_0["segment_error"].isna()]` keeps the rows SAM 3 looked at.
 
 Then come the row's own columns: a frame's `t_s`, its time in the video, and its video's fields. The mean share of each label over the images is a Python Computation node:
 
