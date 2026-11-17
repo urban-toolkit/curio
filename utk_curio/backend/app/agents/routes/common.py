@@ -47,6 +47,13 @@ class Dataflow:
     owner_name: str
     #: Whether its owner is a guest, for the LLM configuration that answers.
     guest: bool
+    #: Whether the agents' work may write :attr:`project_id`. Not while it is
+    #: the dataflow a hosted guest's own copy will copy, before the copy is
+    #: made: the guest's agents have not written it, and nothing the guest
+    #: asks does. A route that only reads reads it as any backend process
+    #: reads a dataflow it does not own (``dataflow_docs.read``), on the
+    #: process the copy's own id names, where the guest's page sends it.
+    writable: bool = True
 
     @property
     def editor(self) -> bool:
@@ -62,8 +69,10 @@ def _dataflow(project_id: str, *, make: bool = True) -> Dataflow:
     dataflow among them, and a dataflow that does not exist is not found. A
     hosted guest's agents work on its own copy of the dataflow, made when
     *make* and there is none: a route that writes makes it, one that only
-    reads does not. A hosted guest's own new dataflow, which has no row, is
-    its own (``visitor_copies.own_new``), and not found for anyone else."""
+    reads does not, and reads the dataflow itself, which it may not write
+    (:attr:`Dataflow.writable`). A hosted guest's own new dataflow, which has
+    no row, is its own (``visitor_copies.own_new``), and not found for anyone
+    else."""
     project = db.session.get(Project, project_id)
     if project is None:
         own = visitor_copies.own_new(g.user, project_id)
@@ -81,12 +90,15 @@ def _dataflow(project_id: str, *, make: bool = True) -> Dataflow:
     if role not in access.EDIT_ROLES:
         raise AgentServiceError(access.AGENTS_WATCHER_REFUSAL, 403)
     owner = project.owner
+    worked_on = visitor_copies.for_request(g.user, project_id, make=make)
+    own = visitor_copies.own_copy_id(g.user, project)
     return Dataflow(
-        project_id=visitor_copies.for_request(g.user, project_id, make=make),
+        project_id=worked_on,
         key=_owner_user_dir_key(project),
         role=role,
         owner_name=(owner.name or owner.username) if owner is not None else "the owner",
         guest=bool(getattr(owner, "is_guest", False)),
+        writable=own is None or worked_on == own,
     )
 
 
