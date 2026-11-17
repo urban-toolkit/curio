@@ -34,6 +34,7 @@ from .utils import (
     connect_nodes,
     dismiss_toasts,
     drag_builtin_to_canvas,
+    frame_nodes,
     node_execution_timeout_ms,
     node_locator,
     open_strip_category,
@@ -237,6 +238,13 @@ def _wait_for_output(page, node_id: str, needle: str, what: str) -> None:
 
 
 def _delete_node(page, node_id: str) -> None:
+    # Framed first, so its header is in sight. set_node_code scrolled the second
+    # producer, whose bottom sat past the window's, into view, which moved the
+    # whole canvas up and put this node's header under the menu bar. That
+    # scroll used to stay on React Flow's element, where Playwright's retries
+    # scrolled it back before the click landed. The canvas now turns it into a
+    # pan (#1539), which no scroll takes back.
+    frame_nodes(page, [node_id])
     box = node_locator(page, node_id).bounding_box()
     assert box, f"node {node_id} has no layout box"
     # A point on the header left of its icon buttons selects the node.

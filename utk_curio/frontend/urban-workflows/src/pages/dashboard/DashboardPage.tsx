@@ -22,6 +22,7 @@ import { fitViewWithMenuOffsetNow } from "../../utils/fitViewWithMenuOffset";
 import { scenarioDashboard } from "../../utils/scenarios/scenarioDashboard";
 import { dataflowPath } from "../../utils/shareLinks";
 import { useViewportMotionHint } from "../../hook/useViewportMotionHint";
+import { useFlowInSight } from "../../hook/useFlowInSight";
 import DashboardTopBar, { useDashboardLeaveGuard } from "./DashboardTopBar";
 import { DASHBOARD_FIT_OPTIONS, useDashboardFit } from "./useDashboardFit";
 import styles from "./DashboardPage.module.css";
@@ -84,6 +85,10 @@ export const DashboardPage: React.FC = () => {
   const reactFlow = useReactFlow();
   const flowStore = useStoreApi();
   const viewportMotionHint = useViewportMotionHint();
+  // As on the canvas: a scroll of React Flow's own element, the browser's to
+  // show a tile's control Tab reaches past the page's edge, becomes the same
+  // pan, and a tile Tab reaches on any side is panned into sight.
+  const flowInSight = useFlowInSight();
   const canvasRef = useRef<HTMLDivElement>(null);
 
   const pinnedIds = useMemo(
@@ -193,6 +198,7 @@ export const DashboardPage: React.FC = () => {
           onMoveStart={viewportMotionHint.onMoveStart}
           onMove={viewportMotionHint.onMove}
           onMoveEnd={viewportMotionHint.onMoveEnd}
+          {...flowInSight}
           selectionKeyCode={null}
           multiSelectionKeyCode={null}
           // A dashboard has nothing to delete.

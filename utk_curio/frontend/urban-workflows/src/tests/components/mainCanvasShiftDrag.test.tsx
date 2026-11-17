@@ -118,6 +118,9 @@ jest.mock("../../utils/fitViewWithMenuOffset", () => ({
   fitViewWithMenuOffsetNow: jest.fn(),
   setDrawnBeside: jest.fn(),
   topOverlayBottom: () => null,
+  // What MainCanvas's useFlowInSight calls on a scroll or a keyboard's focus.
+  paneInSight: () => null,
+  setViewportNow: jest.fn(() => false),
 }));
 
 import { CURIO_UNIVERSAL_NODE_TYPE } from "../../constants";

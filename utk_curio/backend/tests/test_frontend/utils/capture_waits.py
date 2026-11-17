@@ -90,12 +90,14 @@ VIEWPORT_WALL_CAP_MS = 120_000
 # made *maxReads*. Its record on window.__curio_fitWait says how the wait went.
 #
 # It also scrolls the canvas's wrapper back to its origin first. React Flow's
-# `.react-flow` hides its overflow and pans by its viewport's transform, so a
-# person never scrolls it, but a scroll into view of a node past the pane's
-# edge (Playwright's, before it plays or clicks one) does, and every node is
-# then drawn that far off where a fit sets it, until a fit leaves less overflow
-# than the offset. Example 31's map close-up came out 368 px to the left, under
-# the palette dock, after its test played the swimlane past the pane's edge.
+# `.react-flow` hides its overflow and pans by its viewport's transform, but a
+# scroll into view of a node past the pane's edge (Playwright's, before it
+# plays or clicks one) scrolls it, and every node is then drawn that far off
+# where a fit sets it. Example 31's map close-up came out 368 px to the left,
+# under the palette dock, after its test played the swimlane past the pane's
+# edge. The canvas turns such a scroll into the same pan when the browser fires
+# it, at its next frame (#1539); a wait on a runner that draws no frame for a
+# while can read the wrapper before then.
 _FIT_AND_HOLD_JS = """({ options, reads, maxReads }) => {
     const wait = window.__curio_fitWait = window.__curio_fitWait || {
         target: null, shown: null, held: 0,
@@ -230,7 +232,9 @@ def _wait_for_reactflow_ready(
     wrapper hides its overflow, and a scroll into view of a node past the
     pane's edge, which Playwright makes before it plays or clicks one,
     scrolls it, so every node is drawn that far off where the fit sets it. The
-    wait scrolls the wrapper back to its origin before the viewport can hold
+    canvas turns that scroll into a pan at the browser's next frame
+    (``useFlowInSight``, #1539); the wait scrolls back a wrapper it finds
+    scrolled before then, before the viewport can hold
     (``test_frame_nodes_e2e.py``).
     """
     _wait_for_the_canvas_dataflow(page)

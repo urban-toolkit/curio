@@ -40,11 +40,13 @@ frames every node before the first frame.
 A fit lands where it means to only on an unscrolled canvas. React Flow's
 wrapper hides its overflow and pans by its viewport's transform, but a scroll
 into view of a node past the pane's edge, which Playwright makes before it
-plays or clicks one (``play_node``), scrolls the wrapper, and React Flow never
-scrolls it back: every node is then drawn that far off where a fit sets it.
-Example 31's map close-up came out 368 px to the left so, under the palette
-dock (#1533). One test scrolls a far node into view and checks that a fit then
-draws the near node where it drew it before.
+plays or clicks one (``play_node``), scrolls the wrapper, and React Flow 11
+never scrolls it back: every node was then drawn that far off where a fit sets
+it. Example 31's map close-up came out 368 px to the left so, under the palette
+dock (#1533). The canvas now turns such a scroll into the same pan at the
+browser's next frame (#1539), and the viewport wait scrolls back a wrapper it
+finds scrolled before then. One test scrolls a far node into view and checks
+that a fit then draws the near node where it drew it before.
 
 Run::
 
@@ -194,6 +196,23 @@ _IN_WINDOW_JS = """(id) => {
 _CANVAS_SCROLL_JS = """() => {
     const wrapper = document.querySelector('.react-flow');
     return wrapper ? { left: wrapper.scrollLeft, top: wrapper.scrollTop } : null;
+}"""
+
+_VIEWPORT_JS = "() => window.__curio_reactFlow.getViewport()"
+
+# A scroll into view as it shows when read: React Flow's wrapper scrolled, or,
+# once the browser fired that scroll and the canvas turned it into the same pan
+# (#1539), the view panned from *before* at the same zoom. Null for each that
+# did not happen.
+_SCROLLED_OR_PANNED_JS = """(before) => {
+    const wrapper = document.querySelector('.react-flow');
+    const view = window.__curio_reactFlow.getViewport();
+    const scrolled = wrapper.scrollLeft !== 0 || wrapper.scrollTop !== 0;
+    const panned = view.zoom === before.zoom && (view.x !== before.x || view.y !== before.y);
+    return {
+        scrolled: scrolled ? { left: wrapper.scrollLeft, top: wrapper.scrollTop } : null,
+        panned: panned ? { from: before, to: view } : null,
+    };
 }"""
 
 # The right edge of the palette dock over the canvas's left side, in the window.
@@ -442,20 +461,23 @@ def test_frame_nodes_draws_a_node_where_its_fit_sets_it_after_a_scroll_into_view
         f"frame_nodes drew {NEAR} at {framed}, not right of the palette dock's edge at {dock}"
     )
 
-    # As play_node does before it plays a node past the pane's edge.
+    # As play_node does before it plays a node past the pane's edge. The browser
+    # scrolls React Flow's wrapper to show it, which the canvas turns into the
+    # same pan at the browser's next frame: read now, it is one or the other.
+    before = page.evaluate(_VIEWPORT_JS)
     node_locator(page, MIDDLE).scroll_into_view_if_needed()
-    scrolled = page.evaluate(_CANVAS_SCROLL_JS)
-    assert scrolled and (scrolled["left"] or scrolled["top"]), (
-        f"the scroll into view of {MIDDLE} left React Flow's wrapper at {scrolled}, so this test "
-        "proves nothing"
+    moved = page.evaluate(_SCROLLED_OR_PANNED_JS, before)
+    assert moved["scrolled"] or moved["panned"], (
+        f"the scroll into view of {MIDDLE} neither scrolled React Flow's wrapper nor panned the "
+        f"canvas ({moved}), so this test proves nothing"
     )
 
     frame_nodes(page, [NEAR])
 
     box = _box(page, NEAR)
     assert box == framed, (
-        f"after a scroll into view left React Flow's wrapper at {scrolled}, frame_nodes drew {NEAR} "
-        f"at {box}, not where the same fit drew it before, {framed}"
+        f"after the scroll into view of {MIDDLE} ({moved}), frame_nodes drew {NEAR} at {box}, "
+        f"not where the same fit drew it before, {framed}"
     )
     assert page.evaluate(_CANVAS_SCROLL_JS) == {"left": 0, "top": 0}
 
