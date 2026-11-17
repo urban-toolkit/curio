@@ -249,3 +249,25 @@ def test_without_isolation_a_remove_in_one_backend_process_takes_back_what_an_ad
         f"process 1's pip installed {library} for the dialog's add, and nothing else asks for it, "
         "yet its Remove, served by process 0, left it in the interpreter"
     )
+
+
+def test_with_one_backend_process_the_record_of_pips_installs_keeps_no_file(tmp_curio, monkeypatch):
+    """With one backend process the record is held in its memory, as before,
+    and so it is in the launcher, whose environment names no backend process:
+    the libraries a start installs before its backends run, the shipped
+    catalog's, never enter the record a start of several keeps."""
+    from utk_curio.backend.app.common import shared_budgets, user_storage
+
+    library = "curio-added-in-the-one-process"
+    monkeypatch.delenv("CURIO_BACKEND_PROCESSES", raising=False)
+    monkeypatch.delenv("CURIO_BACKEND_PROCESS", raising=False)
+    monkeypatch.setenv("CURIO_STATE_DIR", str(tmp_curio / "state"))
+    monkeypatch.setattr(pip_runner, "_installed_here", set())
+    environment = _Environment(tmp_curio)
+    environment.patch(monkeypatch)
+
+    install_python_deps({library: ""})
+
+    assert pip_runner.installed_here([library]) == [library]
+    folder = user_storage.curio_root() / shared_budgets.FOLDER
+    assert not folder.exists(), sorted(str(path) for path in folder.rglob("*"))

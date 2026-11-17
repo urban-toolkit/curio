@@ -4,7 +4,7 @@ A package's ``manifest.dependencies.python`` declares the libraries the
 package's behavior hooks need at runtime. The catalog install flow calls
 :func:`install_python_deps` after copying the package files; a package's
 removal (``application/prune.py``) uninstalls from this interpreter only
-libraries this process's pip installed into it (:func:`installed_here`) that
+libraries this start's pip installed into it (:func:`installed_here`) that
 nothing else still asks for.
 
 Design choices:
@@ -25,6 +25,8 @@ Design choices:
   Curio's requirements, the image's torch, the shipped catalog's libraries
   the launcher installs, and the user's own. Package manifests name several
   of those too, so a manifest is no evidence that Curio put a library here.
+  A start of several backend processes keeps one record for all of them, so
+  a removal any of them serves takes back what another's pip installed.
 - **The image's libraries win in an account's tree.** Under isolation an
   account's node libraries are a ``--target`` tree its nodes import in front
   of this interpreter, the image's. ``--target`` ignores what this
@@ -62,6 +64,7 @@ from pathlib import Path
 from importlib.metadata import PackageNotFoundError, version as installed_version
 from typing import Callable, Iterable, Mapping, Optional
 
+from utk_curio.backend.app.common import shared_budgets
 from utk_curio.backend.app.common.file_locks import exclusive_lock
 
 from .bounded_exec import bounded_argv
@@ -443,12 +446,39 @@ def outside_their_ranges_in_front(deps: Mapping[str, str], target_dir) -> list[s
 
 #: Each library :func:`install_python_deps` installed into this interpreter
 #: where it held none, by PEP 503 name: the only ones a package's removal may
-#: uninstall from it (:func:`installed_here`). This process's own record, so a
+#: uninstall from it (:func:`installed_here`). The start's own record, so a
 #: restart forgets it and those libraries stay, and nothing the interpreter
-#: held before this process ran pip can be in it. A library another backend
-#: process installed is not in it either, so this one never takes it back.
+#: held before the start's pip ran can be in it. With one backend process it
+#: is held here, in its memory, as it is in the launcher, whose installs at a
+#: start come before any backend runs; a start of several keeps one for all
+#: its backends (:data:`_THE_STARTS_RECORD`), since a removal one of them
+#: serves may take back what another's pip installed.
 _installed_here: set[str] = set()
 _installed_here_lock = threading.Lock()
+#: The record of a start of several backend processes, in the start's state,
+#: under its own lock (``common/shared_budgets.State``): its names, sorted,
+#: under :data:`_INSTALLED`.
+_THE_STARTS_RECORD = shared_budgets.State("pip-installed-here")
+_INSTALLED = "installed"
+
+
+@contextlib.contextmanager
+def _the_record():
+    """The record of what :func:`install_python_deps` installed, held: this
+    process's, or in a start of several backend processes the start's, which
+    no process reads or changes until the block ends. Raises ``OSError`` when
+    the start's cannot be read or written."""
+    with _installed_here_lock:
+        if not shared_budgets.across_processes():
+            yield _installed_here
+            return
+        with _THE_STARTS_RECORD.held() as state:
+            kept = state.get(_INSTALLED)
+            names = {name for name in kept if isinstance(name, str)} if isinstance(kept, list) else set()
+            noted = set(names)
+            yield noted
+            if noted != names:
+                state[_INSTALLED] = sorted(noted)
 
 
 def _is_installed(name: str) -> bool:
@@ -462,18 +492,23 @@ def _is_installed(name: str) -> bool:
 
 def installed_here(names: Iterable[str]) -> list[str]:
     """The names among *names* that :func:`install_python_deps` installed into
-    this interpreter where it held none before, since this process started,
-    and that are installed still, sorted.
+    this interpreter where it held none before, since this start, in any of
+    its backend processes, and that are installed still, sorted.
 
     A package's removal uninstalls from the shared interpreter only these
     (``application/prune.py``). A library that was there before is not
     Curio's to take back, whoever declares it: Curio's requirements, the
     image's torch, the shipped catalog's libraries, the user's own. Nor is one
     pip only upgraded: uninstalling it would remove it, not put back the
-    version it replaced.
+    version it replaced. A record that cannot be read names none, so every
+    library stays.
     """
-    with _installed_here_lock:
-        noted = set(_installed_here)
+    try:
+        with _the_record() as record:
+            noted = set(record)
+    except OSError as exc:
+        log.warning("The record of what Curio's pip installed did not read, so no library is taken back: %s", exc)
+        return []
     return sorted(
         name for name in set(names)
         if _canonical_dist_name(name) in noted and _is_installed(name)
@@ -481,9 +516,27 @@ def installed_here(names: Iterable[str]) -> list[str]:
 
 
 def _note_installed_here(names: Iterable[str]) -> None:
-    """Note *names*, which this process's pip just installed fresh."""
-    with _installed_here_lock:
-        _installed_here.update(_canonical_dist_name(name) for name in names)
+    """Note *names*, which this start's pip just installed fresh. When the
+    start's record cannot be written they go unnoted, and stay installed
+    through a removal."""
+    names = {_canonical_dist_name(name) for name in names}
+    if not names:
+        return
+    try:
+        with _the_record() as record:
+            record.update(names)
+    except OSError as exc:
+        log.warning("Could not note %s in the record of what Curio's pip installed: %s", sorted(names), exc)
+
+
+def _forget_installed_here(names: Iterable[str]) -> None:
+    """Take *names*, which pip just uninstalled, off the record."""
+    names = {_canonical_dist_name(name) for name in names}
+    try:
+        with _the_record() as record:
+            record.difference_update(names)
+    except OSError as exc:
+        log.warning("Could not take %s off the record of what Curio's pip installed: %s", sorted(names), exc)
 
 
 #: Top-level modules a distribution ships that are never the import people mean.
@@ -1409,8 +1462,7 @@ def _uninstall_python_deps(names: list[str]) -> UninstallReport:
             f"pip uninstall failed (exit {proc.returncode}): {tail.strip()}"
         )
     _pip_ran()
-    with _installed_here_lock:
-        _installed_here.difference_update(_canonical_dist_name(name) for name in names)
+    _forget_installed_here(names)
     return UninstallReport(removed=list(names), kept=[])
 
 
