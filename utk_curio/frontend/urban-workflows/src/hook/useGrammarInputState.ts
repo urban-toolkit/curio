@@ -1,5 +1,5 @@
 import { useFlowContext } from "../providers/FlowProvider";
-import { hasIncomingEdge, incomingSourceIds } from "../utils/nodeEmptyState";
+import { hasIncomingEdge, incomingSourceIds, upstreamMessages } from "../utils/nodeEmptyState";
 
 /**
  * What a node knows about the edge into it: whether one arrives, and whether
@@ -12,7 +12,10 @@ import { hasIncomingEdge, incomingSourceIds } from "../utils/nodeEmptyState";
  * show (``upstreamRunning``) and why the last one stopped short of them, at a
  * step this browser could not run or with the run refused (``upstreamStopped``,
  * useDashboardRun): a visitor runs no node and opens none, so a tile says that
- * instead, and what is not in yet is on its way (``onDashboard``).
+ * instead, and what is not in yet is on its way (``onDashboard``). While a step
+ * above the tile, however far up, downloads what it reads on its first use, it
+ * says how far that has come, in the step's own words, nearest step first
+ * (``upstreamDownloads``), for the tile to say on a line under "Computing...".
  */
 export function useGrammarInputState(nodeId: string): {
   connected: boolean;
@@ -20,14 +23,16 @@ export function useGrammarInputState(nodeId: string): {
   erroredSourceIds: string[];
   upstreamRunning: boolean;
   upstreamStopped: string | null;
+  upstreamDownloads: string[];
   onDashboard: boolean;
 } {
-  const { edges, nodeExecStatus, dashboardOn, serverRunActive, dashboardStopped } = useFlowContext() as {
+  const { edges, nodeExecStatus, dashboardOn, serverRunActive, dashboardStopped, dashboardDownloads } = useFlowContext() as {
     edges?: Array<{ source?: unknown; target?: unknown }>;
     nodeExecStatus?: Record<string, string>;
     dashboardOn?: boolean;
     serverRunActive?: boolean;
     dashboardStopped?: string | null;
+    dashboardDownloads?: Record<string, string>;
   };
   const list = edges ?? [];
   const erroredSourceIds = incomingSourceIds(list, nodeId).filter(
@@ -39,6 +44,7 @@ export function useGrammarInputState(nodeId: string): {
     erroredSourceIds,
     upstreamRunning: !!dashboardOn && !!serverRunActive,
     upstreamStopped: dashboardOn ? dashboardStopped ?? null : null,
+    upstreamDownloads: dashboardOn ? upstreamMessages(list, nodeId, dashboardDownloads) : [],
     onDashboard: !!dashboardOn,
   };
 }

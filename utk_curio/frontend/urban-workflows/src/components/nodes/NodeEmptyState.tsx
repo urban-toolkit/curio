@@ -11,6 +11,12 @@ export interface NodeEmptyStateProps {
   hint?: string;
   /** Overrides the standard title, likewise. */
   title?: string;
+  /**
+   * A dashboard's tile computing what a step above it feeds, while that
+   * step downloads what it reads on its first use: how far each download
+   * has come, in the step's own words, each on its line under the title.
+   */
+  progress?: readonly string[];
 }
 
 /**
@@ -27,11 +33,15 @@ export const NodeEmptyState = memo(function NodeEmptyState({
   reason,
   hint,
   title,
+  progress,
 }: NodeEmptyStateProps) {
   const copy = NODE_EMPTY_COPY[reason];
   return (
     <div className={styles.root} data-curio-node-empty={reason}>
       <span className={styles.title}>{title ?? copy.title}</span>
+      {(progress ?? []).map((line, index) => (
+        <span key={index} className={styles.hint} data-curio-node-progress="">{line}</span>
+      ))}
       {hint ?? copy.hint ? (
         <span className={styles.hint}>{hint ?? copy.hint}</span>
       ) : null}
