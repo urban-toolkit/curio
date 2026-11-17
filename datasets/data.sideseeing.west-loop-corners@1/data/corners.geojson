@@ -1,0 +1,230 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 256591099,
+    "street_a": "South Racine Avenue",
+    "street_b": "West Van Buren Street"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.65693,
+     41.8765152
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 256613293,
+    "street_a": "South Racine Avenue",
+    "street_b": "West Jackson Boulevard"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.6570284,
+     41.8777895
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 261143285,
+    "street_a": "North May Street",
+    "street_b": "West Washington Boulevard"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.6555628,
+     41.8830173
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 261143286,
+    "street_a": "North Racine Avenue",
+    "street_b": "West Washington Boulevard"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.6567091,
+     41.8829981
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 261143287,
+    "street_a": "North Willard Court",
+    "street_b": "West Washington Boulevard"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.6576468,
+     41.8829841
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 261143288,
+    "street_a": "North Elizabeth Street",
+    "street_b": "West Washington Boulevard"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.6587876,
+     41.8829659
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 261209662,
+    "street_a": "North Racine Avenue",
+    "street_b": "West Madison Street"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.656689,
+     41.8816297
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 261239963,
+    "street_a": "South Racine Avenue",
+    "street_b": "West Monroe Street"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.6571032,
+     41.880336
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 261239964,
+    "street_a": "South Racine Avenue",
+    "street_b": "West Adams Street"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.6570638,
+     41.8790527
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 1640004517,
+    "street_a": "South Racine Avenue",
+    "street_b": "West Congress Parkway"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.6568926,
+     41.8753457
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 2051982639,
+    "street_a": "South Racine Avenue",
+    "street_b": "West Van Buren Street"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.6570837,
+     41.8765132
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 2051982657,
+    "street_a": "South Racine Avenue",
+    "street_b": "West Congress Parkway"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.6570561,
+     41.8753459
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 5970344129,
+    "street_a": "North Elizabeth Street",
+    "street_b": "West Madison Street"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.6587524,
+     41.8815942
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 5970344135,
+    "street_a": "North May Street",
+    "street_b": "West Madison Street"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.6555206,
+     41.8816486
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "corner_id": 5970344154,
+    "street_a": "South Racine Avenue",
+    "street_b": "West Madison Street"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -87.657142,
+     41.8816213
+    ]
+   }
+  }
+ ]
+}
