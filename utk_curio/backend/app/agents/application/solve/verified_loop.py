@@ -14,8 +14,8 @@ as the loop it is.
 :meth:`_dashboard_gate`, after :meth:`_map_edits_gate`, ends the loop on a
 pinned tile's spec that loads its own data.
 
-Stage methods are generators (they relay ``node_executed`` and
-``round_verdict`` events) and return a control token: ``None`` to proceed
+Stage methods are generators (they relay ``node_executed``,
+``node_download`` and ``round_verdict`` events) and return a control token: ``None`` to proceed
 to the next stage, ``CONTINUE`` to start the next round, ``BREAK`` to leave
 the loop, or a result dict to end the whole loop with that result.
 
@@ -684,6 +684,9 @@ class VerifiedRounds:
                     progress=lambda nid, i, total: progress_queue.put(
                         ("progress", nid, i, total)
                     ),
+                    # How far each download on first use of what a node of
+                    # the slice reads has come, as a run on the server says it.
+                    downloads=lambda nid, fields: progress_queue.put(("download", nid, fields)),
                 )
             except Exception as exc:  # the validator must never kill the stream
                 result = {
@@ -699,6 +702,10 @@ class VerifiedRounds:
             if item[0] == "progress":
                 _, nid, index, total = item
                 yield "node_executed", {"nodeId": nid, "index": index, "total": total}
+                continue
+            if item[0] == "download":
+                _, nid, fields = item
+                yield "node_download", {"nodeId": nid, **fields}
                 continue
             thread.join(timeout=5)
             return item[1]
@@ -980,10 +987,16 @@ class VerifiedRounds:
             # sandbox was unreachable, or the sandbox does not run this kind.
             self.stopped_by = "passed" if verdict_result["verdict"] == "pass" else verdict_result["verdict"]
             return BREAK
-        if round_evidence.get("kind") == "precondition" or round_evidence.get("upstreamEmpty"):
+        if (
+            round_evidence.get("kind") == "precondition"
+            or round_evidence.get("upstreamEmpty")
+            or round_evidence.get("downloadFailed")
+        ):
             # dev/118: the runner refused the SLICE (bound, cycle), or an
             # upstream has no content yet — no correction of THIS content can
-            # change that; one round says so.
+            # change that; one round says so. So does a file a node reads that
+            # could not be downloaded on its first use: a round that tried
+            # again would only download it again.
             self.stopped_by = "blocker"
             return BREAK
         self.previous_attempt = self.candidate

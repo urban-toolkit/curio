@@ -3,6 +3,7 @@ import { backendUrl } from "../utils/backendUrl";
 import { requestHeaders } from "../utils/requestHeaders";
 import { embeddedArtifact, EmbeddedEnvelope, embeddedRaster, EmbeddedRaster } from "../standalone/dashboardPayload";
 import { dashboardRunRead } from "./runs/dashboardRunFiles";
+import { noteDashboardOutput } from "./runs/dashboardMedia";
 import { askedOfPage, keepPageResult } from "./runs/dashboardRunSteps";
 import { dataflowRead } from "./dataflowReads";
 
@@ -123,9 +124,12 @@ function previewOfEmbedded(fileName: string, envelope: EmbeddedEnvelope) {
 export async function fetchData(fileName: string) {
     // A standalone dashboard was served with its rows inside it. Checked before
     // the request rather than after a failure, because the whole point is that
-    // the page never reaches the network.
+    // the page never reaches the network. The files its rows name are read
+    // through the dashboard's links (runs/dashboardMedia), as are those of an
+    // output a viewer's run made.
     const embedded = embeddedArtifact(fileName);
     if (embedded) {
+        noteDashboardOutput(fileName, embedded);
         return { ...embedded, filename: fileName };
     }
     try {
@@ -143,6 +147,7 @@ export async function fetchData(fileName: string) {
         try {
             const viaArrow = await fetchArtifactAsArrow(url, _token, extraHeaders);
             if (viaArrow) {
+                if (dashboard) noteDashboardOutput(fileName, viaArrow);
                 return viaArrow;
             }
         } catch (arrowError: unknown) {
@@ -168,6 +173,7 @@ export async function fetchData(fileName: string) {
         const jsonData = await response.json();
 
         console.log(`Fetched data`, jsonData);
+        if (dashboard) noteDashboardOutput(fileName, jsonData);
 
         return jsonData;
     } catch (error: unknown) {
@@ -216,6 +222,7 @@ export async function fetchPreviewData(fileName: string) {
     // is the one thing on it that still calls out.
     const embedded = embeddedArtifact(fileName);
     if (embedded) {
+        noteDashboardOutput(fileName, embedded);
         return previewOfEmbedded(fileName, embedded);
     }
     try {
@@ -240,6 +247,7 @@ export async function fetchPreviewData(fileName: string) {
 
         const jsonData = await response.json();
         console.log(`[fetchPreviewData] Fetched preview data:`, jsonData);
+        if (dashboard) noteDashboardOutput(fileName, jsonData);
 
         return jsonData;
     } catch (error: unknown) {

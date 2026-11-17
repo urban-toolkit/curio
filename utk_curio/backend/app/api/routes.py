@@ -5,7 +5,7 @@ from flask import request, abort, jsonify, g, Response, current_app
 
 import requests
 
-from utk_curio.backend.app.execution import node_exec
+from utk_curio.backend.app.execution import node_exec, play_progress
 from utk_curio.backend.app.execution.sandbox_client import (
     SANDBOX_STORE_TIMEOUT,
     SandboxTransportError,
@@ -453,11 +453,26 @@ def relay_output_file(file_name, session_id):
 @bp.route('/processPythonCode', methods=['POST'])
 @require_auth
 def process_python_code():
-    run = node_exec.NodeRun.from_request_json(request.json)
+    body = request.json
+    run = node_exec.NodeRun.from_request_json(body)
     try:
-        return node_exec.execute_python_node(g.user, get_current_token(), run)
+        # How far the node's downloads on first use have come, which the page
+        # asks while it waits (``/processPythonCode/progress``), under the id
+        # it gave the Play.
+        with play_progress.kept(get_current_token(), (body or {}).get('progressId')):
+            return node_exec.execute_python_node(g.user, get_current_token(), run)
     except SandboxTransportError as e:
         return jsonify(e.payload), e.status
+
+
+@bp.route('/processPythonCode/progress', methods=['GET'])
+@require_auth
+def process_python_code_progress():
+    """How far the downloads on first use of the caller's Play ``?play=<id>``,
+    the id it posted the Play with, have come: ``{message, done, total}``,
+    an empty message when they say nothing, are over, or the Play is not
+    running. Only the sign-in that posted the Play reads it."""
+    return jsonify(play_progress.said(get_current_token(), request.args.get('play')))
 
 
 @bp.route('/storeOutput', methods=['POST'])

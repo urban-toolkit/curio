@@ -508,6 +508,89 @@ def test_a_visitor_with_no_account_sees_the_dashboard_read_only(
         visitor_ctx.close()
 
 
+PHOTOS = "dash-photos"
+PHOTO_VIEW = "dash-photo-view"
+
+#: The committed street survey's three photos, as a collection's rows come to node code.
+PHOTOS_CODE = (
+    "import pandas as pd\n"
+    "\n"
+    'collection = curio_load_collection("data.curio.storage-survey")\n'
+    'photos = collection[collection["kind"] == "image"]\n'
+    'return pd.DataFrame(photos.drop(columns="geometry", errors="ignore"))\n'
+)
+
+
+def _photos_spec() -> dict:
+    """The survey's photos feeding a Simple View, which shows them as cards."""
+    return {
+        "dataflow": {
+            "name": "Dashboard photos e2e",
+            "task": "",
+            "description": "",
+            "packages": [],
+            "datasets": [],
+            "nodes": [
+                _node(PHOTOS, "curio.builtin/python-computation", 0, PHOTOS_CODE),
+                _node(PHOTO_VIEW, "curio.builtin/vis-simple", 700),
+            ],
+            "edges": [
+                {"id": f"reactflow__edge-{PHOTOS}out-{PHOTO_VIEW}in", "source": PHOTOS, "target": PHOTO_VIEW},
+            ],
+        },
+    }
+
+
+#: Whether a Simple View's cards hold at least *count* images, every one drawn.
+_CARD_PHOTOS_DREW_JS = """([nodeId, count]) => {
+  const images = [...document.querySelectorAll(`#imageBox_content_${nodeId} img`)];
+  return images.length >= count && images.every((image) => image.complete && image.naturalWidth > 0);
+}"""
+
+
+def test_a_visitor_with_no_account_sees_the_photos_a_pinned_simple_view_shows(
+    app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
+):
+    """A Simple View tile shows a collection's photos, which the server
+    serves. A visitor with no account sees them on the dashboard served as
+    the hosted stacks serve it, read through the links the dashboard gives
+    for the files its tile's rows name; the media route, which needs a
+    sign-in, is never asked."""
+    require_project_page()
+    require_user_auth()
+    session = _enter(page, app_frontend, current_server, prefix="dash_photos", spec=_photos_spec())
+    node_locator(page, PHOTOS).wait_for(state="visible", timeout=45000)
+    play_node(page, PHOTOS)
+    wait_for_node_done(page, PHOTOS, timeout_ms=180000)
+    # The owner sees them on the canvas, as before.
+    page.wait_for_function(_CARD_PHOTOS_DREW_JS, arg=[PHOTO_VIEW, 3], timeout=60000)
+    _pin(page, PHOTO_VIEW)
+    _save(page)
+    project_id = session["project"]["id"]
+    # Off the canvas: it can still save on its way out.
+    page.goto("about:blank")
+    hosted = _serve_hosted(app_frontend, current_server, monkeypatch)
+
+    visitor = _Visitor(browser, current_server)
+    try:
+        visitor.opens(hosted, project_id)
+        visitor.waits_for(
+            "the visitor's Simple View tile drew the survey's three photos",
+            lambda: visitor.page.wait_for_function(_CARD_PHOTOS_DREW_JS, arg=[PHOTO_VIEW, 3], timeout=60000),
+        )
+        by_the_route = [line for line in visitor.answered if "/api/datasets/" in line and "/media/" in line]
+        assert by_the_route == [], (
+            "the page asked the media route, which needs a sign-in:\n  " + "\n  ".join(by_the_route)
+        )
+        asked = [line for line in visitor.answered
+                 if line.startswith(f"POST /api/projects/{project_id}/dashboard/media ")]
+        assert asked and all(" -> 200 " in line for line in asked), visitor.story()
+        photos = [line for line in visitor.answered if line.startswith("GET /api/media/") and "variant=thumb" in line]
+        assert len(photos) >= 3 and all(" -> 200 " in line for line in photos), visitor.story()
+    finally:
+        visitor.close()
+
+
 def test_another_user_reloading_the_dataflow_sees_its_data(
     app_frontend: "FrontendPage", current_server, browser, page,
 ):

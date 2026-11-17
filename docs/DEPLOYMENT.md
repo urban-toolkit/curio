@@ -657,6 +657,8 @@ Each stack runs its own [bucket mount service](#bucket-mounts) when the deployed
 
 Before a deploy stops the running stack, it also checks that Docker Engine is 28 or newer, and once the new stack is up, it fails unless `/version` says `"memory_limit": "cgroup"`.
 
+Both stacks start with `--backend-processes 16` when the deployed release has the flag, so each serves on 16 backend processes behind nginx ([Build and run](#3-build-and-run)). Once the new stack is up, the deploy fails unless all 16 answer `/api/monitor`.
+
 A merge to `main` deploys the dev stack once: Bump version bumps the patch version and dispatches the dev deploy of that commit. Stable runs manually via Actions → Deploy → Run workflow.
 
 `deploy.yml` takes two inputs: `ref` (branch, tag, or SHA; empty deploys the latest `v*` tag) and `target` (`both` / `dev` / `stable`). Both jobs check out the requested ref and rebuild with `--no-cache --force-recreate`.
@@ -783,6 +785,7 @@ flooding it cannot push real errors out of the log.
 | `docker compose up` cannot start `bucket-mounts` | The host lacks one of the three things [Bucket mounts](#bucket-mounts) checks: `/dev/fuse`, a shared mount where the mounts live, or the loaded AppArmor profile. |
 | `/monitor` shows **Bucket mounts** *unavailable* | Curio's test of the mount service failed, for the reason the line gives. Recent errors holds the details, and `docker compose logs bucket-mounts` the service's side. |
 | **Bucket mounts** says the mount service *could not reach Curio's proxy on port 3128*, or adding a bucket's files says it *cannot reach* it | The service's container does not reach port 3128 of Curio's container, where Curio's proxy listens on the backend's `--backend-host`. Keep both containers on the overlay's `bucket-mounts` network, and the backend on `--backend-host 0.0.0.0`, as `docker-compose.deploy.yml` starts it. |
+| Adding a bucket's files says *Curio's bucket mount proxy refused the requests to the bucket* | Curio's proxy refused the bucket's host, for the reason that follows: an address that is not public, a host that takes no connection, or 64 tunnels open at once. The bucket is tried again a minute later. |
 | Nodes fail and you cannot see why | Open `/monitor`. The error log there holds the last failures with their tracebacks, and survives longer than `.curio/messages.log`, which is truncated on every launch. |
 | `/monitor` says the sandbox is unreachable | The sandbox process is down or not answering within 3s. The rest of the page stays current; check `docker compose logs curio`. |
 

@@ -69,7 +69,7 @@ A swimlane of that table, one bar per object, is a Vega-Lite `bar` with `start_s
 
 ## Segment Images
 
-Its code holds its settings and one call of `find_in_images`, from the package's module `sam3_images`, which hands it `curio_load_model("model.curio.sam3")` and `curio_derived_file`. It reads the images' `path`, so wire it from rows that have one: a collection's images, or Sample Video Frames' frames.
+Its code holds its settings and one call of `find_in_images`, from the package's module `sam3_images`, which hands it `curio_load_model("model.curio.sam3")` and `curio_derived_file`. It reads the images' `path`, so wire it from rows that have one: a collection's images, or Sample Video Frames' frames. It cleans what SAM 3 finds as Track Objects does: of two objects of one label whose masks overlap, it keeps the one SAM 3 scores higher, and it fills the small holes and removes the small specks of each mask.
 
 ### Its settings
 

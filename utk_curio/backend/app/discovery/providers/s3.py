@@ -1,8 +1,9 @@
 """A public S3 bucket, or any endpoint that speaks S3's ListObjectsV2.
 
 Listed with ``GET {base}/?list-type=2&prefix=...``, one page of up to 1000 keys
-at a time, and read with a plain GET (with a ``Range`` header for a probe of a
-file's header). Every request goes through the discovery transport, so the egress
+at a time, and the folders under a prefix with ``&delimiter=/``, for a template
+read a folder at a time; read with a plain GET (with a ``Range`` header for a
+probe of a file's header). Every request goes through the discovery transport, so the egress
 policy applies to each one, redirects included. Anonymous access only: a
 bucket that needs a signed request is not one this provider reads.
 
@@ -31,13 +32,15 @@ from utk_curio.backend.app.discovery.infrastructure.transport import (
 )
 from utk_curio.backend.app.discovery.providers.storage_base import (
     FileEntry,
+    ListingCut,
     is_skipped,
     validate_relpath,
 )
 
 _NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
 
-#: Pages listed per scan at most: 1000 keys each.
+#: Pages one listing reads at most, of up to 1000 keys each: past them it
+#: stops, noted in ``S3Storage.cut_short``.
 MAX_PAGES = 400
 
 #: The parameters this provider reads: an area, for a GeoParquet table row.
@@ -57,14 +60,38 @@ class S3Storage:
         #: ``SourceMount``, and ``forget(path)``); None reads every file over
         #: HTTP.
         self.reads = reads
+        #: Each listing that stopped at :data:`MAX_PAGES` before its end, a
+        #: file listing's or a folder listing's, so a scan says it was cut short.
+        self.cut_short: list[ListingCut] = []
 
     # ── urls ───────────────────────────────────────────────────────────────
 
-    def _list_url(self, prefix: str, token: str | None) -> str:
+    def _list_url(self, prefix: str, token: str | None, *, delimiter: str | None = None) -> str:
         url = f"{self.base}/?list-type=2&max-keys=1000&prefix={quote(self.prefix + prefix, safe='')}"
+        if delimiter:
+            url += f"&delimiter={quote(delimiter, safe='')}"
         if token:
             url += f"&continuation-token={quote(token, safe='')}"
         return url
+
+    def _pages(self, prefix: str, *, delimiter: str | None = None) -> Iterator[ET.Element]:
+        """Each page of the listing under *prefix*, up to :data:`MAX_PAGES`;
+        a listing that runs past them is noted in :attr:`cut_short`."""
+        token = None
+        for _page in range(MAX_PAGES):
+            body = self.transport.json_get(self._list_url(prefix, token, delimiter=delimiter))
+            try:
+                root = ET.fromstring(body if isinstance(body, str) else str(body))
+            except ET.ParseError as exc:
+                raise ProviderError(f"{self.manifest.name} answered a listing that is not XML") from exc
+            yield root
+            if (root.findtext(f"{_NS}IsTruncated") or "").lower() != "true":
+                return
+            token = root.findtext(f"{_NS}NextContinuationToken")
+            if not token:
+                return
+        # The last page read names another: the listing stops short of the bucket.
+        self.cut_short.append(ListingCut(prefix, MAX_PAGES))
 
     def file_url(self, relpath: str) -> str:
         validate_relpath(relpath)
@@ -76,13 +103,7 @@ class S3Storage:
     # ── the contract ───────────────────────────────────────────────────────
 
     def scan(self, prefix: str = "") -> Iterator[FileEntry]:
-        token = None
-        for _page in range(MAX_PAGES):
-            body = self.transport.json_get(self._list_url(prefix, token))
-            try:
-                root = ET.fromstring(body if isinstance(body, str) else str(body))
-            except ET.ParseError as exc:
-                raise ProviderError(f"{self.manifest.name} answered a listing that is not XML") from exc
+        for root in self._pages(prefix):
             for item in root.iter(f"{_NS}Contents"):
                 key = item.findtext(f"{_NS}Key") or ""
                 if not key.startswith(self.prefix) or key.endswith("/"):
@@ -96,11 +117,24 @@ class S3Storage:
                     mtime=_timestamp(item.findtext(f"{_NS}LastModified")),
                     etag=(item.findtext(f"{_NS}ETag") or "").strip('"') or None,
                 )
-            if (root.findtext(f"{_NS}IsTruncated") or "").lower() != "true":
-                return
-            token = root.findtext(f"{_NS}NextContinuationToken")
-            if not token:
-                return
+
+    def folders(self, prefix: str = "") -> list[str]:
+        """The names of the folders right under *prefix*, which
+        ``application/scan.py`` reads a template through one at a time: a
+        listing with a ``/`` delimiter, whose common prefixes are the folders.
+        Hidden and system names are left out, as :meth:`scan` leaves out the
+        files under them."""
+        start = self.prefix + prefix
+        names: list[str] = []
+        for root in self._pages(prefix, delimiter="/"):
+            for item in root.iter(f"{_NS}CommonPrefixes"):
+                folder = item.findtext(f"{_NS}Prefix") or ""
+                # A source's prefix may end partway through a name: the
+                # folder's name, as its files' relpaths start, is what follows.
+                name = folder[len(start):-1] if folder.startswith(start) and folder.endswith("/") else ""
+                if name and "/" not in name and not is_skipped(name):
+                    names.append(name)
+        return names
 
     def open(self, relpath: str, *, byte_range: tuple[int, int] | None = None,
              max_bytes: int = MAX_DISCOVERY_DOWNLOAD_BYTES, ceiling: int | None = None) -> BinaryIO:

@@ -24,6 +24,7 @@ import json
 
 import pytest
 
+from utk_curio.backend.tests._support.left_out_files import shipped_catalog_bytes
 from utk_curio.backend.tests.dataset_catalog_coverage import (
     CatalogDataset,
     bucket_source,
@@ -283,7 +284,7 @@ def test_dataset_slugs_and_e2e_usernames_are_unique():
 def test_the_shipped_catalog_stays_within_its_size_budget():
     """``MANIFEST.in`` ships ``datasets/`` to PyPI, all but the data files
     the manifests name in ``downloadOnFirstUse``, which a pip install
-    downloads on first use.
+    downloads on first use. Those bytes alone count (``shipped_catalog_bytes``).
 
     The example-data migration took this directory from 1.4 MB to tens of MB in
     one commit (while removing more than that from ``docs/examples/data``). This
@@ -291,9 +292,9 @@ def test_the_shipped_catalog_stays_within_its_size_budget():
     ``pip install utk-curio``, and PyPI caps a single file at 100 MB.
     """
     root = CATALOG[0].root.parent
-    total = sum(path.stat().st_size for path in root.rglob("*") if path.is_file())
+    total = shipped_catalog_bytes(root.parent)
     assert total < 64 * 1024 * 1024, (
-        f"datasets/ is {total / 1e6:.1f} MB. Either shrink the new dataset, or "
+        f"The pip package ships {total / 1e6:.1f} MB of datasets/. Either shrink the new dataset, or "
         f"leave its data file out of the pip package: name it in its manifest's "
         f"downloadOnFirstUse. Do not just raise this number."
     )

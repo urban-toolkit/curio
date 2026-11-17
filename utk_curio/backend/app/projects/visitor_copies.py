@@ -48,7 +48,8 @@ folder, named as their datasets are (:func:`media_visitor`,
 ``media_dirs.derived_root``), wherever the guest is served: in their
 requests, on a run's thread, and through a signed link. One derived id names
 a file in each guest's folder, so none reads or overwrites another's. They go
-when the server starts too.
+when the server starts too. A dashboard's run is the exception: each of its
+steps writes in a folder of its own, as every viewer's does.
 
 The guest's own edits on the canvas land on the copy too: the guest's tab
 joins the room of its copy (:func:`room_for`), keyed by the copy's id, and
@@ -245,8 +246,9 @@ def media_visitor(user_key: Optional[str]) -> Optional[str]:
     in the shared guest account's, on a Curio started with ``--deploy``, the
     visitor the request or the run serves (:func:`served_visitor`). None for
     any other store; without ``--deploy``, where the shared guest is the one
-    local user; and for a run that serves no visitor, such as a dashboard's
-    that every viewer of it shares."""
+    local user; and for a run that serves no visitor. A dashboard viewer's
+    step writes in a folder of its own instead, whoever it serves
+    (``media_dirs.derived_root``'s *kept*)."""
     from utk_curio.backend import config
 
     if user_key != GUEST_KEY or config.CURIO_NO_AUTH:

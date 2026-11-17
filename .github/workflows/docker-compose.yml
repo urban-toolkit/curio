@@ -1576,6 +1576,19 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
+      # As in test-isolated, which says why: this stack runs nodes in the
+      # sandbox itself, where onnxruntime starts a thread per core it sees. At
+      # load 530 to 680 example 10's Image Segmentation ran 129 s there, past
+      # its test's 120 s (run 44027626125), where a quiet arcade runner takes
+      # 11 s. docker-compose.ci.yml hands the count on as OMP_NUM_THREADS, which
+      # the Segmentation package hands onnxruntime.
+      - name: 📏 Size the stack's library threads to this runner
+        if: env.CURIO_CI_HOLDS == 'true'
+        run: |
+          threads=$(nproc); [ "$threads" -gt 8 ] && threads=8
+          echo "CURIO_CI_LIBRARY_THREADS=$threads" >> "$GITHUB_ENV"
+          echo "OMP_NUM_THREADS=$threads" >> "$GITHUB_ENV"
+
       # runner-env: the runner's pytest uses the image's packages
       # (.github/actions/image-env), so test.sh skips its setup.
       - if: env.CURIO_CI_HOLDS == 'true'
@@ -1635,6 +1648,11 @@ jobs:
           # checks that each selected test ran.
           if [ -n "${CURIO_TESTS:-}" ]; then extra+=(--allow-empty); fi
           bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing --skip-setup "${extra[@]}"
+
+      # After the tests, as test-isolated's, so it never stops them.
+      - name: 🔒 Assert a node of the stack uses the job's thread count
+        if: ${{ !cancelled() && env.CURIO_CI_HOLDS == 'true' }}
+        run: python3 scripts/ci_library_threads.py
 
       - name: 📦 Collect the re-minted baselines
         if: always() && env.CURIO_REMINT == '1' && env.CURIO_CI_HOLDS == 'true'
@@ -1815,7 +1833,7 @@ jobs:
       # After the workflows, as the check above, so it never stops the tests.
       - name: 🔒 Assert an isolated child's torch uses the job's thread count
         if: ${{ !cancelled() }}
-        run: python3 scripts/ci_isolated_threads.py
+        run: python3 scripts/ci_library_threads.py
 
       - name: 📋 Capture sandbox/backend logs
         if: always()
@@ -1921,8 +1939,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Only pytest. The suite talks to the sandbox over HTTP and imports
-      # nothing from the project, deliberately.
+      # Only pytest. The suite talks to the sandbox and the backend over HTTP
+      # and imports nothing from the project, deliberately.
       - name: 📦 Install pytest
         run: python -m pip install --quiet "pytest==9.0.3"
 

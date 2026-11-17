@@ -269,9 +269,9 @@ def _progress_payload(step: Step, progress) -> dict:
     """A ``step_progress`` event of *step*: what its node does as it runs,
     the *progress* of a download (``left_out_files.Progress``), or no message
     once its downloads are over (None)."""
-    if progress is None:
-        return {"nodeId": step.node_id, "message": ""}
-    return {"nodeId": step.node_id, "message": progress.message, "done": progress.done, "total": progress.total}
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+    return {"nodeId": step.node_id, **left_out_files.progress_fields(progress)}
 
 
 def _handed_back(work: Callable, step: Step, arrivals: "queue.Queue") -> None:

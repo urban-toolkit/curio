@@ -25,10 +25,13 @@ from utk_curio.backend.app.discovery.infrastructure.transport import (
 )
 from utk_curio.backend.app.discovery.providers.storage_base import (
     FileEntry,
+    ListingCut,
     is_skipped,
     validate_relpath,
 )
 
+#: Pages one listing reads at most: past them it stops, noted in
+#: ``HuggingFaceStorage.cut_short``.
 MAX_PAGES = 400
 
 #: The parameters this provider reads: an area, for a GeoParquet table row.
@@ -47,6 +50,9 @@ class HuggingFaceStorage:
         options = manifest.provider.options
         self.repo = str(options["repo"])
         self.revision = str(options.get("revision") or "main")
+        #: Each listing that stopped at :data:`MAX_PAGES` before its end, so a
+        #: scan says it was cut short.
+        self.cut_short: list[ListingCut] = []
 
     def _tree_url(self, prefix: str) -> str:
         path = quote(prefix.rstrip("/"), safe="/")
@@ -89,6 +95,9 @@ class HuggingFaceStorage:
                     etag=str(entry.get("oid") or "") or None,
                 )
             url = _next_link(headers, self.base)
+        if url is not None:
+            # The last page read names another: the listing stops short of the repository.
+            self.cut_short.append(ListingCut(prefix, MAX_PAGES))
 
     def open(self, relpath: str, *, byte_range: tuple[int, int] | None = None,
              max_bytes: int = MAX_DISCOVERY_DOWNLOAD_BYTES, ceiling: int | None = None) -> BinaryIO:

@@ -286,8 +286,8 @@ class TestAfterTheImportSolvingContinues:
 
 
 class TestAMidSessionDatasetStillGetsItsPath:
-    """dev/131 F4, closed here. The sandbox path mapping is resolved when a
-    Solve starts (dev/115's rule — a detached job holds no request context), so
+    """dev/131 F4, closed here. The sandbox path mapping was resolved when a
+    Solve started (dev/115's rule, a detached job holds no request context), so
     a dataset that appeared DURING the session had no path inside the running
     job. What the resolution actually needs is the acting user, and a job can
     hold that from its start."""

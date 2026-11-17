@@ -1,8 +1,10 @@
 """The SAGE-IDOT rail crossings source, on the recorded corpus: no socket opens.
 
 ``scripts/record_discovery_fixtures.py --only idot`` listed the bucket on
-data.urbantk.org live, 168,023 objects on 169 pages, and kept them as one page
-of the first and last file of each folder. Each monthly JSON Lines file is
+data.urbantk.org live, 168,023 objects, a folder at a time as the listing reads
+it: the crossings, each crossing's months, then each month's snapshots and each
+crossing's data folder, each kept as one page of its first and last file. No
+file beside those is listed, such as ``sample/``'s. Each monthly JSON Lines file is
 indexed to a synthetic stand-in in the real files' format
 (``fixtures/download/storage/idot/detections.jsonl``), and the one empty file
 in the bucket, W06E's for March 2026, to an empty body.
@@ -85,6 +87,32 @@ class TestTheListing:
         assert december["acquirable"] is False
         assert "1,310,434,728 bytes" in december["unavailableReason"], december["unavailableReason"]
         assert rows[row_id("detections", "W042", JULY)]["unavailableReason"] is None
+
+    def test_a_listing_past_its_folders_says_it_met_them(
+        self, client, auth, app, shipped_root, fixture_corpus, monkeypatch
+    ):
+        """Its rows are in more folders than a bound of 5, and the page names
+        that bound, not the files a row or a listing holds."""
+        from utk_curio.backend.app.discovery.application import scan
+
+        monkeypatch.setattr(scan, "MAX_FOLDERS", 5)
+        body = listing(client, auth, SOURCE)
+        assert body["truncated"] is True
+        assert body.get("cutShort") == (
+            "This source holds more files than are listed here: a listing reads the files of up to 5 folders."
+        ), "the listing does not say which of its limits it met"
+
+    def test_a_listing_past_its_files_says_it_met_them(
+        self, client, auth, app, shipped_root, fixture_corpus, monkeypatch
+    ):
+        from utk_curio.backend.app.discovery.application import scan
+
+        monkeypatch.setattr(scan, "MAX_LISTING_FILES", 10)
+        body = listing(client, auth, SOURCE)
+        assert body["truncated"] is True
+        assert body.get("cutShort") == (
+            "This source holds more files than are listed here: a listing holds up to 10 files, all its rows' together."
+        ), "the listing does not say which of its limits it met"
 
 
 class TestTheSnapshots:

@@ -37,6 +37,16 @@ function without<T>(prev: ById<T>, key: string): ById<T> {
   return rest;
 }
 
+/**
+ * What a `node_download` event of an agent's run says, for the line that
+ * narrates the node's run: how far a download on first use of what the node
+ * reads has come, as the canvas says a run's step_progress; null once its
+ * downloads are over and the node runs.
+ */
+export function downloadLine(payload: Record<string, unknown>): string | null {
+  return typeof payload.message === "string" && payload.message ? payload.message : null;
+}
+
 function readWaiting(raw: unknown): AgentSolveWaiting {
   return Array.isArray(raw)
     ? (raw as Array<Record<string, unknown>>).map((w) => ({
@@ -124,6 +134,17 @@ export function useAgentSolve(opts: {
       }
       const nodeId = typeof payload.nodeId === "string" ? payload.nodeId : null;
       if (!nodeId) return;
+      if (name === "node_download") {
+        // How far what the node reads has downloaded on its first use, under
+        // the pills while it does; nothing once that is over.
+        const message = downloadLine(payload);
+        setSolveNotices((prev) => {
+          const forAttachment = prev[attachmentId] ?? {};
+          if (message) return { ...prev, [attachmentId]: { ...forAttachment, [nodeId]: message } };
+          return nodeId in forAttachment ? { ...prev, [attachmentId]: without(forAttachment, nodeId) } : prev;
+        });
+        return;
+      }
       if (name === "node_started") mark(nodeId, "solving");
       else if (name === "node_round") mark(nodeId, "generating");
       else if (name === "node_executed") mark(nodeId, "verifying");
@@ -241,9 +262,12 @@ export function useAgentSolve(opts: {
             (name, payload) => {
               if (bridgeLandedChangeEvent(name, payload)) return;
               const round = typeof payload.round === "number" ? payload.round : null;
+              const running = `Round ${round ?? ""}: running in the sandbox…`.replace("Round : ", "");
               const line =
                 name === "generation_round" ? `Round ${round ?? "?"}: generating…`
-                : name === "node_executed" ? `Round ${round ?? ""}: running in the sandbox…`.replace("Round : ", "")
+                : name === "node_executed" ? running
+                // How far what the node reads has downloaded on its first use.
+                : name === "node_download" ? downloadLine(payload) ?? running
                 : name === "round_verdict" ? `Round ${round ?? "?"}: ${payload.verdict === "pass" ? "passed" : "failed, fixing…"}`
                 : null;
               if (line) narrateNodeSolve(attachmentId, line);
@@ -277,6 +301,8 @@ export function useAgentSolve(opts: {
             name === "generation_round"
               ? round === 1 ? "Round 1: running the current code…" : `Round ${round}: generating a fix…`
               : name === "node_executed" ? "Running in the sandbox…"
+              // How far what the node reads has downloaded on its first use.
+              : name === "node_download" ? downloadLine(payload) ?? "Running in the sandbox…"
               : name === "round_verdict"
                 ? `Round ${round ?? "?"}: ${payload.verdict === "pass" ? "passed ✓" : payload.verdict === "fail" ? "failed, fixing…" : "not verified (sandbox unreachable)"}`
                 : null;

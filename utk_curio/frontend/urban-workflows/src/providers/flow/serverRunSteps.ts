@@ -3,6 +3,7 @@
 // outputs a reopened canvas takes from the run, and which ancestor outputs a
 // play reuses. useServerRun applies them.
 import type { Edge, Node } from "reactflow";
+import type { NodeOutput } from "../../hook/useNodeState";
 import type { RunEvent, RunStatus, RunStep, StepRole, StepStatus } from "../../services/runs/runsApi";
 import type { IOutput } from "./flowTypes";
 import { directedEdgesOf, nodesToRunUpTo } from "./runLevels";
@@ -53,6 +54,26 @@ export function nodeChangeFor(
     default:
       return null;
   }
+}
+
+/**
+ * What a running step shows on its node, on the canvas and on a dashboard
+ * alike: running, saying what its run says it does, such as how far what it
+ * reads has downloaded, until its outcome lands; after that, a replayed event
+ * shows nothing. *run* holds the nodes it showed as running (`started`) and
+ * those its outcome reached (`applied`). Whether *change* is a running one.
+ */
+export function showRunning(
+  change: NodeChange,
+  nodeId: string,
+  run: { started: Set<string>; applied: Set<string> },
+  showOnNode: (nodeId: string, output: NodeOutput) => void,
+): boolean {
+  if (change.kind !== "running" && change.kind !== "progress") return false;
+  run.started.add(nodeId);
+  const content = change.kind === "progress" ? change.message : "";
+  if (!run.applied.has(nodeId)) showOnNode(nodeId, { code: "exec", content });
+  return true;
 }
 
 /** The reply a step stands for when the run kept only its tails: an engine-made failure, or a record. */

@@ -22,9 +22,16 @@ journaled, and the saved spec is never written.
 What is kept: each step's output, under a key of what made it, as viewers
 made it (``runs/kept.py``: ``step_key``, ``keep``), so a visitor who opens
 the page or picks values someone ran before gets the outputs at once, and a
-request for a run already going joins it. Kept outputs go after their time or
-past their budget, with their artifacts, by the sweep ``kept.py`` describes;
-a run sweeps at its end, and at the first start after a restart.
+request for a run already going joins it. The files a step derives from a
+collection's files (an overlay, a video's frame) are kept with its output, in
+a folder of the step's own in the owner's media folder
+(``media_dirs.derived_root``), whose name the URLs of its rows carry: a
+viewer's run never writes where the owner's runs write theirs under the same
+ids. A step that reads an earlier step's output keeps naming that step's
+folder (``kept.folders_named_by``), since its rows may hand on the files there.
+Kept outputs go after their time or past their budget, with their artifacts,
+and a folder goes once no kept output names it, by the sweep ``kept.py``
+describes; a run sweeps at its end, and at the first start after a restart.
 
 A hosted guest's dashboard of a dataflow their account owns, an example, is
 their own copy's once they have one (``projects/visitor_copies.py``,
@@ -83,6 +90,7 @@ from utk_curio.backend.app.runs.kept import (
     canonical,
     datasets_read,
     digest,
+    folders_named_by,
     forget_sessions,
     keep,
     kept_output,
@@ -564,6 +572,7 @@ def _run_events(
     guest's datasets as the guest's plays do (``visitor_copies.serving``)."""
     from contextlib import nullcontext
 
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
     from utk_curio.backend.app.execution import node_exec
     from utk_curio.backend.app.execution.run_engine import run_events
     from utk_curio.backend.app.projects import visitor_copies
@@ -589,21 +598,37 @@ def _run_events(
             output, ids = kept
             return {"stdout": [], "stderr": "", "output": output, "artifactIds": ids}
         session_id = new_session_id()
+        # What the step derives (an overlay, a frame) is its own, in a folder
+        # of its session's that goes with its kept output, never where the
+        # owner's runs write theirs under the same ids.
+        kept_media = media_dirs.kept_media_name(session_id)
         node_run = node_exec.NodeRun(
             code=call.code, node_type=step.node_type,
             # No node id: a viewer's run writes nothing to the owner's runtime
             # journal (``record_runtime_outcome``) and installs nothing.
             node_id=None, input=call.input, dataflow_id=project_id, node_name=step.label,
             save_output_dataset=False, input_slots=call.slots,
-            kept_on=kept_on if kept_on != project_id else None,
+            kept_on=kept_on if kept_on != project_id else None, kept_media=kept_media,
         )
         run_node = node_exec.execute_js_node if call.engine == "javascript" else node_exec.execute_python_node
-        with _SLOTS:
-            reply, _status = run_node(owner, session_id, node_run)
+        try:
+            with _SLOTS:
+                reply, _status = run_node(owner, session_id, node_run)
+        except BaseException:
+            media_dirs.forget_kept(user_key, [kept_media])
+            raise
         output = reply.get("output") if isinstance(reply.get("output"), dict) else {}
         if output.get("path"):
-            return {**reply, "artifactIds": keep(kept_on, step.node_id, key, session_id, output, private)}
+            # Its rows may hand on the rows it read, which name the files
+            # earlier steps derived: those folders stay while this output does.
+            read = node_exec.input_names(node_exec.parse_input_ref(call.input)) if call.input else []
+            ids = keep(
+                kept_on, step.node_id, key, session_id, output, private,
+                media_folders=folders_named_by(kept_on, read),
+            )
+            return {**reply, "artifactIds": ids}
         forget_sessions([session_id])
+        media_dirs.forget_kept(user_key, [kept_media])
         return reply
 
     def wrap(fn):

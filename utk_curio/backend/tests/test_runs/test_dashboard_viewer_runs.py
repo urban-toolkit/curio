@@ -76,9 +76,11 @@ class FakeSandbox:
     """Runs a node as an artifact named after it; describes and forgets the
     sessions it is asked about, and stores a page's result as ``page-<n>``.
     *hold* keeps the named nodes running; *outputs* gives a node's output
-    instead, ``(path, dataType)`` from a callable. *store_takes_s* is how long
-    a store takes: one given less time is stored all the same, and its caller
-    gets the timeout ``sandbox_request`` raises."""
+    instead, ``(path, dataType)`` from a callable. *derive* runs a node's
+    code instead, a callable handed the body the backend sent (its
+    ``media_dir`` among it). *store_takes_s* is how long a store takes: one
+    given less time is stored all the same, and its caller gets the timeout
+    ``sandbox_request`` raises."""
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -88,6 +90,7 @@ class FakeSandbox:
         self.stored = []
         self.hold = set()
         self.outputs = {}
+        self.derive = {}
         self.store_takes_s = 0
         self.gate = threading.Event()
         self.started = threading.Event()
@@ -124,6 +127,8 @@ class FakeSandbox:
         self.started.set()
         if node_id in self.hold:
             assert self.gate.wait(timeout=30), "the test never released the gate"
+        if node_id in self.derive:
+            self.derive[node_id](body)
         with self.lock:
             self.runs.append((node_id, body))
             path_out, kind = (
@@ -1192,6 +1197,27 @@ class TestTheStepsLeftToThePage:
         after = KeptStepOutput.query.filter_by(project_id=gpu, node_id="after").one()
         assert after.private_to == kept.digest(first["token"])
 
+    def test_what_is_made_from_a_pages_result_gets_no_media_links(self, client, gpu, sandbox):
+        """The server cannot check what a page sends, so rows made from it
+        could name any of the owner's files: the dashboard links none of
+        them, with the run's token or without."""
+        from utk_curio.backend.app.runs.models import KeptStepOutput
+
+        first = _month(client, gpu)
+        page = _keep_step(client, gpu, first["runId"], first["token"]).get_json()["output"]["path"]
+        resp = _on_the_page(client, gpu, {"gpu": page}, first["token"])
+        assert resp.status_code == 202, resp.get_data(as_text=True)
+        _wait(resp.get_json()["runId"])
+        after = KeptStepOutput.query.filter_by(project_id=gpu, node_id="after").one()
+        asked = json.dumps({
+            "fileName": after.output_path, "files": [{"datasetId": SURVEY, "fileId": "0" * 16, "kept": None}],
+        })
+
+        for headers in ({}, {TOKEN_HEADER: first["token"]}):
+            res = client.post(f"/api/projects/{gpu}/dashboard/media", data=asked,
+                              headers={"Content-Type": "application/json", **headers})
+            assert res.status_code == 404, (headers, res.get_data(as_text=True))
+
     def test_another_page_runs_its_own_step_and_cannot_name_the_first_ones(self, client, gpu, sandbox):
         first = _month(client, gpu)
         page = _keep_step(client, gpu, first["runId"], first["token"]).get_json()["output"]["path"]
@@ -1616,3 +1642,294 @@ class TestAWrapperAStepReads:
         _month(client, pid)
 
         assert [node for node, _ in sandbox.runs] == ["grid", "after"]
+
+
+#: The committed street survey: three photos and a video, in a folder of the repo.
+SURVEY = "data.curio.storage-survey"
+#: The owner's overlay of a photo, and the viewer's.
+OWNERS, VIEWERS = (200, 30, 30), (30, 200, 30)
+
+
+def _png(colour) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (8, 8), colour).save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+@pytest.fixture()
+def survey(monkeypatch, client, user_and_token):
+    """The committed street survey in the owner's Data Catalog, its source
+    read where the repo holds it: the ids of its photos."""
+    from pathlib import Path
+
+    import pandas as pd
+
+    from utk_curio.backend.app.discovery.infrastructure import storage as discovery_storage
+
+    monkeypatch.setenv(discovery_storage.ENV_ROOT, str(Path(__file__).resolve().parents[4] / "discovery"))
+    _, token = user_and_token
+    item = client.get(f"/api/datasets/{SURVEY}", headers=_auth(token))
+    assert item.status_code == 200, item.get_data(as_text=True)
+    index = pd.read_parquet(item.get_json()["path"])
+    return index[index["kind"] == "image"]["file_id"].tolist()
+
+
+class TestWhatAViewersRunDerives:
+    """A viewer's run that draws an overlay of a photo, as Image Segmentation
+    does, draws it under the id the owner's run of the same node gave the
+    owner's overlay (``curio_derived_file``: the photo, the time and the
+    model's tag). It is kept where the viewer's kept output is: the owner's
+    file keeps its bytes, each row reads the file its own run wrote, and the
+    sweep takes the viewer's with its kept output. New names are imported
+    inside each test, so a checkout without them fails each on its own."""
+
+    @staticmethod
+    def _owners_overlay(user, photo):
+        """The overlay the owner's own run of Grid drew, where an owner's run writes."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+
+        derive = make_collection_helpers(None, {}, str(media_dirs.media_work_root(str(user.id))))["curio_derived_file"]
+        row = derive(SURVEY, photo, 0, "png", kind="image", tag="seg")
+        Path(row["path"]).write_bytes(_png(OWNERS))
+        return row
+
+    @staticmethod
+    def _viewers_grid_draws(sandbox, photo):
+        """Grid's code on the server: one overlay of *photo*, written where
+        ``curio_derived_file`` says at the media directory the backend sent;
+        the rows it gave."""
+        from pathlib import Path
+
+        from utk_curio.sandbox.util.collections import make_collection_helpers
+
+        rows = []
+
+        def draw(body):
+            derive = make_collection_helpers(None, {}, body["media_dir"])["curio_derived_file"]
+            row = derive(SURVEY, photo, 0, "png", kind="image", tag="seg")
+            Path(row["path"]).write_bytes(_png(VIEWERS))
+            rows.append(row)
+
+        sandbox.derive["grid"] = draw
+        return rows
+
+    def test_a_viewers_run_with_other_values_leaves_the_owners_derived_file_as_it_was(
+        self, client, user_and_token, sandbox, saved, survey,
+    ):
+        from pathlib import Path
+
+        user, token = user_and_token
+        pid = _create(client, token)
+        owners = self._owners_overlay(user, survey[0])
+        viewers = self._viewers_grid_draws(sandbox, survey[0])
+
+        _month(client, pid)
+
+        assert len(viewers) == 1, "the viewer's run did not run Grid"
+        assert Path(owners["path"]).read_bytes() == _png(OWNERS), (
+            f"the viewer's run wrote its overlay over the owner's: both at {viewers[0]['path']}"
+        )
+        assert Path(viewers[0]["path"]).read_bytes() == _png(VIEWERS)
+
+    def test_each_rows_url_reads_the_file_its_own_run_wrote(self, client, user_and_token, sandbox, saved, survey):
+        user, token = user_and_token
+        pid = _create(client, token)
+        owners = self._owners_overlay(user, survey[0])
+        viewers = self._viewers_grid_draws(sandbox, survey[0])
+
+        _month(client, pid)
+
+        auth = {"Authorization": f"Bearer {token}"}
+        assert viewers[0]["image_url"] != owners["image_url"], "the viewer's row names the owner's file"
+        theirs = client.get(owners["image_url"], headers=auth)
+        assert (theirs.status_code, theirs.data == _png(OWNERS)) == (200, True), theirs.status_code
+        mine = client.get(viewers[0]["image_url"], headers=auth)
+        assert (mine.status_code, mine.data == _png(VIEWERS)) == (200, True), mine.status_code
+
+    def test_the_sweep_takes_the_viewers_file_with_its_kept_output(
+        self, client, user_and_token, sandbox, saved, survey, monkeypatch,
+    ):
+        from pathlib import Path
+
+        from utk_curio.backend.app.runs import kept
+        from utk_curio.backend.app.runs.models import KeptStepOutput
+
+        user, token = user_and_token
+        pid = _create(client, token)
+        owners = self._owners_overlay(user, survey[0])
+        viewers = self._viewers_grid_draws(sandbox, survey[0])
+        _month(client, pid)
+        made_at = KeptStepOutput.query.filter_by(project_id=pid).one().created_at
+        monkeypatch.setattr(kept, "naive_utc_now", lambda: made_at + timedelta(days=kept.KEPT_DAYS + 1))
+
+        assert kept.prune() == 1
+
+        assert not Path(viewers[0]["path"]).exists(), "the viewer's overlay outlived its kept output"
+        assert Path(owners["path"]).read_bytes() == _png(OWNERS)
+        gone = client.get(viewers[0]["image_url"], headers={"Authorization": f"Bearer {token}"})
+        assert gone.status_code == 404, "a swept overlay was read as another"
+
+    def test_a_step_that_keeps_no_output_leaves_nothing_it_derived(
+        self, client, user_and_token, sandbox, saved, survey,
+    ):
+        from pathlib import Path
+
+        user, token = user_and_token
+        pid = _create(client, token)
+        owners = self._owners_overlay(user, survey[0])
+        viewers = self._viewers_grid_draws(sandbox, survey[0])
+        sandbox.outputs["grid"] = lambda: ("", "str")
+
+        _month(client, pid)
+
+        assert len(viewers) == 1
+        assert not Path(viewers[0]["path"]).exists(), "a step that kept nothing left its overlay behind"
+        assert Path(owners["path"]).read_bytes() == _png(OWNERS)
+
+    def test_a_viewer_with_no_account_sees_the_overlay_its_run_drew(
+        self, client, user_and_token, sandbox, saved, survey, monkeypatch,
+    ):
+        """The page asks the dashboard for a link to the overlay its run's row
+        names, with no sign-in: the link reads the viewer's overlay, read from
+        the run's kept output in its own session, and the owner's overlay of
+        the same id gets none."""
+        from urllib.parse import parse_qs, urlparse
+
+        from utk_curio.backend.app.api import routes as api_routes
+        from utk_curio.backend.app.runs.models import KeptStepOutput
+
+        user, token = user_and_token
+        pid = _create(client, token)
+        self._owners_overlay(user, survey[0])
+        viewers = self._viewers_grid_draws(sandbox, survey[0])
+        _month(client, pid)
+        entry = KeptStepOutput.query.filter_by(project_id=pid).one()
+        row = viewers[0]
+        read = []
+
+        class Envelope:
+            """Grid's output as the sandbox's ``/get`` sends it: the row it derived."""
+
+            status_code = 200
+
+            def json(self):
+                columns = ("dataset_id", "file_id", "kind", "thumbnail", "image_url")
+                return {"dataType": "dataframe", "data": {column: [row[column]] for column in columns}}
+
+            def close(self):
+                pass
+
+        def sandbox_call(method, path, **kwargs):
+            read.append((path, kwargs.get("params")))
+            return Envelope()
+
+        monkeypatch.setattr(api_routes, "_sandbox_call", sandbox_call)
+        kept_folder = parse_qs(urlparse(row["image_url"]).query).get("kept", [None])[0]
+        asked = client.post(f"/api/projects/{pid}/dashboard/media", data=json.dumps({
+            "fileName": entry.output_path,
+            "files": [
+                {"datasetId": SURVEY, "fileId": row["file_id"], "kept": kept_folder},
+                {"datasetId": SURVEY, "fileId": row["file_id"], "kept": None},
+            ],
+        }), headers={"Content-Type": "application/json"})
+
+        assert asked.status_code == 200, asked.get_data(as_text=True)
+        assert kept_folder is not None, f"the viewer's row names no folder of its run: {row['image_url']}"
+        links = asked.get_json()["links"]
+        assert [(link["fileId"], link["kept"]) for link in links] == [(row["file_id"], kept_folder)]
+        overlay = client.get(f"{links[0]['url']}?variant=original")
+        assert (overlay.status_code, overlay.data == _png(VIEWERS)) == (200, True), overlay.status_code
+        assert read == [("/get", {"fileName": entry.output_path, "sessionId": entry.session_id})]
+
+    def test_a_file_a_later_steps_rows_name_stays_until_that_steps_output_goes(
+        self, client, user_and_token, sandbox, saved, survey, monkeypatch,
+    ):
+        """Grid draws the overlay, and After hands Grid's rows on, so After's
+        rows name the overlay in Grid's folder. Grid's kept output goes first,
+        a day before After's: After's row still reads the overlay, which goes
+        with After's output."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.runs import kept
+        from utk_curio.backend.app.runs.models import KeptStepOutput
+        from utk_curio.backend.extensions import db
+
+        user, token = user_and_token
+        after = {"id": "after", "type": CODE, "content": "# node after\nreturn input_0"}
+        pid = _create(client, token, nodes=_nodes(extra=[after]), edges=[
+            {"id": "grid-after", "source": "grid", "target": "after"},
+            {"id": "after-chart", "source": "after", "target": "chart"},
+        ])
+        viewers = self._viewers_grid_draws(sandbox, survey[0])
+        _month(client, pid)
+        assert [node for node, _body in sandbox.runs] == ["grid", "after"]
+        grid = KeptStepOutput.query.filter_by(project_id=pid, node_id="grid").one()
+        made_at = KeptStepOutput.query.filter_by(project_id=pid, node_id="after").one().created_at
+        grid.created_at = made_at - timedelta(days=kept.KEPT_DAYS + 1)
+        db.session.commit()
+        overlay = Path(viewers[0]["path"])
+
+        assert kept.prune() == 1
+        assert overlay.exists(), "Grid's output went and took the overlay After's rows still name"
+        read = client.get(viewers[0]["image_url"], headers={"Authorization": f"Bearer {token}"})
+        assert (read.status_code, read.data == _png(VIEWERS)) == (200, True), read.status_code
+
+        monkeypatch.setattr(kept, "naive_utc_now", lambda: made_at + timedelta(days=kept.KEPT_DAYS + 1))
+        assert kept.prune() == 1
+        assert not overlay.exists(), "the overlay outlived the last kept output that named it"
+
+    def test_the_sweep_takes_a_folder_no_kept_output_names(self, client, db, user_and_token, sandbox, saved, survey):
+        """A step's folder no kept output names: one a backend that stopped
+        between the step's write and its keep leaves, or one whose dataflow's
+        row was dropped with its spec file gone (``list_projects``). The sweep
+        takes it once nothing has been written in it for an hour, and never a
+        folder a kept output names."""
+        import time
+        from pathlib import Path
+
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.backend.app.projects import repositories as repo
+        from utk_curio.backend.app.runs import kept
+        from utk_curio.common.kept_sessions import new_session_id
+
+        user, token = user_and_token
+        pid = _create(client, token)
+        viewers = self._viewers_grid_draws(sandbox, survey[0])
+        _month(client, pid)
+        named = Path(viewers[0]["path"])
+        stray = media_dirs.derived_root(str(user.id), kept=media_dirs.kept_media_name(new_session_id()))
+        (stray / "overlays").mkdir(parents=True)
+        (stray / "overlays" / "0-seg.png").write_bytes(_png(VIEWERS))
+        later = time.time() + kept.KEPT_MEDIA_GRACE_SECONDS + 60
+
+        assert kept.sweep_kept_media() == 0, "a folder its step may still be writing in went"
+        assert kept.sweep_kept_media(now=later) == 1
+        assert not stray.exists(), "a folder no kept output names stayed"
+        assert named.exists(), "the sweep took a folder a kept output names"
+
+        repo.delete_project_row(pid, user.id)
+        db.session.commit()
+        assert kept.sweep_kept_media(now=later) == 1
+        assert not named.exists(), "a dropped dataflow's folder stayed"
+
+    def test_the_folder_a_viewers_step_writes_in_is_the_one_its_rows_name(self, user_and_token):
+        """The backend names a step's folder (``media_dirs``), and the sandbox
+        reads the name back from the media directory it is handed
+        (``collections.kept_of``): the two agree on the layout."""
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.common.kept_sessions import new_session_id
+        from utk_curio.sandbox.util.collections import KEPT_NAME_RE, kept_of
+
+        user, _token = user_and_token
+        name = media_dirs.kept_media_name(new_session_id())
+        assert KEPT_NAME_RE.match(name)
+        assert kept_of(str(media_dirs.derived_root(str(user.id), kept=name))) == name
+        assert kept_of(str(media_dirs.derived_root(str(user.id)))) is None
+        assert kept_of(str(media_dirs.derived_root(str(user.id), "v" + "0" * 32))) is None
