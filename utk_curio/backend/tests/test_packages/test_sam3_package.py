@@ -52,7 +52,7 @@ MODULE_SOURCE = PACKAGE / "sources" / f"{MODULE}.py"
 #: The node's settings, in its code tab's order, and the arguments they are.
 SETTINGS = {
     "LABELS": "labels", "EVERY_SECONDS": "every_seconds", "FORGET_SECONDS": "forget_seconds",
-    "FROM_SECONDS": "from_seconds", "TO_SECONDS": "to_seconds", "MAX_SECONDS": "max_seconds", "WIDTH": "width",
+    "FROM_SECONDS": "from_seconds", "TO_SECONDS": "to_seconds", "MAX_FRAMES": "max_frames", "WIDTH": "width",
 }
 #: Meta's SAM 3 is gated (``facebook/sam3``, at the revision sideseeing-tools
 #: pins, 3c879f39826c281e95690f02c7821c4de09afae7). Its weights download from
@@ -512,7 +512,7 @@ def test_the_code_tab_holds_its_settings_and_one_call_of_the_packages_module():
     assert set(DEFAULT_LABELS) <= set(_manifest()["model"]["labels"])
     assert (settings["EVERY_SECONDS"], settings["FROM_SECONDS"], settings["TO_SECONDS"]) == (0.5, 0, None)
     assert settings["FORGET_SECONDS"] == 10
-    assert settings["MAX_SECONDS"] > 0 and settings["WIDTH"] % 2 == 0
+    assert settings["MAX_FRAMES"] > 0 and settings["WIDTH"] % 2 == 0
     assert isinstance(returned, ast.Return) and isinstance(returned.value, ast.Call), ast.unparse(returned)
     call = returned.value
     assert ast.unparse(call.func) == "track_objects"
@@ -537,7 +537,9 @@ def test_the_module_offers_track_objects_says_what_it_does_and_is_handed_curios_
     first = " ".join((ast.get_docstring(function) or "").split("\n\n", 1)[0].split())
     assert "SAM 3" in first and len(first) <= 600, first
     assert [arg.arg for arg in function.args.args] == ["media", "model", "derived_file"]
-    assert [arg.arg for arg in function.args.kwonlyargs] == list(SETTINGS.values())
+    # The settings, then max_seconds, which only stops a call of a node's
+    # code older than max_frames, naming the lines to change.
+    assert [arg.arg for arg in function.args.kwonlyargs] == [*SETTINGS.values(), "max_seconds"]
     imported = [alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names]
     imported += [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
     assert not [name for name in imported if name.split(".")[0] == "utk_curio"]
@@ -584,7 +586,7 @@ def test_track_objects_follows_each_object_through_a_clip(videos, catalog_copy, 
     with _staged(tmp_path) as module:
         out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
                                    every_seconds=EVERY)
-        tag = module._tag(DEFAULT_LABELS, EVERY, 10, module._part_end(video, 0, None, 300), 960)
+        tag = module._tag(DEFAULT_LABELS, EVERY, 10, module._part_end(video, 0, None, EVERY, 450), 960)
 
     assert len(out) == 1
     row = out.iloc[0]
@@ -623,13 +625,14 @@ def test_track_objects_follows_each_object_through_a_clip(videos, catalog_copy, 
 
 
 def test_a_part_of_a_video_is_tracked_from_where_it_starts(videos, catalog_copy, weights, few_threads, tmp_path):
-    """The 2 s clip from 1 s to 2 s, a part of 1 s, within a limit of 1 s: its
-    files are named by where the part starts, and so is its overlay's time."""
+    """The 2 s clip from 1 s to 2 s, a part of 2 frames, within a limit of 2
+    frames: its files are named by where the part starts, and so is its
+    overlay's time."""
     rows, helpers = videos
     model = _loaded(catalog_copy, weights)(MODEL_ID)
     with _staged(tmp_path) as module:
         out = module.track_objects(rows, model, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
-                                   every_seconds=EVERY, from_seconds=1, to_seconds=2, max_seconds=1)
+                                   every_seconds=EVERY, from_seconds=1, to_seconds=2, max_frames=2)
         tag = module._tag(DEFAULT_LABELS, EVERY, 10, 2, 960)
     (row,) = out.to_dict("records")
     assert (row["file_id"], row["t_s"], row["duration_s"]) == (
@@ -801,10 +804,12 @@ def test_with_every_shorter_than_a_frame_the_overlay_plays_in_real_time(
 
 
 def test_each_stop_comes_before_sam3_loads_and_writes_nothing(videos, tmp_path):
-    """Empty labels, a part longer than one run takes and a video not on this
-    machine each stop the call before any frame is read or file written, and
-    before SAM 3 loads: the model here names a folder that holds nothing. A
-    collection with no video loads nothing either."""
+    """Empty labels, a part that needs more frames than one run looks at, a
+    limit under one frame, the limit in seconds of a node's code older than
+    MAX_FRAMES and a video not on this machine each stop the call before any
+    frame is read or file written, and before SAM 3 loads: the model here
+    names a folder that holds nothing. A collection with no video loads
+    nothing either."""
     rows, helpers = videos
     relpath = rows["relpath"].iloc[0]
     nothing = SimpleNamespace(path=str(tmp_path / "no-weights"))
@@ -813,14 +818,24 @@ def test_each_stop_comes_before_sam3_loads_and_writes_nothing(videos, tmp_path):
         with pytest.raises(ValueError) as no_labels:
             module.track_objects(rows, nothing, derived, labels=[])
         with pytest.raises(ValueError) as too_long:
-            module.track_objects(rows, nothing, derived, labels=DEFAULT_LABELS, max_seconds=1)
+            module.track_objects(rows, nothing, derived, labels=DEFAULT_LABELS, max_frames=3)
+        with pytest.raises(ValueError) as no_frame:
+            module.track_objects(rows, nothing, derived, labels=DEFAULT_LABELS, max_frames=0)
+        with pytest.raises(ValueError) as in_seconds:
+            module.track_objects(rows, nothing, derived, labels=DEFAULT_LABELS, max_seconds=300)
         with pytest.raises(ValueError) as not_cached:
             module.track_objects(rows.assign(path=None), nothing, derived, labels=DEFAULT_LABELS)
         assert module.track_objects(rows.assign(kind="image"), nothing, derived, labels=DEFAULT_LABELS).empty
     assert str(no_labels.value) == "LABELS is empty: name at least one thing to look for"
     assert str(too_long.value) == (
-        f"{relpath}: Track Objects takes 1 s of video in one run; "
-        "set FROM_SECONDS and TO_SECONDS to the part to track, such as 0 and 1"
+        f"{relpath}: Track Objects looks at 3 frames of a video at most in one run, and 0 to 2 s at a frame "
+        "every 0.5 s is 4 frames; raise EVERY_SECONDS to 0.7 or more, or set FROM_SECONDS and TO_SECONDS to a "
+        "shorter part, such as 0 and 1.5"
+    )
+    assert str(no_frame.value) == "MAX_FRAMES is 0: a run looks at one frame at least, so set it to 1 or more"
+    assert str(in_seconds.value) == (
+        "MAX_SECONDS is gone: Track Objects counts the frames a run looks at. In the node's code, replace "
+        "MAX_SECONDS = 300 with MAX_FRAMES = 450, and max_seconds=MAX_SECONDS with max_frames=MAX_FRAMES"
     )
     assert str(not_cached.value) == f"{relpath} is not on this machine yet; cache the collection's files first"
     assert not (tmp_path / "media" / "videos").exists() and not (tmp_path / "media" / "tables").exists()

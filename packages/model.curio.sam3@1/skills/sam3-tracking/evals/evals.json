@@ -37,17 +37,17 @@
     },
     {
       "id": 3,
-      "prompt": "Track Objects stopped with \"corner.mp4: Track Objects takes 300 s of video in one run; set FROM_SECONDS and TO_SECONDS to the part to track, such as 0 and 300\". Track only the first minute of each video.",
-      "expected_output": "One code write on the Track Objects node walk-objects that sets TO_SECONDS to 60, keeping FROM_SECONDS at 0 and MAX_SECONDS at 300.",
+      "prompt": "Track Objects stopped with \"corner.mp4: Track Objects looks at 450 frames of a video at most in one run, and 0 to 864.3 s at a frame every 0.5 s is 1729 frames; raise EVERY_SECONDS to 2 or more, or set FROM_SECONDS and TO_SECONDS to a shorter part, such as 0 and 225\". Track only the first minute of each video.",
+      "expected_output": "One code write on the Track Objects node walk-objects that sets TO_SECONDS to 60, keeping FROM_SECONDS at 0 and MAX_FRAMES at 450.",
       "assertions": [
         "The answer writes the code of the Track Objects node walk-objects.",
         "The written code sets TO_SECONDS to 60 and keeps FROM_SECONDS at 0.",
-        "The written code keeps MAX_SECONDS at 300."
+        "The written code keeps MAX_FRAMES at 450."
       ],
       "checks": [
         {"assertion": 2, "kind": "code", "node": "walk-objects", "pattern": "(?m)^TO_SECONDS\\s*=\\s*60(?:\\.0*)?\\s*(?:#.*)?$"},
         {"assertion": 2, "kind": "code", "node": "walk-objects", "pattern": "(?m)^FROM_SECONDS\\s*=\\s*0(?:\\.0*)?\\s*(?:#.*)?$"},
-        {"assertion": 3, "kind": "code", "node": "walk-objects", "pattern": "(?m)^MAX_SECONDS\\s*=\\s*300\\s*(?:#.*)?$"}
+        {"assertion": 3, "kind": "code", "node": "walk-objects", "pattern": "(?m)^MAX_FRAMES\\s*=\\s*450\\s*(?:#.*)?$"}
       ]
     }
   ],
