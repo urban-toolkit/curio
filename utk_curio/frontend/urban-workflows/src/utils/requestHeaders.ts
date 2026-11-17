@@ -23,7 +23,7 @@
  * request's header, a request that names the dataflow itself included, and in
  * its room's socket's query. Until that answer the canvas names the dataflow,
  * on the reads of its load, which any process answers, and its room's socket
- * waits for it (`dataflowNameKnown`). Ids in paths and bodies stay the
+ * waits for it (`dataflowNameKnown`). Ids in paths and bodies are the
  * dataflow's, and a dashboard names its own route's dataflow.
  *
  * Every client writes the token's header here and nowhere else
