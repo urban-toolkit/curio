@@ -11,7 +11,8 @@ to the image (``libraries.take_back_after_a_removal``). Two gaps were left:
 - Of the installs that put a version of a package in place of the account's
   copy, only the catalogs' Update took back what the copy it replaced asked
   for alone, and gave way. Import package over a copy, a model downloaded
-  again and an applied build did neither.
+  again, an applied build and the seeder's refresh of a copy nobody changed
+  did neither.
 
 Every library here is installed offline, from a wheelhouse of the test's own
 (``_support/front_of_the_image``), or by a pip that changes nothing for real.
@@ -314,6 +315,24 @@ def _a_staged_build(manifest_dict, user_key: str, python_deps: dict[str, str]) -
     return build_staging.stage_artifact(user_key, archive)
 
 
+def _a_catalog_of(root, monkeypatch, make_archive, manifest: dict):
+    """The shared catalog, a folder of the test's own at *root*
+    (``CURIO_PACKAGES_ROOT``), holding the package *manifest* describes, as
+    its archive unpacks, with the integrity map a release commits beside it;
+    the package's folder."""
+    import io
+    import zipfile
+
+    from utk_curio.backend.app.packages.repositories.archive import refresh_package_integrity
+
+    folder = root / f"{manifest['id']}@{manifest['compatibility']['major']}"
+    with zipfile.ZipFile(io.BytesIO(make_archive(manifest=manifest))) as archive:
+        archive.extractall(folder)
+    refresh_package_integrity(folder)
+    monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(root))
+    return folder
+
+
 def _the_trees_torch_went(tree, user_key: str, what: str, torch: str | None, image_torch: str) -> None:
     from utk_curio.backend.tests._support.front_of_the_image import OTHER_TORCH, held
 
@@ -427,6 +446,35 @@ class TestAnInstallOverACopyTakesBackAndGivesWay:
 
         assert journal["status"] == "completed", journal
         _the_trees_torch_went(tree, user_key, "an applied build", torch, image_torch)
+
+    @_NEW_TORCH
+    def test_the_seeders_refresh_of_a_copy_nobody_changed(
+        self, torch, isolated, launch_tree, tmp_curio, manifest_dict, make_archive, tmp_path, monkeypatch,
+    ):
+        """The seeder puts the shared catalog's version in place of an
+        account's copy of it that nobody changed, once the catalog moves on,
+        as an upgrade of Curio moves it (#194): on a read of the store, and
+        for the shared guest as a start begins (``seeding.seed_dev_packages``),
+        so after the start's give-way. It installs none of the new version's
+        libraries, which the next start installs."""
+        from utk_curio.backend.app.packages.application import seeding, store_install
+        from utk_curio.backend.tests._support.front_of_the_image import OTHER_TORCH, offline_pip, the_images_torch
+
+        image_torch = the_images_torch()
+        user_key = "7"
+        offline_pip(monkeypatch, tmp_path / "wheelhouse")
+        _no_import_probe(monkeypatch)
+        added = _a_catalog_of(tmp_path / "catalog-1.0.0", monkeypatch, make_archive, manifest_dict(
+            PACKAGE, version="1.0.0", python_deps={"torch": f">={OTHER_TORCH.version}"}))
+        store_install.install_package_from_directory(user_key, added)
+        tree = _the_other_torch_in(user_key)
+        _a_catalog_of(tmp_path / "catalog-1.1.0", monkeypatch, make_archive, manifest_dict(
+            PACKAGE, version="1.1.0", python_deps=_deps(torch)))
+
+        refreshed = seeding.seed_dev_packages(user_key=user_key)
+
+        assert f"{PACKAGE}@1" in refreshed, f"the seeder did not refresh account {user_key}'s copy: {refreshed}"
+        _the_trees_torch_went(tree, user_key, "the seeder's refresh", torch, image_torch)
 
     def test_an_applied_build_rolled_back_leaves_the_libraries_of_the_copy_it_puts_back(
         self, isolated, launch_tree, install_package, manifest_dict, tmp_path, monkeypatch,
