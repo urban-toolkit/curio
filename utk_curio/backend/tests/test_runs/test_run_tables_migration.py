@@ -143,10 +143,3 @@ def test_the_migration_creates_the_models_indexes_and_uniqueness(table):
         if isinstance(con, sa.UniqueConstraint)
     }
     assert model_uniques == migrated_uniques
-
-
-def test_the_downgrade_removes_both_tables():
-    engine = _migrated_engine()
-    _run(_load(next(VERSIONS.glob(f"{REVISION}_*.py"))), engine, "downgrade")
-    remaining = set(sa.inspect(engine).get_table_names())
-    assert not remaining & set(TABLES)

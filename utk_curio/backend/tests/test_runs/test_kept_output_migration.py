@@ -106,11 +106,10 @@ def test_the_viewers_table_goes_and_the_kept_one_starts_empty():
         assert conn.execute(sa.text(f"SELECT COUNT(*) FROM {TABLE}")).scalar() == 0
 
 
-def test_the_media_folders_revision_keeps_every_entry_and_its_downgrade_drops_only_its_column():
+def test_the_media_folders_revision_keeps_every_entry():
     engine = sa.create_engine("sqlite://")
     _run(VIEWERS, "upgrade", engine)
     _run(KEPT, "upgrade", engine)
-    before = _columns(engine, TABLE)
     with engine.begin() as conn:
         conn.execute(sa.text(
             f"INSERT INTO {TABLE} (id, project_id, node_id, step_key, session_id, output, output_path, "
@@ -123,27 +122,3 @@ def test_the_media_folders_revision_keeps_every_entry_and_its_downgrade_drops_on
     assert _columns(engine, TABLE)["media_folders"] == ("TEXT", True)
     with engine.connect() as conn:
         assert conn.execute(sa.text(f"SELECT id, media_folders FROM {TABLE}")).all() == [("e1", None)]
-    _run(MEDIA, "downgrade", engine)
-    assert _columns(engine, TABLE) == before
-    with engine.connect() as conn:
-        assert conn.execute(sa.text(f"SELECT COUNT(*) FROM {TABLE}")).scalar() == 1
-
-
-def test_the_downgrade_puts_the_viewers_table_back_as_it_was():
-    engine = _migrated()
-    _run(MEDIA, "downgrade", engine)
-    _run(KEPT, "downgrade", engine)
-
-    created = sa.create_engine("sqlite://")
-    _run(VIEWERS, "upgrade", created)
-    assert TABLE not in sa.inspect(engine).get_table_names()
-    assert _columns(engine, OLD_TABLE) == _columns(created, OLD_TABLE)
-    indexes = lambda e: {ix["name"]: tuple(ix["column_names"]) for ix in sa.inspect(e).get_indexes(OLD_TABLE)}
-    assert indexes(engine) == indexes(created)
-
-
-def test_the_first_downgrade_drops_the_viewers_table():
-    engine = sa.create_engine("sqlite://")
-    _run(VIEWERS, "upgrade", engine)
-    _run(VIEWERS, "downgrade", engine)
-    assert OLD_TABLE not in sa.inspect(engine).get_table_names()

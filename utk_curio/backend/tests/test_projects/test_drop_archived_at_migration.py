@@ -2,7 +2,7 @@
 
 ``f6a7b8c9d0e1`` is the one migration in this repo that destroys user data: for
 every project with ``archived_at`` set it removes the row, its ``exec_cache_entry``
-children and its on-disk tree, and ``downgrade()`` restores none of it. It runs
+children and its on-disk tree. It runs
 automatically on the next ``flask db upgrade``, so a mistake here is unrecoverable
 for anyone who used Archive as a holding area (#261).
 
@@ -283,28 +283,3 @@ def test_drops_the_column_and_replaces_the_index(engine, store):
         "dropping the composite index without replacing it leaves lookups by "
         "user_id unindexed"
     )
-
-
-def test_downgrade_restores_the_shape_but_not_the_data(engine, store):
-    """Stated in the revision's own docstring; pinned so nobody assumes otherwise."""
-    _seed(
-        engine,
-        store,
-        [
-            ("arch-owner", 2, False, "alice", True),
-            ("live-owner", 2, False, "alice", False),
-        ],
-    )
-    module = _load_revision()
-
-    _run(module, engine)
-    _run(module, engine, "downgrade")
-
-    with engine.begin() as conn:
-        cols = {r[1] for r in conn.execute(sa.text("PRAGMA table_info(project)"))}
-        ids = {r[0] for r in conn.execute(sa.text("SELECT id FROM project"))}
-        indexes = {r[1] for r in conn.execute(sa.text("PRAGMA index_list(project)"))}
-
-    assert "archived_at" in cols
-    assert "ix_project_user_archived_opened" in indexes
-    assert ids == {"live-owner"}, "downgrade must not appear to restore purged rows"

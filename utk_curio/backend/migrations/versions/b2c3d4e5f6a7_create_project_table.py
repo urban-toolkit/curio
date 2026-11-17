@@ -57,10 +57,3 @@ def upgrade():
         "exec_cache_entry",
         ["project_id", "content_key"],
     )
-
-
-def downgrade():
-    op.drop_index("ix_exec_cache_project_key", table_name="exec_cache_entry")
-    op.drop_table("exec_cache_entry")
-    op.drop_index("ix_project_user_archived_opened", table_name="project")
-    op.drop_table("project")

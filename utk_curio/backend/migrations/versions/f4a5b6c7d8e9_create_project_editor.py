@@ -29,8 +29,3 @@ def upgrade():
         sa.UniqueConstraint("project_id", "user_id", name="uq_project_editor_project_user"),
     )
     op.create_index("ix_project_editor_user", TABLE, ["user_id"])
-
-
-def downgrade():
-    op.drop_index("ix_project_editor_user", table_name=TABLE)
-    op.drop_table(TABLE)

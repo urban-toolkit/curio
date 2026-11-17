@@ -79,26 +79,6 @@ def test_upgrade_drops_the_columns_and_keeps_the_account():
     assert tuple(row) == (1, "alice", "Alice", 0)
 
 
-def test_downgrade_restores_the_columns_empty():
-    engine = sa.create_engine("sqlite://")
-    with engine.begin() as conn:
-        conn.execute(sa.text(_PRE_SCHEMA))
-        conn.execute(sa.text(
-            "INSERT INTO \"user\" (id, username, name, is_guest, huggingface_token) "
-            "VALUES (1, 'alice', 'Alice', 0, 'hf-old')"
-        ))
-    module = _load_revision()
-    _run(module, engine)
-    _run(module, engine, "downgrade")
-    assert KEY_COLUMNS <= _columns(engine)
-    with engine.connect() as conn:
-        row = conn.execute(sa.text(
-            "SELECT username, huggingface_token, socrata_app_token, google_maps_api_key, "
-            "mapillary_access_token FROM \"user\""
-        )).one()
-    assert tuple(row) == ("alice", None, None, None, None)
-
-
 def test_the_model_does_not_declare_them():
     from utk_curio.backend.app.users.models import User
 

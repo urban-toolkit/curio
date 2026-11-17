@@ -3,7 +3,7 @@
 A viewer who changes a pinned control reruns the dataflow on the server, and
 each step's output is kept under a key of what made it, so the next viewer who
 picks the same values gets it with no run (``runs/viewer.py``). A new table
-only: nothing existing is read or changed, and ``downgrade()`` drops it.
+only: nothing existing is read or changed.
 
 Revision ID: d2e3f4a5b6c7
 Revises: c1d2e3f4a5b6
@@ -43,10 +43,3 @@ def upgrade():
     op.create_index(
         "ix_dashboard_step_output_created", "dashboard_step_output", ["created_at"],
     )
-
-
-def downgrade():
-    op.drop_index("ix_dashboard_step_output_created", table_name="dashboard_step_output")
-    op.drop_index("ix_dashboard_step_output_path", table_name="dashboard_step_output")
-    op.drop_index("ix_dashboard_step_output_key", table_name="dashboard_step_output")
-    op.drop_table("dashboard_step_output")

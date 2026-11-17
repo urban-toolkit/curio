@@ -19,11 +19,3 @@ def upgrade():
         batch_op.add_column(sa.Column("llm_base_url", sa.String(500), nullable=True))
         batch_op.add_column(sa.Column("llm_api_key", sa.String(255), nullable=True))
         batch_op.add_column(sa.Column("llm_model", sa.String(100), nullable=True))
-
-
-def downgrade():
-    with op.batch_alter_table("user", schema=None) as batch_op:
-        batch_op.drop_column("llm_model")
-        batch_op.drop_column("llm_api_key")
-        batch_op.drop_column("llm_base_url")
-        batch_op.drop_column("llm_api_type")

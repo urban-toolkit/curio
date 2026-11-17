@@ -115,22 +115,3 @@ def upgrade():
         "project",
         ["user_id", sa.text("last_opened_at DESC")],
     )
-
-
-def downgrade():
-    """Restore the column and the old index.
-
-    Purged projects do NOT come back: their rows, their exec-cache entries and
-    their on-disk trees were deleted, not marked. This restores the shape of the
-    schema, nothing else.
-    """
-    op.drop_index("ix_project_user_opened", table_name="project")
-
-    with op.batch_alter_table("project") as batch_op:
-        batch_op.add_column(sa.Column("archived_at", sa.DateTime(), nullable=True))
-
-    op.create_index(
-        "ix_project_user_archived_opened",
-        "project",
-        ["user_id", "archived_at", sa.text("last_opened_at DESC")],
-    )

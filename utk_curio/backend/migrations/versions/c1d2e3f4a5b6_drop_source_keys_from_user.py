@@ -10,7 +10,6 @@ Revises: b0c1d2e3f4a5
 Create Date: 2026-10-18 00:00:00.000000
 """
 from alembic import op
-import sqlalchemy as sa
 
 revision = "c1d2e3f4a5b6"
 down_revision = "b0c1d2e3f4a5"
@@ -24,11 +23,3 @@ def upgrade():
         batch_op.drop_column("google_maps_api_key")
         batch_op.drop_column("socrata_app_token")
         batch_op.drop_column("huggingface_token")
-
-
-def downgrade():
-    with op.batch_alter_table("user", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("huggingface_token", sa.String(255), nullable=True))
-        batch_op.add_column(sa.Column("socrata_app_token", sa.String(255), nullable=True))
-        batch_op.add_column(sa.Column("google_maps_api_key", sa.String(255), nullable=True))
-        batch_op.add_column(sa.Column("mapillary_access_token", sa.String(255), nullable=True))
