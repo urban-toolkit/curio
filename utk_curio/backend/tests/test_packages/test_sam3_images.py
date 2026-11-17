@@ -249,6 +249,7 @@ def test_segment_images_finds_each_label_in_each_frame_sample_video_frames_sampl
     among them. Each overlay is a PNG of the frame's size, named after its
     video at the frame's time and after what the call asked, as Image
     Segmentation names an overlay of a sampled frame."""
+    import pandas as pd
     from PIL import Image
 
     with _staged(tmp_path) as modules:
@@ -266,7 +267,10 @@ def test_segment_images_finds_each_label_in_each_frame_sample_video_frames_sampl
         # The label covering the most, the first of LABELS on a tie; none where nothing covers any.
         best = max(shares.values())
         assert row["dominant_pct"] == best
-        assert row["dominant_class"] == (max(shares, key=lambda label: shares[label]) if best > 0 else None)
+        if best > 0:
+            assert row["dominant_class"] == max(shares, key=lambda label: shares[label])
+        else:
+            assert pd.isna(row["dominant_class"])
         video, t_ms = row["file_id"].split("@")
         assert row["overlay_url"].endswith(f"/media/{video}@{t_ms}-{tag}.png?variant=original"), row["overlay_url"]
         with Image.open(_overlay(row["overlay_url"], tmp_path)) as overlay:
@@ -291,6 +295,7 @@ def test_photos_get_overlays_named_after_themselves_and_a_row_without_an_image_s
     wider than WIDTH is read and drawn WIDTH wide, and a photo that is gone or
     is not an image gets no results and says why."""
     import numpy as np
+    import pandas as pd
     from PIL import Image
 
     from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
@@ -313,12 +318,13 @@ def test_photos_get_overlays_named_after_themselves_and_a_row_without_an_image_s
     by_name = {row["name"]: row for row in out.to_dict("records")}
     assert by_name["c.png"]["segment_error"] == "the image could not be read"
     assert by_name["d.png"]["segment_error"] == "the image is not on this machine"
+    # pandas holds a missing value as None or NaN by the column's type: a column
+    # of text with a missing value is pandas' string type, whose missing value is NaN.
     for name in ("c.png", "d.png"):
-        assert by_name[name]["pole_objects"] is None or np.isnan(by_name[name]["pole_objects"])
-        assert by_name[name]["overlay_url"] is None or by_name[name]["overlay_url"] != by_name[name]["overlay_url"]
+        assert pd.isna(by_name[name]["pole_objects"]) and pd.isna(by_name[name]["overlay_url"])
     for name, size in (("a.png", (96, 64)), ("b.png", (960, 640))):
         row = by_name[name]
-        assert row["segment_error"] is None and row["pole_objects"] == QUERIES
+        assert pd.isna(row["segment_error"]) and row["pole_objects"] == QUERIES
         assert f"/media/{row['file_id']}@0-sam3" in row["overlay_url"], row["overlay_url"]
         with Image.open(_overlay(row["overlay_url"], tmp_path)) as overlay:
             assert overlay.size == size
