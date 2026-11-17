@@ -229,6 +229,33 @@ class TestTheListing:
         add = scan.scan(limited, provider, selection=a_row(limited, month_row("snapshots", "W065", "2025_08")))
         assert add.truncated and [len(group.files) for group in add.groups] == [1000]
 
+    def test_a_listing_stops_at_its_bound_of_files_though_each_row_is_under_the_file_limit(self, idot, monkeypatch):
+        """A whole listing holds up to ``MAX_LISTING_FILES`` files, its rows'
+        together: past them it stops and says it was cut short, though no row
+        is full."""
+        from utk_curio.backend.app.discovery.application import scan
+
+        manifest, _bucket, provider = idot
+        # Each row's 1,500 snapshots under the row limit of 2,000, and the
+        # bucket's 6,008 matched files over a bound of 4,000.
+        limited = dataclasses.replace(manifest, max_files=2000)
+        bound = 4000
+        monkeypatch.setattr(scan, "MAX_LISTING_FILES", bound, raising=False)
+        result = scan.scan(limited, provider)
+
+        assert result.matched == bound, f"the listing held {result.matched:,} files, past its bound of {bound:,}"
+        assert result.truncated, f"the listing stopped at its bound of {bound:,} files and did not say it was cut short"
+        rows = {group.resource_id: len(group.files) for group in result.groups}
+        assert sum(rows.values()) == bound and max(rows.values()) < limited.max_files, rows
+        # The folders are read in key order, so the first crossing's rows are whole.
+        assert all(rows[month_row("snapshots", "W042", month)] == SNAPSHOTS for month in MONTHS), rows
+
+        # A bucket of exactly the bound is listed whole.
+        total = len(CROSSINGS) * len(MONTHS) * (SNAPSHOTS + 2)
+        monkeypatch.setattr(scan, "MAX_LISTING_FILES", total)
+        whole = scan.scan(limited, provider)
+        assert whole.matched == total and not whole.truncated, (whole.matched, whole.truncated)
+
 
 class TestWhatIsListedAsBefore:
     def test_a_template_whose_folders_name_no_row_is_listed_under_its_leading_names(self):
