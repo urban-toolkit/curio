@@ -1842,8 +1842,9 @@ reads the manifests, for the release and for a running Curio.
    attempts it again once the node changes (`SolveBatch._pass_targets`, as
    for a node that waits on the person), or once the file is in place, saved
    by hand where the failure says or fetched ahead (`_downloads_here`, over
-   `left_out_files.appeared`), when its last attempt's code runs again as its
-   first round (`download_again`).
+   `left_out_files.appeared`), when the code the download stopped runs again
+   whole as its first round (`download_codes`, `download_again`), its attempt
+   saying so (`start_source`), rather than a correction of code that was right.
 7. The download has no limit of its own on the whole: `IDLE_TIMEOUT_S` is the
    transport's connect and read timeout, which a stall reaches and a big file
    does not. A partial file of a name of its own that a process left when it
