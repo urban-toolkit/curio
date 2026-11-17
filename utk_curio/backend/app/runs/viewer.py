@@ -33,7 +33,8 @@ standing in only for the nodes the copy makes as the dataflow does
 (:func:`made_as_saved`); its steps read the guest's own datasets, as the
 guest's plays do, the request's sign-in served on their threads; and what it
 keeps is kept on the copy, under a dashboard of its own, which no other
-visitor's dashboard reads or joins.
+visitor's dashboard reads or joins. Its page names the copy, made or not yet,
+as the guest's canvas does (``dashboard_copy_id``).
 
 A step only a browser runs (an Autark compute node) is the
 page's. The run ends asking for it (``needs_canvas``), as a canvas's run on
@@ -52,8 +53,10 @@ the sandbox's isolated pool running a viewer's node at once, so viewers never
 take every slot from signed-in users. In a start of several backend processes
 the budget per address, the overall one and the slots hold across them all
 (``common/shared_budgets.py``), since a visitor's dashboards and every viewer's
-steps reach several processes and one pool. A dashboard's live runs are its
-owner process's alone: no other process starts one (``owner_guard``).
+steps reach several processes and one pool. A dashboard's live runs are the
+process's that owns the dataflow its page names alone: its dataflow's, or for
+a hosted guest, the guest's own copy's, made or not yet. No other process
+starts one (``owner_guard``).
 """
 from __future__ import annotations
 
@@ -370,22 +373,27 @@ def start_viewer_run(
     for that guest alone (``visitor_copies.dashboard_new``): as it is now,
     with no saved output, kept on it; for anyone else it is not found.
 
-    Refused first of all in a process that does not own the dataflow
-    (``collaboration/owner_guard.py``), the one the dashboard's page names. A
-    hosted guest's run of its own copy is a run of the dashboard too, kept by
-    the dashboard's dataflow's owner, which reads the copy as any process
-    reads a dataflow it does not own (``dataflow_docs.read``) and keeps what
-    the run makes on it."""
+    Refused first of all in a process that does not own the dataflow the
+    dashboard's page names (``collaboration/owner_guard.py``): a hosted
+    guest's own copy of it, made or not yet, which the guest's page names as
+    its canvas does (``visitor_copies.dashboard_copy_id``), else the
+    dashboard's dataflow. So a hosted guest's runs are its copy's process's,
+    whether they run the copy or, while the guest has none, the dataflow,
+    which that process reads as any process reads a dataflow it does not own
+    (``dataflow_docs.read``)."""
     from flask import current_app
 
     from utk_curio.backend.app.collaboration import owner_guard
     from utk_curio.backend.app.execution.node_names import template_labels
+    from utk_curio.backend.app.projects import storage, visitor_copies
+    from utk_curio.common import backend_processes
 
-    owner_guard.refuse(project_id, what="a dashboard's run")
+    # The guest's copy's id is asked for only in a start of several processes.
+    named = visitor_copies.dashboard_copy_id(project_id) if backend_processes.process_count() > 1 else None
+    owner_guard.refuse(named or project_id, what="a dashboard's run")
     from utk_curio.backend.app.execution.run_engine import PlanError
     from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
     from utk_curio.backend.app.packages.service import roster_templates
-    from utk_curio.backend.app.projects import storage, visitor_copies
     from utk_curio.backend.app.projects.dashboard_payload import dashboard_source_node_ids
     from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.app.projects.services import _owner_user_dir_key

@@ -6,14 +6,15 @@ owner: the process ``shard_of`` names for the dataflow's id (:func:`room_key`).
 A hosted guest's copy of a dataflow goes by the copy's own id, never by the id
 of the dataflow it copies, and so does a hosted guest's own new dataflow
 (``projects/visitor_copies.py``): the copies of one example, one for each guest
-who opens it, spread over the processes as their ids do. The guest's page
-names its copy's id once the dataflow's load gives it
-(``src/utils/requestHeaders.ts``). A dataflow's requests and sockets reach its
-owner by the same rule, and only the owner keeps anything live for it: its doc
-and its room (``dataflow_docs.py``, ``events.py``), its agents' turns, its
-Solves, its runs and its dashboard's runs. A hosted guest's dashboard of an
-example runs the guest's copy as a run of that dashboard, which the example's
-owner keeps: the dashboard's page names the example (``runs/viewer.py``).
+who opens it, spread over the processes as their ids do. The guest's pages
+name its copy's id once the dataflow's load gives it, its canvas and its
+dashboard alike (``src/utils/requestHeaders.ts``). A dataflow's requests and
+sockets reach its owner by the same rule, and only the owner keeps anything
+live for it: its doc and its room (``dataflow_docs.py``, ``events.py``), its
+agents' turns, its Solves, its runs and its dashboard's runs. A hosted guest's
+dashboard of an example is its copy's, made or not yet: the copy's owner keeps
+its runs, whether they run the copy or, while the guest has none, the example
+(``runs/viewer.py``).
 
 In any other process:
 

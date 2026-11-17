@@ -26,9 +26,12 @@
  * waits for it: `ProjectLoader` marks a hosted guest's load
  * (`awaitDataflowName`), and the socket opens once the name is known
  * (`dataflowNameKnown`). An account's load is not marked, as its answer names
- * no copy: its socket opens at once, apart from the load. Ids in paths and
- * bodies are the dataflow's, and a dashboard names its own route's dataflow.
- * A request sent once the page has left the canvas, a node's outcome as its
+ * no copy: its socket opens at once, apart from the load. The guest's
+ * dashboard of the dataflow names the copy the same way, once its load
+ * answers with the copy's id, or, on a page served with its data, once
+ * `ProjectLoader` reads it there: its viewer runs are kept on the copy's
+ * process. Ids in paths and bodies are the dataflow's. A request sent once
+ * the page has left the canvas or the dashboard, a node's outcome as its
  * canvas closes, names the dataflow itself: the record it writes is a file
  * beside the copy, which any process writes.
  *
@@ -48,6 +51,8 @@ export const DATAFLOW_QUERY: string = route.query;
 
 /** A canvas's route: `/dataflow/<id>`, `/dataflow/new` or `/dataflow`. */
 const CANVAS_ROUTE = /^\/dataflow(?:\/|$)/;
+/** A dashboard's route: `/dashboard/<id>`. */
+const DASHBOARD_ROUTE = /^\/dashboard\//;
 
 /** The page's route: its pathname without the app's base path. */
 function pageRoute(): string {
@@ -56,9 +61,11 @@ function pageRoute(): string {
   return base && pathname.startsWith(base) ? pathname.slice(base.length) || "/" : pathname;
 }
 
-/** Whether the page is a canvas. */
-function onCanvas(): boolean {
-  return typeof window !== "undefined" && CANVAS_ROUTE.test(pageRoute());
+/** Whether the page shows a dataflow it loaded: a canvas or a dashboard. */
+function showsADataflow(): boolean {
+  if (typeof window === "undefined") return false;
+  const page = pageRoute();
+  return CANVAS_ROUTE.test(page) || DASHBOARD_ROUTE.test(page);
 }
 
 /** The dataflow the page shows, or null on a page that shows none. */
@@ -70,8 +77,8 @@ export function pageDataflow(): string | null {
   return CANVAS_ROUTE.test(page) ? openDataflowId() : null;
 }
 
-/** Each dataflow a canvas loaded whose load answered with a hosted guest's
- *  own copy of it, and that copy's id. */
+/** Each dataflow a canvas or a dashboard loaded whose load, or whose page's
+ *  data, answered with a hosted guest's own copy of it, and that copy's id. */
 const copies = new Map<string, string>();
 /** The dataflow whose load the canvas waits on for the id it names it by. */
 let awaited: string | null = null;
@@ -100,7 +107,8 @@ export function awaitDataflowName(dataflow: string): void {
 }
 
 /**
- * The load of *dataflow* answered: from now on the canvas names it *copy*, a
+ * The load of *dataflow* answered, or a dashboard's page read the data it
+ * was served with: from now on the canvas or the dashboard names it *copy*, a
  * hosted guest's own copy of it, or, with none, the dataflow itself.
  */
 export function nameDataflow(dataflow: string, copy?: string | null): void {
@@ -141,12 +149,13 @@ export function resetDataflowNames(): void {
 }
 
 /**
- * The id a request or a socket about *dataflow* names it by: on a canvas, a
- * hosted guest's own copy of it once the canvas's load of it answered with
- * one, else *dataflow* itself.
+ * The id a request or a socket about *dataflow* names it by: on a canvas or a
+ * dashboard, a hosted guest's own copy of it once the page's load of it, or
+ * the data its page was served with, answered with one, else *dataflow*
+ * itself.
  */
 export function dataflowName(dataflow: string): string {
-  return (onCanvas() && copies.get(dataflow)) || dataflow;
+  return (showsADataflow() && copies.get(dataflow)) || dataflow;
 }
 
 /**

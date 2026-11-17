@@ -42,7 +42,7 @@ import { SHARE_UUID_RE as UUID_RE } from "../utils/shareLinks";
 import { dashboardRefusal, getEmbeddedDashboard } from "../standalone/dashboardPayload";
 import { mayEditServedDashboard } from "../standalone/servedDashboardAccess";
 import { setOpenDataflow } from "../services/dataflowReads";
-import { awaitDataflowName, releaseDataflowName } from "../utils/requestHeaders";
+import { awaitDataflowName, nameDataflow, releaseDataflowName } from "../utils/requestHeaders";
 import { useHostedGuest } from "./apiSettings/useHostedGuest";
 import { ProjectLoadStateContext, type ProjectLoadState } from "./projectLoadState";
 
@@ -285,8 +285,14 @@ export const ProjectLoader: React.FC<{
       // it, from the owner's endpoint, so Edit layout, Save layout and Arrange
       // work as there; the rows still come from the page. If that load fails,
       // it gets the page's own data like anyone else.
+      //
+      // The data names the id the page names the dataflow by, as a load's
+      // answer does (`copy_id`, utils/requestHeaders.ts): a hosted guest's own
+      // copy of it, whose sign-in the page server built it for. Before the
+      // page is loaded and starts a viewer's run.
       const embedded = getEmbeddedDashboard();
       if (embedded) {
+        nameDataflow(id, embedded.copy_id ?? null);
         const mayEdit = await mayEditServedDashboard();
         if (signal.aborted) return;
         if (mayEdit) {

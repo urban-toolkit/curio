@@ -1773,8 +1773,9 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
     ``copy_id`` is, for a hosted guest on a dataflow its account owns, the id
     of the guest's own copy of it, made or not yet, which nothing here makes
     (``visitor_copies.own_copy_id``): the id the guest's canvas names in its
-    requests and its room's socket from then on, so they reach the process
-    the copy belongs to. ``None`` for anyone else and for a new dataflow."""
+    requests and its room's socket from then on, and the guest's dashboard in
+    its requests, so they reach the process the copy belongs to. ``None`` for
+    anyone else and for a new dataflow."""
     from utk_curio.backend.app.datasets.seed import (
         ensure_dataflow_datasets_installed,
     )
@@ -2212,6 +2213,13 @@ def build_standalone_dashboard(
     page (:func:`_as_the_visitors_copy`), built for their sign-in alone, and
     the page of their own new dataflow is theirs alone too
     (:func:`_visitors_new_dataflow`): for anyone else it is not found.
+
+    ``copy_id`` is, for a hosted guest on a dataflow their account owns, the
+    id of the guest's own copy of it, made or not yet, as the dataflow's load
+    answers it (:func:`load_project`, ``visitor_copies.dashboard_copy_id``):
+    the page names it in every request from then on, so its viewer runs reach
+    the process the copy belongs to. ``None`` for anyone else and for a new
+    dataflow.
     """
     from utk_curio.backend.app.projects.dashboard_payload import (
         DEFAULT_PAYLOAD_LIMIT_BYTES,
@@ -2247,6 +2255,7 @@ def build_standalone_dashboard(
     )
     body = payload.to_dict()
     body["registry"] = registry if registry is not None else _dashboard_registry(project_id)
+    body["copy_id"] = visitor_copies.dashboard_copy_id(project_id)
     return body
 
 
