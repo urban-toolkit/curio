@@ -342,7 +342,8 @@ def give_way_to_the_image(user_key: str) -> list[str]:
             except (ManifestError, OSError):
                 return []
             for name, spec in (manifest.python_deps or {}).items():
-                declared.setdefault(name, []).append(spec)
+                # By PEP 503 name: two packages may spell one library apart.
+                declared.setdefault(_canonical(name), []).append(spec)
     if not declared:
         return []
     own = [split_lib_spec(spec)[0] for spec in _load_raw(user_key)["python"]]

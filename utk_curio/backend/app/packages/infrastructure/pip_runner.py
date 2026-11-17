@@ -25,6 +25,13 @@ Design choices:
   Curio's requirements, the image's torch, the shipped catalog's libraries
   the launcher installs, and the user's own. Package manifests name several
   of those too, so a manifest is no evidence that Curio put a library here.
+- **The image's libraries win in an account's tree.** Under isolation an
+  account's node libraries are a ``--target`` tree its nodes import in front
+  of this interpreter, the image's. ``--target`` ignores what this
+  interpreter holds, so an install into such a tree (*in_front*) resolves
+  with the tree in front of this interpreter, as node code imports them, and
+  puts into the tree only what neither holds at a version the requirements
+  accept: a package's ``torch>=2.6`` keeps the image's CUDA torch.
 - **One run at a time per environment.** A pip run that changes this
   interpreter, or a ``--target`` tree, holds that environment's lock across
   threads and backend processes (:func:`_one_run_into`), and an install
@@ -366,12 +373,11 @@ def version_in_front(name: str, target_dir, in_tree: Optional[Mapping[str, str]]
 
 def copies_this_interpreter_meets(declared: Mapping[str, Iterable[str]], target_dir, *, keep=()) -> list[str]:
     """The names of *declared*, each with the ranges asked of it, whose copy
-    in the tree *target_dir* hides one of this interpreter's, the image's,
-    that every one of those ranges accepts, and that every distribution of
-    the tree left that requires it accepts too, sorted; *keep* names
-    libraries to leave out whatever their versions. A library the tree needs
-    at a version this interpreter's is not keeps its copy, and so do the
-    libraries only it needs, until it goes."""
+    in the tree *target_dir* stands in front of this interpreter's, the
+    image's, where the image's meets every one of those ranges and every
+    requirement on it of the distributions the tree keeps, sorted; *keep*
+    names libraries whose copies stay whatever their versions. A copy that a
+    distribution the tree keeps needs at a version the image's is not stays."""
     from importlib.metadata import distributions
     from packaging.requirements import InvalidRequirement, Requirement
 
@@ -398,6 +404,8 @@ def copies_this_interpreter_meets(declared: Mapping[str, Iterable[str]], target_
             image[name] = installed_version(name)
         except PackageNotFoundError:
             continue  # the tree's copy is node code's only one
+    # A copy that goes no longer needs what it required: so on until no
+    # other copy can go.
     going: set[str] = set()
     while True:
         more = []
