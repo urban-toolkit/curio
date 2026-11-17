@@ -1,0 +1,1051 @@
+{
+  "dataflow": {
+    "categories": {
+      "city": [
+        "Chicago"
+      ],
+      "topic": [
+        "Mobility and streets",
+        "Sensors"
+      ],
+      "complexity": [
+        "Advanced"
+      ]
+    },
+    "name": "SAGE-IDOT rail crossings",
+    "description": "Three SAGE cameras at IDOT rail crossings on the days the Cities in Motion workshop team studied, read in place from data.urbantk.org: each object YOLO saw placed on the ground through the camera's homography, how full each lane before and after the crossing is minute by minute over night, twilight and day, a half hour's frames with every model's count, a confidence grid on the ground, and how four YOLO models agree.",
+    "task": "Show how full the lanes at three rail crossings get through a day, from the objects YOLO models saw in each camera's images.",
+    "timestamp": 0,
+    "provenance_id": "sage-idot-rail-crossings",
+    "packages": [],
+    "datasets": [
+      {
+        "datasetId": "data.cities-in-motion.idot-cameras",
+        "dirName": "data.cities-in-motion.idot-cameras@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-17T00:00:00Z"
+      },
+      {
+        "datasetId": "data.cities-in-motion.idot-yolo26n",
+        "dirName": "data.cities-in-motion.idot-yolo26n@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-17T00:00:00Z"
+      },
+      {
+        "datasetId": "data.sage.idot-w042-records-2025-08",
+        "dirName": "data.sage.idot-w042-records-2025-08@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-17T00:00:00Z"
+      },
+      {
+        "datasetId": "data.sage.idot-w065-records-2025-08",
+        "dirName": "data.sage.idot-w065-records-2025-08@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-17T00:00:00Z"
+      },
+      {
+        "datasetId": "data.sage.idot-w06e-records-2025-12",
+        "dirName": "data.sage.idot-w06e-records-2025-12@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-17T00:00:00Z"
+      },
+      {
+        "datasetId": "data.sage.idot-w042-snapshots-2025-08-09",
+        "dirName": "data.sage.idot-w042-snapshots-2025-08-09@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-17T00:00:00Z"
+      },
+      {
+        "datasetId": "data.sage.idot-w065-snapshots-2025-08-17",
+        "dirName": "data.sage.idot-w065-snapshots-2025-08-17@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-17T00:00:00Z"
+      },
+      {
+        "datasetId": "data.sage.idot-w06e-snapshots-2025-12-02",
+        "dirName": "data.sage.idot-w06e-snapshots-2025-12-02@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-17T00:00:00Z"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "idot-settings",
+        "type": "curio.builtin/python-computation",
+        "x": 0,
+        "y": 548,
+        "content": "# The dashboard's controls, read by every node wired to this one: the camera\n# and its day, the model, the classes, the lowest confidence kept, and the\n# half hour the frames show.\ncamera = [!! camera !!]\nmodel = [!! model !!]\n\nreturn {\n    \"camera\": camera.split(\" \")[0],\n    \"model\": model.split(\" \")[0],\n    \"classes\": [!! classes !!],\n    \"confidence\": [!! confidence !!],\n    \"frames_from\": [!! frames_from !!],\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "The dashboard's controls: the camera and its day, the model, the classes, the lowest confidence kept and the half hour the frames show.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "camera",
+              "type": "choice",
+              "label": "Camera",
+              "default": "W042 · Aug 9, 2025",
+              "options": {
+                "choices": [
+                  "W042 · Aug 9, 2025",
+                  "W065 · Aug 17, 2025",
+                  "W06E · Dec 2, 2025"
+                ],
+                "display": "radio"
+              }
+            },
+            {
+              "name": "model",
+              "type": "choice",
+              "label": "Model",
+              "default": "YOLOv8n",
+              "options": {
+                "choices": [
+                  "YOLOv5n",
+                  "YOLOv8n",
+                  "YOLOv10n",
+                  "YOLO26n (snapshots only)"
+                ],
+                "display": "radio"
+              }
+            },
+            {
+              "name": "classes",
+              "type": "checkbox-group",
+              "label": "Classes",
+              "default": [
+                "car",
+                "truck",
+                "bus",
+                "train",
+                "person",
+                "bicycle",
+                "motorcycle"
+              ],
+              "options": {
+                "choices": [
+                  "car",
+                  "truck",
+                  "bus",
+                  "train",
+                  "person",
+                  "bicycle",
+                  "motorcycle"
+                ]
+              }
+            },
+            {
+              "name": "confidence",
+              "type": "slider",
+              "label": "Confidence at least",
+              "default": 0.5,
+              "options": {
+                "min": 0.25,
+                "max": 0.95,
+                "step": 0.05
+              }
+            },
+            {
+              "name": "frames_from",
+              "type": "choice",
+              "label": "Frames from",
+              "default": "Busiest",
+              "options": {
+                "choices": [
+                  "Busiest",
+                  "7:00 PM",
+                  "7:30 PM",
+                  "8:00 PM",
+                  "8:30 PM",
+                  "9:00 PM",
+                  "9:30 PM",
+                  "10:00 PM",
+                  "10:30 PM",
+                  "11:00 PM",
+                  "11:30 PM",
+                  "12:00 AM",
+                  "12:30 AM",
+                  "1:00 AM",
+                  "1:30 AM",
+                  "2:00 AM",
+                  "2:30 AM",
+                  "3:00 AM",
+                  "3:30 AM",
+                  "4:00 AM",
+                  "4:30 AM",
+                  "5:00 AM",
+                  "5:30 AM",
+                  "6:00 AM",
+                  "6:30 AM",
+                  "7:00 AM",
+                  "7:30 AM",
+                  "8:00 AM",
+                  "8:30 AM",
+                  "9:00 AM",
+                  "9:30 AM",
+                  "10:00 AM",
+                  "10:30 AM",
+                  "11:00 AM",
+                  "11:30 AM",
+                  "12:00 PM",
+                  "12:30 PM",
+                  "1:00 PM",
+                  "1:30 PM",
+                  "2:00 PM",
+                  "2:30 PM",
+                  "3:00 PM",
+                  "3:30 PM",
+                  "4:00 PM"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
+        },
+        "title": "Settings",
+        "dashboardPinned": true,
+        "dashboardX": 0,
+        "dashboardY": 0,
+        "dashboardWidth": 280,
+        "dashboardHeight": 610
+      },
+      {
+        "id": "idot-cameras",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 978,
+        "content": "cameras = curio_load_data(\"data.cities-in-motion.idot-cameras\")\n\nreturn cameras\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the team's control points and zones of the three cameras.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Cameras"
+      },
+      {
+        "id": "idot-yolo26n",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 118,
+        "content": "boxes = curio_load_data(\"data.cities-in-motion.idot-yolo26n\")\n\nreturn boxes\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load Keira's YOLO26n boxes on the snapshots of the three team days.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "YOLO26n boxes"
+      },
+      {
+        "id": "idot-camera-on-the-ground",
+        "type": "curio.builtin/python-computation",
+        "x": 645,
+        "y": 1010,
+        "content": "import geopandas as gpd\nimport numpy as np\nfrom shapely.geometry import Point\n\n# The camera's homography H, the 3 x 3 matrix that takes a pixel of its\n# snapshots to the ground in metres, in UTM zone 16N (EPSG:26916): a least\n# squares fit (DLT) to its control points, in float64, each set of points\n# first moved to its middle and scaled (Hartley's normalization). With four\n# points the fit is exact; with more, fit_error_m is how far, on average, H\n# puts a control point from where it lies.\nsettings, cameras = input_0, input_1\npoints = cameras[(cameras[\"camera\"] == settings[\"camera\"]) & (cameras[\"kind\"] == \"control point\")]\npixels = points[[\"x_px\", \"y_px\"]].to_numpy(float)\nground = points[[\"easting_m\", \"northing_m\"]].to_numpy(float)\n\n\ndef normalizer(xy):\n    middle = xy.mean(axis=0)\n    scale = np.sqrt(2) / np.linalg.norm(xy - middle, axis=1).mean()\n    return np.array([[scale, 0, -scale * middle[0]], [0, scale, -scale * middle[1]], [0, 0, 1]])\n\n\ndef lifted(matrix, xy):\n    \"\"\"Each point of *xy* times *matrix*, in homogeneous coordinates (u, v, w).\"\"\"\n    return (matrix @ np.c_[xy, np.ones(len(xy))].T).T\n\n\na, b = normalizer(pixels), normalizer(ground)\nrows = []\nfor (x, y, _), (u, v, _) in zip(lifted(a, pixels), lifted(b, ground)):\n    rows += [[-x, -y, -1, 0, 0, 0, u * x, u * y, u], [0, 0, 0, -x, -y, -1, v * x, v * y, v]]\nh = np.linalg.inv(b) @ np.linalg.svd(np.array(rows))[2][-1].reshape(3, 3) @ a\nh /= h[2, 2]\n# H's sign is free: take the one that puts the control points in front of\n# the camera (w > 0), so a pixel above the horizon has w <= 0.\nh *= np.sign(lifted(h, pixels)[:, 2].mean())\n\non_ground = lifted(h, pixels)\nerrors = np.hypot(*(on_ground[:, :2] / on_ground[:, 2:] - ground).T)\nmiddle = ground.mean(axis=0)\nsite = gpd.GeoSeries([Point(middle)], crs=26916).to_crs(4326).iloc[0]\nfirst = points.iloc[0]\nreturn {\n    \"camera\": settings[\"camera\"],\n    \"day\": first[\"day\"],\n    \"image_width\": int(first[\"image_width\"]),\n    \"image_height\": int(first[\"image_height\"]),\n    \"h\": h.tolist(),\n    \"control_points\": len(points),\n    \"fit_error_m\": float(np.sqrt(np.mean(errors**2))),\n    \"largest_error_m\": float(errors.max()),\n    \"easting_m\": float(middle[0]),\n    \"northing_m\": float(middle[1]),\n    \"latitude\": float(site.y),\n    \"longitude\": float(site.x),\n}\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Fit the chosen camera's homography from pixels to the ground in float64 and say how well it fits its control points.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Camera on the ground"
+      },
+      {
+        "id": "idot-zones-on-the-ground",
+        "type": "curio.builtin/python-computation",
+        "x": 1290,
+        "y": 745,
+        "content": "import geopandas as gpd\nimport numpy as np\nfrom shapely.geometry import Polygon\n\n# The camera's four zones on the ground: each zone's corners in pixels taken\n# through the camera's homography to metres in UTM zone 16N (EPSG:26916), so\n# its area is in square metres.\ncamera, cameras = input_0, input_1\nh = np.array(camera[\"h\"])\ncorners = cameras[(cameras[\"camera\"] == camera[\"camera\"]) & (cameras[\"kind\"] == \"zone\")]\nnames, shapes = [], []\nfor zone, part in corners.sort_values(\"point\", kind=\"stable\").groupby(\"zone\", sort=False):\n    u, v, w = h @ np.vstack([part[\"x_px\"], part[\"y_px\"], np.ones(len(part))])\n    names.append(zone)\n    shapes.append(Polygon(zip(u / w, v / w)))\nzones = gpd.GeoDataFrame({\"zone\": names}, geometry=shapes, crs=26916)\nzones[\"area_m2\"] = zones.area\nzones[\"before_the_crossing\"] = zones[\"zone\"].str.contains(\"before\")\nzones.metadata = {\"layerType\": \"polygons\"}\nreturn zones\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the camera's four zones to the ground and measure their areas in square metres.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Zones on the ground"
+      },
+      {
+        "id": "idot-records-of-the-day",
+        "type": "curio.builtin/python-computation",
+        "x": 645,
+        "y": 580,
+        "content": "import json\nimport os\nfrom datetime import date, timedelta\n\nimport pandas as pd\n\n# The camera's records of its day, a UTC date, out of its month's JSON Lines\n# file, read where it is. The month runs day by day, each day's lines in a\n# block: one line per image the models looked at, in time order, then one per\n# snapshot uploaded. A line's date never goes down, so a bisection on the\n# dates finds where the day starts and where the next one does, and only\n# those bytes are read.\nDAYS = {\"W042\": \"2025-08-09\", \"W065\": \"2025-08-17\", \"W06E\": \"2025-12-02\"}\nMONTHS = {\n    \"W042\": curio_load_collection(\"data.sage.idot-w042-records-2025-08\"),\n    \"W065\": curio_load_collection(\"data.sage.idot-w065-records-2025-08\"),\n    \"W06E\": curio_load_collection(\"data.sage.idot-w06e-records-2025-12\"),\n}\ncamera = input_0[\"camera\"]\npath = MONTHS[camera][\"path\"].iloc[0]\nif pd.isna(path):\n    raise RuntimeError(\n        f\"The records of {camera} are not on this machine: open their dataset's details in the \"\n        \"Data Catalog and press Cache files.\"\n    )\n\n\ndef first_line_from(handle, size, day):\n    \"\"\"Where the first line dated *day* or later starts.\"\"\"\n    low, high = 0, size\n    while low < high:\n        middle = (low + high) // 2\n        handle.seek(middle)\n        if middle:\n            handle.readline()  # the rest of the line the seek fell in\n        line = handle.readline()\n        if line and json.loads(line)[\"timestamp\"][:10] < day:\n            low = middle + 1\n        else:\n            high = middle\n    handle.seek(low)\n    if low:\n        handle.readline()\n    return handle.tell()\n\n\nday = DAYS[camera]\nnext_day = (date.fromisoformat(day) + timedelta(days=1)).isoformat()\nwith open(path, \"rb\") as handle:\n    size = os.fstat(handle.fileno()).st_size\n    start = first_line_from(handle, size, day)\n    end = first_line_from(handle, size, next_day)\n    handle.seek(start)\n    lines = handle.read(end - start).splitlines()\n\n# One row per box a model drew, and one with no class for an image the model\n# saw nothing in, as the team's get_detections_df reads the records.\nrows = []\nfor line in lines:\n    record = json.loads(line)  # its meta.filename may be a bare NaN, which Python reads\n    if record[\"name\"] != \"object.detections.all\":\n        continue  # a snapshot's upload line\n    value = json.loads(record[\"value\"])\n    for model, result in value[\"models_results\"].items():\n        for box in result.get(\"detections\") or [{}]:\n            x0, y0, x1, y1 = box.get(\"bbox\", [None] * 4)\n            rows.append((value[\"image_timestamp_ns\"], model, box.get(\"class\"), box.get(\"confidence\"), x0, y0, x1, y1))\nrecords = pd.DataFrame(rows, columns=[\"image_timestamp_ns\", \"model\", \"class\", \"confidence\", \"x0\", \"y0\", \"x1\", \"y1\"])\nprint(f\"{camera} on {day}: {end - start:,} bytes from {start:,}, {records['image_timestamp_ns'].nunique():,} images\")\nreturn records\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Read the camera's day of records out of its month's file, by a bisection on the dates, one row per box and one per image a model saw nothing in.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Records of the day"
+      },
+      {
+        "id": "idot-snapshots-of-the-day",
+        "type": "curio.builtin/python-computation",
+        "x": 645,
+        "y": 150,
+        "content": "# The camera's snapshots of its day, one every 5 minutes, read where they are:\n# each named by when it was taken in nanoseconds (ns), with that time in UTC\n# (taken_at) and on a Chicago clock (chicago).\nSNAPSHOTS = {\n    \"W042\": curio_load_collection(\"data.sage.idot-w042-snapshots-2025-08-09\"),\n    \"W065\": curio_load_collection(\"data.sage.idot-w065-snapshots-2025-08-17\"),\n    \"W06E\": curio_load_collection(\"data.sage.idot-w06e-snapshots-2025-12-02\"),\n}\nsnapshots = SNAPSHOTS[input_0[\"camera\"]].sort_values(\"ns\", ignore_index=True)\nin_utc = snapshots[\"taken_at\"].dt.tz_localize(\"UTC\")\nsnapshots[\"chicago\"] = in_utc.dt.tz_convert(\"America/Chicago\").dt.tz_localize(None)\nreturn snapshots\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "List the camera's snapshots of its day with their times in Chicago.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Snapshots of the day"
+      },
+      {
+        "id": "idot-models-on-the-snapshots",
+        "type": "curio.builtin/python-computation",
+        "x": 1290,
+        "y": 315,
+        "content": "import pandas as pd\n\n# Every model's boxes on the day's snapshots, of the chosen classes at the\n# chosen confidence or more: YOLOv5n's, YOLOv8n's and YOLOv10n's from the\n# records, whose image_timestamp_ns is a snapshot's name, and YOLO26n's from\n# Keira's run on the snapshots, whose timestamps_ns is that name too. A\n# snapshot a model found nothing in has no row; the snapshots are the count\n# each model's boxes are shared over.\nsettings, records, snapshots, yolo26n = input_0, input_1, input_2, input_3\nyolo26n = yolo26n.rename(columns={\n    \"timestamps_ns\": \"image_timestamp_ns\", \"x_min\": \"x0\", \"y_min\": \"y0\", \"x_max\": \"x1\", \"y_max\": \"y1\",\n})\nyolo26n[\"model\"] = \"YOLO26n\"\ncolumns = [\"image_timestamp_ns\", \"model\", \"class\", \"confidence\", \"x0\", \"y0\", \"x1\", \"y1\"]\nboxes = pd.concat([records[columns], yolo26n[columns]], ignore_index=True)\nboxes = boxes[\n    boxes[\"image_timestamp_ns\"].isin(snapshots[\"ns\"])\n    & boxes[\"class\"].isin(settings[\"classes\"])\n    & (boxes[\"confidence\"] >= settings[\"confidence\"])\n]\nprint(f\"{len(boxes):,} boxes on {len(snapshots)} snapshots: \" + \", \".join(\n    f\"{model} {count:,}\" for model, count in boxes[\"model\"].value_counts().sort_index().items()\n))\nreturn boxes.reset_index(drop=True)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Gather every model's boxes on the day's snapshots, YOLO26n's from Keira's run, of the chosen classes and confidence.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Models on the snapshots"
+      },
+      {
+        "id": "idot-on-the-ground",
+        "type": "curio.builtin/python-computation",
+        "x": 1935,
+        "y": 1044,
+        "content": "import geopandas as gpd\nimport numpy as np\nimport pandas as pd\n\n# Where each object the chosen model saw stands on the ground: the bottom\n# center of its box, ((x0 + x1) / 2, y1), where it meets the ground, taken\n# through the camera's homography to metres in UTM zone 16N (EPSG:26916), of\n# the chosen classes at the chosen confidence or more. The classes hold no\n# traffic light, which is not on the ground. A point more than RANGE_M from\n# the control points is left out: its box stands near the horizon, where a\n# pixel spans many metres. YOLO26n ran on the snapshots alone, so its points\n# are its boxes there.\nRANGE_M = 100\nsettings, camera, records, on_snapshots = input_0, input_1, input_2, input_3\nif settings[\"model\"] == \"YOLO26n\":\n    boxes = on_snapshots[on_snapshots[\"model\"] == \"YOLO26n\"]\nelse:\n    boxes = records[records[\"model\"] == settings[\"model\"]]\n    boxes = boxes[boxes[\"class\"].isin(settings[\"classes\"]) & (boxes[\"confidence\"] >= settings[\"confidence\"])]\n\nh = np.array(camera[\"h\"])\nu, v, w = h @ np.vstack([(boxes[\"x0\"] + boxes[\"x1\"]) / 2, boxes[\"y1\"], np.ones(len(boxes))])\npoints = boxes.assign(easting_m=u / w, northing_m=v / w)\naway = np.hypot(points[\"easting_m\"] - camera[\"easting_m\"], points[\"northing_m\"] - camera[\"northing_m\"])\npoints = points[(w > 0) & (away <= RANGE_M)].reset_index(drop=True)\ntaken_at = pd.to_datetime(points[\"image_timestamp_ns\"], unit=\"ns\", utc=True)\npoints[\"chicago\"] = taken_at.dt.tz_convert(\"America/Chicago\").dt.tz_localize(None)\nprint(f\"{len(points):,} of {len(boxes):,} boxes stand within {RANGE_M} m of the control points\")\ngeometry = gpd.points_from_xy(points[\"easting_m\"], points[\"northing_m\"])\npoints = gpd.GeoDataFrame(points, geometry=geometry, crs=26916)\npoints.metadata = {\"layerType\": \"points\"}\nreturn points\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Place each object the chosen model saw on the ground, at its box's bottom center.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "On the ground"
+      },
+      {
+        "id": "idot-objects-in-zones",
+        "type": "curio.builtin/spatial-join",
+        "x": 2612,
+        "y": 430,
+        "content": "from spatial_join import spatial_join\n\nreturn spatial_join(input_0, input_1, operation=[!! operation !!], output=[!! output !!])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Pair each ground point with the zone it lies within.",
+        "metadata": {
+          "keywords": [],
+          "widgets": [
+            {
+              "name": "operation",
+              "type": "choice",
+              "label": "Operation",
+              "default": "intersects",
+              "value": "within",
+              "options": {
+                "choices": [
+                  "intersects",
+                  "within",
+                  "contains",
+                  "touches",
+                  "overlaps",
+                  "crosses",
+                  "nearest"
+                ],
+                "display": "dropdown"
+              }
+            },
+            {
+              "name": "output",
+              "type": "choice",
+              "label": "Output",
+              "default": "pairs",
+              "options": {
+                "choices": [
+                  "pairs",
+                  "counts"
+                ],
+                "display": "dropdown"
+              }
+            }
+          ]
+        },
+        "title": "Objects in each zone"
+      },
+      {
+        "id": "idot-zone-occupancy",
+        "type": "curio.builtin/python-computation",
+        "x": 3225,
+        "y": 380,
+        "content": "import pandas as pd\n\n# How full each zone is, minute by minute: the objects in it per image, per\n# 100 square metres of the zone. Every image the model looked at counts, one it\n# saw nothing in too, whatever the filters keep: the distinct images of the\n# model in the records. YOLO26n looked at the snapshots alone, one every 5\n# minutes, so its bins are 5 minutes long.\nsettings, records, snapshots, zones, inside = input_0, input_1, input_2, input_3, input_4\nif settings[\"model\"] == \"YOLO26n\":\n    images, step = snapshots[\"ns\"], \"5min\"\nelse:\n    images, step = records.loc[records[\"model\"] == settings[\"model\"], \"image_timestamp_ns\"].unique(), \"1min\"\n\n\ndef binned(ns):\n    \"\"\"Each time in nanoseconds as the start of its bin, on a Chicago clock.\"\"\"\n    chicago = pd.to_datetime(pd.Series(ns), unit=\"ns\", utc=True).dt.tz_convert(\"America/Chicago\")\n    return chicago.dt.floor(step).dt.tz_localize(None).to_numpy()\n\n\nlooked = pd.Series(binned(images)).value_counts().rename(\"images\")\nfound = inside.groupby([binned(inside[\"image_timestamp_ns\"]), \"zone\"]).size()\nbins = pd.MultiIndex.from_product([looked.index.sort_values(), zones[\"zone\"]], names=[\"bin\", \"zone\"])\noccupancy = found.reindex(bins, fill_value=0).rename(\"objects\").reset_index()\noccupancy = occupancy.join(looked, on=\"bin\").merge(zones[[\"zone\", \"area_m2\"]], on=\"zone\")\noccupancy[\"per_image_per_100_m2\"] = occupancy[\"objects\"] / occupancy[\"images\"] / occupancy[\"area_m2\"] * 100\n# The Chicago clock written as if it were UTC, so a chart draws the same hours in\n# a browser anywhere.\noccupancy[\"time\"] = occupancy[\"bin\"].dt.strftime(\"%Y-%m-%dT%H:%M:%SZ\")\noccupancy[\"clock\"] = occupancy[\"bin\"].dt.strftime(\"%H:%M\")\nreturn occupancy\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Count the objects in each zone per image, per 100 square metres, minute by minute.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Zone occupancy"
+      },
+      {
+        "id": "idot-light",
+        "type": "curio.builtin/python-computation",
+        "x": 1290,
+        "y": 1175,
+        "content": "from datetime import date, datetime, time, timedelta, timezone\nfrom zoneinfo import ZoneInfo\n\nimport pandas as pd\nfrom astral import Observer\nfrom astral.sun import dawn, dusk, sunrise, sunset\n\n# Night, twilight and day at the camera over its day, a UTC date: astral's\n# dawn, sunrise, sunset and dusk (civil twilight, the sun 6 degrees under the\n# horizon) at the camera's place, for each Chicago date the day touches.\nCHICAGO = ZoneInfo(\"America/Chicago\")\ncamera = input_0\nstart = datetime.combine(date.fromisoformat(camera[\"day\"]), time(0), tzinfo=timezone.utc).astimezone(CHICAGO)\nend = start + timedelta(days=1)\nobserver = Observer(latitude=camera[\"latitude\"], longitude=camera[\"longitude\"])\nchanges = []\nfor local in sorted({start.date(), (end - timedelta(microseconds=1)).date()}):\n    for event, light in ((dawn, \"twilight\"), (sunrise, \"day\"), (sunset, \"twilight\"), (dusk, \"night\")):\n        changes.append((event(observer, local, tzinfo=CHICAGO), light))\nchanges.sort()\n\n# The light at the day's start is what the last change before it began.\nlight = next((light for moment, light in reversed(changes) if moment <= start), \"night\")\nspans, since = [], start\nfor moment, after in changes:\n    if start < moment < end:\n        spans.append((since, moment, light))\n        since, light = moment, after\nspans.append((since, end, light))\n\n\ndef clock(moment):\n    \"\"\"A Chicago time written as if it were UTC, so a chart draws the same hours anywhere.\"\"\"\n    return moment.strftime(\"%Y-%m-%dT%H:%M:%SZ\")\n\n\nreturn pd.DataFrame([\n    {\"from\": clock(a), \"to\": clock(b), \"light\": what, \"span\": f\"{a:%H:%M} to {b:%H:%M}\"} for a, b, what in spans\n])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Find night, twilight and day at the camera over its day with astral.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Light"
+      },
+      {
+        "id": "idot-half-hour",
+        "type": "curio.builtin/python-computation",
+        "x": 3225,
+        "y": 810,
+        "content": "from datetime import datetime, timedelta\n\nimport pandas as pd\n\n# The half hour the frames show, on a Chicago clock: the one Frames from\n# names, or the busiest, the half hour whose snapshots show the most objects\n# in the lanes before the crossing.\nsettings, snapshots, inside = input_0, input_1, input_2\nhalves = snapshots[\"chicago\"].dt.floor(\"30min\")\nif settings[\"frames_from\"] == \"Busiest\":\n    waiting = inside.loc[inside[\"before_the_crossing\"], \"image_timestamp_ns\"].value_counts()\n    start = snapshots[\"ns\"].map(waiting).fillna(0).groupby(halves).sum().idxmax()\nelse:\n    clock = datetime.strptime(settings[\"frames_from\"], \"%I:%M %p\").time()\n    starts = [halves.min() + timedelta(minutes=30 * k) for k in range(48)]\n    start = next(moment for moment in starts if moment.time() == clock)\nend = start + timedelta(minutes=30)\n\n\ndef in_utc_ns(moment):\n    return pd.Timestamp(moment).tz_localize(\"America/Chicago\").tz_convert(\"UTC\").value\n\n\ndef said(moment):\n    return f\"{moment.hour % 12 or 12}:{moment.minute:02d} {'AM' if moment.hour < 12 else 'PM'}\"\n\n\nreturn pd.DataFrame([{\n    # The Chicago clock written as if it were UTC, as the charts read times.\n    \"from\": start.strftime(\"%Y-%m-%dT%H:%M:%SZ\"),\n    \"to\": end.strftime(\"%Y-%m-%dT%H:%M:%SZ\"),\n    \"from_ns\": in_utc_ns(start),\n    \"to_ns\": in_utc_ns(end),\n    \"label\": (\"Busiest, \" if settings[\"frames_from\"] == \"Busiest\" else \"\") + f\"{said(start)} to {said(end)}\",\n}])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Pick the half hour the frames show: the one chosen, or the busiest before the crossing.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Half hour of the frames"
+      },
+      {
+        "id": "idot-zone-occupancy-chart",
+        "type": "curio.builtin/vis-vega",
+        "x": 3870,
+        "y": 953,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Objects in each zone per image, per 100 m2, minute by minute on a Chicago clock, over night, twilight and day, with the half hour the frames show.\",\n  \"layer\": [\n    {\n      \"data\": {\n        \"name\": \"[!! input_1 !!]\"\n      },\n      \"mark\": {\n        \"type\": \"rect\"\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"from\",\n          \"type\": \"temporal\",\n          \"scale\": {\n            \"type\": \"utc\"\n          }\n        },\n        \"x2\": {\n          \"field\": \"to\"\n        },\n        \"color\": {\n          \"field\": \"light\",\n          \"type\": \"nominal\",\n          \"title\": \"Light\",\n          \"scale\": {\n            \"domain\": [\n              \"night\",\n              \"twilight\",\n              \"day\"\n            ],\n            \"range\": [\n              \"#d5dae3\",\n              \"#eceef3\",\n              \"#ffffff\"\n            ]\n          }\n        },\n        \"tooltip\": [\n          {\n            \"field\": \"light\",\n            \"type\": \"nominal\",\n            \"title\": \"Light\"\n          },\n          {\n            \"field\": \"span\",\n            \"type\": \"nominal\",\n            \"title\": \"Chicago time\"\n          }\n        ]\n      }\n    },\n    {\n      \"data\": {\n        \"name\": \"[!! input_2 !!]\"\n      },\n      \"mark\": {\n        \"type\": \"rect\",\n        \"color\": \"#ff7f0e\",\n        \"opacity\": 0.35\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"from\",\n          \"type\": \"temporal\",\n          \"scale\": {\n            \"type\": \"utc\"\n          }\n        },\n        \"x2\": {\n          \"field\": \"to\"\n        },\n        \"tooltip\": [\n          {\n            \"field\": \"label\",\n            \"type\": \"nominal\",\n            \"title\": \"Frames\"\n          }\n        ]\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"line\",\n        \"strokeWidth\": 1\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"time\",\n          \"type\": \"temporal\",\n          \"title\": \"Chicago time\",\n          \"scale\": {\n            \"type\": \"utc\"\n          },\n          \"axis\": {\n            \"format\": \"%H:%M\"\n          }\n        },\n        \"y\": {\n          \"field\": \"per_image_per_100_m2\",\n          \"type\": \"quantitative\",\n          \"title\": \"Objects per image per 100 m\\u00b2\"\n        },\n        \"color\": {\n          \"field\": \"zone\",\n          \"type\": \"nominal\",\n          \"title\": \"Zone\"\n        },\n        \"tooltip\": [\n          {\n            \"field\": \"zone\",\n            \"type\": \"nominal\",\n            \"title\": \"Zone\"\n          },\n          {\n            \"field\": \"clock\",\n            \"type\": \"nominal\",\n            \"title\": \"Chicago time\"\n          },\n          {\n            \"field\": \"objects\",\n            \"type\": \"quantitative\",\n            \"title\": \"Objects\"\n          },\n          {\n            \"field\": \"images\",\n            \"type\": \"quantitative\",\n            \"title\": \"Images\"\n          },\n          {\n            \"field\": \"per_image_per_100_m2\",\n            \"type\": \"quantitative\",\n            \"format\": \".2f\",\n            \"title\": \"Per image per 100 m\\u00b2\"\n          }\n        ]\n      }\n    }\n  ],\n  \"resolve\": {\n    \"scale\": {\n      \"color\": \"independent\"\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart each zone's occupancy over the day, with the light and the frames' half hour.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Zone occupancy",
+        "dashboardPinned": true,
+        "dashboardX": 290,
+        "dashboardY": 0,
+        "dashboardWidth": 990,
+        "dashboardHeight": 300
+      },
+      {
+        "id": "idot-per-hour",
+        "type": "curio.builtin/python-computation",
+        "x": 3870,
+        "y": 523,
+        "content": "import pandas as pd\n\n# The objects the chosen model saw per image, by class group and Chicago hour:\n# the ground points of each hour over the images the model looked at in it,\n# which Zone occupancy counts in each of its bins.\nGROUPS = {\"car\": \"cars\", \"truck\": \"trucks and buses\", \"bus\": \"trucks and buses\", \"train\": \"trains\",\n          \"person\": \"people\", \"bicycle\": \"bicycles and motorcycles\", \"motorcycle\": \"bicycles and motorcycles\"}\noccupancy, points = input_0, input_1\nbins = occupancy.drop_duplicates(\"bin\")\nimages = bins.groupby(bins[\"bin\"].dt.hour)[\"images\"].sum()\nseen = points.groupby([points[\"chicago\"].dt.hour.rename(\"hour\"), points[\"class\"].map(GROUPS).rename(\"group\")]).size()\nhours = pd.MultiIndex.from_product([images.index, sorted(set(GROUPS.values()))], names=[\"hour\", \"group\"])\nper_hour = seen.reindex(hours, fill_value=0).rename(\"objects\").reset_index()\nper_hour[\"images\"] = per_hour[\"hour\"].map(images)\nper_hour[\"per_image\"] = per_hour[\"objects\"] / per_hour[\"images\"]\nreturn per_hour\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Count the objects per image by class group and Chicago hour.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Per hour"
+      },
+      {
+        "id": "idot-per-hour-chart",
+        "type": "curio.builtin/vis-vega",
+        "x": 4515,
+        "y": 523,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"The objects the chosen model saw per image, by class group and Chicago hour.\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"hour\",\n      \"type\": \"ordinal\",\n      \"title\": \"Chicago hour\",\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"per_image\",\n      \"type\": \"quantitative\",\n      \"title\": \"Objects per image\"\n    },\n    \"color\": {\n      \"field\": \"group\",\n      \"type\": \"nominal\",\n      \"title\": \"Objects\"\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"hour\",\n        \"type\": \"ordinal\",\n        \"title\": \"Chicago hour\"\n      },\n      {\n        \"field\": \"group\",\n        \"type\": \"nominal\",\n        \"title\": \"Objects\"\n      },\n      {\n        \"field\": \"objects\",\n        \"type\": \"quantitative\",\n        \"title\": \"Seen\"\n      },\n      {\n        \"field\": \"images\",\n        \"type\": \"quantitative\",\n        \"title\": \"Images\"\n      },\n      {\n        \"field\": \"per_image\",\n        \"type\": \"quantitative\",\n        \"format\": \".2f\",\n        \"title\": \"Per image\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart the objects per image by class group and Chicago hour.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Per hour",
+        "dashboardPinned": true,
+        "dashboardX": 0,
+        "dashboardY": 620,
+        "dashboardWidth": 635,
+        "dashboardHeight": 270
+      },
+      {
+        "id": "idot-confidence-by-hour",
+        "type": "curio.builtin/python-computation",
+        "x": 2580,
+        "y": 1670,
+        "content": "# The confidence of the chosen model's ground points by Chicago hour: its\n# quartiles, and the lowest and highest.\npoints = input_0\nby_hour = points.groupby(points[\"chicago\"].dt.hour.rename(\"hour\"))[\"confidence\"]\nquartiles = by_hour.quantile([0, 0.25, 0.5, 0.75, 1]).unstack()\nquartiles.columns = [\"lowest\", \"q1\", \"median\", \"q3\", \"highest\"]\nquartiles[\"points\"] = by_hour.size()\nreturn quartiles.reset_index()\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Take the quartiles of the ground points' confidence by Chicago hour.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Confidence by hour"
+      },
+      {
+        "id": "idot-confidence-chart",
+        "type": "curio.builtin/vis-vega",
+        "x": 3225,
+        "y": 1670,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"The confidence of the chosen model's ground points by Chicago hour: the lowest to the highest, the middle half, and the median.\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"hour\",\n      \"type\": \"ordinal\",\n      \"title\": \"Chicago hour\",\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"type\": \"rule\",\n        \"color\": \"#8c8c8c\"\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"lowest\",\n          \"type\": \"quantitative\",\n          \"title\": \"Confidence\",\n          \"scale\": {\n            \"domain\": [\n              0.25,\n              1\n            ]\n          }\n        },\n        \"y2\": {\n          \"field\": \"highest\"\n        }\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"bar\",\n        \"size\": 12,\n        \"color\": \"#4c78a8\"\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"q1\",\n          \"type\": \"quantitative\"\n        },\n        \"y2\": {\n          \"field\": \"q3\"\n        },\n        \"tooltip\": [\n          {\n            \"field\": \"hour\",\n            \"type\": \"ordinal\",\n            \"title\": \"Chicago hour\"\n          },\n          {\n            \"field\": \"points\",\n            \"type\": \"quantitative\",\n            \"title\": \"Points\"\n          },\n          {\n            \"field\": \"q1\",\n            \"type\": \"quantitative\",\n            \"format\": \".2f\",\n            \"title\": \"First quartile\"\n          },\n          {\n            \"field\": \"median\",\n            \"type\": \"quantitative\",\n            \"format\": \".2f\",\n            \"title\": \"Median\"\n          },\n          {\n            \"field\": \"q3\",\n            \"type\": \"quantitative\",\n            \"format\": \".2f\",\n            \"title\": \"Third quartile\"\n          }\n        ]\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"tick\",\n        \"size\": 12,\n        \"color\": \"#ffffff\",\n        \"thickness\": 2\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"median\",\n          \"type\": \"quantitative\"\n        }\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart the confidence by Chicago hour.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Confidence by hour",
+        "dashboardPinned": true,
+        "dashboardX": 645,
+        "dashboardY": 620,
+        "dashboardWidth": 635,
+        "dashboardHeight": 270
+      },
+      {
+        "id": "idot-frames",
+        "type": "curio.builtin/python-computation",
+        "x": 3870,
+        "y": 93,
+        "content": "import hashlib\nimport json\n\nimport pandas as pd\nfrom PIL import Image, ImageDraw\n\n# Up to MOST snapshots of the half hour, each drawn with PIL: the camera's\n# zones and the chosen model's boxes, colored by class, as a picture derived\n# from the snapshot. Each card's caption counts every model's boxes on its\n# snapshot, of the chosen classes at the chosen confidence or more.\nMOST = 6\nWIDTH = 960  # the drawn picture's width, in pixels\nCOLORS = {\"car\": \"#1f77b4\", \"truck\": \"#ff7f0e\", \"bus\": \"#d62728\", \"train\": \"#9467bd\",\n          \"person\": \"#2ca02c\", \"bicycle\": \"#17becf\", \"motorcycle\": \"#bcbd22\"}\nZONE = \"#ffd400\"\nsettings, snapshots, boxes, cameras, window = input_0, input_1, input_2, input_3, input_4.iloc[0]\nshown = snapshots[(snapshots[\"ns\"] >= window[\"from_ns\"]) & (snapshots[\"ns\"] < window[\"to_ns\"])].head(MOST)\nmissing = shown.loc[shown[\"path\"].isna(), \"name\"].tolist()\nif missing:\n    raise RuntimeError(\n        f\"{len(missing)} snapshots of the half hour are not on this machine, {missing[0]} first: open \"\n        \"their dataset's details in the Data Catalog and press Cache files.\"\n    )\nzones = cameras[(cameras[\"camera\"] == settings[\"camera\"]) & (cameras[\"kind\"] == \"zone\")]\nzones = zones.sort_values(\"point\", kind=\"stable\").groupby(\"zone\", sort=False)\n# The pictures' tag tells them apart from those drawn with other settings.\nasked = [settings[\"model\"], sorted(settings[\"classes\"]), float(settings[\"confidence\"])]\ntag = \"frames\" + hashlib.sha256(json.dumps(asked).encode(\"utf-8\")).hexdigest()[:12]\n\nrows = []\nfor snapshot in shown.itertuples():\n    # Boxes and zones are in the camera's pixels: scaled to the picture's.\n    size = (WIDTH, round(WIDTH * snapshot.height / snapshot.width))\n    sx, sy = size[0] / snapshot.width, size[1] / snapshot.height\n    with Image.open(snapshot.path) as source:\n        picture = source.convert(\"RGB\").resize(size)\n    draw = ImageDraw.Draw(picture)\n    for _zone, corners in zones:\n        outline = [(x * sx, y * sy) for x, y in zip(corners[\"x_px\"], corners[\"y_px\"])]\n        draw.line(outline + outline[:1], fill=ZONE, width=3)\n    found = boxes[boxes[\"image_timestamp_ns\"] == snapshot.ns]\n    drawn = found.loc[found[\"model\"] == settings[\"model\"], [\"x0\", \"y0\", \"x1\", \"y1\", \"class\"]]\n    for x0, y0, x1, y1, kind in drawn.itertuples(index=False):\n        draw.rectangle([x0 * sx, y0 * sy, x1 * sx, y1 * sy], outline=COLORS.get(kind, \"#ffffff\"), width=3)\n    derived = curio_derived_file(snapshot.dataset_id, snapshot.file_id, 0, \"png\", kind=\"image\", tag=tag)\n    picture.save(derived[\"path\"])\n    count = found[\"model\"].value_counts()\n    rows.append({\n        \"thumbnail\": derived[\"thumbnail\"],\n        \"taken_at\": f\"{snapshot.chicago:%H:%M:%S}\",\n        \"v5n · v8n\": f\"{count.get('YOLOv5n', 0)} · {count.get('YOLOv8n', 0)}\",\n        \"v10n · 26n\": f\"{count.get('YOLOv10n', 0)} · {count.get('YOLO26n', 0)}\",\n    })\nprint(f\"{len(rows)} frames of {window['label']}, with {settings['model']}'s boxes\")\nreturn pd.DataFrame(rows, columns=[\"thumbnail\", \"taken_at\", \"v5n · v8n\", \"v10n · 26n\"])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw the half hour's snapshots with the zones and the chosen model's boxes, captioned with every model's count.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Frames"
+      },
+      {
+        "id": "idot-frames-view",
+        "type": "curio.builtin/vis-simple",
+        "x": 4515,
+        "y": 93,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show the drawn snapshots.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Frames",
+        "dashboardPinned": true,
+        "dashboardX": 290,
+        "dashboardY": 310,
+        "dashboardWidth": 520,
+        "dashboardHeight": 300
+      },
+      {
+        "id": "idot-confidence-grid",
+        "type": "curio.builtin/python-computation",
+        "x": 2580,
+        "y": 1240,
+        "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\n# The mean confidence of the day's ground points on cells of SIDE metres, each\n# cell a square on the ground (EPSG:26916), with how many points it holds.\nSIDE = 2\npoints = input_0\ncells = points.assign(column=(points[\"easting_m\"] // SIDE).astype(int), row=(points[\"northing_m\"] // SIDE).astype(int))\ngrid = cells.groupby([\"column\", \"row\"]).agg(mean_confidence=(\"confidence\", \"mean\"), points=(\"confidence\", \"size\"))\ngrid = grid.reset_index()\nsquares = [box(c * SIDE, r * SIDE, (c + 1) * SIDE, (r + 1) * SIDE) for c, r in zip(grid[\"column\"], grid[\"row\"])]\ngrid = gpd.GeoDataFrame(grid, geometry=squares, crs=26916)\ngrid.metadata = {\"layerType\": \"polygons\"}\nreturn grid\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Average the ground points' confidence on cells of 2 m.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Confidence grid"
+      },
+      {
+        "id": "idot-map-extent",
+        "type": "curio.builtin/python-computation",
+        "x": 3225,
+        "y": 1240,
+        "content": "import geopandas as gpd\nfrom shapely.geometry import box\n\n# The ground the map shows: one rectangle around the zones and the grid, MARGIN\n# metres past them. A map clips every layer after its first to its first's\n# outline, so this one comes first and keeps the others whole.\nMARGIN = 10\nzones, grid = input_0, input_1\nwest, south, east, north = gpd.GeoSeries(list(zones.geometry) + list(grid.geometry), crs=26916).total_bounds\nground = gpd.GeoDataFrame(\n    {\"name\": [\"ground\"]}, geometry=[box(west - MARGIN, south - MARGIN, east + MARGIN, north + MARGIN)], crs=26916\n)\nground.metadata = {\"layerType\": \"polygons\"}\nreturn ground\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Give the map one rectangle of ground around the zones and the grid, so no layer is cut.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Map extent"
+      },
+      {
+        "id": "idot-points-of-the-half-hour",
+        "type": "curio.builtin/python-computation",
+        "x": 3870,
+        "y": 1383,
+        "content": "# The ground points of the half hour the frames show, for the map.\npoints, window = input_0, input_1.iloc[0]\nshown = points[(points[\"image_timestamp_ns\"] >= window[\"from_ns\"]) & (points[\"image_timestamp_ns\"] < window[\"to_ns\"])]\nshown = shown[[\"class\", \"confidence\", \"geometry\"]].reset_index(drop=True)\nshown.metadata = {\"layerType\": \"points\"}\nreturn shown\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Keep the ground points of the half hour the frames show.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Points of the half hour"
+      },
+      {
+        "id": "idot-ground-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 4515,
+        "y": 953,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"color\": \"#eef1f5\",\n        \"stroke\": false,\n        \"title\": \"Ground\"\n      },\n      {\n        \"dataRef\": \"[!! input_1 !!]\",\n        \"color\": \"#fff1a8\",\n        \"stroke\": \"#d4a900\",\n        \"title\": \"Zones\"\n      },\n      {\n        \"dataRef\": \"[!! input_2 !!]\",\n        \"getFnv\": \"mean_confidence\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"colorMapRange\": [\n          0.25,\n          1\n        ],\n        \"stroke\": false,\n        \"title\": \"Mean confidence of the day\"\n      },\n      {\n        \"dataRef\": \"[!! input_3 !!]\",\n        \"getFnv\": \"class\",\n        \"getFnvType\": \"categorical\",\n        \"colorMapInterpolator\": \"schemeTableau10\",\n        \"pointSize\": 0.5,\n        \"title\": \"Objects of the half hour\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the zones, the day's confidence grid and the half hour's objects on the ground.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Ground",
+        "dashboardPinned": true,
+        "dashboardX": 820,
+        "dashboardY": 310,
+        "dashboardWidth": 460,
+        "dashboardHeight": 300
+      },
+      {
+        "id": "idot-by-model",
+        "type": "curio.builtin/python-computation",
+        "x": 1935,
+        "y": 614,
+        "content": "import pandas as pd\n\n# Each model's boxes per snapshot, by class group: its boxes on the day's\n# snapshots over how many snapshots there are, a snapshot it found nothing in\n# counted too.\nGROUPS = {\"car\": \"cars\", \"truck\": \"trucks and buses\", \"bus\": \"trucks and buses\", \"train\": \"trains\",\n          \"person\": \"people\", \"bicycle\": \"bicycles and motorcycles\", \"motorcycle\": \"bicycles and motorcycles\"}\nMODELS = [\"YOLOv5n\", \"YOLOv8n\", \"YOLOv10n\", \"YOLO26n\"]\nboxes, snapshots = input_0, input_1\ncounts = boxes.groupby([\"model\", boxes[\"class\"].map(GROUPS).rename(\"group\")]).size()\nevery = pd.MultiIndex.from_product([MODELS, sorted(set(GROUPS.values()))], names=[\"model\", \"group\"])\nby_model = counts.reindex(every, fill_value=0).rename(\"boxes\").reset_index()\nby_model[\"snapshots\"] = len(snapshots)\nby_model[\"per_snapshot\"] = by_model[\"boxes\"] / len(snapshots)\nreturn by_model\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Count each model's boxes per snapshot by class group.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "By model"
+      },
+      {
+        "id": "idot-by-model-chart",
+        "type": "curio.builtin/vis-vega",
+        "x": 2580,
+        "y": 810,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Each model's boxes per snapshot of the day, by class group.\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"group\",\n      \"type\": \"nominal\",\n      \"title\": null,\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"xOffset\": {\n      \"field\": \"model\",\n      \"type\": \"nominal\",\n      \"sort\": [\n        \"YOLOv5n\",\n        \"YOLOv8n\",\n        \"YOLOv10n\",\n        \"YOLO26n\"\n      ]\n    },\n    \"y\": {\n      \"field\": \"per_snapshot\",\n      \"type\": \"quantitative\",\n      \"title\": \"Boxes per snapshot\"\n    },\n    \"color\": {\n      \"field\": \"model\",\n      \"type\": \"nominal\",\n      \"title\": \"Model\",\n      \"sort\": [\n        \"YOLOv5n\",\n        \"YOLOv8n\",\n        \"YOLOv10n\",\n        \"YOLO26n\"\n      ]\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"model\",\n        \"type\": \"nominal\",\n        \"title\": \"Model\"\n      },\n      {\n        \"field\": \"group\",\n        \"type\": \"nominal\",\n        \"title\": \"Objects\"\n      },\n      {\n        \"field\": \"boxes\",\n        \"type\": \"quantitative\",\n        \"title\": \"Boxes\"\n      },\n      {\n        \"field\": \"snapshots\",\n        \"type\": \"quantitative\",\n        \"title\": \"Snapshots\"\n      },\n      {\n        \"field\": \"per_snapshot\",\n        \"type\": \"quantitative\",\n        \"format\": \".2f\",\n        \"title\": \"Per snapshot\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart each model's boxes per snapshot by class group.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "By model",
+        "dashboardPinned": true,
+        "dashboardX": 0,
+        "dashboardY": 900,
+        "dashboardWidth": 635,
+        "dashboardHeight": 270
+      },
+      {
+        "id": "idot-agreement",
+        "type": "curio.builtin/python-computation",
+        "x": 1935,
+        "y": 184,
+        "content": "import numpy as np\nimport pandas as pd\n\n# How often two models agree on the snapshots: the share of one model's boxes\n# that the other model finds too, a box of the same class on the same snapshot\n# overlapping it by an intersection over union (IoU) of IOU or more. Each\n# model finds all its own boxes.\nIOU = 0.5\nMODELS = [\"YOLOv5n\", \"YOLOv8n\", \"YOLOv10n\", \"YOLO26n\"]\nboxes = input_0\n\n\ndef area(boxes):\n    return (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])\n\n\ndef overlaps(a, b):\n    \"\"\"The IoU of every box of *a* with every box of *b*, boxes as rows of x0, y0, x1, y1.\"\"\"\n    width = np.minimum(a[:, None, 2], b[None, :, 2]) - np.maximum(a[:, None, 0], b[None, :, 0])\n    height = np.minimum(a[:, None, 3], b[None, :, 3]) - np.maximum(a[:, None, 1], b[None, :, 1])\n    shared = width.clip(min=0) * height.clip(min=0)\n    return shared / (area(a)[:, None] + area(b)[None, :] - shared)\n\n\nfound = {(one, other): 0 for one in MODELS for other in MODELS}\ntotal = dict.fromkeys(MODELS, 0)\nfor _key, part in boxes.groupby([\"image_timestamp_ns\", \"class\"]):\n    corners = {model: rows[[\"x0\", \"y0\", \"x1\", \"y1\"]].to_numpy(float) for model, rows in part.groupby(\"model\")}\n    for one, mine in corners.items():\n        total[one] += len(mine)\n        for other, theirs in corners.items():\n            found[one, other] += int((overlaps(mine, theirs) >= IOU).any(axis=1).sum())\nreturn pd.DataFrame([\n    {\"model\": one, \"other\": other, \"share\": found[one, other] / total[one] if total[one] else None,\n     \"boxes\": total[one]}\n    for one in MODELS for other in MODELS\n])\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Find the share of each model's boxes that another model finds too.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Agreement"
+      },
+      {
+        "id": "idot-agreement-chart",
+        "type": "curio.builtin/vis-vega",
+        "x": 2580,
+        "y": 0,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"The share of each model's boxes on the snapshots that another model finds too: same class, IoU 0.5 or more.\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"other\",\n      \"type\": \"nominal\",\n      \"title\": \"Found by\",\n      \"sort\": [\n        \"YOLOv5n\",\n        \"YOLOv8n\",\n        \"YOLOv10n\",\n        \"YOLO26n\"\n      ],\n      \"axis\": {\n        \"labelAngle\": 0\n      }\n    },\n    \"y\": {\n      \"field\": \"model\",\n      \"type\": \"nominal\",\n      \"title\": \"Boxes of\",\n      \"sort\": [\n        \"YOLOv5n\",\n        \"YOLOv8n\",\n        \"YOLOv10n\",\n        \"YOLO26n\"\n      ]\n    }\n  },\n  \"layer\": [\n    {\n      \"mark\": \"rect\",\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"share\",\n          \"type\": \"quantitative\",\n          \"title\": \"Share\",\n          \"scale\": {\n            \"domain\": [\n              0,\n              1\n            ],\n            \"scheme\": \"blues\"\n          }\n        },\n        \"tooltip\": [\n          {\n            \"field\": \"model\",\n            \"type\": \"nominal\",\n            \"title\": \"Boxes of\"\n          },\n          {\n            \"field\": \"other\",\n            \"type\": \"nominal\",\n            \"title\": \"Found by\"\n          },\n          {\n            \"field\": \"boxes\",\n            \"type\": \"quantitative\",\n            \"title\": \"Boxes\"\n          },\n          {\n            \"field\": \"share\",\n            \"type\": \"quantitative\",\n            \"format\": \".2f\",\n            \"title\": \"Share\"\n          }\n        ]\n      }\n    },\n    {\n      \"mark\": {\n        \"type\": \"text\",\n        \"fontSize\": 12\n      },\n      \"encoding\": {\n        \"text\": {\n          \"field\": \"share\",\n          \"type\": \"quantitative\",\n          \"format\": \".2f\"\n        },\n        \"color\": {\n          \"condition\": {\n            \"test\": \"datum.share > 0.6\",\n            \"value\": \"#ffffff\"\n          },\n          \"value\": \"#1f2933\"\n        }\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart how often each model finds another's boxes.",
+        "metadata": {
+          "keywords": []
+        },
+        "title": "Agreement",
+        "dashboardPinned": true,
+        "dashboardX": 645,
+        "dashboardY": 900,
+        "dashboardWidth": 635,
+        "dashboardHeight": 270
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-idot-settingsout-idot-camera-on-the-groundin",
+        "source": "idot-settings",
+        "sourceHandle": "out",
+        "target": "idot-camera-on-the-ground",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-camerasout-idot-camera-on-the-groundin_1",
+        "source": "idot-cameras",
+        "sourceHandle": "out",
+        "target": "idot-camera-on-the-ground",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-camera-on-the-groundout-idot-zones-on-the-groundin",
+        "source": "idot-camera-on-the-ground",
+        "sourceHandle": "out",
+        "target": "idot-zones-on-the-ground",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-camerasout-idot-zones-on-the-groundin_1",
+        "source": "idot-cameras",
+        "sourceHandle": "out",
+        "target": "idot-zones-on-the-ground",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-settingsout-idot-records-of-the-dayin",
+        "source": "idot-settings",
+        "sourceHandle": "out",
+        "target": "idot-records-of-the-day",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-settingsout-idot-snapshots-of-the-dayin",
+        "source": "idot-settings",
+        "sourceHandle": "out",
+        "target": "idot-snapshots-of-the-day",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-settingsout-idot-models-on-the-snapshotsin",
+        "source": "idot-settings",
+        "sourceHandle": "out",
+        "target": "idot-models-on-the-snapshots",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-records-of-the-dayout-idot-models-on-the-snapshotsin_1",
+        "source": "idot-records-of-the-day",
+        "sourceHandle": "out",
+        "target": "idot-models-on-the-snapshots",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-snapshots-of-the-dayout-idot-models-on-the-snapshotsin_2",
+        "source": "idot-snapshots-of-the-day",
+        "sourceHandle": "out",
+        "target": "idot-models-on-the-snapshots",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-idot-yolo26nout-idot-models-on-the-snapshotsin_3",
+        "source": "idot-yolo26n",
+        "sourceHandle": "out",
+        "target": "idot-models-on-the-snapshots",
+        "targetHandle": "in_3"
+      },
+      {
+        "id": "reactflow__edge-idot-settingsout-idot-on-the-groundin",
+        "source": "idot-settings",
+        "sourceHandle": "out",
+        "target": "idot-on-the-ground",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-camera-on-the-groundout-idot-on-the-groundin_1",
+        "source": "idot-camera-on-the-ground",
+        "sourceHandle": "out",
+        "target": "idot-on-the-ground",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-records-of-the-dayout-idot-on-the-groundin_2",
+        "source": "idot-records-of-the-day",
+        "sourceHandle": "out",
+        "target": "idot-on-the-ground",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-idot-models-on-the-snapshotsout-idot-on-the-groundin_3",
+        "source": "idot-models-on-the-snapshots",
+        "sourceHandle": "out",
+        "target": "idot-on-the-ground",
+        "targetHandle": "in_3"
+      },
+      {
+        "id": "reactflow__edge-idot-on-the-groundout-idot-objects-in-zonesin",
+        "source": "idot-on-the-ground",
+        "sourceHandle": "out",
+        "target": "idot-objects-in-zones",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-zones-on-the-groundout-idot-objects-in-zonesin_1",
+        "source": "idot-zones-on-the-ground",
+        "sourceHandle": "out",
+        "target": "idot-objects-in-zones",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-settingsout-idot-zone-occupancyin",
+        "source": "idot-settings",
+        "sourceHandle": "out",
+        "target": "idot-zone-occupancy",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-records-of-the-dayout-idot-zone-occupancyin_1",
+        "source": "idot-records-of-the-day",
+        "sourceHandle": "out",
+        "target": "idot-zone-occupancy",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-snapshots-of-the-dayout-idot-zone-occupancyin_2",
+        "source": "idot-snapshots-of-the-day",
+        "sourceHandle": "out",
+        "target": "idot-zone-occupancy",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-idot-zones-on-the-groundout-idot-zone-occupancyin_3",
+        "source": "idot-zones-on-the-ground",
+        "sourceHandle": "out",
+        "target": "idot-zone-occupancy",
+        "targetHandle": "in_3"
+      },
+      {
+        "id": "reactflow__edge-idot-objects-in-zonesout-idot-zone-occupancyin_4",
+        "source": "idot-objects-in-zones",
+        "sourceHandle": "out",
+        "target": "idot-zone-occupancy",
+        "targetHandle": "in_4"
+      },
+      {
+        "id": "reactflow__edge-idot-camera-on-the-groundout-idot-lightin",
+        "source": "idot-camera-on-the-ground",
+        "sourceHandle": "out",
+        "target": "idot-light",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-settingsout-idot-half-hourin",
+        "source": "idot-settings",
+        "sourceHandle": "out",
+        "target": "idot-half-hour",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-snapshots-of-the-dayout-idot-half-hourin_1",
+        "source": "idot-snapshots-of-the-day",
+        "sourceHandle": "out",
+        "target": "idot-half-hour",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-objects-in-zonesout-idot-half-hourin_2",
+        "source": "idot-objects-in-zones",
+        "sourceHandle": "out",
+        "target": "idot-half-hour",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-idot-zone-occupancyout-idot-zone-occupancy-chartin",
+        "source": "idot-zone-occupancy",
+        "sourceHandle": "out",
+        "target": "idot-zone-occupancy-chart",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-lightout-idot-zone-occupancy-chartin_1",
+        "source": "idot-light",
+        "sourceHandle": "out",
+        "target": "idot-zone-occupancy-chart",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-half-hourout-idot-zone-occupancy-chartin_2",
+        "source": "idot-half-hour",
+        "sourceHandle": "out",
+        "target": "idot-zone-occupancy-chart",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-idot-zone-occupancyout-idot-per-hourin",
+        "source": "idot-zone-occupancy",
+        "sourceHandle": "out",
+        "target": "idot-per-hour",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-on-the-groundout-idot-per-hourin_1",
+        "source": "idot-on-the-ground",
+        "sourceHandle": "out",
+        "target": "idot-per-hour",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-per-hourout-idot-per-hour-chartin",
+        "source": "idot-per-hour",
+        "sourceHandle": "out",
+        "target": "idot-per-hour-chart",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-on-the-groundout-idot-confidence-by-hourin",
+        "source": "idot-on-the-ground",
+        "sourceHandle": "out",
+        "target": "idot-confidence-by-hour",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-confidence-by-hourout-idot-confidence-chartin",
+        "source": "idot-confidence-by-hour",
+        "sourceHandle": "out",
+        "target": "idot-confidence-chart",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-settingsout-idot-framesin",
+        "source": "idot-settings",
+        "sourceHandle": "out",
+        "target": "idot-frames",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-snapshots-of-the-dayout-idot-framesin_1",
+        "source": "idot-snapshots-of-the-day",
+        "sourceHandle": "out",
+        "target": "idot-frames",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-models-on-the-snapshotsout-idot-framesin_2",
+        "source": "idot-models-on-the-snapshots",
+        "sourceHandle": "out",
+        "target": "idot-frames",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-idot-camerasout-idot-framesin_3",
+        "source": "idot-cameras",
+        "sourceHandle": "out",
+        "target": "idot-frames",
+        "targetHandle": "in_3"
+      },
+      {
+        "id": "reactflow__edge-idot-half-hourout-idot-framesin_4",
+        "source": "idot-half-hour",
+        "sourceHandle": "out",
+        "target": "idot-frames",
+        "targetHandle": "in_4"
+      },
+      {
+        "id": "reactflow__edge-idot-framesout-idot-frames-viewin",
+        "source": "idot-frames",
+        "sourceHandle": "out",
+        "target": "idot-frames-view",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-on-the-groundout-idot-confidence-gridin",
+        "source": "idot-on-the-ground",
+        "sourceHandle": "out",
+        "target": "idot-confidence-grid",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-zones-on-the-groundout-idot-map-extentin",
+        "source": "idot-zones-on-the-ground",
+        "sourceHandle": "out",
+        "target": "idot-map-extent",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-confidence-gridout-idot-map-extentin_1",
+        "source": "idot-confidence-grid",
+        "sourceHandle": "out",
+        "target": "idot-map-extent",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-on-the-groundout-idot-points-of-the-half-hourin",
+        "source": "idot-on-the-ground",
+        "sourceHandle": "out",
+        "target": "idot-points-of-the-half-hour",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-half-hourout-idot-points-of-the-half-hourin_1",
+        "source": "idot-half-hour",
+        "sourceHandle": "out",
+        "target": "idot-points-of-the-half-hour",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-map-extentout-idot-ground-mapin",
+        "source": "idot-map-extent",
+        "sourceHandle": "out",
+        "target": "idot-ground-map",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-zones-on-the-groundout-idot-ground-mapin_1",
+        "source": "idot-zones-on-the-ground",
+        "sourceHandle": "out",
+        "target": "idot-ground-map",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-confidence-gridout-idot-ground-mapin_2",
+        "source": "idot-confidence-grid",
+        "sourceHandle": "out",
+        "target": "idot-ground-map",
+        "targetHandle": "in_2"
+      },
+      {
+        "id": "reactflow__edge-idot-points-of-the-half-hourout-idot-ground-mapin_3",
+        "source": "idot-points-of-the-half-hour",
+        "sourceHandle": "out",
+        "target": "idot-ground-map",
+        "targetHandle": "in_3"
+      },
+      {
+        "id": "reactflow__edge-idot-models-on-the-snapshotsout-idot-by-modelin",
+        "source": "idot-models-on-the-snapshots",
+        "sourceHandle": "out",
+        "target": "idot-by-model",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-snapshots-of-the-dayout-idot-by-modelin_1",
+        "source": "idot-snapshots-of-the-day",
+        "sourceHandle": "out",
+        "target": "idot-by-model",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-idot-by-modelout-idot-by-model-chartin",
+        "source": "idot-by-model",
+        "sourceHandle": "out",
+        "target": "idot-by-model-chart",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-models-on-the-snapshotsout-idot-agreementin",
+        "source": "idot-models-on-the-snapshots",
+        "sourceHandle": "out",
+        "target": "idot-agreement",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-idot-agreementout-idot-agreement-chartin",
+        "source": "idot-agreement",
+        "sourceHandle": "out",
+        "target": "idot-agreement-chart",
+        "targetHandle": "in"
+      }
+    ]
+  }
+}

@@ -1,0 +1,617 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "31-sage-idot-rail-crossings",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/31-sage-idot-rail-crossings.json",
+    "sha256": "3c5be99462585fb3af99f97d91acd4102483f95d9c72f0c4248db9bc93e32e8f",
+    "walkthrough": "docs/examples/31-sage-idot-rail-crossings.md"
+  },
+  "prompt": "For the SAGE cameras at three IDOT rail crossings, W042, W065 and W06E, each on the day the Cities in Motion workshop team studied, read the camera's day of YOLO detection records out of its month's JSON Lines file in the Data Catalog without reading the rest of the file, and list its snapshots of that day. Place every object the chosen model saw on the ground, at its box's bottom center, through the camera's homography fitted in float64 to the team's control points, and measure how full each of the camera's lanes before and after the crossing is, per image and per 100 square metres, minute by minute, against night, twilight and day from astral. Draw a half hour's snapshots with the lanes and the boxes, map a grid of mean confidence on 2 m cells with that half hour's objects, and compare YOLOv5n, YOLOv8n, YOLOv10n and the team's YOLO26n boxes on the snapshots: boxes per snapshot by class group, and how often each model finds another's boxes at an IoU of 0.5 or more. Put the camera, model, classes, lowest confidence and half hour on a dashboard with the charts, the map and the drawn snapshots.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.cities-in-motion.idot-cameras",
+      "data.cities-in-motion.idot-yolo26n",
+      "data.sage.idot-w042-records-2025-08",
+      "data.sage.idot-w042-snapshots-2025-08-09",
+      "data.sage.idot-w065-records-2025-08",
+      "data.sage.idot-w065-snapshots-2025-08-17",
+      "data.sage.idot-w06e-records-2025-12",
+      "data.sage.idot-w06e-snapshots-2025-12-02"
+    ],
+    "packages": []
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis4",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis5",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis6",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis7",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis8",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis9",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis10",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis11",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis12",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis13",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis14",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis15",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis16",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis17",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis18",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "transform1",
+        "type": "curio.builtin/spatial-join",
+        "role": "transform",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-simple",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization4",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization5",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization6",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization7",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "analysis4",
+        "kind": "data",
+        "slot": 3
+      },
+      {
+        "from": "loader2",
+        "to": "analysis2",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader2",
+        "to": "analysis3",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader2",
+        "to": "analysis5",
+        "kind": "data",
+        "slot": 3
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis5",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis8",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis16",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis17",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "analysis18",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis12",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "analysis17",
+        "kind": "data",
+        "slot": 3
+      },
+      {
+        "from": "analysis2",
+        "to": "transform1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis9",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis16",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis4",
+        "to": "analysis5",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis4",
+        "to": "analysis10",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "analysis14",
+        "kind": "data"
+      },
+      {
+        "from": "analysis4",
+        "to": "analysis16",
+        "kind": "data",
+        "slot": 3
+      },
+      {
+        "from": "analysis5",
+        "to": "visualization2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis6",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis6",
+        "to": "analysis12",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis7",
+        "to": "analysis4",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis7",
+        "to": "analysis16",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis7",
+        "to": "analysis17",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis8",
+        "to": "analysis4",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis8",
+        "to": "analysis5",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis8",
+        "to": "analysis14",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis8",
+        "to": "analysis17",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "analysis8",
+        "to": "analysis18",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis9",
+        "to": "visualization7",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis10",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis11",
+        "to": "visualization4",
+        "kind": "data"
+      },
+      {
+        "from": "analysis12",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis13",
+        "to": "visualization1",
+        "kind": "data",
+        "slot": 3
+      },
+      {
+        "from": "analysis14",
+        "to": "visualization5",
+        "kind": "data"
+      },
+      {
+        "from": "analysis15",
+        "to": "visualization6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis16",
+        "to": "analysis6",
+        "kind": "data"
+      },
+      {
+        "from": "analysis16",
+        "to": "analysis11",
+        "kind": "data"
+      },
+      {
+        "from": "analysis16",
+        "to": "analysis13",
+        "kind": "data"
+      },
+      {
+        "from": "analysis16",
+        "to": "analysis15",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis16",
+        "to": "transform1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis17",
+        "to": "analysis15",
+        "kind": "data"
+      },
+      {
+        "from": "analysis17",
+        "to": "visualization7",
+        "kind": "data"
+      },
+      {
+        "from": "analysis18",
+        "to": "analysis5",
+        "kind": "data",
+        "slot": 4
+      },
+      {
+        "from": "analysis18",
+        "to": "analysis13",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "analysis18",
+        "to": "visualization7",
+        "kind": "data",
+        "slot": 2
+      },
+      {
+        "from": "transform1",
+        "to": "analysis17",
+        "kind": "data",
+        "slot": 4
+      },
+      {
+        "from": "transform1",
+        "to": "analysis18",
+        "kind": "data",
+        "slot": 2
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.cities-in-motion.idot-cameras",
+        "data.cities-in-motion.idot-yolo26n",
+        "data.sage.idot-w042-records-2025-08",
+        "data.sage.idot-w042-snapshots-2025-08-09",
+        "data.sage.idot-w065-records-2025-08",
+        "data.sage.idot-w065-snapshots-2025-08-17",
+        "data.sage.idot-w06e-records-2025-12",
+        "data.sage.idot-w06e-snapshots-2025-12-02"
+      ],
+      "paths": [],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "transform1",
+      "mustMention": [
+        "zone"
+      ],
+      "outputKind": "geodataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T3",
+    "needs": [
+      "gpu"
+    ],
+    "skip": [
+      {
+        "when": "gpu",
+        "reason": "The Autark map needs hardware WebGPU; the plan and apply half of this fixture still runs offline.",
+        "scope": "execution"
+      }
+    ]
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-11-17",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the datasets appear only as ids.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.cities-in-motion.idot-cameras",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.cities-in-motion.idot-yolo26n",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.sage.idot-w042-records-2025-08",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.sage.idot-w042-snapshots-2025-08-09",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.sage.idot-w065-records-2025-08",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.sage.idot-w065-snapshots-2025-08-17",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.sage.idot-w06e-records-2025-12",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.sage.idot-w06e-snapshots-2025-12-02",
+        "licence": ""
+      }
+    ]
+  },
+  "notes": "SAGE's records and snapshots of three rail crossings read in place, the Cities in Motion workshop team's control points, zones and YOLO26n boxes, and a dashboard of eight tiles."
+}
