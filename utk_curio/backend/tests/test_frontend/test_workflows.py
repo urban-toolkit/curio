@@ -3,6 +3,7 @@ import contextlib
 import os
 import re
 import json
+import math
 import time
 from dataclasses import dataclass
 from urllib.parse import quote
@@ -447,10 +448,16 @@ BLOCK_VIDEO = f'.react-flow__node[data-id="{BLOCK_CARDS}"] video'
 BLOCK_SEEK_S, BLOCK_SEEK_BACK_S = 1.0, 0.2
 
 
+def _empty_cell(value) -> bool:
+    """Whether a stored cell holds nothing: None, or a float NaN."""
+    return value is None or (isinstance(value, float) and math.isnan(value))
+
+
 def _same_cell(a, b) -> bool:
     """Whether two stored cells hold the same value, an empty one (None or
     NaN) the same as another empty one."""
-    return a == b or ((a is None or a != a) and (b is None or b != b))
+    return a == b or (_empty_cell(a) and _empty_cell(b))
+
 
 # Keeps each Vega view by the element it draws in, from the next view built
 # on (as test_scenario_inputs_e2e.py's init script does at a page's start).
