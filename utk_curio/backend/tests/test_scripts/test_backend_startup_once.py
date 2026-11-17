@@ -20,6 +20,7 @@ replaced by a record of its call.
 from __future__ import annotations
 
 import collections
+import os
 import runpy
 from types import SimpleNamespace
 
@@ -119,6 +120,28 @@ def test_only_the_home_process_does_the_startup_work(start):
     assert other == EVERY_PROCESS, (
         f"backend process 1 of 2 did startup work, which is the home process's, or did not start its own "
         f"histories and open-files sampler once each: {other}"
+    )
+
+
+def test_the_home_process_of_several_starts_the_bucket_mount_proxy_where_nginx_listens(monkeypatch, start):
+    """A start of several backend processes on ``--backend-host 0.0.0.0``, as
+    the deploy runs: each process listens on 127.0.0.1 behind nginx, and the
+    home process starts the bucket mount service's proxy on 0.0.0.0. The
+    service reaches it from its own container, at ``curio:3128``
+    (``docker-compose.bucket-mounts.yml``), and 127.0.0.1 in Curio's container
+    is out of its reach: no source would mount, and each add of a source's
+    file would fail."""
+    from utk_curio.backend.tests._support.backend_group_fakes import boot
+
+    home = boot(monkeypatch, processes=2, host="0.0.0.0").env(0)
+    assert home["FLASK_BACKEND_HOST"] == "127.0.0.1", "the home process no longer listens on 127.0.0.1 behind nginx"
+    hosts = []
+    monkeypatch.setattr("utk_curio.backend.app.discovery.service.start_bucket_mount_proxy",
+                        lambda host: hosts.append(host) or False)
+    start(WERKZEUG_RUN_MAIN=None, **{name: value for name, value in home.items() if os.environ.get(name) != value})
+    assert hosts == ["0.0.0.0"], (
+        f"the home process of a start of several on 0.0.0.0 started the bucket mount proxy on {hosts}, "
+        "out of the mount service's reach"
     )
 
 
