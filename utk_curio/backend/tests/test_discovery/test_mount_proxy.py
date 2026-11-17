@@ -235,7 +235,12 @@ class TestRefusals:
 
         head = self._refused(start_proxy, upstream, f"other.example.org:{upstream}")
 
-        assert head.startswith("HTTP/1.1 403 Forbidden\r\n")
+        # Curio's proxy refused it, which rclone's error repeats: never a
+        # bare Forbidden, which reads as the bucket's own answer.
+        assert head.startswith(
+            "HTTP/1.1 403 Curio's bucket mount proxy refused the request: "
+            "it is not the host and port of a source being mounted\r\n"
+        ), head
         assert any(f"other.example.org:{upstream}" in record.getMessage()
                    and "not the host and port of a source being mounted" in record.getMessage()
                    for record in caplog.records)
@@ -255,7 +260,8 @@ class TestRefusals:
         client, head = tunnel(port, f"{host}:{upstream}")
         client.close()
 
-        assert head.startswith("HTTP/1.1 403 ")
+        assert head.startswith("HTTP/1.1 403 Curio's bucket mount proxy refused the request: "), head
+        assert "non-public address" in head.split("\r\n", 1)[0]
         assert any(host in record.getMessage() and "non-public address" in record.getMessage()
                    for record in caplog.records)
 
@@ -265,12 +271,17 @@ class TestRefusals:
 
         head = self._refused(start_proxy, upstream, None, request=request)
 
-        assert head.startswith("HTTP/1.1 405 Method Not Allowed\r\n")
+        assert head.startswith(
+            "HTTP/1.1 405 Curio's bucket mount proxy refused the request: "
+            "it asked GET, and the proxy takes CONNECT alone\r\n"
+        ), head
         assert "Allow: CONNECT\r\n" in head
         messages = " ".join(record.getMessage() for record in caplog.records)
         assert UPSTREAM_NAME in messages
-        # The host alone is logged, never the path or the query.
+        # The host alone is logged, never the path or the query, and the
+        # answer holds neither.
         assert "token" not in messages and "/key" not in messages
+        assert "token" not in head and "/key" not in head
 
     @pytest.mark.parametrize("request_line", [
         b"CONNECT bucket.example.org HTTP/1.1",
@@ -314,13 +325,44 @@ class TestRefusals:
                 assert head.startswith("HTTP/1.1 200 "), head
             extra, head = tunnel(port, target)
             open_now.append(extra)
-            assert head.startswith("HTTP/1.1 503 Service Unavailable\r\n")
+            assert head.startswith(
+                f"HTTP/1.1 503 Curio's bucket mount proxy refused the request: "
+                f"{mount_proxy.MAX_TUNNELS} tunnels are open\r\n"
+            ), head
             # The 64 still work.
             open_now[0].sendall(b"ok")
             assert read_exactly(open_now[0], 2) == b"OK"
         finally:
             for client in open_now:
                 client.close()
+
+    def test_an_admitted_host_that_takes_no_connection(self, start_proxy, caplog):
+        caplog.set_level(logging.WARNING, logger=mount_proxy.__name__)
+        # A port of loopback that nothing listens on: the upstream refuses.
+        with socket.create_server(("127.0.0.1", 0)) as gone:
+            closed = gone.getsockname()[1]
+        proxy, port = start_proxy()
+        proxy.admit("source.example.bucket@1", UPSTREAM_NAME, closed)
+
+        client, head = tunnel(port, f"{UPSTREAM_NAME}:{closed}")
+        client.close()
+
+        assert head.startswith(
+            "HTTP/1.1 502 Curio's bucket mount proxy refused the request: "
+            "none of the host's addresses took a connection: "
+        ), head
+        assert any(f"{UPSTREAM_NAME}:{closed}" in record.getMessage()
+                   and "none of the host's addresses took a connection" in record.getMessage()
+                   for record in caplog.records)
+
+    def test_why_is_one_line_of_printable_ascii_in_the_answer(self):
+        """A reason holds what the host check or the system said, which
+        could hold anything: the status line stays one line a client reads."""
+        phrase = mount_proxy._phrase("line one\r\nX-Injected: yes é" + "x" * 500)
+
+        assert phrase.startswith("Curio's bucket mount proxy refused the request: line one??X-Injected: yes ?")
+        assert all(" " <= char <= "~" for char in phrase)
+        assert len(phrase) == len(mount_proxy.REFUSAL) + 2 + mount_proxy.WHY_CHARS
 
     def test_a_tunnel_closed_frees_its_place(self, start_proxy, upstream):
         proxy, port = start_proxy(max_tunnels=1)
@@ -365,13 +407,16 @@ class TestTheSelfTestsAsk:
         client, head = tunnel(port, f"{self.HOST}:443")
         client.close()
 
-        assert head.startswith("HTTP/1.1 403 Forbidden\r\n")
+        assert head.startswith(
+            "HTTP/1.1 403 Curio's bucket mount proxy refused the request: the self-test reached it\r\n"
+        ), head
         assert proxy.heard(self.HOST, 443)
         assert checked == []
         assert not proxy.admits(self.HOST, 443)
         messages = " ".join(record.getMessage() for record in caplog.records)
-        # Its name, which only the self-test may know, is not logged.
+        # Its name, which only the self-test may know, is neither logged nor answered.
         assert "self-test" in messages and self.HOST not in messages
+        assert self.HOST not in head
 
     def test_another_port_of_it_is_refused_as_any_host_and_not_heard(self, start_proxy, caplog):
         caplog.set_level(logging.WARNING, logger=mount_proxy.__name__)
