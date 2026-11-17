@@ -134,11 +134,17 @@ def _sign_up() -> str:
     return body["token"]
 
 
+def _as_played(code: str) -> str:
+    """*code* as the canvas posts a Play of it (``PythonInterpreter.ts``,
+    ``run_engine.play_indent``): every line indented as a function's body."""
+    return "".join("    " + line + "\n" for line in code.split("\n"))
+
+
 def _owners_play(token: str, project_id: str) -> dict:
     """The owner's Play of Draw, red, as the canvas sends it: the row it made."""
     owner = {"Authorization": f"Bearer {token}"}
     reply = _json("POST", "/processPythonCode", {
-        "code": DRAW_CODE.replace("[!! shade !!]", '"red"'), "nodeType": CODE,
+        "code": _as_played(DRAW_CODE.replace("[!! shade !!]", '"red"')), "nodeType": CODE,
         "nodeId": "draw", "dataflowId": project_id, "input": None,
     }, owner)
     assert reply.get("output", {}).get("path"), f"the owner's play made nothing: {str(reply)[:1500]}"
