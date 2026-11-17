@@ -1,6 +1,6 @@
 # Example: SideSeeing: objects tracked along a walk
 
-A walk along the sidewalks of Chicago's West Loop on 2026-10-26, recorded with the SideSeeing app on a phone that looks down at the sidewalk: 14 minutes of video, and a GPS fix about every half second. SAM 3 follows nine kinds of sidewalk object through the whole video, a frame every 2 s, and `Simple View` plays the overlay it draws. The player is linked to two views by interaction edges: as the video plays, each object's bar on a swimlane lights from the moment SAM 3 first saw it, and the walk's GPS fixes on an Autark map of its streets light up to where the video stands.
+A walk along the sidewalks of Chicago's West Loop on 2026-10-26, recorded with the SideSeeing app on a phone that looks down at the sidewalk: 14 minutes of video, and a GPS fix about every half second. SAM 3 follows nine kinds of sidewalk object through the whole video, a frame every 2.5 s, and `Simple View` plays the overlay it draws. The player is linked to two views by interaction edges: as the video plays, each object's bar on a swimlane lights from the moment SAM 3 first saw it, and the walk's GPS fixes on an Autark map of its streets light up to where the video stands.
 
 Tracking the whole walk takes about 3.5 minutes on dev.urbantk.org's GPU. The first run downloads SAM 3's weights, 3.4 GB, from Hugging Face ([Model Catalog](../MODEL-CATALOG.md)).
 
@@ -8,7 +8,7 @@ Tracking the whole walk takes about 3.5 minutes on dev.urbantk.org's GPU. The fi
 
 ```mermaid
 flowchart LR
-  W[`Data Loading`<br/>Walk] --> T[`Track Objects`<br/>SAM 3, a frame every 2 s]
+  W[`Data Loading`<br/>Walk] --> T[`Track Objects`<br/>SAM 3, a frame every 2.5 s]
   T --> S[`Simple View`<br/>the overlay]
   T --> O[`Python Computation`<br/>Objects]
   O --> L[`Vega-Lite`<br/>Swimlane]
@@ -38,7 +38,7 @@ return walk
 
 ## Track the objects
 
-`Track Objects` is the node of SAM 3's model package, `model.curio.sam3@1`, which this dataflow declares. Its code holds its settings: the eight labels it ships with and "wheelchair ramp", a frame every 2 s, and an object let go once SAM 3 has not seen it for 10 s. At a frame every 2 s the walk is 433 frames, under `MAX_FRAMES`.
+`Track Objects` is the node of SAM 3's model package, `model.curio.sam3@1`, which this dataflow declares. Its code holds its settings: the eight labels it ships with and "wheelchair ramp", a frame every 2.5 s, and an object let go once SAM 3 has not seen it for 10 s. At a frame every 2.5 s the walk is 346 frames, under `MAX_FRAMES`.
 
 ```python
 from sam3_tracking import track_objects
@@ -48,7 +48,7 @@ LABELS = [
     "curb ramp", "curb cut", "tactile paving", "bollard", "pole",
     "construction barrier", "traffic cone", "person", "wheelchair ramp",
 ]
-EVERY_SECONDS = 2  # the gap between two frames SAM 3 looks at
+EVERY_SECONDS = 2.5  # the gap between two frames SAM 3 looks at
 FORGET_SECONDS = 10  # SAM 3 lets go of an object unseen this long; None keeps every object
 FROM_SECONDS = 0  # the part of each video to track, in seconds from its start
 TO_SECONDS = None  # None is the video's end
@@ -66,7 +66,7 @@ It gives the video back as its overlay, the frames SAM 3 looked at with each obj
 
 ## Play the overlay
 
-`Simple View` plays the overlay, each frame for 2 s, so it keeps time with the walk. Its interaction edges link the player to the swimlane and to the map: what the player has played, from the video's start to where it stands, is a range on `t_s`, and each view lights its rows whose `t_s` is in the range. A seek back lights fewer.
+`Simple View` plays the overlay, each frame for 2.5 s, so it keeps time with the walk. Its interaction edges link the player to the swimlane and to the map: what the player has played, from the video's start to where it stands, is a range on `t_s`, and each view lights its rows whose `t_s` is in the range. A seek back lights fewer.
 
 ## One row per object
 

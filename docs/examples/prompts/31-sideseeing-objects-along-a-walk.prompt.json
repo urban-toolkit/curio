@@ -4,10 +4,10 @@
   "version": 1,
   "source": {
     "path": "docs/examples/31-sideseeing-objects-along-a-walk.json",
-    "sha256": "804b1f1720da225df0d0eb008d5c780d345a51fb35dd31c147410be56ec5de68",
+    "sha256": "d1f79c9f01e8b5cff78e9d6a8d5238efb2a1f50870286ad63177788e438e3952",
     "walkthrough": "docs/examples/31-sideseeing-objects-along-a-walk.md"
   },
-  "prompt": "Load the SideSeeing West Loop walk's video from the Data Catalog and follow sidewalk objects through the whole of it with SAM 3: the eight labels its tracking node ships with, plus wheelchair ramp, a frame every 2 seconds. Play the overlay it draws, and make one row per object from its tracks table, with the time the object was first seen. Chart the objects in Vega-Lite as a swimlane, a lane per label and a bar per object from its first sighting to its last, in its label's colour once the video has played past it and grey before. Also load the walk's GPS track from the Data Catalog, read its gps.csv in place, and make each fix a point with its time in the walk, from when the walk began. Map the fixes on an Autark map over the West Loop's streets from the committed OpenStreetMap extract, each a disc 2 m in radius coloured by its time. Link the video's player to the swimlane and the map, so both light up to where the video stands.",
+  "prompt": "Load the SideSeeing West Loop walk's video from the Data Catalog and follow sidewalk objects through the whole of it with SAM 3: the eight labels its tracking node ships with, plus wheelchair ramp, a frame every 2.5 seconds. Play the overlay it draws, and make one row per object from its tracks table, with the time the object was first seen. Chart the objects in Vega-Lite as a swimlane, a lane per label and a bar per object from its first sighting to its last, in its label's colour once the video has played past it and grey before. Also load the walk's GPS track from the Data Catalog, read its gps.csv in place, and make each fix a point with its time in the walk, from when the walk began. Map the fixes on an Autark map over the West Loop's streets from the committed OpenStreetMap extract, each a disc 2 m in radius coloured by its time. Link the video's player to the swimlane and the map, so both light up to where the video stands.",
   "context": null,
   "required": {
     "datasets": [

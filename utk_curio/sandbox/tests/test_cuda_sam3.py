@@ -10,7 +10,7 @@ mode raises nowhere. This keeps that probe as a guard.
 
 Each mode runs in a process of its own: deterministic mode is the process's,
 set before CUDA starts. Each runs Track Objects twice on an 8 s clip with
-example 31's settings, a frame every 2 s, on CUDA, and the two runs must agree
+example 31's settings, a frame every 2.5 s, on CUDA, and the two runs must agree
 on the row, the tracks (``largest_share`` included), what SAM 3 found in each
 frame (its objects, scores, boxes and masks) and the frames it drew. The
 encoded overlay is never compared, since an H.264 encoder may write other
@@ -41,7 +41,7 @@ LABELS = [
     "curb ramp", "curb cut", "tactile paving", "bollard", "pole",
     "construction barrier", "traffic cone", "person", "wheelchair ramp",
 ]
-SETTINGS = {"every_seconds": 2, "forget_seconds": 10, "width": 960}
+SETTINGS = {"every_seconds": 2.5, "forget_seconds": 10, "width": 960}
 #: CI's stand-in for the walk is about this long.
 CLIP_SECONDS = 8
 MODES = ("default", "deterministic")
@@ -203,7 +203,8 @@ def test_tiny_track_objects_repeats_run_to_run_on_the_gpu(mode, tmp_path, record
     assert result["device"][0] == "cuda", f"Track Objects ran on {result['device']}, not the GPU"
     assert result["deterministic"] is (mode == "deterministic"), result["deterministic"]
     first, second = result["runs"]
-    assert first["tracks"] and len(first["found"]) == CLIP_SECONDS // SETTINGS["every_seconds"], first
+    # A frame at each step of every_seconds from 0, never one at the clip's end.
+    assert first["tracks"] and len(first["found"]) == math.ceil(CLIP_SECONDS / SETTINGS["every_seconds"]), first
     differ = [part for part in PARTS if first[part] != second[part]]
     assert not differ, f"in torch's {mode} mode, two runs of Track Objects differ in their {differ}"
 
