@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import sys
 import zipfile
 
 import pytest
@@ -33,6 +34,17 @@ from utk_curio.backend.app.packages.infrastructure.pip_runner import (
 _THE_SESSIONS_DATA_FOLDER = os.environ.get("CURIO_SHARED_DATA")
 
 
+def _let_the_store_go() -> None:
+    """Close the sandbox store's connection, when this process opened one.
+
+    Only code that uses the store imports the module that holds it, and the
+    jobs that run some of these tests outside the CI image (preview-runner's)
+    have no duckdb to import it with."""
+    store = sys.modules.get("utk_curio.sandbox.util.db")
+    if store is not None:
+        store.release_connection()
+
+
 @pytest.fixture(autouse=True)
 def _a_data_folder_of_its_own(tmp_path, monkeypatch):
     """Each test's own data folder, ``.curio/data`` in its ``tmp_path``.
@@ -50,15 +62,13 @@ def _a_data_folder_of_its_own(tmp_path, monkeypatch):
     before and after, as ``test_datasets``' conftest does, so the store a
     test opens is its own.
     """
-    from utk_curio.sandbox.util.db import release_connection
-
     if os.environ.get("CURIO_SHARED_DATA") != _THE_SESSIONS_DATA_FOLDER:
         yield  # a module's own folder, which its fixture named
         return
     monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path / ".curio" / "data"))
-    release_connection()
+    _let_the_store_go()
     yield
-    release_connection()
+    _let_the_store_go()
 
 
 @pytest.fixture(autouse=True)
