@@ -159,6 +159,19 @@ test('Rescan asks for a new scan', async () => {
   expect(screen.queryByText(/match no resource/)).toBeNull();
 });
 
+test('a listing cut short says which of its limits it met', async () => {
+  const said = "This source holds more files than are listed here: a folder's listing stops at 400 pages.";
+  apiFetch.mockImplementation((path: string) =>
+    Promise.resolve(
+      path.includes('/search') ? listing('ok', { unmatched: 0, truncated: true, cutShort: said }) : source,
+    ),
+  );
+  renderPage();
+  await settlePage();
+  expect(screen.getByText(said)).toBeInTheDocument();
+  expect(screen.queryByText(/2,000,000/)).toBeNull();
+});
+
 test('a scan that failed says why, and not that the source is empty', async () => {
   const detail = 'Example storage: its folder is not available on this machine';
   apiFetch.mockImplementation((path: string) =>

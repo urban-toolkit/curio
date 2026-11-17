@@ -69,6 +69,7 @@ NOT_SCANNED = {
     "scripts/build_example_idot.py": "builds the SAGE-IDOT example's datasets from its source and the team's files",
     "scripts/build_example_mapillary.py": "builds the Mapillary sample dataset",
     "scripts/build_example_scenario_charts.py": "builds the datasets the scenario chart examples read",
+    "scripts/build_example_sideseeing.py": "builds the SideSeeing walk's datasets from its source",
     "scripts/build_example_storage.py": "builds the example storage datasets",
     "scripts/build_flood_vulnerability_datasets.py": "builds the flood vulnerability datasets",
     "scripts/build_scout_flood_datasets.py": "builds SCOUT's flood datasets",

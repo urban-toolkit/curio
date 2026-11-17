@@ -184,6 +184,17 @@ class TestTheFileLimit:
         assert job["status"] == "failed"
         assert "more than 3 files" in job["error"]
 
+    def test_the_source_page_says_a_row_lists_up_to_the_limit(self, client, auth, app, discovery_dir, tmp_path):
+        root = write_files(tmp_path / "f", {f"aq/2024-01-0{d}.csv": "v\n1\n" for d in range(1, 5)})
+        a_source(discovery_dir, root, [
+            {"id": "aq", "name": "Readings", "kind": "table", "format": "csv", "path": "aq/{day:date}.csv"}
+        ], limits={"maxFiles": 3})
+        body = listing(client, auth)
+        assert body["truncated"] is True
+        assert body.get("cutShort") == (
+            "This source holds more files than are listed here: a row lists up to 3 files."
+        ), "the listing does not say which of its limits it met"
+
     def test_exactly_the_limit_is_all_of_it(self, client, auth, app, discovery_dir, tmp_path):
         root = write_files(tmp_path / "f", {f"aq/2024-01-0{d}.csv": "v\n1\n" for d in range(1, 4)})
         a_source(discovery_dir, root, [

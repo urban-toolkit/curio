@@ -13,7 +13,9 @@ row/feature counts, column names, the geometry type that came back from
 ``gpd.read_file``. Geo datasets get a third
 node, a Vega-Lite chart of a per-feature measure derived from the parsed
 geometry, so the coordinates are proven to survive all the way to a rendered
-mark rather than merely to a row count.
+mark rather than merely to a row count. A collection whose files are in a
+bucket has them cached from its details before it loads, from the recorded
+corpus, since no e2e stack mounts a bucket.
 
 WHY THIS IS NOT COVERED BY THE EXISTING SUITE
 ---------------------------------------------
@@ -59,6 +61,7 @@ from playwright.sync_api import expect
 
 from utk_curio.backend.tests.dataset_catalog_coverage import (
     CatalogDataset,
+    bucket_source,
     catalog_datasets,
     expected_markers,
     marker_text,
@@ -189,6 +192,8 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
             "button", name="Remove from project", exact=True
         )
     ).to_be_visible(timeout=20000)
+    if bucket_source(dataset) is not None:
+        _cache_its_files(page, drawer, card_id, int(expected_markers(dataset)["CURIO_E2E_ROWS"]))
 
     # This drawer has no Escape handler, so close through the header button.
     drawer.locator("header").get_by_role(
@@ -209,6 +214,28 @@ def _add_dataset_from_catalog(page, palette, dataset: CatalogDataset):
         expect(caret).to_have_attribute("aria-expanded", "true", timeout=5000)
     expect(row).to_have_count(1, timeout=20000)
     return row
+
+
+def _cache_its_files(page, drawer, card_id: str, files: int) -> None:
+    """Cache the collection's files from its details, as a person does, then
+    close them.
+
+    A committed collection whose files are in a bucket (``bucket_source``) is
+    read once they are on this machine wherever no mount reads the bucket, as
+    on every e2e stack: the Collection section's **Cache files** copies them
+    from the recorded corpus, the bucket's stand-in here, and then says every
+    file is on this machine.
+    """
+    card = drawer.locator(f'{CARD}[data-dataset-id="{card_id}"]')
+    card.get_by_role("button", name=re.compile(r"^View .+ details$")).click()
+    details = page.get_by_role("dialog", name="Dataset details")
+    expect(details).to_be_visible(timeout=30000)
+    details.get_by_role("button", name="Cache files", exact=True).click()
+    expect(details.get_by_text(f"{files:,} of {files:,} files", exact=True)).to_be_visible(timeout=120000)
+    expect(details.get_by_role("button", name="Cache files", exact=True)).to_have_count(0)
+    # One Escape closes the details alone; the drawer under them stays open.
+    page.keyboard.press("Escape")
+    expect(details).to_have_count(0, timeout=10000)
 
 
 def test_the_catalog_is_not_empty():

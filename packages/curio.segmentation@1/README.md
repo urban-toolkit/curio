@@ -28,7 +28,8 @@ return segment_images(input_0, model, curio_derived_file, classes=classes)
 labels every pixel of each image with a model `curio_load_model` loaded, the
 way its manifest says to run it: an `onnx` graph on onnxruntime, a
 `transformers` checkpoint with its own image processor and torch, both on
-the CPU. The model's package declares that runtime.
+the CPU, on as many threads as `OMP_NUM_THREADS` names, else on one per
+core. The model's package declares that runtime.
 
 - `images`: a collection's rows, each with a `path`, as Data Loading gives
   them with `curio_load_collection(...)`.

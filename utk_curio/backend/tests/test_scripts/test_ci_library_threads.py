@@ -1,12 +1,13 @@
-"""``scripts/ci_isolated_threads.py``: test-isolated's stack runs node code on the job's thread count.
+"""``scripts/ci_library_threads.py``: a CI stack runs node code on the job's thread count.
 
-The check runs a node in an isolated child of the stack and reads what torch
-uses there. Torch's x86 build sizes its pool through MKL, which counts physical
-cores, so on a 4-CPU hosted runner (2 cores) it takes 2 threads under
-``OMP_NUM_THREADS=4``: fewer than the job's count, which costs nothing, and main's
-run 42323207500 failed the check for it. What the check is for is more: torch
-spread over 96 threads in a child on an arcade runner (run 42230248452). These
-hand the check what a child reported.
+The check runs a node of the stack, in test-isolated's an isolated child and in
+e2e-desktop's the sandbox itself, and reads what torch uses there. Torch's x86
+build sizes its pool through MKL, which counts physical cores, so on a 4-CPU
+hosted runner (2 cores) it takes 2 threads under ``OMP_NUM_THREADS=4``: fewer
+than the job's count, which costs nothing, and main's run 42323207500 failed the
+check for it. What the check is for is more: torch spread over 96 threads in a
+child on an arcade runner (run 42230248452). These hand the check what a node
+reported.
 """
 from __future__ import annotations
 
@@ -19,8 +20,8 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 def _load():
-    path = REPO_ROOT / "scripts" / "ci_isolated_threads.py"
-    spec = importlib.util.spec_from_file_location("_scripts_ci_isolated_threads", path)
+    path = REPO_ROOT / "scripts" / "ci_library_threads.py"
+    spec = importlib.util.spec_from_file_location("_scripts_ci_library_threads", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)

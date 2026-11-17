@@ -451,6 +451,7 @@ class DiscoveryService:
         if state.status == "scanning":
             leg["seen"] = state.seen
         payload = search_payload(rows, sources=[leg], truncated=view.truncated if view else False)
+        payload["cutShort"] = scanning.cut_short_text(view.stopped_at) if view else None
         payload["unmatched"] = view.unmatched if view else 0
         payload["scannedAt"] = _iso(view.scanned_at) if view else None
         return payload
@@ -556,7 +557,10 @@ class DiscoveryService:
     def _describe_collection(self, item: dict[str, Any], fields: dict[str, Any]) -> None:
         """The seam into the Data Catalog for what a cache read from one of
         this account's collections: *fields* of its block, in its manifest and
-        its index entry. *item*'s ``path`` is its index, in ``data/``."""
+        its index entry. *item* is the collection as the cache wrote into it
+        (``cache_collection.details_index``): its ``path`` is that index, in
+        ``data/``, of the account's own collection or of its copy of one the
+        Data Catalog ships, never of the catalog's."""
         from pathlib import Path
 
         from utk_curio.backend.app.datasets.install.installer import update_collection
@@ -1016,7 +1020,7 @@ class DiscoveryService:
                         items=_items,
                         progress=_progress,
                         cancelled=lambda: job.cancelled,
-                        describe=lambda fields: worker._describe_collection(item, fields),
+                        describe=worker._describe_collection,
                     )
                     job_store.jobs.finish(
                         job, "completed", dataset=item, dataset_id=dataset_id,

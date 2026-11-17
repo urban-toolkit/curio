@@ -96,6 +96,32 @@ class TestTheListing:
         assert "1,310,434,728 bytes" in december["unavailableReason"], december["unavailableReason"]
         assert rows[row_id("detections", "W042", JULY)]["unavailableReason"] is None
 
+    def test_a_listing_past_its_folders_says_it_met_them(
+        self, client, auth, app, shipped_root, fixture_corpus, monkeypatch
+    ):
+        """Its rows are in more folders than a bound of 5, and the page names
+        that bound, not the files a row or a listing holds."""
+        from utk_curio.backend.app.discovery.application import scan
+
+        monkeypatch.setattr(scan, "MAX_FOLDERS", 5)
+        body = listing(client, auth, SOURCE)
+        assert body["truncated"] is True
+        assert body.get("cutShort") == (
+            "This source holds more files than are listed here: a listing reads the files of up to 5 folders."
+        ), "the listing does not say which of its limits it met"
+
+    def test_a_listing_past_its_files_says_it_met_them(
+        self, client, auth, app, shipped_root, fixture_corpus, monkeypatch
+    ):
+        from utk_curio.backend.app.discovery.application import scan
+
+        monkeypatch.setattr(scan, "MAX_LISTING_FILES", 10)
+        body = listing(client, auth, SOURCE)
+        assert body["truncated"] is True
+        assert body.get("cutShort") == (
+            "This source holds more files than are listed here: a listing holds up to 10 files, all its rows' together."
+        ), "the listing does not say which of its limits it met"
+
 
 class TestTheRecords:
     def test_a_months_records_are_its_file_left_in_the_bucket(self, client, auth, app, shipped_root, fixture_corpus):
