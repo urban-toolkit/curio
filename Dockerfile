@@ -140,7 +140,7 @@ COPY utk_curio/ utk_curio/
 # Stage 2: Build frontends with Node (avoids NodeSource on slim in CI)
 # -----------------------------------------------------------------------------
 FROM node:26-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68 AS frontend_builder
-# The dependencies first, from the manifests and the vendored tarball they
+# The dependencies first, from the manifests and the vendored tarballs they
 # name (vendor/autark/README.md), so a source change reuses the npm layer and
 # only rebuilds.
 WORKDIR /src/utk_curio/frontend/urban-workflows

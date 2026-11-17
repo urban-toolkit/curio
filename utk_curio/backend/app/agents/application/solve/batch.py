@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import queue as _queue
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -176,12 +177,14 @@ class SolveBatch:
             else agents_grounding._solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
         )
         self.solve_ctx: dict = {"granted": [], "manifest": manifest}
-        self.solve_dataset_paths = (
-            dataset_paths if dataset_paths is not None
-            else (agents_grounding._resolve_catalog_execution_paths(
-                project_id, list(self.solve_ground.get("catalog_ids") or {}))
-                  if verify else {})
-        )
+        # The paths of the datasets the batch's runs read, each looked up as
+        # a round's code reads it (``grounding._session_dataset_paths``), and
+        # why each whose download failed in this Solve's run could not be
+        # had, which no later round downloads again. Its rounds look them up
+        # one at a time (:meth:`_dataset_paths_of`).
+        self.solve_dataset_paths = dataset_paths if dataset_paths is not None else {}
+        self.solve_dataset_failures: dict = {}
+        self.dataset_lookups = threading.Lock()
         # The Data Catalog's collections, which the request thread resolved
         # too; each attempt takes those its code reads on its pool's thread
         # (``grounding._session_collections``).
@@ -582,6 +585,11 @@ class SolveBatch:
         )[:300]
         extra = {"remedy": remedy_payload} if remedy_payload else {}
         self.results[node_id] = {"status": "failed", "error": err, **trail, **extra}
+        if evidence.get("downloadFailed"):
+            # What the node reads could not be downloaded, which the Solve
+            # keeps for its run: a later pass attempts it again only once the
+            # node changes (``_pass_targets``).
+            self.results[node_id]["downloadFailed"] = True
         return {"nodeId": node_id, "status": "failed", "error": err, **trail, **extra}
 
     def _gate_unverified(self, node_id: str, code: str) -> str | None:
@@ -1127,12 +1135,15 @@ class SolveBatch:
         # than the pass before had (owner correction: "it should carry
         # the currently error that is being given"). A node waiting on
         # a user action has no new input, so that one is attempted
-        # again only when something that could unblock it changed.
+        # again only when something that could unblock it changed. Nor
+        # has a node whose file could not be downloaded: the Solve keeps
+        # that failure for its run, and an attempt would only say it again.
         return [
             nid for nid in unresolved
             if self.pass_no == 1
             or (
                 not agents_rounds._awaits_user_action(self.results.get(nid))
+                and not (self.results.get(nid) or {}).get("downloadFailed")
                 and self.weak_passes.get(nid, 0) < agents_budgets.MAX_WEAK_PASSES
             )
             or self.attempted_signature.get(nid) != agents_session._blocker_signature(
@@ -1394,6 +1405,25 @@ class SolveBatch:
             return None
         return None
 
+    def _dataset_paths_of(self, codes, formats, unavailable=None) -> dict:
+        """The paths of the datasets a round's *codes* read, looked up as the
+        acting user (``grounding._session_dataset_paths``, which fills
+        *formats* and *unavailable*), by one round at a time.
+
+        The rounds of a wave run at once, on the pool's threads, and share the
+        batch's paths and failed downloads: one at a time, a dataset two nodes
+        read at once is looked up once, and a download that failed for one is
+        not asked for again by the other. A download holds the other rounds'
+        lookups until it is over, as a Solve's start once held every round
+        for all of them. In the unit suites' in-memory database every thread
+        shares one SQLite connection, on which two lookups at once crashed
+        the backend's tests."""
+        with self.dataset_lookups:
+            return agents_grounding._session_dataset_paths(
+                self.project_id, self.acting_user, self.solve_dataset_paths, codes, formats, unavailable,
+                failed=self.solve_dataset_failures,
+            )
+
     def _run_verified_worker(self, node_id: str, node: dict, wave_spec: dict, upstream_outputs) -> None:
         """dev/115 (DEC-073) → dev/118 (DEC-075): the ONE verified-content
         loop for EVERY executable kind — and, since dev/134, for every
@@ -1424,13 +1454,12 @@ class SolveBatch:
             extra_inputs={"planSiblings": self.goals[:20],
                           **({"upstreamOutputs": upstream_outputs} if upstream_outputs else {})},
             delegate_runner=self._traced_runner(node_id),
-            # dev/132 (closes dev/131 F4): the eager mapping,
-            # topped up for a dataset the user imported or
-            # installed since this session started, and why each whose
-            # file failed to download could not be had.
-            dataset_paths_fn=lambda codes, formats, unavailable=None: agents_grounding._session_dataset_paths(
-                self.project_id, self.acting_user, self.solve_dataset_paths, codes, formats, unavailable,
-            ),
+            # dev/132 (closes dev/131 F4): the paths the round's code
+            # reads, looked up now as the acting user, a dataset the user
+            # imported or installed since this session started among them,
+            # and why each whose file failed to download could not be had,
+            # kept for the Solve's run; one round's lookup at a time.
+            dataset_paths_fn=self._dataset_paths_of,
             # The collections, from the batch's mapping, topped up the same
             # way, and handed to the thread each attempt runs on.
             collections_fn=lambda codes: agents_grounding._session_collections(

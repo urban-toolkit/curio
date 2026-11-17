@@ -126,6 +126,7 @@ const Harness: React.FC = () => {
       <button onClick={() => void ctx.cancelSolve("a1")}>cancel-solve</button>
       <button onClick={() => void ctx.solveNode("a1", "n1").catch(() => undefined)}>solve-node</button>
       <div data-testid="solve-node-activity">{ctx.solveNodeActivity["a1"] ?? "∅"}</div>
+      <div data-testid="simulation-activity">{ctx.simulationActivity["a1"] ?? "∅"}</div>
       <div data-testid="solve-progress">
         {Object.entries(ctx.solveProgress["a1"] ?? {})
           .map(([n, st]) => `${n}:${st}`)
@@ -1509,6 +1510,132 @@ describe("AgentAttachmentsProvider — dev/115 verified Solve as a background jo
     });
     expect(screen.getByTestId("solve-node-activity")).toHaveTextContent("∅");
     expect(api.getSession).toHaveBeenCalled();
+  });
+});
+
+/**
+ * A node an agent's run reaches downloads what it reads on its first use
+ * before it runs, SAM 3's 3.4 GB of weights among them. The run says how far
+ * that has come (`node_download`, an empty message once it is over), and the
+ * line that narrates the node's run says it, as the canvas says a run's
+ * step_progress on the node.
+ */
+describe("AgentAttachmentsProvider: an agent's run says how far a node's downloads on first use have come", () => {
+  const MESSAGE = "Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)";
+  type OnEvent = (name: string, payload: Record<string, unknown>) => void;
+
+  it("solveNode narrates them, then the run in the sandbox once they are over", async () => {
+    let emit: OnEvent = () => undefined;
+    let finish: (r: Record<string, unknown>) => void = () => undefined;
+    api.solveNodeStream.mockImplementation((_p: string, _a: string, _n: string, onEvent: OnEvent) => {
+      emit = onEvent;
+      return new Promise((res) => {
+        finish = res;
+      });
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("solve-node"));
+    await waitFor(() => expect(api.solveNodeStream).toHaveBeenCalled());
+
+    act(() => {
+      emit("generation_round", { round: 1 });
+      emit("node_executed", { nodeId: "n1", index: 0, total: 1 });
+      emit("node_download", { nodeId: "n1", message: MESSAGE, done: 1210000000, total: 3440000000 });
+    });
+    expect(screen.getByTestId("solve-node-activity")).toHaveTextContent(MESSAGE);
+    act(() => emit("node_download", { nodeId: "n1", message: "" }));
+    expect(screen.getByTestId("solve-node-activity")).toHaveTextContent("Running in the sandbox…");
+
+    await act(async () => {
+      finish({ nodeId: "n1", verdict: "pass", rounds: 1 });
+    });
+    expect(screen.getByTestId("solve-node-activity")).toHaveTextContent("∅");
+  });
+
+  it("a re-attached node's Solve narrates them too", async () => {
+    let emit: OnEvent = () => undefined;
+    let finish: (r: Record<string, unknown> | null) => void = () => undefined;
+    api.listAttachments.mockResolvedValue({
+      attachments: [{ ...attachment, liveJob: { executionId: "e7", kind: "solve-node", status: "running", startedAt: 1 } }],
+    });
+    api.attachJobStream.mockImplementation((_p: string, _a: string, onEvent: OnEvent) => {
+      emit = onEvent;
+      return new Promise((res) => {
+        finish = res;
+      });
+    });
+    renderProvider();
+    await waitFor(() => expect(api.listAttachments).toHaveBeenCalled());
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(api.attachJobStream).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      emit("node_executed", { nodeId: "n1", index: 0, total: 1 });
+      emit("node_download", { nodeId: "n1", message: MESSAGE });
+    });
+    expect(screen.getByTestId("solve-node-activity")).toHaveTextContent(MESSAGE);
+    act(() => emit("node_download", { nodeId: "n1", message: "" }));
+    expect(screen.getByTestId("solve-node-activity")).toHaveTextContent("running in the sandbox…");
+
+    await act(async () => {
+      finish(null);
+    });
+  });
+
+  it("a plan's Solve says them under its pills, the node's pill still verifying, until they are over", async () => {
+    let emit: OnEvent = () => undefined;
+    let finish: (r: Awaited<ReturnType<typeof api.solveAttachmentStream>>) => void = () => undefined;
+    api.solveAttachmentStream.mockImplementation((_p: string, _a: string, onEvent: OnEvent) => {
+      emit = onEvent;
+      return new Promise((res) => {
+        finish = res;
+      }) as ReturnType<typeof api.solveAttachmentStream>;
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("solve"));
+    await waitFor(() => expect(api.solveAttachmentStream).toHaveBeenCalled());
+
+    act(() => {
+      emit("node_started", { nodeId: "n1" });
+      emit("node_executed", { nodeId: "n1", index: 0, total: 1 });
+      emit("node_download", { nodeId: "n1", message: MESSAGE, done: 1210000000, total: 3440000000 });
+    });
+    expect(screen.getByTestId("solve-notices")).toHaveTextContent(`n1:${MESSAGE}`);
+    expect(screen.getByTestId("solve-progress")).toHaveTextContent("n1:verifying");
+    act(() => emit("node_download", { nodeId: "n1", message: "" }));
+    expect(screen.getByTestId("solve-notices")).toHaveTextContent("∅");
+
+    await act(async () => {
+      finish({ attachmentId: "a1", executionId: "e1", results: { n1: { status: "solved", verdict: "pass" } },
+               appliedContents: [], builderSession: { phase: "ready" } });
+    });
+  });
+
+  it("Build & validate narrates them, then the upstream run again", async () => {
+    let emit: OnEvent = () => undefined;
+    let finish: (r: Record<string, unknown>) => void = () => undefined;
+    api.simulate.mockImplementation((_p: string, _a: string, _m: string, onEvent: OnEvent) => {
+      emit = onEvent;
+      return new Promise((res) => {
+        finish = res;
+      });
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("run-simulation"));
+    await waitFor(() => expect(api.simulate).toHaveBeenCalled());
+
+    act(() => {
+      emit("node_executed", { nodeId: "n1", index: 0, total: 2 });
+      emit("node_download", { nodeId: "n1", message: MESSAGE });
+    });
+    expect(screen.getByTestId("simulation-activity")).toHaveTextContent(MESSAGE);
+    act(() => emit("node_download", { nodeId: "n1", message: "" }));
+    expect(screen.getByTestId("simulation-activity")).toHaveTextContent("executing upstream 1/2");
+
+    await act(async () => {
+      finish({ status: "completed", mode: "auto" });
+    });
+    expect(screen.getByTestId("simulation-activity")).toHaveTextContent("∅");
   });
 });
 

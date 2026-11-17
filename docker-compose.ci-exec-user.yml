@@ -21,7 +21,9 @@
 #    exclusive. This job therefore drops the workflow comparison entirely and
 #    asserts the boundary over the sandbox's HTTP API instead
 #    (utk_curio/sandbox/tests/live/test_exec_user_boundary.py), which runs
-#    nothing on the host that touches the hardened paths.
+#    nothing on the host that touches the hardened paths. A dashboard
+#    viewer's step as curio-exec is asked over the backend's
+#    (test_exec_user_dashboard_media.py), which touches none either.
 #
 # 2. --deploy, which ci-isolated.yml had to drop. A hosted instance asking for
 #    fork isolation without an exec user is fatal by design

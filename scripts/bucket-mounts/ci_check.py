@@ -14,10 +14,13 @@ loaded by its path: the stand-in has the checkout, not Curio's libraries.
     source-mount   mount two sources' buckets at once, as the backend mounts
                    them (application/bucket_mount_sources.py): rclone takes
                    the parameters, names each mount as the backend expects,
-                   the mount shows here, and its listing fails, since nothing
-                   listens on the proxy's port in the stand-in; vfs/forget and
-                   vfs/refresh find each mount by that name, which the
-                   backend's reads in place give them, and refuse another
+                   refuses a second mount of a folder that holds one, which
+                   the backend's start of several processes never asks (a
+                   lock of the source's across them), the mount shows here,
+                   and its listing fails, since nothing listens on the
+                   proxy's port in the stand-in; vfs/forget and vfs/refresh
+                   find each mount by that name, which the backend's reads in
+                   place give them, and refuse another
     leave-mounted  mount the service's test folder, read it as that account,
                    check it refuses a write, and leave it mounted, as a service
                    that stops without unmounting leaves its mounts
@@ -147,6 +150,10 @@ def source_mount(mounts) -> int:
             except mounts.RcError as error:
                 return fail(f"mounting {fs} at {point}: {error.reason}")
             made.append((point, fs, mounts.listed_fs("s3", parameters, path), folder / name))
+        point, fs, _listed, _here = made[0]
+        failed = _a_second_mount_is_refused(mounts, client, point, fs)
+        if failed:
+            return failed
         for point, fs, listed, here in made:
             failed = _a_source_mount(client, here, point, listed)
             if failed:
@@ -202,6 +209,25 @@ def _listings(mounts, client, names) -> int:
         print(f"vfs/forget of a name no mount has is refused: {error.reason}")
         return 0
     return fail(f"vfs/forget found a mount named {NO_SUCH_MOUNT}")
+
+
+#: What rclone answers a mount of a folder that holds a mount, which the
+#: backend's tests answer too (test_bucket_mount_sources.py, ALREADY_MOUNTED).
+ALREADY_MOUNTED = "directory already mounted"
+
+
+def _a_second_mount_is_refused(mounts, client, point: str, fs: str) -> int:
+    """rclone refuses a second mount of a folder that holds one: two backend
+    processes that each found no mount there would both ask, and the second
+    keep its source down for its reason."""
+    try:
+        client.call("mount/mount", {"fs": fs, "mountPoint": point, **mounts.SOURCE_MOUNT_OPTIONS})
+    except mounts.RcError as error:
+        if ALREADY_MOUNTED not in error.reason:
+            return fail(f"a second mount at {point} was refused for another reason: {error.reason}")
+        print(f"a second mount at {point} is refused: {error.reason}")
+        return 0
+    return fail(f"a second mount at {point}, which holds a mount, was taken")
 
 
 def _a_source_mount(client, here: Path, point: str, expected: str) -> int:

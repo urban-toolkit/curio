@@ -77,7 +77,8 @@ function narrowedLabel(block: DatasetCollection): string | null {
   const parts = Object.entries(block.narrowedBy ?? {}).map(([name, kept]) =>
     Array.isArray(kept) ? `${name} ${kept.join(", ")}` : `${name} ${kept.min} to ${kept.max}`,
   );
-  if (block.chosenFiles != null) parts.push(`${block.chosenFiles.toLocaleString()} picked files`);
+  const picked = block.chosenFiles;
+  if (picked != null) parts.push(`${picked.toLocaleString()} picked file${picked === 1 ? "" : "s"}`);
   return parts.length ? parts.join("; ") : null;
 }
 

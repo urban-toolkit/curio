@@ -21,7 +21,11 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import os
+import platform
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -566,6 +570,87 @@ def test_street_classes_keep_their_colours(segmentation):
     assert colours[1] == segmentation.CLASS_COLOURS["vegetation"]
     assert colours[3] == segmentation.CLASS_COLOURS["sky"]
     assert colours[2] not in segmentation.CLASS_COLOURS.values()
+
+
+# ---------------------------------------------------------------------------
+# The threads it runs on
+# ---------------------------------------------------------------------------
+
+#: A child that makes DDRNet23-Slim's session as the module's ``_OnnxRunner``
+#: makes it and scores one photo, then prints how many threads that added to
+#: the process (Linux lists them in /proc/self/task), the intra-op thread count
+#: the session was made with (0 is onnxruntime's own choice) and the CPUs the
+#: child sees. onnxruntime is imported before the first count, so the count is
+#: the session's.
+SESSION_THREADS = """
+import importlib.util
+import json
+import os
+import sys
+
+module_path, model_path, manifest, photo = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("semantic_segmentation", module_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+import onnxruntime
+from PIL import Image
+
+before = len(os.listdir("/proc/self/task"))
+runner = module._OnnxRunner(model_path, json.loads(manifest))
+with Image.open(photo) as source:
+    runner(source.convert("RGB"))
+print(json.dumps({
+    "added": len(os.listdir("/proc/self/task")) - before,
+    "intra_op": runner.session.get_session_options().intra_op_num_threads,
+    "cpus": os.cpu_count(),
+}))
+"""
+
+
+def _session_threads(photo: str, omp_num_threads: str | None) -> dict:
+    """What making DDRNet23-Slim's session and scoring *photo* did in a child of
+    its own whose ``OMP_NUM_THREADS`` is *omp_num_threads*, unset when None."""
+    env = {name: value for name, value in os.environ.items() if name != "OMP_NUM_THREADS"}
+    if omp_num_threads is not None:
+        env["OMP_NUM_THREADS"] = omp_num_threads
+    model = _loaded(DDRNET)
+    run = subprocess.run(
+        [sys.executable, "-c", SESSION_THREADS, str(PACKAGE / "sources" / f"{MODULE}.py"), model.path,
+         json.dumps(model.manifest), photo],
+        capture_output=True, text=True, env=env, timeout=300,
+    )
+    assert run.returncode == 0, f"the child exited {run.returncode}:\n{run.stderr[-3000:]}"
+    return json.loads(run.stdout.strip().splitlines()[-1])
+
+
+def test_ddrnets_session_runs_on_the_threads_omp_num_threads_names(photos):
+    """onnxruntime reads no ``OMP_NUM_THREADS``: a session that names no thread
+    count starts a thread for every core it sees. An arcade CI runner shows the
+    192 CPUs of a machine its 44 runners share, and e2e-desktop's stack runs
+    nodes in-process, so example 10's Image Segmentation scored its 40 photos on
+    a thread per core. At load 530 to 680 on 100% CPU its second one ran for
+    129 s, past the e2e test's 120 s (run 44027626125), where a quiet arcade
+    runner takes 11 s and a GitHub-hosted one 18 to 30 s. The CI stacks give
+    node code their runner's share as ``OMP_NUM_THREADS``, which torch and
+    OpenBLAS read for themselves; ``_OnnxRunner`` hands the same count to
+    onnxruntime. With no ``OMP_NUM_THREADS``, as on a user's Curio, onnxruntime
+    keeps its own choice.
+
+    Under ``OMP_NUM_THREADS=1`` the session runs on the calling thread alone,
+    which starts no thread, on any machine of more than one core."""
+    assert platform.system() == "Linux", (
+        f"This test counts a child's threads in /proc/self/task, which Linux has; this machine is {platform.system()}."
+    )
+    frame, _helpers = photos
+    photo = frame["path"].iloc[0]
+    unset = _session_threads(photo, None)
+    one = _session_threads(photo, "1")
+    assert (one["added"], one["intra_op"]) == (0, 1), (
+        f"Under OMP_NUM_THREADS=1, DDRNet23-Slim's session, made as _OnnxRunner makes it, started {one['added']} "
+        f"threads, and it was made with an intra-op thread count of {one['intra_op']} (0 is onnxruntime's own "
+        f"choice); with OMP_NUM_THREADS unset it started {unset['added']}, on a machine of {unset['cpus']} CPUs. "
+        "onnxruntime reads no OMP_NUM_THREADS: _OnnxRunner has to give the session the count it names."
+    )
 
 
 # ---------------------------------------------------------------------------

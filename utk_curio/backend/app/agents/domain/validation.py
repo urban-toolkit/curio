@@ -110,9 +110,14 @@ def validate_candidate(
     keep_stdout: bool = False,
     collections: dict | None = None,
     media_dir: str | None = None,
+    downloads=None,
 ) -> dict:
     """Run the dataflow through *node_id* with the candidate overlaid and
-    return ``{"verdict", "evidence"}`` (see module docstring). dev/115:
+    return ``{"verdict", "evidence"}`` (see module docstring). *downloads*
+    rides through to the runner, which tells it how far each download on
+    first use of what a node reads has come (``runner.run_through_node``),
+    and a node that failed because what it reads could not be downloaded
+    marks the evidence ``downloadFailed``. dev/115:
     ``dataset_paths`` / ``dataset_formats`` / ``exec_user_key`` ride through
     to the runner so the Data Catalog's ``curio_data_path("<id>")`` loaders
     resolve exactly as on Play, and ``dataset_problems``, why each dataset
@@ -164,6 +169,7 @@ def validate_candidate(
         templates=templates,  # dev/119: the roster classifies executability
         acting_user=acting_user,
         keep_stdout=keep_stdout,
+        downloads=downloads,
     )
     executed = [nid for nid, rec in report["nodes"].items() if rec.get("executed")]
     reused = [nid for nid, rec in report["nodes"].items() if rec.get("status") == "reused"]
@@ -212,6 +218,10 @@ def validate_candidate(
             })
         else:
             evidence.update({"kind": "precondition", "detail": report.get("error")})
+        if blocker and (report["nodes"].get(blocker) or {}).get("downloadFailed"):
+            # What the failed node reads could not be downloaded on its first
+            # use: no correction of the code mends that.
+            evidence["downloadFailed"] = True
         return {"verdict": "fail", "evidence": evidence}
     output_data_type = (target_record.get("output") or {}).get("dataType", "")
     evidence["outputDataType"] = output_data_type

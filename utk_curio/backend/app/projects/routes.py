@@ -473,6 +473,63 @@ def get_dashboard_payload(project_id: str):
     )
 
 
+def _a_media_file(value) -> bool:
+    """Whether *value* names one file as a dashboard's page asks a link for it."""
+    return (
+        isinstance(value, dict)
+        and isinstance(value.get("datasetId"), str) and isinstance(value.get("fileId"), str)
+        and (value.get("kept") is None or isinstance(value.get("kept"), str))
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/projects/:id/dashboard/media - links to the files a tile's rows show
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/dashboard/media", methods=["POST"])
+def get_dashboard_media_links(project_id: str):
+    """``{fileName, files: [{datasetId, fileId, kept}]}``: links to the files
+    of *files* that the rows of *fileName*, an output a pinned tile of this
+    dashboard reads, name, which its page reads them through
+    (``services.dashboard_media_links``): ``GET /api/media/<token>``, with
+    ``?variant=`` for a thumbnail or a poster. 200 with ``{links: [{datasetId,
+    fileId, kept, url}], expiresIn}``, a file the rows do not name left out;
+    404 for an output no tile of the dashboard reads; 400 for another body.
+
+    Unauthenticated, as the payload is: whoever holds the dashboard's link
+    sees its tiles, their images and videos among them. A hosted guest's
+    links name the visitor who asked, as their own links do."""
+    from flask import url_for
+
+    from utk_curio.backend.app.discovery.application import media
+    from utk_curio.backend.app.users.dependencies import get_current_user
+
+    body = request.get_json(silent=True) or {}
+    file_name, files = body.get("fileName"), body.get("files")
+    if (
+        not isinstance(file_name, str) or not file_name or not isinstance(files, list)
+        or len(files) > services.MAX_DASHBOARD_MEDIA_FILES or not all(_a_media_file(f) for f in files)
+    ):
+        return _error(
+            f"Name an output as fileName and at most {services.MAX_DASHBOARD_MEDIA_FILES} files "
+            "as files, each with its datasetId, fileId and kept.", 400,
+        )
+    visitor = visitor_copies.visitor_of() if visitor_copies.copies_for(get_current_user()) else None
+    try:
+        signed = services.dashboard_media_links(project_id, file_name, files, visitor=visitor)
+    except NotFoundError as exc:
+        return _error(str(exc), 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+    return jsonify({
+        "links": [
+            {"datasetId": dataset_id, "fileId": file_id, "kept": kept,
+             "url": url_for("collection_media.signed_media", token=token)}
+            for dataset_id, file_id, kept, token in signed
+        ],
+        "expiresIn": media.LINK_TTL_SECONDS,
+    }), 200
+
+
 # ---------------------------------------------------------------------------
 # GET /api/projects/:id/dashboard/can-edit - may this session edit the layout
 # ---------------------------------------------------------------------------

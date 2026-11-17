@@ -305,12 +305,11 @@ def solve_attachment_stream(
         session_id = record.get("sessionId")
         # dev/115: everything that needs the REQUEST context is resolved here, as
         # the job thread holds no ``g``: the batch's grounding base (catalog refs,
-        # mission + plan texts), the sandbox's dataset-path mapping and collections.
+        # mission + plan texts) and collections. A dataset's path is looked up
+        # when a round's code reads it, as the acting user below
+        # (``grounding._session_dataset_paths``): a lookup downloads, on a pip
+        # install, a shipped dataset the pip package leaves out.
         solve_ground = agents_grounding._solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
-        solve_dataset_paths = (
-            agents_grounding._resolve_catalog_execution_paths(project_id, list(solve_ground.get("catalog_ids") or {}))
-            if verify else {}
-        )
         solve_collections = (
             agents_grounding._resolve_catalog_collections(project_id, user_key, solve_ground.get("catalog_ids") or {})
             if verify else {}
@@ -325,7 +324,7 @@ def solve_attachment_stream(
             user_key, project_id, attachment_id, config, targets, nodes_by_id,
             manifest, coord, session_id, solve_execution_id, stop,
             spec=spec, verify=verify,
-            grounding_base=solve_ground, dataset_paths=solve_dataset_paths, collections=solve_collections,
+            grounding_base=solve_ground, collections=solve_collections,
             catalog_rows=solve_catalog_rows, acting_user=solve_user,
             retry_of=retry_of if isinstance(retry_of, str) else None,
             # Who asked, as the room names them, read here: the job's thread holds no request.
@@ -633,5 +632,7 @@ def _artifact_summary_fn():
 SOLVE_PROGRESS_EVENTS = {
     "generation_round": "node_round",
     "node_executed": "node_executed",
+    # How far a download on first use of what a node reads has come.
+    "node_download": "node_download",
     "round_verdict": "node_verdict",
 }

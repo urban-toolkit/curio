@@ -1,7 +1,8 @@
 {
   "package": "@urban-toolkit/autk-grammar",
-  "version": "4.4.1",
-  "source": "npm",
+  "version": "4.5.0-curio.1",
+  "source": "vendored tarball",
+  "tarball": "utk_curio/frontend/urban-workflows/vendor/autark/urban-toolkit-autk-grammar-4.5.0-curio.1.tgz",
   "id": "https://autarkjs.org/schema/autk-grammar/v1.json",
-  "sha256": "b1366c9ebc54e7953839f9a6d164bc48b8af3786316297a60d24c8a4c8a6c73c"
+  "sha256": "71af92820788013782daacb93050232c22977d4a99010d5b5b62b6a8844536b4"
 }

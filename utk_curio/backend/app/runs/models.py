@@ -169,6 +169,11 @@ class KeptStepOutput(db.Model):
     private_to = db.Column(db.String(64), nullable=True)
     # Whose run made it: "owner" or "viewer" (``kept.MADE_BY_*``).
     made_by = db.Column(db.String(16), nullable=False, default="viewer")
+    # The folders of the viewers' steps whose files its rows may name (JSON):
+    # its own step's, and those the outputs it read name. A folder goes once
+    # no entry names it (``kept.forget_kept_media``). Empty for one kept
+    # before the column, which names its own step's folder alone.
+    media_folders = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=naive_utc_now)
     used_at = db.Column(db.DateTime, nullable=False, default=naive_utc_now)
 

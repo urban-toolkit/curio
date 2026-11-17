@@ -13,7 +13,9 @@ the proxy test's, on loopback.
 from __future__ import annotations
 
 import errno
+import json
 import os
+import re
 import socket
 import threading
 import time
@@ -315,11 +317,19 @@ NO_WAY_OUT = (
     "proxyconnect tcp: dial tcp 172.18.0.3:3128: connect: connection refused"
 )
 
+#: What rclone 1.76 answers a ``mount/mount`` of a folder that holds a mount:
+#: its mount checks the folder in ``/proc/self/mountinfo``
+#: (``cmd/mountlib``'s ``CheckAllowNonEmpty``) unless ``allow_non_empty`` is
+#: set, which a source's mount never sets. CI's bucket-mounts job checks it on
+#: the real service (``scripts/bucket-mounts/ci_check.py source-mount``).
+ALREADY_MOUNTED = "failed to mount FUSE fs: directory already mounted, use --allow-non-empty to mount anyway: {point}"
+
 
 class FakeRclone:
     """The mount service as the backend calls it. *refuse* maps a method to
     rclone's error; *unreachable* makes every call find no service; *hold*,
-    an event, holds ``mount/mount`` until it is set.
+    an event, holds ``mount/mount`` until it is set. A ``mount/mount`` of a
+    folder that holds a mount is refused, as rclone refuses it.
 
     ``operations/list`` lists a remote made on the fly as rclone does, out
     through its HTTPS_PROXY: a ``CONNECT`` to the remote's host on the proxy
@@ -356,6 +366,9 @@ class FakeRclone:
         if method == "mount/mount":
             if self.hold is not None:
                 self.hold.wait(10)
+            if params["mountPoint"] in self.mounts:
+                raise bm.RcError("refused", "the mount service refused mount/mount: "
+                                            + ALREADY_MOUNTED.format(point=params["mountPoint"]))
             self.mounts[params["mountPoint"]] = params["fs"]
             self.dead.discard(params["mountPoint"])
         elif method == "mount/unmount":
@@ -423,6 +436,59 @@ class FakeFolders:
         if folder.name in self.refuse:
             raise OSError(errno.EIO, os.strerror(errno.EIO))
         return self._held(folder)[0]
+
+
+class OneServiceOfTheStart:
+    """The one mount service every backend process of a start calls, as each
+    calls the one rclone: its mounts are kept in a file under *folder*, so a
+    forked child's calls and this process's change one service. Each call
+    holds a lock of its own (``fcntl`` itself, which ``two_processes``' watch
+    of file locks does not count). It answers as :class:`FakeRclone`, a
+    ``mount/mount`` of a folder that holds a mount refused. *window*, a
+    ``two_processes.Window``, stops a forked child's ``mount/mount`` before
+    the service takes it, after its ``mount/listmounts`` found no mount."""
+
+    def __init__(self, folder, window=None):
+        self._folder = Path(folder)
+        self._folder.mkdir(parents=True, exist_ok=True)
+        self._window = window
+        self.calls = []
+        self.dead = set()
+
+    @property
+    def mounts(self):
+        try:
+            return json.loads((self._folder / "mounts.json").read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return {}
+
+    def call(self, method, params=None, *, timeout=None):
+        import fcntl
+
+        params = dict(params or {})
+        self.calls.append((method, params))
+        if method == "mount/mount" and self._window is not None:
+            self._window.stop_here()
+        with open(self._folder / "mounts.lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            mounts = self.mounts
+            answer = {}
+            if method == "mount/listmounts":
+                answer = {"mountPoints": [{"Fs": canonical(fs), "MountPoint": point}
+                                          for point, fs in sorted(mounts.items())]}
+            elif method == "mount/mount":
+                if params["mountPoint"] in mounts:
+                    raise bm.RcError("refused", "the mount service refused mount/mount: "
+                                                + ALREADY_MOUNTED.format(point=params["mountPoint"]))
+                mounts[params["mountPoint"]] = params["fs"]
+            elif method == "mount/unmount":
+                if mounts.pop(params["mountPoint"], None) is None:
+                    raise bm.RcError("refused", "the mount service refused mount/unmount: mount not found")
+            (self._folder / "mounts.json").write_text(json.dumps(mounts), encoding="utf-8")
+        return answer
+
+    def methods(self):
+        return [method for method, _ in self.calls]
 
 
 class Clock:
@@ -635,6 +701,36 @@ class TestFailures:
         assert mounts.ensure(PATH_STYLE).reason == REASONS["listing"]
         assert "operations/list" not in service.methods()
 
+    def test_a_host_curios_proxy_refused_is_named_not_the_bucket(self, tmp_path):
+        """The bucket's host passed the mount's own check, then resolved to a
+        private address when the service's listing asked the proxy for it: a
+        name that turned private. Curio's proxy refused each request, and FUSE
+        gives Curio EIO alone. The way out reached the proxy, so the source
+        was down for "the bucket refuses listing", which the bucket never
+        said: no request reached it."""
+
+        def turned_private(host):
+            raise egress_policy.EgressRefused(f"host {host!r} resolves to a non-public address (10.1.2.3) - refused")
+
+        service = FakeRclone()
+        proxy = MountProxy(addresses_of=turned_private)
+        service.proxy_port = proxy.start("127.0.0.1", 0)
+        folders = ListedThroughTheProxy(service, service.proxy_port)
+        mounts = BucketMountSources(service, tmp_path, proxy=proxy, folders=folders, resolver=resolver,
+                                    list_seconds=5)
+        try:
+            found = mounts.ensure(PATH_STYLE)
+        finally:
+            proxy.stop()
+
+        assert folders.answers and all(" 403 " in answer for answer in folders.answers), folders.answers
+        assert found.state == "down"
+        assert "Curio's bucket mount proxy refused" in found.reason and "non-public address" in found.reason, (
+            f"the source is down for {found.reason!r}, where Curio's proxy refused the bucket's host: "
+            f"{folders.answers}"
+        )
+        assert POINT not in service.mounts
+
     def test_a_listing_with_no_answer_holds_one_thread_and_never_the_caller(self, rig):
         mounts, service, folders, clock, _proxy = rig
         folders.hang = threading.Event()
@@ -665,6 +761,34 @@ class TestFailures:
         clock.now += 1
         assert mounts.ensure(PATH_STYLE).mounted
         assert "mount/mount" in service.methods()[calls:]
+
+
+#: The repository's root, where the service's start is.
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+class TestTheListingsBound:
+    def test_the_listing_waits_out_rclones_tries_of_a_request_that_fails(self):
+        """rclone lists a mount's folder in up to ``--low-level-retries``
+        tries (its pacer's, which tries a refused connection again), each of
+        them the S3 SDK's attempts (``RetryMaxAttempts`` is
+        ``--low-level-retries`` too), which back off up to 2^k s after attempt
+        k (aws-sdk-go-v2's ``ExponentialJitterBackoff``): up to 3 × (2 + 4) =
+        18 s with the service's 3, for a listing against a proxy it cannot
+        reach. CI's bucket-mounts job saw such listings fail after 3 to 9.4 s.
+        A bound of 10 s left rclone's last tries no room: a listing that was
+        failing was called one that gave no answer, and its thread was left
+        stuck until rclone gave up. The bound holds rclone's longest tries,
+        half as much again for the requests themselves; reads keep rclone's
+        tries."""
+        start = (REPO_ROOT / "scripts" / "bucket-mounts" / "service.sh").read_text(encoding="utf-8")
+        tries = int(re.search(r"--low-level-retries (\d+)", start).group(1))
+        longest = tries * sum(2 ** attempt for attempt in range(1, tries))
+
+        assert sources_module.LIST_SECONDS >= 1.5 * longest, (
+            f"a mount's listing is given {sources_module.LIST_SECONDS:g} s, where rclone's {tries} tries of "
+            f"{tries} attempts each back off for up to {longest} s before a failed request fails the listing"
+        )
 
 
 class TestRemounts:
@@ -703,6 +827,24 @@ class TestRemounts:
             "mount/listmounts", "mount/unmount", "operations/mkdir", "mount/mount",
         ]
         assert service.mounts[POINT].endswith(":sideseeing/sao-paulo")
+
+    def test_the_host_a_manifest_moved_from_is_let_through_no_more(self, rig):
+        """The source's manifest names another host now, and its mount is made
+        again there. The old host stayed let through, for the source, until
+        the backend started again: node code, which can reach the proxy's
+        port, could tunnel to it all that time."""
+        mounts, service, _folders, _clock, proxy = rig
+        assert mounts.ensure(PATH_STYLE).mounted
+        assert proxy.admits("data.example.org", 443)
+
+        moved = a_manifest("https://other.example.org/sideseeing", "chicago/")
+        assert mounts.ensure(moved).mounted
+        assert service.mounts[POINT] == fs_of(bucket_mount(moved))
+
+        assert proxy.admits("other.example.org", 443)
+        assert not proxy.admits("data.example.org", 443), (
+            "the proxy still lets through the host the source's manifest named before its mount was made again"
+        )
 
     def test_a_mount_made_before_a_backend_restart_is_taken_as_it_is(self, rig, tmp_path):
         _mounts, service, folders, clock, proxy = rig
@@ -942,6 +1084,8 @@ class TestAStartOfSeveralProcesses:
     out through home's proxy as the mount service's requests do."""
 
     HOST = "data.example.org"
+    #: Where the source's manifest moves its bucket to, the same server.
+    MOVED = "moved.example.org"
 
     @pytest.fixture
     def start(self, tmp_path, monkeypatch):
@@ -954,13 +1098,13 @@ class TestAStartOfSeveralProcesses:
         port = upstream.getsockname()[1]
         monkeypatch.setenv("CURIO_STATE_DIR", str(tmp_path / "state"))
         monkeypatch.setattr(bm, "PROXY_PORT", 0)
-        # The bucket's host is the server on loopback, which these tests take
-        # as public, as test_mount_proxy.py's tunnels do; any other host is
-        # Curio's policy's to judge.
+        # The bucket's hosts are the server on loopback, which these tests
+        # take as public, as test_mount_proxy.py's tunnels do; any other host
+        # is Curio's policy's to judge.
         policy = egress_policy.public_addresses
 
         def the_bucket_is_public(host, *, resolver=None):
-            return ["127.0.0.1"] if host == self.HOST else policy(host, resolver=resolver)
+            return ["127.0.0.1"] if host in (self.HOST, self.MOVED) else policy(host, resolver=resolver)
 
         monkeypatch.setattr(egress_policy, "public_addresses", the_bucket_is_public)
 
@@ -979,17 +1123,25 @@ class TestAStartOfSeveralProcesses:
             upstream.close()
 
     @staticmethod
-    def _in_process(number, work):
-        """*work* in the start's process *number*, a forked child that holds no
-        proxy and no mount of its own yet, as a process of its own starts:
-        what it raised, or ""."""
+    def _become(number):
+        """This forked child as the start's process *number*, which holds no
+        proxy, no mount and no self-test of its own yet, as a process of its
+        own starts."""
+        os.environ["CURIO_BACKEND_PROCESS"] = str(number)
+        # The module's proxy and sources here are copies of home's, the test
+        # process's; a process of its own makes its own. The self-test runs in
+        # home alone, so no other process holds its outcome in memory.
+        sources_module._proxy = sources_module._sources = None
+        bucket_mount_check.reset()
+
+    @classmethod
+    def _in_process(cls, number, work):
+        """*work* in the start's process *number*, a forked child
+        (:meth:`_become`): what it raised, or ""."""
         from utk_curio.backend.tests._support.two_processes import in_another_process
 
         def run():
-            os.environ["CURIO_BACKEND_PROCESS"] = str(number)
-            # The module's proxy and sources here are copies of home's, the
-            # test process's; a process of its own makes its own.
-            sources_module._proxy = sources_module._sources = None
+            cls._become(number)
             work()
 
         return in_another_process(run)
@@ -1113,6 +1265,218 @@ class TestAStartOfSeveralProcesses:
         assert (found.state, found.reason) == ("down", REASONS["admission"])
         assert service.calls == [], "a source whose host could not be let through was mounted"
         assert not sources_module.process_proxy().admits("data.example.org", 443)
+
+    def test_a_self_test_that_failed_in_home_lets_no_process_mount(self, start, tmp_path):
+        """The self-test runs in home alone, once, as the start begins. It
+        failed for a reason no mount's own calls can clear (here, node code's
+        account cannot read the test mount), so no source may mount until the
+        backend starts again. Each process read only its own memory, which
+        holds no self-test but home's: processes 1 to N-1 mounted on, and node
+        code there met files it could not read."""
+        _home, _proxy_port, source, _port = start(2)
+        bucket_mount_check.record(bm.SelfTest(
+            False, "not-readable", "reading /bucket-mounts/.selftest/ok as curio-exec (uid 999): "
+                                   "Permission denied (errno 13)"))
+        refused = f"the mount service failed its self-test: {bm.PROBLEMS['not-readable']}"
+        assert bucket_mount_check.failed_self_test() == refused
+
+        def mounts_nothing():
+            service = FakeRclone()
+            found = self._mounts(service, FakeFolders(service), tmp_path).ensure(source)
+            assert (found.state, found.reason) == ("down", refused), (
+                f"process 1's mount of the source is {found.state} ({found.reason!r}), though the self-test "
+                "failed in home"
+            )
+            assert service.calls == [], f"process 1 asked the mount service {service.methods()}"
+
+        error = self._in_process(1, mounts_nothing)
+        assert error == "", error
+
+    @pytest.mark.parametrize("outcome", [
+        bm.SelfTest(True, None, "passed"),
+        bm.SelfTest(False, "no-service", "nothing answers on /run/x/rc.sock"),
+    ], ids=["passed", "found-no-service"])
+    def test_what_lets_home_mount_lets_another_process_mount(self, start, tmp_path, outcome):
+        """A passed self-test, and one that found no service, which a mount's
+        own calls find again, stop no process, as they stop no mount in home."""
+        _home, _proxy_port, source, _port = start(2)
+        bucket_mount_check.record(outcome)
+
+        def mounts_it():
+            service = FakeRclone()
+            found = self._mounts(service, FakeFolders(service), tmp_path).ensure(source)
+            assert found.mounted, found
+
+        error = self._in_process(1, mounts_it)
+        assert error == "", error
+
+    def test_the_next_start_reads_no_self_test_of_the_start_before(self, start, tmp_path, monkeypatch):
+        from utk_curio.backend.app.common import shared_budgets
+
+        _home, _proxy_port, source, _port = start(2)
+        bucket_mount_check.record(bm.SelfTest(False, "not-propagated", "no /bucket-mounts/.selftest/ok"))
+        monkeypatch.setattr(shared_budgets, "BOOT_ID", "the next start")
+
+        def mounts_it():
+            service = FakeRclone()
+            found = self._mounts(service, FakeFolders(service), tmp_path).ensure(source)
+            assert found.mounted, f"the next start's process 1 reads the start before's self-test: {found}"
+
+        error = self._in_process(1, mounts_it)
+        assert error == "", error
+
+    def test_the_proxys_notes_hold_a_host_its_port_why_and_when_alone(self, start):
+        """The notes are the start's, in its state folder, which node code
+        cannot reach: what a ``CONNECT`` said, never a path (it holds none),
+        and never the self-test's host, which no log or answer shows either."""
+        from utk_curio.backend.app.common import shared_budgets
+
+        home, proxy_port, _source, port = start(2)
+        selftest = "selftest-0123456789abcdef0123456789abcdef.curio-bucket-mounts.invalid"
+        home.expect(selftest, 443)
+        for target in (f"{selftest}:443", f"other.example.org:{port}"):
+            with socket.create_connection(("127.0.0.1", proxy_port), timeout=10) as sock:
+                sock.sendall(f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n".encode("ascii"))
+                assert sock.recv(1024).startswith(b"HTTP/1.1 403 ")
+
+        with shared_budgets.State(sources_module.REFUSALS).held() as state:
+            [note] = state["refused"]
+        assert sorted(note) == ["at", "host", "port", "why"]
+        assert (note["host"], note["port"], note["why"]) == (
+            "other.example.org", port, "it is not the host and port of a source being mounted",
+        )
+
+    def test_two_processes_that_mount_one_source_at_once_both_have_it_mounted(self, start, tmp_path, monkeypatch):
+        """Processes 0 and 1 each own a dataflow whose node reads the same
+        source, which no process has mounted yet, and they ask at once.
+        Process 1's ``mount/listmounts`` found no mount, and its
+        ``mount/mount`` is on its way (the window) when process 0 asks. Each
+        process kept its mounts of a source one at a time with a lock of its
+        own memory, so process 0 found no mount either and mounted the source,
+        and rclone refused process 1's ``mount/mount``, as the folder holds a
+        mount (:data:`ALREADY_MOUNTED`): process 1 kept the source down for a
+        minute, for rclone's words."""
+        from utk_curio.backend.tests._support.two_processes import Window, race
+
+        _home, _proxy_port, source, _port = start(2)
+        window = Window()
+        service_folder = tmp_path / "service"
+
+        def process_1():
+            self._become(1)
+            service = OneServiceOfTheStart(service_folder, window)
+            found = self._mounts(service, FakeFolders(service), tmp_path).ensure(source)
+            assert found.mounted, f"process 1's mount of the source is {found.state}, for {found.reason!r}"
+
+        def process_0():
+            service = OneServiceOfTheStart(service_folder)
+            return self._mounts(service, FakeFolders(service), tmp_path).ensure(source)
+
+        raced = race(window, process_1, process_0, monkeypatch)
+
+        assert raced.child_error == "", raced.child_error
+        assert raced.here.mounted, f"process 0's mount of the source is {raced.here.state}, for {raced.here.reason!r}"
+        assert list(OneServiceOfTheStart(service_folder).mounts) == [POINT]
+
+    def test_a_process_that_waited_behind_a_failed_mount_keeps_its_reason_and_asks_nothing(
+            self, start, tmp_path, monkeypatch):
+        """The source's bucket refuses listing, and processes 1 and 0 ask for
+        it at once: process 0 waits for the source's lock of the start while
+        process 1 tries and fails. Process 0 then answers process 1's reason,
+        for the minute it stands, and asks the service nothing, as a thread
+        behind a failed mount does in one process: in turn, each of a start's
+        sixteen processes would try a broken source again, and hold its
+        request for each try before it."""
+        from utk_curio.backend.tests._support.two_processes import Window, race
+
+        _home, _proxy_port, source, _port = start(2)
+        window = Window()
+        service_folder = tmp_path / "service"
+
+        def refusing(service):
+            folders = FakeFolders(service)
+            folders.refuse.add(NAME)
+            return folders
+
+        def process_1():
+            self._become(1)
+            service = OneServiceOfTheStart(service_folder, window)
+            found = self._mounts(service, refusing(service), tmp_path).ensure(source)
+            assert (found.state, found.reason) == ("down", REASONS["listing"]), found
+
+        def process_0():
+            service = OneServiceOfTheStart(service_folder)
+            found = self._mounts(service, refusing(service), tmp_path).ensure(source)
+            return found, service.methods()
+
+        raced = race(window, process_1, process_0, monkeypatch)
+
+        assert raced.child_error == "", raced.child_error
+        found, asked = raced.here
+        assert (found.state, found.reason) == ("down", REASONS["listing"]), found
+        assert asked == [], f"process 0 tried again the mount process 1 had just failed: {asked}"
+        assert OneServiceOfTheStart(service_folder).mounts == {}
+
+    def test_the_host_a_manifest_moved_from_is_let_through_no_more_whoever_mounted_it(self, start, tmp_path):
+        """Process 1 mounted the source at its host. Then the source's manifest
+        names another host, and process 2, which reads the source next, makes
+        its mount again there. Process 1's entry kept the old host let through
+        until the start ended, though no mount reaches it any more."""
+        home, proxy_port, source, port = start(3)
+        moved = a_manifest(f"https://{self.MOVED}:{port}/sideseeing", "chicago/")
+
+        def mounts(manifest, held=None):
+            def work():
+                service = FakeRclone()
+                if held is not None:
+                    # The service holds process 1's mount of the source.
+                    service.mounts[POINT] = fs_of(bucket_mount(held))
+                folders = ListedThroughTheProxy(service, proxy_port)
+                found = self._mounts(service, folders, tmp_path).ensure(manifest)
+                assert found.mounted, (
+                    f"the source's mount is {found.state}, for {found.reason!r}: home's proxy answered its listing "
+                    f"{folders.answers}"
+                )
+                assert service.mounts[POINT] == fs_of(bucket_mount(manifest))
+            return work
+
+        error = self._in_process(1, mounts(source))
+        assert error == "", error
+        assert home.admits(self.HOST, port)
+        error = self._in_process(2, mounts(moved, held=source))
+        assert error == "", error
+
+        assert home.admits(self.MOVED, port)
+        assert not home.admits(self.HOST, port), (
+            "home's proxy still lets through the host the source's manifest named before process 2 made its "
+            "mount again at another host"
+        )
+
+    def test_another_process_names_curios_proxy_when_it_refused_the_bucket(self, start, tmp_path):
+        """Process 1 mounts a source whose host takes no connection: home's
+        proxy refuses each of rclone's requests (502), so rclone's listing
+        fails, which FUSE gives Curio as EIO alone. Process 1 cannot ask the
+        way out, which needs the proxy that listens, in home: the source was
+        down for "the bucket refuses listing", though no request reached the
+        bucket."""
+        _home, proxy_port, _source, _port = start(2)
+        with socket.create_server(("127.0.0.1", 0)) as gone:
+            closed = gone.getsockname()[1]
+        unreachable = a_manifest(f"https://{self.HOST}:{closed}/sideseeing", "chicago/")
+
+        def names_the_proxy():
+            service = FakeRclone()
+            folders = ListedThroughTheProxy(service, proxy_port)
+            found = self._mounts(service, folders, tmp_path).ensure(unreachable)
+            assert folders.answers and all(" 502 " in answer for answer in folders.answers), folders.answers
+            assert found.state == "down", found
+            assert "Curio's bucket mount proxy refused" in found.reason and "took a connection" in found.reason, (
+                f"process 1's source is down for {found.reason!r}, where home's proxy refused its requests: "
+                f"{folders.answers}"
+            )
+
+        error = self._in_process(1, names_the_proxy)
+        assert error == "", error
 
 
 class TestTheFolders:

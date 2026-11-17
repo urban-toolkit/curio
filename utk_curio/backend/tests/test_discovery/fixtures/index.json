@@ -216,8 +216,225 @@
     },
     "status": 200
   },
-  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=": {
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=&delimiter=%2F": {
     "file": "idot/01.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W042%2Fdata%2F": {
+    "file": "idot/06.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W042%2Fimages%2F&delimiter=%2F": {
+    "file": "idot/02.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W042%2Fimages%2F2025_07%2F": {
+    "file": "idot/07.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W042%2Fimages%2F2025_08%2F": {
+    "file": "idot/08.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W042%2Fimages%2F2025_09%2F": {
+    "file": "idot/09.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W042%2Fimages%2F2025_10%2F": {
+    "file": "idot/10.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W042%2Fimages%2F2025_11%2F": {
+    "file": "idot/11.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W042%2Fimages%2F2025_12%2F": {
+    "file": "idot/12.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W065%2Fdata%2F": {
+    "file": "idot/13.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W065%2Fimages%2F&delimiter=%2F": {
+    "file": "idot/03.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W065%2Fimages%2F2025_07%2F": {
+    "file": "idot/14.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W065%2Fimages%2F2025_08%2F": {
+    "file": "idot/15.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W065%2Fimages%2F2025_09%2F": {
+    "file": "idot/16.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W065%2Fimages%2F2025_10%2F": {
+    "file": "idot/17.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W065%2Fimages%2F2025_11%2F": {
+    "file": "idot/18.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W065%2Fimages%2F2025_12%2F": {
+    "file": "idot/19.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W065%2Fimages%2F2026_01%2F": {
+    "file": "idot/20.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W065%2Fimages%2F2026_02%2F": {
+    "file": "idot/21.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W065%2Fimages%2F2026_03%2F": {
+    "file": "idot/22.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W06E%2Fdata%2F": {
+    "file": "idot/23.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W06E%2Fimages%2F&delimiter=%2F": {
+    "file": "idot/04.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W06E%2Fimages%2F2025_07%2F": {
+    "file": "idot/24.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W06E%2Fimages%2F2025_08%2F": {
+    "file": "idot/25.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W06E%2Fimages%2F2025_09%2F": {
+    "file": "idot/26.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W06E%2Fimages%2F2025_10%2F": {
+    "file": "idot/27.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W06E%2Fimages%2F2025_11%2F": {
+    "file": "idot/28.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W06E%2Fimages%2F2025_12%2F": {
+    "file": "idot/29.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W06E%2Fimages%2F2026_01%2F": {
+    "file": "idot/30.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=W06E%2Fimages%2F2026_02%2F": {
+    "file": "idot/31.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=sample%2Fdata%2F": {
+    "file": "idot/32.xml",
+    "headers": {
+      "Content-Type": "application/xml"
+    },
+    "status": 200
+  },
+  "https://data.urbantk.org/idot/?list-type=2&max-keys=1000&prefix=sample%2Fimages%2F&delimiter=%2F": {
+    "file": "idot/05.xml",
     "headers": {
       "Content-Type": "application/xml"
     },

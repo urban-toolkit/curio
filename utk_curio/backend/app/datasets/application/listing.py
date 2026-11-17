@@ -778,9 +778,30 @@ class CatalogListing:
         # via ``liveOutputs``); the preview service then reports the dataset as
         # unavailable instead of reading the raw path off disk.
         item["path"] = self._paths._resolve_item_path(item)
-        return self.preview_service.preview(
-            item, row_limit=row_limit, offset=offset, part_index=part_index
+        # A collection's files are found by the id its rows are named by: the
+        # item's, whose index this is.
+        collection = (
+            self._collection_files(item["id"], dataflow_id) if item.get("format") == "collection" else None
         )
+        return self.preview_service.preview(
+            item, row_limit=row_limit, offset=offset, part_index=part_index, collection=collection,
+        )
+
+    def _collection_files(self, dataset_id: str, dataflow_id: str | None) -> dict[str, Any]:
+        """Where collection *dataset_id*'s files are for node code of this
+        account in *dataflow_id*, found as a run finds them
+        (``exec_collections.resolve_collections``), so its preview shows the
+        ``path`` node code gets; ``{}`` when none is found."""
+        from utk_curio.backend.app.discovery.application.exec_collections import resolve_collections
+
+        try:
+            found = resolve_collections(
+                [dataset_id], self._paths._user_key(), user=self.user, dataflow_id=dataflow_id,
+            )
+        except Exception:  # noqa: BLE001 - the index previews whatever its files
+            logger.warning("Could not find where collection %s's files are", dataset_id, exc_info=True)
+            return {}
+        return found.get(dataset_id) or {}
 
     def _layer_group_members(
         self,

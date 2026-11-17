@@ -160,8 +160,10 @@ def save(checkpoint: Path, model_config, words: Path) -> Path:
 
 
 def weights(tmp_path_factory, model_config) -> Path:
-    """The package's folder under ``--model-weights-dir``, its entry holding a
-    tiny SAM 3 of *model_config* and its processor: every file the package's
+    """The folder the sandbox reads the package's weights from, as a
+    revision's folder under ``--model-weights-dir``
+    (``<dir>/<id>@<major>/<revision>/``) holds them: its entry holding a tiny
+    SAM 3 of *model_config* and its processor, every file the package's
     ``fetch`` lists."""
     root = tmp_path_factory.mktemp("model-weights") / PACKAGE.name
     save(root / _entry(), model_config, tmp_path_factory.mktemp("tokenizer"))
