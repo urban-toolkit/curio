@@ -25,10 +25,12 @@ defaults/seed-state convention - startup is never blockable by a bad JSON).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 import re
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -48,7 +50,7 @@ from utk_curio.backend.app.packages.application import (
     provisioning as packages_provisioning,
     store_reads as packages_store_reads,
 )
-from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError
+from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError, PipSpecError
 from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
 
 log = logging.getLogger(__name__)
@@ -278,28 +280,66 @@ def uninstall_user_library(user_key: str, name: str):
 
 def uninstall_user_libraries(user_key: str, names):
     """:func:`uninstall_user_library` for several libraries at once: one pip
-    run, or one walk of the user's tree under its lock.
+    run, or one walk of the user's tree, holding where they are imported
+    from (:func:`_holding_where_nodes_import`).
 
-    A package's removal takes its libraries back through this
-    (:func:`take_back_after_a_removal`), so they leave from where their
-    install put them, as the dialog's do.
+    A removal takes its libraries back through this
+    (:func:`take_back_after_a_removal`), inside the hold it decided in, so
+    they leave from where their install put them.
     """
     names = list(names)
-    if not packages_backend_runtime.per_user_node_envs():
-        return packages_pip_runner.uninstall_python_deps(names)
-    overlay = packages_backend_runtime.user_node_overlay_dir(user_key)
-    if not overlay.is_dir():
-        # Nothing was ever installed for this user; saying so beats raising.
-        return packages_pip_runner.UninstallReport(removed=[], kept=names)
-    with target_lock(user_key, packages_provisioning.NODE_OVERLAY_LOCK):
-        return packages_pip_runner.uninstall_python_deps_from_target(names, str(overlay))
+    with _holding_where_nodes_import(user_key) as tree:
+        if tree is None:
+            return packages_pip_runner.uninstall_python_deps(names)
+        if not tree.is_dir():
+            # Nothing was ever installed for this user; saying so beats raising.
+            return packages_pip_runner.UninstallReport(removed=[], kept=names)
+        return packages_pip_runner.uninstall_python_deps_from_target(names, str(tree))
+
+
+#: The accounts whose node libraries each thread holds now
+#: (:func:`_holding_where_nodes_import`).
+_holding = threading.local()
+
+
+@contextlib.contextmanager
+def _holding_where_nodes_import(user_key: str):
+    """Hold where *user_key*'s node code imports its libraries from, as an
+    add holds it to decide what to put there. Under per-user node
+    environments that is the account's own tree: the lock its changes take
+    in this process (``target_locks``), then the one pip's runs into it take
+    across processes (``pip_runner.holding_tree``), in that order, as
+    ``provisioning.provision_user_node_deps`` takes them. Without them it is
+    this interpreter: the lock pip's runs into it take, inside which
+    ``pip_runner.install_python_deps`` decides what to install
+    (``pip_runner.holding_the_interpreter``). Yields the tree, or None for
+    the interpreter. A thread that holds it already holds it on."""
+    tree = (packages_backend_runtime.user_node_overlay_dir(user_key)
+            if packages_backend_runtime.per_user_node_envs() else None)
+    held = getattr(_holding, "accounts", None)
+    if held is None:
+        held = _holding.accounts = set()
+    if user_key in held:
+        yield tree
+        return
+    with contextlib.ExitStack() as stack:
+        if tree is None:
+            stack.enter_context(packages_pip_runner.holding_the_interpreter())
+        else:
+            stack.enter_context(target_lock(user_key, packages_provisioning.NODE_OVERLAY_LOCK))
+            stack.enter_context(packages_pip_runner.holding_tree(tree))
+        held.add(user_key)
+        try:
+            yield tree
+        finally:
+            held.discard(user_key)
 
 
 def names_to_take_back(user_key: str, names) -> list[str]:
     """The libraries among *names* that may leave where *user_key*'s nodes
     import them from, sorted: those nothing asks for any more, which Curio
-    put there. A package's removal (:func:`take_back_after_a_removal`) and
-    the dialog's Remove both take back only these.
+    put there. Every removal takes back only these
+    (:func:`take_back_after_a_removal`), the dialog's Remove among them.
 
     Under fork isolation that is the account's own tree, which no other
     account imports from and only Curio's pip writes, so only the account's
@@ -367,9 +407,9 @@ def give_way_to_the_image(user_key: str) -> list[str]:
 def give_way_after_a_removal(user_key: str) -> list[str]:
     """:func:`give_way_to_the_image` after a removal: of a package, from its
     last dataflow, from the account, or by a start's take-off of a guest
-    package, or of the version an Update replaced, each after the take-back
-    of its libraries (:func:`take_back_after_a_removal`), or of a library in
-    Installed libraries (:func:`remove_standalone_library`).
+    package, of the copy an install over it replaced, or of a library in
+    Installed libraries, each after the take-back of its libraries
+    (:func:`take_back_after_a_removal`).
     A library another package of the account's still asks for stays, and its
     copy in the account's tree, which the removed package or list entry put
     there, goes where the image's copy meets every range left, as the next
@@ -401,28 +441,43 @@ def node_libraries_of(user_key: str, dir_name: str) -> set[str]:
 
 
 def take_back_after_a_removal(user_key: str, libraries) -> list[str]:
-    """After packages left *user_key*'s store, take back *libraries*, those
-    their installs put where node code imports from (:func:`node_libraries_of`),
-    that nothing asks for now and Curio put there (:func:`names_to_take_back`,
-    which the libraries dialog's Remove asks too), from where their install
-    put them (:func:`uninstall_user_libraries`), then give way to the image
-    (:func:`give_way_after_a_removal`): a library another package still asks
-    for stays, and its copy in the account's tree goes where the image's
-    meets every range left, as the next start would take it.
+    """After packages, or a library of the account's own list, left
+    *user_key*'s account, take back *libraries*, those their installs put
+    where node code imports from (:func:`node_libraries_of`), that nothing
+    asks for now and Curio put there (:func:`names_to_take_back`), from where
+    their install put them (:func:`uninstall_user_libraries`), then give way
+    to the image (:func:`give_way_after_a_removal`): a library another
+    package still asks for stays, and its copy in the account's tree goes
+    where the image's meets every range left, as the next start would take
+    it.
+
+    The take-back decides and uninstalls in one hold of where node code
+    imports from (:func:`_holding_where_nodes_import`), the hold an add
+    decides what to install in. Decided before it, an add landing between
+    the decision and the uninstall found a copy there, installed nothing,
+    and the uninstall then took that copy out.
 
     What a removal gets: Remove from project on a package's last dataflow
     (``prune.py``), Remove from account (``store_install.remove_package``),
-    an Update, for what the version it replaced declared
-    (``store_install.install_from_catalog``), and a guest package a start
-    takes off (``guest_packages``). The removal is done already, so a failed
-    uninstall is logged and the libraries stay. The names taken back, sorted."""
-    names = names_to_take_back(user_key, libraries) if libraries else []
-    if names:
+    each install over a store copy, for the copy it replaced
+    (``store_install.install_package_from_archive``: an Update, Import
+    package with replace, the wizard's Save and install, a model downloaded
+    again, an applied build's rollback), an applied build once it can no
+    longer roll back (``builder/promotion.confirm_nodes_created``), a guest
+    package a start takes off (``guest_packages``), and a library's Remove in
+    Installed libraries (:func:`remove_standalone_library`). The removal is
+    done already, so a failed uninstall is logged and the libraries stay. The
+    names taken back, sorted."""
+    names: list[str] = []
+    if libraries:
         try:
-            uninstall_user_libraries(user_key, names)
-        except (PipInstallError, OSError) as exc:
+            with _holding_where_nodes_import(user_key):
+                names = names_to_take_back(user_key, libraries)
+                if names:
+                    uninstall_user_libraries(user_key, names)
+        except (PipInstallError, PipSpecError, OSError) as exc:
             log.warning("Account %s's libraries %s could not be taken back after a removal: %s",
-                        user_key, names, exc)
+                        user_key, names or sorted(libraries), exc)
             names = []
     give_way_after_a_removal(user_key)
     return names
@@ -516,28 +571,24 @@ def add_standalone_library(user_key: str, kind: str, spec: str) -> dict:
 
 
 def remove_standalone_library(user_key: str, kind: str, spec: str) -> dict:
-    """Drop a standalone library and pip-uninstall it, as a package's removal
-    takes its libraries back (:func:`names_to_take_back`): only when nothing
-    else still asks for it, a package or a list, and only what Curio put
-    there. Under per-user node environments only the account's own packages
-    and list count: another user's list describes another user's tree, so
-    asking it would refuse to remove a library from yours because someone
-    else installed it in theirs. Without them, one interpreter serves every
-    account, so every account's packages and lists count (#309), and a
-    library this server's pip did not install, such as one the dialog found
-    already installed, stays. A library a package still asks for stays, and
-    under per-user node environments its copy in the account's tree goes
-    where the image's meets every range left (:func:`give_way_after_a_removal`)."""
+    """Drop a standalone library and take it back, as a package's removal
+    takes its libraries back (:func:`take_back_after_a_removal`): it is
+    uninstalled only when nothing else still asks for it, a package or a
+    list, and only when Curio put it there. Under per-user node environments
+    only the account's own packages and list count: another user's list
+    describes another user's tree, so asking it would refuse to remove a
+    library from yours because someone else installed it in theirs. Without
+    them, one interpreter serves every account, so every account's packages
+    and lists count (#309), and a library this server's pip did not install,
+    such as one the dialog found already installed, stays. A library a
+    package still asks for stays, and under per-user node environments its
+    copy in the account's tree goes where the image's meets every range left
+    (:func:`give_way_after_a_removal`)."""
     name, _ = split_lib_spec(spec)
     # A malformed name escaped the pip error below and read as a 500 before
     # #309; the route maps PipSpecError to a 400.
     packages_pip_runner.validate_python_requirement(name)
     # Off the list first: the list is one of what asks for the library.
     remove_library(user_key, kind, spec)
-    if name in names_to_take_back(user_key, [name]):
-        try:
-            uninstall_user_library(user_key, name)
-        except PipInstallError as exc:
-            log.warning("library remove: pip uninstall %s failed: %s", name, exc)
-    give_way_after_a_removal(user_key)
+    take_back_after_a_removal(user_key, [name])
     return {"standalone": list_standalone(user_key)}
