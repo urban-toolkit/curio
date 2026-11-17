@@ -570,7 +570,8 @@ class TestFailures:
         folders.refuse.add(NAME)
 
         self._down(rig, REASONS["listing"])
-        assert service.methods()[-2:] == ["mount/mount", "mount/unmount"]
+        # The service reached Curio's proxy, so the refusal is the bucket's.
+        assert service.methods()[-3:] == ["mount/mount", "operations/list", "mount/unmount"]
 
     def test_a_mount_that_did_not_reach_this_container_is_unmounted(self, rig):
         _mounts, service, folders, _clock, _proxy = rig
@@ -603,6 +604,36 @@ class TestFailures:
         )
         assert "Curio's proxy" in found.reason
         assert POINT not in service.mounts
+
+    def test_the_proxy_named_is_the_one_on_port_3128(self, rig):
+        mounts, service, folders, _clock, _proxy = rig
+        service.way_out = False
+        folders.refuse.add(NAME)
+
+        assert mounts.ensure(PATH_STYLE).reason == REASONS["proxy"] == (
+            "the mount service cannot reach Curio's proxy on port 3128"
+        )
+
+    def test_a_way_out_still_trying_at_its_deadline_is_not_the_service_lost(self, rig):
+        mounts, service, folders, _clock, _proxy = rig
+        bucket_mount_check.record(bm.SelfTest(True, None, "passed"))
+        service.way_out = "timeout"
+        folders.refuse.add(NAME)
+
+        assert mounts.ensure(PATH_STYLE).reason == REASONS["proxy"]
+        assert bucket_mount_check.status() == {"state": "passed", "problem": None}
+
+    def test_with_the_proxy_in_another_process_a_failed_listing_keeps_its_reason(self, tmp_path):
+        """In a start of several backend processes the home process runs the
+        proxy, and this one cannot tell whether the service reaches it."""
+        service = FakeRclone()
+        folders = FakeFolders(service)
+        folders.refuse.add(NAME)
+        mounts = BucketMountSources(service, tmp_path, proxy=MountProxy(), folders=folders, resolver=resolver,
+                                    list_seconds=0.3)
+
+        assert mounts.ensure(PATH_STYLE).reason == REASONS["listing"]
+        assert "operations/list" not in service.methods()
 
     def test_a_listing_with_no_answer_holds_one_thread_and_never_the_caller(self, rig):
         mounts, service, folders, clock, _proxy = rig
@@ -808,7 +839,7 @@ class TestTheMonitorLine:
         mounts, _service, _folders, _clock, _proxy = rig
         bucket_mount_check.record(bm.SelfTest(False, "no-service", "nothing answers on /run/x/rc.sock"))
         assert bucket_mount_check.status()["state"] == "unavailable"
-        monkeypatch.setattr(bm, "self_test_from_env", lambda: bm.SelfTest(True, None, "passed"))
+        monkeypatch.setattr(bm, "self_test_from_env", lambda **_settings: bm.SelfTest(True, None, "passed"))
         reconciled = []
         monkeypatch.setattr(sources_module, "reconcile_at_start", lambda: reconciled.append(True))
 

@@ -441,8 +441,10 @@ To start a stack with the service:
 
 It works when `docker compose ps` shows `bucket-mounts` as `(healthy)` and
 `/monitor`'s **Deployment** shows **Bucket mounts** *on, self-test passed*.
-While Curio tests the service after a start, the line says *on, self-test
-running*.
+The self-test passes when the service mounts a test folder, node code's
+account reads it in Curio's container, and the service reaches Curio's proxy,
+its one way out to the buckets. While Curio tests the service after a start,
+the line says *on, self-test running*.
 
 ## 2. Configure Caddy
 
@@ -769,6 +771,7 @@ flooding it cannot push real errors out of the log.
 | A node says *Curio could not write the weights of ...* | The server cannot write the folder the weights download into: give the folder `--model-weights-dir` names to the container's root ([Model weights a package fetches](#model-weights-a-package-fetches)). |
 | `docker compose up` cannot start `bucket-mounts` | The host lacks one of the three things [Bucket mounts](#bucket-mounts) checks: `/dev/fuse`, a shared mount where the mounts live, or the loaded AppArmor profile. |
 | `/monitor` shows **Bucket mounts** *unavailable* | Curio's test of the mount service failed, for the reason the line gives. Recent errors holds the details, and `docker compose logs bucket-mounts` the service's side. |
+| **Bucket mounts** says the mount service *could not reach Curio's proxy on port 3128*, or adding a bucket's files says it *cannot reach* it | The service's container does not reach port 3128 of Curio's container, where Curio's proxy listens on the backend's `--backend-host`. Keep both containers on the overlay's `bucket-mounts` network, and the backend on `--backend-host 0.0.0.0`, as `docker-compose.deploy.yml` starts it. |
 | Nodes fail and you cannot see why | Open `/monitor`. The error log there holds the last failures with their tracebacks, and survives longer than `.curio/messages.log`, which is truncated on every launch. |
 | `/monitor` says the sandbox is unreachable | The sandbox process is down or not answering within 3s. The rest of the page stays current; check `docker compose logs curio`. |
 

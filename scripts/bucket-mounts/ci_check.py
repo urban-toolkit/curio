@@ -5,7 +5,12 @@ Each runs the backend's own code, discovery/infrastructure/bucket_mounts.py,
 loaded by its path: the stand-in has the checkout, not Curio's libraries.
 
     selftest       the self-test the backend runs as it starts, which must read
-                   as an execution account that is not root
+                   as an execution account that is not root and reach Curio's
+                   proxy (discovery/infrastructure/mount_proxy.py, run here as
+                   the backend runs it): with the proxy on this container's
+                   own 127.0.0.1, out of the service's reach, it must fail for
+                   the way out; with the proxy where the service's HTTPS_PROXY
+                   points, every address of this container, it must pass
     source-mount   mount two sources' buckets at once, as the backend mounts
                    them (application/bucket_mount_sources.py): rclone takes
                    the parameters, names each mount as the backend expects,
@@ -26,23 +31,43 @@ from __future__ import annotations
 
 import errno
 import importlib.util
+import logging
 import os
 import sys
 import threading
 import time
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-MODULE = ROOT / "utk_curio" / "backend" / "app" / "discovery" / "infrastructure" / "bucket_mounts.py"
+APP = ROOT / "utk_curio" / "backend" / "app"
+MODULE = APP / "discovery" / "infrastructure" / "bucket_mounts.py"
+PROXY = APP / "discovery" / "infrastructure" / "mount_proxy.py"
+POLICY = APP / "common" / "egress_policy.py"
 
 
-def load():
-    """bucket_mounts.py, loaded by its path."""
-    spec = importlib.util.spec_from_file_location("bucket_mounts", MODULE)
+def _by_path(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def load():
+    """bucket_mounts.py, loaded by its path."""
+    return _by_path("bucket_mounts", MODULE)
+
+
+def proxy_module():
+    """mount_proxy.py, loaded by its path too, with the one module of Curio
+    it imports, the egress policy, which imports none, put where it imports
+    it from: through their packages, the import would run the backend's
+    app/__init__.py, which needs Curio's libraries."""
+    common = types.ModuleType("utk_curio.backend.app.common")
+    common.egress_policy = _by_path("utk_curio.backend.app.common.egress_policy", POLICY)
+    sys.modules[common.__name__] = common
+    return _by_path("mount_proxy", PROXY)
 
 
 def listed(path: Path) -> bool:
@@ -66,11 +91,29 @@ def account_of(mounts):
 
 def selftest(mounts) -> int:
     account_of(mounts)
-    outcome = mounts.self_test_from_env()
-    if outcome is None:
-        return fail("the environment names no mount service")
-    print(f"self-test: passed={outcome.passed} problem={outcome.problem}: {outcome.detail}")
+    proxies = proxy_module()
+    # As the home process of a start of several started it once: on its own
+    # 127.0.0.1, where the service's container cannot reach it.
+    outcome = _self_test(mounts, proxies.MountProxy(), "127.0.0.1")
+    if outcome.passed or outcome.problem != "no-way-out":
+        return fail(f"with Curio's proxy out of the service's reach, the self-test gave passed={outcome.passed} "
+                    f"problem={outcome.problem}, where the way out must fail")
+    outcome = _self_test(mounts, proxies.MountProxy(), "0.0.0.0")
     return 0 if outcome.passed else fail(mounts.PROBLEMS.get(outcome.problem, outcome.problem))
+
+
+def _self_test(mounts, proxy, host: str):
+    """The self-test, with *proxy* listening on *host* at the proxy's port."""
+    proxy.start(host, mounts.PROXY_PORT)
+    try:
+        outcome = mounts.self_test_from_env(proxy=proxy)
+    finally:
+        proxy.stop()
+    if outcome is None:
+        raise SystemExit(fail("the environment names no mount service"))
+    print(f"self-test with Curio's proxy on {host} port {mounts.PROXY_PORT}: "
+          f"passed={outcome.passed} problem={outcome.problem}: {outcome.detail}")
+    return outcome
 
 
 #: Two sources' mounts: the shipped Sentinel-2 source's bucket, virtual-hosted
@@ -256,6 +299,8 @@ def main(argv: list[str]) -> int:
     if len(argv) != 2 or argv[1] not in CHECKS:
         print(f"usage: {argv[0]} {{{','.join(CHECKS)}}}")
         return 2
+    # The proxy's own lines, as the backend logs them.
+    logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
     return CHECKS[argv[1]](load())
 
 

@@ -2042,10 +2042,12 @@ jobs:
   # A real FUSE mount, through the bucket mount service of
   # docker-compose.bucket-mounts.yml (docs/ARCHITECTURE.md, "Bucket mounts"),
   # beside a stand-in for Curio's container (docker-compose.ci-bucket-mounts.yml).
-  # The backend's own self-test reads the test mount as a non-root account;
-  # then the service is killed, which leaves its mount dead in the stand-in,
-  # and its next start must clear that mount before the self-test passes again
-  # (scripts/bucket-mounts/ci_check.py).
+  # The backend's own self-test reads the test mount as a non-root account and
+  # has the service reach Curio's proxy, which runs in the stand-in: on the
+  # stand-in's own 127.0.0.1 it must fail, and where the service's HTTPS_PROXY
+  # points it must pass. Then the service is killed, which leaves its mount
+  # dead in the stand-in, and its next start must clear that mount before the
+  # self-test passes again (scripts/bucket-mounts/ci_check.py).
   #
   # On ubuntu-latest only: the job loads the service's AppArmor profile into
   # the runner's kernel (sudo apparmor_parser), which only a VM runner may do;
@@ -2083,7 +2085,9 @@ jobs:
       - name: 🚀 Start the service beside a stand-in for Curio
         run: docker compose up -d --wait --wait-timeout 180
 
-      - name: 🧪 The self-test, reading as a non-root account
+      # Curio's proxy out of the service's reach, then where its HTTPS_PROXY
+      # points: the self-test fails for the way out, then passes.
+      - name: 🧪 The self-test, reading as a non-root account and reaching Curio's proxy
         run: docker compose exec -T curio python /curio/scripts/bucket-mounts/ci_check.py selftest
 
       # Two buckets mounted at once as the backend mounts a source: rclone
