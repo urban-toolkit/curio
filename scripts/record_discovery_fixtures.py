@@ -81,6 +81,8 @@ STORAGE_PLAN = {
     "source.huggingface.documentation-images@1": {"slug": "huggingface"},
     "source.sideseeing.street-captures@1": {
         "slug": "sideseeing",
+        # gps-files lists the gps table's files, so Cache files reads its
+        # stand-in too: rows 4.5 to 6.7 s after the walk below began.
         "tables": {
             "gps": "download/storage/sideseeing/gps.csv",
             "sensors-one": "download/storage/sideseeing/sensors.one.csv",
