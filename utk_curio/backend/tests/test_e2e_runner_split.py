@@ -79,6 +79,24 @@ class ClassificationTest(unittest.TestCase):
         self.assertTrue(runner_split.item_needs_webgpu(case("29-pytorch-street-photos.json")))
         self.assertFalse(runner_split.item_needs_webgpu(case("16-simple-view-tables-and-images.json")))
 
+    def test_example_31_runs_on_the_gpu_runner_and_not_on_the_isolated_stack(self):
+        """Example 31's Track Objects runs SAM 3 in its package's module, so
+        no node's code imports torch itself: its Autark map is what puts it on
+        the GPU runner, where SAM 3 runs on CUDA. The isolated stack, a CPU
+        runner's, whose browser has no WebGPU, does not run it."""
+        example = EXAMPLES / "31-sideseeing-objects-along-a-walk.json"
+        self.assertTrue(runner_split.dataflow_needs_webgpu(str(example)))
+        self.assertFalse(runner_split.dataflow_runs_torch(str(example)))
+        item = SimpleNamespace(
+            get_closest_marker=lambda name: None,
+            module=SimpleNamespace(__name__="utk_curio.backend.tests.test_frontend.test_workflows"),
+            callspec=SimpleNamespace(params={"loaded_workflow": str(example)}),
+        )
+        self.assertTrue(runner_split.item_needs_webgpu(item))
+        workflow = (REPO / ".github" / "workflows" / "docker-compose.yml").read_text(encoding="utf-8")
+        (isolated,) = re.findall(r"^\s*ISOLATED_WORKFLOWS: (\S+)\s*$", workflow, re.M)
+        self.assertNotIn(example.name, isolated.split(","))
+
     def test_a_walk_needs_webgpu_through_its_example_or_its_script(self):
         def plain(ctx):
             ctx.capture("canvas")
