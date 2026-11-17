@@ -37,6 +37,15 @@ nodes are measured. One test holds animation frames and ResizeObserver
 callbacks back from the page's first script, and checks that the viewport wait
 frames every node before the first frame.
 
+A fit lands where it means to only on an unscrolled canvas. React Flow's
+wrapper hides its overflow and pans by its viewport's transform, but a scroll
+into view of a node past the pane's edge, which Playwright makes before it
+plays or clicks one (``play_node``), scrolls the wrapper, and React Flow never
+scrolls it back: every node is then drawn that far off where a fit sets it.
+Example 31's map close-up came out 368 px to the left so, under the palette
+dock (#1533). One test scrolls a far node into view and checks that a fit then
+draws the near node where it drew it before.
+
 Run::
 
     CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/test_frame_nodes_e2e.py -v
@@ -179,6 +188,18 @@ _NODE_BOX_JS = """(id) => {
 _IN_WINDOW_JS = """(id) => {
     const r = document.querySelector(`.react-flow__node[data-id="${id}"]`).getBoundingClientRect();
     return r.left >= 0 && r.top >= 0 && r.right <= window.innerWidth && r.bottom <= window.innerHeight;
+}"""
+
+# How far React Flow's wrapper is scrolled, or null with no canvas.
+_CANVAS_SCROLL_JS = """() => {
+    const wrapper = document.querySelector('.react-flow');
+    return wrapper ? { left: wrapper.scrollLeft, top: wrapper.scrollTop } : null;
+}"""
+
+# The right edge of the palette dock over the canvas's left side, in the window.
+_DOCK_RIGHT_JS = """() => {
+    const dock = document.getElementById('tools-palette-dock');
+    return dock ? dock.getBoundingClientRect().right : null;
 }"""
 
 # The fit the viewport wait calls, wrapped so its first call keeps the page's
@@ -406,6 +427,37 @@ def test_frame_nodes_frames_a_node_after_a_long_task_keeps_the_page_from_reading
     assert _in_window(box), (
         f"frame_nodes returned after {took:.1f} s with {FAR} at {box}, outside the window"
     )
+
+
+def test_frame_nodes_draws_a_node_where_its_fit_sets_it_after_a_scroll_into_view(
+    app_frontend: "FrontendPage", current_server: str, page,
+):
+    require_project_page()
+    require_user_auth()
+    _open_dataflow(page, app_frontend.base_url, current_server, username="frame_nodes_scrolled_e2e")
+    frame_nodes(page, [NEAR])
+    framed = _box(page, NEAR)
+    dock = page.evaluate(_DOCK_RIGHT_JS)
+    assert dock is not None and framed["left"] >= dock, (
+        f"frame_nodes drew {NEAR} at {framed}, not right of the palette dock's edge at {dock}"
+    )
+
+    # As play_node does before it plays a node past the pane's edge.
+    node_locator(page, MIDDLE).scroll_into_view_if_needed()
+    scrolled = page.evaluate(_CANVAS_SCROLL_JS)
+    assert scrolled and (scrolled["left"] or scrolled["top"]), (
+        f"the scroll into view of {MIDDLE} left React Flow's wrapper at {scrolled}, so this test "
+        "proves nothing"
+    )
+
+    frame_nodes(page, [NEAR])
+
+    box = _box(page, NEAR)
+    assert box == framed, (
+        f"after a scroll into view left React Flow's wrapper at {scrolled}, frame_nodes drew {NEAR} "
+        f"at {box}, not where the same fit drew it before, {framed}"
+    )
+    assert page.evaluate(_CANVAS_SCROLL_JS) == {"left": 0, "top": 0}
 
 
 def test_frame_nodes_still_fails_while_the_viewport_keeps_moving(

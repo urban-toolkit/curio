@@ -48,6 +48,7 @@ include docs/examples/data/chicago_downtown.osm.pbf
 include docs/examples/data/chicago_loop.osm.pbf
 include docs/examples/data/lower_mnt.osm.pbf
 include docs/examples/data/niteroi.osm.pbf
+include docs/examples/data/west_loop.osm.pbf
 include docs/examples/data/niteroi_lst_verao_2001_2024.tif
 include docs/examples/data/access_score.geojson
 include docs/examples/data/shape-cnn.npz

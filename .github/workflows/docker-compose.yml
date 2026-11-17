@@ -1259,7 +1259,9 @@ jobs:
       # runner's GPU inside the curio container, and its torch multiplies on it, as plain
       # Python (utk_curio/sandbox/tests/test_cuda_mlp.py and test_cuda_torch.py)
       # and as a node in an isolated child that runs as curio-exec under seccomp
-      # at the deploy's budget (test_cuda_isolated.py); only -m cuda selects them. After the e2e
+      # at the deploy's budget (test_cuda_isolated.py), and the tiny SAM 3 Track Objects runs
+      # twice in each of torch's modes, each mode in a process of its own, whose two runs must
+      # agree (test_cuda_sam3.py); only -m cuda selects them. After the e2e
       # tests, so a failure here never hides theirs, and their browsers have
       # let go of the GPU's memory by then. Its JUnit joins this job's results,
       # which ci-report's every-test-ran check reads.
@@ -1272,7 +1274,7 @@ jobs:
           status=0
           docker compose -p curio-ci exec -T curio python -m pytest \
             utk_curio/sandbox/tests/test_cuda_mlp.py utk_curio/sandbox/tests/test_cuda_torch.py \
-            utk_curio/sandbox/tests/test_cuda_isolated.py \
+            utk_curio/sandbox/tests/test_cuda_isolated.py utk_curio/sandbox/tests/test_cuda_sam3.py \
             -m cuda -v -s --junitxml=/app/.curio/ci-report/cuda.xml || status=$?
           cp .curio/ci-report/cuda.xml ci-report/cuda.xml || status=1
           # Every CUDA test passed, both GPU runs among them: an -m expression
@@ -1284,7 +1286,9 @@ jobs:
           needed = {"test_a_tiny_mlp_runs_on_the_gpu_and_matches_numpy",
                     "test_torch_is_the_cuda_12_9_build_and_multiplies_on_the_gpu",
                     "test_a_node_in_an_isolated_child_reaches_the_gpu_through_torch",
-                    "test_a_node_holds_more_of_the_gpu_than_the_address_space_cap_allowed"}
+                    "test_a_node_holds_more_of_the_gpu_than_the_address_space_cap_allowed",
+                    "test_tiny_track_objects_repeats_run_to_run_on_the_gpu[default]",
+                    "test_tiny_track_objects_repeats_run_to_run_on_the_gpu[deterministic]"}
           if len(passed) != len(cases) or not needed <= set(passed):
               sys.exit(f"::error::the CUDA tests did not all pass: {len(passed)} of {len(cases)}")
           print(f"OK: {len(passed)} CUDA tests passed")
