@@ -161,7 +161,7 @@ The video starts 0.36 s after `taken_at` (`mediaStartDateTime` in the walk's `me
 
 ## The map
 
-The streets of the extract, with the fixes on top, colored by their time in the walk. `pointSize` is a point's radius in meters on the ground, so each fix is a disc 4 m across. The fixes are the layer that picks, which is the one the player's range lights.
+The streets of the extract, with the fixes on top, colored by their time in the walk. `pointSize` is a point's radius in meters on the ground, so each fix is a disc 8 m across. The fixes are the layer that picks, which is the one the player's range lights.
 
 ```json
 {
@@ -193,7 +193,7 @@ The streets of the extract, with the fixes on top, colored by their time in the 
       {
         "dataRef": "[!! input_0 !!]",
         "isPick": true,
-        "pointSize": 2,
+        "pointSize": 4,
         "getFnv": "t_s",
         "getFnvType": "quantitative",
         "colorMapInterpolator": "interpolateViridis",
