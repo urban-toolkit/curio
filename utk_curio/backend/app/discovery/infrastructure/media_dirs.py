@@ -17,11 +17,19 @@ Every hosted guest signs in to one shared account, so what one guest's nodes
 derive is kept in a folder of that guest's own in the account's media folder
 (``derived_root``), named as their datasets are, and goes when the server
 starts (``forget_visitors``).
+
+A dashboard viewer's step runs as the dataflow's owner, so what it derives is
+kept in a folder of the step's own in the owner's media folder
+(``derived_root``'s *kept*), named after its kept session
+(``kept_media_name``), and goes with the step's kept output
+(``forget_kept``, ``runs/kept.py``): a viewer's run never writes where the
+owner's runs write, and two viewers' runs never write in one folder.
 """
 
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import os
 from pathlib import Path
 
@@ -82,21 +90,23 @@ def room_files(user_key: str) -> tuple[Path, Path]:
 def forget_media(user_key: str, dataset_id: str) -> None:
     """Remove what Curio made from one dataset's files: its thumbnails, its
     cached bucket files, and the files nodes derived from it, in the media
-    folder and in each visitor's own folder in it (:func:`derived_root`).
+    folder, in each visitor's own folder in it and in each dashboard viewer's
+    step's (:func:`derived_root`).
 
     Never the files themselves, which are the source's.
     """
     import shutil
 
-    from utk_curio.sandbox.util.collections import DERIVED
+    from utk_curio.sandbox.util.collections import DERIVED, KEPT_MEDIA
 
     segment = _dataset_segment(dataset_id)
     key = user_key_segment(user_key)
     root = media_work_root(user_key)
     folders = [users_base() / key / "media-cache" / segment, root / "objects" / segment]
     roots = [root]
-    if (root / VISITORS).is_dir():
-        roots += [visitor for visitor in (root / VISITORS).iterdir() if visitor.is_dir()]
+    for group in (VISITORS, KEPT_MEDIA):
+        if (root / group).is_dir():
+            roots += [folder for folder in (root / group).iterdir() if folder.is_dir()]
     derived = sorted({folder for types in DERIVED.values() for folder, _kind in types.values()})
     folders += [where / folder / segment for where in roots for folder in derived]
     for folder in folders:
@@ -119,17 +129,48 @@ def media_work_root(user_key: str) -> Path:
 VISITORS = "visitors"
 
 
-def derived_root(user_key: str, visitor: str | None = None) -> Path:
+def derived_root(user_key: str, visitor: str | None = None, *, kept: str | None = None) -> Path:
     """Where the files nodes derive from a collection's files are, without
     creating it: *user_key*'s media folder, or *visitor*'s own folder in it,
     ``<media>/visitors/<visitor>/``, for a hosted guest named as
-    ``visitor_copies.visitor_of`` names them, never by the sign-in. A node
-    makes the folder as it writes there, so under isolation it is the
-    execution user's."""
+    ``visitor_copies.visitor_of`` names them, never by the sign-in. *kept*,
+    the name of a dashboard viewer's step's folder (:func:`kept_media_name`),
+    is that step's own, ``<media>/kept/<kept>/``, whoever its run serves; a
+    name of any other shape raises ValueError. A node makes the folder as it
+    writes there, so under isolation it is the execution user's."""
     root = media_work_root(user_key)
+    if kept is not None:
+        from utk_curio.sandbox.util.collections import KEPT_MEDIA, KEPT_NAME_RE
+
+        if not isinstance(kept, str) or not KEPT_NAME_RE.match(kept):
+            raise ValueError("not the folder of a dashboard viewer's step")
+        return root / KEPT_MEDIA / kept
     if not visitor:
         return root
     return root / VISITORS / validate_component(visitor, field="visitor")
+
+
+def kept_media_name(session_id: str) -> str:
+    """The name of the folder of the dashboard viewer's step that runs in the
+    kept session *session_id* (:func:`derived_root`): a digest of the
+    session, never the session itself, since the URLs of the rows the step
+    derives name the folder (``collections.KEPT_NAME_RE``)."""
+    return "k" + hashlib.sha256(f"curio-kept-media:{session_id}".encode("utf-8")).hexdigest()[:32]
+
+
+def forget_kept(user_key: str, names) -> None:
+    """Remove the folders *names* of dashboard viewers' steps
+    (:func:`kept_media_name`) in *user_key*'s media folder, with what the
+    steps derived: their kept outputs went, or the step kept none
+    (``runs/kept.py``, ``runs/viewer.py``)."""
+    import shutil
+
+    for name in names or ():
+        try:
+            folder = derived_root(user_key, kept=name)
+        except ValueError:
+            continue
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 def forget_visitors(user_key: str) -> None:

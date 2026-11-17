@@ -2458,15 +2458,20 @@ def delete_project(user, project_id: str) -> None:
     again, so there was no way back from the mis-click.
     """
     from utk_curio.backend.app.projects.seed import is_example_project
+    from utk_curio.backend.app.runs import kept
 
     repo.get_for_user(project_id, user.id)  # 404s before anything is touched
     if is_example_project(user, project_id):
         raise ProjectError(
             "Example dataflows ship with Curio and cannot be deleted.", 403
         )
+    # The row's delete takes its kept outputs; what the viewers' steps derived
+    # goes from the owner's media folder with them.
+    viewers = kept.viewers_sessions(project_id)
     storage.delete_tree(_user_dir_key(user), project_id)
     repo.delete_project_row(project_id, user.id)
     db.session.commit()
+    kept.forget_kept_media([(project_id, session) for session in viewers], user_key=_user_dir_key(user))
 
 
 # ---------------------------------------------------------------------------

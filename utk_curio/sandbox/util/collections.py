@@ -19,8 +19,11 @@ video (an overlay of it, say), a table of what a node found in a video, a
 recording's window, a photo's overlay. ``DERIVED`` lists what may be derived
 from a file of each kind. A ``tag`` tells two derived files of one file and
 time apart: an overlay's names the model that drew it. The backend serves the
-file back under the same id (``DERIVED_ID_RE``). Both paths, in process and
-isolated, build these from one function, so they cannot disagree.
+file back under the same id (``DERIVED_ID_RE``). A dashboard viewer's step
+writes in a folder of its own (``KEPT_MEDIA``), which the URLs of the rows it
+derives name (``?kept=<name>``), so a row is read from where its run wrote
+it. Both paths, in process and isolated, build these from one function, so
+they cannot disagree.
 """
 
 from __future__ import annotations
@@ -70,22 +73,52 @@ DERIVED = {
 #: files but those of a ``files`` resource, and the derived ones but a table.
 DRAWN = ("image", "frame", "raster", "video", "audio")
 
+#: In an account's media folder, the folder of each dashboard viewer's step's
+#: own, ``<media>/kept/<name>/``, which the backend makes the step's media
+#: directory (``media_dirs.derived_root``): what a viewer's run derives is
+#: written there, never where the owner's runs write theirs under the same
+#: ids. The rows such a step derives name the folder in their URLs
+#: (``?kept=<name>``), so a row is read from where its run wrote it, whoever
+#: reads it and however many steps it passes through.
+KEPT_MEDIA = "kept"
 
-def media_url(dataset_id, file_id, variant="thumb"):
-    return f"/api/datasets/{dataset_id}/media/{file_id}?variant={variant}"
+#: The name of such a folder: a digest of its step's kept session
+#: (``media_dirs.kept_media_name``), never the session itself.
+KEPT_NAME_RE = re.compile(r"^k[0-9a-f]{32}$")
 
 
-def media_urls(dataset_id, file_id, kind):
+def kept_of(media_dir):
+    """The name of the folder of a dashboard viewer's step that *media_dir*
+    is (``<media>/kept/<name>``, ``KEPT_MEDIA``), or None for any other media
+    directory: an account's own, or a hosted guest's folder in it."""
+    if not media_dir:
+        return None
+    parent, name = os.path.split(os.path.normpath(str(media_dir)))
+    if os.path.basename(parent) == KEPT_MEDIA and KEPT_NAME_RE.match(name):
+        return name
+    return None
+
+
+def media_url(dataset_id, file_id, variant="thumb", kept=None):
+    """The media route's URL of one file, ``variant`` its ``thumb``,
+    ``poster`` or ``original``; *kept* names the folder of the dashboard
+    viewer's step that derived it (``KEPT_MEDIA``)."""
+    url = f"/api/datasets/{dataset_id}/media/{file_id}?variant={variant}"
+    return f"{url}&kept={kept}" if kept else url
+
+
+def media_urls(dataset_id, file_id, kind, kept=None):
     """A row's ``thumbnail``, ``image_url`` and ``audio_url``, by the row's
     *kind*: what Simple View draws; the image a reader of images reads (the
     file itself, or a video's or a raster's thumbnail); a recording's file,
     for a player. None of them for a kind the media route draws nothing of:
     a table, and a ``file``, which node code reads from its ``path``. A
-    collection's rows and a derived file's row get them here."""
+    collection's rows and a derived file's row get them here; *kept* is the
+    folder a dashboard viewer's step derived the file in (``KEPT_MEDIA``)."""
     if kind not in DRAWN:
         return {"thumbnail": None, "image_url": None, "audio_url": None}
-    thumbnail = media_url(dataset_id, file_id)
-    original = media_url(dataset_id, file_id, "original")
+    thumbnail = media_url(dataset_id, file_id, kept=kept)
+    original = media_url(dataset_id, file_id, "original", kept=kept)
     if kind in ("image", "frame"):
         image_url = original
     elif kind in ("raster", "video"):
@@ -157,9 +190,12 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
     isolated, whose files the parent keeps, and the run's own folder in
     process (``util/output_files.py``); without one, the media directory's
     ``outputs``. *output_names*, a list, gets each name ``curio_output_file``
-    gives, which an isolated child reports to its parent.
+    gives, which an isolated child reports to its parent. A *media_dir* that
+    is a dashboard viewer's step's own folder (``KEPT_MEDIA``) is named in
+    the URLs of every row ``curio_derived_file`` gives.
     """
     known = dict(collections or {})
+    kept = kept_of(media_dir)
 
     def curio_load_collection(dataset_id):
         dataset_id = str(dataset_id)
@@ -231,8 +267,9 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
         collection's row of its kind has: ``file_id``, ``dataset_id``,
         ``kind``, ``path``, ``thumbnail``, ``image_url`` and ``audio_url``,
         the last three None for a table, which later nodes read by its
-        ``path``. The directory exists when this returns; the node writes the
-        bytes to ``path``.
+        ``path``. A dashboard viewer's step's URLs name its own folder
+        (``kept``), where it writes. The directory exists when this returns;
+        the node writes the bytes to ``path``.
         """
         dataset_id, file_id = str(dataset_id), str(file_id)
         if not _ID_RE.match(dataset_id) or not _FILE_ID_RE.match(file_id):
@@ -252,7 +289,7 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
         served_as = derived_id(file_id, t_ms, tag, suffix)
         return {
             "file_id": served_as, "dataset_id": dataset_id, "kind": row_kind, "path": path,
-            **media_urls(dataset_id, served_as, row_kind),
+            **media_urls(dataset_id, served_as, row_kind, kept),
         }
 
     def curio_output_file(name):

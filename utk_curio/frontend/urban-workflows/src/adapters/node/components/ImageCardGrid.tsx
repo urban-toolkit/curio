@@ -3,7 +3,7 @@ import CSS from 'csstype';
 import { ImageSource, resolveImageSources } from '../../../utils/imageColumns';
 import { backendUrl } from '../../../utils/backendUrl';
 import { apiFetch } from '../../../utils/authApi';
-import { collectionMediaPath } from '../../../utils/collectionMedia';
+import { collectionMediaPath, keptOfRow } from '../../../utils/collectionMedia';
 import { useAuthedObjectUrl } from '../../../utils/useAuthedObjectUrl';
 import { PLAYER_TELLS_EVERY_MS } from '../../../utils/playerSelection';
 
@@ -104,13 +104,17 @@ function FrameImage({ source, alt, dataflowId }: { source: ImageSource; alt: str
   );
 }
 
-/** A collection row that plays: a video or a recording, named by its ids. */
-function playable(row: Record<string, unknown>): { datasetId: string; fileId: string; kind: 'video' | 'audio' } | null {
+/** A collection row that plays: a video or a recording, named by its ids,
+ *  and the folder of the dashboard viewer's step that derived it, which its
+ *  URLs name (`keptOfRow`). */
+function playable(
+  row: Record<string, unknown>,
+): { datasetId: string; fileId: string; kind: 'video' | 'audio'; kept: string | null } | null {
   const { kind, dataset_id: datasetId, file_id: fileId } = row;
   if ((kind !== 'video' && kind !== 'audio') || typeof datasetId !== 'string' || typeof fileId !== 'string') {
     return null;
   }
-  return { datasetId, fileId, kind };
+  return { datasetId, fileId, kind, kept: keptOfRow(row, datasetId, fileId) };
 }
 
 const playButtonStyle: CSS.Properties = {
@@ -164,11 +168,15 @@ const playerStyle: CSS.Properties = { width: '100%', display: 'block' };
  * starts, is sought or stops, and while it plays at most every
  * PLAYER_TELLS_EVERY_MS. A time it already told is not told again, and when
  * the player closes it is told null.
+ *
+ * *kept* is the folder of the dashboard viewer's step that derived the file,
+ * which the link names, so it plays that step's file.
  */
-function Player({ datasetId, fileId, kind, dataflowId, onTime }: {
+function Player({ datasetId, fileId, kind, kept, dataflowId, onTime }: {
   datasetId: string;
   fileId: string;
   kind: 'video' | 'audio';
+  kept: string | null;
   dataflowId: string | null;
   onTime?: (at: number | null) => void;
 }) {
@@ -192,9 +200,10 @@ function Player({ datasetId, fileId, kind, dataflowId, onTime }: {
 
   useEffect(() => {
     let cancelled = false;
+    const where = kept ? `?kept=${encodeURIComponent(kept)}` : '';
     apiFetch<{ url: string; expiresIn: number }>(
       collectionMediaPath(
-        `/api/datasets/${encodeURIComponent(datasetId)}/media/${encodeURIComponent(fileId)}/link`,
+        `/api/datasets/${encodeURIComponent(datasetId)}/media/${encodeURIComponent(fileId)}/link${where}`,
         dataflowId,
       ),
       { method: 'POST' },
@@ -209,7 +218,7 @@ function Player({ datasetId, fileId, kind, dataflowId, onTime }: {
     return () => {
       cancelled = true;
     };
-  }, [datasetId, fileId, dataflowId, lapse]);
+  }, [datasetId, fileId, kept, dataflowId, lapse]);
 
   if (error) return <div style={{ ...captionStyle, color: '#b42318' }}>{error}</div>;
   if (!link) return <div style={{ ...imgStyle, background: '#f8fafc' }} />;
@@ -327,7 +336,7 @@ export default function ImageCardGrid({
               <div onClick={(e) => e.stopPropagation()}>
                 {/* One player per file and dataflow: where it stood belongs to that file. */}
                 <Player
-                  key={`${media.datasetId}/${media.fileId}/${dataflowId ?? ''}`}
+                  key={`${media.datasetId}/${media.fileId}/${media.kept ?? ''}/${dataflowId ?? ''}`}
                   {...media}
                   dataflowId={dataflowId}
                   onTime={onPlayed ? (at) => onPlayed(row, at) : undefined}

@@ -14,7 +14,9 @@ keeps at most :data:`MAX_KEPT_BYTES` of what its viewers made; past it the
 least recently used go. What the owner's and the editors' runs made
 (``made_by``) is bounded by its days alone: their open canvases show it. An
 output goes with its artifacts: the sandbox forgets the session that made them
-(``common/kept_sessions.py``).
+(``common/kept_sessions.py``); a viewer's output also goes with the files its
+step derived, in that step's own folder (``media_dirs.derived_root``,
+:func:`forget_kept_media`).
 The sweep runs every :data:`PRUNE_INTERVAL_HOURS` (:func:`start_prune_scheduler`),
 at the end of each run, and at the first start after a restart.
 
@@ -581,18 +583,70 @@ def keep(
     return ids
 
 
+def _viewers_media(entries) -> list:
+    """``(project_id, session_id)`` of the *entries* a viewer's step made,
+    whose folders hold what the steps derived (:func:`forget_kept_media`)."""
+    return [(entry.project_id, entry.session_id) for entry in entries if entry.made_by == MADE_BY_VIEWER]
+
+
+def forget_kept_media(entries, *, user_key: Optional[str] = None) -> None:
+    """Remove the folders of the viewers' steps whose kept outputs went, with
+    the files the steps derived (``media_dirs.derived_root``): *entries* are
+    their ``(project_id, session_id)``. In *user_key*'s media folder when
+    given, else in that of each dataflow's owner, the shared guest's for a
+    hosted guest's copy or new dataflow, which has no row. Best effort: a
+    sweep never fails on it."""
+    from utk_curio.backend.app.discovery.infrastructure import media_dirs
+
+    by_dataflow: dict = {}
+    for project_id, session_id in entries or ():
+        by_dataflow.setdefault(project_id, []).append(session_id)
+    for project_id, session_ids in by_dataflow.items():
+        try:
+            key = user_key or _media_owner(project_id)
+            media_dirs.forget_kept(key, [media_dirs.kept_media_name(session_id) for session_id in session_ids])
+        except Exception:  # noqa: BLE001 - the next sweep of the media goes on
+            log.warning("could not remove what the viewers' steps of %s derived", project_id)
+
+
+def _media_owner(project_id: str) -> str:
+    """The store whose media folder holds what the viewers' steps on
+    *project_id* derived: its owner's, as the steps run as the owner, or the
+    shared guest's for a hosted guest's copy or new dataflow."""
+    from utk_curio.backend.app.common.user_storage import GUEST_KEY
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.projects.services import _owner_user_dir_key
+
+    project = db.session.get(Project, project_id)
+    return _owner_user_dir_key(project) if project is not None else GUEST_KEY
+
+
+def viewers_sessions(project_id: str) -> list:
+    """The sessions of the outputs viewers' steps kept on *project_id*, whose
+    folders a delete of the dataflow removes (:func:`forget_kept_media`)."""
+    return [
+        session_id for (session_id,) in KeptStepOutput.query.with_entities(KeptStepOutput.session_id)
+        .filter_by(project_id=project_id, made_by=MADE_BY_VIEWER).all()
+    ]
+
+
 def forget_node(project_id: str, node_id: str) -> int:
     """Drop every output kept for *node_id* of *project_id*, whoever made it,
     as deleting the node's saved output asks; their artifacts go once the
-    delete commits (:func:`_note_deleted_entry`). Returns how many went."""
+    delete commits (:func:`_note_deleted_entry`), and the files the viewers'
+    steps derived with them. Returns how many went."""
+    media: list = []
 
     def _apply():
         entries = KeptStepOutput.query.filter_by(project_id=project_id, node_id=node_id).all()
+        media[:] = _viewers_media(entries)
         for entry in entries:
             db.session.delete(entry)
         return len(entries)
 
-    return commit_with_retry(_apply)
+    gone = commit_with_retry(_apply)
+    forget_kept_media(media)
+    return gone
 
 
 def forget_dataflows(project_ids) -> int:
@@ -600,18 +654,23 @@ def forget_dataflows(project_ids) -> int:
     the server's start drops the hosted guests' copies of dataflows
     (``projects/visitor_copies.drop_all``), which have no row whose delete
     would take them; their artifacts go once the delete commits
-    (:func:`_note_deleted_entry`). Returns how many went."""
+    (:func:`_note_deleted_entry`), and the files the viewers' steps derived
+    with them. Returns how many went."""
     ids = list(dict.fromkeys(str(project_id) for project_id in project_ids or () if project_id))
     if not ids:
         return 0
+    media: list = []
 
     def _apply():
         entries = KeptStepOutput.query.filter(KeptStepOutput.project_id.in_(ids)).all()
+        media[:] = _viewers_media(entries)
         for entry in entries:
             db.session.delete(entry)
         return len(entries)
 
-    return commit_with_retry(_apply)
+    gone = commit_with_retry(_apply)
+    forget_kept_media(media)
+    return gone
 
 
 def readable_output(project_id: str, file_name: str, token: Optional[str]) -> KeptStepOutput:
@@ -651,8 +710,9 @@ def prune(now=None) -> int:
     """Drop the kept outputs past their time (:data:`KEPT_DAYS`, or
     :data:`TAB_OWN_HOURS` for a tab's own), and, on a dataflow whose outputs
     from one maker pass :data:`MAX_KEPT_BYTES`, that maker's least recently
-    used until they are under. Their artifacts go with them. Returns how many
-    went."""
+    used until they are under. Their artifacts go with them, and so do the
+    files the viewers' steps derived (:func:`forget_kept_media`). Returns how
+    many went."""
     now = now or naive_utc_now()
     expired = KeptStepOutput.query.filter(db.not_(_alive(now))).all()
     going = {entry.id: entry for entry in expired}
@@ -684,6 +744,7 @@ def prune(now=None) -> int:
     if not going:
         return 0
     sessions = [entry.session_id for entry in going.values()]
+    media = _viewers_media(going.values())
     ids = list(going)
 
     def _apply():
@@ -692,6 +753,7 @@ def prune(now=None) -> int:
 
     commit_with_retry(_apply)
     forget_sessions(sessions)
+    forget_kept_media(media)
     return len(ids)
 
 
