@@ -37,10 +37,15 @@ export function absoluteDate(iso?: string | null): string {
   });
 }
 
+/** *count* with its noun, one or many: ``1 row``, ``2 rows``. */
+function counted(count: number, one: string, many: string): string {
+  return `${count.toLocaleString()} ${count === 1 ? one : many}`;
+}
+
 export function datasetCount(dataset?: DatasetCatalogItem | null): string | null {
   if (!dataset) return null;
-  if (dataset.featureCount != null) return `${dataset.featureCount.toLocaleString()} features`;
-  if (dataset.rowCount != null) return `${dataset.rowCount.toLocaleString()} rows`;
+  if (dataset.featureCount != null) return counted(dataset.featureCount, "feature", "features");
+  if (dataset.rowCount != null) return counted(dataset.rowCount, "row", "rows");
   return null;
 }
 
@@ -49,7 +54,7 @@ export function datasetCount(dataset?: DatasetCatalogItem | null): string | null
 export function datasetCountCompact(dataset?: DatasetCatalogItem | null): string | null {
   if (!dataset) return null;
   if (dataset.featureCount != null) return `${dataset.featureCount.toLocaleString()} feat.`;
-  if (dataset.rowCount != null) return `${dataset.rowCount.toLocaleString()} rows`;
+  if (dataset.rowCount != null) return counted(dataset.rowCount, "row", "rows");
   return null;
 }
 

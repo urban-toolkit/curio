@@ -1,3 +1,4 @@
+import { datasetCount as datasetCountInFull } from "../../components/datasets/catalog/datasetDetailHelpers";
 import { consumeLabel, metaLeft } from "../../pages/dataCatalog/dataCatalogBrowseFormat";
 import type { DatasetCatalogItem } from "../../services/datasetCatalog";
 
@@ -53,5 +54,24 @@ describe("metaLeft consumer segment", () => {
 
   test("defaults to '0 nodes consume' when the count is absent", () => {
     expect(metaLeft(makeDataset({}))).toContain("0 nodes consume");
+  });
+});
+
+describe("the count of a dataset's rows or features (a card, a browse row, the details)", () => {
+  test("one row is a row, as one node consumes", () => {
+    expect(metaLeft(makeDataset({ rowCount: 1, sizeBytes: 5939 }))).toBe("1 row | 5.8 KB | 0 nodes consume");
+    expect(datasetCountInFull(makeDataset({ rowCount: 1 }))).toBe("1 row");
+  });
+
+  test("any other count of rows is rows", () => {
+    expect(metaLeft(makeDataset({ rowCount: 0 }))).toBe("0 rows | 0 nodes consume");
+    expect(metaLeft(makeDataset({ rowCount: 288 }))).toBe("288 rows | 0 nodes consume");
+    expect(datasetCountInFull(makeDataset({ rowCount: 288 }))).toBe("288 rows");
+  });
+
+  test("one feature is a feature in full, and feat. in the compact count", () => {
+    expect(datasetCountInFull(makeDataset({ featureCount: 1 }))).toBe("1 feature");
+    expect(datasetCountInFull(makeDataset({ featureCount: 2 }))).toBe("2 features");
+    expect(metaLeft(makeDataset({ featureCount: 1 }))).toBe("1 feat. | 0 nodes consume");
   });
 });
