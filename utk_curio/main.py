@@ -366,7 +366,7 @@ def main():
         help=(
             "Directory the weights of model packages that fetch them download "
             "into on first use, and are read from in place: "
-            "<PATH>/<package id>@<major>/, as scripts/fetch_model_weights.py "
+            "<PATH>/<package id>@<major>/<revision>/, as scripts/fetch_model_weights.py "
             "--into PATH writes them too (sets CURIO_MODEL_WEIGHTS_DIR). "
             "Without it, each package's own folder. The server writes it, and "
             "every account must be able to read it: isolated nodes read it."

@@ -842,8 +842,9 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         # package's fetch names on their first use, before the sandbox runs
         # the node and its time limit starts. A download that fails ends the
         # run here, with its own error, where the sandbox would only say "not
-        # available".
-        with left_out_files.failures() as unavailable:
+        # available". A run on the server shows how far each has come on the
+        # node, and that they are over once this block ends.
+        with left_out_files.failures() as unavailable, left_out_files.downloading():
             dataset_paths = resolve_dataset_paths(run.code, run.dataflow_id, user, dataset_formats)
             exec_models = resolve_models(run.code, user, run.dataflow_id)
             exec_model_weights = resolve_fetched_weights(run.code, user, run.dataflow_id) if exec_models else {}

@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 REPO = Path(__file__).resolve().parents[4]
 #: The files the pip package leaves out, the one place a test writes them:
@@ -81,21 +83,62 @@ def catalog_copy(folder: str, root: Path) -> Path:
     return root / folder
 
 
+_RANGE = re.compile(r"^bytes=(\d+)-$")
+
+
+def answer_with(body: bytes, headers=None, *, ranges: bool = True, cut=None, chunk_size=None):
+    """``(status, headers, location, chunks)``: *body* as a file host answers
+    a ``GET`` sent with *headers*. A ``Range: bytes=<n>-`` gets the rest of
+    the file from byte n, 206 with its ``Content-Range``, or 416 when n is
+    not before the file's end; with *ranges* False the host ignores it and
+    sends the whole file, as a host that serves no ranges does. *cut*, an
+    exception, is raised once the first half of what is sent has gone, as a
+    connection dropped mid-download does. *chunk_size* sends the bytes in
+    chunks of that many."""
+    asked = _RANGE.match(str((headers or {}).get("Range") or "")) if ranges else None
+    start = int(asked.group(1)) if asked else None
+    if start is not None and start >= len(body):
+        return 416, {"Content-Range": f"bytes */{len(body)}", "Content-Length": "0"}, None, iter([])
+    sent = body if start is None else body[start:]
+    answer = {"Content-Length": str(len(sent))}
+    if start is not None:
+        answer["Content-Range"] = f"bytes {start}-{len(body) - 1}/{len(body)}"
+    half = len(sent) // 2
+
+    def pieces(part: bytes):
+        step = chunk_size or max(len(part), 1)
+        for offset in range(0, len(part), step):
+            yield part[offset:offset + step]
+
+    def chunks():
+        yield from pieces(sent[:half])
+        if cut is not None:
+            raise cut
+        yield from pieces(sent[half:])
+
+    return (200 if start is None else 206), answer, None, chunks()
+
+
 class FakeGitHub:
     """Answers ``GET https://raw.githubusercontent.com/urban-toolkit/curio/<commit>/<path>``
-    with the repository's bytes, or with *contents* (``{repo path: bytes}``).
+    with the repository's bytes, or with *contents* (``{repo path: bytes}``),
+    as :func:`answer_with` answers.
 
-    Keeps every URL asked for. *fail*, an exception, is raised instead of
-    answering; *cut* sends the first half of the body and then raises it,
-    as a connection dropped mid-download does.
+    Keeps every URL asked for, and every request with the headers it was sent
+    with. *fail*, an exception, is raised instead of answering; *cut* sends
+    the first half of the body and then raises it, as a connection dropped
+    mid-download does. *ranges* and *chunk_size* are :func:`answer_with`'s.
     """
 
-    def __init__(self, *, commit: str = COMMIT, contents=None, fail=None, cut=None):
+    def __init__(self, *, commit: str = COMMIT, contents=None, fail=None, cut=None, ranges=True, chunk_size=None):
         self.commit = commit
         self.contents = dict(contents or {})
         self.fail = fail
         self.cut = cut
+        self.ranges = ranges
+        self.chunk_size = chunk_size
         self.urls: list[str] = []
+        self.requests: list[SimpleNamespace] = []
         self.hosts: list[str] = []
 
     def resolver(self, host: str) -> list[str]:
@@ -110,22 +153,14 @@ class FakeGitHub:
 
     def request(self, method, url, *, trusted_host=None, headers=None, timeout_s=None):
         self.urls.append(url)
+        self.requests.append(SimpleNamespace(method=method, url=url, headers=dict(headers or {})))
         if self.fail is not None:
             raise self.fail
         prefix = f"{RAW}/{self.commit}/"
         body = self.body(url[len(prefix):]) if method == "GET" and url.startswith(prefix) else None
         if body is None:
             return 404, {"Content-Length": "14"}, None, iter([b"404: Not Found"])
-        half = len(body) // 2
-        cut = self.cut
-
-        def chunks():
-            yield body[:half]
-            if cut is not None:
-                raise cut
-            yield body[half:]
-
-        return 200, {"Content-Length": str(len(body))}, None, chunks()
+        return answer_with(body, headers, ranges=self.ranges, cut=self.cut, chunk_size=self.chunk_size)
 
     def serve(self, monkeypatch) -> "FakeGitHub":
         """Make this the GitHub the module under test downloads from."""

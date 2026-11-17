@@ -121,6 +121,8 @@ def test_media_offers_the_calls_of_its_video_and_audio_nodes_from_media_collecti
         "media_collections": [
             ("sample_video_frames", "sample_video_frames(media, derived_file, *, every_seconds=2.0, max_frames_per_video=300)"),
             ("split_audio", "split_audio(media, derived_file, *, window_seconds=5.0, max_windows_per_recording=2000)"),
+            ("split_video", "split_video(media, derived_file, cuts=None, *, block_seconds=60.0, width=960, "
+                            "max_frames=30000)"),
         ],
     }
 
@@ -252,6 +254,7 @@ def test_mosaic_rasters_lists_medias_module_then_rasterizations_whose_mosaic_its
     assert [(f["name"], f["insert"]) for f in listed["modules"][0]["functions"]] == [
         ("sample_video_frames", "sample_video_frames(media, derived_file)"),
         ("split_audio", "split_audio(media, derived_file)"),
+        ("split_video", "split_video(media, derived_file)"),
     ]
     assert [(f["name"], f["insert"]) for f in listed["modules"][1]["functions"]] == [
         ("mosaic_rasters", "mosaic_rasters(tiles, path, crs=crs, dtype=dtype)"),

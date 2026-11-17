@@ -27,7 +27,10 @@ changed:
    ``<bucket-mounts-dir>/<sourceId>@<major>`` here;
 4. that folder listed within :data:`LIST_SECONDS`, on a thread of its own, so
    a hung FUSE call holds that thread and never the caller: the listing proves
-   the mount reached this container and the bucket answers listings.
+   the mount reached this container and the bucket answers listings. A
+   listing that fails or gives no answer is followed by the self-test's way
+   out (``bucket_mounts.reaches_proxy``): a service that reaches no proxy is
+   named so, not the bucket.
 
 A failure keeps one reason (:data:`REASONS`, the host check's own words, or
 rclone's error), unmounts what it made, and the source is not tried again for
@@ -94,6 +97,7 @@ REASONS = {
     "timeout": f"the bucket's mount gave no answer in {LIST_SECONDS:g} s",
     "listing": "the bucket refuses listing",
     "not-propagated": "the mount did not reach this container",
+    "proxy": f"the mount service cannot reach Curio's proxy on port {bucket_mounts.PROXY_PORT}",
 }
 
 #: The /monitor problem (``bucket_mounts.PROBLEMS``) of a call that found the
@@ -327,15 +331,41 @@ class BucketMountSources:
         log.info("Bucket mounts: mounted %s from %s", mount.name, fs)
 
     def _check(self, name: str, folder: Path) -> None:
-        """The mounted folder lists within the bound, and is a mount here."""
+        """The mounted folder lists within the bound, and is a mount here. A
+        listing that fails, or gives no answer, names the proxy when the
+        service reaches no proxy at all (:meth:`_proxy_unreached`)."""
         outcome, value = self._bounded(name, lambda: self.folders.list(folder))
         if outcome == "hung":
-            raise _Failed("timeout", detail=f"listing {folder} took over {self.list_seconds:g} s")
-        if outcome == "error":
+            failed = _Failed("timeout", detail=f"listing {folder} took over {self.list_seconds:g} s")
+        elif outcome == "error":
             words = getattr(value, "strerror", None) or str(value)
-            raise _Failed("listing", detail=f"listing {folder}: {words}")
-        if value is False:
+            failed = _Failed("listing", detail=f"listing {folder}: {words}")
+        elif value is False:
             raise _Failed("not-propagated", detail=f"{folder} is no mount in this container")
+        else:
+            return
+        unreached = self._proxy_unreached()
+        if unreached is not None:
+            raise unreached
+        raise failed
+
+    def _proxy_unreached(self) -> Optional[_Failed]:
+        """After a listing that failed or gave no answer: whether the service
+        reaches Curio's proxy, its one way out, as the self-test asks
+        (``bucket_mounts.reaches_proxy``), within the listing's bound. A
+        ``proxy`` failure when it does not, the service gone when nothing
+        answers on its socket, and None when it reaches the proxy, so the
+        listing's own failure stands. None too when the proxy does not listen
+        in this process, which cannot tell: another backend process of a
+        start of several runs it."""
+        if not self.proxy.listening:
+            return None
+        try:
+            reached, answered = bucket_mounts.reaches_proxy(self.client, self.proxy, timeout=self.list_seconds)
+        except bucket_mounts.RcError as error:
+            self._monitor.lost(_GONE.get(error.kind, "no-service"), error.reason)
+            return _Failed("service", detail=error.reason)
+        return None if reached else _Failed("proxy", detail=answered)
 
     def _look(self, name: str, folder: Path) -> str:
         """``mounted``, ``absent``, ``dead`` or ``hung`` (no answer in the bound)."""
@@ -564,6 +594,13 @@ def _the_proxy() -> MountProxy:
     if _proxy is None:
         _proxy = MountProxy()
     return _proxy
+
+
+def process_proxy() -> MountProxy:
+    """The process's proxy: the one :func:`start_proxy` starts, which the
+    self-test has the service reach (``bucket_mount_check``)."""
+    with _LOCK:
+        return _the_proxy()
 
 
 def start_proxy(host: str) -> bool:

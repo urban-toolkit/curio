@@ -12,6 +12,11 @@ It tunnels HTTPS, and only to where a source being mounted is:
 
 - ``CONNECT host:port`` only; any other request is answered 405. Its head must
   come within :data:`HEAD_SECONDS` and hold at most :data:`MAX_HEAD_BYTES`.
+- A (host, port) the self-test expects (:meth:`MountProxy.expect`) is
+  recorded, then refused with 403, before any other check: it is the
+  self-test's proof that the service reaches this proxy
+  (``bucket_mounts.reaches_proxy``), and it is never admitted, looked up or
+  connected to.
 - Only to a (host, port) admitted now (:meth:`MountProxy.admit`): the host of
   a source the backend mounts; 403 otherwise.
 - Every address the host resolves to must pass Curio's egress policy
@@ -109,6 +114,8 @@ class MountProxy:
         self.connect_seconds = connect_seconds
         self._lock = threading.Lock()
         self._admitted: dict[tuple[str, int], set[str]] = {}
+        #: What the self-test expects (:meth:`expect`), and whether each came.
+        self._expected: dict[tuple[str, int], bool] = {}
         self._tunnels = threading.BoundedSemaphore(max_tunnels)
         self._connections = threading.BoundedSemaphore(max_tunnels + MAX_WAITING)
         self._listener: Optional[socket.socket] = None
@@ -135,6 +142,35 @@ class MountProxy:
     def admits(self, host: str, port: int) -> bool:
         with self._lock:
             return (host.lower(), int(port)) in self._admitted
+
+    # ── the self-test's ask ────────────────────────────────────────────────
+
+    def expect(self, host: str, port: int) -> None:
+        """Answer a ``CONNECT`` to *host* at *port* here until :meth:`forget`:
+        the self-test's ask (``bucket_mounts.reaches_proxy``), recorded
+        (:meth:`heard`), then refused with 403, and never admitted, looked up
+        or connected to."""
+        with self._lock:
+            self._expected[(host.lower(), int(port))] = False
+
+    def heard(self, host: str, port: int) -> bool:
+        """Whether a ``CONNECT`` to *host* at *port* came since :meth:`expect`
+        named it."""
+        with self._lock:
+            return self._expected.get((host.lower(), int(port)), False)
+
+    def forget(self, host: str, port: int) -> None:
+        """*host* at *port* is expected no more."""
+        with self._lock:
+            self._expected.pop((host.lower(), int(port)), None)
+
+    def _heard_now(self, host: str, port: int) -> bool:
+        """Whether *host* at *port* is expected; heard from now on if so."""
+        with self._lock:
+            if (host, port) not in self._expected:
+                return False
+            self._expected[(host, port)] = True
+            return True
 
     # ── serving ────────────────────────────────────────────────────────────
 
@@ -211,6 +247,11 @@ class MountProxy:
                 raise _Refused(405, f"it asked {method[:16]}, and the proxy takes CONNECT alone")
             host, port = _authority(target)
             where = f"{host}:{port}"
+            if self._heard_now(host, port):
+                # The host is the self-test's own, which no log shows.
+                log.info("Bucket mount proxy: the mount service reached it, as its self-test asks")
+                _answer(client, 403)
+                return
             if not self.admits(host, port):
                 raise _Refused(403, "it is not the host and port of a source being mounted")
             addresses_of = self._addresses_of or egress_policy.public_addresses

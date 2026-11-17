@@ -78,6 +78,17 @@ export type RunEvent =
   | { kind: "run_started"; nodeIds: string[] }
   | { kind: "step_started"; nodeId: string; startedAt: number }
   | {
+      kind: "step_progress";
+      nodeId: string;
+      /**
+       * What the running node does, such as how far what it reads has
+       * downloaded on its first use; empty once that is over and it runs.
+       */
+      message: string;
+      done?: number;
+      total?: number | null;
+    }
+  | {
       kind: "step_finished";
       nodeId: string;
       status: StepStatus;

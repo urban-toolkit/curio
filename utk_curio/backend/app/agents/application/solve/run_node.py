@@ -107,8 +107,11 @@ def _run_inputs(user_key: str, project_id: str, spec: dict) -> dict:
     # The paths of the Data Catalog datasets the run reads, and how
     # curio_load_data reads a layer group, as Play and Solve's runs
     # resolve them: over each node's code as the run writes it, so the id
-    # a Data widget holds counts (node_run_code).
+    # a Data widget holds counts (node_run_code). A dataset whose file
+    # failed to download fails the node that reads it with the download's
+    # reason, as Play's run does.
     dataset_formats: dict = {}
+    dataset_problems: dict = {}
     dataset_paths = agents_grounding._exec_dataset_paths(
         project_id,
         *(
@@ -117,12 +120,14 @@ def _run_inputs(user_key: str, project_id: str, spec: dict) -> dict:
             if isinstance(n, dict)
         ),
         formats=dataset_formats,
+        unavailable=dataset_problems,
     )
     return {
         "session_id": artifact_session,
         "acting_user": acting_user,
         "dataset_paths": dataset_paths or None,
         "dataset_formats": dataset_formats or None,
+        "dataset_problems": dataset_problems or None,
         "collections": collections,
         "media_dir": media_dir,
         # The dataflow's template roster, which Solve's runs classify its
