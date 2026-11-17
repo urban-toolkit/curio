@@ -27,8 +27,12 @@ let mockNodeExecStatus: Record<string, string> = {};
 const mockSignalNodeExecDone = jest.fn();
 const mockPlayNodesUpTo = jest.fn();
 let mockIsRunActive = false;
-// A dashboard's page: a viewer's run going (serverRunActive), or why it stopped.
-let mockDashboard: { dashboardOn?: boolean; serverRunActive?: boolean; dashboardStopped?: string | null } = {};
+// A dashboard's page: a viewer's run going (serverRunActive), or why it stopped,
+// and how far each step's downloads on first use have come, by node.
+let mockDashboard: {
+  dashboardOn?: boolean; serverRunActive?: boolean; dashboardStopped?: string | null;
+  dashboardDownloads?: Record<string, string>;
+} = {};
 jest.mock('../../../providers/FlowProvider', () => ({
   useFlowContext: () => ({
     workflowNameRef: { current: 'test-workflow' },
@@ -510,6 +514,25 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
         expect(container.textContent).toContain('Computing...');
         expect(container.textContent).toContain('Results will be shown here once they are ready.');
         expect(container.textContent).not.toContain('Run the node');
+      });
+
+      test('while a step above it downloads on its first use, it says how far on a line under Computing...', async () => {
+        // The node that downloads, two steps up, is hidden on the dashboard:
+        // the tile says what that node says, and still names no node to run.
+        const MESSAGE = 'Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)';
+        mockEdges = WIRED;
+        mockFlowEdges = [{ id: 'e0', source: 'sam3', target: 'average' }, ...WIRED];
+        mockDashboard = { dashboardOn: true, serverRunActive: true, dashboardDownloads: { sam3: MESSAGE } };
+        try {
+          const result = await callBehavior(useSimpleVisBehavior, { input: '' } as any);
+          const { container } = render(<>{result.current.contentComponent}</>);
+          expect(container.querySelector('[data-curio-node-empty]')?.getAttribute('data-curio-node-empty')).toBe('upstream-running');
+          const lines = Array.from(container.querySelectorAll('[data-curio-node-empty] span')).map((span) => span.textContent);
+          expect(lines).toEqual(['Computing...', MESSAGE, 'Results will be shown here once they are ready.']);
+          expect(container.textContent).not.toContain('Run the node');
+        } finally {
+          mockFlowEdges = [];
+        }
       });
 
       test('says why the run stopped before it, as the page tells it', async () => {

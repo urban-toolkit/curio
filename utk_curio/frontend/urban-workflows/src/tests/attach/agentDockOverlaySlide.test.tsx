@@ -250,3 +250,35 @@ describe("AgentDockOverlay names the dataflow's agents for the chat", () => {
     expect(latest.agentNameOf("att-detached")).toBeNull();
   });
 });
+
+// A plan row's Solve (validate-node) and Run (run-node) wait while what the
+// node reads downloads on its first use. Each streams how far that has come
+// (`node_download`, an empty message once it is over), and the dock hands the
+// row's run a listener that gives the row each line, as a node's Solve
+// narrates it on its own line.
+describe("AgentDockOverlay: a plan row's Solve and Run say how far a download has come", () => {
+  const MESSAGE = "Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)";
+
+  it.each([
+    ["onSolvePlanNode", "validateNode"],
+    ["onRunPlanNode", "runNode"],
+  ])("%s hands %s a listener whose download events reach the row's line", async (prop, call) => {
+    const context = ctx([A], "a");
+    mockCtx.mockReturnValue(context);
+    render(<AgentDockOverlay />);
+    const latest = panelProps[panelProps.length - 1];
+    const lines: string[] = [];
+
+    await act(async () => { await latest[prop]("load", (line: string) => lines.push(line)); });
+
+    const asked = (context as any)[call] as jest.Mock;
+    expect(asked).toHaveBeenCalledWith("a", { ref: "load" }, expect.any(Function));
+    const onEvent = asked.mock.calls[0][2];
+    act(() => {
+      onEvent("node_executed", { nodeId: "n1", index: 0, total: 1 });
+      onEvent("node_download", { nodeId: "n1", message: MESSAGE, done: 1210000000, total: 3440000000 });
+      onEvent("node_download", { nodeId: "n1", message: "" });
+    });
+    expect(lines).toEqual([MESSAGE, ""]);
+  });
+});
