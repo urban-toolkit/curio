@@ -2259,6 +2259,104 @@ def build_standalone_dashboard(
     return body
 
 
+#: The most files one ask for a dashboard's media links names
+#: (:func:`dashboard_media_links`): a page of cards asks for its own.
+MAX_DASHBOARD_MEDIA_FILES = 500
+
+
+def dashboard_media_links(project_id: str, file_name: str, files, *, visitor: Optional[str] = None) -> list:
+    """Signed links to the files of *files* (``{datasetId, fileId, kept}``)
+    that the rows of *file_name*, an output a pinned tile of *project_id*'s
+    dashboard reads, name: ``[(dataset_id, file_id, kept, token)]``, a file
+    the rows do not name left out. Anyone who opens the dashboard may ask,
+    signed in or not, as for its payload (:func:`build_standalone_dashboard`):
+    the media route needs a sign-in and reads the caller's own collections,
+    so a tile's images and videos reach its viewers through these alone.
+
+    *file_name* is a saved output the page carries (one of a node
+    ``dashboard_source_node_ids`` gives, as the payload chooses them, a hosted
+    guest's copy's among them), or an output a run of the dashboard kept for
+    such a node that every page reads (``viewer.dashboard_output`` with no
+    token): one built on what a page sent (``private_to``) could name any of
+    the owner's files, so it has none. Its rows are read as the page reads
+    them, and every media URL in them counts (``collections.media_refs``).
+    Each link reads its file as the dataflow's owner does (``media.sign``),
+    one a viewer's step derived in that step's own folder (``kept``), and,
+    for a hosted guest who asks, as that visitor (*visitor*). Raises
+    :class:`NotFoundError` for anything else, and :class:`ProjectError` when
+    the output cannot be read now."""
+    from utk_curio.backend.app.discovery.application import media
+    from utk_curio.backend.app.projects.dashboard_payload import dashboard_source_node_ids
+    from utk_curio.backend.app.projects.template_grammars import TemplateGrammars
+    from utk_curio.sandbox.util.collections import media_refs
+
+    project = _dashboard_row(project_id)
+    if project is None or not file_name:
+        raise repo.NotFoundError("No such output on this dashboard.")
+    loaded = _visitors_new_dataflow(project_id) or _as_the_visitors_copy(
+        project_id, load_shared_project(project_id),
+    )
+    owner_key = _owner_user_dir_key(project)
+    tiles_read = dashboard_source_node_ids(loaded["spec"], TemplateGrammars.for_account(owner_key))
+    named = media_refs(_a_tiles_output(project_id, file_name, loaded, tiles_read))
+    links = []
+    for asked in files:
+        ref = (asked["datasetId"], asked["fileId"], asked.get("kept") or None)
+        if ref in named:
+            token = media.sign(project.user_id, owner_key, ref[0], ref[1], visitor=visitor, kept=ref[2])
+            links.append((*ref, token))
+    return links
+
+
+def _a_tiles_output(project_id: str, file_name: str, loaded: dict, tiles_read) -> dict:
+    """*file_name* as ``/get`` sends it, when a pinned tile reads it: a saved
+    output of a node in *tiles_read* that *loaded*, the dataflow as its
+    dashboard shows it, lists, or what a run of the dashboard kept for one,
+    shared with every page. :class:`NotFoundError` for anything else."""
+    from utk_curio.backend.app.runs import viewer
+    from utk_curio.backend.app.runs.service import RunError
+
+    saved = next((ref for ref in loaded["outputs"] if ref.get("filename") == file_name), None)
+    if saved is not None:
+        if saved.get("node_id") not in tiles_read:
+            raise repo.NotFoundError("No tile of this dashboard reads that output.")
+
+        def saved_path_of(filename: str):
+            found = saved_output_of(project_id, filename)
+            return found.path if found is not None else None
+
+        try:
+            return _dashboard_envelope_reader(saved_path_of)(file_name)
+        except Exception as exc:  # noqa: BLE001 - the page asks again
+            raise ProjectError("This output could not be read; try again in a moment.", 503) from exc
+    try:
+        entry = viewer.dashboard_output(project_id, file_name, None)
+    except RunError as exc:
+        raise repo.NotFoundError("No such output on this dashboard.") from exc
+    if entry.private_to is not None or entry.node_id not in tiles_read:
+        raise repo.NotFoundError("No tile of this dashboard reads that output.")
+    return _kept_output_envelope(file_name, entry.session_id)
+
+
+def _kept_output_envelope(file_name: str, session_id: str) -> dict:
+    """The kept output *file_name* as ``/get`` sends it, read in the session
+    that made it, as the dashboard's output routes read it."""
+    from utk_curio.backend.app.api.routes import SANDBOX_GET_TIMEOUT, _sandbox_call
+
+    resp = _sandbox_call(
+        "get", "/get", label="/get (dashboard media)", timeout=SANDBOX_GET_TIMEOUT,
+        params={"fileName": file_name, "sessionId": session_id},
+    )
+    if isinstance(resp, tuple):  # transport failure, already a Flask tuple
+        raise ProjectError("This output could not be read; try again in a moment.", 503)
+    try:
+        if resp.status_code != 200:
+            raise ProjectError("This output could not be read; try again in a moment.", 503)
+        return resp.json()
+    finally:
+        resp.close()
+
+
 # ---------------------------------------------------------------------------
 # List
 # ---------------------------------------------------------------------------
@@ -2458,15 +2556,20 @@ def delete_project(user, project_id: str) -> None:
     again, so there was no way back from the mis-click.
     """
     from utk_curio.backend.app.projects.seed import is_example_project
+    from utk_curio.backend.app.runs import kept
 
     repo.get_for_user(project_id, user.id)  # 404s before anything is touched
     if is_example_project(user, project_id):
         raise ProjectError(
             "Example dataflows ship with Curio and cannot be deleted.", 403
         )
+    # The row's delete takes its kept outputs; what the viewers' steps derived
+    # goes from the owner's media folder with them.
+    viewers = kept.viewers_media(project_id)
     storage.delete_tree(_user_dir_key(user), project_id)
     repo.delete_project_row(project_id, user.id)
     db.session.commit()
+    kept.forget_kept_media(viewers, user_key=_user_dir_key(user))
 
 
 # ---------------------------------------------------------------------------

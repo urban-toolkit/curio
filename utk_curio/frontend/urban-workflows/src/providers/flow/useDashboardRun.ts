@@ -23,12 +23,13 @@ import type { ReactFlowInstance } from "reactflow";
 import type { useToastContext } from "../ToastProvider";
 import { dashboardRunsApi, type DashboardRunEvent } from "../../services/runs/dashboardRunsApi";
 import { forgetDashboardRunFiles, rememberDashboardRunFiles } from "../../services/runs/dashboardRunFiles";
+import { forgetDashboardMedia } from "../../services/runs/dashboardMedia";
 import { askPage, forgetPageSteps, keepPageResult, pageResultNotKept } from "../../services/runs/dashboardRunSteps";
 import { dashboardSourceNodeIds } from "../../utils/dashboardLayout";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { dashboardValues, type DashboardValues } from "../../utils/widgets/dashboardControls";
 import type { IOutput } from "./flowTypes";
-import { STOPPED_MESSAGE, nodeChangeFor, type NodeChange } from "./serverRunSteps";
+import { STOPPED_MESSAGE, nodeChangeFor, showRunning, type NodeChange } from "./serverRunSteps";
 import type { StepOutcomes } from "./useStepOutcomes";
 
 interface FollowedDashboardRun {
@@ -109,11 +110,9 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
 
     const apply = (run: FollowedDashboardRun, nodeId: string, change: NodeChange | null) => {
         if (!change) return;
-        if (change.kind === "running") {
-            run.started.add(nodeId);
-            if (!run.applied.has(nodeId)) outcomes.showOnNode(nodeId, { code: "exec", content: "" });
-            return;
-        }
+        // A running node says what its run does, such as how far what it
+        // reads has downloaded, as on the canvas (useServerRun).
+        if (showRunning(change, nodeId, run, outcomes.showOnNode)) return;
         if (run.applied.has(nodeId)) return;
         run.applied.add(nodeId);
         if (change.kind === "result") {
@@ -258,6 +257,11 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
             }
             return;
         }
+        if (event.kind === "step_progress") {
+            // The step still runs: only what its node says changes.
+            apply(run, event.nodeId, nodeChangeFor(event, undefined, { started: true }));
+            return;
+        }
         if (event.kind === "step_finished" && event.status === "error") run.failed.push(event.nodeId);
         if (event.kind !== "step_started" && event.kind !== "step_finished") return;
         if (event.kind === "step_finished" && event.status === "browser") {
@@ -347,11 +351,13 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         if ([...sources].some((nodeId) => !savedRef.current?.outputs.has(nodeId))) void start();
     };
 
-    // Leaving the page stops following; what the runs made is not read again.
+    // Leaving the page stops following; what the runs made is not read again,
+    // nor are the files the dashboard's outputs name.
     useEffect(() => () => {
         const run = followedRef.current;
         if (run) { run.done = true; run.controller.abort(); }
         forgetDashboardRunFiles();
+        forgetDashboardMedia();
         forgetPageSteps();
     }, []);
 

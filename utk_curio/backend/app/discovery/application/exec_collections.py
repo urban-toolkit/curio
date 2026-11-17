@@ -15,6 +15,7 @@ from utk_curio.backend.app.datasets.domain.code_refs import (
 
 def resolve_exec_collections(
     code: str, user_key: str | None, *, user=None, dataflow_id: str | None = None,
+    kept: str | None = None,
 ) -> tuple[dict, str | None]:
     """Where the files of each collection *code* reads are, for this execution.
 
@@ -34,11 +35,14 @@ def resolve_exec_collections(
     collection's cached copies are the owner's, read where her store keeps
     them (``DiscoveryService.collection_store``). Anyone else reads what a run
     that names no dataflow reads.
+
+    *kept* names the folder of a dashboard viewer's step
+    (``media_dirs.kept_media_name``), which is its ``media_dir``.
     """
     if not user_key:
         return {}, None
     try:
-        media_dir = media_dir_for(user_key)
+        media_dir = media_dir_for(user_key, kept=kept)
         ids = collection_ids_in_code(code, limit=MAX_DATASET_IDS)
         if not ids:
             return {}, media_dir
@@ -48,19 +52,23 @@ def resolve_exec_collections(
         return {}, None
 
 
-def media_dir_for(user_key: str | None) -> str | None:
+def media_dir_for(user_key: str | None, *, kept: str | None = None) -> str | None:
     """Where a node run under *user_key* writes the frames, clips and
     overlays it derives; None with no key. Every node gets it, not only one
     that loads a collection: a node downstream of a Data Loading node writes
     the frames or the mosaic, and never names the collection itself. A
     hosted guest's run writes in the folder of the visitor it serves, in
     their request or on a thread of its own (``visitor_copies.media_visitor``),
-    which the media route reads for that visitor alone."""
+    which the media route reads for that visitor alone. A dashboard viewer's
+    step writes in its own folder, *kept*, whoever it serves, and never where
+    the owner's runs write (``media_dirs.derived_root``)."""
     if not user_key:
         return None
     from utk_curio.backend.app.discovery.infrastructure import media_dirs
     from utk_curio.backend.app.projects import visitor_copies
 
+    if kept is not None:
+        return str(media_dirs.derived_root(user_key, kept=kept))
     return str(media_dirs.derived_root(user_key, visitor_copies.media_visitor(user_key)))
 
 

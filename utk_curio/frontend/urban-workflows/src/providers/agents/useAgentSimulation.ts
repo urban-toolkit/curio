@@ -7,6 +7,7 @@
 import { useCallback, useMemo, useState } from "react";
 
 import { agentsApi, bridgeLandedChangeEvent } from "../../services/agents";
+import { downloadLine } from "./useAgentSolve";
 
 export interface AgentSimulationSlice {
   runSimulation: (attachmentId: string, mode: "step" | "auto") => Promise<Record<string, unknown>>;
@@ -34,6 +35,9 @@ export function useAgentSimulation(opts: {
           }
           return { ...prev, [attachmentId]: line };
         });
+      // The node the run executes, as the line said it last, which it says
+      // again once that node's downloads on first use are over.
+      let executing = "";
       try {
         return await agentsApi.simulate(pid, attachmentId, mode, (name, payload) => {
           if (bridgeLandedChangeEvent(name, payload)) {
@@ -41,7 +45,11 @@ export function useAgentSimulation(opts: {
           } else if (name === "stage") {
             narrate(`${String(payload.action)}${payload.label ? `: ${String(payload.label)}` : ""}`);
           } else if (name === "node_executed") {
-            narrate(`executing upstream ${Number(payload.index) + 1}/${String(payload.total)}`);
+            executing = `executing upstream ${Number(payload.index) + 1}/${String(payload.total)}`;
+            narrate(executing);
+          } else if (name === "node_download") {
+            // How far what the node reads has downloaded on its first use.
+            narrate(downloadLine(payload) ?? executing);
           } else if (name === "generation_round") {
             narrate(`generating content (round ${String(payload.round)})`);
           }

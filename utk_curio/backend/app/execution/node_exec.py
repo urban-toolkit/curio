@@ -56,6 +56,10 @@ class NodeRun:
     # they are not *dataflow_id*'s: a hosted guest's own copy of it, which a
     # dashboard viewer's step on that guest's dashboard runs (runs/viewer.py).
     kept_on: str | None = None
+    # A dashboard viewer's step's own media folder (media_dirs.kept_media_name
+    # of its kept session): the files it derives go there, never where the
+    # owner's runs write theirs (runs/viewer.py).
+    kept_media: str | None = None
 
     @classmethod
     def from_request_json(cls, body: dict) -> "NodeRun":
@@ -859,9 +863,10 @@ def _execute(user, session_token, run: NodeRun, *, language: str) -> tuple[dict,
         # the in-process path ignores it entirely.
         user_key = exec_user_key(user)
         # The dataflow's collections, as its datasets above: for its owner and
-        # an editor she invited, those it lists, from her store.
+        # an editor she invited, those it lists, from her store. A dashboard
+        # viewer's step derives into a folder of its own.
         collections, media_dir = resolve_exec_collections(
-            run.code, user_key, user=user, dataflow_id=run.dataflow_id,
+            run.code, user_key, user=user, dataflow_id=run.dataflow_id, kept=run.kept_media,
         )
         exec_secrets = resolve_secrets(run.code, user)
         owners = owners_packages_for(user, run.dataflow_id)

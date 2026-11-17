@@ -345,10 +345,11 @@ def test_a_solve_job_keeps_the_keys_of_whoever_started_it(app, people, flow):
     with app.test_request_context():
         g.user = people.bob
         base = grounding._solve_grounding_base(flow.owner_key, flow.pid, spec, {}, [])
-        paths = grounding._resolve_catalog_execution_paths(flow.pid, [dataset_id])
     assert base.get("keys") == str(people.bob.id)
     assert sorted(base["secrets"]) == ["bobs-weather"]
-    # The job's thread: no request, no one signed in.
+    # The job's thread: no request, no one signed in. Its runs look up the
+    # datasets their code reads as bob, whom the job holds.
+    paths = grounding._session_dataset_paths(flow.pid, people.bob, {}, [f'df = curio_load_data("{dataset_id}")'])
     ctx = grounding._grounding_context(flow.owner_key, flow.pid, {}, node_type=None, base=base)
     assert ctx.secret_values(["alices-census"]) == {}
     assert ctx.secret_values(["bobs-weather"]) == {"bobs-weather": BOB_KEY[2]}
