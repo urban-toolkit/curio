@@ -51,8 +51,8 @@ class HuggingFaceStorage:
         self.repo = str(options["repo"])
         self.revision = str(options.get("revision") or "main")
         #: Each listing that stopped before its end, so a scan says it was cut
-        #: short: at :data:`MAX_PAGES`, or at a page whose next one is not on
-        #: the Hub itself.
+        #: short: at :data:`MAX_PAGES`, or at a page whose next one is not at
+        #: the source's address (``baseUrl``).
         self.cut_short: list[ListingCut] = []
 
     def _tree_url(self, prefix: str) -> str:
@@ -97,8 +97,8 @@ class HuggingFaceStorage:
                 )
             url = _next_link(headers, self.base)
             if url is None and _names_a_next_page(headers):
-                # A next page off the Hub is never asked for: the listing
-                # stops short of the repository.
+                # A next page that is not at the source's address is never
+                # asked for: the listing stops short of the repository.
                 self.cut_short.append(ListingCut(prefix, page + 1, elsewhere=True))
                 return
         if url is not None:
@@ -149,7 +149,7 @@ def _next_link(headers: dict, base: str) -> str | None:
 
 
 def _names_a_next_page(headers: dict) -> bool:
-    """Whether a page's ``Link`` header names a next page, on the Hub or not."""
+    """Whether a page's ``Link`` header names a next page, wherever it is."""
     return any(
         name.lower() == "link" and _NEXT_RE.search(str(value)) is not None
         for name, value in (headers or {}).items()
