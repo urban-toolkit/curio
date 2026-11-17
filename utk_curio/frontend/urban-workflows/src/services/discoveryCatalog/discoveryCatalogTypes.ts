@@ -428,6 +428,8 @@ export interface DiscoverySearchResponse {
   nextCursor: string | null;
   totalHint: number | null;
   truncated: boolean;
+  /** Storage sources: what a listing cut short says of the limits it met. */
+  cutShort?: string | null;
   /** Storage sources: files under the source that no resource declares. */
   unmatched?: number;
   scannedAt?: string | null;
