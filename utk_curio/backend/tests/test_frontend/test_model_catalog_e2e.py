@@ -174,7 +174,8 @@ def test_the_model_catalog_button_opens_its_own_drawer_and_a_card_its_details(
     expect(modal).to_have_count(0, timeout=10000)
 
     # SAM 3's weights download on a node's first run, and no CI run holds
-    # them: its details say so, and name the node its card makes.
+    # them: its details say so, and name both nodes its card makes, the one
+    # picked from the drop's menu; the package's section counts them.
     expect(_card(drawer, SAM3)).to_contain_text("SAM License")
     _card(drawer, SAM3).get_by_role("button", name="View details", exact=True).click()
     modal = page.get_by_role("dialog", name="Model details")
@@ -182,7 +183,8 @@ def test_the_model_catalog_button_opens_its_own_drawer_and_a_card_its_details(
     expect(_row(modal, "Type")).to_have_text("Concept segmentation")
     expect(_row(modal, "Runtime")).to_have_text("Transformers")
     expect(_row(modal, "Labels")).to_have_text("35")
-    expect(_row(modal, "Node")).to_have_text("Track Objects")
+    expect(_row(modal, "Node")).to_have_text("Track Objects or Segment Images")
+    expect(_row(modal, "Nodes")).to_have_text("2")
     expect(_row(modal, "Weights")).to_have_text("Downloads on first use")
     modal.get_by_role("button", name="View license").click()
     expect(modal.locator('[data-curio-model-license="true"]')).to_contain_text("SAM Materials", timeout=10000)

@@ -6,7 +6,8 @@ import type { PackageKind, PackagePayload } from "./types";
  * A package's card dragged from the Node Catalog or Model Catalog drawer onto
  * the canvas, where it becomes one of the package's nodes: its one node, or
  * the node picked from a menu of its nodes at the drop point. A card drags
- * when its package has a node. A model package has one, which runs its model.
+ * when its package has a node. Each node of a model package runs its model,
+ * and SAM 3's card offers its two, Track Objects and Segment Images.
  */
 
 /** A node a card's drop can make. */
