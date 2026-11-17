@@ -689,6 +689,69 @@ def test_the_model_is_the_export_of_scouts_generator():
     assert block.size_bytes == MODEL.stat().st_size
 
 
+# ---------------------------------------------------------------------------
+# The threads it runs on
+# ---------------------------------------------------------------------------
+
+#: A child's script, run after ``session_threads.RECORD_SESSIONS``: Deep Umbra
+#: on a height raster as Accumulated Shadow's node runs it (``shadow_tiles``),
+#: the package's modules staged as a run of the node stages them and the model
+#: as ``curio_load_model`` gives it.
+SHADOW_TILES = """
+import importlib
+import sys
+
+import rasterio
+
+from utk_curio.sandbox.util.catalog_helpers import CurioModel
+
+modules, model_id, package, heights = sys.argv[1:]
+sys.path.insert(0, modules)
+outputs = importlib.import_module("deep_umbra.node_outputs")
+with rasterio.open(heights) as raster:
+    shadows = outputs.shadow_tiles(raster, "summer", CurioModel(model_id, package))
+report(tiles=len(shadows))
+"""
+
+
+def test_deep_umbras_session_runs_on_the_threads_omp_num_threads_names(tmp_path):
+    """onnxruntime reads no ``OMP_NUM_THREADS``: a session that names no thread
+    count starts a thread for every core it sees, the whole machine's where
+    CI's runners share one (``_support/session_threads.py``). Accumulated
+    Shadow's node opens Deep Umbra in one session for all its tiles
+    (``shadow_tiles``), which hands onnxruntime the count ``OMP_NUM_THREADS``
+    names: the stacks of e2e-desktop and test-gpu, which run this node, set it
+    to their runner's share. With no ``OMP_NUM_THREADS``, as on a user's Curio,
+    the session keeps onnxruntime's own choice.
+
+    On one of SCOUT's tiles, which the node predicts in each child."""
+    import shutil
+
+    from utk_curio.backend.tests._support.session_threads import (
+        assert_the_session_takes_the_named_count,
+        sessions_made,
+    )
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    tile = _tile_name(0, 0)
+    tiles = tmp_path / "one_tile"
+    tiles.mkdir()
+    shutil.copy(FIXTURES / "A_rasters" / tile, tiles / tile)
+    heights = _mosaic_of(tmp_path, tiles, "mosaic-one-tile")
+    run = tmp_path / "run-threads"
+    run.mkdir()
+    staged = stage_package_modules(SHADOW_MODULES, str(run))
+    assert staged == {"root": "package_modules", "names": [MODULE, RASTER_MODULE]}, staged
+
+    def made(omp_num_threads):
+        return sessions_made(
+            SHADOW_TILES, run / staged["root"], MODEL_ID, PACKAGE, heights, omp_num_threads=omp_num_threads,
+        )
+
+    reported = assert_the_session_takes_the_named_count(made, "Deep Umbra's session, made as shadow_tiles makes it,")
+    assert {under: said["tiles"] for under, said in reported.items()} == {"1": 1, "2,1": 1, "unset": 1}, reported
+
+
 def test_the_weights_stay_out_of_the_pip_package(monkeypatch):
     """``MANIFEST.in`` ships ``packages/`` in the sdist, which the wheel is built
     from (``publish-pip-to-pypi.yml``), and ``setup.py``'s ``egg_info`` leaves
