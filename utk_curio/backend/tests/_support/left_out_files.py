@@ -68,6 +68,12 @@ def write_record(path: Path, repo_paths, *, commit: str = COMMIT, contents=None)
     return path
 
 
+def shipped_catalog_bytes(repo: Path) -> int:
+    """The bytes of ``datasets/`` under *repo* that the Data Catalog's size
+    budget counts (``test_catalog_dataset_coverage.py``)."""
+    return sum(path.stat().st_size for path in (Path(repo) / "datasets").rglob("*") if path.is_file())
+
+
 def catalog_copy(folder: str, root: Path) -> Path:
     """The repository's catalog folder *folder* (``datasets/<dir>`` or
     ``packages/<dir>``) copied under *root* without the files the pip package

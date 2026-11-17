@@ -13,7 +13,8 @@ Curio's state directory.
   them, leave out exactly those and the frontend's source maps; the release
   script records each. A new dataset's manifest is all it takes to leave its
   file out, a folder a manifest names leaves out every file in it, and no
-  file of the release names a dataset or a package.
+  file of the release names a dataset or a package. The Data Catalog's size
+  budget counts only what ships.
 - The fetch: a missing listed file is fetched, verified and placed, then read
   where it was placed; a wrong sha256, a refused address, a dropped
   connection or a checkout without a record places nothing; a dropped
@@ -53,6 +54,7 @@ from utk_curio.backend.tests._support.left_out_files import (
     FakeGitHub,
     catalog_copy,
     listed,
+    shipped_catalog_bytes,
     url_of,
     write_record,
 )
@@ -310,6 +312,34 @@ def test_a_new_dataset_that_names_its_data_file_is_left_out_with_no_list_edit(tm
     monkeypatch.setattr(module, "SHIPPED_ROOT", root)
     assert module.left_out_paths() == (big,)
     assert module.is_left_out(big) and not module.is_left_out(small)
+
+
+def test_the_size_budget_counts_only_what_the_pip_package_ships(tmp_path):
+    """The Data Catalog's size budget (``test_catalog_dataset_coverage.py``)
+    counts the bytes of ``datasets/`` that the sdist and the wheel ship, as
+    ``setup.py`` leaves files out: a data file its manifest names in
+    ``downloadOnFirstUse`` is not counted, so naming a big file there, as the
+    budget's message says to, takes it out of the count. Another dataset's
+    file is counted."""
+    big = "datasets/data.test.big@1/data/big.csv"
+    small = "datasets/data.test.small@1/data/small.csv"
+    root = _tree(tmp_path / "repo", {
+        "datasets/data.test.big@1/manifest.json": _dataset(
+            "data.test.big", "data/big.csv", downloadOnFirstUse=["data/big.csv"],
+        ),
+        big: b"a,b\n" + b"1,2\n" * 25_000,
+        "datasets/data.test.small@1/manifest.json": _dataset("data.test.small", "data/small.csv"),
+        small: b"a\n1\n",
+    })
+
+    shipped = {name for name in _kept_by_the_build(root, _files_under(root)) if name.startswith("datasets/")}
+    assert big not in shipped and small in shipped, sorted(shipped)
+    ships = sum((root / name).stat().st_size for name in shipped)
+    counted = shipped_catalog_bytes(root)
+    assert counted == ships, (
+        f"the size budget counts {counted:,} bytes of datasets/, but the pip package ships {ships:,}: "
+        f"it counts {big}, which a pip install downloads on first use"
+    )
 
 
 def test_a_folder_a_manifest_names_leaves_out_every_file_in_it(tmp_path, monkeypatch):

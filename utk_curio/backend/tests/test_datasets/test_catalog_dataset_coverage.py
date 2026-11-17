@@ -24,6 +24,7 @@ import json
 
 import pytest
 
+from utk_curio.backend.tests._support.left_out_files import shipped_catalog_bytes
 from utk_curio.backend.tests.dataset_catalog_coverage import (
     CatalogDataset,
     bucket_source,
@@ -291,7 +292,7 @@ def test_the_shipped_catalog_stays_within_its_size_budget():
     ``pip install utk-curio``, and PyPI caps a single file at 100 MB.
     """
     root = CATALOG[0].root.parent
-    total = sum(path.stat().st_size for path in root.rglob("*") if path.is_file())
+    total = shipped_catalog_bytes(root.parent)
     assert total < 64 * 1024 * 1024, (
         f"datasets/ is {total / 1e6:.1f} MB. Either shrink the new dataset, or "
         f"leave its data file out of the pip package: name it in its manifest's "
