@@ -69,6 +69,13 @@ def _route() -> tuple[str, str]:
     return ROUTE_HEADER, ROUTE_QUERY
 
 
+def _home_only(path: str) -> bool:
+    """Whether the router sends a request to *path* to the home process
+    whatever dataflow it names: the monitor's routes, a page's error reports
+    among them."""
+    return path == "/api/monitor" or path.startswith("/api/monitor/")
+
+
 def _spec() -> dict:
     return {
         "name": NAME,
@@ -157,8 +164,9 @@ class _Tab:
         *copy*, on every write it sent with its sign-in and in the handshake
         of every socket it opened. A request of it that did not name the copy
         named the example and was a read, as the reads its loads of the
-        example send before their answers name the copy are. No request named
-        any other dataflow, nor none."""
+        example send before their answers name the copy are, or a report to
+        the monitor, which the router sends to the home process whatever it
+        names. No request named any other dataflow, nor none."""
         _header, query = _route()
         assert self.signed, f"{self.who}'s tab sent no request with its sign-in"
         others = [
@@ -171,7 +179,8 @@ class _Tab:
         )
         writes = [
             f"{method} {urlparse(url).path}: {named!r}"
-            for method, url, named in self.signed if method != "GET" and named != copy
+            for method, url, named in self.signed
+            if method != "GET" and named != copy and not _home_only(urlparse(url).path)
         ]
         assert not writes, (
             f"{self.who}'s tab sent {len(writes)} writes that did not name its copy {copy}: {writes[:10]}"

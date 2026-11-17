@@ -71,14 +71,20 @@ def test_the_copy_a_load_names_is_the_one_the_guests_change_made(client, example
     assert _answer(client, VISITOR_B, example)["copy_id"] == _copy_of(VISITOR_B, example)
 
 
-def test_an_accounts_load_names_no_copy(client, user_and_token):
-    _user, token = user_and_token
+def test_an_accounts_load_names_no_copy(client, db, user_and_token, monkeypatch):
+    from utk_curio.backend.app.projects.models import Project
+
+    # Sign-in on, so the request is the account's, not the local guest's.
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+    user, token = user_and_token
     created = client.post("/api/projects", data=json.dumps({
         "name": "Hers", "spec": {"dataflow": {"name": "Hers", "nodes": [_node("a")], "edges": []}}, "outputs": [],
     }), headers=auth_headers(token))
     assert created.status_code == 201, created.get_data(as_text=True)
+    hers = created.get_json()["id"]
+    assert db.session.get(Project, hers).user_id == user.id and not user.is_guest
 
-    answer = _answer(client, token, created.get_json()["id"], results="last")
+    answer = _answer(client, token, hers, results="last")
 
     assert "copy_id" in answer and answer["copy_id"] is None, answer.get("copy_id")
 

@@ -24,7 +24,10 @@
  * its room's socket's query. Until that answer the canvas names the dataflow,
  * on the reads of its load, which any process answers, and its room's socket
  * waits for it (`dataflowNameKnown`). Ids in paths and bodies are the
- * dataflow's, and a dashboard names its own route's dataflow.
+ * dataflow's, and a dashboard names its own route's dataflow. A request sent
+ * once the page has left the canvas, a node's outcome as its canvas closes,
+ * names the dataflow itself: the record it writes is a file beside the copy,
+ * which any process writes.
  *
  * Every client writes the token's header here and nowhere else
  * (`tests/utils/authorizationHeaderByHand.test.ts`), so none sends the
