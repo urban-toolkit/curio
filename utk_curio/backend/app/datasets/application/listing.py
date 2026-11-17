@@ -778,8 +778,10 @@ class CatalogListing:
         # via ``liveOutputs``); the preview service then reports the dataset as
         # unavailable instead of reading the raw path off disk.
         item["path"] = self._paths._resolve_item_path(item)
+        # A collection's files are found by the id its rows are named by: the
+        # item's, whose index this is.
         collection = (
-            self._collection_files(dataset_id, dataflow_id) if item.get("format") == "collection" else None
+            self._collection_files(item["id"], dataflow_id) if item.get("format") == "collection" else None
         )
         return self.preview_service.preview(
             item, row_limit=row_limit, offset=offset, part_index=part_index, collection=collection,

@@ -51,16 +51,18 @@ def idot_keys() -> list[str]:
 class ListingBucket:
     """An S3 endpoint over *keys*, answering ListObjectsV2 as S3 does.
 
-    A page holds up to ``max-keys`` entries in key order. With a delimiter,
+    A page holds up to ``max-keys`` entries in key order, or *page_size*
+    when it is fewer: S3 may answer fewer, never more. With a delimiter,
     a key with one after the prefix is listed once as its folder, a common
     prefix. A page that leaves entries says so and gives a token, the last
     entry it holds, which the next page starts after. Every URL asked is kept
     in ``calls``, from any thread.
     """
 
-    def __init__(self, base: str, keys: list[str]):
+    def __init__(self, base: str, keys: list[str], *, page_size: int | None = None):
         self.base = base
         self.keys = sorted(keys)
+        self.page_size = page_size
         self.calls: list[str] = []
 
     def json_get(self, url, *, credential=None, headers=None):
@@ -85,6 +87,8 @@ class ListingBucket:
         if after is not None:
             entries = [entry for entry in entries if entry[1] > after]
         limit = int(query.get("max-keys", "1000"))
+        if self.page_size is not None:
+            limit = min(limit, self.page_size)
         page, left = entries[:limit], entries[limit:]
         body = "".join(
             f"<Contents><Key>{escape(name)}</Key><Size>1000</Size>"
@@ -133,6 +137,42 @@ def month_row(resource: str, crossing: str, month: str) -> str:
 #: The whole bucket from its first key, page after page: what main asked.
 WHOLE_BUCKET = ("", None)
 
+#: July's snapshots of every crossing, a row of :func:`by_month`'s source.
+JULY_SNAPSHOTS = "snapshots@month=2025-07-01T00:00:00"
+
+
+def by_month(manifest):
+    """SAGE-IDOT with a row of each month's snapshots, every crossing's
+    together: a row whose files are in a folder of each crossing."""
+    snapshots = next(spec for spec in manifest.resources if spec.id == "snapshots")
+    monthly = dataclasses.replace(snapshots, datasets="per:month", split_by=("month",))
+    return dataclasses.replace(manifest, resources=(monthly,))
+
+
+def few_crossings(*crossings: str) -> list[str]:
+    """A bucket of IDOT's layout with one July snapshot and one July file of
+    detections for each of *crossings*."""
+    start = MONTHS["2025_07"]
+    return [
+        key
+        for crossing in crossings
+        for key in (f"{crossing}/images/2025_07/{start}-snapshot.jpg", f"{crossing}/data/{crossing}_2025_07.jsonl")
+    ]
+
+
+def an_add(provider):
+    """The storage add path over *provider*. It installs nothing: each add
+    here is refused once its scan ends."""
+    from utk_curio.backend.app.discovery.application.storage_acquire import StorageAcquire
+
+    def installs(*_args, **_kwargs):
+        raise AssertionError("the add went on to install files it should have refused")
+
+    return StorageAcquire(
+        user_key="guest", storage_for=lambda _manifest: provider,
+        install_path=installs, import_layers=installs, find_held=lambda *_args: None,
+    )
+
 
 class TestAnAdd:
     def test_a_months_snapshots_list_only_that_months_folder(self, idot):
@@ -164,6 +204,57 @@ class TestAnAdd:
         assert bucket.asked() == Counter({("", "/"): 1, ("W065/data/", None): 1})
         [group] = result.groups
         assert [f.relpath for f in group.files] == ["W065/data/W065_2025_08.jsonl"]
+
+    def test_a_row_in_more_folders_than_a_scan_lists_is_refused_for_its_folders(self, idot, monkeypatch):
+        """The add says what it met: folders, at their bound, not files."""
+        from utk_curio.backend.app.discovery.application import scan
+        from utk_curio.backend.app.discovery.domain.errors import DownloadTooLarge
+        from utk_curio.backend.app.discovery.providers.s3 import S3Storage
+
+        manifest, bucket, _provider = idot
+        monthly = by_month(manifest)
+        # July's snapshots are in W042's July folder and W065's: two, past a bound of one.
+        monkeypatch.setattr(scan, "MAX_FOLDERS", 1)
+        with pytest.raises(DownloadTooLarge) as refused:
+            an_add(S3Storage(monthly, bucket)).acquire(monthly, JULY_SNAPSHOTS)
+
+        assert str(refused.value) == (
+            "Crossing snapshots is in more than 1 folder, the most SAGE-IDOT rail crossings reads at once; "
+            "add part of it"
+        )
+
+    def test_a_row_in_as_many_folders_as_a_scan_lists_is_listed_whole(self, idot, monkeypatch):
+        from utk_curio.backend.app.discovery.application import scan
+        from utk_curio.backend.app.discovery.providers.s3 import S3Storage
+
+        manifest, bucket, _provider = idot
+        monthly = by_month(manifest)
+        monkeypatch.setattr(scan, "MAX_FOLDERS", 2)
+        add = scan.scan(monthly, S3Storage(monthly, bucket), selection=a_row(monthly, JULY_SNAPSHOTS))
+
+        assert not add.truncated
+        assert [len(group.files) for group in add.groups] == [len(CROSSINGS) * SNAPSHOTS]
+
+    def test_a_row_whose_folder_lists_past_its_pages_is_refused_for_them(self, monkeypatch):
+        """Its add says the folder's listing ran past its pages, not that no
+        file matches the row."""
+        from utk_curio.backend.app.discovery.domain.errors import DownloadTooLarge
+        from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+        from utk_curio.backend.app.discovery.providers import s3
+
+        manifest = load_source_manifest(IDOT)
+        # 1,000 notes come before the snapshots in W042's July folder: its
+        # first page, and the bound is one.
+        notes = [f"W042/images/2025_07/0{n:03d}-notes.txt" for n in range(1000)]
+        bucket = ListingBucket(BASE, idot_keys() + notes)
+        monkeypatch.setattr(s3, "MAX_PAGES", 1)
+        with pytest.raises(DownloadTooLarge) as refused:
+            an_add(s3.S3Storage(manifest, bucket)).acquire(manifest, month_row("snapshots", "W042", "2025_07"))
+
+        assert str(refused.value) == (
+            "Crossing snapshots has a folder whose listing runs past 1 page, "
+            "the most SAGE-IDOT rail crossings reads of one folder"
+        )
 
 
 class TestTheListing:
@@ -255,6 +346,72 @@ class TestTheListing:
         monkeypatch.setattr(scan, "MAX_LISTING_FILES", total)
         whole = scan.scan(limited, provider)
         assert whole.matched == total and not whole.truncated, (whole.matched, whole.truncated)
+
+
+class TestAListingPastItsPages:
+    """A bucket lists one folder in up to ``MAX_PAGES`` pages: a listing that
+    stops there says it was cut short, as it does at the other bounds."""
+
+    def test_a_folder_of_files_past_its_pages_cuts_the_listing_short(self, idot, monkeypatch):
+        from utk_curio.backend.app.discovery.application import scan
+        from utk_curio.backend.app.discovery.providers import s3
+
+        manifest, bucket, provider = idot
+        # A month's 1,500 snapshots are two pages, one past a bound of one.
+        monkeypatch.setattr(s3, "MAX_PAGES", 1)
+        result = scan.scan(manifest, provider)
+
+        assert bucket.asked()[("W042/images/2025_07/", None)] == 1
+        rows = {group.resource_id: len(group.files) for group in result.groups}
+        assert rows[month_row("snapshots", "W042", "2025_07")] == 1000, rows
+        assert result.truncated, (
+            "each month's folder was listed to its first page of two, and the listing did not say it was cut short"
+        )
+
+    def test_a_folder_of_files_as_long_as_its_pages_is_listed_whole(self, idot, monkeypatch):
+        from utk_curio.backend.app.discovery.application import scan
+        from utk_curio.backend.app.discovery.providers import s3
+
+        manifest, _bucket, provider = idot
+        monkeypatch.setattr(s3, "MAX_PAGES", 2)
+        result = scan.scan(manifest, provider)
+
+        rows = {group.resource_id: len(group.files) for group in result.groups}
+        assert all(
+            rows[month_row("snapshots", crossing, month)] == SNAPSHOTS for crossing in CROSSINGS for month in MONTHS
+        ), rows
+        assert not result.truncated
+
+    def test_a_list_of_folders_past_its_pages_cuts_the_listing_short(self, monkeypatch):
+        """The folders under a prefix come in pages too."""
+        from utk_curio.backend.app.discovery.application import scan
+        from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+        from utk_curio.backend.app.discovery.providers import s3
+
+        manifest = load_source_manifest(IDOT)
+        # Three crossings at two folders a page: two pages, one past a bound of one.
+        bucket = ListingBucket(BASE, few_crossings("W042", "W065", "W06E"), page_size=2)
+        monkeypatch.setattr(s3, "MAX_PAGES", 1)
+        result = scan.scan(manifest, s3.S3Storage(manifest, bucket))
+
+        assert bucket.asked()[("", "/")] == 1
+        assert {group.key[0] for group in result.groups} == {"W042", "W065"}
+        assert result.truncated, (
+            "the bucket's crossings were listed to their first page of two, and the listing did not say it was cut short"
+        )
+
+    def test_a_list_of_folders_as_long_as_its_pages_is_listed_whole(self, monkeypatch):
+        from utk_curio.backend.app.discovery.application import scan
+        from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+        from utk_curio.backend.app.discovery.providers import s3
+
+        manifest = load_source_manifest(IDOT)
+        bucket = ListingBucket(BASE, few_crossings("W042", "W065", "W06E"), page_size=2)
+        monkeypatch.setattr(s3, "MAX_PAGES", 2)
+        result = scan.scan(manifest, s3.S3Storage(manifest, bucket))
+
+        assert {group.key[0] for group in result.groups} == {"W042", "W065", "W06E"}
+        assert not result.truncated
 
 
 class TestWhatIsListedAsBefore:
