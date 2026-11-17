@@ -152,11 +152,13 @@ def test_the_example_runs_on_its_cached_files_and_its_dashboard_follows_a_visito
     _frames_read(page, W042_CAPTIONS)
     save_dataflow(page)
 
-    # The owner's dashboard: the eight tiles, drawn from the saved outputs.
+    # The owner's dashboard: the eight tiles, drawn from the saved outputs. The
+    # other nodes stay mounted there, hidden (``hiddenNodes.hideNode``).
     _open_dashboard(page, app_frontend.base_url, project_id)
-    tiles = page.locator(".react-flow__node")
+    tiles = page.locator(".react-flow__node:visible")
     expect(tiles).to_have_count(len(TILES), timeout=45000)
     assert {tiles.nth(i).get_attribute("data-id") for i in range(len(TILES))} == TILES
+    expect(page.locator(".react-flow__node")).to_have_count(len(spec["dataflow"]["nodes"]))
     _tiles_drew(page)
     _frames_read(page, W042_CAPTIONS)
     park_pointer(page)
