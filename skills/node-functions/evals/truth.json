@@ -38,7 +38,7 @@
         "The code it writes reads the photos with curio_load_collection(\"data.curio.mapillary-sample\").",
         "For each photo, the code calls curio_derived_file with the row's dataset_id and file_id, 0 for the time and kind=\"image\".",
         "The code writes each copy to the path in the row curio_derived_file returns, and makes no folder or file path of its own (no tempfile, no hard-coded directory).",
-        "The code returns the copies' rows, which carry the thumbnail and image_url that curio_derived_file gives."
+        "The code returns one row per copy, and every image column its rows carry (thumbnail, image_url, overlay_url) holds a link curio_derived_file gave for the copy, none the original photo's."
       ]
     }
   ],
