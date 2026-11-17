@@ -633,6 +633,7 @@ test_frontend/
     run_all.py                # Run All state, holding a run open
     node_drawings.py          # assert_vega_canvas_rendered and the other drawing checks
     offline_install.py        # a test package in the catalog, its library in a wheelhouse
+    stand_ins.py              # a tiny model planted as fetched, a bucket collection cached
     page.py                   # FrontendPage
     scripted_llm.py           # scripted agent turns
   packages/                   # test packages, planted in a backend's catalog for one test

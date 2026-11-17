@@ -158,6 +158,13 @@ WORKFLOW_FILES = [
     "docs/examples/28-pytorch-training-on-the-gpu.json",
     "docs/examples/29-pytorch-street-photos.json",
     "docs/examples/30-pytorch-sidewalk-clusters.json",
+    # SAM 3 along the SideSeeing walk: test-gpu runs it, for its Autark map,
+    # on a tiny SAM 3 planted as fetched and the walk's recorded stand-in,
+    # cached first (utils/stand_ins.py, which loaded_workflow asks).
+    "docs/examples/31-sideseeing-objects-along-a-walk.json",
+    # A SAGE bucket's collections, cached from the recorded corpus before the
+    # run, as a Curio that mounts no bucket reads them.
+    "docs/examples/32-sage-idot-rail-crossings.json",
 ]
 
 
