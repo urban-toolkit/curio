@@ -664,6 +664,13 @@
     },
     "status": 200
   },
+  "https://data.urbantk.org/sideseeing/chicago/west-loop/2026-10-26-16-03-17-016/video.mp4": {
+    "file": "download/storage/sideseeing/walk.mp4",
+    "headers": {
+      "Content-Type": "application/octet-stream"
+    },
+    "status": 200
+  },
   "https://graph.mapillary.com/images?bbox=-87.642%2C41.918%2C-87.639%2C41.92&fields=id%2Ccaptured_at%2Ccompass_angle%2Ccomputed_geometry%2Cgeometry%2Csequence%2Cis_pano%2Ccreator&is_pano=true&start_captured_at=2023-01-01T00%3A00%3A00Z&limit=2000": {
     "file": "mapillary/03.json",
     "headers": {

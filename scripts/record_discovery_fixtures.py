@@ -69,6 +69,11 @@ PLAN = {
 #: corpus carries a bucket's shape and none of its imagery. A table resource
 #: named under ``tables`` has each of its files indexed to a synthetic
 #: stand-in in the real files' format, so its add runs on the corpus too.
+#: A file named under ``files`` is indexed, whole, to a synthetic stand-in
+#: this script writes (``SYNTHETIC_FILES``), so Cache files fetches it on the
+#: corpus: the listing keeps the real file's size, and a cache that finds
+#: another size reads nothing from the file it copied, so a committed index
+#: keeps the details read from the real one.
 #: A bucket too large to keep whole names ``folder_ends``: each listing is
 #: kept as one page of the first and last files of each folder.
 STORAGE_PLAN = {
@@ -82,6 +87,10 @@ STORAGE_PLAN = {
             "sensors-three": "download/storage/sideseeing/sensors.three.csv",
             "sensors-three-uncalibrated": "download/storage/sideseeing/sensors.three.uncalibrated.csv",
             "cell": "download/storage/sideseeing/cell.csv",
+        },
+        # The walk the Data Catalog commits, datasets/data.sideseeing.west-loop-walk@1.
+        "files": {
+            "chicago/west-loop/2026-10-26-16-03-17-016/video.mp4": "download/storage/sideseeing/walk.mp4",
         },
     },
     "source.sage.idot-crossings@1": {
@@ -111,6 +120,58 @@ SYNTHETIC_HEADS = {
 
 #: What the index probes with, restated here only to spell the fixture key.
 PROBE_RANGE = "bytes=0-65535"
+
+
+def write_walk_clip(path: Path) -> None:
+    """An 8 s clip at 640x360 and 30 fps, H.264 as the storage examples'
+    clips are (``build_example_storage.py``), which browsers play: a sidewalk
+    passing under a camera that looks down at it, its joints and a pole's
+    base going by, as a SideSeeing walk's video shows it."""
+    import av
+    import numpy as np
+
+    width, height, rate, seconds = 640, 360, 30, 8
+    rows, cols = np.mgrid[0:height, 0:width]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    container = av.open(str(path), mode="w")
+    stream = container.add_stream("libx264", rate=rate)
+    stream.width, stream.height, stream.pix_fmt = width, height, "yuv420p"
+    stream.options = {"crf": "30", "preset": "veryfast"}
+    for index in range(rate * seconds):
+        offset = index * 4
+        frame = np.empty((height, width, 3), dtype=np.uint8)
+        # The concrete, lighter where the slabs meet every 120 px.
+        shade = 128 + 10 * np.sin((cols + rows * 0.3) / 23.0) + 6 * np.sin((rows + offset) / 7.0)
+        joints = ((rows + offset) % 120) < 4
+        frame[...] = np.clip(shade, 0, 255).astype(np.uint8)[..., None]
+        frame[joints] = (96, 96, 96)
+        # The curb along the right, and the street beyond it.
+        frame[:, 540:552] = (176, 176, 168)
+        frame[:, 552:] = (64, 66, 70)
+        # A pole's base, passing from the top of the frame to the bottom.
+        y = (index * 3) % (height + 80) - 40
+        disc = (rows - y) ** 2 + (cols - 470) ** 2 < 26**2
+        frame[disc] = (48, 52, 58)
+        video = av.VideoFrame.from_ndarray(frame, format="rgb24")
+        for packet in stream.encode(video):
+            container.mux(packet)
+    for packet in stream.encode():
+        container.mux(packet)
+    container.close()
+
+
+#: Synthetic stand-ins this script writes, by their path in the corpus, for
+#: the files a storage plan names under ``files``.
+SYNTHETIC_FILES = {
+    "download/storage/sideseeing/walk.mp4": write_walk_clip,
+}
+
+
+def whole_file_entry(stand_in: str) -> dict:
+    """The corpus's answer to a whole-file read of a file named under a
+    storage plan's ``files``: its stand-in, with no length of its own, so a
+    download is bounded by the size the listing gives."""
+    return {"file": stand_in, "status": 200, "headers": {"Content-Type": "application/octet-stream"}}
 
 #: Services asked over HTTP: each request is recorded as the service sends it,
 #: with the answers a person gives, normalized as the app normalizes them.
@@ -268,9 +329,16 @@ def record_storage(slug_filter: str | None, index: dict) -> None:
             result = scan.scan(manifest, provider)
             print(f"    -> kept {result.matched} files in {len(result.groups)} rows")
         tables = plan.get("tables", {})
+        whole = plan.get("files", {})
+        for name in sorted(set(whole.values())):
+            SYNTHETIC_FILES[name](FIXTURES / name)
         for group in result.groups:
             stand_in = tables.get(group.spec.id)
             for found in group.files:
+                if found.relpath in whole:
+                    # Cache files reads the whole file, with no Range.
+                    index[provider.file_url(found.relpath)] = whole_file_entry(whole[found.relpath])
+                    continue
                 if stand_in is not None:
                     # An add reads the whole file, with no Range.
                     index[provider.file_url(found.relpath)] = {
