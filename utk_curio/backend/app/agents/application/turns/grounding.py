@@ -89,8 +89,9 @@ def _dataset_path_topup(
         return mapping
     for dataset_id, path in resolved.items():
         mapping[str(dataset_id)] = path
-    for dataset_id, reason in (problems or {}).items():
-        unavailable.setdefault(dataset_id, reason)
+    if unavailable is not None:
+        for dataset_id, reason in (problems or {}).items():
+            unavailable.setdefault(dataset_id, reason)
     return mapping
 
 

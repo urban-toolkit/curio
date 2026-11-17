@@ -97,7 +97,8 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         setDownloads((prev) => {
             if (message) return prev[nodeId] === message ? prev : { ...prev, [nodeId]: message };
             if (!(nodeId in prev)) return prev;
-            const { [nodeId]: _over, ...rest } = prev;
+            const rest = { ...prev };
+            delete rest[nodeId];
             return rest;
         });
     };
