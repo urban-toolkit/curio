@@ -68,14 +68,34 @@ def _save_under_an_agent(user, project_id: str, loader: dict) -> None:
     projects_storage.write_spec(key, project_id, spec)
 
 
+def _as_the_sandbox_answers(payload: dict) -> dict | None:
+    """What the sandbox answers a node whose code loads a Data Catalog
+    dataset it was sent neither a path nor a layer group's entry for
+    (``sandbox/app/worker.py``), or None when it was sent one for every
+    dataset its code loads."""
+    from utk_curio.backend.app.datasets.domain.code_refs import dataset_ids_in_code
+
+    for dataset_id in dataset_ids_in_code(payload.get("code") or ""):
+        if dataset_id not in (payload.get("dataset_paths") or {}) and dataset_id not in (payload.get("dataset_formats") or {}):
+            return {
+                "stdout": [], "output": {"path": "", "dataType": "str"},
+                "stderr": f"Dataset '{dataset_id}' is not available in this environment - add it to the dataflow",
+            }
+    return None
+
+
 def _run_through_the_node_after(client, token, project_id: str, monkeypatch) -> tuple[dict, list[dict]]:
     """Runs the dataflow through the node after the loader from the agent's
-    chat, the sandbox stood in for. Returns the run's ``done`` and what each
-    node of the run sent the sandbox, in order."""
+    chat, the sandbox stood in for, which answers a node whose code loads a
+    dataset it was sent no path for as the sandbox does. Returns the run's
+    ``done`` and what each node of the run sent the sandbox, in order."""
     sent: list[dict] = []
 
     def _exec(_endpoint, payload):
         sent.append(payload)
+        refused = _as_the_sandbox_answers(payload)
+        if refused is not None:
+            return refused
         return {"stdout": ["ran"], "stderr": "", "output": {"path": f"art-{len(sent)}", "dataType": "dataframe"}}
 
     monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
@@ -136,3 +156,34 @@ def test_a_run_through_a_node_after_a_layer_groups_loader_sends_its_layers_and_i
     assert (loading.get("dataset_formats") or {}).get(group_id) == {
         "format": "layer-group", "layers": [[name, i] for name, i in layers],
     }, loading
+
+
+def test_a_run_through_a_node_whose_dataset_fails_to_download_says_why(
+    client, user_and_token, tmp_curio, alice_project, tmp_path, monkeypatch,
+):
+    """On a pip install, a shipped dataset whose file the pip package leaves
+    out is downloaded the first time a run reads it. When that download
+    fails, the agent's run fails the loader with the download's own reason,
+    what failed and how to get the file, as Play's run does, and never asks
+    the sandbox, which would only say the dataset "is not available in this
+    environment"."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+    from utk_curio.backend.tests._support.left_out_files import FakeGitHub, catalog_copy, url_of, write_record
+
+    user, token = user_and_token
+    mrt = "datasets/data.utk.milan-mrt@1/data/milan-mrt.tif"
+    site_packages = tmp_path / "site-packages"
+    catalog_copy("datasets/data.utk.milan-mrt@1", site_packages)
+    monkeypatch.setenv("CURIO_CATALOG_ROOT", str(site_packages / "datasets"))
+    monkeypatch.setattr(left_out_files, "RECORD_PATH", write_record(tmp_path / "record.json", [mrt]))
+    assert not (site_packages / mrt).exists()
+    FakeGitHub(fail=OSError("Network is unreachable")).serve(monkeypatch)
+    _save_under_an_agent(user, alice_project, _loader('data = curio_load_data("data.utk.milan-mrt")\nreturn data\n'))
+
+    done, sent = _run_through_the_node_after(client, token, alice_project, monkeypatch)
+
+    assert (done["ok"], done["blocker"]) == (False, "load"), done
+    stderr = (done["nodes"].get("load") or {}).get("stderrTail") or ""
+    for words in (mrt, url_of(mrt), "Network is unreachable", "https://github.com/urban-toolkit/curio"):
+        assert words in stderr, f"the run did not say why the dataset could not be had: {stderr!r}"
+    assert sent == [], "the sandbox was asked to run a loader whose dataset could not be downloaded"

@@ -67,7 +67,7 @@
     {
       "behavior": "code",
       "category": "computation",
-      "description": "Follow what LABELS names through every video of a collection with SAM 3, one frame every EVERY_SECONDS seconds, each object under one id from frame to frame. Returns each video as its overlay, the frames looked at with each object's mask and id drawn, which Simple View plays, with t_s, where the overlay starts in the video; <label>_objects, how many objects of each label it followed; and tracks, the path of a Parquet table of one row per object (object_id, label, start_s, end_s, frames, largest_share, mean_score). FROM_SECONDS and TO_SECONDS pick the part of each video to track, at most MAX_SECONDS. The model is this package's, model.curio.sam3.",
+      "description": "Follow what LABELS names through every video of a collection with SAM 3, one frame every EVERY_SECONDS seconds, each object under one id from frame to frame. Returns each video as its overlay, the frames looked at with each object's mask and id drawn, which Simple View plays, with t_s, where the overlay starts in the video; <label>_objects, how many objects of each label it followed; and tracks, the path of a Parquet table of one row per object (object_id, label, start_s, end_s, frames, largest_share, mean_score). FROM_SECONDS and TO_SECONDS pick the part of each video to track, at most MAX_FRAMES frames of it. The model is this package's, model.curio.sam3.",
       "editor": "code",
       "engine": "python",
       "hasCode": true,

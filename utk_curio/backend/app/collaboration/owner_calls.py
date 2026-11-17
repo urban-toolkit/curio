@@ -108,7 +108,7 @@ def run(fn, user_key, dataflow_id: str, **arguments):
     known = _operations.get(getattr(fn, "owner_operation", None) or "")
     if known is None or known.run is not fn:
         raise TypeError(f"{fn!r} is no operation a dataflow's owner makes")
-    owner = owner_guard.elsewhere(dataflow_id, user_key)
+    owner = owner_guard.elsewhere(dataflow_id)
     if owner is None:
         return fn(user_key, dataflow_id, **arguments)
     return _sent(owner, known, str(user_key), dataflow_id, arguments)
@@ -221,7 +221,7 @@ def made_here(dataflow_id: str, name: str):
     if not isinstance(user_key, str) or not user_key or not isinstance(arguments, dict):
         return jsonify({"ok": False, "error": "a call names its account and its arguments"}), 400
     try:
-        owner_guard.refuse(dataflow_id, user_key, what=f"{name}, sent by another process,")
+        owner_guard.refuse(dataflow_id, what=f"{name}, sent by another process,")
     except owner_guard.NotTheOwner as exc:
         return jsonify({"ok": False, "error": exc.description}), 421
     try:

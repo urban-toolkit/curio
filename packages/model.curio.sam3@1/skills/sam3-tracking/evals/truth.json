@@ -24,7 +24,7 @@
       "assertions": [
         "The answer writes the code of the Track Objects node walk-objects.",
         "The written code sets TO_SECONDS to 60 and keeps FROM_SECONDS at 0.",
-        "The written code keeps MAX_SECONDS at 300."
+        "The written code keeps MAX_FRAMES at 450."
       ]
     }
   ],

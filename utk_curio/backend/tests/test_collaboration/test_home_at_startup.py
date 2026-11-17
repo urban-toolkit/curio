@@ -68,7 +68,7 @@ def test_alone_at_startup_home_writes_every_dataflow_then_keeps_no_doc_another_p
 
     with application.test_request_context():
         with owner_guard.before_the_others_serve(True):
-            owner_during = owner_guard.elsewhere(theirs, room.owner_key)
+            owner_during = owner_guard.elsewhere(theirs)
             lifecycle.seed_default_agents(room.owner_key, users["alice"])
             open_during = room.docs._open_entry(theirs) is not None
 
@@ -82,4 +82,4 @@ def test_alone_at_startup_home_writes_every_dataflow_then_keeps_no_doc_another_p
     assert missing == [], f"the agents every account has did not reach the dataflow: {missing}"
     assert _code(on_disk["dataflow"]) == TYPED + "x = 1\n", "home dropped the doc without writing what it held"
     assert "sent" not in owner_guard.counts(), "home sent a change to a process that does not listen yet"
-    assert owner_guard.elsewhere(theirs, room.owner_key) == 1, "after the startup work the dataflow is process 1's again"
+    assert owner_guard.elsewhere(theirs) == 1, "after the startup work the dataflow is process 1's again"

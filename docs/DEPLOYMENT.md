@@ -263,7 +263,10 @@ repository and commit the block names, with no token, and checks each file
 against the digest the manifest names; a file that does not match is never
 placed. The node runs once they are in place, and later runs read them there.
 Until then the model's details in the Model Catalog say *Downloads on first
-use*. SAM 3's 3.4 GB come from an identical copy of Meta's files.
+use*. SAM 3's 3.4 GB come from an identical copy of Meta's files. While they
+download, the node says which file comes and how far it has come. A download
+a restart cut, such as a deploy's, goes on from where it stopped the next time
+a node needs the model, and the whole file is checked.
 
 Each placed file is stamped with its digest, in `.<file>.digest` beside it,
 and is in place only while its stamp names the digest the manifest names. So
@@ -271,6 +274,14 @@ a later Curio whose manifest names other files downloads them the first time
 a node runs the model on it, and a file placed with no stamp, by hand or by
 an older Curio, is checked once: stamped when it matches, downloaded again
 when it does not.
+
+Under `--model-weights-dir`, each revision of a package's weights has a folder
+of its own, `<dir>/<package id>@<major>/<revision>/models/<name>/`. Stacks
+that share the folder and run different versions of a package keep their own
+files, and stacks on the same version share one download. A file that two
+revisions name with one digest is linked into the second one's folder, not
+downloaded again. A revision that no stack runs any more can be removed by
+hand.
 
 1. Pass `--model-weights-dir` to `curio.py start`, so the weights go to a
    folder of their own, which isolated node code reads in place.
@@ -441,8 +452,10 @@ To start a stack with the service:
 
 It works when `docker compose ps` shows `bucket-mounts` as `(healthy)` and
 `/monitor`'s **Deployment** shows **Bucket mounts** *on, self-test passed*.
-While Curio tests the service after a start, the line says *on, self-test
-running*.
+The self-test passes when the service mounts a test folder, node code's
+account reads it in Curio's container, and the service reaches Curio's proxy,
+its one way out to the buckets. While Curio tests the service after a start,
+the line says *on, self-test running*.
 
 ## 2. Configure Caddy
 
@@ -632,7 +645,7 @@ To give both stacks an LLM endpoint of their own (the **Curio** rows and Curio's
 
 Without both secrets, the deploy removes `.secrets/llm-endpoint` and the stack has no endpoint of its own.
 
-Both stacks mount `/srv/curio-model-weights` at `/model-weights` and start with `--model-weights-dir /model-weights`, so a model's weights download there once, on the first node that runs it on either stack ([Model weights a package fetches](#model-weights-a-package-fetches)). Each deploy gives the folder to root, the account both containers' servers run as, readable by every account and writable by no other.
+Both stacks mount `/srv/curio-model-weights` at `/model-weights` and start with `--model-weights-dir /model-weights`, so a model's weights download there once for each revision, on the first node that runs it on either stack, into a folder of that revision: a stack on another version of the package never downloads over the other's ([Model weights a package fetches](#model-weights-a-package-fetches)). Each deploy gives the folder to root, the account both containers' servers run as, readable by every account and writable by no other.
 
 Both stacks also start with `--media-cache-max-file-gb 8`, so **Cache files** copies the SideSeeing walks, videos of up to 7 GiB, from data.urbantk.org. Each account still holds at most 20 GB of cached files.
 
@@ -771,6 +784,7 @@ flooding it cannot push real errors out of the log.
 | A node says *Curio could not write the weights of ...* | The server cannot write the folder the weights download into: give the folder `--model-weights-dir` names to the container's root ([Model weights a package fetches](#model-weights-a-package-fetches)). |
 | `docker compose up` cannot start `bucket-mounts` | The host lacks one of the three things [Bucket mounts](#bucket-mounts) checks: `/dev/fuse`, a shared mount where the mounts live, or the loaded AppArmor profile. |
 | `/monitor` shows **Bucket mounts** *unavailable* | Curio's test of the mount service failed, for the reason the line gives. Recent errors holds the details, and `docker compose logs bucket-mounts` the service's side. |
+| **Bucket mounts** says the mount service *could not reach Curio's proxy on port 3128*, or adding a bucket's files says it *cannot reach* it | The service's container does not reach port 3128 of Curio's container, where Curio's proxy listens on the backend's `--backend-host`. Keep both containers on the overlay's `bucket-mounts` network, and the backend on `--backend-host 0.0.0.0`, as `docker-compose.deploy.yml` starts it. |
 | Nodes fail and you cannot see why | Open `/monitor`. The error log there holds the last failures with their tracebacks, and survives longer than `.curio/messages.log`, which is truncated on every launch. |
 | `/monitor` says the sandbox is unreachable | The sandbox process is down or not answering within 3s. The rest of the page stays current; check `docker compose logs curio`. |
 

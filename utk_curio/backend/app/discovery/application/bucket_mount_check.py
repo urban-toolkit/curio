@@ -5,10 +5,13 @@ service, the backend runs its self-test
 (``infrastructure/bucket_mounts.py``) once, on a thread of its own
 (:func:`start`, which ``server.py``'s ``serve()`` calls through the discovery
 service, in the home process when it serves, as it starts the monitor's
-sampler of open files). Its outcome is /monitor's Deployment line (:func:`status`), and
-a failure is also one of the monitor's Recent errors, with what went wrong
-(:func:`record`). After a passed self-test, the same thread looks at the
-service's mounts of sources (``bucket_mount_sources.reconcile_at_start``).
+sampler of open files), with the proxy ``serve()`` started just before in
+this process, which the service must reach
+(``bucket_mount_sources.process_proxy``). Its outcome is /monitor's
+Deployment line (:func:`status`), and a failure is also one of the monitor's
+Recent errors, with what went wrong (:func:`record`). After a passed
+self-test, the same thread looks at the service's mounts of sources
+(``bucket_mount_sources.reconcile_at_start``).
 
 From then on the line follows the service: each later call to it says
 whether it was answered (``bucket_mount_sources.py``). A call that finds it
@@ -78,8 +81,9 @@ def status() -> dict:
 def failed_self_test() -> Optional[str]:
     """Why no source may mount: a self-test that failed for a reason a
     mount's own calls cannot clear (FUSE, the profile, propagation, the read
-    as node code's account, the self-test's own error). None when it passed,
-    has not ended, or found no service, which a mount's calls find again."""
+    as node code's account, the way out to Curio's proxy, the self-test's own
+    error), until the backend starts again. None when it passed, has not
+    ended, or found no service, which a mount's calls find again."""
     with _LOCK:
         outcome = _outcome
     if outcome is None or outcome.passed or outcome.problem in _CHANNEL_PROBLEMS:
@@ -157,8 +161,10 @@ def _words(outcome: bucket_mounts.SelfTest) -> str:
 
 
 def _run() -> None:
+    from utk_curio.backend.app.discovery.application import bucket_mount_sources
+
     try:
-        outcome = bucket_mounts.self_test_from_env()
+        outcome = bucket_mounts.self_test_from_env(proxy=bucket_mount_sources.process_proxy())
     except Exception as exc:  # noqa: BLE001 - the self-test never raises; a bug still reports
         outcome = bucket_mounts.SelfTest(False, "error", f"the self-test raised {type(exc).__name__}: {exc}")
     if outcome is None:
@@ -168,6 +174,4 @@ def _run() -> None:
     record(outcome)
     if outcome.passed:
         # The service's mounts of sources: admitted again, or unmounted.
-        from utk_curio.backend.app.discovery.application import bucket_mount_sources
-
         bucket_mount_sources.reconcile_at_start()

@@ -389,8 +389,9 @@ def download(
     ``secret_headers`` go only to hops on *url*'s origin, as in :func:`fetch`.
 
     ``before_body(headers, final_url)``, when given, is called with the last
-    hop's response headers before a single body byte is read; whatever it
-    raises ends the download there.
+    hop's response headers before a single body byte is read, and with its
+    ``status`` too when it takes that keyword; whatever it raises ends the
+    download there.
     """
     request_fn = request_fn or _default_stream_request
     started = time.monotonic()
@@ -411,7 +412,12 @@ def download(
 
         if before_body is not None:
             try:
-                before_body(dict(response_headers or {}), current)
+                # The status only to a callable that takes it, so every
+                # two-argument one keeps working unchanged.
+                before_body(
+                    dict(response_headers or {}), current,
+                    **_accepted_kwargs(before_body, {"status": int(status)}),
+                )
             except BaseException:
                 _close(chunks)
                 raise

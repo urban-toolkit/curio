@@ -38,6 +38,7 @@ import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
 import type { InstallSyncOutcome, PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import { setOpenDataflow } from "../services/dataflowReads";
+import { nameDataflow } from "../utils/requestHeaders";
 import {
     getCurrentProjectId,
     getCurrentProjectPackagesList,
@@ -1567,6 +1568,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const loadProject = useCallback(async (id: string, options?: LoadOptions) => {
         const result = await projectsApi.get(id, options);
         leftBeforeItAnswered(options);
+        // The id the canvas names the dataflow by from here on, a hosted
+        // guest's own copy's (utils/requestHeaders.ts): before anything this
+        // load sets off sends a request, and before its room's socket opens.
+        nameDataflow(id, result.copy_id);
         const { project, outputs } = result;
 
         // Pin the ref here rather than letting the next render carry it over,
@@ -1593,6 +1598,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const loadSharedProject = useCallback(async (id: string, options?: LoadOptions) => {
         const result = await projectsApi.getShared(id, options);
         leftBeforeItAnswered(options);
+        // Opened from its link: the canvas names the dataflow itself.
+        nameDataflow(id, null);
         const { project, outputs } = result;
 
         // Deliberately leave projectId=null: this dataflow is not "open for

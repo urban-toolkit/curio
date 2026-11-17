@@ -1426,9 +1426,10 @@ class SolveBatch:
             delegate_runner=self._traced_runner(node_id),
             # dev/132 (closes dev/131 F4): the eager mapping,
             # topped up for a dataset the user imported or
-            # installed since this session started.
-            dataset_paths_fn=lambda codes, formats: agents_grounding._session_dataset_paths(
-                self.project_id, self.acting_user, self.solve_dataset_paths, codes, formats
+            # installed since this session started, and why each whose
+            # file failed to download could not be had.
+            dataset_paths_fn=lambda codes, formats, unavailable=None: agents_grounding._session_dataset_paths(
+                self.project_id, self.acting_user, self.solve_dataset_paths, codes, formats, unavailable,
             ),
             # The collections, from the batch's mapping, topped up the same
             # way, and handed to the thread each attempt runs on.

@@ -20,6 +20,12 @@ from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
     tmp_curio,
     user_and_token,
 )
+# The real installer, taken before the autouse stub below replaces it: the
+# tests of a removal without isolation need the pip run it notes
+# (``pip_that_installs``).
+from utk_curio.backend.app.packages.infrastructure.pip_runner import (
+    install_python_deps as _real_install_python_deps,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -55,6 +61,41 @@ def _stub_pip_runner(monkeypatch):
         pip_runner, "uninstall_python_deps",
         lambda names: UninstallReport(removed=list(names), kept=[]),
     )
+
+
+@pytest.fixture
+def pip_that_installs(monkeypatch):
+    """The real ``install_python_deps``, over a pip that installs nothing for
+    real: a library is missing until a ``pip install`` names it, then there.
+    Returns the libraries it installed."""
+    import re
+    import subprocess
+    import types
+    from importlib.metadata import PackageNotFoundError
+
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+    there: dict[str, str] = {}
+
+    def _version(name):
+        if name not in there:
+            raise PackageNotFoundError(name)
+        return there[name]
+
+    def _run(cmd, *args, **kwargs):
+        assert list(cmd[1:4]) == ["-m", "pip", "install"], f"only pip install is faked: {cmd}"
+        for requirement in cmd[5:]:
+            there[re.split(r"[<>=!~]", requirement, maxsplit=1)[0]] = "1.0"
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(pip_runner, "install_python_deps", _real_install_python_deps)
+    monkeypatch.setattr(pip_runner, "installed_version", _version)
+    monkeypatch.setattr(
+        pip_runner, "subprocess",
+        types.SimpleNamespace(run=_run, TimeoutExpired=subprocess.TimeoutExpired),
+    )
+    monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
+    return there
 
 
 # ---------------------------------------------------------------------------

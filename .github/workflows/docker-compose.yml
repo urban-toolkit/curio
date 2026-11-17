@@ -561,6 +561,23 @@ jobs:
           if [ "${CURIO_REMINT:-}" = 1 ]; then args+=(--remint --remint-filter "$CURIO_REMINT_FILTER"); fi
           python3 scripts/ci_selected_tests.py split "${args[@]}" | tee -a "$GITHUB_OUTPUT"
 
+      # The collection below runs the image (image-env's helper or its copy,
+      # and the unit suite's listing), so the image is pulled first, the way
+      # start-stack pulls it (scripts/ci_image_slots.py): in an image slot on
+      # arcade, and tried again when the registry fails it. The build above
+      # ran in buildx's own builder and pushed from there, and a reused image
+      # is only a new tag in the registry, so this runner's daemon holds no
+      # copy, and a `docker run` would fetch it itself, once and in no slot.
+      # Like the steps it serves, it may fail: they then fetch the image
+      # themselves, and if the collection fails every part of the selected
+      # suites runs.
+      - name: 📥 Pull the image, for the collection
+        if: steps.suites.outputs.e2e == 'true' || steps.suites.outputs.backend == 'true'
+        continue-on-error: true
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+        run: python3 scripts/ci_image_slots.py pull "$IMAGE"
+
       - name: 🐍 The image's Python, for the e2e collection
         if: steps.suites.outputs.e2e == 'true'
         continue-on-error: true
@@ -637,12 +654,13 @@ jobs:
       # On an arcade runner the image's Python above is the image's own folder,
       # mounted in place (scripts/ci_image_python.sh), and this job starts no
       # stack whose stop-stack would let it go and remove the image the
-      # collection pulled, so it does both here, on every self-hosted runner.
+      # collection pulled, so it does both here, on every self-hosted runner,
+      # for whichever suite the collection pulled the image for.
       # It never holds up the pick below: a release that fails leaves the next
       # job's take to finish it, and the next job's first step removes the
       # image.
       - name: 🧹 Let go of the image's Python, remove the image
-        if: always() && steps.suites.outputs.e2e == 'true'
+        if: always() && (steps.suites.outputs.e2e == 'true' || steps.suites.outputs.backend == 'true')
         run: |
           bash scripts/ci_image_python.sh release
           if [ "$RUNNER_ENVIRONMENT" = self-hosted ]; then bash scripts/ci_image_cleanup.sh; fi
@@ -2042,10 +2060,12 @@ jobs:
   # A real FUSE mount, through the bucket mount service of
   # docker-compose.bucket-mounts.yml (docs/ARCHITECTURE.md, "Bucket mounts"),
   # beside a stand-in for Curio's container (docker-compose.ci-bucket-mounts.yml).
-  # The backend's own self-test reads the test mount as a non-root account;
-  # then the service is killed, which leaves its mount dead in the stand-in,
-  # and its next start must clear that mount before the self-test passes again
-  # (scripts/bucket-mounts/ci_check.py).
+  # The backend's own self-test reads the test mount as a non-root account and
+  # has the service reach Curio's proxy, which runs in the stand-in: on the
+  # stand-in's own 127.0.0.1 it must fail, and where the service's HTTPS_PROXY
+  # points it must pass. Then the service is killed, which leaves its mount
+  # dead in the stand-in, and its next start must clear that mount before the
+  # self-test passes again (scripts/bucket-mounts/ci_check.py).
   #
   # On ubuntu-latest only: the job loads the service's AppArmor profile into
   # the runner's kernel (sudo apparmor_parser), which only a VM runner may do;
@@ -2083,7 +2103,9 @@ jobs:
       - name: 🚀 Start the service beside a stand-in for Curio
         run: docker compose up -d --wait --wait-timeout 180
 
-      - name: 🧪 The self-test, reading as a non-root account
+      # Curio's proxy out of the service's reach, then where its HTTPS_PROXY
+      # points: the self-test fails for the way out, then passes.
+      - name: 🧪 The self-test, reading as a non-root account and reaching Curio's proxy
         run: docker compose exec -T curio python /curio/scripts/bucket-mounts/ci_check.py selftest
 
       # Two buckets mounted at once as the backend mounts a source: rclone
@@ -2161,11 +2183,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Through the script start-stack pulls with, which tries a pull again
+      # when the registry fails it (scripts/ci_image_slots.py): one reset of
+      # this pull lost the whole job in run 44017255256. This GitHub-hosted
+      # runner shares no folder with other runners, so it takes no slot.
       - name: 📥 Pull the image
         env:
           IMAGE: ${{ needs.build-image.outputs.image }}
         run: |
-          docker pull --quiet "$IMAGE"
+          python3 scripts/ci_image_slots.py pull "$IMAGE"
           mkdir -p ci-report
 
       - uses: ./.github/actions/image-env
@@ -2296,7 +2322,9 @@ jobs:
   # types in and plays the dataflow as its tab holds it, and each room's owner
   # runs it on the server and saves it; then the same ten canvases with every
   # member's agent writing its node too (--agents), on Curio's scripted
-  # model, report in stress-agents/. The browser tier is five
+  # model, report in stress-agents/; then 100 hosted guests on one example
+  # (--guests), each typing in a copy of its own and asking Node Builder on
+  # the scripted model, report in stress-guests/. The browser tier is five
   # real Chrome contexts rendering Autark on WebGPU, which is the half that
   # cannot be driven any other way and does not scale past a handful on one GPU.
   # The stack runs 16 backend processes behind nginx, each owning the dataflows
@@ -2485,6 +2513,27 @@ jobs:
             --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
             --probe "docker exec $cid python"
 
+      # 100 hosted guests on one example, as a workshop's visitors are: each
+      # signs in as a guest, opens the example as its page does, types in a
+      # node's code in a copy of its own through its tab, and asks Node
+      # Builder, on Curio's scripted model, to put a line on top of that code.
+      # Each agent's write must land in its own guest's copy, in no other
+      # guest's and not in the example, which a guest of the stage's own reads
+      # before and after, and no agent or lock may be left in a room. The
+      # report names each copy's backend process and gives each process its
+      # copies, their sync and their turns, and every process's thread stacks,
+      # read 30 s after the first agent turn is asked, are in its folder.
+      - name: 🎫 Run 100 hosted guests on one example with agents
+        if: ${{ !cancelled() }}
+        run: |
+          cid="$(docker compose -p curio-ci-stress ps -q curio | head -n1)"
+          bash scripts/ci_repeat.sh python -m utk_curio.backend.tests.stress \
+            --backend "http://localhost:5072" \
+            --tiers 100 --guests \
+            --out "$GITHUB_WORKSPACE/stress-guests{run}" \
+            --stats-log "$GITHUB_WORKSPACE/docker-stats.log" \
+            --probe "docker exec $cid python"
+
       # Separate step so a red HTTP tier does not hide the state of the WebGPU
       # half, and vice versa: they fail for different reasons and get fixed by
       # different changes.
@@ -2546,6 +2595,8 @@ jobs:
             stress-canvas.run*/
             stress-agents/
             stress-agents.run*/
+            stress-guests/
+            stress-guests.run*/
             stress-stacks/
             docker-stats.log
           if-no-files-found: warn

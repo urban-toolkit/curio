@@ -864,17 +864,17 @@ def _built_anew_if_grown(entry: _OpenDoc) -> None:
 
 
 @contextmanager
-def _held(project_id: str, user_key: str, *, unmade: Optional[dict] = None,
-          source: Optional[str] = None) -> Iterator[_OpenDoc]:
+def _held(project_id: str, user_key: str, *, unmade: Optional[dict] = None) -> Iterator[_OpenDoc]:
     """The open doc of the dataflow, opened if it is not, with its lock held.
     A doc open under the same id for another account is not this dataflow's
     (only tests reuse an id across accounts): it is dropped, writing nothing.
     *unmade*, for a hosted guest's copy with no spec yet, is the spec of the
-    dataflow it copies, *source*, which a doc this opens is built from in
-    memory (:func:`_load_unmade`). Only the process that owns the dataflow
-    keeps its doc: any other is refused (``owner_guard.NotTheOwner``)."""
+    dataflow it copies, which a doc this opens is built from in memory
+    (:func:`_load_unmade`). Only the process that owns the dataflow keeps its
+    doc, a copy's being the process its own id names: any other is refused
+    (``owner_guard.NotTheOwner``)."""
     user_key = str(user_key)
-    owner_guard.refuse(project_id, user_key, what="opening its doc", source=source)
+    owner_guard.refuse(project_id, what="opening its doc")
     while True:
         with _lock:
             entry = _docs.get(project_id)
@@ -1233,7 +1233,7 @@ def close_others() -> list[str]:
         entries = list(_docs.values())
     closed: list[str] = []
     for entry in entries:
-        if entry.closed or owner_guard.elsewhere(entry.project_id, entry.user_key) is None:
+        if entry.closed or owner_guard.elsewhere(entry.project_id) is None:
             continue
         if entry.dirty_since is not None:
             _flush(entry)
@@ -1281,7 +1281,7 @@ def read(user_key: str, project_id: str) -> Optional[dict]:
     spec = storage.read_spec(user_key, project_id)
     if spec is None:
         return None
-    owner = owner_guard.elsewhere(project_id, user_key)
+    owner = owner_guard.elsewhere(project_id)
     if owner is not None:
         owner_guard.noted("read", project_id, owner)
         return _replayed(user_key, project_id, spec)
@@ -1516,7 +1516,7 @@ def live(user_key: str, project_id: str) -> Optional[Live]:
     writer's read is refused in a process that does not own the dataflow
     (``owner_guard.NotTheOwner``): only its owner writes it."""
     user_key = str(user_key)
-    owner_guard.refuse(project_id, user_key, what="a writer's read of it")
+    owner_guard.refuse(project_id, what="a writer's read of it")
     file = storage.read_spec_file(user_key, project_id)
     if not isinstance(file.spec, dict):
         return None
@@ -1652,7 +1652,7 @@ def create(user_key: str, project_id: str, spec: dict, actor: Actor) -> Live:
     outside its doc (:func:`_catch_up`)."""
     user_key = str(user_key)
     mine = _writable(spec)
-    owner = owner_guard.elsewhere(project_id, user_key)
+    owner = owner_guard.elsewhere(project_id)
     if owner is not None:
         owner_guard.noted("create", project_id, owner)
         storage.write_spec(user_key, project_id, spec)
@@ -1767,7 +1767,7 @@ def _write(user_key: str, project_id: str, base: dict, mine, actor: Actor, *,
     (:func:`_drop_dangling_connections`). Refused in a process that does not
     own the dataflow (``owner_guard.NotTheOwner``), whatever it changes: the
     owner's doc and tabs must have it."""
-    owner_guard.refuse(project_id, user_key, what="a write to it")
+    owner_guard.refuse(project_id, what="a write to it")
     if not _has_spec(user_key, project_id):
         return Written(False)
     with _spec_lock(user_key, project_id):
@@ -2316,21 +2316,19 @@ def _copied(project, user_key: str) -> Optional[dict]:
 def _start(sid: str, me: dict, project_id: str, message: bytes, held_id) -> dict:
     """A tab's sync step 1. Refused, naming the dataflow's owner and this
     process, in a process that does not own the dataflow (``owner_guard.py``):
-    a hosted guest's copy, made or not yet, belongs with the dataflow it
-    copies."""
+    a hosted guest's copy, made or not yet, belongs where its own id names."""
     from utk_curio.backend.app.projects.services import _owner_user_dir_key
 
     project = _project(project_id)
     if project is None:
         return _refused("unknown_project")
     user_key = _owner_user_dir_key(project)
-    source = getattr(project, "copies", None)
     try:
-        owner_guard.refuse(project_id, user_key, what="a tab's sync", source=source)
+        owner_guard.refuse(project_id, what="a tab's sync")
     except owner_guard.NotTheOwner as exc:
         return _refused("not_the_owner", message=exc.description)
     try:
-        with _held(project_id, user_key, unmade=_copied(project, user_key), source=source) as entry:
+        with _held(project_id, user_key, unmade=_copied(project, user_key)) as entry:
             if held_id is not None and held_id != entry.doc_id:
                 return _refused("reload", docId=entry.doc_id)
             _framed(message[2:])  # the tab's state, which step 2 answers

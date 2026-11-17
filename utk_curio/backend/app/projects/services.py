@@ -1768,7 +1768,14 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
     dataflow (``runs/reopen.py``). A hosted guest who has a copy of the
     dataflow of their own (``visitor_copies.py``) opens that copy, with the
     results their plays kept on it, and opens its own new dataflow
-    (:func:`_load_kept`); another visitor's is not found."""
+    (:func:`_load_kept`); another visitor's is not found.
+
+    ``copy_id`` is, for a hosted guest on a dataflow its account owns, the id
+    of the guest's own copy of it, made or not yet, which nothing here makes
+    (``visitor_copies.own_copy_id``): the id the guest's canvas names in its
+    requests and its room's socket from then on, and the guest's dashboard in
+    its requests, so they reach the process the copy belongs to. ``None`` for
+    anyone else and for a new dataflow."""
     from utk_curio.backend.app.datasets.seed import (
         ensure_dataflow_datasets_installed,
     )
@@ -1827,6 +1834,7 @@ def load_project(user, project_id: str, *, last_results: bool = False) -> dict:
         "project": visitor_copies.with_spec(detail, own) if own is not None else detail,
         "spec": opened,
         "outputs": [_output_ref_dict(r) for r in shown],
+        "copy_id": visitor_copies.own_copy_id(user, project),
     }
 
 
@@ -1847,7 +1855,8 @@ def _load_kept(user, own: str, *, last_results: bool) -> dict:
             shown = kept_results(user, ukey, own, detail.spec, [], kept_on=own)
         except Exception:  # noqa: BLE001 - a dataflow always opens, with no output at least
             logger.exception("could not find the kept results of dataflow %s", own)
-    return {"project": detail, "spec": detail.spec, "outputs": [_output_ref_dict(r) for r in shown]}
+    # Its page names its own id, which copies no dataflow.
+    return {"project": detail, "spec": detail.spec, "outputs": [_output_ref_dict(r) for r in shown], "copy_id": None}
 
 
 # ---------------------------------------------------------------------------
@@ -2204,6 +2213,13 @@ def build_standalone_dashboard(
     page (:func:`_as_the_visitors_copy`), built for their sign-in alone, and
     the page of their own new dataflow is theirs alone too
     (:func:`_visitors_new_dataflow`): for anyone else it is not found.
+
+    ``copy_id`` is, for a hosted guest on a dataflow their account owns, the
+    id of the guest's own copy of it, made or not yet, as the dataflow's load
+    answers it (:func:`load_project`, ``visitor_copies.dashboard_copy_id``):
+    the page names it in every request from then on, so its viewer runs reach
+    the process the copy belongs to. ``None`` for anyone else and for a new
+    dataflow.
     """
     from utk_curio.backend.app.projects.dashboard_payload import (
         DEFAULT_PAYLOAD_LIMIT_BYTES,
@@ -2239,6 +2255,7 @@ def build_standalone_dashboard(
     )
     body = payload.to_dict()
     body["registry"] = registry if registry is not None else _dashboard_registry(project_id)
+    body["copy_id"] = visitor_copies.dashboard_copy_id(project_id)
     return body
 
 

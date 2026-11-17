@@ -10,6 +10,12 @@ over, and runs at once on a runner with no such folder. The kernel frees a
 slot when the process holding it ends, so a job killed mid-pull leaves none
 taken, and the command itself never holds it.
 
+A failed pull is tried again, 10 s and then 30 s later, in the slot it took,
+and fails the job only when all 3 attempts failed: on 11-17 GitHub's registry
+reset two pulls of one run 5 s apart (run 44017255256), and each lost its job
+before any test ran. The tests that run a pull in this process replace the
+script's ``pause``, its one wait between attempts, so none sleeps.
+
 Other jobs' slots are held here the way the script holds them: a lock on the
 slot's file. Docker is a stand-in that logs what it is asked.
 """
@@ -17,6 +23,7 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import importlib.util
 import os
 import re
 import signal
@@ -46,12 +53,24 @@ PROBE = (
     "print('taken', *taken)\n"
 )
 
-#: Logs every call; a pull fails when FAKE_PULL_FAILS is set, and image
-#: inspect answers a size.
-FAKE_DOCKER = """#!/bin/sh
+#: All that docker pull printed when GitHub's registry reset e2e-desktop
+#: (10)'s pull in run 44017255256. The stand-in ends the local port with the
+#: pull's number, so that each attempt prints a line of its own.
+RESET = "failed to copy: read tcp 10.1.0.34:5803{}->185.199.111.154:443: read: connection reset by peer"
+
+#: Logs every call. A pull fails as that one did when FAKE_PULL_FAILS is set,
+#: or while it is one of the first FAKE_FAILED_PULLS pulls; else it prints the
+#: image, as `docker pull --quiet` does. image inspect answers a size.
+FAKE_DOCKER = f"""#!/bin/sh
 echo "$*" >> "$DOCKER_LOG"
 case "$1" in
-  pull) [ -z "${FAKE_PULL_FAILS:-}" ] || exit 1 ;;
+  pull)
+    pulls=$(grep -c '^pull ' "$DOCKER_LOG")
+    if [ -n "${{FAKE_PULL_FAILS:-}}" ] || [ "$pulls" -le "${{FAKE_FAILED_PULLS:-0}}" ]; then
+      echo "{RESET.format('$pulls')}" >&2
+      exit 1
+    fi
+    echo "$3" ;;
   image) echo 6670989293 ;;
 esac
 exit 0
@@ -118,6 +137,57 @@ def _docker(tmp_path):
     docker.write_text(FAKE_DOCKER)
     docker.chmod(0o755)
     return f"{bin_dir}{os.pathsep}{os.environ['PATH']}", tmp_path / "docker.log"
+
+
+def _slots():
+    """The script as a module, loaded anew by each test that runs it here, so
+    that a copy of it with no retries fails those tests on what it does rather
+    than at their collection."""
+    spec = importlib.util.spec_from_file_location("_scripts_ci_image_slots", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _taken(folder):
+    """The slots another job would find taken now."""
+    taken = []
+    for n in SLOTS:
+        fd = os.open(folder / f"image-slot-{n}", os.O_RDONLY | os.O_CREAT, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            taken.append(n)
+        finally:
+            os.close(fd)
+    return taken
+
+
+def _pull_here(tmp_path, monkeypatch, shared=None, **fake):
+    """The script's pull of IMAGE, run in this process with the stand-in
+    docker first on PATH and ``fake`` its settings: the script's exit status,
+    the calls docker got, and each wait between attempts with the slots
+    another job found taken during it. The wait is the script's ``pause``,
+    replaced here; set without ``raising``, so that a script with no retries
+    fails on the pulls it makes."""
+    path, log = _docker(tmp_path)
+    for name in ("RUNNER_SHARED_DIR", "CURIO_CI_SLOT_WAIT_S", "FAKE_PULL_FAILS", "FAKE_FAILED_PULLS"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("PATH", path)
+    monkeypatch.setenv("DOCKER_LOG", str(log))
+    if shared is not None:
+        monkeypatch.setenv("RUNNER_SHARED_DIR", str(shared))
+    for name, value in fake.items():
+        monkeypatch.setenv(name, value)
+    slots = _slots()
+    waits = []
+
+    def pause(seconds):
+        waits.append((seconds, None if shared is None else _taken(shared)))
+
+    monkeypatch.setattr(slots, "pause", pause, raising=False)
+    code = slots.main(["ci_image_slots.py", "pull", IMAGE])
+    return code, log.read_text().splitlines(), waits
 
 
 def test_a_free_slot_is_taken_and_held_while_the_command_runs(tmp_path):
@@ -223,17 +293,71 @@ def test_pull_pulls_in_a_slot_and_its_seconds_leave_the_wait_out(tmp_path):
         _free(held)
     assert result.returncode == 0, result.stderr
     assert log.read_text().splitlines() == [f"pull --quiet {IMAGE}", f"image inspect --format {{{{.Size}}}} {IMAGE}"]
-    pulled = re.search(r"^Pulled in (\d+) s, 6670989293 bytes on this daemon$", result.stdout, re.M)
+    pulled = re.search(r"^Pulled in (\d+) s, 6670989293 bytes on this daemon, at attempt 1 of 3$",
+                       result.stdout, re.M)
     assert pulled, result.stdout
     assert int(pulled.group(1)) < 3 <= took
 
 
-def test_a_failed_pull_fails_the_job_and_names_no_size(tmp_path):
-    path, log = _docker(tmp_path)
-    result, _ = _run(["pull", IMAGE], _env(tmp_path, PATH=path, DOCKER_LOG=str(log), FAKE_PULL_FAILS="1"))
-    assert result.returncode == 1
-    assert "Pulled in" not in result.stdout
-    assert log.read_text().splitlines() == [f"pull --quiet {IMAGE}"]
+def test_a_pull_the_registry_resets_is_tried_again_10_s_later_in_its_slot(tmp_path, monkeypatch, capfd):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    code, calls, waits = _pull_here(tmp_path, monkeypatch, shared, FAKE_FAILED_PULLS="1")
+    out, err = capfd.readouterr()
+    assert code == 0, out + err
+    assert calls == [f"pull --quiet {IMAGE}"] * 2 + [f"image inspect --format {{{{.Size}}}} {IMAGE}"]
+    # The slot stayed held through the wait: the retry is still this runner's turn.
+    assert waits == [(10, [1])], out + err
+    # docker's own line, then why the attempt failed, then the second attempt's pull.
+    assert re.fullmatch(
+        r"image slot 1 of 8 taken after \d+ s\n"
+        + re.escape(f"{RESET.format(1)}\n"
+                    f"::warning::docker pull failed at attempt 1 of 3, with exit 1: {RESET.format(1)}; "
+                    f"trying again in 10 s\n"
+                    f"{IMAGE}\n")
+        + r"Pulled in \d+ s, 6670989293 bytes on this daemon, at attempt 2 of 3\n",
+        out,
+    ), out + err
+    assert err == ""
+    _free(_hold(shared, SLOTS))
+
+
+def test_a_pull_that_fails_at_every_attempt_fails_the_job_and_names_no_size(tmp_path, monkeypatch, capfd):
+    code, calls, waits = _pull_here(tmp_path, monkeypatch, tmp_path, FAKE_PULL_FAILS="1")
+    out, err = capfd.readouterr()
+    assert code == 1, out + err
+    assert "Pulled in" not in out
+    # 3 pulls, 10 s and then 30 s apart, all in the job's slot, and no size asked for.
+    assert calls == [f"pull --quiet {IMAGE}"] * 3, out + err
+    assert waits == [(10, [1]), (30, [1])], out + err
+    # Each attempt's own last line, then the job's failure, which names the attempts.
+    failed = "".join(
+        f"{RESET.format(n)}\n"
+        f"::warning::docker pull failed at attempt {n} of 3, with exit 1: {RESET.format(n)}; "
+        f"trying again in {wait} s\n"
+        for n, wait in ((1, 10), (2, 30))
+    )
+    last = (f"{RESET.format(3)}\n"
+            f"::error::docker pull failed at all 3 attempts, the last with exit 1: {RESET.format(3)}\n")
+    assert re.fullmatch(r"image slot 1 of 8 taken after \d+ s\n" + re.escape(failed + last), out), out + err
+    assert err == ""
+    _free(_hold(tmp_path, SLOTS))
+
+
+def test_a_pull_that_works_at_once_is_one_attempt_and_says_so(tmp_path, monkeypatch, capfd):
+    # A runner that shares no folder, as GitHub-hosted ones (test-desktop-stress's) do.
+    code, calls, waits = _pull_here(tmp_path, monkeypatch)
+    out, err = capfd.readouterr()
+    assert code == 0, out + err
+    assert calls == [f"pull --quiet {IMAGE}", f"image inspect --format {{{{.Size}}}} {IMAGE}"]
+    assert waits == []
+    assert re.fullmatch(
+        re.escape("image slots: this runner shares no folder with other runners (RUNNER_SHARED_DIR), "
+                  f"so it goes on at once\n{IMAGE}\n")
+        + r"Pulled in \d+ s, 6670989293 bytes on this daemon, at attempt 1 of 3\n",
+        out,
+    ), out + err
+    assert err == ""
 
 
 @pytest.mark.parametrize("args", [[], ["pull"], ["pull", IMAGE, "more"], ["run"], ["push", IMAGE]])

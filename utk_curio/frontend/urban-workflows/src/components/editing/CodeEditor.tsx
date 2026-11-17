@@ -532,8 +532,10 @@ function CodeEditor({
     useEffect(deferResizeObserverCallbacks, []);
 
     const execLabel = output.code === "exec" ? "[*]:" : execCount > 0 ? `[${execCount}]:` : "[ ]:";
+    // A running node says what its run does when the run says so, such as
+    // how far its weights have downloaded on their first use.
     const outputText = output.code === "exec"
-        ? "Running..."
+        ? (typeof output.content === "string" && output.content ? output.content : "Running...")
         : typeof output.content === "string" && output.content
             ? output.content
             : "No output yet";
