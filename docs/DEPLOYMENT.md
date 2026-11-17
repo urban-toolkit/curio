@@ -651,7 +651,7 @@ Both stacks also start with `--media-cache-max-file-gb 8`, so **Cache files** co
 
 They also start with `--discovery-max-download-mb 2048`, so a download, or a file of a bucket table, may be up to 2 GiB on them: a month of detections in data.urbantk.org's `idot` bucket is a JSON Lines file of up to 1.7 GB.
 
-Both stacks start with `--guest-packages model.curio.sam3@1`, so every guest runs SAM 3's **Track Objects** on the host's GPU ([Packages every guest has](#packages-every-guest-has)).
+Both stacks start with `--guest-packages model.curio.sam3@1`, so every guest runs SAM 3's **Track Objects** and **Segment Images** on the host's GPU ([Packages every guest has](#packages-every-guest-has)).
 
 Each stack runs its own [bucket mount service](#bucket-mounts) when the deployed release has it, mounting in `/srv/curio-bucket-mounts/dev` or `/srv/curio-bucket-mounts/stable`. Before a deploy stops the running stack, it checks the host: `/dev/fuse`, a shared mount at `/srv`, and the AppArmor profile, loaded and with `/etc/apparmor.d/curio-bucket-mounts` the same as the checkout's `scripts/bucket-mounts/curio-bucket-mounts.apparmor`. A failed check fails the deploy with the command to run. Once the new stack is up, the deploy fails unless `bucket-mounts` is healthy and **Bucket mounts** says *on, self-test passed*.
 

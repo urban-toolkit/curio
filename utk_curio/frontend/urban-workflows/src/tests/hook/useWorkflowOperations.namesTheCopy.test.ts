@@ -9,6 +9,8 @@
  * answer to ProjectLoader, which builds the canvas from it: the room's socket,
  * which waits for the name, and every request a node or a panel sends after
  * name the copy. A load from the dataflow's link names the dataflow itself.
+ * The guest's dashboard of the example loads it with the same `loadProject`,
+ * and names the copy the same way: its viewer's runs are the copy's process's.
  *
  * The helper is loaded in each test, so a checkout without it fails each test
  * on its own.
@@ -120,6 +122,24 @@ test("a hosted guest's load names its own copy by the time it hands its answer o
   expect(named).toEqual({ header: COPY, dataflow: COPY });
   expect(names().dataflowNameKnown(EXAMPLE)).toBe(true);
   // A request that names the example itself names the copy too.
+  expect(names().requestHeaders("tok", {}, EXAMPLE)[HEADER]).toBe(COPY);
+});
+
+test("a hosted guest's dashboard load names its own copy by the time it hands its answer on", async () => {
+  // The dashboard of the example, whose load ProjectLoader has started with
+  // the saved outputs, not the results a canvas was left with.
+  window.history.replaceState(null, "", `/dashboard/${EXAMPLE}`);
+  mockGet.mockResolvedValue(answer(COPY));
+  const { result } = renderOperations();
+
+  let named: string | undefined;
+  await act(async () => {
+    await result.current.loadProject(EXAMPLE);
+    named = names().requestHeaders("tok")[HEADER];
+  });
+
+  expect(named).toBe(COPY);
+  // A request that names the example itself, a viewer's run of it, names the copy too.
   expect(names().requestHeaders("tok", {}, EXAMPLE)[HEADER]).toBe(COPY);
 });
 

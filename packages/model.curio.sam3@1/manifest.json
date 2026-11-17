@@ -21,7 +21,7 @@
       "transformers": ">=5.0,<6.0"
     }
   },
-  "description": "Meta's Segment Anything Model 3: it finds every object a short phrase names, such as curb ramp or traffic cone, in an image or a video, outlines each with a mask, and follows each one from frame to frame under one id. Its Track Objects node runs it on a collection's videos and writes an overlay video, which Simple View plays, and a table of one row per object. The weights, Meta's 3.4 GB, are in neither the Curio repository nor the pip package: Curio downloads them the first time a node runs the model, from an identical copy on Hugging Face, each file checked against its digest.",
+  "description": "Meta's Segment Anything Model 3: it finds every object a short phrase names, such as curb ramp or traffic cone, in an image or a video, outlines each with a mask, and follows each one from frame to frame under one id. Its Track Objects node runs it on a collection's videos and writes an overlay video, which Simple View plays, and a table of one row per object. Its Segment Images node runs it on a collection's images, or the frames Sample Video Frames samples, and gives each how many objects of each label it holds, how much of it they cover, and an overlay. The weights, Meta's 3.4 GB, are in neither the Curio repository nor the pip package: Curio downloads them the first time a node runs the model, from an identical copy on Hugging Face, each file checked against its digest.",
   "id": "model.curio.sam3",
   "kind": "model",
   "license": "MIT",
@@ -90,6 +90,33 @@
         }
       ],
       "source": "sources/track-objects.py"
+    },
+    {
+      "behavior": "code",
+      "category": "computation",
+      "description": "Find what LABELS names in every image of a collection, or every frame Sample Video Frames sampled, with SAM 3. Returns each image with dominant_class and dominant_pct, the label whose objects cover the most of it; for each label, <label>_pct, the share of the image its objects cover, and <label>_objects, how many it found (a space written as _); overlay_url, the image with each object's mask, box and label drawn, which Simple View shows beside it; and segment_error. THRESHOLD is the score SAM 3 needs to keep an object, WIDTH the widest an image is read and drawn at, and MAX_IMAGES the most images one run looks at. The model is this package's, model.curio.sam3.",
+      "editor": "code",
+      "engine": "python",
+      "hasCode": true,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "icon": null,
+      "iconRef": "fa-solid:object-ungroup",
+      "id": "segment-images",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["DATAFRAME", "GEODATAFRAME"]
+        }
+      ],
+      "label": "Segment Images",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["DATAFRAME", "GEODATAFRAME"]
+        }
+      ],
+      "source": "sources/segment-images.py"
     }
   ],
   "version": "1.0.0"

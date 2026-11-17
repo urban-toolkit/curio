@@ -368,8 +368,8 @@ class TestModelPackagesInTheModelCatalog:
         fetched = all(is_stamped(checkpoint / item.path, item) for item in parse_fetch(block["fetch"]).files)
         assert block["downloadsOnFirstUse"] is not fetched
         assert "weightsNotFetched" not in block
-        assert sam3["modules"] == ["sam3_tracking"]
-        assert [template["label"] for template in sam3["templates"]] == ["Track Objects"]
+        assert sam3["modules"] == ["sam3_images", "sam3_tracking"]
+        assert [template["label"] for template in sam3["templates"]] == ["Track Objects", "Segment Images"]
         assert {"transformers", "safetensors"} <= set(sam3["dependencies"]["python"])
         from utk_curio.backend.app.packages.service import catalog_root
 

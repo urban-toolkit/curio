@@ -10,6 +10,14 @@
  * more. An account's load names no copy: its socket opens at once, apart
  * from the load.
  *
+ * A dashboard served with its data loads nothing: the page server built it
+ * for the visitor's sign-in (`cli/static_server.py`), and a hosted guest's
+ * names the guest's own copy (`copy_id`), which the page names from then on,
+ * before it is loaded and starts a viewer's run, as a canvas names the copy
+ * its load answers with. So does the canvas its Open dataflow goes on to, in
+ * the same page, before it pins the dataflow, which the room's socket
+ * follows: that socket names the copy, whose process keeps its room.
+ *
  * The helper is loaded in each test, so a checkout without it fails each test
  * on its own.
  */
@@ -21,6 +29,8 @@ const mockLoadSharedProject = jest.fn();
 const mockLoadTrill = jest.fn();
 /** Whether the dataflow's name was known each time ProjectLoader pinned it. */
 const mockKnownWhenPinned: boolean[] = [];
+/** The id the page named the dataflow by each time ProjectLoader pinned it. */
+const mockNamedWhenPinned: string[] = [];
 
 let mockRouteId = "new";
 /** Whether the signed-in user is a hosted guest (`useHostedGuest`). */
@@ -64,7 +74,9 @@ jest.mock("../../registry/projectPackagesStore", () => ({
   beginProjectLoad: jest.fn(),
   settleProjectLoad: jest.fn(),
   setCurrentProject: jest.fn((id: string) => {
-    mockKnownWhenPinned.push(require("../../utils/requestHeaders").dataflowNameKnown(id));
+    const pinned = require("../../utils/requestHeaders");
+    mockKnownWhenPinned.push(pinned.dataflowNameKnown(id));
+    mockNamedWhenPinned.push(pinned.dataflowName(id));
   }),
   setUnsavedDataflow: jest.fn(),
   setCurrentProjectPackages: jest.fn(),
@@ -73,9 +85,13 @@ jest.mock("../../services/packages", () => ({
   packagesApi: { getDefaults: jest.fn().mockResolvedValue({ packages: [] }) },
 }));
 
-import { ProjectLoader } from "../../components/ProjectLoader";
+import { ProjectLoader, useProjectLoadState } from "../../components/ProjectLoader";
+import { resetEmbeddedDashboardForTests } from "../../standalone/dashboardPayload";
 
+const HEADER = "X-Curio-Dataflow";
 const ROUTE_ID = "11111111-2222-4333-8444-555555555555";
+/** A hosted guest's own copy of the dataflow of ROUTE_ID. */
+const COPY = "99999999-8888-5777-a666-555555555555";
 const SPEC = { dataflow: { nodes: [{ id: "py" }], edges: [] } };
 
 /** The helper, loaded when a test asks for it. */
@@ -89,6 +105,7 @@ const renderLoader = (presentation = false) =>
 beforeEach(() => {
   jest.clearAllMocks();
   mockKnownWhenPinned.length = 0;
+  mockNamedWhenPinned.length = 0;
   mockRouteId = ROUTE_ID;
   mockHostedGuest = true;
   mockLoadTrill.mockReturnValue({ nodes: SPEC.dataflow.nodes, edges: [] });
@@ -164,4 +181,76 @@ test("a new dataflow, which no load names, waits for nothing", () => {
 
   expect(mockKnownWhenPinned).toEqual([]);
   expect(names().dataflowNameKnown(ROUTE_ID)).toBe(true);
+});
+
+describe("a dashboard served with its data", () => {
+  const PAYLOAD_ID = "curio-dashboard-payload";
+
+  /** The page as the page server served it, with *payload* inside. */
+  const servedWith = (payload: object) => {
+    const element = document.createElement("script");
+    element.id = PAYLOAD_ID;
+    element.type = "application/json";
+    element.textContent = JSON.stringify(payload);
+    document.body.appendChild(element);
+    resetEmbeddedDashboardForTests();
+  };
+
+  afterEach(() => {
+    document.getElementById(PAYLOAD_ID)?.remove();
+    resetEmbeddedDashboardForTests();
+    window.history.replaceState(null, "", "/");
+  });
+
+  test("names the copy its page was built for before the page is loaded", async () => {
+    // A hosted guest's page names no account (UserProvider's viewer), and the
+    // browser holds no session the page could ask with.
+    mockHostedGuest = false;
+    window.history.replaceState(null, "", `/dashboard/${ROUTE_ID}`);
+    servedWith({
+      meta: { projectId: ROUTE_ID, name: "Example" },
+      spec: SPEC,
+      outputs: {},
+      outputRefs: [],
+      copy_id: COPY,
+    });
+    /** What a request names each time the page reads as loaded. */
+    const named: string[] = [];
+    const Probe: React.FC = () => {
+      if (useProjectLoadState() === "loaded") named.push(names().requestHeaders("tok")[HEADER]);
+      return null;
+    };
+
+    render(<ProjectLoader presentation><Probe /></ProjectLoader>);
+
+    await waitFor(() => expect(named.length).toBeGreaterThan(0));
+    expect(named[0]).toBe(COPY);
+    expect(names().requestHeaders("tok", {}, ROUTE_ID)[HEADER]).toBe(COPY);
+    expect(mockLoadProject).not.toHaveBeenCalled();
+    expect(mockLoadSharedProject).not.toHaveBeenCalled();
+  });
+
+  test("the canvas its Open dataflow goes on to names the copy before it pins the dataflow", async () => {
+    // Open dataflow, on the dashboard: the canvas, in the same page, which
+    // holds the data the page was served with. The room's socket follows the
+    // pinned dataflow, by the id the page names it by: the copy's, whose
+    // process keeps its room.
+    mockHostedGuest = false;
+    window.history.replaceState(null, "", `/dataflow/${ROUTE_ID}`);
+    servedWith({
+      meta: { projectId: ROUTE_ID, name: "Example" },
+      spec: SPEC,
+      outputs: {},
+      outputRefs: [],
+      copy_id: COPY,
+    });
+
+    renderLoader();
+
+    expect(mockNamedWhenPinned).toEqual([COPY]);
+    expect(mockKnownWhenPinned).toEqual([true]);
+    expect(names().socketQuery(ROUTE_ID)).toEqual({ dataflow: COPY });
+    await waitFor(() => expect(mockLoadTrill).toHaveBeenCalled());
+    expect(mockLoadProject).not.toHaveBeenCalled();
+  });
 });

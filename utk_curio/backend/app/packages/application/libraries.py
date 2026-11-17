@@ -256,7 +256,9 @@ def install_user_library(user_key: str, name: str, version: str):
     overlay = packages_backend_runtime.user_node_overlay_dir(user_key)
     overlay.mkdir(parents=True, exist_ok=True)
     with target_lock(user_key, packages_provisioning.NODE_OVERLAY_LOCK):
-        return packages_pip_runner.install_python_deps_to_target(deps, str(overlay))
+        # In front of the image's libraries, which win where they meet the
+        # version asked: only what the image lacks goes into the tree.
+        return packages_pip_runner.install_python_deps_to_target(deps, str(overlay), in_front=True)
 
 
 def uninstall_user_library(user_key: str, name: str):
@@ -287,6 +289,72 @@ def uninstall_user_libraries(user_key: str, names):
         return packages_pip_runner.UninstallReport(removed=[], kept=names)
     with target_lock(user_key, packages_provisioning.NODE_OVERLAY_LOCK):
         return packages_pip_runner.uninstall_python_deps_from_target(names, str(overlay))
+
+
+def names_to_take_back(user_key: str, names) -> list[str]:
+    """The libraries among *names* that may leave where *user_key*'s nodes
+    import them from, sorted: those nothing asks for any more, which Curio
+    put there. A package's removal (``prune.py``) and the dialog's Remove
+    both take back only these.
+
+    Under fork isolation that is the account's own tree, which no other
+    account imports from and only Curio's pip writes, so only the account's
+    own packages and list count. A library the install found the image held
+    at an accepted version, such as its torch, was never copied into it, and
+    the shared interpreter is not touched.
+
+    Without isolation it is the one interpreter Curio runs on and every
+    account's nodes import from. A library leaves it only when this server's
+    own pip installed it there (``pip_runner.installed_here``) and no
+    account's packages or list asks for it: what the interpreter held before
+    (requirements, the image's torch, the shipped catalog's libraries, the
+    user's own, and one the dialog found already installed) stays, whoever
+    declared or listed it."""
+    isolated = packages_backend_runtime.per_user_node_envs()
+    kept = not_asked_for([user_key] if isolated else accounts(), names)
+    return kept if isolated else packages_pip_runner.installed_here(kept)
+
+
+def give_way_to_the_image(user_key: str) -> list[str]:
+    """Take out of *user_key*'s own node libraries each copy of a library the
+    account's packages declare that hides the image's copy where the image's
+    meets every range they declare it at, and that the tree's other libraries
+    need at no other version: an earlier start or add put it there, and in
+    front of the image's it gave the account another torch than the image's
+    CUDA one. A library the account's own list names stays, as the account's
+    own choice, and every one stays when a package of the account's cannot be
+    read. Its own requirements stay in the tree, as ``pip uninstall`` leaves
+    them. The names taken out, sorted.
+
+    A lock owner (memo dev/99): the account's store is walked under its seed
+    lock, as :func:`not_asked_for` walks it, and the lock covers the walk
+    alone, never the removal after it."""
+    if not packages_backend_runtime.per_user_node_envs():
+        return []
+    overlay = packages_backend_runtime.user_node_overlay_dir(user_key)
+    if not overlay.is_dir():
+        return []
+    declared: dict[str, list[str]] = {}
+    with package_seed_lock(user_key, shared=True):  # memo dev/99: one consistent walk
+        for package_path in list_user_packages(user_key):
+            try:
+                manifest = load_package_manifest(package_path)
+            except (ManifestError, OSError):
+                return []
+            for name, spec in (manifest.python_deps or {}).items():
+                # By PEP 503 name: two packages may spell one library apart.
+                declared.setdefault(_canonical(name), []).append(spec)
+    if not declared:
+        return []
+    own = [split_lib_spec(spec)[0] for spec in _load_raw(user_key)["python"]]
+    with target_lock(user_key, packages_provisioning.NODE_OVERLAY_LOCK):
+        with packages_pip_runner.holding_tree(overlay):
+            names = packages_pip_runner.copies_this_interpreter_meets(declared, str(overlay), keep=own)
+            if names:
+                packages_pip_runner.uninstall_python_deps_from_target(names, str(overlay))
+    if names:
+        log.info("Took %s out of account %s's node libraries: the image's copies meet every range", names, user_key)
+    return names
 
 
 def accounts() -> list[str]:
@@ -377,27 +445,25 @@ def add_standalone_library(user_key: str, kind: str, spec: str) -> dict:
 
 
 def remove_standalone_library(user_key: str, kind: str, spec: str) -> dict:
-    """Drop a standalone library and pip-uninstall it - unless something else
-    still needs it: an installed package declares it (the same ref-counting
-    contract as the package prune path), or - when one interpreter serves
-    everyone - another user lists it (#309). Under per-user node environments
-    that second question is meaningless: another user's list describes another
-    user's tree, so asking it would refuse to remove a library from yours
-    because someone else installed it in theirs."""
+    """Drop a standalone library and pip-uninstall it, as a package's removal
+    takes its libraries back (:func:`names_to_take_back`): only when nothing
+    else still asks for it, a package or a list, and only what Curio put
+    there. Under per-user node environments only the account's own packages
+    and list count: another user's list describes another user's tree, so
+    asking it would refuse to remove a library from yours because someone
+    else installed it in theirs. Without them, one interpreter serves every
+    account, so every account's packages and lists count (#309), and a
+    library this server's pip did not install, such as one the dialog found
+    already installed, stays."""
     name, _ = split_lib_spec(spec)
     # A malformed name escaped the pip error below and read as a 500 before
     # #309; the route maps PipSpecError to a 400.
     packages_pip_runner.validate_python_requirement(name)
-    if not (
-        any_package_declares(user_key, name, "python")
-        or (
-            not packages_backend_runtime.per_user_node_envs()
-            and listed_by_others(user_key, "python", name, lambda s: split_lib_spec(s)[0])
-        )
-    ):
+    # Off the list first: the list is one of what asks for the library.
+    remove_library(user_key, kind, spec)
+    if name in names_to_take_back(user_key, [name]):
         try:
             uninstall_user_library(user_key, name)
         except PipInstallError as exc:
             log.warning("library remove: pip uninstall %s failed: %s", name, exc)
-    remove_library(user_key, kind, spec)
     return {"standalone": list_standalone(user_key)}

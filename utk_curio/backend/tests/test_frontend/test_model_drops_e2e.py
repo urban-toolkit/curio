@@ -89,12 +89,15 @@ if TYPE_CHECKING:
 MODEL_DRAWER = '[data-curio-model-catalog-drawer="true"]'
 NOTIFICATIONS = '[aria-label="Notifications"]'
 
-#: The shipped model packages, each with its one node.
+#: The shipped model packages' cards, each with the node a drop of it makes:
+#: its one node, or for SAM 3's, whose card offers its two in a menu, the one
+#: picked.
 SHIPPED_CARDS = {
     "ddrnet": ("model.curio.ddrnet23-slim@1", "image-segmentation"),
     "deep-umbra": ("model.scout.deep-umbra@1", "accumulated-shadow"),
     "weather-gnn": ("model.scout.weather-gnn@1", "weather-routing"),
     "sam3": ("model.curio.sam3@1", "track-objects"),
+    "sam3-images": ("model.curio.sam3@1", "segment-images"),
 }
 #: A model added from the Discovery Catalog's Hugging Face source: the ONNX
 #: export the recorded Hub search for "segformer" holds.
@@ -227,9 +230,12 @@ def _add_review(page, name: str):
     return page.get_by_role("dialog").filter(has=page.get_by_role("heading", name=f'Add "{name}"', exact=True))
 
 
-def _drop_card_and_add(page, drawer, dir_name: str, name: str) -> str:
+def _drop_card_and_add(page, drawer, dir_name: str, name: str, pick: str | None = None,
+                       offered: list[str] | None = None) -> str:
     """Drop *dir_name*'s card on the canvas, confirm the Add review it opens,
-    and return the node the drop made."""
+    and return the node the drop made. A package of several nodes, such as
+    SAM 3's, first offers *offered* in a menu at the drop point, and the drop
+    makes *pick*."""
     card = _card(drawer, dir_name)
     expect(card).to_have_count(1, timeout=30000)
     expect(card).to_have_attribute("draggable", "true")
@@ -238,6 +244,13 @@ def _drop_card_and_add(page, drawer, dir_name: str, name: str) -> str:
     drop = drag_with_the_mouse_onto_canvas(page, card.locator("h3"), at=_free_point(page))
 
     assert drop["onCanvas"], f"the card's drop landed on {drop['droppedOn']}, not on the canvas"
+    if pick is not None:
+        menu = page.get_by_role("menu", name=f"{name} nodes", exact=True)
+        expect(menu).to_be_visible(timeout=30000)
+        expect(menu.get_by_role("menuitem")).to_have_text(offered or [])
+        assert _node_ids(page) == before, "the drop made a node before one was picked"
+        menu.get_by_role("menuitem", name=pick, exact=True).click()
+        expect(menu).to_have_count(0, timeout=10000)
     review = _add_review(page, name)
     expect(review).to_be_visible(timeout=30000)
     assert _node_ids(page) == before, "the drop made a node before the Add review was confirmed"
@@ -286,12 +299,13 @@ def _add_the_hugging_face_model(page, app_frontend, current_server: str, token: 
     return added[0]["dirName"], added[0]["name"]
 
 
-@pytest.mark.parametrize("card", ["ddrnet", "deep-umbra", "weather-gnn", "sam3", "hugging-face"])
+@pytest.mark.parametrize("card", ["ddrnet", "deep-umbra", "weather-gnn", "sam3", "sam3-images", "hugging-face"])
 def test_a_model_card_dropped_on_the_canvas_adds_its_package_and_becomes_its_node(
     app_frontend: "FrontendPage", current_server: str, page, card: str,
 ):
     spec = _photos_only() if card == "ddrnet" else _empty()
     session = _enter(page, app_frontend, current_server, spec=spec)
+    offered, pick = [], None
     if card == "hugging-face":
         canvas_url = page.url
         dir_name, name = _add_the_hugging_face_model(page, app_frontend, current_server, session["token"])
@@ -301,13 +315,18 @@ def test_a_model_card_dropped_on_the_canvas_adds_its_package_and_becomes_its_nod
     else:
         dir_name, template = SHIPPED_CARDS[card]
         name = _manifest(dir_name)["name"]
+        templates = _manifest(dir_name)["templates"]
+        # A card of several nodes offers them in a menu; the drop makes the one picked.
+        if len(templates) > 1:
+            offered = [t["label"] for t in templates]
+            pick = next(t["label"] for t in templates if t["id"] == template)
     model_id = dir_name.split("@")[0]
     if card == "ddrnet":
         # Room beside the photos for DDRNet's node, so the two can be wired.
         set_canvas_zoom(page, 0.5)
 
     drawer = _open_drawer(page, "Model Catalog", MODEL_DRAWER)
-    node = _drop_card_and_add(page, drawer, dir_name, name)
+    node = _drop_card_and_add(page, drawer, dir_name, name, pick=pick, offered=offered)
 
     assert (canvas_node_type(page, node) or "").startswith(f"{model_id}/{template}"), canvas_node_type(page, node)
     _wait_for_code_naming(page, node, model_id)

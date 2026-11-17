@@ -17,7 +17,8 @@ import type { AskForPackage } from "./useAskForPackage";
 
 /**
  * A package's card dropped on the canvas from the Node Catalog drawer, or a
- * model's from the Model Catalog drawer (a model package has one node).
+ * model's from the Model Catalog drawer (a model package's nodes each run its
+ * model: one, or several such as SAM 3's two).
  *
  * A hosted guest's drop of a package the dataflow has not added is refused
  * first, before any menu: guests never install. One the guest's account holds
