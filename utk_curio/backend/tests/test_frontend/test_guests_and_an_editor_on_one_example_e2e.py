@@ -537,7 +537,7 @@ class _Dashboard:
             if method != "GET" and named != copy and not _home_only(urlsplit(url).path)
         ]
         assert not writes, f"{self.who} sent {len(writes)} writes that did not name its copy {copy}: {writes[:10]}"
-        runs, _starts, _streams = self._runs()
+        runs = self._runs()[0]
         astray = [
             f"{method} {path}: {named!r}" for method, path, named in runs
             if named != copy or not path.startswith(f"/api/projects/{example}/dashboard/runs")

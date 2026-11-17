@@ -110,7 +110,7 @@ def test_a_hosted_guests_dashboard_page_names_its_own_copy_before_the_copy_is_ma
     a visitor who only looks makes no copy."""
     from utk_curio.backend.app.projects import visitor_copies
 
-    example, _saved = dashboard
+    example = dashboard[0]
 
     for token in (VISITOR_A, VISITOR_B):
         page = _payload(client, token, example)
@@ -131,7 +131,7 @@ def test_a_hosted_guests_dashboard_page_names_its_own_copy_before_the_copy_is_ma
 def test_the_copy_a_dashboard_page_names_is_the_copy_it_carries(client, dashboard, embedded):
     """A's copy holds A's change: A's page carries it and names it; B's page,
     of a guest with no copy, carries the example and names B's own copy."""
-    example, _saved = dashboard
+    example = dashboard[0]
     own = _change(VISITOR_A, example, COPY_CODE)
 
     mine, theirs = _payload(client, VISITOR_A, example), _payload(client, VISITOR_B, example)
@@ -147,7 +147,7 @@ def test_a_dashboard_page_names_no_copy_for_anyone_else(client, dashboard, embed
     one user of a Curio started without ``--deploy``, whose example is its own
     dataflow: each one's page names the example itself (``copy_id`` null), as
     each one's load does."""
-    example, _saved = dashboard
+    example = dashboard[0]
     account = _an_accounts_sign_in()
 
     pages = {"no sign-in": _payload(client, None, example), "an account": _payload(client, account, example)}
@@ -187,7 +187,7 @@ def test_a_hosted_guests_dashboard_runs_on_its_copys_process_before_the_copy_is_
     from utk_curio.backend.app.projects import visitor_copies
     from utk_curio.backend.app.runs import viewer
 
-    example, _saved = dashboard
+    example = dashboard[0]
     examples = owner_of(example)
     copies = 1 - examples
     guest = _visitor_whose_copy_belongs_to(example, copies)
@@ -205,7 +205,7 @@ def test_a_hosted_guests_dashboard_runs_on_its_copys_process_before_the_copy_is_
     mine = _ran(client, guest, example, YEAR)
 
     assert viewer.REGISTRY.get_job(mine["runId"]) is not None, "the copy's process holds no run of the guest's"
-    codes = [body["code"] for _node, body in sandbox.runs]
+    codes = [run[1]["code"] for run in sandbox.runs]
     assert len(codes) == 2 and all(MINE not in code for code in codes), codes
     assert '"Month"' in codes[0] and '"Year"' in codes[1], codes
     assert {row.project_id for row in KeptStepOutput.query.all()} == {example}, (
@@ -222,7 +222,7 @@ def test_a_hosted_guests_dashboard_runs_its_own_copy_on_the_copys_process(client
     before, and the copy's process refuses it, naming the example's."""
     from utk_curio.backend.app.runs import viewer
 
-    example, _saved = dashboard
+    example = dashboard[0]
     examples = owner_of(example)
     copies = 1 - examples
     guest = _visitor_whose_copy_belongs_to(example, copies)
@@ -246,5 +246,5 @@ def test_a_hosted_guests_dashboard_runs_its_own_copy_on_the_copys_process(client
 
     as_process(monkeypatch, examples)
     _ran(client, account, example, MONTH)
-    _node, theirs = sandbox.runs[-1]
-    assert len(sandbox.runs) == 2 and MINE not in theirs["code"] and '"Month"' in theirs["code"], theirs["code"]
+    theirs = sandbox.runs[-1][1]["code"]
+    assert len(sandbox.runs) == 2 and MINE not in theirs and '"Month"' in theirs, theirs
