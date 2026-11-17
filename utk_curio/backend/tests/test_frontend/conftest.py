@@ -165,6 +165,10 @@ WORKFLOW_FILES = [
     # A SAGE bucket's collections, cached from the recorded corpus before the
     # run, as a Curio that mounts no bucket reads them.
     "docs/examples/32-sage-idot-rail-crossings.json",
+    # SAM 3's Segment Images on frames of the same walk, and the walk cut into
+    # blocks by Split Video: test-gpu runs it, for its Autark maps, on the same
+    # stand-ins as example 31.
+    "docs/examples/33-sideseeing-frames-segments-blocks.json",
 ]
 
 

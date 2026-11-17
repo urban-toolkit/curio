@@ -453,8 +453,8 @@ def test_a_box_spec_loads_the_box_its_extract_is_cut_at_or_one_inside_it():
     """A shipped spec whose area is a box (``queryArea.bbox``: west, south,
     east, north) loads the box its extract is cut at, the box the extract's
     header records, or a box inside it, so the extract holds every feature
-    the load keeps. Example 31's map loads the West Loop's box around the
-    walk, its extract's own, and chicago-rain-wind-routing's loader and
+    the load keeps. The maps of examples 31 and 33 load the West Loop's box
+    around the walk, their extract's own, and chicago-rain-wind-routing's loader and
     chicago-loop-layers' OpenStreetMap layers load SCOUT's routing box, their
     extract's own. The park shade test dataflow's loader loads two boxes of
     Lower Manhattan's extract: its parks' box, and the box of the buildings
@@ -464,6 +464,7 @@ def test_a_box_spec_loads_the_box_its_extract_is_cut_at_or_one_inside_it():
 
     assert [(dataflow, extract) for dataflow, _node_id, extract, _bbox in boxes] == [
         ("31-sideseeing-objects-along-a-walk.json", "docs/examples/data/west_loop.osm.pbf"),
+        ("33-sideseeing-frames-segments-blocks.json", "docs/examples/data/west_loop.osm.pbf"),
         ("dataflows/chicago-loop-layers.json", "docs/examples/data/chicago_downtown.osm.pbf"),
         ("dataflows/chicago-rain-wind-routing.json", "docs/examples/data/chicago_downtown.osm.pbf"),
         ("dataflows/lower-manhattan-park-shade.json", "docs/examples/data/lower_mnt.osm.pbf"),
@@ -473,6 +474,7 @@ def test_a_box_spec_loads_the_box_its_extract_is_cut_at_or_one_inside_it():
         cut = read_pbf(REPO_ROOT / extract).box
         if dataflow in (
             "31-sideseeing-objects-along-a-walk.json",
+            "33-sideseeing-frames-segments-blocks.json",
             "dataflows/chicago-loop-layers.json",
             "dataflows/chicago-rain-wind-routing.json",
         ):

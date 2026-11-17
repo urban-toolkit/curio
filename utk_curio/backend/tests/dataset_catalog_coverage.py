@@ -282,6 +282,73 @@ def _geojson_expectations(data_file: Path) -> dict[str, str]:
     }
 
 
+# A layer of points (plan_for picks it when every feature is a point): a
+# point's bounding box has no width, so the polygon recipe's check cannot hold
+# for one. The layer's extent must span an area instead, which dropped
+# coordinates cannot, and the view charts each point at its longitude and
+# latitude, which it can only draw if the coordinates parsed.
+_GEOJSON_POINTS_TRANSFORM = '''import pandas as pd
+
+gdf = input_0
+west, south, east, north = gdf.total_bounds
+print("CURIO_E2E_FEATURES=%d;" % len(gdf))
+print("CURIO_E2E_GEOM=%s;" % ",".join(sorted(set(gdf.geom_type))))
+print("CURIO_E2E_EXTENT_POSITIVE=%d;" % int(east > west and north > south))
+return pd.DataFrame({
+    "feature": [str(i) for i in range(len(gdf))],
+    "longitude": gdf.geometry.x.tolist(),
+    "latitude": gdf.geometry.y.tolist(),
+})
+'''
+
+_GEOJSON_POINTS_VEGA_SPEC = json.dumps(
+    {
+        "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+        "description": "Each loaded point at its longitude and latitude.",
+        "mark": "point",
+        "encoding": {
+            "x": {
+                "field": "longitude",
+                "type": "quantitative",
+                "scale": {"zero": False},
+                "axis": {"title": "Longitude (deg)"},
+            },
+            "y": {
+                "field": "latitude",
+                "type": "quantitative",
+                "scale": {"zero": False},
+                "axis": {"title": "Latitude (deg)"},
+            },
+        },
+    },
+    indent=2,
+)
+
+
+def _only_points(data_file: Path) -> bool:
+    """Whether every feature of a GeoJSON file is a point."""
+    features = json.loads(data_file.read_text(encoding="utf-8")).get("features") or []
+    return bool(features) and all(
+        (feature.get("geometry") or {}).get("type") == "Point" for feature in features
+    )
+
+
+def _geojson_points_expectations(data_file: Path) -> dict[str, str]:
+    doc = json.loads(data_file.read_text(encoding="utf-8"))
+    features = doc.get("features") or []
+    assert features, f"{data_file} carries no features"
+    longitudes = [feature["geometry"]["coordinates"][0] for feature in features]
+    latitudes = [feature["geometry"]["coordinates"][1] for feature in features]
+    assert max(longitudes) > min(longitudes) and max(latitudes) > min(latitudes), (
+        f"{data_file}'s points span no area, so the extent check could not tell a dropped coordinate"
+    )
+    return {
+        "CURIO_E2E_FEATURES": str(len(features)),
+        "CURIO_E2E_GEOM": "Point",
+        "CURIO_E2E_EXTENT_POSITIVE": "1",
+    }
+
+
 # Deliberately not ``return df``: the two violations tables are ~400k rows, and
 # pushing one of those through the artifact pipeline is exactly the failure
 # docs/examples/03's own loader comment documents ("the inter-node
@@ -616,6 +683,14 @@ FORMAT_PLANS: dict[str, FormatPlan] = {
     ),
 }
 
+#: The geojson recipe of a layer whose every feature is a point.
+GEOJSON_POINTS_PLAN = FormatPlan(
+    loader_code=_STARTER,
+    transform_code=_GEOJSON_POINTS_TRANSFORM,
+    vega_spec=_GEOJSON_POINTS_VEGA_SPEC,
+    expectations=_geojson_points_expectations,
+)
+
 
 def plan_for(dataset: CatalogDataset) -> FormatPlan:
     """Return the recipe for *dataset*, or fail with what to go and write.
@@ -634,6 +709,8 @@ def plan_for(dataset: CatalogDataset) -> FormatPlan:
             f"(known formats: {sorted(FORMAT_PLANS)}). Every dataset in the "
             f"catalog must be covered by at least one end-to-end test."
         )
+    if dataset.manifest.format == "geojson" and _only_points(dataset.data_file):
+        return GEOJSON_POINTS_PLAN
     return plan
 
 
