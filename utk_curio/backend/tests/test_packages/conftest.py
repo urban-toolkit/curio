@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import zipfile
 
 import pytest
@@ -26,6 +27,38 @@ from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
 from utk_curio.backend.app.packages.infrastructure.pip_runner import (
     install_python_deps as _real_install_python_deps,
 )
+
+
+#: The data folder the suite's root conftest names for the whole session.
+_THE_SESSIONS_DATA_FOLDER = os.environ.get("CURIO_SHARED_DATA")
+
+
+@pytest.fixture(autouse=True)
+def _a_data_folder_of_its_own(tmp_path, monkeypatch):
+    """Each test's own data folder, ``.curio/data`` in its ``tmp_path``.
+
+    The suite's root conftest names one for the whole session, an absolute
+    ``CURIO_SHARED_DATA`` that neither ``tmp_path`` nor ``tmp_curio`` moves,
+    and each account's node libraries sit beside it
+    (``backend_runtime.user_node_overlay_dir``): every test of a worker shared
+    the account trees, and the sandbox's store, the tests before it left. A
+    folder a module's fixture names for its tests stays theirs.
+
+    The folder is named, not made: ``tmp_curio`` makes it, as the store does
+    when it opens (``sandbox.util.db``), so a test that lists its
+    ``tmp_path`` finds only what it made. The store's connection is let go
+    before and after, as ``test_datasets``' conftest does, so the store a
+    test opens is its own.
+    """
+    from utk_curio.sandbox.util.db import release_connection
+
+    if os.environ.get("CURIO_SHARED_DATA") != _THE_SESSIONS_DATA_FOLDER:
+        yield  # a module's own folder, which its fixture named
+        return
+    monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path / ".curio" / "data"))
+    release_connection()
+    yield
+    release_connection()
 
 
 @pytest.fixture(autouse=True)
