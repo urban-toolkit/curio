@@ -185,7 +185,7 @@ def ask(user_key: str, project_id: str, attachment_id: str, message: str, config
     if ask_id is not None and not (isinstance(ask_id, str) and _ASK_ID.fullmatch(ask_id)):
         raise AgentServiceError("'askId' must be 32 hexadecimal characters", 400)
     # Only the process that owns the dataflow runs its agents' turns.
-    owner_guard.refuse(project_id, user_key, what="an agent's turn")
+    owner_guard.refuse(project_id, what="an agent's turn")
     from flask import current_app
 
     new = Ask(

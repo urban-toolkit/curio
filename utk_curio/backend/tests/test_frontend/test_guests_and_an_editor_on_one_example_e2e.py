@@ -1,25 +1,30 @@
 """Playwright E2E: two hosted guests and an invited editor on one example.
 
-Every request a dataflow's page sends with its sign-in names the dataflow the
-page shows, in a header, and its room's socket names it in its handshake's
-query (``cli/backend_group.py`` reads both). With several backend processes
+Every request a dataflow's page sends with its sign-in names the dataflow it
+works on, in a header, and its room's socket names it in its handshake's query
+(``cli/backend_group.py`` reads both). With several backend processes
 (``curio.py start --backend-processes N``) the router sends each to the
-process that owns that dataflow, where its room, its doc and its guests' copies
-are kept. A hosted guest's page names the dataflow it shows, never the id of
-its own copy, which the server keeps with the dataflow it copies.
+process that owns that dataflow, where its room and its doc are kept. A hosted
+guest's canvas of an example works on the guest's own copy of it, which the
+server keeps on the process the copy's own id names, so the guests of one
+example spread over the processes: once the canvas's load of the example
+answers with the copy's id (``copy_id``), the tab names the copy. Only reads
+name the example, those its loads sent before their answers.
 
 Two hosted guests open one example, which the shared guest account owns, and
 each changes its node: each sees its own change, after a reload too, and never
 the other's. An account holds the same example as a dataflow of its own, and
 its owner invites an editor: each sees what the other writes there, and
-neither guest does. Every tab names the dataflow its page shows on every
-request that carries its sign-in, and on its socket. A hosted guest's play
-runs in the browser: it sends ``/processPythonCode`` and reports to
-``/nodeRuntime``, paths that name no dataflow. The editor's play is a run on
-the server, as an owner's is (``FlowProvider``'s ``runsOnServer``), which
-the tab follows at ``/api/runs/<run>``, a path that names none either. An
-editor has no save status (saving is the owner's), so the owner's canvas
-showing the editor's change is the wait for the server to have it.
+neither guest does. Each guest's tab names its own copy on every write and on
+every socket it opens, and no request of it names the other guest's copy; the
+owner's and the editor's tabs name her dataflow on every request that carries
+their sign-in, and on their sockets. A hosted guest's play runs in the browser:
+it sends ``/processPythonCode`` and reports to ``/nodeRuntime``, paths that
+name no dataflow. The editor's play is a run on the server, as an owner's is
+(``FlowProvider``'s ``runsOnServer``), which the tab follows at
+``/api/runs/<run>``, a path that names none either. An editor has no save
+status (saving is the owner's), so the owner's canvas showing the editor's
+change is the wait for the server to have it.
 
 On a stack without sign-in (CI's test-isolated job) every tab is the shared
 guest, the one local user, which owns the example: no copy is made, two tabs
@@ -36,6 +41,7 @@ from .utils import (
     allow_guest_login_env,
     api_json,
     auth_enabled_env,
+    named_dataflow,
     node_locator,
     read_node_code,
     run_node_and_wait,
@@ -61,6 +67,13 @@ def _route() -> tuple[str, str]:
     from utk_curio.cli.backend_group import ROUTE_HEADER, ROUTE_QUERY
 
     return ROUTE_HEADER, ROUTE_QUERY
+
+
+def _home_only(path: str) -> bool:
+    """Whether the router sends a request to *path* to the home process
+    whatever dataflow it names: the monitor's routes, a page's error reports
+    among them."""
+    return path == "/api/monitor" or path.startswith("/api/monitor/")
 
 
 def _spec() -> dict:
@@ -118,6 +131,11 @@ class _Tab:
     def sent_to(self, path: str) -> bool:
         return any(urlparse(url).path.endswith(path) for _method, url, _named in self.signed)
 
+    def sent_naming(self, dataflow: str) -> int:
+        """How many requests this tab sent with its sign-in that named
+        *dataflow*."""
+        return sum(1 for _method, _url, named in self.signed if named == dataflow)
+
     def followed_a_run(self) -> bool:
         """Whether this tab followed a run on the server, at
         ``/api/runs/<run>``, a path that names no dataflow."""
@@ -140,6 +158,46 @@ class _Tab:
         assert sockets, f"{self.who}'s tab opened no socket to its room"
         asked = [parse_qs(urlparse(url).query).get(query) for url in sockets]
         assert asked == [[dataflow]] * len(sockets), f"{self.who}'s sockets named {asked}, not {dataflow}"
+
+    def names_its_copy(self, example: str, copy: str) -> None:
+        """This tab, a hosted guest's on *example*, named its own copy of it,
+        *copy*, on every write it sent with its sign-in and in the handshake
+        of every socket it opened. A request of it that did not name the copy
+        named the example and was a read, as the reads its loads of the
+        example send before their answers name the copy are, or a report to
+        the monitor, which the router sends to the home process whatever it
+        names. No request named any other dataflow, nor none."""
+        _header, query = _route()
+        assert self.signed, f"{self.who}'s tab sent no request with its sign-in"
+        others = [
+            f"{method} {urlparse(url).path}: {named!r}"
+            for method, url, named in self.signed if named not in (copy, example)
+        ]
+        assert not others, (
+            f"{self.who}'s tab, on its copy {copy} of {example}, sent {len(others)} of {len(self.signed)} "
+            f"requests naming another dataflow or none: {others[:10]}"
+        )
+        writes = [
+            f"{method} {urlparse(url).path}: {named!r}"
+            for method, url, named in self.signed
+            if method != "GET" and named != copy and not _home_only(urlparse(url).path)
+        ]
+        assert not writes, (
+            f"{self.who}'s tab sent {len(writes)} writes that did not name its copy {copy}: {writes[:10]}"
+        )
+        sockets = [url for url in self.sockets if "/socket.io/" in url]
+        assert sockets, f"{self.who}'s tab opened no socket to its room"
+        asked = [parse_qs(urlparse(url).query).get(query) for url in sockets]
+        assert asked == [[copy]] * len(sockets), f"{self.who}'s sockets named {asked}, not its copy {copy}"
+
+
+def _own_copy(tab: _Tab, example: str) -> str:
+    """The id of the own copy of *example* of *tab*'s hosted guest: the one
+    its sign-in and the example make (``visitor_copies.copy_id``), whose room
+    its tab joins."""
+    from utk_curio.backend.app.projects.visitor_copies import copy_id
+
+    return copy_id(tab.token(), example)
 
 
 def _spec_code(backend: str, token: str, dataflow: str) -> str:
@@ -189,8 +247,9 @@ def test_two_hosted_guests_keep_their_own_edits_and_an_editor_shares_the_owners_
 ):
     """With sign-in, each hosted guest's edit of the example is kept in its
     own copy and the invited editor shares the owner's dataflow, while every
-    tab names the dataflow its page shows. Without sign-in, two tabs of the
-    local guest share the example (:func:`_two_tabs_of_the_local_guest`)."""
+    tab names the dataflow it works on: a guest's its own copy, the owner's
+    and the editor's her dataflow. Without sign-in, two tabs of the local
+    guest share the example (:func:`_two_tabs_of_the_local_guest`)."""
     hosted = auth_enabled_env()
     guests = allow_guest_login_env()
     if hosted:
@@ -217,7 +276,8 @@ def test_two_hosted_guests_keep_their_own_edits_and_an_editor_shares_the_owners_
         # The first visitor changes the example's node: its own copy holds it.
         first = _Tab(browser, contexts, "the first guest")
         first.open(base, example, "owner")
-        first.names_only(example)
+        copies = {first.who: _own_copy(first, example)}
+        first.names_its_copy(example, copies[first.who])
         set_node_code(first.page, NODE, FIRST_GUESTS)
         wait_for_changes_kept(first.page)
         _kept_for_the_visit(first)
@@ -225,6 +285,8 @@ def test_two_hosted_guests_keep_their_own_edits_and_an_editor_shares_the_owners_
         # The second visitor opens the example as it was, and changes it too.
         second = _Tab(browser, contexts, "the second guest")
         second.open(base, example, "owner")
+        copies[second.who] = _own_copy(second, example)
+        assert len({*copies.values(), example}) == 3, f"the two visitors' copies of {example}: {copies}"
         wait_for_node_code(second.page, NODE, ORIGINAL)
         set_node_code(second.page, NODE, SECOND_GUESTS)
         wait_for_changes_kept(second.page)
@@ -281,9 +343,16 @@ def test_two_hosted_guests_keep_their_own_edits_and_an_editor_shares_the_owners_
             "the example": ORIGINAL,
         }
 
-        # Every tab named the dataflow its page shows, the guests' never their copies'.
+        # Every tab named the dataflow it works on: each guest's its own copy,
+        # which the load of the example answers with, never the other's; the
+        # owner's and the editor's her dataflow.
         for tab in (first, second):
-            tab.names_only(example)
+            tab.names_its_copy(example, copies[tab.who])
+            assert tab.sent_naming(copies[tab.who]), f"{tab.who}'s tab sent no request naming its copy"
+            answered = named_dataflow(backend, tab.token(), example)
+            assert answered == copies[tab.who], (
+                f"{tab.who}'s load of the example names {answered!r}, not its own copy {copies[tab.who]}"
+            )
         for tab in (owner, editor):
             tab.names_only(dataflow)
     finally:

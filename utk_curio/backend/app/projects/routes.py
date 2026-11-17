@@ -229,7 +229,12 @@ def get_project(project_id: str):
     ``?results=last``, the results its canvas was left with, as a canvas
     opens it (``services.load_project``). A hosted guest's canvas opens
     their own copy, once they have one (visitor_copies.py), and their own
-    new dataflow, which is not found for anyone else."""
+    new dataflow, which is not found for anyone else.
+
+    ``copy_id`` names a hosted guest's own copy of a dataflow its account
+    owns, made or not yet, which the guest's canvas names in its requests and
+    its room's socket from then on; ``null`` for anyone else. The read itself
+    names the dataflow, and any backend process answers it."""
     try:
         result = services.load_project(
             g.user, project_id, last_results=request.args.get("results") == "last",
@@ -243,6 +248,7 @@ def get_project(project_id: str):
         "project": asdict(result["project"]),
         "spec": result["spec"],
         "outputs": result["outputs"],
+        "copy_id": result.get("copy_id"),
     }), 200
 
 
