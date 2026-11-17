@@ -12,6 +12,10 @@ Each process also memoises its import verdicts per library and version, and
 dropped them only after its own pip runs: another process's run that adds or
 removes what a library needs changes no version of it, so the verdict stayed.
 
+Without isolation a removal takes back from the interpreter only what Curio's
+pip installed there, and each process kept that record of its own pip runs:
+a Remove served by another process than the add kept the library.
+
 The pip runs here are fakes over files both processes see; the race tests
 fork a run that stops inside pip, then run pip from this process
 (``_support/two_processes.py``).
@@ -197,4 +201,51 @@ def test_an_import_verdict_is_asked_again_after_another_processes_pip_run(run, t
     assert bool(before) == (run == "install"), before
     assert bool(after) == (run == "uninstall"), (
         f"after another process's pip run {run}ed y, this process still answered for x as before: {after}"
+    )
+
+
+def _a_start_of_two(tmp_curio, monkeypatch) -> None:
+    """A start of two backend processes without isolation, this test's being
+    process 0, with a state folder of the start's own and nothing yet in this
+    process's record of pip's installs."""
+    monkeypatch.setenv("CURIO_ISOLATION", "off")
+    monkeypatch.setenv("CURIO_BACKEND_PROCESSES", "2")
+    monkeypatch.delenv("CURIO_BACKEND_PROCESS", raising=False)
+    monkeypatch.setenv("CURIO_STATE_DIR", str(tmp_curio / "state"))
+    monkeypatch.setattr(pip_runner, "_installed_here", set())
+
+
+def test_without_isolation_a_remove_in_one_backend_process_takes_back_what_an_add_in_another_installed(
+    tmp_curio, monkeypatch,
+):
+    """Without isolation a removal takes a library out of the one interpreter
+    only when Curio's pip installed it there (``installed_here``), which each
+    backend process noted for itself. In a start of several, the Installed
+    libraries dialog's add, served by one process, and its Remove, served by
+    another, left the library installed."""
+    from utk_curio.backend.app.packages.application import libraries
+    from utk_curio.backend.tests._support.two_processes import in_another_process
+
+    library = "curio-added-in-process-one"
+    _a_start_of_two(tmp_curio, monkeypatch)
+    environment = _Environment(tmp_curio)
+    environment.patch(monkeypatch)
+    # The real installer and uninstaller, under the package tests' stubs.
+    monkeypatch.setattr(pip_runner, "install_python_deps", install_python_deps)
+    monkeypatch.setattr(pip_runner, "uninstall_python_deps", uninstall_python_deps)
+    monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
+
+    def _the_add_in_process_one():
+        os.environ["CURIO_BACKEND_PROCESS"] = "1"
+        libraries.add_standalone_library("7", "python", library)
+
+    error = in_another_process(_the_add_in_process_one)
+    assert not error, error
+    assert (environment.site / library).is_file(), "the add in process 1 installed nothing"
+
+    libraries.remove_standalone_library("7", "python", library)
+
+    assert not (environment.site / library).exists(), (
+        f"process 1's pip installed {library} for the dialog's add, and nothing else asks for it, "
+        "yet its Remove, served by process 0, left it in the interpreter"
     )
