@@ -50,6 +50,7 @@ from .test_model_catalog_e2e import (
     LOCAL_RELIEF,
     LOCAL_RELIEF_FOLDER,
     LOCAL_RELIEF_ID,
+    SESSION_ON_THE_STACKS_THREADS,
     _add_to_project,
     _card,
     _close_drawer,
@@ -123,10 +124,11 @@ def _manifest(dir_name: str) -> dict:
 
 def _relief_code(model_id: str) -> str:
     return (
+        "import os\n"
         "import numpy as np\n"
         "import onnxruntime as ort\n"
         f'model = curio_load_model("{model_id}")\n'
-        'session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])\n'
+        f"{SESSION_ON_THE_STACKS_THREADS}"
         'relief = session.run(None, {"height": np.arange(64, dtype=np.float32).reshape(1, 1, 8, 8)})[0]\n'
         f'print("{MARKER}", tuple(relief.shape))\n'
         "return float(np.abs(relief).sum())\n"
