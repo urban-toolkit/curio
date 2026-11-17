@@ -704,7 +704,15 @@ def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> tupl
     one of their copies fails, every copy this call made is taken back
     (:func:`_copy_from_catalog`), and so they are when the package's own copy
     fails. Answers the package's install and what the packages brought for it
-    did (their libraries, for ``provisioning.with_brought``)."""
+    did (their libraries, for ``provisioning.with_brought``).
+
+    An Update, which replaces the store's copy, is a removal of the version
+    it replaced as much as an add of the new one: the libraries the replaced
+    version's install put where node code imports from are taken back when
+    nothing asks for them now, and a copy in the account's tree that the new
+    version's ranges let the image's win over goes at once, not at the next
+    start (``libraries.take_back_after_a_removal``). The caller installs the
+    new version's libraries after."""
     packages_provisioning.assert_may_install()
     src = packages_catalog_dir.catalog_root() / dir_name
     if not src.is_dir():
@@ -712,6 +720,8 @@ def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> tupl
     needed = packages_dependencies.packages_to_add(user_key, dir_name, its_catalog_copy=True)
     missing = _the_missing(user_key, dir_name, needed)
     brought = _copy_from_catalog(user_key, missing)
+    # Read before the replace, which takes the version they came with.
+    replaced_libraries = packages_libraries.node_libraries_of(user_key, dir_name) if replace else set()
     try:
         result = install_package_from_directory(user_key, src, replace=replace)
     except Exception:
@@ -721,6 +731,8 @@ def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> tupl
     # Same as the first copy in _ensure_user_store_install: a replaced backend
     # entry keeps its old pin otherwise, and every invocation is refused.
     packages_backend_runtime.record_entry_pin(user_key, dir_name)
+    if result.replaced_existing:
+        packages_libraries.take_back_after_a_removal(user_key, replaced_libraries)
     return result, brought
 
 
