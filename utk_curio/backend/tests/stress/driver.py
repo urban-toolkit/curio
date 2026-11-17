@@ -223,9 +223,17 @@ class Sample:
 #                   was never told that a turn ended
 # agent_present   - once the room's work was over, an agent was still in the
 #                   room, on the server or in a tab
+# With hosted guests on one example (--guests, guests.py):
+# not_in_copy     - a guest's own copy, read back as its page reads it, lacked
+#                   the lines it typed or its agent's write
+# leaked          - work landed outside a guest's own copy: lines that are not
+#                   its own in its copy, or in the example as it opened it; its
+#                   tab in a room that is not its own copy's; or, once the tier
+#                   was over, the example changed or two guests shared a room
 FAILURE_KINDS = ("http_error", "empty_output", "timeout", "transport", "mismatch",
                  "socket", "unsynced", "diverged", "locked", "server_run", "unsaved",
-                 "agent_turn", "changed_meanwhile", "agent_unsynced", "agent_present")
+                 "agent_turn", "changed_meanwhile", "agent_unsynced", "agent_present",
+                 "not_in_copy", "leaked")
 
 
 @dataclass

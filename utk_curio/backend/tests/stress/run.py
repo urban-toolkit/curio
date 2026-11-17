@@ -31,6 +31,14 @@ With ``--agents`` as well, every member also asks Node Builder to write its own
 node's code, on Curio's scripted model, which is Curio's default for the tier
 (``agents.py``): ten agents at work in each canvas while its people type,
 drag and play.
+
+With ``--guests`` a tier's users are hosted guests on one shipped example
+(``guests.py``), as a workshop's visitors are: each signs in as a guest, opens
+the example as its page does, types in a node's code in a copy of its own
+through its tab and asks Node Builder, on the scripted model, to put a line on
+top of it. Each agent's write must land in its own guest's copy, in no other
+guest's and not in the example, which a guest of the stage's own reads before
+the tiers and after each; the report names each copy's backend process.
 """
 
 from __future__ import annotations
@@ -45,6 +53,7 @@ import queue
 import shlex
 import sys
 import random
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -57,9 +66,11 @@ from . import sockets
 from .agents import TURN_WAIT_S, RoomAgents, on_the_scripted_model
 from .autk import compile_autk_data
 from .backend_probe import (
-    BackendProbe, ProbeError, Sampler, reading_now, save_thread_stacks, track_worker, worker_finished,
+    PROBE_TIMEOUT_S, STACKS_WAIT_S, BackendProbe, ProbeError, Sampler, reading_now, save_thread_stacks,
+    track_worker, worker_finished,
 )
 from .driver import AUTK_GRAMMAR, BURST, JS_COMPUTATION, PASS_ON, Pacing, VirtualUser, new_user_name
+from .guests import ExampleReader, GuestsError, slice_visits
 
 REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
@@ -82,6 +93,11 @@ DEFAULT_MIX = [
     "dataflows/regression.json",              # Autark data + compute
     "dataflows/js-computation.json",           # JS node on its own
 ]
+
+# The example hosted guests open with ``--guests`` and no example named: the
+# mix's first, which the agents stage already works on, with three Python
+# nodes and no Autark one.
+DEFAULT_GUEST_EXAMPLE = DEFAULT_MIX[0]
 
 # A single user's whole session. Generous: under load a node legitimately
 # queues behind the sandbox's parallelism limit for minutes.
@@ -108,6 +124,12 @@ SESSION_PAUSE_MAX_S = 4.0
 # the tier closed to end, so a thread still there then was kept.
 PROBE_EVERY_S = 1.0
 PROBE_END_WAIT_S = 2.0
+
+# How long after a guests tier's first agent turn was asked the harness asks
+# every backend process for its thread stacks, once, saved in --out: while
+# the turns run, so the stacks show what each process waits on then. The
+# stacks after a failed tier come once its work is over.
+STACKS_DURING_TURNS_S = 30.0
 
 # Users per harness process: two rooms of five. Each socket message costs the
 # harness about 0.6 ms of Python (tier 10 and the session profile, run
@@ -301,49 +323,74 @@ def tier_slices(tier: int, room_size: int, per_process: int = USERS_PER_PROCESS)
     return [sum(groups[k:k + per], []) for k in range(0, len(groups), per)]
 
 
-def run_slice(job: dict, start_gate, register_gate, results_out) -> None:
+def slice_users(job: dict, start_gate, register_gate) -> tuple[list, dict]:
+    """The users one harness process carries of a tier, and their rooms,
+    whole, by index."""
+    room_size, names, examples = job["room_size"], job["names"], job["examples"]
+    shared = job.get("shared_canvas", False)
+    mine = set(job["indices"])
+    rooms = {room.index: room for room in build_rooms(names, room_size, shared=shared)
+             if room.index * room_size in mine}
+    for room in rooms.values():
+        if shared:
+            example = example_of(room.index * room_size, room_size, examples, shared)
+            room.example, room.parent = example.relpath, example.canvas_parent
+        if job.get("agents"):
+            room.agents = RoomAgents(room)
+    users = []
+    for index in job["indices"]:
+        example = example_of(index, room_size, examples, shared)
+        users.append(VirtualUser(
+            job["backend_url"], names[index], example.relpath, example.spec_json,
+            example.workflow, example.autk_code,
+            compare_to=job["baselines"].get(example.relpath),
+            register_gate=register_gate, start_gate=start_gate,
+            pacing=job["pacing"][index],
+            room=rooms[index // room_size] if room_size else None,
+            namespace=job["namespace"],
+            probe_command=job.get("probe_command"),
+        ))
+    return users, rooms
+
+
+def run_slice(job: dict, start_gate, register_gate, results_out, first_ask=None) -> None:
     """One harness process's part of a tier: its users' sessions, their rooms
-    whole, as threads of this process; what they did goes back to the main
-    process through *results_out*, with this process's own CPU seconds."""
+    whole, as threads of this process, or its hosted guests' visits
+    (``guests.py``), each a room of its own, which set *first_ask* as their
+    agents' turns are asked; what they did goes back to the main process
+    through *results_out*, with this process's own CPU seconds."""
     from .backend_probe import process_cpu_seconds
 
     try:
-        room_size, names, examples = job["room_size"], job["names"], job["examples"]
-        shared = job.get("shared_canvas", False)
-        mine = set(job["indices"])
-        rooms = {room.index: room for room in build_rooms(names, room_size, shared=shared)
-                 if room.index * room_size in mine}
-        for room in rooms.values():
-            if shared:
-                example = example_of(room.index * room_size, room_size, examples, shared)
-                room.example, room.parent = example.relpath, example.canvas_parent
-            if job.get("agents"):
-                room.agents = RoomAgents(room)
-        users = []
-        for index in job["indices"]:
-            example = example_of(index, room_size, examples, shared)
-            users.append(VirtualUser(
-                job["backend_url"], names[index], example.relpath, example.spec_json,
-                example.workflow, example.autk_code,
-                compare_to=job["baselines"].get(example.relpath),
-                register_gate=register_gate, start_gate=start_gate,
-                pacing=job["pacing"][index],
-                room=rooms[index // room_size] if room_size else None,
-                namespace=job["namespace"],
-                probe_command=job.get("probe_command"),
-            ))
+        if job.get("guests"):
+            users, rooms = slice_visits(job, start_gate, register_gate, first_ask), {}
+        else:
+            users, rooms = slice_users(job, start_gate, register_gate)
         with ThreadPoolExecutor(max_workers=len(users)) as pool:
             futures = [pool.submit(user.run) for user in users]
             results = [f.result(timeout=USER_DEADLINE_S) for f in futures]
         for room in rooms.values():
             if room.agents is not None:
                 room.agents.wait_over(TURN_WAIT_S)
-        results_out.put({"slice": job["slice"], "results": results,
-                         "rooms": [room.outcome() for room in rooms.values()],
+        outcomes = ([user.outcome() for user in users] if job.get("guests")
+                    else [room.outcome() for room in rooms.values()])
+        results_out.put({"slice": job["slice"], "results": results, "rooms": outcomes,
                          "cpu_seconds": process_cpu_seconds()})
     except BaseException as exc:  # noqa: BLE001 - the main process reports it for these users
         results_out.put({"slice": job["slice"], "error": f"{type(exc).__name__}: {exc}",
                          "cpu_seconds": process_cpu_seconds()})
+
+
+def watch_turns(first_ask, over, after_s: float, call) -> None:
+    """*call*, once, *after_s* seconds after the tier's first agent turn was
+    asked (*first_ask*, which the harness process of the guest that asked
+    first sets), unless the tier is over (*over*) by then; nothing for a tier
+    whose turns were never asked."""
+    while not first_ask.wait(1.0):
+        if over.is_set():
+            return
+    if not over.wait(after_s):
+        call()
 
 
 def _lost_user(name: str, example: str, why: str):
@@ -361,7 +408,8 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
              profile: str = "burst", label: str | None = None,
              room_size: int = 0, namespace: str | None = None,
              shared_canvas: bool = False, probe_command: list | None = None,
-             agents: bool = False) -> tuple[list, float, list]:
+             agents: bool = False, guests: dict | None = None,
+             during_turns=None) -> tuple[list, float, list]:
     """Run *tier* users, all doing their dataflow work at the same moment,
     and, in rooms of *room_size*, each with its tab of its room's dataflow;
     the results, the seconds it took, and each room's outcome
@@ -369,7 +417,13 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
     its room's one dataflow, and the room's owner reads the file its save
     wrote through *probe_command* (``backend_probe``), when there is one;
     with *agents* too, every member also asks its agent to write its node
-    (``agents.RoomAgents``).
+    (``agents.RoomAgents``). With *guests*, the example the stage's reader
+    opened (``guests.ExampleReader.open_example``), the users are hosted
+    guests on it, and each guest's outcome is its own
+    (``guests.GuestVisit.outcome``). *during_turns*, given, is called once on
+    a thread of this process :data:`STACKS_DURING_TURNS_S` after the tier's
+    first agent turn was asked, if the tier still runs then
+    (:func:`watch_turns`), and is over before the tier's results are.
 
     The users run in harness processes of their own (:func:`tier_slices`,
     :func:`run_slice`), whole rooms each, behind one start gate that spans
@@ -390,18 +444,26 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
     names = [new_user_name(label, index, run_id) for index in range(tier)]
     slices = tier_slices(tier, room_size)
     results_out = context.Queue()
+    first_ask = context.Event()
     processes = []
     started = time.time()
     for number, indices in enumerate(slices):
         job = {"slice": number, "indices": indices, "names": names, "examples": examples,
                "baselines": baselines, "pacing": pacing, "room_size": room_size,
                "namespace": namespace, "backend_url": backend_url,
-               "shared_canvas": shared_canvas, "probe_command": probe_command, "agents": agents}
-        process = context.Process(target=run_slice, args=(job, start_gate, register_gate, results_out),
+               "shared_canvas": shared_canvas, "probe_command": probe_command, "agents": agents,
+               "guests": guests}
+        process = context.Process(target=run_slice, args=(job, start_gate, register_gate, results_out, first_ask),
                                   name=f"stress-{label}-{number}", daemon=True)
         process.start()
         track_worker(process.pid)
         processes.append(process)
+    over = threading.Event()
+    watcher = None
+    if during_turns is not None:
+        watcher = threading.Thread(target=watch_turns, args=(first_ask, over, STACKS_DURING_TURNS_S, during_turns),
+                                   name=f"stress-{label}-turns", daemon=True)
+        watcher.start()
 
     reported: dict[int, dict] = {}
     deadline = time.monotonic() + USER_DEADLINE_S + 120
@@ -417,6 +479,10 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
     for process in processes:
         process.join(timeout=30)
     seconds = time.time() - started
+    over.set()
+    if watcher is not None:
+        # A reading of the stacks under way ends before the tier is reported.
+        watcher.join(timeout=PROBE_TIMEOUT_S + STACKS_WAIT_S + 30)
 
     results, outcomes = [], []
     for number, indices in enumerate(slices):
@@ -533,10 +599,25 @@ def tier_lines(summary: dict) -> list[str]:
             f"{writes['refused']} refused otherwise, {writes['none']} never made; {agents['unsynced']} "
             f"missing from a tab, {present} agent(s) in the room at the end"
         )
-        phases = agents.get("phases_s") or {}
-        if any(phases.values()):
-            lines.append("agent turns, p50 from the ask: " + ", ".join(
-                f"{phase} {took['p50']} s" for phase, took in phases.items() if took))
+        lines += phase_lines(agents)
+    guests = summary.get("guests")
+    if guests:
+        sync, ends, writes, copies, took = (guests["sync_ms"], guests["ends"], guests["writes"], guests["copies"],
+                                            guests["turn_s"])
+        left = [f"{guests[key]} {what}" for key, what in (("present_at_end", "agent(s)"), ("locks_at_end", "lock(s)"))
+                if guests[key] is not None]
+        lines.append(
+            f"{guests['guests']} hosted guest(s) on {', '.join(guests['examples'])}: {guests['joined']} tab(s) in "
+            f"{guests['rooms']} room(s) of their own copies, {guests['updates']} update(s)"
+            + (f" answered in p50 {sync['p50']} ms, p95 {sync['p95']} ms, max {sync['max']} ms" if sync else "")
+            + f"; {guests['asked']} agent turn(s): {ends['done']} done, {ends['error']} error, "
+            f"{ends['never']} never ended"
+            + (f", p50 {took['p50']} s, p95 {took['p95']} s, max {took['max']} s" if took else "")
+            + f"; writes {writes['landed']} landed; {copies['read']} cop(ies) read back, {copies['not_in_copy']} "
+            f"missing their own work, {copies['leaked']} holding work not their own; "
+            + (" and ".join(left) or "nothing read") + " in a room at the end"
+        )
+        lines += phase_lines(guests)
     backend = summary.get("backend") or {}
     if backend.get("measured"):
         threads, rss = backend["threads"], backend["rss_mib"]
@@ -563,6 +644,16 @@ def tier_lines(summary: dict) -> list[str]:
             + (f"; no log for {', '.join(files['without_log'])}" if files["without_log"] else "")
         )
     return lines + process_lines(summary)
+
+
+def phase_lines(block: dict) -> list[str]:
+    """The phases of a tier's agents' turns (its ``agents`` or ``guests``
+    block), p50 from each ask, for the log; none when no phase was seen."""
+    phases = block.get("phases_s") or {}
+    if not any(phases.values()):
+        return []
+    return ["agent turns, p50 from the ask: " + ", ".join(
+        f"{phase} {took['p50']} s" for phase, took in phases.items() if took)]
 
 
 def process_lines(summary: dict) -> list[str]:
@@ -622,6 +713,16 @@ def main(argv: list[str] | None = None) -> int:
                              "Node Builder to write its own node's code, on "
                              "Curio's scripted model, which is Curio's default "
                              "for the tier (the stack needs --testing)")
+    parser.add_argument("--guests", nargs="?", const=DEFAULT_GUEST_EXAMPLE, default=None,
+                        metavar="EXAMPLE",
+                        help="a tier's users are hosted guests on one shipped "
+                             "example, a path under docs/examples found in the "
+                             "guests' gallery by its name (" + DEFAULT_GUEST_EXAMPLE
+                             + " when none is given): each signs in as a guest, "
+                             "opens it, types in a node's code in a copy of its "
+                             "own through its tab and asks Node Builder, on "
+                             "Curio's scripted model, to put a line on top of it "
+                             "(the stack needs --deploy, --testing and --with-examples)")
     parser.add_argument("--probe", default="",
                         help="the command that runs Python where the backend "
                              "runs, to read its threads, memory and doc files, "
@@ -658,38 +759,81 @@ def main(argv: list[str] | None = None) -> int:
     room_size = max(0, args.room_size)
     if args.shared_canvas and not room_size:
         parser.error("--shared-canvas puts each room on one dataflow, so it needs a --room-size")
+    if args.guests and (args.shared_canvas or args.agents):
+        parser.error("--guests puts each guest on a copy of its own of one example, with its agent, "
+                     "so it takes no --shared-canvas or --agents")
     if args.agents and not args.shared_canvas:
         parser.error("--agents has each member's agent write its own node of a shared canvas, "
                      "so it needs --shared-canvas")
-    examples = load_mix([m.strip() for m in args.mix.split(",") if m.strip()])
-    if room_size:
+    if args.guests:
+        # Each guest is a room of its own, its copy's, and its harness
+        # process carries guests, not rooms.
+        room_size = 0
+    examples = load_mix([args.guests] if args.guests else [m.strip() for m in args.mix.split(",") if m.strip()])
+    if room_size or args.guests:
         sockets.require_websocket_client()
 
     wait_for_backend(backend_url)
-    namespace = read_namespace(backend_url) if room_size else None
+    namespace = read_namespace(backend_url) if room_size or args.guests else None
     probe = make_probe(args)
     processes = backend_process_count(args.backend_processes, probe)
+    if room_size:
+        tabs_said = f"rooms of {room_size} on {namespace}"
+    elif args.guests:
+        tabs_said = f"hosted guests on {args.guests}, each with its tab on {namespace} and its agent"
+    else:
+        tabs_said = "no tabs"
     print(f"[stress] run {args.run_id} against {backend_url}; "
-          f"tiers {tiers}; profile {args.profile}; "
-          + (f"rooms of {room_size} on {namespace}" if room_size else "no tabs")
+          f"tiers {tiers}; profile {args.profile}; " + tabs_said
           + ("; each room one shared canvas" if args.shared_canvas else "")
           + ("; each member's agent at work on it" if args.agents else "")
           + f"; {processes} backend process(es)",
           flush=True)
 
-    baselines = run_baseline(backend_url, args.run_id, examples, shared_canvas=args.shared_canvas)
+    reader = guest_job = None
+    if args.guests:
+        # No solo baseline: a guest plays no node. The example's own reader
+        # instead, which every guest's copy and the example are held to.
+        reader = ExampleReader(backend_url, examples[0].relpath,
+                               (examples[0].spec_json.get("dataflow") or {}).get("name") or "")
+        try:
+            guest_job = reader.open_example()
+        except GuestsError as exc:
+            raise SystemExit(f"[stress] the guests' example {args.guests} could not be opened as a guest, "
+                             f"so the tiers would be meaningless: {exc}") from exc
+        print(f"[stress] the guests open {guest_job['name']!r}, dataflow {guest_job['id']}, and type in "
+              f"node {guest_job['node_id']}", flush=True)
+        baselines = {}
+    else:
+        baselines = run_baseline(backend_url, args.run_id, examples, shared_canvas=args.shared_canvas)
+
+    #: Each guests tier's thread stacks during its turns, by its position.
+    during: dict = {}
+
+    def stacks_during_turns(tier: int, position: int) -> None:
+        """Every backend process's thread stacks while a guests tier's
+        agents work, saved in --out (``backend_probe.save_thread_stacks``)."""
+        path, line = save_thread_stacks(probe, args.out, f"tier-{position + 1}-{tier}-during-turns")
+        during[position] = {"file": os.path.basename(path), "after_s": STACKS_DURING_TURNS_S, "line": line}
+        print(f"[stress] tier {tier}: {STACKS_DURING_TURNS_S:.0f} s after its first agent turn was asked, {line}",
+              flush=True)
 
     def tier_run(tier: int, position: int):
-        """The tier, as :func:`probe_tier` runs it; with the agents, on
-        Curio's scripted model, its default for the tier alone. Read only
-        once the tier runs, the probe's command among it."""
+        """The tier, as :func:`probe_tier` runs it; with the agents, the
+        guests' among them, on Curio's scripted model, its default for the
+        tier alone; a guests tier with the backend's thread stacks during
+        its turns. Read only once the tier runs, the probe's command among
+        it."""
         run = functools.partial(
             run_tier, backend_url, args.run_id, tier, examples, baselines,
             args.register_concurrency, args.profile, label=f"{tier}x{position}",
             room_size=room_size, namespace=namespace, shared_canvas=args.shared_canvas,
             probe_command=probe.command if probe is not None else None, agents=args.agents,
+            guests=guest_job,
+            during_turns=(functools.partial(stacks_during_turns, tier, position)
+                          if args.guests and probe is not None else None),
         )
-        return on_the_scripted_model(backend_url, run) if args.agents else run()
+        return on_the_scripted_model(backend_url, run) if args.agents or args.guests else run()
 
     tier_reports = []
     all_results = []
@@ -702,14 +846,34 @@ def main(argv: list[str] | None = None) -> int:
             probe, functools.partial(tier_run, tier, position))
         all_results.extend(results)
         lock = reporting.exec_lock_delta(lock_before, read_exec_lock(backend_url))
-        tabs = reporting.socket_summary(outcomes, processes)
-        summary = reporting.tier_summary(tier, results, seconds, args.profile,
-                                         exec_lock=lock, sockets=tabs,
-                                         backend=backend, doc_files=doc_files,
-                                         harness=harness,
-                                         canvas=reporting.canvas_summary(outcomes))
-        summary["agents"] = reporting.agents_summary(outcomes, processes)
-        summary["processes"] = reporting.process_summary(outcomes, processes, backend)
+        if reader is not None:
+            # Each guest is a room of its own, its copy's, on the process its
+            # copy belongs to (report.copy_process).
+            checked = reader.check(outcomes)
+            all_results.append(checked)
+            summary = reporting.tier_summary(tier, results, seconds, args.profile, exec_lock=lock,
+                                             backend=backend, doc_files=doc_files, harness=harness,
+                                             checks=[checked])
+            summary["guests"] = reporting.guests_summary(outcomes, processes)
+            summary["processes"] = reporting.process_summary(outcomes, processes, backend,
+                                                             process_of=reporting.copy_process)
+            if position in during:
+                summary["stacks_during_turns"] = during[position]
+            else:
+                why = ("the probe is off (--no-probe)" if probe is None else
+                       f"no agent turn was asked, or the tier was over within {STACKS_DURING_TURNS_S:.0f} s "
+                       "of its first")
+                summary["stacks_during_turns"] = {"file": None, "after_s": STACKS_DURING_TURNS_S,
+                                                  "line": f"none saved: {why}"}
+        else:
+            tabs = reporting.socket_summary(outcomes, processes)
+            summary = reporting.tier_summary(tier, results, seconds, args.profile,
+                                             exec_lock=lock, sockets=tabs,
+                                             backend=backend, doc_files=doc_files,
+                                             harness=harness,
+                                             canvas=reporting.canvas_summary(outcomes))
+            summary["agents"] = reporting.agents_summary(outcomes, processes)
+            summary["processes"] = reporting.process_summary(outcomes, processes, backend)
         tier_reports.append(summary)
         print(f"[stress] tier {tier}: {summary['completed']}/{tier} completed in "
               f"{seconds:.1f}s, {summary['failure_count']} failure(s)", flush=True)
@@ -728,7 +892,7 @@ def main(argv: list[str] | None = None) -> int:
     report = reporting.build_report(args.run_id, backend_url, tier_reports,
                                     args.stats_log, profile=args.profile,
                                     room_size=room_size, shared_canvas=args.shared_canvas,
-                                    backend_processes=processes)
+                                    backend_processes=processes, guests=args.guests)
     report["agents"] = args.agents
     json_path, md_path = reporting.write_outputs(report, args.out)
     with open(os.path.join(args.out, "samples.json"), "w", encoding="utf-8") as fh:
