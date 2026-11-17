@@ -16,6 +16,10 @@ sign-in, signs in to the one guest account, so the room numbers that
 account's tabs (:data:`GUEST_NUMBER`), which name each of them apart. The
 socket's own id stays on the server. The dataflow is not here: it is the
 server's Yjs doc (``dataflow_docs.py``).
+
+A tab that joins or leaves a room tells ``placement.py``, which counts the
+rooms open in this process for the placement of new dataflows, once this
+module's lock is let go.
 """
 
 from __future__ import annotations
@@ -121,7 +125,24 @@ def add_user(room: str, sid: str, user_info: dict) -> dict:
         users[sid] = entry
         _sid_index.setdefault(sid, set()).add(room)
         _room_meta[room]["last_active"] = _now()
-        return dict(entry)
+        joined = dict(entry)
+    _rooms_changed()
+    return joined
+
+
+def rooms_with_tabs() -> set:
+    """The rooms at least one tab is in."""
+    with _lock:
+        return {room for room, users in _room_users.items() if users}
+
+
+def _rooms_changed() -> None:
+    """Tell the placement of new dataflows that a tab joined or left a room
+    (``placement.changed``). Called with this module's lock let go: the
+    placement reads the rooms under a lock of its own."""
+    from utk_curio.backend.app.collaboration import placement
+
+    placement.changed()
 
 
 def _release_locks_of(room: str, participant_id: Optional[str]) -> List[str]:
@@ -141,17 +162,25 @@ def remove_user(room: str, sid: str) -> Optional[dict]:
     nodeIds) or ``None`` if the sid wasn't a member.
     """
     with _lock:
-        users = _room_users.get(room) or {}
-        removed = users.pop(sid, None)
-        released_node_ids = _release_locks_of(room, (removed or {}).get("participant_id"))
-        rooms = _sid_index.get(sid)
-        if rooms is not None:
-            rooms.discard(room)
-            if not rooms:
-                _sid_index.pop(sid, None)
-        if removed is not None:
-            removed = dict(removed, released_locks=released_node_ids)
-        return removed
+        removed = _remove(room, sid)
+    if removed is not None:
+        _rooms_changed()
+    return removed
+
+
+def _remove(room: str, sid: str) -> Optional[dict]:
+    """:func:`remove_user`'s change, made with this module's lock held."""
+    users = _room_users.get(room) or {}
+    removed = users.pop(sid, None)
+    released_node_ids = _release_locks_of(room, (removed or {}).get("participant_id"))
+    rooms = _sid_index.get(sid)
+    if rooms is not None:
+        rooms.discard(room)
+        if not rooms:
+            _sid_index.pop(sid, None)
+    if removed is not None:
+        removed = dict(removed, released_locks=released_node_ids)
+    return removed
 
 
 def release_all_for_sid(sid: str) -> Dict[str, dict]:
@@ -160,10 +189,12 @@ def release_all_for_sid(sid: str) -> Dict[str, dict]:
         rooms = list(_sid_index.get(sid, ()))
         result: Dict[str, dict] = {}
         for r in rooms:
-            removed = remove_user(r, sid)
+            removed = _remove(r, sid)
             if removed is not None:
                 result[r] = removed
-        return result
+    if result:
+        _rooms_changed()
+    return result
 
 
 def participant(room: str, sid: str) -> Optional[dict]:
@@ -289,7 +320,10 @@ def is_member(room: str, sid: str) -> bool:
 
 
 def reset_for_tests() -> None:
-    """Test-only utility - wipe every dict."""
+    """Test-only utility - wipe every dict, and the count of open rooms the
+    placement last wrote (``placement.py``)."""
+    from utk_curio.backend.app.collaboration import placement
+
     with _lock:
         _room_users.clear()
         _room_locks.clear()
@@ -297,3 +331,4 @@ def reset_for_tests() -> None:
         _room_activity.clear()
         _sid_index.clear()
         _sid_identity.clear()
+    placement.reset_for_tests()

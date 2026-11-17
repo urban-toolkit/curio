@@ -116,6 +116,42 @@ def test_every_process_owns_a_share_of_the_dataflows():
     assert owners == set(range(8))
 
 
+# A new dataflow's id, made for a process.
+
+
+@pytest.mark.parametrize("processes", range(1, 17))
+def test_an_id_made_for_a_process_belongs_to_it_and_stays_a_uuid4(processes):
+    """The placement of new dataflows picks a process and makes the new
+    dataflow's id for it (``collaboration/placement.py``); the router and the
+    owner guard send it there by ``shard_of``, as they send every id."""
+    processes_module = _processes()
+    for process in range(processes):
+        for _ in range(32):
+            made = processes_module.dataflow_id_on(process, processes)
+            parsed = uuid.UUID(made)
+            assert str(parsed) == made, made
+            assert parsed.version == 4 and parsed.variant == uuid.RFC_4122, f"{made} is not a uuid4"
+            assert processes_module.shard_of(made, processes) == process, (
+                f"{made}, made for process {process} of {processes}, belongs to "
+                f"{processes_module.shard_of(made, processes)}"
+            )
+
+
+def test_the_ids_made_for_a_process_start_with_any_of_its_leads():
+    """Of 256 ids made for process 1 of 2, which 128 leads name, more than
+    half of those leads start one: the lead is drawn, not fixed."""
+    made_for = _processes().dataflow_id_on
+    leads = {made_for(1, 2)[:2] for _ in range(256)}
+    assert all(int(lead, 16) % 2 == 1 for lead in leads), leads
+    assert len(leads) > 64, sorted(leads)
+
+
+@pytest.mark.parametrize("process, processes", [(-1, 2), (2, 2), (8, 8)])
+def test_no_id_is_made_for_a_process_the_start_does_not_run(process, processes):
+    with pytest.raises(ValueError):
+        _processes().dataflow_id_on(process, processes)
+
+
 # What the launcher gives the backend.
 
 
