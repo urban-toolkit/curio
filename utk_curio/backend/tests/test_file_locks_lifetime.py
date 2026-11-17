@@ -2,7 +2,7 @@
 life of the process (``common/file_locks.py``).
 
 Every dataflow a backend touches gets a spec lock and a history lock of its
-own, and each signup seeds 61 dataflows. Kept for the life of the process,
+own, and each signup seeds 62 dataflows. Kept for the life of the process,
 the stress job's backend held 191,370 of these locks after 1,395 signups,
 about 140 a signup (tmp/backend-rss-probe, run 43752339941). A lock that
 nothing references cannot be held or waited on, so it can go; one that is
