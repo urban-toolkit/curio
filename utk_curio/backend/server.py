@@ -154,6 +154,15 @@ def _socketio_run_kwargs():
     }
 
 
+def _bucket_mount_proxy_host(run_kwargs):
+    """Where the bucket mount service's proxy listens: where the backend
+    listens, the launcher's ``--backend-host``. In a start of several
+    processes that is where nginx listens (``ROUTER_HOST_VARIABLE``), not
+    this process's own 127.0.0.1, which the service's container cannot
+    reach."""
+    return os.getenv(backend_processes.ROUTER_HOST_VARIABLE) or run_kwargs["host"]
+
+
 def serve():
     """Serve the backend, Socket.IO included, until it is stopped."""
     # SIGUSR1 writes every thread's stack to a file (thread_stacks.py), which
@@ -182,9 +191,9 @@ def serve():
         from utk_curio.backend.app.discovery import service as discovery_service
 
         # When --bucket-mounts-dir and --bucket-mount-socket name a bucket
-        # mount service: its one way out, a proxy on the backend's own host,
+        # mount service: its one way out, a proxy where the backend listens,
         # then its self-test, once; /monitor shows how it went.
-        discovery_service.start_bucket_mount_proxy(run_kwargs["host"])
+        discovery_service.start_bucket_mount_proxy(_bucket_mount_proxy_host(run_kwargs))
         discovery_service.start_bucket_mount_check()
 
     # The app's own SocketIO server (extensions.init_socketio), which

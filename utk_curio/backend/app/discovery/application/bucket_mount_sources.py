@@ -567,7 +567,7 @@ def _the_proxy() -> MountProxy:
 
 
 def start_proxy(host: str) -> bool:
-    """Start the proxy on *host*, the backend's own, at
+    """Start the proxy on *host*, where the backend listens, at
     ``bucket_mounts.PROXY_PORT``, when the flags name a mount service.
     Whether it listens."""
     if bucket_mounts.configured() is None:

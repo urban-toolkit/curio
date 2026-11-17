@@ -66,6 +66,11 @@ BOOT_ID_VARIABLE = "CURIO_BOOT_ID"
 PORTS_VARIABLE = "CURIO_BACKEND_PORTS"
 #: The secret the start's backends show each other on a call between them.
 TOKEN_VARIABLE = "CURIO_BACKEND_TOKEN"
+#: Where nginx listens, the launcher's ``--backend-host``: each process itself
+#: listens on 127.0.0.1, so a server the home process starts for another
+#: container to reach, the bucket mount service's proxy, listens here
+#: (``backend/server.py``).
+ROUTER_HOST_VARIABLE = "CURIO_BACKEND_ROUTER_HOST"
 
 #: The header a request names its dataflow in, and the query argument a
 #: socket's handshake names it in, which nginx routes by
