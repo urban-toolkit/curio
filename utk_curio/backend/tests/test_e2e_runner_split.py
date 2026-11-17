@@ -83,7 +83,9 @@ class ClassificationTest(unittest.TestCase):
         """Example 31's Track Objects runs SAM 3 in its package's module, so
         no node's code imports torch itself: its Autark map is what puts it on
         the GPU runner, where SAM 3 runs on CUDA. The isolated stack, a CPU
-        runner's, whose browser has no WebGPU, does not run it."""
+        runner's, whose browser has no WebGPU, does not run it: its list is
+        the workflow's alone, which the unit suites' container does not hold,
+        so the Jest suite checks it (ciIsolatedWorkflows.test.ts)."""
         example = EXAMPLES / "31-sideseeing-objects-along-a-walk.json"
         self.assertTrue(runner_split.dataflow_needs_webgpu(str(example)))
         self.assertFalse(runner_split.dataflow_runs_torch(str(example)))
@@ -93,9 +95,6 @@ class ClassificationTest(unittest.TestCase):
             callspec=SimpleNamespace(params={"loaded_workflow": str(example)}),
         )
         self.assertTrue(runner_split.item_needs_webgpu(item))
-        workflow = (REPO / ".github" / "workflows" / "docker-compose.yml").read_text(encoding="utf-8")
-        (isolated,) = re.findall(r"^\s*ISOLATED_WORKFLOWS: (\S+)\s*$", workflow, re.M)
-        self.assertNotIn(example.name, isolated.split(","))
 
     def test_a_walk_needs_webgpu_through_its_example_or_its_script(self):
         def plain(ctx):
