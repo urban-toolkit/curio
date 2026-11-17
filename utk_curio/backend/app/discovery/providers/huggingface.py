@@ -1,7 +1,8 @@
 """A dataset repo on the Hugging Face Hub, read file by file.
 
-Listed with the Hub's tree API, ``/api/datasets/<repo>/tree/<revision>/<path>``,
-which pages with a ``Link: <...>; rel="next"`` header, and read with
+Listed with the Hugging Face Hub's tree API,
+``/api/datasets/<repo>/tree/<revision>/<path>``, which pages with a
+``Link: <...>; rel="next"`` header, and read with
 ``/datasets/<repo>/resolve/<revision>/<path>``, which redirects to a CDN. Each
 hop is re-checked by the egress policy. A token is optional: the account's
 Hugging Face token (the one the Hugging Face models source uses) opens gated
@@ -138,7 +139,7 @@ class HuggingFaceStorage:
 
 
 def _next_link(headers: dict, base: str) -> str | None:
-    """The next page, only when it is on the Hub itself."""
+    """The next page, only when it is on the Hugging Face Hub itself."""
     for name, value in (headers or {}).items():
         if name.lower() != "link":
             continue
