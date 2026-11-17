@@ -2,12 +2,19 @@
 
 ``curio.py start`` may run several backend processes
 (``common/backend_processes.py``). Each dataflow belongs to one of them, its
-owner: the process ``shard_of`` names for the dataflow's id, or for a hosted
-guest's copy of a dataflow, for the id of the dataflow it copies, the one the
-guest's page names (``projects/visitor_copies.py``). A dataflow's requests and
+owner: the process ``shard_of`` names for the dataflow's id (:func:`room_key`).
+A hosted guest's copy of a dataflow goes by the copy's own id, never by the id
+of the dataflow it copies, and so does a hosted guest's own new dataflow
+(``projects/visitor_copies.py``): the copies of one example, one for each guest
+who opens it, spread over the processes as their ids do. The guest's pages
+name its copy's id once the dataflow's load gives it, its canvas and its
+dashboard alike (``src/utils/requestHeaders.ts``). A dataflow's requests and
 sockets reach its owner by the same rule, and only the owner keeps anything
 live for it: its doc and its room (``dataflow_docs.py``, ``events.py``), its
-agents' turns, its Solves, its runs and its dashboard's runs.
+agents' turns, its Solves, its runs and its dashboard's runs. A hosted guest's
+dashboard of an example is its copy's, made or not yet: the copy's owner keeps
+its runs, whether they run the copy or, while the guest has none, the example
+(``runs/viewer.py``).
 
 In any other process:
 
@@ -46,7 +53,6 @@ from typing import Iterator, Optional
 
 from werkzeug.exceptions import MisdirectedRequest
 
-from utk_curio.backend.app.common.user_storage import GUEST_KEY
 from utk_curio.common import backend_processes
 
 logger = logging.getLogger(__name__)
@@ -62,9 +68,6 @@ _lock = threading.Lock()
 _counts: dict[str, int] = {}
 #: The same, by kind and caller, for the lines.
 _by_caller: dict[tuple[str, str], int] = {}
-#: Each hosted guest's copy's source, once known: a copy's id is made from the
-#: dataflow it copies, so it names that dataflow for good.
-_sources: dict[str, str] = {}
 #: Whether this process owns every dataflow for now: the home process while it
 #: does the startup work, before the start's other processes serve.
 _alone = False
@@ -96,51 +99,23 @@ class NotTheOwner(MisdirectedRequest):
         ))
 
 
-def room_key(project_id: str, user_key=None, *, source: Optional[str] = None) -> str:
-    """The id that names the process *project_id* belongs to: its own, or for
-    a hosted guest's copy of a dataflow, that dataflow's. *source* is what the
-    copy copies when the caller holds its row (``visitor_copies.Copy``);
-    otherwise the copy's ``visitor.json`` says, or for a copy not made yet,
-    the room of it this process opened. A guest's own new dataflow copies
-    none and goes by its own id, as its page names it. Only the guest account
-    holds copies: another account's dataflow goes by its own id at once."""
-    if source is None:
-        if user_key is not None and str(user_key) != GUEST_KEY:
-            return project_id
-        source = _source_of(project_id)
-    if not source or _new(source):
-        return project_id
-    return source
+def room_key(project_id: str) -> str:
+    """The id that names the process *project_id* belongs to: its own, for
+    every dataflow. A hosted guest's copy of a dataflow goes by the copy's
+    id, not by the id of the dataflow it copies, and a guest's own new
+    dataflow by its own: the id the guest's page names."""
+    return project_id
 
 
-def _source_of(project_id: str) -> Optional[str]:
-    known = _sources.get(project_id)
-    if known is not None:
-        return known
-    from utk_curio.backend.app.projects import visitor_copies
-
-    source = visitor_copies.source_of(project_id)
-    if source:
-        with _lock:
-            _sources[project_id] = source
-    return source
-
-
-def _new(source: str) -> bool:
-    from utk_curio.backend.app.projects.visitor_copies import NEW
-
-    return source.startswith(NEW)
-
-
-def owner_of(project_id: str, user_key=None, *, source: Optional[str] = None) -> int:
+def owner_of(project_id: str) -> int:
     """The process *project_id* belongs to among this start's."""
     processes = backend_processes.process_count()
     if processes <= 1:
         return backend_processes.HOME
-    return backend_processes.shard_of(room_key(project_id, user_key, source=source), processes)
+    return backend_processes.shard_of(room_key(project_id), processes)
 
 
-def elsewhere(project_id: str, user_key=None, *, source: Optional[str] = None) -> Optional[int]:
+def elsewhere(project_id: str) -> Optional[int]:
     """The process that owns *project_id* when it is not this one; ``None``
     when this process owns it, as the one process of a start owns every
     dataflow, and the home process does while it does the startup work
@@ -148,7 +123,7 @@ def elsewhere(project_id: str, user_key=None, *, source: Optional[str] = None) -
     processes = backend_processes.process_count()
     if processes <= 1 or _alone:
         return None
-    owner = backend_processes.shard_of(room_key(project_id, user_key, source=source), processes)
+    owner = backend_processes.shard_of(room_key(project_id), processes)
     return None if owner == backend_processes.this_process() else owner
 
 
@@ -180,11 +155,11 @@ def before_the_others_serve(does_startup_work: bool) -> Iterator[None]:
                         backend_processes.process_count(), len(closed))
 
 
-def refuse(project_id: str, user_key=None, *, what: str, source: Optional[str] = None) -> None:
+def refuse(project_id: str, *, what: str) -> None:
     """Raise :class:`NotTheOwner` when another process owns *project_id*;
     *what*, in a few words, is what this process was asked to keep or start
     for it. The refusal is counted and logged."""
-    owner = elsewhere(project_id, user_key, source=source)
+    owner = elsewhere(project_id)
     if owner is None:
         return
     _note("refused", f"refused {what} for", project_id, owner, logging.ERROR)
@@ -238,10 +213,9 @@ def counts() -> dict[str, int]:
 
 
 def reset_for_tests() -> None:
-    """Forget the counts and the copies' sources, as a process that starts."""
+    """Forget the counts, as a process that starts."""
     global _alone
     with _lock:
         _counts.clear()
         _by_caller.clear()
-        _sources.clear()
         _alone = False

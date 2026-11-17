@@ -5,7 +5,8 @@ with them as it starts (``discovery/application/bucket_mount_check.py``).
 The rc client is tested against a fake rc server on a Unix socket, in a short
 folder of its own (an AF_UNIX path holds about 100 bytes; netguard lets AF_UNIX
 through). The self-test runs against a fake service whose "mount" copies the
-test file where the mount would show it, and unmount takes it away.
+test file where the mount would show it, and unmount takes it away. Its way
+out runs against Curio's own proxy, on loopback.
 """
 
 from __future__ import annotations
@@ -14,7 +15,9 @@ import errno
 import http.server
 import json
 import os
+import re
 import shutil
+import socket
 import socketserver
 import subprocess
 import tempfile
@@ -44,15 +47,19 @@ class _RcServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
 
 class _Handler(http.server.BaseHTTPRequestHandler):
     """Records each call, then answers from the server's ``answers``: a
-    ``(status, JSON or bytes)`` per method, ``"hang"`` to answer only once the
-    test is over, and ``{}`` otherwise."""
+    ``(status, JSON or bytes)`` per method, a function of the call's
+    parameters that gives one, ``"hang"`` to answer only once the test is
+    over, and ``{}`` otherwise."""
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length)
         method = self.path.lstrip("/")
-        self.server.calls.append((self.command, self.path, self.headers.get("Content-Type"), json.loads(body or b"{}")))
+        params = json.loads(body or b"{}")
+        self.server.calls.append((self.command, self.path, self.headers.get("Content-Type"), params))
         answer = self.server.answers.get(method, (200, {}))
+        if callable(answer):
+            answer = answer(params)
         if answer == "hang":
             self.server.release.wait(10)
             answer = (200, {})
@@ -147,21 +154,53 @@ class TestTheRcClient:
 # ── The self-test, against a fake service ───────────────────────────────────
 
 
+class _FakeProxy:
+    """Curio's proxy as the self-test asks it: whether it listens, and the
+    hosts it was told to expect, each heard once a request for it comes."""
+
+    def __init__(self, *, listening=True):
+        self.listening = listening
+        self.expected = {}
+        self.asked = []
+
+    def expect(self, host, port):
+        self.asked.append((host, port))
+        self.expected[(host, port)] = False
+
+    def heard(self, host, port):
+        return self.expected.get((host, port), False)
+
+    def forget(self, host, port):
+        self.expected.pop((host, port), None)
+
+    def arrive(self, host, port):
+        """A ``CONNECT`` to *host* at *port* comes."""
+        if (host, port) in self.expected:
+            self.expected[(host, port)] = True
+
+
 class _FakeService:
     """The mount service as the self-test calls it. ``operations/mkdir``
     makes the test mount's folder in *mounts_dir*, ``mount/mount`` "mounts" by
     writing the test file there (unless *propagate* is off), and
     ``mount/unmount`` takes it away. *refuse* maps a method to rclone's error;
-    *unreachable* makes the first calls find no service."""
+    *unreachable* makes the first calls find no service.
+
+    ``operations/list`` lists a bucket as rclone does, out through its
+    proxy: its request reaches ``proxy`` unless *way_out* is False, and
+    rclone answers with the error of a refused request either way; with
+    ``"timeout"`` it is still trying when the call's deadline comes."""
 
     def __init__(self, mounts_dir: Path, *, refuse=None, propagate=True,
-                 line=bm.SELFTEST_LINE, leftover=False, unreachable=0):
+                 line=bm.SELFTEST_LINE, leftover=False, unreachable=0, way_out=True):
         self.mounts_dir = mounts_dir
         self.refuse = dict(refuse or {})
         self.propagate = propagate
         self.line = line
         self.mounted = leftover
         self.unreachable = unreachable
+        self.way_out = way_out
+        self.proxy = _FakeProxy()
         self.calls = []
 
     def call(self, method, params=None, *, timeout=None):
@@ -183,7 +222,20 @@ class _FakeService:
             self.mounted = False
         elif method == "mount/listmounts":
             return {"mountPoints": [{"Fs": bm.SELFTEST_FOLDER, "MountPoint": MOUNT_POINT}] if self.mounted else []}
+        elif method == "operations/list":
+            raise self._listing_out(params)
         return {}
+
+    def _listing_out(self, params):
+        """What rclone answers a listing out through its proxy with."""
+        host = _endpoint_host(params["fs"])
+        if self.way_out == "timeout":
+            return bm.RcError("timeout", "the mount service did not answer operations/list within 30 s")
+        if not self.way_out:
+            return bm.RcError("refused", "the mount service refused operations/list: " + NO_WAY_OUT.format(host=host))
+        self.proxy.arrive(host, 443)
+        return bm.RcError("refused", "the mount service refused operations/list: request send failed, "
+                                     f'Get "https://{host}/selftest?list-type=2": Forbidden')
 
     def methods(self):
         return [method for method, _ in self.calls]
@@ -193,11 +245,11 @@ class TestTheSelfTest:
     def test_it_mounts_the_test_folder_reads_it_and_unmounts_it(self, tmp_path):
         service = _FakeService(tmp_path)
 
-        outcome = bm.self_test(service, tmp_path, wait_seconds=0)
+        outcome = bm.self_test(service, tmp_path, proxy=service.proxy, wait_seconds=0)
 
         assert (outcome.passed, outcome.problem) == (True, None)
         assert service.methods() == [
-            "rc/noop", "mount/listmounts", "operations/mkdir", "mount/mount", "mount/unmount",
+            "rc/noop", "mount/listmounts", "operations/mkdir", "mount/mount", "mount/unmount", "operations/list",
         ]
         assert service.calls[2][1] == {"fs": "/mounts", "remote": ".selftest"}
         # Read-only, with allow_other, no cache, files 0444 and folders 0555,
@@ -209,6 +261,17 @@ class TestTheSelfTest:
         }
         assert service.calls[4][1] == {"mountPoint": MOUNT_POINT}
         assert not service.mounted
+        # The way out: a bucket listed as a source's is, at the host the
+        # proxy was told to expect, which it expects no more.
+        [(host, port)] = service.proxy.asked
+        assert port == 443 and re.fullmatch(r"selftest-[0-9a-f]{32}\.curio-bucket-mounts\.invalid", host), host
+        assert service.calls[5][1] == {
+            "fs": f":s3,provider=Other,endpoint='https://{host}',env_auth=false,no_head_object=true,"
+                  "force_path_style=true,list_version=2:selftest",
+            "remote": "",
+        }
+        assert service.proxy.expected == {}
+        assert "reached Curio's proxy" in outcome.detail
 
     def test_it_reads_as_the_execution_account_with_its_ids(self, tmp_path, monkeypatch):
         service = _FakeService(tmp_path)
@@ -219,7 +282,8 @@ class TestTheSelfTest:
             return subprocess.CompletedProcess(argv, 0, (bm.SELFTEST_LINE + "\n").encode(), b"")
 
         monkeypatch.setattr(bm.subprocess, "run", run)
-        outcome = bm.self_test(service, tmp_path, account=bm.Account("curio-exec", 999, 998), wait_seconds=0)
+        outcome = bm.self_test(service, tmp_path, account=bm.Account("curio-exec", 999, 998), proxy=service.proxy,
+                               wait_seconds=0)
 
         assert outcome.passed, outcome.detail
         assert "as curio-exec (uid 999)" in outcome.detail
@@ -269,7 +333,8 @@ class TestTheSelfTest:
             sleeps.append(seconds)
             now[0] += seconds
 
-        outcome = bm.self_test(service, tmp_path, wait_seconds=60, sleep=sleep, clock=lambda: now[0])
+        outcome = bm.self_test(service, tmp_path, proxy=service.proxy, wait_seconds=60, sleep=sleep,
+                               clock=lambda: now[0])
 
         assert outcome.passed, outcome.detail
         assert sleeps == [bm.SERVICE_RETRY_SECONDS] * 2
@@ -306,11 +371,12 @@ class TestTheSelfTest:
     def test_a_test_mount_a_stopped_self_test_left_is_unmounted_first(self, tmp_path):
         service = _FakeService(tmp_path, leftover=True)
 
-        outcome = bm.self_test(service, tmp_path, wait_seconds=0)
+        outcome = bm.self_test(service, tmp_path, proxy=service.proxy, wait_seconds=0)
 
         assert outcome.passed, outcome.detail
         assert service.methods() == [
             "rc/noop", "mount/listmounts", "mount/unmount", "operations/mkdir", "mount/mount", "mount/unmount",
+            "operations/list",
         ]
 
     def test_a_refused_unmount_fails_the_self_test(self, tmp_path):
@@ -320,6 +386,45 @@ class TestTheSelfTest:
 
         assert (outcome.passed, outcome.problem) == (False, "unmount-refused")
         assert "mount not found" in outcome.detail
+
+    def test_a_service_that_reaches_no_proxy_fails_as_no_way_out_with_rclones_words(self, tmp_path):
+        service = _FakeService(tmp_path, way_out=False)
+
+        outcome = bm.self_test(service, tmp_path, proxy=service.proxy, wait_seconds=0)
+
+        assert (outcome.passed, outcome.problem) == (False, "no-way-out")
+        assert bm.PROBLEMS["no-way-out"] == "the mount service could not reach Curio's proxy on port 3128"
+        # What rclone answered goes to the monitor's Recent errors.
+        assert "proxyconnect tcp: dial tcp 172.18.0.3:3128: connect: connection refused" in outcome.detail
+        assert not service.mounted
+        assert service.proxy.expected == {}
+
+    def test_a_listing_still_trying_at_its_deadline_is_no_way_out_and_never_no_answer(self, tmp_path):
+        # After no-answer, each call the service answers would run the
+        # self-test again.
+        service = _FakeService(tmp_path, way_out="timeout")
+
+        outcome = bm.self_test(service, tmp_path, proxy=service.proxy, wait_seconds=0)
+
+        assert (outcome.passed, outcome.problem) == (False, "no-way-out")
+
+    @pytest.mark.parametrize("proxy", [None, _FakeProxy(listening=False)], ids=["none", "not-listening"])
+    def test_with_no_proxy_listening_in_this_process_it_fails_with_no_listing(self, tmp_path, proxy):
+        service = _FakeService(tmp_path)
+
+        outcome = bm.self_test(service, tmp_path, proxy=proxy, wait_seconds=0)
+
+        assert (outcome.passed, outcome.problem) == (False, "no-way-out")
+        assert "operations/list" not in service.methods()
+
+    def test_each_ask_is_for_a_host_of_its_own(self, tmp_path):
+        service = _FakeService(tmp_path)
+
+        assert bm.self_test(service, tmp_path, proxy=service.proxy, wait_seconds=0).passed
+        assert bm.self_test(service, tmp_path, proxy=service.proxy, wait_seconds=0).passed
+
+        first, second = service.proxy.asked
+        assert first != second
 
 
 class TestTheRead:
@@ -402,10 +507,11 @@ class TestTheCheck:
     def test_it_runs_the_self_test_once_on_a_thread_of_its_own(self, check, monkeypatch):
         from utk_curio.backend.app.discovery.application import bucket_mount_sources
 
-        runs = []
+        runs, proxies = [], []
 
-        def self_test_from_env():
+        def self_test_from_env(proxy=None):
             runs.append(("self-test", threading.current_thread().name))
+            proxies.append(proxy)
             return bm.SelfTest(True, None, "passed")
 
         monkeypatch.setattr(bm, "self_test_from_env", self_test_from_env)
@@ -418,10 +524,13 @@ class TestTheCheck:
         check._thread.join(5)
 
         assert runs == [("self-test", "bucket-mounts-self-test"), ("mounts", "bucket-mounts-self-test")]
+        # The service must reach the proxy of this process, which serve()
+        # starts before the self-test.
+        assert proxies == [bucket_mount_sources.process_proxy()]
         assert check.status() == {"state": "passed", "problem": None}
 
     def test_a_self_test_that_raises_still_reports(self, check, monkeypatch):
-        def broken():
+        def broken(**_settings):
             raise RuntimeError("a bug")
 
         monkeypatch.setattr(bm, "self_test_from_env", broken)
@@ -429,3 +538,100 @@ class TestTheCheck:
         check._thread.join(5)
 
         assert check.status() == {"state": "unavailable", "problem": bm.PROBLEMS["error"]}
+
+
+# ── The way out: the service reaches Curio's proxy ──────────────────────────
+
+#: What rclone answers when its request cannot reach the proxy its
+#: HTTPS_PROXY names, as CI's bucket-mounts job shows with nothing on the
+#: proxy's port in its stand-in for Curio's container.
+NO_WAY_OUT = (
+    "operation error S3: ListObjectsV2, exceeded maximum number of attempts, 3, https response error "
+    'StatusCode: 0, RequestID: , HostID: , request send failed, Get "https://{host}/selftest?list-type=2": '
+    "proxyconnect tcp: dial tcp 172.18.0.3:3128: connect: connection refused"
+)
+
+
+def _endpoint_host(fs):
+    """The host of the endpoint of the s3 remote that the connection string
+    *fs* makes on the fly."""
+    return re.search(r"endpoint='https://([^/':]+)", fs).group(1)
+
+
+def _connect_through(port, host):
+    """What rclone does first when its request goes out through its
+    HTTPS_PROXY: ``CONNECT`` to the request's host at 443, here to Curio's
+    proxy on loopback. The status line of the proxy's answer."""
+    with socket.create_connection(("127.0.0.1", port), timeout=10) as sock:
+        sock.sendall(f"CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n".encode("ascii"))
+        head = b""
+        while b"\r\n" not in head:
+            chunk = sock.recv(1024)
+            if not chunk:
+                break
+            head += chunk
+    return head.split(b"\r\n", 1)[0].decode("latin-1")
+
+
+@pytest.fixture
+def curios_proxy(check, monkeypatch):
+    """Curio's proxy as ``serve()`` starts it in the process the self-test
+    runs in (``bucket_mount_sources.start_proxy``), here on loopback at a free
+    port; that port."""
+    from utk_curio.backend.app.discovery.application import bucket_mount_sources
+
+    monkeypatch.setattr(bm, "PROXY_PORT", 0)
+    bucket_mount_sources.reset()
+    assert bucket_mount_sources.start_proxy("127.0.0.1")
+    try:
+        # It listens already, so start answers the port it listens on.
+        yield bucket_mount_sources.sources().proxy.start("127.0.0.1", 0)
+    finally:
+        bucket_mount_sources.reset()
+
+
+class TestTheWayOut:
+    """The self-test proves the service's one way out too: rclone's request
+    through its HTTPS_PROXY reaches Curio's proxy. It runs here as the backend
+    runs it as it starts (``bucket_mount_check.start``), on a fake service
+    whose test mount reads back."""
+
+    def _status(self, check, rc_server, monkeypatch, listing):
+        server, path = rc_server
+        monkeypatch.setenv(bm.SOCKET_VARIABLE, path)
+        monkeypatch.setattr(bm, "read_test_file", lambda _path, _account: bm.SELFTEST_LINE + "\n")
+        server.answers["operations/list"] = listing
+        assert check.start() is True
+        check._thread.join(30)
+        assert not check._thread.is_alive(), "the self-test did not end in 30 s"
+        return check.status()
+
+    def test_a_service_that_cannot_reach_curios_proxy_fails_the_self_test(
+            self, check, rc_server, curios_proxy, monkeypatch):
+        # As on a deployment whose proxy listens where the service's
+        # container cannot reach it: rclone's request goes nowhere.
+        def nowhere(params):
+            return 500, {"error": NO_WAY_OUT.format(host=_endpoint_host(params["fs"])), "status": 500}
+
+        status = self._status(check, rc_server, monkeypatch, nowhere)
+
+        assert status["state"] == "unavailable", (
+            f"/monitor reads {status} while the mount service reaches no proxy: the deploy's check "
+            "passes, and every mount then fails to list its bucket"
+        )
+        assert "Curio's proxy" in status["problem"]
+
+    def test_a_service_that_reaches_curios_proxy_passes_the_self_test(
+            self, check, rc_server, curios_proxy, monkeypatch):
+        def through_the_proxy(params):
+            host = _endpoint_host(params["fs"])
+            answer = _connect_through(curios_proxy, host)
+            # Go's transport makes a refused CONNECT an error of its reason.
+            reason = answer.partition(" ")[2].partition(" ")[2] or "no answer"
+            return 500, {
+                "error": f'request send failed, Get "https://{host}/selftest?list-type=2": {reason}', "status": 500,
+            }
+
+        status = self._status(check, rc_server, monkeypatch, through_the_proxy)
+
+        assert status == {"state": "passed", "problem": None}

@@ -137,6 +137,17 @@ def api_json(
         return body if raw else json.loads(body.decode("utf-8") or "{}")
 
 
+def named_dataflow(backend_url: str, token: str, dataflow: str) -> str:
+    """The dataflow the calls about *dataflow* of the one signed in as *token*
+    name, as its canvas names it: a hosted guest's own copy of a dataflow its
+    account owns, which the canvas's load of *dataflow* answers with
+    (``copy_id``), else *dataflow* itself. With several backend processes a
+    copy's turns, its scripted replies and its writes are the process's its
+    own id names, so a call about them passes this as :func:`api_json`'s and
+    the scripted model helpers' *dataflow*."""
+    return api_json(f"{backend_url}/api/projects/{dataflow}", token).get("copy_id") or dataflow
+
+
 #: A made-up agent that attaches to nodes only. Every catalog card accepts the
 #: canvas, so the browser tests that need a node-only agent (a canvas drop it
 #: refuses, a node chat's header) upload this one to the account.

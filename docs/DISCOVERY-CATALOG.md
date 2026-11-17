@@ -167,7 +167,7 @@ On a Curio started with `--deploy`, a dataset a guest downloads or adds from her
 
 A download, and a table added from a storage source, lands in your Data Catalog as an ordinary imported dataset, with a preview, a schema, and the same loader code as any other. Nothing downstream needs to know where it came from.
 
-A collection lands as a dataset of format **Collection**. Its **Data Loading** node reads it with `curio_load_collection("<id>")`, which returns one row per file: the path fields, what Curio read from each file, and `path`, where the file can be opened. Rows with a position come back as a GeoDataFrame. **Simple View** shows the rows as cards; a video or a recording plays in its card. The `curio.media` package's nodes work on these rows: **Sample Video Frames**, **Split Audio** and **Mosaic Rasters**. See [DATA-CATALOG.md](DATA-CATALOG.md#collections) for the columns.
+A collection lands as a dataset of format **Collection**. Its **Data Loading** node reads it with `curio_load_collection("<id>")`, which returns one row per file: the path fields, what Curio read from each file, and `path`, where the file can be opened. Rows with a position come back as a GeoDataFrame. **Simple View** shows the rows as cards; a video or a recording plays in its card. The `curio.media` package's nodes work on these rows: **Sample Video Frames**, **Split Audio**, **Split Video** and **Mosaic Rasters**. See [DATA-CATALOG.md](DATA-CATALOG.md#collections) for the columns.
 
 Downloading or adding does not add the dataset to a dataflow. Add it from the Data Catalog drawer on the canvas, then drag it onto the canvas: see [DATA-CATALOG.md part 3](DATA-CATALOG.md#3-using-a-dataset-in-a-dataflow).
 

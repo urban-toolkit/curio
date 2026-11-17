@@ -24,10 +24,7 @@ from utk_curio.backend.app.packages.domain.spec_packages import (
     project_packages,
 )
 from utk_curio.backend.app.packages.repositories import defaults as defaults_io
-from utk_curio.backend.app.packages.infrastructure import (
-    backend_runtime as packages_backend_runtime,
-    pip_runner as packages_pip_runner,
-)
+from utk_curio.backend.app.packages.infrastructure import backend_runtime as packages_backend_runtime
 from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError
 from utk_curio.backend.app.packages.application import libraries as packages_libraries
 from utk_curio.backend.app.packages.application import store_reads as packages_store_reads
@@ -103,29 +100,13 @@ def prune_unreferenced_packages(
 
 def _uninstall_libraries_only_they_asked_for(user_key: str, libraries: set[str]) -> None:
     """Uninstall the pruned packages' *libraries* that nothing else asks for,
-    from where their install put them: the libraries dialog's removal
-    (``libraries.uninstall_user_libraries``), whose route follows the install's.
-
-    Under fork isolation that is the account's own tree, which no other
-    account imports from, so only the account's own packages and list count.
-    A library the install found importable already, such as the image's
-    torch, was never copied into it, and the shared interpreter is not
-    touched.
-
-    Without isolation it is the one interpreter Curio runs on and every
-    account's nodes import from. A library leaves it only when this server's
-    own pip installed it there (``pip_runner.installed_here``) and no
-    account's packages or list asks for it: what the interpreter held before
-    (requirements, the image's torch, the shipped catalog's libraries, the
-    user's own) stays, whoever declared it.
-    """
+    and that Curio put there (``libraries.names_to_take_back``, which the
+    libraries dialog's Remove asks too), from where their install put them:
+    the libraries dialog's removal (``libraries.uninstall_user_libraries``),
+    whose route follows the install's."""
     if not libraries:
         return
-    isolated = packages_backend_runtime.per_user_node_envs()
-    accounts = [user_key] if isolated else packages_libraries.accounts()
-    names = packages_libraries.not_asked_for(accounts, libraries)
-    if not isolated:
-        names = packages_pip_runner.installed_here(names)
+    names = packages_libraries.names_to_take_back(user_key, libraries)
     if not names:
         return
     try:

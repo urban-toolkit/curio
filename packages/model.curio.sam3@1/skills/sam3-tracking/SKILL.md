@@ -32,7 +32,7 @@ The constants at the top of its code, each passed to `track_objects` as the argu
 - `EVERY_SECONDS`, 0.5 by default: the gap between two frames SAM 3 looks at. A longer gap runs faster and can miss what passes quickly.
 - `FORGET_SECONDS`, 10 by default: SAM 3 lets go of an object it has not seen for that long. The object's track ends where it was last seen, and if it comes back it is a new object, with a new id and a track of its own, counted again in `<label>_objects`. Raise it when an object hidden for longer, such as behind a parked truck, should keep one id; each frame then takes longer, since SAM 3 follows every object it saw in that time. None follows every object to the part's end.
 - `FROM_SECONDS` and `TO_SECONDS`, 0 and None by default (None is the video's end): the part of each video to track, in seconds from its start.
-- `MAX_SECONDS`, 300 by default: the most video one run takes. Keep it, and track a longer video in parts with `FROM_SECONDS` and `TO_SECONDS`.
+- `MAX_FRAMES`, 450 by default: the most frames of a video one run looks at. A part of W seconds needs W / `EVERY_SECONDS` frames, rounded up, so a 15 minute video fits whole at a frame every 2 s. Keep it, and fit more of a video with a larger `EVERY_SECONDS`, or track it in parts with `FROM_SECONDS` and `TO_SECONDS`.
 - `WIDTH`, 960 by default: the widest frames are read and drawn at.
 
 ### What it returns
@@ -59,7 +59,7 @@ A swimlane of that table, one bar per object, is a Vega-Lite `bar` with `start_s
 ### When it stops
 
 - *Curio could not download ... of the weights of model.curio.sam3*, or *The weights of model 'model.curio.sam3' are not on this Curio*: the first run downloads the weights, and that download failed for the reason the message gives. Whoever runs this Curio can fetch them once, with `python scripts/fetch_model_weights.py model.curio.sam3`. No change to the dataflow helps: say so, and change no node.
-- *`<file>`: Track Objects takes 300 s of video in one run; set FROM_SECONDS and TO_SECONDS to the part to track*: set them to a part of at most `MAX_SECONDS`, such as 0 and 60 for the first minute.
+- *`<file>`: Track Objects looks at 450 frames of a video at most in one run, and ... is ... frames; raise EVERY_SECONDS to ... or more, or set FROM_SECONDS and TO_SECONDS to a shorter part, such as ...*: keep `MAX_FRAMES` and do one of the two: set `EVERY_SECONDS` to the gap the message names or a larger one, or set `FROM_SECONDS` and `TO_SECONDS` to a part that fits, such as the one it names, or 0 and 60 for the first minute.
 - *`<file>` does not say how long it is*: set `TO_SECONDS` to where to stop.
 - *`<file>` is not on this machine yet; cache the collection's files first*: the collection's videos are in a bucket and not cached yet.
 - *LABELS is empty*: name at least one thing to look for.

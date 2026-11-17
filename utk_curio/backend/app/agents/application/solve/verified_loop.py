@@ -61,6 +61,18 @@ CONTINUE = "continue"
 BREAK = "break"
 
 
+def _takes(fn, name: str) -> bool:
+    """Whether *fn* takes the keyword *name*: a reader is handed only what it
+    declares, as a test's stand-in declares less."""
+    import inspect
+
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return name in params or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+
+
 class VerifiedRounds:
     """One node's verified-content loop; :meth:`run` streams it and returns
     the outcome dict (``verdict``, ``evidence``, ``rounds``, ``candidate``,
@@ -162,6 +174,9 @@ class VerifiedRounds:
         self.reuse_retried = False
         self.dataset_paths = None
         self.dataset_formats = None
+        # Why each dataset the round reads whose file failed to download
+        # could not be had, which fails the node that reads it.
+        self.dataset_problems = None
         self.collections = None
         self.media_dir = None
         self.secrets = None
@@ -595,17 +610,21 @@ class VerifiedRounds:
         return [node_run_code({**self.node, "content": self.candidate}), *slice_codes]
 
     def _round_dataset_paths(self):
-        """``(paths, formats)`` of the datasets the candidate and its slice
-        read: *dataset_paths_fn* gives the paths and fills the formats, such
-        as a layer group's entry naming its layers."""
+        """``(paths, formats, problems)`` of the datasets the candidate and
+        its slice read: *dataset_paths_fn* gives the paths and fills the
+        formats, such as a layer group's entry naming its layers, and, when
+        it takes ``unavailable``, the problems: why each dataset whose file
+        failed to download could not be had."""
         if self.dataset_paths_fn is None:
-            return None, None
+            return None, None, None
         try:
             formats: dict = {}
-            paths = self.dataset_paths_fn(self._round_codes(), formats) or None
-            return paths, formats or None
+            problems: dict = {}
+            reasons = {"unavailable": problems} if _takes(self.dataset_paths_fn, "unavailable") else {}
+            paths = self.dataset_paths_fn(self._round_codes(), formats, **reasons) or None
+            return paths, formats or None, problems or None
         except Exception:
-            return None, None
+            return None, None, None
 
     def _round_collections(self):
         """``(collections, media_dir)`` of the collections the candidate and
@@ -653,6 +672,7 @@ class VerifiedRounds:
                     available_templates=self.available,
                     dataset_paths=paths,
                     dataset_formats=formats,
+                    dataset_problems=self.dataset_problems,
                     exec_user_key=self.exec_user_key,
                     secrets=secret_values,
                     prior_outputs=prior,
@@ -687,7 +707,7 @@ class VerifiedRounds:
         """The candidate runs with ITS dataset paths, collections, connection
         keys and the batch's prior outputs; a vanished reused input re-runs
         the slice whole, once, silently."""
-        self.dataset_paths, self.dataset_formats = self._round_dataset_paths()
+        self.dataset_paths, self.dataset_formats, self.dataset_problems = self._round_dataset_paths()
         self.collections, self.media_dir = self._round_collections()
         self.secrets = self._round_secrets()
         prior_outputs = self._round_prior_outputs()

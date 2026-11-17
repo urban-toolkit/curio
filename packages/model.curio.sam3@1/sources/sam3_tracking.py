@@ -6,9 +6,12 @@ plumbing: the model ``curio_load_model("model.curio.sam3")`` gives, whose
 ``path`` is the folder of SAM 3's weights, and ``curio_derived_file``, which
 says where a file made from a collection's video is kept and served.
 
-Its SAM 3 is Transformers' video model with one correction
-(:class:`Sam3VideoModel`): on a frame where SAM 3 drops an object that showed
-up for a moment, each other object keeps its own mask and score.
+Its SAM 3 is Transformers' video model with two corrections
+(:class:`Sam3VideoModel`): it cleans its masks as SAM 3 does, on any device
+and with no library more, where Transformers cleans them only with the
+kernels library, which an isolated run cannot fetch and which has no build
+for this torch; and on a frame where SAM 3 drops an object that showed up for
+a moment, each other object keeps its own mask and score.
 """
 
 import colorsys
@@ -16,6 +19,7 @@ import datetime
 import hashlib
 import json
 import math
+import sys
 from dataclasses import dataclass
 from fractions import Fraction
 
@@ -68,7 +72,7 @@ class _Run:
 
 
 def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forget_seconds=10, from_seconds=0,
-                  to_seconds=None, max_seconds=300, width=960):
+                  to_seconds=None, max_frames=450, width=960, max_seconds=None):
     """Follow what *labels* name, such as curb ramp or traffic cone, through
     each video of a collection with SAM 3: each video comes back as its
     overlay, its frames with each object's mask and id drawn, which Simple View
@@ -84,9 +88,11 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forg
     one id. It lets go of an object it has not seen for *forget_seconds*
     (None: it follows every object to the part's end): the object's track ends
     where it was last seen, and an object that comes back is found again, as a
-    new object with a new id. A part longer than *max_seconds*, the most one
-    run takes, stops the call before SAM 3 loads, as do empty *labels* and a
-    video not on this machine.
+    new object with a new id. A part of a video that needs more than
+    *max_frames* frames, one every *every_seconds*, stops the call before SAM 3
+    loads, as do empty *labels* and a video not on this machine. So does
+    *max_seconds*, the limit in seconds of a node's code older than
+    *max_frames*, with the lines of that code to change.
 
     Each row keeps the video's own columns, its overlay's (``file_id``,
     ``path``, ``thumbnail``, ``image_url``, ``duration_s``, ``fps``, ``width``,
@@ -99,10 +105,18 @@ def track_objects(media, model, derived_file, *, labels, every_seconds=0.5, forg
     forgetting, part or width of a video than an earlier call keeps files of
     its own; one that asks the same writes the earlier call's files again.
     """
+    if max_seconds is not None:
+        raise ValueError(
+            "MAX_SECONDS is gone: Track Objects counts the frames a run looks at. In the node's code, replace "
+            f"MAX_SECONDS = {max_seconds!r} with MAX_FRAMES = 450, and max_seconds=MAX_SECONDS with "
+            "max_frames=MAX_FRAMES"
+        )
     if not labels:
         raise ValueError("LABELS is empty: name at least one thing to look for")
+    if max_frames < 1:
+        raise ValueError(f"MAX_FRAMES is {max_frames}: a run looks at one frame at least, so set it to 1 or more")
     videos = [video for _, video in media[media["kind"] == "video"].iterrows()]
-    ends = [_part_end(video, from_seconds, to_seconds, max_seconds) for video in videos]
+    ends = [_part_end(video, from_seconds, to_seconds, every_seconds, max_frames) for video in videos]
     rows = []
     if videos:
         device, dtype = _device()
@@ -147,10 +161,21 @@ def _length_of(container, stream):
     return None
 
 
-def _part_end(video, from_seconds, to_seconds, max_seconds):
+def _seconds(value):
+    """*value*, a time in seconds, as a message writes it: to the millisecond,
+    with no trailing zeros."""
+    return f"{value:.3f}".rstrip("0").rstrip(".")
+
+
+def _part_end(video, from_seconds, to_seconds, every_seconds, max_frames):
     """Where the part of *video* to track ends, in seconds, once it is checked
     with no frame read: the file is on this machine, its end is known, and the
-    part fits one run."""
+    part needs no more than *max_frames* frames, one every *every_seconds*.
+
+    The frames a part needs are its steps (:func:`_steps`), the frames
+    :func:`_sample` looks at: one for each step, or fewer when the video's
+    frames come further apart than *every_seconds* or the part runs past the
+    video's end."""
     if not isinstance(video["path"], str) or not video["path"]:
         raise ValueError(f"{video['relpath']} is not on this machine yet; cache the collection's files first")
     end = to_seconds
@@ -159,12 +184,31 @@ def _part_end(video, from_seconds, to_seconds, max_seconds):
             end = _length_of(container, container.streams.video[0])
     if end is None:
         raise ValueError(f"{video['relpath']} does not say how long it is: set TO_SECONDS to where to stop")
-    if end - from_seconds > max_seconds:
+    frames = _steps(from_seconds, end, every_seconds)[0]
+    if frames > max_frames:
+        # What fits: the gap, in tenths of a second, at which the whole part
+        # needs max_frames frames at most, and the part's first max_frames
+        # steps, to the millisecond (the 1e-6 is for float rounding).
+        every = math.ceil((end - from_seconds) / max_frames * 10) / 10
+        shorter = math.floor((from_seconds + max_frames * every_seconds) * 1000 + 1e-6) / 1000
         raise ValueError(
-            f"{video['relpath']}: Track Objects takes {max_seconds} s of video in one run; "
-            f"set FROM_SECONDS and TO_SECONDS to the part to track, such as 0 and {max_seconds}"
+            f"{video['relpath']}: Track Objects looks at {max_frames} frames of a video at most in one run, "
+            f"and {_seconds(from_seconds)} to {_seconds(end)} s at a frame every {every_seconds:g} s is {frames} "
+            f"frames; raise EVERY_SECONDS to {every:g} or more, or set FROM_SECONDS and TO_SECONDS to a shorter "
+            f"part, such as {_seconds(from_seconds)} and {_seconds(shorter)}"
         )
     return end
+
+
+def _steps(from_seconds, end, every_seconds):
+    """``(count, stop)``: the steps of *every_seconds* from *from_seconds* up to
+    *end*, never the step at *end*, ceil(W / every_seconds) of a part of W
+    seconds (the 1e-9 is for float rounding), and where the frames of the step
+    at *end* would start. A part of no length has one step and no such end."""
+    if end > from_seconds:
+        count = math.ceil((end - from_seconds) / every_seconds - 1e-9)
+        return count, from_seconds + count * every_seconds - EARLY_SECONDS
+    return int(end == from_seconds), float("inf")
 
 
 def _sample(run, video, end):
@@ -185,14 +229,7 @@ def _sample(run, video, end):
         width = 2 * (min(run.width, stream.codec_context.width) // 2)
         height = 2 * round(stream.codec_context.height * width / stream.codec_context.width / 2)
         container.seek(int(run.from_seconds / stream.time_base), stream=stream, backward=True)
-        # The part's steps, ceil(W / every_seconds) of a part of W seconds (the
-        # 1e-9 is for float rounding), and where the frames of the step at
-        # *end* would start; a part of no length has one step and no such end.
-        if end > run.from_seconds:
-            count = math.ceil((end - run.from_seconds) / run.every_seconds - 1e-9)
-            stop = run.from_seconds + count * run.every_seconds - EARLY_SECONDS
-        else:
-            count, stop = int(end == run.from_seconds), float("inf")
+        count, stop = _steps(run.from_seconds, end, run.every_seconds)
         steps, wanted = 0, run.from_seconds
         for frame in container.decode(stream):
             if steps >= count:
@@ -228,9 +265,23 @@ def _draw(run, image, found, label_of):
 
 
 class Sam3VideoModel(TransformersSam3VideoModel):
-    """SAM 3's video model as Transformers has it, but for the frames where
-    SAM 3 drops an object that showed up for a moment: there each other
-    object keeps its own mask and score.
+    """SAM 3's video model as Transformers has it, with SAM 3's clean-up of
+    its masks, and with each object's own mask and score on the frames where
+    SAM 3 drops an object that showed up for a moment.
+
+    SAM 3 cleans what it finds in each frame: of the detections of a label
+    that overlap, by a mask IoU above ``det_nms_thresh`` (0.1), it keeps the
+    one it scores highest (:meth:`run_detection`); and in each mask it fills
+    the holes and removes the specks of ``fill_hole_area`` pixels or fewer
+    (16) of the low-resolution mask, a speck only where it is under half the
+    mask's area, both in the masks it follows objects with
+    (:meth:`run_tracker_propagation`) and in those of the objects it takes
+    from the frame's detections (:meth:`build_outputs`). Transformers does
+    this only with the kernels library's cv-utils, fetched from the Hugging
+    Face Hub, which has no build for the image's torch and none for a CPU,
+    and an isolated run cannot fetch it; without it, it kept every detection
+    and every hole and speck. Here it is done in torch, as cv-utils does it,
+    and Transformers no longer looks for the library.
 
     SAM 3's tracker gives each frame a mask and a score for each object it
     follows as the frame starts, in order. Transformers drops the objects the
@@ -240,6 +291,47 @@ class Sam3VideoModel(TransformersSam3VideoModel):
     frame's masks and scores are paired, as SAM 3's own code pairs them with
     the objects it followed as the frame started, and the frame's output
     leaves the objects dropped out, as Transformers' does."""
+
+    def __init__(self, config):
+        super().__init__(config)
+        _without_the_kernels_library()
+
+    def run_detection(self, inference_session, vision_embeds):
+        """Each label's detections, as Transformers finds them, without those
+        a detection of the label it scores higher overlaps by a mask IoU
+        above ``det_nms_thresh`` (:func:`_kept_by_nms`)."""
+        found = super().run_detection(inference_session=inference_session, vision_embeds=vision_embeds)
+        if self.det_nms_thresh > 0.0:
+            for prompt_id, detections in found.items():
+                kept = _kept_by_nms(detections["scores"], detections["mask"], self.det_nms_thresh)
+                found[prompt_id] = {key: value[kept] for key, value in detections.items()}
+        return found
+
+    def run_tracker_propagation(self, inference_session, frame_idx, reverse):
+        """The masks of the objects SAM 3 follows, as its tracker makes them
+        for the frame, cleaned (:func:`_cleaned`), with their scores."""
+        masks, scores = super().run_tracker_propagation(
+            inference_session=inference_session, frame_idx=frame_idx, reverse=reverse,
+        )
+        if masks.shape[0]:
+            masks = _cleaned(masks.unsqueeze(1), self.fill_hole_area).squeeze(1)
+        return masks, scores
+
+    def build_outputs(self, inference_session, det_out, tracker_low_res_masks_global, tracker_update_plan,
+                      reconditioned_obj_ids=None):
+        """The frame's masks, with those of the objects SAM 3 takes from the
+        frame's detections cleaned (:func:`_cleaned`), as the masks it follows
+        objects with are."""
+        masks = super().build_outputs(
+            inference_session=inference_session, det_out=det_out,
+            tracker_low_res_masks_global=tracker_low_res_masks_global, tracker_update_plan=tracker_update_plan,
+            reconditioned_obj_ids=reconditioned_obj_ids,
+        )
+        new = [object_id for object_id in tracker_update_plan["new_det_obj_ids"] if object_id in masks]
+        if new:
+            cleaned = _cleaned(torch.stack([masks[object_id] for object_id in new]), self.fill_hole_area)
+            masks.update(zip(new, cleaned))
+        return masks
 
     def run_tracker_update_execution_phase(self, inference_session, frame_idx, det_out, tracker_update_plan,
                                            reverse=False):
@@ -265,6 +357,91 @@ class Sam3VideoModel(TransformersSam3VideoModel):
             inference_session.remove_object(object_id, strict=False)
             masks.pop(object_id, None)
         return masks, scores, metadata, tracker_scores
+
+
+def _without_the_kernels_library():
+    """Have Transformers' SAM 3 go on as if it had looked for the kernels
+    library and found none, unless it has loaded it: :class:`Sam3VideoModel`
+    cleans the masks itself, and Transformers would otherwise look for the
+    library on the Hugging Face Hub, then say on each run that the clean-up is
+    skipped."""
+    transformers_module = sys.modules[TransformersSam3VideoModel.__module__]
+    if getattr(transformers_module, "cv_utils_kernel", False) is None:
+        transformers_module.cv_utils_kernel = False
+
+
+def _kept_by_nms(scores, masks, iou_threshold):
+    """Which of a label's detections SAM 3 keeps, in their order: from the
+    highest score down, of equal scores the earlier first, each detection kept
+    drops those its mask overlaps by an IoU above *iou_threshold*. The IoU is
+    Transformers' ``mask_iou`` of the masks above 0, compared in float64, as
+    cv-utils' ``generic_nms`` compares it."""
+    count = scores.shape[0]
+    if count < 2:
+        return torch.ones(count, dtype=torch.bool, device=scores.device)
+    # Pixel counts are whole numbers, exact in float64; MPS has no float64.
+    device = torch.device("cpu") if masks.device.type == "mps" else masks.device
+    binary = (masks > 0).flatten(1).to(device).double()
+    shared = binary @ binary.T
+    area = binary.sum(1)
+    union = area[:, None] + area[None, :] - shared
+    ious = shared.float() / union.float().clamp(min=1)
+    over = (ious.double() > iou_threshold).cpu().numpy()
+    order = torch.sort(scores.float(), descending=True, stable=True).indices.tolist()
+    kept, dropped = np.zeros(count, dtype=bool), np.zeros(count, dtype=bool)
+    for index in order:
+        if not dropped[index]:
+            kept[index] = True
+            dropped |= over[index]
+    return torch.from_numpy(kept).to(scores.device)
+
+
+def _cleaned(masks, max_area):
+    """*masks*, ``(N, 1, H, W)`` mask scores, cleaned as SAM 3 cleans them
+    (Transformers' ``fill_holes_in_mask_scores``): each hole, a region of
+    pixels at or below 0 of *max_area* pixels or fewer, is filled with 0.1;
+    then each speck, a region of pixels above 0 of *max_area* pixels or fewer
+    and of at most half the mask's pixels above 0, is set to -0.1. Regions
+    are 8-connected, as cv-utils' ``cc_2d`` finds them."""
+    if max_area <= 0 or not masks.shape[0]:
+        return masks
+    background = masks <= 0
+    masks = torch.where(background & (_areas_up_to(background, max_area) <= max_area), 0.1, masks)
+    foreground = masks > 0
+    allowed = foreground.sum(dim=(2, 3), keepdim=True, dtype=torch.int32).floor_divide(2).clamp(max=max_area)
+    return torch.where(foreground & (_areas_up_to(foreground, max_area) <= allowed), -0.1, masks)
+
+
+def _areas_up_to(members, limit):
+    """For each pixel of *members*, ``(N, 1, H, W)`` booleans, how many
+    pixels its 8-connected region of members has, where that is *limit* or
+    fewer, and ``limit + 1`` where it is more; 0 outside *members*.
+
+    Each member takes the lowest index among the members around it, *limit*
+    times. A region of *limit* pixels or fewer is fewer steps across than
+    that, so all of it then holds one index, which no other region holds. A
+    larger region holds one index only if all of it does, and its count says
+    it is larger, or several, two of them side by side. So a region is
+    counted by its index where no member holding it is beside one holding
+    another."""
+    count, _, height, width = members.shape
+    pixels = height * width
+    # Indexes in float32, which max pooling takes: exact up to 2^24 pixels.
+    outside = float(pixels)
+    labels = torch.where(
+        members, torch.arange(pixels, device=members.device, dtype=torch.float32).view(1, 1, height, width), outside,
+    )
+    for _ in range(limit):
+        labels = torch.where(members, -torch.nn.functional.max_pool2d(-labels, 3, stride=1, padding=1), outside)
+    lowest = -torch.nn.functional.max_pool2d(-labels, 3, stride=1, padding=1)
+    highest = torch.nn.functional.max_pool2d(torch.where(members, labels, -1.0), 3, stride=1, padding=1)
+    beside_another = members & ((lowest != labels) | (highest != labels))
+    keys = labels.long() + torch.arange(count, device=members.device).view(count, 1, 1, 1) * pixels
+    keys = keys.clamp(max=count * pixels - 1)
+    sizes = torch.bincount(keys[members], minlength=count * pixels)
+    opened = torch.bincount(keys[beside_another], minlength=count * pixels)
+    areas = torch.where(opened[keys] > 0, limit + 1, sizes[keys].clamp(max=limit + 1))
+    return torch.where(members, areas, 0)
 
 
 class _Frames:

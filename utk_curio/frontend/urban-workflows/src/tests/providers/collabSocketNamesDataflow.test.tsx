@@ -7,10 +7,13 @@
  * a connection of its own, so the page's next dataflow opens one that names
  * the new one, never a connection made for the one before.
  *
- * A hosted guest's join to an example answers with its own copy's id, whose
- * room the tab joins: the socket, a reconnect of it, and the page's requests
- * (`utils/requestHeaders.ts`) still name the dataflow the page shows, with
- * which the server keeps the copy.
+ * A hosted guest's canvas of an example works on the guest's own copy of it,
+ * which the server keeps on the backend process the copy's own id names. The
+ * canvas's load of the example answers with that id (`copy_id`,
+ * `utils/requestHeaders.ts`), and the room's socket waits for it: its
+ * handshake, a reconnect of it, and the page's requests name the copy, while
+ * the join still names the example, and answers with the copy's id, whose
+ * room the tab joins.
  */
 import React from "react";
 import { act, render, waitFor } from "@testing-library/react";
@@ -102,6 +105,8 @@ beforeEach(() => {
 
 afterEach(() => {
   window.history.replaceState(null, "", "/");
+  // What a load named, which a page that starts knows nothing of.
+  require("../../utils/requestHeaders").resetDataflowNames?.();
 });
 
 async function connected() {
@@ -141,9 +146,35 @@ test("the page's next dataflow opens a socket that names the new one", async () 
   expect(joins(sockets[1])).toEqual([OTHER]);
 });
 
-test("a hosted guest's socket and requests name the dataflow its page shows, never its own copy's", async () => {
-  const { requestHeaders } = require("../../utils/requestHeaders");
-  const socket = await connected();
+/** Let the provider read its namespace and run what follows from it: a
+ *  socket it would open opens by now. */
+async function settled() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+test("a hosted guest's socket waits for the load's answer, then it and the page's requests name its own copy", async () => {
+  const names = require("../../utils/requestHeaders");
+  // ProjectLoader starts the canvas's load of the example: no socket yet.
+  names.awaitDataflowName(PAGE);
+  render(
+    <CollaborationProvider>
+      <div />
+    </CollaborationProvider>,
+  );
+  await settled();
+  expect(sockets).toHaveLength(0);
+  expect(names.requestHeaders("tok")).toEqual({ Authorization: "Bearer tok", "X-Curio-Dataflow": PAGE });
+
+  // The load answers with the guest's own copy: the socket opens, naming it.
+  act(() => names.nameDataflow(PAGE, COPY));
+  await waitFor(() => expect(sockets).toHaveLength(1));
+  const socket = sockets[0];
+  fire(socket, "connect");
+  expect(handshakes().map((options) => options.query)).toEqual([{ dataflow: COPY }]);
+  // The join names the example, and answers with the copy's room.
+  expect(joins(socket)).toEqual([PAGE]);
   const join = socket.emits.find((e) => e.event === "join_session");
   act(() => join!.ack!({
     ok: true, participant_id: "p-5", role: "owner", projectId: COPY,
@@ -154,14 +185,76 @@ test("a hosted guest's socket and requests name the dataflow its page shows, nev
   const syncs = socket.emits.filter((e) => e.event === "yjs");
   expect(syncs.length).toBeGreaterThan(0);
   expect(new Set(syncs.map((e) => e.payload.projectId))).toEqual(new Set([COPY]));
-  // Its requests name the dataflow the page shows.
-  expect(requestHeaders("tok")).toEqual({ Authorization: "Bearer tok", "X-Curio-Dataflow": PAGE });
+  // Its requests name the copy.
+  expect(names.requestHeaders("tok")).toEqual({ Authorization: "Bearer tok", "X-Curio-Dataflow": COPY });
 
   // A reconnect is the same connection, its handshake unchanged, and it
   // joins by the page's dataflow again.
   fire(socket, "disconnect");
   fire(socket, "connect");
-  expect(handshakes().map((options) => options.query)).toEqual([{ dataflow: PAGE }]);
+  expect(handshakes().map((options) => options.query)).toEqual([{ dataflow: COPY }]);
   expect(joins(socket)).toEqual([PAGE, PAGE]);
-  expect(requestHeaders("tok")["X-Curio-Dataflow"]).toBe(PAGE);
+  expect(names.requestHeaders("tok")["X-Curio-Dataflow"]).toBe(COPY);
+});
+
+test("a hosted guest's socket whose load names no copy opens naming the dataflow", async () => {
+  // Another account's dataflow, opened from its link: the guest watches it.
+  const names = require("../../utils/requestHeaders");
+  names.awaitDataflowName(PAGE);
+  render(
+    <CollaborationProvider>
+      <div />
+    </CollaborationProvider>,
+  );
+  await settled();
+  expect(sockets).toHaveLength(0);
+
+  act(() => names.nameDataflow(PAGE, null));
+
+  await waitFor(() => expect(sockets).toHaveLength(1));
+  fire(sockets[0], "connect");
+  expect(handshakes().map((options) => options.query)).toEqual([{ dataflow: PAGE }]);
+  expect(joins(sockets[0])).toEqual([PAGE]);
+});
+
+test("a socket the room refused under the dataflow's id opens again by the copy's once the load names it", async () => {
+  const names = require("../../utils/requestHeaders");
+  // A socket that opened before the page knew of a copy, which the process
+  // the dataflow's id names refuses: the guest's room is its copy's.
+  const first = await connected();
+  const join = first.emits.find((e) => e.event === "join_session");
+  act(() => join!.ack!({ ok: false, error: "not_the_owner", message: "belongs to backend process 1" }));
+  expect(first.disconnect).toHaveBeenCalled();
+  // The same dataflow by the same id stays refused.
+  act(() => mockStoreListeners.forEach((listener) => listener()));
+  await settled();
+  expect(sockets).toHaveLength(1);
+
+  act(() => names.nameDataflow(PAGE, COPY));
+
+  await waitFor(() => expect(sockets).toHaveLength(2));
+  fire(sockets[1], "connect");
+  expect(handshakes().map((options) => options.query)).toEqual([{ dataflow: PAGE }, { dataflow: COPY }]);
+  expect(joins(sockets[1])).toEqual([PAGE]);
+});
+
+test("the next dataflow's socket waits for its load, and the socket before it closes meanwhile", async () => {
+  const names = require("../../utils/requestHeaders");
+  const first = await connected();
+
+  // The page opens another dataflow, whose load has not answered yet.
+  names.awaitDataflowName(OTHER);
+  mockProjectId = OTHER;
+  window.history.replaceState(null, "", `/dataflow/${OTHER}`);
+  act(() => mockStoreListeners.forEach((listener) => listener()));
+  await settled();
+  expect(first.disconnect).toHaveBeenCalled();
+  expect(sockets).toHaveLength(1);
+
+  // Its answer names a hosted guest's copy of it: the socket opens by that.
+  act(() => names.nameDataflow(OTHER, COPY));
+  await waitFor(() => expect(sockets).toHaveLength(2));
+  fire(sockets[1], "connect");
+  expect(handshakes().map((options) => options.query)).toEqual([{ dataflow: PAGE }, { dataflow: COPY }]);
+  expect(joins(sockets[1])).toEqual([OTHER]);
 });

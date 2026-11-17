@@ -24,7 +24,10 @@ logic, and where the model's weights come from. The
 **Track Objects** samples each video of a collection, one frame every
 `EVERY_SECONDS`, and runs SAM 3 on those frames with the phrases in `LABELS`.
 SAM 3 holds each frame back until it has seen a few after it, so it can drop an
-object that showed up for a moment and was never there.
+object that showed up for a moment and was never there. It cleans what it finds
+in each frame as Meta's SAM 3 does: of two detections of one label whose masks
+overlap, it keeps the one it scores higher, and it fills the small holes and
+removes the small specks of each mask.
 
 Its code tab holds its settings and one call of `track_objects`, the function of
 the package's module `sam3_tracking`, which the header above the code lists:
@@ -39,14 +42,15 @@ EVERY_SECONDS = 0.5
 return track_objects(
     input_0, curio_load_model("model.curio.sam3"), curio_derived_file,
     labels=LABELS, every_seconds=EVERY_SECONDS, forget_seconds=FORGET_SECONDS,
-    from_seconds=FROM_SECONDS, to_seconds=TO_SECONDS, max_seconds=MAX_SECONDS, width=WIDTH,
+    from_seconds=FROM_SECONDS, to_seconds=TO_SECONDS, max_frames=MAX_FRAMES, width=WIDTH,
 )
 ```
 
 The node hands the function Curio's plumbing: the model, whose `path` is the
 folder of its weights, and `curio_derived_file`, which says where the overlay
-and the tracks are kept. Empty `LABELS`, a part longer than `MAX_SECONDS` and a
-video not on the machine yet stop the node before SAM 3 loads.
+and the tracks are kept. Empty `LABELS`, a part that needs more than
+`MAX_FRAMES` frames and a video not on the machine yet stop the node before
+SAM 3 loads.
 
 The input is a collection's rows, as a Data Loading node gives them with
 `curio_load_collection(...)`, each video's file on the machine, in a mounted
@@ -63,7 +67,7 @@ the argument of its name in lowercase:
 | `EVERY_SECONDS` | `0.5` | The gap between two frames SAM 3 looks at. |
 | `FORGET_SECONDS` | `10` | How long SAM 3 follows an object it no longer sees. An object it has not seen for that long is let go: its track ends where it was last seen, and if it comes back SAM 3 finds it again as a new object, with a new id, and counts it again. `None` follows every object to the end of the part. |
 | `FROM_SECONDS`, `TO_SECONDS` | `0`, `None` | The part of each video to track, in seconds from its start; `None` is its end. |
-| `MAX_SECONDS` | `300` | The most video one run takes: a longer part stops the node, with a message naming the limit and the two settings above. |
+| `MAX_FRAMES` | `450` | The most frames of a video one run looks at. A part of W seconds needs W / `EVERY_SECONDS` frames, rounded up, and one that needs more stops the node, with a message naming the limit, the frames the part needs, and an `EVERY_SECONDS` and a shorter part that fit. |
 | `WIDTH` | `960` | The widest frames are read and drawn at. A narrower video keeps its size. |
 
 The node runs on the GPU when the machine has one (CUDA, in bfloat16, or
@@ -100,8 +104,11 @@ reads:
 | `largest_share` | The largest share of a frame its mask covered, from 0 to 1 |
 | `mean_score` | Its mean detection score over those frames |
 
-Both files are kept beside the collection's other files derived from that video,
-under one name per video and `FROM_SECONDS`, so a run again replaces them.
+Both files are kept beside the collection's other files derived from that video.
+Their name holds the video, `FROM_SECONDS` and a tag of `LABELS`,
+`EVERY_SECONDS`, `FORGET_SECONDS`, where the part ends and `WIDTH`, so a run
+with other settings keeps files of its own, and a run with the same settings
+writes them again.
 
 ## Labels
 

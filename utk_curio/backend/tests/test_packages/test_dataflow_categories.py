@@ -42,6 +42,7 @@ SHIPPED = {
         "tags": ["GeoPandas", "Pandas"], "dataTypes": ["Tables", "Geometries", "Imagery", "Video"],
     },
     ("curio.media@1", "split-audio"): {"tags": ["Pandas"], "dataTypes": ["Tables", "Audio"]},
+    ("curio.media@1", "split-video"): {"tags": ["GeoPandas", "Pandas"], "dataTypes": ["Tables", "Geometries", "Video"]},
     ("curio.media@1", "mosaic-rasters"): {"dataTypes": ["Rasters"]},
     # Rasterization: SCOUT on every node, Rasters on its two raster nodes. The
     # Vega-Lite package declares none: its charts are not SCOUT's.

@@ -148,7 +148,7 @@ A concept segmentation model is run by the node its package ships, whose code, o
 
 A new type of model's node is its package's own: the template's `source`, calling a function of its package's module, or of a package it names in `dependencies.packages`, as Image Segmentation calls Segmentation's. Curio writes no cell for a type.
 
-The first run of a node that loads a model whose `fetch` names its weights downloads them before the node runs, which can take minutes for a model of gigabytes; later runs read them where they were placed, until a later version of the package names other weights, which its first run downloads in turn. A download that fails stops the node with what failed, in an agent's run of the node too, *Curio could not download `<file>`, a file of the weights of `<id>`, from `<url>`: `<reason>`*, and the command that fetches them ahead, `python scripts/fetch_model_weights.py <id>`.
+The first run of a node that loads a model whose `fetch` names its weights downloads them before the node runs, which can take minutes for a model of gigabytes; meanwhile the node says which file of them comes and how far it has come, and a download that stops, as a restart stops one, goes on from where it stopped the next time a node needs the model. Later runs read them where they were placed, until a later version of the package names other weights, which its first run downloads in turn. A download that fails stops the node with what failed, in an agent's run of the node too, *Curio could not download `<file>`, a file of the weights of `<id>`, from `<url>`: `<reason>`*, and the command that fetches them ahead, `python scripts/fetch_model_weights.py <id>`.
 
 ---
 
@@ -207,7 +207,7 @@ A template with no `source` opens with the cell Curio writes for a model package
 
 **Shipping a model.** Add its model package to `packages/` and restart; `--packages-root` moves that folder. The Docker image bakes `packages/` in. A model there must be one Curio may redistribute, with the weights' license in the package; weights in git are files directly in `models/`.
 
-**A model whose weights Curio fetches.** Curio downloads them the first time a node runs the model, into the package's folder, or into the folder `--model-weights-dir` names, which the server writes and every account reads. `scripts/fetch_model_weights.py <package id>` fetches them there ahead, as [DEPLOYMENT.md](DEPLOYMENT.md#model-weights-a-package-fetches) says.
+**A model whose weights Curio fetches.** Curio downloads them the first time a node runs the model, into the package's folder, or into the folder `--model-weights-dir` names, a folder per revision of them in it, which the server writes and every account reads. `scripts/fetch_model_weights.py <package id>` fetches them there ahead, as [DEPLOYMENT.md](DEPLOYMENT.md#model-weights-a-package-fetches) says.
 
 ---
 

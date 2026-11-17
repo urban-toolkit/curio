@@ -562,6 +562,7 @@ class CatalogListing:
         *,
         dataflow_id: str | None = None,
         formats: dict[str, dict[str, str]] | None = None,
+        unavailable: dict[str, str] | None = None,
     ) -> dict[str, str]:
         """Resolve dataset ids to absolute data-file paths for code execution.
 
@@ -574,7 +575,11 @@ class CatalogListing:
         containment-guarded ``_resolve_item_path`` used by preview/download, so
         the mapping can only ever contain paths the authenticated user may
         read. Ids that don't resolve are omitted - the sandbox raises a clear
-        per-id error for those at call time.
+        per-id error for those at call time. When *unavailable* is given, it
+        is filled with why each id whose file Curio downloads on first use
+        could not be had: the download's own message (``left_out_files``),
+        which a run reports where the sandbox would only say the dataset is
+        not available.
 
         Account-store ids resolve straight from the dataset index, so the common
         case (a loader node reading an imported or computed dataset) costs a
@@ -598,12 +603,19 @@ class CatalogListing:
         if not dataset_ids:
             return {}
         from utk_curio.backend.app.datasets.domain.catalog_item import execution_format
+        from utk_curio.backend.app.datasets.domain.errors import DatasetFileUnavailable
 
         resolved: dict[str, str] = {}
 
         def resolve(dataset_id: str, item: dict[str, Any]) -> None:
             try:
                 path = self._paths._resolve_item_path(item)
+            except DatasetFileUnavailable as exc:
+                # A file Curio downloads on first use that could not be had.
+                if unavailable is not None:
+                    unavailable.setdefault(dataset_id, str(exc))
+                logger.warning("Dataset %s could not be had: %s", dataset_id, exc)
+                return
             except Exception:  # noqa: BLE001 - one bad item must not drop the rest
                 logger.warning(
                     "Could not resolve execution path for dataset %s", dataset_id,
