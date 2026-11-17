@@ -679,8 +679,6 @@ So a routine merge quietly ships to `curio-dev` and nothing else. Cutting a stab
 > [!NOTE]
 > Pushes made with `GITHUB_TOKEN` never trigger workflows, which is why the bump job dispatches `deploy.yml` over the API rather than relying on its own commit to set things off. `workflow_dispatch` events are exempt from that recursion guard, so no PAT is needed.
 
-To roll back, dispatch Deploy with `ref` set to the previous tag and `target: stable`.
-
 ## The monitor page
 
 Every instance serves `/monitor`, a page that reports what the deployment is

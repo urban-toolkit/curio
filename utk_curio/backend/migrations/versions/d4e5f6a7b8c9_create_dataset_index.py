@@ -66,8 +66,3 @@ def upgrade():
         "dataset_index_entry",
         ["user_key", "origin"],
     )
-
-
-def downgrade():
-    op.drop_index("ix_dataset_index_user_origin", table_name="dataset_index_entry")
-    op.drop_table("dataset_index_entry")

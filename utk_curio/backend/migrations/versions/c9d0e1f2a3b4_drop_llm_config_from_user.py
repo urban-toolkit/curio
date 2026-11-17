@@ -11,7 +11,6 @@ Revises: b8c9d0e1f2a3
 Create Date: 2026-09-27 00:00:00.000000
 """
 from alembic import op
-import sqlalchemy as sa
 
 revision = "c9d0e1f2a3b4"
 down_revision = "b8c9d0e1f2a3"
@@ -25,11 +24,3 @@ def upgrade():
         batch_op.drop_column("llm_api_key")
         batch_op.drop_column("llm_base_url")
         batch_op.drop_column("llm_api_type")
-
-
-def downgrade():
-    with op.batch_alter_table("user", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("llm_api_type", sa.String(50), nullable=True))
-        batch_op.add_column(sa.Column("llm_base_url", sa.String(500), nullable=True))
-        batch_op.add_column(sa.Column("llm_api_key", sa.String(255), nullable=True))
-        batch_op.add_column(sa.Column("llm_model", sa.String(100), nullable=True))

@@ -2,7 +2,7 @@
 
 One row per run of a dataflow on the server (``dataflow_run``) and one per node
 the run touched (``dataflow_run_step``). New tables only: nothing existing is
-read or changed, and ``downgrade()`` drops both.
+read or changed.
 
 Revision ID: f7a8b9c0d1e2
 Revises: e2f3a4b5c6d7
@@ -67,10 +67,3 @@ def upgrade():
         sa.Column("skip_reason", sa.Text(), nullable=True),
         sa.UniqueConstraint("run_id", "node_id", name="uq_dataflow_run_step_node"),
     )
-
-
-def downgrade():
-    op.drop_table("dataflow_run_step")
-    op.drop_index("ix_dataflow_run_user_created", table_name="dataflow_run")
-    op.drop_index("ix_dataflow_run_project_created", table_name="dataflow_run")
-    op.drop_table("dataflow_run")

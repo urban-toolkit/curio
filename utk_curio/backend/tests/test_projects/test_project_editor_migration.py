@@ -80,9 +80,3 @@ def test_the_migration_creates_the_models_indexes_and_unique_pair():
     assert migrated == model
     unique = {u["name"]: tuple(u["column_names"]) for u in inspector.get_unique_constraints(TABLE)}
     assert unique == {"uq_project_editor_project_user": ("project_id", "user_id")}
-
-
-def test_the_downgrade_drops_the_table():
-    engine = _migrated()
-    _run("downgrade", engine)
-    assert TABLE not in sa.inspect(engine).get_table_names()

@@ -145,26 +145,3 @@ def test_migration_creates_the_uniqueness_the_index_relies_on():
         if isinstance(con, sa.UniqueConstraint)
     }
     assert model_uniques == got
-
-
-def test_downgrade_removes_the_table():
-    import importlib.util
-    from pathlib import Path
-
-    from alembic.migration import MigrationContext
-    from alembic.operations import Operations
-
-    engine = _migrated_engine()
-    versions = Path(__file__).resolve().parents[2] / "migrations" / "versions"
-    spec = importlib.util.spec_from_file_location(
-        f"_rev_{REVISION}_down", next(versions.glob(f"{REVISION}_*.py"))
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-
-    with engine.begin() as conn:
-        ctx = MigrationContext.configure(conn)
-        with Operations.context(ctx):
-            module.downgrade()
-
-    assert TABLE not in sa.inspect(engine).get_table_names()

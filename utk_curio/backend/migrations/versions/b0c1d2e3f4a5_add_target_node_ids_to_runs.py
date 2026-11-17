@@ -20,8 +20,3 @@ depends_on = None
 def upgrade():
     with op.batch_alter_table("dataflow_run", schema=None) as batch_op:
         batch_op.add_column(sa.Column("target_node_ids", sa.Text(), nullable=True))
-
-
-def downgrade():
-    with op.batch_alter_table("dataflow_run", schema=None) as batch_op:
-        batch_op.drop_column("target_node_ids")
