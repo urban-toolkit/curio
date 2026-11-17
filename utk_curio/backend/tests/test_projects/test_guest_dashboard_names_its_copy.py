@@ -15,16 +15,25 @@ copy is made yet or not, and the example's process refuses it (421, naming
 the copy's process). Anyone else's dashboard run, a visitor's who sends no
 sign-in or an account's, belongs to the dashboard's dataflow, as before.
 
+At any process count a hosted guest's runs are its own copy's dashboard's
+from its first visit, made or not yet (``dashboard:<copy id>`` in the run
+registry): they join and wait on no other visitor's runs of the example's
+dashboard, though they keep on the example while the guest has no copy, as
+anyone's run of it does.
+
 Here this test's process is set as one of two by the variables the launcher
 sets, as ``test_collaboration/test_owner_guard.py`` sets it, before the
 guard's first answer, on the example of ``test_guest_dashboard_copy.py``,
 whose sandbox and page reader these tests use. Each new visitor's sign-in is
 made so its copy belongs to the process a test needs. The page's ``copy_id``
-is read in a start of one process, where it is the same.
+and the registry's dashboards are read in a start of one process, where they
+are the same.
 """
 from __future__ import annotations
 
 import json
+
+import pytest
 
 from utk_curio.backend import config
 from utk_curio.backend.app.runs.models import KeptStepOutput
@@ -52,10 +61,38 @@ from utk_curio.backend.tests.test_projects.test_guest_dashboard_copy import (  #
     embedded,
     sandbox,
 )
+from utk_curio.backend.tests.test_runs.test_dashboard_viewer_runs import _wait
 
 #: Values a viewer tries on the example's pinned control, Shade's Period.
 MONTH = {"shade": {"period": "Month"}}
 YEAR = {"shade": {"period": "Year"}}
+
+
+@pytest.fixture()
+def unsaved(client, db, monkeypatch):
+    """The example of ``test_guest_dashboard_copy.py``'s ``dashboard`` with no
+    output saved, so each value of Shade's Period, the saved one too, runs
+    Shade: three runs of three values can go at once. Visitors A and B are
+    signed in to the shared guest account, with sign-in on, as there. Its
+    id."""
+    from utk_curio.backend.app.users.models import User, UserSession
+
+    guest = User(username=config.CURIO_SHARED_GUEST_USERNAME, name="Guest",
+                 email="guest@test.com", is_guest=True)
+    db.session.add(guest)
+    db.session.flush()
+    for token in (VISITOR_A, VISITOR_B):
+        db.session.add(UserSession(user_id=guest.id, token=token))
+    db.session.commit()
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", True)
+    created = client.post("/api/projects", data=json.dumps({
+        "name": "Example",
+        "spec": {"dataflow": {"name": "Example", "nodes": _nodes(), "edges": EDGES}},
+        "outputs": [],
+    }), headers=auth_headers(VISITOR_A))
+    assert created.status_code == 201, created.get_data(as_text=True)
+    monkeypatch.setattr(config, "CURIO_NO_AUTH", False)
+    return created.get_json()["id"]
 
 
 def _visitor_whose_copy_belongs_to(example: str, process: int) -> str:
@@ -248,3 +285,79 @@ def test_a_hosted_guests_dashboard_runs_its_own_copy_on_the_copys_process(client
     _ran(client, account, example, MONTH)
     theirs = sandbox.runs[-1][1]["code"]
     assert len(sandbox.runs) == 2 and MINE not in theirs and '"Month"' in theirs, theirs
+
+
+# ---------------------------------------------------------------------------
+# Its runs are its own copy's dashboard's
+# ---------------------------------------------------------------------------
+
+def _started(resp) -> dict:
+    """The answer of a start that started a run of its own."""
+    assert resp.status_code == 202, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert body["runId"] and body["joined"] is False, body
+    return body
+
+
+def _waits(resp, what: str) -> None:
+    """*resp* is a start refused while a dashboard runs as many runs as it may."""
+    assert resp.status_code == 429, f"{what}: {resp.status_code} {resp.get_data(as_text=True)}"
+
+
+def test_a_hosted_guests_dashboard_runs_are_its_own_copys_from_its_first_visit(client, unsaved, sandbox):
+    """With the example's dashboard at its two live runs, an anonymous
+    visitor's, a third start of it waits. Two hosted guests with no copy yet
+    still start runs of their own, each as its own copy's dashboard: a start
+    of values one of the visitor's runs runs does not join that run, and a
+    start of the third values does not wait. Each guest counts against its
+    own copy's dashboard alone: it starts as many runs as one dashboard may
+    have, a start of values its own run runs joins that run, and one more
+    waits. Every run keeps on the example, as anyone's run of it does, so a
+    guest's later run of values a visitor ran reuses what that run kept."""
+    from utk_curio.backend.app.projects import visitor_copies
+
+    example = unsaved
+    #: Shade's Period as the example saves it, Date, which has no saved output here.
+    saved_values: dict = {}
+    sandbox.hold.add("shade")
+    runs: list[str] = []
+    try:
+        anyones = {"Month": _started(_start(client, None, example, MONTH)),
+                   "Year": _started(_start(client, None, example, YEAR))}
+        runs += [body["runId"] for body in anyones.values()]
+        _waits(_start(client, None, example, saved_values), "a third start of the example's dashboard")
+
+        theirs: set[str] = set()
+        for token in (VISITOR_A, VISITOR_B):
+            month = _start(client, token, example, MONTH)
+            assert month.status_code == 202, month.get_data(as_text=True)
+            assert month.get_json()["joined"] is False, (
+                f"{token}, with no copy yet, joined the anonymous visitor's run of the same values: "
+                f"{month.get_json()}"
+            )
+            mine = {"Month": _started(month), "Date": _started(_start(client, token, example, saved_values))}
+            ids = {body["runId"] for body in mine.values()}
+            assert not ids & {body["runId"] for body in anyones.values()} and not ids & theirs, (token, ids)
+            again = _start(client, token, example, MONTH)
+            assert again.status_code == 202, again.get_data(as_text=True)
+            assert (again.get_json()["runId"], again.get_json()["joined"]) == (mine["Month"]["runId"], True)
+            assert again.get_json()["token"] == mine["Month"]["token"]
+            _waits(_start(client, token, example, YEAR), f"{token}'s third start, past its own dashboard's two")
+            theirs |= ids
+        runs += sorted(theirs)
+    finally:
+        sandbox.release()
+
+    for run_id in runs:
+        _wait(run_id)
+    assert len(runs) == 6, runs
+    assert {row.project_id for row in KeptStepOutput.query.all()} == {example}, (
+        "a run of a guest with no copy kept elsewhere than on the example"
+    )
+    ran = len(sandbox.runs)
+    # The visitor's Year was kept on the example: a guest's run of it now
+    # reuses it, and runs nothing.
+    _ran(client, VISITOR_B, example, YEAR)
+    assert len(sandbox.runs) == ran, "a guest's run ran a step a visitor's run of the same values had kept"
+    for token in (VISITOR_A, VISITOR_B):
+        assert not visitor_copies.is_copy(_copy_of(token, example)), f"a dashboard's run made {token} a copy"

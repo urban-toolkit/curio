@@ -142,6 +142,12 @@ class _Tab:
         """Open *dataflow*'s canvas and wait until its room names this tab
         *role*, with the canvas bound to the doc it joined."""
         self.page.goto(f"{base}/dataflow/{dataflow}", timeout=120000)
+        self.joined(role)
+
+    def joined(self, role: str) -> None:
+        """Wait until the canvas on this tab shows the example's node and its
+        room names this tab *role*, with the canvas bound to the doc it
+        joined."""
         node_locator(self.page, NODE).wait_for(timeout=30000)
         try:
             self.page.locator(f'[data-curio-room-role="{role}"]').wait_for(state="attached", timeout=30000)
@@ -473,6 +479,19 @@ def _served_as_the_hosted_stacks_serve_it(base: str, backend: str, monkeypatch) 
     return serve_built_frontend("/api", host=urlsplit(base).hostname)
 
 
+def _served_with_its_data(page) -> bool:
+    """Whether *page* is a dashboard the page server served with its data."""
+    return page.locator("script#curio-dashboard-payload").count() == 1
+
+
+def _shows_rows(page, rows: int) -> None:
+    """The pinned pool's table on the dashboard *page* holds *rows* rows,
+    which only the viewer's run the page started as it opened makes: nothing
+    is saved."""
+    table = node_locator(page, POOL).locator("table").first
+    expect(table.locator("tbody tr")).to_have_count(rows, timeout=90000)
+
+
 class _Dashboard:
     """A dashboard's page in one person's browser (a page of *tab*'s
     context), and what it sent the backend with its sign-in: each request,
@@ -493,13 +512,10 @@ class _Dashboard:
             self.signed.append((request.method, request.url, headers.get(header)))
 
     def served_with_its_data(self) -> bool:
-        return self.page.locator("script#curio-dashboard-payload").count() == 1
+        return _served_with_its_data(self.page)
 
     def shows_rows(self, rows: int) -> None:
-        """The pinned pool's table holds *rows* rows, which only the viewer's
-        run the page started as it opened makes: nothing is saved."""
-        table = node_locator(self.page, POOL).locator("table").first
-        expect(table.locator("tbody tr")).to_have_count(rows, timeout=90000)
+        _shows_rows(self.page, rows)
 
     def _runs(self) -> tuple[list, list, list]:
         """Each request of the page's viewer's runs, its starts and its
@@ -662,6 +678,86 @@ def test_each_hosted_guests_dashboard_of_one_example_names_its_copy_and_runs_on_
             "the example": _spec_code(backend, newcomer, example),
         }
         assert seen == {"the first guest's copy": FIRST_GUESTS_ROWS, "the example": SHIPPED_ROWS}, seen
+    finally:
+        for context in contexts:
+            context.close()
+
+
+# ---------------------------------------------------------------------------
+# The canvas a served dashboard's Open dataflow goes on to
+# ---------------------------------------------------------------------------
+
+def _opens_the_dataflow_from_its_served_dashboard(tab: _Tab, hosted_pages: str, example: str, role: str) -> None:
+    """*tab* opens *example*'s dashboard as the hosted stacks serve it, with
+    its data, which the page server builds for the tab's sign-in, waits for
+    the pool its run on open fills, then follows the dashboard's Open
+    dataflow to the canvas, in the same page, and waits until the canvas's
+    room names the tab *role*, with the canvas bound to the doc it joined."""
+    tab.page.goto(f"{hosted_pages}/dashboard/{example}", timeout=120000)
+    assert _served_with_its_data(tab.page), (
+        "the page server, started as the hosted stacks start it, served the dashboard without its data"
+    )
+    opens = tab.page.get_by_test_id("open-dataflow-link")
+    opens.wait_for(state="visible", timeout=45000)
+    _shows_rows(tab.page, 3)
+    opens.click()
+    tab.page.wait_for_url(f"**/dataflow/{example}", timeout=30000)
+    try:
+        tab.joined(role)
+    except AssertionError as exc:
+        query = _route()[1]
+        asked = [parse_qs(urlparse(url).query).get(query) for url in tab.sockets if "/socket.io/" in url]
+        raise AssertionError(f"{exc}; the tab's sockets named {asked}") from exc
+
+
+def _the_local_guests_canvas_from_its_served_dashboard(
+    browser, contexts: list, base: str, backend: str, hosted_pages: str, example: str,
+) -> None:
+    """Without sign-in the shared guest is the one local user and owns the
+    example, which no copy is made of: the canvas its served dashboard's Open
+    dataflow goes on to names the example, and its socket joins the
+    example's room as its owner."""
+    tab = _Tab(browser, contexts, "the local guest")
+    token = api_json(f"{backend}/api/auth/signin/auto-guest", "", method="POST", payload={})["token"]
+    install_session_cookie(tab.page, base, _authenticated(backend, token))
+    _opens_the_dataflow_from_its_served_dashboard(tab, hosted_pages, example, "owner")
+    tab.names_only(example)
+
+
+def test_a_hosted_guests_canvas_opened_from_its_served_dashboard_names_its_copy_and_joins_its_room(
+    app_frontend, current_server, browser, monkeypatch,
+):
+    """A hosted guest, signed in, opens its dashboard of an example as the
+    hosted stacks serve it, with its data, which the page server built for
+    the guest's sign-in, then the dashboard's Open dataflow, which opens the
+    canvas in the same page, from the data the page holds and with no load
+    of its own. That canvas names the guest's own copy, as the data names it:
+    on every write, and in its room socket's query, and its socket joins the
+    copy's room as the guest's, on the process the copy's own id names, here
+    not the example's. The guest has only looked, so the copy is not made.
+
+    Without sign-in the local guest's canvas names the example and joins its
+    room (:func:`_the_local_guests_canvas_from_its_served_dashboard`)."""
+    hosted = auth_enabled_env()
+    base, backend = app_frontend.base_url, current_server
+    example = _example(backend, hosted, _dashboard_spec())
+    hosted_pages = _served_as_the_hosted_stacks_serve_it(base, backend, monkeypatch)
+    contexts: list = []
+    try:
+        if not hosted:
+            _the_local_guests_canvas_from_its_served_dashboard(browser, contexts, base, backend, hosted_pages, example)
+            return
+        assert allow_guest_login_env(), "this stack turns guest login off, so it has no hosted guest"
+        guest = _Tab(browser, contexts, "the guest")
+        install_session_cookie(guest.page, base, _guests_off_the_examples_process(backend, example, _processes(), 1)[0])
+        copy = _own_copy(guest, example)
+
+        _opens_the_dataflow_from_its_served_dashboard(guest, hosted_pages, example, "owner")
+
+        guest.names_its_copy(example, copy)
+        assert guest.sent_naming(copy), f"{guest.who}'s tab sent no request naming its copy"
+        answered = named_dataflow(backend, guest.token(), example)
+        assert answered == copy, f"{guest.who}'s load of the example names {answered!r}, not its own copy {copy}"
     finally:
         for context in contexts:
             context.close()
