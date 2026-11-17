@@ -24,7 +24,8 @@ quad-cities-flood-vulnerability ``Vega-Lite`` when their charts did
 Their charts became the Vega-Lite package's (#1270), which declares no tag:
 example 06 and the charts dataflow lost ``SCOUT``, which only their charts
 had given them. Examples 27 to 30, whose nodes run torch, carry the computed
-``PyTorch`` tag (2026-11-06).
+``PyTorch`` tag (2026-11-06). Example 32, SideSeeing's frames, segments and
+blocks, is placed by the same rules (2026-11-17).
 The automatic sections must reproduce it from the files alone, and the
 hand-set ones live in the files themselves.
 """
@@ -72,7 +73,7 @@ def _spec(key: str) -> dict:
 
 def test_the_golden_file_covers_every_shipped_dataflow():
     assert set(GOLDEN) == set(SHIPPED)
-    assert len(SHIPPED) == 61
+    assert len(SHIPPED) == 62
 
 
 @pytest.mark.parametrize("key", sorted(SHIPPED))

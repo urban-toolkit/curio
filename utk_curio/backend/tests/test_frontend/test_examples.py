@@ -124,6 +124,14 @@ EXAMPLE_INVARIANTS = [
     ("30-pytorch-sidewalk-clusters.json", 6, 5,
      {"curio.builtin/data-loading": 1, "curio.builtin/python-computation": 3,
       "curio.builtin/vis-vega": 1, "curio.builtin/autk-grammar": 1}, False),
+    # SideSeeing: a walk's frames found in by SAM 3 and placed on it, and the
+    # walk cut into blocks at the corners it passes, the blocks' player linked
+    # to the map by time.
+    ("32-sideseeing-frames-segments-blocks.json", 16, 19,
+     {"curio.builtin/data-loading": 3, "curio.builtin/python-computation": 4,
+      "curio.media/video-frames": 1, "model.curio.sam3/segment-images": 1,
+      "curio.media/split-video": 1, "curio.builtin/autk-grammar": 2,
+      "curio.builtin/vis-simple": 2, "curio.builtin/vis-vega": 2}, True),
 ]
 
 
@@ -149,6 +157,9 @@ FAN_IN_NODES = {
     "26-several-inputs.json": 6,
     # The network: the pictures on "in", its weights on "in_1".
     "27-pytorch-shape-classifier.json": 1,
+    # The GPS fixes, the placed frames, the map, the cuts, Split Video's blocks
+    # and the blocks' shares.
+    "32-sideseeing-frames-segments-blocks.json": 6,
 }
 
 
