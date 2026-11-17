@@ -243,16 +243,20 @@ class MemberTurn:
     followed on a thread of its own (:meth:`run`), then judged
     (:meth:`judge`). *early*: it asked as its node was in, not once the
     room's typing was over. *dataflow*: the dataflow whose agents it asks,
-    which its calls name in their paths and headers: a hosted guest's, the
-    example its page opened (``guests.py``); its room's when None."""
+    which its calls name in their paths: a hosted guest's, the example its
+    page opened (``guests.py``); its room's when None. *named*: the id its
+    calls name in their header, which nginx routes by: a hosted guest's own
+    copy, which its page names once its load answered it; *dataflow* when
+    None."""
 
     def __init__(self, member: str, node_id: str, content: str, *, early: bool,
-                 dataflow: Optional[str] = None):
+                 dataflow: Optional[str] = None, named: Optional[str] = None):
         self.member = member
         self.node_id = node_id
         self.content = content
         self.early = early
         self.dataflow = dataflow
+        self.named = named
         self.attachment_id: Optional[str] = None
         #: The ask's id, chosen here as a tab chooses one, to follow it by.
         self.ask_id = uuid.uuid4().hex
@@ -342,10 +346,11 @@ class MemberTurn:
         work is over."""
         session = requests.Session()
         dataflow = self.dataflow or user.room.project_id
+        named = self.named or dataflow
         base = f"/api/agents/projects/{dataflow}"
         try:
             attached = _request(user, session, "POST", "/api/agents/projects/:id/attachments",
-                                f"{base}/attachments", expect=201, dataflow=dataflow,
+                                f"{base}/attachments", expect=201, dataflow=named,
                                 json_body={"coord": COORD, "target": {"kind": "node", "targetId": self.node_id}})
             self.attachment_id = attached.get("attachmentId")
             if not self.attachment_id:
@@ -353,14 +358,14 @@ class MemberTurn:
                            f"attaching {COORD} to its node answered no attachment: {attached!r}", "agent_turn")
                 return
             _request(user, session, "POST", "/api/testing/agent-script", "/api/testing/agent-script",
-                     dataflow=dataflow, json_body=script_body(self.attachment_id, self.node_id, self.content))
+                     dataflow=named, json_body=script_body(self.attachment_id, self.node_id, self.content))
             turns = f"{base}/attachments/{self.attachment_id}/turns"
             self.asked_at = time.perf_counter()
             _request(user, session, "POST", "/api/agents/projects/:id/attachments/:id/turns", turns,
-                     expect=202, dataflow=dataflow, json_body={"message": MESSAGE, "askId": self.ask_id})
+                     expect=202, dataflow=named, json_body={"message": MESSAGE, "askId": self.ask_id})
             self.asked = True
             on_asked(self)
-            self._follow(user, session, f"{turns}/{self.ask_id}", dataflow)
+            self._follow(user, session, f"{turns}/{self.ask_id}", named)
         except UserFailed:
             pass  # its Sample says why
         except Exception as exc:  # noqa: BLE001 - a crashed agent thread is a finding too

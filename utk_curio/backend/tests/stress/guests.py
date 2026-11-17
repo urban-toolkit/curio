@@ -9,14 +9,18 @@ so a workshop of guests on one example never meets each other's work.
 
 Each guest of a tier does what a guest's page does (:class:`GuestVisit`):
 
-* signs in, finds the example in its gallery by its name and opens it as the
-  canvas does (``GET /api/projects/<id>?results=last``), naming it in
-  ``X-Curio-Dataflow``; what it opens must be the example, with no work of any
-  guest in it;
-* behind the tier's start gate, opens a tab of it, whose handshake and join
-  name the example, as the page does (``requestHeaders.ts``): the join answers
-  with the id of the room it joined, its own copy's, which the tab's later
-  events name (``sockets.Tab``), and which must not be the example's;
+* signs in, finds the example in its gallery by its name and loads it as the
+  canvas does (``GET /api/projects/<id>?results=last``), the load naming the
+  example in ``X-Curio-Dataflow``; what it opens must be the example, with no
+  work of any guest in it, and the load answers with the id of the guest's
+  own copy of it, made or not (``copy_id``), which the guest names from then
+  on in every call's header and in its socket's handshake, as its page does
+  (``requestHeaders.ts``, ``nameDataflow``), while paths and its join keep
+  naming the example;
+* behind the tier's start gate, opens a tab whose handshake names its copy
+  and whose join names the example: the join answers with the id of the room
+  it joined, which must be the copy its load named, and which the tab's later
+  events name (``sockets.Tab``);
 * takes the lock of the example's first Python node (:func:`guest_node`),
   types two comment lines in its code and lets the lock go
   (``sockets.Tab.work``);
@@ -24,13 +28,15 @@ Each guest of a tier does what a guest's page does (:class:`GuestVisit`):
   that node, to put a line on top of its code (``agents.MemberTurn``), on
   Curio's scripted model, which ``run.py`` makes the stack's default for the
   tier, its replies queued for its own attachment; every call names the
-  example, as the page's do, and the agent writes in the guest's copy;
+  example in its path and the copy in its header, as the page's do, and the
+  agent writes in the guest's copy;
 * checks that its tab holds the agent's code and was told the turn's end, and
   that neither its tab nor the server's room (a joining tab's snapshot) still
   has an agent or a lock in it;
-* reads its copy back as a reload does (the same ``GET``), which must hold its
-  own work and nothing else (:func:`copy_problems`): its lines and its agent's
-  in that node, and every other node as the example has it.
+* reads its copy back with the same ``GET``, naming its copy as every call
+  after its load does, which must hold its own work and nothing else
+  (:func:`copy_problems`): its lines and its agent's in that node, and every
+  other node as the example has it.
 
 A guest of the stage's own (:class:`ExampleReader`), which changes nothing and
 so never has a copy, opens the example before the tiers; after each tier it
@@ -43,8 +49,9 @@ tab to the server's answer, once the copy's doc holds it (``socket yjs
 update``).
 
 **Each copy's process.** With several backend processes each guest's copy
-belongs to one of them; the report gives each copy its process and each
-process its copies (``report.copy_process``).
+belongs to the one its own id names (``owner_guard.room_key``), where its
+header and its socket's handshake send its calls; the report gives each copy
+its process and each process its copies (``report.copy_process``).
 """
 
 from __future__ import annotations
@@ -183,8 +190,10 @@ def shared_rooms(outcomes: list) -> list[str]:
 
 class _Guest(VirtualUser):
     """A hosted guest: a visit to the shared guest's account, with its own
-    sign-in, on one example. Once it has opened the example every call names
-    it (``X-Curio-Dataflow``), as the page names the dataflow it shows."""
+    sign-in, on one example. Its load of the example names the example
+    (``X-Curio-Dataflow``), as the page's load does before its answer; every
+    call after it names what its page names the dataflow by then
+    (``project_id``): a guest's own copy, once its load answered its id."""
 
     def __init__(self, backend_url: str, name: str, example: str, *, register_gate=None, start_gate=None,
                  pacing: Pacing = BURST, namespace: Optional[str] = None):
@@ -203,17 +212,26 @@ class _Guest(VirtualUser):
         """The guest's gallery (``GET /api/projects``), which names no dataflow."""
         return self._call("GET", "/api/projects")
 
-    def open(self, project_id: str) -> dict:
-        """Open *project_id* as the canvas does, naming it from now on: its
-        spec, the guest's own copy once it has one."""
-        self.project_id = project_id
-        body = self._call("GET", "/api/projects/:id", path_url=f"/api/projects/{project_id}",
+    def load(self, example_id: str) -> tuple[dict, Optional[str]]:
+        """Load *example_id* as the canvas does, the load naming the example:
+        its spec, the guest's own copy once it has one, and the id of the
+        guest's own copy of it, made or not (``copy_id``), None when the
+        answer names none."""
+        self.project_id = example_id
+        body = self.read_example(example_id)
+        copy_id = body.get("copy_id")
+        return body["spec"], copy_id if isinstance(copy_id, str) and copy_id else None
+
+    def read_example(self, example_id: str) -> dict:
+        """``GET /api/projects/<example_id>?results=last``, naming in its
+        header what the guest names now: its answer, which must hold a
+        dataflow."""
+        body = self._call("GET", "/api/projects/:id", path_url=f"/api/projects/{example_id}",
                           params={"results": "last"})
-        spec = body.get("spec") if isinstance(body, dict) else None
-        if not isinstance(spec, dict):
+        if not isinstance(body, dict) or not isinstance(body.get("spec"), dict):
             self._fail("/api/projects/:id", "", "opening the example answered no dataflow", "http_error")
             raise UserFailed("the example opened with no dataflow")
-        return spec
+        return body
 
 
 class ExampleReader(_Guest):
@@ -237,7 +255,7 @@ class ExampleReader(_Guest):
             example_id, problem = find_example(self.listing(), self.dataflow_name)
             if problem:
                 raise GuestsError(problem)
-            spec = self.open(example_id)
+            spec, _copy = self.load(example_id)
         except UserFailed as exc:
             detail = "; ".join(f"{s.endpoint}: {(s.error or '')[:200]}" for s in self.result.failures)
             raise GuestsError(f"{exc}: {detail}") from exc
@@ -261,7 +279,7 @@ class ExampleReader(_Guest):
             # the tiers before it took.
             self.token = self.project_id = None
             self.sign_in()
-            after = node_codes(self.open(self.job["id"]))
+            after = node_codes(self.load(self.job["id"])[0])
             changed = changed_nodes(self.job["codes"], after)
             if changed:
                 self._fail("the example", "", "once the tier was over, the example itself held work: "
@@ -293,6 +311,10 @@ class GuestVisit(_Guest):
         #: while after the tier's first ask, while the turns run
         #: (``run.watch_turns``). None tells no one.
         self.first_ask = first_ask
+        #: The id of its own copy of the example, which the example's load
+        #: answered (``copy_id``): every call after the load names it in its
+        #: header, and its tab's socket in its handshake.
+        self.copy_id: Optional[str] = None
         self.tab: Optional[sockets.Tab] = None
         self.turn: Optional[MemberTurn] = None
         #: The node's code as the guest's tab held it once its typing was
@@ -333,34 +355,50 @@ class GuestVisit(_Guest):
         return self.result
 
     def arrive(self) -> None:
-        """Sign in, find the example in the gallery and open it: what it
-        opens must be the example, which no guest's work is in."""
+        """Sign in, find the example in the gallery and load it: what it
+        opens must be the example, which no guest's work is in, and the load
+        must name a copy of its own, which every call names from then on."""
         self.sign_in()
         if self.job["id"] not in named_in(self.listing(), self.job["name"]):
             self._fail("/api/projects", "", f"its gallery lists no dataflow named {self.job['name']!r} "
                        f"as the example {self.job['id']}", "http_error")
             raise UserFailed("the example is not in the guest's gallery")
-        changed = changed_nodes(self.job["codes"], node_codes(self.open(self.job["id"])))
+        spec, copy_id = self.load(self.job["id"])
+        changed = changed_nodes(self.job["codes"], node_codes(spec))
         if changed:
             self._fail("/api/projects/:id", "", "what it opened as the example held work that is not the "
                        "example's: " + "; ".join(changed), "leaked")
             raise UserFailed("the example it opened was not the example")
+        if not copy_id:
+            self._fail("/api/projects/:id", "", "its load of the example named no copy of its own "
+                       "(copy_id), so its page would have none to name", "http_error")
+            raise UserFailed("the example's load named no copy")
+        if copy_id == self.job["id"]:
+            self._fail("/api/projects/:id", "", "its load of the example named the example itself as its "
+                       "own copy", "leaked")
+            raise UserFailed("the example's load named the example as its copy")
+        self.copy_id = self.project_id = copy_id
 
     def on_its_copy(self) -> bool:
         """Its tab, its typing and its agent on its copy, the checks once the
         turn is over, and its copy read back; whether all of it went."""
         record = self.socket_sample
-        tab = sockets.Tab(self.name, self.project_id, sockets.SyncLedger(), record)
+        example = self.job["id"]
+        # Its join names the example, the dataflow its page shows; its
+        # handshake names its copy, as the page's socket does once its load
+        # answered it.
+        tab = sockets.Tab(self.name, example, sockets.SyncLedger(), record)
         self.tab = tab
         node_id = self.job["node_id"]
         try:
             tab.connect(lambda on_yjs, on_close: sockets.SocketLink(
                 self.backend_url, self.namespace, self.token, on_yjs, on_close, on_room=tab.room_event,
-                dataflow=self.project_id))
+                dataflow=self.copy_id))
             tab.join()
-            if tab.room_id == self.project_id:
-                record("socket join_session", 0.0, False, f"its tab joined the example's own room, "
-                       f"{self.project_id}, not a copy of its own", "leaked")
+            if tab.room_id != self.copy_id:
+                joined = "the example's own room" if tab.room_id == example else f"the room of {tab.room_id}"
+                record("socket join_session", 0.0, False, f"its tab joined {joined}, not that of its own copy "
+                       f"{self.copy_id}, which its load named", "leaked")
                 return False
             tab.sync()
             target = [(node_id, "# ")]
@@ -371,7 +409,7 @@ class GuestVisit(_Guest):
             tab.wait_for_answers(sockets.CALL_TIMEOUT_S)
             self.typed = tab.code_of(node_id)
             self.turn = MemberTurn(self.name, node_id, agent_content(self.name, self.typed), early=False,
-                                   dataflow=self.project_id)
+                                   dataflow=example, named=self.copy_id)
             self.turn.run(self, on_asked=self.tell_asked)
             self.after_the_turn(tab, self.turn)
         except sockets.TabFailed:
@@ -429,12 +467,12 @@ class GuestVisit(_Guest):
                    "its turn was over: " + ", ".join(self.locks_at_end), "locked")
 
     def read_back(self, node_id: str) -> None:
-        """Its copy, read as a reload reads it (the same ``GET`` as its
-        open), which must hold its own work and nothing else
-        (:func:`copy_problems`): its agent's write where it landed, else its
-        lines."""
+        """Its copy, read with the same ``GET`` as its load, naming its copy
+        as every call after the load does, which must hold its own work and
+        nothing else (:func:`copy_problems`): its agent's write where it
+        landed, else its lines."""
         expected = self.turn.content if self.turn is not None and self.turn.landed else self.typed
-        copy = node_codes(self.open(self.project_id))
+        copy = node_codes(self.read_example(self.job["id"])["spec"])
         problems = copy_problems(copy, self.job["codes"], node_id, expected or "")
         self.copy = {"read": True,
                      "not_in_copy": [message for message, kind in problems if kind == "not_in_copy"],

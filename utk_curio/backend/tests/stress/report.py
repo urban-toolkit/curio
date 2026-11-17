@@ -119,11 +119,12 @@ def room_process(room: dict, processes: int) -> int:
 def copy_process(guest: dict, processes: int) -> int:
     """The backend process that owns a hosted guest's copy of an example
     among *processes*, from the guest's outcome (``guests.GuestVisit.outcome``),
-    by the rule the owner guard keeps (``owner_guard.room_key``): today the
-    example's (``shard_of`` of the id of the example it copies), the id its
-    page names in its calls and its socket's handshake, so every guest of one
-    example works on one process. The one place the report reads that rule."""
-    return shard_of(guest.get("example_id"), processes)
+    by the rule the owner guard keeps (``owner_guard.room_key``): the copy's
+    own id's (``shard_of`` of the room its tab joined), the id its page names
+    in its calls and its socket's handshake once its load answered it, so the
+    guests of one example spread over the processes. The one place the report
+    reads that rule."""
+    return shard_of(guest.get("project_id"), processes)
 
 
 def socket_summary(rooms: list[dict], processes: int = 1) -> dict | None:
@@ -747,8 +748,9 @@ def _guests_table(tiers: list[dict]) -> list[str]:
                   "model (no LLM, no tokens), to put a line naming it on top of that code. A copy's room holds its "
                   "guest's one tab, so sync is each keystroke's and drag's time from the tab to the server's "
                   "answer, once the copy's doc holds it; a turn is timed from its ask to its end. Each guest reads "
-                  "its copy back as a reload does, which must hold its own work and nothing else, and once the "
-                  "tier is over the example must be as it was. A turn that fails, a write missing from a tab or a "
+                  "its copy back with the same read as its load, which must hold its own work and nothing else, "
+                  "and once the tier is over the example must be as it was. A turn that fails, a write missing "
+                  "from a tab or a "
                   "copy, work found outside its guest's copy, or an agent or a lock left in a room fails the tier."),
              ""]
     lines.append("| Tier | Guests | Rooms | Updates | Sync p50 | Sync p95 | Sync max | Turns | Done | Turn p50 "

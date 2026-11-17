@@ -6,10 +6,13 @@
 * A tab's events after its join name the id the join answered, a hosted
   guest's own copy's, while its joins name the dataflow it opened.
 * A guest's whole visit on stand-ins for the server, its socket and its
-  agent's calls: every HTTP call names the example, never the copy, and its
+  agent's calls, as its page makes it: its load names the example, and every
+  call after it names, in its header, the copy the load answered with, as its
+  socket's handshake does, while paths and the join name the example and the
   socket's events after the join name the copy; its copy read back holds its
-  own work, and work that is not its own is a failure; a join to the
-  example's own room stops it before it types.
+  own work, and work that is not its own is a failure; a load that names no
+  copy of its own stops it before its tab, and a join to any room but that
+  copy's before it types.
 * The report: each copy's process by the one rule (``report.copy_process``),
   each process's copies, the guests' summary and table, and the reader's
   checks failing the tier while being no user of it.
@@ -225,12 +228,15 @@ class _Server:
     and the agent's write landing there. It keeps every HTTP call's path and
     dataflow header, and every socket payload."""
 
-    def __init__(self, join_room=COPY, read_back_adds=None):
+    def __init__(self, join_room=COPY, read_back_adds=None, load_copy=COPY):
         from utk_curio.backend.app.collaboration import doc_mapping
 
         self.doc = doc_mapping.new_doc()
         doc_mapping.dataflow_to_doc(FLOW, self.doc, doc_id="d")
         self.join_room = join_room
+        #: The guest's own copy the example's load answers with (``copy_id``),
+        #: as the server does for a hosted guest; None for none.
+        self.load_copy = load_copy
         #: Lines another guest's work put at the top of the guest's node, which
         #: its read back then holds.
         self.read_back_adds = read_back_adds
@@ -256,12 +262,14 @@ class _Server:
         if path == f"/api/projects/{EXAMPLE}":
             self.opened += 1
             if self.opened == 1:
-                return _Response(200, {"project": {}, "spec": {"dataflow": FLOW}, "outputs": []})
+                return _Response(200, {"project": {}, "spec": {"dataflow": FLOW}, "outputs": [],
+                                       "copy_id": self.load_copy})
             flow = doc_mapping.doc_to_dataflow(self.doc)
             if self.read_back_adds:
                 flow = {**flow, "nodes": [{**node, "content": self.read_back_adds + node["content"]}
                                           if node["id"] == NODE else node for node in flow["nodes"]]}
-            return _Response(200, {"project": {}, "spec": {"dataflow": flow}, "outputs": []})
+            return _Response(200, {"project": {}, "spec": {"dataflow": flow}, "outputs": [],
+                                   "copy_id": self.load_copy})
         if path.endswith("/attachments"):
             return _Response(201, {"attachmentId": "att-9"})
         if path == "/api/testing/agent-script":
@@ -369,12 +377,14 @@ class AGuestsVisitTest(unittest.TestCase):
             result = visit.run()
         return visit, result
 
-    def test_a_guest_works_on_its_own_copy_and_names_the_example_in_every_call(self):
-        """Sign in, the gallery, the example opened; its tab on its copy's
+    def test_a_guest_names_its_own_copy_once_its_load_answered_it(self):
+        """Sign in, the gallery, the example loaded; its tab on its copy's
         room, its lines typed; its agent attached, scripted, asked and
-        followed, writing its copy; its copy read back. Every HTTP call that
-        names a dataflow names the example, as the page does today, and
-        never the copy; the socket's events after its join name the copy."""
+        followed, writing its copy; its copy read back. As the page does, the
+        load names the example, and every call after it names the copy the
+        load answered with in its header, as the socket's handshake does,
+        while every path and the join name the example; the socket's events
+        after its join name the copy."""
         server = _Server()
         visit, result = self._visit(server)
 
@@ -382,17 +392,21 @@ class AGuestsVisitTest(unittest.TestCase):
         self.assertTrue(result.completed)
         paths = [path for _method, path, _header, _params in server.http]
         self.assertEqual(paths[:3], ["/api/auth/signin/guest", "/api/projects", f"/api/projects/{EXAMPLE}"])
-        self.assertEqual(paths[-1], f"/api/projects/{EXAMPLE}", "its copy is read back as a reload does")
+        self.assertEqual(paths[-1], f"/api/projects/{EXAMPLE}", "its copy is read back with its load's read")
         self.assertIn("/api/testing/agent-script", paths)
         self.assertFalse([path for path in paths if COPY in path], paths)
-        self.assertEqual({header for _method, _path, header, _params in server.http[2:]}, {EXAMPLE})
         self.assertEqual({header for _method, _path, header, _params in server.http[:2]}, {None},
                          "no dataflow is named before the guest opens one")
+        self.assertEqual(server.http[2][2], EXAMPLE, "the load names the example, as the page's does")
+        self.assertEqual({header for _method, _path, header, _params in server.http[3:]}, {COPY},
+                         "every call after the load names the copy it answered with")
+        self.assertGreaterEqual(len(server.http[3:]), 5, "the agent's four calls and the read back")
         self.assertEqual([params for _m, path, _h, params in server.http if path == f"/api/projects/{EXAMPLE}"],
                          [{"results": "last"}] * 2)
-        self.assertEqual(server.handshakes, [EXAMPLE])
+        self.assertEqual(server.handshakes, [COPY])
         self.assertEqual({room for event, room in server.socket if event == "join_session"}, {EXAMPLE})
         self.assertEqual({room for event, room in server.socket if event != "join_session"}, {COPY})
+        self.assertEqual(visit.copy_id, COPY)
 
         outcome = visit.outcome()
         self.assertEqual((outcome["project_id"], outcome["example_id"], outcome["room"]), (COPY, EXAMPLE, 0))
@@ -422,9 +436,31 @@ class AGuestsVisitTest(unittest.TestCase):
 
         self.assertFalse(result.completed)
         self.assertEqual([(s.endpoint, s.kind) for s in result.failures], [("socket join_session", "leaked")])
+        self.assertIn("the example's own room", result.failures[0].error)
         self.assertEqual([event for event, _room in server.socket], ["join_session"], "it typed nothing")
         self.assertIsNone(visit.outcome()["project_id"], "the example's room is no copy")
         self.assertFalse(visit.first_ask.is_set(), "it asked nothing")
+
+    def test_a_join_to_a_room_its_load_did_not_name_stops_it_before_it_types(self):
+        server = _Server(join_room=OTHER_COPY)
+        _visit, result = self._visit(server)
+
+        self.assertFalse(result.completed)
+        self.assertEqual([(s.endpoint, s.kind) for s in result.failures], [("socket join_session", "leaked")])
+        self.assertIn(f"the room of {OTHER_COPY}, not that of its own copy {COPY}", result.failures[0].error)
+        self.assertEqual([event for event, _room in server.socket], ["join_session"], "it typed nothing")
+
+    def test_a_load_that_names_no_copy_stops_it_before_its_tab(self):
+        for load_copy, kind in ((None, "http_error"), (EXAMPLE, "leaked")):
+            with self.subTest(load_copy=load_copy):
+                server = _Server(load_copy=load_copy)
+                visit, result = self._visit(server)
+
+                self.assertFalse(result.completed)
+                self.assertEqual([(s.endpoint, s.kind) for s in result.failures], [("/api/projects/:id", kind)])
+                self.assertEqual((server.handshakes, server.socket), ([], []), "it opened no socket")
+                self.assertEqual(len(server.http), 3, "nothing after its load")
+                self.assertIsNone(visit.copy_id)
 
 
 class TheExampleReaderTest(unittest.TestCase):
@@ -490,23 +526,26 @@ def _outcome(index: int, copy_id: str | None, sync: list, turn: float | None, **
 
 
 class TheReportTest(unittest.TestCase):
-    def test_a_copy_is_on_its_examples_process_today_whatever_its_own_id(self):
-        """The one rule: a guest's copy is owned with the example it copies
-        (``owner_guard.room_key``), where its page names it. The copy's own id
-        falls on process 1 of 8, the example's on 4."""
+    def test_a_copy_is_on_its_own_ids_process_whatever_its_examples(self):
+        """The one rule: a guest's copy is owned by its own id
+        (``owner_guard.room_key``), which its page names once its load
+        answered it. The copies' ids fall on processes 1 and 2 of 8, the
+        example's on 4."""
         from utk_curio.backend.tests.stress.report import copy_process, guests_summary, process_summary
 
         guests = [_outcome(0, COPY, [0.01], 2.0), _outcome(1, OTHER_COPY, [0.02], 4.0)]
-        self.assertEqual([copy_process(guest, 8) for guest in guests], [4, 4])
+        self.assertEqual([copy_process(guest, 8) for guest in guests], [1, 2])
         self.assertEqual(copy_process(guests[0], 1), 0)
         per_guest = guests_summary(guests, 8)["per_guest"]
-        self.assertEqual([(entry["copy_id"], entry["process"]) for entry in per_guest], [(COPY, 4), (OTHER_COPY, 4)])
+        self.assertEqual([(entry["copy_id"], entry["process"]) for entry in per_guest], [(COPY, 1), (OTHER_COPY, 2)])
         block = process_summary(guests, 8, None, process_of=copy_process)
-        self.assertEqual([(entry["process"], entry["rooms"]) for entry in block if entry["rooms"]], [(4, [0, 1])])
-        self.assertEqual(block[4]["turn_s"]["count"], 2)
-        self.assertEqual(block[4]["sync_ms"]["max"], 20.0)
-        self.assertEqual(block[4]["phases_s"]["prepared"]["max"], 2.0)
-        self.assertEqual(block[1]["rooms"], [], "the copy's own id names no process today")
+        self.assertEqual([(entry["process"], entry["rooms"]) for entry in block if entry["rooms"]],
+                         [(1, [0]), (2, [1])])
+        self.assertEqual((block[1]["turn_s"]["count"], block[2]["turn_s"]["count"]), (1, 1))
+        self.assertEqual((block[1]["sync_ms"]["max"], block[2]["sync_ms"]["max"]), (10.0, 20.0))
+        self.assertEqual((block[1]["phases_s"]["prepared"]["max"], block[2]["phases_s"]["prepared"]["max"]),
+                         (1.0, 2.0))
+        self.assertEqual(block[4]["rooms"], [], "the example's own id names no copy's process")
 
     def test_the_guests_summary_says_what_they_did_and_what_was_wrong(self):
         from utk_curio.backend.tests.stress.report import guests_summary
@@ -567,9 +606,11 @@ class TheReportTest(unittest.TestCase):
         self.assertIn("| 2 | 2 | 2 | 2 | 10.0 ms | 20.0 ms | 20.0 ms | 2 | 2 | 2.0 s | 4.0 s | 4.0 s | 2 | 2 of 2 "
                       "| 0 | 0 | 0 agent(s), 0 lock(s) |", text)
         self.assertIn("| Tier | Prepared p50 |", text, "the turns phase by phase")
-        self.assertIn(f"- `g0`: copy `{COPY}` on process 4", text)
-        self.assertIn(f"- `g1`: copy `{OTHER_COPY}` on process 4", text)
-        self.assertIn("| 2 | 4 | 2 |", text, "process 4 holds both copies")
+        self.assertIn(f"- `g0`: copy `{COPY}` on process 1", text)
+        self.assertIn(f"- `g1`: copy `{OTHER_COPY}` on process 2", text)
+        self.assertIn("| 2 | 1 | 1 |", text, "process 1 holds the first copy")
+        self.assertIn("| 2 | 2 | 1 |", text, "process 2 holds the second")
+        self.assertIn("| 2 | 4 | 0 |", text, "the example's process holds none")
         self.assertIn("each hosted guest's copy is a room of its own", text)
 
 
@@ -620,10 +661,11 @@ class TheStacksDuringTheTurnsTest(unittest.TestCase):
         watch_turns(never, done, 0.0, lambda: called.append("never asked"))
         self.assertEqual(called, [])
 
-    def _main(self, out_dir: str, probe) -> int:
+    def _main(self, out_dir: str, probe, outcomes=None) -> int:
         """``run.main`` on one guests tier of 5, the stack and the tier stood
         in for: the tier calls what it is to call during its turns, as
-        ``run_tier`` does once its first ask is a while old."""
+        ``run_tier`` does once its first ask is a while old, and its guests'
+        outcomes are *outcomes*, one guest's on its copy by default."""
         from types import SimpleNamespace
 
         from utk_curio.backend.tests.stress import run
@@ -644,7 +686,7 @@ class TheStacksDuringTheTurnsTest(unittest.TestCase):
             if during_turns is not None:
                 during_turns()
             guest = UserResult(user="g0", example="e.json", started_at=0.0, seconds=1.0, completed=True)
-            return [guest], 1.0, [_outcome(0, COPY, [0.01], 2.0)]
+            return [guest], 1.0, outcomes if outcomes is not None else [_outcome(0, COPY, [0.01], 2.0)]
 
         example = SimpleNamespace(relpath="e.json", spec_json={"dataflow": {"name": FLOW["name"]}})
         environ = {key: value for key, value in os.environ.items() if key != "GITHUB_STEP_SUMMARY"}
@@ -688,6 +730,18 @@ class TheStacksDuringTheTurnsTest(unittest.TestCase):
             stacks = report["tiers"][0]["stacks_during_turns"]
             self.assertIsNone(stacks["file"])
             self.assertIn("the probe is off (--no-probe)", stacks["line"])
+
+    def test_a_guest_whose_tab_joined_no_room_has_no_copy_on_any_process(self):
+        """A copy goes by its own id, so a guest that never joined a room has
+        none to place: it is on no process's list of copies."""
+        outcomes = [_outcome(0, COPY, [0.01], 2.0),
+                    _outcome(1, None, [], None, tab={}, copy=None, present_at_end=None, locks_at_end=None)]
+        with tempfile.TemporaryDirectory() as out_dir:
+            self.assertEqual(self._main(out_dir, _StacksProbe(), outcomes), 0)
+
+            report = json.loads(Path(out_dir, "report.json").read_text(encoding="utf-8"))
+            self.assertEqual([entry["rooms"] for entry in report["tiers"][0]["processes"]], [[0]])
+            self.assertEqual(report["tiers"][0]["guests"]["guests"], 2, "both guests are in the guests' summary")
 
 
 class TheCommandLineTest(unittest.TestCase):

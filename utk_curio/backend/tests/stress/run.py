@@ -848,15 +848,17 @@ def main(argv: list[str] | None = None) -> int:
         lock = reporting.exec_lock_delta(lock_before, read_exec_lock(backend_url))
         if reader is not None:
             # Each guest is a room of its own, its copy's, on the process its
-            # copy belongs to (report.copy_process).
+            # copy belongs to (report.copy_process); a guest whose tab joined
+            # no room has no copy there.
             checked = reader.check(outcomes)
             all_results.append(checked)
             summary = reporting.tier_summary(tier, results, seconds, args.profile, exec_lock=lock,
                                              backend=backend, doc_files=doc_files, harness=harness,
                                              checks=[checked])
             summary["guests"] = reporting.guests_summary(outcomes, processes)
-            summary["processes"] = reporting.process_summary(outcomes, processes, backend,
-                                                             process_of=reporting.copy_process)
+            summary["processes"] = reporting.process_summary(
+                [guest for guest in outcomes if guest.get("project_id")], processes, backend,
+                process_of=reporting.copy_process)
             if position in during:
                 summary["stacks_during_turns"] = during[position]
             else:
