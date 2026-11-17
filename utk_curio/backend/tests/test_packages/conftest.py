@@ -30,8 +30,12 @@ from utk_curio.backend.app.packages.infrastructure.pip_runner import (
 )
 
 
-#: The data folder the suite's root conftest names for the whole session.
-_THE_SESSIONS_DATA_FOLDER = os.environ.get("CURIO_SHARED_DATA")
+@pytest.fixture(scope="module", autouse=True)
+def _the_data_folder_a_module_starts_with():
+    """``CURIO_SHARED_DATA`` as each module of these tests starts, before
+    any fixture of its own runs: the session's, which the suite's root
+    conftest names, or one an earlier test left set."""
+    return os.environ.get("CURIO_SHARED_DATA")
 
 
 def _let_the_store_go() -> None:
@@ -46,15 +50,16 @@ def _let_the_store_go() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _a_data_folder_of_its_own(tmp_path, monkeypatch):
+def _a_data_folder_of_its_own(_the_data_folder_a_module_starts_with, tmp_path, monkeypatch):
     """Each test's own data folder, ``.curio/data`` in its ``tmp_path``.
 
     The suite's root conftest names one for the whole session, an absolute
     ``CURIO_SHARED_DATA`` that neither ``tmp_path`` nor ``tmp_curio`` moves,
     and each account's node libraries sit beside it
     (``backend_runtime.user_node_overlay_dir``): every test of a worker shared
-    the account trees, and the sandbox's store, the tests before it left. A
-    folder a module's fixture names for its tests stays theirs.
+    the account trees, and the sandbox's store, the tests before it left. So
+    does a folder an earlier test left set, which a module starts with too. A
+    folder a module's own fixture names for its tests stays theirs.
 
     The folder is named, not made: ``tmp_curio`` makes it, as the store does
     when it opens (``sandbox.util.db``), so a test that lists its
@@ -62,8 +67,8 @@ def _a_data_folder_of_its_own(tmp_path, monkeypatch):
     before and after, as ``test_datasets``' conftest does, so the store a
     test opens is its own.
     """
-    if os.environ.get("CURIO_SHARED_DATA") != _THE_SESSIONS_DATA_FOLDER:
-        yield  # a module's own folder, which its fixture named
+    if os.environ.get("CURIO_SHARED_DATA") != _the_data_folder_a_module_starts_with:
+        yield  # the module's own folder, which a fixture of its named for its tests
         return
     monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path / ".curio" / "data"))
     _let_the_store_go()
