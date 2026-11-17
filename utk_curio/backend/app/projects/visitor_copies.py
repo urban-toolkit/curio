@@ -358,9 +358,10 @@ def dashboard_copy_id(project_id: str) -> Optional[str]:
     hosted guest's own copy of a dataflow their account owns, made or not yet
     (:func:`own_copy_id`), the one their canvas of it names. The page names it
     in every request once its data or its load answers with it (``copy_id``,
-    ``src/utils/requestHeaders.ts``), and in a start of several backend
-    processes the dashboard's viewer runs belong to the process that id names
-    (``runs/viewer.py``). Nothing is made here. ``None`` for anyone else, as
+    ``src/utils/requestHeaders.ts``); the dashboard's viewer runs are that
+    copy's dashboard's, made or not yet, and in a start of several backend
+    processes they belong to the process that id names (``runs/viewer.py``).
+    Nothing is made here. ``None`` for anyone else, as
     :func:`dashboard_copy` says, and for a guest's own new dataflow, whose
     page names its own id. A dashboard's routes need no sign-in, so the
     request's is read here, when it sends one."""

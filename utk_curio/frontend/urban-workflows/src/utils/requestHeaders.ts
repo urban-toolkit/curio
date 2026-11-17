@@ -28,9 +28,11 @@
  * (`dataflowNameKnown`). An account's load is not marked, as its answer names
  * no copy: its socket opens at once, apart from the load. The guest's
  * dashboard of the dataflow names the copy the same way, once its load
- * answers with the copy's id, or, on a page served with its data, once
- * `ProjectLoader` reads it there: its viewer runs are kept on the copy's
- * process. Ids in paths and bodies are the dataflow's. A request sent once
+ * answers with the copy's id, or, on a page served with its data, as soon as
+ * `ProjectLoader` starts, from that data: its viewer runs are kept on the
+ * copy's process. So does the canvas that page's Open dataflow opens in the
+ * same page, before its room's socket opens. Ids in paths and bodies are the
+ * dataflow's. A request sent once
  * the page has left the canvas or the dashboard, a node's outcome as its
  * canvas closes, names the dataflow itself: the record it writes is a file
  * beside the copy, which any process writes.

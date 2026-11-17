@@ -32,9 +32,12 @@ their own copy's once they have one (``projects/visitor_copies.py``,
 standing in only for the nodes the copy makes as the dataflow does
 (:func:`made_as_saved`); its steps read the guest's own datasets, as the
 guest's plays do, the request's sign-in served on their threads; and what it
-keeps is kept on the copy, under a dashboard of its own, which no other
-visitor's dashboard reads or joins. Its page names the copy, made or not yet,
-as the guest's canvas does (``dashboard_copy_id``).
+keeps is kept on the copy, which no other visitor's dashboard reads. Its page
+names the copy, made or not yet, as the guest's canvas does
+(``dashboard_copy_id``), and from the guest's first visit its runs are a
+dashboard of their own, the copy's (``dashboard:<copy id>``), which joins and
+waits on no other visitor's runs: while the guest has no copy they run the
+dataflow and keep on it, as anyone's run of it does.
 
 A step only a browser runs (an Autark compute node) is the
 page's. The run ends asking for it (``needs_canvas``), as a canvas's run on
@@ -368,10 +371,14 @@ def start_viewer_run(
 
     A hosted guest who has their own copy of the dataflow runs the copy
     (``visitor_copies.dashboard_copy``), with the saved outputs that hold for
-    it (:func:`made_as_saved`), and keeps what the run makes on the copy. The
-    dashboard of a hosted guest's own new dataflow, which has no row, runs it
-    for that guest alone (``visitor_copies.dashboard_new``): as it is now,
-    with no saved output, kept on it; for anyone else it is not found.
+    it (:func:`made_as_saved`), and keeps what the run makes on the copy. A
+    hosted guest's runs are their own copy's dashboard's from their first
+    visit, made or not yet (``visitor_copies.dashboard_copy_id``): a start of
+    values another visitor's run runs does not join it, nor does it count
+    against that dashboard's live runs. The dashboard of a hosted guest's own
+    new dataflow, which has no row, runs it for that guest alone
+    (``visitor_copies.dashboard_new``): as it is now, with no saved output,
+    kept on it; for anyone else it is not found.
 
     Refused first of all in a process that does not own the dataflow the
     dashboard's page names (``collaboration/owner_guard.py``): a hosted
@@ -386,10 +393,10 @@ def start_viewer_run(
     from utk_curio.backend.app.collaboration import owner_guard
     from utk_curio.backend.app.execution.node_names import template_labels
     from utk_curio.backend.app.projects import storage, visitor_copies
-    from utk_curio.common import backend_processes
 
-    # The guest's copy's id is asked for only in a start of several processes.
-    named = visitor_copies.dashboard_copy_id(project_id) if backend_processes.process_count() > 1 else None
+    # The dataflow the dashboard's page names, whose dashboard the run is:
+    # a hosted guest's own copy, made or not yet, else the dashboard's own.
+    named = visitor_copies.dashboard_copy_id(project_id)
     owner_guard.refuse(named or project_id, what="a dashboard's run")
     from utk_curio.backend.app.execution.run_engine import PlanError
     from utk_curio.backend.app.execution.workflow_spec import parse_workflow_dict
@@ -466,9 +473,12 @@ def start_viewer_run(
         raise RunError(str(exc), 422) from exc
 
     _forget_finished_runs()
-    # A hosted guest's copy is a dashboard of its own: no other visitor's
-    # start joins its runs, nor counts against its live ones.
-    dashboard = f"dashboard:{kept_on}"
+    # A hosted guest's dashboard is its own copy's from the guest's first
+    # visit, made or not yet: its runs join no other visitor's, nor count
+    # against their live ones, and no other visitor's join or count against
+    # its own. What they keep is kept on *kept_on*: the copy once made, else
+    # the dataflow, whose kept outputs anyone's run of the same values reuses.
+    dashboard = f"dashboard:{named or kept_on}"
     run_key = hashlib.sha256(canonical({
         "revision": storage.spec_revision(user_key, kept_on),
         "values": _control_values(dashboard_controls(overlaid)),
