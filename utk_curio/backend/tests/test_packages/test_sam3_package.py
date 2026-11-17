@@ -827,6 +827,269 @@ def test_each_stop_comes_before_sam3_loads_and_writes_nothing(videos, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# The frames one run looks at
+# ---------------------------------------------------------------------------
+
+#: The SideSeeing walk's length, which Track Objects ran on whole in dev's
+#: check: 433 frames at a frame every 2 s, in 208 s of a node's 300 s.
+WALK_SECONDS = 864.3
+#: The node's code as a dataflow saved before MAX_FRAMES holds it.
+SAVED_WITH_MAX_SECONDS = '''from sam3_tracking import track_objects
+
+# What to look for, in plain words: SAM 3 takes any short noun phrase.
+LABELS = [
+    "curb ramp", "curb cut", "tactile paving", "bollard", "pole",
+    "construction barrier", "traffic cone", "person",
+]
+EVERY_SECONDS = 0.5  # the gap between two frames SAM 3 looks at
+FORGET_SECONDS = 10  # SAM 3 lets go of an object unseen this long; None keeps every object
+FROM_SECONDS = 0  # the part of each video to track, in seconds from its start
+TO_SECONDS = None  # None is the video's end
+MAX_SECONDS = 300  # the most video one run takes
+WIDTH = 960  # the widest frames are read and drawn at
+
+return track_objects(
+    input_0, curio_load_model("model.curio.sam3"), curio_derived_file,
+    labels=LABELS, every_seconds=EVERY_SECONDS, forget_seconds=FORGET_SECONDS,
+    from_seconds=FROM_SECONDS, to_seconds=TO_SECONDS, max_seconds=MAX_SECONDS, width=WIDTH,
+)
+'''
+
+
+class _SamLoads(Exception):
+    """SAM 3 was about to load: the call passed every stop before it."""
+
+
+@pytest.fixture
+def no_sam3(monkeypatch):
+    """Makes a staged module raise :class:`_SamLoads` where SAM 3 would load,
+    so a test sees whether a call passed its stops without loading SAM 3."""
+
+    def stop(module):
+        class _Loading:
+            @staticmethod
+            def from_pretrained(*_args, **_kwargs):
+                raise _SamLoads("SAM 3 loads: the call passed every stop")
+
+        monkeypatch.setattr(module, "Sam3VideoProcessor", _Loading)
+
+    return stop
+
+
+def _rows_of(video: dict):
+    """The rows of a collection holding *video* alone, as Track Objects' stops
+    read them."""
+    import pandas as pd
+
+    return pd.DataFrame([{"kind": "video", **video}])
+
+
+def _code_tab_settings() -> dict:
+    """The settings the node's code tab sets, by name."""
+    code = SOURCE.read_text(encoding="utf-8")
+    body = ast.parse("def node(input_0):\n" + "\n".join("    " + line for line in code.splitlines())).body[0].body
+    return {
+        statement.targets[0].id: ast.literal_eval(statement.value)
+        for statement in body if isinstance(statement, ast.Assign)
+    }
+
+
+def _whole_walk(tmp_path: Path) -> dict:
+    """A clip as long as the walk, 864.3 s at 10 frames a second, as
+    ``_sample`` reads a video."""
+    import av
+    import numpy as np
+
+    path = tmp_path / "whole-walk.mp4"
+    image = np.full((32, 32, 3), 40, dtype=np.uint8)
+    with av.open(str(path), "w") as out:
+        stream = out.add_stream("mpeg4", rate=10)
+        stream.width, stream.height, stream.pix_fmt = 32, 32, "yuv420p"
+        for _ in range(round(WALK_SECONDS * 10)):
+            for packet in stream.encode(av.VideoFrame.from_ndarray(image, format="rgb24")):
+                out.mux(packet)
+        for packet in stream.encode():
+            out.mux(packet)
+    return {"path": str(path), "relpath": path.name}
+
+
+def test_a_part_that_needs_more_frames_than_max_frames_stops_before_sam3_loads_whatever_its_length(
+        videos, tmp_path, no_sam3):
+    """A run's time follows the frames SAM 3 looks at, not the seconds of the
+    part: the 2 s clip at a frame every half second, and its first second at a
+    frame every quarter second, each need 4 frames, so each stops at a limit
+    of 3 before SAM 3 loads and writes nothing, though both are seconds long.
+    The message names the limit, the frames the part needs, and an
+    EVERY_SECONDS and a shorter part that fit, which each pass."""
+    rows, helpers = videos
+    relpath = rows["relpath"].iloc[0]
+    nothing = SimpleNamespace(path=str(tmp_path / "no-weights"))
+    with _staged(tmp_path) as module:
+        no_sam3(module)
+
+        def track(**settings):
+            return module.track_objects(rows, nothing, helpers["curio_derived_file"], labels=DEFAULT_LABELS,
+                                        max_frames=3, **settings)
+
+        with pytest.raises(ValueError) as whole_clip:
+            track(every_seconds=EVERY)
+        with pytest.raises(ValueError) as first_second:
+            track(every_seconds=EVERY / 2, to_seconds=1)
+        for fits in ({"every_seconds": 0.7}, {"every_seconds": EVERY, "to_seconds": 1.5},
+                     {"every_seconds": 0.4, "to_seconds": 1}, {"every_seconds": EVERY / 2, "to_seconds": 0.75}):
+            with pytest.raises(_SamLoads):
+                track(**fits)
+
+    assert str(whole_clip.value) == (
+        f"{relpath}: Track Objects looks at 3 frames of a video at most in one run, and 0 to 2 s at a frame "
+        "every 0.5 s is 4 frames; raise EVERY_SECONDS to 0.7 or more, or set FROM_SECONDS and TO_SECONDS to a "
+        "shorter part, such as 0 and 1.5"
+    )
+    assert str(first_second.value) == (
+        f"{relpath}: Track Objects looks at 3 frames of a video at most in one run, and 0 to 1 s at a frame "
+        "every 0.25 s is 4 frames; raise EVERY_SECONDS to 0.4 or more, or set FROM_SECONDS and TO_SECONDS to a "
+        "shorter part, such as 0 and 0.75"
+    )
+    assert not (tmp_path / "media" / "videos").exists() and not (tmp_path / "media" / "tables").exists()
+
+
+def test_a_run_may_look_at_max_frames_frames_of_a_part_and_not_one_more(corner, walk, tmp_path, no_sam3):
+    """The frames the limit counts are the frames a run looks at: each part
+    the steps' tests pin, whose frames fall on a step, a millisecond before it
+    or after the part's end, passes a limit of the frames ``_sample`` looks at
+    in it, and stops before SAM 3 loads at one fewer, naming them."""
+    nothing = SimpleNamespace(path=str(tmp_path / "no-weights"))
+    parts = [
+        (corner, 0, None), (corner, 0, 1.0), (corner, 1.0, 1.0),
+        (walk, 30, 31.75), (walk, 30.5, 31.0), (walk, 30, 31.51), (walk, 31.0, 31.0), (walk, 31.5, 31.5),
+    ]
+    with _staged(tmp_path) as module:
+        no_sam3(module)
+        for video, start, to in parts:
+            looked_at = len(_times(module, video, start, CLIP_SECONDS if to is None else to))
+            part = f"{video['relpath']} from {start} to {to}, {looked_at} frames"
+
+            def track(max_frames, video=video, start=start, to=to):
+                return module.track_objects(_rows_of(video), nothing, None, labels=DEFAULT_LABELS,
+                                            every_seconds=EVERY, from_seconds=start, to_seconds=to,
+                                            max_frames=max_frames)
+
+            with pytest.raises(_SamLoads):
+                track(looked_at)
+            if looked_at > 1:
+                with pytest.raises(ValueError) as refused:
+                    track(looked_at - 1)
+                message = str(refused.value)
+                assert f"looks at {looked_at - 1} frames of a video at most" in message, (part, message)
+                assert f" is {looked_at} frames; " in message, (part, message)
+
+
+def test_a_part_of_exactly_max_frames_frames_runs(videos, catalog_copy, weights, few_threads, tmp_path):
+    """The 2 s clip at a frame every half second is 4 frames, which a limit of
+    4 runs whole."""
+    import av
+
+    rows, helpers = videos
+    model = _loaded(catalog_copy, weights)(MODEL_ID)
+    with _staged(tmp_path) as module:
+        (row,) = module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS,
+                                      every_seconds=EVERY, max_frames=len(SAMPLED)).to_dict("records")
+    with av.open(row["path"]) as overlay:
+        shown = [round(float(frame.time), 3) for frame in overlay.decode(overlay.streams.video[0])]
+    assert shown == SAMPLED, f"the overlay shows its frames at {shown} s"
+    assert Path(row["tracks"]).is_file()
+
+
+def test_a_long_part_at_a_large_every_seconds_that_fits_runs(catalog_copy, weights, few_threads, tmp_path):
+    """30 s of video at a frame every 10 s is 3 frames: a limit of 3 runs it
+    whole, though it is 15 times as long as the 2 s clip a limit of 3 stops at
+    a frame every half second, and a limit of 2 stops it before SAM 3 loads."""
+    import av
+
+    rows, helpers = _collection(tmp_path, seconds=30)
+    model = _loaded(catalog_copy, weights)(MODEL_ID)
+    with _staged(tmp_path) as module:
+        def track(max_frames):
+            return module.track_objects(rows, model, helpers["curio_derived_file"], labels=TWO_LABELS,
+                                        every_seconds=10, max_frames=max_frames)
+
+        with pytest.raises(ValueError) as refused:
+            track(2)
+        (row,) = track(3).to_dict("records")
+    assert " 0 to 30 s at a frame every 10 s is 3 frames; " in str(refused.value), str(refused.value)
+    with av.open(row["path"]) as overlay:
+        shown = [round(float(frame.time), 3) for frame in overlay.decode(overlay.streams.video[0])]
+    assert shown == [0.0, 10.0, 20.0], f"the overlay shows its frames at {shown} s"
+    assert (row["t_s"], row["duration_s"]) == (0.0, 30.0)
+
+
+def test_the_code_tabs_max_frames_is_450_which_takes_the_whole_walk_at_a_frame_every_2_s(tmp_path, no_sam3):
+    """On dev the whole 864.3 s walk at a frame every 2 s took 433 frames in
+    208 s, and 0 to 300 s at the code tab's frame every 0.5 s took 600 in 269
+    s, against a node's 300 s. The code tab's limit, 450 frames, takes the
+    first whole, and stops the second, and the whole walk at 0.5 s, before
+    SAM 3 loads, with a gap and a part that fit."""
+    import inspect
+
+    settings = _code_tab_settings()
+    assert settings.get("MAX_FRAMES") == 450, f"the code tab sets {settings}"
+    walk = _whole_walk(tmp_path)
+    nothing = SimpleNamespace(path=str(tmp_path / "no-weights"))
+    with _staged(tmp_path) as module:
+        assert inspect.signature(module.track_objects).parameters["max_frames"].default == settings["MAX_FRAMES"]
+        no_sam3(module)
+
+        def track(**part):
+            return module.track_objects(_rows_of(walk), nothing, None, labels=settings["LABELS"],
+                                        max_frames=settings["MAX_FRAMES"], **part)
+
+        with pytest.raises(_SamLoads):
+            track(every_seconds=2)
+        looked_at = module._sample(SimpleNamespace(width=960, from_seconds=0, every_seconds=2), walk, WALK_SECONDS)[1]
+        with pytest.raises(ValueError) as whole_walk:
+            track(every_seconds=settings["EVERY_SECONDS"])
+        with pytest.raises(ValueError) as five_minutes:
+            track(every_seconds=settings["EVERY_SECONDS"], to_seconds=300)
+        for fits in ({"every_seconds": settings["EVERY_SECONDS"], "to_seconds": 225},
+                     {"every_seconds": 0.7, "to_seconds": 300}):
+            with pytest.raises(_SamLoads):
+                track(**fits)
+
+    assert (len(looked_at), looked_at[-1]) == (433, 864.0), f"one frame every 2 s of the walk: {looked_at}"
+    assert str(whole_walk.value) == (
+        "whole-walk.mp4: Track Objects looks at 450 frames of a video at most in one run, and 0 to 864.3 s at a "
+        "frame every 0.5 s is 1729 frames; raise EVERY_SECONDS to 2 or more, or set FROM_SECONDS and TO_SECONDS "
+        "to a shorter part, such as 0 and 225"
+    )
+    assert str(five_minutes.value) == (
+        "whole-walk.mp4: Track Objects looks at 450 frames of a video at most in one run, and 0 to 300 s at a "
+        "frame every 0.5 s is 600 frames; raise EVERY_SECONDS to 0.7 or more, or set FROM_SECONDS and TO_SECONDS "
+        "to a shorter part, such as 0 and 225"
+    )
+
+
+def test_a_dataflow_saved_with_max_seconds_stops_with_the_lines_to_change(videos, tmp_path, no_sam3):
+    """A dataflow saved before MAX_FRAMES keeps its code, MAX_SECONDS and all:
+    run as the canvas runs it, it stops before SAM 3 loads, naming the two
+    lines to change, and writes nothing."""
+    from utk_curio.sandbox.util.input_names import call_as_node
+
+    rows, helpers = videos
+    nothing = SimpleNamespace(path=str(tmp_path / "no-weights"))
+    namespace = {**helpers, "curio_load_model": lambda _model_id: nothing}
+    body = "\n".join("    " + line for line in SAVED_WITH_MAX_SECONDS.splitlines())
+    with _staged(tmp_path) as module:
+        no_sam3(module)
+        with pytest.raises(ValueError) as refused:
+            call_as_node(body, namespace, rows, [0])
+    assert str(refused.value) == (
+        "MAX_SECONDS is gone: Track Objects counts the frames a run looks at. In the node's code, replace "
+        "MAX_SECONDS = 300 with MAX_FRAMES = 450, and max_seconds=MAX_SECONDS with max_frames=MAX_FRAMES"
+    )
+    assert not (tmp_path / "media" / "videos").exists() and not (tmp_path / "media" / "tables").exists()
+
+
+# ---------------------------------------------------------------------------
 # What SAM 3 holds
 # ---------------------------------------------------------------------------
 
