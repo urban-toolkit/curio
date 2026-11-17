@@ -429,6 +429,29 @@ WALK_VIDEO = f'.react-flow__node[data-id="{WALK_OVERLAY}"] video'
 #: walk is 8 s long, and its GPS track's three fixes are 4.5 to 6.7 s in.
 WALK_SEEK_S, WALK_SEEK_BACK_S = 7.0, 5.0
 
+#: Example 33, SAM 3 on the same walk's frames and the walk cut into blocks,
+#: and the nodes its own test reads.
+EXAMPLE_33 = "33-sideseeing-frames-segments-blocks.json"
+FRAME_SEGMENTS = "frame-segments"
+FRAMES_ON_WALK = "frames-on-walk"
+WALK_CUTS = "walk-cuts"
+WALK_BLOCKS = "walk-blocks"
+BLOCK_SHARES = "block-shares"
+BLOCK_CARDS = "block-cards"
+FRAMES_MAP = "frames-map"
+BLOCK_VIDEO = f'.react-flow__node[data-id="{BLOCK_CARDS}"] video'
+#: Where the test seeks the first block to, then back to, in the block's own
+#: time. On CI's stand-ins the walk's three fixes pass West Madison Street's
+#: corner 5.7 s in, so the walk is cut once there, and its one block runs to
+#: the 8 s clip's end, holding the frame sampled at 6 s.
+BLOCK_SEEK_S, BLOCK_SEEK_BACK_S = 1.0, 0.2
+
+
+def _same_cell(a, b) -> bool:
+    """Whether two stored cells hold the same value, an empty one (None or
+    NaN) the same as another empty one."""
+    return a == b or ((a is None or a != a) and (b is None or b != b))
+
 # Keeps each Vega view by the element it draws in, from the next view built
 # on (as test_scenario_inputs_e2e.py's init script does at a page's start).
 _KEEP_VEGA_VIEWS_JS = """() => {
@@ -1850,3 +1873,116 @@ class TestWorkflowCanvas:
         finally:
             page.evaluate("(selector) => { document.querySelector(selector).style.visibility = ''; }", WALK_VIDEO)
         assert page.evaluate(_SAME_CANVAS_JS, map_canvas), "the map was drawn again for its frames"
+
+    @pytest.mark.only_workflows(EXAMPLE_33)
+    def test_a_blocks_player_lights_the_frames_from_its_start_to_where_it_stands(self, loaded_workflow):
+        """Example 33 as it ships, on CI's stand-ins (``utils/stand_ins.py``):
+        the tiny SAM 3 planted as fetched, and the walk's 8 s recorded clip and
+        three GPS fixes, cached for the account.
+
+        Segment Images gives one row per frame Sample Video Frames sampled,
+        and each is placed on the walk. The walk is cut where its fixes first
+        pass a street corner, and Split Video makes a block of each cut, a
+        video whose ``t_s`` is its first frame in the walk's time, within a
+        frame of the cut, with the cut's columns. Each block's shares count
+        the frames whose ``t_s`` it holds. The block's player lights on the
+        map exactly the frames from the block's ``t_s`` to where it stands, in
+        the walk's time, read from the nodes' own outputs: none before it
+        plays, some after a seek to 1 s into the block, and fewer after a seek
+        back to 0.2 s. On CI's stand-ins the one block starts 5.7 s into the
+        walk, so a player that read the block's own time from 0 would light
+        other frames. The map is never drawn again for the range.
+
+        Frames, each after the checks of what it shows: the map before the
+        block plays and at 1 s into it, and the block's card at 1 s with its
+        video hidden, whose picture is wherever the browser's seek landed.
+        """
+        page = self.page
+        self._execute_all_playable_nodes()
+
+        # The frames, each placed on the walk at its t_s.
+        frames = _stored_rows(page, FRAME_SEGMENTS)
+        assert frames, "Segment Images gave no frame"
+        placed = sorted(round(point["t_s"], 6) for point in _stored_rows(page, FRAMES_ON_WALK))
+        assert placed == sorted(round(row["t_s"], 6) for row in frames), placed
+        # One block per cut, from within a frame of it, keeping its columns.
+        cuts = _stored_rows(page, WALK_CUTS)
+        blocks = sorted(_stored_rows(page, WALK_BLOCKS), key=lambda row: row["block"])
+        assert cuts and [row["block"] for row in blocks] == list(range(1, len(cuts) + 1)), (cuts, blocks)
+        for cut, block in zip(cuts, blocks):
+            assert block["kind"] == "video" and block["t_s"] < block["end_s"], block
+            assert abs(block["t_s"] - cut["t_s"]) < 1 / block["fps"], (cut, block)
+            assert all(_same_cell(block[key], cut[key]) for key in ("street", "from", "to")), (cut, block)
+        # Each block's share of frames showing a label, of the frames it holds.
+        labels = _code_settings(self.spec, FRAME_SEGMENTS)["LABELS"]
+        shares = _stored_rows(page, BLOCK_SHARES)
+        assert len(shares) == len(blocks) * len(labels), shares
+        for block in blocks:
+            inside = [row for row in frames if block["t_s"] <= row["t_s"] < block["end_s"]]
+            for label in labels:
+                (share,) = [row for row in shares if row["block"] == block["block"] and row["label"] == label]
+                seen = sum(row[label.replace(" ", "_") + "_objects"] > 0 for row in inside)
+                assert share["frames"] == len(inside), (block, share)
+                expected = 100 * seen / len(inside) if inside else 0.0
+                assert abs(share["share"] - expected) <= 0.05 + 1e-9, (block, label, share, expected)
+
+        block = blocks[0]
+
+        def lit_at(at: float) -> list[float]:
+            return [t for t in placed if block["t_s"] <= t <= block["t_s"] + at]
+
+        # The seek lights some frames, the seek back fewer, and a player that
+        # read the block's own time from 0 would light others.
+        assert 0 < len(lit_at(BLOCK_SEEK_S)), (block["t_s"], placed)
+        assert len(lit_at(BLOCK_SEEK_BACK_S)) < len(lit_at(BLOCK_SEEK_S)), (block["t_s"], placed)
+        assert lit_at(BLOCK_SEEK_S) != [t for t in placed if t <= BLOCK_SEEK_S], (block["t_s"], placed)
+
+        def map_lit():
+            state = page.evaluate(_MAP_LIT_T_S_JS, FRAMES_MAP)
+            if not state or "lit" not in state or state["drawn"] != len(placed):
+                return state
+            return sorted(round(t, 6) for t in state["lit"])
+
+        map_canvas = f"#autk-grammar-map-{FRAMES_MAP}"
+        assert page.evaluate(_KEEP_CANVAS_JS, map_canvas), f"the map has no canvas {map_canvas}"
+        _wait_until(page, map_lit, [], "Before the block plays, the map lights the frames at")
+        save_node_closeup(page, self.spec.filepath, FRAMES_MAP, test_name="frames_map_before_playing",
+                          sweep_toasts=True)
+
+        # The block plays through the media route: the link its card asks for
+        # the block's file is what the player plays.
+        frame_node(page, BLOCK_CARDS)
+        link = f"/api/datasets/{block['dataset_id']}/media/{quote(str(block['file_id']), safe='')}/link"
+        with page.expect_response(
+            lambda r: r.request.method == "POST" and r.url.split("?")[0].endswith(link), timeout=60000,
+        ) as asked:
+            node_locator(page, BLOCK_CARDS).get_by_role("button", name=f"Play {block['name']}").click()
+        assert asked.value.ok, f"the block's link answered {asked.value.status}"
+        url = asked.value.json()["url"]
+        page.wait_for_function(
+            "(selector) => { const v = document.querySelector(selector); return !!v && v.readyState >= 1; }",
+            arg=BLOCK_VIDEO, timeout=60000,
+        )
+        page.evaluate("(selector) => document.querySelector(selector).pause()", BLOCK_VIDEO)
+        player = page.evaluate(_PLAYER_JS, BLOCK_VIDEO)
+        assert player["src"].endswith(url), f"the player plays {player['src']}, not the link {url}"
+        assert abs(player["duration"] - block["duration_s"]) < 0.1, (player, block["duration_s"])
+
+        def seek(at: float) -> None:
+            stands = page.evaluate(_SEEK_JS, [BLOCK_VIDEO, at])
+            assert stands == at, f"a seek to {at} s left the player at {stands} s"
+
+        seek(BLOCK_SEEK_S)
+        _wait_until(page, map_lit, lit_at(BLOCK_SEEK_S),
+                    f"At {BLOCK_SEEK_S} s into block 1, the map lights the frames at")
+        save_node_closeup(page, self.spec.filepath, FRAMES_MAP, test_name="frames_map_at_1_s", sweep_toasts=True)
+        page.evaluate("(selector) => { document.querySelector(selector).style.visibility = 'hidden'; }", BLOCK_VIDEO)
+        try:
+            save_node_closeup(page, self.spec.filepath, BLOCK_CARDS, test_name="block_card_at_1_s",
+                              sweep_toasts=True)
+        finally:
+            page.evaluate("(selector) => { document.querySelector(selector).style.visibility = ''; }", BLOCK_VIDEO)
+        seek(BLOCK_SEEK_BACK_S)
+        _wait_until(page, map_lit, lit_at(BLOCK_SEEK_BACK_S),
+                    f"Back at {BLOCK_SEEK_BACK_S} s into block 1, the map lights the frames at")
+        assert page.evaluate(_SAME_CANVAS_JS, map_canvas), "the map was drawn again for the player's range"
