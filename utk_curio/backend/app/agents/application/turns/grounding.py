@@ -40,58 +40,46 @@ from utk_curio.backend.app.agents.domain import agent_text
 log = logging.getLogger(__name__)
 
 
-def _resolve_catalog_execution_paths(project_id: str, dataset_ids: list) -> dict:
-    """dev/115: ``{datasetId: absolutePath}`` for every id a Solve batch may
-    load — resolved ONCE in the request thread the way ``/processPythonCode``
-    does (contained paths only); fail-open to ``{}``."""
-    ids = [str(i) for i in dataset_ids if i][:64]
-    if not ids:
-        return {}
-    try:
-        from flask import g, has_request_context
-
-        from utk_curio.backend.app.datasets.application.catalog_service import (
-            DatasetCatalogService,
-        )
-
-        user = getattr(g, "user", None) if has_request_context() else None
-        return dict(
-            DatasetCatalogService(user).resolve_execution_paths(ids, dataflow_id=project_id) or {}
-        )
-    except Exception:
-        log.warning("Could not resolve catalog execution paths for project %s",
-                    project_id, exc_info=True)
-        return {}
-
-
 def _dataset_path_topup(
     project_id: str, user_obj, mapping: dict, ids: list, formats: dict | None = None,
-    unavailable: dict | None = None,
+    unavailable: dict | None = None, failed: dict | None = None,
 ) -> dict:
-    """Resolve dataset ids the eager mapping does not have, as *user_obj*.
+    """Resolve dataset ids *mapping* does not have, as *user_obj*.
 
-    dev/131 F4, closed by dev/132: the sandbox path mapping is resolved when a
-    Solve starts (dev/115's rule — the job thread holds no request context), so
-    a dataset that appeared DURING the session — the user importing the file a
-    portal row's steps described, or installing one from the catalog — had no
-    path inside the running job and its node stayed pending until the next
-    Solve. The acting user is what the resolution actually needs, and a job can
-    hold that from its start; the top-up caches into the same mapping, so one
-    new id costs one lookup per session. *formats*, when given, is filled
-    with how each id it resolves is read, and *unavailable* with why each id
-    whose download failed could not be had (``resolve_execution_paths``).
+    A Solve's job holds no request context, so it looks a dataset's path up
+    as the acting user, which it holds from its start, when a round's code
+    reads it (dev/132, which closed dev/131 F4: a dataset that appeared
+    DURING the session, the user importing the file a portal row's steps
+    described or installing one from the catalog, had no path inside the
+    running job). Nothing is looked up before a round reads it: on a pip
+    install a lookup downloads a shipped dataset the pip package leaves out.
+    Each path is kept in *mapping*, so an id costs one lookup per session.
+    *formats*, when given, is filled with how each id it resolves is read,
+    and *unavailable* with why each id whose download failed could not be
+    had (``resolve_execution_paths``).
+
+    *failed*, when given, is the Solve's own record of the ids whose
+    download failed in its run, with why: an id it holds is not looked up
+    again, its reason going to *unavailable* as the first lookup's did, and
+    an id whose download fails now joins it.
     """
     missing = [i for i in ids if i and i not in mapping]
+    if failed:
+        for dataset_id in missing:
+            if dataset_id in failed and unavailable is not None:
+                unavailable.setdefault(dataset_id, failed[dataset_id])
+        missing = [i for i in missing if i not in failed]
     if not missing or user_obj is None:
         return mapping
+    problems: dict | None = None if unavailable is None and failed is None else {}
     try:
         from utk_curio.backend.app.datasets.application.catalog_service import (
             DatasetCatalogService,
         )
 
         read_as = {} if formats is None else {"formats": formats}
-        if unavailable is not None:
-            read_as["unavailable"] = unavailable
+        if problems is not None:
+            read_as["unavailable"] = problems
         resolved = DatasetCatalogService(user_obj).resolve_execution_paths(
             missing, dataflow_id=project_id, **read_as
         ) or {}
@@ -101,6 +89,11 @@ def _dataset_path_topup(
         return mapping
     for dataset_id, path in resolved.items():
         mapping[str(dataset_id)] = path
+    for dataset_id, reason in (problems or {}).items():
+        if failed is not None:
+            failed.setdefault(dataset_id, reason)
+        if unavailable is not None:
+            unavailable.setdefault(dataset_id, reason)
     return mapping
 
 
@@ -119,10 +112,11 @@ def _dataset_ids_in(codes: list) -> list[str]:
 
 def _session_dataset_paths(
     project_id: str, user_obj, mapping: dict, codes: list, formats: dict | None = None,
-    unavailable: dict | None = None,
+    unavailable: dict | None = None, *, failed: dict | None = None,
 ) -> dict:
-    """The paths *codes* need — from the eager mapping, topped up for anything
-    that arrived since the session started (dev/131 F4).
+    """The paths *codes* need: those *mapping*, the Solve's, holds, and the
+    others looked up now (:func:`_dataset_path_topup`), when a round's code
+    reads them, and kept there.
 
     With *formats*, a layer group the codes name gets its layers' paths, and
     *formats* its entry and its layers' (``layer_group_formats``), so
@@ -130,11 +124,13 @@ def _session_dataset_paths(
     path to keep, so it is resolved again for each run; every other dataset
     is read by its path alone, as before. *unavailable*, when given, gets
     why each id whose file failed to download could not be had, which the
-    run reports for the node that reads it (``runner.run_through_node``)."""
+    run reports for the node that reads it (``runner.run_through_node``),
+    and *failed* keeps those for the Solve's run, so no later round
+    downloads one again."""
     ids = _dataset_ids_in(codes)
     found: dict | None = None if formats is None else {}
     if ids:
-        _dataset_path_topup(project_id, user_obj, mapping, ids, found, unavailable)
+        _dataset_path_topup(project_id, user_obj, mapping, ids, found, unavailable, failed)
     if formats is None:
         return _filter_dataset_paths(mapping, codes)
     groups = layer_group_formats(ids, found)
@@ -164,9 +160,9 @@ def _exec_dataset_paths(
     in *codes* — resolved the way ``/processPythonCode`` resolves it
     (``resolve_execution_paths``, contained paths only). Fail-open to ``{}``:
     an unmapped id raises a clear per-id error inside the sandbox, which the
-    correction loop then sees. Needs the request context (``g.user``); a Solve
-    batch precomputes it in the request thread and hands the mapping to its
-    workers. *formats*, when given, gets the entries of the layer groups the
+    correction loop then sees. Needs the request context (``g.user``); a
+    Solve's rounds, whose job holds none, look their datasets up as the
+    acting user instead (:func:`_session_dataset_paths`). *formats*, when given, gets the entries of the layer groups the
     codes name and of their layers, as :func:`_session_dataset_paths` gives
     them, and *unavailable* why each id whose file failed to download could
     not be had, which the run reports for the node that reads it."""
@@ -211,7 +207,7 @@ def _collections_key(user_key: str, user=None) -> str:
 
 
 def _resolve_catalog_collections(project_id: str, user_key: str, catalog_ids: dict, user=None) -> dict:
-    """The collections twin of :func:`_resolve_catalog_execution_paths`:
+    """The collections a Solve's runs may read, looked up when it starts:
     ``{datasetId: entry | None}`` over *catalog_ids*, a Solve's grounding
     base's, which say each dataset's format. Resolved ONCE, in the request
     that starts the Solve, as *user* (else the request's account) under its
@@ -341,8 +337,7 @@ def _catalog_rows_for_discovery(user_key: str, project_id: str) -> list[dict]:
     dev/126, learned from dev/123's field finding: ``catalog.search`` rides the
     request context (the datasets domain is user-object keyed), and a detached
     Solve job has none — so the rows are listed at the entry point and handed
-    to the discovery delegate, exactly as dev/115 already resolves the
-    execution paths eagerly. Empty on failure: the delegate is then TOLD the
+    to the discovery delegate. Empty on failure: the delegate is then TOLD the
     catalog was unavailable rather than left to imagine it.
 
     Every row of the listing: the delegate is shown the first of them

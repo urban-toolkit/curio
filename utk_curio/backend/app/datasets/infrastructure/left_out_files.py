@@ -186,6 +186,15 @@ class Progress:
         return text
 
 
+def progress_fields(progress: Progress | None) -> dict:
+    """What an event of a run says of a download's *progress*, wherever the
+    run shows it: its ``message``, the bytes ``done`` and the ``total``; an
+    empty message once the downloads are over (None, :func:`downloading`)."""
+    if progress is None:
+        return {"message": ""}
+    return {"message": progress.message, "done": progress.done, "total": progress.total}
+
+
 class _Reporter:
     """Where the downloads of one run report their progress, and whether one
     has since its downloads began (:func:`downloading`)."""

@@ -73,7 +73,9 @@ def _fetch_into(root: Path, *names: str) -> Path:
 
 @pytest.fixture
 def weights(tmp_path):
-    """The package's folder under ``--model-weights-dir``, every file fetched."""
+    """The folder the sandbox reads the package's weights from, as a
+    revision's folder under ``--model-weights-dir``
+    (``<dir>/<id>@<major>/<revision>/``) holds them: every file fetched."""
     return _fetch_into(tmp_path / "model-weights" / DIR)
 
 

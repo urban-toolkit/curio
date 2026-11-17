@@ -1812,7 +1812,16 @@ reads the manifests, for the release and for a running Curio.
    (`DatasetFileUnavailable`), the agents' resolutions pass it on
    (`grounding._exec_dataset_paths`, `_session_dataset_paths`, a Solve
    round's `dataset_paths_fn`), and the runner fails the node whose code names
-   such an id with it (`dataset_problems`).
+   such an id with it (`dataset_problems`). A Solve looks a dataset's path up
+   only when a round's code reads it, never at its start, and keeps each id
+   whose download failed with its reason for the rest of its run
+   (`SolveBatch.solve_dataset_failures`, `_session_dataset_paths`' `failed`),
+   so no later round downloads it again. A node that failed so is marked
+   `downloadFailed` on the runner's record and in the round's evidence
+   (`validation.validate_candidate`), and the verified loop ends its rounds
+   there as a blocker, one attempt saying why; a later pass of a plan's Solve
+   attempts it again only once the node changes (`SolveBatch._pass_targets`,
+   as for a node that waits on the person).
 7. The download has no limit of its own on the whole: `IDLE_TIMEOUT_S` is the
    transport's connect and read timeout, which a stall reaches and a big file
    does not. A partial file of a name of its own that a process left when it
@@ -1825,8 +1834,23 @@ reads the manifests, for the release and for a running Curio.
    for each step and yields what it gets as that step's `step_progress`
    events; `node_exec._execute` marks its resolution `downloading()`, after
    which a reporter that heard from a download gets None, a `step_progress`
-   with no message. The canvas shows the message on the node while it runs
-   (`useServerRun`, `CodeEditor`).
+   with no message. A Play the browser runs (a hosted guest's, a shared
+   viewer's) sets one in `/processPythonCode`, keeping what it gets under the
+   sign-in and the `progressId` the page posts the Play with
+   (`execution/play_progress.py`); while the Play waits, the page asks for it
+   every `PROGRESS_ASK_MS` at `GET /processPythonCode/progress?play=<id>`
+   (`utils/nodeRunRequest.ts`), with the Play's own `X-Curio-Dataflow`, so
+   the router sends both to one process. An agent's run hands
+   `runner.run_through_node` a `downloads` callback, which it sets as each
+   node's reporter around that node's resolution, marked `downloading()`;
+   the verified loop yields what it gets as `node_download` events, which a
+   Solve's batch forwards (`SOLVE_PROGRESS_EVENTS`). Each says the same
+   fields (`left_out_files.progress_fields`). The canvas shows the message on
+   the node while it runs (`useServerRun`, `CodeEditor`), and so does a
+   dashboard viewer's run (`useDashboardRun`, through the rule both hooks
+   share, `serverRunSteps.showRunning`); an agent's Solve and Build &
+   validate show it on the line that narrates the node's run, and a plan's
+   Solve under its pills (`useAgentSolve`, `useAgentSimulation`).
 
 The weights a shipped model package's `fetch` names download on first use
 through the same functions (`download_checked`, `one_download_at_a_time`,
@@ -3019,7 +3043,8 @@ The backend is a Flask application in `utk_curio/backend/`. Routes are split acr
 |---|---|---|
 | `/live` | GET | Health check (the container healthcheck uses `/health` on `server.py`) |
 | `/version` | GET | Installed `utk_curio` version, as JSON |
-| `/processPythonCode` | POST | Execute Python node code (proxies to sandbox `/exec`) |
+| `/processPythonCode` | POST | Execute Python node code (proxies to sandbox `/exec`); a `progressId` in the body names the run for its progress |
+| `/processPythonCode/progress` | GET | `?play=<progressId>`: how far the downloads on first use of the caller's running Play have come, `{message, done, total}`, an empty `message` when they say nothing, are over or the Play is not running; read only under the sign-in that posted the Play |
 | `/processJavaScriptCode` | POST | Execute JS node code via Node.js subprocess (proxies to sandbox `/execJs`) |
 | `/storeOutput` | POST | Keep rows a node made in the browser (`{dataType: dataframe or geodataframe, data}`, the rows a custom-UI node made) as a frame artifact under the caller's session, through the sandbox's `/artifacts/store`, and answer the `{path, dataType}` reference the node hands on, so Python and JavaScript nodes read them and a save records them; anything else is a 400 with its reason |
 | `/get` | GET | Download an artifact by id (Arrow IPC when the client asks for it). A name the session-tagged store cannot serve is read from `savedPath`, the file the owner's store holds for a dataflow's saved output, which only the backend sends, so a saved output is readable by anyone who can load the project; no other file is read by name |
