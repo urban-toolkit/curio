@@ -357,6 +357,23 @@ def give_way_to_the_image(user_key: str) -> list[str]:
     return names
 
 
+def give_way_after_a_removal(user_key: str) -> list[str]:
+    """:func:`give_way_to_the_image` after a removal: of a package, from its
+    last dataflow (``prune.py``) or from the account (``store_install``), or
+    of a library in Installed libraries (:func:`remove_standalone_library`).
+    A library another package of the account's still asks for stays, and its
+    copy in the account's tree, which the removed package or list entry put
+    there, goes where the image's copy meets every range left, as the next
+    start would take it. The removal is done already, so a failure is logged
+    and the next start gives way instead. The names taken out, sorted."""
+    try:
+        return give_way_to_the_image(user_key)
+    except (PipInstallError, OSError) as exc:
+        log.warning("Account %s's node libraries could not give way to the image after a removal: %s",
+                    user_key, exc)
+        return []
+
+
 def accounts() -> list[str]:
     """The key of each account with a folder of its own under the users' base."""
     base = _users_base()
@@ -454,7 +471,9 @@ def remove_standalone_library(user_key: str, kind: str, spec: str) -> dict:
     else installed it in theirs. Without them, one interpreter serves every
     account, so every account's packages and lists count (#309), and a
     library this server's pip did not install, such as one the dialog found
-    already installed, stays."""
+    already installed, stays. A library a package still asks for stays, and
+    under per-user node environments its copy in the account's tree goes
+    where the image's meets every range left (:func:`give_way_after_a_removal`)."""
     name, _ = split_lib_spec(spec)
     # A malformed name escaped the pip error below and read as a 500 before
     # #309; the route maps PipSpecError to a 400.
@@ -466,4 +485,5 @@ def remove_standalone_library(user_key: str, kind: str, spec: str) -> dict:
             uninstall_user_library(user_key, name)
         except PipInstallError as exc:
             log.warning("library remove: pip uninstall %s failed: %s", name, exc)
+    give_way_after_a_removal(user_key)
     return {"standalone": list_standalone(user_key)}

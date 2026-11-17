@@ -1635,7 +1635,9 @@ after the fork. Three things follow, and none of them is a mode bit:
   the image's meets it, is taken out rather than replaced. Each start also
   takes out a copy an earlier one put in front of an image library that
   meets every range the account's packages declare, unless the account's own
-  list names it (`libraries.give_way_to_the_image`).
+  list names it (`libraries.give_way_to_the_image`), and so does each
+  removal of a package, from its last dataflow or from the account, and of a
+  library in Installed libraries (`libraries.give_way_after_a_removal`).
 
 A run of an editor the dataflow's owner invited reads the owner's folder too,
 after the editor's own, so a node of the owner's packages imports the

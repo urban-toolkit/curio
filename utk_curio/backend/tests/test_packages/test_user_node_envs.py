@@ -748,6 +748,27 @@ class TestARemovalGivesWayToTheImage:
             f"account {user_key}'s tree still holds torch {left.get('torch')} in front of the image's "
             f"{image_torch}, which meets torch>=2.6, the one range of torch its packages declare")
 
+    def test_a_removal_keeps_a_copy_a_package_left_needs_where_the_images_is_outside_its_range(
+        self, isolated, launch_tree, a_dataflow_using,
+    ):
+        """The mirror case: the package removed declared ``torch>=2.6``, and
+        the one left declares ``torch>=2.99.0``, which the image's torch is
+        below, so the tree's copy is the one its nodes run on."""
+        from utk_curio.backend.app.packages import service as packages_service
+        from utk_curio.backend.tests._support.front_of_the_image import OTHER_TORCH, held, the_images_torch
+
+        image_torch = the_images_torch()
+        user_key, project_id, removed = a_dataflow_using("ai.test.torch", {"torch": ">=2.6"})
+        a_dataflow_using("ai.test.next-torch", {"torch": f">={OTHER_TORCH.version}"})
+        tree = _the_other_torch_in(user_key)
+
+        result = packages_service.uninstall_from_project(user_key, project_id, removed.dir_name)
+
+        assert result["pruned"] == [removed.dir_name]
+        assert held(tree) == {"torch": OTHER_TORCH.version}, (
+            f"the removal took torch {OTHER_TORCH.version} out of account {user_key}'s tree, where a package "
+            f"of its own declares torch>={OTHER_TORCH.version}, which the image's {image_torch} is below")
+
 
 class TestEachTestHasTreesOfItsOwn:
     """The suite's root conftest names one data folder for the whole session,
