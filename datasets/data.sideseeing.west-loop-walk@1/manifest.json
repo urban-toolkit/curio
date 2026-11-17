@@ -1,0 +1,69 @@
+{
+  "id": "data.sideseeing.west-loop-walk",
+  "name": "SideSeeing West Loop walk",
+  "version": "1.0.0",
+  "format": "collection",
+  "description": "A walk along the sidewalks of Chicago's West Loop on 2026-10-26, recorded with the SideSeeing app on a phone: its video, 14 minutes looking down at the sidewalk, with faces and license plates blurred. The video stays in the SideSeeing bucket on data.urbantk.org, read in place where the deployment mounts the bucket and once cached elsewhere.",
+  "publisher": "SideSeeing",
+  "license": "",
+  "tags": [
+    "sideseeing",
+    "sidewalks",
+    "chicago",
+    "videos"
+  ],
+  "dataFile": "data/index.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "SideSeeing street captures",
+  "createdAt": "2026-11-17T00:00:00Z",
+  "updatedAt": "2026-11-17T00:00:00Z",
+  "rowCount": 1,
+  "featureCount": null,
+  "schema": null,
+  "discoverySource": {
+    "sourceId": "source.sideseeing.street-captures@1",
+    "sourceName": "SideSeeing street captures",
+    "resourceId": "walks",
+    "fileCount": 1,
+    "fields": "began",
+    "fetchedAt": "2026-11-17T00:00:00Z",
+    "fingerprint": "695e509b7e75d1516f04a506948985c127e0fcd30b48958af99c6398dfc02a2d",
+    "narrowed": true
+  },
+  "collection": {
+    "kind": "videos",
+    "sourceId": "source.sideseeing.street-captures@1",
+    "sourceName": "SideSeeing street captures",
+    "provider": "s3",
+    "resourceId": "walks",
+    "resource": "walks",
+    "resourceName": "Walk videos",
+    "path": "chicago/west-loop/{began:%Y-%m-%d-%H-%M-%S-%f}/video.mp4",
+    "fields": [
+      "began"
+    ],
+    "fieldValues": [
+      {
+        "name": "began",
+        "type": "datetime",
+        "distinct": 1,
+        "values": [
+          "2026-10-26T16:03:17.016000"
+        ]
+      }
+    ],
+    "counts": {
+      "video": 1
+    },
+    "fileCount": 1,
+    "totalBytes": 2794611395,
+    "hasGps": false,
+    "probeErrors": 0,
+    "indexedAt": "2026-11-17T00:00:00Z",
+    "fingerprint": "695e509b7e75d1516f04a506948985c127e0fcd30b48958af99c6398dfc02a2d",
+    "narrowedBy": {},
+    "chosenFiles": 1
+  }
+}

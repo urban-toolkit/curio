@@ -1,0 +1,36 @@
+{
+  "id": "data.sideseeing.west-loop-walk-gps",
+  "name": "SideSeeing West Loop walk GPS",
+  "version": "1.0.0",
+  "format": "parquet",
+  "description": "The GPS fixes of the SideSeeing West Loop walk, 1,292 of them over its 14 minutes: latitude, longitude and accuracy in meters, at datetime_utc. began names the walk.",
+  "publisher": "SideSeeing",
+  "license": "",
+  "tags": [
+    "sideseeing",
+    "sidewalks",
+    "chicago",
+    "gps"
+  ],
+  "dataFile": "data/gps.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "SideSeeing street captures",
+  "createdAt": "2026-11-17T00:00:00Z",
+  "updatedAt": "2026-11-17T00:00:00Z",
+  "rowCount": 1292,
+  "featureCount": null,
+  "schema": null,
+  "discoverySource": {
+    "sourceId": "source.sideseeing.street-captures@1",
+    "sourceName": "SideSeeing street captures",
+    "resourceId": "gps",
+    "fileCount": 1,
+    "fields": "began",
+    "fetchedAt": "2026-11-17T00:00:00Z",
+    "fingerprint": "31e0ae9c7184a525254164922dbb6cee1ad199fcd18547b1e3e819de97fe0b6c",
+    "narrowed": true,
+    "sourcePath": "chicago/west-loop/2026-10-26-16-03-17-016/gps.csv"
+  }
+}
