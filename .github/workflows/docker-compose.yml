@@ -2495,7 +2495,8 @@ jobs:
       # guest's and not in the example, which a guest of the stage's own reads
       # before and after, and no agent or lock may be left in a room. The
       # report names each copy's backend process and gives each process its
-      # copies, their sync and their turns.
+      # copies, their sync and their turns, and every process's thread stacks,
+      # read 30 s after the first agent turn is asked, are in its folder.
       - name: 🎫 Run 100 hosted guests on one example with agents
         if: ${{ !cancelled() }}
         run: |

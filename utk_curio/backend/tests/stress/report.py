@@ -772,6 +772,12 @@ def _guests_table(tiers: list[dict]) -> list[str]:
                   ", ".join(at_end) or "not read"]
         lines.append(f"| {tier['tier']} | {guests['guests']} | {guests['rooms']} | {guests['updates']} "
                      f"| {' | '.join(cells)} |")
+    for tier in tiers:
+        stacks = tier.get("stacks_during_turns")
+        if tier.get("guests") and stacks:
+            said = f"`{stacks['file']}`" if stacks.get("file") else stacks.get("line") or "none saved"
+            lines += ["", f"Every backend process's thread stacks {stacks.get('after_s') or 0:g} s after tier "
+                          f"{tier['tier']}'s first agent turn was asked, while the turns ran: {said}."]
     return lines + _turn_phases_table(tiers, "guests") + _copies_details(tiers)
 
 

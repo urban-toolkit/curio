@@ -334,10 +334,12 @@ class MemberTurn:
 
     # -- the work ---------------------------------------------------------------
 
-    def run(self, user, on_over: Callable[["MemberTurn"], None] = lambda turn: None) -> None:
+    def run(self, user, on_over: Callable[["MemberTurn"], None] = lambda turn: None,
+            on_asked: Callable[["MemberTurn"], None] = lambda turn: None) -> None:
         """Attach, script, ask and follow, on this thread, then judge; every
-        failure is recorded on *user*'s result, never raised. *on_over* is
-        told once the work is over."""
+        failure is recorded on *user*'s result, never raised. *on_asked* is
+        told once the ask is answered, before its follow; *on_over* once the
+        work is over."""
         session = requests.Session()
         dataflow = self.dataflow or user.room.project_id
         base = f"/api/agents/projects/{dataflow}"
@@ -357,6 +359,7 @@ class MemberTurn:
             _request(user, session, "POST", "/api/agents/projects/:id/attachments/:id/turns", turns,
                      expect=202, dataflow=dataflow, json_body={"message": MESSAGE, "askId": self.ask_id})
             self.asked = True
+            on_asked(self)
             self._follow(user, session, f"{turns}/{self.ask_id}", dataflow)
         except UserFailed:
             pass  # its Sample says why

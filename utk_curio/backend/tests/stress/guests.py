@@ -283,11 +283,16 @@ class GuestVisit(_Guest):
     (:meth:`ExampleReader.open_example`)."""
 
     def __init__(self, backend_url: str, name: str, index: int, job: dict, *, register_gate=None,
-                 start_gate=None, pacing: Pacing = BURST, namespace: Optional[str] = None):
+                 start_gate=None, pacing: Pacing = BURST, namespace: Optional[str] = None, first_ask=None):
         super().__init__(backend_url, name, job["example"], register_gate=register_gate,
                          start_gate=start_gate, pacing=pacing, namespace=namespace)
         self.index = index
         self.job = job
+        #: Set once its agent's turn is asked, as every guest of its tier sets
+        #: it: the harness asks every backend process for its thread stacks a
+        #: while after the tier's first ask, while the turns run
+        #: (``run.watch_turns``). None tells no one.
+        self.first_ask = first_ask
         self.tab: Optional[sockets.Tab] = None
         self.turn: Optional[MemberTurn] = None
         #: The node's code as the guest's tab held it once its typing was
@@ -367,7 +372,7 @@ class GuestVisit(_Guest):
             self.typed = tab.code_of(node_id)
             self.turn = MemberTurn(self.name, node_id, agent_content(self.name, self.typed), early=False,
                                    dataflow=self.project_id)
-            self.turn.run(self)
+            self.turn.run(self, on_asked=self.tell_asked)
             self.after_the_turn(tab, self.turn)
         except sockets.TabFailed:
             return False  # what happened is already recorded
@@ -376,6 +381,11 @@ class GuestVisit(_Guest):
             self.result.tab = tab.summary()
         self.read_back(node_id)
         return True
+
+    def tell_asked(self, _turn: MemberTurn) -> None:
+        """Its agent's turn was asked: the tier is told (:attr:`first_ask`)."""
+        if self.first_ask is not None:
+            self.first_ask.set()
 
     def after_the_turn(self, tab: sockets.Tab, turn: MemberTurn) -> None:
         """Once its turn is over: its tab holds the agent's write and was told
@@ -466,10 +476,12 @@ class GuestVisit(_Guest):
         }
 
 
-def slice_visits(job: dict, start_gate, register_gate) -> list:
-    """The guests one harness process carries of a tier (``run.run_slice``)."""
+def slice_visits(job: dict, start_gate, register_gate, first_ask=None) -> list:
+    """The guests one harness process carries of a tier (``run.run_slice``),
+    each setting *first_ask* once its agent's turn is asked."""
     return [
         GuestVisit(job["backend_url"], job["names"][index], index, job["guests"], register_gate=register_gate,
-                   start_gate=start_gate, pacing=job["pacing"][index], namespace=job["namespace"])
+                   start_gate=start_gate, pacing=job["pacing"][index], namespace=job["namespace"],
+                   first_ask=first_ask)
         for index in job["indices"]
     ]

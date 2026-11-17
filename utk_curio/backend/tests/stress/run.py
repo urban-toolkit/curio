@@ -53,6 +53,7 @@ import queue
 import shlex
 import sys
 import random
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -65,7 +66,8 @@ from . import sockets
 from .agents import TURN_WAIT_S, RoomAgents, on_the_scripted_model
 from .autk import compile_autk_data
 from .backend_probe import (
-    BackendProbe, ProbeError, Sampler, reading_now, save_thread_stacks, track_worker, worker_finished,
+    PROBE_TIMEOUT_S, STACKS_WAIT_S, BackendProbe, ProbeError, Sampler, reading_now, save_thread_stacks,
+    track_worker, worker_finished,
 )
 from .driver import AUTK_GRAMMAR, BURST, JS_COMPUTATION, PASS_ON, Pacing, VirtualUser, new_user_name
 from .guests import ExampleReader, GuestsError, slice_visits
@@ -122,6 +124,12 @@ SESSION_PAUSE_MAX_S = 4.0
 # the tier closed to end, so a thread still there then was kept.
 PROBE_EVERY_S = 1.0
 PROBE_END_WAIT_S = 2.0
+
+# How long after a guests tier's first agent turn was asked the harness asks
+# every backend process for its thread stacks, once, saved in --out: while
+# the turns run, so the stacks show what each process waits on then. The
+# stacks after a failed tier come once its work is over.
+STACKS_DURING_TURNS_S = 30.0
 
 # Users per harness process: two rooms of five. Each socket message costs the
 # harness about 0.6 ms of Python (tier 10 and the session profile, run
@@ -345,16 +353,17 @@ def slice_users(job: dict, start_gate, register_gate) -> tuple[list, dict]:
     return users, rooms
 
 
-def run_slice(job: dict, start_gate, register_gate, results_out) -> None:
+def run_slice(job: dict, start_gate, register_gate, results_out, first_ask=None) -> None:
     """One harness process's part of a tier: its users' sessions, their rooms
     whole, as threads of this process, or its hosted guests' visits
-    (``guests.py``), each a room of its own; what they did goes back to the
-    main process through *results_out*, with this process's own CPU seconds."""
+    (``guests.py``), each a room of its own, which set *first_ask* as their
+    agents' turns are asked; what they did goes back to the main process
+    through *results_out*, with this process's own CPU seconds."""
     from .backend_probe import process_cpu_seconds
 
     try:
         if job.get("guests"):
-            users, rooms = slice_visits(job, start_gate, register_gate), {}
+            users, rooms = slice_visits(job, start_gate, register_gate, first_ask), {}
         else:
             users, rooms = slice_users(job, start_gate, register_gate)
         with ThreadPoolExecutor(max_workers=len(users)) as pool:
@@ -372,6 +381,18 @@ def run_slice(job: dict, start_gate, register_gate, results_out) -> None:
                          "cpu_seconds": process_cpu_seconds()})
 
 
+def watch_turns(first_ask, over, after_s: float, call) -> None:
+    """*call*, once, *after_s* seconds after the tier's first agent turn was
+    asked (*first_ask*, which the harness process of the guest that asked
+    first sets), unless the tier is over (*over*) by then; nothing for a tier
+    whose turns were never asked."""
+    while not first_ask.wait(1.0):
+        if over.is_set():
+            return
+    if not over.wait(after_s):
+        call()
+
+
 def _lost_user(name: str, example: str, why: str):
     """The result of a user whose harness process never reported it."""
     from .driver import Sample, UserResult
@@ -387,7 +408,8 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
              profile: str = "burst", label: str | None = None,
              room_size: int = 0, namespace: str | None = None,
              shared_canvas: bool = False, probe_command: list | None = None,
-             agents: bool = False, guests: dict | None = None) -> tuple[list, float, list]:
+             agents: bool = False, guests: dict | None = None,
+             during_turns=None) -> tuple[list, float, list]:
     """Run *tier* users, all doing their dataflow work at the same moment,
     and, in rooms of *room_size*, each with its tab of its room's dataflow;
     the results, the seconds it took, and each room's outcome
@@ -398,7 +420,10 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
     (``agents.RoomAgents``). With *guests*, the example the stage's reader
     opened (``guests.ExampleReader.open_example``), the users are hosted
     guests on it, and each guest's outcome is its own
-    (``guests.GuestVisit.outcome``).
+    (``guests.GuestVisit.outcome``). *during_turns*, given, is called once on
+    a thread of this process :data:`STACKS_DURING_TURNS_S` after the tier's
+    first agent turn was asked, if the tier still runs then
+    (:func:`watch_turns`), and is over before the tier's results are.
 
     The users run in harness processes of their own (:func:`tier_slices`,
     :func:`run_slice`), whole rooms each, behind one start gate that spans
@@ -419,6 +444,7 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
     names = [new_user_name(label, index, run_id) for index in range(tier)]
     slices = tier_slices(tier, room_size)
     results_out = context.Queue()
+    first_ask = context.Event()
     processes = []
     started = time.time()
     for number, indices in enumerate(slices):
@@ -427,11 +453,17 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
                "namespace": namespace, "backend_url": backend_url,
                "shared_canvas": shared_canvas, "probe_command": probe_command, "agents": agents,
                "guests": guests}
-        process = context.Process(target=run_slice, args=(job, start_gate, register_gate, results_out),
+        process = context.Process(target=run_slice, args=(job, start_gate, register_gate, results_out, first_ask),
                                   name=f"stress-{label}-{number}", daemon=True)
         process.start()
         track_worker(process.pid)
         processes.append(process)
+    over = threading.Event()
+    watcher = None
+    if during_turns is not None:
+        watcher = threading.Thread(target=watch_turns, args=(first_ask, over, STACKS_DURING_TURNS_S, during_turns),
+                                   name=f"stress-{label}-turns", daemon=True)
+        watcher.start()
 
     reported: dict[int, dict] = {}
     deadline = time.monotonic() + USER_DEADLINE_S + 120
@@ -447,6 +479,10 @@ def run_tier(backend_url: str, run_id: str, tier: int, examples: list[Example],
     for process in processes:
         process.join(timeout=30)
     seconds = time.time() - started
+    over.set()
+    if watcher is not None:
+        # A reading of the stacks under way ends before the tier is reported.
+        watcher.join(timeout=PROBE_TIMEOUT_S + STACKS_WAIT_S + 30)
 
     results, outcomes = [], []
     for number, indices in enumerate(slices):
@@ -771,10 +807,22 @@ def main(argv: list[str] | None = None) -> int:
     else:
         baselines = run_baseline(backend_url, args.run_id, examples, shared_canvas=args.shared_canvas)
 
+    #: Each guests tier's thread stacks during its turns, by its position.
+    during: dict = {}
+
+    def stacks_during_turns(tier: int, position: int) -> None:
+        """Every backend process's thread stacks while a guests tier's
+        agents work, saved in --out (``backend_probe.save_thread_stacks``)."""
+        path, line = save_thread_stacks(probe, args.out, f"tier-{position + 1}-{tier}-during-turns")
+        during[position] = {"file": os.path.basename(path), "after_s": STACKS_DURING_TURNS_S, "line": line}
+        print(f"[stress] tier {tier}: {STACKS_DURING_TURNS_S:.0f} s after its first agent turn was asked, {line}",
+              flush=True)
+
     def tier_run(tier: int, position: int):
         """The tier, as :func:`probe_tier` runs it; with the agents, the
         guests' among them, on Curio's scripted model, its default for the
-        tier alone. Read only once the tier runs, the probe's command among
+        tier alone; a guests tier with the backend's thread stacks during
+        its turns. Read only once the tier runs, the probe's command among
         it."""
         run = functools.partial(
             run_tier, backend_url, args.run_id, tier, examples, baselines,
@@ -782,6 +830,8 @@ def main(argv: list[str] | None = None) -> int:
             room_size=room_size, namespace=namespace, shared_canvas=args.shared_canvas,
             probe_command=probe.command if probe is not None else None, agents=args.agents,
             guests=guest_job,
+            during_turns=(functools.partial(stacks_during_turns, tier, position)
+                          if args.guests and probe is not None else None),
         )
         return on_the_scripted_model(backend_url, run) if args.agents or args.guests else run()
 
@@ -807,6 +857,14 @@ def main(argv: list[str] | None = None) -> int:
             summary["guests"] = reporting.guests_summary(outcomes, processes)
             summary["processes"] = reporting.process_summary(outcomes, processes, backend,
                                                              process_of=reporting.copy_process)
+            if position in during:
+                summary["stacks_during_turns"] = during[position]
+            else:
+                why = ("the probe is off (--no-probe)" if probe is None else
+                       f"no agent turn was asked, or the tier was over within {STACKS_DURING_TURNS_S:.0f} s "
+                       "of its first")
+                summary["stacks_during_turns"] = {"file": None, "after_s": STACKS_DURING_TURNS_S,
+                                                  "line": f"none saved: {why}"}
         else:
             tabs = reporting.socket_summary(outcomes, processes)
             summary = reporting.tier_summary(tier, results, seconds, args.profile,

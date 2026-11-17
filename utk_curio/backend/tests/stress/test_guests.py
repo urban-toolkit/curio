@@ -13,14 +13,24 @@
 * The report: each copy's process by the one rule (``report.copy_process``),
   each process's copies, the guests' summary and table, and the reader's
   checks failing the tier while being no user of it.
+* Every backend process's thread stacks, read once a while after a guests
+  tier's first agent turn was asked, while the turns run, into the report's
+  folder, which the report names.
 * ``--guests`` refuses ``--shared-canvas`` and ``--agents``.
 
 Names are imported in each test, so a checkout without them fails test by test.
 """
 
+import contextlib
+import io
 import json
+import os
+import tempfile
+import threading
+import time
 import unittest
 import unittest.mock as mock
+from pathlib import Path
 from urllib.parse import urlsplit
 
 #: The example, and a guest's copy of it whose id falls on another of eight
@@ -349,7 +359,8 @@ class AGuestsVisitTest(unittest.TestCase):
         from utk_curio.backend.tests.stress import agents, sockets
         from utk_curio.backend.tests.stress.guests import GuestVisit
 
-        visit = GuestVisit("http://backend", "g0", 0, _job(), pacing=_no_pause(), namespace="/collab")
+        visit = GuestVisit("http://backend", "g0", 0, _job(), pacing=_no_pause(), namespace="/collab",
+                           first_ask=threading.Event())
         visit.session = server.session_class()()
         with mock.patch.object(sockets, "SocketLink", server.link_class()), \
                 mock.patch.object(agents.requests, "Session", server.session_class()), \
@@ -394,6 +405,7 @@ class AGuestsVisitTest(unittest.TestCase):
         code = server.content
         self.assertTrue(code.startswith("# g0's Node Builder wrote this line\n# g0 typed this line\n"), code)
         self.assertTrue(code.endswith("return input_0"), code)
+        self.assertTrue(visit.first_ask.is_set(), "its ask tells the tier its turns are under way")
 
     def test_another_guests_work_in_its_copy_fails_it(self):
         server = _Server(read_back_adds="# g1 typed this line\n")
@@ -412,6 +424,7 @@ class AGuestsVisitTest(unittest.TestCase):
         self.assertEqual([(s.endpoint, s.kind) for s in result.failures], [("socket join_session", "leaked")])
         self.assertEqual([event for event, _room in server.socket], ["join_session"], "it typed nothing")
         self.assertIsNone(visit.outcome()["project_id"], "the example's room is no copy")
+        self.assertFalse(visit.first_ask.is_set(), "it asked nothing")
 
 
 class TheExampleReaderTest(unittest.TestCase):
@@ -457,30 +470,33 @@ class TheExampleReaderTest(unittest.TestCase):
         self.assertEqual(signed_in, [None] * 4, "each check signs in anew, naming no dataflow")
 
 
-class TheReportTest(unittest.TestCase):
-    def _guest(self, index: int, copy: str, sync: list, turn: float | None, **changes) -> dict:
-        outcome = {
-            "room": index, "guest": f"g{index}", "example": "e.json", "example_id": EXAMPLE, "project_id": copy,
-            "node_id": NODE, "tab": {"transport": "websocket", "role": "owner", "room_id": copy},
-            "updates": len(sync), "sync_seconds": list(sync),
-            "agents": {"turn_seconds": [turn] if turn is not None else [],
-                       "phases": {"prepared": [turn / 2]} if turn is not None else {}},
-            "turn": {"asked": turn is not None, "end": "done" if turn is not None else None, "seconds": turn,
-                     "write": "landed" if turn is not None else "none",
-                     "phases": {"prepared": turn / 2} if turn is not None else {}},
-            "copy": {"read": True, "not_in_copy": [], "leaked": []},
-            "present_at_end": [], "locks_at_end": [],
-        }
-        outcome.update(changes)
-        return outcome
+def _outcome(index: int, copy_id: str | None, sync: list, turn: float | None, **changes) -> dict:
+    """A guest's outcome (``guests.GuestVisit.outcome``) whose tab joined
+    *copy_id*'s room; *changes* replace its fields, its ``copy`` among them."""
+    outcome = {
+        "room": index, "guest": f"g{index}", "example": "e.json", "example_id": EXAMPLE, "project_id": copy_id,
+        "node_id": NODE, "tab": {"transport": "websocket", "role": "owner", "room_id": copy_id},
+        "updates": len(sync), "sync_seconds": list(sync),
+        "agents": {"turn_seconds": [turn] if turn is not None else [],
+                   "phases": {"prepared": [turn / 2]} if turn is not None else {}},
+        "turn": {"asked": turn is not None, "end": "done" if turn is not None else None, "seconds": turn,
+                 "write": "landed" if turn is not None else "none",
+                 "phases": {"prepared": turn / 2} if turn is not None else {}},
+        "copy": {"read": True, "not_in_copy": [], "leaked": []},
+        "present_at_end": [], "locks_at_end": [],
+    }
+    outcome.update(changes)
+    return outcome
 
+
+class TheReportTest(unittest.TestCase):
     def test_a_copy_is_on_its_examples_process_today_whatever_its_own_id(self):
         """The one rule: a guest's copy is owned with the example it copies
         (``owner_guard.room_key``), where its page names it. The copy's own id
         falls on process 1 of 8, the example's on 4."""
         from utk_curio.backend.tests.stress.report import copy_process, guests_summary, process_summary
 
-        guests = [self._guest(0, COPY, [0.01], 2.0), self._guest(1, OTHER_COPY, [0.02], 4.0)]
+        guests = [_outcome(0, COPY, [0.01], 2.0), _outcome(1, OTHER_COPY, [0.02], 4.0)]
         self.assertEqual([copy_process(guest, 8) for guest in guests], [4, 4])
         self.assertEqual(copy_process(guests[0], 1), 0)
         per_guest = guests_summary(guests, 8)["per_guest"]
@@ -496,10 +512,10 @@ class TheReportTest(unittest.TestCase):
         from utk_curio.backend.tests.stress.report import guests_summary
 
         guests = [
-            self._guest(0, COPY, [0.010, 0.030], 2.0),
-            self._guest(1, OTHER_COPY, [0.020], 6.0, copy={"read": True, "not_in_copy": [], "leaked": ["x"]},
+            _outcome(0, COPY, [0.010, 0.030], 2.0),
+            _outcome(1, OTHER_COPY, [0.020], 6.0, copy={"read": True, "not_in_copy": [], "leaked": ["x"]},
                         present_at_end=["Node Builder"], locks_at_end=[f"{NODE} by Node Builder for g1"]),
-            self._guest(2, None, [], None, tab={}, copy=None, present_at_end=None, locks_at_end=None),
+            _outcome(2, None, [], None, tab={}, copy=None, present_at_end=None, locks_at_end=None),
         ]
         summary = guests_summary(guests, 8)
 
@@ -539,7 +555,7 @@ class TheReportTest(unittest.TestCase):
             copy_process, guests_summary, markdown, process_summary, tier_summary,
         )
 
-        guests = [self._guest(0, COPY, [0.01], 2.0), self._guest(1, OTHER_COPY, [0.02], 4.0)]
+        guests = [_outcome(0, COPY, [0.01], 2.0), _outcome(1, OTHER_COPY, [0.02], 4.0)]
         tier = tier_summary(2, [], 1.0, "burst")
         tier["guests"] = guests_summary(guests, 8)
         tier["processes"] = process_summary(guests, 8, None, process_of=copy_process)
@@ -555,6 +571,123 @@ class TheReportTest(unittest.TestCase):
         self.assertIn(f"- `g1`: copy `{OTHER_COPY}` on process 4", text)
         self.assertIn("| 2 | 4 | 2 |", text, "process 4 holds both copies")
         self.assertIn("each hosted guest's copy is a room of its own", text)
+
+
+class _StacksProbe:
+    """The probe, standing in for a stack of one backend process that dumps
+    its threads' stacks when asked."""
+
+    command = ["python"]
+    timeout = 1.0
+    DUMP = "=== thread stacks of pid 7 at 2026-11-16T23:30:00Z: 2 thread(s) ===\n"
+
+    def __init__(self):
+        self.stacks_asked = 0
+
+    def read(self, project_ids=()):
+        return {"pid": 7, "threads": 2, "rss_bytes": 1, "cpu_seconds": 0.0, "count": 1}
+
+    def thread_stacks(self):
+        self.stacks_asked += 1
+        return {"pid": 7, "path": "/app/.curio/backend-thread-stacks.txt", "stacks": self.DUMP}
+
+
+class TheStacksDuringTheTurnsTest(unittest.TestCase):
+    """A guests tier asks every backend process for its thread stacks once,
+    a while after its first agent turn was asked, while the turns run: the
+    stacks a failed tier saves come once its work is over."""
+
+    def test_they_are_read_once_a_while_after_the_first_ask(self):
+        from utk_curio.backend.tests.stress.run import watch_turns
+
+        first_ask, over, called = threading.Event(), threading.Event(), []
+        started = time.monotonic()
+        threading.Timer(0.05, first_ask.set).start()
+        watch_turns(first_ask, over, 0.2, lambda: called.append(time.monotonic() - started))
+        self.assertEqual(len(called), 1)
+        self.assertGreaterEqual(called[0], 0.2, "not before its while after the first ask")
+
+    def test_a_tier_over_before_then_or_never_asked_reads_none(self):
+        from utk_curio.backend.tests.stress.run import watch_turns
+
+        called = []
+        first_ask, over = threading.Event(), threading.Event()
+        first_ask.set()
+        threading.Timer(0.05, over.set).start()
+        watch_turns(first_ask, over, 30.0, lambda: called.append("over first"))
+        never, done = threading.Event(), threading.Event()
+        done.set()
+        watch_turns(never, done, 0.0, lambda: called.append("never asked"))
+        self.assertEqual(called, [])
+
+    def _main(self, out_dir: str, probe) -> int:
+        """``run.main`` on one guests tier of 5, the stack and the tier stood
+        in for: the tier calls what it is to call during its turns, as
+        ``run_tier`` does once its first ask is a while old."""
+        from types import SimpleNamespace
+
+        from utk_curio.backend.tests.stress import run
+        from utk_curio.backend.tests.stress.driver import UserResult
+        from utk_curio.backend.tests.stress.guests import READER
+
+        class Reader:
+            def __init__(self, backend_url, example, name):
+                self.example = example
+
+            def open_example(self):
+                return _job()
+
+            def check(self, outcomes):
+                return UserResult(user=READER, example=self.example, started_at=0.0, completed=True)
+
+        def run_tier(*_args, during_turns=None, **_kwargs):
+            if during_turns is not None:
+                during_turns()
+            guest = UserResult(user="g0", example="e.json", started_at=0.0, seconds=1.0, completed=True)
+            return [guest], 1.0, [_outcome(0, COPY, [0.01], 2.0)]
+
+        example = SimpleNamespace(relpath="e.json", spec_json={"dataflow": {"name": FLOW["name"]}})
+        environ = {key: value for key, value in os.environ.items() if key != "GITHUB_STEP_SUMMARY"}
+        with contextlib.ExitStack() as stack:
+            for patch in (
+                mock.patch.object(run, "make_probe", lambda args: probe),
+                mock.patch.object(run, "wait_for_backend", lambda *args, **kwargs: None),
+                mock.patch.object(run, "read_namespace", lambda url: "/collab"),
+                mock.patch.object(run.sockets, "require_websocket_client", lambda: None),
+                mock.patch.object(run, "load_mix", lambda names: [example]),
+                mock.patch.object(run, "ExampleReader", Reader),
+                mock.patch.object(run, "on_the_scripted_model", lambda url, tier: tier()),
+                mock.patch.object(run, "read_exec_lock", lambda url: None),
+                mock.patch.object(run, "run_tier", run_tier),
+                mock.patch.object(run, "PROBE_END_WAIT_S", 0.0),
+                mock.patch.dict(os.environ, environ, clear=True),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                stack.enter_context(patch)
+            return run.main(["--tiers", "5", "--guests", "--out", out_dir])
+
+    def test_a_guests_tier_saves_them_in_its_report_folder_and_names_them(self):
+        probe = _StacksProbe()
+        with tempfile.TemporaryDirectory() as out_dir:
+            self.assertEqual(self._main(out_dir, probe), 0)
+
+            self.assertEqual(probe.stacks_asked, 1, "once, during the turns; a clean tier saves none after it")
+            saved = Path(out_dir, "thread-stacks-tier-1-5-during-turns.txt")
+            self.assertTrue(saved.read_text(encoding="utf-8").endswith(_StacksProbe.DUMP))
+            report = json.loads(Path(out_dir, "report.json").read_text(encoding="utf-8"))
+            stacks = report["tiers"][0]["stacks_during_turns"]
+            self.assertEqual((stacks["file"], stacks["after_s"]), (saved.name, 30.0))
+            self.assertIn(f"`{saved.name}`", Path(out_dir, "summary.md").read_text(encoding="utf-8"))
+
+    def test_with_the_probe_off_the_report_says_none_were_saved(self):
+        with tempfile.TemporaryDirectory() as out_dir:
+            self.assertEqual(self._main(out_dir, None), 0)
+
+            self.assertEqual(list(Path(out_dir).glob("thread-stacks-*")), [])
+            report = json.loads(Path(out_dir, "report.json").read_text(encoding="utf-8"))
+            stacks = report["tiers"][0]["stacks_during_turns"]
+            self.assertIsNone(stacks["file"])
+            self.assertIn("the probe is off (--no-probe)", stacks["line"])
 
 
 class TheCommandLineTest(unittest.TestCase):
