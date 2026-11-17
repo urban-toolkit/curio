@@ -101,7 +101,7 @@ def start_turn(*, user_key: str, project_id: str, attachment_id: str, job_id: st
     failure a terminal ``error`` event with *redact_values* taken out, and
     *on_finish* called once it is no longer live. Refused in a process that
     does not own the dataflow (``collaboration/owner_guard.py``)."""
-    owner_guard.refuse(project_id, user_key, what="an agent's turn")
+    owner_guard.refuse(project_id, what="an agent's turn")
     return _TURNS.start(
         user_key=user_key, project_id=project_id, key=attachment_id, kind="turn",
         job_id=job_id, events=_for_the_asker(events), app_context=app_context,
@@ -163,7 +163,7 @@ def start_job(
     ``error`` event, never a lost job, with *redact_values* taken out of its
     text. Refused in a process that does not own the dataflow
     (``collaboration/owner_guard.py``): only its owner runs its Solves."""
-    owner_guard.refuse(project_id, user_key, what="a Solve")
+    owner_guard.refuse(project_id, what="a Solve")
     return _REGISTRY.start(
         user_key=user_key, project_id=project_id, key=attachment_id, kind=kind,
         job_id=job_id, events=_for_the_asker(events), app_context=app_context,
@@ -186,7 +186,7 @@ def register_job(
     attachment. :func:`run_job` then drives its events, and :func:`fail_job`
     ends it when the caller fails first. Refused in a process that does not
     own the dataflow (``collaboration/owner_guard.py``)."""
-    owner_guard.refuse(project_id, user_key, what="a Solve")
+    owner_guard.refuse(project_id, what="a Solve")
     return _REGISTRY.register(
         user_key=user_key, project_id=project_id, key=attachment_id, kind=kind,
         job_id=job_id, redact_values=redact_values,

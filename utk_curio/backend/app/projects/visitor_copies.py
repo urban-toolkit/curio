@@ -54,7 +54,12 @@ joins the room of its copy (:func:`room_for`), keyed by the copy's id, and
 syncs the copy's doc (``collaboration/dataflow_docs.py``). A room opens the
 doc of a copy not made yet from the dataflow as it is, in memory, and the
 guest's first change there makes the copy (:func:`make`), so a visitor who
-only looks makes none.
+only looks makes none. In a start of several backend processes a copy belongs
+to the process its own id names, as any dataflow does
+(``collaboration/owner_guard.py``), so the copies of one example spread over
+the processes: the guest's canvas names its copy's id, which its load of the
+dataflow answers with (:func:`own_copy_id`), in every request and in its
+room's socket from then on.
 
 A hosted guest's File > New is a dataflow of its own (:func:`new_dataflow`),
 made on the first action that needs one, as an account's is, and kept with
@@ -600,14 +605,6 @@ def _source(own: str) -> Optional[str]:
         return _rooms.get(own)
 
 
-def source_of(own: str) -> Optional[str]:
-    """What *own* copies, when it is a hosted guest's copy or new dataflow:
-    the dataflow, or ``new:<uuid>``. ``None`` for any other dataflow, and for
-    a copy not made yet whose room another process opened. The process a
-    copy belongs to is its source's (``collaboration/owner_guard.py``)."""
-    return _source(own)
-
-
 def _guest_account():
     """The shared guest's account, which every hosted guest signs in to and
     which owns their new dataflows. Read, never made: ``None`` with none."""
@@ -638,17 +635,36 @@ def as_row(own: str) -> Optional[Copy]:
     return Copy(id=own, copies=project.id, user_id=project.user_id, owner=project.owner)
 
 
-def room_for(user, project, sign_in: Optional[str]) -> Optional[Copy]:
-    """The copy whose room the tab of a hosted guest signed in as *sign_in*
-    joins for *project*, a dataflow the guest's account owns: the guest's
-    own copy of it (:func:`copy_id`), made or not yet. Nothing is written:
-    the copy is made on the guest's first change (:func:`make`). ``None`` for
-    anyone else, for another account's dataflow, and for a copy itself."""
-    if isinstance(project, Copy) or not sign_in or not copies_for(user):
+def own_copy_id(user, project, *, sign_in: Optional[str] = None) -> Optional[str]:
+    """The id of the own copy of *project*, a dataflow the guest's account
+    owns, of the hosted guest signed in as *sign_in*, else the request's:
+    made or not yet (:func:`copy_id`), and nothing is made here. It is the id
+    the guest's canvas of *project* names in its requests and its room's
+    socket once its load answers with it (``projects/routes.py``,
+    ``src/utils/requestHeaders.ts``), and the room the guest's tab joins
+    (:func:`room_for`): in a start of several backend processes the copy
+    belongs to the process its own id names (``collaboration/owner_guard.py``),
+    which keeps its room, its doc, its plays and its agents. ``None`` for
+    anyone else, for another account's dataflow, for a copy itself, and with
+    no sign-in."""
+    if isinstance(project, Copy) or not copies_for(user):
         return None
     if project is None or getattr(project, "user_id", None) != getattr(user, "id", None):
         return None
-    own = copy_id(sign_in, project.id)
+    sign_in = sign_in or _sign_in()
+    return copy_id(sign_in, project.id) if sign_in else None
+
+
+def room_for(user, project, sign_in: Optional[str]) -> Optional[Copy]:
+    """The copy whose room the tab of a hosted guest signed in as *sign_in*
+    joins for *project*, a dataflow the guest's account owns: the guest's
+    own copy of it (:func:`own_copy_id`), made or not yet. Nothing is
+    written: the copy is made on the guest's first change (:func:`make`).
+    ``None`` for anyone else, for another account's dataflow, and for a copy
+    itself."""
+    own = own_copy_id(user, project, sign_in=sign_in) if sign_in else None
+    if own is None:
+        return None
     with _rooms_lock:
         _rooms[own] = project.id
     return Copy(id=own, copies=project.id, user_id=project.user_id, owner=project.owner)

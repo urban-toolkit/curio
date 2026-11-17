@@ -24,6 +24,7 @@ from .utils import (
     auth_enabled_env,
     captured_agent_prompts,
     close_tools_palette,
+    named_dataflow,
     node_locator,
     open_tools_palette,
     read_node_code,
@@ -85,6 +86,14 @@ def _session_token(page) -> str:
         if cookie["name"] == "session_token":
             return cookie["value"]
     raise AssertionError("the guest's browser holds no session_token cookie")
+
+
+def _copy_of(token: str, example: str) -> str:
+    """The id of the own copy of *example* of the visitor signed in as
+    *token*, which its sign-in and the example make (``visitor_copies.copy_id``)."""
+    from utk_curio.backend.app.projects.visitor_copies import copy_id
+
+    return copy_id(token, example)
 
 
 def _open(page, base: str, example: str) -> None:
@@ -201,25 +210,32 @@ def test_a_hosted_guests_edit_is_kept_for_it_alone_and_its_agent_reads_it(app_fr
         assert their_token != my_token
         assert _spec_code(backend, their_token, example) == ORIGINAL
 
-        # A Researcher the first visitor drops on the node reads its copy.
+        # A Researcher the first visitor drops on the node reads its copy. The
+        # visitor's calls name its own copy, as its canvas does: the copy's
+        # turns and their scripted replies are the process's its own id names.
+        mine_named = named_dataflow(backend, my_token, example)
+        assert mine_named == _copy_of(my_token, example), (
+            f"the visitor's load of the example names {mine_named!r}, not its own copy"
+        )
         _post_json(f"{backend}/api/testing/llm-deployment", {"scripted": True})
         api_json(f"{backend}/api/agents/projects/{example}/install", my_token, method="POST",
-                 payload={"coord": RESEARCHER})
+                 payload={"coord": RESEARCHER}, dataflow=mine_named)
         _open(mine, base, example)
         wait_for_node_code(mine, NODE, EDITED)
         _drop_on_the_node(mine, RESEARCHER)
         expect(mine.get_by_text("Agent attached to the node.")).to_be_visible(timeout=30000)
-        listed = api_json(f"{backend}/api/agents/projects/{example}/attachments", my_token)["attachments"]
+        listed = api_json(f"{backend}/api/agents/projects/{example}/attachments", my_token,
+                          dataflow=mine_named)["attachments"]
         attached = [a for a in listed if (a.get("target") or {}).get("targetId") == NODE]
         assert attached, f"the guest's drop on the node attached no agent to it: {listed}"
-        # The example its page shows names it: its copy is owned with it.
-        script_agent_replies(backend, READ_THE_DATAFLOW, QUOTE, dataflow=example)
+        script_agent_replies(backend, READ_THE_DATAFLOW, QUOTE, dataflow=mine_named)
         answered = api_json(
             f"{backend}/api/agents/projects/{example}/attachments/{attached[0]['attachmentId']}/run",
             my_token, method="POST", payload={"message": "Quote this node's code."}, timeout=120,
+            dataflow=mine_named,
         )
         assert QUOTE in json.dumps(answered), answered
-        prompts = captured_agent_prompts(backend, dataflow=example)
+        prompts = captured_agent_prompts(backend, dataflow=mine_named)
         # Its read on the server is of the visitor's own copy, not the example.
         read = _code_the_read_returned(prompts)
         assert read == EDITED, f"the Researcher's read of the dataflow holds {read!r}, not the visitor's own code"

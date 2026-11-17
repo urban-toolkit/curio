@@ -2,9 +2,10 @@
 (``collaboration/owner_guard.py``).
 
 A start of several backend processes gives each dataflow one owner: the
-process its id names (``backend_processes.shard_of``), or for a hosted guest's
-copy, the process the dataflow it copies names. Here this test's process is
-set as one of two by the variables the launcher sets. As a process that does
+process its id names (``backend_processes.shard_of``), a hosted guest's copy's
+own id included, never the id of the dataflow it copies, so the guests of one
+example spread over the processes. Here this test's process is set as one of
+two by the variables the launcher sets. As a process that does
 not own a dataflow it keeps no doc of it, and starts no turn, Solve, run or
 dashboard run for it: each is refused, naming the dataflow, its owner and this
 process. It reads the dataflow as the owner's log holds it, replayed into a
@@ -94,7 +95,7 @@ def test_its_owner_keeps_the_doc_as_one_process_does(room, monkeypatch):
 
     from utk_curio.backend.app.collaboration import owner_guard
 
-    assert owner_guard.owner_of(room.project_id, room.owner_key) == owner_of(room.project_id)
+    assert owner_guard.owner_of(room.project_id) == owner_of(room.project_id)
 
 
 # ---------------------------------------------------------------------------
@@ -231,51 +232,148 @@ def _hosted_guest(doc_app, monkeypatch):
     return make_user(config.CURIO_SHARED_GUEST_USERNAME, is_guest=True)
 
 
-def test_a_guests_copy_belongs_with_the_dataflow_it_copies(doc_app, monkeypatch):
-    """A visitor's copy of an example has an id of its own, which here names
-    the other process; the copy belongs with the example all the same, since
-    the guest's page names the example. The example's owner opens the copy's
-    room, made or not yet, and the other process refuses it."""
-    from utk_curio.backend.app.collaboration import dataflow_docs as docs
+def _another_sign_in(guest):
+    """Another visitor's sign-in to the shared guest account, as a second
+    browser's."""
+    from datetime import datetime, timedelta, timezone
+
+    from utk_curio.backend import extensions as _ext
+    from utk_curio.backend.app.users.models import UserSession
+
+    session = UserSession(
+        user_id=guest.id, token=f"tok-{guest.username}-{guest.id}-another",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+        last_seen_at=datetime.now(timezone.utc), active=True,
+    )
+    _ext.db.session.add(session)
+    _ext.db.session.commit()
+    return session
+
+
+def _shared_example(guest, wanted) -> str:
+    """An example the shared guest owns, as every shipped one is, whose id
+    passes *wanted*, and its spec on disk."""
     from utk_curio.backend.app.common.user_storage import GUEST_KEY
-    from utk_curio.backend.app.projects import storage, visitor_copies
+    from utk_curio.backend.app.projects import storage
+
+    example = next(candidate for candidate in (str(uuid.uuid4()) for _ in range(500)) if wanted(candidate))
+    make_project(guest, example)
+    storage.write_spec(GUEST_KEY, example, copy.deepcopy(_EXAMPLE))
+    return example
+
+
+def _typed_in_its_copy(socket, own: str, text: str) -> None:
+    """Sync the copy's doc on *socket*, which joined its room, and type *text*
+    on top of the loader's code: the guest's first change, which makes the
+    copy."""
+    from ._ydoc_client import DocClient
+
+    socket.get_received(namespace=NAMESPACE)
+    tab = DocClient(socket, own)
+    started = tab.sync()
+    assert started["ok"] is True, f"the copy's own process refused its room: {started}"
+    acks = tab.edit(lambda doc: doc.get("nodes", type=Map)["loader"]["content"].insert(0, text))
+    assert acks and all(ack.get("ok") for ack in acks), acks
+
+
+def test_a_guests_copy_belongs_where_its_own_id_names(doc_app, monkeypatch):
+    """A visitor's copy of an example has an id of its own, which here names
+    the other process than the example's. The copy belongs where its own id
+    names, which the guest's page names (``src/utils/requestHeaders.ts``), as
+    any dataflow does: its process opens the copy's room, made or not yet,
+    and keeps its doc, and the example's process refuses the guest's join,
+    the copy's doc and its tab's sync."""
+    from utk_curio.backend.app.collaboration import dataflow_docs as docs
+    from utk_curio.backend.app.collaboration import owner_guard
+    from utk_curio.backend.app.common.user_storage import GUEST_KEY
+    from utk_curio.backend.app.projects import visitor_copies
 
     from ._ydoc_client import DocClient
 
     application, socketio = doc_app
     guest, session = _hosted_guest(doc_app, monkeypatch)
     sign_in = session.token
-    example = next(candidate for candidate in (str(uuid.uuid4()) for _ in range(500))
-                   if owner_of(candidate) != owner_of(visitor_copies.copy_id(sign_in, candidate)))
-    make_project(guest, example)
-    storage.write_spec(GUEST_KEY, example, copy.deepcopy(_EXAMPLE))
+    example = _shared_example(
+        guest, lambda candidate: owner_of(candidate) != owner_of(visitor_copies.copy_id(sign_in, candidate)),
+    )
     own = visitor_copies.copy_id(sign_in, example)
-    owner, other = owner_of(example), owner_of(own)
-    assert owner != other
+    owner, examples = owner_of(own), owner_of(example)
+    assert owner != examples
 
+    # The example's process refuses the guest's join of its copy's room, not
+    # made yet, naming the copy's own process, and opens no doc of it.
+    as_process(monkeypatch, examples)
+    misrouted = connect(socketio, application, sign_in)
+    refused_join = join(misrouted, example)
+    assert refused_join["ok"] is False and refused_join["error"] == "not_the_owner", refused_join
+    assert_names_the_owner(refused_join["message"], own, owner, examples)
+    assert docs._open_entry(own) is None, "the example's process opened the doc of a copy it does not own"
+
+    # The copy's own process opens its room, and the guest's first change there makes the copy.
     as_process(monkeypatch, owner)
     socket = connect(socketio, application, sign_in)
     joined = join(socket, example)
     assert joined["ok"] is True and joined["projectId"] == own, joined
-    socket.get_received(namespace=NAMESPACE)
-    tab = DocClient(socket, own)
-    started = tab.sync()
-    assert started["ok"] is True, f"the example's owner refused its guest's copy, not made yet: {started}"
-    acks = tab.edit(lambda doc: doc.get("nodes", type=Map)["loader"]["content"].insert(0, "# mine\n"))
-    assert acks and all(ack.get("ok") for ack in acks), acks
+    _typed_in_its_copy(socket, own, "# mine\n")
     assert visitor_copies.is_copy(own), "the guest's first change made no copy"
+    assert _code(docs.live(GUEST_KEY, own)["dataflow"]) == "# mine\nx = 1\n"
 
-    as_process(monkeypatch, other)
+    # The example's process refuses a writer's read of the copy and its tab's sync.
+    as_process(monkeypatch, examples)
     with pytest.raises(Exception) as refused:
         docs.live(GUEST_KEY, own)
-    assert_names_the_owner(str(refused.value), own, owner, other)
-    elsewhere = connect(socketio, application, sign_in)
-    refused_join = join(elsewhere, example)
-    assert refused_join["ok"] is False and refused_join["error"] == "not_the_owner", refused_join
+    assert_names_the_owner(str(refused.value), own, owner, examples)
+    synced = DocClient(socket, own).sync()
+    assert synced["ok"] is False and synced["error"] == "not_the_owner", synced
+    assert_names_the_owner(synced["message"], own, owner, examples)
 
+    assert (owner_guard.owner_of(own), owner_guard.owner_of(example)) == (owner, examples)
+
+
+def test_two_guests_copies_of_one_example_belong_where_their_own_ids_name(doc_app, monkeypatch):
+    """Two visitors open one example, whose copies' own ids name the two
+    processes, one each: each guest's room and doc are its copy's process's,
+    the other process refuses that guest's join, and each copy holds its own
+    guest's change alone. So the guests of one example spread over the
+    processes, rather than all working on the example's."""
+    from utk_curio.backend.app.collaboration import dataflow_docs as docs
     from utk_curio.backend.app.collaboration import owner_guard
+    from utk_curio.backend.app.common.user_storage import GUEST_KEY
+    from utk_curio.backend.app.projects import visitor_copies
 
-    assert owner_guard.owner_of(own, GUEST_KEY) == owner
+    application, socketio = doc_app
+    guest, first = _hosted_guest(doc_app, monkeypatch)
+    second = _another_sign_in(guest)
+    visitors = {"first": first.token, "second": second.token}
+    example = _shared_example(guest, lambda candidate: len({
+        owner_of(visitor_copies.copy_id(token, candidate)) for token in visitors.values()
+    }) == 2)
+    copies = {name: visitor_copies.copy_id(token, example) for name, token in visitors.items()}
+    assert len(set(copies.values())) == 2 and example not in copies.values()
+    assert {owner_of(own) for own in copies.values()} == {0, 1}
+
+    # The guard reads the start's process count, so it is named before the
+    # guard's first answer: with none named, every copy would be home's, and
+    # the first guest's check would pass only when its copy hashed to home.
+    as_process(monkeypatch, 0)
+    for name, token in visitors.items():
+        own = copies[name]
+        here = owner_of(own)
+        assert owner_guard.owner_of(own) == here
+        as_process(monkeypatch, 1 - here)
+        refused = join(connect(socketio, application, token), example)
+        assert refused["ok"] is False and refused["error"] == "not_the_owner", (name, refused)
+        assert_names_the_owner(refused["message"], own, here, 1 - here)
+        as_process(monkeypatch, here)
+        socket = connect(socketio, application, token)
+        joined = join(socket, example)
+        assert joined["ok"] is True and joined["projectId"] == own, (name, joined)
+        _typed_in_its_copy(socket, own, f"# the {name} visitor's\n")
+
+    for name, own in copies.items():
+        as_process(monkeypatch, owner_of(own))
+        assert _code(docs.live(GUEST_KEY, own)["dataflow"]) == f"# the {name} visitor's\nx = 1\n", name
+    assert _code(docs.read(GUEST_KEY, example)["dataflow"]) == "x = 1\n", "a guest's change reached the example"
 
 
 def test_a_guests_new_dataflow_belongs_where_its_own_id_names(doc_app, monkeypatch):

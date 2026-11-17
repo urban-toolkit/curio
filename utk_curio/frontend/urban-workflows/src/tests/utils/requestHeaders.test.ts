@@ -13,9 +13,16 @@
  * dataflow before it. On `/dataflow/new` it is the id a new dataflow gets on
  * its first save, the one its reads are on (`services/dataflowReads.ts`). Any
  * other page, the projects, a catalog or the monitor, names none. A request
- * that names its dataflow itself, in its body or its query, names that one. A
- * hosted guest's page names the dataflow it shows, never its own copy's:
- * `providers/collabSocketNamesDataflow.test.tsx`.
+ * that names its dataflow itself, in its body or its query, names that one.
+ *
+ * A hosted guest's canvas of an example names the guest's own copy of it once
+ * the canvas's load of the example answers with the copy's id (`copy_id`,
+ * `nameDataflow`): every request, one that names the example itself among
+ * them, and its room's socket's query. The server keeps each copy on the
+ * backend process its own id names, so the guests of one example spread over
+ * the processes. Until the answer the canvas names the example, on its load's
+ * reads; its socket waits (`providers/collabSocketNamesDataflow.test.tsx`).
+ * The dashboard names its own route's dataflow.
  *
  * The helper is loaded in each test, so a checkout without it fails each test
  * on its own.
@@ -39,6 +46,8 @@ const HEADER = "X-Curio-Dataflow";
 const A = "11111111-2222-4333-8444-555555555555";
 const B = "66666666-7777-4888-9999-000000000000";
 const NEW = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+/** A hosted guest's own copy of A, as the canvas's load of A answers it. */
+const COPY = "99999999-8888-5777-a666-555555555555";
 
 /** The helper, loaded when a test asks for it. */
 const helper = (): any => require("../../utils/requestHeaders");
@@ -59,6 +68,8 @@ function servedUnder(base: string) {
 afterEach(() => {
   at("/");
   setOpenDataflow(null);
+  // What a load named, which a page that starts knows nothing of.
+  helper().resetDataflowNames?.();
   document.querySelectorAll("base").forEach((element) => element.remove());
 });
 
@@ -159,6 +170,92 @@ describe("the dataflow a page names", () => {
   });
 });
 
+describe("a hosted guest's canvas names its own copy", () => {
+  test("once its load answers with the copy, every request and the socket name the copy", () => {
+    at(`/dataflow/${A}`);
+    // ProjectLoader starts the load: its reads name the example, and the
+    // room's socket waits for its answer.
+    helper().awaitDataflowName(A);
+    expect(helper().dataflowNameKnown(A)).toBe(false);
+    expect(helper().requestHeaders("tok")[HEADER]).toBe(A);
+
+    // The load's answer names the guest's own copy (`copy_id`).
+    helper().nameDataflow(A, COPY);
+
+    expect(helper().dataflowNameKnown(A)).toBe(true);
+    expect(helper().requestHeaders("tok")).toEqual({ Authorization: "Bearer tok", [HEADER]: COPY });
+    expect(helper().socketQuery(A)).toEqual({ dataflow: COPY });
+    // A request that names the example itself, a node's outcome or an import
+    // for it, names the copy too; one of another dataflow names that one.
+    expect(helper().requestHeaders("tok", {}, A)[HEADER]).toBe(COPY);
+    expect(helper().requestHeaders("tok", {}, B)[HEADER]).toBe(B);
+    expect(helper().socketQuery(B)).toEqual({ dataflow: B });
+  });
+
+  test("an account's load, or one from the link, names the dataflow itself", () => {
+    at(`/dataflow/${A}`);
+    helper().awaitDataflowName(A);
+
+    helper().nameDataflow(A, null);
+
+    expect(helper().dataflowNameKnown(A)).toBe(true);
+    expect(helper().requestHeaders("tok")[HEADER]).toBe(A);
+    expect(helper().socketQuery(A)).toEqual({ dataflow: A });
+  });
+
+  test("a load that ends naming nothing lets the socket go on, by what the page knew", () => {
+    at(`/dataflow/${A}`);
+    helper().nameDataflow(A, COPY);
+    // The canvas loads it again, and that load fails or the page leaves it.
+    helper().awaitDataflowName(A);
+    expect(helper().requestHeaders("tok")[HEADER]).toBe(COPY);
+
+    helper().releaseDataflowName(A);
+
+    expect(helper().dataflowNameKnown(A)).toBe(true);
+    expect(helper().socketQuery(A)).toEqual({ dataflow: COPY });
+  });
+
+  test("only the dataflow whose load is in flight waits", () => {
+    at(`/dataflow/${B}`);
+    helper().awaitDataflowName(A);
+    helper().awaitDataflowName(B);
+
+    expect([helper().dataflowNameKnown(A), helper().dataflowNameKnown(B)]).toEqual([true, false]);
+    // A load of A that answers late keeps B waiting.
+    helper().releaseDataflowName(A);
+    expect(helper().dataflowNameKnown(B)).toBe(false);
+  });
+
+  test("every change to the names is heard, and a listener that leaves hears no more", () => {
+    const heard = jest.fn();
+    const leave = helper().subscribeDataflowNames(heard);
+
+    helper().awaitDataflowName(A);
+    helper().nameDataflow(A, COPY);
+    leave();
+    helper().nameDataflow(A, null);
+
+    expect(heard).toHaveBeenCalledTimes(2);
+  });
+
+  test("the dashboard of the example names the example, as its runs are the example's", () => {
+    helper().nameDataflow(A, COPY);
+    at(`/dashboard/${A}`);
+
+    expect(helper().requestHeaders("tok")[HEADER]).toBe(A);
+    expect(helper().requestHeaders("tok", {}, A)[HEADER]).toBe(A);
+  });
+
+  test("another page names none, even after a guest's canvas named its copy", () => {
+    helper().nameDataflow(A, COPY);
+    setOpenDataflow(A);
+    at("/projects");
+
+    expect(helper().requestHeaders("tok")).toEqual({ Authorization: "Bearer tok" });
+  });
+});
+
 describe("what each client sends", () => {
   const originalFetch = global.fetch;
   let asked: { url: string; headers: Record<string, string> }[] = [];
@@ -222,6 +319,20 @@ describe("what each client sends", () => {
     for (const { url, headers } of asked) {
       expect({ url, named: headers[HEADER], signedIn: headers.Authorization }).toEqual({
         url, named: A, signedIn: "Bearer tok",
+      });
+    }
+  });
+
+  test.each(clients)("%s names a hosted guest's own copy once the canvas's load named it", async (_what, send) => {
+    // The canvas of the example A, whose load answered with the guest's copy.
+    helper().nameDataflow(A, COPY);
+
+    await send();
+
+    expect(asked.length).toBeGreaterThan(0);
+    for (const { url, headers } of asked) {
+      expect({ url, named: headers[HEADER], signedIn: headers.Authorization }).toEqual({
+        url, named: COPY, signedIn: "Bearer tok",
       });
     }
   });
