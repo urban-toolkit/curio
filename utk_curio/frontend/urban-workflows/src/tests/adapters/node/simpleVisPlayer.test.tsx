@@ -79,15 +79,16 @@ describe("Simple View's player as a selection", () => {
 
   afterEach(() => play.mockRestore());
 
-  /** Opens the view on *rows* and plays *name*'s card; returns its element. */
-  async function playCard(rows: Record<string, unknown>[], name: string, extra: Record<string, unknown> = {}) {
+  /** Opens the view on *rows* and plays the card whose Play is named *play*;
+   *  returns its element. */
+  async function playCard(rows: Record<string, unknown>[], play: string, extra: Record<string, unknown> = {}) {
     const interactionsCallback = jest.fn();
     const bodies: unknown[] = [];
     const data = { nodeId: 'sv-1', input: videos(rows), outputCallback: jest.fn(), interactionsCallback, ...extra };
     const view = render(<Harness data={data} bodies={bodies} />);
     await act(async () => {});
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: `Play ${name}` }));
+      fireEvent.click(screen.getByRole('button', { name: play }));
     });
     const element = await waitFor(() => {
       const found = view.container.querySelector('video');
@@ -99,7 +100,7 @@ describe("Simple View's player as a selection", () => {
   }
 
   it("tells the flow the range a video has played, from its start to where it stands, as an interval on t_s", async () => {
-    const { element, interactionsCallback } = await playCard([video('walk.mp4')], 'walk.mp4');
+    const { element, interactionsCallback } = await playCard([video('walk.mp4')], 'Play walk.mp4');
     await act(async () => {
       fireEvent.play(element);
     });
@@ -112,7 +113,11 @@ describe("Simple View's player as a selection", () => {
   });
 
   it("an overlay's range is in the time of its video: it starts at the overlay's t_s", async () => {
-    const { element, interactionsCallback } = await playCard([video('overlay.mp4', { t_s: 50 })], 'overlay.mp4');
+    // Its Play names where it starts in its video.
+    const { element, interactionsCallback } = await playCard(
+      [video('overlay.mp4', { t_s: 50 })],
+      'Play overlay.mp4 from 50 s',
+    );
     await act(async () => {
       element.currentTime = 4;
       fireEvent.seeked(element);
@@ -121,7 +126,7 @@ describe("Simple View's player as a selection", () => {
   });
 
   it("a click on a card after it is the latest select, and the player's range stays at priority 0", async () => {
-    const { element, interactionsCallback } = await playCard([video('walk.mp4'), video('other.mp4')], 'walk.mp4');
+    const { element, interactionsCallback } = await playCard([video('walk.mp4'), video('other.mp4')], 'Play walk.mp4');
     await act(async () => {
       element.currentTime = 2;
       fireEvent.seeked(element);
@@ -136,7 +141,7 @@ describe("Simple View's player as a selection", () => {
   });
 
   it('a player that closes takes its range away: a new frame closes it', async () => {
-    const { element, interactionsCallback, view, data } = await playCard([video('walk.mp4')], 'walk.mp4');
+    const { element, interactionsCallback, view, data } = await playCard([video('walk.mp4')], 'Play walk.mp4');
     await act(async () => {
       element.currentTime = 3;
       fireEvent.seeked(element);
@@ -148,7 +153,7 @@ describe("Simple View's player as a selection", () => {
   });
 
   it("keeps the view's body as it was while the player tells its time, so the node stays on its tab", async () => {
-    const { element, bodies } = await playCard([video('walk.mp4')], 'walk.mp4');
+    const { element, bodies } = await playCard([video('walk.mp4')], 'Play walk.mp4');
     const body = bodies[bodies.length - 1];
     await act(async () => {
       fireEvent.play(element);
@@ -162,7 +167,7 @@ describe("Simple View's player as a selection", () => {
   });
 
   it('a selection the view receives moves no player and tells nothing back', async () => {
-    const { element, interactionsCallback, view, data } = await playCard([video('walk.mp4')], 'walk.mp4');
+    const { element, interactionsCallback, view, data } = await playCard([video('walk.mp4')], 'Play walk.mp4');
     await act(async () => {
       element.currentTime = 3;
       fireEvent.seeked(element);

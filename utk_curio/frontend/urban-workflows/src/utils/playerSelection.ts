@@ -43,10 +43,32 @@ export const CARD_SELECT = "images_click";
  */
 export const PLAYER_TELLS_EVERY_MS = 200;
 
+/**
+ * Where *row*'s file starts in the file it was cut from, when it is a part of
+ * one: its `t_s`. Null for a whole file, whose row carries no `t_s`, or an
+ * empty one where a table mixes whole files with parts.
+ */
+export function partStart(row: Record<string, unknown> | null | undefined): number | null {
+  const value = row?.[PLAYED_TIME_COLUMN];
+  if (value == null || value === "") return null;
+  const start = Number(value);
+  return Number.isFinite(start) ? start : null;
+}
+
 /** Where *row*'s file starts in the file it was cut from: its `t_s`, else 0. */
 export function playedFrom(row: Record<string, unknown> | null | undefined): number {
-  const start = Number(row?.[PLAYED_TIME_COLUMN]);
-  return Number.isFinite(start) ? start : 0;
+  return partStart(row) ?? 0;
+}
+
+/**
+ * A time in a file, in seconds, as a label says it: to the millisecond, as
+ * Curio's media nodes round `t_s` (Split Video's blocks, Split Audio's
+ * windows, Sample Video Frames' frames), with no trailing zeros: "0", "60",
+ * "152.7", "2.345". So two parts of one file that start apart never read
+ * alike, however short a block or a window is.
+ */
+export function secondsText(seconds: number): string {
+  return String(Number(seconds.toFixed(3)));
 }
 
 /**
