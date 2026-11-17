@@ -328,27 +328,30 @@ def give_way_to_the_image(user_key: str) -> list[str]:
 
     A lock owner (memo dev/99): the account's store is walked under its seed
     lock, as :func:`not_asked_for` walks it, and the lock covers the walk
-    alone, never the removal after it."""
+    alone, never the removal after it. The walk comes once the tree's own
+    locks are held (the seed lock is a leaf): a removal's give-way can wait
+    for the tree behind another pip run, and a package an add put into the
+    store meanwhile, before its own pip run, has to count."""
     if not packages_backend_runtime.per_user_node_envs():
         return []
     overlay = packages_backend_runtime.user_node_overlay_dir(user_key)
     if not overlay.is_dir():
         return []
-    declared: dict[str, list[str]] = {}
-    with package_seed_lock(user_key, shared=True):  # memo dev/99: one consistent walk
-        for package_path in list_user_packages(user_key):
-            try:
-                manifest = load_package_manifest(package_path)
-            except (ManifestError, OSError):
-                return []
-            for name, spec in (manifest.python_deps or {}).items():
-                # By PEP 503 name: two packages may spell one library apart.
-                declared.setdefault(_canonical(name), []).append(spec)
-    if not declared:
-        return []
-    own = [split_lib_spec(spec)[0] for spec in _load_raw(user_key)["python"]]
     with target_lock(user_key, packages_provisioning.NODE_OVERLAY_LOCK):
         with packages_pip_runner.holding_tree(overlay):
+            declared: dict[str, list[str]] = {}
+            with package_seed_lock(user_key, shared=True):  # memo dev/99: one consistent walk
+                for package_path in list_user_packages(user_key):
+                    try:
+                        manifest = load_package_manifest(package_path)
+                    except (ManifestError, OSError):
+                        return []
+                    for name, spec in (manifest.python_deps or {}).items():
+                        # By PEP 503 name: two packages may spell one library apart.
+                        declared.setdefault(_canonical(name), []).append(spec)
+            if not declared:
+                return []
+            own = [split_lib_spec(spec)[0] for spec in _load_raw(user_key)["python"]]
             names = packages_pip_runner.copies_this_interpreter_meets(declared, str(overlay), keep=own)
             if names:
                 packages_pip_runner.uninstall_python_deps_from_target(names, str(overlay))
