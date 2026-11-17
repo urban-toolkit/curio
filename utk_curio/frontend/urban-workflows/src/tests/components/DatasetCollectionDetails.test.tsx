@@ -3,7 +3,7 @@
  * for a bucket's. A table combined from a storage source's files says so.
  */
 import React from "react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { MemoryRouter } from "react-router-dom";
 
@@ -164,6 +164,22 @@ describe("a collection's details", () => {
     expect(screen.getByText("year 2023, 2024 · tile tile_0001 to tile_0400")).toBeInTheDocument();
     expect(screen.getByText("EPSG:32616")).toBeInTheDocument();
     expect(screen.getByText("41.8812, -87.6315 to 41.8814, -87.6312")).toBeInTheDocument();
+  });
+
+  it("says how many picked files it was narrowed to, one in the singular", async () => {
+    // Narrowed as the SideSeeing walk's datasets are: by picked files alone.
+    const narrowedToPicked = async (files: number) => {
+      cleanup();
+      apiFetch.mockResolvedValue(status({ fileCount: files }));
+      await renderPanel(
+        item({
+          collection: { ...block, counts: { image: files }, fileCount: files, narrowedBy: {}, chosenFiles: files },
+        }),
+      );
+      return screen.getByText("Narrowed to").nextElementSibling?.textContent;
+    };
+    expect(await narrowedToPicked(1)).toBe("1 picked file");
+    expect(await narrowedToPicked(2)).toBe("2 picked files");
   });
 
   it("stops following its Cache files job once the panel is closed", async () => {
