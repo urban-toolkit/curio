@@ -829,6 +829,60 @@ def test_the_gnn_takes_any_road_graph():
     assert _sha256(_gnn_file()).startswith("602fe4a5")
 
 
+#: A child's script, run after ``session_threads.RECORD_SESSIONS``: the weather
+#: GNN on a graph of three roads as Weather Routing's node runs it
+#: (``gnn_predict``), the package's module staged as a run of the node stages
+#: it and the model as ``curio_load_model`` gives it.
+GNN_PREDICT = """
+import importlib
+import sys
+
+import numpy as np
+
+from utk_curio.sandbox.util.catalog_helpers import CurioModel
+
+modules, model_id, package = sys.argv[1:]
+sys.path.insert(0, modules)
+weights = importlib.import_module("weather_routing.weight_calculation")
+x = np.zeros((3, 7), dtype=np.float32)
+edge_index = np.array([[0, 1, 2], [1, 2, 0]], dtype=np.int64)
+prediction = weights.gnn_predict(CurioModel(model_id, package), x, edge_index)
+report(prediction=list(prediction.shape))
+"""
+
+
+def test_the_gnns_session_runs_on_the_threads_omp_num_threads_names(tmp_path):
+    """onnxruntime reads no ``OMP_NUM_THREADS``: a session that names no thread
+    count starts a thread for every core it sees, the whole machine's where
+    CI's runners share one (``_support/session_threads.py``). Weather Routing's
+    node opens the GNN in a session of its own (``gnn_predict``), which hands
+    onnxruntime the count ``OMP_NUM_THREADS`` names, as SCOUT's torch read it
+    for itself: the stacks of e2e-desktop and test-gpu, which run this node,
+    set it to their runner's share. With no ``OMP_NUM_THREADS``, as on a
+    user's Curio, the session keeps onnxruntime's own choice."""
+    from utk_curio.backend.tests._support.session_threads import (
+        assert_the_session_takes_the_named_count,
+        sessions_made,
+    )
+    from utk_curio.sandbox.util.staging import stage_package_modules
+
+    run = tmp_path / "run-threads"
+    run.mkdir()
+    staged = stage_package_modules({"root": str(SOURCES), "names": [MODULE]}, str(run))
+    assert staged == {"root": "package_modules", "names": [MODULE]}, staged
+
+    def made(omp_num_threads):
+        return sessions_made(GNN_PREDICT, run / staged["root"], GNN_ID, PACKAGE, omp_num_threads=omp_num_threads)
+
+    reported = assert_the_session_takes_the_named_count(
+        made, "the weather GNN's session, made as gnn_predict makes it,"
+    )
+    # One row of five weather values for each of the three roads' nodes.
+    assert {under: said["prediction"] for under, said in reported.items()} == {
+        "1": [3, 5], "2,1": [3, 5], "unset": [3, 5],
+    }, reported
+
+
 def test_the_package_declares_the_libraries_it_imports():
     manifest = _manifest()
     assert (manifest["license"], manifest["publisher"]) == ("MIT", "Curio")

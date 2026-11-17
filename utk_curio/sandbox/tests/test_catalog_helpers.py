@@ -43,6 +43,27 @@ def _helpers(paths, formats=None, *, collections=None, models=None, media_dir=No
 
 BUNDLE_FILES = "frame.csv, count.json, depth.tif"
 
+#: A child's script, run after ``session_threads.RECORD_SESSIONS``: an ONNX
+#: dataset loaded with ``curio_load_data``, as a node's code loads it, and its
+#: session run once on a row of tens.
+LOADS_AN_ONNX_DATASET = """
+import sys
+
+import numpy as np
+
+from utk_curio.sandbox.util.catalog_helpers import install_catalog_helpers
+
+path = sys.argv[1]
+namespace = {}
+install_catalog_helpers(
+    namespace, data_path=lambda dataset_id: path, formats={"m": {"format": "onnx"}}, collections=None,
+    media_dir=None, models=None,
+)
+session = namespace["curio_load_data"]("m")
+(answer,) = session.run(None, {session.get_inputs()[0].name: np.full((1, 3), 10, dtype=np.float32)})
+report(answer=answer.tolist())
+"""
+
 
 def _bundle_dataset(root):
     """A dataset of several files, as a shipped one is laid out: its files side
@@ -287,6 +308,34 @@ class TestLoadData:
         assert isinstance(session, ort.InferenceSession)
         (answer,) = session.run(None, {session.get_inputs()[0].name: np.full((1, 3), 10, dtype=np.float32)})
         assert answer.tolist() == [[10 + value for value in ADDEND]]
+
+    def test_an_onnx_models_session_runs_on_the_threads_omp_num_threads_names(self, tmp_path):
+        """onnxruntime reads no ``OMP_NUM_THREADS``: a session that names no
+        thread count starts a thread for every core it sees, the whole
+        machine's where CI's runners share one
+        (``_support/session_threads.py``). ``curio_load_data`` hands the
+        session it opens for an ONNX dataset the count ``OMP_NUM_THREADS``
+        names, which the CI stacks set to their runner's share. With no
+        ``OMP_NUM_THREADS``, as on a user's Curio, the session keeps
+        onnxruntime's own choice."""
+        from utk_curio.backend.tests._support.session_threads import (
+            assert_the_session_takes_the_named_count,
+            sessions_made,
+        )
+
+        path = tmp_path / "tiny.onnx"
+        path.write_bytes(tiny_onnx_model())
+
+        def made(omp_num_threads):
+            return sessions_made(LOADS_AN_ONNX_DATASET, path, omp_num_threads=omp_num_threads)
+
+        reported = assert_the_session_takes_the_named_count(
+            made, "the session curio_load_data opens for an ONNX dataset"
+        )
+        answer = [[10 + value for value in ADDEND]]
+        assert {under: said["answer"] for under, said in reported.items()} == {
+            "1": answer, "2,1": answer, "unset": answer,
+        }, reported
 
     @pytest.mark.parametrize("fmt", list(NETCDF_SIGNATURES))
     def test_a_netcdf_file_is_an_xarray_dataset(self, tmp_path, fmt):

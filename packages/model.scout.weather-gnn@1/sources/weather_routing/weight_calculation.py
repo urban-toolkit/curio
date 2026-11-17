@@ -7,6 +7,9 @@ backend/models/routing/scripts/weight_calculation.py. What changed:
   this package's weights, model.scout.weather-gnn, in place of SCOUT's torch
   ``NodeRegressor`` loaded from rain_model.pth. Its inputs are the arrays SCOUT
   hands torch, as numpy arrays.
+- The session takes the thread count ``OMP_NUM_THREADS`` names
+  (``_library_threads``), which SCOUT's torch reads for itself and onnxruntime
+  does not; with none named, it keeps onnxruntime's own, a thread per core.
 - The edge weights are stored as Python floats. SCOUT computes them in float32
   and, under numpy 1, its routing sums them in float64; numpy 2 would sum
   float32 values in float32.
@@ -37,6 +40,8 @@ first line has one. Comment and docstring lines, and lines that differ from
 SCOUT's only in quotes, spacing, line breaks, order or punctuation, have none.
 """
 
+import os  # Curio: The session takes the thread count OMP_NUM_THREADS names
+
 import numpy as np
 import networkx as nx
 import onnxruntime as ort  # Curio: The graph network runs as an ONNX model through onnxruntime
@@ -51,13 +56,28 @@ __all__ = []  # Curio: __all__ names nothing
 ZONE_MINUTES = 15  # Curio: A trip's 15-minute zones read the weather's hourly step each zone starts in
 
 
+def _library_threads():  # Curio: The session takes the thread count OMP_NUM_THREADS names
+    """The thread count ``OMP_NUM_THREADS`` names (its first, when it lists one
+    per level), which OpenBLAS reads for itself and onnxruntime does not; None
+    when it names none."""
+    first = os.environ.get("OMP_NUM_THREADS", "").split(",")[0].strip()
+    return int(first) if first.isdigit() and int(first) > 0 else None
+
+
 def gnn_predict(model, x, edge_index):  # Curio: The graph network runs as an ONNX model through onnxruntime
     """The graph network's five weather values at each node: this package's
     model, model.scout.weather-gnn, as ``curio_load_model`` returns it, its
-    ONNX file (``model.path``) opened in an onnxruntime session on the CPU
+    ONNX file (``model.path``) opened in an onnxruntime session on the CPU,
+    on as many threads as ``OMP_NUM_THREADS`` names, else on one per core,
     and run on SCOUT's node features and edges. Its one output is
     ``prediction``."""
-    session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])
+    options = ort.SessionOptions()
+    # A session that names no count starts a thread per core it sees, the
+    # whole machine's where others share its CPUs.
+    threads = _library_threads()
+    if threads:
+        options.intra_op_num_threads = threads
+    session = ort.InferenceSession(model.path, sess_options=options, providers=["CPUExecutionProvider"])
     (prediction,) = session.run(None, {"x": x, "edge_index": edge_index})
     return prediction
 

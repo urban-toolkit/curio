@@ -81,7 +81,8 @@ Deep Umbra's weights are an ONNX file exported from SCOUT's TensorFlow
 checkpoint by
 [`scripts/scout/export_deep_umbra.py`](../../scripts/scout/export_deep_umbra.py).
 The node loads them with `curio_load_model("model.scout.deep-umbra")` and runs
-them with onnxruntime, one tile at a time.
+them with onnxruntime on the CPU, one tile at a time, on as many threads as
+`OMP_NUM_THREADS` names, else on one per core.
 
 A pip install downloads the weights from GitHub the first time the node runs.
 

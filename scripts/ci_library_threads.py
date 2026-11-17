@@ -5,13 +5,14 @@ and onnxruntime one per core. An arcade CPU runner shows all 192 CPUs of a
 machine its 44 runners share, so on run 42230248452 example 28's training, at
 load 490 to 574, ran until the sandbox stopped it at 300 s in test-isolated's
 stack, and on run 44027626125 example 10's Image Segmentation ran 129 s on 96
-threads in e2e-desktop's, past its e2e test's 120 s. Both jobs hand their
-stack the runner's share, ``CURIO_CI_LIBRARY_THREADS``, as ``OMP_NUM_THREADS``,
-which the Segmentation package hands onnxruntime. This runs a node of the
+threads in e2e-desktop's, past its e2e test's 120 s. Both jobs, and test-gpu,
+whose arcade GPU runners show the same 192 CPUs, hand their stack the runner's
+share, ``CURIO_CI_LIBRARY_THREADS``, as ``OMP_NUM_THREADS``, which the code
+that makes an onnxruntime session hands onnxruntime. This runs a node of the
 stack, in an isolated child in test-isolated's and in the sandbox in
-e2e-desktop's, and fails unless the node got that count and torch there uses
-no more. Torch may use fewer: its x86 build sizes its pool through MKL, which
-counts physical cores, 2 on a 4-CPU hosted runner.
+e2e-desktop's and test-gpu's, and fails unless the node got that count and
+torch there uses no more. Torch may use fewer: its x86 build sizes its pool
+through MKL, which counts physical cores, 2 on a 4-CPU hosted runner.
 """
 from __future__ import annotations
 

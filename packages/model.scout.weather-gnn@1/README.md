@@ -69,7 +69,8 @@ Chicago's, so the forecast runs from 2025-07-05 19:00 to 2025-07-07 19:00 there;
 the trip reads the hour it starts in, and each 15 minutes of it the hour it is
 in by then. The weather at each road node comes from SCOUT's graph network, this
 package's weights, which the node loads with
-`curio_load_model("model.scout.weather-gnn")` and runs with onnxruntime. They
+`curio_load_model("model.scout.weather-gnn")` and runs with onnxruntime on the
+CPU, on as many threads as `OMP_NUM_THREADS` names, else on one per core. They
 are SCOUT's `rain_model.pth`, exported to ONNX by
 [`scripts/scout/export_weather_gnn.py`](../../scripts/scout/export_weather_gnn.py).
 
