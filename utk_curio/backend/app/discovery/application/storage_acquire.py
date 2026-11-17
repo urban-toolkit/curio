@@ -162,7 +162,8 @@ def _stopped_short(manifest: DiscoverySourceManifest, spec, stopped_at: dict[str
     """Why an add of *spec* is refused when its scan stopped short of the
     source: each bound it met (``ScanResult.stopped_at``). Part of the row
     holds fewer files, lies in fewer folders, or leaves out the folders too
-    deep to read; no part of it lists a long folder in fewer pages."""
+    deep to read; no part of it lists a long folder in fewer pages, or reads
+    a next page that is not at the source's address."""
     said = []
     if scanning.ROW_FILES in stopped_at:
         said.append(
@@ -179,6 +180,11 @@ def _stopped_short(manifest: DiscoverySourceManifest, spec, stopped_at: dict[str
         pages = scanning._counted(stopped_at[scanning.PAGES], "page", "pages")
         said.append(
             f"{spec.name} has a folder whose listing runs past {pages}, the most {manifest.name} reads of one folder"
+        )
+    if scanning.ELSEWHERE in stopped_at:
+        pages = scanning._counted(stopped_at[scanning.ELSEWHERE], "page", "pages")
+        said.append(
+            f"{spec.name} has a listing that stops after {pages}, because its next page is not at the source's address"
         )
     if scanning.DEPTH in stopped_at:
         skipped = stopped_at[scanning.DEPTH]

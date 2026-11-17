@@ -80,13 +80,15 @@ MAX_LISTING_FILES = 2_000_000
 
 #: The bounds a walk stops short of its source at, as ``ScanResult.stopped_at``
 #: names them: a row's ``limits.maxFiles``, :data:`MAX_LISTING_FILES`,
-#: :data:`MAX_FOLDERS`, a provider's bound of pages on one listing
-#: (``storage_base.ListingCut``), and the levels of folders a provider reads
+#: :data:`MAX_FOLDERS`, a provider's bound of pages on one listing, a
+#: listing's next page that is not at the source's address (each a
+#: ``storage_base.ListingCut``), and the levels of folders a provider reads
 #: (``storage_base.DeepFolder``).
 ROW_FILES = "row files"
 LISTING_FILES = "listing files"
 FOLDERS = "folders"
 PAGES = "pages"
+ELSEWHERE = "elsewhere"
 DEPTH = "depth"
 
 KIND_LABEL = {
@@ -147,8 +149,9 @@ class ScanResult:
     scanned_at: float
     #: Each bound the walk met, which stopped it short of the source (a
     #: row's files, the listing's, its folders or a listing's pages), with
-    #: the number it holds; for the depth, the folders not read
-    #: (:class:`Skipped`). Empty when the walk read the whole source.
+    #: the number it holds; for a next page elsewhere, the pages read before
+    #: it; for the depth, the folders not read (:class:`Skipped`). Empty when
+    #: the walk read the whole source.
     stopped_at: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -493,9 +496,14 @@ class Noted:
         the walk looks for; with none, each one counts."""
         met: dict[str, Any] = {}
         cuts = (self._cuts or [])[self._seen[0]:]
-        if cuts:
+        at_pages = [cut.pages for cut in cuts if not cut.elsewhere]
+        if at_pages:
             # A listing the provider stopped at its bound of pages.
-            met[PAGES] = max(cut.pages for cut in cuts)
+            met[PAGES] = max(at_pages)
+        elsewhere = [cut.pages for cut in cuts if cut.elsewhere]
+        if elsewhere:
+            # A listing whose next page is not at the source's address.
+            met[ELSEWHERE] = elsewhere[0]
         deep = [
             folder for folder in (self._deep or [])[self._seen[1]:]
             if holds is None or holds(folder.relpath)
@@ -800,6 +808,7 @@ _SAID_OF_BOUNDS = (
     (LISTING_FILES, "a listing holds up to {}, all its rows' together", "file", "files"),
     (FOLDERS, "a listing reads the files of up to {}", "folder", "folders"),
     (PAGES, "a folder's listing stops at {}", "page", "pages"),
+    (ELSEWHERE, "a listing stops after {}, because its next page is not at the source's address", "page", "pages"),
 )
 
 
