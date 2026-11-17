@@ -22,7 +22,9 @@ adds, in every process, have still to land counts against its cap
 (:func:`check_room`).
 A bucket's index lists its videos and recordings by path and size alone, so
 their details are read from the cached files and written into the index
-(:func:`record_details`).
+(:func:`record_details`): the collection's own, or, for a collection the Data
+Catalog ships, the account's copy of it, never the catalog's
+(:func:`details_index`).
 """
 
 from __future__ import annotations
@@ -177,10 +179,11 @@ def cache(
 
     *owner* is the cache (a job) whose caller claimed the collection already
     (:func:`claim`). Without it this call claims it, and either way it refuses
-    while another cache of the collection runs. *describe*, when given, gets
-    what the collection's block says of its files once their details are read
-    (``probeErrors``, and ``totalSeconds`` for recordings), for the Data
-    Catalog to keep.
+    while another cache of the collection runs. *describe*, when given, is
+    called once their details are written, with the collection as the cache
+    wrote into it (its ``path`` the index :func:`details_index` names) and
+    what its block says of its files (``probeErrors``, and ``totalSeconds``
+    for recordings), for the Data Catalog to keep.
 
     A bucket this deployment mounts is read in place, so nothing of it is
     cached, also while its mount is down (``bucket_mount_sources``).
@@ -207,15 +210,13 @@ def cache(
 
 
 def _cache(user_key, dataset, provider, *, items, progress, cancelled, describe) -> dict[str, Any]:
-    import pandas as pd
-    import pyarrow.parquet as pq
-
     from utk_curio.backend.app.discovery.application.storage_acquire import Cancelled
 
     if provider.local_path is None or getattr(provider, "type", "") == "folder":
         raise CapabilityUnsupported("this collection's files are already on this machine")
-    names = set(pq.read_schema(dataset["path"]).names)
-    index = pd.read_parquet(dataset["path"], columns=[c for c in _READ if c in names])
+    # The files are those the collection's index lists, which every reader of
+    # it reads, wherever what the cache reads of them is written.
+    index = _index_columns(dataset["path"], _READ)
     target = objects_dir(user_key, dataset["id"])
     _drop_parts(target)
     todo = []
@@ -259,7 +260,7 @@ def _cache(user_key, dataset, provider, *, items, progress, cancelled, describe)
                 progress(done_bytes, needed)
     finally:
         # What landed is read even when the cache stops partway.
-        _read_cached_details(user_key, dataset, index, describe)
+        _read_cached_details(user_key, dataset, describe)
     return {"cached": len(todo), "bytes": done_bytes, "total": len(index)}
 
 
@@ -469,36 +470,68 @@ READ_ONCE_CACHED = ("video", "audio")
 _READ = ("file_id", "relpath", "ext", "bytes", "kind", "duration_s", "probe_error")
 
 
-def _read_cached_details(user_key: str, dataset: dict[str, Any], index, describe=None) -> None:
-    """Read the details of the cached videos and recordings the index lacks,
-    those an earlier cache copied among them, and write them into it. A file
-    that cannot be read says why in its row's ``probe_error``. *describe* then
-    gets what the collection's block says of its files, as indexing a folder
-    counts it (``index_collection.collection_block``)."""
+def details_index(user_key: str, dataset: dict[str, Any]) -> Path | None:
+    """The index a cache of *dataset* writes what it reads of the cached files
+    into: *dataset*'s own, at its ``path``, unless that is in the shared Data
+    Catalog (``datasets/``, or ``CURIO_CATALOG_ROOT``), which every account
+    reads and a pip install keeps in Curio's own package. For a collection the
+    catalog holds, it is the account's copy of it, the one Add to project
+    makes in its store; with no copy, there is none, and the catalog's index
+    keeps the details its build committed."""
+    from utk_curio.backend.app.datasets.infrastructure.storage import DatasetIdError, catalog_root, dataset_dir
+
+    index = Path(dataset["path"])
+    try:
+        within = index.resolve().relative_to(catalog_root().resolve())
+    except ValueError:
+        return index
+    try:
+        copy = dataset_dir(user_key, within.parts[0]).joinpath(*within.parts[1:])
+    except (DatasetIdError, PathTraversalError, IndexError):  # no folder of the catalog's
+        return None
+    return copy if copy.is_file() else None
+
+
+def _read_cached_details(user_key: str, dataset: dict[str, Any], describe=None) -> None:
+    """Read the details of the cached videos and recordings that the index a
+    cache writes (:func:`details_index`) lacks, those an earlier cache copied
+    among them, and write them into it. A file that cannot be read says why in
+    its row's ``probe_error``. *describe* then gets the collection as written
+    and what its block says of its files, as indexing a folder counts it
+    (``index_collection.collection_block``)."""
     import logging
 
     try:
+        into = details_index(user_key, dataset)
+        if into is None:
+            return
         found = {}
-        for row in _unread(index):
+        for row in _unread(_index_columns(into, _READ)):
             path = cached_file(user_key, dataset["id"], row.file_id, row.ext)
             if path is not None and path.stat().st_size == int(row.bytes):
                 found[row.file_id] = probing.probe(row.kind, path)
-        record_details(dataset["path"], found)
+        record_details(str(into), found)
         if found and describe is not None:
-            describe(_block_fields(dataset))
+            written = dict(dataset, path=str(into))
+            describe(written, _block_fields(written))
     except Exception:  # noqa: BLE001 - the files are cached either way
         logging.getLogger(__name__).warning(
             "Could not record the details of %s's cached files", dataset.get("id"), exc_info=True
         )
 
 
-def _block_fields(dataset: dict[str, Any]) -> dict[str, Any]:
-    """``probeErrors``, and for recordings ``totalSeconds``, from the index as it is now."""
+def _index_columns(path, columns):
+    """The columns of *columns* a collection's index at *path* has."""
     import pandas as pd
     import pyarrow.parquet as pq
 
-    names = set(pq.read_schema(dataset["path"]).names)
-    index = pd.read_parquet(dataset["path"], columns=[c for c in ("duration_s", "probe_error") if c in names])
+    names = set(pq.read_schema(path).names)
+    return pd.read_parquet(path, columns=[c for c in columns if c in names])
+
+
+def _block_fields(dataset: dict[str, Any]) -> dict[str, Any]:
+    """``probeErrors``, and for recordings ``totalSeconds``, from the index as it is now."""
+    index = _index_columns(dataset["path"], ("duration_s", "probe_error"))
     fields: dict[str, Any] = {}
     if "probe_error" in index.columns:
         fields["probeErrors"] = int(index["probe_error"].notna().sum())
