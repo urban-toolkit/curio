@@ -6,19 +6,20 @@ One whole walk of the SideSeeing street captures, the West Loop walk of
 Catalog as two datasets, added from ``discovery/source.sideseeing.street-captures@1``
 through the Discovery Catalog's own add path, as ``build_example_storage.py``
 adds the storage examples' datasets, so an example can name them by a stable
-id:
+id. Each is a collection of one row, the listing of one file that stays in the
+bucket, read in place where the deployment mounts the bucket and once cached
+elsewhere; nothing of the bucket's data is copied:
 
-    datasets/data.sideseeing.west-loop-walk@1/      the walk's video: a collection
-                                                   of one row, its file left in
-                                                   the bucket
-    datasets/data.sideseeing.west-loop-walk-gps@1/  the walk's GPS fixes, a table
+    datasets/data.sideseeing.west-loop-walk@1/      the walk's video (walks)
+    datasets/data.sideseeing.west-loop-walk-gps@1/  its GPS track, gps.csv (gps-files)
 
 The bucket on data.urbantk.org is read anonymously over HTTPS: the walk's
-entry in its listing, the video's details (PyAV opens the file at its URL and
-reads its header, nothing else of its 2.8 GB), the walk's ``gps.csv`` and its
-``metadata.json``. A deployment that mounts the bucket reads the video's
-details from its file the same way when the walk is added, and the index
-keeps them, so a node knows how long the video is before it reads it.
+entries in its listing, the video's details (PyAV opens the file at its URL
+and reads its header, nothing else of its 2.8 GB), and, for the checks below,
+the walk's ``gps.csv`` and ``metadata.json``. A deployment that mounts the
+bucket reads the video's details from its file the same way when the walk is
+added, and the index keeps them, so a node knows how long the video is before
+it reads it.
 
 Two checks are printed, with what they found:
 
@@ -29,7 +30,7 @@ Two checks are printed, with what they found:
   less the walk's ``taken_at``, between 0 and the video's duration.
 
 Every date the datasets record is pinned, so a rebuild writes the same files.
-Needs network access to data.urbantk.org, and PyAV, pandas and DuckDB, which
+Needs network access to data.urbantk.org, and PyAV and pandas, which
 ``curio.builtin@1`` installs. Run from the repository root:
 
     PYTHONPATH=$PWD python scripts/build_example_sideseeing.py
@@ -81,9 +82,11 @@ WALK_DATASET = (
 )
 GPS_DATASET = (
     "data.sideseeing.west-loop-walk-gps",
-    "SideSeeing West Loop walk GPS",
-    "The GPS fixes of the SideSeeing West Loop walk, 1,292 of them over its 14 minutes: latitude, "
-    "longitude and accuracy in meters, at datetime_utc. began names the walk.",
+    "SideSeeing West Loop walk GPS track",
+    "The GPS track of the SideSeeing West Loop walk, its gps.csv: 1,292 fixes over its 14 minutes, "
+    "with latitude, longitude and accuracy in meters at datetime_utc. The file stays in the SideSeeing "
+    "bucket on data.urbantk.org, read in place where the deployment mounts the bucket and once cached "
+    "elsewhere; node code opens it from its row's path.",
     ["sideseeing", "sidewalks", "chicago", "gps"],
 )
 
@@ -154,51 +157,25 @@ def add_walk(acquire, manifest, provider, placed: list[Path]) -> tuple[Path, dic
     return built, details
 
 
-def add_gps(manifest, provider, install_path, placed: list[Path]) -> Path:
-    """The walk's fixes as an add of the ``gps`` resource gives every walk's:
-    one table, read by the add's own combine code (``combine_tables``) with
-    ``datetime_utc`` a time in UTC, and ``began`` and ``source_file`` naming
-    the walk, with the provenance the add records for one file it combines.
-    An add of the one file would copy the CSV as it is."""
-    from utk_curio.backend.app.discovery.application import combine_tables, index_collection, scan
-
-    selection = scan.narrow(scan.parse_resource_id(manifest, "gps"), files=[GPS])
-    result = scan.scan(manifest, provider, selection=selection)
-    files = [found for group in result.groups for found in group.files]
-    if [found.relpath for found in files] != [GPS]:
-        raise SystemExit(f"the bucket lists {[found.relpath for found in files]}, not {GPS}")
-
-    def stage(found, into: Path, index: int) -> Path:
-        local = into / f"part-{index:06d}.csv"
-        bound = found.size + 1024 * 1024
-        with local.open("wb") as handle:
-            provider.stream(found.relpath, handle.write, max_bytes=bound, ceiling=bound)
-        try:
-            local.read_bytes().decode("utf-8")
-        except UnicodeDecodeError:
-            raise SystemExit(f"{found.relpath} is not UTF-8, which an add transcodes first") from None
-        return local
-
-    with tempfile.TemporaryDirectory() as tmp:
-        work = Path(tmp)
-        combined = combine_tables.combine(selection.spec, files, stage=stage, tmp=work, dest=work / "gps.parquet")
-        install_path(
-            combined.path, combined.path.name, "parquet",
-            title=GPS_DATASET[1],
-            discovery_source={
-                "sourceId": manifest.dir_name,
-                "sourceName": manifest.name,
-                "resourceId": "gps",
-                "fileCount": len(files),
-                "fields": ",".join(selection.spec.template.names),
-                "fetchedAt": PINNED_ISO,
-                "fingerprint": index_collection.fingerprint(files),
-                "narrowed": True,
-                "sourcePath": GPS,
-            },
-            description=f"Read from {GPS} of {manifest.name}.",
-        )
+def add_gps_track(acquire, manifest, placed: list[Path]) -> Path:
+    """The walk's ``gps.csv`` as an add of it picked from the ``gps-files``
+    resource indexes it: one row, the file left in the bucket, for node code
+    to open from its row's path."""
+    acquire.acquire(manifest, "gps-files", files=[GPS], title=GPS_DATASET[1])
     return placed.pop()
+
+
+def read_fixes(provider):
+    """The walk's GPS fixes, from its ``gps.csv`` in the bucket, with
+    ``datetime_utc`` a time in UTC, as node code reads the file."""
+    import io
+
+    import pandas as pd
+
+    with provider.open(GPS, max_bytes=64 * 1024 * 1024) as handle:
+        fixes = pd.read_csv(io.BytesIO(handle.read()))
+    fixes["datetime_utc"] = pd.to_datetime(fixes["datetime_utc"], utc=True)
+    return fixes
 
 
 def _commit(built: Path, dataset_id: str, title: str, description: str, tags: list[str]) -> Path:
@@ -323,23 +300,23 @@ def build() -> int:
         manifest = load_source_manifest(SOURCE)
         provider = build_storage(manifest, HttpDiscoveryTransport())
         placed: list[Path] = []
-        install_path = _install(placed)
         acquire = StorageAcquire(
             user_key="1",
             storage_for=lambda _m: provider,
-            install_path=install_path,
+            install_path=_install(placed),
             import_layers=None,
             find_held=lambda *_a: None,
         )
 
         built_walk, details = add_walk(acquire, manifest, provider, placed)
-        built_gps = add_gps(manifest, provider, install_path, placed)
+        built_gps = add_gps_track(acquire, manifest, placed)
         walk = _commit(built_walk, *WALK_DATASET)
         gps_dir = _commit(built_gps, *GPS_DATASET)
 
         walk_manifest = json.loads((walk / "manifest.json").read_text(encoding="utf-8"))
         walk_row = pd.read_parquet(walk / "data" / "index.parquet").iloc[0]
-        gps = pd.read_parquet(gps_dir / json.loads((gps_dir / "manifest.json").read_text(encoding="utf-8"))["dataFile"])
+        gps_row = pd.read_parquet(gps_dir / "data" / "index.parquet").iloc[0]
+        gps = read_fixes(provider)
         metadata = json.loads(provider.open(METADATA, max_bytes=1024 * 1024).read().decode("utf-8"))
 
         print(f"wrote {walk.relative_to(REPO)} and {gps_dir.relative_to(REPO)}")
@@ -350,9 +327,10 @@ def build() -> int:
         fingerprint = walk_manifest["collection"]["fingerprint"]
         print(f"  fingerprint {fingerprint}: {'the one' if fingerprint == DEV_FINGERPRINT else 'NOT the one'} "
               "curio-dev's add recorded")
-        print("\nThe GPS table")
-        print(f"  {len(gps):,} rows; columns {list(gps.columns)}")
-        print(f"  types {dict((name, str(kind)) for name, kind in gps.dtypes.items())}")
+        print("\nThe GPS track's row")
+        for column in ("relpath", "kind", "bytes", "began", "taken_at", "mtime"):
+            print(f"  {column}: {gps_row[column]}")
+        print(f"  its file: {len(gps):,} fixes; columns {list(gps.columns)}")
         print(f"  a box around the fixes (S, W, N, E), {BOX_MARGIN} degrees past them: {box_around(gps)}")
 
         if walk_row["taken_at"].to_pydatetime() != TAKEN_AT:
