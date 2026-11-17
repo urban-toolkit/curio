@@ -583,6 +583,7 @@ def _verified_content_rounds(
     result_summary_fn=None,
     acting_user=None,
     download_failures: dict | None = None,
+    start_source: str = "current content",
 ):
     """dev/115 (DEC-073): the ONE generate → gate → execute → correct loop.
 
@@ -592,7 +593,9 @@ def _verified_content_rounds(
     - round 0 either delegates ``node.content.generate`` or, with
       ``start_from_current``, executes the node's CURRENT content as-is (the
       per-node Solve on code the user just applied: if it passes, nothing is
-      generated, nothing changes);
+      generated, nothing changes), its attempt's source ``start_source``: a
+      plan's Solve runs so the code a failed download stopped, once the file
+      is in place;
     - every candidate passes the DEC-072 grounding gate BEFORE it runs — a
       refused candidate is a failed round (``kind: ungrounded-source``) whose
       refusal text is the correction's error, and it never reaches the sandbox;
@@ -641,6 +644,6 @@ def _verified_content_rounds(
         recorded_failure=recorded_failure, node_budget_s=node_budget_s,
         budget_stop=budget_stop,
         carry_forward=carry_forward, result_summary_fn=result_summary_fn,
-        acting_user=acting_user, download_failures=download_failures,
+        acting_user=acting_user, download_failures=download_failures, start_source=start_source,
     )
     return (yield from loop.run())

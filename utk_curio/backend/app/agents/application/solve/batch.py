@@ -186,8 +186,10 @@ class SolveBatch:
         # (:meth:`_dataset_paths_of`, :meth:`_collections_of`).
         self.solve_dataset_paths = dataset_paths if dataset_paths is not None else {}
         self.solve_download_failures: dict = {}
-        # The code to run again of each node a later pass attempts once the
-        # file its download failed on is in place (``_pass_targets``).
+        # The whole code a failed download stopped, by node, and the code each
+        # node a later pass attempts once that file is in place runs again
+        # (``_downloads_here``): an attempt's trail cuts its code.
+        self.download_codes: dict[str, str] = {}
         self.download_again: dict[str, str] = {}
         self.dataset_lookups = threading.Lock()
         # The Data Catalog's collections: each looked up when a round's code
@@ -591,8 +593,10 @@ class SolveBatch:
         if evidence.get("downloadFailed"):
             # What the node reads could not be downloaded, which the Solve
             # keeps for its run: a later pass attempts it again once the node
-            # changes, or once the file is in place (``_pass_targets``).
+            # changes, or once the file is in place (``_pass_targets``), with
+            # the code the download stopped, whole.
             self.results[node_id]["downloadFailed"] = True
+            self.download_codes[node_id] = str(outcome.get("candidate") or "")
         return {"nodeId": node_id, "status": "failed", "error": err, **trail, **extra}
 
     def _gate_unverified(self, node_id: str, code: str) -> str | None:
@@ -1161,8 +1165,8 @@ class SolveBatch:
         """The nodes whose download failed in this Solve's run on a file that
         is in place now, saved by hand where the failure says or fetched
         ahead (``left_out_files.appeared``), each failure forgotten, so the
-        node's next round reads the file. Each such node runs the code of its
-        last attempt again (:attr:`download_again`): only the download
+        node's next round reads the file. Each such node runs the code the
+        download stopped again (:attr:`download_again`): only the download
         stopped it, and that code generated again would be refused as a
         repeat."""
         from utk_curio.backend.app.datasets.infrastructure import left_out_files
@@ -1170,8 +1174,7 @@ class SolveBatch:
         came = left_out_files.appeared(self.solve_download_failures)
         nodes = {node_id for failure in came.values() for node_id in failure.nodes}
         for node_id in nodes:
-            result = self.results.get(node_id) or {}
-            code = agents_rounds._last_attempt_code(result) if result.get("downloadFailed") else None
+            code = self.download_codes.get(node_id) if (self.results.get(node_id) or {}).get("downloadFailed") else None
             if code:
                 self.download_again[node_id] = code
         return nodes
@@ -1454,7 +1457,17 @@ class SolveBatch:
         """The collections a round's *codes* read, each looked up the first
         time a round reads it (``grounding._session_collections``), by one
         round at a time, as :meth:`_dataset_paths_of` looks datasets up: a
-        lookup reads the database, which the unit suites' threads share."""
+        lookup reads the database, which the unit suites' threads share. A
+        round whose every id was looked up already asks the database nothing,
+        so it does not wait for a lookup another round holds the turn with,
+        a download among them."""
+        from utk_curio.backend.app.datasets.domain.code_refs import collection_ids_in_code
+
+        ids = collection_ids_in_code("\n".join(str(code or "") for code in codes))
+        if all(dataset_id in self.solve_collections for dataset_id in ids):
+            return agents_grounding._session_collections(
+                self.project_id, self.user_key, self.acting_user, self.solve_collections, codes,
+            )
         with self.dataset_lookups:
             return agents_grounding._session_collections(
                 self.project_id, self.user_key, self.acting_user, self.solve_collections, codes,
@@ -1488,6 +1501,7 @@ class SolveBatch:
             self.user_key, self.project_id,
             spec=wave_spec, node=node, resolution=self.resolution, config=self.config,
             start_from_current=bool(recorded or again),
+            start_source="the code a download stopped" if again else "current content",
             recorded_failure=recorded,
             carry_forward=carry,
             parent_execution_id=self.solve_execution_id, parent_coord=self.coord,

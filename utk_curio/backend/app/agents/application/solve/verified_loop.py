@@ -110,6 +110,7 @@ class VerifiedRounds:
         result_summary_fn=None,
         acting_user=None,
         download_failures: dict | None = None,
+        start_source: str = "current content",
     ):
         self.user_key = user_key
         self.project_id = project_id
@@ -117,6 +118,10 @@ class VerifiedRounds:
         self.node = node
         self.exec_fn = exec_fn
         self.start_from_current = start_from_current
+        # What round 0's attempt says it ran with *start_from_current*: the
+        # node's current content, or the code a failed download stopped, which
+        # a plan's Solve runs again once the file is in place.
+        self.start_source = start_source
         self.extra_inputs = extra_inputs
         self.dataset_paths_fn = dataset_paths_fn
         self.collections_fn = collections_fn
@@ -444,7 +449,7 @@ class VerifiedRounds:
             "round": self.rounds_used, "contentSha256": agents_rounds._content_sha(self.candidate),
             "verdict": "fail", "kind": kind,
             "detail": refusal[:agents_budgets.ATTEMPT_DETAIL_CHARS],
-            "source": source or ("current content" if self.use_current else "generated"),
+            "source": source or (self.start_source if self.use_current else "generated"),
             **agents_rounds._attempt_code_field(self.candidate, prose=prose),
         }
         self.attempts.append(attempt)
@@ -1067,7 +1072,7 @@ class VerifiedRounds:
             "contentSha256": agents_rounds._content_sha(self.candidate),
             "verdict": verdict,
             "kind": round_evidence.get("kind"),
-            "source": "current content" if self.use_current else "generated",
+            "source": self.start_source if self.use_current else "generated",
         }
         if round_evidence.get("detail"):
             attempt["detail"] = str(round_evidence["detail"])[:agents_budgets.ATTEMPT_DETAIL_CHARS]
