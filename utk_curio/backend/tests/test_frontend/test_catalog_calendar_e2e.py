@@ -57,11 +57,11 @@ OWN_DATASET_CODE = (
 )
 
 #: SCOUT's buildings and its raster nodes' package both shipped dated 2026-10-05
-#: 00:00 UTC, 19 days and 6 hours before the calendar date: "19d ago" there,
-#: "20d ago" by noon of that day on the real clock, and more every day after.
+#: 00:00 UTC, 57 days and 6 hours before the calendar date: "57d ago" there,
+#: "58d ago" by noon of that day on the real clock, and more every day after.
 SHIPPED_DATASET = "data.scout.loop-buildings"
 SHIPPED_PACKAGE = "curio.rasterization@1"
-SHIPPED_AGE = "19d ago"
+SHIPPED_AGE = "57d ago"
 
 #: The text the catalogs give an age (``catalogTimeFormat.ts``).
 AGE = re.compile(r"^\d+[mhd] ago$")
