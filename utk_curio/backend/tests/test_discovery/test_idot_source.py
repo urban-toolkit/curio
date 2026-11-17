@@ -1,8 +1,10 @@
 """The SAGE-IDOT rail crossings source, on the recorded corpus: no socket opens.
 
 ``scripts/record_discovery_fixtures.py --only idot`` listed the bucket on
-data.urbantk.org live, 168,023 objects on 169 pages, and kept them as one page
-of the first and last file of each folder. Each monthly JSON Lines file is
+data.urbantk.org live, 168,023 objects, a folder at a time as the listing reads
+it: the crossings, each crossing's months, then each month's snapshots and each
+crossing's data folder, each kept as one page of its first and last file. No
+file beside those is listed, such as ``sample/``'s. Each monthly JSON Lines file is
 indexed to a synthetic stand-in in the real files' format
 (``fixtures/download/storage/idot/detections.jsonl``), and the one empty file
 in the bucket, W06E's for March 2026, to an empty body.

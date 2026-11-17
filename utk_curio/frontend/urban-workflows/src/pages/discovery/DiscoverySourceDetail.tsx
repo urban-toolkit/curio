@@ -251,8 +251,8 @@ export const DiscoverySourceBody: React.FC<DiscoverySourceBodyProps> = ({
           ) : null}
           {storage && search.data.truncated ? (
             <p className={detailStyles.unmatched}>
-              This source holds more files than its manifest's limit; only the first ones are
-              listed.
+              A row of this source holds more files than its manifest's limit; only its first
+              ones are listed.
             </p>
           ) : null}
 

@@ -1,8 +1,9 @@
 """A public S3 bucket, or any endpoint that speaks S3's ListObjectsV2.
 
 Listed with ``GET {base}/?list-type=2&prefix=...``, one page of up to 1000 keys
-at a time, and read with a plain GET (with a ``Range`` header for a probe of a
-file's header). Every request goes through the discovery transport, so the egress
+at a time, and the folders under a prefix with ``&delimiter=/``, for a template
+read a folder at a time; read with a plain GET (with a ``Range`` header for a
+probe of a file's header). Every request goes through the discovery transport, so the egress
 policy applies to each one, redirects included. Anonymous access only: a
 bucket that needs a signed request is not one this provider reads.
 
@@ -60,11 +61,29 @@ class S3Storage:
 
     # ── urls ───────────────────────────────────────────────────────────────
 
-    def _list_url(self, prefix: str, token: str | None) -> str:
+    def _list_url(self, prefix: str, token: str | None, *, delimiter: str | None = None) -> str:
         url = f"{self.base}/?list-type=2&max-keys=1000&prefix={quote(self.prefix + prefix, safe='')}"
+        if delimiter:
+            url += f"&delimiter={quote(delimiter, safe='')}"
         if token:
             url += f"&continuation-token={quote(token, safe='')}"
         return url
+
+    def _pages(self, prefix: str, *, delimiter: str | None = None) -> Iterator[ET.Element]:
+        """Each page of the listing under *prefix*, up to :data:`MAX_PAGES`."""
+        token = None
+        for _page in range(MAX_PAGES):
+            body = self.transport.json_get(self._list_url(prefix, token, delimiter=delimiter))
+            try:
+                root = ET.fromstring(body if isinstance(body, str) else str(body))
+            except ET.ParseError as exc:
+                raise ProviderError(f"{self.manifest.name} answered a listing that is not XML") from exc
+            yield root
+            if (root.findtext(f"{_NS}IsTruncated") or "").lower() != "true":
+                return
+            token = root.findtext(f"{_NS}NextContinuationToken")
+            if not token:
+                return
 
     def file_url(self, relpath: str) -> str:
         validate_relpath(relpath)
@@ -76,13 +95,7 @@ class S3Storage:
     # ── the contract ───────────────────────────────────────────────────────
 
     def scan(self, prefix: str = "") -> Iterator[FileEntry]:
-        token = None
-        for _page in range(MAX_PAGES):
-            body = self.transport.json_get(self._list_url(prefix, token))
-            try:
-                root = ET.fromstring(body if isinstance(body, str) else str(body))
-            except ET.ParseError as exc:
-                raise ProviderError(f"{self.manifest.name} answered a listing that is not XML") from exc
+        for root in self._pages(prefix):
             for item in root.iter(f"{_NS}Contents"):
                 key = item.findtext(f"{_NS}Key") or ""
                 if not key.startswith(self.prefix) or key.endswith("/"):
@@ -96,11 +109,24 @@ class S3Storage:
                     mtime=_timestamp(item.findtext(f"{_NS}LastModified")),
                     etag=(item.findtext(f"{_NS}ETag") or "").strip('"') or None,
                 )
-            if (root.findtext(f"{_NS}IsTruncated") or "").lower() != "true":
-                return
-            token = root.findtext(f"{_NS}NextContinuationToken")
-            if not token:
-                return
+
+    def folders(self, prefix: str = "") -> list[str]:
+        """The names of the folders right under *prefix*, which
+        ``application/scan.py`` reads a template through one at a time: a
+        listing with a ``/`` delimiter, whose common prefixes are the folders.
+        Hidden and system names are left out, as :meth:`scan` leaves out the
+        files under them."""
+        start = self.prefix + prefix
+        names: list[str] = []
+        for root in self._pages(prefix, delimiter="/"):
+            for item in root.iter(f"{_NS}CommonPrefixes"):
+                folder = item.findtext(f"{_NS}Prefix") or ""
+                # A source's prefix may end partway through a name: the
+                # folder's name, as its files' relpaths start, is what follows.
+                name = folder[len(start):-1] if folder.startswith(start) and folder.endswith("/") else ""
+                if name and "/" not in name and not is_skipped(name):
+                    names.append(name)
+        return names
 
     def open(self, relpath: str, *, byte_range: tuple[int, int] | None = None,
              max_bytes: int = MAX_DISCOVERY_DOWNLOAD_BYTES, ceiling: int | None = None) -> BinaryIO:

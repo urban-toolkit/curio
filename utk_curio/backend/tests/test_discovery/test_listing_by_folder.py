@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 from xml.sax.saxutils import escape
@@ -211,3 +212,79 @@ class TestTheListing:
             for crossing in CROSSINGS for month in MONTHS
         ), rows
         assert result.matched == len(CROSSINGS) * len(MONTHS) * (SNAPSHOTS + 2)
+
+    def test_a_row_over_the_file_limit_stops_alone_and_its_add_is_refused(self, idot):
+        from utk_curio.backend.app.discovery.application import scan
+
+        manifest, _bucket, provider = idot
+        limited = dataclasses.replace(manifest, max_files=1000)
+        result = scan.scan(limited, provider)
+
+        assert result.truncated
+        rows = {group.resource_id: len(group.files) for group in result.groups}
+        for crossing in CROSSINGS:
+            for month in MONTHS:
+                assert rows[month_row("snapshots", crossing, month)] == 1000
+                assert rows[month_row("detections", crossing, month)] == 1
+        add = scan.scan(limited, provider, selection=a_row(limited, month_row("snapshots", "W065", "2025_08")))
+        assert add.truncated and [len(group.files) for group in add.groups] == [1000]
+
+
+class TestWhatIsListedAsBefore:
+    def test_a_template_whose_folders_name_no_row_is_listed_under_its_leading_names(self):
+        """As SideSeeing's walks: a folder per walk, and one row of them all."""
+        from utk_curio.backend.app.discovery.application import scan
+        from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest_from_dir
+        from utk_curio.backend.app.discovery.providers.s3 import S3Storage
+
+        manifest = load_source_manifest_from_dir(REPO / "discovery" / "source.sideseeing.street-captures@1")
+        walks = [f"chicago/west-loop/2026-10-26-1{n}-03-17-016/{name}"
+                 for n in range(4) for name in ("video.mp4", "gps.csv", "metadata.json")]
+        bucket = ListingBucket("https://data.urbantk.org/sideseeing", [*walks, "sao-paulo/bras/raw/a.mp4"])
+
+        result = scan.scan(manifest, S3Storage(manifest, bucket))
+
+        assert bucket.asked() == Counter({("chicago/west-loop/", None): 1})
+        assert {group.resource_id: len(group.files) for group in result.groups}["walks"] == 4
+
+    def test_a_provider_that_lists_no_folders_lists_the_whole_bucket(self, idot):
+        from utk_curio.backend.app.discovery.application import scan
+
+        manifest, bucket, provider = idot
+
+        class FilesOnly:
+            """A provider that lists files and no folders, as a folder's or a repository's."""
+
+            type = "s3"
+            scan = staticmethod(provider.scan)
+
+        result = scan.scan(manifest, FilesOnly())
+
+        assert bucket.asked() == Counter({WHOLE_BUCKET: 7})
+        assert len(result.groups) == 3 * len(CROSSINGS) * len(MONTHS)
+
+
+class TestTheFolders:
+    def test_a_templates_folders_end_at_its_file_name_or_a_double_star(self):
+        from utk_curio.backend.app.discovery.domain.templates import compile_template
+
+        snapshots = compile_template("{crossing}/images/{month:%Y_%m}/{ns:int}-snapshot.jpg")
+        assert [(f.text, f.literal, [c.name for c in f.captures]) for f in snapshots.folders] == [
+            ("{crossing}", False, ["crossing"]), ("images", True, []), ("{month:%Y_%m}", False, ["month"]),
+        ]
+        assert snapshots.folders[2].match("2025_07") == {"month": datetime(2025, 7, 1)}
+        # The whole name or nothing, and a value its type cannot read is no match.
+        assert snapshots.folders[2].match("2025_07x") is None and snapshots.folders[2].match("2025_13") is None
+        assert [f.text for f in compile_template("survey/{year:int}/**/*").folders] == ["survey", "{year:int}"]
+
+    def test_a_bucket_prefix_ending_partway_through_a_name_names_each_folder_after_it(self):
+        from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest_from_dir
+        from utk_curio.backend.app.discovery.providers.s3 import S3Storage
+
+        idot = load_source_manifest_from_dir(IDOT)
+        manifest = dataclasses.replace(idot, provider=dataclasses.replace(idot.provider, options={"prefix": "W0"}))
+        # A hidden folder, and one named by the prefix alone, name no folder.
+        bucket = ListingBucket(BASE, idot_keys() + ["W0.hidden/x.jpg", "W0/x.jpg"])
+
+        assert S3Storage(manifest, bucket).folders() == ["42", "65"]
+        assert bucket.asked() == Counter({("W0", "/"): 1})

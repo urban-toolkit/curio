@@ -503,7 +503,7 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 200000,
-          "description": "For a storage source: how many matched files it lists and adds at once. A listing stops at the limit, and adding a resource with more files than it is refused. A manifest may lower it, never raise it."
+          "description": "For a storage source: how many matched files one of its rows lists and adds at once. A row of a listing stops at the limit, and adding a row with more files than it is refused. A manifest may lower it, never raise it."
         }
       }
     },
