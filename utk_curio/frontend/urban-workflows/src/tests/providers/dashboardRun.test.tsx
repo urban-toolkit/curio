@@ -8,6 +8,8 @@
  * - each step reaches its node as a canvas run's does (useStepOutcomes),
  *   restored as a load restores an output, and its artifacts are read on the
  *   dashboard's own routes with the run's token;
+ * - while a step runs, its node says what its run says it does, such as how
+ *   far its weights have downloaded, as on the canvas;
  * - a node a later run does not reach, and every node when nothing needs to
  *   run, shows its saved output again;
  * - Save layout gets the widgets as the page opened with them, never a tried value;
