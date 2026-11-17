@@ -244,9 +244,16 @@ def _install_user_node_deps_at_boot(user_key: str, entries) -> None:
     One account's unsatisfiable manifest must not stop an instance booting for
     everybody else - the failure belongs to whoever installed that package, and
     they get a plain ImportError naming it the first time a node runs.
+
+    The tree is in front of this interpreter, the image's, whose libraries win
+    wherever they meet a package's range: a copy an earlier start put in front
+    of one goes (``give_way_to_the_image``), and only what neither holds at an
+    accepted version is installed (*in_front*), so a start whose libraries are
+    all there runs no pip, and a package's ``torch>=2.6`` keeps the image's
+    CUDA torch.
     """
     from utk_curio.backend.app.packages.infrastructure import backend_runtime
-    from utk_curio.backend.app.packages.service import merge_python_deps
+    from utk_curio.backend.app.packages.service import give_way_to_the_image, merge_python_deps
     from utk_curio.backend.app.packages.infrastructure.pip_runner import install_python_deps_to_target
     from utk_curio.backend.app.packages.service import PipInstallError
 
@@ -260,6 +267,17 @@ def _install_user_node_deps_at_boot(user_key: str, entries) -> None:
         return
     overlay = backend_runtime.user_node_overlay_dir(user_key)
     overlay.mkdir(parents=True, exist_ok=True)
+    try:
+        taken_out = give_way_to_the_image(user_key)
+    except (PipInstallError, OSError) as exc:
+        log_error(f"[Setup] Could not look over the node deps of user {user_key}: {exc}")
+        taken_out = []
+    if taken_out:
+        log_info(
+            f"[Setup] Took out of user {user_key}'s node deps the copies that hid the image's: "
+            + ", ".join(taken_out),
+            COLOR_BACKEND, 0,
+        )
     log_info(
         f"[Setup] Installing node deps for user {user_key}: "
         + ", ".join(sorted(merged)),
@@ -269,6 +287,7 @@ def _install_user_node_deps_at_boot(user_key: str, entries) -> None:
         install_python_deps_to_target(
             merged, str(overlay),
             on_line=lambda line: log_info(f"[pip] {line}", COLOR_BACKEND, 2),
+            in_front=True,
         )
     except PipInstallError as exc:
         log_error(f"[Setup] Node dep install failed for user {user_key}: {exc}")

@@ -24,7 +24,10 @@ logic, and where the model's weights come from. The
 **Track Objects** samples each video of a collection, one frame every
 `EVERY_SECONDS`, and runs SAM 3 on those frames with the phrases in `LABELS`.
 SAM 3 holds each frame back until it has seen a few after it, so it can drop an
-object that showed up for a moment and was never there.
+object that showed up for a moment and was never there. It cleans what it finds
+in each frame as Meta's SAM 3 does: of two detections of one label whose masks
+overlap, it keeps the one it scores higher, and it fills the small holes and
+removes the small specks of each mask.
 
 Its code tab holds its settings and one call of `track_objects`, the function of
 the package's module `sam3_tracking`, which the header above the code lists:
