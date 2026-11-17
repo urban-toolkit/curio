@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlsplit
 
 import pytest
 
@@ -172,6 +172,28 @@ class TestABucket:
         rows = {r["resourceId"]: r for r in listing(client, auth, "source.example.bucket@1")["resources"]}
         assert rows["numbers"]["fileCount"] == 2 and rows["pics"]["fileCount"] == 2
 
+    def test_a_listing_past_its_pages_says_it_was_cut_short(self, client, auth, app, bucket_corpus, monkeypatch):
+        from utk_curio.backend.app.discovery.providers import s3
+
+        # The bucket's files are two pages, one past a bound of one.
+        monkeypatch.setattr(s3, "MAX_PAGES", 1)
+        body = listing(client, auth, "source.example.bucket@1")
+
+        assert body["truncated"] is True, "the listing stopped at its first page of two, and did not say so"
+        assert body.get("cutShort") == (
+            "This source holds more files than are listed here: a folder's listing stops at 1 page."
+        )
+
+    def test_a_listing_as_long_as_its_pages_is_whole(self, client, auth, app, bucket_corpus, monkeypatch):
+        from utk_curio.backend.app.discovery.providers import s3
+
+        monkeypatch.setattr(s3, "MAX_PAGES", 2)
+        body = listing(client, auth, "source.example.bucket@1")
+
+        assert body["truncated"] is False and body.get("cutShort") is None
+        rows = {r["resourceId"]: r for r in body["resources"]}
+        assert rows["numbers"]["fileCount"] == 2 and rows["tiles"]["fileCount"] == 1
+
     def test_a_rasters_thumbnail_is_drawn_before_it_is_cached(self, client, auth, app, bucket_corpus):
         listing(client, auth, "source.example.bucket@1")
         res = client.get("/api/discovery/sources/source.example.bucket@1/thumbnails/0/tiles", headers=auth)
@@ -331,6 +353,38 @@ class TestTheLimitOnOneCachedFile:
         assert cache_collection.cached_count(str(user.id), dataset_id)[0] == 2
 
 
+class TreePages:
+    """Hugging Face's tree API over *pages* pages of one image each: each page
+    but the last names the next in a ``Link`` header on the site itself."""
+
+    def __init__(self, base: str, pages: int):
+        self.base = base
+        self.pages = pages
+        self.asked: list[str] = []
+
+    def get_page(self, url, *, credential=None, headers=None):
+        self.asked.append(url)
+        page = int(dict(parse_qsl(urlsplit(url).query)).get("cursor", "0"))
+        body = json.dumps([
+            {"type": "file", "path": f"transformers/tasks/{page:03d}.png", "size": 10, "oid": f"o{page}"},
+        ])
+        if page + 1 == self.pages:
+            return body, {}
+        following = url.split("&cursor=")[0] + f"&cursor={page + 1}"
+        return body, {"Link": f'<{following}>; rel="next"'}
+
+
+def hugging_face_scan(pages: int):
+    """The shipped Hugging Face source scanned over :class:`TreePages`."""
+    from utk_curio.backend.app.discovery.application import scan
+    from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+    from utk_curio.backend.app.discovery.providers.huggingface import HuggingFaceStorage
+
+    manifest = load_source_manifest(REPO / "discovery" / HF)
+    tree = TreePages(manifest.provider.base_url, pages)
+    return scan.scan(manifest, HuggingFaceStorage(manifest, tree)), tree
+
+
 class TestHuggingFacePagination:
     def test_the_link_header_is_followed_only_on_the_hub(self):
         from utk_curio.backend.app.discovery.providers.huggingface import _next_link
@@ -339,6 +393,29 @@ class TestHuggingFacePagination:
         assert _next_link({"Link": f'<{base}/api/x?cursor=2>; rel="next"'}, base) == f"{base}/api/x?cursor=2"
         assert _next_link({"link": '<https://evil.example/x>; rel="next"'}, base) is None
         assert _next_link({}, base) is None
+
+    def test_a_listing_past_its_pages_says_it_was_cut_short(self, monkeypatch):
+        from utk_curio.backend.app.discovery.providers import huggingface
+
+        # Three pages, one past a bound of two.
+        monkeypatch.setattr(huggingface, "MAX_PAGES", 2)
+        result, tree = hugging_face_scan(3)
+
+        assert len(tree.asked) == 2
+        assert [len(group.files) for group in result.groups] == [2]
+        assert result.truncated, (
+            "the repository was listed to its second page of three, and the listing did not say it was cut short"
+        )
+
+    def test_a_listing_as_long_as_its_pages_is_whole(self, monkeypatch):
+        from utk_curio.backend.app.discovery.providers import huggingface
+
+        monkeypatch.setattr(huggingface, "MAX_PAGES", 3)
+        result, tree = hugging_face_scan(3)
+
+        assert len(tree.asked) == 3
+        assert [len(group.files) for group in result.groups] == [3]
+        assert not result.truncated
 
 
 class TestMediaDirectories:
