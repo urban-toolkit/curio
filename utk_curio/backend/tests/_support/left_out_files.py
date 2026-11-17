@@ -69,9 +69,19 @@ def write_record(path: Path, repo_paths, *, commit: str = COMMIT, contents=None)
 
 
 def shipped_catalog_bytes(repo: Path) -> int:
-    """The bytes of ``datasets/`` under *repo* that the Data Catalog's size
-    budget counts (``test_catalog_dataset_coverage.py``)."""
-    return sum(path.stat().st_size for path in (Path(repo) / "datasets").rglob("*") if path.is_file())
+    """The bytes of ``datasets/`` under *repo* that the pip package ships,
+    which the Data Catalog's size budget counts (``test_catalog_dataset_coverage.py``):
+    every file there but those the manifests name in ``downloadOnFirstUse``,
+    left out with the two calls ``setup.py`` leaves them out with
+    (``downloaded_on_first_use`` and ``covers`` of ``utk_curio/shipped.py``)."""
+    from utk_curio import shipped
+
+    left_out = shipped.downloaded_on_first_use(repo)
+    return sum(
+        path.stat().st_size
+        for path in (Path(repo) / "datasets").rglob("*")
+        if path.is_file() and not shipped.covers(left_out, path.relative_to(repo).as_posix())
+    )
 
 
 def catalog_copy(folder: str, root: Path) -> Path:
