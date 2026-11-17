@@ -134,15 +134,10 @@ async function ask(key: string): Promise<void> {
   for (let start = 0; start < files.length; start += FILES_PER_ASK) {
     const part = files.slice(start, start + FILES_PER_ASK);
     const askedAt = Date.now();
-    let answer: LinksAnswer = {};
-    try {
-      answer = await apiFetch<LinksAnswer>(
-        `/api/projects/${encodeURIComponent(batch.holder.projectId)}/dashboard/media`,
-        { method: "POST", body: JSON.stringify({ fileName: batch.holder.fileName, files: part }) },
-      );
-    } catch {
-      answer = {};
-    }
+    const answer: LinksAnswer = await apiFetch<LinksAnswer>(
+      `/api/projects/${encodeURIComponent(batch.holder.projectId)}/dashboard/media`,
+      { method: "POST", body: JSON.stringify({ fileName: batch.holder.fileName, files: part }) },
+    ).catch((): LinksAnswer => ({}));
     const life = Number.isFinite(answer.expiresIn) ? Number(answer.expiresIn) * 1000 : 0;
     // A file the answer leaves out has no link: asked again once a link would have lapsed.
     const lapsesAt = askedAt + Math.max(life, LINK_LAPSE_MARGIN_MS * 2);

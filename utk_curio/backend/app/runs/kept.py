@@ -605,8 +605,12 @@ def forget_kept_media(entries, *, user_key: Optional[str] = None) -> None:
         try:
             key = user_key or _media_owner(project_id)
             media_dirs.forget_kept(key, [media_dirs.kept_media_name(session_id) for session_id in session_ids])
-        except Exception:  # noqa: BLE001 - the next sweep of the media goes on
+        except Exception:  # noqa: BLE001 - the files stay, and nothing fails
             log.warning("could not remove what the viewers' steps of %s derived", project_id)
+            try:
+                db.session.rollback()
+            except Exception:  # noqa: BLE001 - no database to roll back
+                pass
 
 
 def _media_owner(project_id: str) -> str:
