@@ -1,4 +1,5 @@
-"""Playwright E2E: Tab onto a node past the canvas's edge leaves the canvas whole.
+"""Playwright E2E: Tab onto a node off the canvas brings it into sight and
+leaves the canvas whole.
 
 React Flow draws the canvas inside its own element, ``.react-flow``, whose
 overflow is hidden, and pans by its viewport's transform. The browser still
@@ -8,15 +9,19 @@ Curio uses, never scrolls it back. From then on, until a reload, the dot grid,
 the pane and the zoom buttons sat that far off the window, so the strip left
 there neither panned nor zoomed, and every fit, the canvas's own Fit view among
 them, drew each node that far off where it put it. #1533's test met it through
-Playwright's scroll into view before a click.
+Playwright's scroll into view before a click. And the browser cannot scroll the
+element to a negative offset, so a node left of the view or above it stayed
+out of sight when Tab reached it.
 
-The canvas now turns that scroll into the same pan and puts its element back
-at 0,0 (``useFlowScrollAsPan``). Here the near node is framed and the far one,
-first in the tab order, sits past the canvas's right edge. A person clicks an
-empty spot of the canvas and presses Tab, which gives the far node the focus.
-The test checks that React Flow's element reads 0,0 again with the far node in
-the window, where the browser brought it, and that Fit view then draws every
-node exactly where its viewport puts it.
+The canvas now turns such a scroll into the same pan and puts its element back
+at 0,0, and pans a node the keyboard reaches into the part of the canvas the
+rail, the bar and the dataflow's title leave in sight (``useFlowInSight``).
+Here the near node is framed, and the node Tab reaches, first in the tab order,
+sits past the canvas's right edge, wholly left of the view, or above it with
+its header off the window. A person clicks an empty spot of the canvas and
+presses Tab, which gives that node the focus. The test checks that React
+Flow's element reads 0,0, that the node is in sight, and that Fit view then
+draws every node exactly where its viewport puts it.
 
 Python nodes only, so it runs on any runner.
 
@@ -29,6 +34,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .utils import (
@@ -45,7 +51,13 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-FAR, NEAR = "scroll-far", "scroll-near"
+TARGET, NEAR = "scroll-target", "scroll-near"
+
+#: Where the node Tab reaches sits, from the near node at 0,0, once the near
+#: node is framed: past the canvas's right edge, wholly left of the view, or
+#: just above the near node, its header off the window and its body under the
+#: bar and the title.
+PLACES = {"right": (2400, 0), "left": (-2400, 0), "above": (0, -380)}
 
 #: How long the canvas may take to put its element back: the browser fires the
 #: scroll only when it draws its next frame, which a loaded runner can hold
@@ -57,21 +69,22 @@ PUT_BACK_TIMEOUT_MS = 15_000
 ROUNDING_PX = 0.5
 
 
-def _node(node_id: str, x: int) -> dict:
+def _node(node_id: str, x: int, y: int) -> dict:
     return {
-        "id": node_id, "type": "curio.builtin/python-computation", "x": x, "y": 0,
+        "id": node_id, "type": "curio.builtin/python-computation", "x": x, "y": y,
         "content": "return 1", "in": "DEFAULT", "out": "DEFAULT", "goal": "",
         "metadata": {"keywords": []},
     }
 
 
-def _spec() -> dict:
-    """The far node first, so it comes first in the tab order, then the near one."""
+def _spec(place: str) -> dict:
+    """The node Tab reaches first, so it comes first in the tab order, then the near one."""
+    x, y = PLACES[place]
     return {
         "dataflow": {
             "name": "Wrapper scroll", "task": "", "timestamp": 1789193389280,
             "provenance_id": "Wrapper scroll",
-            "nodes": [_node(FAR, 2400), _node(NEAR, 0)],
+            "nodes": [_node(TARGET, x, y), _node(NEAR, 0, 0)],
             "edges": [],
         }
     }
@@ -115,6 +128,28 @@ _PLACED_JS = """(ids) => {
 _BOX_JS = """(id) => {
     const r = document.querySelector(`.react-flow__node[data-id="${id}"]`).getBoundingClientRect();
     return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+}"""
+
+_IN_WINDOW_JS = """(id) => {
+    const r = document.querySelector(`.react-flow__node[data-id="${id}"]`).getBoundingClientRect();
+    return r.left >= 0 && r.top >= 0 && r.right <= window.innerWidth && r.bottom <= window.innerHeight;
+}"""
+
+# The part of the canvas in sight: right of the rail, below the bar, the
+# dataflow's title and its chips, as the canvas's fit measures it.
+_SIGHT_JS = """() => {
+    const pane = document.querySelector('.react-flow').getBoundingClientRect();
+    const dock = document.getElementById('tools-palette-dock');
+    let top = pane.top;
+    const overlays = '[data-curio-menu-bar], [data-curio-canvas-title], '
+        + '[data-curio-canvas-title] [data-curio-category-chips]';
+    for (const el of document.querySelectorAll(overlays)) {
+        top = Math.max(top, el.getBoundingClientRect().bottom);
+    }
+    return {
+        left: Math.max(pane.left, dock ? dock.getBoundingClientRect().right : pane.left),
+        top, right: pane.right, bottom: pane.bottom,
+    };
 }"""
 
 # A spot on an empty part of the canvas, right of the rail and left of the near
@@ -167,6 +202,13 @@ def _where_put(off: dict) -> bool:
     return all(abs(across) <= ROUNDING_PX and abs(down) <= ROUNDING_PX for across, down in off.values())
 
 
+def _in_sight(box: dict, sight: dict) -> bool:
+    return (
+        box["left"] >= sight["left"] - ROUNDING_PX and box["top"] >= sight["top"] - ROUNDING_PX
+        and box["right"] <= sight["right"] + ROUNDING_PX and box["bottom"] <= sight["bottom"] + ROUNDING_PX
+    )
+
+
 def _press(page, selector: str, what: str) -> None:
     """Press *selector* with the mouse where it is drawn, as a person does: a
     locator's click would first scroll it into view, which is what this module
@@ -179,8 +221,9 @@ def _press(page, selector: str, what: str) -> None:
     page.mouse.click(x, y)
 
 
-def test_tab_onto_a_node_past_the_canvas_edge_keeps_the_canvas_where_it_is_drawn(
-    app_frontend: "FrontendPage", current_server: str, page,
+@pytest.mark.parametrize("place", list(PLACES))
+def test_tab_onto_a_node_off_the_canvas_brings_it_into_sight_and_keeps_the_canvas_whole(
+    app_frontend: "FrontendPage", current_server: str, page, place: str,
 ):
     require_project_page()
     require_user_auth()
@@ -189,21 +232,25 @@ def test_tab_onto_a_node_past_the_canvas_edge_keeps_the_canvas_where_it_is_drawn
         frontend_url=app_frontend.base_url,
         backend_url=current_server,
         name="Wrapper Scroll",
-        username="canvas_wrapper_scroll_e2e",
+        username=f"canvas_wrapper_scroll_{place}_e2e",
         project_name="Wrapper scroll",
-        project_spec=_spec(),
+        project_spec=_spec(place),
     )
-    for node_id in (FAR, NEAR):
+    for node_id in (TARGET, NEAR):
         node_locator(page, node_id).wait_for(state="visible", timeout=45000)
     require_owner_view(page)
+    # The load's own fit frames both nodes, and fits again 75 ms later. Let it
+    # finish first, or it would reframe the canvas after the near node is
+    # framed (as test_frame_nodes_e2e.py's _open_dataflow does).
+    page.wait_for_function(_IN_WINDOW_JS, arg=TARGET, polling=100, timeout=30000)
+    page.wait_for_timeout(1000)
 
-    # The near node framed at 100%: the far one then sits past the right edge.
+    # The near node framed at 100%: the other one is then out of sight.
     frame_nodes(page, [NEAR])
-    width = page.evaluate("() => window.innerWidth")
-    far = page.evaluate(_BOX_JS, FAR)
-    assert far["left"] >= width, (
-        f"{FAR} is not past the canvas's right edge before the Tab, so this test proves nothing: "
-        f"{far}, in a {width} px window"
+    sight = page.evaluate(_SIGHT_JS)
+    before = page.evaluate(_BOX_JS, TARGET)
+    assert not _in_sight(before, sight), (
+        f"{TARGET} is in sight before the Tab, so this test proves nothing: {before}, the sight {sight}"
     )
     framed = _off(page.evaluate(_PLACED_JS, [NEAR]))
     assert _where_put(framed), (
@@ -217,38 +264,39 @@ def test_tab_onto_a_node_past_the_canvas_edge_keeps_the_canvas_where_it_is_drawn
     page.mouse.click(*assert_in_view(page, spot[0], spot[1], "the empty spot of the canvas"))
     page.keyboard.press("Tab")
     focused = page.evaluate(_FOCUSED_JS)
-    assert focused is not None and focused["node"] == FAR and focused["isTheNode"], (
-        f"Tab from an empty spot of the canvas gave the focus to {focused}, not to {FAR}'s node, "
+    assert focused is not None and focused["node"] == TARGET and focused["isTheNode"], (
+        f"Tab from an empty spot of the canvas gave the focus to {focused}, not to {TARGET}'s node, "
         "so this test proves nothing"
     )
 
-    # React Flow's element is back at 0,0, the far node in the window.
+    # React Flow's element is back at 0,0, and the node is in sight.
     try:
         page.wait_for_function(_UNSCROLLED_JS, polling=100, timeout=PUT_BACK_TIMEOUT_MS)
     except PlaywrightTimeoutError:
         canvas = page.evaluate(_CANVAS_JS)
-        placed = _off(page.evaluate(_PLACED_JS, [FAR, NEAR]))
+        placed = _off(page.evaluate(_PLACED_JS, [TARGET, NEAR]))
         raise AssertionError(
-            f"after Tab gave the focus to {FAR}'s node past the canvas's right edge, React Flow's "
-            f"element stayed scrolled {canvas['scrolled']} for {PUT_BACK_TIMEOUT_MS} ms: its pane, its "
-            f"dot grid and its buttons are drawn from {canvas['pane']} where the canvas starts at "
+            f"after Tab gave the focus to {TARGET}'s node ({place}), React Flow's element stayed "
+            f"scrolled {canvas['scrolled']} for {PUT_BACK_TIMEOUT_MS} ms: its pane, its dot grid and "
+            f"its buttons are drawn from {canvas['pane']} where the canvas starts at "
             f"{canvas['canvas']}, and the nodes are drawn this far off where the viewport puts them, "
             f"across and down: {placed}"
         ) from None
-    far = page.evaluate(_BOX_JS, FAR)
-    assert far["left"] < width and far["right"] > 0, (
-        f"{FAR}'s node has the focus but is not in the window: {far}, in a {width} px window"
+    shown = page.evaluate(_BOX_JS, TARGET)
+    assert _in_sight(shown, sight), (
+        f"{TARGET}'s node ({place}) has the focus but is not in sight: it is drawn at {shown}, "
+        f"from {before} before the Tab, and the sight is {sight}"
     )
-    shown = _off(page.evaluate(_PLACED_JS, [FAR, NEAR]))
-    assert _where_put(shown), (
+    drawn = _off(page.evaluate(_PLACED_JS, [TARGET, NEAR]))
+    assert _where_put(drawn), (
         f"after the Tab, the nodes are drawn this far off where the viewport puts them, across and "
-        f"down: {shown}"
+        f"down: {drawn}"
     )
 
     # Fit view, pressed with the mouse, draws every node where its viewport puts it.
     _press(page, _FIT_VIEW, "Fit view")
     settled_viewport(page)
-    fitted = _off(page.evaluate(_PLACED_JS, [FAR, NEAR]))
+    fitted = _off(page.evaluate(_PLACED_JS, [TARGET, NEAR]))
     canvas = page.evaluate(_CANVAS_JS)
     assert _where_put(fitted) and canvas["scrolled"] == {"left": 0, "top": 0}, (
         f"after Fit view, React Flow's element is scrolled {canvas['scrolled']} and the nodes are "
