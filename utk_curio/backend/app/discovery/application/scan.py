@@ -22,7 +22,8 @@ by, or a name of its own comes below a pattern, as SAGE-IDOT's
 ``{crossing}/images/{month:%Y_%m}/``), it is read a folder at a time instead:
 the folders under each pattern's parent are listed, and the files of only the
 folders a row needs, several at once (:func:`folders_to_list`). A row holds up
-to the source's ``limits.maxFiles`` files, however many rows a listing has.
+to the source's ``limits.maxFiles`` files, and a whole listing up to
+:data:`MAX_LISTING_FILES`, its rows' together.
 """
 
 from __future__ import annotations
@@ -65,6 +66,11 @@ LISTING_WORKERS = 4
 #: The folders one scan lists the files of at most: past them, it stops
 #: short of the source.
 MAX_FOLDERS = 10_000
+
+#: The matched files a whole listing holds at most, all its rows' together
+#: (each row holds up to the source's ``limits.maxFiles``): past them, the
+#: walk stops short of the source.
+MAX_LISTING_FILES = 2_000_000
 
 KIND_LABEL = {
     "rasters": "Rasters",
@@ -414,10 +420,12 @@ def scan(
     matched = unmatched = seen = 0
     # A shapefile is read with its parts, so they are kept to be found again.
     sidecars: dict[str, FileEntry] | None = {} if any(s.format == "shp" for s in specs) else None
-    # The limit holds each row's files. A scan whose every resource has one
-    # row (an add's, or a listing of unsplit resources) ends once all are full.
+    # The limit holds each row's files, and MAX_LISTING_FILES all of them. A
+    # scan whose every resource has one row (an add's, or a listing of
+    # unsplit resources) ends once all are full.
     one_row_each = selection is not None or all(spec.datasets == "one" for spec in specs)
     full: set[str] = set()
+    at_bound = False
     folders, truncated = folders_to_list(provider, specs, selection=selection)
     with closing(_files_under(provider, folders)) as entries:
         for entry in entries:
@@ -436,6 +444,10 @@ def scan(
                 hit = True
                 if selection is not None and not _selected(selection, found):
                     continue
+                if matched >= MAX_LISTING_FILES:
+                    # A file past the listing's bound: the walk stops short of the source.
+                    truncated = at_bound = True
+                    break
                 if spec.datasets == "per-file":
                     key: tuple = (found.relpath,)
                 elif spec.split_by:
@@ -460,7 +472,7 @@ def scan(
                 and not any(t.match(entry.relpath) is not None for t in attached)
             ):
                 unmatched += 1
-            if one_row_each and len(full) == len(specs):
+            if at_bound or (one_row_each and len(full) == len(specs)):
                 break
     order = {spec.id: index for index, spec in enumerate(specs)}
     out = sorted(groups.values(), key=lambda g: (order[g.spec.id], tuple(map(_value_text, g.key))))
