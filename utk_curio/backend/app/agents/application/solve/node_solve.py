@@ -94,13 +94,15 @@ def solve_node_stream(
         raise AgentServiceError(str(exc), exc.status)
     execution_id = uuid.uuid4().hex
     # Request-context pieces, resolved before the job thread starts. A
-    # dataset's path is looked up when a round's code reads it, as the acting
-    # user (``grounding._session_dataset_paths``): a lookup downloads, on a pip
-    # install, a shipped dataset the pip package leaves out.
+    # dataset's path and a collection are looked up when a round's code reads
+    # them, as the acting user (``grounding._session_dataset_paths``,
+    # ``_session_collections``): on a pip install a lookup downloads a shipped
+    # dataset the pip package leaves out, and one of a collection mounts its
+    # bucket.
     agents_acquire._settle_discovery_acquisitions(user_key, project_id)
     base = agents_grounding._solve_grounding_base(user_key, project_id, spec, {node_id: node}, [node_id])
     dataset_paths: dict = {}
-    collections = agents_grounding._resolve_catalog_collections(project_id, user_key, base.get("catalog_ids") or {})
+    collections = agents_grounding._solve_collections(base.get("catalog_ids") or {})
     events = _solve_node_events(
         user_key, project_id, attachment_id, config, spec, node, resolution,
         record.get("coord", ""), record.get("sessionId"), execution_id, exec_fn,
@@ -313,8 +315,9 @@ def _run_node_loop(
         dataset_paths_fn=lambda codes, formats, unavailable=None: agents_grounding._session_dataset_paths(
             project_id, acting_user, dataset_paths, codes, formats, unavailable,
         ),
-        # The collections the request resolved, topped up the same way, on
-        # the job's thread, and handed to the thread each attempt runs on.
+        # The collections, each looked up the same way when a round's code
+        # reads it, on the job's thread, and handed to the thread each
+        # attempt runs on.
         collections_fn=lambda codes: agents_grounding._session_collections(
             project_id, user_key, acting_user, collections, codes
         ),

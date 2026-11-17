@@ -111,13 +111,16 @@ def validate_candidate(
     collections: dict | None = None,
     media_dir: str | None = None,
     downloads=None,
+    download_failures: dict | None = None,
 ) -> dict:
     """Run the dataflow through *node_id* with the candidate overlaid and
     return ``{"verdict", "evidence"}`` (see module docstring). *downloads*
     rides through to the runner, which tells it how far each download on
     first use of what a node reads has come (``runner.run_through_node``),
     and a node that failed because what it reads could not be downloaded
-    marks the evidence ``downloadFailed``. dev/115:
+    marks the evidence ``downloadFailed``. *download_failures*, a plan's
+    Solve's record of the downloads that failed in its run, rides through
+    too: a model's weights it holds are not downloaded again. dev/115:
     ``dataset_paths`` / ``dataset_formats`` / ``exec_user_key`` ride through
     to the runner so the Data Catalog's ``curio_data_path("<id>")`` loaders
     resolve exactly as on Play, and ``dataset_problems``, why each dataset
@@ -170,6 +173,7 @@ def validate_candidate(
         acting_user=acting_user,
         keep_stdout=keep_stdout,
         downloads=downloads,
+        download_failures=download_failures,
     )
     executed = [nid for nid, rec in report["nodes"].items() if rec.get("executed")]
     reused = [nid for nid, rec in report["nodes"].items() if rec.get("status") == "reused"]

@@ -582,6 +582,7 @@ def _verified_content_rounds(
     carry_forward=None,
     result_summary_fn=None,
     acting_user=None,
+    download_failures: dict | None = None,
 ):
     """dev/115 (DEC-073): the ONE generate → gate → execute → correct loop.
 
@@ -602,7 +603,12 @@ def _verified_content_rounds(
       download could not be had, which fails the node that reads it with
       that reason; and its collections and media folder by
       ``collections_fn(codes)``, on the thread that starts the attempt,
-      which hands them to the one that runs it;
+      which hands them to the one that runs it. The codes are those of the
+      slice the run goes through: the candidate's and its ancestors'. The
+      datasets' paths are looked up on the thread that runs the attempt,
+      which says how far a download of one has come; a plan's Solve hands
+      ``download_failures``, its record of the downloads that failed in its
+      run, which no round downloads again;
     - a failed round feeds the next generation ``previousAttempt``,
       ``validationError``, ``sourceGrounding`` (data-loading nodes) and — when
       the failure names an HTTP problem — fresh probe evidence for the URLs
@@ -614,9 +620,9 @@ def _verified_content_rounds(
       names whichever bound ended it. A caller that hands the loop what is
       left of a larger budget names that budget as ``budget_stop``.
 
-    A generator: yields ``("generation_round", …)``, ``("node_executed", …)``
-    and ``("round_verdict", …)`` exactly as the validate-node stream always
-    did, and RETURNS the outcome dict ``{verdict, evidence, rounds, candidate,
+    A generator: yields ``("generation_round", …)``, ``("node_executed", …)``,
+    ``("node_download", …)`` and ``("round_verdict", …)`` exactly as the
+    validate-node stream does, and RETURNS the outcome dict ``{verdict, evidence, rounds, candidate,
     delegations, roundsTrace, attempts}`` (``outcome = yield from …``).
     ``attempts`` is the bounded trail the cards render: one row per round
     with the content digest, verdict, kind, detail, stderr tail, and output.
@@ -635,6 +641,6 @@ def _verified_content_rounds(
         recorded_failure=recorded_failure, node_budget_s=node_budget_s,
         budget_stop=budget_stop,
         carry_forward=carry_forward, result_summary_fn=result_summary_fn,
-        acting_user=acting_user,
+        acting_user=acting_user, download_failures=download_failures,
     )
     return (yield from loop.run())

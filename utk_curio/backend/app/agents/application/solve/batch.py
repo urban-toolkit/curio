@@ -179,19 +179,22 @@ class SolveBatch:
         self.solve_ctx: dict = {"granted": [], "manifest": manifest}
         # The paths of the datasets the batch's runs read, each looked up as
         # a round's code reads it (``grounding._session_dataset_paths``), and
-        # why each whose download failed in this Solve's run could not be
-        # had, which no later round downloads again. Its rounds look them up
-        # one at a time (:meth:`_dataset_paths_of`).
+        # the downloads on first use that failed in this Solve's run, of a
+        # dataset or of a model's weights, which no later round downloads
+        # again until the file is in place (``left_out_files.keeping``). Its
+        # rounds look datasets and collections up one at a time
+        # (:meth:`_dataset_paths_of`, :meth:`_collections_of`).
         self.solve_dataset_paths = dataset_paths if dataset_paths is not None else {}
-        self.solve_dataset_failures: dict = {}
+        self.solve_download_failures: dict = {}
+        # The code to run again of each node a later pass attempts once the
+        # file its download failed on is in place (``_pass_targets``).
+        self.download_again: dict[str, str] = {}
         self.dataset_lookups = threading.Lock()
-        # The Data Catalog's collections, which the request thread resolved
-        # too; each attempt takes those its code reads on its pool's thread
-        # (``grounding._session_collections``).
+        # The Data Catalog's collections: each looked up when a round's code
+        # reads it, on its pool's thread (``grounding._session_collections``).
         self.solve_collections = (
             collections if collections is not None
-            else (agents_grounding._resolve_catalog_collections(
-                project_id, user_key, self.solve_ground.get("catalog_ids") or {}, user=acting_user)
+            else (agents_grounding._solve_collections(self.solve_ground.get("catalog_ids") or {})
                   if verify else {})
         )
         self.batch_templates = agents_roster._roster_templates(user_key, project_id)  # dev/119: ONE snapshot per batch
@@ -587,8 +590,8 @@ class SolveBatch:
         self.results[node_id] = {"status": "failed", "error": err, **trail, **extra}
         if evidence.get("downloadFailed"):
             # What the node reads could not be downloaded, which the Solve
-            # keeps for its run: a later pass attempts it again only once the
-            # node changes (``_pass_targets``).
+            # keeps for its run: a later pass attempts it again once the node
+            # changes, or once the file is in place (``_pass_targets``).
             self.results[node_id]["downloadFailed"] = True
         return {"nodeId": node_id, "status": "failed", "error": err, **trail, **extra}
 
@@ -1137,19 +1140,41 @@ class SolveBatch:
         # a user action has no new input, so that one is attempted
         # again only when something that could unblock it changed. Nor
         # has a node whose file could not be downloaded: the Solve keeps
-        # that failure for its run, and an attempt would only say it again.
+        # that failure for its run, and an attempt would only say it
+        # again, until the file is in place (owner, 11-17, "3b"): saved by
+        # hand where the failure says, or fetched ahead.
+        here = self._downloads_here()
         return [
             nid for nid in unresolved
             if self.pass_no == 1
             or (
                 not agents_rounds._awaits_user_action(self.results.get(nid))
-                and not (self.results.get(nid) or {}).get("downloadFailed")
+                and (not (self.results.get(nid) or {}).get("downloadFailed") or nid in here)
                 and self.weak_passes.get(nid, 0) < agents_budgets.MAX_WEAK_PASSES
             )
             or self.attempted_signature.get(nid) != agents_session._blocker_signature(
                 pass_spec, nid, user_key=self.user_key,
             )
         ]
+
+    def _downloads_here(self) -> set[str]:
+        """The nodes whose download failed in this Solve's run on a file that
+        is in place now, saved by hand where the failure says or fetched
+        ahead (``left_out_files.appeared``), each failure forgotten, so the
+        node's next round reads the file. Each such node runs the code of its
+        last attempt again (:attr:`download_again`): only the download
+        stopped it, and that code generated again would be refused as a
+        repeat."""
+        from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+        came = left_out_files.appeared(self.solve_download_failures)
+        nodes = {node_id for failure in came.values() for node_id in failure.nodes}
+        for node_id in nodes:
+            result = self.results.get(node_id) or {}
+            code = agents_rounds._last_attempt_code(result) if result.get("downloadFailed") else None
+            if code:
+                self.download_again[node_id] = code
+        return nodes
 
     def _run_pass(self, pass_spec: dict, pass_targets: list[str]):
         self.passes_run += 1
@@ -1405,23 +1430,34 @@ class SolveBatch:
             return None
         return None
 
-    def _dataset_paths_of(self, codes, formats, unavailable=None) -> dict:
+    def _dataset_paths_of(self, codes, formats, unavailable=None, *, node_id: str | None = None) -> dict:
         """The paths of the datasets a round's *codes* read, looked up as the
         acting user (``grounding._session_dataset_paths``, which fills
-        *formats* and *unavailable*), by one round at a time.
+        *formats* and *unavailable*), by one round at a time, the round of
+        *node_id*.
 
-        The rounds of a wave run at once, on the pool's threads, and share the
-        batch's paths and failed downloads: one at a time, a dataset two nodes
-        read at once is looked up once, and a download that failed for one is
-        not asked for again by the other. A download holds the other rounds'
-        lookups until it is over, as a Solve's start once held every round
-        for all of them. In the unit suites' in-memory database every thread
-        shares one SQLite connection, on which two lookups at once crashed
-        the backend's tests."""
+        The rounds of a wave run at once, each on the thread its attempt runs
+        on, and share the batch's paths and failed downloads: one at a time,
+        a dataset two nodes read at once is looked up once, and a download
+        that failed for one is not asked for again by the other, until its
+        file is in place. A download holds the other rounds' lookups until it
+        is over, as a Solve's start once held every round for all of them. In
+        the unit suites' in-memory database every thread shares one SQLite
+        connection, on which two lookups at once crashed the backend's tests."""
         with self.dataset_lookups:
             return agents_grounding._session_dataset_paths(
                 self.project_id, self.acting_user, self.solve_dataset_paths, codes, formats, unavailable,
-                failed=self.solve_dataset_failures,
+                failed=self.solve_download_failures, by=node_id,
+            )
+
+    def _collections_of(self, codes) -> tuple[dict, str | None]:
+        """The collections a round's *codes* read, each looked up the first
+        time a round reads it (``grounding._session_collections``), by one
+        round at a time, as :meth:`_dataset_paths_of` looks datasets up: a
+        lookup reads the database, which the unit suites' threads share."""
+        with self.dataset_lookups:
+            return agents_grounding._session_collections(
+                self.project_id, self.user_key, self.acting_user, self.solve_collections, codes,
             )
 
     def _run_verified_worker(self, node_id: str, node: dict, wave_spec: dict, upstream_outputs) -> None:
@@ -1433,19 +1469,25 @@ class SolveBatch:
         loop, which is how an invalid document and the sentence "not
         controllable" reached two nodes in the owner's `e72c7080`."""
         recorded = self._recorded_failure(node_id, node)
+        # A node whose download failed on a file that is in place now runs
+        # its last attempt's code again, as its first round: only that
+        # download stopped it (``_downloads_here``).
+        again = self.download_again.pop(node_id, None)
+        if again:
+            node = {**node, "content": again}
         # dev/131 (owner correction): on a later pass the error
         # this node's last attempt produced is the input this
         # one starts from — never the same blank inputs again.
         # A recorded on-disk failure is the stronger evidence
         # (it is the code actually ON the node), so it wins.
         carry = (
-            None if recorded
+            None if recorded or again
             else agents_rounds._carry_forward_error(self.results.get(node_id))
         )
         gen = agents_rounds._verified_content_rounds(
             self.user_key, self.project_id,
             spec=wave_spec, node=node, resolution=self.resolution, config=self.config,
-            start_from_current=bool(recorded),
+            start_from_current=bool(recorded or again),
             recorded_failure=recorded,
             carry_forward=carry,
             parent_execution_id=self.solve_execution_id, parent_coord=self.coord,
@@ -1459,12 +1501,16 @@ class SolveBatch:
             # imported or installed since this session started among them,
             # and why each whose file failed to download could not be had,
             # kept for the Solve's run; one round's lookup at a time.
-            dataset_paths_fn=self._dataset_paths_of,
-            # The collections, from the batch's mapping, topped up the same
-            # way, and handed to the thread each attempt runs on.
-            collections_fn=lambda codes: agents_grounding._session_collections(
-                self.project_id, self.user_key, self.acting_user, self.solve_collections, codes
+            dataset_paths_fn=lambda codes, formats, unavailable=None: self._dataset_paths_of(
+                codes, formats, unavailable, node_id=node_id,
             ),
+            # The collections the round's code reads, each looked up the
+            # first time a round reads it, one round's lookup at a time, and
+            # handed to the thread each attempt runs on.
+            collections_fn=self._collections_of,
+            # The downloads that failed in this Solve's run, a model's weights
+            # among them, which no round downloads again.
+            download_failures=self.solve_download_failures,
             # dev/133: the batch's memoized preview — one
             # description per artifact, reused by the emptiness
             # check and by the next node's input schema.

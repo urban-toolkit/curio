@@ -305,14 +305,14 @@ def solve_attachment_stream(
         session_id = record.get("sessionId")
         # dev/115: everything that needs the REQUEST context is resolved here, as
         # the job thread holds no ``g``: the batch's grounding base (catalog refs,
-        # mission + plan texts) and collections. A dataset's path is looked up
-        # when a round's code reads it, as the acting user below
-        # (``grounding._session_dataset_paths``): a lookup downloads, on a pip
-        # install, a shipped dataset the pip package leaves out.
+        # mission + plan texts). A dataset's path and a collection are looked
+        # up when a round's code reads them, as the acting user below
+        # (``grounding._session_dataset_paths``, ``_session_collections``): on
+        # a pip install a lookup downloads a shipped dataset the pip package
+        # leaves out, and one of a collection mounts its bucket.
         solve_ground = agents_grounding._solve_grounding_base(user_key, project_id, spec, nodes_by_id, targets)
         solve_collections = (
-            agents_grounding._resolve_catalog_collections(project_id, user_key, solve_ground.get("catalog_ids") or {})
-            if verify else {}
+            agents_grounding._solve_collections(solve_ground.get("catalog_ids") or {}) if verify else {}
         )
         # dev/126: and the Data Catalog rows the discovery delegate is handed.
         agents_acquire._settle_discovery_acquisitions(user_key, project_id)
