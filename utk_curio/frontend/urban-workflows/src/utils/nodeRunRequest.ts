@@ -92,11 +92,12 @@ function askProgress(path: string, progressId: string, show: (message: string) =
                 `${backendUrl()}${path}/progress?play=${encodeURIComponent(progressId)}`,
                 { headers: requestHeaders(getToken()) },
             );
-            // A backend that answers no such ask is asked no more.
-            if (!response.ok) stopped = true;
-            const answer = stopped ? null : await response.json();
-            const message = typeof answer?.message === "string" ? answer.message : "";
-            if (!stopped && message !== shown) {
+            // A backend with no such ask is asked no more; one that could not
+            // answer this time (a 502 or 503 while it is busy) is asked again.
+            if (response.status === 404) stopped = true;
+            const answer = response.ok && !stopped ? await response.json() : null;
+            const message = typeof answer?.message === "string" ? answer.message : null;
+            if (!stopped && message !== null && message !== shown) {
                 shown = message;
                 show(message);
             }

@@ -273,15 +273,19 @@ def _acting_store(user_key: str, project_id: str, acting_user) -> tuple[str | No
 @contextlib.contextmanager
 def _downloads_told(downloads, node_id: str):
     """Tell *downloads* how far each download on first use made inside the
-    block, the resolution of *node_id*'s run, has come, and None once they
-    are over (``left_out_files.reporting``, ``downloading``); nothing
-    without *downloads*."""
+    block, the resolution of *node_id*'s run, has come, and that they are
+    over once they are (``left_out_files.reporting``, ``downloading``), in
+    the fields a run's event says (``left_out_files.progress_fields``);
+    nothing without *downloads*."""
     if downloads is None:
         yield
         return
     from utk_curio.backend.app.datasets.infrastructure import left_out_files
 
-    with left_out_files.reporting(lambda progress: downloads(node_id, progress)), left_out_files.downloading():
+    def told(progress) -> None:
+        downloads(node_id, left_out_files.progress_fields(progress))
+
+    with left_out_files.reporting(told), left_out_files.downloading():
         yield
 
 
@@ -317,8 +321,9 @@ def run_through_node(
 
     *downloads*, when given, is told how far each download on first use of
     what a node of the slice reads has come, as ``downloads(node id,
-    progress)`` (a ``left_out_files.Progress``), and None once that node's
-    downloads are over, as a run on the server tells its ``step_progress``.
+    fields)``, the fields a run's event says (``left_out_files.progress_fields``:
+    ``message``, ``done``, ``total``), and an empty message once that node's
+    downloads are over, as a run on the server says its ``step_progress``.
 
     With *keep_stdout*, the report also holds ``targetStdout``: everything
     the target printed, where its record keeps only the tail. It stays out of

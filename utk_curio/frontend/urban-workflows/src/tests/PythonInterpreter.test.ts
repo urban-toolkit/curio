@@ -277,8 +277,9 @@ describe('PythonInterpreter', () => {
         const MESSAGE = 'Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)';
 
         /** A backend that holds the Play's answer until the test sends it, and
-         *  answers each ask of its progress with the next of *said*. */
-        const backend = (said: string[]) => {
+         *  answers each ask of its progress with the next of *said*: a message,
+         *  or an HTTP status it answers with instead. */
+        const backend = (said: Array<string | number>) => {
             let answer = (): void => {
                 throw new Error('the node never sent its run');
             };
@@ -291,8 +292,11 @@ describe('PythonInterpreter', () => {
                         });
                     });
                 }
-                const message = said.length ? said.shift() : '';
-                return Promise.resolve({ ok: true, status: 200, json: async () => ({ message }) });
+                const next = said.length ? said.shift() : '';
+                if (typeof next === 'number') {
+                    return Promise.resolve({ ok: next < 400, status: next, json: async () => ({}) });
+                }
+                return Promise.resolve({ ok: true, status: 200, json: async () => ({ message: next }) });
             });
             return { answer: () => answer() };
         };
@@ -330,6 +334,31 @@ describe('PythonInterpreter', () => {
                 await jest.advanceTimersByTimeAsync(5000);
                 expect(asks()).toHaveLength(asked);
                 expect(shown).toEqual([MESSAGE, '']);
+            } finally {
+                jest.useRealTimers();
+                (global.fetch as jest.Mock).mockReset();
+            }
+        });
+
+        test("asks again after an ask the backend could not answer, and no more of one with no such ask", async () => {
+            jest.useFakeTimers();
+            try {
+                backend([503, MESSAGE, 404, '']);
+                const shown: string[] = [];
+                const send = interpreter.interpretCode.bind(interpreter) as (...args: unknown[]) => void;
+                send('return 1', 'return 1', '', [], jest.fn(), NodeType.PYTHON_COMPUTATION, 'node-1', 'workflow-1',
+                    mockNodeExecProv, 'flow-1', false, 'Node', [], (message: string) => shown.push(message));
+
+                // A busy backend's answer changes nothing on the node.
+                await jest.advanceTimersByTimeAsync(1000);
+                expect(shown).toEqual([]);
+                await jest.advanceTimersByTimeAsync(1000);
+                expect(shown).toEqual([MESSAGE]);
+                // A backend with no such ask, as one from before it, is asked no more.
+                await jest.advanceTimersByTimeAsync(1000);
+                await jest.advanceTimersByTimeAsync(5000);
+                expect(asks()).toHaveLength(3);
+                expect(shown).toEqual([MESSAGE]);
             } finally {
                 jest.useRealTimers();
                 (global.fetch as jest.Mock).mockReset();

@@ -50,7 +50,6 @@ from utk_curio.backend.app.agents.application.solve import rounds as agents_roun
 from utk_curio.backend.app.agents.application.solve import session as agents_session
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.domain import validation as agents_validation
-from utk_curio.backend.app.datasets.infrastructure import left_out_files
 from utk_curio.backend.app.execution import workflow_spec
 from utk_curio.backend.app.execution.code_references import node_run_code
 from utk_curio.backend.app.packages import service as packages_services
@@ -687,7 +686,7 @@ class VerifiedRounds:
                     ),
                     # How far each download on first use of what a node of
                     # the slice reads has come, as a run on the server says it.
-                    downloads=lambda nid, progress: progress_queue.put(("download", nid, progress)),
+                    downloads=lambda nid, fields: progress_queue.put(("download", nid, fields)),
                 )
             except Exception as exc:  # the validator must never kill the stream
                 result = {
@@ -705,8 +704,8 @@ class VerifiedRounds:
                 yield "node_executed", {"nodeId": nid, "index": index, "total": total}
                 continue
             if item[0] == "download":
-                _, nid, progress = item
-                yield "node_download", {"nodeId": nid, **left_out_files.progress_fields(progress)}
+                _, nid, fields = item
+                yield "node_download", {"nodeId": nid, **fields}
                 continue
             thread.join(timeout=5)
             return item[1]
