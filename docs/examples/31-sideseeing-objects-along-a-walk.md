@@ -1,6 +1,6 @@
 # Example: SideSeeing: objects tracked along a walk
 
-A walk along the sidewalks of Chicago's West Loop on 2026-10-26, recorded with the SideSeeing app on a phone that looks down at the sidewalk: 14 minutes of video, and a GPS fix about every half second. SAM 3 follows nine kinds of sidewalk object through the whole video, a frame every 2.5 s, and `Simple View` plays the overlay it draws. The player is linked to two views by interaction edges: as the video plays, each object's bar on a swimlane lights from the moment SAM 3 first saw it, and the walk's GPS fixes on an Autark map of its streets light up to where the video stands.
+A walk along the sidewalks of Chicago's West Loop on 2026-10-26, recorded with the SideSeeing app on a phone that looks down at the sidewalk: 14 minutes of video, and a GPS fix about every half second. SAM 3 looks for nine kinds of sidewalk object through the whole video, a frame every 2.5 s, and `Simple View` plays the overlay it draws. The player is linked to two views by interaction edges: as the video plays, each object's bar on a swimlane turns from gray to its label's color once the video passes the moment SAM 3 first saw it, and the walk's GPS fixes on an Autark map of its streets, up to where the video stands, take Autark's highlight color in place of their colors by time.
 
 Tracking the whole walk takes about 3.5 minutes on dev.urbantk.org's GPU. The first run downloads SAM 3's weights, 3.4 GB, from Hugging Face ([Model Catalog](../MODEL-CATALOG.md)).
 
@@ -66,7 +66,7 @@ It gives the video back as its overlay, the frames SAM 3 looked at with each obj
 
 ## Play the overlay
 
-`Simple View` plays the overlay, each frame for 2.5 s, so it keeps time with the walk. Its interaction edges link the player to the swimlane and to the map: what the player has played, from the video's start to where it stands, is a range on `t_s`, and each view lights its rows whose `t_s` is in the range. A seek back lights fewer.
+`Simple View` plays the overlay, each frame for 2.5 s, so it keeps time with the walk. Its interaction edges link the player to the swimlane and to the map: what the player has played, from the video's start to where it stands, is a range on `t_s`, and each view marks its rows whose `t_s` is in the range: the swimlane draws their bars in their label's color, and the map draws their fixes in Autark's highlight color. A seek back marks fewer.
 
 ## One row per object
 
@@ -75,7 +75,7 @@ import pandas as pd
 
 # One row per object Track Objects followed, from the tracks table each of
 # its rows names. t_s, the time the player's range is matched on, is when
-# SAM 3 first saw the object, so its bar lights from there.
+# SAM 3 first saw the object, so its bar takes its label's color from there.
 objects = pd.concat([pd.read_parquet(path) for path in input_0["tracks"]], ignore_index=True)
 objects["t_s"] = objects["start_s"]
 
@@ -84,7 +84,7 @@ return objects
 
 ## The swimlane
 
-One lane per label and one bar per object, from `start_s`, when SAM 3 first saw it, to `end_s`, when it last did. A bar takes its label's color once the player has played past its first sighting, and is gray before.
+A lane for each label SAM 3 found an object of, and one bar per object, from `start_s`, when SAM 3 first saw it, to `end_s`, when it last did. A label it finds nothing of has no lane, so the swimlane can have fewer lanes than `LABELS` names. A bar takes its label's color once the player has played past its first sighting, and is gray before.
 
 ```json
 {
@@ -157,11 +157,11 @@ return gpd.GeoDataFrame(
 )
 ```
 
-The video starts 0.36 s after `taken_at` (`mediaStartDateTime` in the walk's `metadata.json`), so a fix lights 0.36 s after the video passes its place.
+The video starts 0.36 s after `taken_at` (`mediaStartDateTime` in the walk's `metadata.json`), so a fix takes the highlight color 0.36 s after the video passes its place.
 
 ## The map
 
-The streets of the extract, with the fixes on top, colored by their time in the walk. `pointSize` is a point's radius in meters on the ground, so each fix is a disc 8 m across. The fixes are the layer that picks, which is the one the player's range lights.
+The streets of the extract, with the fixes on top, colored by their time in the walk. `pointSize` is a point's radius in meters on the ground, so each fix is a disc 8 m across. The fixes are the layer that picks, which is the one the player's range marks: each fix up to where the video stands takes Autark's highlight color in place of its color by time.
 
 ```json
 {
