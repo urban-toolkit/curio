@@ -328,33 +328,53 @@ def give_way_to_the_image(user_key: str) -> list[str]:
 
     A lock owner (memo dev/99): the account's store is walked under its seed
     lock, as :func:`not_asked_for` walks it, and the lock covers the walk
-    alone, never the removal after it."""
+    alone, never the removal after it. The walk comes once the tree's own
+    locks are held (the seed lock is a leaf): a removal's give-way can wait
+    for the tree behind another pip run, and a package an add put into the
+    store meanwhile, before its own pip run, has to count."""
     if not packages_backend_runtime.per_user_node_envs():
         return []
     overlay = packages_backend_runtime.user_node_overlay_dir(user_key)
     if not overlay.is_dir():
         return []
-    declared: dict[str, list[str]] = {}
-    with package_seed_lock(user_key, shared=True):  # memo dev/99: one consistent walk
-        for package_path in list_user_packages(user_key):
-            try:
-                manifest = load_package_manifest(package_path)
-            except (ManifestError, OSError):
-                return []
-            for name, spec in (manifest.python_deps or {}).items():
-                # By PEP 503 name: two packages may spell one library apart.
-                declared.setdefault(_canonical(name), []).append(spec)
-    if not declared:
-        return []
-    own = [split_lib_spec(spec)[0] for spec in _load_raw(user_key)["python"]]
     with target_lock(user_key, packages_provisioning.NODE_OVERLAY_LOCK):
         with packages_pip_runner.holding_tree(overlay):
+            declared: dict[str, list[str]] = {}
+            with package_seed_lock(user_key, shared=True):  # memo dev/99: one consistent walk
+                for package_path in list_user_packages(user_key):
+                    try:
+                        manifest = load_package_manifest(package_path)
+                    except (ManifestError, OSError):
+                        return []
+                    for name, spec in (manifest.python_deps or {}).items():
+                        # By PEP 503 name: two packages may spell one library apart.
+                        declared.setdefault(_canonical(name), []).append(spec)
+            if not declared:
+                return []
+            own = [split_lib_spec(spec)[0] for spec in _load_raw(user_key)["python"]]
             names = packages_pip_runner.copies_this_interpreter_meets(declared, str(overlay), keep=own)
             if names:
                 packages_pip_runner.uninstall_python_deps_from_target(names, str(overlay))
     if names:
         log.info("Took %s out of account %s's node libraries: the image's copies meet every range", names, user_key)
     return names
+
+
+def give_way_after_a_removal(user_key: str) -> list[str]:
+    """:func:`give_way_to_the_image` after a removal: of a package, from its
+    last dataflow (``prune.py``) or from the account (``store_install``), or
+    of a library in Installed libraries (:func:`remove_standalone_library`).
+    A library another package of the account's still asks for stays, and its
+    copy in the account's tree, which the removed package or list entry put
+    there, goes where the image's copy meets every range left, as the next
+    start would take it. The removal is done already, so a failure is logged
+    and the next start gives way instead. The names taken out, sorted."""
+    try:
+        return give_way_to_the_image(user_key)
+    except (PipInstallError, OSError) as exc:
+        log.warning("Account %s's node libraries could not give way to the image after a removal: %s",
+                    user_key, exc)
+        return []
 
 
 def accounts() -> list[str]:
@@ -454,7 +474,9 @@ def remove_standalone_library(user_key: str, kind: str, spec: str) -> dict:
     else installed it in theirs. Without them, one interpreter serves every
     account, so every account's packages and lists count (#309), and a
     library this server's pip did not install, such as one the dialog found
-    already installed, stays."""
+    already installed, stays. A library a package still asks for stays, and
+    under per-user node environments its copy in the account's tree goes
+    where the image's meets every range left (:func:`give_way_after_a_removal`)."""
     name, _ = split_lib_spec(spec)
     # A malformed name escaped the pip error below and read as a 500 before
     # #309; the route maps PipSpecError to a 400.
@@ -466,4 +488,5 @@ def remove_standalone_library(user_key: str, kind: str, spec: str) -> dict:
             uninstall_user_library(user_key, name)
         except PipInstallError as exc:
             log.warning("library remove: pip uninstall %s failed: %s", name, exc)
+    give_way_after_a_removal(user_key)
     return {"standalone": list_standalone(user_key)}

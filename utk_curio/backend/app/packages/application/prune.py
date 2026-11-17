@@ -92,9 +92,10 @@ def prune_unreferenced_packages(
     if removed_from_defaults:
         defaults_io.save_defaults(user_key, new_defaults)
 
-    _uninstall_libraries_only_they_asked_for(
-        user_key, set().union(*(pruned_libraries[dn] for dn in pruned)),
-    )
+    if pruned:
+        _uninstall_libraries_only_they_asked_for(
+            user_key, set().union(*(pruned_libraries[dn] for dn in pruned)),
+        )
     return {"pruned": pruned, "removedFromDefaults": removed_from_defaults}
 
 
@@ -103,18 +104,21 @@ def _uninstall_libraries_only_they_asked_for(user_key: str, libraries: set[str])
     and that Curio put there (``libraries.names_to_take_back``, which the
     libraries dialog's Remove asks too), from where their install put them:
     the libraries dialog's removal (``libraries.uninstall_user_libraries``),
-    whose route follows the install's."""
-    if not libraries:
-        return
-    names = packages_libraries.names_to_take_back(user_key, libraries)
-    if not names:
-        return
-    try:
-        packages_libraries.uninstall_user_libraries(user_key, names)
-    except PipInstallError as exc:
-        # Don't fail the whole prune over a pip uninstall hiccup;
-        # the user can clean up manually if needed.
-        log.warning("prune: pip uninstall failed: %s", exc)
+    whose route follows the install's.
+
+    A library another package still asks for stays, and its copy in the
+    account's tree goes where the image's meets every range left
+    (``libraries.give_way_after_a_removal``), as the next start would take
+    it."""
+    names = packages_libraries.names_to_take_back(user_key, libraries) if libraries else []
+    if names:
+        try:
+            packages_libraries.uninstall_user_libraries(user_key, names)
+        except PipInstallError as exc:
+            # Don't fail the whole prune over a pip uninstall hiccup;
+            # the user can clean up manually if needed.
+            log.warning("prune: pip uninstall failed: %s", exc)
+    packages_libraries.give_way_after_a_removal(user_key)
 
 
 def dataflow_packages(spec, installed_majors) -> set[str]:
