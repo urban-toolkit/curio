@@ -18,7 +18,11 @@ It tunnels HTTPS, and only to where a source being mounted is:
   (``bucket_mounts.reaches_proxy``), and it is never admitted, looked up or
   connected to.
 - Only to a (host, port) admitted now (:meth:`MountProxy.admit`): the host of
-  a source the backend mounts; 403 otherwise.
+  a source a backend process mounts; 403 otherwise. The proxy reads its
+  *admissions* at each ``CONNECT``: this process's own (:class:`Admissions`),
+  or in a start of several backend processes the list they share, which the
+  backend gives it (``application/bucket_mount_sources.SharedAdmissions``),
+  since the home process alone runs the proxy and any process may mount.
 - Every address the host resolves to must pass Curio's egress policy
   (``egress_policy.public_addresses``), and the tunnel connects to one of
   those very addresses, never to the name, so a second lookup cannot send it
@@ -29,7 +33,11 @@ It tunnels HTTPS, and only to where a source being mounted is:
   side closes or :data:`IDLE_SECONDS` pass with nothing sent; at most
   :data:`MAX_TUNNELS` at once (503 beyond).
 
-Each refusal is logged with the host and why. Through a tunnel pass only TLS
+Each refusal is logged with the host and why, and its answer's reason phrase
+says that Curio's proxy refused the request, and why (:data:`REFUSAL`): Go's
+transport makes a refused ``CONNECT`` an error of that phrase, which rclone
+reports, so the refusal never reads as the bucket's own answer. The phrase
+holds no path, and never the self-test's host. Through a tunnel pass only TLS
 bytes: no path, header or key of what rclone asks is read here.
 """
 
@@ -69,15 +77,10 @@ ACCEPT_POLL_SECONDS = 0.5
 LINGER_SECONDS = 0.5
 LINGER_READS = 4
 
-_REASONS = {
-    400: "Bad Request",
-    403: "Forbidden",
-    405: "Method Not Allowed",
-    408: "Request Timeout",
-    431: "Request Header Fields Too Large",
-    502: "Bad Gateway",
-    503: "Service Unavailable",
-}
+#: How the reason phrase of each refusal starts, before why.
+REFUSAL = "Curio's bucket mount proxy refused the request"
+#: The most characters of why a reason phrase gives.
+WHY_CHARS = 200
 
 #: A host name as the proxy takes one: labels of letters, digits and dashes.
 _HOST_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$")
@@ -96,39 +99,21 @@ class _Gone(Exception):
     """The client closed before it said where to."""
 
 
-class MountProxy:
-    """A CONNECT proxy to the hosts of the sources being mounted.
+class Admissions:
+    """The hosts and ports tunnels may reach, each with the sources it is
+    admitted for, in this process's memory: a start of one backend process's.
+    A start of several gives its proxy the list its processes share instead
+    (``application/bucket_mount_sources.SharedAdmissions``), which answers the
+    same three calls. A host comes lowercase, a port as a number."""
 
-    *addresses_of* is the host check: the addresses of a host to connect to,
-    each one checked, or :class:`egress_policy.EgressRefused`. It is
-    ``egress_policy.public_addresses`` unless a test gives its own rule.
-    """
-
-    def __init__(self, *, addresses_of: Optional[Callable[[str], list]] = None,
-                 max_tunnels: int = MAX_TUNNELS, idle_seconds: float = IDLE_SECONDS,
-                 head_seconds: float = HEAD_SECONDS, connect_seconds: float = CONNECT_SECONDS):
-        self._addresses_of = addresses_of
-        self.max_tunnels = max_tunnels
-        self.idle_seconds = idle_seconds
-        self.head_seconds = head_seconds
-        self.connect_seconds = connect_seconds
+    def __init__(self) -> None:
         self._lock = threading.Lock()
         self._admitted: dict[tuple[str, int], set[str]] = {}
-        #: What the self-test expects (:meth:`expect`), and whether each came.
-        self._expected: dict[tuple[str, int], bool] = {}
-        self._tunnels = threading.BoundedSemaphore(max_tunnels)
-        self._connections = threading.BoundedSemaphore(max_tunnels + MAX_WAITING)
-        self._listener: Optional[socket.socket] = None
-        self._thread: Optional[threading.Thread] = None
-        self._stopping = threading.Event()
-        self._open: set[socket.socket] = set()
-
-    # ── who may be reached ─────────────────────────────────────────────────
 
     def admit(self, name: str, host: str, port: int) -> None:
-        """Let tunnels reach *host* at *port*, for the source mounted as *name*."""
+        """*host* at *port* may be reached, for the source mounted as *name*."""
         with self._lock:
-            self._admitted.setdefault((host.lower(), int(port)), set()).add(name)
+            self._admitted.setdefault((host, port), set()).add(name)
 
     def withdraw(self, name: str) -> None:
         """The source mounted as *name* needs its host no more."""
@@ -141,7 +126,52 @@ class MountProxy:
 
     def admits(self, host: str, port: int) -> bool:
         with self._lock:
-            return (host.lower(), int(port)) in self._admitted
+            return (host, port) in self._admitted
+
+
+class MountProxy:
+    """A CONNECT proxy to the hosts of the sources being mounted.
+
+    *addresses_of* is the host check: the addresses of a host to connect to,
+    each one checked, or :class:`egress_policy.EgressRefused`. It is
+    ``egress_policy.public_addresses`` unless a test gives its own rule.
+    *admissions* says which hosts and ports tunnels may reach: this process's
+    own (:class:`Admissions`) unless the backend gives the list a start of
+    several backend processes shares.
+    """
+
+    def __init__(self, *, addresses_of: Optional[Callable[[str], list]] = None, admissions=None,
+                 max_tunnels: int = MAX_TUNNELS, idle_seconds: float = IDLE_SECONDS,
+                 head_seconds: float = HEAD_SECONDS, connect_seconds: float = CONNECT_SECONDS):
+        self._addresses_of = addresses_of
+        self._admissions = Admissions() if admissions is None else admissions
+        self.max_tunnels = max_tunnels
+        self.idle_seconds = idle_seconds
+        self.head_seconds = head_seconds
+        self.connect_seconds = connect_seconds
+        self._lock = threading.Lock()
+        #: What the self-test expects (:meth:`expect`), and whether each came.
+        self._expected: dict[tuple[str, int], bool] = {}
+        self._tunnels = threading.BoundedSemaphore(max_tunnels)
+        self._connections = threading.BoundedSemaphore(max_tunnels + MAX_WAITING)
+        self._listener: Optional[socket.socket] = None
+        self._thread: Optional[threading.Thread] = None
+        self._stopping = threading.Event()
+        self._open: set[socket.socket] = set()
+
+    # ── who may be reached ─────────────────────────────────────────────────
+
+    def admit(self, name: str, host: str, port: int) -> None:
+        """Let tunnels reach *host* at *port*, for the source mounted as *name*.
+        Raises ``OSError`` when a list the processes share cannot be written."""
+        self._admissions.admit(name, host.lower(), int(port))
+
+    def withdraw(self, name: str) -> None:
+        """The source mounted as *name* needs its host no more."""
+        self._admissions.withdraw(name)
+
+    def admits(self, host: str, port: int) -> bool:
+        return self._admissions.admits(host.lower(), int(port))
 
     # ── the self-test's ask ────────────────────────────────────────────────
 
@@ -248,9 +278,9 @@ class MountProxy:
             host, port = _authority(target)
             where = f"{host}:{port}"
             if self._heard_now(host, port):
-                # The host is the self-test's own, which no log shows.
+                # The host is the self-test's own, which no log and no answer shows.
                 log.info("Bucket mount proxy: the mount service reached it, as its self-test asks")
-                _answer(client, 403)
+                _answer(client, 403, "the self-test reached it")
                 return
             if not self.admits(host, port):
                 raise _Refused(403, "it is not the host and port of a source being mounted")
@@ -273,7 +303,7 @@ class MountProxy:
                 self._tunnels.release()
         except _Refused as refused:
             log.warning("Bucket mount proxy refused %s: %s", where, refused.why)
-            _answer(client, refused.status)
+            _answer(client, refused.status, refused.why)
         except _Gone:
             log.debug("Bucket mount proxy: a connection closed before it said where to")
         except OSError as exc:
@@ -326,7 +356,7 @@ class MountProxy:
                 last = exc
                 continue
             return upstream
-        raise _Refused(502, f"none of its addresses took a connection: {last}")
+        raise _Refused(502, f"none of the host's addresses took a connection: {last}")
 
     def _relay(self, client: socket.socket, upstream: socket.socket) -> None:
         """Bytes both ways until a side closes or nothing passes for the idle bound."""
@@ -399,13 +429,21 @@ def _host_of_target(target: str) -> Optional[str]:
         return None
 
 
-def _answer(client: socket.socket, status: int) -> None:
-    """Answer *status* with no body, and say the connection closes. Then a
-    lingering close: what the client still sends is read and dropped for a
-    moment, so the close does not reset the connection before the client
-    reads the answer."""
+def _phrase(why: str) -> str:
+    """The reason phrase of a refusal for *why*: :data:`REFUSAL`, then *why*,
+    at most :data:`WHY_CHARS` of it, in printable ASCII, so the status line
+    stays one line a client reads."""
+    shown = "".join(char if " " <= char <= "~" else "?" for char in why[:WHY_CHARS])
+    return f"{REFUSAL}: {shown}"
+
+
+def _answer(client: socket.socket, status: int, why: str) -> None:
+    """Answer *status* with no body, its reason phrase saying why
+    (:func:`_phrase`), and say the connection closes. Then a lingering close:
+    what the client still sends is read and dropped for a moment, so the
+    close does not reset the connection before the client reads the answer."""
     allow = "Allow: CONNECT\r\n" if status == 405 else ""
-    head = (f"HTTP/1.1 {status} {_REASONS.get(status, 'Error')}\r\n{allow}"
+    head = (f"HTTP/1.1 {status} {_phrase(why)}\r\n{allow}"
             "Content-Length: 0\r\nConnection: close\r\n\r\n")
     try:
         client.settimeout(1.0)

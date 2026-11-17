@@ -220,6 +220,48 @@ LOCATOR_COLUMNS = (
 )
 
 
+def collection_rows(frame, dataset_id, entry):
+    """Rows of collection *dataset_id*'s index, *frame*, as
+    ``curio_load_collection`` gives them to node code: with ``dataset_id``,
+    ``path``, ``thumbnail``, ``image_url`` and ``audio_url``, and the columns
+    that locate a file last. *entry* is where its files are for this
+    execution, one of ``make_collection_helpers``'s *collections*. The Data
+    Catalog's preview of the index shows its rows through this too."""
+    import pandas as pd
+
+    root, objects = entry.get("root"), entry.get("objects")
+    # A mounted bucket's prefix may end partway through a name, which
+    # every file's path in the mount then starts with.
+    tail = str(entry.get("tail") or "")
+
+    def where(row):
+        if root:
+            relpath = str(row["relpath"])
+            # An index lists files under its root; a row that says
+            # otherwise has no file here.
+            if any(part in ("", ".", "..") for part in relpath.split("/")):
+                return None
+            return os.path.join(root, *(tail + relpath).split("/"))
+        if objects:
+            name = f"{row['file_id']}.{row['ext']}" if row["ext"] else row["file_id"]
+            path = os.path.join(objects, name)
+            return path if os.path.isfile(path) else None
+        return None
+
+    frame["dataset_id"] = dataset_id
+    # Kept as objects, so a file not here reads None: pandas would store a
+    # column of strings with NaN for it, which is truthy.
+    frame["path"] = pd.Series([where(row) for _, row in frame.iterrows()], index=frame.index, dtype=object)
+    urls = [media_urls(dataset_id, fid, kind) for fid, kind in zip(frame["file_id"], frame["kind"])]
+    for column in ("thumbnail", "image_url", "audio_url"):
+        frame[column] = [row_urls[column] for row_urls in urls]
+    # What a reader looks for first (the name, the path fields, what was
+    # read from the file) ahead of the columns that locate the file, which
+    # is also the order a Simple View card captions a row in.
+    last = [c for c in LOCATOR_COLUMNS if c in frame.columns]
+    return frame[[c for c in frame.columns if c not in last] + last]
+
+
 def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir=None, output_names=None):
     """The helpers for one execution: ``curio_load_collection``,
     ``curio_derived_file``, ``curio_output_file`` and ``curio_export``.
@@ -262,37 +304,7 @@ def make_collection_helpers(resolve_index, collections, media_dir, *, output_dir
             frame = gpd.read_parquet(index_path)
         except Exception:  # noqa: BLE001 - an index without positions
             frame = pd.read_parquet(index_path)
-        root, objects = entry.get("root"), entry.get("objects")
-        # A mounted bucket's prefix may end partway through a name, which
-        # every file's path in the mount then starts with.
-        tail = str(entry.get("tail") or "")
-
-        def where(row):
-            if root:
-                relpath = str(row["relpath"])
-                # An index lists files under its root; a row that says
-                # otherwise has no file here.
-                if any(part in ("", ".", "..") for part in relpath.split("/")):
-                    return None
-                return os.path.join(root, *(tail + relpath).split("/"))
-            if objects:
-                name = f"{row['file_id']}.{row['ext']}" if row["ext"] else row["file_id"]
-                path = os.path.join(objects, name)
-                return path if os.path.isfile(path) else None
-            return None
-
-        frame["dataset_id"] = dataset_id
-        # Kept as objects, so a file not here reads None: pandas would store a
-        # column of strings with NaN for it, which is truthy.
-        frame["path"] = pd.Series([where(row) for _, row in frame.iterrows()], index=frame.index, dtype=object)
-        urls = [media_urls(dataset_id, fid, kind) for fid, kind in zip(frame["file_id"], frame["kind"])]
-        for column in ("thumbnail", "image_url", "audio_url"):
-            frame[column] = [row_urls[column] for row_urls in urls]
-        # What a reader looks for first (the name, the path fields, what was
-        # read from the file) ahead of the columns that locate the file, which
-        # is also the order a Simple View card captions a row in.
-        last = [c for c in LOCATOR_COLUMNS if c in frame.columns]
-        return frame[[c for c in frame.columns if c not in last] + last]
+        return collection_rows(frame, dataset_id, entry)
 
     def curio_derived_file(dataset_id, file_id, t_ms, ext=None, *, kind="video", tag=None):
         """Where to write a file derived from one file of a collection, and its row.

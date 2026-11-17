@@ -14,13 +14,25 @@ or waits for one.
     python3 scripts/ci_image_slots.py pull <image>
     python3 scripts/ci_image_slots.py run <command> [<argument>...]
 
-pull is start-stack's `docker pull --quiet <image>` in a slot. It then says how
-long the pull took, the wait for the slot left out, and the image's size:
-"Pulled in N s, B bytes on this daemon". run runs any command in a slot and
-exits as the command does. test-gpu's image build takes no slot: it would hold
-one for its 2 to 4 minutes, though a build from the runner's cache writes only
-its new layers, and replayed with the builds holding slots, the last CPU job of
-a run got its image 60 s later instead of 28 (median, 11-15).
+pull is the CI image's pull, start-stack's, test-desktop-stress's and that of
+build-image's collection on a filtered run: `docker pull --quiet <image>` in a
+slot, tried up to PULL_ATTEMPTS times. On 11-17 GitHub's registry reset two
+pulls of one run 5 s apart (run 44017255256), and each lost its job before any
+test ran. A failed attempt says why as a warning, with the last line docker
+printed, and the next attempt comes PULL_WAITS_S later; the job fails only
+when every attempt failed, with the last one's exit status and a line that
+names the attempts. The retries keep the slot: the pull is still that runner's
+turn, and a slot given back could keep the next attempt waiting up to WAIT_S
+for another. Once it has the image, pull says how long the pull took from its
+first attempt, the wait for the slot left out, the image's size and the
+attempt that pulled it: "Pulled in N s, B bytes on this daemon, at attempt K
+of 3".
+
+run runs any command in a slot, once, and exits as the command does.
+test-gpu's image build takes no slot: it would hold one for its 2 to 4
+minutes, though a build from the runner's cache writes only its new layers,
+and replayed with the builds holding slots, the last CPU job of a run got its
+image 60 s later instead of 28 (median, 11-15).
 
 A job waits for a slot at most WAIT_S, then goes on without one, so a slot
 never holds a job up longer than that. A slot is a lock that the kernel frees
@@ -28,7 +40,8 @@ when the process holding it ends: a job cancelled or killed mid-pull leaves
 none taken, and the command run in a slot does not hold it. Where the runner
 names no shared folder (GitHub-hosted runners, utk-gpu, the utk-desktop
 runners, an arcade runner made before the folder), the command runs at once,
-as before. CURIO_CI_SLOT_WAIT_S sets another wait (tests).
+as before. CURIO_CI_SLOT_WAIT_S sets another wait for a slot, and the tests
+replace pause, the wait between a pull's attempts.
 """
 
 from __future__ import annotations
@@ -54,12 +67,59 @@ SLOTS = 8
 WAIT_S = 240
 #: How often a waiting job looks for a free slot.
 POLL_S = 1.0
+#: Attempts at a pull before the job fails, and the waits before the second
+#: and the third: 40 s at most, where a job lost to one reset ran again only
+#: when someone re-ran it by hand.
+PULL_ATTEMPTS = 3
+PULL_WAITS_S = (10, 30)
 
 USAGE = "usage: ci_image_slots.py pull <image> | run <command> [<argument>...]"
 
 
 def say(line: str) -> None:
     print(line, flush=True)
+
+
+def pause(seconds: float) -> None:
+    """The wait before a pull's next attempt."""
+    time.sleep(seconds)
+
+
+def exit_status(code: int) -> int:
+    """A process's exit status as a shell gives it: 128 and the signal's
+    number for one that a signal ended."""
+    return 128 - code if code < 0 else code
+
+
+def last_line(output: str) -> str:
+    """The last line of a command's output that holds more than spaces."""
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    return lines[-1] if lines else "(no output)"
+
+
+def pull(command: list[str]) -> tuple[int, int]:
+    """Run the pull up to PULL_ATTEMPTS times, until one works: the last
+    attempt's exit status and its number. All that docker prints goes to the
+    job's log, as it does without retries."""
+    attempt = 1
+    while True:
+        done = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                              errors="replace", check=False)
+        if done.stdout:
+            sys.stdout.write(done.stdout if done.stdout.endswith("\n") else done.stdout + "\n")
+            sys.stdout.flush()
+        code = exit_status(done.returncode)
+        if code == 0:
+            return 0, attempt
+        why = f"with exit {code}: {last_line(done.stdout)}"
+        if attempt == PULL_ATTEMPTS:
+            say(f"::error::docker pull failed at all {PULL_ATTEMPTS} attempts, the last {why}")
+            return code, attempt
+        wait = PULL_WAITS_S[attempt - 1]
+        say(f"::warning::docker pull failed at attempt {attempt} of {PULL_ATTEMPTS}, {why}; "
+            f"trying again in {wait} s")
+        pause(wait)
+        attempt += 1
 
 
 def try_slots(folder: str) -> tuple[int, int] | None:
@@ -122,19 +182,21 @@ def main(argv: list[str]) -> int:
         return 2
     fd = take(float(os.environ.get("CURIO_CI_SLOT_WAIT_S") or WAIT_S))
     started = time.monotonic()
+    attempt = 1
     try:
-        code = subprocess.run(command, check=False).returncode
+        if mode == "pull":
+            # Every attempt in the one slot: the pull is still this runner's turn.
+            code, attempt = pull(command)
+        else:
+            code = exit_status(subprocess.run(command, check=False).returncode)
     finally:
         if fd is not None:
             os.close(fd)
     took = time.monotonic() - started
-    if code < 0:
-        # Ended by a signal, which a shell reports as 128 and its number.
-        code = 128 - code
     if mode == "pull" and code == 0:
         size = subprocess.run(["docker", "image", "inspect", "--format", "{{.Size}}", rest[0]],
                               capture_output=True, text=True, check=False).stdout.strip()
-        say(f"Pulled in {took:.0f} s, {size} bytes on this daemon")
+        say(f"Pulled in {took:.0f} s, {size} bytes on this daemon, at attempt {attempt} of {PULL_ATTEMPTS}")
     return code
 
 

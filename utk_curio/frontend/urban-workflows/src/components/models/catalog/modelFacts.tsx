@@ -4,6 +4,7 @@ import { formatBytes } from "../../datasets/catalog/datasetDetailHelpers";
 import {
   MODEL_RUNTIME_LABEL,
   MODEL_TYPE_LABEL,
+  packageCardNodes,
   type ModelBlockPayload,
   type PackagePayload,
 } from "../../../services/packages";
@@ -49,10 +50,14 @@ export function modelTypeLabel(pkg: ModelPackage): string {
   return MODEL_TYPE_LABEL[pkg.model.type] ?? pkg.model.type;
 }
 
-/** The node a drop of the model creates: its package's own. */
+/** The node a drop of the model makes, its package's own: when there are
+ *  several, the drop makes the one picked from its menu, so they read as a
+ *  choice, in the menu's order (`packageCardNodes`): `"Track Objects or
+ *  Segment Images"`, `"A, B or C"`. */
 export function modelNodeLabel(pkg: ModelPackage): string | null {
-  const template = pkg.templates[0];
-  return template ? template.label || template.templateId : null;
+  const labels = packageCardNodes(pkg).map((node) => node.label || node.nodeType);
+  if (labels.length <= 2) return labels.length > 0 ? labels.join(" or ") : null;
+  return `${labels.slice(0, -1).join(", ")} or ${labels[labels.length - 1]}`;
 }
 
 /** The card meta line: runtime, label count (a model with none, its type

@@ -62,7 +62,7 @@ A model package declares one of four types of model:
 | `semantic-segmentation` | an image | one class per pixel | DDRNet23-Slim, run by **Image Segmentation** |
 | `image-to-image` | images or rasters | an image or a raster | Deep Umbra, run by **Accumulated Shadow**; Local Relief, below |
 | `node-regression` | a graph: node features and edges | values for each node | the weather GNN, run by **Weather Routing** |
-| `concept-segmentation` | images or video, and text prompts, its labels | every thing each prompt names | SAM 3, a Transformers checkpoint its package's module loads from `model.path`, run by **Track Objects** |
+| `concept-segmentation` | images or video, and text prompts, its labels | every thing each prompt names | SAM 3, a Transformers checkpoint its package's modules load from `model.path`, run by **Track Objects** on videos and **Segment Images** on images |
 
 A segmentation model runs in an **Image Segmentation** node, whose code calls
 the Segmentation package's `segment_images` and needs no code of yours: drop
