@@ -4,7 +4,7 @@
   "version": 1,
   "source": {
     "path": "docs/examples/33-sideseeing-frames-segments-blocks.json",
-    "sha256": "11d0fb9e718e324e88d41fd71e491170b52db6371c1ab28b47e5bd782bcd81cc",
+    "sha256": "696046f3753832c11395dca1110d6a6b238af7ae2b892446b33f2725a7c8b734",
     "walkthrough": "docs/examples/33-sideseeing-frames-segments-blocks.md"
   },
   "prompt": "Load the SideSeeing West Loop walk's video from the Data Catalog, sample a frame every 2 seconds over the whole walk with Sample Video Frames, and find nine labels in each frame with SAM 3's Segment Images: curb cut, curb ramp, wheelchair ramp, tactile paving, pole, bollard, construction barrier, traffic cone and person. Show each frame beside its overlay in Simple View, and chart the mean share of a frame each label covers in Vega-Lite. Also load the walk's GPS track from the Data Catalog, read its gps.csv in place, and give each fix its time in the walk, from when the walk began. Place each frame on the walk where the track was at its time, between the fixes before and after it, and map the frames on an Autark map over the West Loop's streets from the committed OpenStreetMap extract, each a disc 4 m in radius colored by how much of the frame a curb cut covers. Load the West Loop's street corners from the Data Catalog and cut the walk where its fixes first come within 12 m of a corner, each block running along the street its corner shares with the next corner, from one cross street to the next. Cut the walk's video into those blocks with Split Video and play each in Simple View, linked to the map so the map highlights the frames from the block's start up to where it plays. Chart in Vega-Lite each block's share of frames showing each label, side by side per label.",
@@ -17,6 +17,7 @@
     ],
     "packages": [
       "curio.media@1",
+      "curio.rasterization@1",
       "model.curio.sam3@1"
     ],
     "paths": [
