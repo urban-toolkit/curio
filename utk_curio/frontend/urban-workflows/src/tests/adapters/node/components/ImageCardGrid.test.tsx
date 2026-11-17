@@ -492,4 +492,71 @@ describe('ImageCardGrid', () => {
       expect(onPlayed.mock.calls).toEqual([[row, 0], [row, 683.2], [row, 684]]);
     });
   });
+
+  // A card's Play is read by its name. A part of a longer file is named with
+  // where it starts in that file, so the blocks Split Video cuts from one
+  // walk, which all carry the walk's name, and the windows Split Audio cuts,
+  // which carry none, each have a name of their own: a screen reader tells
+  // them apart, and a test finds one by its name.
+  describe("a card's Play names the part it plays", () => {
+    const { apiFetch } = require('../../../../utils/authApi') as { apiFetch: jest.Mock };
+
+    afterEach(() => apiFetch.mockReset());
+
+    const part = (fileId: string, extra: Record<string, unknown>) => ({
+      thumbnail: 'https://example.test/poster.png',
+      kind: 'video',
+      dataset_id: 'imported.xc1@1',
+      file_id: fileId.padEnd(16, 'f'),
+      ...extra,
+    });
+
+    /** Shows *parts* as cards and returns the names their Play buttons are read by. */
+    function playNames(parts: Record<string, unknown>[]): (string | null)[] {
+      render(
+        <ImageCardGrid {...defaultProps} rows={parts} imageColumns={['thumbnail']} interacted={parts.map(() => '0')} />,
+      );
+      return screen.getAllByRole('button').map((button) => button.getAttribute('aria-label'));
+    }
+
+    it('two blocks of one video, both with its name, have names of their own, and each plays its block', async () => {
+      apiFetch.mockResolvedValue({ url: '/api/media/signed-token' });
+      const names = playNames([
+        part('block1', { name: 'walk.mp4', block: 1, t_s: 0, end_s: 60 }),
+        part('block2', { name: 'walk.mp4', block: 2, t_s: 60, end_s: 120 }),
+      ]);
+      expect(names).toEqual(['Play walk.mp4 from 0 s', 'Play walk.mp4 from 60 s']);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Play walk.mp4 from 60 s' }));
+      });
+      expect(apiFetch.mock.calls).toEqual([
+        [`/api/datasets/imported.xc1%401/media/${'block2'.padEnd(16, 'f')}/link`, { method: 'POST' }],
+      ]);
+    });
+
+    it("Split Audio's windows, which carry no name, are named by their kind and where each starts, to the millisecond", () => {
+      // Windows of 25 ms, as speech is often cut: a tenth of a second would
+      // name the first two alike.
+      const windowAt = (fileId: string, t_s: number) =>
+        part(fileId, { kind: 'audio', recording_file_id: 'birds', recording: 'birds.wav', t_s, duration_s: 0.025 });
+      expect(playNames([windowAt('w1', 152.675), windowAt('w2', 152.7), windowAt('w3', 152.725)])).toEqual([
+        'Play audio from 152.675 s',
+        'Play audio from 152.7 s',
+        'Play audio from 152.725 s',
+      ]);
+    });
+
+    it('a whole file, whose row carries no t_s, keeps "Play" and its name', () => {
+      expect(playNames([part('clip', { name: 'clip.mp4' })])).toEqual(['Play clip.mp4']);
+    });
+
+    it("in a table of whole files and parts, a whole file's empty t_s names no start", () => {
+      // A table that mixes them leaves a whole file's t_s empty, which the
+      // player reads as 0: the file plays from its start, and is not a part.
+      expect(
+        playNames([part('clip', { name: 'clip.mp4', t_s: null }), part('overlay', { name: 'clip.mp4', t_s: 30 })]),
+      ).toEqual(['Play clip.mp4', 'Play clip.mp4 from 30 s']);
+    });
+  });
 });

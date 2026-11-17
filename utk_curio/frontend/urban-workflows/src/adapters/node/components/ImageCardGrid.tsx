@@ -5,7 +5,7 @@ import { backendUrl } from '../../../utils/backendUrl';
 import { apiFetch } from '../../../utils/authApi';
 import { collectionMediaPath, collectionMediaRef, mediaPathOfRow } from '../../../utils/collectionMedia';
 import { useAuthedObjectUrl } from '../../../utils/useAuthedObjectUrl';
-import { PLAYER_TELLS_EVERY_MS } from '../../../utils/playerSelection';
+import { PLAYER_TELLS_EVERY_MS, partStart, secondsText } from '../../../utils/playerSelection';
 import { dashboardMediaLink, heldOnADashboard } from '../../../services/runs/dashboardMedia';
 
 /**
@@ -149,6 +149,22 @@ function playable(row: Record<string, unknown>): {
   }
   const mediaPath = mediaPathOfRow(row, datasetId, fileId);
   return { datasetId, fileId, kind, kept: collectionMediaRef(mediaPath)?.kept ?? null, mediaPath };
+}
+
+/**
+ * The name a card's Play is read by: "Play" and the row's file name, or its
+ * kind when the row names none, as Split Audio's windows do. A row that is a
+ * part of a longer file (Split Video's blocks, Split Audio's windows, Track
+ * Objects' overlay) adds where the part starts in that file, the `t_s` its
+ * player's range starts from (utils/playerSelection): "Play video.mp4 from
+ * 152.7 s". So the blocks of one walk, which all carry the walk's name, each
+ * have a name of their own. A whole file keeps "Play <name>". The button
+ * still shows "▶ Play".
+ */
+function playLabel(row: Record<string, unknown>, kind: 'video' | 'audio'): string {
+  const play = `Play ${String(row.name ?? kind)}`;
+  const start = partStart(row);
+  return start === null ? play : `${play} from ${secondsText(start)} s`;
 }
 
 const playButtonStyle: CSS.Properties = {
@@ -400,7 +416,7 @@ export default function ImageCardGrid({
                   <button
                     type="button"
                     style={playButtonStyle}
-                    aria-label={`Play ${String(row.name ?? media.kind)}`}
+                    aria-label={playLabel(row, media.kind)}
                     onClick={(e) => {
                       e.stopPropagation();
                       setPlaying(index);

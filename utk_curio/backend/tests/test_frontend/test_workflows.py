@@ -459,6 +459,15 @@ def _same_cell(a, b) -> bool:
     return a == b or (_empty_cell(a) and _empty_cell(b))
 
 
+def _play_name(part: dict) -> str:
+    """The name Simple View's card of *part*, a part of a longer file (a row
+    with ``t_s``), gives its Play: its name, and where it starts in that
+    file, to the millisecond with no trailing zeros, as ImageCardGrid's
+    ``playLabel`` says it ("Play video.mp4 from 5.7 s")."""
+    start = f"{round(float(part['t_s']), 3):.3f}".rstrip("0").rstrip(".")
+    return f"Play {part['name']} from {start} s"
+
+
 # Keeps each Vega view by the element it draws in, from the next view built
 # on (as test_scenario_inputs_e2e.py's init script does at a page's start).
 _KEEP_VEGA_VIEWS_JS = """() => {
@@ -1844,7 +1853,7 @@ class TestWorkflowCanvas:
         with page.expect_response(
             lambda r: r.request.method == "POST" and r.url.split("?")[0].endswith(link), timeout=60000,
         ) as asked:
-            node_locator(page, WALK_OVERLAY).get_by_role("button", name=f"Play {overlay['name']}").click()
+            node_locator(page, WALK_OVERLAY).get_by_role("button", name=_play_name(overlay), exact=True).click()
         assert asked.value.ok, f"the overlay's link answered {asked.value.status}"
         url = asked.value.json()["url"]
         page.wait_for_function(
@@ -1963,7 +1972,7 @@ class TestWorkflowCanvas:
         with page.expect_response(
             lambda r: r.request.method == "POST" and r.url.split("?")[0].endswith(link), timeout=60000,
         ) as asked:
-            node_locator(page, BLOCK_CARDS).get_by_role("button", name=f"Play {block['name']}").click()
+            node_locator(page, BLOCK_CARDS).get_by_role("button", name=_play_name(block), exact=True).click()
         assert asked.value.ok, f"the block's link answered {asked.value.status}"
         url = asked.value.json()["url"]
         page.wait_for_function(

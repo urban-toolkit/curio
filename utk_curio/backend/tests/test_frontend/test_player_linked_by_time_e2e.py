@@ -195,7 +195,9 @@ def _play_the_clip(page) -> None:
     can_play = page.evaluate("() => document.createElement('video').canPlayType('video/mp4; codecs=\"avc1.42E01E\"')")
     assert can_play, "this browser plays no H.264 MP4, so Simple View cannot play the clip"
     frame_node(page, VIEW_ID)
-    node_locator(page, VIEW_ID).get_by_role("button", name=f"Play {CLIP}").click()
+    # The clip is a whole file, whose Play is named "Play <name>"; only that
+    # name, whole, finds its card.
+    node_locator(page, VIEW_ID).get_by_role("button", name=f"Play {CLIP}", exact=True).click()
     page.wait_for_function(
         "(selector) => { const v = document.querySelector(selector); return !!v && v.readyState >= 1; }",
         arg=VIDEO, timeout=60000,
