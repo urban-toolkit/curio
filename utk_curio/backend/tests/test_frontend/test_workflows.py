@@ -1,8 +1,11 @@
+import ast
 import contextlib
 import os
 import re
 import json
+import time
 from dataclasses import dataclass
+from urllib.parse import quote
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -74,7 +77,9 @@ from .utils import (
     wait_for_run_guard_released,
     watch_brush,
 )
+from .utils import _OUTPUT_ARTIFACT_JS, frame_node, node_locator
 from .runner_split import TORCH_RE
+from .test_player_linked_by_time_e2e import _KEEP_CANVAS_JS, _SAME_CANVAS_JS, _SEEK_JS
 from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES, parse_workflow
 
 """
@@ -409,6 +414,97 @@ _UNHOLD_MAP_DRAWING_JS = """() => {
     }
     window.__curioMapDrawingHold = null;
 }"""
+
+
+#: Example 31, SAM 3 along the SideSeeing walk, and the nodes its own test reads.
+EXAMPLE_31 = "31-sideseeing-objects-along-a-walk.json"
+WALK_TRACKING = "walk-tracking"
+WALK_OVERLAY = "walk-overlay"
+WALK_OBJECTS = "walk-objects"
+WALK_SWIMLANE = "walk-swimlane"
+WALK_POINTS = "walk-points"
+WALK_MAP = "walk-map"
+WALK_VIDEO = f'.react-flow__node[data-id="{WALK_OVERLAY}"] video'
+#: Where the test seeks the overlay to, then back to. CI's stand-in for the
+#: walk is 8 s long, and its GPS track's three fixes are 4.5 to 6.7 s in.
+WALK_SEEK_S, WALK_SEEK_BACK_S = 7.0, 5.0
+
+# Keeps each Vega view by the element it draws in, from the next view built
+# on (as test_scenario_inputs_e2e.py's init script does at a page's start).
+_KEEP_VEGA_VIEWS_JS = """() => {
+    const module = window.__curio_vega;
+    if (!module || !module.View) return false;
+    if (!module.View.prototype.__curioKeepsViews) {
+        const initialize = module.View.prototype.initialize;
+        module.View.prototype.initialize = function (element, ...rest) {
+            const id = typeof element === "string" ? element.replace(/^#/, "") : element && element.id;
+            if (id) (window.__curioVegaViews = window.__curioVegaViews || {})[id] = this;
+            return initialize.call(this, element, ...rest);
+        };
+        module.View.prototype.__curioKeepsViews = true;
+    }
+    return true;
+}"""
+
+# The object ids of the bars a Vega-Lite chart lights: its rows flagged
+# `interacted`, which its color condition reads.
+_VEGA_LIT_IDS_JS = """(id) => {
+    const view = (window.__curioVegaViews || {})["vega" + id];
+    if (!view) return null;
+    return view.data("input_0").filter((t) => t.interacted === "1").map((t) => t.object_id);
+}"""
+
+# The t_s of the features an Autark map lights on the layer that picks, as
+# autk-map holds the layer (adapters/node/autkMapState.ts).
+_MAP_LIT_T_S_JS = """async (id) => {
+    const state = window.__curio_mapState ? await window.__curio_mapState(id) : null;
+    if (!state) return null;
+    const picks = Object.values(state).filter((table) => table.pick);
+    if (picks.length !== 1) return { picks: picks.length };
+    return { lit: picks[0].lit.map((p) => p.t_s), drawn: picks[0].drawn };
+}"""
+
+# Where the overlay's player stands, and what it plays.
+_PLAYER_JS = """(selector) => {
+    const video = document.querySelector(selector);
+    return video && { src: video.currentSrc, readyState: video.readyState, duration: video.duration };
+}"""
+
+
+def _stored_rows(page, node_id: str) -> list[dict]:
+    """The rows of *node_id*'s saved output as the sandbox stores them: a
+    table's, or a layer's features' properties."""
+    artifact = page.evaluate(_OUTPUT_ARTIFACT_JS, node_id)
+    assert artifact, f"{node_id} shows no saved output"
+    stored = load_artifact_as_dict(artifact)
+    data = stored["data"]
+    if stored["dataType"] == "geodataframe":
+        return [feature["properties"] for feature in data["features"]]
+    assert stored["dataType"] == "dataframe", f"{node_id} saved a {stored['dataType']}"
+    columns = {name: list(values.values()) if isinstance(values, dict) else list(values)
+               for name, values in data.items()}
+    count = len(next(iter(columns.values()), []))
+    return [{name: values[index] for name, values in columns.items()} for index in range(count)]
+
+
+def _code_settings(spec, node_id: str) -> dict:
+    """The settings a node's code tab sets at its top, by name."""
+    code = next(node.content for node in spec.nodes if node.id == node_id)
+    body = ast.parse("def node(input_0):\n" + "\n".join("    " + line for line in code.splitlines())).body[0].body
+    return {
+        statement.targets[0].id: ast.literal_eval(statement.value)
+        for statement in body if isinstance(statement, ast.Assign) and isinstance(statement.targets[0], ast.Name)
+    }
+
+
+def _wait_until(page, read, expected, what: str, timeout_ms: int = 30000):
+    """Read *read()* until it gives *expected*, or fail naming *what*."""
+    deadline = time.monotonic() + timeout_ms / 1000
+    found = read()
+    while found != expected and time.monotonic() < deadline:
+        page.wait_for_timeout(200)
+        found = read()
+    assert found == expected, f"{what}: {found!r}, not {expected!r}"
 
 
 class TestWorkflowCanvas:
@@ -1628,3 +1724,129 @@ class TestWorkflowCanvas:
         finally:
             if viewport:
                 page.set_viewport_size(viewport)
+
+    @pytest.mark.only_workflows(EXAMPLE_31)
+    def test_the_walks_player_lights_its_objects_and_fixes_up_to_where_it_stands(self, loaded_workflow, request):
+        """Example 31 as it ships, on CI's stand-ins (``utils/stand_ins.py``):
+        the tiny SAM 3 planted as fetched, and the walk's 8 s recorded clip and
+        three GPS fixes, cached for the account.
+
+        Track Objects gives the walk back as its overlay, one video that
+        starts at ``t_s`` 0 and shows a frame every ``EVERY_SECONDS``, which
+        Simple View plays through the media route. Objects gives one row per
+        object of its tracks, which keep the module's invariants, and ``t_s``,
+        its first sighting. The player's range lights exactly the bars and the
+        fixes whose ``t_s`` it holds, read from the nodes' own outputs: none
+        before the overlay plays, and after a seek to 7 s and back to 5 s,
+        fewer fixes than at 7 s. The tiny SAM 3 takes its objects in its first
+        frame, so every bar lights at any seek past 0, and only the fixes tell
+        a seek back. The map is never drawn again for the range.
+
+        Frames, each after the checks of what it shows: the map and the
+        swimlane before the overlay plays and at 5 s, and the overlay's card
+        at 5 s with its video hidden, whose picture the tiny model's random
+        weights draw otherwise on each GPU.
+        """
+        page = self.page
+        self._execute_all_playable_nodes()
+        settings = _code_settings(self.spec, WALK_TRACKING)
+        labels, every = settings["LABELS"], settings["EVERY_SECONDS"]
+
+        # The overlay: the walk as one video that starts where the walk does,
+        # a frame every EVERY_SECONDS.
+        (overlay,) = _stored_rows(page, WALK_TRACKING)
+        assert (overlay["kind"], overlay["t_s"]) == ("video", 0.0), overlay
+        frames = round(overlay["duration_s"] / every)
+        assert frames >= 2 and overlay["fps"] == round(1 / every, 3), overlay
+        # One row per object of its tracks, as Objects reads them.
+        objects = _stored_rows(page, WALK_OBJECTS)
+        counts = {label: int(overlay[label.replace(" ", "_") + "_objects"]) for label in labels}
+        # In the job's results, to compare what the tiny SAM 3 finds on each GPU.
+        request.node.user_properties.append(("walk_objects", json.dumps(counts, sort_keys=True)))
+        assert objects, "Track Objects followed no object, so no bar could light"
+        assert counts == {label: sum(row["label"] == label for row in objects) for label in labels}, counts
+        assert sum(counts.values()) == len(objects) == len({row["object_id"] for row in objects}), objects
+        for row in objects:
+            assert row["t_s"] == row["start_s"] <= row["end_s"] < overlay["duration_s"], row
+            assert all(abs(t / every - round(t / every)) < 1e-6 for t in (row["start_s"], row["end_s"])), row
+            assert 1 <= row["frames"] <= frames, row
+        fixes = sorted(round(point["t_s"], 6) for point in _stored_rows(page, WALK_POINTS))
+
+        def walked(at: float) -> list[float]:
+            return [t for t in fixes if t <= at]
+
+        def seen(at: float) -> list[int]:
+            return sorted(row["object_id"] for row in objects if row["t_s"] <= at)
+
+        # A seek back lights fewer fixes than the seek before it, and some.
+        assert 0 < len(walked(WALK_SEEK_BACK_S)) < len(walked(WALK_SEEK_S)), fixes
+
+        def map_lit():
+            state = page.evaluate(_MAP_LIT_T_S_JS, WALK_MAP)
+            if not state or "lit" not in state or state["drawn"] != len(fixes):
+                return state
+            return sorted(round(t, 6) for t in state["lit"])
+
+        def bars_lit():
+            ids = page.evaluate(_VEGA_LIT_IDS_JS, WALK_SWIMLANE)
+            return None if ids is None else sorted(ids)
+
+        # The swimlane drawn again with its view kept, whose rows' flags say
+        # which bars its color condition lights.
+        assert page.evaluate(_KEEP_VEGA_VIEWS_JS), "the page holds no Vega module"
+        play_node(page, WALK_SWIMLANE)
+        wait_for_node_done(page, WALK_SWIMLANE, node_type="VIS_VEGA")
+        wait_for_run_guard_released(page, timeout_ms=node_execution_timeout_ms("VIS_VEGA"))
+        dismiss_toasts(page)
+        map_canvas = f"#autk-grammar-map-{WALK_MAP}"
+        assert page.evaluate(_KEEP_CANVAS_JS, map_canvas), f"the map has no canvas {map_canvas}"
+
+        _wait_until(page, map_lit, [], "Before the overlay plays, the map lights the fixes at")
+        _wait_until(page, bars_lit, [], "Before the overlay plays, the swimlane lights the objects")
+        save_node_closeup(page, self.spec.filepath, WALK_MAP, test_name="walk_map_before_playing", sweep_toasts=True)
+        save_node_closeup(page, self.spec.filepath, WALK_SWIMLANE, test_name="walk_swimlane_before_playing",
+                          sweep_toasts=True)
+
+        # The overlay plays through the media route: the link its card asks
+        # for the overlay's file is what the player plays.
+        frame_node(page, WALK_OVERLAY)
+        link = f"/api/datasets/{overlay['dataset_id']}/media/{quote(str(overlay['file_id']), safe='')}/link"
+        with page.expect_response(
+            lambda r: r.request.method == "POST" and r.url.split("?")[0].endswith(link), timeout=60000,
+        ) as asked:
+            node_locator(page, WALK_OVERLAY).get_by_role("button", name=f"Play {overlay['name']}").click()
+        assert asked.value.ok, f"the overlay's link answered {asked.value.status}"
+        url = asked.value.json()["url"]
+        page.wait_for_function(
+            "(selector) => { const v = document.querySelector(selector); return !!v && v.readyState >= 1; }",
+            arg=WALK_VIDEO, timeout=60000,
+        )
+        page.evaluate("(selector) => document.querySelector(selector).pause()", WALK_VIDEO)
+        player = page.evaluate(_PLAYER_JS, WALK_VIDEO)
+        assert player["src"].endswith(url), f"the player plays {player['src']}, not the link {url}"
+        assert abs(player["duration"] - overlay["duration_s"]) < 0.1, (player, overlay["duration_s"])
+
+        def seek(at: float) -> None:
+            stands = page.evaluate(_SEEK_JS, [WALK_VIDEO, at])
+            assert stands == at, f"a seek to {at} s left the player at {stands} s"
+
+        seek(WALK_SEEK_S)
+        _wait_until(page, map_lit, walked(WALK_SEEK_S), f"At {WALK_SEEK_S} s, the map lights the fixes at")
+        _wait_until(page, bars_lit, seen(WALK_SEEK_S), f"At {WALK_SEEK_S} s, the swimlane lights the objects")
+        seek(WALK_SEEK_BACK_S)
+        _wait_until(page, map_lit, walked(WALK_SEEK_BACK_S),
+                    f"Back at {WALK_SEEK_BACK_S} s, the map lights the fixes at")
+        _wait_until(page, bars_lit, seen(WALK_SEEK_BACK_S),
+                    f"Back at {WALK_SEEK_BACK_S} s, the swimlane lights the objects")
+        assert page.evaluate(_SAME_CANVAS_JS, map_canvas), "the map was drawn again for the player's range"
+
+        save_node_closeup(page, self.spec.filepath, WALK_MAP, test_name="walk_map_at_5_s", sweep_toasts=True)
+        save_node_closeup(page, self.spec.filepath, WALK_SWIMLANE, test_name="walk_swimlane_at_5_s",
+                          sweep_toasts=True)
+        page.evaluate("(selector) => { document.querySelector(selector).style.visibility = 'hidden'; }", WALK_VIDEO)
+        try:
+            save_node_closeup(page, self.spec.filepath, WALK_OVERLAY, test_name="walk_overlay_at_5_s",
+                              sweep_toasts=True)
+        finally:
+            page.evaluate("(selector) => { document.querySelector(selector).style.visibility = ''; }", WALK_VIDEO)
+        assert page.evaluate(_SAME_CANVAS_JS, map_canvas), "the map was drawn again for its frames"

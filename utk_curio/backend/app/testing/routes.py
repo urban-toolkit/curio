@@ -1843,3 +1843,163 @@ def catalog_package():
         path.write_bytes(data)
     refresh_package_integrity(target)
     return jsonify({"planted": dir_name, "files": sorted([*files, *weights])}), 200
+
+
+#: The most a stand-in's files may weigh in all: a tiny model, never real weights.
+_STAND_IN_MAX_BYTES = 128 * 1024 * 1024
+#: The record a plant keeps in the entry folder of what it wrote there, so a
+#: removal takes that alone. A dotfile, which the package's integrity and
+#: archives leave out, as they leave out the stamps.
+_PLANTED_RECORD = ".curio-test-planted.json"
+
+
+def _is_relative(rel: object) -> bool:
+    return (isinstance(rel, str) and bool(rel) and not rel.startswith("/") and "\\" not in rel
+            and ".." not in rel.split("/"))
+
+
+def _remove_planted(root, entry) -> list[str]:
+    """Take out what a plant put in *entry*, the entry folder of the catalog
+    package in *root*, by its record: each file still as planted, with its
+    stamp, then the record, then each folder the plant made, once it is
+    empty. A file that is no longer as planted, such as one a download put
+    in its place, stays. The files removed, by their path in the entry."""
+    import hashlib
+    import json as _json
+
+    from utk_curio.backend.app.packages.domain import model_fetch
+
+    record_path = entry / _PLANTED_RECORD
+    try:
+        record = _json.loads(record_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    removed = []
+    for rel, digest in sorted((record.get("files") or {}).items()):
+        target = entry / rel
+        if not _is_relative(rel) or target.is_symlink() or not target.is_file():
+            continue
+        if hashlib.sha256(target.read_bytes()).hexdigest() == digest:
+            model_fetch.discard(target)
+            removed.append(rel)
+    record_path.unlink(missing_ok=True)
+    for rel in record.get("folders") or []:
+        if _is_relative(rel):
+            with contextlib.suppress(OSError):
+                (root / rel).rmdir()
+    return removed
+
+
+@testing_bp.route("/fetched-weights", methods=["POST"])
+def fetched_weights():
+    """Plant a stand-in for the weights a catalog model package's ``fetch``
+    names, or take it out.
+
+    No CI run holds such weights (SAM 3's are Meta's 3.4 GB) and no test may
+    open a socket to download them, so a test of a dataflow that runs such a
+    model plants a stand-in, a tiny model with random weights
+    (``tests/_support/tiny_sam3.py``), in the catalog's copy of the package,
+    laid out as ``scripts/fetch_model_weights.py`` leaves the real ones: each
+    file the block lists in its entry folder, readable by every account, and
+    stamped with the digest the block names (``model_fetch.write_stamp``),
+    the stamp being what Curio reads to tell they are in place
+    (``model_fetch.is_stamped``). A node then runs on the stand-in, and the
+    Model Catalog says the weights need no download. The catalog is in the
+    stack's own filesystem, which a pytest process talking to a container
+    cannot write, so it is written here.
+
+    Body (JSON):
+      * ``action``  - ``"plant"`` or ``"remove"``.
+      * ``dirName`` - a package of the catalog whose model block has a ``fetch``.
+      * ``files``   - plant: ``{path in the entry: base64}``, every file the
+        ``fetch`` lists and no other.
+
+    A plant is refused (409) where ``--model-weights-dir`` names the folder of
+    the weights, which stacks share, and where a file the block lists, or its
+    stamp, is already in the entry folder: real weights, or a download's,
+    which no plant replaces. It keeps a record of what it wrote, and a
+    ``remove`` takes out that alone (:func:`_remove_planted`); a plant of a
+    package already planted takes the earlier plant out first.
+    """
+    import base64 as _base64
+    import binascii as _binascii
+    import hashlib
+    import json as _json
+    import os
+
+    from utk_curio.backend.app.packages.domain import model_fetch
+    from utk_curio.backend.app.packages.domain.manifest import ManifestError
+    from utk_curio.backend.app.packages.domain.package_id import PACKAGE_DIR_RE
+    from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root as _catalog_root
+    from utk_curio.backend.app.packages.repositories.catalog_dir import model_weights_dir
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+
+    body = request.get_json(silent=True) or {}
+    action = (body.get("action") or "").strip()
+    dir_name = (body.get("dirName") or "").strip()
+    if action not in ("plant", "remove"):
+        return jsonify({"error": "action must be 'plant' or 'remove'"}), 400
+    if not PACKAGE_DIR_RE.match(dir_name):
+        return jsonify({"error": f"not a package: {dir_name!r}"}), 400
+    root = _catalog_root() / dir_name
+    try:
+        manifest = load_package_manifest(root)
+    except (ManifestError, OSError, ValueError):
+        return jsonify({"error": f"the catalog has no package {dir_name}"}), 404
+    block = manifest.model
+    if manifest.kind != "model" or block is None or block.fetch is None:
+        return jsonify({"error": f"{dir_name} is not a model package whose weights a fetch names"}), 400
+    entry = root / block.entry
+    if action == "remove":
+        return jsonify({"removed": _remove_planted(root, entry), "dirName": dir_name}), 200
+
+    if model_weights_dir() is not None:
+        return jsonify({
+            "error": "--model-weights-dir names the folder of the weights, which stacks share: no stand-in is planted there",
+        }), 409
+    listed = {item.path: item for item in block.fetch.files}
+    files = body.get("files")
+    if not isinstance(files, dict) or set(files) != set(listed):
+        return jsonify({"error": f"files must be every file the fetch lists and no other: {sorted(listed)}"}), 400
+    planted: dict[str, bytes] = {}
+    for rel, encoded in files.items():
+        if not isinstance(encoded, str):
+            return jsonify({"error": f"{rel!r} is not base64"}), 400
+        try:
+            planted[rel] = _base64.b64decode(encoded, validate=True)
+        except (_binascii.Error, ValueError):
+            return jsonify({"error": f"{rel!r} is not base64"}), 400
+    if sum(len(data) for data in planted.values()) > _STAND_IN_MAX_BYTES:
+        return jsonify({"error": "a stand-in is a tiny model, a few files of a few megabytes"}), 400
+
+    _remove_planted(root, entry)
+    in_place = sorted(
+        rel for rel in listed
+        if os.path.lexists(entry / rel) or os.path.lexists(model_fetch.stamp_path(entry / rel))
+    )
+    if in_place:
+        return jsonify({"error": f"the weights of {dir_name} are in place ({', '.join(in_place)}): no stand-in replaces them"}), 409
+
+    made: list[str] = []
+    for rel in listed:
+        folder = (entry / rel).parent
+        missing = []
+        while folder != root and not folder.exists():
+            missing.append(folder)
+            folder = folder.parent
+        for new in reversed(missing):
+            new.mkdir()
+            os.chmod(new, model_fetch.FOLDER_MODE)
+            made.append(new.relative_to(root).as_posix())
+    for rel, data in planted.items():
+        target = entry / rel
+        target.write_bytes(data)
+        os.chmod(target, model_fetch.FILE_MODE)
+        model_fetch.write_stamp(target, listed[rel])
+    record = {
+        "files": {rel: hashlib.sha256(data).hexdigest() for rel, data in planted.items()},
+        # The deepest first, so each is empty when its turn to go comes.
+        "folders": sorted(made, key=lambda rel: rel.count("/"), reverse=True),
+    }
+    (entry / _PLANTED_RECORD).write_text(_json.dumps(record, indent=2), encoding="utf-8")
+    return jsonify({"planted": dir_name, "files": sorted(listed)}), 200

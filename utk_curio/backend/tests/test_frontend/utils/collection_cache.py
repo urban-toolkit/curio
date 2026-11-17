@@ -71,10 +71,11 @@ def bucket_collections_of(dataset_ids) -> list:
     ]
 
 
-def cache_bucket_collections(page, dataset_ids) -> list[str]:
+def cache_bucket_collections_from_the_drawer(page, dataset_ids) -> list[str]:
     """Cache, from the open dataflow's Data Catalog drawer, the files of each
     of *dataset_ids* that is a committed collection of a bucket, as a person
-    does on a Curio that mounts no bucket; the ids it cached."""
+    does on a Curio that mounts no bucket; the ids it cached. The generic
+    matrix caches them over the API instead (``stand_ins.cache_bucket_collections``)."""
     from .palettes import close_tools_palette, open_tools_palette
 
     collections = bucket_collections_of(dataset_ids)

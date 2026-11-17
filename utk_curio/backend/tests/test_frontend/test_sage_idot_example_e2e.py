@@ -31,7 +31,7 @@ from .utils import (
     REPO_ROOT,
     assert_autark_map_drawn,
     assert_vega_canvas_rendered,
-    cache_bucket_collections,
+    cache_bucket_collections_from_the_drawer,
     dismiss_toasts,
     node_locator,
     park_pointer,
@@ -141,7 +141,7 @@ def test_the_example_runs_on_its_cached_files_and_its_dashboard_follows_a_visito
 
     # The six collections whose files are in the bucket, cached from the corpus.
     datasets = [ref["datasetId"] for ref in spec["dataflow"]["datasets"]]
-    cached = cache_bucket_collections(page, datasets)
+    cached = cache_bucket_collections_from_the_drawer(page, datasets)
     assert sorted(cached) == sorted(d for d in datasets if d.startswith("data.sage.")), cached
 
     # Run All runs every node, each to Done.

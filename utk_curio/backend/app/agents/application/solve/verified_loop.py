@@ -693,6 +693,13 @@ class VerifiedRounds:
                     "verdict": "infrastructure",
                     "evidence": {"kind": "infrastructure", "detail": str(exc)[:300]},
                 }
+            except BaseException as exc:
+                # What no Exception handler takes, such as the refusal of a
+                # test's network guard, ended this thread with nothing handed
+                # over, and the stream below waited for it for ever. It goes
+                # to the stream, which raises it where it waits.
+                progress_queue.put(("raised", exc))
+                raise
             progress_queue.put(("done", result))
 
         thread = threading.Thread(target=_run_validation)
@@ -708,6 +715,8 @@ class VerifiedRounds:
                 yield "node_download", {"nodeId": nid, **fields}
                 continue
             thread.join(timeout=5)
+            if item[0] == "raised":
+                raise item[1]
             return item[1]
 
     def _validate(self):

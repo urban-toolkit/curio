@@ -19,7 +19,6 @@ from playwright.sync_api import Page
 from . import diagnostics
 from .utils import (
     FrontendPage,
-    cache_bucket_collections,
     debug_log,
     REPO_ROOT,
     is_port_in_use,
@@ -30,6 +29,10 @@ from .utils import (
     upload_workflow,
     seed_node_code,
     stub_login_and_enter_workflow,
+    cache_bucket_collections,
+    declared_bucket_collections,
+    declared_stand_ins,
+    fetched_weights_planted,
 )
 from .workflow_spec import PY_CODE_TYPES, normalize_type
 
@@ -719,6 +722,12 @@ def loaded_workflow(
     expected-data generation (see ``execute_workflow_programmatically``).
     The original *spec* (un-seeded) is kept for content assertions — they
     use a substring check so the seed prefix doesn't break them.
+
+    What the dataflow reads that CI lacks is put in place first, for the
+    class (``utils/stand_ins.py``): the files of a committed bucket
+    collection it declares, cached for the user, and a tiny model for a
+    model package it declares whose weights download on first use, planted
+    as fetched and taken out after the class.
     """
     from .workflow_spec import parse_workflow
 
@@ -778,21 +787,19 @@ def loaded_workflow(
         },
         "H3,H4",
     )
-    upload_workflow(
-        workflow_page, workflow_frontend, seeded_tmp.name, spec.nodes_count,
-    )
-    # A committed collection whose files are in a bucket is read once they are
-    # on this machine, as on a Curio that mounts no bucket: Cache files copies
-    # them from the recorded corpus before anything runs.
-    cache_bucket_collections(
-        workflow_page, [ref["datasetId"] for ref in wf_data["dataflow"].get("datasets") or []],
-    )
-    request.cls.spec = spec
-    request.cls.page = workflow_page
-    # The ground-truth run resolves datasets as this user too, so the files a
-    # node derives land where the browser's run puts them.
-    request.cls.username = username
-    yield
+    token = stub_result["token"]
+    with fetched_weights_planted(current_server, token, declared_stand_ins(wf_data)):
+        upload_workflow(
+            workflow_page, workflow_frontend, seeded_tmp.name, spec.nodes_count,
+        )
+        # Once the dataflow is open, as a person caches a collection it reads.
+        cache_bucket_collections(current_server, token, declared_bucket_collections(wf_data))
+        request.cls.spec = spec
+        request.cls.page = workflow_page
+        # The ground-truth run resolves datasets as this user too, so the files a
+        # node derives land where the browser's run puts them.
+        request.cls.username = username
+        yield
     os.unlink(seeded_tmp.name)
     if os.environ.get("CURIO_PAUSE_AFTER"):
         input("Tests done — press Enter to close the browser...")
