@@ -39,6 +39,15 @@ transport makes a refused ``CONNECT`` an error of that phrase, which rclone
 reports, so the refusal never reads as the bucket's own answer. The phrase
 holds no path, and never the self-test's host. Through a tunnel pass only TLS
 bytes: no path, header or key of what rclone asks is read here.
+
+Each refusal of a ``CONNECT`` to a host and port is also noted, before it is
+answered, with why and when (:meth:`MountProxy.refusal_since`): FUSE gives a
+listing that rclone could not make EIO alone, so the backend process whose
+mount's listing failed reads there that Curio's proxy refused the bucket's
+host, and why. The proxy's *refusals* are this process's own
+(:class:`Refusals`), or in a start of several backend processes the notes
+they share (``application/bucket_mount_sources.SharedRefusals``). A note holds
+no path, and the self-test's host is never noted.
 """
 
 from __future__ import annotations
@@ -79,8 +88,10 @@ LINGER_READS = 4
 
 #: How the reason phrase of each refusal starts, before why.
 REFUSAL = "Curio's bucket mount proxy refused the request"
-#: The most characters of why a reason phrase gives.
+#: The most characters of why a reason phrase, or a note of a refusal, gives.
 WHY_CHARS = 200
+#: The hosts and ports whose latest refusal is noted, at most: the latest.
+REFUSALS_KEPT = 64
 
 #: A host name as the proxy takes one: labels of letters, digits and dashes.
 _HOST_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$")
@@ -104,7 +115,7 @@ class Admissions:
     admitted for, in this process's memory: a start of one backend process's.
     A start of several gives its proxy the list its processes share instead
     (``application/bucket_mount_sources.SharedAdmissions``), which answers the
-    same three calls. A host comes lowercase, a port as a number."""
+    same four calls. A host comes lowercase, a port as a number."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -117,8 +128,18 @@ class Admissions:
 
     def withdraw(self, name: str) -> None:
         """The source mounted as *name* needs its host no more."""
+        self._drop(name, keep=None)
+
+    def withdraw_others(self, name: str, host: str, port: int) -> None:
+        """The source mounted as *name* reaches *host* at *port* alone now:
+        any other host and port it was let through to goes."""
+        self._drop(name, keep=(host, port))
+
+    def _drop(self, name: str, *, keep: Optional[tuple[str, int]]) -> None:
         with self._lock:
             for key in list(self._admitted):
+                if key == keep:
+                    continue
                 names = self._admitted[key]
                 names.discard(name)
                 if not names:
@@ -129,22 +150,51 @@ class Admissions:
             return (host, port) in self._admitted
 
 
+class Refusals:
+    """The proxy's latest refusal of each host and port, why and when
+    (``time.time()``), in this process's memory: a start of one backend
+    process's. A start of several gives its proxy the notes its processes
+    share instead (``application/bucket_mount_sources.SharedRefusals``), which
+    answer the same two calls. At most :data:`REFUSALS_KEPT` hosts and ports,
+    the latest."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._noted: dict[tuple[str, int], tuple[str, float]] = {}
+
+    def note(self, host: str, port: int, why: str, at: float) -> None:
+        """The proxy refused *host* at *port* at *at*, for *why*."""
+        with self._lock:
+            self._noted.pop((host, port), None)
+            self._noted[(host, port)] = (why, at)
+            while len(self._noted) > REFUSALS_KEPT:
+                del self._noted[next(iter(self._noted))]
+
+    def since(self, host: str, port: int, since: float) -> Optional[str]:
+        """Why the proxy refused *host* at *port* at *since* or later, or None."""
+        with self._lock:
+            noted = self._noted.get((host, port))
+        return noted[0] if noted is not None and noted[1] >= since else None
+
+
 class MountProxy:
     """A CONNECT proxy to the hosts of the sources being mounted.
 
     *addresses_of* is the host check: the addresses of a host to connect to,
     each one checked, or :class:`egress_policy.EgressRefused`. It is
     ``egress_policy.public_addresses`` unless a test gives its own rule.
-    *admissions* says which hosts and ports tunnels may reach: this process's
-    own (:class:`Admissions`) unless the backend gives the list a start of
-    several backend processes shares.
+    *admissions* says which hosts and ports tunnels may reach, and *refusals*
+    keeps the proxy's refusals of each: this process's own
+    (:class:`Admissions`, :class:`Refusals`) unless the backend gives those a
+    start of several backend processes shares.
     """
 
     def __init__(self, *, addresses_of: Optional[Callable[[str], list]] = None, admissions=None,
-                 max_tunnels: int = MAX_TUNNELS, idle_seconds: float = IDLE_SECONDS,
+                 refusals=None, max_tunnels: int = MAX_TUNNELS, idle_seconds: float = IDLE_SECONDS,
                  head_seconds: float = HEAD_SECONDS, connect_seconds: float = CONNECT_SECONDS):
         self._addresses_of = addresses_of
         self._admissions = Admissions() if admissions is None else admissions
+        self._refusals = Refusals() if refusals is None else refusals
         self.max_tunnels = max_tunnels
         self.idle_seconds = idle_seconds
         self.head_seconds = head_seconds
@@ -170,8 +220,32 @@ class MountProxy:
         """The source mounted as *name* needs its host no more."""
         self._admissions.withdraw(name)
 
+    def withdraw_others(self, name: str, host: str, port: int) -> None:
+        """The source mounted as *name* reaches *host* at *port* alone now:
+        its mount's folder holds a mount of that host's bucket, or none. Any
+        other host and port it was let through to goes."""
+        self._admissions.withdraw_others(name, host.lower(), int(port))
+
     def admits(self, host: str, port: int) -> bool:
         return self._admissions.admits(host.lower(), int(port))
+
+    # ── what it refused ────────────────────────────────────────────────────
+
+    def refusal_since(self, host: str, port: int, since: float) -> Optional[str]:
+        """Why the proxy refused a ``CONNECT`` to *host* at *port* at *since*
+        (``time.time()``) or later, its latest refusal of it; None when it
+        refused none since. In a start of several backend processes the
+        proxy that listens is home's, and every process reads its notes."""
+        return self._refusals.since(host.lower(), int(port), since)
+
+    def _note(self, host: str, port: int, why: str) -> None:
+        """Note the refusal of *host* at *port*, for *why*, before it is
+        answered, so a process whose listing then fails finds it. A note that
+        cannot be kept is logged, and the refusal answered all the same."""
+        try:
+            self._refusals.note(host, port, _shown(why), time.time())
+        except OSError as exc:
+            log.warning("Bucket mount proxy could not note its refusal of %s:%d: %s", host, port, exc)
 
     # ── the self-test's ask ────────────────────────────────────────────────
 
@@ -269,6 +343,8 @@ class MountProxy:
         self._track(client)
         upstream: Optional[socket.socket] = None
         where = "a request"
+        #: The host and port a CONNECT asked for, once read: what a refusal notes.
+        asked: Optional[tuple[str, int]] = None
         try:
             head, rest = self._read_head(client)
             method, target = _request_line(head)
@@ -282,6 +358,8 @@ class MountProxy:
                 log.info("Bucket mount proxy: the mount service reached it, as its self-test asks")
                 _answer(client, 403, "the self-test reached it")
                 return
+            # Past the self-test's host, which no note shows either.
+            asked = (host, port)
             if not self.admits(host, port):
                 raise _Refused(403, "it is not the host and port of a source being mounted")
             addresses_of = self._addresses_of or egress_policy.public_addresses
@@ -303,6 +381,9 @@ class MountProxy:
                 self._tunnels.release()
         except _Refused as refused:
             log.warning("Bucket mount proxy refused %s: %s", where, refused.why)
+            if asked is not None:
+                # Before the answer: rclone's listing fails only after it.
+                self._note(*asked, refused.why)
             _answer(client, refused.status, refused.why)
         except _Gone:
             log.debug("Bucket mount proxy: a connection closed before it said where to")
@@ -429,12 +510,16 @@ def _host_of_target(target: str) -> Optional[str]:
         return None
 
 
+def _shown(why: str) -> str:
+    """*why*, at most :data:`WHY_CHARS` of it, in printable ASCII."""
+    return "".join(char if " " <= char <= "~" else "?" for char in why[:WHY_CHARS])
+
+
 def _phrase(why: str) -> str:
-    """The reason phrase of a refusal for *why*: :data:`REFUSAL`, then *why*,
-    at most :data:`WHY_CHARS` of it, in printable ASCII, so the status line
-    stays one line a client reads."""
-    shown = "".join(char if " " <= char <= "~" else "?" for char in why[:WHY_CHARS])
-    return f"{REFUSAL}: {shown}"
+    """The reason phrase of a refusal for *why*: :data:`REFUSAL`, then *why*
+    as :func:`_shown` gives it, so the status line stays one line a client
+    reads."""
+    return f"{REFUSAL}: {_shown(why)}"
 
 
 def _answer(client: socket.socket, status: int, why: str) -> None:

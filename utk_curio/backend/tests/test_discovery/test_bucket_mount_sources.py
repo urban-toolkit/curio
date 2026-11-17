@@ -1292,6 +1292,60 @@ class TestAStartOfSeveralProcesses:
         error = self._in_process(1, mounts_nothing)
         assert error == "", error
 
+    @pytest.mark.parametrize("outcome", [
+        bm.SelfTest(True, None, "passed"),
+        bm.SelfTest(False, "no-service", "nothing answers on /run/x/rc.sock"),
+    ], ids=["passed", "found-no-service"])
+    def test_what_lets_home_mount_lets_another_process_mount(self, start, tmp_path, outcome):
+        """A passed self-test, and one that found no service, which a mount's
+        own calls find again, stop no process, as they stop no mount in home."""
+        _home, _proxy_port, source, _port = start(2)
+        bucket_mount_check.record(outcome)
+
+        def mounts_it():
+            service = FakeRclone()
+            found = self._mounts(service, FakeFolders(service), tmp_path).ensure(source)
+            assert found.mounted, found
+
+        error = self._in_process(1, mounts_it)
+        assert error == "", error
+
+    def test_the_next_start_reads_no_self_test_of_the_start_before(self, start, tmp_path, monkeypatch):
+        from utk_curio.backend.app.common import shared_budgets
+
+        _home, _proxy_port, source, _port = start(2)
+        bucket_mount_check.record(bm.SelfTest(False, "not-propagated", "no /bucket-mounts/.selftest/ok"))
+        monkeypatch.setattr(shared_budgets, "BOOT_ID", "the next start")
+
+        def mounts_it():
+            service = FakeRclone()
+            found = self._mounts(service, FakeFolders(service), tmp_path).ensure(source)
+            assert found.mounted, f"the next start's process 1 reads the start before's self-test: {found}"
+
+        error = self._in_process(1, mounts_it)
+        assert error == "", error
+
+    def test_the_proxys_notes_hold_a_host_its_port_why_and_when_alone(self, start):
+        """The notes are the start's, in its state folder, which node code
+        cannot reach: what a ``CONNECT`` said, never a path (it holds none),
+        and never the self-test's host, which no log or answer shows either."""
+        from utk_curio.backend.app.common import shared_budgets
+
+        home, proxy_port, _source, port = start(2)
+        selftest = "selftest-0123456789abcdef0123456789abcdef.curio-bucket-mounts.invalid"
+        home.expect(selftest, 443)
+        for target in (f"{selftest}:443", f"other.example.org:{port}"):
+            with socket.create_connection(("127.0.0.1", proxy_port), timeout=10) as sock:
+                sock.sendall(f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n".encode("ascii"))
+                assert sock.recv(1024).startswith(b"HTTP/1.1 403 ")
+
+        with shared_budgets.State(sources_module.REFUSALS).held() as state:
+            [note] = state["refused"]
+        assert sorted(note) == ["at", "host", "port", "why"]
+        assert (note["host"], note["port"], note["why"]) == (
+            "other.example.org", port, "it is not the host and port of a source being mounted",
+        )
+
     def test_two_processes_that_mount_one_source_at_once_both_have_it_mounted(self, start, tmp_path, monkeypatch):
         """Processes 0 and 1 each own a dataflow whose node reads the same
         source, which no process has mounted yet, and they ask at once.

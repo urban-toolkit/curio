@@ -203,6 +203,24 @@ class TestTunnels:
 
         assert head.startswith("HTTP/1.1 403 ")
 
+    def test_a_source_that_reaches_one_host_alone_now_is_let_through_to_no_other(self):
+        """A source's manifest moved its bucket to another host: once its
+        folder holds no mount of the old host's bucket, the old host goes for
+        it, and stays for another source that holds it."""
+        proxy = MountProxy()
+        proxy.admit("source.example.bucket@1", "old.example.org", 443)
+        proxy.admit("source.example.other@1", "shared.example.org", 443)
+        proxy.admit("source.example.bucket@1", "shared.example.org", 443)
+        proxy.admit("source.example.bucket@1", "new.example.org", 443)
+
+        proxy.withdraw_others("source.example.bucket@1", "new.example.org", 443)
+
+        assert proxy.admits("new.example.org", 443)
+        assert not proxy.admits("old.example.org", 443)
+        assert proxy.admits("shared.example.org", 443)
+        proxy.withdraw("source.example.other@1")
+        assert not proxy.admits("shared.example.org", 443)
+
     def test_an_idle_tunnel_is_closed(self, start_proxy, upstream):
         proxy, port = start_proxy(idle_seconds=0.3)
         proxy.admit("source.example.bucket@1", UPSTREAM_NAME, upstream)
@@ -384,6 +402,82 @@ class TestRefusals:
                 break
             time.sleep(0.05)
         assert head.startswith("HTTP/1.1 200 ")
+
+
+class TestTheNotesOfRefusals:
+    """Each refusal of a ``CONNECT`` to a host and port is noted before it is
+    answered, why and when: FUSE gives the backend a listing rclone could not
+    make as EIO alone, and the note says it was Curio's proxy that refused."""
+
+    def test_a_refusal_is_noted_with_why_before_it_is_answered(self, start_proxy, upstream):
+        proxy, port = start_proxy()
+        proxy.admit("source.example.bucket@1", UPSTREAM_NAME, upstream)
+        before = time.time()
+
+        client, head = tunnel(port, f"other.example.org:{upstream}")
+        client.close()
+
+        assert head.startswith("HTTP/1.1 403 ")
+        assert proxy.refusal_since("other.example.org", upstream, before) == (
+            "it is not the host and port of a source being mounted"
+        )
+        # Another port, a host it did not refuse, and a time after the refusal.
+        assert proxy.refusal_since("other.example.org", upstream + 1, before) is None
+        assert proxy.refusal_since(UPSTREAM_NAME, upstream, before) is None
+        assert proxy.refusal_since("other.example.org", upstream, time.time() + 1) is None
+
+    def test_a_host_that_takes_no_connection_is_noted(self, start_proxy):
+        with socket.create_server(("127.0.0.1", 0)) as gone:
+            closed = gone.getsockname()[1]
+        proxy, port = start_proxy()
+        proxy.admit("source.example.bucket@1", UPSTREAM_NAME, closed)
+        before = time.time()
+
+        client, head = tunnel(port, f"{UPSTREAM_NAME}:{closed}")
+        client.close()
+
+        assert head.startswith("HTTP/1.1 502 ")
+        assert proxy.refusal_since(UPSTREAM_NAME, closed, before).startswith(
+            "none of the host's addresses took a connection: "
+        )
+
+    def test_the_self_tests_host_and_a_request_that_is_not_connect_are_never_noted(self, start_proxy, upstream):
+        host = TestTheSelfTestsAsk.HOST
+        proxy, port = start_proxy()
+        proxy.expect(host, 443)
+
+        client, head = tunnel(port, f"{host}:443")
+        client.close()
+        request = f"GET http://{UPSTREAM_NAME}:{upstream}/key?token=abc HTTP/1.1\r\nHost: x\r\n\r\n".encode()
+        client = connect(port)
+        try:
+            client.sendall(request)
+            assert head_of(client).startswith("HTTP/1.1 405 ")
+        finally:
+            client.close()
+
+        assert head.startswith("HTTP/1.1 403 ")
+        assert proxy.refusal_since(host, 443, 0) is None
+        assert proxy.refusal_since(UPSTREAM_NAME, upstream, 0) is None
+
+    def test_the_latest_hosts_are_kept(self):
+        refusals = mount_proxy.Refusals()
+        for number in range(mount_proxy.REFUSALS_KEPT + 1):
+            refusals.note(f"host-{number}.example.org", 443, "refused", float(number))
+
+        assert refusals.since("host-0.example.org", 443, 0) is None
+        assert refusals.since("host-1.example.org", 443, 0) == "refused"
+        assert refusals.since(f"host-{mount_proxy.REFUSALS_KEPT}.example.org", 443, 0) == "refused"
+
+    def test_a_note_holds_why_as_its_answer_shows_it(self):
+        refusals = mount_proxy.Refusals()
+        proxy = MountProxy(refusals=refusals)
+
+        proxy._note("bucket.example.org", 443, "line one\r\nX: y é" + "x" * 500)
+
+        why = proxy.refusal_since("bucket.example.org", 443, 0)
+        assert why == mount_proxy._shown("line one\r\nX: y é" + "x" * 500)
+        assert len(why) == mount_proxy.WHY_CHARS and all(" " <= char <= "~" for char in why)
 
 
 class TestTheSelfTestsAsk:
