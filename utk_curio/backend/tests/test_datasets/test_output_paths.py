@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 #: The folders the ``app`` fixture moves into each test's ``tmp_path``.
@@ -14,6 +12,8 @@ _THE_APPS_FOLDERS = ("CURIO_SHARED_DATA", "CURIO_LAUNCH_CWD")
 def _the_folders_the_module_starts_with():
     """``CURIO_SHARED_DATA`` and ``CURIO_LAUNCH_CWD`` as this module's first
     test starts, before any fixture of its own moves them."""
+    import os
+
     return {name: os.environ.get(name) for name in _THE_APPS_FOLDERS}
 
 
@@ -41,6 +41,8 @@ def test_after_a_test_that_moves_the_apps_folders_again_they_are_back(_the_folde
     suite's root conftest, undid the test's moves after that, writing the
     fixture's folders back: every later test of the process ran in that
     test's ``tmp_path``."""
+    import os
+
     now = {name: os.environ.get(name) for name in _THE_APPS_FOLDERS}
     assert now == _the_folders_the_module_starts_with, (
         f"after test_resolve_shared_output_path_artifact_parquet the folders are {now}, "
