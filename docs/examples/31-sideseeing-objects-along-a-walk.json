@@ -1,0 +1,224 @@
+{
+  "dataflow": {
+    "categories": {
+      "city": [
+        "Chicago"
+      ],
+      "topic": [
+        "Mobility and streets"
+      ],
+      "complexity": [
+        "Advanced"
+      ]
+    },
+    "nodes": [
+      {
+        "id": "walk-video",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 518,
+        "title": "Walk",
+        "content": "walk = curio_load_collection(\"data.sideseeing.west-loop-walk\")\n\nreturn walk\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the West Loop walk: one row, its video, read in place from the SideSeeing bucket.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "walk-tracking",
+        "type": "model.curio.sam3/track-objects",
+        "x": 645,
+        "y": 410,
+        "content": "from sam3_tracking import track_objects\n\n# What to look for, in plain words: SAM 3 takes any short noun phrase.\nLABELS = [\n    \"curb ramp\", \"curb cut\", \"tactile paving\", \"bollard\", \"pole\",\n    \"construction barrier\", \"traffic cone\", \"person\", \"wheelchair ramp\",\n]\nEVERY_SECONDS = 2  # the gap between two frames SAM 3 looks at\nFORGET_SECONDS = 10  # SAM 3 lets go of an object unseen this long; None keeps every object\nFROM_SECONDS = 0  # the part of each video to track, in seconds from its start\nTO_SECONDS = None  # None is the video's end\nMAX_FRAMES = 450  # the most frames of a video one run looks at\nWIDTH = 960  # the widest frames are read and drawn at\n\nreturn track_objects(\n    input_0, curio_load_model(\"model.curio.sam3\"), curio_derived_file,\n    labels=LABELS, every_seconds=EVERY_SECONDS, forget_seconds=FORGET_SECONDS,\n    from_seconds=FROM_SECONDS, to_seconds=TO_SECONDS, max_frames=MAX_FRAMES, width=WIDTH,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Follow nine kinds of sidewalk object through the whole walk with SAM 3, a frame every 2 s, and write its overlay and its tracks, one row per object.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "walk-overlay",
+        "type": "curio.builtin/vis-simple",
+        "x": 1290,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Play the overlay: the frames SAM 3 looked at, each object's mask and id drawn on them.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "walk-objects",
+        "type": "curio.builtin/python-computation",
+        "x": 1290,
+        "y": 430,
+        "title": "Objects",
+        "content": "import pandas as pd\n\n# One row per object Track Objects followed, from the tracks table each of\n# its rows names. t_s, the time the player's range is matched on, is when\n# SAM 3 first saw the object, so its bar lights from there.\nobjects = pd.concat([pd.read_parquet(path) for path in input_0[\"tracks\"]], ignore_index=True)\nobjects[\"t_s\"] = objects[\"start_s\"]\n\nreturn objects\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Read the tracks into one row per object, with t_s, when SAM 3 first saw it.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "walk-swimlane",
+        "type": "curio.builtin/vis-vega",
+        "x": 1935,
+        "y": 395,
+        "width": 700,
+        "height": 420,
+        "title": "Swimlane",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Each object SAM 3 followed through the walk, a bar in its label's lane from when it was first seen to when it was last seen: in its label's color once the video has played past its first sighting, gray before. The bar's outline keeps an object seen in one frame alone in view.\",\n  \"mark\": {\n    \"type\": \"bar\",\n    \"strokeWidth\": 2\n  },\n  \"encoding\": {\n    \"y\": {\n      \"field\": \"label\",\n      \"type\": \"nominal\",\n      \"title\": null\n    },\n    \"x\": {\n      \"field\": \"start_s\",\n      \"type\": \"quantitative\",\n      \"title\": \"Seconds into the walk\"\n    },\n    \"x2\": {\n      \"field\": \"end_s\"\n    },\n    \"color\": {\n      \"condition\": {\n        \"test\": \"datum.interacted === '1'\",\n        \"field\": \"label\",\n        \"type\": \"nominal\",\n        \"legend\": null\n      },\n      \"value\": \"#c8c8c8\"\n    },\n    \"stroke\": {\n      \"condition\": {\n        \"test\": \"datum.interacted === '1'\",\n        \"field\": \"label\",\n        \"type\": \"nominal\",\n        \"legend\": null\n      },\n      \"value\": \"#c8c8c8\"\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"label\",\n        \"type\": \"nominal\"\n      },\n      {\n        \"field\": \"object_id\",\n        \"type\": \"quantitative\",\n        \"title\": \"object\"\n      },\n      {\n        \"field\": \"start_s\",\n        \"type\": \"quantitative\",\n        \"title\": \"first seen (s)\"\n      },\n      {\n        \"field\": \"end_s\",\n        \"type\": \"quantitative\",\n        \"title\": \"last seen (s)\"\n      },\n      {\n        \"field\": \"frames\",\n        \"type\": \"quantitative\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Draw each object as a bar from its first sighting to its last, in its label's lane, lit once the video has played past its first sighting.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "walk-gps",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 948,
+        "title": "GPS fixes",
+        "content": "gps = curio_load_collection(\"data.sideseeing.west-loop-walk-gps\")\n\nreturn gps\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the listing of the walk's gps.csv, read in place from the SideSeeing bucket.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "walk-points",
+        "type": "curio.builtin/python-computation",
+        "x": 645,
+        "y": 840,
+        "title": "Walk track",
+        "content": "import geopandas as gpd\nimport pandas as pd\n\nwalk, gps = [!! input_0 !!], [!! input_1 !!]\n\n# The walk's GPS fixes, read in place from the gps.csv the GPS track's row names.\npath = gps[\"path\"].iloc[0]\nif not path:\n    raise ValueError(\"gps.csv is not on this machine yet: cache the GPS track's files in the Data Catalog first\")\nfixes = pd.read_csv(path)\n\n# t_s, each fix's time in the walk, in seconds, which the player's range is\n# matched on: its datetime_utc less the walk's taken_at, both in UTC.\ntaken_at = pd.to_datetime(walk[\"taken_at\"].iloc[0], utc=True)\nfixes[\"t_s\"] = (pd.to_datetime(fixes[\"datetime_utc\"], utc=True) - taken_at).dt.total_seconds()\n\nreturn gpd.GeoDataFrame(\n    fixes, geometry=gpd.points_from_xy(fixes[\"longitude\"], fixes[\"latitude\"]), crs=\"EPSG:4326\",\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Read the walk's GPS fixes in place, each a point with t_s, its time in the walk.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "walk-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1290,
+        "y": 860,
+        "width": 525,
+        "height": 700,
+        "title": "Map",
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/west_loop.osm.pbf\",\n      \"queryArea\": {\n        \"bbox\": [\n          -87.6593,\n          41.8746,\n          -87.6548,\n          41.8836\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"roads\"\n        ]\n      }\n    }\n  ],\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_roads\"\n      },\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"isPick\": true,\n        \"pointSize\": 2,\n        \"getFnv\": \"t_s\",\n        \"getFnvType\": \"quantitative\",\n        \"colorMapInterpolator\": \"interpolateViridis\",\n        \"title\": \"Seconds into the walk\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the fixes over the West Loop's streets, colored by their time in the walk, lit up to where the video stands.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-walk-videoout-walk-trackingin",
+        "source": "walk-video",
+        "sourceHandle": "out",
+        "target": "walk-tracking",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-walk-trackingout-walk-overlayin",
+        "source": "walk-tracking",
+        "sourceHandle": "out",
+        "target": "walk-overlay",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-walk-trackingout-walk-objectsin",
+        "source": "walk-tracking",
+        "sourceHandle": "out",
+        "target": "walk-objects",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-walk-objectsout-walk-swimlanein",
+        "source": "walk-objects",
+        "sourceHandle": "out",
+        "target": "walk-swimlane",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-walk-videoout-walk-pointsin",
+        "source": "walk-video",
+        "sourceHandle": "out",
+        "target": "walk-points",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-walk-gpsout-walk-pointsin_1",
+        "source": "walk-gps",
+        "sourceHandle": "out",
+        "target": "walk-points",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-walk-pointsout-walk-mapin",
+        "source": "walk-points",
+        "sourceHandle": "out",
+        "target": "walk-map",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-walk-overlayin/out-walk-swimlanein/out",
+        "source": "walk-overlay",
+        "sourceHandle": "in/out",
+        "target": "walk-swimlane",
+        "targetHandle": "in/out",
+        "type": "Interaction"
+      },
+      {
+        "id": "reactflow__edge-walk-overlayin/out-walk-mapin/out",
+        "source": "walk-overlay",
+        "sourceHandle": "in/out",
+        "target": "walk-map",
+        "targetHandle": "in/out",
+        "type": "Interaction"
+      }
+    ],
+    "name": "SideSeeing: objects tracked along a walk",
+    "description": "A SideSeeing walk along the sidewalks of Chicago's West Loop, its 14 minute video read in place from the SideSeeing bucket: SAM 3 follows nine kinds of sidewalk object through it, a frame every 2 s, and Simple View plays the overlay it draws. As the video plays, each object's bar on a swimlane lights from its first sighting, and the walk's GPS fixes on an Autark map of its streets light up to where the video stands.",
+    "task": "Track sidewalk objects through a walk's video with SAM 3, and follow them on a timeline and a map as the video plays.",
+    "timestamp": 0,
+    "provenance_id": "sideseeing-objects-along-a-walk",
+    "packages": [
+      "model.curio.sam3@1"
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.sideseeing.west-loop-walk",
+        "dirName": "data.sideseeing.west-loop-walk@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-17T00:00:00Z"
+      },
+      {
+        "datasetId": "data.sideseeing.west-loop-walk-gps",
+        "dirName": "data.sideseeing.west-loop-walk-gps@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-17T00:00:00Z"
+      }
+    ]
+  }
+}
