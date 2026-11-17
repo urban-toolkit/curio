@@ -352,6 +352,10 @@ def test_two_guests_copies_of_one_example_belong_where_their_own_ids_name(doc_ap
     assert len(set(copies.values())) == 2 and example not in copies.values()
     assert {owner_of(own) for own in copies.values()} == {0, 1}
 
+    # The guard reads the start's process count, so it is named before the
+    # guard's first answer: with none named, every copy would be home's, and
+    # the first guest's check would pass only when its copy hashed to home.
+    as_process(monkeypatch, 0)
     for name, token in visitors.items():
         own = copies[name]
         here = owner_of(own)
