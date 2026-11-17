@@ -155,8 +155,11 @@ class TestSharedInterpreter:
         assert libs.list_standalone(_user_key(bob))["python"] == ["humanize"]
 
     def test_remove_still_uninstalls_when_nobody_else_lists_it(
-        self, client, db, user_and_token, pip_calls,
+        self, client, db, user_and_token, pip_calls, pip_that_installs,
     ):
+        """The add's own pip run installed it (``pip_that_installs``, the real
+        installer over a pip that installs nothing for real): a removal takes
+        back only what this server's pip put into the interpreter."""
         _, alice_token = user_and_token
         _make_user(db, "bob", "bob-token")
         client.post("/api/packages/libraries",

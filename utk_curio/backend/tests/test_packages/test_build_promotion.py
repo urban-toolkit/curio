@@ -435,7 +435,7 @@ class TestApplyUnderIsolation:
             calls.append(("host", dict(deps)))
             return pip_runner.InstallReport(installed=sorted(deps), skipped=[])
 
-        def _to_target(deps, target_dir, on_line=None):
+        def _to_target(deps, target_dir, on_line=None, in_front=False):
             calls.append(("target", dict(deps), str(target_dir)))
             in_tree.update(deps)
             for name in deps:

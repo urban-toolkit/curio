@@ -320,7 +320,7 @@ def installed_per_user(monkeypatch):
     from utk_curio.backend.app.packages.infrastructure import pip_runner
     monkeypatch.setattr(
         pip_runner, "install_python_deps_to_target",
-        lambda merged, target, on_line=None: calls.append((dict(merged), str(target))),
+        lambda merged, target, on_line=None, in_front=False: calls.append((dict(merged), str(target))),
     )
     return calls
 
@@ -384,7 +384,7 @@ def test_one_users_broken_manifest_does_not_stop_the_boot(
 
     done: list[str] = []
 
-    def _maybe_fail(merged, target, on_line=None):
+    def _maybe_fail(merged, target, on_line=None, in_front=False):
         if os.path.basename(target) == "7":
             raise pip_runner.PipInstallError("no such distribution")
         done.append(os.path.basename(target))
@@ -521,3 +521,91 @@ def test_with_isolation_a_store_copy_of_a_package_the_launch_installs_for_everyo
     assert "inflection" in {name for call in installed for name in call}
     trees = {os.path.basename(target): set(tree_deps) for tree_deps, target in installed_per_user}
     assert trees == {"8": {"inflection", "tabulate"}}, trees
+
+
+# ── An account's tree in front of the image's libraries: the image's win ──
+
+
+def test_a_start_puts_no_torch_of_its_own_in_an_accounts_tree_whose_range_the_images_meets(
+    launch_cwd, installed, isolated, tmp_path, monkeypatch,
+):
+    """Under isolation each start installs every account's package libraries
+    into the account's own tree, which its nodes import in front of the
+    image's. ``pip --target`` ignores what the image holds, so a package
+    declaring ``torch>=2.6``, as the Discovery Catalog's Hugging Face models
+    do, or a library that requires it, got a torch of its own at every start,
+    for that account's nodes in front of the image's CUDA torch. Here the
+    package declares both, with the real pip offline: the image's torch meets
+    the range, and the start puts into the tree only the library the image
+    lacks."""
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.tests._support.front_of_the_image import (
+        NEEDS_TORCH, held, offline_pip, the_images_torch,
+    )
+
+    image_torch = the_images_torch()
+    offline_pip(monkeypatch, tmp_path / "wheelhouse")
+    _write_package(
+        _user_store(launch_cwd, "7"), "acme.model@1",
+        deps={"torch": ">=2.6", NEEDS_TORCH.dist: f"=={NEEDS_TORCH.version}"}, backend=False, python_template=True,
+    )
+
+    launcher.install_manifest_dependencies()
+
+    tree = held(backend_runtime.user_node_overlay_dir("7"))
+    assert "torch" not in tree, (
+        f"the start put torch {tree.get('torch')} into account 7's tree, in front of the image's {image_torch}")
+    assert tree == {NEEDS_TORCH.dist: NEEDS_TORCH.version}, tree
+
+
+def test_a_start_takes_out_a_torch_an_earlier_start_put_in_front_of_the_images(
+    launch_cwd, installed, isolated, tmp_path, monkeypatch,
+):
+    """A tree an earlier start filled keeps its torch: not installing it again
+    leaves it in front of the image's. A start takes out of an account's tree
+    the copy of a library its packages declare where the image's meets every
+    range they declare it at."""
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.tests._support.front_of_the_image import (
+        OTHER_TORCH, held, offline_pip, the_images_torch,
+    )
+    from utk_curio.backend.tests._support.offline_wheels import unpack_wheel
+
+    image_torch = the_images_torch()
+    offline_pip(monkeypatch, tmp_path / "wheelhouse")
+    _write_package(
+        _user_store(launch_cwd, "7"), "acme.model@1", deps={"torch": ">=2.6"}, backend=False, python_template=True,
+    )
+    tree = backend_runtime.user_node_overlay_dir("7")
+    unpack_wheel(OTHER_TORCH, tree)
+    assert held(tree) == {"torch": OTHER_TORCH.version}
+
+    launcher.install_manifest_dependencies()
+
+    left = held(tree)
+    assert "torch" not in left, (
+        f"account 7's tree still holds torch {left.get('torch')} in front of the image's {image_torch}")
+
+
+def test_a_start_keeps_a_torch_the_accounts_own_list_names(
+    launch_cwd, installed, isolated, tmp_path, monkeypatch,
+):
+    """A library the account installed itself, in Installed libraries, is its
+    own choice: a start leaves its copy in the tree, though a package of the
+    account's declares it at a range the image's meets."""
+    from utk_curio.backend.app.packages.application import libraries
+    from utk_curio.backend.app.packages.infrastructure import backend_runtime
+    from utk_curio.backend.tests._support.front_of_the_image import OTHER_TORCH, held, offline_pip
+    from utk_curio.backend.tests._support.offline_wheels import unpack_wheel
+
+    offline_pip(monkeypatch, tmp_path / "wheelhouse")
+    _write_package(
+        _user_store(launch_cwd, "7"), "acme.model@1", deps={"torch": ">=2.6"}, backend=False, python_template=True,
+    )
+    libraries.add_library("7", "python", f"torch=={OTHER_TORCH.version}")
+    tree = backend_runtime.user_node_overlay_dir("7")
+    unpack_wheel(OTHER_TORCH, tree)
+
+    launcher.install_manifest_dependencies()
+
+    assert held(tree) == {"torch": OTHER_TORCH.version}

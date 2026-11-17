@@ -35,6 +35,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 from fractions import Fraction
 from pathlib import Path
@@ -1560,3 +1561,368 @@ def test_objects_let_go_keep_their_labels_when_sam3_drops_the_last_object_it_fol
     assert (outputs[8].object_ids, sorted(outputs[8].removed_obj_ids)) == ([], [1]), (
         outputs[8].object_ids, outputs[8].removed_obj_ids)
     assert shown == [(index, {"pole": [0]} if index < 3 else {}) for index in range(len(frames))], shown
+
+
+# ---------------------------------------------------------------------------
+# SAM 3's clean-up of its masks
+# ---------------------------------------------------------------------------
+
+def _square(top, left, size, *, hole=None, speck=None):
+    """A low-resolution mask, scores of 10 on a square of *size* pixels at
+    *top*, *left* and of -10 elsewhere; *hole* and *speck*, each ``(top,
+    left, size)``, a square of -10 inside it and one of 10 away from it."""
+    import torch
+
+    mask = torch.full((LOW_RES, LOW_RES), -10.0)
+    mask[top:top + size, left:left + size] = 10.0
+    for place, value in ((hole, -10.0), (speck, 10.0)):
+        if place is not None:
+            mask[place[0]:place[0] + place[2], place[1]:place[1] + place[2]] = value
+    return mask
+
+
+class _Seen:
+    """What SAM 3's detector finds and its tracker shows, made up by a test
+    below where SAM 3 cleans them: in every frame its detector finds each of
+    *objects*, ``(label, score, mask)``, and its tracker shows each object it
+    follows with the mask that object was found with. The rest of SAM 3 runs
+    as it is, its clean-up among it.
+
+    :attr:`follows` notes which of *objects* each id SAM 3 gives is, and
+    :attr:`outputs` SAM 3's output of each frame, its low-resolution masks
+    among it."""
+
+    def __init__(self, monkeypatch, module, sam3, objects):
+        import torch
+
+        seen, parent = self, module.TransformersSam3VideoModel
+        self.objects = objects
+        self.follows = {}
+        self.outputs = {}
+        self._session = None
+        real_take = parent._tracker_add_new_objects
+
+        def take(self, inference_session, frame_idx, new_obj_ids, new_obj_masks, reverse=False):
+            for object_id, mask in zip(new_obj_ids, new_obj_masks):
+                seen.follows[object_id] = next(
+                    index for index, (_, _, own) in enumerate(seen.objects) if torch.equal(mask > 0, own > 0))
+            return real_take(self, inference_session=inference_session, frame_idx=frame_idx,
+                             new_obj_ids=new_obj_ids, new_obj_masks=new_obj_masks, reverse=reverse)
+
+        monkeypatch.setattr(parent, "_tracker_add_new_objects", take)
+        self._hooks = [
+            sam3.register_forward_pre_hook(self._starts, with_kwargs=True),
+            sam3.register_forward_hook(self._ends),
+            sam3.detector_model.register_forward_hook(self._detects, with_kwargs=True),
+            sam3.tracker_model.register_forward_hook(self._tracks, with_kwargs=True),
+        ]
+
+    def remove(self):
+        for hook in self._hooks:
+            hook.remove()
+
+    def _starts(self, _sam3, _args, kwargs):
+        self._session = kwargs["inference_session"]
+
+    def _ends(self, _sam3, _args, output):
+        self.outputs[output.frame_idx] = output
+
+    def _detects(self, _detector, _args, kwargs, output):
+        """The detector's output for the label it is asked about, the
+        session's prompt whose text embedding it is handed: each of the
+        label's objects, as one query of a score its own, and no other."""
+        import torch
+
+        session = self._session
+        (label,) = [session.prompts[prompt_id] for prompt_id, embeds in session.prompt_embeddings.items()
+                    if embeds is kwargs["text_embeds"]]
+        logits = torch.full_like(output.pred_logits, float("-inf"))
+        masks = torch.full_like(output.pred_masks, -10.0)
+        boxes = torch.zeros_like(output.pred_boxes)
+        for query, (_, score, mask) in enumerate(item for item in self.objects if item[0] == label):
+            rows, columns = torch.nonzero(mask > 0, as_tuple=True)
+            logits[0, query] = torch.logit(torch.tensor(score))
+            masks[0, query] = mask
+            boxes[0, query] = torch.stack([columns.min(), rows.min(), columns.max() + 1, rows.max() + 1]) / LOW_RES
+        output.pred_logits, output.pred_masks, output.pred_boxes = logits, masks, boxes
+        output.presence_logits = torch.full_like(output.presence_logits, 30.0)
+        return output
+
+    def _tracks(self, _tracker, _args, kwargs, output):
+        """Each object SAM 3 follows, as its tracker propagates it to the
+        frame: the mask it was found with, seen for sure. The tracker's run
+        for the memory of new objects is left as it is."""
+        import torch
+
+        if kwargs.get("run_mem_encoder"):
+            return None
+        masks = output.pred_masks.clone()
+        for row, object_id in enumerate(kwargs["inference_session"].obj_ids):
+            masks[row, 0] = self.objects[self.follows[object_id]][2]
+        output.pred_masks = masks
+        output.object_score_logits = torch.full_like(output.object_score_logits, 10.0)
+        return output
+
+    def shown(self):
+        """Each frame's index, with each object SAM 3 shows there: which of
+        :attr:`objects` it is, and the pixels of its low-resolution mask
+        above 0."""
+        return {
+            frame: {self.follows[object_id]: output.obj_id_to_mask[object_id][0] > 0
+                    for object_id in output.object_ids}
+            for frame, output in sorted(self.outputs.items())
+        }
+
+
+def _see(module, path, frames, objects, monkeypatch):
+    """SAM 3 run through *frames*, its detector and tracker made to see
+    *objects* (:class:`_Seen`); what it saw."""
+    import torch
+
+    processor = module.Sam3VideoProcessor.from_pretrained(path, local_files_only=True)
+    sam3 = module.Sam3VideoModel.from_pretrained(path, local_files_only=True).eval()
+    seen = _Seen(monkeypatch, module, sam3, objects)
+    run = SimpleNamespace(processor=processor, sam3=sam3, device="cpu", dtype=torch.float32, labels=TWO_LABELS)
+    try:
+        with torch.inference_mode():
+            handed_back = [index for index, _ in module._follow(run, frames)]
+    finally:
+        seen.remove()
+    assert handed_back == list(range(len(frames))), handed_back
+    return seen
+
+
+@pytest.fixture
+def no_kernels_library(tmp_path, monkeypatch):
+    """The package's module, staged as a run imports it, with Transformers'
+    SAM 3 as an isolated run on the image has it: the kernels library, whose
+    cv-utils Transformers cleans SAM 3's masks with, cannot be had."""
+    with _staged(tmp_path) as module:
+        monkeypatch.setattr(sys.modules[module.TransformersSam3VideoModel.__module__], "cv_utils_kernel", False)
+        yield module
+
+
+def _objects(specs):
+    """``(label, score, mask)`` for each ``(label, score, square)`` of
+    *specs*, the mask :func:`_square` of the square's keywords."""
+    return [(label, score, _square(**square)) for label, score, square in specs]
+
+
+#: Two poles, the second the first one pixel to the right, scored lower, and a
+#: person: the poles' masks overlap by an IoU of 0.85.
+OVERLAPPING = [
+    ("pole", 0.9, {"top": 8, "left": 8, "size": 12}),
+    ("pole", 0.8, {"top": 8, "left": 9, "size": 12}),
+    ("person", 0.85, {"top": 30, "left": 30, "size": 10}),
+]
+
+
+def test_of_two_detections_of_a_label_that_overlap_sam3_follows_the_one_it_scores_higher(
+        weights, catalog_copy, few_threads, no_kernels_library, monkeypatch):
+    """SAM 3 keeps, of a label's detections whose masks overlap by an IoU
+    above 0.1, the one it scores highest (its ``det_nms_thresh``).
+    Transformers does so only with the kernels library, which an isolated
+    run cannot fetch and which has no build for the image's torch: every
+    run's stderr said NMS post-processing would be skipped, and SAM 3 then
+    followed each of two detections of one pole as an object of its own.
+    Here its detector finds two poles, one a pixel to the right of the other,
+    and a person, in every frame: SAM 3 follows the pole it scores higher and
+    the person, and nothing else, in every frame."""
+    from PIL import Image
+
+    frames = [Image.fromarray(_street(index)) for index in range(4)]
+    path = _loaded(catalog_copy, weights)(MODEL_ID).path
+    seen = _see(no_kernels_library, path, frames, _objects(OVERLAPPING), monkeypatch)
+
+    followed = sorted(seen.follows.values())
+    assert followed == [0, 2], (
+        f"SAM 3 followed {[OVERLAPPING[index][:2] for index in followed]}: "
+        "the lower scored pole, a duplicate of the other, is not dropped")
+    assert {frame: sorted(objects) for frame, objects in seen.shown().items()} == {
+        frame: [0, 2] for frame in range(len(frames))}
+
+
+#: A pole whose mask has a hole of 4 pixels, and a person whose mask has a
+#: speck of 4 pixels away from it.
+HOLED = [
+    ("pole", 0.9, {"top": 8, "left": 8, "size": 12, "hole": (13, 13, 2)}),
+    ("person", 0.85, {"top": 30, "left": 30, "size": 10, "speck": (50, 50, 2)}),
+]
+
+
+def test_sam3_fills_the_small_holes_and_removes_the_specks_of_every_mask_it_shows(
+        weights, catalog_copy, few_threads, no_kernels_library, monkeypatch):
+    """SAM 3 fills each hole of 16 pixels or fewer (its ``fill_hole_area``) in
+    a low-resolution mask and removes each speck of as few, both in a mask
+    its detector finds an object with and in one its tracker follows an
+    object with. Transformers does so only with the kernels library, and
+    without it every hole and speck of SAM 3's masks stayed. Here the pole's
+    mask has a hole of 4 pixels and the person's a speck of 4: in every
+    frame, the first's masks from the detector and the others' from the
+    tracker, SAM 3 shows the pole whole and the person without the speck."""
+    from PIL import Image
+
+    frames = [Image.fromarray(_street(index)) for index in range(4)]
+    path = _loaded(catalog_copy, weights)(MODEL_ID).path
+    seen = _see(no_kernels_library, path, frames, _objects(HOLED), monkeypatch)
+
+    # Each object's square, with no hole and no speck.
+    clean = {
+        index: _square(square["top"], square["left"], square["size"]) > 0
+        for index, (_, _, square) in enumerate(HOLED)
+    }
+    shown = seen.shown()
+    assert {frame: sorted(objects) for frame, objects in shown.items()} == {
+        frame: [0, 1] for frame in range(len(frames))}
+    left = [
+        (frame, HOLED[index][0], "hole" if index == 0 else "speck")
+        for frame, objects in shown.items() for index, mask in objects.items()
+        if not bool((mask == clean[index]).all())
+    ]
+    assert not left, f"masks SAM 3 shows with their hole or speck: {left}"
+
+
+class _CvUtils:
+    """The two functions of the kernels library's ``kernels-community/cv-utils``
+    that Transformers' SAM 3 cleans its masks with, as their CUDA code computes
+    them, on the CPU: ``cc_2d``, each pixel's 8-connected region of non-zero
+    pixels (scipy's labels) and its size, 0 elsewhere; and ``generic_nms``,
+    from the highest score down, of equal scores the earlier first, each kept
+    detection dropping those it overlaps by an IoU above the threshold,
+    compared in float64. Their CUDA builds stop at torch 2.12, and they have
+    no CPU code.
+
+    Transformers goes on without the clean-up when a function raises, so
+    :attr:`calls` counts each one's answers and :attr:`errors` keeps what
+    each raised."""
+
+    def __init__(self):
+        self.calls = {"cc_2d": 0, "generic_nms": 0}
+        self.errors = []
+
+    def cc_2d(self, inputs, get_counts):
+        import numpy as np
+        import torch
+
+        try:
+            from scipy import ndimage
+
+            labels = np.zeros(inputs.shape, dtype=np.int32)
+            counts = np.zeros(inputs.shape, dtype=np.int32)
+            for index, image in enumerate(inputs.cpu().numpy()[:, 0]):
+                labelled, _ = ndimage.label(image != 0, structure=np.ones((3, 3), dtype=int))
+                sizes = np.bincount(labelled.ravel())
+                labels[index, 0] = labelled
+                if get_counts:
+                    counts[index, 0] = np.where(labelled > 0, sizes[labelled], 0)
+        except Exception as exc:
+            self.errors.append(f"cc_2d: {exc!r}")
+            raise
+        self.calls["cc_2d"] += 1
+        return torch.from_numpy(labels), torch.from_numpy(counts)
+
+    def generic_nms(self, ious, scores, iou_threshold, use_iou_matrix):
+        import torch
+
+        if not use_iou_matrix:
+            self.errors.append("generic_nms: boxes, not an IoU matrix")
+            raise ValueError("only an IoU matrix")
+        over = (ious.double() > iou_threshold).tolist()
+        kept, dropped = [], set()
+        for index in torch.sort(scores, descending=True, stable=True).indices.tolist():
+            if index not in dropped:
+                kept.append(index)
+                dropped.update(other for other, overlaps in enumerate(over[index]) if overlaps)
+        self.calls["generic_nms"] += 1
+        return torch.tensor(kept, dtype=torch.long)
+
+
+def test_sam3_finds_what_transformers_finds_with_the_kernels_library(
+        weights, catalog_copy, few_threads, tmp_path, monkeypatch):
+    """With random weights and its thresholds at 0, the tiny SAM 3 finds five
+    overlapping detections of each label in every frame, with ragged masks.
+    Track Objects' SAM 3, with no kernels library, finds in each frame the
+    same objects, scores, boxes and masks as Transformers' SAM 3 cleaning
+    them with cv-utils' two functions (:class:`_CvUtils`), and Transformers'
+    SAM 3 without them finds others."""
+    import torch
+    from PIL import Image
+
+    frames = [Image.fromarray(_street(index)) for index in range(6)]
+    path = _loaded(catalog_copy, weights)(MODEL_ID).path
+    with _staged(tmp_path) as module:
+        transformers_module = sys.modules[module.TransformersSam3VideoModel.__module__]
+        processor = module.Sam3VideoProcessor.from_pretrained(path, local_files_only=True)
+
+        def found_by(sam3_class, kernel):
+            monkeypatch.setattr(transformers_module, "cv_utils_kernel", kernel)
+            sam3 = sam3_class.from_pretrained(path, local_files_only=True).eval()
+            run = SimpleNamespace(processor=processor, sam3=sam3, device="cpu", dtype=torch.float32,
+                                  labels=DEFAULT_LABELS)
+            with torch.inference_mode():
+                return list(module._follow(run, frames))
+
+        cv_utils = _CvUtils()
+        cleaned = found_by(module.TransformersSam3VideoModel, cv_utils)
+        not_cleaned = found_by(module.TransformersSam3VideoModel, False)
+        tracked = found_by(module.Sam3VideoModel, False)
+
+    assert not cv_utils.errors and all(cv_utils.calls.values()), (
+        f"Transformers did not clean with the stand-in for cv-utils: {cv_utils.calls}, {cv_utils.errors}")
+    keys = ("object_ids", "scores", "boxes", "masks")
+
+    def same(first, second):
+        return first["prompt_to_obj_ids"] == second["prompt_to_obj_ids"] and all(
+            first[key].shape == second[key].shape and torch.equal(first[key], second[key]) for key in keys)
+
+    assert [index for index, _ in tracked] == [index for index, _ in cleaned] == list(range(len(frames)))
+    assert not all(same(a, b) for (_, a), (_, b) in zip(cleaned, not_cleaned)), (
+        "the clean-up changed nothing: the frames test nothing")
+    differ = [index for (index, a), (_, b) in zip(tracked, cleaned) if not same(a, b)]
+    assert not differ, (
+        f"frames where Track Objects' SAM 3 finds other objects, scores, boxes or masks than Transformers' "
+        f"with cv-utils: {differ}; objects there {[tracked[i][1]['prompt_to_obj_ids'] for i in differ][:3]}, "
+        f"against {[cleaned[i][1]['prompt_to_obj_ids'] for i in differ][:3]}")
+
+
+def test_a_run_no_longer_says_that_sam3s_clean_up_is_skipped(weights, catalog_copy, few_threads, tmp_path, monkeypatch):
+    """Every run of Track Objects wrote "kernels library is not installed. NMS
+    post-processing, hole filling, and sprinkle removal will be skipped" to its
+    stderr, as Transformers' SAM 3 looked for the library on its first frame.
+    Track Objects' SAM 3 cleans its masks itself, and its run says nothing of
+    the kind, as a node's first run in a fresh process finds Transformers."""
+    import logging
+
+    import torch
+    from PIL import Image
+    from transformers.utils import logging as transformers_logging
+
+    frames = [Image.fromarray(_street(index)) for index in range(2)]
+    path = _loaded(catalog_copy, weights)(MODEL_ID).path
+    said = []
+
+    class _Said(logging.Handler):
+        def emit(self, record):
+            said.append(record.getMessage())
+
+    with _staged(tmp_path) as module:
+        transformers_module = sys.modules[module.TransformersSam3VideoModel.__module__]
+        # Transformers has neither looked for the library nor said so yet.
+        monkeypatch.setattr(transformers_module, "cv_utils_kernel", None)
+        transformers_logging.warning_once.cache_clear()
+        logger = logging.getLogger(transformers_module.__name__)
+        handler = _Said()
+        logger.addHandler(handler)
+        try:
+            processor = module.Sam3VideoProcessor.from_pretrained(path, local_files_only=True)
+            sam3 = module.Sam3VideoModel.from_pretrained(path, local_files_only=True).eval()
+            run = SimpleNamespace(processor=processor, sam3=sam3, device="cpu", dtype=torch.float32,
+                                  labels=TWO_LABELS)
+            with torch.inference_mode():
+                handed_back = [index for index, _ in module._follow(run, frames)]
+        finally:
+            logger.removeHandler(handler)
+
+    assert handed_back == [0, 1], handed_back
+    skipped = [message for message in said if "skipped" in message or "kernels" in message]
+    assert not skipped, f"the run said: {skipped}"
