@@ -221,7 +221,11 @@ def provision_user_node_deps(
 
     overlay = packages_backend_runtime.user_node_overlay_dir(user_key)
     overlay.mkdir(parents=True, exist_ok=True)
-    packages_libraries.give_way_to_the_image(user_key)
+    try:
+        packages_libraries.give_way_to_the_image(user_key)
+    except (PipInstallError, OSError):
+        # The add goes on: the copy stays in front, as it was.
+        log.warning("could not look over %s's node libraries", user_key, exc_info=True)
     before = node_overlay_import_failures(user_key, py_deps)
     outside = set(packages_pip_runner.outside_their_ranges_in_front(py_deps, str(overlay)))
     missing = {name: spec for name, spec in py_deps.items() if name in before or name in outside}
