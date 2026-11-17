@@ -140,8 +140,9 @@ class DatasetPreviewService:
         collection: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """*collection*, for a collection, is where its files are for node
-        code (``exec_collections.resolve_collections``): its index's rows show
-        as ``curio_load_collection`` gives them."""
+        code, found for ``item["id"]``, the id its rows are named by
+        (``exec_collections.resolve_collections``): its index's rows show as
+        ``curio_load_collection`` gives them."""
         # Paginated payloads are small (<= row_limit rows per part), so sanitizing
         # the whole result is cheap and guarantees no non-finite float escapes to
         # the strict browser JSON parser, regardless of which format handler ran.
