@@ -82,6 +82,11 @@ W065_CAPTIONS = [
     ["taken_at: 00:55:02", "v5n · v8n: 0 · 0", "v10n · 26n: 0 · 0"],
 ]
 
+#: The most a dashboard page carries (``dashboard_payload.DEFAULT_PAYLOAD_LIMIT_BYTES``).
+PAGE_LIMIT_BYTES = 25 * 1024 * 1024
+#: The bytes of the data a hosted dashboard page carries.
+_PAYLOAD_BYTES_JS = "() => new Blob([document.querySelector('script#curio-dashboard-payload').textContent]).size"
+
 #: Each Frames card's caption, a line per column, in card order.
 _CAPTIONS_JS = """(id) => [...document.querySelectorAll('[id^="imageBox_content_' + id + '_"]')].map(
     (card) => [...card.querySelectorAll('span')].map((line) => line.textContent.trim()))"""
@@ -113,7 +118,7 @@ def _tiles_drew(page) -> None:
 
 
 def test_the_example_runs_on_its_cached_files_and_its_dashboard_follows_a_visitors_camera(
-    app_frontend: "FrontendPage", current_server, page, browser, monkeypatch,
+    app_frontend: "FrontendPage", current_server, page, browser, monkeypatch, request,
 ):
     require_project_page()
     require_user_auth()
@@ -163,6 +168,11 @@ def test_the_example_runs_on_its_cached_files_and_its_dashboard_follows_a_visito
     visitor = _Visitor(browser, current_server)
     try:
         visitor.opens(hosted, project_id)
+        # The page carries the dataflow and the nodes right above its tiles,
+        # summaries and map layers, far under what a page may carry.
+        carried = visitor.page.evaluate(_PAYLOAD_BYTES_JS)
+        request.node.user_properties.append(("dashboard_payload_bytes", carried))
+        assert 0 < carried < PAGE_LIMIT_BYTES, f"the dashboard page carries {carried:,} bytes"
         visitor.waits_for("the saved tiles", lambda: _tiles_drew(visitor.page))
         visitor.waits_for("W042's frames", lambda: _frames_read(visitor.page, W042_CAPTIONS))
         occupancy = visitor.page.evaluate(_CHART_PIXELS_JS, CHARTS[0])
