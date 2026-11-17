@@ -152,7 +152,8 @@ def test_a_hosted_guests_list_of_its_agents_before_its_copy_is_made_writes_nothi
         "target": {"kind": "node", "targetId": "a-node-that-is-gone"},
         "sessionId": "a-session-of-a-node-that-is-gone", "revision": 1,
     })
-    assert dataflow_docs.write(GUEST_KEY, example, spec, dataflow_docs.by_curio(GUEST_KEY, "seed")).wrote
+    written = dataflow_docs.write(GUEST_KEY, example, spec, dataflow_docs.by_curio(GUEST_KEY, "seed"))
+    assert written.wrote, "the example's attachment whose node is gone was not written"
     held = storage.read_spec(GUEST_KEY, example)
 
     listed = _listed(client, VISITOR_B, example)
