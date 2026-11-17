@@ -644,6 +644,8 @@ Each stack runs its own [bucket mount service](#bucket-mounts) when the deployed
 
 Before a deploy stops the running stack, it also checks that Docker Engine is 28 or newer, and once the new stack is up, it fails unless `/version` says `"memory_limit": "cgroup"`.
 
+Both stacks start with `--backend-processes 16` when the deployed release has the flag, so each serves on 16 backend processes behind nginx ([Build and run](#3-build-and-run)). Once the new stack is up, the deploy fails unless all 16 answer `/api/monitor`.
+
 A merge to `main` deploys the dev stack once: Bump version bumps the patch version and dispatches the dev deploy of that commit. Stable runs manually via Actions → Deploy → Run workflow.
 
 `deploy.yml` takes two inputs: `ref` (branch, tag, or SHA; empty deploys the latest `v*` tag) and `target` (`both` / `dev` / `stable`). Both jobs check out the requested ref and rebuild with `--no-cache --force-recreate`.
