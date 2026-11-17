@@ -49,6 +49,7 @@ from utk_curio.backend.app.packages.infrastructure import backend_runtime as pac
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.infrastructure.pip_runner import PipInstallError
 from utk_curio.backend.app.packages.application import (
+    libraries as packages_libraries,
     model_packages as packages_model_packages,
     package_dependencies as packages_dependencies,
     provisioning as packages_provisioning,
@@ -727,12 +728,17 @@ def remove_package(user_key: str, dir_name: str) -> None:
     """Uninstall *dir_name* from the user store with its backend residue
     (dev/97: overlay, data dir, pin — the invocation ledger survives). The
     builtin is refused; a package that is not installed is a 404;
-    ``PackageIdError`` propagates for a malformed name."""
+    ``PackageIdError`` propagates for a malformed name. Under per-user node
+    environments a copy in the account's tree that only the package needed,
+    in front of an image library that meets every range left, goes too
+    (``libraries.give_way_after_a_removal``), as the next start would take
+    it."""
     if dir_name.startswith(f"{BUILTIN_PACKAGE_ID}@"):
         raise PackageServiceError(f"{BUILTIN_PACKAGE_ID} is built-in and cannot be uninstalled", 400)
     if not uninstall_package(user_key, dir_name):
         raise PackageServiceError("package not installed", 404)
     packages_backend_runtime.remove_backend_residue(user_key, dir_name)
+    packages_libraries.give_way_after_a_removal(user_key)
 
 
 def archive_file_for_download(user_key: str, dir_name: str) -> tuple[Path, Callable[[], None]]:
