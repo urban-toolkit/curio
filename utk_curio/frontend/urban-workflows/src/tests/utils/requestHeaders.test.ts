@@ -22,7 +22,10 @@
  * backend process its own id names, so the guests of one example spread over
  * the processes. Until the answer the canvas names the example, on its load's
  * reads; its socket waits (`providers/collabSocketNamesDataflow.test.tsx`).
- * The dashboard names its own route's dataflow.
+ * The guest's dashboard of the example names the copy the same way, once its
+ * load, or the data its page was served with, names it: its viewer's runs,
+ * their streams and what the page sends them are the copy's process's. Paths
+ * keep the example's id.
  *
  * The helper is loaded in each test, so a checkout without it fails each test
  * on its own.
@@ -39,6 +42,7 @@ import { fetchOutputFile } from "../../services/outputFiles";
 import { reportNodeRuntime, resetNodeRuntimeReports } from "../../services/nodeRuntimeReport";
 import { datasetCatalogApi } from "../../services/datasetCatalog/datasetCatalogApi";
 import { forgetDashboardRunFiles, rememberDashboardRunFiles } from "../../services/runs/dashboardRunFiles";
+import { dashboardRunsApi } from "../../services/runs/dashboardRunsApi";
 import { runsApi } from "../../services/runs/runsApi";
 import useStarters from "../../providers/starters";
 
@@ -239,12 +243,25 @@ describe("a hosted guest's canvas names its own copy", () => {
     expect(heard).toHaveBeenCalledTimes(2);
   });
 
-  test("the dashboard of the example names the example, as its runs are the example's", () => {
+  test("the dashboard of the example names the guest's own copy, as its canvas does", () => {
+    // The dashboard's load answered with the guest's copy, or its page was
+    // served with it (`copy_id`): its runs are the copy's process's.
     helper().nameDataflow(A, COPY);
     at(`/dashboard/${A}`);
 
+    expect(helper().requestHeaders("tok")[HEADER]).toBe(COPY);
+    expect(helper().requestHeaders("tok", {}, A)[HEADER]).toBe(COPY);
+    // A request of another dataflow names that one.
+    expect(helper().requestHeaders("tok", {}, B)[HEADER]).toBe(B);
+
+    // Under the app's base path too.
+    servedUnder("/app-dev/");
+    at(`/app-dev/dashboard/${A}`);
+    expect(helper().requestHeaders("tok")[HEADER]).toBe(COPY);
+
+    // A dashboard whose load named no copy names its dataflow.
+    helper().nameDataflow(A, null);
     expect(helper().requestHeaders("tok")[HEADER]).toBe(A);
-    expect(helper().requestHeaders("tok", {}, A)[HEADER]).toBe(A);
   });
 
   test("another page names none, even after a guest's canvas named its copy", () => {
@@ -336,6 +353,41 @@ describe("what each client sends", () => {
       });
     }
   });
+
+  /** What a dashboard's page sends of a viewer's run (`useDashboardRun`). */
+  const dashboardClients: Array<[string, () => Promise<unknown>]> = [
+    ["a viewer's run (dashboardRunsApi.start)", () => dashboardRunsApi.start(A, {})],
+    ["the start that goes on from the page's steps (dashboardRunsApi.start)", () =>
+      dashboardRunsApi.start(A, {}, { token: "t1", browserOutputs: { n1: "page-1" } })],
+    ["the run's stream (dashboardRunsApi.follow)", () => dashboardRunsApi.follow(A, "r1", "t1", () => {})],
+    ["what the page made of a step (dashboardRunsApi.keepStep)", () =>
+      dashboardRunsApi.keepStep(A, "r1", "t1", "n1", { dataType: "outputs", data: [] })],
+    ["what the run made (fetchPreviewData)", () => {
+      rememberDashboardRunFiles(A, "t1", ["art-1"]);
+      return fetchPreviewData("art-1");
+    }],
+  ];
+
+  test.each(dashboardClients)(
+    "%s names a hosted guest's own copy once the dashboard's load named it, its path the example",
+    async (_what, send) => {
+      // The guest's dashboard of the example A, whose load answered with the
+      // guest's copy, or whose page was served with it.
+      at(`/dashboard/${A}`);
+      helper().nameDataflow(A, COPY);
+
+      await send();
+
+      expect(asked.length).toBeGreaterThan(0);
+      for (const { url, headers } of asked) {
+        const path = new URL(url, "http://backend").pathname;
+        expect({ path, named: headers[HEADER] }).toEqual({
+          path: expect.stringMatching(new RegExp(`^/api/projects/${A}/dashboard/`)),
+          named: COPY,
+        });
+      }
+    },
+  );
 
   test("a dashboard viewer's read names the dashboard's dataflow beside its run's token", async () => {
     at(`/dashboard/${A}`);

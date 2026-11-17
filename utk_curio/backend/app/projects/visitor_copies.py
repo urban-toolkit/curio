@@ -24,10 +24,11 @@ journal (``execution/node_exec.py``), a Data Catalog Add or Remove changes the
 copy's datasets (``services.mutate_dataflow_datasets``), and a rename names the
 copy (:func:`rename`). Each makes the copy when there is none. The guest's
 dashboard of the dataflow shows and runs the copy once there is one
-(:func:`dashboard_copy`, ``runs/viewer.py``), and makes none. A node's output
-the guest adds to the dataflow is saved in the account's store under the
-copy's id (``computed.<copy>.<node>``), which every guest's Data Catalog reads,
-so it lists for that guest alone (:func:`lists_for`).
+(:func:`dashboard_copy`, ``runs/viewer.py``), and makes none; its page names
+the copy, made or not yet, as the canvas does (:func:`dashboard_copy_id`). A
+node's output the guest adds to the dataflow is saved in the account's store
+under the copy's id (``computed.<copy>.<node>``), which every guest's Data
+Catalog reads, so it lists for that guest alone (:func:`lists_for`).
 
 So does a file the guest imports, and a dataset they download from the
 Discovery Catalog: each is named after the guest (``imported.<visitor>.x<id>``,
@@ -59,7 +60,9 @@ to the process its own id names, as any dataflow does
 (``collaboration/owner_guard.py``), so the copies of one example spread over
 the processes: the guest's canvas names its copy's id, which its load of the
 dataflow answers with (:func:`own_copy_id`), in every request and in its
-room's socket from then on.
+room's socket from then on, and so does its dashboard of the dataflow, whose
+page's data answers with it too (:func:`dashboard_copy_id`), so its viewer
+runs are that process's.
 
 A hosted guest's File > New is a dataflow of its own (:func:`new_dataflow`),
 made on the first action that needs one, as an account's is, and kept with
@@ -350,14 +353,18 @@ def spec_of(own: str) -> Optional[dict]:
     return _with_effective_packages(shown, GUEST_KEY, own)
 
 
-def dashboard_copy(project_id: str) -> Optional[str]:
-    """The copy the dashboard of *project_id* shows and runs for the visitor
-    who asks: a hosted guest's own copy of a dataflow their account owns, once
-    they have one. None is made here: a visitor who only looks makes none.
-    ``None`` for anyone else: a guest with no copy, every other visitor of the
-    dashboard's link, an account, and anyone on a Curio started without
-    ``--deploy``. A dashboard's routes need no sign-in, so the request's is
-    read here, when it sends one."""
+def dashboard_copy_id(project_id: str) -> Optional[str]:
+    """The id the dashboard of *project_id* names for the visitor who asks: a
+    hosted guest's own copy of a dataflow their account owns, made or not yet
+    (:func:`own_copy_id`), the one their canvas of it names. The page names it
+    in every request once its data or its load answers with it (``copy_id``,
+    ``src/utils/requestHeaders.ts``); the dashboard's viewer runs are that
+    copy's dashboard's, made or not yet, and in a start of several backend
+    processes they belong to the process that id names (``runs/viewer.py``).
+    Nothing is made here. ``None`` for anyone else, as
+    :func:`dashboard_copy` says, and for a guest's own new dataflow, whose
+    page names its own id. A dashboard's routes need no sign-in, so the
+    request's is read here, when it sends one."""
     from flask import has_request_context
 
     from utk_curio.backend.app.projects.models import Project
@@ -369,11 +376,18 @@ def dashboard_copy(project_id: str) -> Optional[str]:
     user = get_current_user()
     if not copies_for(user):
         return None
-    project = db.session.get(Project, project_id)
-    if project is None or project.user_id != getattr(user, "id", None):
-        return None
-    own = for_request(user, project_id, make=False)
-    return own if own != project_id else None
+    return own_copy_id(user, db.session.get(Project, project_id))
+
+
+def dashboard_copy(project_id: str) -> Optional[str]:
+    """The copy the dashboard of *project_id* shows and runs for the visitor
+    who asks: a hosted guest's own copy of a dataflow their account owns, once
+    they have one (:func:`dashboard_copy_id`, made). None is made here: a
+    visitor who only looks makes none. ``None`` for anyone else: a guest with
+    no copy, every other visitor of the dashboard's link, an account, and
+    anyone on a Curio started without ``--deploy``."""
+    own = dashboard_copy_id(project_id)
+    return own if own is not None and _has_copy(own) else None
 
 
 def dashboard_new(project_id: str) -> Optional["Copy"]:
@@ -641,12 +655,14 @@ def own_copy_id(user, project, *, sign_in: Optional[str] = None) -> Optional[str
     made or not yet (:func:`copy_id`), and nothing is made here. It is the id
     the guest's canvas of *project* names in its requests and its room's
     socket once its load answers with it (``projects/routes.py``,
-    ``src/utils/requestHeaders.ts``), and the room the guest's tab joins
-    (:func:`room_for`): in a start of several backend processes the copy
-    belongs to the process its own id names (``collaboration/owner_guard.py``),
-    which keeps its room, its doc, its plays and its agents. ``None`` for
-    anyone else, for another account's dataflow, for a copy itself, and with
-    no sign-in."""
+    ``src/utils/requestHeaders.ts``), and its dashboard of *project* once its
+    data or its load does (:func:`dashboard_copy_id`), and the room the
+    guest's tab joins (:func:`room_for`): in a start of several backend
+    processes the copy belongs to the process its own id names
+    (``collaboration/owner_guard.py``), which keeps its room, its doc, its
+    plays, its agents and its dashboard's viewer runs. ``None`` for anyone
+    else, for another account's dataflow, for a copy itself, and with no
+    sign-in."""
     if isinstance(project, Copy) or not copies_for(user):
         return None
     if project is None or getattr(project, "user_id", None) != getattr(user, "id", None):

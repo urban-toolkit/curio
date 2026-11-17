@@ -42,7 +42,7 @@ import { SHARE_UUID_RE as UUID_RE } from "../utils/shareLinks";
 import { dashboardRefusal, getEmbeddedDashboard } from "../standalone/dashboardPayload";
 import { mayEditServedDashboard } from "../standalone/servedDashboardAccess";
 import { setOpenDataflow } from "../services/dataflowReads";
-import { awaitDataflowName, releaseDataflowName } from "../utils/requestHeaders";
+import { awaitDataflowName, nameDataflow, releaseDataflowName } from "../utils/requestHeaders";
 import { useHostedGuest } from "./apiSettings/useHostedGuest";
 import { ProjectLoadStateContext, type ProjectLoadState } from "./projectLoadState";
 
@@ -182,12 +182,18 @@ export const ProjectLoader: React.FC<{
     loaded.current = id;
     closeEveryCategory();
 
-    // A hosted guest's room's socket waits for the load's answer, which names
-    // the id the canvas names this dataflow by: the guest's own copy's, kept
-    // on the backend process that id names (utils/requestHeaders.ts). Before
-    // the id is pinned below, which the room follows. An account's answer
-    // names no copy, so its socket opens at once, apart from the load.
-    if (hostedGuestRef.current) awaitDataflowName(id);
+    // The id the page names this dataflow by: the guest's own copy's, for a
+    // hosted guest, kept on the backend process that id names
+    // (utils/requestHeaders.ts). Before the id is pinned below, which the
+    // room's socket follows. A page served with this dataflow's data knows it
+    // at once from that data (`copy_id`), as a load's answer gives it: the
+    // dashboard's page, and the canvas its Open dataflow goes on to in the
+    // same page. Elsewhere a hosted guest's room's socket waits for the
+    // load's answer. An account's answer names no copy, so its socket opens
+    // at once, apart from the load.
+    const served = getEmbeddedDashboard();
+    if (served?.meta?.projectId === id) nameDataflow(id, served.copy_id ?? null);
+    else if (hostedGuestRef.current) awaitDataflowName(id);
     // Pin the project id immediately with an empty lockfile so the palette
     // filter knows we're in a project; loadProject below will replace the
     // package set via setPackages → projectPackagesStore.
@@ -284,7 +290,8 @@ export const ProjectLoader: React.FC<{
       // once for the page) gets the dataflow the way a page that fetches loads
       // it, from the owner's endpoint, so Edit layout, Save layout and Arrange
       // work as there; the rows still come from the page. If that load fails,
-      // it gets the page's own data like anyone else.
+      // it gets the page's own data like anyone else. The data named the id
+      // the page names the dataflow by when the load started, above.
       const embedded = getEmbeddedDashboard();
       if (embedded) {
         const mayEdit = await mayEditServedDashboard();
