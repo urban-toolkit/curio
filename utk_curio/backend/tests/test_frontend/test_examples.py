@@ -130,6 +130,12 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/data-loading": 2, "model.curio.sam3/track-objects": 1,
       "curio.builtin/vis-simple": 1, "curio.builtin/python-computation": 2,
       "curio.builtin/vis-vega": 1, "curio.builtin/autk-grammar": 1}, True),
+    # A SAGE bucket read in place, with a dashboard: the Settings node's
+    # widgets reach every node, and no tile reads a selection.
+    ("32-sage-idot-rail-crossings.json", 28, 53,
+     {"curio.builtin/data-loading": 2, "curio.builtin/python-computation": 18,
+      "curio.builtin/spatial-join": 1, "curio.builtin/vis-vega": 5,
+      "curio.builtin/vis-simple": 1, "curio.builtin/autk-grammar": 1}, False),
     # SideSeeing: a walk's frames found in by SAM 3 and placed on it, and the
     # walk cut into blocks at the corners it passes, the blocks' player linked
     # to the map by time.
@@ -165,6 +171,9 @@ FAN_IN_NODES = {
     "27-pytorch-shape-classifier.json": 1,
     # Walk track: the walk on "in", the listing of its gps.csv on "in_1".
     "31-sideseeing-objects-along-a-walk.json": 1,
+    # Settings and the day's records, snapshots and zones meet in the
+    # analysis nodes, the Spatial Join, the occupancy chart and the map.
+    "32-sage-idot-rail-crossings.json": 14,
     # The GPS fixes, the placed frames, the map, the cuts, Split Video's blocks
     # and the blocks' shares.
     "33-sideseeing-frames-segments-blocks.json": 6,

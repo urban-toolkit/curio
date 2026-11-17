@@ -1,0 +1,94 @@
+{
+  "id": "data.sage.idot-w042-snapshots-2025-08-09",
+  "name": "SAGE-IDOT W042 snapshots, 2025-08-09",
+  "version": "1.0.0",
+  "format": "collection",
+  "description": "The 288 snapshots SAGE's W042 camera took of its IDOT rail crossing on 2025-08-09 (UTC), one every 5 minutes at 2560 by 1920 pixels, each named by when it was taken in nanoseconds since 1970 (ns), with that time in UTC (taken_at). They stay in the idot bucket on data.urbantk.org, read in place where the deployment mounts the bucket and once cached elsewhere. Used with the permission of its authors.",
+  "publisher": "SAGE",
+  "license": "",
+  "tags": [
+    "sage",
+    "rail crossings",
+    "illinois",
+    "images"
+  ],
+  "dataFile": "data/index.parquet",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "SAGE-IDOT rail crossings",
+  "createdAt": "2026-11-17T00:00:00Z",
+  "updatedAt": "2026-11-17T00:00:00Z",
+  "rowCount": 288,
+  "featureCount": null,
+  "schema": null,
+  "discoverySource": {
+    "sourceId": "source.sage.idot-crossings@1",
+    "sourceName": "SAGE-IDOT rail crossings",
+    "resourceId": "snapshots@crossing=W042;month=2025-08-01T00:00:00",
+    "fileCount": 288,
+    "fields": "crossing,month,ns",
+    "fetchedAt": "2026-11-17T00:00:00Z",
+    "fingerprint": "9767ee8276186cf393d05790c41d1587083dbaf5435b4d86d96d151721c628bc",
+    "narrowed": true
+  },
+  "collection": {
+    "kind": "images",
+    "sourceId": "source.sage.idot-crossings@1",
+    "sourceName": "SAGE-IDOT rail crossings",
+    "provider": "s3",
+    "resourceId": "snapshots@crossing=W042;month=2025-08-01T00:00:00",
+    "resource": "snapshots",
+    "resourceName": "Crossing snapshots",
+    "path": "{crossing}/images/{month:%Y_%m}/{ns:int}-snapshot.jpg",
+    "fields": [
+      "crossing",
+      "month",
+      "ns"
+    ],
+    "fieldValues": [
+      {
+        "name": "crossing",
+        "type": "str",
+        "distinct": 1,
+        "values": [
+          "W042"
+        ]
+      },
+      {
+        "name": "month",
+        "type": "datetime",
+        "distinct": 1,
+        "values": [
+          "2025-08-01T00:00:00"
+        ]
+      },
+      {
+        "name": "ns",
+        "type": "int",
+        "distinct": 288,
+        "min": "1754697614432149755",
+        "max": "1754783701582330630"
+      }
+    ],
+    "counts": {
+      "image": 288
+    },
+    "fileCount": 288,
+    "totalBytes": 228349924,
+    "hasGps": false,
+    "probeErrors": 0,
+    "indexedAt": "2026-11-17T00:00:00Z",
+    "fingerprint": "9767ee8276186cf393d05790c41d1587083dbaf5435b4d86d96d151721c628bc",
+    "split": {
+      "crossing": "W042",
+      "month": "2025-08-01T00:00:00"
+    },
+    "narrowedBy": {
+      "ns": {
+        "min": "1754697600000000000",
+        "max": "1754783999999999999"
+      }
+    }
+  }
+}
