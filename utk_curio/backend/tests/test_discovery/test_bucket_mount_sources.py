@@ -306,10 +306,27 @@ def canonical(fs):
     return bm.listed_fs(backend, params, path)
 
 
+#: What rclone answers when its request cannot reach the proxy its
+#: HTTPS_PROXY names, as CI's bucket-mounts job shows with nothing on the
+#: proxy's port in its stand-in for Curio's container.
+NO_WAY_OUT = (
+    "operation error S3: ListObjectsV2, exceeded maximum number of attempts, 3, https response error "
+    'StatusCode: 0, RequestID: , HostID: , request send failed, Get "https://{host}/": '
+    "proxyconnect tcp: dial tcp 172.18.0.3:3128: connect: connection refused"
+)
+
+
 class FakeRclone:
     """The mount service as the backend calls it. *refuse* maps a method to
     rclone's error; *unreachable* makes every call find no service; *hold*,
-    an event, holds ``mount/mount`` until it is set."""
+    an event, holds ``mount/mount`` until it is set.
+
+    ``operations/list`` lists a remote made on the fly as rclone does, out
+    through its HTTPS_PROXY: a ``CONNECT`` to the remote's host on the proxy
+    at *proxy_port*, on loopback. With *way_out* False its request goes
+    nowhere, as when nothing the service can reach listens on the proxy's
+    port; with ``"timeout"`` it is still trying when the call's deadline
+    comes."""
 
     def __init__(self):
         self.calls = []
@@ -318,6 +335,8 @@ class FakeRclone:
         self.refuse = {}
         self.unreachable = False
         self.hold = None
+        self.way_out = True
+        self.proxy_port = None
 
     def call(self, method, params=None, *, timeout=None):
         params = dict(params or {})
@@ -327,6 +346,8 @@ class FakeRclone:
                              "nothing answers on the mount service's socket /run/x/rc.sock: No such file or directory")
         if method in self.refuse:
             raise bm.RcError("refused", f"the mount service refused {method}: {self.refuse[method]}")
+        if method == "operations/list":
+            raise self._listing_through_the_proxy(params["fs"], timeout)
         if method == "mount/listmounts":
             return {"mountPoints": [
                 {"Fs": canonical(fs), "MountPoint": point, "MountedOn": "2026-11-07T00:00:00Z"}
@@ -342,6 +363,28 @@ class FakeRclone:
                 raise bm.RcError("refused", "the mount service refused mount/unmount: mount not found")
             del self.mounts[params["mountPoint"]]
         return {}
+
+    def _listing_through_the_proxy(self, fs, timeout):
+        """What rclone answers a listing of the remote *fs* with, out through
+        the proxy: an error, since the proxy refuses every host but a
+        source's, and with no proxy to reach there is no listing either."""
+        host = urlsplit(parse_connection_string(fs)[1]["endpoint"]).hostname
+        if self.way_out == "timeout":
+            return bm.RcError("timeout", f"the mount service did not answer operations/list within {timeout or 0:g} s")
+        if not self.way_out:
+            return bm.RcError("refused", "the mount service refused operations/list: " + NO_WAY_OUT.format(host=host))
+        with socket.create_connection(("127.0.0.1", self.proxy_port), timeout=10) as sock:
+            sock.sendall(f"CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n".encode("ascii"))
+            head = b""
+            while b"\r\n" not in head:
+                chunk = sock.recv(1024)
+                if not chunk:
+                    break
+                head += chunk
+        # Go's transport makes a refused CONNECT an error of its reason.
+        reason = head.split(b"\r\n", 1)[0].decode("latin-1").partition(" ")[2].partition(" ")[2] or "no answer"
+        return bm.RcError("refused", f'the mount service refused operations/list: request send failed, '
+                                     f'Get "https://{host}/": {reason}')
 
     def methods(self):
         return [method for method, _ in self.calls]
@@ -409,14 +452,19 @@ def _fresh_state(monkeypatch):
 @pytest.fixture
 def rig(tmp_path):
     """A service, its folders as Curio sees them, a clock, the proxy, and the
-    sources' mounts over them."""
+    sources' mounts over them. The proxy listens on loopback, as ``serve()``
+    starts it, and the service's requests out reach it there."""
     service = FakeRclone()
     folders = FakeFolders(service)
     clock = Clock()
     proxy = MountProxy()
+    service.proxy_port = proxy.start("127.0.0.1", 0)
     mounts = BucketMountSources(service, tmp_path, proxy=proxy, folders=folders, resolver=resolver,
                                 clock=clock, list_seconds=0.3)
-    return mounts, service, folders, clock, proxy
+    try:
+        yield mounts, service, folders, clock, proxy
+    finally:
+        proxy.stop()
 
 
 PATH_STYLE = a_manifest("https://data.example.org/sideseeing", "chicago/")
@@ -522,7 +570,8 @@ class TestFailures:
         folders.refuse.add(NAME)
 
         self._down(rig, REASONS["listing"])
-        assert service.methods()[-2:] == ["mount/mount", "mount/unmount"]
+        # The service reached Curio's proxy, so the refusal is the bucket's.
+        assert service.methods()[-3:] == ["mount/mount", "operations/list", "mount/unmount"]
 
     def test_a_mount_that_did_not_reach_this_container_is_unmounted(self, rig):
         _mounts, service, folders, _clock, _proxy = rig
@@ -530,6 +579,61 @@ class TestFailures:
 
         self._down(rig, REASONS["not-propagated"])
         assert service.methods()[-1] == "mount/unmount"
+
+    @pytest.mark.parametrize("listing", ["fails", "gives-no-answer"])
+    def test_a_service_that_cannot_reach_curios_proxy_is_named_not_the_bucket(self, rig, listing):
+        """A fresh mount's listing fails, or gives no answer, when the
+        service's requests reach no proxy: a refused connection to the
+        proxy's port, no route to it, or one that times out."""
+        mounts, service, folders, _clock, _proxy = rig
+        if listing == "fails":
+            service.way_out = False
+            folders.refuse.add(NAME)
+        else:
+            service.way_out = "timeout"
+            folders.hang = threading.Event()
+        try:
+            found = mounts.ensure(PATH_STYLE)
+        finally:
+            if folders.hang is not None:
+                folders.hang.set()
+
+        assert found.state == "down"
+        assert found.reason not in (REASONS["listing"], REASONS["timeout"]), (
+            f"a mount whose service reaches no proxy is down for {found.reason!r}, which points at the bucket"
+        )
+        assert "Curio's proxy" in found.reason
+        assert POINT not in service.mounts
+
+    def test_the_proxy_named_is_the_one_on_port_3128(self, rig):
+        mounts, service, folders, _clock, _proxy = rig
+        service.way_out = False
+        folders.refuse.add(NAME)
+
+        assert mounts.ensure(PATH_STYLE).reason == REASONS["proxy"] == (
+            "the mount service cannot reach Curio's proxy on port 3128"
+        )
+
+    def test_a_way_out_still_trying_at_its_deadline_is_not_the_service_lost(self, rig):
+        mounts, service, folders, _clock, _proxy = rig
+        bucket_mount_check.record(bm.SelfTest(True, None, "passed"))
+        service.way_out = "timeout"
+        folders.refuse.add(NAME)
+
+        assert mounts.ensure(PATH_STYLE).reason == REASONS["proxy"]
+        assert bucket_mount_check.status() == {"state": "passed", "problem": None}
+
+    def test_with_the_proxy_in_another_process_a_failed_listing_keeps_its_reason(self, tmp_path):
+        """In a start of several backend processes the home process runs the
+        proxy, and this one cannot tell whether the service reaches it."""
+        service = FakeRclone()
+        folders = FakeFolders(service)
+        folders.refuse.add(NAME)
+        mounts = BucketMountSources(service, tmp_path, proxy=MountProxy(), folders=folders, resolver=resolver,
+                                    list_seconds=0.3)
+
+        assert mounts.ensure(PATH_STYLE).reason == REASONS["listing"]
+        assert "operations/list" not in service.methods()
 
     def test_a_listing_with_no_answer_holds_one_thread_and_never_the_caller(self, rig):
         mounts, service, folders, clock, _proxy = rig
@@ -735,7 +839,7 @@ class TestTheMonitorLine:
         mounts, _service, _folders, _clock, _proxy = rig
         bucket_mount_check.record(bm.SelfTest(False, "no-service", "nothing answers on /run/x/rc.sock"))
         assert bucket_mount_check.status()["state"] == "unavailable"
-        monkeypatch.setattr(bm, "self_test_from_env", lambda: bm.SelfTest(True, None, "passed"))
+        monkeypatch.setattr(bm, "self_test_from_env", lambda **_settings: bm.SelfTest(True, None, "passed"))
         reconciled = []
         monkeypatch.setattr(sources_module, "reconcile_at_start", lambda: reconciled.append(True))
 

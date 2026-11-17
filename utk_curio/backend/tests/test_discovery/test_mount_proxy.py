@@ -344,6 +344,63 @@ class TestRefusals:
         assert head.startswith("HTTP/1.1 200 ")
 
 
+class TestTheSelfTestsAsk:
+    """A host the self-test expects (``bucket_mounts.reaches_proxy``) is
+    heard, then refused, and never admitted, looked up or connected to."""
+
+    HOST = "selftest-0123456789abcdef0123456789abcdef.curio-bucket-mounts.invalid"
+
+    def test_an_expected_host_is_heard_then_refused_and_never_looked_up(self, start_proxy, caplog):
+        caplog.set_level(logging.INFO, logger=mount_proxy.__name__)
+        checked = []
+
+        def check(host):
+            checked.append(host)
+            return loopback_upstream_is_public(host)
+
+        proxy, port = start_proxy(addresses_of=check)
+        proxy.expect(self.HOST, 443)
+        assert not proxy.heard(self.HOST, 443)
+
+        client, head = tunnel(port, f"{self.HOST}:443")
+        client.close()
+
+        assert head.startswith("HTTP/1.1 403 Forbidden\r\n")
+        assert proxy.heard(self.HOST, 443)
+        assert checked == []
+        assert not proxy.admits(self.HOST, 443)
+        messages = " ".join(record.getMessage() for record in caplog.records)
+        # Its name, which only the self-test may know, is not logged.
+        assert "self-test" in messages and self.HOST not in messages
+
+    def test_another_port_of_it_is_refused_as_any_host_and_not_heard(self, start_proxy, caplog):
+        caplog.set_level(logging.WARNING, logger=mount_proxy.__name__)
+        proxy, port = start_proxy()
+        proxy.expect(self.HOST, 443)
+
+        client, head = tunnel(port, f"{self.HOST}:8443")
+        client.close()
+
+        assert head.startswith("HTTP/1.1 403 ")
+        assert not proxy.heard(self.HOST, 443)
+        assert any("not the host and port of a source being mounted" in record.getMessage()
+                   for record in caplog.records)
+
+    def test_a_host_forgotten_is_refused_as_any_host_and_not_heard(self, start_proxy, caplog):
+        caplog.set_level(logging.WARNING, logger=mount_proxy.__name__)
+        proxy, port = start_proxy()
+        proxy.expect(self.HOST, 443)
+        proxy.forget(self.HOST, 443)
+
+        client, head = tunnel(port, f"{self.HOST}:443")
+        client.close()
+
+        assert head.startswith("HTTP/1.1 403 ")
+        assert not proxy.heard(self.HOST, 443)
+        assert any("not the host and port of a source being mounted" in record.getMessage()
+                   for record in caplog.records)
+
+
 class TestStopping:
     def test_stop_ends_its_tunnels_and_listens_no_more(self, upstream):
         proxy = MountProxy(addresses_of=loopback_upstream_is_public)
