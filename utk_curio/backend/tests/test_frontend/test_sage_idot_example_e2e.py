@@ -23,6 +23,7 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
 from .test_dashboard_page_e2e import _CHART_PIXELS_JS, _Visitor, _open_dashboard, _pick, _serve_hosted
@@ -97,9 +98,9 @@ def _captions(page) -> list[list[str]]:
 def _frames_read(page, captions: list[list[str]], *, timeout: float = RUN_TIMEOUT_MS) -> None:
     """The Frames tile's cards read *captions*."""
     try:
-        page.wait_for_function(f"(id) => JSON.stringify(({_CAPTIONS_JS})(id)) === {json.dumps(json.dumps(captions))}",
-                               arg=FRAMES, timeout=timeout, polling=500)
-    except Exception:  # noqa: BLE001 - the failure says what the cards read
+        page.wait_for_function(f"([id, want]) => JSON.stringify(({_CAPTIONS_JS})(id)) === JSON.stringify(want)",
+                               arg=[FRAMES, captions], timeout=timeout, polling=500)
+    except PlaywrightTimeoutError:
         raise AssertionError(f"the Frames cards read {_captions(page)!r}, not {captions!r}") from None
 
 
