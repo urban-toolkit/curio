@@ -50,12 +50,14 @@ export function modelTypeLabel(pkg: ModelPackage): string {
   return MODEL_TYPE_LABEL[pkg.model.type] ?? pkg.model.type;
 }
 
-/** The nodes a drop of the model can make, its package's own, in the order
- *  the drop's menu offers them when there are several (`packageCardNodes`):
- *  `"Track Objects, Segment Images"`. */
+/** The node a drop of the model makes, its package's own: when there are
+ *  several, the drop makes the one picked from its menu, so they read as a
+ *  choice, in the menu's order (`packageCardNodes`): `"Track Objects or
+ *  Segment Images"`, `"A, B or C"`. */
 export function modelNodeLabel(pkg: ModelPackage): string | null {
   const labels = packageCardNodes(pkg).map((node) => node.label || node.nodeType);
-  return labels.length > 0 ? labels.join(", ") : null;
+  if (labels.length <= 2) return labels.length > 0 ? labels.join(" or ") : null;
+  return `${labels.slice(0, -1).join(", ")} or ${labels[labels.length - 1]}`;
 }
 
 /** The card meta line: runtime, label count (a model with none, its type
@@ -99,7 +101,7 @@ export function modelInfoRows(pkg: ModelPackage, weightsLicense?: React.ReactNod
           ),
         }
       : null,
-    node ? { label: pkg.templates.length > 1 ? "Nodes" : "Node", value: node } : null,
+    node ? { label: "Node", value: node } : null,
     weights ? { label: "Weights", value: weights } : null,
   ];
   return rows.filter((row): row is ModelFact => row != null);

@@ -304,7 +304,7 @@ def test_photos_get_overlays_named_after_themselves_and_a_row_without_an_image_s
     (root / "c.png").write_bytes(b"not an image")
     Image.fromarray(_street(5)).save(root / "d.png")
     resource = {"id": "photos", "name": "Photos", "kind": "images", "path": "*"}
-    source = write_source(tmp_path / "discovery", "source.example.photos@1", a_storage_manifest(root, [resource]))
+    source = write_source(tmp_path / "discovery", "source.example.folder@1", a_storage_manifest(root, [resource]))
     rows, helpers = collection_rows(load_source_manifest(source), "photos", tmp_path)
     (root / "d.png").unlink()
 
