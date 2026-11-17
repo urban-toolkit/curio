@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Optional
 
 from utk_curio.backend.app.common import shared_budgets
@@ -63,6 +64,13 @@ _lost: Optional[tuple[str, str]] = None
 #: and settled: passed, or failed for a reason a mount's calls cannot clear,
 #: which no later self-test of the start changes.
 _settled: Optional[tuple[bool, Optional[str]]] = None
+#: How long a process takes the start's outcome as last read while it is not
+#: settled (none yet, or a self-test that found no service), before it reads
+#: it again: each mount's read asks for it.
+READ_AGAIN_SECONDS = 1.0
+#: When the start's outcome was last read while not settled
+#: (``time.monotonic()``), and what it was.
+_unsettled: Optional[tuple[float, Optional[tuple[bool, Optional[str]]]]] = None
 
 
 def start() -> bool:
@@ -110,8 +118,12 @@ def failed_self_test() -> Optional[str]:
     document (:data:`SELF_TEST`), so each refuses as home does."""
     with _LOCK:
         outcome = (_outcome.passed, _outcome.problem) if _outcome is not None else _settled
+        last = _unsettled
     if outcome is None and shared_budgets.across_processes():
-        outcome = _the_starts_outcome()
+        if last is not None and time.monotonic() - last[0] < READ_AGAIN_SECONDS:
+            outcome = last[1]
+        else:
+            outcome = _the_starts_outcome()
     if outcome is None:
         return None
     passed, problem = outcome
@@ -125,21 +137,24 @@ def _the_starts_outcome() -> Optional[tuple[bool, Optional[str]]]:
     ``(passed, problem)``; None while there is none, or when the document
     cannot be read (logged at debug: the start's list of the hosts let
     through cannot be written then either, which fails each mount for its
-    reason). Kept in this process once settled."""
-    global _settled
+    reason). Kept in this process once settled, and else for
+    :data:`READ_AGAIN_SECONDS`."""
+    global _settled, _unsettled
+    outcome: Optional[tuple[bool, Optional[str]]] = None
     try:
         with shared_budgets.State(SELF_TEST).held() as state:
             kept = state.get(_OUTCOME)
     except OSError as exc:
         log.debug("Bucket mounts: the self-test's outcome could not be read: %s", exc)
-        return None
-    if not (isinstance(kept, dict) and isinstance(kept.get("passed"), bool)
+        kept = None
+    if (isinstance(kept, dict) and isinstance(kept.get("passed"), bool)
             and (kept.get("problem") is None or isinstance(kept.get("problem"), str))):
-        return None
-    outcome = (kept["passed"], kept["problem"])
-    if outcome[0] or outcome[1] not in _CHANNEL_PROBLEMS:
-        with _LOCK:
+        outcome = (kept["passed"], kept["problem"])
+    with _LOCK:
+        if outcome is not None and (outcome[0] or outcome[1] not in _CHANNEL_PROBLEMS):
             _settled = outcome
+        else:
+            _unsettled = (time.monotonic(), outcome)
     return outcome
 
 
@@ -220,12 +235,13 @@ def _share(outcome: bucket_mounts.SelfTest) -> None:
 def reset() -> None:
     """Forget the outcome, the thread, a lost service and the start's outcome
     read. For tests only."""
-    global _outcome, _thread, _lost, _settled
+    global _outcome, _thread, _lost, _settled, _unsettled
     with _LOCK:
         _outcome = None
         _thread = None
         _lost = None
         _settled = None
+        _unsettled = None
 
 
 def _words(problem: Optional[str]) -> str:

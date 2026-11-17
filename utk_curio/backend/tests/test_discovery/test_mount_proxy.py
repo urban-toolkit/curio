@@ -16,6 +16,7 @@ import socket
 import socketserver
 import threading
 import time
+import types
 
 import pytest
 
@@ -468,6 +469,42 @@ class TestTheNotesOfRefusals:
         assert refusals.since("host-0.example.org", 443, 0) is None
         assert refusals.since("host-1.example.org", 443, 0) == "refused"
         assert refusals.since(f"host-{mount_proxy.REFUSALS_KEPT}.example.org", 443, 0) == "refused"
+
+    @pytest.fixture
+    def clock(self, monkeypatch):
+        """The proxy's clock, which the test moves: one time for both its
+        clocks, so a note's time is the time it was noted."""
+        now = [100.0]
+        monkeypatch.setattr(mount_proxy, "time", types.SimpleNamespace(monotonic=lambda: now[0], time=lambda: now[0]))
+        return now
+
+    def test_a_refusal_for_the_same_why_is_noted_once_a_second(self, clock):
+        """Node code can reach the proxy's port, and in a start of several
+        backend processes each note is a write of the start's document."""
+        proxy = MountProxy()
+        proxy._note("bucket.example.org", 443, "refused")
+
+        clock[0] += 0.5
+        proxy._note("bucket.example.org", 443, "refused")
+        assert proxy.refusal_since("bucket.example.org", 443, 100.25) is None
+        proxy._note("bucket.example.org", 443, "another why")
+        assert proxy.refusal_since("bucket.example.org", 443, 100.25) == "another why"
+
+        clock[0] += 1.5
+        proxy._note("bucket.example.org", 443, "another why")
+        assert proxy.refusal_since("bucket.example.org", 443, 101.75) == "another why"
+
+    def test_at_most_twenty_refusals_are_noted_a_second(self, clock):
+        proxy = MountProxy()
+        limit = mount_proxy.NOTES_A_SECOND
+        for number in range(limit + 1):
+            proxy._note(f"host-{number}.example.org", 443, "refused")
+
+        assert proxy.refusal_since(f"host-{limit - 1}.example.org", 443, 0) == "refused"
+        assert proxy.refusal_since(f"host-{limit}.example.org", 443, 0) is None
+        clock[0] += 1
+        proxy._note(f"host-{limit}.example.org", 443, "refused")
+        assert proxy.refusal_since(f"host-{limit}.example.org", 443, 0) == "refused"
 
     def test_a_note_holds_why_as_its_answer_shows_it(self):
         refusals = mount_proxy.Refusals()

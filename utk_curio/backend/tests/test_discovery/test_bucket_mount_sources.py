@@ -1378,6 +1378,45 @@ class TestAStartOfSeveralProcesses:
         assert raced.here.mounted, f"process 0's mount of the source is {raced.here.state}, for {raced.here.reason!r}"
         assert list(OneServiceOfTheStart(service_folder).mounts) == [POINT]
 
+    def test_a_process_that_waited_behind_a_failed_mount_keeps_its_reason_and_asks_nothing(
+            self, start, tmp_path, monkeypatch):
+        """The source's bucket refuses listing, and processes 1 and 0 ask for
+        it at once: process 0 waits for the source's lock of the start while
+        process 1 tries and fails. Process 0 then answers process 1's reason,
+        for the minute it stands, and asks the service nothing, as a thread
+        behind a failed mount does in one process: in turn, each of a start's
+        sixteen processes would try a broken source again, and hold its
+        request for each try before it."""
+        from utk_curio.backend.tests._support.two_processes import Window, race
+
+        _home, _proxy_port, source, _port = start(2)
+        window = Window()
+        service_folder = tmp_path / "service"
+
+        def refusing(service):
+            folders = FakeFolders(service)
+            folders.refuse.add(NAME)
+            return folders
+
+        def process_1():
+            self._become(1)
+            service = OneServiceOfTheStart(service_folder, window)
+            found = self._mounts(service, refusing(service), tmp_path).ensure(source)
+            assert (found.state, found.reason) == ("down", REASONS["listing"]), found
+
+        def process_0():
+            service = OneServiceOfTheStart(service_folder)
+            found = self._mounts(service, refusing(service), tmp_path).ensure(source)
+            return found, service.methods()
+
+        raced = race(window, process_1, process_0, monkeypatch)
+
+        assert raced.child_error == "", raced.child_error
+        found, asked = raced.here
+        assert (found.state, found.reason) == ("down", REASONS["listing"]), found
+        assert asked == [], f"process 0 tried again the mount process 1 had just failed: {asked}"
+        assert OneServiceOfTheStart(service_folder).mounts == {}
+
     def test_the_host_a_manifest_moved_from_is_let_through_no_more_whoever_mounted_it(self, start, tmp_path):
         """Process 1 mounted the source at its host. Then the source's manifest
         names another host, and process 2, which reads the source next, makes

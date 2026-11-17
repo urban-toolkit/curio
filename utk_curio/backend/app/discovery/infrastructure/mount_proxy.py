@@ -47,7 +47,9 @@ mount's listing failed reads there that Curio's proxy refused the bucket's
 host, and why. The proxy's *refusals* are this process's own
 (:class:`Refusals`), or in a start of several backend processes the notes
 they share (``application/bucket_mount_sources.SharedRefusals``). A note holds
-no path, and the self-test's host is never noted.
+no path, and the self-test's host is never noted. A refusal is noted at most
+once a second for one host, port and why, and at most :data:`NOTES_A_SECOND`
+a second in all.
 """
 
 from __future__ import annotations
@@ -92,6 +94,14 @@ REFUSAL = "Curio's bucket mount proxy refused the request"
 WHY_CHARS = 200
 #: The hosts and ports whose latest refusal is noted, at most: the latest.
 REFUSALS_KEPT = 64
+#: A refusal of a host and port for the same why as one noted this many
+#: seconds ago or less is not noted again, and at most :data:`NOTES_A_SECOND`
+#: refusals are noted each second: node code can reach the proxy's port, and
+#: in a start of several backend processes each note is a write of the
+#: start's document. A refusal noted this long before a listing began still
+#: counts for it (``bucket_mount_sources``).
+NOTE_AGAIN_SECONDS = 1.0
+NOTES_A_SECOND = 20
 
 #: A host name as the proxy takes one: labels of letters, digits and dashes.
 _HOST_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$")
@@ -202,6 +212,11 @@ class MountProxy:
         self._lock = threading.Lock()
         #: What the self-test expects (:meth:`expect`), and whether each came.
         self._expected: dict[tuple[str, int], bool] = {}
+        #: The latest note of each host and port, why and when
+        #: (``time.monotonic()``), and the notes of the second under way:
+        #: :meth:`_note`'s bounds.
+        self._last_notes: dict[tuple[str, int], tuple[str, float]] = {}
+        self._notes_second = (0, 0)
         self._tunnels = threading.BoundedSemaphore(max_tunnels)
         self._connections = threading.BoundedSemaphore(max_tunnels + MAX_WAITING)
         self._listener: Optional[socket.socket] = None
@@ -240,10 +255,28 @@ class MountProxy:
 
     def _note(self, host: str, port: int, why: str) -> None:
         """Note the refusal of *host* at *port*, for *why*, before it is
-        answered, so a process whose listing then fails finds it. A note that
-        cannot be kept is logged, and the refusal answered all the same."""
+        answered, so a process whose listing then fails finds it: unless one
+        for the same why was noted :data:`NOTE_AGAIN_SECONDS` ago or less, or
+        :data:`NOTES_A_SECOND` were noted this second. A note that cannot be
+        kept is logged, and the refusal answered all the same."""
+        shown = _shown(why)
+        now = time.monotonic()
+        with self._lock:
+            last = self._last_notes.get((host, port))
+            if last is not None and last[0] == shown and now - last[1] <= NOTE_AGAIN_SECONDS:
+                return
+            second, notes = self._notes_second
+            if second != int(now):
+                second, notes = int(now), 0
+            if notes >= NOTES_A_SECOND:
+                return
+            self._notes_second = (second, notes + 1)
+            self._last_notes.pop((host, port), None)
+            self._last_notes[(host, port)] = (shown, now)
+            while len(self._last_notes) > REFUSALS_KEPT:
+                del self._last_notes[next(iter(self._last_notes))]
         try:
-            self._refusals.note(host, port, _shown(why), time.time())
+            self._refusals.note(host, port, shown, time.time())
         except OSError as exc:
             log.warning("Bucket mount proxy could not note its refusal of %s:%d: %s", host, port, exc)
 

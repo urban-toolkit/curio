@@ -46,8 +46,9 @@ rclone's error), unmounts what it made, and the source is not tried again for
 :data:`RETRY_SECONDS`; :func:`ensure` answers with the kept reason meanwhile.
 One mount of a source at a time: a lock per source, and in a start of several
 backend processes a file lock of the source's too, since rclone refuses a
-second mount of a folder that holds one. A mounted source is looked at again
-(a stat of its folder, on a thread too) once :data:`LOOK_SECONDS` have
+second mount of a folder that holds one; there a failure stands for every
+process of the start (:class:`SharedFailures`). A mounted source is looked at
+again (a stat of its folder, on a thread too) once :data:`LOOK_SECONDS` have
 passed: a dead mount (``ENOTCONN``), a mount that is gone, or one whose remote
 no longer matches its manifest is mounted again.
 
@@ -79,7 +80,7 @@ from utk_curio.backend.app.discovery.application import bucket_mount_check
 from utk_curio.backend.app.discovery.application.catalog import DiscoveryCatalog
 from utk_curio.backend.app.discovery.domain.bucket_mount import BucketMount, NotMountable, bucket_mount
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest
-from utk_curio.backend.app.discovery.infrastructure import bucket_mounts
+from utk_curio.backend.app.discovery.infrastructure import bucket_mounts, mount_proxy
 from utk_curio.backend.app.discovery.infrastructure.mount_proxy import REFUSALS_KEPT, MountProxy
 from utk_curio.common import backend_processes
 
@@ -176,6 +177,17 @@ class _Failed(Exception):
         self.reason = reason or REASONS[kind]
         self.detail = detail
         super().__init__(self.reason)
+
+
+class _FailedInTheStart(Exception):
+    """A mount of the source that failed in the start lately, maybe in
+    another process, whose reason stands *seconds* more
+    (:class:`SharedFailures`): the source is not tried again meanwhile."""
+
+    def __init__(self, reason: str, seconds: float):
+        super().__init__(reason)
+        self.reason = reason
+        self.seconds = seconds
 
 
 class _Known(NamedTuple):
@@ -286,6 +298,9 @@ class BucketMountSources:
         self._locks: dict[str, threading.Lock] = {}
         self._known: dict[str, _Known] = {}
         self._failures: dict[str, _Failure] = {}
+        #: In a start of several backend processes, each source's failure for
+        #: every process of the start.
+        self._start_failures = SharedFailures()
         self._stuck: dict[str, threading.Thread] = {}
         #: When each folder's listing, by mount and folder, was last forgotten.
         self._forgotten: dict[tuple[str, str], float] = {}
@@ -313,6 +328,9 @@ class BucketMountSources:
                 return SourceMount("down", tail=mount.tail, reason=failure.reason)
             try:
                 self._keep_mounted(mount, folder)
+            except _FailedInTheStart as kept:
+                self._failures[mount.name] = _Failure(kept.reason, self._clock() + kept.seconds)
+                return SourceMount("down", tail=mount.tail, reason=kept.reason)
             except _Failed as failed:
                 return self._failed(mount, failed)
             self._failures.pop(mount.name, None)
@@ -323,18 +341,31 @@ class BucketMountSources:
         known = self._known.get(mount.name)
         if known is not None and known.fs == fs and self._clock() - known.looked < self.look_seconds:
             return
-        with self._held_across_processes(mount.name):
-            if known is not None and known.fs == fs:
-                seen = self._look(mount.name, folder)
-                if seen == "mounted":
-                    self._known[mount.name] = _Known(fs, self._clock())
-                    return
-                if seen == "hung":
-                    raise _Failed("stat-timeout", detail=f"a stat of {folder} took over {self.stat_seconds:g} s")
-                log.warning("Bucket mounts: the mount of %s is %s; it is mounted again", mount.name, seen)
-            elif known is not None:
-                log.info("Bucket mounts: %s's manifest names another bucket now; it is mounted again", mount.name)
-            self._mount(mount, folder, fs)
+        with self._held_across_processes(mount.name) as across:
+            try:
+                if known is not None and known.fs == fs:
+                    seen = self._look(mount.name, folder)
+                    if seen == "mounted":
+                        self._known[mount.name] = _Known(fs, self._clock())
+                        return
+                    if seen == "hung":
+                        raise _Failed("stat-timeout", detail=f"a stat of {folder} took over {self.stat_seconds:g} s")
+                    log.warning("Bucket mounts: the mount of %s is %s; it is mounted again", mount.name, seen)
+                elif known is not None:
+                    log.info("Bucket mounts: %s's manifest names another bucket now; it is mounted again",
+                             mount.name)
+                if across:
+                    # A mount another process tried lately failed: its reason
+                    # stands for the start, as a failure here stands for this
+                    # process's threads that waited behind it.
+                    kept = self._start_failures.kept(mount.name)
+                    if kept is not None:
+                        raise _FailedInTheStart(*kept)
+                self._mount(mount, folder, fs)
+            except _Failed as failed:
+                if across:
+                    self._start_failures.keep(mount.name, failed.reason, self.retry_seconds)
+                raise
 
     def _mount(self, mount: BucketMount, folder: Path, fs: str) -> None:
         try:
@@ -396,7 +427,8 @@ class BucketMountSources:
             raise _Failed("not-propagated", detail=f"{folder} is no mount in this container")
         else:
             return
-        why = self.proxy.refusal_since(mount.host, mount.port, began)
+        # A refusal of the same host for the same why is noted once a second.
+        why = self.proxy.refusal_since(mount.host, mount.port, began - mount_proxy.NOTE_AGAIN_SECONDS)
         if why is not None:
             raise _Failed("refused", f"{REASONS['refused']}: {why}", detail=failed.detail)
         unreached = self._proxy_unreached()
@@ -502,18 +534,18 @@ class BucketMountSources:
             return self._locks.setdefault(name, threading.Lock())
 
     @contextlib.contextmanager
-    def _held_across_processes(self, name: str) -> Iterator[None]:
+    def _held_across_processes(self, name: str) -> Iterator[bool]:
         """The source mounted as *name*, held by this process while it looks
         at, mounts or unmounts it, its thread lock (:meth:`_lock_of`) held
-        already. In a start of several backend processes, also a file lock of
-        the source's (:func:`_lock_file`), which every process takes: each
-        process's own lock left two of them free to find no mount at once and
-        both call ``mount/mount``, which rclone refuses for the second (the
-        folder holds a mount), so that process kept the source down for a
-        minute. A lock that cannot be taken is logged, and the source looked
-        at with this process's lock alone."""
+        already; whether this is a start of several backend processes. There
+        a file lock of the source's (:func:`_lock_file`) is held too, which
+        every process takes: each process's own lock left two of them free to
+        find no mount at once and both call ``mount/mount``, which rclone
+        refuses for the second (the folder holds a mount), so that process
+        kept the source down for a minute. A lock that cannot be taken is
+        logged, and the source looked at with this process's lock alone."""
         if not shared_budgets.across_processes():
-            yield
+            yield False
             return
         with contextlib.ExitStack() as held:
             try:
@@ -521,7 +553,7 @@ class BucketMountSources:
             except OSError as exc:
                 log.warning("Bucket mounts: backend process %d could not take %s's lock of the start: %s",
                             backend_processes.this_process(), name, exc)
-            yield
+            yield True
 
     # ── a mounted source's listings ────────────────────────────────────────
 
@@ -667,6 +699,69 @@ def _lock_file(name: str) -> Path:
     folder = root / LOCKS
     ensure_private_dir(folder)
     return folder / f"{name}.lock"
+
+
+# ── A start's failed mounts ──────────────────────────────────────────────────
+
+#: The start's document of each source's failed mount (:class:`SharedFailures`),
+#: kept with its budgets.
+FAILURES = "bucket-mount-failures"
+#: Its one field: each failed source's ``{reason, until}``, by its mount's name.
+_FAILED_SOURCES = "failed"
+
+
+class SharedFailures:
+    """Each source's failed mount, in a start of several backend processes:
+    why, and until when (``time.time()``) no process of the start tries to
+    mount it again. Within one process a thread that waited for a source's
+    lock behind a failed mount answers the failure kept; a process about to
+    mount the source reads here, once it holds the source's lock of the
+    start, the failure of another that held it before, rather than try in
+    its turn (each try can take rclone's calls and a listing: sixteen
+    processes in turn would hold their requests for minutes). A process whose
+    mount of the source is alive keeps it. Expired failures go as another is
+    kept. The document is the start's, so each start begins with none."""
+
+    def __init__(self, state: Optional[shared_budgets.State] = None):
+        self._state = state or shared_budgets.State(FAILURES)
+
+    def kept(self, name: str) -> Optional[tuple[str, float]]:
+        """Why the source mounted as *name* failed, and for how many seconds
+        more no process tries it; None when no failure stands, or when the
+        document cannot be read, which is logged."""
+        try:
+            with self._state.held() as state:
+                failure = _failures_in(state).get(name)
+        except OSError as exc:
+            log.warning("Bucket mounts: the start's failed mounts could not be read: %s", exc)
+            return None
+        if failure is None:
+            return None
+        left = failure["until"] - time.time()
+        return (failure["reason"], left) if left > 0 else None
+
+    def keep(self, name: str, reason: str, seconds: float) -> None:
+        """The mount of the source mounted as *name* failed for *reason*: no
+        process of the start tries it for *seconds*. A document that cannot
+        be written is logged, and each process tries in its turn then."""
+        now = time.time()
+        try:
+            with self._state.held() as state:
+                failures = {key: failure for key, failure in _failures_in(state).items() if failure["until"] > now}
+                failures[name] = {"reason": reason, "until": now + seconds}
+                state[_FAILED_SOURCES] = failures
+        except OSError as exc:
+            log.warning("Bucket mounts: %s's failed mount could not be kept for the start: %s", name, exc)
+
+
+def _failures_in(state: dict) -> dict[str, dict]:
+    """The failed mounts that *state* holds, each as Curio writes one."""
+    kept = state.get(_FAILED_SOURCES)
+    return {
+        name: failure for name, failure in (kept.items() if isinstance(kept, dict) else ())
+        if isinstance(name, str) and isinstance(failure, dict) and isinstance(failure.get("reason"), str)
+        and isinstance(failure.get("until"), (int, float))
+    }
 
 
 # ── The hosts a start of several processes lets through ─────────────────────
