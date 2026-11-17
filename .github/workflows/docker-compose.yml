@@ -1921,8 +1921,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Only pytest. The suite talks to the sandbox over HTTP and imports
-      # nothing from the project, deliberately.
+      # Only pytest. The suite talks to the sandbox and the backend over HTTP
+      # and imports nothing from the project, deliberately.
       - name: 📦 Install pytest
         run: python -m pip install --quiet "pytest==9.0.3"
 

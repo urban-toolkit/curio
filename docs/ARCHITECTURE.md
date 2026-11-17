@@ -1578,7 +1578,12 @@ each isolated one (`runner.IsolationConfig.from_environment`,
 >   `tests/live/test_exec_user_boundary_js.py`, asks the same of a JavaScript
 >   node's Node, and that it holds no token and cannot reach the zygote's
 >   socket; `unit` drops Node to the account in the sandbox suite
->   (`tests/test_js_run_as_exec_user.py`).
+>   (`tests/test_js_run_as_exec_user.py`). `tests/live/test_exec_user_dashboard_media.py`
+>   goes through the backend's API: a dashboard viewer's step, as
+>   `curio-exec`, writes the overlay it derives in its own folder,
+>   `media/kept/<name>/`, which its row names and the dashboard's link reads
+>   back, and the owner's overlay of the same photo stays as it was
+>   ([A dashboard viewer's runs](#a-dashboard-viewers-runs)).
 >
 > It is a separate job because an execution account and the e2e harness cannot
 > coexist: hardening `.curio/data` breaks the host-side ground-truth step, which
