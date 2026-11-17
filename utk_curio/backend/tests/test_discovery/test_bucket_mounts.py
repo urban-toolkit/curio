@@ -235,7 +235,8 @@ class _FakeService:
             return bm.RcError("refused", "the mount service refused operations/list: " + NO_WAY_OUT.format(host=host))
         self.proxy.arrive(host, 443)
         return bm.RcError("refused", "the mount service refused operations/list: request send failed, "
-                                     f'Get "https://{host}/selftest?list-type=2": Forbidden')
+                                     f'Get "https://{host}/selftest?list-type=2": '
+                                     "Curio's bucket mount proxy refused the request: the self-test reached it")
 
     def methods(self):
         return [method for method, _ in self.calls]

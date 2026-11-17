@@ -967,7 +967,8 @@ class TestAStartOfSeveralProcesses:
         def begin(processes):
             monkeypatch.setenv("CURIO_BACKEND_PROCESSES", str(processes))
             monkeypatch.setenv("CURIO_BACKEND_PROCESS", "0")
-            assert sources_module.start_proxy("127.0.0.1")
+            listening = sources_module.start_proxy("127.0.0.1")
+            assert listening, "home's proxy did not start"
             home = sources_module.process_proxy()
             source = a_manifest(f"https://{self.HOST}:{port}/sideseeing", "chicago/")
             return home, home.start("127.0.0.1", 0), source, port
@@ -1073,7 +1074,9 @@ class TestAStartOfSeveralProcesses:
         monkeypatch.delenv("CURIO_BACKEND_PROCESS", raising=False)
         service = FakeRclone()
 
-        assert self._mounts(service, FakeFolders(service), tmp_path).ensure(PATH_STYLE).mounted
+        found = self._mounts(service, FakeFolders(service), tmp_path).ensure(PATH_STYLE)
+
+        assert found.mounted, found
         assert sources_module.process_proxy().admits("data.example.org", 443)
         folder = user_storage.curio_root() / shared_budgets.FOLDER
         assert not folder.exists(), sorted(str(path) for path in folder.rglob("*"))
@@ -1093,6 +1096,23 @@ class TestAStartOfSeveralProcesses:
         assert not sources_module.process_proxy().admits(self.HOST, port), (
             "the next start's proxy lets through a host the start before it let through"
         )
+
+    def test_a_list_that_cannot_be_kept_lets_no_host_through_and_mounts_nothing(self, tmp_path, monkeypatch):
+        """The start's list is kept in its state folder. Where that cannot be
+        read or written, the proxy lets no host through, and no source
+        mounts, for a reason people can read."""
+        not_a_folder = tmp_path / "not-a-folder"
+        not_a_folder.write_text("")
+        monkeypatch.setenv("CURIO_STATE_DIR", str(not_a_folder))
+        monkeypatch.setenv("CURIO_BACKEND_PROCESSES", "2")
+        monkeypatch.setenv("CURIO_BACKEND_PROCESS", "1")
+        service = FakeRclone()
+
+        found = self._mounts(service, FakeFolders(service), tmp_path).ensure(PATH_STYLE)
+
+        assert (found.state, found.reason) == ("down", REASONS["admission"])
+        assert service.calls == [], "a source whose host could not be let through was mounted"
+        assert not sources_module.process_proxy().admits("data.example.org", 443)
 
 
 class TestTheFolders:
