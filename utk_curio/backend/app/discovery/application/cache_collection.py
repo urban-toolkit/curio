@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from utk_curio.backend.app.common.file_locks import exclusive_lock, interprocess_lock, is_held
-from utk_curio.backend.app.common.safe_paths import PathTraversalError
+from utk_curio.backend.app.common.safe_paths import PathTraversalError, is_within
 from utk_curio.backend.app.discovery.application import probe as probing
 from utk_curio.backend.app.discovery.domain.errors import (
     CapabilityUnsupported,
@@ -478,11 +478,20 @@ def details_index(user_key: str, dataset: dict[str, Any]) -> Path | None:
     catalog holds, it is the account's copy of it, the one Add to project
     makes in its store; with no copy, there is none, and the catalog's index
     keeps the details its build committed."""
-    from utk_curio.backend.app.datasets.infrastructure.storage import DatasetIdError, catalog_root, dataset_dir
+    from utk_curio.backend.app.datasets.infrastructure.storage import (
+        DatasetIdError,
+        catalog_root,
+        dataset_dir,
+        user_datasets_dir,
+    )
 
     index = Path(dataset["path"])
+    resolved = index.resolve()
+    # The account's own, wherever the catalog's folder is.
+    if is_within(resolved, user_datasets_dir(user_key).resolve()):
+        return index
     try:
-        within = index.resolve().relative_to(catalog_root().resolve())
+        within = resolved.relative_to(catalog_root().resolve())
     except ValueError:
         return index
     try:
