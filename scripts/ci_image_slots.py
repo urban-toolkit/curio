@@ -14,18 +14,19 @@ or waits for one.
     python3 scripts/ci_image_slots.py pull <image>
     python3 scripts/ci_image_slots.py run <command> [<argument>...]
 
-pull is the CI image's pull, start-stack's and test-desktop-stress's: `docker
-pull --quiet <image>` in a slot, tried up to PULL_ATTEMPTS times. On 11-17
-GitHub's registry reset two pulls of one run 5 s apart (run 44017255256), and
-each lost its job before any test ran. A failed attempt says why as a warning,
-with the last line docker printed, and the next attempt comes PULL_WAITS_S
-later; the job fails only when every attempt failed, with the last one's exit
-status and a line that names the attempts. The retries keep the slot: the
-pull is still that runner's turn, and a slot given back could keep the next
-attempt waiting up to WAIT_S for another. Once it has the image, pull says how
-long the pull took from its first attempt, the wait for the slot left out, the
-image's size and the attempt that pulled it: "Pulled in N s, B bytes on this
-daemon, at attempt K of 3".
+pull is the CI image's pull, start-stack's, test-desktop-stress's and that of
+build-image's collection on a filtered run: `docker pull --quiet <image>` in a
+slot, tried up to PULL_ATTEMPTS times. On 11-17 GitHub's registry reset two
+pulls of one run 5 s apart (run 44017255256), and each lost its job before any
+test ran. A failed attempt says why as a warning, with the last line docker
+printed, and the next attempt comes PULL_WAITS_S later; the job fails only
+when every attempt failed, with the last one's exit status and a line that
+names the attempts. The retries keep the slot: the pull is still that runner's
+turn, and a slot given back could keep the next attempt waiting up to WAIT_S
+for another. Once it has the image, pull says how long the pull took from its
+first attempt, the wait for the slot left out, the image's size and the
+attempt that pulled it: "Pulled in N s, B bytes on this daemon, at attempt K
+of 3".
 
 run runs any command in a slot, once, and exits as the command does.
 test-gpu's image build takes no slot: it would hold one for its 2 to 4

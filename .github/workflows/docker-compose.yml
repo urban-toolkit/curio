@@ -561,6 +561,23 @@ jobs:
           if [ "${CURIO_REMINT:-}" = 1 ]; then args+=(--remint --remint-filter "$CURIO_REMINT_FILTER"); fi
           python3 scripts/ci_selected_tests.py split "${args[@]}" | tee -a "$GITHUB_OUTPUT"
 
+      # The collection below runs the image (image-env's helper or its copy,
+      # and the unit suite's listing), so the image is pulled first, the way
+      # start-stack pulls it (scripts/ci_image_slots.py): in an image slot on
+      # arcade, and tried again when the registry fails it. The build above
+      # ran in buildx's own builder and pushed from there, and a reused image
+      # is only a new tag in the registry, so this runner's daemon holds no
+      # copy, and a `docker run` would fetch it itself, once and in no slot.
+      # Like the steps it serves, it may fail: they then fetch the image
+      # themselves, and if the collection fails every part of the selected
+      # suites runs.
+      - name: 📥 Pull the image, for the collection
+        if: steps.suites.outputs.e2e == 'true' || steps.suites.outputs.backend == 'true'
+        continue-on-error: true
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+        run: python3 scripts/ci_image_slots.py pull "$IMAGE"
+
       - name: 🐍 The image's Python, for the e2e collection
         if: steps.suites.outputs.e2e == 'true'
         continue-on-error: true
@@ -637,12 +654,13 @@ jobs:
       # On an arcade runner the image's Python above is the image's own folder,
       # mounted in place (scripts/ci_image_python.sh), and this job starts no
       # stack whose stop-stack would let it go and remove the image the
-      # collection pulled, so it does both here, on every self-hosted runner.
+      # collection pulled, so it does both here, on every self-hosted runner,
+      # for whichever suite the collection pulled the image for.
       # It never holds up the pick below: a release that fails leaves the next
       # job's take to finish it, and the next job's first step removes the
       # image.
       - name: 🧹 Let go of the image's Python, remove the image
-        if: always() && steps.suites.outputs.e2e == 'true'
+        if: always() && (steps.suites.outputs.e2e == 'true' || steps.suites.outputs.backend == 'true')
         run: |
           bash scripts/ci_image_python.sh release
           if [ "$RUNNER_ENVIRONMENT" = self-hosted ]; then bash scripts/ci_image_cleanup.sh; fi
