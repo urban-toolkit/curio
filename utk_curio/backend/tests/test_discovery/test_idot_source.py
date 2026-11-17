@@ -4,7 +4,7 @@
 data.urbantk.org live, 168,023 objects, a folder at a time as the listing reads
 it: the crossings, each crossing's months, then each month's snapshots and each
 crossing's data folder, each kept as one page of its first and last file, and
-of the files of the collections example 31 reads, which the Data Catalog
+of the files of the collections example 32 reads, which the Data Catalog
 commits. No file beside those is listed, such as ``sample/``'s. Each monthly
 JSON Lines file is indexed to a synthetic stand-in in the real files' format
 (``fixtures/download/storage/idot/detections.jsonl``), but for the example's
@@ -26,7 +26,7 @@ SOURCE = "source.sage.idot-crossings@1"
 JULY = "2025-07-01T00:00:00"
 
 #: The months of data the recorded listing keeps: each crossing's first and
-#: last, and the month of its team day, which example 31 reads.
+#: last, and the month of its team day, which example 32 reads.
 DATA_MONTHS = [
     ("W042", JULY), ("W042", "2025-08-01T00:00:00"), ("W042", "2025-12-01T00:00:00"),
     ("W065", JULY), ("W065", "2025-08-01T00:00:00"), ("W065", "2026-03-01T00:00:00"),

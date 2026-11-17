@@ -164,7 +164,7 @@ WORKFLOW_FILES = [
     "docs/examples/31-sideseeing-objects-along-a-walk.json",
     # A SAGE bucket's collections, cached from the recorded corpus before the
     # run, as a Curio that mounts no bucket reads them.
-    "docs/examples/31-sage-idot-rail-crossings.json",
+    "docs/examples/32-sage-idot-rail-crossings.json",
 ]
 
 

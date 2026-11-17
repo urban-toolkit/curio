@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the SAGE-IDOT example's committed datasets.
 
-Example 31 ports the Cities in Motion workshop team's analyses of three SAGE
+Example 32 ports the Cities in Motion workshop team's analyses of three SAGE
 cameras at IDOT rail crossings, each on the day the team studied, a UTC date.
 Their data stays in the ``idot`` bucket on data.urbantk.org, read in place
 where the deployment mounts the bucket and once cached elsewhere. What lands

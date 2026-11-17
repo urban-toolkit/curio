@@ -1,7 +1,7 @@
-"""Example 31, the SAGE-IDOT rail crossings, run in process on the recorded corpus.
+"""Example 32, the SAGE-IDOT rail crossings, run in process on the recorded corpus.
 
 Each test runs the example's own node code, from
-``docs/examples/31-sage-idot-rail-crossings.json``, its widget references
+``docs/examples/32-sage-idot-rail-crossings.json``, its widget references
 written as a run writes them, on its circles' inputs as the sandbox runs node
 code (``input_names.call_as_node``): the team's two files through
 ``curio_load_data``, and the bucket's files through the sandbox's own
@@ -33,7 +33,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-EXAMPLE = REPO_ROOT / "docs" / "examples" / "31-sage-idot-rail-crossings.json"
+EXAMPLE = REPO_ROOT / "docs" / "examples" / "32-sage-idot-rail-crossings.json"
 CORPUS = Path(__file__).resolve().parent / "test_discovery" / "fixtures" / "download" / "storage" / "idot" / "example"
 PACKAGE = REPO_ROOT / "packages" / "curio.builtin@1"
 CHICAGO = ZoneInfo("America/Chicago")
@@ -54,7 +54,7 @@ def spatial_join_module(tmp_path):
     from utk_curio.sandbox.util.package_modules import importable
     from utk_curio.sandbox.util.staging import stage_package_modules
 
-    run = tmp_path / "run-example-31"
+    run = tmp_path / "run-example-32"
     run.mkdir()
     staged = stage_package_modules({"root": str(PACKAGE / "sources"), "names": ["spatial_join"]}, str(run))
     with importable(str(run / staged["root"]), staged["names"]):

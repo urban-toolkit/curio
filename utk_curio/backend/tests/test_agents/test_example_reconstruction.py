@@ -199,7 +199,7 @@ class TestReachability:
             # Each Spatial Join's Operation and Output.
             "10-street-vision-cv-analysis", "15-vega-lite-spec-forms-and-catalogs", "25-spatial-join-operations",
             # Its Settings node's widgets, and its Spatial Join's.
-            "31-sage-idot-rail-crossings",
+            "32-sage-idot-rail-crossings",
         }
         for fixture in with_widgets:
             example = _example(fixture)

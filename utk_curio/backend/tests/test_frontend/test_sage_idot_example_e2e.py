@@ -1,4 +1,4 @@
-"""Example 31, the SAGE-IDOT rail crossings, run in the browser and on its dashboard.
+"""Example 32, the SAGE-IDOT rail crossings, run in the browser and on its dashboard.
 
 The example's data stay in a bucket, which no e2e stack mounts, so its owner
 first caches the files of its six bucket collections from the Data Catalog
@@ -49,8 +49,8 @@ from .utils import (
 if TYPE_CHECKING:
     from .utils import FrontendPage
 
-EXAMPLE = Path(REPO_ROOT, "docs", "examples", "31-sage-idot-rail-crossings.json")
-STEM = "31-sage-idot-rail-crossings"
+EXAMPLE = Path(REPO_ROOT, "docs", "examples", "32-sage-idot-rail-crossings.json")
+STEM = "32-sage-idot-rail-crossings"
 SETTINGS = "idot-settings"
 FRAMES = "idot-frames-view"
 GROUND = "idot-ground-map"
