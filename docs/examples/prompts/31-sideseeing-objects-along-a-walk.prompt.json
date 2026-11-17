@@ -1,0 +1,210 @@
+{
+  "$schema": "https://curio.dev/schemas/example-prompt-fixture.v1.json",
+  "fixtureId": "31-sideseeing-objects-along-a-walk",
+  "version": 1,
+  "source": {
+    "path": "docs/examples/31-sideseeing-objects-along-a-walk.json",
+    "sha256": "804b1f1720da225df0d0eb008d5c780d345a51fb35dd31c147410be56ec5de68",
+    "walkthrough": "docs/examples/31-sideseeing-objects-along-a-walk.md"
+  },
+  "prompt": "Load the SideSeeing West Loop walk's video from the Data Catalog and follow sidewalk objects through the whole of it with SAM 3: the eight labels its tracking node ships with, plus wheelchair ramp, a frame every 2 seconds. Play the overlay it draws, and make one row per object from its tracks table, with the time the object was first seen. Chart the objects in Vega-Lite as a swimlane, a lane per label and a bar per object from its first sighting to its last, in its label's colour once the video has played past it and grey before. Also load the walk's GPS track from the Data Catalog, read its gps.csv in place, and make each fix a point with its time in the walk, from when the walk began. Map the fixes on an Autark map over the West Loop's streets from the committed OpenStreetMap extract, each a disc 2 m in radius coloured by its time. Link the video's player to the swimlane and the map, so both light up to where the video stands.",
+  "context": null,
+  "required": {
+    "datasets": [
+      "data.sideseeing.west-loop-walk",
+      "data.sideseeing.west-loop-walk-gps"
+    ],
+    "packages": [
+      "model.curio.sam3@1"
+    ],
+    "paths": [
+      "docs/examples/data/west_loop.osm.pbf"
+    ]
+  },
+  "expected": {
+    "nodes": [
+      {
+        "ref": "visualization1",
+        "type": "curio.builtin/autk-grammar",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "loader1",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "loader2",
+        "type": "curio.builtin/data-loading",
+        "role": "loader",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis1",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis2",
+        "type": "curio.builtin/python-computation",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      },
+      {
+        "ref": "visualization2",
+        "type": "curio.builtin/vis-simple",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": false
+      },
+      {
+        "ref": "visualization3",
+        "type": "curio.builtin/vis-vega",
+        "role": "visualization",
+        "executable": false,
+        "hasContent": true
+      },
+      {
+        "ref": "analysis3",
+        "type": "model.curio.sam3/track-objects",
+        "role": "analysis",
+        "executable": true,
+        "hasContent": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "loader1",
+        "to": "analysis1",
+        "kind": "data",
+        "slot": 1
+      },
+      {
+        "from": "loader2",
+        "to": "analysis1",
+        "kind": "data"
+      },
+      {
+        "from": "loader2",
+        "to": "analysis3",
+        "kind": "data"
+      },
+      {
+        "from": "analysis1",
+        "to": "visualization1",
+        "kind": "data"
+      },
+      {
+        "from": "analysis2",
+        "to": "visualization3",
+        "kind": "data"
+      },
+      {
+        "from": "visualization2",
+        "to": "visualization1",
+        "kind": "interaction"
+      },
+      {
+        "from": "visualization2",
+        "to": "visualization3",
+        "kind": "interaction"
+      },
+      {
+        "from": "analysis3",
+        "to": "analysis2",
+        "kind": "data"
+      },
+      {
+        "from": "analysis3",
+        "to": "visualization2",
+        "kind": "data"
+      }
+    ],
+    "sources": {
+      "datasetIds": [
+        "data.sideseeing.west-loop-walk",
+        "data.sideseeing.west-loop-walk-gps"
+      ],
+      "paths": [
+        "docs/examples/data/west_loop.osm.pbf"
+      ],
+      "urls": []
+    }
+  },
+  "intents": [
+    {
+      "ref": "analysis1",
+      "mustMention": [
+        "gps"
+      ],
+      "outputKind": "geodataframe"
+    },
+    {
+      "ref": "analysis2",
+      "mustMention": [
+        "object"
+      ],
+      "outputKind": "dataframe"
+    }
+  ],
+  "execution": {
+    "mode": "sandbox",
+    "browserOnlyKinds": [
+      "curio.builtin/autk-grammar",
+      "curio.builtin/vis-simple",
+      "curio.builtin/vis-vega"
+    ],
+    "notes": null
+  },
+  "capability": {
+    "tier": "T3",
+    "needs": [
+      "gpu",
+      "package-enlist:templates"
+    ],
+    "skip": [
+      {
+        "when": "gpu",
+        "reason": "The Autark map needs hardware WebGPU, and SAM 3 a GPU to track the whole walk in a node's time; the plan and apply half of this fixture still runs offline.",
+        "scope": "execution"
+      }
+    ]
+  },
+  "thresholds": {
+    "pass": 0.9,
+    "templates": 1.0,
+    "topology": 0.9,
+    "dependencies": 1.0
+  },
+  "split": "train",
+  "review": {
+    "status": "pending-owner-review",
+    "draftedBy": "claude-opus-5-5 from the example JSON and its walkthrough, 2026-11-17",
+    "reviewedBy": null,
+    "reviewedAt": null
+  },
+  "consent": {
+    "dataContent": "identifiers-only",
+    "licence": "MIT (this repository)",
+    "notes": "The prompt, the expected graph and the plan target are authored in this repository; the export carries the datasets' identifiers only. The walk is SideSeeing's, whose source states no licence, so its datasets carry no licence string.",
+    "sourceLicences": [
+      {
+        "datasetId": "data.sideseeing.west-loop-walk",
+        "licence": ""
+      },
+      {
+        "datasetId": "data.sideseeing.west-loop-walk-gps",
+        "licence": ""
+      }
+    ]
+  },
+  "notes": "SAM 3's Track Objects, a model package's node, on a walk's video read in place from its bucket, with Simple View's player linked by t_s to a swimlane of the objects and to a map of the walk's GPS fixes."
+}

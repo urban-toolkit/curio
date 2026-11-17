@@ -317,6 +317,22 @@
       "Geometries"
     ]
   },
+  "31-sideseeing-objects-along-a-walk": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas",
+      "Computer vision"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "Imagery",
+      "OpenStreetMap",
+      "Video"
+    ]
+  },
   "dataflows/autk-map": {
     "tags": [
       "Autark",
