@@ -1,12 +1,11 @@
 """The Dataflow Builder's Solve hands the sandbox the datasets a node's code names, as a node's Solve does.
 
 A Solve over a plan is a batch that solves each node on a thread of its pool
-(``SolveBatch._run_pass``). When the Solve starts, its request resolves the
-paths of the dataflow's Data Catalog datasets; an id those paths do not hold
-is resolved for the node's run, on the pool's thread
-(``grounding._session_dataset_paths``). A layer group's id is always one: it
-names no file of its own, and only its entry, which that lookup reads, names
-its layers. The lookup reads the Data Catalog, which reads the database, and
+(``SolveBatch._run_pass``). The path of each Data Catalog dataset a node's code
+reads is resolved for the node's run, on the pool's thread
+(``grounding._session_dataset_paths``), and a layer group's id is resolved
+again for each run: it names no file of its own, and only its entry, which
+that lookup reads, names its layers. The lookup reads the Data Catalog, which reads the database, and
 a pool's thread starts with no app context of its own. There it found
 nothing, so the node ran as if the dataset were missing, while a node's own
 Solve, which looks it up on its job's thread, loads it.

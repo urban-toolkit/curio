@@ -19,6 +19,7 @@ blaming the node under validation.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import textwrap
 import time
@@ -269,6 +270,21 @@ def _acting_store(user_key: str, project_id: str, acting_user) -> tuple[str | No
     return acting_key, OwnersPackages(user_key, project_id)
 
 
+@contextlib.contextmanager
+def _downloads_told(downloads, node_id: str):
+    """Tell *downloads* how far each download on first use made inside the
+    block, the resolution of *node_id*'s run, has come, and None once they
+    are over (``left_out_files.reporting``, ``downloading``); nothing
+    without *downloads*."""
+    if downloads is None:
+        yield
+        return
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+
+    with left_out_files.reporting(lambda progress: downloads(node_id, progress)), left_out_files.downloading():
+        yield
+
+
 def run_through_node(
     user_key: str,
     project_id: str,
@@ -294,9 +310,15 @@ def run_through_node(
     templates: dict | None = None,
     acting_user=None,
     keep_stdout: bool = False,
+    downloads=None,
 ) -> dict:
     """Execute the dataflow's ancestor slice THROUGH *node_id* and report
     per-node outcomes (memo dev/67-7).
+
+    *downloads*, when given, is told how far each download on first use of
+    what a node of the slice reads has come, as ``downloads(node id,
+    progress)`` (a ``left_out_files.Progress``), and None once that node's
+    downloads are over, as a run on the server tells its ``step_progress``.
 
     With *keep_stdout*, the report also holds ``targetStdout``: everything
     the target printed, where its record keeps only the tail. It stays out of
@@ -519,8 +541,8 @@ def run_through_node(
             # on their first use, before the sandbox runs the node. A download
             # that fails ends the node's run here with its own error, as Play's
             # does (node_exec), where the sandbox would only say the model is
-            # not here.
-            with left_out_files.failures() as unavailable:
+            # not here. How far each has come goes to *downloads*.
+            with left_out_files.failures() as unavailable, _downloads_told(downloads, node.id):
                 if acting_user is not None:
                     models = resolve_models_for(seeded, acting_key, owners=owners)
                     model_weights = resolve_fetched_weights_for(seeded, acting_key, owners=owners) if models else {}
@@ -601,6 +623,10 @@ def run_through_node(
             },
             "durationMs": duration_ms,
         }
+        if widget_problem is None and download_problem is not None:
+            # What the node reads could not be downloaded: no change to its
+            # code mends that (``validation.validate_candidate``).
+            record["downloadFailed"] = True
         report["nodes"][node.id] = record
         if keep_stdout and node.id == node_id:
             report["targetStdout"] = stdout_text
