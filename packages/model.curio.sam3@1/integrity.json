@@ -1,14 +1,14 @@
 {
   "sha256": {
     "LICENSE": "4dea99bfaa016e21bc860d73f344236bd1e5c4977d1a9a8fd32f822b500ae1be",
-    "README.md": "78e247be7714815e05f2b4e2dd84791a1f17847871277c3c88e3521c3631796d",
+    "README.md": "e05fe1a74665431052ab7e427bfd5d667d1816eda608acb5392abf6e3acf7c29",
     "manifest.json": "b0cb48bb1c3643e6a2d277a5a7cd811d79e49906502fc6e921d98f7b42ca631d",
     "skills/sam3-tracking/SKILL.md": "0f8004e416006006970499601d4b2acf8886c36f14a2692cd1977e72843a8e08",
     "skills/sam3-tracking/evals/evals.json": "af49cbd532106a1d1f8a15514c2e170782ed3d384777bdad6bc21a692cf1883c",
     "skills/sam3-tracking/evals/files/walk.json": "f042227ee8007613162f1a1e04f14a3f210fff3fd7186b081a906f3013466e4a",
     "skills/sam3-tracking/evals/truth.json": "48c911f503ea88a4b7c13935ab210823b16bbfb694ae45df8fc4b5af64eb1b02",
     "sources/sam3_images.py": "31c28741b1ab09b349b1531a2ad2b62532ffd80a3fdd36d63f3c31b7c6c09a16",
-    "sources/sam3_tracking.py": "d7d8b69c3395bbb2d7172220c6256257a6f0a6204dfcf307dc9ef148f4017b60",
+    "sources/sam3_tracking.py": "4e9509fb45b4cc77a7fe9b57a20168adf5b1a14d9bc79320af7bc38756be9291",
     "sources/segment-images.py": "6b89298a3a8c9a49bee5a0dbd186621371973609dc47b74817d60dc1d91d2330",
     "sources/track-objects.py": "78839b8d27ebeb7be16782a26c34c8771d7b27511b3747a209c29883927b367a"
   }

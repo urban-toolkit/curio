@@ -25,6 +25,13 @@ Design choices:
   Curio's requirements, the image's torch, the shipped catalog's libraries
   the launcher installs, and the user's own. Package manifests name several
   of those too, so a manifest is no evidence that Curio put a library here.
+- **The image's libraries win in an account's tree.** Under isolation an
+  account's node libraries are a ``--target`` tree its nodes import in front
+  of this interpreter, the image's. ``--target`` ignores what this
+  interpreter holds, so an install into such a tree (*in_front*) resolves
+  with the tree in front of this interpreter, as node code imports them, and
+  puts into the tree only what neither holds at a version the requirements
+  accept: a package's ``torch>=2.6`` keeps the image's CUDA torch.
 - **One run at a time per environment.** A pip run that changes this
   interpreter, or a ``--target`` tree, holds that environment's lock across
   threads and backend processes (:func:`_one_run_into`), and an install
@@ -303,13 +310,19 @@ def _is_satisfied(name: str, spec: str) -> bool:
     evaluated — not just whether the package is importable. Falls back to
     True (let pip decide) if the installed version string can't be parsed.
     """
-    from packaging.specifiers import SpecifierSet
-    from packaging.version import Version, InvalidVersion
-
     try:
         ver_str = installed_version(name)
     except PackageNotFoundError:
         return False
+    return accepts(name, spec, ver_str)
+
+
+def accepts(name: str, spec: str, version: str) -> bool:
+    """Whether *spec*, a manifest's range for *name*, accepts *version* of it:
+    any version when it names none, and, when the version or the range does
+    not parse, yes, so that pip is the authority (:func:`_is_satisfied`)."""
+    from packaging.specifiers import SpecifierSet
+    from packaging.version import Version, InvalidVersion
 
     spec = (spec or "").strip()
     if not spec or spec == "*":
@@ -321,9 +334,111 @@ def _is_satisfied(name: str, spec: str) -> bool:
     pep440 = full[len(name):]            # e.g. ">=3.7.3"  or  "==3.0.2"
 
     try:
-        return Version(ver_str) in SpecifierSet(pep440)
+        return Version(version) in SpecifierSet(pep440)
     except (InvalidVersion, Exception):
         return True  # unparseable — let pip be the authority
+
+
+def tree_versions(target_dir) -> dict[str, str]:
+    """The version of each distribution a ``--target`` tree holds, by PEP 503
+    name: those its ``*.dist-info`` folders record. A folder whose metadata
+    does not read is left out."""
+    from importlib.metadata import distributions
+
+    found: dict[str, str] = {}
+    for dist in distributions(path=[str(target_dir)]):
+        try:
+            name, version = dist.metadata["Name"], dist.version
+        except Exception:  # noqa: BLE001 - a broken dist-info records no version to go by
+            continue
+        if name and version:
+            found.setdefault(_canonical_dist_name(name), version)
+    return found
+
+
+def version_in_front(name: str, target_dir, in_tree: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    """The version of *name* node code imports with the tree *target_dir* in
+    front of this interpreter: the tree's copy when it holds one, else this
+    interpreter's, the image's; None when neither holds it. *in_tree* is the
+    tree's :func:`tree_versions`, when the caller has read them."""
+    in_tree = tree_versions(target_dir) if in_tree is None else in_tree
+    version = in_tree.get(_canonical_dist_name(name))
+    return version if version is not None else interpreter_version(name)
+
+
+def interpreter_version(name: str) -> Optional[str]:
+    """The version of *name* this interpreter, the image's, holds, or None."""
+    try:
+        return installed_version(name)
+    except PackageNotFoundError:
+        return None
+
+
+def copies_this_interpreter_meets(declared: Mapping[str, Iterable[str]], target_dir, *, keep=()) -> list[str]:
+    """The names of *declared*, each with the ranges asked of it, whose copy
+    in the tree *target_dir* stands in front of this interpreter's, the
+    image's, where the image's meets every one of those ranges and every
+    requirement on it of the distributions the tree keeps, sorted; *keep*
+    names libraries whose copies stay whatever their versions. A copy that a
+    distribution the tree keeps needs at a version the image's is not stays."""
+    from importlib.metadata import distributions
+    from packaging.requirements import InvalidRequirement, Requirement
+
+    in_tree = tree_versions(target_dir)
+    kept = {_canonical_dist_name(name) for name in keep}
+    # Each distribution of the tree, with what it requires here (its
+    # requirements whose markers hold, none of an extra).
+    needs: list[tuple[str, str, object]] = []
+    for dist in distributions(path=[str(target_dir)]):
+        try:
+            requirer, lines = _canonical_dist_name(dist.metadata["Name"] or ""), dist.requires or []
+        except Exception:  # noqa: BLE001 - a broken dist-info requires nothing to go by
+            continue
+        for line in lines:
+            try:
+                requirement = Requirement(line)
+            except InvalidRequirement:
+                continue  # a line pip would not read either
+            if requirement.marker is None or requirement.marker.evaluate({"extra": ""}):
+                needs.append((requirer, _canonical_dist_name(requirement.name), requirement.specifier))
+    # A library this interpreter lacks keeps the tree's copy, node code's only one.
+    image = {}
+    for name in declared:
+        version = interpreter_version(name)
+        if version is not None:
+            image[name] = version
+    # A copy that goes no longer needs what it required: so on until no
+    # other copy can go.
+    going: set[str] = set()
+    while True:
+        more = []
+        for name, ranges in declared.items():
+            canonical = _canonical_dist_name(name)
+            if canonical not in in_tree or canonical in kept or canonical in going or name not in image:
+                continue
+            if not all(accepts(name, spec, image[name]) for spec in ranges):
+                continue
+            if all(specifier.contains(image[name], prereleases=True)
+                   for requirer, needed, specifier in needs if needed == canonical and requirer not in going):
+                more.append(canonical)
+        if not more:
+            break
+        going.update(more)
+    return sorted(name for name in declared if _canonical_dist_name(name) in going)
+
+
+def outside_their_ranges_in_front(deps: Mapping[str, str], target_dir) -> list[str]:
+    """The names of *deps* that node code, with the tree *target_dir* in front
+    of this interpreter, imports at a version their range does not accept,
+    sorted. A library neither holds is not one: whether it imports is the
+    import probe's question."""
+    in_tree = tree_versions(target_dir)
+    outside = []
+    for name, spec in deps.items():
+        version = version_in_front(name, target_dir, in_tree)
+        if version is not None and not accepts(name, spec, version):
+            outside.append(name)
+    return sorted(outside)
 
 
 #: Each library :func:`install_python_deps` installed into this interpreter
@@ -971,6 +1086,7 @@ def install_python_deps_to_target(
     target_dir: str,
     *,
     on_line: Optional[Callable[[str], None]] = None,
+    in_front: bool = False,
 ) -> InstallReport:
     """dev/97: pip-install *deps* (and their transitive closure) into
     *target_dir* via ``pip install --target`` — the backend sandbox's
@@ -993,32 +1109,137 @@ def install_python_deps_to_target(
     them (``backend_runtime.user_node_overlay_dir``), and a package's handler
     overlay sits in the account's own 0700 store. pip then installs into a
     folder the account owns, and this process moves what it installed into
-    *target_dir* and makes it its own (:func:`_place_installed`)."""
+    *target_dir* and makes it its own (:func:`_place_installed`).
+
+    With *in_front*, *target_dir* is a tree node code imports in front of this
+    interpreter, an account's own node libraries, and the image's libraries
+    win wherever they meet a range (:func:`_install_in_front`): only what
+    neither holds at a version the requirements accept goes into the tree,
+    ``installed`` names the requested specs pip installed and ``skipped``
+    the requirements already met."""
     if not deps:
         return InstallReport(installed=[], skipped=[])
     with _one_run_into(target_dir):
-        account = _pip_account()
-        if account is None:
-            return _install_to_target(deps, target_dir, on_line)
-        staging = tempfile.mkdtemp(prefix="curio-pip-target-")
+        if in_front:
+            return _install_in_front(deps, target_dir, on_line)
+        return _install_into(deps, target_dir, on_line)
+
+
+def _install_into(
+    deps: Mapping[str, str], target_dir: str, on_line: Optional[Callable[[str], None]], *, no_deps: bool = False,
+) -> InstallReport:
+    """:func:`_install_to_target` into *target_dir*, through a folder of the
+    execution account's where pip runs as that account, for
+    :func:`install_python_deps_to_target`, which holds the tree's lock."""
+    account = _pip_account()
+    if account is None:
+        return _install_to_target(deps, target_dir, on_line, no_deps=no_deps)
+    staging = tempfile.mkdtemp(prefix="curio-pip-target-")
+    try:
+        os.chown(staging, *account)
+        report = _install_to_target(deps, staging, on_line, no_deps=no_deps)
+        _place_installed(Path(staging), Path(target_dir))
+        return report
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def _install_in_front(
+    deps: Mapping[str, str], target_dir: str, on_line: Optional[Callable[[str], None]],
+) -> InstallReport:
+    """*deps* into the tree *target_dir*, which node code imports in front of
+    this interpreter, for :func:`install_python_deps_to_target`, which holds
+    the tree's lock.
+
+    ``pip install --target`` ignores what this interpreter holds, so it put
+    every requirement and every library they need into the tree, the image's
+    CUDA torch among them, in front of the image's copy. Here a requirement
+    the tree or this interpreter already meets is skipped
+    (:func:`version_in_front`), pip resolves the others with the tree in
+    front of this interpreter, as node code imports them, and only the
+    distributions it would install go into the tree, each at the version pip
+    chose and without its own requirements, which that resolution met. A
+    distribution the tree holds at another version is taken out first, since
+    ``--target`` leaves one it holds as it is; so is a requirement's copy in
+    the tree at a version its range does not accept where this interpreter's
+    meets it, which then wins."""
+    in_tree = tree_versions(target_dir)
+    wanted, hiding = {}, []
+    for name, spec in deps.items():
+        version = version_in_front(name, target_dir, in_tree)
+        if version is not None and accepts(name, spec, version):
+            continue
+        image = interpreter_version(name)
+        if _canonical_dist_name(name) in in_tree and image is not None and accepts(name, spec, image):
+            hiding.append(name)
+            continue
+        wanted[name] = spec
+    if hiding:
+        uninstall_python_deps_from_target(hiding, target_dir)
+        in_tree = tree_versions(target_dir)
+    plan = _resolved_in_front(wanted, target_dir) if wanted else []
+    planned = {_canonical_dist_name(name) for name, _version in plan}
+    skipped = sorted(name for name in deps if _canonical_dist_name(name) not in planned)
+    if not plan:
+        return InstallReport(installed=[], skipped=skipped)
+    replaced = [name for name, _version in plan if _canonical_dist_name(name) in in_tree]
+    if replaced:
+        uninstall_python_deps_from_target(replaced, target_dir)
+    _install_into({name: f"=={version}" for name, version in plan}, target_dir, on_line, no_deps=True)
+    return InstallReport(
+        installed=[_spec_argv(name, spec) for name, spec in sorted(deps.items())
+                   if _canonical_dist_name(name) in planned],
+        skipped=skipped,
+    )
+
+
+def _resolved_in_front(deps: Mapping[str, str], target_dir: str) -> list[tuple[str, str]]:
+    """``(name, version)`` of each distribution pip would install for *deps*
+    in an environment of the tree *target_dir* in front of this interpreter:
+    those the requirements and what they need ask for that neither holds at
+    an accepted version. pip's dry run, bounded as an install is: wheels
+    only first, then, where one has no wheel, with builds, whose metadata a
+    build backend makes."""
+    specs = [_spec_argv(name, spec) for name, spec in sorted(deps.items())]
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = f"{target_dir}{os.pathsep}{existing}" if existing else str(target_dir)
+    base = [sys.executable, "-m", "pip", "install", "--no-input", "--dry-run", "--quiet", "--report", "-"]
+
+    def dry_run(cmd):
+        log.info("Running %s", " ".join(cmd))
         try:
-            os.chown(staging, *account)
-            report = _install_to_target(deps, staging, on_line)
-            _place_installed(Path(staging), Path(target_dir))
-            return report
-        finally:
-            shutil.rmtree(staging, ignore_errors=True)
+            return subprocess.run(
+                _bounded(cmd), capture_output=True, text=True, env=env, timeout=_PIP_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise PipInstallError(
+                f"pip install --dry-run timed out after {_PIP_TIMEOUT_SECONDS}s (packages: {specs})"
+            ) from exc
+
+    proc = dry_run([*base, WHEEL_ONLY_ARG, *specs])
+    if proc.returncode != 0 and _looks_like_no_wheel((proc.stderr or "") + (proc.stdout or "")):
+        proc = dry_run([*base, *specs])
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "")[-2000:]
+        raise PipInstallError(f"pip install --dry-run failed (exit {proc.returncode}): {tail.strip()}")
+    try:
+        report = json.loads(proc.stdout)
+        return [(item["metadata"]["name"], item["metadata"]["version"]) for item in report.get("install") or []]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise PipInstallError(f"pip's report of what it would install did not read: {exc}") from exc
 
 
 def _install_to_target(
-    deps: Mapping[str, str], target_dir: str, on_line: Optional[Callable[[str], None]],
+    deps: Mapping[str, str], target_dir: str, on_line: Optional[Callable[[str], None]], *, no_deps: bool = False,
 ) -> InstallReport:
     """``pip install --target`` *target_dir* for
     :func:`install_python_deps_to_target`, which holds the tree's lock:
-    wheels only, then a build where a dependency has no wheel."""
+    wheels only, then a build where a dependency has no wheel. With
+    *no_deps*, the requirements alone, none of what they need."""
     specs = [_spec_argv(name, spec) for name, spec in sorted(deps.items())]
     base = [sys.executable, "-m", "pip", "install", "--no-input",
-            "--target", str(target_dir)]
+            "--target", str(target_dir), *(["--no-deps"] if no_deps else [])]
 
     # Wheels first, so no setup.py runs at all in the common case (#309). A
     # dependency with no wheel for this platform still has to install, so a

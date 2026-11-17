@@ -6,9 +6,12 @@ plumbing: the model ``curio_load_model("model.curio.sam3")`` gives, whose
 ``path`` is the folder of SAM 3's weights, and ``curio_derived_file``, which
 says where a file made from a collection's video is kept and served.
 
-Its SAM 3 is Transformers' video model with one correction
-(:class:`Sam3VideoModel`): on a frame where SAM 3 drops an object that showed
-up for a moment, each other object keeps its own mask and score.
+Its SAM 3 is Transformers' video model with two corrections
+(:class:`Sam3VideoModel`): it cleans its masks as SAM 3 does, on any device
+and with no library more, where Transformers cleans them only with the
+kernels library, which an isolated run cannot fetch and which has no build
+for this torch; and on a frame where SAM 3 drops an object that showed up for
+a moment, each other object keeps its own mask and score.
 """
 
 import colorsys
@@ -16,6 +19,7 @@ import datetime
 import hashlib
 import json
 import math
+import sys
 from dataclasses import dataclass
 from fractions import Fraction
 
@@ -261,9 +265,23 @@ def _draw(run, image, found, label_of):
 
 
 class Sam3VideoModel(TransformersSam3VideoModel):
-    """SAM 3's video model as Transformers has it, but for the frames where
-    SAM 3 drops an object that showed up for a moment: there each other
-    object keeps its own mask and score.
+    """SAM 3's video model as Transformers has it, with SAM 3's clean-up of
+    its masks, and with each object's own mask and score on the frames where
+    SAM 3 drops an object that showed up for a moment.
+
+    SAM 3 cleans what it finds in each frame: of the detections of a label
+    that overlap, by a mask IoU above ``det_nms_thresh`` (0.1), it keeps the
+    one it scores highest (:meth:`run_detection`); and in each mask it fills
+    the holes and removes the specks of ``fill_hole_area`` pixels or fewer
+    (16) of the low-resolution mask, a speck only where it is under half the
+    mask's area, both in the masks it follows objects with
+    (:meth:`run_tracker_propagation`) and in those of the objects it takes
+    from the frame's detections (:meth:`build_outputs`). Transformers does
+    this only with the kernels library's cv-utils, fetched from the Hugging
+    Face Hub, which has no build for the image's torch and none for a CPU,
+    and an isolated run cannot fetch it; without it, it kept every detection
+    and every hole and speck. Here it is done in torch, as cv-utils does it,
+    and Transformers no longer looks for the library.
 
     SAM 3's tracker gives each frame a mask and a score for each object it
     follows as the frame starts, in order. Transformers drops the objects the
@@ -273,6 +291,47 @@ class Sam3VideoModel(TransformersSam3VideoModel):
     frame's masks and scores are paired, as SAM 3's own code pairs them with
     the objects it followed as the frame started, and the frame's output
     leaves the objects dropped out, as Transformers' does."""
+
+    def __init__(self, config):
+        super().__init__(config)
+        _without_the_kernels_library()
+
+    def run_detection(self, inference_session, vision_embeds):
+        """Each label's detections, as Transformers finds them, without those
+        a detection of the label it scores higher overlaps by a mask IoU
+        above ``det_nms_thresh`` (:func:`_kept_by_nms`)."""
+        found = super().run_detection(inference_session=inference_session, vision_embeds=vision_embeds)
+        if self.det_nms_thresh > 0.0:
+            for prompt_id, detections in found.items():
+                kept = _kept_by_nms(detections["scores"], detections["mask"], self.det_nms_thresh)
+                found[prompt_id] = {key: value[kept] for key, value in detections.items()}
+        return found
+
+    def run_tracker_propagation(self, inference_session, frame_idx, reverse):
+        """The masks of the objects SAM 3 follows, as its tracker makes them
+        for the frame, cleaned (:func:`_cleaned`), with their scores."""
+        masks, scores = super().run_tracker_propagation(
+            inference_session=inference_session, frame_idx=frame_idx, reverse=reverse,
+        )
+        if masks.shape[0]:
+            masks = _cleaned(masks.unsqueeze(1), self.fill_hole_area).squeeze(1)
+        return masks, scores
+
+    def build_outputs(self, inference_session, det_out, tracker_low_res_masks_global, tracker_update_plan,
+                      reconditioned_obj_ids=None):
+        """The frame's masks, with those of the objects SAM 3 takes from the
+        frame's detections cleaned (:func:`_cleaned`), as the masks it follows
+        objects with are."""
+        masks = super().build_outputs(
+            inference_session=inference_session, det_out=det_out,
+            tracker_low_res_masks_global=tracker_low_res_masks_global, tracker_update_plan=tracker_update_plan,
+            reconditioned_obj_ids=reconditioned_obj_ids,
+        )
+        new = [object_id for object_id in tracker_update_plan["new_det_obj_ids"] if object_id in masks]
+        if new:
+            cleaned = _cleaned(torch.stack([masks[object_id] for object_id in new]), self.fill_hole_area)
+            masks.update(zip(new, cleaned))
+        return masks
 
     def run_tracker_update_execution_phase(self, inference_session, frame_idx, det_out, tracker_update_plan,
                                            reverse=False):
@@ -298,6 +357,91 @@ class Sam3VideoModel(TransformersSam3VideoModel):
             inference_session.remove_object(object_id, strict=False)
             masks.pop(object_id, None)
         return masks, scores, metadata, tracker_scores
+
+
+def _without_the_kernels_library():
+    """Have Transformers' SAM 3 go on as if it had looked for the kernels
+    library and found none, unless it has loaded it: :class:`Sam3VideoModel`
+    cleans the masks itself, and Transformers would otherwise look for the
+    library on the Hugging Face Hub, then say on each run that the clean-up is
+    skipped."""
+    transformers_module = sys.modules[TransformersSam3VideoModel.__module__]
+    if getattr(transformers_module, "cv_utils_kernel", False) is None:
+        transformers_module.cv_utils_kernel = False
+
+
+def _kept_by_nms(scores, masks, iou_threshold):
+    """Which of a label's detections SAM 3 keeps, in their order: from the
+    highest score down, of equal scores the earlier first, each detection kept
+    drops those its mask overlaps by an IoU above *iou_threshold*. The IoU is
+    Transformers' ``mask_iou`` of the masks above 0, compared in float64, as
+    cv-utils' ``generic_nms`` compares it."""
+    count = scores.shape[0]
+    if count < 2:
+        return torch.ones(count, dtype=torch.bool, device=scores.device)
+    # Pixel counts are whole numbers, exact in float64; MPS has no float64.
+    device = torch.device("cpu") if masks.device.type == "mps" else masks.device
+    binary = (masks > 0).flatten(1).to(device).double()
+    shared = binary @ binary.T
+    area = binary.sum(1)
+    union = area[:, None] + area[None, :] - shared
+    ious = shared.float() / union.float().clamp(min=1)
+    over = (ious.double() > iou_threshold).cpu().numpy()
+    order = torch.sort(scores.float(), descending=True, stable=True).indices.tolist()
+    kept, dropped = np.zeros(count, dtype=bool), np.zeros(count, dtype=bool)
+    for index in order:
+        if not dropped[index]:
+            kept[index] = True
+            dropped |= over[index]
+    return torch.from_numpy(kept).to(scores.device)
+
+
+def _cleaned(masks, max_area):
+    """*masks*, ``(N, 1, H, W)`` mask scores, cleaned as SAM 3 cleans them
+    (Transformers' ``fill_holes_in_mask_scores``): each hole, a region of
+    pixels at or below 0 of *max_area* pixels or fewer, is filled with 0.1;
+    then each speck, a region of pixels above 0 of *max_area* pixels or fewer
+    and of at most half the mask's pixels above 0, is set to -0.1. Regions
+    are 8-connected, as cv-utils' ``cc_2d`` finds them."""
+    if max_area <= 0 or not masks.shape[0]:
+        return masks
+    background = masks <= 0
+    masks = torch.where(background & (_areas_up_to(background, max_area) <= max_area), 0.1, masks)
+    foreground = masks > 0
+    allowed = foreground.sum(dim=(2, 3), keepdim=True, dtype=torch.int32).floor_divide(2).clamp(max=max_area)
+    return torch.where(foreground & (_areas_up_to(foreground, max_area) <= allowed), -0.1, masks)
+
+
+def _areas_up_to(members, limit):
+    """For each pixel of *members*, ``(N, 1, H, W)`` booleans, how many
+    pixels its 8-connected region of members has, where that is *limit* or
+    fewer, and ``limit + 1`` where it is more; 0 outside *members*.
+
+    Each member takes the lowest index among the members around it, *limit*
+    times. A region of *limit* pixels or fewer is fewer steps across than
+    that, so all of it then holds one index, which no other region holds. A
+    larger region holds one index only if all of it does, and its count says
+    it is larger, or several, two of them side by side. So a region is
+    counted by its index where no member holding it is beside one holding
+    another."""
+    count, _, height, width = members.shape
+    pixels = height * width
+    # Indexes in float32, which max pooling takes: exact up to 2^24 pixels.
+    outside = float(pixels)
+    labels = torch.where(
+        members, torch.arange(pixels, device=members.device, dtype=torch.float32).view(1, 1, height, width), outside,
+    )
+    for _ in range(limit):
+        labels = torch.where(members, -torch.nn.functional.max_pool2d(-labels, 3, stride=1, padding=1), outside)
+    lowest = -torch.nn.functional.max_pool2d(-labels, 3, stride=1, padding=1)
+    highest = torch.nn.functional.max_pool2d(torch.where(members, labels, -1.0), 3, stride=1, padding=1)
+    beside_another = members & ((lowest != labels) | (highest != labels))
+    keys = labels.long() + torch.arange(count, device=members.device).view(count, 1, 1, 1) * pixels
+    keys = keys.clamp(max=count * pixels - 1)
+    sizes = torch.bincount(keys[members], minlength=count * pixels)
+    opened = torch.bincount(keys[beside_another], minlength=count * pixels)
+    areas = torch.where(opened[keys] > 0, limit + 1, sizes[keys].clamp(max=limit + 1))
+    return torch.where(members, areas, 0)
 
 
 class _Frames:

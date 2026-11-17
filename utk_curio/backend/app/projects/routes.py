@@ -233,8 +233,9 @@ def get_project(project_id: str):
 
     ``copy_id`` names a hosted guest's own copy of a dataflow its account
     owns, made or not yet, which the guest's canvas names in its requests and
-    its room's socket from then on; ``null`` for anyone else. The read itself
-    names the dataflow, and any backend process answers it."""
+    its room's socket from then on, and its dashboard in its requests;
+    ``null`` for anyone else. The read itself names the dataflow, and any
+    backend process answers it."""
     try:
         result = services.load_project(
             g.user, project_id, last_results=request.args.get("results") == "last",
@@ -423,6 +424,10 @@ def get_dashboard_payload(project_id: str):
     Every refusal names the dataflow too: the page server carries a refusal in
     the page instead of the data (``cli/static_server.py``), and the page shows
     it under the dataflow's name.
+
+    ``copy_id`` names a hosted guest's own copy of a dataflow its account
+    owns, made or not yet, as ``GET /api/projects/<id>`` answers it: the page
+    names it in its requests from then on. ``null`` for anyone else.
     """
     from utk_curio.backend.app.projects.dashboard_payload import (
         DashboardCannotBeStandaloneError,

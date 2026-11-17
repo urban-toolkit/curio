@@ -19,11 +19,6 @@ import pytest
 from utk_curio.backend.app.packages.infrastructure import backend_runtime as rt
 from utk_curio.backend.app.packages.application import libraries
 from utk_curio.backend.app.packages.application import provisioning
-# The real installer, taken before conftest's autouse stub replaces it: the
-# tests of a prune without isolation need the pip run it notes.
-from utk_curio.backend.app.packages.infrastructure.pip_runner import (
-    install_python_deps as _real_install_python_deps,
-)
 
 
 class _Manifest:
@@ -183,6 +178,80 @@ class TestIncremental:
         assert pip_calls == []
 
 
+class TestTheImagesLibrariesWinInAnAccountsTree:
+    """The account's tree is in front of the image's libraries, which win
+    wherever they meet a package's range: an add puts into the tree only what
+    neither holds at a version the package, and what it needs, accept. Real
+    pip, offline (``_support/front_of_the_image.py``)."""
+
+    def test_an_add_puts_no_torch_in_the_tree_for_a_library_needing_one_the_images_meets(
+        self, isolated, launch_tree, tmp_path, monkeypatch,
+    ):
+        """``pip --target`` ignores what the image holds, so a library the
+        image lacks brought every library it needs into the account's tree:
+        one that needs ``torch>=2.6`` gave the account a torch of its own,
+        in front of the image's CUDA torch."""
+        from utk_curio.backend.tests._support.front_of_the_image import (
+            NEEDS_TORCH, held, offline_pip, the_images_torch,
+        )
+
+        image_torch = the_images_torch()
+        offline_pip(monkeypatch, tmp_path / "wheelhouse")
+
+        provisioning.provision_python_deps(
+            "7", "ai.test.needs-torch@1", _Manifest({NEEDS_TORCH.dist: f"=={NEEDS_TORCH.version}"}),
+        )
+
+        tree = held(rt.user_node_overlay_dir("7"))
+        assert "torch" not in tree, (
+            f"the add put torch {tree.get('torch')} into account 7's tree, in front of the image's {image_torch}")
+        assert tree == {NEEDS_TORCH.dist: NEEDS_TORCH.version}, tree
+
+    def test_an_add_puts_the_packages_torch_in_the_tree_where_the_images_is_outside_its_range(
+        self, isolated, launch_tree, tmp_path, monkeypatch,
+    ):
+        """The import probe only asks whether a library imports, so an add
+        left out a library the image holds at a version the package does not
+        accept, and its nodes then ran the image's."""
+        from utk_curio.backend.tests._support.front_of_the_image import (
+            OTHER_TORCH, held, offline_pip, the_images_torch,
+        )
+
+        image_torch = the_images_torch()
+        offline_pip(monkeypatch, tmp_path / "wheelhouse")
+
+        provisioning.provision_python_deps(
+            "7", "ai.test.next-torch@1", _Manifest({"torch": f">={OTHER_TORCH.version}"}),
+        )
+
+        tree = held(rt.user_node_overlay_dir("7"))
+        assert tree.get("torch") == OTHER_TORCH.version, (
+            f"the add left torch>={OTHER_TORCH.version} out of account 7's tree, which holds {tree}: "
+            f"its nodes import the image's {image_torch}, which the package does not accept")
+
+    def test_an_add_takes_out_a_torch_of_the_tree_its_range_misses_where_the_images_meets_it(
+        self, isolated, launch_tree, tmp_path, monkeypatch,
+    ):
+        """An earlier add can have put into the tree a torch a new package's
+        range does not accept, in front of the image's, which it does: the
+        add takes the tree's copy out, and its nodes import the image's."""
+        from utk_curio.backend.tests._support.front_of_the_image import held, offline_pip, the_images_torch
+        from utk_curio.backend.tests._support.offline_wheels import WheelLibrary, unpack_wheel
+
+        image_torch = the_images_torch()
+        offline_pip(monkeypatch, tmp_path / "wheelhouse")
+        tree = rt.user_node_overlay_dir("7")
+        unpack_wheel(WheelLibrary(dist="torch", version="2.0.0", module="curio_old_torch", message="old"), tree)
+        assert held(tree) == {"torch": "2.0.0"}
+
+        provisioning.provision_python_deps("7", "ai.test.torch@1", _Manifest({"torch": ">=2.6"}))
+
+        left = held(tree)
+        assert "torch" not in left, (
+            f"account 7's tree still holds torch {left.get('torch')}, which torch>=2.6 does not accept, "
+            f"in front of the image's {image_torch}, which it does")
+
+
 class TestTheProbeAsksTheRightInterpreter:
 
     def test_a_node_overlay_is_not_probed_through_the_handler_pin(
@@ -250,6 +319,46 @@ class TestTheLibrariesDialog:
         assert resp.status_code == 201, resp.get_data(as_text=True)
         assert [c[0] for c in pip_calls] == ["target"]
         assert str(user.id) in pip_calls[0][2]
+
+    def test_without_isolation_removing_a_library_curio_did_not_install_uninstalls_nothing(
+        self, client, user_and_token, in_process, uninstall_calls, launch_tree,
+    ):
+        """One interpreter, the server's, which every account's nodes import
+        from: the image's torch is in it from the start. Adding torch in
+        Installed libraries finds it already installed, and its Remove ran
+        ``pip uninstall torch`` on the server's interpreter, taking the
+        image's torch from every account. It now uninstalls only what this
+        server's pip installed, as a package's removal does."""
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+        assert pip_runner.is_satisfied("torch", ""), "the image's torch is not in this interpreter"
+        assert pip_runner.installed_here(["torch"]) == [], "this server's pip installed torch"
+        _, token = user_and_token
+        added = client.post("/api/packages/libraries", json={"kind": "python", "spec": "torch"},
+                            headers=self._auth(token))
+        assert added.status_code == 201, added.get_data(as_text=True)
+
+        removed = client.delete("/api/packages/libraries/python/torch", headers=self._auth(token))
+
+        assert removed.status_code == 200, removed.get_data(as_text=True)
+        assert removed.get_json()["standalone"]["python"] == []
+        assert uninstall_calls == [], f"the dialog uninstalled what Curio never installed: {uninstall_calls}"
+
+    def test_without_isolation_removing_a_library_this_server_installed_for_it_uninstalls_it(
+        self, client, user_and_token, in_process, pip_that_installs, uninstall_calls, launch_tree,
+    ):
+        """A library the dialog's own pip run brought into the interpreter,
+        which nothing else asks for, leaves with its Remove."""
+        _, token = user_and_token
+        added = client.post("/api/packages/libraries", json={"kind": "python", "spec": "curio-dialog-probe"},
+                            headers=self._auth(token))
+        assert added.status_code == 201, added.get_data(as_text=True)
+        assert "curio-dialog-probe" in pip_that_installs, "the add never ran pip"
+
+        removed = client.delete("/api/packages/libraries/python/curio-dialog-probe", headers=self._auth(token))
+
+        assert removed.status_code == 200, removed.get_data(as_text=True)
+        assert uninstall_calls == [("host", ["curio-dialog-probe"], None)]
 
     def test_the_import_probe_asks_the_environment_it_installed_into(
         self, client, user_and_token, isolated, pip_calls, launch_tree, monkeypatch,
@@ -435,41 +544,6 @@ class TestAddingAPackageTheStoreHolds:
             user_key, _new_dataflow(client, token), manifest.dir_name)
 
         assert result["importErrors"] == {}
-
-
-@pytest.fixture
-def pip_that_installs(monkeypatch):
-    """The real ``install_python_deps``, over a pip that installs nothing for
-    real: a library is missing until a ``pip install`` names it, then there.
-    Returns the libraries it installed."""
-    import re
-    import subprocess
-    import types
-    from importlib.metadata import PackageNotFoundError
-
-    from utk_curio.backend.app.packages.infrastructure import pip_runner
-
-    there: dict[str, str] = {}
-
-    def _version(name):
-        if name not in there:
-            raise PackageNotFoundError(name)
-        return there[name]
-
-    def _run(cmd, *args, **kwargs):
-        assert list(cmd[1:4]) == ["-m", "pip", "install"], f"only pip install is faked: {cmd}"
-        for requirement in cmd[5:]:
-            there[re.split(r"[<>=!~]", requirement, maxsplit=1)[0]] = "1.0"
-        return subprocess.CompletedProcess(cmd, 0, "", "")
-
-    monkeypatch.setattr(pip_runner, "install_python_deps", _real_install_python_deps)
-    monkeypatch.setattr(pip_runner, "installed_version", _version)
-    monkeypatch.setattr(
-        pip_runner, "subprocess",
-        types.SimpleNamespace(run=_run, TimeoutExpired=subprocess.TimeoutExpired),
-    )
-    monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
-    return there
 
 
 class TestRemovingAPackageFromItsLastDataflow:
