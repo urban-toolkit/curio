@@ -1,7 +1,8 @@
 """A dataset repo on the Hugging Face Hub, read file by file.
 
-Listed with the Hub's tree API, ``/api/datasets/<repo>/tree/<revision>/<path>``,
-which pages with a ``Link: <...>; rel="next"`` header, and read with
+Listed with the Hugging Face Hub's tree API,
+``/api/datasets/<repo>/tree/<revision>/<path>``, which pages with a
+``Link: <...>; rel="next"`` header, and read with
 ``/datasets/<repo>/resolve/<revision>/<path>``, which redirects to a CDN. Each
 hop is re-checked by the egress policy. A token is optional: the account's
 Hugging Face token (the one the Hugging Face models source uses) opens gated
@@ -50,8 +51,9 @@ class HuggingFaceStorage:
         options = manifest.provider.options
         self.repo = str(options["repo"])
         self.revision = str(options.get("revision") or "main")
-        #: Each listing that stopped at :data:`MAX_PAGES` before its end, so a
-        #: scan says it was cut short.
+        #: Each listing that stopped before its end, so a scan says it was cut
+        #: short: at :data:`MAX_PAGES`, or at a page whose next one is not at
+        #: the source's address (``baseUrl``).
         self.cut_short: list[ListingCut] = []
 
     def _tree_url(self, prefix: str) -> str:
@@ -71,7 +73,7 @@ class HuggingFaceStorage:
 
     def scan(self, prefix: str = "") -> Iterator[FileEntry]:
         url: str | None = self._tree_url(prefix)
-        for _page in range(MAX_PAGES):
+        for page in range(MAX_PAGES):
             if url is None:
                 return
             body, headers = self.transport.get_page(url)
@@ -95,6 +97,11 @@ class HuggingFaceStorage:
                     etag=str(entry.get("oid") or "") or None,
                 )
             url = _next_link(headers, self.base)
+            if url is None and _names_a_next_page(headers):
+                # A next page that is not at the source's address is never
+                # asked for: the listing stops short of the repository.
+                self.cut_short.append(ListingCut(prefix, page + 1, elsewhere=True))
+                return
         if url is not None:
             # The last page read names another: the listing stops short of the repository.
             self.cut_short.append(ListingCut(prefix, MAX_PAGES))
@@ -132,7 +139,7 @@ class HuggingFaceStorage:
 
 
 def _next_link(headers: dict, base: str) -> str | None:
-    """The next page, only when it is on the Hub itself."""
+    """The next page, only when it is on the Hugging Face Hub itself."""
     for name, value in (headers or {}).items():
         if name.lower() != "link":
             continue
@@ -140,6 +147,14 @@ def _next_link(headers: dict, base: str) -> str | None:
         if match and match.group(1).startswith(base + "/"):
             return match.group(1)
     return None
+
+
+def _names_a_next_page(headers: dict) -> bool:
+    """Whether a page's ``Link`` header names a next page, wherever it is."""
+    return any(
+        name.lower() == "link" and _NEXT_RE.search(str(value)) is not None
+        for name, value in (headers or {}).items()
+    )
 
 
 def _timestamp(text: str | None) -> float:

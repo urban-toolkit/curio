@@ -1,11 +1,12 @@
 """A public S3 bucket, or any endpoint that speaks S3's ListObjectsV2.
 
 Listed with ``GET {base}/?list-type=2&prefix=...``, one page of up to 1000 keys
-at a time, and the folders under a prefix with ``&delimiter=/``, for a template
-read a folder at a time; read with a plain GET (with a ``Range`` header for a
-probe of a file's header). Every request goes through the discovery transport, so the egress
-policy applies to each one, redirects included. Anonymous access only: a
-bucket that needs a signed request is not one this provider reads.
+at a time, and the folders under a prefix, with the files beside them, with
+``&delimiter=/``, for a template read a folder at a time; read with a plain GET
+(with a ``Range`` header for a probe of a file's header). Every request goes
+through the discovery transport, so the egress policy applies to each one,
+redirects included. Anonymous access only: a bucket that needs a signed request
+is not one this provider reads.
 
 Where this deployment mounts the bucket (``application/bucket_mount_sources.py``,
 which the discovery service hands this provider as *reads*), its files are
@@ -102,31 +103,39 @@ class S3Storage:
 
     # ── the contract ───────────────────────────────────────────────────────
 
+    def _files(self, root: ET.Element) -> Iterator[FileEntry]:
+        """The files one page of a listing holds: its contents but folder
+        markers, hidden and system names, and keys outside the source."""
+        for item in root.iter(f"{_NS}Contents"):
+            key = item.findtext(f"{_NS}Key") or ""
+            if not key.startswith(self.prefix) or key.endswith("/"):
+                continue
+            relpath = key[len(self.prefix):]
+            if not relpath or any(is_skipped(part) for part in relpath.split("/")):
+                continue
+            yield FileEntry(
+                relpath=relpath,
+                size=int(item.findtext(f"{_NS}Size") or 0),
+                mtime=_timestamp(item.findtext(f"{_NS}LastModified")),
+                etag=(item.findtext(f"{_NS}ETag") or "").strip('"') or None,
+            )
+
     def scan(self, prefix: str = "") -> Iterator[FileEntry]:
         for root in self._pages(prefix):
-            for item in root.iter(f"{_NS}Contents"):
-                key = item.findtext(f"{_NS}Key") or ""
-                if not key.startswith(self.prefix) or key.endswith("/"):
-                    continue
-                relpath = key[len(self.prefix):]
-                if not relpath or any(is_skipped(part) for part in relpath.split("/")):
-                    continue
-                yield FileEntry(
-                    relpath=relpath,
-                    size=int(item.findtext(f"{_NS}Size") or 0),
-                    mtime=_timestamp(item.findtext(f"{_NS}LastModified")),
-                    etag=(item.findtext(f"{_NS}ETag") or "").strip('"') or None,
-                )
+            yield from self._files(root)
 
-    def folders(self, prefix: str = "") -> list[str]:
-        """The names of the folders right under *prefix*, which
-        ``application/scan.py`` reads a template through one at a time: a
-        listing with a ``/`` delimiter, whose common prefixes are the folders.
-        Hidden and system names are left out, as :meth:`scan` leaves out the
-        files under them."""
+    def level(self, prefix: str = "") -> tuple[list[str], list[FileEntry]]:
+        """What is right under *prefix*, which ``application/scan.py`` reads a
+        template through a level at a time: the names of its folders, and the
+        files beside them. One listing with a ``/`` delimiter holds both: its
+        common prefixes are the folders, and its contents the files. Hidden
+        and system names are left out, as :meth:`scan` leaves out the files
+        under them."""
         start = self.prefix + prefix
         names: list[str] = []
+        files: list[FileEntry] = []
         for root in self._pages(prefix, delimiter="/"):
+            files.extend(self._files(root))
             for item in root.iter(f"{_NS}CommonPrefixes"):
                 folder = item.findtext(f"{_NS}Prefix") or ""
                 # A source's prefix may end partway through a name: the
@@ -134,7 +143,7 @@ class S3Storage:
                 name = folder[len(start):-1] if folder.startswith(start) and folder.endswith("/") else ""
                 if name and "/" not in name and not is_skipped(name):
                     names.append(name)
-        return names
+        return names, files
 
     def open(self, relpath: str, *, byte_range: tuple[int, int] | None = None,
              max_bytes: int = MAX_DISCOVERY_DOWNLOAD_BYTES, ceiling: int | None = None) -> BinaryIO:

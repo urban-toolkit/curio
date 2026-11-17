@@ -355,11 +355,13 @@ class TestTheLimitOnOneCachedFile:
 
 class TreePages:
     """Hugging Face's tree API over *pages* pages of one image each: each page
-    but the last names the next in a ``Link`` header on the site itself."""
+    but the last names the next in a ``Link`` header on the site itself, or,
+    for page *elsewhere*, at the same path on another site."""
 
-    def __init__(self, base: str, pages: int):
+    def __init__(self, base: str, pages: int, *, elsewhere: int | None = None):
         self.base = base
         self.pages = pages
+        self.elsewhere = elsewhere
         self.asked: list[str] = []
 
     def get_page(self, url, *, credential=None, headers=None):
@@ -371,17 +373,19 @@ class TreePages:
         if page + 1 == self.pages:
             return body, {}
         following = url.split("&cursor=")[0] + f"&cursor={page + 1}"
+        if page == self.elsewhere:
+            following = "https://elsewhere.example" + following[len(self.base):]
         return body, {"Link": f'<{following}>; rel="next"'}
 
 
-def hugging_face_scan(pages: int):
+def hugging_face_scan(pages: int, *, elsewhere: int | None = None):
     """The shipped Hugging Face source scanned over :class:`TreePages`."""
     from utk_curio.backend.app.discovery.application import scan
     from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
     from utk_curio.backend.app.discovery.providers.huggingface import HuggingFaceStorage
 
     manifest = load_source_manifest(REPO / "discovery" / HF)
-    tree = TreePages(manifest.provider.base_url, pages)
+    tree = TreePages(manifest.provider.base_url, pages, elsewhere=elsewhere)
     return scan.scan(manifest, HuggingFaceStorage(manifest, tree)), tree
 
 
@@ -416,6 +420,40 @@ class TestHuggingFacePagination:
         assert len(tree.asked) == 3
         assert [len(group.files) for group in result.groups] == [3]
         assert not result.truncated
+
+    def test_a_listing_whose_next_page_is_on_another_site_says_it_stopped_and_why(self):
+        from utk_curio.backend.app.discovery.application import scan
+
+        # Three pages, and the second names the third on another site.
+        result, tree = hugging_face_scan(3, elsewhere=1)
+
+        # The page on the other site is never asked for.
+        assert len(tree.asked) == 2 and all(url.startswith(tree.base + "/") for url in tree.asked)
+        assert [len(group.files) for group in result.groups] == [2]
+        assert result.truncated, (
+            "the repository was listed to its second page of three, whose next page is on another site, "
+            "and the listing did not say it stopped"
+        )
+        assert scan.cut_short_text(result.stopped_at) == (
+            "This source holds more files than are listed here: a listing stops after 2 pages, "
+            "because its next page is not at the source's address."
+        )
+
+    def test_an_add_from_a_listing_that_stopped_there_is_refused_and_says_why(self, app):
+        from utk_curio.backend.app.discovery.domain.errors import DownloadTooLarge
+        from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+        from utk_curio.backend.app.discovery.providers.huggingface import HuggingFaceStorage
+        from utk_curio.backend.tests.test_discovery.test_listing_by_folder import an_add
+
+        manifest = load_source_manifest(REPO / "discovery" / HF)
+        tree = TreePages(manifest.provider.base_url, 3, elsewhere=1)
+        with pytest.raises(DownloadTooLarge) as refused:
+            an_add(HuggingFaceStorage(manifest, tree)).acquire(manifest, "task-images")
+
+        assert str(refused.value) == (
+            "Transformers task images has a listing that stops after 2 pages, "
+            "because its next page is not at the source's address"
+        )
 
 
 class TestMediaDirectories:
