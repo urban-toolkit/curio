@@ -1,0 +1,394 @@
+{
+  "dataflow": {
+    "categories": {
+      "city": [
+        "Chicago"
+      ],
+      "topic": [
+        "Mobility and streets"
+      ],
+      "complexity": [
+        "Advanced"
+      ]
+    },
+    "name": "SideSeeing: frames, segments and blocks",
+    "description": "A walk along the sidewalks of Chicago's West Loop, read in place from the SideSeeing bucket: a frame every 2 s, what each of 9 labels covers in it found by SAM 3, the frames placed on the walk's GPS track on a map, and the walk cut into blocks at the street corners it passes, each block with its share of frames showing each label.",
+    "task": "Find curb cuts and what stands in a walker's way along a sidewalk walk, frame by frame, and compare the blocks between its corners.",
+    "timestamp": 0,
+    "provenance_id": "sideseeing-frames-segments-blocks",
+    "packages": [
+      "curio.media@1",
+      "model.curio.sam3@1"
+    ],
+    "datasets": [
+      {
+        "datasetId": "data.sideseeing.west-loop-walk",
+        "dirName": "data.sideseeing.west-loop-walk@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-17T00:00:00Z"
+      },
+      {
+        "datasetId": "data.sideseeing.west-loop-walk-gps",
+        "dirName": "data.sideseeing.west-loop-walk-gps@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-17T00:00:00Z"
+      },
+      {
+        "datasetId": "data.sideseeing.west-loop-corners",
+        "dirName": "data.sideseeing.west-loop-corners@1",
+        "origin": "imported",
+        "producerNodeId": null,
+        "consumerNodeIds": [],
+        "installedAt": "2026-11-17T00:00:00Z"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "walk",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 1075,
+        "content": "collection = curio_load_collection(\"data.sideseeing.west-loop-walk\")\n\nreturn collection\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the walk's video, read in place from the SideSeeing bucket.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "walk-gps",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 1505,
+        "content": "collection = curio_load_collection(\"data.sideseeing.west-loop-walk-gps\")\n\nreturn collection\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the walk's GPS track, its gps.csv.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "west-loop-corners",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 1935,
+        "content": "corners = curio_load_data(\"data.sideseeing.west-loop-corners\")\n\nreturn corners\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the West Loop's street corners.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "walk-frames",
+        "type": "curio.media/video-frames",
+        "x": 645,
+        "y": 430,
+        "content": "\"\"\"Sample Video Frames.\n\nInput: a collection's rows, as Data Loading's `curio_load_collection(...)` returns\nthem. Every video row becomes one row per sampled frame, and each frame is a\nJPEG written beside the collection's other derived files. A frame row has the\ncolumns of an image row (`path`, `thumbnail`, `image_url`, `width`, `height`),\nso Simple View shows the frames and any node that reads images reads them. It\nalso keeps the video's own columns: its fields, its position, and its time,\nmoved forward by the frame's offset. `t_s` is the frame's time in the video,\nand `frame` its number there.\n\nSettings:\n- EVERY_SECONDS: the gap between two sampled frames.\n- MAX_FRAMES_PER_VIDEO: frames kept from one video at most.\n\"\"\"\n\nfrom media_collections import sample_video_frames\n\nEVERY_SECONDS = 2.0\nMAX_FRAMES_PER_VIDEO = 450\n\nreturn sample_video_frames(\n    input_0, curio_derived_file,\n    every_seconds=EVERY_SECONDS, max_frames_per_video=MAX_FRAMES_PER_VIDEO,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Sample a frame every 2 s over the whole walk.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "walk-fixes",
+        "type": "curio.builtin/python-computation",
+        "x": 645,
+        "y": 1505,
+        "content": "import geopandas as gpd\nimport pandas as pd\n\n# The walk's GPS fixes, each at its time in the video: t_s is the fix's\n# datetime_utc less the walk's taken_at, both in UTC.\nlisting, walk = input_0, input_1\nfixes = pd.read_csv(listing[\"path\"].iloc[0])\nfixes[\"datetime_utc\"] = pd.to_datetime(fixes[\"datetime_utc\"], utc=True)\ntaken_at = pd.Timestamp(walk[\"taken_at\"].iloc[0])\ntaken_at = taken_at.tz_localize(\"UTC\") if taken_at.tzinfo is None else taken_at.tz_convert(\"UTC\")\nfixes[\"t_s\"] = (fixes[\"datetime_utc\"] - taken_at).dt.total_seconds()\nreturn gpd.GeoDataFrame(\n    fixes, geometry=gpd.points_from_xy(fixes[\"longitude\"], fixes[\"latitude\"]), crs=4326,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Place each GPS fix at its time in the video.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "frame-segments",
+        "type": "model.curio.sam3/segment-images",
+        "x": 1290,
+        "y": 430,
+        "content": "from sam3_images import find_in_images\n\n# What to look for, in plain words: SAM 3 takes any short noun phrase. These are\n# the 9 labels the SideSeeing walk example tracks: the ways a curb meets the\n# street, what marks a crossing underfoot, and what stands in a walker's way.\nLABELS = [\n    \"curb cut\", \"curb ramp\", \"wheelchair ramp\", \"tactile paving\",\n    \"pole\", \"bollard\", \"construction barrier\", \"traffic cone\", \"person\",\n]\nTHRESHOLD = 0.5  # the score SAM 3 needs to keep an object\nWIDTH = 960  # the widest images are read and drawn at\nMAX_IMAGES = 450  # the most images one run looks at\n\nreturn find_in_images(\n    input_0, curio_load_model(\"model.curio.sam3\"), curio_derived_file,\n    labels=LABELS, threshold=THRESHOLD, width=WIDTH, max_images=MAX_IMAGES,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Find what each of the 9 labels names in each frame.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "west-loop-streets",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1290,
+        "y": 1075,
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/west_loop.osm.pbf\",\n      \"queryArea\": {\n        \"bbox\": [\n          -87.6593,\n          41.8746,\n          -87.6548,\n          41.8836\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"roads\",\n          \"buildings\"\n        ]\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the West Loop's streets and buildings from OpenStreetMap.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "walk-cuts",
+        "type": "curio.builtin/python-computation",
+        "x": 1290,
+        "y": 1935,
+        "content": "import geopandas as gpd\nimport pandas as pd\n\n# Where the walk is cut into blocks: the first time a GPS fix comes within 12 m\n# of a corner of two named streets. A block runs along the street its corner\n# shares with the next corner the walk passes, from its corner's other street\n# to the next one's.\nfixes, corners = input_0, input_1\nnear = gpd.sjoin_nearest(fixes.to_crs(26916), corners.to_crs(26916), max_distance=12)\npassed = near.groupby([\"street_a\", \"street_b\"], as_index=False)[\"t_s\"].min().sort_values(\"t_s\")\npassed = passed.to_dict(\"records\")\ncuts, street = [], None\nfor here, there in zip(passed, passed[1:] + [None]):\n    names = {here[\"street_a\"], here[\"street_b\"]}\n    if there is not None:\n        shared = names & {there[\"street_a\"], there[\"street_b\"]}\n        street = min(shared) if shared else None\n        to = \", \".join(sorted({there[\"street_a\"], there[\"street_b\"]} - {street}))\n    else:\n        street = street if street in names else None\n        to = \"the walk's end\"\n    cuts.append({\"street\": street, \"from\": \", \".join(sorted(names - {street})), \"to\": to, \"t_s\": round(here[\"t_s\"], 3)})\nreturn pd.DataFrame(cuts)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Cut the walk where it first passes each street corner.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "frame-cards",
+        "type": "curio.builtin/vis-simple",
+        "x": 1935,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show each frame beside its overlay.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "label-shares",
+        "type": "curio.builtin/vis-vega",
+        "x": 1935,
+        "y": 430,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"The mean share of a frame each label covers, over the walk's frames.\",\n  \"title\": \"Mean share of a frame (%)\",\n  \"transform\": [\n    {\n      \"fold\": [\n        \"curb cut_pct\",\n        \"curb ramp_pct\",\n        \"wheelchair ramp_pct\",\n        \"tactile paving_pct\",\n        \"pole_pct\",\n        \"bollard_pct\",\n        \"construction barrier_pct\",\n        \"traffic cone_pct\",\n        \"person_pct\"\n      ],\n      \"as\": [\n        \"column\",\n        \"share\"\n      ]\n    },\n    {\n      \"calculate\": \"replace(datum.column, '_pct', '')\",\n      \"as\": \"label\"\n    },\n    {\n      \"aggregate\": [\n        {\n          \"op\": \"mean\",\n          \"field\": \"share\",\n          \"as\": \"mean_share\"\n        }\n      ],\n      \"groupby\": [\n        \"label\"\n      ]\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"y\": {\n      \"field\": \"label\",\n      \"type\": \"nominal\",\n      \"sort\": \"-x\",\n      \"title\": null\n    },\n    \"x\": {\n      \"field\": \"mean_share\",\n      \"type\": \"quantitative\",\n      \"title\": \"Mean share of a frame (%)\"\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart the mean share of a frame each label covers.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "frames-on-walk",
+        "type": "curio.builtin/python-computation",
+        "x": 1935,
+        "y": 860,
+        "content": "import geopandas as gpd\nimport numpy as np\n\n# Each frame placed on the walk where the GPS track was at its t_s, between the\n# fixes before and after it, with the share of the frame each label covers.\nframes, fixes = input_0, input_1.sort_values(\"t_s\")\nshares = [column for column in frames.columns if column.endswith(\"_pct\")]\nplaced = frames[[\"t_s\", \"dominant_class\", *shares]].rename(columns=lambda column: column.replace(\" \", \"_\"))\nlon = np.interp(frames[\"t_s\"], fixes[\"t_s\"], fixes[\"longitude\"])\nlat = np.interp(frames[\"t_s\"], fixes[\"t_s\"], fixes[\"latitude\"])\nreturn gpd.GeoDataFrame(placed, geometry=gpd.points_from_xy(lon, lat), crs=4326)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Place each frame on the walk, between its GPS fixes.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "walk-blocks",
+        "type": "curio.media/split-video",
+        "x": 1935,
+        "y": 1935,
+        "content": "\"\"\"Split Video.\n\nInput: on the top circle, a collection's rows, as Data Loading's\n`curio_load_collection(...)` returns them; on the bottom circle, if anything is\nwired there, where to cut: one row per block, with `t_s`, where the block\nstarts in seconds from its video's start, and maybe `end_s`, where it ends, and\n`video_file_id`, the video it cuts. Every video becomes one row per block, each\nblock an MP4 of its own that Simple View plays, with no sound. A block's row\nleads with `block`, the cut's own columns (a street's name, say), `t_s` and\n`end_s`, where the block starts and ends in the video, so a player linked by\ntime reads the video's time; then it keeps the video's own columns.\n\nSettings:\n- BLOCK_SECONDS: the length of one block, when nothing is wired to the bottom circle.\n- WIDTH: the widest a block is drawn.\n- MAX_FRAMES: the most frames one run re-encodes.\n\"\"\"\n\nfrom media_collections import split_video\n\nBLOCK_SECONDS = 60.0\nWIDTH = 960\nMAX_FRAMES = 30000\n\nreturn split_video(\n    input_0, curio_derived_file, input_1,\n    block_seconds=BLOCK_SECONDS, width=WIDTH, max_frames=MAX_FRAMES,\n)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Cut the walk into its blocks, one video each.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "frames-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2580,
+        "y": 860,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"[!! input_1:table_osm_surface !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input_1:table_osm_roads !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input_1:table_osm_buildings !!]\"\n      },\n      {\n        \"dataRef\": \"[!! input_0 !!]\",\n        \"getFnv\": \"curb_cut_pct\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0,\n        \"isPick\": true,\n        \"isColorMap\": true,\n        \"title\": \"Curb cut (% of the frame)\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Map the frames on the walk, colored by how much of each a curb cut covers.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "block-shares",
+        "type": "curio.builtin/python-computation",
+        "x": 2580,
+        "y": 1505,
+        "content": "import pandas as pd\n\n# Each block's share of frames showing each label: of the frames whose t_s\n# falls within the block, the share with at least one object of the label.\nframes, blocks = input_0, input_1\nlabels = [column[: -len(\"_pct\")] for column in frames.columns if column.endswith(\"_pct\") and column != \"dominant_pct\"]\nrows = []\nfor block in blocks.to_dict(\"records\"):\n    inside = frames[(frames[\"t_s\"] >= block[\"t_s\"]) & (frames[\"t_s\"] < block[\"end_s\"])]\n    for label in labels:\n        seen = inside[label.replace(\" \", \"_\") + \"_objects\"] > 0\n        rows.append({\n            \"block\": int(block[\"block\"]), \"street\": block[\"street\"], \"from\": block[\"from\"], \"to\": block[\"to\"],\n            \"label\": label, \"share\": round(float(seen.mean() * 100), 1) if len(inside) else 0.0,\n            \"frames\": int(len(inside)),\n        })\nreturn pd.DataFrame(rows)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Count, for each block, the share of its frames showing each label.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "block-cards",
+        "type": "curio.builtin/vis-simple",
+        "x": 2580,
+        "y": 1935,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Play each block; the map lights the frames up to where it plays.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "block-chart",
+        "type": "curio.builtin/vis-vega",
+        "x": 3225,
+        "y": 1505,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Each block's share of frames showing each label, side by side.\",\n  \"title\": \"Frames showing each label, per block (%)\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"block\",\n      \"type\": \"ordinal\",\n      \"title\": \"Block\"\n    },\n    \"xOffset\": {\n      \"field\": \"label\"\n    },\n    \"y\": {\n      \"field\": \"share\",\n      \"type\": \"quantitative\",\n      \"title\": \"Share of the block's frames (%)\"\n    },\n    \"color\": {\n      \"field\": \"label\",\n      \"type\": \"nominal\",\n      \"title\": \"Label\"\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"block\"\n      },\n      {\n        \"field\": \"street\"\n      },\n      {\n        \"field\": \"from\"\n      },\n      {\n        \"field\": \"to\"\n      },\n      {\n        \"field\": \"label\"\n      },\n      {\n        \"field\": \"share\"\n      },\n      {\n        \"field\": \"frames\"\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Chart each block's share of frames for each label, side by side.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-walkout-walk-framesin",
+        "source": "walk",
+        "target": "walk-frames",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-walk-gpsout-walk-fixesin",
+        "source": "walk-gps",
+        "target": "walk-fixes",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-walkout-walk-fixesin_1",
+        "source": "walk",
+        "target": "walk-fixes",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-walk-framesout-frame-segmentsin",
+        "source": "walk-frames",
+        "target": "frame-segments",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-frame-segmentsout-frame-cardsin",
+        "source": "frame-segments",
+        "target": "frame-cards",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-frame-segmentsout-label-sharesin",
+        "source": "frame-segments",
+        "target": "label-shares",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-frame-segmentsout-frames-on-walkin",
+        "source": "frame-segments",
+        "target": "frames-on-walk",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-walk-fixesout-frames-on-walkin_1",
+        "source": "walk-fixes",
+        "target": "frames-on-walk",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-frames-on-walkout-frames-mapin",
+        "source": "frames-on-walk",
+        "target": "frames-map",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-west-loop-streetsout-frames-mapin_1",
+        "source": "west-loop-streets",
+        "target": "frames-map",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-walk-fixesout-walk-cutsin",
+        "source": "walk-fixes",
+        "target": "walk-cuts",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-west-loop-cornersout-walk-cutsin_1",
+        "source": "west-loop-corners",
+        "target": "walk-cuts",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-walkout-walk-blocksin",
+        "source": "walk",
+        "target": "walk-blocks",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-walk-cutsout-walk-blocksin_1",
+        "source": "walk-cuts",
+        "target": "walk-blocks",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-walk-blocksout-block-cardsin",
+        "source": "walk-blocks",
+        "target": "block-cards",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-frame-segmentsout-block-sharesin",
+        "source": "frame-segments",
+        "target": "block-shares",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-walk-blocksout-block-sharesin_1",
+        "source": "walk-blocks",
+        "target": "block-shares",
+        "sourceHandle": "out",
+        "targetHandle": "in_1"
+      },
+      {
+        "id": "reactflow__edge-block-sharesout-block-chartin",
+        "source": "block-shares",
+        "target": "block-chart",
+        "sourceHandle": "out",
+        "targetHandle": "in"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-block-cardsin/out-frames-mapin/out",
+        "source": "block-cards",
+        "target": "frames-map"
+      }
+    ]
+  }
+}
