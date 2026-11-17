@@ -3,25 +3,28 @@ name: sam3-tracking
 description: >-
   Use this skill when a dataflow uses SAM 3 (model.curio.sam3@1) and a task writes, wires or fixes
   its Track Objects node, which follows objects named in words, such as curb ramp or traffic cone,
-  through a collection's videos, or reads what the node returns: an overlay video, how many objects
-  of each label it followed, and a table of their tracks. It gives the node's settings, its output's
-  columns, how a later node reads the tracks, and what each of its stops means.
+  through a collection's videos, or its Segment Images node, which finds them in a collection's
+  images or in the frames Sample Video Frames samples, or reads what either returns: an overlay
+  video, counts and a table of tracks, or each image's counts and shares per label and its overlay.
+  It gives each node's settings, its output's columns, how a later node reads them, and what each of
+  its stops means.
 license: MIT
 compatibility: Written for Curio's agents, on a dataflow that uses Curio's SAM 3 model package, model.curio.sam3@1.
 metadata:
   author: curio
   version: "1.0.0"
-  curio-templates: track-objects
+  curio-templates: track-objects segment-images
 ---
-## SAM 3 and Track Objects
+## SAM 3, Track Objects and Segment Images
 
-SAM 3 is a model of the Model Catalog that finds every object a short phrase names, such as `curb ramp` or `traffic cone`, and follows each one from frame to frame of a video under one id. Its package's one node, Track Objects, `model.curio.sam3/track-objects`, runs it through every video of a collection.
+SAM 3 is a model of the Model Catalog that finds every object a short phrase names, such as `curb ramp` or `traffic cone`, and follows each one from frame to frame of a video under one id. Its package has two nodes: Track Objects, `model.curio.sam3/track-objects`, runs it through every video of a collection, and Segment Images, `model.curio.sam3/segment-images`, runs it on every image of a collection, or every frame Sample Video Frames sampled from one.
 
 ### Which node
 
 - Objects named in words, followed through a collection's videos, are a Track Objects node, wired from the Data Loading node that loads the collection (`curio_load_collection(...)`). Rows that are not videos are left out.
 - Its code holds its settings and one call of `track_objects`, from the package's module `sam3_tracking`. Change what it does through the settings, and keep the call, which hands it `curio_load_model("model.curio.sam3")`, a literal id Curio reads, and `curio_derived_file`.
-- An Image Segmentation node does not run SAM 3: its `segment_images` refuses a concept segmentation model, and a model dropped on a node swaps only for one of the node's type.
+- Objects named in words, found in a collection's images or in a video's frames, with how much of each image they cover, are a Segment Images node (below), wired from the Data Loading node of the images, or from a Sample Video Frames node for a video's frames.
+- An Image Segmentation node does not run SAM 3: Segmentation's `segment_images` refuses a concept segmentation model, and a model dropped on a node swaps only for one of the node's type.
 - A table of the objects is a Python Computation node that reads the tracks (below); a chart of them is a Vega-Lite node on that table.
 
 ### Its settings
@@ -63,3 +66,41 @@ A swimlane of that table, one bar per object, is a Vega-Lite `bar` with `start_s
 - *`<file>` does not say how long it is*: set `TO_SECONDS` to where to stop.
 - *`<file>` is not on this machine yet; cache the collection's files first*: the collection's videos are in a bucket and not cached yet.
 - *LABELS is empty*: name at least one thing to look for.
+
+## Segment Images
+
+Its code holds its settings and one call of `find_in_images`, from the package's module `sam3_images`, which hands it `curio_load_model("model.curio.sam3")` and `curio_derived_file`. It reads the images' `path`, so wire it from rows that have one: a collection's images, or Sample Video Frames' frames.
+
+### Its settings
+
+- `LABELS`: the phrases to look for. Its code starts with the model's 35 labels, in their seven groups; any short noun phrase works, and fewer labels run faster.
+- `THRESHOLD`, 0.5 by default: the score SAM 3 needs to keep an object. Lower it to find more, and less surely.
+- `WIDTH`, 960 by default: the widest an image is read and its overlay drawn.
+- `MAX_IMAGES`, 300 by default: the most images one run looks at, as many as Sample Video Frames samples from one video by default.
+
+### What it returns
+
+The input's rows, each with the results first, the columns Image Segmentation gives:
+
+- `dominant_class` and `dominant_pct`: the label whose objects cover the most of the image, and that share in percent; None and 0 where SAM 3 found nothing;
+- for each label of `LABELS`, `<label>_pct`, the share of the image its objects cover together, in percent, the label spelled as written (`curb ramp_pct`), and `<label>_objects`, how many objects of it SAM 3 found, a space written as `_` (`curb_ramp_objects`);
+- `overlay_url`: the image with each object's mask, box and label drawn, which Simple View shows beside the image;
+- `segment_error`: why a row has no results, such as an image not on this machine; None otherwise.
+
+Then come the row's own columns: a frame's `t_s`, its time in the video, and its video's fields. The mean share of each label over the images is a Python Computation node:
+
+```python
+import pandas as pd
+
+labels = [c[: -len("_pct")] for c in input_0.columns if c.endswith("_pct") and c != "dominant_pct"]
+shares = input_0[[f"{label}_pct" for label in labels]].mean()
+return pd.DataFrame({"label": labels, "mean_pct": shares.to_numpy()})
+```
+
+### When it stops
+
+- The weights' messages are Track Objects' (above).
+- *Segment Images looks at N images in one run (MAX_IMAGES), and its input has M*: sample fewer frames upstream (a larger `EVERY_SECONDS` in Sample Video Frames), keep fewer rows, or raise `MAX_IMAGES`.
+- *LABELS names ... more than once*, or *LABELS would give two results one column*: name each label once, and rename one that would be read as another's column, such as `dominant`.
+- *Segment Images reads rows with a path*: wire it from a collection's rows or Sample Video Frames' frames.
+- A row whose `segment_error` says *the image is not on this machine* or *the image could not be read* gets no results; the other rows do.

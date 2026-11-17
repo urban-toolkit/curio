@@ -5,21 +5,25 @@ names, such as *curb ramp* or *traffic cone*, in an image or a video. It
 outlines each object with a mask, and in a video it follows each one from frame
 to frame under one id. Curio runs it with Hugging Face Transformers.
 
-This is a model package: the model's node, the module that holds the node's
+This is a model package: the model's two nodes, the modules that hold their
 logic, and where the model's weights come from. The
-[Model Catalog](../../docs/MODEL-CATALOG.md) lists it.
+[Model Catalog](../../docs/MODEL-CATALOG.md) lists it, and its card, dropped on
+the canvas, offers both nodes.
 
 | Part | What it is | License |
 |---|---|---|
 | `models/checkpoint/` | The weights, Meta's `facebook/sam3`: the eight files Transformers reads, 3.4 GB, downloaded on first use from an identical copy, `jetjodh/sam3` on Hugging Face at revision `1aa50ce07302cb375f85d8084b68a0fb378b8d85`. Never shipped | SAM License (`LICENSE`), published by Meta |
 | `sources/track-objects.py` | The Track Objects node's code: its settings and one call of `track_objects` | MIT |
-| `sources/sam3_tracking.py` | The module the node calls: `track_objects`, SAM 3 through a collection's videos | MIT |
+| `sources/sam3_tracking.py` | The module Track Objects calls: `track_objects`, SAM 3 through a collection's videos | MIT |
+| `sources/segment-images.py` | The Segment Images node's code: its settings and one call of `find_in_images` | MIT |
+| `sources/sam3_images.py` | The module Segment Images calls: `find_in_images`, SAM 3 on a collection's images | MIT |
 
 ## Nodes
 
 | Canonical id | Label | Input | Output |
 |---|---|---|---|
 | `model.curio.sam3/track-objects` | Track Objects | A collection's rows, each video with a `path` | One row per video: its overlay, a count of the objects of each label, and the path of its tracks |
+| `model.curio.sam3/segment-images` | Segment Images | A collection's images, or the frames Sample Video Frames sampled, each with a `path` | Each image with the label covering the most of it, each label's share of it and count of objects, and its overlay |
 
 **Track Objects** samples each video of a collection, one frame every
 `EVERY_SECONDS`, and runs SAM 3 on those frames with the phrases in `LABELS`.
@@ -107,10 +111,60 @@ Their name holds the video, `FROM_SECONDS` and a tag of `LABELS`,
 with other settings keeps files of its own, and a run with the same settings
 writes them again.
 
+## Segment Images
+
+**Segment Images** runs SAM 3 on each image of a collection, or each frame a
+Sample Video Frames node sampled from its videos, with the phrases in
+`LABELS`, and finds every object each one names. SAM 3 reads the image's
+features once and looks for every label in them. Its code tab holds its
+settings and one call of `find_in_images`, the function of the package's module
+`sam3_images`:
+
+```python
+from sam3_images import find_in_images
+
+LABELS = [...]  # the package's 35 labels
+THRESHOLD = 0.5
+WIDTH = 960
+MAX_IMAGES = 300
+
+return find_in_images(
+    input_0, curio_load_model("model.curio.sam3"), curio_derived_file,
+    labels=LABELS, threshold=THRESHOLD, width=WIDTH, max_images=MAX_IMAGES,
+)
+```
+
+| Setting | Default | What it sets |
+|---|---|---|
+| `LABELS` | the package's 35 labels, in their seven groups | What to look for, in plain words. Fewer labels run faster. |
+| `THRESHOLD` | `0.5` | The score SAM 3 needs to keep an object. |
+| `WIDTH` | `960` | The widest an image is read and its overlay drawn. |
+| `MAX_IMAGES` | `300` | The most images one run looks at, as many as Sample Video Frames samples from one video by default. More rows stop the node before SAM 3 loads. |
+
+It reads the model as Track Objects does, on the same device, and draws each
+object as Track Objects draws one. Each row comes back with these columns
+first, the ones Image Segmentation gives, then its own:
+
+| Column | What it holds |
+|---|---|
+| `dominant_class`, `dominant_pct` | The label whose objects cover the most of the image, and that share in percent; None and 0 where SAM 3 found nothing |
+| `<label>_pct` | The share of the image the label's objects cover together, in percent, the label as written, such as `curb ramp_pct` |
+| `<label>_objects` | How many objects of the label SAM 3 found, such as `curb_ramp_objects` |
+| `overlay_url` | The image with each object's mask, box and label drawn, which Simple View shows beside it |
+| `segment_error` | Why a row has no results: its image is not on the machine, or cannot be read |
+
+An overlay is a PNG kept beside the collection's other derived files. It is
+named as Image Segmentation names an overlay, after the image, or after its
+video at its time for a sampled frame, and after a tag of `LABELS`,
+`THRESHOLD` and `WIDTH`, so a run with other settings keeps overlays of its
+own. Empty `LABELS`, a label named twice and more rows than `MAX_IMAGES` stop
+the node before SAM 3 loads.
+
 ## Labels
 
 The package's labels are 35 phrases for what a camera looking at a sidewalk
-sees, in seven groups. The node's `LABELS` starts with eight of them.
+sees, in seven groups. Track Objects' `LABELS` starts with eight of them, and
+Segment Images' with all 35.
 
 | Group | Labels |
 |---|---|
@@ -128,6 +182,8 @@ sees, in seven groups. The node's `LABELS` starts with eight of them.
 Data Loading (videos) → Track Objects → Simple View (the overlay)
                               ↓
                Python Computation (the tracks) → Vega-Lite (one bar per object)
+
+Data Loading (videos) → Sample Video Frames → Segment Images → Simple View (each frame beside its overlay)
 ```
 
 A Python Computation node reads every video's tracks into one table:

@@ -429,7 +429,7 @@ def catalog_copy(tmp_path):
 # The package
 # ---------------------------------------------------------------------------
 
-def test_the_package_is_a_concept_segmentation_model_whose_node_is_its_own_source():
+def test_the_package_is_a_concept_segmentation_model_whose_nodes_are_its_own_sources():
     from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
     from utk_curio.backend.app.packages.repositories.python_modules import module_names
 
@@ -438,9 +438,13 @@ def test_the_package_is_a_concept_segmentation_model_whose_node_is_its_own_sourc
     assert (manifest.kind, block.type, block.runtime, block.entry) == (
         "model", "concept-segmentation", "transformers", "models/checkpoint")
     assert [(t.template_id, t.label, t.source) for t in manifest.templates] == [
-        ("track-objects", "Track Objects", "sources/track-objects.py")]
-    # The node's logic is the package's one module; its source is no module.
-    assert module_names(PACKAGE, manifest) == {MODULE}
+        ("track-objects", "Track Objects", "sources/track-objects.py"),
+        ("segment-images", "Segment Images", "sources/segment-images.py"),
+    ]
+    # Each node's logic is a module of the package, Track Objects' this one and
+    # Segment Images' the image module (test_sam3_images.py); a node's source
+    # is no module.
+    assert module_names(PACKAGE, manifest) == {MODULE, "sam3_images"}
     deps = dict(manifest.python_deps)
     assert deps["transformers"] == ">=5.0,<6.0" and "safetensors" in deps
     # The node imports torch, and the processor needs torchvision as it loads.
@@ -471,6 +475,7 @@ def test_the_weights_download_from_the_copy_with_metas_digests_and_never_ship():
     integrity = json.loads((PACKAGE / "integrity.json").read_text(encoding="utf-8"))["sha256"]
     assert sorted(integrity) == sorted([
         "LICENSE", "README.md", "manifest.json", "sources/track-objects.py", f"sources/{MODULE}.py",
+        "sources/segment-images.py", "sources/sam3_images.py",
     ] + [
         f"skills/{path.relative_to(PACKAGE / 'skills').as_posix()}"
         for path in (PACKAGE / "skills").rglob("*") if path.is_file() and not path.name.startswith(".")

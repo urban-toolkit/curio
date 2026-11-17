@@ -4,6 +4,7 @@ import { formatBytes } from "../../datasets/catalog/datasetDetailHelpers";
 import {
   MODEL_RUNTIME_LABEL,
   MODEL_TYPE_LABEL,
+  packageCardNodes,
   type ModelBlockPayload,
   type PackagePayload,
 } from "../../../services/packages";
@@ -49,10 +50,12 @@ export function modelTypeLabel(pkg: ModelPackage): string {
   return MODEL_TYPE_LABEL[pkg.model.type] ?? pkg.model.type;
 }
 
-/** The node a drop of the model creates: its package's own. */
+/** The nodes a drop of the model can make, its package's own, in the order
+ *  the drop's menu offers them when there are several (`packageCardNodes`):
+ *  `"Track Objects, Segment Images"`. */
 export function modelNodeLabel(pkg: ModelPackage): string | null {
-  const template = pkg.templates[0];
-  return template ? template.label || template.templateId : null;
+  const labels = packageCardNodes(pkg).map((node) => node.label || node.nodeType);
+  return labels.length > 0 ? labels.join(", ") : null;
 }
 
 /** The card meta line: runtime, label count (a model with none, its type
@@ -96,7 +99,7 @@ export function modelInfoRows(pkg: ModelPackage, weightsLicense?: React.ReactNod
           ),
         }
       : null,
-    node ? { label: "Node", value: node } : null,
+    node ? { label: pkg.templates.length > 1 ? "Nodes" : "Node", value: node } : null,
     weights ? { label: "Weights", value: weights } : null,
   ];
   return rows.filter((row): row is ModelFact => row != null);
