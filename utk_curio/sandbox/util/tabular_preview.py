@@ -232,12 +232,17 @@ def preview_parquet_file(
     *,
     row_limit: int,
     offset: int = 0,
+    rows_of=None,
 ) -> tuple[list[dict[str, Any]], int, dict[str, Any]]:
-    """Read a parquet page and serialize with ``parseOutput``."""
+    """Read a parquet page and serialize with ``parseOutput``. *rows_of*, when
+    given, makes the page's rows what it returns for them: a collection's
+    index, as node code gets it (``collections.collection_rows``)."""
     frame, total_rows = load_parquet_frame(path)
     if offset >= total_rows:
         page = frame.iloc[0:0]
     else:
         page = frame.iloc[offset : offset + row_limit]
+    if rows_of is not None:
+        page = rows_of(page.copy())
     parsed = parseOutput(page)
     return rows_from_parse_output(parsed), total_rows, parsed

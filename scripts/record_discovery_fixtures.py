@@ -86,7 +86,8 @@ STORAGE_PLAN = {
     },
     "source.sage.idot-crossings@1": {
         "slug": "idot",
-        # 168,023 objects on 169 listing pages.
+        # 168,023 objects, read a folder at a time: each crossing's months,
+        # then each month's snapshots on up to 9 pages.
         "folder_ends": 1,
         "tables": {
             "detections": "download/storage/idot/detections.jsonl",
@@ -197,14 +198,15 @@ class CondensedListingTransport(RecordingTransport):
     The real pages are read once, so the scan walks the whole bucket. Once a
     listing's last page is in, its condensed page is recorded under its first
     page's URL and says it is the last, and every later ask of that listing is
-    answered with it.
+    answered with it. A listing of folders, with a delimiter, keeps each one.
     """
 
     def __init__(self, slug: str, index: dict, ends: int) -> None:
         super().__init__(slug, index)
         self.ends = ends
-        #: Each listing's files so far, by its first page's URL.
+        #: Each listing's files and folders so far, by its first page's URL.
         self.listed: dict[str, list] = {}
+        self.folders: dict[str, list] = {}
         self.condensed: dict[str, str] = {}
 
     def json_get(self, url, *, credential=None, headers=None):
@@ -216,6 +218,7 @@ class CondensedListingTransport(RecordingTransport):
         body = self.inner.json_get(url, credential=credential, headers=headers)
         page = ET.fromstring(body)
         self.listed.setdefault(first, []).extend(page.iter(f"{{{S3_NS}}}Contents"))
+        self.folders.setdefault(first, []).extend(page.iter(f"{{{S3_NS}}}CommonPrefixes"))
         if (page.findtext(f"{{{S3_NS}}}IsTruncated") or "").lower() != "true":
             self._record(first)
         return body
@@ -232,6 +235,7 @@ class CondensedListingTransport(RecordingTransport):
         ET.SubElement(page, f"{{{S3_NS}}}IsTruncated").text = "false"
         for items in by_folder.values():
             page.extend(items if len(items) <= 2 * self.ends else items[:self.ends] + items[-self.ends:])
+        page.extend(self.folders.pop(first))
         body = '<?xml version="1.0" encoding="UTF-8"?>' + ET.tostring(page, encoding="unicode")
         self.condensed[first] = body
         name = self._name(first, "xml")
@@ -246,11 +250,17 @@ def record_storage(slug_filter: str | None, index: dict) -> None:
     listing's resources would probe."""
     from utk_curio.backend.app.discovery.application import scan
 
+    # One folder after another, so each listing is numbered in the order asked.
+    scan.LISTING_WORKERS = 1
     for dir_name, plan in STORAGE_PLAN.items():
         if slug_filter and plan["slug"] != slug_filter:
             continue
         manifest = load_source_manifest(REPO / "discovery" / dir_name)
         print(f"\n==  {manifest.name}  ({plan['slug']})")
+        # Its listings are recorded anew, so one a scan no longer asks goes.
+        listings = f"{manifest.provider.base_url}/?list-type=2&"
+        for url in [url for url in index if url.startswith(listings)]:
+            del index[url]
         ends = plan.get("folder_ends")
         if ends:
             transport = CondensedListingTransport(plan["slug"], index, ends)
