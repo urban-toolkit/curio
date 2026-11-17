@@ -44,6 +44,7 @@ import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
 import { DEFAULT_DELETE_KEY_CODES } from "./canvasKeyBindings";
 import { useRunSelectedNodeShortcut } from "../hook/useRunSelectedNodeShortcut";
 import { useViewportMotionHint } from "../hook/useViewportMotionHint";
+import { useFlowScrollAsPan } from "../hook/useFlowScrollAsPan";
 import UniversalNode from "./UniversalNode";
 import BiDirectionalEdge from "./edges/BiDirectionalEdge";
 import { useCode } from "../hook/useCode";
@@ -255,6 +256,10 @@ export function MainCanvas() {
     const reactFlow = useReactFlow();
     const { setViewport, screenToFlowPosition } = useReactFlow();
     const viewportMotionHint = useViewportMotionHint();
+    // A scroll of React Flow's own element, the browser's to show what Tab
+    // reaches past the canvas's edge, becomes the same pan. The notebook view
+    // holds its view at the origin, so there the element is only put back.
+    const keepFlowUnscrolled = useFlowScrollAsPan(!notebookOn);
 
     // The notebook view holds React Flow on its own pane: zoom 1, no gestures,
     // and a translate extent equal to the pane, so the page scrolls instead.
@@ -970,6 +975,7 @@ export function MainCanvas() {
                 onMoveStart={viewportMotionHint.onMoveStart}
                 onMove={viewportMotionHint.onMove}
                 onMoveEnd={viewportMotionHint.onMoveEnd}
+                onScroll={keepFlowUnscrolled}
                 nodesDraggable={!isSharedView}
                 elementsSelectable={true}
                 // Set here, not left to React Flow's default: it keeps a value

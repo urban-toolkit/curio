@@ -1,5 +1,4 @@
-import fs from "fs";
-import path from "path";
+import { CANVAS_FILES, reactFlowCanvases } from "../_support/reactFlowCanvases";
 
 /**
  * No canvas draws React Flow's attribution (#509).
@@ -8,44 +7,12 @@ import path from "path";
  * fixed to, so the two strings overlapped on every canvas screen. Read from
  * the source, so a new canvas has to say the same, and is named below.
  */
-const SRC = path.resolve(__dirname, "../..");
-
-function sources(dir: string): string[] {
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return entry.name === "tests" ? [] : sources(full);
-    return /\.tsx$/.test(entry.name) ? [full] : [];
-  });
-}
-
-/**
- * The props of each `<ReactFlow ...>` opening tag in a file: from the tag to
- * the `>` or `/>` on a line of its own at the tag's indentation. Props carry
- * comments with arrows in them, so the first `>` is not the end.
- */
-function reactFlowTags(text: string): string[] {
-  const tags: string[] = [];
-  const open = /^([ \t]*)<ReactFlow(?=\s)/gm;
-  let match: RegExpExecArray | null;
-  while ((match = open.exec(text))) {
-    const close = new RegExp(`^${match[1]}/?>`, "m");
-    const rest = text.slice(match.index);
-    const end = rest.search(close);
-    tags.push(end === -1 ? rest : rest.slice(0, end));
-  }
-  return tags;
-}
-
-const canvases = sources(SRC)
-  .map((file) => ({ file: path.relative(SRC, file), tags: reactFlowTags(fs.readFileSync(file, "utf8")) }))
-  .filter(({ tags }) => tags.length > 0);
+const canvases = reactFlowCanvases();
 
 test("finds every canvas: the main one and the dashboard's", () => {
   // The provenance drawer draws a dataflow's versions and a node's runs
   // without React Flow.
-  expect(canvases.map(({ file }) => file).sort()).toEqual(
-    [path.join("components", "MainCanvas.tsx"), path.join("pages", "dashboard", "DashboardPage.tsx")].sort(),
-  );
+  expect(canvases.map(({ file }) => file).sort()).toEqual([...CANVAS_FILES].sort());
 });
 
 test.each(canvases.map(({ file, tags }) => [file, tags] as const))(
