@@ -455,8 +455,9 @@ class TestTheShippedCorpus:
 
     def test_the_examples_that_need_interaction_edges_are_exactly_these(self):
         """The examples whose graphs carry an interaction edge: views linked
-        to each other or to a pool, and Map Editor nodes linked to the Autark
-        maps they feed and edit on (06's, chicago-loop-shadow-towers' and
+        to each other or to a pool (31's player to its swimlane and its map
+        among them), and Map Editor nodes linked to the Autark maps they feed
+        and edit on (06's, chicago-loop-shadow-towers' and
         lower-manhattan-park-shade's levers among them)."""
         with_interaction = set()
         for path in example_paths():
@@ -470,6 +471,7 @@ class TestTheShippedCorpus:
             "09-heterogeneous-data-linked-views",
             "11-autark-pbf-loading",
             "17-autark-geodataframe-maps",
+            "31-sideseeing-objects-along-a-walk",
             "chicago-loop-layers",
             "chicago-loop-shadow-towers",
             "crown-heights-1550-bedford-shadow",
@@ -484,13 +486,15 @@ class TestTheShippedCorpus:
     def test_these_are_the_examples_whose_templates_need_a_package(self):
         """Example 09 declares ``curio.weather@1`` for its python LIBRARIES
         while using only builtin templates -- a different resolution route
-        from examples 06, 10, 18, 21, 22 and 24 and the chicago-loop-shadow-towers,
+        from examples 06, 10, 18, 21, 22, 24 and 31 and the chicago-loop-shadow-towers,
         chicago-rain-wind-routing, lower-manhattan-park-shade,
         quad-cities-flood-vulnerability and scenario-comparison-charts test
         dataflows, whose templates themselves live in a package
         (``curio.media@1``, ``curio.rasterization@1``, ``curio.vega-lite@1``,
         and the model packages ``model.curio.ddrnet23-slim@1``,
-        ``model.scout.deep-umbra@1`` and ``model.scout.weather-gnn@1``).
+        ``model.curio.sam3@1``, ``model.scout.deep-umbra@1`` and
+        ``model.scout.weather-gnn@1``). Example 31's package node is SAM 3's
+        Track Objects.
         quad-cities-flood-vulnerability's raster nodes are its Raster
         Calculators, Rasterization's, and scenario-comparison-charts' package
         nodes are its nine charts, all the Vega-Lite package's.
@@ -518,11 +522,15 @@ class TestTheShippedCorpus:
             "21-storage-photos-and-videos",
             "22-storage-audio-recordings",
             "24-scout-shadow-model-chicago-loop",
+            "31-sideseeing-objects-along-a-walk",
             "chicago-loop-shadow-towers",
             "chicago-rain-wind-routing",
             "lower-manhattan-park-shade",
             "quad-cities-flood-vulnerability",
             "scenario-comparison-charts",
+        ]
+        assert needs_package_templates["31-sideseeing-objects-along-a-walk"] == [
+            "model.curio.sam3/track-objects",
         ]
         # Its nine charts are the Vega-Lite package's, the grouped bars and the
         # table among them.
