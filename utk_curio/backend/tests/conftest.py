@@ -125,6 +125,11 @@ from utk_curio.backend.extensions import db as _db  # noqa: E402
 
 
 sys.dont_write_bytecode = True
+# No child Python a test starts with the tests' environment writes bytecode
+# either: one that loads a shipped package's module from its sources would
+# leave ``sources/__pycache__`` in the checkout, an archive member the package
+# installer refuses (test_shipped_catalog.py's ``shipped_store``).
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
 
 # ---------------------------------------------------------------------------

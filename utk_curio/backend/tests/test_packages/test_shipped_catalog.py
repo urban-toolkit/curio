@@ -12,8 +12,11 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import shutil
+import subprocess
+import sys
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -226,6 +229,39 @@ def shipped_store(tmp_path_factory):
         for package_root in PACKAGE_DIRS:
             install_package_from_directory(GUEST, package_root)
         yield GUEST
+
+
+#: A child that loads the module at its argument by its path, as
+#: ``test_segmentation_package``'s session child loads ``semantic_segmentation``
+#: from the package's sources.
+LOAD_BY_PATH = (
+    "import importlib.util, sys\n"
+    "spec = importlib.util.spec_from_file_location('probe', sys.argv[1])\n"
+    "spec.loader.exec_module(importlib.util.module_from_spec(spec))\n"
+)
+
+
+def test_a_child_python_started_with_the_tests_environment_writes_no_bytecode(tmp_path):
+    """A child Python a test starts with the tests' environment writes no
+    ``__pycache__`` beside a module it loads. In a shipped package's sources
+    that folder is an archive member the installer refuses, so
+    ``shipped_store`` failed every test of this module that a part ran after
+    such a child: main's run 44087383940, unit part 4, refused
+    ``sources/__pycache__/semantic_segmentation.cpython-312.pyc`` ("archive
+    member has unsafe segment '__pycache__'")."""
+    module = tmp_path / "sources" / "probe.py"
+    module.parent.mkdir()
+    module.write_text("VALUE = 1\n", encoding="utf-8")
+    run = subprocess.run(
+        [sys.executable, "-c", LOAD_BY_PATH, str(module)],
+        env=dict(os.environ), capture_output=True, text=True, timeout=120,
+    )
+    assert run.returncode == 0, f"the child exited {run.returncode}:\n{run.stderr[-2000:]}"
+    cache = module.parent / "__pycache__"
+    written = sorted(p.name for p in cache.iterdir()) if cache.exists() else []
+    assert not written, (
+        f"a child Python started with the tests' environment wrote bytecode beside the module it loaded: {written}"
+    )
 
 
 def _libraries_imported_by(source: str, own_modules: frozenset[str]) -> list[str]:
