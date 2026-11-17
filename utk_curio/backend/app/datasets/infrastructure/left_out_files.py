@@ -54,7 +54,11 @@ its weights, a parquet's sidecar beside the parquet.
 A failure raises :class:`LeftOutFileUnavailable`, whose message says what
 failed and how to get the file by hand. Readers that turn a failure into a
 missing file still report it: :func:`failures` collects them, and a node run
-fails with them (``execution/node_exec``).
+fails with them (``execution/node_exec``). A long run of work, a plan's Solve,
+keeps its failures for the rest of its run (:func:`keeping`): a download a
+failure is kept for is not asked for again, and fails at once with that
+failure, until its file is in place, saved by hand where the failure says,
+which a reader then reads (:func:`appeared` says which files came).
 
 The weights a shipped model package's ``fetch`` names download the first time
 a node needs them through the same code: :func:`download_checked`,
@@ -75,7 +79,8 @@ import re
 import shutil
 import tempfile
 import time
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
@@ -407,6 +412,73 @@ def failures():
         _failures.reset(token)
 
 
+@dataclass
+class KeptFailure:
+    """A download on first use that failed in a long run of work, as the
+    work keeps it (:func:`keeping`): its *message*, *here*, which says
+    whether the file it could not have is in place now, and the *nodes*
+    whose runs it failed."""
+
+    message: str
+    here: Callable[[], bool] | None = None
+    nodes: set[str] = field(default_factory=set)
+
+
+_kept: contextvars.ContextVar[tuple[dict, str | None] | None] = contextvars.ContextVar(
+    "first_use_kept_failures", default=None,
+)
+
+
+@contextlib.contextmanager
+def keeping(kept: dict | None, *, by: str | None = None):
+    """Keep in *kept*, a long run of work's own record of its failures, a
+    plan's Solve's (``{key: KeptFailure}``), each download on first use that
+    fails inside the block, the first for each key, as :func:`failures`
+    collects them. A download inside the block whose key *kept* holds is not
+    asked for again: it fails at once with the kept message
+    (:func:`kept_message`). A reader that finds the file in place reads it,
+    and asks nothing. *by* names the node whose run the block is; each kept
+    failure it meets names that node among its ``nodes``. *kept* None keeps
+    nothing."""
+    token = _kept.set((kept, by) if kept is not None else None)
+    try:
+        yield
+    finally:
+        _kept.reset(token)
+
+
+def kept_message(key: str) -> str | None:
+    """The message of the failure the block (:func:`keeping`) keeps for
+    *key*, which a download of *key* fails with at once; None when it keeps
+    none, or outside such a block."""
+    held = _kept.get()
+    if held is None:
+        return None
+    kept, by = held
+    failure = kept.get(key)
+    if failure is None:
+        return None
+    if by:
+        failure.nodes.add(by)
+    return failure.message
+
+
+def appeared(kept: dict) -> dict:
+    """The failures of *kept* whose file is in place now, saved by hand where
+    the failure says or fetched ahead, each taken out of *kept*, so the next
+    reader reads the file: ``{key: KeptFailure}``. Asks only whether files
+    are there."""
+    came: dict = {}
+    for key, failure in list(kept.items()):
+        try:
+            here = failure.here is not None and failure.here()
+        except OSError:
+            here = False
+        if here:
+            came[key] = kept.pop(key, failure)
+    return came
+
+
 def fetch(repo_path: str, shipped: Path, *, expected_sha256: str | None = None) -> Path:
     """The file to read for *repo_path*, a path in the repository.
 
@@ -416,7 +488,9 @@ def fetch(repo_path: str, shipped: Path, *, expected_sha256: str | None = None) 
     when this is the first read. *expected_sha256*, when given, is a second
     digest the download must have besides the record's: the one a model
     package's ``integrity.json`` names for its weight. Raises
-    :class:`LeftOutFileUnavailable`.
+    :class:`LeftOutFileUnavailable`. In a block that keeps a run's failures
+    (:func:`keeping`), a file whose download failed in that run is not
+    downloaded again, until it is in place.
     """
     shipped = Path(shipped)
     if shipped.is_file():
@@ -429,32 +503,43 @@ def fetch(repo_path: str, shipped: Path, *, expected_sha256: str | None = None) 
         raise unavailable(repo_path, (
             f"Curio could not read the record of its release, {exc}, so it cannot download "
             f"{repo_path}. Start Curio from a clone of {REPOSITORY}, which holds the file."
-        )) from exc
+        ), here=shipped.is_file) from exc
     if record is None:
         raise unavailable(repo_path, (
             f"{repo_path} is not in this Curio, which has no record of a release to download it "
             f"from. Start Curio from a clone of {REPOSITORY}, which holds the file "
             f"(git checkout -- {repo_path} puts it back in a clone)."
-        ))
+        ), here=shipped.is_file)
     entry = record.files.get(repo_path)
     if entry is None:
         raise unavailable(repo_path, (
             f"{repo_path} is not in the record of this Curio's release, so Curio cannot download "
             f"it. Start Curio from a clone of {REPOSITORY}, which holds the file."
-        ))
+        ), here=shipped.is_file)
     root = fetched_root(record.commit)
     target = root / repo_path
     if target.is_file():
         return target
+    _fail_if_kept(repo_path)
     _close_fetched_dir()
     lock = root / ".locks" / f"{_path_key(repo_path)}.lock"
     with one_download_at_a_time(lock, key=f"{record.commit}/{repo_path}"):
-        # Another reader may have placed it while this one waited.
+        # Another reader may have placed it while this one waited, or failed
+        # to download it.
         if not target.is_file():
+            _fail_if_kept(repo_path)
             _remove_other_releases(record.commit)
             remove_stale_partials(root / ".partial")
             _download(repo_path, entry, record.commit, Path(shipped), target, expected_sha256=expected_sha256)
     return target
+
+
+def _fail_if_kept(key: str) -> None:
+    """Raise the failure the block keeps for *key* (:func:`keeping`), if it
+    keeps one, rather than download *key* again."""
+    message = kept_message(key)
+    if message is not None:
+        raise unavailable(key, message)
 
 
 def _path_key(repo_path: str) -> str:
@@ -769,7 +854,11 @@ def _download(
 
     download_checked(
         url, target, partial_dir=partial_dir, max_bytes=entry.size, check=check,
-        failed=lambda reason: unavailable(repo_path, _could_not_download(repo_path, url, target, reason)),
+        failed=lambda reason: unavailable(
+            repo_path, _could_not_download(repo_path, url, target, reason),
+            # Saved by hand where the message says, or a clone's.
+            here=lambda: target.is_file() or shipped.is_file(),
+        ),
         before_place=lambda: _copy_folder(repo_path, shipped, root, partial_dir),
         # The file's lock makes this download the one writer of its partial
         # file, which the next goes on from when this one stops.
@@ -817,12 +906,20 @@ def _could_not_download(repo_path: str, url: str, target: Path, reason: str) -> 
     )
 
 
-def unavailable(key: str, message: str) -> LeftOutFileUnavailable:
+def unavailable(key: str, message: str, *, here: Callable[[], bool] | None = None) -> LeftOutFileUnavailable:
     """The error of a file Curio could not download on first use, which
     *message* explains, for its caller to raise. A block that collects
     failures (:func:`failures`) keeps *message* under *key*, the first for
-    each key, so a node's run fails with it."""
+    each key, so a node's run fails with it, and so does a block that keeps
+    a run's failures (:func:`keeping`), with *here*, which says whether the
+    file is in place now."""
     collected = _failures.get()
     if collected is not None:
         collected.setdefault(key, message)
+    held = _kept.get()
+    if held is not None:
+        kept, by = held
+        failure = kept.setdefault(key, KeptFailure(message, here))
+        if by:
+            failure.nodes.add(by)
     return LeftOutFileUnavailable(message)
