@@ -26,9 +26,11 @@ import pytest
 
 from utk_curio.backend.tests.dataset_catalog_coverage import (
     CatalogDataset,
+    bucket_source,
     catalog_datasets,
     expected_markers,
     plan_for,
+    recorded_bucket,
 )
 
 CATALOG = catalog_datasets()
@@ -140,11 +142,31 @@ def test_dataset_parses_and_yields_expectations(dataset: CatalogDataset):
         from utk_curio.backend.app.discovery.infrastructure.storage import source_dir, storage_root
 
         block = dataset.manifest.collection or {}
-        root = storage_root(load_source_manifest(source_dir(block["sourceId"])))
-        relpaths = pq.read_table(dataset.data_file, columns=["relpath"]).column("relpath").to_pylist()
+        table = pq.read_table(dataset.data_file, columns=["relpath", "bytes"])
+        relpaths = table.column("relpath").to_pylist()
         assert relpaths, "a collection needs at least one file"
-        missing = [r for r in relpaths if not (root / r).is_file()]
-        assert not missing, f"{dataset.dataset_id} indexes files its source does not hold: {missing}"
+        bucket = bucket_source(dataset)
+        if bucket is None:
+            root = storage_root(load_source_manifest(source_dir(block["sourceId"])))
+            missing = [r for r in relpaths if not (root / r).is_file()]
+            assert not missing, f"{dataset.dataset_id} indexes files its source does not hold: {missing}"
+        else:
+            # CI has neither the bucket's mount nor a network: its recorded
+            # corpus lists each file at the size the index gives, which caps
+            # what Cache files copies, and serves each one whole, as Cache
+            # files reads it, so the browser case reads every file.
+            listed, served = recorded_bucket(bucket, block["resource"])
+            sizes = dict(zip(relpaths, table.column("bytes").to_pylist()))
+            wrong = {r: (size, listed.get(r)) for r, size in sizes.items() if listed.get(r) != size}
+            assert not wrong, (
+                f"{dataset.dataset_id} indexes files at sizes the recorded listing of {bucket.name} "
+                f"does not give, as (index, listing): {wrong}"
+            )
+            unserved = sorted(set(relpaths) - served)
+            assert not unserved, (
+                f"the recorded corpus serves no file for {unserved}; give each a stand-in under "
+                f"its source's files in STORAGE_PLAN (scripts/record_discovery_fixtures.py)"
+            )
         assert int(markers["CURIO_E2E_ROWS"]) == len(relpaths)
     elif fmt == "netcdf":
         from utk_curio.backend.app.datasets.domain.constants import NETCDF_SIGNATURES
