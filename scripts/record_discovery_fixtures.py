@@ -63,6 +63,42 @@ PLAN = {
 }
 
 
+def idot_example_files() -> dict[str, str]:
+    """Each file of the SAGE-IDOT collections the Data Catalog commits, by
+    relpath, with the stand-in the corpus serves for it, whose writer it puts
+    in ``SYNTHETIC_FILES``."""
+    import functools
+    import importlib.util
+
+    import pandas as pd
+
+    spec = importlib.util.spec_from_file_location("build_example_idot", REPO / "scripts" / "build_example_idot.py")
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
+    base = load_source_manifest(REPO / "discovery" / IDOT_SOURCE).provider.base_url
+    camera, first, last = IDOT_FRAMES
+    files: dict[str, str] = {}
+    for manifest_path in sorted((REPO / "datasets").glob("*/manifest.json")):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if (manifest.get("collection") or {}).get("sourceId") != IDOT_SOURCE:
+            continue
+        index = pd.read_parquet(manifest_path.parent / manifest["dataFile"])
+        for row in index.itertuples():
+            url = f"{base}/{row.relpath}"
+            if row.ext == "jsonl":
+                day = builder.CAMERAS[row.crossing][0]
+                stand_in = f"{IDOT_EXAMPLE}/{row.name}"
+                SYNTHETIC_FILES[stand_in] = functools.partial(write_thinned_day, url=url, size=row.bytes, day=day)
+            elif row.crossing == camera and first <= row.ns < last:
+                stand_in = f"{IDOT_EXAMPLE}/{row.name}"
+                SYNTHETIC_FILES[stand_in] = functools.partial(write_small_snapshot, url=url)
+            else:
+                stand_in = IDOT_SNAPSHOT
+                SYNTHETIC_FILES[stand_in] = write_snapshot_stand_in
+            files[row.relpath] = stand_in
+    return files
+
+
 #: Storage sources: every listing page is recorded as it arrives. The files
 #: themselves are not: a probe's Range read of a real object is indexed to a
 #: small synthetic file of the same format under ``download/storage/``, so the
@@ -107,7 +143,7 @@ STORAGE_PLAN = {
             "frames": "download/storage/idot/detections.jsonl",
         },
         # The files of the SAGE-IDOT example's committed collections.
-        "files": lambda: idot_example_files(),
+        "files": idot_example_files,
     },
 }
 
@@ -288,42 +324,6 @@ def write_snapshot_stand_in(path: Path) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     Image.new("RGB", (160, 120), (128, 128, 128)).save(path, quality=80)
-
-
-def idot_example_files() -> dict[str, str]:
-    """Each file of the SAGE-IDOT collections the Data Catalog commits, by
-    relpath, with the stand-in the corpus serves for it, whose writer it puts
-    in ``SYNTHETIC_FILES``."""
-    import functools
-    import importlib.util
-
-    import pandas as pd
-
-    spec = importlib.util.spec_from_file_location("build_example_idot", REPO / "scripts" / "build_example_idot.py")
-    builder = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(builder)
-    base = load_source_manifest(REPO / "discovery" / IDOT_SOURCE).provider.base_url
-    camera, first, last = IDOT_FRAMES
-    files: dict[str, str] = {}
-    for manifest_path in sorted((REPO / "datasets").glob("*/manifest.json")):
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if (manifest.get("collection") or {}).get("sourceId") != IDOT_SOURCE:
-            continue
-        index = pd.read_parquet(manifest_path.parent / manifest["dataFile"])
-        for row in index.itertuples():
-            url = f"{base}/{row.relpath}"
-            if row.ext == "jsonl":
-                day = builder.CAMERAS[row.crossing][0]
-                stand_in = f"{IDOT_EXAMPLE}/{row.name}"
-                SYNTHETIC_FILES[stand_in] = functools.partial(write_thinned_day, url=url, size=row.bytes, day=day)
-            elif row.crossing == camera and first <= row.ns < last:
-                stand_in = f"{IDOT_EXAMPLE}/{row.name}"
-                SYNTHETIC_FILES[stand_in] = functools.partial(write_small_snapshot, url=url)
-            else:
-                stand_in = IDOT_SNAPSHOT
-                SYNTHETIC_FILES[stand_in] = write_snapshot_stand_in
-            files[row.relpath] = stand_in
-    return files
 
 
 #: Services asked over HTTP: each request is recorded as the service sends it,
