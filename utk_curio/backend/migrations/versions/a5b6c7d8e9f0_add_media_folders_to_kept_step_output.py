@@ -24,5 +24,10 @@ def upgrade():
 
 
 def downgrade():
-    with op.batch_alter_table("kept_step_output", schema=None) as batch_op:
+    # SQLite drops a column by copying the table. Its foreign keys are copied
+    # as they are, without reflecting the tables they name, so the downgrade
+    # reads this table alone.
+    with op.batch_alter_table(
+        "kept_step_output", schema=None, reflect_kwargs={"resolve_fks": False},
+    ) as batch_op:
         batch_op.drop_column("media_folders")
