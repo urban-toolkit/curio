@@ -221,6 +221,13 @@ def _run_node_events(
                     "blocker": None, "infrastructure": str(exc)[:300],
                     "error": f"run failed: {str(exc)[:300]}",
                 }
+            except BaseException as exc:
+                # What no Exception handler takes, such as the refusal of a
+                # test's network guard, ended this thread with nothing handed
+                # over, and the stream below waited for it for ever. It goes
+                # to the stream, which raises it where it waits.
+                progress_queue.put(("raised", exc))
+                raise
             progress_queue.put(("done", report))
 
         thread = threading.Thread(target=_run)
@@ -236,6 +243,9 @@ def _run_node_events(
                 _, nid, fields = item
                 yield "node_download", {"nodeId": nid, **fields}
                 continue
+            if item[0] == "raised":
+                thread.join(timeout=5)
+                raise item[1]
             report = item[1]
             break
         thread.join(timeout=5)

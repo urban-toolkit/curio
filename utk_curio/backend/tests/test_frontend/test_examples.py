@@ -124,6 +124,12 @@ EXAMPLE_INVARIANTS = [
     ("30-pytorch-sidewalk-clusters.json", 6, 5,
      {"curio.builtin/data-loading": 1, "curio.builtin/python-computation": 3,
       "curio.builtin/vis-vega": 1, "curio.builtin/autk-grammar": 1}, False),
+    # SAM 3's Track Objects along the SideSeeing walk; Simple View's player
+    # is linked to the swimlane and to the map by interaction edges.
+    ("31-sideseeing-objects-along-a-walk.json", 8, 9,
+     {"curio.builtin/data-loading": 2, "model.curio.sam3/track-objects": 1,
+      "curio.builtin/vis-simple": 1, "curio.builtin/python-computation": 2,
+      "curio.builtin/vis-vega": 1, "curio.builtin/autk-grammar": 1}, True),
 ]
 
 
@@ -149,6 +155,8 @@ FAN_IN_NODES = {
     "26-several-inputs.json": 6,
     # The network: the pictures on "in", its weights on "in_1".
     "27-pytorch-shape-classifier.json": 1,
+    # Walk track: the walk on "in", the listing of its gps.csv on "in_1".
+    "31-sideseeing-objects-along-a-walk.json": 1,
 }
 
 
