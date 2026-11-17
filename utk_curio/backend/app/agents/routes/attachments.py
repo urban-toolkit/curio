@@ -29,7 +29,7 @@ from utk_curio.backend.app.users.dependencies import require_auth
 def list_attachments(project_id: str):
     try:
         flow = _dataflow(project_id, make=False)
-        att = agents_services.list_project_attachments(flow.key, flow.project_id)
+        att = agents_services.list_project_attachments(flow.key, flow.project_id, writes=flow.writable)
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except AgentServiceError as exc:

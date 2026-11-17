@@ -14,7 +14,9 @@ live for it: its doc and its room (``dataflow_docs.py``, ``events.py``), its
 agents' turns, its Solves, its runs and its dashboard's runs. A hosted guest's
 dashboard of an example is its copy's, made or not yet: the copy's owner keeps
 its runs, whether they run the copy or, while the guest has none, the example
-(``runs/viewer.py``).
+(``runs/viewer.py``). So are its agents' reads: while the guest has none, the
+copy's owner reads the example for them, and writes nothing of it
+(``agents/routes/common.py``'s ``Dataflow.writable``).
 
 In any other process:
 
