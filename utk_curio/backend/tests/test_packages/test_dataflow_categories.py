@@ -50,6 +50,8 @@ SHIPPED = {
     ("curio.rasterization@1", "raster-calculator"): {"dataTypes": ["Rasters"]},
     ("curio.rasterization@1", "rasterize-buildings"): {"dataTypes": ["Rasters"]},
     ("curio.weather@1", "utci-compute"): {"dataTypes": ["Rasters"]},
+    # SAM 3 runs torch in its package's module, which no import in node code shows.
+    ("model.curio.sam3@1", None): {"tags": ["PyTorch"]},
     ("model.scout.deep-umbra@1", None): {"tags": ["SCOUT"]},
     ("model.scout.weather-gnn@1", None): {"tags": ["SCOUT"]},
 }
