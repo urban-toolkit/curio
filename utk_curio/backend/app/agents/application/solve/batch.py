@@ -582,6 +582,11 @@ class SolveBatch:
         )[:300]
         extra = {"remedy": remedy_payload} if remedy_payload else {}
         self.results[node_id] = {"status": "failed", "error": err, **trail, **extra}
+        if evidence.get("downloadFailed"):
+            # What the node reads could not be downloaded, which the Solve
+            # keeps for its run: a later pass attempts it again only once the
+            # node changes (``_pass_targets``).
+            self.results[node_id]["downloadFailed"] = True
         return {"nodeId": node_id, "status": "failed", "error": err, **trail, **extra}
 
     def _gate_unverified(self, node_id: str, code: str) -> str | None:
@@ -1127,12 +1132,15 @@ class SolveBatch:
         # than the pass before had (owner correction: "it should carry
         # the currently error that is being given"). A node waiting on
         # a user action has no new input, so that one is attempted
-        # again only when something that could unblock it changed.
+        # again only when something that could unblock it changed. Nor
+        # has a node whose file could not be downloaded: the Solve keeps
+        # that failure for its run, and an attempt would only say it again.
         return [
             nid for nid in unresolved
             if self.pass_no == 1
             or (
                 not agents_rounds._awaits_user_action(self.results.get(nid))
+                and not (self.results.get(nid) or {}).get("downloadFailed")
                 and self.weak_passes.get(nid, 0) < agents_budgets.MAX_WEAK_PASSES
             )
             or self.attempted_signature.get(nid) != agents_session._blocker_signature(

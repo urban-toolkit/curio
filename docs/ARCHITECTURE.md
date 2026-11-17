@@ -1817,7 +1817,9 @@ reads the manifests, for the release and for a running Curio.
    so no later round downloads it again. A node that failed so is marked
    `downloadFailed` on the runner's record and in the round's evidence
    (`validation.validate_candidate`), and the verified loop ends its rounds
-   there as a blocker, one attempt saying why.
+   there as a blocker, one attempt saying why; a later pass of a plan's Solve
+   attempts it again only once the node changes (`SolveBatch._pass_targets`,
+   as for a node that waits on the person).
 7. The download has no limit of its own on the whole: `IDLE_TIMEOUT_S` is the
    transport's connect and read timeout, which a stall reaches and a big file
    does not. A partial file of a name of its own that a process left when it

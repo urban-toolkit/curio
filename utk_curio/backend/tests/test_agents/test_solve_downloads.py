@@ -153,7 +153,9 @@ def test_a_dataset_whose_download_fails_is_asked_for_once_in_a_solve_and_its_nod
     assert ctx["exec_payloads"] == [], "the sandbox was asked to run a loader whose dataset could not be had"
 
 
-def test_a_solves_lookups_keep_a_failed_download_for_its_run(app, tmp_curio, user_and_token, tmp_path, monkeypatch):
+def test_a_solves_lookups_keep_a_failed_download_for_its_run(
+    app, tmp_curio, user_and_token, alice_project, tmp_path, monkeypatch,
+):
     """Each round of a Solve looks up the datasets its code reads. A
     download that failed in the Solve's run is not asked for again: each
     later lookup gives the first one's reason."""
@@ -165,13 +167,13 @@ def test_a_solves_lookups_keep_a_failed_download_for_its_run(app, tmp_curio, use
     mapping: dict = {}
     failed: dict = {}
     told = []
-    with app.test_request_context():
-        for _round in range(3):
-            unavailable: dict = {}
-            paths = grounding._session_dataset_paths(
-                "p-downloads", user, mapping, [_loading()], {}, unavailable, failed=failed,
-            )
-            told.append(unavailable.get(MRT_ID, ""))
+    # The job's thread: no request, the acting user held.
+    for _round in range(3):
+        unavailable: dict = {}
+        paths = grounding._session_dataset_paths(
+            alice_project, user, mapping, [_loading()], {}, unavailable, failed=failed,
+        )
+        told.append(unavailable.get(MRT_ID, ""))
 
     assert github.urls == [url_of(MRT)], github.urls
     assert paths == {} and mapping == {}, (paths, mapping)
