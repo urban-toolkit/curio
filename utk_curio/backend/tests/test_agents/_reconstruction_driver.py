@@ -4,7 +4,10 @@ A transport, not a runtime: it drives the SAME endpoints a browser drives --
 create a project, install and attach the Dataflow Builder, send one turn, apply
 the installs that came back, Solve, read the persisted spec -- through the Flask test client,
 with the provider and the sandbox replaced the way every agent test replaces
-them (``services.run_chat_turn`` and ``runner._http_exec``).
+them (``services.run_chat_turn`` and ``runner._http_exec``). The weights a
+model package's ``fetch`` names, which a node's first run downloads and no test
+may, are a stand-in planted where Curio reads them, as example 31's e2e plants
+its tiny SAM 3 (``/api/testing/fetched-weights``); the faked sandbox reads none.
 
 It lives under ``tests/`` on purpose. The evaluation library itself
 (``app/agents/evaluation``) takes values and returns values; anything that
@@ -26,6 +29,7 @@ different choices from run to run measures nothing:
 
 from __future__ import annotations
 
+import base64
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -249,6 +253,63 @@ class InProcessDriver:
             assert response.status_code in (200, 201), response.get_json()
             responses.append(response.get_json())
         return responses
+
+    def plant_fetched_weights(self, dir_names: Iterable) -> list:
+        """A stand-in for the weights each model package of *dir_names* names
+        in its ``fetch``, planted in the catalog's copy through the route
+        example 31's e2e plants its tiny SAM 3 with
+        (``/api/testing/fetched-weights``); the packages planted.
+
+        Those weights download the first time a node runs the model, before
+        the sandbox runs it (``packages/infrastructure/fetched_weights.py``),
+        and no test may open a socket (``tests/netguard.py``). Curio reads
+        their stamps, never their bytes, and the sandbox is faked, so the
+        stand-in's bytes are a few of its own. Before the plant the weights
+        must download on first use, so no earlier test left any.
+        """
+        from utk_curio.backend.app.packages.application import model_packages
+        from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root
+        from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+
+        # The route plants none under --model-weights-dir, which stacks share.
+        self.monkeypatch.delenv("CURIO_MODEL_WEIGHTS_DIR", raising=False)
+        planted = []
+        for dir_name in dict.fromkeys(dir_names):
+            folder = catalog_root() / dir_name
+            manifest = load_package_manifest(folder)
+            if manifest.kind != "model" or manifest.model is None or manifest.model.fetch is None:
+                continue
+            assert model_packages.weights_on_first_use(manifest, folder), (
+                f"the weights of {dir_name} are here before their stand-in is planted"
+            )
+            files = {
+                item.path: base64.b64encode(f"stand-in for {item.path}\n".encode()).decode("ascii")
+                for item in manifest.model.fetch.files
+            }
+            response = self.client.post(
+                "/api/testing/fetched-weights",
+                json={"action": "plant", "dirName": dir_name, "files": files},
+            )
+            assert response.status_code == 200, response.get_json()
+            planted.append(dir_name)
+        return planted
+
+    def remove_fetched_weights(self, dir_names: Iterable) -> None:
+        """Take out what :meth:`plant_fetched_weights` planted. After it the
+        weights download on first use again, so no later test sees them."""
+        from utk_curio.backend.app.packages.application import model_packages
+        from utk_curio.backend.app.packages.repositories.catalog_dir import catalog_root
+        from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+
+        for dir_name in dir_names:
+            response = self.client.post(
+                "/api/testing/fetched-weights", json={"action": "remove", "dirName": dir_name},
+            )
+            assert response.status_code == 200, response.get_json()
+            folder = catalog_root() / dir_name
+            assert model_packages.weights_on_first_use(load_package_manifest(folder), folder), (
+                f"the stand-in for the weights of {dir_name} is still in place"
+            )
 
     def catalog_dataset_ids(self) -> set:
         from utk_curio.backend.app.datasets.application.catalog_service import (
@@ -508,9 +569,10 @@ def oracle_attempt(
     """Drive one fixture through the production path with oracle replies.
 
     The reachability proof of memo dev/121 section 3.5: everything here is the
-    real thing except the provider (scripted) and the sandbox (faked), so a
-    score below 1.0 for an expressible fixture is a defect in the harness or in
-    the runtime, never noise.
+    real thing except the provider (scripted), the sandbox (faked) and the
+    weights a model package's ``fetch`` names (a stand-in, planted for the
+    turn and its Solve), so a score below 1.0 for an expressible fixture is a
+    defect in the harness or in the runtime, never noise.
     """
     from utk_curio.backend.app.agents.evaluation import attempt as attempt_mod
     from utk_curio.backend.app.agents.evaluation import oracle
@@ -642,9 +704,14 @@ def oracle_attempt(
     driver.script(responder or oracle_responder(plan.as_reply(), contents))
     driver.fake_sandbox(kind_for=kind_for)
 
-    turn = driver.run_turn(fixture.prompt, fixture.context)
-    applied = driver.apply_under_policy(turn, required=fixture.required)
-    solve_result = driver.solve() if solve else None
+    # Taken out whatever happens, so no later test sees the stand-in.
+    planted = driver.plant_fetched_weights([*fixture.required["packages"], *account_only_packages])
+    try:
+        turn = driver.run_turn(fixture.prompt, fixture.context)
+        applied = driver.apply_under_policy(turn, required=fixture.required)
+        solve_result = driver.solve() if solve else None
+    finally:
+        driver.remove_fetched_weights(planted)
     spec = driver.read_spec()
 
     universe = Universe(
