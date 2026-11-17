@@ -402,6 +402,55 @@ def test_a_video_that_gives_no_length_is_sampled_all_through(folder_collection, 
     assert list(frames["t_s"]) == [0.0, 0.52]
 
 
+def test_sample_video_frames_reads_each_video_once_with_frame_threading(folder_collection, tmp_path, monkeypatch):
+    """Sample Video Frames reads a video once, from its start, with frame
+    threading, as Track Objects and Split Video read one. On dev its defaults,
+    a frame every 2 s and 300 at most, ran past a node's 300 s on the 864 s
+    SideSeeing walk, whose key frames are 8.3 s apart: it sought each of the
+    300 frames, decoding from the key frame before it, about 125 frames for
+    each, with slice threading."""
+    import importlib
+
+    import av
+
+    media, helpers = _walks(folder_collection, tmp_path, {"walk.mp4": 7.0})
+    module = importlib.import_module(MODULE)
+    reads, seeks = [], []
+    real_open = av.open
+
+    class _Recording:
+        """The container the node opens, noting each read, how it is threaded, and each seek."""
+
+        def __init__(self, container):
+            self._container = container
+
+        def __enter__(self):
+            self._container.__enter__()
+            return self
+
+        def __exit__(self, *exc):
+            return self._container.__exit__(*exc)
+
+        def __getattr__(self, name):
+            return getattr(self._container, name)
+
+        def seek(self, *args, **kwargs):
+            seeks.append(args)
+            return self._container.seek(*args, **kwargs)
+
+        def decode(self, *args, **kwargs):
+            threading = args[0].thread_type if args else None
+            reads.append(getattr(threading, "name", threading))
+            return self._container.decode(*args, **kwargs)
+
+    monkeypatch.setattr(module.av, "open", lambda *args, **kwargs: _Recording(real_open(*args, **kwargs)))
+    frames = run_node("video-frames", media, helpers, EVERY_SECONDS=0.5)
+    # The same frames as before: the first at or past each half second.
+    assert list(frames["t_s"]) == [k / 2 for k in range(14)]
+    assert list(frames["frame"]) == [5 * k for k in range(14)]
+    assert (reads, seeks) == (["AUTO"], []), (reads, seeks)
+
+
 def _stereo_left_only(path: Path, seconds: float = 1.0, rate: int = 8000) -> None:
     """A stereo recording with a 0.5-amplitude tone on its left channel only."""
     import av

@@ -72,11 +72,7 @@ def sample_video_frames(media, derived_file, *, every_seconds=2.0, max_frames_pe
             stream = container.streams.video[0]
             rate = float(stream.average_rate) if stream.average_rate else None
             length = _length_of(container, stream)
-            sampled = (
-                _by_seeking(container, stream, length, every_seconds, max_frames_per_video)
-                if length is not None
-                else _by_reading(container, stream, rate, every_seconds)
-            )
+            sampled = _by_decoding(container, stream, rate, length, every_seconds, max_frames_per_video)
             last = None
             for at, frame in sampled:
                 t_s = round(float(at), 3)
@@ -127,36 +123,32 @@ def _length_of(container, stream):
     return None
 
 
-def _by_seeking(container, stream, length, every_seconds, max_frames_per_video):
-    """The frame showing at each sample time, reached by seeking."""
-    targets = [0.0]
-    while len(targets) < max_frames_per_video and targets[-1] + every_seconds < length:
-        targets.append(round(targets[-1] + every_seconds, 6))
-    for target in targets:
-        container.seek(int(target / stream.time_base), stream=stream, backward=True)
-        frame = None
-        for candidate in container.decode(stream):
-            frame = candidate
-            if candidate.time is None or candidate.time >= target - 1e-3:
-                break
-        if frame is not None:
-            yield (frame.time if frame.time is not None else target), frame
-
-
-def _by_reading(container, stream, rate, every_seconds):
-    """The first frame at or past each sample time, read from the start: for a
-    video whose length its file does not give."""
-    wanted = 0.0
+def _by_decoding(container, stream, rate, length, every_seconds, max_frames_per_video):
+    """The first frame at or past each sample time, one every *every_seconds*
+    from 0, before the video's *length* (when its file gives one) and
+    *max_frames_per_video* of them at most, read in one pass from the video's
+    start with frame threading. A seek to each sample time would decode from
+    the key frame before it instead, so on a video whose key frames are
+    seconds apart, as the SideSeeing walks' 8.3 s, each frame would be decoded
+    many times over."""
+    # Frame threading decodes several frames at once, about five times faster
+    # than slice threading at 1080p.
+    stream.thread_type = "AUTO"
+    step = 0
     for index, frame in enumerate(container.decode(stream)):
+        if step >= max_frames_per_video or (length is not None and step * every_seconds >= length):
+            return
         at = frame.time if frame.time is not None else (index / rate if rate else None)
         if at is None:
             # Neither a time nor a rate: only the first frame can be placed.
             if index == 0:
                 yield 0.0, frame
             return
-        if at >= wanted - 1e-3:
-            yield at, frame
-            wanted = at + every_seconds
+        if at < step * every_seconds - 1e-3:
+            continue
+        yield at, frame
+        # On to the first sample time this frame does not stand for.
+        step = max(step + 1, math.floor((at + 1e-3) / every_seconds) + 1)
 
 
 # ---------------------------------------------------------------------------
