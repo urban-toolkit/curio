@@ -849,6 +849,20 @@ jobs:
           python3 scripts/ci_memory_budget.py --github-env --workers-max "$CURIO_E2E_MAX_PARALLEL" \
             || echo "CURIO_E2E_PARALLEL=$CURIO_E2E_MAX_PARALLEL" >> "$GITHUB_ENV"
 
+      # As in test-isolated, which says why: an arcade GPU runner is a
+      # container on the server arcade's CPU runners are on, with the same 192
+      # CPUs and no CPU quota (uic-evl/evl-github-runners), and this job's
+      # stacks run nodes in the sandbox itself, Deep Umbra's and the weather
+      # GNN's among them, whose onnxruntime sessions took a thread per core.
+      # docker-compose.ci.yml hands the count on as OMP_NUM_THREADS, which
+      # those packages hand onnxruntime; each shard, started in the container
+      # with `docker compose exec`, gets the container's environment.
+      - name: 📏 Size the stack's library threads to this runner
+        run: |
+          threads=$(nproc); [ "$threads" -gt 8 ] && threads=8
+          echo "CURIO_CI_LIBRARY_THREADS=$threads" >> "$GITHUB_ENV"
+          echo "OMP_NUM_THREADS=$threads" >> "$GITHUB_ENV"
+
       # The Node.js major is written in five places (NODE_MAJOR, .nvmrc,
       # .node-version, two package.json "engines", the Dockerfile). The test
       # suite cannot check them: it runs inside the image, which ships
@@ -1232,6 +1246,11 @@ jobs:
           bash scripts/ci_repeat.sh bash scripts/test.sh --e2e-only --use-existing --skip-setup "${extra[@]}" \
             --parallel "$CURIO_E2E_PARALLEL"
 
+      # After the tests, as test-isolated's, so it never stops them.
+      - name: 🔒 Assert a node of the stack uses the job's thread count
+        if: ${{ !cancelled() && steps.stack_healthy.outcome == 'success' }}
+        run: python3 scripts/ci_library_threads.py
+
       # What a re-mint wrote into this checkout: the baselines whose screen
       # changed, and any it minted. Exactly those files, flat, for review on the
       # report page and then a commit. The *_actual.png a failure leaves behind
@@ -1581,7 +1600,7 @@ jobs:
       # load 530 to 680 example 10's Image Segmentation ran 129 s there, past
       # its test's 120 s (run 44027626125), where a quiet arcade runner takes
       # 11 s. docker-compose.ci.yml hands the count on as OMP_NUM_THREADS, which
-      # the Segmentation package hands onnxruntime.
+      # the code that makes an onnxruntime session hands onnxruntime.
       - name: 📏 Size the stack's library threads to this runner
         if: env.CURIO_CI_HOLDS == 'true'
         run: |

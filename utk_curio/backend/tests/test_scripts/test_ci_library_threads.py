@@ -1,13 +1,13 @@
 """``scripts/ci_library_threads.py``: a CI stack runs node code on the job's thread count.
 
 The check runs a node of the stack, in test-isolated's an isolated child and in
-e2e-desktop's the sandbox itself, and reads what torch uses there. Torch's x86
-build sizes its pool through MKL, which counts physical cores, so on a 4-CPU
-hosted runner (2 cores) it takes 2 threads under ``OMP_NUM_THREADS=4``: fewer
-than the job's count, which costs nothing, and main's run 42323207500 failed the
-check for it. What the check is for is more: torch spread over 96 threads in a
-child on an arcade runner (run 42230248452). These hand the check what a node
-reported.
+e2e-desktop's and test-gpu's the sandbox itself, and reads what torch uses
+there. Torch's x86 build sizes its pool through MKL, which counts physical
+cores, so on a 4-CPU hosted runner (2 cores) it takes 2 threads under
+``OMP_NUM_THREADS=4``: fewer than the job's count, which costs nothing, and
+main's run 42323207500 failed the check for it. What the check is for is more:
+torch spread over 96 threads in a child on an arcade runner (run 42230248452).
+These hand the check what a node reported.
 """
 from __future__ import annotations
 
