@@ -120,6 +120,11 @@ services:
       - CURIO_DISCOVERY_FIXTURES=/app/utk_curio/backend/tests/test_discovery/fixtures
       # See 4 above.
       - CURIO_SKIP_DEP_INSTALL=1
+      # e2e-desktop's share of its runner's CPUs, which the job sizes, for
+      # every library that starts a thread per CPU or core it sees: torch,
+      # OpenBLAS, and onnxruntime through the Segmentation package. Passed on
+      # only when the job sets it; the other jobs' stacks keep their default.
+      - OMP_NUM_THREADS
     # The job's own host ports, in place of the base file's 5002/8080, which
     # are the production stack's on the runner.
     ports: !override

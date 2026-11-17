@@ -582,7 +582,7 @@ def test_example_07_drives_compute_gpgpu():
     )
 
 
-#: The only ``docs/examples/data`` files that legitimately stay put. The four OSM
+#: The only ``docs/examples/data`` files that legitimately stay put. The OSM
 #: extracts are consumed by autk-grammar ``pbfFileUrl`` specs, which take a URL
 #: the *browser* fetches from the unauthenticated ``/file/`` route, not a Python
 #: path a loader can resolve by dataset id -- and ``.pbf`` is not even a catalog
@@ -596,6 +596,8 @@ _DATA_DIR_ALLOWLIST = (
     "chicago_loop.osm.pbf",
     "lower_mnt.osm.pbf",
     "niteroi.osm.pbf",
+    # The streets of the SideSeeing walk (datasets/data.sideseeing.west-loop-walk@1).
+    "west_loop.osm.pbf",
     "niteroi_lst_verao_2001_2024.tif",
     "shape-cnn.npz",
     "ImageTest",
