@@ -18,8 +18,10 @@ export const PlanNodeRow: React.FC<{
   solveBlocker: string | null;
   /** #662: its scenario, the node a copy copies, its widgets. */
   extras?: string[];
-  onSolve?: () => Promise<void>;
-  onRun?: () => Promise<void>;
+  /** The row's Solve and Run, each told the line the row shows while a
+   *  download on first use of what the node reads comes (empty once over). */
+  onSolve?: (onLine: (line: string) => void) => Promise<void>;
+  onRun?: (onLine: (line: string) => void) => Promise<void>;
   /** dev/72: opens the chat that holds its validated code's change. */
   onOpenChange?: () => void;
   changeAgentName?: string;
@@ -28,16 +30,24 @@ export const PlanNodeRow: React.FC<{
   const label = node.scenario ? `${node.title} (${node.scenario})` : node.title;
   const [rowBusy, setRowBusy] = useState<"solve" | "run" | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
+  // How far a download the row's run waits on has come, as a node's Solve
+  // says it on its own line: shown while the run lasts.
+  const [rowLine, setRowLine] = useState<string | null>(null);
 
-  const act = async (kind: "solve" | "run", fn?: () => Promise<void>) => {
+  const act = async (kind: "solve" | "run", fn?: (onLine: (line: string) => void) => Promise<void>) => {
     if (!fn || rowBusy) return;
     setRowBusy(kind);
     setRowError(null);
+    let running = true;
     try {
-      await fn();
+      await fn((line) => {
+        if (running) setRowLine(line || null);
+      });
     } catch (e) {
       setRowError(e instanceof Error ? e.message : `The ${kind} failed`);
     } finally {
+      running = false;
+      setRowLine(null);
       setRowBusy(null);
     }
   };
@@ -98,6 +108,7 @@ export const PlanNodeRow: React.FC<{
           </>
         )}
       </div>
+      {rowLine ? <div className={styles.planNodeExpects}>{rowLine}</div> : null}
       {deps.length ? <div className={styles.planNodeExpects}>needs: {deps.join(", ")}</div> : null}
       {node.expects ? <div className={styles.planNodeExpects}>{node.expects}</div> : null}
       {(extras ?? []).map((line) => (

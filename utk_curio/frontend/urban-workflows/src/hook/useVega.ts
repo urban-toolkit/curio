@@ -89,6 +89,7 @@ export const useVega = ({
   upstreamErrored = false,
   upstreamRunning = false,
   upstreamStopped = null,
+  upstreamDownloads,
   onDashboard = false,
   hasSpec = true,
   onRedraw,
@@ -104,6 +105,8 @@ export const useVega = ({
   upstreamRunning?: boolean;
   /** On a dashboard, why the viewer's run stopped before this chart, if it did. */
   upstreamStopped?: string | null;
+  /** On a dashboard, how far the downloads on first use of the steps above this chart have come. */
+  upstreamDownloads?: readonly string[];
   /** A dashboard's tile: it draws by itself, with no play for a visitor to press. */
   onDashboard?: boolean;
   /** Does the editor hold a spec to compile? */
@@ -252,8 +255,8 @@ export const useVega = ({
   };
 
   /** Write the empty state into the div vega renders into (utils/writeEmptyState). */
-  const renderEmptyState = (reason: NodeEmptyReason | null, detail: string | null) => {
-    writeEmptyState(document.getElementById("vega" + data.nodeId), reason, { hint: detail });
+  const renderEmptyState = (reason: NodeEmptyReason | null, detail: string | null, progress?: readonly string[]) => {
+    writeEmptyState(document.getElementById("vega" + data.nodeId), reason, { hint: detail, progress });
   };
 
   // Build a tupleid → original-index map by traversing the scene graph.
@@ -428,7 +431,10 @@ export const useVega = ({
   // upstream that has not run, an empty editor. Nothing else would report these
   // -- `prepareVegaInput` only runs on a compile or an input change -- so the
   // node body would just sit blank, which is the complaint #224 was filed
-  // about, still true of the most-used visualisation node.
+  // about, still true of the most-used visualisation node. On a dashboard,
+  // while a step above the chart downloads what it reads on its first use,
+  // "Computing..." says how far that has come on a line under it.
+  const downloadsSaid = (upstreamDownloads ?? []).join("\n");
   useEffect(() => {
     if (currentViewRef.current != null) return;
     const reason = resolveGrammarEmptyReason({
@@ -442,8 +448,14 @@ export const useVega = ({
       hasRun: hasRunRef.current,
       inputProblem: emptyReason,
     });
-    if (reason != null) renderEmptyState(reason, reason === "upstream-stopped" ? upstreamStopped : emptyDetail);
-  }, [connected, upstreamErrored, upstreamRunning, upstreamStopped, onDashboard, hasSpec, data.input, emptyReason, emptyDetail]);
+    if (reason != null) {
+      renderEmptyState(
+        reason, reason === "upstream-stopped" ? upstreamStopped : emptyDetail,
+        reason === "upstream-running" ? upstreamDownloads : undefined,
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, upstreamErrored, upstreamRunning, upstreamStopped, downloadsSaid, onDashboard, hasSpec, data.input, emptyReason, emptyDetail]);
 
   useEffect(() => {
     const el = document.getElementById("vega" + data.nodeId);

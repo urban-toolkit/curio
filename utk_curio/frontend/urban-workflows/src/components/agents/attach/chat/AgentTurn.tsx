@@ -54,8 +54,8 @@ export interface AgentTurnActions {
   onDismissProposal?: (proposalId: string) => Promise<void>;
   /** Undo a change this attachment's agent made. */
   onUndoChange?: (changeId: string) => Promise<unknown>;
-  onSolvePlanNode?: (ref: string) => Promise<void>;
-  onRunPlanNode?: (ref: string) => Promise<void>;
+  onSolvePlanNode?: (ref: string, onLine?: (line: string) => void) => Promise<void>;
+  onRunPlanNode?: (ref: string, onLine?: (line: string) => void) => Promise<void>;
   /** An invited editor's chat: an install waits for the owner's review. */
   installsWaitForOwner?: boolean;
 }

@@ -315,6 +315,7 @@ def run_through_node(
     acting_user=None,
     keep_stdout: bool = False,
     downloads=None,
+    download_failures: dict | None = None,
 ) -> dict:
     """Execute the dataflow's ancestor slice THROUGH *node_id* and report
     per-node outcomes (memo dev/67-7).
@@ -324,6 +325,12 @@ def run_through_node(
     fields)``, the fields a run's event says (``left_out_files.progress_fields``:
     ``message``, ``done``, ``total``), and an empty message once that node's
     downloads are over, as a run on the server says its ``step_progress``.
+
+    *download_failures*, when given, is a plan's Solve's record of the
+    downloads on first use that failed in its run (``left_out_files.keeping``):
+    a model's weights it holds are not downloaded again, the node that loads
+    them failing at once with that failure, until they are in place, and a
+    download of them that fails now joins it, under *node_id*.
 
     With *keep_stdout*, the report also holds ``targetStdout``: everything
     the target printed, where its record keeps only the tail. It stays out of
@@ -546,8 +553,13 @@ def run_through_node(
             # on their first use, before the sandbox runs the node. A download
             # that fails ends the node's run here with its own error, as Play's
             # does (node_exec), where the sandbox would only say the model is
-            # not here. How far each has come goes to *downloads*.
-            with left_out_files.failures() as unavailable, _downloads_told(downloads, node.id):
+            # not here. How far each has come goes to *downloads*, and one
+            # that failed in a plan's Solve's run is not asked for again.
+            with (
+                left_out_files.failures() as unavailable,
+                left_out_files.keeping(download_failures, by=node_id),
+                _downloads_told(downloads, node.id),
+            ):
                 if acting_user is not None:
                     models = resolve_models_for(seeded, acting_key, owners=owners)
                     model_weights = resolve_fetched_weights_for(seeded, acting_key, owners=owners) if models else {}

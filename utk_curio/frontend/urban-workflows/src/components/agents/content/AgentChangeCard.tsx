@@ -55,8 +55,8 @@ export const AgentChangeCard: React.FC<{
   onUndo?: (changeId: string) => Promise<unknown>;
   /** A plan's rows: the attachment's ledger of the plan this card is. */
   planNodeState?: PlanNodeReviewState;
-  onSolvePlanNode?: (ref: string) => Promise<void>;
-  onRunPlanNode?: (ref: string) => Promise<void>;
+  onSolvePlanNode?: (ref: string, onLine?: (line: string) => void) => Promise<void>;
+  onRunPlanNode?: (ref: string, onLine?: (line: string) => void) => Promise<void>;
   onOpenAgentChat?: (attachmentId: string) => void;
   delegateExists?: (attachmentId: string) => boolean;
   agentNameOf?: (attachmentId: string) => string | null;

@@ -38,8 +38,11 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
   const upstreamErrored = incomingSourceIds(poolEdges, data.nodeId).some(
     (sourceId) => nodeExecStatus?.[sourceId] === "errored",
   );
-  // On a dashboard: a viewer's run making the rows, or why it stopped before them.
-  const { upstreamRunning, upstreamStopped, onDashboard } = useGrammarInputState(data.nodeId);
+  // On a dashboard: a viewer's run making the rows, or why it stopped before
+  // them, and how far the downloads of the steps above have come.
+  const { upstreamRunning, upstreamStopped, upstreamDownloads, onDashboard } = useGrammarInputState(data.nodeId);
+  // A fresh list each render: the content below changes with what it says.
+  const downloadsSaid = upstreamDownloads.join("\n");
   const [output, setOutput] = useState<ICodeData>({ code: '', content: '' });
 
   // How the selections that reach the pool combine: the selects of one chart,
@@ -478,6 +481,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
         upstreamErrored={upstreamErrored}
         upstreamRunning={upstreamRunning}
         upstreamStopped={upstreamStopped}
+        upstreamDownloads={upstreamDownloads}
         reading={reading}
         onDashboard={onDashboard}
         insideChartMode={insideChartMode}
@@ -486,9 +490,11 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data) => {
         onBetweenChartsModeChange={onBetweenChartsModeChange}
       />
     ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       activeTab, setActiveTab, tabData, tableData, data, connected, upstreamErrored, upstreamRunning, upstreamStopped,
-      reading, onDashboard, insideChartMode, betweenChartsMode, onInsideChartModeChange, onBetweenChartsModeChange,
+      downloadsSaid, reading, onDashboard, insideChartMode, betweenChartsMode, onInsideChartModeChange,
+      onBetweenChartsModeChange,
     ],
   );
 

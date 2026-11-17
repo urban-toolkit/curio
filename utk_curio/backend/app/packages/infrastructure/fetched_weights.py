@@ -44,7 +44,10 @@ the files its package leaves out, through the same code
   in rather than downloaded again (``model_fetch.placed_elsewhere``);
 - a failure raises ``LeftOutFileUnavailable``, which the node's run reports
   (``left_out_files.failures``), naming ``scripts/fetch_model_weights.py``,
-  which fetches them ahead.
+  which fetches them ahead. A long run of work, a plan's Solve, keeps it
+  (``left_out_files.keeping``): no node of its run downloads the weights
+  again, each failing at once with it, until every file is in the entry,
+  fetched ahead or saved by hand, whose files are then checked and read.
 """
 
 from __future__ import annotations
@@ -131,7 +134,9 @@ def download(manifest: PackageManifest, root: Path) -> Path:
         _make_folders(entry, closed=closed)
         os.close(os.open(lock, os.O_WRONLY | os.O_CREAT, 0o644))
     except OSError as exc:
-        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc)) from exc
+        raise left_out_files.unavailable(
+            package, _cannot_write(manifest, entry, exc), here=_here(manifest, entry),
+        ) from exc
     with left_out_files.one_download_at_a_time(lock, key=str(entry)):
         # Another first use may have placed them while this one waited.
         left_out_files.remove_stale_partials(entry)
@@ -140,8 +145,22 @@ def download(manifest: PackageManifest, root: Path) -> Path:
                 continue
             if shared and _linked(manifest, item, folder):
                 continue
+            kept = left_out_files.kept_message(package)
+            if kept is not None:
+                # They failed to download in this run of work, which keeps
+                # that failure until they are here (left_out_files.keeping).
+                raise left_out_files.unavailable(package, kept)
             _download(left_out_files, manifest, item, entry)
     return folder
+
+
+def _here(manifest: PackageManifest, entry: Path):
+    """What says whether every file *manifest*'s ``fetch`` lists is in the
+    folder *entry* now, fetched ahead or saved by hand, which ends a failure
+    of their download a run keeps (``left_out_files.keeping``). Their digests
+    are checked when they are read."""
+    files = [entry / item.path for item in manifest.model.fetch.files]
+    return lambda: all(path.is_file() for path in files)
 
 
 def _linked(manifest: PackageManifest, item: FetchedFile, folder: Path) -> bool:
@@ -173,7 +192,9 @@ def _checked(left_out_files, manifest: PackageManifest, item: FetchedFile, entry
         return checked_in_place(entry / item.path, item)
     except OSError as exc:
         package = f"{manifest.package_id}@{manifest.major}"
-        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc)) from exc
+        raise left_out_files.unavailable(
+            package, _cannot_write(manifest, entry, exc), here=_here(manifest, entry),
+        ) from exc
 
 
 def _make_folders(entry: Path, *, closed: Path | None) -> None:
@@ -203,10 +224,11 @@ def _download(left_out_files, manifest: PackageManifest, item: FetchedFile, entr
     package = f"{manifest.package_id}@{manifest.major}"
     target = entry / item.path
     url = source_url(block.fetch, item.path)
+    here = _here(manifest, entry)
     if block.size_bytes <= 0:
         raise left_out_files.unavailable(package, _could_not_download(
             manifest, item, url, "its manifest gives no sizeBytes to bound the download", gated=False,
-        ))
+        ), here=here)
     gated = False
 
     def check(result, partial: Path) -> str | None:
@@ -229,12 +251,12 @@ def _download(left_out_files, manifest: PackageManifest, item: FetchedFile, entr
         # one downloads, nor after a download that fails.
         discard(target)
     except OSError as exc:
-        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc)) from exc
+        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc), here=here) from exc
     log.info("Downloading %s of %s from %s", item.path, package, url)
     left_out_files.download_checked(
         url, target, partial_dir=entry, max_bytes=block.size_bytes, check=check,
         failed=lambda reason: left_out_files.unavailable(
-            package, _could_not_download(manifest, item, url, reason, gated=gated),
+            package, _could_not_download(manifest, item, url, reason, gated=gated), here=here,
         ),
         # The model's lock makes this download the one writer of its partial
         # file, so the next goes on from what one a restart killed left.
@@ -246,7 +268,7 @@ def _download(left_out_files, manifest: PackageManifest, item: FetchedFile, entr
         # not there. A file a restart left unstamped is hashed once instead.
         write_stamp(target, item)
     except OSError as exc:
-        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc)) from exc
+        raise left_out_files.unavailable(package, _cannot_write(manifest, entry, exc), here=here) from exc
     log.info("Placed %s of %s at %s", item.path, package, target)
 
 

@@ -7,7 +7,7 @@
 import { useCallback, useMemo, useState } from "react";
 
 import { agentsApi, bridgeLandedChangeEvent } from "../../services/agents";
-import { downloadLine } from "./useAgentSolve";
+import { downloadLine } from "../../utils/downloadLine";
 
 export interface AgentSimulationSlice {
   runSimulation: (attachmentId: string, mode: "step" | "auto") => Promise<Record<string, unknown>>;

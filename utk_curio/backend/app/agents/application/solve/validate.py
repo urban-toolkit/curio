@@ -159,8 +159,11 @@ def _validate_events(
                     "attachment_id": attachment_id, "session_id": session_id,
                     "granted": [], "manifest": None,
                 },
+                # Looked up as the account the request took, on the thread the
+                # attempt runs on, where a download of one says how far it has
+                # come: that thread holds no request.
                 dataset_paths_fn=lambda codes, formats, unavailable=None: agents_grounding._exec_dataset_paths(
-                    project_id, *codes, formats=formats, unavailable=unavailable,
+                    project_id, *codes, formats=formats, unavailable=unavailable, user=acting_user,
                 ),
                 # Looked up in the request the stream holds, and handed to the
                 # thread each attempt runs on.
