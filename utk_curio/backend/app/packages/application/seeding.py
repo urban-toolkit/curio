@@ -77,9 +77,11 @@ from utk_curio.backend.app.packages.repositories.store import (
 )
 from utk_curio.backend.app.packages.infrastructure.locks import package_seed_lock
 from utk_curio.backend.app.packages.application import (
+    libraries as packages_libraries,
     model_downloads as packages_model_downloads,
     model_packages as packages_model_packages,
     package_dependencies as packages_dependencies,
+    store_install as packages_store_install,
 )
 from utk_curio.backend.app.packages.application.store_install import _purge_stale_staging
 
@@ -480,8 +482,20 @@ def seed_dev_packages(*, user_key: str = "guest") -> list[str]:
     before its source named the node a model gets is brought to that node
     (``model_downloads.upgrade_downloaded_models``), as the pass refreshes a
     catalog copy the catalog moved on from.
+
+    A refresh puts the catalog's version in place of a store copy, so once
+    the pass has let the store lock go, the copies it replaced get what a
+    removal of them gets, as an install over a copy does
+    (``store_install.take_back_what_it_replaced``): the libraries their
+    installs put where node code imports from are taken back when nothing
+    asks for them now, and the account's tree gives way to the image. The
+    pass installs none of the new versions' libraries; the next start does.
+    A pass under ``CURIO_RESEED_PACKAGES``, which puts every package in place
+    again, takes none back.
     """
-    seeded = _seed_dev_packages_locked(user_key=user_key)
+    seeded, replaced_libraries = _seed_dev_packages_locked(user_key=user_key)
+    if replaced_libraries is not None:
+        packages_store_install.take_back_what_it_replaced(user_key, replaced_libraries)
     try:
         packages_model_downloads.upgrade_downloaded_models(user_key)
     except Exception:  # noqa: BLE001 - an old download's upgrade never blocks a read of the store
@@ -489,12 +503,13 @@ def seed_dev_packages(*, user_key: str = "guest") -> list[str]:
     return seeded
 
 
-def _seed_dev_packages_locked(*, user_key: str) -> list[str]:
+def _seed_dev_packages_locked(*, user_key: str) -> tuple[list[str], set[str] | None]:
     """Body of :func:`seed_dev_packages`. Plans the fixture reads unlocked,
-    then takes the per-user store lock for the store work itself."""
+    then takes the per-user store lock for the store work itself. Answers
+    what :func:`_seed_locked` answers."""
     src_root = packages_catalog_dir.catalog_root()
     if not src_root.is_dir():
-        return []
+        return [], None
 
     dest_base = user_packages_dir(user_key)
     dest_base.mkdir(parents=True, exist_ok=True)
@@ -578,11 +593,18 @@ def _plan_seed(src_root: Path, installed_names: frozenset[str] = frozenset()) ->
     return _SeedPlan(keep_builtin_name, candidates)
 
 
-def _seed_locked(user_key: str, dest_base: Path, plan: _SeedPlan) -> list[str]:
+def _seed_locked(user_key: str, dest_base: Path, plan: _SeedPlan) -> tuple[list[str], set[str] | None]:
     """One seeding pass over the user's STORE, holding the per-user seed lock.
 
     Everything about the fixture catalog arrived in *plan*; nothing in here
     reads outside ``dest_base`` and the seed-state marker.
+
+    Answers the packages seeded or refreshed, and, when it replaced a copy
+    the store held (unless ``CURIO_RESEED_PACKAGES`` forced the pass), the
+    libraries those copies' installs put where node code imports from
+    (``libraries.node_libraries_of``), read before their files go, for
+    :func:`seed_dev_packages` to take back once the lock is let go; else
+    None.
     """
     _sweep_seed_staging(dest_base)
 
@@ -604,6 +626,7 @@ def _seed_locked(user_key: str, dest_base: Path, plan: _SeedPlan) -> list[str]:
                 log.warning("Failed to prune old builtin %s: %s", old, exc)
 
     seeded: list[str] = []
+    replaced_libraries: set[str] | None = None
     for src, fixture_mtime in plan.candidates:
         dest = dest_base / src.name
         record = records.get(src.name)
@@ -673,8 +696,14 @@ def _seed_locked(user_key: str, dest_base: Path, plan: _SeedPlan) -> list[str]:
             if reason == "untracked-existing-copy":
                 seed_state.mark_seeded(user_key, src.name, fixture_mtime)
             continue
+        # A copy this swap replaces: what its install put where node code
+        # imports from, read before its files go.
+        replaces = dest.exists() and not force
+        its_libraries = packages_libraries.node_libraries_of(user_key, src.name) if replaces else set()
         if not _swap_in_package(src, dest, dest_base):
             continue
+        if replaces:
+            replaced_libraries = (replaced_libraries or set()) | its_libraries
         swapped = _integrity_map(dest)
         seed_state.mark_seeded(
             user_key, src.name, fixture_mtime,
@@ -682,7 +711,7 @@ def _seed_locked(user_key: str, dest_base: Path, plan: _SeedPlan) -> list[str]:
         )
         seeded.append(src.name)
         log.info("Seeded dev package %s into %s (%s)", src.name, dest_base, reason)
-    return seeded
+    return seeded, replaced_libraries
 
 
 def ensure_user_packages_initialized(user_key: str) -> None:

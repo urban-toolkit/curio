@@ -53,7 +53,8 @@ def run_node_stream(
     the runtime journal where the Node Builder, debug agent, and explainer
     read it (67-2 ``node.runtime.read``). The saved spec is never mutated.
 
-    Streams ``run_started`` → ``node_executed`` per upstream execution →
+    Streams ``run_started`` → ``node_executed`` per upstream execution, and
+    ``node_download`` while what a node reads downloads on its first use →
     ``done {ok, nodes, blocker, error}``; a result card joins the transcript.
     """
 
@@ -82,14 +83,26 @@ def run_node_stream(
     )
 
 
-def _run_inputs(user_key: str, project_id: str, spec: dict) -> dict:
-    """What a Run node hands the runner beside the node, as keywords of
-    ``runner.run_through_node``: resolved in the request context the stream
-    carries, before the worker thread starts."""
+def _slice_nodes(spec: dict, node_id: str) -> list[dict]:
+    """The nodes a run through *node_id* runs: the node and every node it
+    reads from (``run_plan.ancestors``, as the runner takes them). A node of
+    another branch of the dataflow does not run, so nothing only it reads is
+    looked up for the run."""
+    from utk_curio.backend.app.execution.run_plan import ancestors
+
+    dataflow = spec.get("dataflow") or {}
+    wanted = ancestors(node_id, [e for e in dataflow.get("edges") or [] if isinstance(e, dict)])
+    return [n for n in dataflow.get("nodes") or [] if isinstance(n, dict) and n.get("id") in wanted]
+
+
+def _run_inputs(user_key: str, project_id: str, spec: dict, node_id: str) -> dict:
+    """What a Run node hands the runner beside the node and its datasets, as
+    keywords of ``runner.run_through_node``: resolved in the request context
+    the stream carries, before the worker thread starts, for the slice the
+    run goes through (:func:`_slice_nodes`)."""
     from utk_curio.backend.app.discovery.application.exec_collections import (
         resolve_spec_collections,
     )
-    from utk_curio.backend.app.execution.code_references import node_run_code
     from utk_curio.backend.app.execution.node_exec import exec_user_key
 
     # The models are looked up on the worker thread, so it gets the account
@@ -102,32 +115,12 @@ def _run_inputs(user_key: str, project_id: str, spec: dict) -> dict:
     # read from the store that holds them. *user_key* is the dataflow's
     # store, which for an editor is the owner's.
     collections, media_dir = resolve_spec_collections(
-        spec, exec_user_key(acting_user) or user_key, user=acting_user, dataflow_id=project_id,
-    )
-    # The paths of the Data Catalog datasets the run reads, and how
-    # curio_load_data reads a layer group, as Play and Solve's runs
-    # resolve them: over each node's code as the run writes it, so the id
-    # a Data widget holds counts (node_run_code). A dataset whose file
-    # failed to download fails the node that reads it with the download's
-    # reason, as Play's run does.
-    dataset_formats: dict = {}
-    dataset_problems: dict = {}
-    dataset_paths = agents_grounding._exec_dataset_paths(
-        project_id,
-        *(
-            node_run_code(n)
-            for n in ((spec.get("dataflow") or {}).get("nodes") or [])
-            if isinstance(n, dict)
-        ),
-        formats=dataset_formats,
-        unavailable=dataset_problems,
+        {"dataflow": {"nodes": _slice_nodes(spec, node_id)}}, exec_user_key(acting_user) or user_key,
+        user=acting_user, dataflow_id=project_id,
     )
     return {
         "session_id": artifact_session,
         "acting_user": acting_user,
-        "dataset_paths": dataset_paths or None,
-        "dataset_formats": dataset_formats or None,
-        "dataset_problems": dataset_problems or None,
         "collections": collections,
         "media_dir": media_dir,
         # The dataflow's template roster, which Solve's runs classify its
@@ -135,6 +128,48 @@ def _run_inputs(user_key: str, project_id: str, spec: dict) -> dict:
         # holds and the catalog does not read as one with no code to run.
         "templates": agents_roster._roster_templates(user_key, project_id),
     }
+
+
+def _dataset_look_up(project_id: str, acting_user, nodes: list[dict]):
+    """The lookup of the paths of the Data Catalog datasets the run reads,
+    and of how ``curio_load_data`` reads a layer group, as Play and Solve's
+    runs resolve them: over each node's code of *nodes* as the run writes
+    it, so the id a Data widget holds counts (``node_run_code``), as
+    *acting_user*, the account the request took. A dataset whose file
+    failed to download fails the node that reads it with the download's
+    reason, as Play's run does.
+
+    It runs on the run's own thread, where a download of one says how far it
+    has come to ``told(fields)``, then that it is over, in the fields a
+    run's event says (``left_out_files.progress_fields``): the app's context
+    and the visitor the request serves are taken here, for that thread. It
+    gives ``run_through_node``'s ``dataset_paths``, ``dataset_formats`` and
+    ``dataset_problems``."""
+    from utk_curio.backend.app.common import job_registry
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+    from utk_curio.backend.app.execution.code_references import node_run_code
+    from utk_curio.backend.app.projects import visitor_copies
+
+    codes = [node_run_code(n) for n in nodes]
+
+    def look_up(told) -> dict:
+        formats: dict = {}
+        problems: dict = {}
+
+        def report(progress) -> None:
+            told(left_out_files.progress_fields(progress))
+
+        with left_out_files.reporting(report), left_out_files.downloading():
+            paths = agents_grounding._exec_dataset_paths(
+                project_id, *codes, formats=formats, unavailable=problems, user=acting_user,
+            )
+        return {
+            "dataset_paths": paths or None,
+            "dataset_formats": formats or None,
+            "dataset_problems": problems or None,
+        }
+
+    return job_registry.in_app_context(visitor_copies.carrying(look_up))
 
 
 def _run_node_events(
@@ -147,8 +182,11 @@ def _run_node_events(
     exec_fn,
 ):
     """The run-node body: a threaded runner drains a queue so upstream
-    executions stream live (the dev/63 pattern); the finally clears the
-    in-flight guard on every exit, disconnect included."""
+    executions stream live (the dev/63 pattern), and so does how far each
+    download on first use of what the run reads has come (``node_download``,
+    an empty message once that node's downloads are over), the datasets'
+    looked up on the runner's thread, as a Solve's round looks them up; the
+    finally clears the in-flight guard on every exit, disconnect included."""
 
     from utk_curio.backend.app.execution import runner
 
@@ -157,10 +195,12 @@ def _run_node_events(
     try:
         yield "run_started", {"nodeId": node_id, "executionId": execution_id}
         progress_queue: _queue.Queue = _queue.Queue()
-        inputs = _run_inputs(user_key, project_id, spec)
+        inputs = _run_inputs(user_key, project_id, spec, node_id)
+        look_up = _dataset_look_up(project_id, inputs["acting_user"], _slice_nodes(spec, node_id))
 
         def _run():
             try:
+                datasets = look_up(lambda fields: progress_queue.put(("download", node_id, fields)))
                 report = runner.run_through_node(
                     user_key, project_id, spec, node_id,
                     candidate_content=None,
@@ -169,7 +209,11 @@ def _run_node_events(
                     progress=lambda nid, i, total: progress_queue.put(
                         ("progress", nid, i, total)
                     ),
+                    # How far each download on first use of a model's weights
+                    # a node of the slice loads has come.
+                    downloads=lambda nid, fields: progress_queue.put(("download", nid, fields)),
                     **inputs,
+                    **datasets,
                 )
             except Exception as exc:  # the runner must never kill the stream
                 report = {
@@ -194,6 +238,10 @@ def _run_node_events(
             if item[0] == "progress":
                 _, nid, index, total = item
                 yield "node_executed", {"nodeId": nid, "index": index, "total": total}
+                continue
+            if item[0] == "download":
+                _, nid, fields = item
+                yield "node_download", {"nodeId": nid, **fields}
                 continue
             if item[0] == "raised":
                 thread.join(timeout=5)

@@ -204,6 +204,91 @@ class TestTheFileLimit:
         assert added(client, auth, "aq")["rowCount"] == 3
 
 
+#: The levels of folders a folder source reads below where a listing starts
+#: (``MAX_DEPTH``).
+LEVELS = 32
+
+
+def nested(levels: int) -> str:
+    """*levels* folders one inside the other: ``01/02/03`` and so on."""
+    return "/".join(f"{level:02d}" for level in range(1, levels + 1))
+
+
+class TestFoldersBelowTheLevelsRead:
+    """A folder source reads 32 levels of folders below where a listing
+    starts. It says how many folders it skipped below them, and where: on
+    the source's page, and in a refused add of a row that may have files
+    there."""
+
+    SURVEY = [{"id": "survey", "name": "Field survey", "kind": "files", "path": "survey/**/*"}]
+    #: The deepest folder a listing of the survey reads.
+    DEEPEST = f"survey/{nested(LEVELS)}"
+
+    def test_the_source_page_says_how_many_folders_it_skipped_and_where(
+        self, client, auth, app, discovery_dir, tmp_path
+    ):
+        root = write_files(tmp_path / "f", {
+            f"{self.DEEPEST}/kept.txt": "x",
+            f"{self.DEEPEST}/33a/deep.txt": "x",
+            f"{self.DEEPEST}/33b/more/deeper.txt": "x",
+        })
+        a_source(discovery_dir, root, self.SURVEY)
+        body = listing(client, auth)
+
+        assert [row["fileCount"] for row in body["resources"]] == [1]
+        assert body["truncated"] is True, (
+            "the listing skipped two folders below the 32 levels it reads, and did not say so"
+        )
+        assert body.get("cutShort") == (
+            "This source holds more files than are listed here: a listing skipped 2 folders, "
+            f"{self.DEEPEST}/33a first, below the 32 levels of folders it reads."
+        )
+
+    def test_folders_as_deep_as_the_levels_read_are_listed_whole(self, client, auth, app, discovery_dir, tmp_path):
+        # A hidden folder is read at no depth, so one below them is not skipped for its depth.
+        root = write_files(tmp_path / "f", {f"{self.DEEPEST}/kept.txt": "x", f"{self.DEEPEST}/.cache/x.txt": "x"})
+        a_source(discovery_dir, root, self.SURVEY)
+        body = listing(client, auth)
+
+        assert body["truncated"] is False and body.get("cutShort") is None
+        assert [row["fileCount"] for row in body["resources"]] == [1]
+        assert added(client, auth, "survey")["rowCount"] == 1
+
+    def test_an_add_of_a_row_that_may_have_files_there_is_refused_and_says_where(
+        self, client, auth, app, discovery_dir, tmp_path
+    ):
+        root = write_files(tmp_path / "f", {f"{self.DEEPEST}/kept.txt": "x", f"{self.DEEPEST}/33/deep.txt": "x"})
+        a_source(discovery_dir, root, self.SURVEY)
+        job = finish(client, auth, start(client, auth, "survey"))
+
+        assert job["status"] == "failed", (
+            "the add left out the files of a folder below the 32 levels it reads, and did not say so"
+        )
+        assert job["error"] == (
+            f"Field survey has 1 folder, {self.DEEPEST}/33, below the 32 levels of folders "
+            "Example Folder reads; add part of it"
+        )
+
+    def test_the_files_a_listing_read_are_added_by_picking_them(self, client, auth, app, discovery_dir, tmp_path):
+        """Part of such a row is added: the picked files are all found."""
+        root = write_files(tmp_path / "f", {f"{self.DEEPEST}/kept.txt": "x", f"{self.DEEPEST}/33/deep.txt": "x"})
+        a_source(discovery_dir, root, self.SURVEY)
+
+        assert added(client, auth, "survey", files=[f"{self.DEEPEST}/kept.txt"])["rowCount"] == 1
+
+    def test_a_row_whose_files_cannot_be_that_deep_is_added_whole(self, client, auth, app, discovery_dir, tmp_path):
+        """Its template names no folder below ``survey/``, so no file of it
+        is in a folder the listing skipped."""
+        root = write_files(tmp_path / "f", {
+            "survey/2024-01-01.csv": "v\n1\n", f"{self.DEEPEST}/33/deep.txt": "x",
+        })
+        a_source(discovery_dir, root, [
+            {"id": "days", "name": "Days", "kind": "table", "format": "csv", "path": "survey/{day:date}.csv"}
+        ])
+
+        assert added(client, auth, "days")["rowCount"] == 1
+
+
 class TestAddingAgain:
     def test_a_table_whose_files_did_not_change_is_the_dataset_already_held(
         self, client, auth, app, storage_source

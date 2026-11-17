@@ -68,6 +68,19 @@ describe('DataPoolContent', () => {
     expect(screen.queryByText('Run the node feeding this one.')).toBeNull();
   });
 
+  test('as a dashboard tile whose upstream downloads on its first use, it says how far on a line under Computing...', () => {
+    // The node that downloads is often hidden on a dashboard: the tile says
+    // what that node says, between "Computing..." and its hint.
+    const message = 'Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)';
+    // The upstream's downloads, whatever the types of the code under test name.
+    const downloading = { upstreamDownloads: [message] } as any;
+    const { container } = render(
+      <DataPoolContent {...defaultProps} tabData={[]} connected onDashboard upstreamRunning {...downloading} />
+    );
+    const lines = Array.from(container.querySelectorAll('[data-curio-node-empty] span')).map((span) => span.textContent);
+    expect(lines).toEqual(['Computing...', message, 'Results will be shown here once they are ready.']);
+  });
+
   test('says the input is not tabular when the upstream ran but made no table', () => {
     // The empty branch passed `tabular: true`, so a connected pool handed a
     // payload it cannot tabulate reported "The input ran, but came back empty" —

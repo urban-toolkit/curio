@@ -66,6 +66,8 @@ interface DataPoolContentProps {
   upstreamRunning?: boolean;
   /** On a dashboard, why the viewer's run stopped before the pool, if it did. */
   upstreamStopped?: string | null;
+  /** On a dashboard, how far the downloads on first use of the steps above the pool have come. */
+  upstreamDownloads?: readonly string[];
   /** Are the rows of the input that just arrived still being read? */
   reading?: boolean;
   /** A dashboard's tile: an input not in yet is on its way, with no node to run. */
@@ -169,7 +171,7 @@ const ContentComponent = ({
 
 export default function DataPoolContent({
   activeTab, onSelectTab, tabData, tableData, data = { nodeId: '', input: '' }, connected = false, upstreamErrored = false,
-  upstreamRunning = false, upstreamStopped = null, reading = false, onDashboard = false,
+  upstreamRunning = false, upstreamStopped = null, upstreamDownloads, reading = false, onDashboard = false,
   insideChartMode = ResolutionType.OVERWRITE, betweenChartsMode = ResolutionType.OVERWRITE,
   onInsideChartModeChange, onBetweenChartsModeChange,
 }: DataPoolContentProps) {
@@ -289,6 +291,7 @@ export default function DataPoolContent({
               <NodeEmptyState
                 reason={reason}
                 hint={reason === 'upstream-stopped' ? upstreamStopped ?? undefined : undefined}
+                progress={reason === 'upstream-running' ? upstreamDownloads : undefined}
               />
             );
           })()

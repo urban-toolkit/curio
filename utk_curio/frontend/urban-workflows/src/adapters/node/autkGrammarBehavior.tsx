@@ -298,7 +298,10 @@ export const useAutkGrammarBehavior = (
 
     // What the node knows about its input edge, asked the way the Vega-Lite
     // node asks (hook/useGrammarInputState).
-    const { connected, upstreamErrored, upstreamRunning, upstreamStopped } = useGrammarInputState(data.nodeId);
+    const { connected, upstreamErrored, upstreamRunning, upstreamStopped, upstreamDownloads } =
+        useGrammarInputState(data.nodeId);
+    // A fresh list each render: the notice changes with what it says.
+    const downloadsSaid = upstreamDownloads.join('\n');
     // A failed node says so to the nodes it feeds, as a failed code node does.
     const { markNodeErrored, workflowNameRef, nodes: flowNodes, edges: flowEdges, dashboardOn } = useFlowContext() as {
         markNodeErrored?: (nodeId: string) => void;
@@ -376,7 +379,10 @@ export const useAutkGrammarBehavior = (
     const inputProblemRef = useRef<{ reason: NodeEmptyReason; detail?: string } | null>(null);
     // The notice the body should show now, kept so a container that mounts
     // later (the editor remounting its output pane) gets it too.
-    const noticeRef = useRef<{ reason: NodeEmptyReason; words: { title?: string; hint?: string } } | null>(null);
+    const noticeRef = useRef<{
+        reason: NodeEmptyReason;
+        words: { title?: string; hint?: string; progress?: readonly string[] };
+    } | null>(null);
     const writeNotice = () => {
         const host = wrapperRef.current;
         if (!host || runningRef.current || grammarRef.current != null) return;
@@ -1617,12 +1623,15 @@ export const useAutkGrammarBehavior = (
             inputProblem: problem?.reason ?? null,
         });
         const detail = reason === 'upstream-stopped' ? upstreamStopped ?? undefined : problem?.detail;
+        // On a dashboard, while a step above the map downloads what it reads
+        // on its first use, "Computing..." says how far on a line under it.
+        const progress = reason === 'upstream-running' ? upstreamDownloads : undefined;
         noticeRef.current = reason == null
             ? null
-            : { reason, words: emptyStateWords(reason, liveKind, detail) };
+            : { reason, words: { ...emptyStateWords(reason, liveKind, detail), progress } };
         writeNotice();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [connected, upstreamErrored, upstreamRunning, upstreamStopped, dashboardOn, hasInput, hasSpec, needsInput, liveKind, gpuBlocked, nodeState.output?.code, runSummary]);
+    }, [connected, upstreamErrored, upstreamRunning, upstreamStopped, downloadsSaid, dashboardOn, hasInput, hasSpec, needsInput, liveKind, gpuBlocked, nodeState.output?.code, runSummary]);
 
     // Forward parent container resizes to AutkMap via a synthetic window.resize.
     // AutkMap binds only to window.resize (and exposes no per-instance resize API),

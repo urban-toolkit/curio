@@ -109,6 +109,8 @@ class VerifiedRounds:
         carry_forward=None,
         result_summary_fn=None,
         acting_user=None,
+        download_failures: dict | None = None,
+        start_source: str = "current content",
     ):
         self.user_key = user_key
         self.project_id = project_id
@@ -116,9 +118,16 @@ class VerifiedRounds:
         self.node = node
         self.exec_fn = exec_fn
         self.start_from_current = start_from_current
+        # What round 0's attempt says it ran with *start_from_current*: the
+        # node's current content, or the code a failed download stopped, which
+        # a plan's Solve runs again once the file is in place.
+        self.start_source = start_source
         self.extra_inputs = extra_inputs
         self.dataset_paths_fn = dataset_paths_fn
         self.collections_fn = collections_fn
+        # A plan's Solve's record of the downloads on first use that failed in
+        # its run, which no round downloads again (``left_out_files.keeping``).
+        self.download_failures = download_failures
         self.exec_user_key = exec_user_key
         # #485: the account's User row, captured in the request; validation
         # runs on a thread of its own, where the request's user is gone.
@@ -440,7 +449,7 @@ class VerifiedRounds:
             "round": self.rounds_used, "contentSha256": agents_rounds._content_sha(self.candidate),
             "verdict": "fail", "kind": kind,
             "detail": refusal[:agents_budgets.ATTEMPT_DETAIL_CHARS],
-            "source": source or ("current content" if self.use_current else "generated"),
+            "source": source or (self.start_source if self.use_current else "generated"),
             **agents_rounds._attempt_code_field(self.candidate, prose=prose),
         }
         self.attempts.append(attempt)
@@ -599,13 +608,20 @@ class VerifiedRounds:
     # ── stage: the sandbox ──────────────────────────────────────────────────
 
     def _round_codes(self) -> list[str]:
-        """The candidate's code and that of each node of the spec, as the run
-        writes each node's code: a dataset widget's id is in no literal call
-        before (node_run_code)."""
+        """The candidate's code and that of each node of the slice the run
+        goes through, the node and every node it reads from
+        (``run_plan.ancestors``, as the runner takes it), as the run writes
+        each node's code: a dataset widget's id is in no literal call before
+        (node_run_code). A node of another branch does not run, so nothing
+        only it reads is looked up, nor downloaded."""
+        from utk_curio.backend.app.execution.run_plan import ancestors
+
+        dataflow = self.spec.get("dataflow") or {}
+        wanted = ancestors(self.node_id, [e for e in dataflow.get("edges") or [] if isinstance(e, dict)])
         slice_codes = [
             node_run_code(n)
-            for n in ((self.spec.get("dataflow") or {}).get("nodes") or [])
-            if isinstance(n, dict)
+            for n in dataflow.get("nodes") or []
+            if isinstance(n, dict) and n.get("id") in wanted
         ]
         return [node_run_code({**self.node, "content": self.candidate}), *slice_codes]
 
@@ -614,7 +630,9 @@ class VerifiedRounds:
         its slice read: *dataset_paths_fn* gives the paths and fills the
         formats, such as a layer group's entry naming its layers, and, when
         it takes ``unavailable``, the problems: why each dataset whose file
-        failed to download could not be had."""
+        failed to download could not be had. It runs on the thread the
+        attempt runs on (:meth:`_dataset_look_up`), where a download of one
+        says how far it has come."""
         if self.dataset_paths_fn is None:
             return None, None, None
         try:
@@ -661,17 +679,51 @@ class VerifiedRounds:
         except Exception:
             return None
 
-    def _validate_with(self, prior, candidate_text, paths, formats, secret_values, collections, media_dir):
+    def _dataset_look_up(self):
+        """The round's lookup of its datasets' paths (:meth:`_round_dataset_paths`),
+        for the thread the attempt runs on (:meth:`_validate_with`), which
+        holds no app context and serves no sign-in: the app's context and the
+        visitor the round serves are taken here, on the round's thread, and
+        the lookup tells ``told(fields)`` how far each download on first use
+        of a dataset has come, then that they are over, in the fields a run's
+        event says (``left_out_files.progress_fields``). None without
+        *dataset_paths_fn*."""
+        if self.dataset_paths_fn is None:
+            return None
+        from utk_curio.backend.app.common import job_registry
+        from utk_curio.backend.app.datasets.infrastructure import left_out_files
+        from utk_curio.backend.app.projects import visitor_copies
+
+        def look_up(told):
+            def report(progress) -> None:
+                told(left_out_files.progress_fields(progress))
+
+            with left_out_files.reporting(report), left_out_files.downloading():
+                return self._round_dataset_paths()
+
+        return job_registry.in_app_context(visitor_copies.carrying(look_up))
+
+    def _validate_with(self, prior, candidate_text, secret_values, collections, media_dir, *, look_up=None):
+        """Run the attempt on a thread of its own, relaying what it says as
+        it goes. With *look_up* (:meth:`_dataset_look_up`), the thread first
+        looks up the paths of the datasets the round reads, so the round says
+        how far a download of one has come while it waits, as it says a
+        model's weights'; without it, the attempt runs with the paths the
+        round looked up before."""
         progress_queue: _queue.Queue = _queue.Queue()
 
         def _run_validation():
             try:
+                if look_up is not None:
+                    self.dataset_paths, self.dataset_formats, self.dataset_problems = look_up(
+                        lambda fields: progress_queue.put(("download", self.node_id, fields))
+                    )
                 result = agents_validation.validate_candidate(
                     self.user_key, self.project_id, self.spec, self.node_id, candidate_text,
                     exec_fn=self.exec_fn,
                     available_templates=self.available,
-                    dataset_paths=paths,
-                    dataset_formats=formats,
+                    dataset_paths=self.dataset_paths,
+                    dataset_formats=self.dataset_formats,
                     dataset_problems=self.dataset_problems,
                     exec_user_key=self.exec_user_key,
                     secrets=secret_values,
@@ -687,6 +739,7 @@ class VerifiedRounds:
                     # How far each download on first use of what a node of
                     # the slice reads has come, as a run on the server says it.
                     downloads=lambda nid, fields: progress_queue.put(("download", nid, fields)),
+                    download_failures=self.download_failures,
                 )
             except Exception as exc:  # the validator must never kill the stream
                 result = {
@@ -722,22 +775,24 @@ class VerifiedRounds:
     def _validate(self):
         """The candidate runs with ITS dataset paths, collections, connection
         keys and the batch's prior outputs; a vanished reused input re-runs
-        the slice whole, once, silently."""
-        self.dataset_paths, self.dataset_formats, self.dataset_problems = self._round_dataset_paths()
+        the slice whole, once, silently. The paths are looked up on the
+        thread the attempt runs on, which says how far a download of a
+        dataset has come (:meth:`_dataset_look_up`)."""
+        self.dataset_paths = self.dataset_formats = self.dataset_problems = None
         self.collections, self.media_dir = self._round_collections()
         self.secrets = self._round_secrets()
         prior_outputs = self._round_prior_outputs()
         candidate = self.candidate
         self.verdict_result = yield from self._validate_with(
-            prior_outputs, candidate, self.dataset_paths, self.dataset_formats, self.secrets,
-            self.collections, self.media_dir)
+            prior_outputs, candidate, self.secrets, self.collections, self.media_dir,
+            look_up=self._dataset_look_up())
         self.reuse_retried = False
         if prior_outputs and agents_session._looks_like_a_vanished_reused_input(self.verdict_result):
             # A reused artifact is gone (the sandbox store moved on): that is
-            # not the candidate's fault. Once, silently, the slice runs whole.
+            # not the candidate's fault. Once, silently, the slice runs whole,
+            # with the paths the attempt looked up.
             self.verdict_result = yield from self._validate_with(
-                None, candidate, self.dataset_paths, self.dataset_formats, self.secrets,
-                self.collections, self.media_dir)
+                None, candidate, self.secrets, self.collections, self.media_dir)
             self.reuse_retried = True
         self.round_stdout = self.verdict_result.pop("stdout", None)
         return None
@@ -1026,7 +1081,7 @@ class VerifiedRounds:
             "contentSha256": agents_rounds._content_sha(self.candidate),
             "verdict": verdict,
             "kind": round_evidence.get("kind"),
-            "source": "current content" if self.use_current else "generated",
+            "source": self.start_source if self.use_current else "generated",
         }
         if round_evidence.get("detail"):
             attempt["detail"] = str(round_evidence["detail"])[:agents_budgets.ATTEMPT_DETAIL_CHARS]

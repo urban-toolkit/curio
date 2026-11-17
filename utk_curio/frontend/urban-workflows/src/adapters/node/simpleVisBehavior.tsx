@@ -100,8 +100,10 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   const connected = hasIncomingEdge(edges, data.nodeId);
   // Whether the node feeding it ran and failed, asked as the Data Pool asks it
   // (#347); on a dashboard, a viewer's run making the rows, or why it stopped
-  // before them.
-  const { upstreamErrored, upstreamRunning, upstreamStopped, onDashboard } = useGrammarInputState(data.nodeId);
+  // before them, and how far the downloads of the steps above have come.
+  const { upstreamErrored, upstreamRunning, upstreamStopped, upstreamDownloads, onDashboard } = useGrammarInputState(data.nodeId);
+  // A fresh list each render: the content below changes with what it says.
+  const downloadsSaid = upstreamDownloads.join("\n");
   // Lazy init: if input is already present on mount seed the view so the
   // first render already produces a contentComponent. One that carries its
   // rows shows at once; the effect reads one that names its artifact.
@@ -378,9 +380,11 @@ export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
       <NodeEmptyState
         reason={reason}
         hint={reason === 'upstream-stopped' ? upstreamStopped ?? undefined : undefined}
+        progress={reason === 'upstream-running' ? upstreamDownloads : undefined}
       />
     );
-  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, upstreamErrored, upstreamRunning, upstreamStopped, reading, onDashboard, clickRow, played, pickColumn]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMode, rows, imageColumns, shownImageColumns, choice, interacted, textContent, data.nodeId, data.input, connected, upstreamErrored, upstreamRunning, upstreamStopped, downloadsSaid, reading, onDashboard, clickRow, played, pickColumn]);
 
   return {
     contentComponent,

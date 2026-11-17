@@ -183,6 +183,7 @@ def install_package_from_archive(
     *,
     replace: bool = False,
     from_catalog: bool = False,
+    take_back: bool = True,
 ) -> InstallResult:
     """Install (or replace) a ``.curio.zip`` archive for *user_key*.
 
@@ -216,14 +217,17 @@ def install_package_from_archive(
         ``True`` when the archive is the shared catalog's copy, which keeps
         the store copy on the catalog's refresh track (#194). Everything
         else is the user's own content, and the seeder leaves it alone (#564).
+    take_back:
+        Whether a copy it replaces gets what a removal of it gets
+        (:func:`take_back_what_it_replaced`): all but an applied build.
 
     Returns
     -------
     InstallResult
         ``manifest`` (the validated :class:`PackageManifest`),
-        ``integrity`` (the ``{relative_path: sha256_hex}`` map), and
+        ``integrity`` (the ``{relative_path: sha256_hex}`` map),
         ``replaced_existing`` (whether *replace* actually displaced an
-        existing package).
+        existing package), and ``replaced_libraries`` (that copy's).
 
     Raises
     ------
@@ -291,15 +295,7 @@ def install_package_from_archive(
             # to refresh the old copy and then swap it in over this one.
             with package_seed_lock(user_key):
                 refuse_a_module_name_in_use(user_key, staging_root, manifest)
-                replaced = False
-                if final_dest.exists():
-                    if not replace:
-                        raise InstallerError(
-                            f"package {dir_name} already installed; pass replace=True "
-                            f"to overwrite"
-                        )
-                    shutil.rmtree(final_dest)
-                    replaced = True
+                replaced_libraries = _out_of_the_way(user_key, dir_name, final_dest, replace=replace)
                 staging_root.replace(final_dest)
                 _touch_manifest_for_install_recency(final_dest)
                 merged_manifest = load_package_manifest(final_dest)
@@ -315,14 +311,56 @@ def install_package_from_archive(
                 except Exception:  # noqa: BLE001: bookkeeping is best-effort
                     log.exception("Failed to record the install of %s/%s", user_key, dir_name)
 
-            return InstallResult(
+            result = InstallResult(
                 manifest=merged_manifest,
                 integrity=integrity,
-                replaced_existing=replaced,
+                replaced_existing=replaced_libraries is not None,
+                replaced_libraries=replaced_libraries or frozenset(),
             )
         except Exception:
             shutil.rmtree(staging_root, ignore_errors=True)
             raise
+    if result.replaced_existing and take_back:  # once the store lock, a leaf the take-back takes, is let go
+        take_back_what_it_replaced(user_key, result.replaced_libraries)
+    return result
+
+
+def _out_of_the_way(user_key: str, dir_name: str, final_dest: Path, *, replace: bool) -> frozenset[str] | None:
+    """Take the copy of *dir_name* at *final_dest* out of the way of its
+    install, under the store lock, when *replace* lets it: an
+    ``InstallerError`` otherwise. Answers what that copy's install put where
+    node code imports from (``libraries.node_libraries_of``), read before its
+    files go, or None when the store held no copy."""
+    if not final_dest.exists():
+        return None
+    if not replace:
+        raise InstallerError(f"package {dir_name} already installed; pass replace=True to overwrite")
+    libraries = frozenset(packages_libraries.node_libraries_of(user_key, dir_name))
+    shutil.rmtree(final_dest)
+    return libraries
+
+
+def take_back_what_it_replaced(user_key: str, libraries) -> None:
+    """After an install replaced a copy of a package in *user_key*'s store,
+    or the seeder's refresh did (``seeding.seed_dev_packages``), what a
+    removal of that copy gets: an install over a copy is a removal of it as
+    much as an add of the new one, whichever path replaced it (an Update,
+    Import package with replace, the wizard's Save and install, a model
+    downloaded again, an applied build's rollback). *libraries*, those the
+    copy's install put where node code imports from
+    (``InstallResult.replaced_libraries``), are taken back when nothing asks
+    for them now, and the account's tree gives way to the image
+    (``libraries.take_back_after_a_removal``), before the caller installs the
+    new version's. An applied build installs with ``take_back=False`` and
+    calls this once it can no longer roll back
+    (``builder/promotion.confirm_nodes_created``). The copy is replaced
+    already and the install stands, so a failure is logged, and the next
+    start gives way instead."""
+    try:
+        packages_libraries.take_back_after_a_removal(user_key, libraries)
+    except Exception:  # noqa: BLE001 - the new copy is in place, and its install must stand
+        log.warning("Could not take back the libraries %s of a copy an install replaced for %s",
+                    sorted(libraries), user_key, exc_info=True)
 
 
 def uninstall_package(user_key: str, dir_name: str) -> bool:
@@ -687,10 +725,12 @@ def bring_needed_packages(user_key: str, dir_name: str, *, its_catalog_copy: boo
 
 
 def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> tuple[InstallResult, InstallOutcome]:
-    """Install a catalog package by its on-disk directory name (a catalog's
-    Update, with ``replace``, and the models a skill evaluation's account
-    holds, ``skill_eval_worker._hold_models``). Copies
-    ``<repo_root>/packages/<dir_name>/`` into the user's store through the same
+    """Install a catalog package by its on-disk directory name, for its one
+    caller, the catalog route ``POST /api/packages/catalog/install``: the
+    Node and Model Catalogs' Update sends it with ``replace``, and a skill
+    evaluation's worker sends it without, over HTTP, for each model the
+    evaluation's account is to hold (``skill_eval_worker._hold_models``).
+    Copies ``<repo_root>/packages/<dir_name>/`` into the user's store through the same
     validator, size caps and integrity writer the sideload uses;
     ``InstallerError`` propagates. A missing catalog entry is a
     :class:`PackageServiceError` 404.
@@ -704,7 +744,16 @@ def install_from_catalog(user_key: str, dir_name: str, *, replace: bool) -> tupl
     one of their copies fails, every copy this call made is taken back
     (:func:`_copy_from_catalog`), and so they are when the package's own copy
     fails. Answers the package's install and what the packages brought for it
-    did (their libraries, for ``provisioning.with_brought``)."""
+    did (their libraries, for ``provisioning.with_brought``).
+
+    An Update, which replaces the store's copy, is a removal of the version
+    it replaced as much as an add of the new one, as every install over a
+    copy is: the libraries the replaced version's install put where node
+    code imports from are taken back when nothing asks for them now, and a
+    copy in the account's tree that the new version's ranges let the image's
+    win over goes at once, not at the next start
+    (:func:`install_package_from_archive`, *take_back*). The caller installs
+    the new version's libraries after."""
     packages_provisioning.assert_may_install()
     src = packages_catalog_dir.catalog_root() / dir_name
     if not src.is_dir():
@@ -728,17 +777,21 @@ def remove_package(user_key: str, dir_name: str) -> None:
     """Uninstall *dir_name* from the user store with its backend residue
     (dev/97: overlay, data dir, pin — the invocation ledger survives). The
     builtin is refused; a package that is not installed is a 404;
-    ``PackageIdError`` propagates for a malformed name. Under per-user node
-    environments a copy in the account's tree that only the package needed,
-    in front of an image library that meets every range left, goes too
-    (``libraries.give_way_after_a_removal``), as the next start would take
-    it."""
+    ``PackageIdError`` propagates for a malformed name. The libraries its
+    install put where node code imports from leave from there when nothing
+    asks for them now and Curio put them there, as a removal from the
+    package's last dataflow takes them back, and a copy in the account's tree
+    that only the package needed, in front of an image library that meets
+    every range left, goes too, as the next start would take it
+    (``libraries.take_back_after_a_removal``)."""
     if dir_name.startswith(f"{BUILTIN_PACKAGE_ID}@"):
         raise PackageServiceError(f"{BUILTIN_PACKAGE_ID} is built-in and cannot be uninstalled", 400)
+    # Read before its files go.
+    its_libraries = packages_libraries.node_libraries_of(user_key, dir_name)
     if not uninstall_package(user_key, dir_name):
         raise PackageServiceError("package not installed", 404)
     packages_backend_runtime.remove_backend_residue(user_key, dir_name)
-    packages_libraries.give_way_after_a_removal(user_key)
+    packages_libraries.take_back_after_a_removal(user_key, its_libraries)
 
 
 def archive_file_for_download(user_key: str, dir_name: str) -> tuple[Path, Callable[[], None]]:

@@ -59,6 +59,20 @@ LOCAL_RELIEF_FOLDER = Path(REPO_ROOT) / "docs" / "bring-your-own-model" / LOCAL_
 RUN_NODE = "runs-local-relief"
 RELIEF_MARKER = "LOCAL_RELIEF_RAN"
 
+#: How a node of these tests opens the model it loaded: the session of the
+#: starter Curio writes for a model's node (``default_cells.run_skeleton``),
+#: given the thread count ``OMP_NUM_THREADS`` names. onnxruntime reads no
+#: ``OMP_NUM_THREADS``, and e2e-desktop's stack sets it to its runner's share,
+#: so the starter's own session would start a thread for every core of a
+#: machine CI's runners share. With none set the count is 0, onnxruntime's own
+#: choice, which is what the starter's session has. The node's code imports
+#: ``os`` and ``onnxruntime as ort`` and names the model ``model``.
+SESSION_ON_THE_STACKS_THREADS = (
+    "options = ort.SessionOptions()\n"
+    'options.intra_op_num_threads = int((os.environ.get("OMP_NUM_THREADS") or "0").split(",")[0])\n'
+    'session = ort.InferenceSession(model.path, sess_options=options, providers=["CPUExecutionProvider"])\n'
+)
+
 
 def _spec(*, code: str = "return [1]", node_id: str = "model-catalog-node") -> dict:
     """One node, so the canvas is not empty (a capture waits for a node)."""
@@ -324,10 +338,11 @@ def test_an_exported_model_package_imports_and_runs_in_another_account(
 
     # Account B imports that archive into a dataflow whose node loads it.
     code = (
+        "import os\n"
         "import numpy as np\n"
         "import onnxruntime as ort\n"
         f'model = curio_load_model("{LOCAL_RELIEF_ID}")\n'
-        'session = ort.InferenceSession(model.path, providers=["CPUExecutionProvider"])\n'
+        f"{SESSION_ON_THE_STACKS_THREADS}"
         'relief = session.run(None, {"height": np.arange(64, dtype=np.float32).reshape(1, 1, 8, 8)})[0]\n'
         f'print("{RELIEF_MARKER}", tuple(relief.shape))\n'
         "return float(np.abs(relief).sum())"

@@ -87,6 +87,21 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
     // left with nothing says (useGrammarInputState), where "Computing..."
     // would wait for nothing. The next start clears it.
     const [stopped, setStopped] = useState<string | null>(null);
+    // How far each step's downloads on first use have come, by node, as its
+    // progress says (owner, 11-17, "2b"): the node that downloads is often
+    // hidden, so the tiles below it say it under "Computing..."
+    // (useGrammarInputState). A step's empty message, its outcome and the
+    // run's end take it away.
+    const [downloads, setDownloads] = useState<Record<string, string>>({});
+    const sayDownload = (nodeId: string, message: string) => {
+        setDownloads((prev) => {
+            if (message) return prev[nodeId] === message ? prev : { ...prev, [nodeId]: message };
+            if (!(nodeId in prev)) return prev;
+            const rest = { ...prev };
+            delete rest[nodeId];
+            return rest;
+        });
+    };
     const projectIdRef = useRef<string | null>(null);
     // Between a start and its answer.
     const startingRef = useRef(false);
@@ -132,6 +147,7 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         run.controller.abort();
         if (followedRef.current === run) followedRef.current = null;
         setActive(false);
+        setDownloads({});
     };
 
     /**
@@ -258,10 +274,13 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
             return;
         }
         if (event.kind === "step_progress") {
-            // The step still runs: only what its node says changes.
+            // The step still runs: only what its node says changes, and what
+            // the tiles below it say, until its outcome lands.
+            if (!run.applied.has(event.nodeId)) sayDownload(event.nodeId, event.message ?? "");
             apply(run, event.nodeId, nodeChangeFor(event, undefined, { started: true }));
             return;
         }
+        if (event.kind === "step_finished") sayDownload(event.nodeId, "");
         if (event.kind === "step_finished" && event.status === "error") run.failed.push(event.nodeId);
         if (event.kind !== "step_started" && event.kind !== "step_finished") return;
         if (event.kind === "step_finished" && event.status === "browser") {
@@ -313,6 +332,7 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         startingRef.current = true;
         setActive(true);
         setStopped(null);
+        setDownloads({});
         const values = dashboardValues(reactFlow.getNodes());
         let started;
         try {
@@ -361,5 +381,5 @@ export function useDashboardRun({ enabled, reactFlow, outcomes, outputsRef, show
         forgetPageSteps();
     }, []);
 
-    return { active, stopped, start, opened };
+    return { active, stopped, downloads, start, opened };
 }

@@ -1,6 +1,6 @@
 {
   "sha256": {
-    "README.md": "7fdece99550caa964756fe51de9a747c85731d50068682daf8972208fd952467",
+    "README.md": "35d59dce5f338be4dc0cd7fad4086a389437503ba60b400dcb2397025dcbab28",
     "manifest.json": "ba93e58ebd4ab6443ed97ce601d7702f5552cb10d32ce972f60132cc4a882b22",
     "models/weather_gnn.onnx": "602fe4a5df17b2557fa688927b7a7097b06003d23657b8bf583ee1e6ce8c57d7",
     "sources/weather-routing.py": "e9a6438c5117ea0bcf9b983f9b6f5eabf47d4c602eb42efae076ad685940364d",
@@ -8,6 +8,6 @@
     "sources/weather_routing/calculate_isochrones.py": "be52e993e3b54441c5b57477d1ec3c1423a69b0a941b5e972afb935f03cbd8c7",
     "sources/weather_routing/road_graph.py": "7c03c8ca07492beaa07d7203a2d45aaa3ecebb7c78e1cec96d1eb7c8a9984228",
     "sources/weather_routing/weather_routing.py": "7bd3376037ef462c5b5e2ef88deb6e5ae450415a3a7369274029e8ca00f17e64",
-    "sources/weather_routing/weight_calculation.py": "31787d433f15e956dc4d7b24ecf60f70b8a8f78051787c453ea39b0d3907f41e"
+    "sources/weather_routing/weight_calculation.py": "0779f811f77e462a260007f127af800e78fda3efbfbac0c45aa9e9a59695baac"
   }
 }

@@ -157,15 +157,17 @@ def test_an_editors_solve_asks_no_database_on_the_thread_an_attempt_runs_on(
     assert set(sent.get("collections") or {}) == {collection}, sent.get("collections")
 
 
-def test_a_plans_solve_looks_its_collections_up_once_when_it_starts(file_backed, tmp_path, monkeypatch):
+def test_a_plans_solve_looks_a_collection_up_once_when_a_round_reads_it(file_backed, tmp_path, monkeypatch):
     """The Dataflow Builder's Solve of a plan whose Data Loading node loads a
     collection of the account's and a table of its Data Catalog, both by id,
-    and the computation it feeds. Every collection the dataflow's Data
-    Catalog lists is looked up in the request that starts the Solve: no
-    attempt looks one up on its own thread, and no thread of the Solve looks
-    up an id that request read, the table's included. The loader's attempt
-    still loads the collection. It runs on a file database, which gives each
-    thread a connection of its own, as a server's does."""
+    and the computation it feeds. No collection is looked up in the request
+    that starts the Solve, where a lookup of one in a bucket would mount it
+    whether a node reads it or not: the loader's round looks up the
+    collection its code reads, once, on the thread that starts its attempt.
+    No attempt looks one up on its own thread, and no thread of the Solve
+    looks up the table's id, which that request read as no collection. The
+    loader's attempt still loads the collection. It runs on a file database,
+    which gives each thread a connection of its own, as a server's does."""
     from utk_curio.backend.app.discovery.infrastructure import storage
     from utk_curio.backend.tests.test_agents.test_verified_rounds import TestVerifiedSolve
     from utk_curio.backend.tests.test_datasets.test_editor_datasets import REPO, _a_collection
@@ -190,8 +192,9 @@ def test_a_plans_solve_looks_its_collections_up_once_when_it_starts(file_backed,
         f"the plan's attempts looked collections up on their own thread: {noted['on_an_attempt']}"
     )
     collection_lookups = [made for made in noted["off_the_request"] if made[0] == "collection"]
-    assert collection_lookups == [], (
-        f"the Solve's threads looked up ids the request that started it had read: {collection_lookups}"
+    assert collection_lookups == [("collection", collection)], (
+        "the Solve's threads looked up other ids than the collection the loader's round reads, "
+        f"or that one more than once: {collection_lookups}"
     )
     loading = [payload for payload in ctx["exec_payloads"] if collection in payload["code"]]
     assert loading, "the loader never reached the sandbox"

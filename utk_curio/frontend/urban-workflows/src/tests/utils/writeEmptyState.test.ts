@@ -22,6 +22,19 @@ describe("writeEmptyState", () => {
     expect(host.textContent).toBe("Not run yetThis step loads data.");
   });
 
+  test("a dashboard tile whose upstream downloads says how far on a line of its own under Computing...", () => {
+    // A chart or a map on a dashboard, below a step that downloads what it
+    // reads on its first use: each download on its line, the hint kept.
+    const weights = "Downloading model.safetensors, a file of the weights of model.curio.sam3: 1.21 of 3.44 GB (35%)";
+    const dataset = "Downloading datasets/data.utk.milan-mrt@1/data/milan-mrt.tif: 4.00 of 13.04 MB (30%)";
+    const host = document.createElement("div");
+    // The downloads, whatever the types of the code under test name.
+    writeEmptyState(host, "upstream-running", { progress: [weights, dataset] } as any);
+    const lines = Array.from(host.querySelectorAll("span")).map((span) => span.textContent);
+    expect(lines).toEqual(["Computing...", weights, dataset, "Results will be shown here once they are ready."]);
+    expect(host.getAttribute("data-curio-node-empty")).toBe("upstream-running");
+  });
+
   test("no reason, no host: nothing happens", () => {
     const host = document.createElement("div");
     writeEmptyState(host, null);

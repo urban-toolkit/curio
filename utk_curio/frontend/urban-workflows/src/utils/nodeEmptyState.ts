@@ -187,6 +187,37 @@ export function incomingSourceIds(
   return Array.from(ids);
 }
 
+/**
+ * What *messages* (by node id) says of the nodes *nodeId*'s data comes from,
+ * however far up, nearest first: on a dashboard, how far the downloads on
+ * first use of the steps above a tile have come, which the tile says under
+ * "Computing..." while the node that downloads is hidden. Data edges only: a
+ * node linked to the tile by an interaction edge alone feeds it nothing.
+ */
+export function upstreamMessages(
+  edges: readonly EdgeLike[] | null | undefined,
+  nodeId: string,
+  messages: Readonly<Record<string, string>> | null | undefined,
+): string[] {
+  if (!edges || !nodeId || !messages || Object.keys(messages).length === 0) return [];
+  const said: string[] = [];
+  const seen = new Set<string>([nodeId]);
+  let level = [nodeId];
+  while (level.length > 0) {
+    const next: string[] = [];
+    for (const id of level) {
+      for (const source of incomingSourceIds(edges, id)) {
+        if (seen.has(source)) continue;
+        seen.add(source);
+        if (messages[source]) said.push(messages[source]);
+        next.push(source);
+      }
+    }
+    level = next;
+  }
+  return said;
+}
+
 /** Payload kinds a node can put in a table. */
 const TABULAR_DATA_TYPES = new Set(["dataframe", "geodataframe"]);
 
