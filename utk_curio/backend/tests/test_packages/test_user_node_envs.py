@@ -789,3 +789,244 @@ class TestEachTestHasTreesOfItsOwn:
         assert tree.is_relative_to(own) and store.is_relative_to(own), (
             f"account 7's node libraries {tree} and the sandbox's store {store} are outside this test's "
             f"own folder {own}: every package test of the worker shares them")
+
+
+def _no_import_probe(monkeypatch) -> None:
+    """Every library reads as importable: nothing here imports one for real."""
+    from utk_curio.backend.app.packages.infrastructure import pip_runner
+
+    monkeypatch.setattr(pip_runner, "import_failures", lambda deps: {})
+    monkeypatch.setattr(pip_runner, "import_failures_in", lambda deps, path, interpreter=None: {})
+
+
+def _the_account_of(user_and_token) -> tuple[str, str]:
+    """The store key and the token of the signed-in account."""
+    from utk_curio.backend.app.projects import services as projects_services
+
+    user, token = user_and_token
+    return projects_services._user_dir_key(user), token
+
+
+class TestRemoveFromAccountTakesBackTheLibrariesOnlyItAskedFor:
+    """Remove from account, on the catalog pages, took the package's store
+    copy and its defaults entry, and none of its libraries, which Remove from
+    project takes back on the package's last dataflow (above). Under
+    isolation a copy only the package asked for then stayed in the account's
+    tree for good, in front of the image's: each start gives way only for a
+    library some package of the account declares."""
+
+    @staticmethod
+    def _remove_from_account(client, token, dir_name):
+        return client.delete(f"/api/packages/{dir_name}?unusedOnly=true", headers={"Authorization": f"Bearer {token}"})
+
+    def test_under_isolation_a_library_only_it_asked_for_leaves_the_accounts_own_tree(
+        self, isolated, launch_tree, install_package, manifest_dict, client, user_and_token,
+    ):
+        """A torch 2.99 that only the package declared, which its add put in
+        front of the image's."""
+        from utk_curio.backend.tests._support.front_of_the_image import OTHER_TORCH, held, the_images_torch
+
+        image_torch = the_images_torch()
+        user_key, token = _the_account_of(user_and_token)
+        unused = install_package(user_key, manifest_dict(
+            "ai.test.next-torch", python_deps={"torch": f">={OTHER_TORCH.version}"})).manifest
+        tree = _the_other_torch_in(user_key)
+
+        removed = self._remove_from_account(client, token, unused.dir_name)
+
+        assert removed.status_code == 204, removed.get_data(as_text=True)
+        left = held(tree)
+        assert "torch" not in left, (
+            f"Remove from account took {unused.dir_name} out, and account {user_key}'s tree still holds its torch "
+            f"{left.get('torch')} in front of the image's {image_torch}, though no package of the account asks for "
+            "torch")
+
+    def test_without_isolation_a_library_this_server_installed_for_it_goes(
+        self, in_process, launch_tree, install_package, manifest_dict, pip_that_installs, uninstall_calls,
+        client, user_and_token,
+    ):
+        """One interpreter, as on the package's last dataflow: a library
+        Curio's own pip brought in for the package, which nothing else asks
+        for, leaves with it."""
+        user_key, token = _the_account_of(user_and_token)
+        manifest = install_package(user_key, manifest_dict(
+            "ai.test.tidy", python_deps={"curio-prune-probe": ">=1.0"})).manifest
+        provisioning.provision_python_deps(user_key, manifest.dir_name, manifest)
+        assert "curio-prune-probe" in pip_that_installs, "the install never ran pip"
+
+        removed = self._remove_from_account(client, token, manifest.dir_name)
+
+        assert removed.status_code == 204, removed.get_data(as_text=True)
+        assert uninstall_calls == [("host", ["curio-prune-probe"], None)], (
+            f"Remove from account took {manifest.dir_name} out and left the library Curio's pip installed "
+            f"for it alone: {uninstall_calls}")
+
+
+def _a_catalog_holding(tmp_path, monkeypatch, make_archive, manifest: dict) -> str:
+    """A shared catalog of the test's own (``CURIO_PACKAGES_ROOT``) holding
+    the package *manifest* describes, as its archive unpacks; its dirName."""
+    import io
+    import zipfile
+
+    dir_name = f"{manifest['id']}@{manifest['compatibility']['major']}"
+    root = tmp_path / "catalog"
+    with zipfile.ZipFile(io.BytesIO(make_archive(manifest=manifest))) as archive:
+        archive.extractall(root / dir_name)
+    monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(root))
+    return dir_name
+
+
+class TestAnUpdateGivesWayToTheImage:
+    """The Node and Model Catalogs' Update puts the shared catalog's version
+    of a package in place of the account's copy
+    (``store_install.install_from_catalog``, with ``replace``). Under
+    isolation the version it replaced may have put a copy into the account's
+    tree, in front of the image's, that the new version no longer needs. The
+    Update kept it: until the next start where the new range lets the image's
+    copy win, and for good where the new version declares the library no
+    more.
+
+    Here the account holds version 1.0.0, declaring ``torch>=2.99.0``, whose
+    add put a torch 2.99 into the tree, and the catalog holds 1.1.0."""
+
+    @staticmethod
+    def _update_to(tmp_path, monkeypatch, make_archive, manifest_dict, client, token, python_deps):
+        dir_name = _a_catalog_holding(tmp_path, monkeypatch, make_archive, manifest_dict(
+            "ai.test.next-torch", version="1.1.0", python_deps=python_deps))
+        return client.post(
+            "/api/packages/catalog/install", json={"dirName": dir_name, "replace": True},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    @staticmethod
+    def _version_1_0_0_in(user_key, install_package, manifest_dict, tmp_path, monkeypatch):
+        """The account's copy, version 1.0.0, with its torch in the tree; the tree."""
+        from utk_curio.backend.tests._support.front_of_the_image import OTHER_TORCH, offline_pip
+
+        offline_pip(monkeypatch, tmp_path / "wheelhouse")
+        _no_import_probe(monkeypatch)
+        install_package(user_key, manifest_dict(
+            "ai.test.next-torch", version="1.0.0", python_deps={"torch": f">={OTHER_TORCH.version}"}))
+        return _the_other_torch_in(user_key)
+
+    def test_an_update_to_a_range_the_images_torch_meets_takes_out_the_trees_copy(
+        self, isolated, launch_tree, install_package, manifest_dict, make_archive, client, user_and_token,
+        tmp_path, monkeypatch,
+    ):
+        """Version 1.1.0 declares ``torch>=2.6``, which the image's torch meets."""
+        from utk_curio.backend.tests._support.front_of_the_image import held, the_images_torch
+
+        image_torch = the_images_torch()
+        user_key, token = _the_account_of(user_and_token)
+        tree = self._version_1_0_0_in(user_key, install_package, manifest_dict, tmp_path, monkeypatch)
+
+        updated = self._update_to(
+            tmp_path, monkeypatch, make_archive, manifest_dict, client, token, {"torch": ">=2.6"})
+
+        assert updated.status_code == 201, updated.get_data(as_text=True)
+        left = held(tree)
+        assert "torch" not in left, (
+            f"after the Update to 1.1.0, account {user_key}'s tree still holds torch {left.get('torch')} in front "
+            f"of the image's {image_torch}, which meets torch>=2.6, the one range of torch its packages declare now")
+
+    def test_an_update_to_a_version_that_declares_no_torch_takes_the_trees_copy_back(
+        self, isolated, launch_tree, install_package, manifest_dict, make_archive, client, user_and_token,
+        tmp_path, monkeypatch,
+    ):
+        """Version 1.1.0 declares no torch, and no other package of the
+        account does, so no start would give way for it."""
+        from utk_curio.backend.tests._support.front_of_the_image import held, the_images_torch
+
+        image_torch = the_images_torch()
+        user_key, token = _the_account_of(user_and_token)
+        tree = self._version_1_0_0_in(user_key, install_package, manifest_dict, tmp_path, monkeypatch)
+
+        updated = self._update_to(tmp_path, monkeypatch, make_archive, manifest_dict, client, token, {})
+
+        assert updated.status_code == 201, updated.get_data(as_text=True)
+        left = held(tree)
+        assert "torch" not in left, (
+            f"after the Update to 1.1.0, which declares no torch, account {user_key}'s tree still holds torch "
+            f"{left.get('torch')} in front of the image's {image_torch}, and no package of the account asks for it")
+
+    def test_an_update_keeps_a_copy_its_new_range_needs(
+        self, isolated, launch_tree, install_package, manifest_dict, make_archive, client, user_and_token,
+        tmp_path, monkeypatch,
+    ):
+        """The mirror case: version 1.1.0 still declares ``torch>=2.99.0``,
+        which the image's torch is below."""
+        from utk_curio.backend.tests._support.front_of_the_image import OTHER_TORCH, held, the_images_torch
+
+        image_torch = the_images_torch()
+        user_key, token = _the_account_of(user_and_token)
+        tree = self._version_1_0_0_in(user_key, install_package, manifest_dict, tmp_path, monkeypatch)
+
+        updated = self._update_to(
+            tmp_path, monkeypatch, make_archive, manifest_dict, client, token,
+            {"torch": f">={OTHER_TORCH.version}"})
+
+        assert updated.status_code == 201, updated.get_data(as_text=True)
+        assert held(tree) == {"torch": OTHER_TORCH.version}, (
+            f"the Update to 1.1.0 took torch {OTHER_TORCH.version} out of account {user_key}'s tree, though 1.1.0 "
+            f"declares torch>={OTHER_TORCH.version}, which the image's {image_torch} is below")
+
+
+class TestAnAddDecidesUnderTheTreesLock:
+    """An add of a package decided what to install into the account's tree
+    (``provisioning.provision_user_node_deps``) before it took the tree's
+    lock, and with nothing to install it never took the lock at all. A
+    removal holding the tree in another backend process could then take out
+    a copy the add had just found there, and the added package's nodes were
+    left with the image's."""
+
+    def test_an_add_racing_a_removal_in_another_process_installs_what_the_removal_took_out(
+        self, isolated, launch_tree, install_package, manifest_dict, tmp_path, monkeypatch,
+    ):
+        """The account holds ``ai.test.torch``, declaring ``torch>=2.6``, and
+        ``ai.test.next-torch``, declaring ``torch>=2.99.0``, whose add put a
+        torch 2.99 into the tree. Another process removes
+        ``ai.test.next-torch`` from the account: its give-way holds the tree,
+        finds the image's torch meets every range left, and stops before it
+        takes the copy out. The add of ``ai.test.also-next-torch``, declaring
+        ``torch>=2.99.0`` too, comes then, after that walk of the store."""
+        from utk_curio.backend.app.packages import service as packages_service
+        from utk_curio.backend.app.packages.infrastructure import pip_runner
+        from utk_curio.backend.tests._support.front_of_the_image import (
+            OTHER_TORCH, held, offline_pip, the_images_torch,
+        )
+        from utk_curio.backend.tests._support.two_processes import Window, race
+
+        image_torch = the_images_torch()
+        offline_pip(monkeypatch, tmp_path / "wheelhouse")
+        _no_import_probe(monkeypatch)
+        user_key = "7"
+        install_package(user_key, manifest_dict("ai.test.torch", python_deps={"torch": ">=2.6"}))
+        removed = install_package(user_key, manifest_dict(
+            "ai.test.next-torch", python_deps={"torch": f">={OTHER_TORCH.version}"})).manifest
+        tree = _the_other_torch_in(user_key)
+        window = Window()
+        meets = pip_runner.copies_this_interpreter_meets
+
+        def _decides_then_stops(declared, target_dir, *, keep=()):
+            # The give-way's decision, made holding the tree, before it acts.
+            names = meets(declared, target_dir, keep=keep)
+            window.stop_here()
+            return names
+
+        monkeypatch.setattr(pip_runner, "copies_this_interpreter_meets", _decides_then_stops)
+
+        def _the_add():
+            added = install_package(user_key, manifest_dict(
+                "ai.test.also-next-torch", python_deps={"torch": f">={OTHER_TORCH.version}"})).manifest
+            return provisioning.provision_python_deps(user_key, added.dir_name, added)
+
+        raced = race(
+            window, lambda: packages_service.remove_package(user_key, removed.dir_name), _the_add, monkeypatch,
+        )
+
+        assert raced.child_exit == 0, raced.child_error
+        left = held(tree)
+        assert left.get("torch") == OTHER_TORCH.version, (
+            f"the add of ai.test.also-next-torch, declaring torch>={OTHER_TORCH.version}, decided on account "
+            f"{user_key}'s tree before a removal in another process took its torch out, and installed nothing: "
+            f"the tree holds {left}, so its nodes import the image's torch {image_torch}, which it does not accept")

@@ -2,6 +2,20 @@
 
 from __future__ import annotations
 
+import os
+
+import pytest
+
+#: The folders the ``app`` fixture moves into each test's ``tmp_path``.
+_THE_APPS_FOLDERS = ("CURIO_SHARED_DATA", "CURIO_LAUNCH_CWD")
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _the_folders_the_module_starts_with():
+    """``CURIO_SHARED_DATA`` and ``CURIO_LAUNCH_CWD`` as this module's first
+    test starts, before any fixture of its own moves them."""
+    return {name: os.environ.get(name) for name in _THE_APPS_FOLDERS}
+
 
 def test_resolve_shared_output_path_artifact_parquet(app, tmp_path, monkeypatch):
     import os
@@ -18,6 +32,20 @@ def test_resolve_shared_output_path_artifact_parquet(app, tmp_path, monkeypatch)
 
     resolved = resolve_shared_output_path("abc123", data_type="dataframe")
     assert resolved == pq
+
+
+def test_after_a_test_that_moves_the_apps_folders_again_they_are_back(_the_folders_the_module_starts_with):
+    """Runs after the test above, which moves both folders again through
+    ``monkeypatch``, over the ``app`` fixture's. The fixture put them back by
+    hand, and ``monkeypatch``, set up before it by an autouse fixture of the
+    suite's root conftest, undid the test's moves after that, writing the
+    fixture's folders back: every later test of the process ran in that
+    test's ``tmp_path``."""
+    now = {name: os.environ.get(name) for name in _THE_APPS_FOLDERS}
+    assert now == _the_folders_the_module_starts_with, (
+        f"after test_resolve_shared_output_path_artifact_parquet the folders are {now}, "
+        f"not {_the_folders_the_module_starts_with}, which this module started with"
+    )
 
 
 def test_computed_output_format_uses_data_type():
