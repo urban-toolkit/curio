@@ -834,34 +834,36 @@ def test_two_curios_that_share_the_flags_folder_each_keep_their_versions_weights
             resolve_model_dirs(user_key, [PACKAGE_ID])
         return failed
 
+    # The account of each stack's run, by its store's key.
+    stable, dev = "41", "42"
     on(catalog)
-    _add("stable", catalog)
+    _add(stable, catalog)
     stable_source = _hugging_face(monkeypatch)
-    assert first_use_or_failure("stable") == {}
+    assert first_use_or_failure(stable) == {}
     assert stable_source.urls == _urls()
 
     on(next_catalog)
-    _add("dev", next_catalog)
+    _add(dev, next_catalog)
     dev_source = FakeHuggingFace(REPOSITORY, NEXT_REVISION, NEXT_FILES, redirect=("model.safetensors",)).serve(monkeypatch)
-    assert first_use_or_failure("dev") == {}
+    assert first_use_or_failure(dev) == {}
     assert dev_source.urls == [resolve_url(REPOSITORY, NEXT_REVISION, "model.safetensors"), f"{CDN}/model.safetensors"], (
         "a file both revisions name with one digest was downloaded again"
     )
 
-    for user_key, stack_catalog in (("stable", catalog), ("dev", next_catalog)) * 2:
+    for stack, user_key, stack_catalog in (("stable", stable, catalog), ("dev", dev, next_catalog)) * 2:
         on(stack_catalog)
         asked = _no_download(monkeypatch)
         failed = first_use_or_failure(user_key)
         assert asked.requests == [] and failed == {}, (
-            f"{user_key}'s weights were replaced by the other stack's download, so it downloaded its own again: {failed}"
+            f"{stack}'s weights were replaced by the other stack's download, so it downloaded its own again: {failed}"
         )
 
     on(catalog)
     stable_root = (weights_dir / DIR / REVISION).resolve()
-    assert resolve_model_weights("stable", [PACKAGE_ID]) == {PACKAGE_ID: str(stable_root)}
+    assert resolve_model_weights(stable, [PACKAGE_ID]) == {PACKAGE_ID: str(stable_root)}
     on(next_catalog)
     dev_root = (weights_dir / DIR / NEXT_REVISION).resolve()
-    assert resolve_model_weights("dev", [PACKAGE_ID]) == {PACKAGE_ID: str(dev_root)}
+    assert resolve_model_weights(dev, [PACKAGE_ID]) == {PACKAGE_ID: str(dev_root)}
     assert {name: (stable_root / ENTRY / name).read_bytes() for name in FILES} == FILES
     assert {name: (dev_root / ENTRY / name).read_bytes() for name in NEXT_FILES} == NEXT_FILES
     assert _stamps(stable_root / ENTRY) == STAMPS
