@@ -63,7 +63,8 @@ STAGED = [
 SETTINGS = {"LABELS": "labels", "THRESHOLD": "threshold", "WIDTH": "width", "MAX_IMAGES": "max_images"}
 TWO = ["pole", "person"]
 #: How many objects the tiny SAM 3 can find in an image for one label: its
-#: detector's queries. At a threshold of 0 it keeps each of them.
+#: detector's queries. At a threshold of 0, with its overlap suppression off
+#: (``every_detection_weights``), it keeps each of them.
 QUERIES = 5
 #: The result columns of a call on TWO, in their order.
 RESULTS = [
@@ -77,6 +78,23 @@ def weights(tmp_path_factory):
     """The tiny SAM 3 Track Objects' tests use, saved where
     ``--model-weights-dir`` puts the package's weights."""
     return _tiny_weights(tmp_path_factory, _tiny_config())
+
+
+@pytest.fixture(scope="module")
+def every_detection_weights(tmp_path_factory):
+    """A tiny SAM 3 that suppresses no detection overlapping another of its
+    label (``det_nms_thresh`` 0), as test_sam3_package's ``steady_weights``:
+    the random detector's QUERIES detections of a label overlap, so at a
+    threshold of 0 it keeps every one, and still cleans their masks."""
+    return _tiny_weights(tmp_path_factory, _tiny_config(det_nms_thresh=0.0))
+
+
+@pytest.fixture(scope="module")
+def uncleaned_weights(tmp_path_factory):
+    """A tiny SAM 3 whose own settings turn its clean-up off: it suppresses no
+    overlapping detection (``det_nms_thresh`` 0) and fills no hole and removes
+    no speck (``fill_hole_area`` 0)."""
+    return _tiny_weights(tmp_path_factory, _tiny_config(det_nms_thresh=0.0, fill_hole_area=0))
 
 
 @pytest.fixture
@@ -246,7 +264,7 @@ def test_without_its_weights_the_node_says_how_to_fetch_them(videos, catalog_cop
 
 
 def test_segment_images_finds_each_label_in_each_frame_sample_video_frames_sampled(
-        videos, catalog_copy, weights, few_threads, tmp_path):
+        videos, catalog_copy, every_detection_weights, few_threads, tmp_path):
     """Each frame comes back with the results first, as Image Segmentation's:
     the label covering the most and its share, then each label's share and
     count, the overlay and the error; then the frame's own columns, its t_s
@@ -258,11 +276,13 @@ def test_segment_images_finds_each_label_in_each_frame_sample_video_frames_sampl
 
     with _staged(tmp_path) as modules:
         frames, helpers = _frames(modules, videos)
-        out = _run(frames, helpers, model_folder=catalog_copy, weights=weights, LABELS=TWO, THRESHOLD=0.0)
+        out = _run(frames, helpers, model_folder=catalog_copy, weights=every_detection_weights,
+                   LABELS=TWO, THRESHOLD=0.0)
         tag = modules[MODULE]._tag(TWO, 0.0, 960)
     assert list(out.columns) == [*RESULTS, *frames.columns]
     assert list(out["t_s"]) == list(frames["t_s"]) and list(out["file_id"]) == list(frames["file_id"])
-    # At a threshold of 0 every query of the detector is kept.
+    # At a threshold of 0, with no overlapping detection suppressed, every
+    # query of the detector is kept.
     assert out["pole_objects"].eq(QUERIES).all() and out["person_objects"].eq(QUERIES).all()
     assert out["segment_error"].isna().all()
     for row in out.to_dict("records"):
@@ -294,7 +314,7 @@ def test_where_sam3_finds_nothing_each_label_counts_none_and_no_label_dominates(
 
 
 def test_photos_get_overlays_named_after_themselves_and_a_row_without_an_image_says_why(
-        catalog_copy, weights, few_threads, tmp_path):
+        catalog_copy, every_detection_weights, few_threads, tmp_path):
     """A collection's photos: each overlay is named after its photo, a photo
     wider than WIDTH is read and drawn WIDTH wide, and a photo that is gone or
     is not an image gets no results and says why."""
@@ -318,7 +338,8 @@ def test_photos_get_overlays_named_after_themselves_and_a_row_without_an_image_s
     (root / "d.png").unlink()
 
     with _staged(tmp_path):
-        out = _run(rows, helpers, model_folder=catalog_copy, weights=weights, LABELS=TWO, THRESHOLD=0.0)
+        out = _run(rows, helpers, model_folder=catalog_copy, weights=every_detection_weights,
+                   LABELS=TWO, THRESHOLD=0.0)
     by_name = {row["name"]: row for row in out.to_dict("records")}
     assert by_name["c.png"]["segment_error"] == "the image could not be read"
     assert by_name["d.png"]["segment_error"] == "the image is not on this machine"
@@ -485,6 +506,24 @@ def test_segment_images_fills_the_small_holes_and_removes_the_specks_of_each_mas
     pd.testing.assert_frame_equal(holed[RESULTS], whole[RESULTS])
     assert all(np.array_equal(a, b) for a, b in zip(holed_overlays, whole_overlays, strict=True))
     assert (big["pole_pct"] < whole["pole_pct"]).all(), (list(big["pole_pct"]), list(whole["pole_pct"]))
+
+
+def test_segment_images_cleans_by_sam3s_own_settings(
+        videos, catalog_copy, uncleaned_weights, few_threads, tmp_path, monkeypatch):
+    """Segment Images takes its clean-up's settings from the checkpoint's own,
+    ``det_nms_thresh`` and ``fill_hole_area``, as Track Objects' SAM 3 does: a
+    SAM 3 whose settings turn them off counts both of OVERLAPPING's poles, and
+    keeps the hole of HOLED's pole and the speck of its person."""
+    found_by = {"weights": uncleaned_weights, "catalog_copy": catalog_copy, "monkeypatch": monkeypatch}
+    with _staged(tmp_path) as modules:
+        frames, helpers = _frames(modules, videos)
+        overlapping, _ = _finding(modules, OVERLAPPING, frames, helpers, tmp_path, **found_by)
+        holed, _ = _finding(modules, HOLED, frames, helpers, tmp_path, **found_by)
+        whole, _ = _finding(modules, WHOLE, frames, helpers, tmp_path, **found_by)
+
+    assert list(overlapping["pole_objects"]) == [2] * len(frames), list(overlapping["pole_objects"])
+    assert (holed["pole_pct"] < whole["pole_pct"]).all(), (list(holed["pole_pct"]), list(whole["pole_pct"]))
+    assert (holed["person_pct"] > whole["person_pct"]).all(), (list(holed["person_pct"]), list(whole["person_pct"]))
 
 
 def test_each_stop_comes_before_sam3_loads_and_writes_nothing(videos, tmp_path):
