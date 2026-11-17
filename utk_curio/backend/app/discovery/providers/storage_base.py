@@ -52,6 +52,15 @@ class FileEntry:
     etag: str | None = None
 
 
+@dataclass(frozen=True)
+class ListingCut:
+    """A listing a provider stopped at its bound of pages, before its end:
+    what it listed under, and the pages it read."""
+
+    prefix: str
+    pages: int
+
+
 def is_skipped(name: str) -> bool:
     return name.startswith(".") or name in SYSTEM_NAMES
 
@@ -80,7 +89,9 @@ class StorageProvider(Protocol):
 
     def scan(self, prefix: str = "") -> Iterator[FileEntry]:
         """Every file under *prefix*, recursively. Hidden and system files are
-        never yielded."""
+        never yielded. A provider that reads a listing in pages, up to a bound
+        of them, notes each listing it stopped there in its ``cut_short``, a
+        list of :class:`ListingCut`, so a scan says it was cut short."""
 
     def open(self, relpath: str, *, byte_range: tuple[int, int] | None = None) -> BinaryIO:
         """Read one file, or ``byte_range`` (inclusive start, exclusive end) of it."""
