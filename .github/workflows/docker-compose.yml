@@ -2165,11 +2165,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Through the script start-stack pulls with, which tries a pull again
+      # when the registry fails it (scripts/ci_image_slots.py): one reset of
+      # this pull lost the whole job in run 44017255256. This GitHub-hosted
+      # runner shares no folder with other runners, so it takes no slot.
       - name: 📥 Pull the image
         env:
           IMAGE: ${{ needs.build-image.outputs.image }}
         run: |
-          docker pull --quiet "$IMAGE"
+          python3 scripts/ci_image_slots.py pull "$IMAGE"
           mkdir -p ci-report
 
       - uses: ./.github/actions/image-env

@@ -64,7 +64,10 @@ runs:
     # the server's runners share (scripts/ci_image_slots.py): each runner has a
     # Docker daemon of its own, so each job writes the whole image to the disk
     # they share, and 16 to 25 pulls at once slowed every `docker run` there
-    # from 3 s to 13 (11-15). Elsewhere it pulls at once, as before.
+    # from 3 s to 13 (11-15). Elsewhere it pulls at once, as before. A pull the
+    # registry fails is tried again, 10 s and then 30 s later, in the same
+    # slot, and fails the job only after 3 attempts: one reset of this pull
+    # lost e2e-desktop (10) in run 44017255256.
     - name: 📥 Pull the image
       shell: bash
       env:
