@@ -154,23 +154,50 @@ def add_walk(acquire, manifest, provider, placed: list[Path]) -> tuple[Path, dic
     return built, details
 
 
-def add_gps(acquire, manifest, provider, placed: list[Path]) -> Path:
+def add_gps(manifest, provider, install_path, placed: list[Path]) -> Path:
     """The walk's fixes as an add of the ``gps`` resource gives every walk's:
-    one table, read by DuckDB as the add combines a resource's files, with
+    one table, read by the add's own combine code (``combine_tables``) with
     ``datetime_utc`` a time in UTC, and ``began`` and ``source_file`` naming
-    the walk. An add of the one file would copy the CSV as it is."""
-    from utk_curio.backend.app.discovery.application import index_collection, scan
+    the walk, with the provenance the add records for one file it combines.
+    An add of the one file would copy the CSV as it is."""
+    from utk_curio.backend.app.discovery.application import combine_tables, index_collection, scan
 
     selection = scan.narrow(scan.parse_resource_id(manifest, "gps"), files=[GPS])
     result = scan.scan(manifest, provider, selection=selection)
     files = [found for group in result.groups for found in group.files]
     if [found.relpath for found in files] != [GPS]:
         raise SystemExit(f"the bucket lists {[found.relpath for found in files]}, not {GPS}")
-    acquire._add_combined(
-        manifest, provider, selection.spec, selection, files, resource_id="gps",
-        title=GPS_DATASET[1], items=None, stage=None, cancelled=None,
-        fingerprint=index_collection.fingerprint(files),
-    )
+
+    def stage(found, into: Path, index: int) -> Path:
+        local = into / f"part-{index:06d}.csv"
+        bound = found.size + 1024 * 1024
+        with local.open("wb") as handle:
+            provider.stream(found.relpath, handle.write, max_bytes=bound, ceiling=bound)
+        try:
+            local.read_bytes().decode("utf-8")
+        except UnicodeDecodeError:
+            raise SystemExit(f"{found.relpath} is not UTF-8, which an add transcodes first") from None
+        return local
+
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        combined = combine_tables.combine(selection.spec, files, stage=stage, tmp=work, dest=work / "gps.parquet")
+        install_path(
+            combined.path, combined.path.name, "parquet",
+            title=GPS_DATASET[1],
+            discovery_source={
+                "sourceId": manifest.dir_name,
+                "sourceName": manifest.name,
+                "resourceId": "gps",
+                "fileCount": len(files),
+                "fields": ",".join(selection.spec.template.names),
+                "fetchedAt": PINNED_ISO,
+                "fingerprint": index_collection.fingerprint(files),
+                "narrowed": True,
+                "sourcePath": GPS,
+            },
+            description=f"Read from {GPS} of {manifest.name}.",
+        )
     return placed.pop()
 
 
@@ -296,16 +323,17 @@ def build() -> int:
         manifest = load_source_manifest(SOURCE)
         provider = build_storage(manifest, HttpDiscoveryTransport())
         placed: list[Path] = []
+        install_path = _install(placed)
         acquire = StorageAcquire(
             user_key="1",
             storage_for=lambda _m: provider,
-            install_path=_install(placed),
+            install_path=install_path,
             import_layers=None,
             find_held=lambda *_a: None,
         )
 
         built_walk, details = add_walk(acquire, manifest, provider, placed)
-        built_gps = add_gps(acquire, manifest, provider, placed)
+        built_gps = add_gps(manifest, provider, install_path, placed)
         walk = _commit(built_walk, *WALK_DATASET)
         gps_dir = _commit(built_gps, *GPS_DATASET)
 
