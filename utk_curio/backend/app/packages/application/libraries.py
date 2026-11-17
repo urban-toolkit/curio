@@ -463,8 +463,10 @@ def take_back_after_a_removal(user_key: str, libraries) -> list[str]:
     (``store_install.install_package_from_archive``: an Update, Import
     package with replace, the wizard's Save and install, a model downloaded
     again, an applied build's rollback), an applied build once it can no
-    longer roll back (``builder/promotion.confirm_nodes_created``), a guest
-    package a start takes off (``guest_packages``), and a library's Remove in
+    longer roll back (``builder/promotion.confirm_nodes_created``), the
+    seeder's refresh of a catalog copy nobody changed
+    (``seeding.seed_dev_packages``), a guest package a start takes off
+    (``guest_packages``), and a library's Remove in
     Installed libraries (:func:`remove_standalone_library`). The removal is
     done already, so a failed uninstall is logged and the libraries stay. The
     names taken back, sorted."""

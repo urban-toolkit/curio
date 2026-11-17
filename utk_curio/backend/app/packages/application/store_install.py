@@ -349,8 +349,9 @@ def install_package_from_archive(
 
 def take_back_what_it_replaced(user_key: str, libraries) -> None:
     """After an install replaced a copy of a package in *user_key*'s store,
-    what a removal of that copy gets: *libraries*, those the copy's install
-    put where node code imports from (``InstallResult.replaced_libraries``),
+    or the seeder's refresh did (``seeding.seed_dev_packages``), what a
+    removal of that copy gets: *libraries*, those the copy's install put
+    where node code imports from (``InstallResult.replaced_libraries``),
     are taken back when nothing asks for them now, and the account's tree
     gives way to the image (``libraries.take_back_after_a_removal``). The
     copy is replaced already and the install stands, so a failure is
