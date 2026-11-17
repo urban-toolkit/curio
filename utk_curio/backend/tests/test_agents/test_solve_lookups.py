@@ -35,8 +35,12 @@ import threading
 DL = "curio.builtin/data-loading"
 #: The loaders' intents. A node's own intent keys its scripted reply
 #: (``InProcessDriver.delegate_inputs``): its request names its siblings too.
+#: A planned node's goal is its title and its intent (``plans.py``), so the
+#: reply is the one whose intent the goal holds.
 HEAT = "load the tract heat table"
 RAIN = "load the tract rain table"
+#: The reply to a request no loader's intent names: code that loads nothing.
+NO_REPLY = "# the test has no code for this node\nreturn None"
 
 
 class _Lookups:
@@ -152,7 +156,8 @@ def _two_loaders(client, user, token, monkeypatch, loaders):
             return "Title"
         if "[delegated task" not in (messages[-1].get("content") or ""):
             return _two_loaders_plan()
-        return replies[InProcessDriver.delegate_inputs(messages).get("intent")]
+        asked = str(InProcessDriver.delegate_inputs(messages).get("intent") or "")
+        return next((code for intent, code in replies.items() if intent in asked), NO_REPLY)
 
     monkeypatch.setattr("utk_curio.backend.app.agents.infrastructure.providers.run_chat_turn", _reply)
     return solve, ctx
@@ -179,7 +184,9 @@ def test_a_plans_rounds_look_their_datasets_up_one_at_a_time(
 
     body = solve._solve(client, token, ctx)
 
-    assert len(set(lookups.askers)) >= 2, f"not both loaders' rounds asked for their datasets: {lookups.askers}"
+    assert len(set(lookups.askers)) >= 2, (
+        f"not both loaders' rounds asked for their datasets: {lookups.askers}; the Solve: {body.get('results')}"
+    )
     looked_up = sorted(dataset_id for _thread, ids in lookups.lookups for dataset_id in ids)
     assert looked_up == sorted([heat, rain]), f"each dataset is looked up once: {lookups.lookups}"
     assert len(lookups.most_at_once) == 1, lookups.met()
@@ -208,7 +215,9 @@ def test_a_dataset_two_nodes_read_at_once_whose_download_fails_is_asked_for_once
 
     body = solve._solve(client, token, ctx)
 
-    assert len(set(lookups.askers)) >= 2, f"not both loaders' rounds asked for their datasets: {lookups.askers}"
+    assert len(set(lookups.askers)) >= 2, (
+        f"not both loaders' rounds asked for their datasets: {lookups.askers}; the Solve: {body.get('results')}"
+    )
     assert github.urls == [url_of(downloads.MRT)], (
         f"the Solve asked for the dataset {len(github.urls)} times: {github.urls}; every lookup: {lookups.lookups}"
     )
