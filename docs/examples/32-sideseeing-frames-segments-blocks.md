@@ -185,8 +185,9 @@ return gpd.GeoDataFrame(placed, geometry=gpd.points_from_xy(lon, lat), crs=4326)
 
 An **Autark** node loads the West Loop's streets and buildings from an
 OpenStreetMap extract, and the map draws the frames over them, colored by how
-much of each frame a curb cut covers. `"pointSize": 2` is a radius in meters on
-the ground, so each frame is a disc 4 m across:
+much of each frame a curb cut covers. `"pointSize": 4` is a radius in meters on
+the ground, so each frame is a disc 8 m across, and the frames, about 2 m apart
+along the walk, draw a trail:
 
 ```json
 {
@@ -208,7 +209,7 @@ the ground, so each frame is a disc 4 m across:
         "defaultFnv": 0,
         "isPick": true,
         "isColorMap": true,
-        "pointSize": 2,
+        "pointSize": 4,
         "title": "Curb cut (% of the frame)"
       }
     ]
