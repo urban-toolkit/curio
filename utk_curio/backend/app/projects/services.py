@@ -2565,11 +2565,11 @@ def delete_project(user, project_id: str) -> None:
         )
     # The row's delete takes its kept outputs; what the viewers' steps derived
     # goes from the owner's media folder with them.
-    viewers = kept.viewers_sessions(project_id)
+    viewers = kept.viewers_media(project_id)
     storage.delete_tree(_user_dir_key(user), project_id)
     repo.delete_project_row(project_id, user.id)
     db.session.commit()
-    kept.forget_kept_media([(project_id, session) for session in viewers], user_key=_user_dir_key(user))
+    kept.forget_kept_media(viewers, user_key=_user_dir_key(user))
 
 
 # ---------------------------------------------------------------------------

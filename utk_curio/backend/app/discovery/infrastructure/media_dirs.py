@@ -21,9 +21,10 @@ starts (``forget_visitors``).
 A dashboard viewer's step runs as the dataflow's owner, so what it derives is
 kept in a folder of the step's own in the owner's media folder
 (``derived_root``'s *kept*), named after its kept session
-(``kept_media_name``), and goes with the step's kept output
-(``forget_kept``, ``runs/kept.py``): a viewer's run never writes where the
-owner's runs write, and two viewers' runs never write in one folder.
+(``kept_media_name``), and goes once no kept output names it: its step's,
+or a later step's that handed its rows on (``forget_kept``,
+``runs/kept.py``). A viewer's run never writes where the owner's runs write,
+and two viewers' runs never write in one folder.
 """
 
 from __future__ import annotations
@@ -161,7 +162,7 @@ def kept_media_name(session_id: str) -> str:
 def forget_kept(user_key: str, names) -> None:
     """Remove the folders *names* of dashboard viewers' steps
     (:func:`kept_media_name`) in *user_key*'s media folder, with what the
-    steps derived: their kept outputs went, or the step kept none
+    steps derived: no kept output names them any more, or the step kept none
     (``runs/kept.py``, ``runs/viewer.py``)."""
     import shutil
 
@@ -171,6 +172,48 @@ def forget_kept(user_key: str, names) -> None:
         except ValueError:
             continue
         shutil.rmtree(folder, ignore_errors=True)
+
+
+def _media_roots():
+    """Every account's media folder there is (:func:`media_work_root`)."""
+    if isolation_on():
+        from utk_curio.sandbox.isolation.supervisor import user_work_dir
+
+        shared = os.environ.get("CURIO_SHARED_DATA") or str(users_base().parent / "data")
+        accounts = Path(user_work_dir(shared, "_")).parent
+    else:
+        accounts = users_base()
+    if not accounts.is_dir():
+        return
+    for account in accounts.iterdir():
+        media = account / "media"
+        if media.is_dir():
+            yield media
+
+
+def kept_folders():
+    """The folder of every dashboard viewer's step there is, in every
+    account's media folder (:func:`derived_root`'s *kept*), for the sweep of
+    those no kept output names (``kept.sweep_kept_media``)."""
+    from utk_curio.sandbox.util.collections import KEPT_MEDIA, KEPT_NAME_RE
+
+    for media in _media_roots():
+        kept = media / KEPT_MEDIA
+        if not kept.is_dir():
+            continue
+        for folder in kept.iterdir():
+            if folder.is_dir() and KEPT_NAME_RE.match(folder.name):
+                yield folder
+
+
+def last_written(folder: Path) -> float:
+    """When anything in *folder*, or the folder itself, was last written: a
+    step writes deep in its folder, which leaves the folder's own time alone."""
+    newest = folder.stat().st_mtime
+    for path in folder.rglob("*"):
+        with contextlib.suppress(OSError):
+            newest = max(newest, path.stat().st_mtime)
+    return newest
 
 
 def forget_visitors(user_key: str) -> None:

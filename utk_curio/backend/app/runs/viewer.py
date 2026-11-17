@@ -27,9 +27,11 @@ collection's files (an overlay, a video's frame) are kept with its output, in
 a folder of the step's own in the owner's media folder
 (``media_dirs.derived_root``), whose name the URLs of its rows carry: a
 viewer's run never writes where the owner's runs write theirs under the same
-ids. Kept outputs go after their time or past their budget, with their
-artifacts and those files, by the sweep ``kept.py`` describes; a run sweeps at
-its end, and at the first start after a restart.
+ids. A step that reads an earlier step's output keeps naming that step's
+folder (``kept.folders_named_by``), since its rows may hand on the files there.
+Kept outputs go after their time or past their budget, with their artifacts,
+and a folder goes once no kept output names it, by the sweep ``kept.py``
+describes; a run sweeps at its end, and at the first start after a restart.
 
 A hosted guest's dashboard of a dataflow their account owns, an example, is
 their own copy's once they have one (``projects/visitor_copies.py``,
@@ -88,6 +90,7 @@ from utk_curio.backend.app.runs.kept import (
     canonical,
     datasets_read,
     digest,
+    folders_named_by,
     forget_sessions,
     keep,
     kept_output,
@@ -616,7 +619,14 @@ def _run_events(
             raise
         output = reply.get("output") if isinstance(reply.get("output"), dict) else {}
         if output.get("path"):
-            return {**reply, "artifactIds": keep(kept_on, step.node_id, key, session_id, output, private)}
+            # Its rows may hand on the rows it read, which name the files
+            # earlier steps derived: those folders stay while this output does.
+            read = node_exec.input_names(node_exec.parse_input_ref(call.input)) if call.input else []
+            ids = keep(
+                kept_on, step.node_id, key, session_id, output, private,
+                media_folders=folders_named_by(kept_on, read),
+            )
+            return {**reply, "artifactIds": ids}
         forget_sessions([session_id])
         media_dirs.forget_kept(user_key, [kept_media])
         return reply
