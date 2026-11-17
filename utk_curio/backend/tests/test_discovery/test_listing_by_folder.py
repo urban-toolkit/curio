@@ -18,10 +18,13 @@ import dataclasses
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import parse_qsl, urlsplit
+from types import SimpleNamespace
+from urllib.parse import parse_qsl, unquote, urlsplit
 from xml.sax.saxutils import escape
 
 import pytest
+
+from utk_curio.backend.tests.test_discovery.conftest import write_source
 
 REPO = Path(__file__).resolve().parents[4]
 IDOT = REPO / "discovery" / "source.sage.idot-crossings@1"
@@ -160,18 +163,75 @@ def few_crossings(*crossings: str) -> list[str]:
     ]
 
 
-def an_add(provider):
+def an_add(provider, installed: list | None = None):
     """The storage add path over *provider*. It installs nothing: each add
-    here is refused once its scan ends."""
+    here is refused before it installs, unless *installed* is given, which
+    takes the index a collection's add writes."""
     from utk_curio.backend.app.discovery.application.storage_acquire import StorageAcquire
 
-    def installs(*_args, **_kwargs):
-        raise AssertionError("the add went on to install files it should have refused")
+    def installs(path=None, *_args, **_kwargs):
+        if installed is None:
+            raise AssertionError("the add went on to install files it should have refused")
+        import pandas as pd
+
+        installed.append(pd.read_parquet(path))
+        return {"id": "added"}
 
     return StorageAcquire(
         user_key="guest", storage_for=lambda _manifest: provider,
         install_path=installs, import_layers=installs, find_held=lambda *_args: None,
     )
+
+
+class FileBucket(ListingBucket):
+    """A :class:`ListingBucket` that also serves each file's bytes, as the
+    transport's ``download`` does."""
+
+    def __init__(self, base: str, files: dict[str, bytes], *, page_size: int | None = None):
+        super().__init__(base, list(files), page_size=page_size)
+        self.files = files
+
+    def download(self, url, sink, *, max_bytes, headers=None, ceiling=None, **_kwargs):
+        sink(self.files[unquote(url[len(self.base) + 1:])])
+        return SimpleNamespace(status=200)
+
+
+def a_bucket_source(tmp_path, name: str, resources: list[dict]):
+    """A source of its own over a bucket at :data:`BASE`, declaring *resources*."""
+    from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+
+    return load_source_manifest(write_source(tmp_path / "sources", f"source.example.{name}@1", {
+        "id": f"source.example.{name}", "name": f"{name.capitalize()} bucket", "version": "1.0.0",
+        "compatibility": {"major": 1},
+        "provider": {"type": "s3", "baseUrl": BASE},
+        "auth": {"mode": "public"},
+        "resources": resources,
+    }))
+
+
+#: Each crossing's snapshots by month, as SAGE-IDOT declares them: read a
+#: folder at a time.
+SNAPSHOTS_BY_MONTH = {
+    "id": "snapshots", "name": "Snapshots", "kind": "images",
+    "path": "{crossing}/images/{month:%Y_%m}/{ns:int}-snapshot.jpg", "datasets": "per:crossing,month",
+}
+
+#: Two clips, and the three parts of the table that says each clip's speed.
+CLIPS = {
+    "clips/a.mp4": b"a" * 8,
+    "clips/b.mp4": b"b" * 8,
+    "telemetry/1.csv": b"file_name,speed\na.mp4,3\n",
+    "telemetry/2.csv": b"file_name,speed\nanother.mp4,4\n",
+    "telemetry/3.csv": b"file_name,speed\nb.mp4,5\n",
+}
+
+
+def clips_source(tmp_path):
+    """A bucket's clips as one collection, joined with its table of speeds."""
+    return a_bucket_source(tmp_path, "clips", [{
+        "id": "clips", "name": "Clips", "kind": "videos", "path": "clips/{clip}.mp4",
+        "metadata": {"path": "telemetry/{part}.csv"},
+    }])
 
 
 class TestAnAdd:
@@ -412,6 +472,126 @@ class TestAListingPastItsPages:
 
         assert {group.key[0] for group in result.groups} == {"W042", "W065", "W06E"}
         assert not result.truncated
+
+
+class TestAMetadataTablePastItsPages:
+    """An add lists a collection's metadata table after its own scan, in up
+    to ``MAX_PAGES`` pages too. A table listed short of the bucket would be
+    joined in part, so the add is refused and says which limit the listing
+    met, as it does when its scan stops there."""
+
+    def test_a_table_listed_past_its_pages_refuses_the_add(self, app, tmp_path, monkeypatch):
+        from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
+        from utk_curio.backend.app.discovery.providers import s3
+
+        manifest = clips_source(tmp_path)
+        # Two names a page: the clips are one page, and the table's three
+        # parts two, one past a bound of one.
+        bucket = FileBucket(BASE, CLIPS, page_size=2)
+        monkeypatch.setattr(s3, "MAX_PAGES", 1)
+        with pytest.raises(DiscoveryError) as refused:
+            an_add(s3.S3Storage(manifest, bucket)).acquire(manifest, "clips")
+
+        assert bucket.asked() == Counter({("clips/", None): 1, ("telemetry/", None): 1})
+        assert str(refused.value) == (
+            "Clips: the listing of its metadata table was cut short (a folder's listing stops at 1 page)"
+        )
+
+    def test_a_table_as_long_as_its_pages_is_joined_whole(self, app, tmp_path, monkeypatch):
+        from utk_curio.backend.app.discovery.providers import s3
+
+        manifest = clips_source(tmp_path)
+        bucket = FileBucket(BASE, CLIPS, page_size=2)
+        monkeypatch.setattr(s3, "MAX_PAGES", 2)
+        installed: list = []
+        an_add(s3.S3Storage(manifest, bucket), installed).acquire(manifest, "clips")
+
+        [index] = installed
+        assert dict(zip(index["name"], index["speed"])) == {"a.mp4": 3, "b.mp4": 5}
+
+
+class TestTheFilesBesideTheFolders:
+    """A listing of the folders under a prefix also holds the files right
+    under it, beside those folders, such as a file at the bucket's root. The
+    walk sees them, as the listing of the whole bucket it replaced did, each
+    once: matched, or counted as matching no resource."""
+
+    def test_a_file_beside_the_folders_counts_as_matching_no_resource(self):
+        from utk_curio.backend.app.discovery.application import scan
+        from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+        from utk_curio.backend.app.discovery.providers.s3 import S3Storage
+
+        manifest = load_source_manifest(IDOT)
+        # One at the bucket's root, beside the crossings, and one beside
+        # W042's months. A hidden one is never seen, as under a folder.
+        beside = ["README.md", "W042/images/notes.txt"]
+        plain = ListingBucket(BASE, idot_keys())
+        bucket = ListingBucket(BASE, idot_keys() + beside + [".DS_Store", "W042/images/.hidden"])
+        without = scan.scan(manifest, S3Storage(manifest, plain))
+        result = scan.scan(manifest, S3Storage(manifest, bucket))
+
+        assert result.unmatched == without.unmatched + len(beside), (
+            f"the listing counted {result.unmatched} files as matching no resource: "
+            f"it dropped the {len(beside)} its folder listings hold beside the folders"
+        )
+        # They came with the folders: no listing more was asked for them.
+        assert bucket.asked() == plain.asked()
+        rows = {group.resource_id: len(group.files) for group in result.groups}
+        assert rows == {group.resource_id: len(group.files) for group in without.groups}
+        assert not result.truncated
+
+    def test_an_adds_row_is_its_own_files_alone(self):
+        from utk_curio.backend.app.discovery.application import scan
+        from utk_curio.backend.app.discovery.domain.manifest import load_source_manifest
+        from utk_curio.backend.app.discovery.providers.s3 import S3Storage
+
+        manifest = load_source_manifest(IDOT)
+        bucket = ListingBucket(BASE, idot_keys() + ["README.md", "W042/images/notes.txt"])
+        add = scan.scan(
+            manifest, S3Storage(manifest, bucket),
+            selection=a_row(manifest, month_row("snapshots", "W042", "2025_07")),
+        )
+
+        [group] = add.groups
+        assert len(group.files) == SNAPSHOTS and not add.truncated
+        assert {f.relpath.rsplit("/", 1)[0] for f in group.files} == {"W042/images/2025_07"}
+
+    def test_a_file_under_a_folder_another_resource_lists_is_seen_once(self, tmp_path):
+        """A crossing's covers are listed with all its images folder holds.
+        The listing of that folder's months holds the covers too, beside the
+        months, and they are not seen a second time."""
+        from utk_curio.backend.app.discovery.application import scan
+        from utk_curio.backend.app.discovery.providers.s3 import S3Storage
+
+        manifest = a_bucket_source(tmp_path, "crossings", [SNAPSHOTS_BY_MONTH, {
+            "id": "covers", "name": "Covers", "kind": "images", "path": "{crossing}/images/{cover}.png",
+            "datasets": "per:crossing",
+        }])
+        bucket = ListingBucket(BASE, idot_keys() + ["W042/images/front.png"])
+        result = scan.scan(manifest, S3Storage(manifest, bucket))
+
+        rows = {group.resource_id: [f.relpath for f in group.files] for group in result.groups}
+        assert rows["covers@crossing=W042"] == ["W042/images/front.png"]
+        assert result.matched == len(CROSSINGS) * len(MONTHS) * SNAPSHOTS + 1
+        assert result.unmatched == 0
+
+    def test_a_file_at_the_root_a_resource_names_is_matched_once(self, tmp_path):
+        """A resource of files at the root has the whole bucket listed, which
+        holds the root's files: the listing of the root's folders holds them
+        too, and they are not seen a second time."""
+        from utk_curio.backend.app.discovery.application import scan
+        from utk_curio.backend.app.discovery.providers.s3 import S3Storage
+
+        manifest = a_bucket_source(tmp_path, "crossings", [SNAPSHOTS_BY_MONTH, {
+            "id": "notes", "name": "Notes", "kind": "files", "path": "{note}.md",
+        }])
+        bucket = ListingBucket(BASE, idot_keys() + ["README.md"])
+        result = scan.scan(manifest, S3Storage(manifest, bucket))
+
+        rows = {group.resource_id: [f.relpath for f in group.files] for group in result.groups}
+        assert rows["notes"] == ["README.md"]
+        # Each crossing's detections, and the four files sample/ holds for it.
+        assert result.unmatched == len(CROSSINGS) * (len(MONTHS) + 4)
 
 
 class TestWhatIsListedAsBefore:
