@@ -26,7 +26,8 @@ listing of folders holds beside them, such as a file at the bucket's root, are
 seen with them. A row holds up
 to the source's ``limits.maxFiles`` files, and a whole listing up to
 :data:`MAX_LISTING_FILES`, its rows' together. A walk that stops at one of
-its bounds says which (``ScanResult.stopped_at``), and so do the source's
+its bounds, or whose provider read less than the source holds (:class:`Noted`),
+says which (``ScanResult.stopped_at``), and so do the source's
 page (:func:`cut_short_text`) and a refused add.
 """
 
@@ -45,7 +46,7 @@ from typing import Any, Callable, Iterable, Iterator
 from utk_curio.backend.app.discovery.domain.errors import ResourceNotFound
 from utk_curio.backend.app.discovery.domain.manifest import DiscoverySourceManifest, ResourceSpec
 from utk_curio.backend.app.discovery.domain.resource import DiscoveryResource
-from utk_curio.backend.app.discovery.domain.templates import Capture, compile_template
+from utk_curio.backend.app.discovery.domain.templates import Capture, Template, compile_template
 from utk_curio.backend.app.discovery.providers.storage_base import (
     SHAPEFILE_PARTS,
     FileEntry,
@@ -79,12 +80,14 @@ MAX_LISTING_FILES = 2_000_000
 
 #: The bounds a walk stops short of its source at, as ``ScanResult.stopped_at``
 #: names them: a row's ``limits.maxFiles``, :data:`MAX_LISTING_FILES`,
-#: :data:`MAX_FOLDERS`, and a provider's bound of pages on one listing
-#: (``storage_base.ListingCut``).
+#: :data:`MAX_FOLDERS`, a provider's bound of pages on one listing
+#: (``storage_base.ListingCut``), and the levels of folders a provider reads
+#: (``storage_base.DeepFolder``).
 ROW_FILES = "row files"
 LISTING_FILES = "listing files"
 FOLDERS = "folders"
 PAGES = "pages"
+DEPTH = "depth"
 
 KIND_LABEL = {
     "rasters": "Rasters",
@@ -126,6 +129,16 @@ class Group:
         return max((f.mtime for f in self.files), default=None)
 
 
+@dataclass(frozen=True)
+class Skipped:
+    """The folders a walk did not read, below the levels of folders its
+    provider reads: those levels, how many folders, and the first of them."""
+
+    levels: int
+    folders: int
+    first: str
+
+
 @dataclass
 class ScanResult:
     groups: list[Group]
@@ -134,8 +147,9 @@ class ScanResult:
     scanned_at: float
     #: Each bound the walk met, which stopped it short of the source (a
     #: row's files, the listing's, its folders or a listing's pages), with
-    #: the number it holds; empty when it read the whole source.
-    stopped_at: dict[str, int] = field(default_factory=dict)
+    #: the number it holds; for the depth, the folders not read
+    #: (:class:`Skipped`). Empty when the walk read the whole source.
+    stopped_at: dict[str, Any] = field(default_factory=dict)
 
     @property
     def truncated(self) -> bool:
@@ -441,6 +455,58 @@ def _files_under(provider, prefixes: list[str], beside: Iterable[FileEntry] = ()
                 future.cancel()
 
 
+def may_hold(template: Template, folder: str, selection: "Selection | None" = None) -> bool:
+    """Whether *folder*, which a walk did not read, may hold a file that
+    matches *template* and that *selection* keeps: its one file or a picked
+    one is under it, or the template's folders take the folder's names, with
+    values the selection keeps, and reach that deep."""
+    if selection is not None:
+        under = folder + "/"
+        if selection.relpath is not None:
+            return selection.relpath.startswith(under)
+        if selection.files is not None and not any(relpath.startswith(under) for relpath in selection.files):
+            return False
+    names = folder.split("/")
+    if len(names) > len(template.folders) and "**" not in template.source.split("/"):
+        # Its files are in the folders it names, each above this one.
+        return False
+    return all(
+        (values := level.match(name)) is not None and _agrees(selection, values)
+        for level, name in zip(template.folders, names)
+    )
+
+
+class Noted:
+    """What a provider notes of its listings from here on, those of one walk
+    and not of a walk before it on the provider: each listing it stopped
+    before its end (its ``cut_short``), and each folder below the levels it
+    reads (its ``too_deep``). A provider with neither notes nothing."""
+
+    def __init__(self, provider) -> None:
+        self._cuts = getattr(provider, "cut_short", None)
+        self._deep = getattr(provider, "too_deep", None)
+        self._seen = (len(self._cuts or ()), len(self._deep or ()))
+
+    def stops(self, holds: Callable[[str], bool] | None = None) -> dict[str, Any]:
+        """Each bound those listings met, as ``ScanResult.stopped_at`` names
+        them. A folder not read counts when *holds* says it may hold what
+        the walk looks for; with none, each one counts."""
+        met: dict[str, Any] = {}
+        cuts = (self._cuts or [])[self._seen[0]:]
+        if cuts:
+            # A listing the provider stopped at its bound of pages.
+            met[PAGES] = max(cut.pages for cut in cuts)
+        deep = [
+            folder for folder in (self._deep or [])[self._seen[1]:]
+            if holds is None or holds(folder.relpath)
+        ]
+        if deep:
+            met[DEPTH] = Skipped(
+                levels=max(folder.levels for folder in deep), folders=len(deep), first=deep[0].relpath,
+            )
+        return met
+
+
 def scan(
     manifest: DiscoverySourceManifest,
     provider,
@@ -470,10 +536,9 @@ def scan(
     one_row_each = selection is not None or all(spec.datasets == "one" for spec in specs)
     full: set[str] = set()
     at_bound = False
-    stopped_at: dict[str, int] = {}
-    # The listings this walk cuts, not those of a walk before it on the provider.
-    cuts = getattr(provider, "cut_short", None)
-    cut_before = len(cuts) if cuts is not None else 0
+    stopped_at: dict[str, Any] = {}
+    # What the provider reads short of the source in this walk's listings.
+    noted = Noted(provider)
     folders, past_folders, beside = folders_to_list(provider, specs, selection=selection)
     if past_folders:
         stopped_at[FOLDERS] = MAX_FOLDERS
@@ -525,9 +590,11 @@ def scan(
                 unmatched += 1
             if at_bound or (one_row_each and len(full) == len(specs)):
                 break
-    if cuts is not None and len(cuts) > cut_before:
-        # A listing the provider stopped at its bound of pages, short of the source.
-        stopped_at[PAGES] = max(cut.pages for cut in cuts[cut_before:])
+    # A listing has every folder not read to say; an add's row is short of
+    # the source only by those that may hold its files.
+    stopped_at.update(noted.stops(
+        None if selection is None else lambda folder: may_hold(selection.spec.template, folder, selection)
+    ))
     order = {spec.id: index for index, spec in enumerate(specs)}
     out = sorted(groups.values(), key=lambda g: (order[g.spec.id], tuple(map(_value_text, g.key))))
     for group in out:
@@ -736,15 +803,33 @@ _SAID_OF_BOUNDS = (
 )
 
 
-def cut_short_text(stopped_at: dict[str, int]) -> str | None:
-    """What a storage source's page says of a listing that stopped short of
-    the source: each bound it met (``ScanResult.stopped_at``). None for a
-    listing of the whole source."""
+def skipped_text(skipped: Skipped) -> str:
+    """How many folders a walk did not read, and where: ``2 folders, a/b
+    first``, or ``1 folder, a/b``."""
+    return f"{_counted(skipped.folders, 'folder', 'folders')}, {skipped.first}{' first' if skipped.folders > 1 else ''}"
+
+
+def bounds_said(stopped_at: dict[str, Any]) -> list[str]:
+    """What is said of each bound a listing met (``ScanResult.stopped_at``),
+    in order: its number, and for the depth how many folders were skipped,
+    and where."""
     met = [
         said.format(_counted(stopped_at[bound], one, many))
         for bound, said, one, many in _SAID_OF_BOUNDS
         if bound in stopped_at
     ]
+    if DEPTH in stopped_at:
+        skipped = stopped_at[DEPTH]
+        levels = _counted(skipped.levels, "level", "levels")
+        met.append(f"a listing skipped {skipped_text(skipped)}, below the {levels} of folders it reads")
+    return met
+
+
+def cut_short_text(stopped_at: dict[str, Any]) -> str | None:
+    """What a storage source's page says of a listing that stopped short of
+    the source: each bound it met (``ScanResult.stopped_at``). None for a
+    listing of the whole source."""
+    met = bounds_said(stopped_at)
     return f"This source holds more files than are listed here: {'; '.join(met)}." if met else None
 
 
@@ -779,7 +864,7 @@ class _State:
     unmatched: int = 0
     truncated: bool = False
     #: The bounds the scan met short of the source (``ScanResult.stopped_at``).
-    stopped_at: dict[str, int] = field(default_factory=dict)
+    stopped_at: dict[str, Any] = field(default_factory=dict)
     scanned_at: float | None = None
     started_at: float = 0.0
     #: Files walked so far, while a scan runs.

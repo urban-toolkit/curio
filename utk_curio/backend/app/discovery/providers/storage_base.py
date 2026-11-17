@@ -61,6 +61,15 @@ class ListingCut:
     pages: int
 
 
+@dataclass(frozen=True)
+class DeepFolder:
+    """A folder a provider did not read, below the levels of folders it
+    reads under where a walk began: the folder, and those levels."""
+
+    relpath: str
+    levels: int
+
+
 def is_skipped(name: str) -> bool:
     return name.startswith(".") or name in SYSTEM_NAMES
 
@@ -89,9 +98,11 @@ class StorageProvider(Protocol):
 
     def scan(self, prefix: str = "") -> Iterator[FileEntry]:
         """Every file under *prefix*, recursively. Hidden and system files are
-        never yielded. A provider that reads a listing in pages, up to a bound
-        of them, notes each listing it stopped there in its ``cut_short``, a
-        list of :class:`ListingCut`, so a scan says it was cut short."""
+        never yielded. A provider that reads a listing in pages notes each
+        listing it stopped before its end in its ``cut_short``, a list of
+        :class:`ListingCut`, and one that reads folders down to a bound of
+        levels notes each folder below them in its ``too_deep``, a list of
+        :class:`DeepFolder`, so a scan says what it did not read."""
 
     def open(self, relpath: str, *, byte_range: tuple[int, int] | None = None) -> BinaryIO:
         """Read one file, or ``byte_range`` (inclusive start, exclusive end) of it."""

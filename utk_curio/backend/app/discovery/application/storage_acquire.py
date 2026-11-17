@@ -158,11 +158,11 @@ def add_refusal(manifest: DiscoverySourceManifest, spec, files, *, for_area: boo
     return None
 
 
-def _stopped_short(manifest: DiscoverySourceManifest, spec, stopped_at: dict[str, int]) -> str:
+def _stopped_short(manifest: DiscoverySourceManifest, spec, stopped_at: dict[str, Any]) -> str:
     """Why an add of *spec* is refused when its scan stopped short of the
     source: each bound it met (``ScanResult.stopped_at``). Part of the row
-    holds fewer files, or lies in fewer folders; no part of it lists a long
-    folder in fewer pages."""
+    holds fewer files, lies in fewer folders, or leaves out the folders too
+    deep to read; no part of it lists a long folder in fewer pages."""
     said = []
     if scanning.ROW_FILES in stopped_at:
         said.append(
@@ -180,7 +180,13 @@ def _stopped_short(manifest: DiscoverySourceManifest, spec, stopped_at: dict[str
         said.append(
             f"{spec.name} has a folder whose listing runs past {pages}, the most {manifest.name} reads of one folder"
         )
-    if scanning.ROW_FILES in stopped_at or scanning.FOLDERS in stopped_at:
+    if scanning.DEPTH in stopped_at:
+        skipped = stopped_at[scanning.DEPTH]
+        levels = scanning._counted(skipped.levels, "level", "levels")
+        said.append(
+            f"{spec.name} has {scanning.skipped_text(skipped)}, below the {levels} of folders {manifest.name} reads"
+        )
+    if any(bound in stopped_at for bound in (scanning.ROW_FILES, scanning.FOLDERS, scanning.DEPTH)):
         said.append("add part of it")
     return "; ".join(said)
 
