@@ -1848,6 +1848,77 @@ class TestWhatAViewersRunDerives:
         assert (overlay.status_code, overlay.data == _png(VIEWERS)) == (200, True), overlay.status_code
         assert read == [("/get", {"fileName": entry.output_path, "sessionId": entry.session_id})]
 
+    def test_a_file_a_later_steps_rows_name_stays_until_that_steps_output_goes(
+        self, client, user_and_token, sandbox, saved, survey, monkeypatch,
+    ):
+        """Grid draws the overlay, and After hands Grid's rows on, so After's
+        rows name the overlay in Grid's folder. Grid's kept output goes first,
+        a day before After's: After's row still reads the overlay, which goes
+        with After's output."""
+        from pathlib import Path
+
+        from utk_curio.backend.app.runs import kept
+        from utk_curio.backend.app.runs.models import KeptStepOutput
+        from utk_curio.backend.extensions import db
+
+        user, token = user_and_token
+        after = {"id": "after", "type": CODE, "content": "# node after\nreturn input_0"}
+        pid = _create(client, token, nodes=_nodes(extra=[after]), edges=[
+            {"id": "grid-after", "source": "grid", "target": "after"},
+            {"id": "after-chart", "source": "after", "target": "chart"},
+        ])
+        viewers = self._viewers_grid_draws(sandbox, survey[0])
+        _month(client, pid)
+        assert [node for node, _body in sandbox.runs] == ["grid", "after"]
+        grid = KeptStepOutput.query.filter_by(project_id=pid, node_id="grid").one()
+        made_at = KeptStepOutput.query.filter_by(project_id=pid, node_id="after").one().created_at
+        grid.created_at = made_at - timedelta(days=kept.KEPT_DAYS + 1)
+        db.session.commit()
+        overlay = Path(viewers[0]["path"])
+
+        assert kept.prune() == 1
+        assert overlay.exists(), "Grid's output went and took the overlay After's rows still name"
+        read = client.get(viewers[0]["image_url"], headers={"Authorization": f"Bearer {token}"})
+        assert (read.status_code, read.data == _png(VIEWERS)) == (200, True), read.status_code
+
+        monkeypatch.setattr(kept, "naive_utc_now", lambda: made_at + timedelta(days=kept.KEPT_DAYS + 1))
+        assert kept.prune() == 1
+        assert not overlay.exists(), "the overlay outlived the last kept output that named it"
+
+    def test_the_sweep_takes_a_folder_no_kept_output_names(self, client, db, user_and_token, sandbox, saved, survey):
+        """A step's folder no kept output names: one a backend that stopped
+        between the step's write and its keep leaves, or one whose dataflow's
+        row was dropped with its spec file gone (``list_projects``). The sweep
+        takes it once nothing has been written in it for an hour, and never a
+        folder a kept output names."""
+        import time
+        from pathlib import Path
+
+        from utk_curio.backend.app.discovery.infrastructure import media_dirs
+        from utk_curio.backend.app.projects import repositories as repo
+        from utk_curio.backend.app.runs import kept
+        from utk_curio.common.kept_sessions import new_session_id
+
+        user, token = user_and_token
+        pid = _create(client, token)
+        viewers = self._viewers_grid_draws(sandbox, survey[0])
+        _month(client, pid)
+        named = Path(viewers[0]["path"])
+        stray = media_dirs.derived_root(str(user.id), kept=media_dirs.kept_media_name(new_session_id()))
+        (stray / "overlays").mkdir(parents=True)
+        (stray / "overlays" / "0-seg.png").write_bytes(_png(VIEWERS))
+        later = time.time() + kept.KEPT_MEDIA_GRACE_SECONDS + 60
+
+        assert kept.sweep_kept_media() == 0, "a folder its step may still be writing in went"
+        assert kept.sweep_kept_media(now=later) == 1
+        assert not stray.exists(), "a folder no kept output names stayed"
+        assert named.exists(), "the sweep took a folder a kept output names"
+
+        repo.delete_project_row(pid, user.id)
+        db.session.commit()
+        assert kept.sweep_kept_media(now=later) == 1
+        assert not named.exists(), "a dropped dataflow's folder stayed"
+
     def test_the_folder_a_viewers_step_writes_in_is_the_one_its_rows_name(self, user_and_token):
         """The backend names a step's folder (``media_dirs``), and the sandbox
         reads the name back from the media directory it is handed
