@@ -239,7 +239,7 @@
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Play each block; the map lights the frames up to where it plays.",
+        "goal": "Play each block; the map highlights the frames up to where it plays.",
         "metadata": {
           "keywords": []
         }

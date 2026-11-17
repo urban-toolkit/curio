@@ -254,9 +254,10 @@ return pd.DataFrame(cuts)
 own. On this walk that is five blocks of South Racine Avenue, from West Madison
 Street to West Van Buren Street and on to the walk's end. **Simple View** plays
 each block, its card captioned with the block, its street and its cross
-streets. An interaction edge from that Simple View to the map lights the frames
-up to where the block plays, since each block keeps `t_s`, where it starts in
-the walk's video.
+streets. An interaction edge from that Simple View to the map highlights the
+frames from the block's start up to where it plays: they take the map's
+highlight color in place of their curb cut color. Each block keeps `t_s`, where
+it starts in the walk's video, so the frames it highlights are its own.
 
 ## Each block's share of frames
 
