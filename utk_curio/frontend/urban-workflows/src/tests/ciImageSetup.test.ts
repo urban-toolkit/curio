@@ -40,8 +40,20 @@
  * every `docker run` there from 3 s to 13 (11-15). So the pull, start-stack's,
  * takes one of a few image slots the server's runners share first
  * (scripts/ci_image_slots.py, tested in the backend suite).
+ *
+ * That script also tries a pull again when the registry fails it: on 11-17
+ * GitHub's registry reset two pulls of one run 5 s apart (run 44017255256),
+ * start-stack's in e2e-desktop (10) and test-desktop-stress's own, and each
+ * lost its job before any test ran. So every pull of the CI image in the Full
+ * stack build goes through it, and no step of a job runs, creates or uses the
+ * image before the job has pulled it so: a `docker run` or a `docker create`
+ * of an image the daemon lacks pulls it itself, once, with no slot, as
+ * build-image's collection on a filtered run did through image-env and the
+ * unit suite's listing.
  */
-import { read } from "./_support/workflowPaths";
+import * as fs from "fs";
+import * as path from "path";
+import { read, REPO_ROOT } from "./_support/workflowPaths";
 
 const WORKFLOW = ".github/workflows/docker-compose.yml";
 const CI_OVERLAYS = [
@@ -262,5 +274,144 @@ describe("Whole images take turns on the disk arcade's runners share", () => {
             .filter(([, job]) => OWN_PULL.test(job) && !/^ {4}runs-on: ubuntu-latest$/m.test(job))
             .map(([name]) => name);
         expect(pulling).toEqual([]);
+    });
+});
+
+describe("A pull of the CI image is tried again when the registry fails it", () => {
+    const THROUGH_THE_SCRIPT = 'python3 scripts/ci_image_slots.py pull "$IMAGE"\n';
+    /** A line that pulls an image itself, anywhere on it, unless the line is a comment. */
+    const BARE_PULL = /^(?!\s*#).*\bdocker (?:image )?pull\b/;
+
+    /** The Full stack build and every action of this repository it can use. */
+    function filesWithSteps(): string[] {
+        const actions = fs
+            .readdirSync(path.join(REPO_ROOT, ".github", "actions"))
+            .flatMap((name) => ["action.yml", "action.yaml"].map((file) => `.github/actions/${name}/${file}`))
+            .filter((file) => fs.existsSync(path.join(REPO_ROOT, file)));
+        return [WORKFLOW, ...actions];
+    }
+
+    test("no step of the Full stack build or of its actions runs a bare docker pull", () => {
+        const files = filesWithSteps();
+        expect(files).toContain(".github/actions/start-stack/action.yml");
+        const bare: string[] = [];
+        for (const file of files) {
+            read(file)
+                .split("\n")
+                .forEach((line, index) => {
+                    if (BARE_PULL.test(line)) bare.push(`${file}:${index + 1}: ${line.trim()}`);
+                });
+        }
+        expect(bare).toEqual([]);
+    });
+
+    test("test-desktop-stress pulls the image through ci_image_slots.py pull, as start-stack does", () => {
+        expect(read(".github/actions/start-stack/action.yml")).toContain(THROUGH_THE_SCRIPT);
+        expect(jobs().get("test-desktop-stress")).toContain(THROUGH_THE_SCRIPT);
+    });
+});
+
+describe("No job uses the CI image before it has pulled it through ci_image_slots.py", () => {
+    const START_STACK = ".github/actions/start-stack/action.yml";
+    const IMAGE_ENV = ".github/actions/image-env/action.yml";
+    const PULL = 'python3 scripts/ci_image_slots.py pull "$IMAGE"';
+    /** build-image's image as a job names it: its output, or within build-image its naming step's. */
+    const CI_IMAGE = /^\$\{\{ (?:needs\.build-image|steps\.name)\.outputs\.image \}\}$/;
+    /** A command that starts a container from $IMAGE, or tags it. */
+    const STARTS_IT = /\bdocker (?:run|create|tag)\b.*"\$\{?IMAGE\}?"/;
+
+    /** A text's lines, each backslash continuation joined to the line after it, comments left out. */
+    function commands(text: string): string[] {
+        return text
+            .replace(/\\\n/g, " ")
+            .split("\n")
+            .filter((line) => !/^\s*#/.test(line));
+    }
+
+    /** A key's value at this indent, as the first `key: value` line there gives it. */
+    function valueAt(text: string, indent: number, key: string): string {
+        const found = new RegExp(`^ {${indent}}${key}: (.+)$`, "m").exec(text);
+        return found ? found[1].trim() : "";
+    }
+
+    /** A step's own key, on the step's first line or below it. */
+    function field(step: string, key: string): string {
+        const found = new RegExp(`^ {6}- ${key}: (.+)$|^ {8}${key}: (.+)$`, "m").exec(step);
+        return found ? (found[1] ?? found[2] ?? "").trim() : "";
+    }
+
+    interface ImageStep {
+        title: string;
+        /** The line of the step that pulls build-image's image through the script, or -1. */
+        pullsAt: number;
+        /** The line of the step that runs, creates or tags it, or -1. */
+        usesAt: number;
+    }
+
+    /**
+     * Each job's steps in order: where each pulls build-image's image through
+     * the script, itself or through start-stack, and where it runs, creates
+     * or tags it, itself or through image-env. Steps are read in order, their
+     * `if:` conditions aside.
+     */
+    function imageSteps(): Map<string, ImageStep[]> {
+        const found = new Map<string, ImageStep[]>();
+        for (const [name, job] of jobs()) {
+            const start = job.search(/^ {4}steps:\s*$/m);
+            if (start < 0) continue;
+            const jobImage = valueAt(job.slice(0, start), 6, "IMAGE");
+            const steps = job
+                .slice(start)
+                .split(/^(?= {6}- )/m)
+                .slice(1)
+                .map((step): ImageStep => {
+                    const action = field(step, "uses");
+                    const asImage = CI_IMAGE.test(valueAt(step, 10, "IMAGE") || jobImage);
+                    const lines = commands(step);
+                    let pullsAt = asImage ? lines.findIndex((line) => line.includes(PULL)) : -1;
+                    let usesAt = asImage ? lines.findIndex((line) => STARTS_IT.test(line)) : -1;
+                    const ofTheImage = CI_IMAGE.test(valueAt(step, 10, "image"));
+                    if (action === "./.github/actions/start-stack" && ofTheImage) pullsAt = 0;
+                    if (action === "./.github/actions/image-env" && ofTheImage) usesAt = 0;
+                    return { title: field(step, "name") || action || step.trim().split("\n")[0], pullsAt, usesAt };
+                });
+            found.set(name, steps);
+        }
+        return found;
+    }
+
+    test("no job runs, creates or uses it before it has pulled it through ci_image_slots.py, itself or through start-stack", () => {
+        // image-env starts a container from its image, so a job's image-env step uses it.
+        expect(read(IMAGE_ENV)).toContain('ci_image_python.sh" take "$IMAGE"');
+        const take = commands(read("scripts/ci_image_python.sh"));
+        expect(take.some((line) => /\bdocker run\b.*"\$image"/.test(line))).toBe(true);
+        expect(take.some((line) => /\bdocker create "\$image"/.test(line))).toBe(true);
+        // start-stack pulls through the script before anything of its own uses the image.
+        const startStack = read(START_STACK);
+        const pull = startStack.indexOf(PULL);
+        expect(pull).toBeGreaterThan(-1);
+        const startStackUses = [
+            'docker tag "$IMAGE"',
+            'docker compose -p "${{ inputs.project }}" up',
+            "uses: ./.github/actions/image-env",
+        ];
+        for (const use of startStackUses) {
+            expect([use, startStack.indexOf(use) > pull]).toEqual([use, true]);
+        }
+        const steps = imageSteps();
+        const users = Array.from(steps)
+            .filter(([, list]) => list.some((step) => step.usesAt >= 0))
+            .map(([name]) => name);
+        expect(users.sort()).toEqual(["build-image", "test-desktop-stress"]);
+        const early: string[] = [];
+        for (const [name, list] of steps) {
+            let pulled = false;
+            for (const step of list) {
+                const pulledFirst = pulled || (step.pullsAt >= 0 && step.pullsAt < step.usesAt);
+                if (step.usesAt >= 0 && !pulledFirst) early.push(`${name}: ${step.title}`);
+                if (step.pullsAt >= 0) pulled = true;
+            }
+        }
+        expect(early).toEqual([]);
     });
 });
