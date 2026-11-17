@@ -642,6 +642,119 @@ def test_a_partial_file_a_restart_left_a_moment_ago_is_written_over_by_the_next_
     assert _left_in(entry) == [".config.json.digest", ".download.lock", ".model.safetensors.digest"]
 
 
+def _ranges(hugging_face) -> list:
+    """The ``Range`` each request to *hugging_face* asked for, None for none."""
+    return [request.headers.get("Range") for request in hugging_face.requests]
+
+
+def test_a_download_cut_halfway_resumes_from_its_partial_file_and_checks_the_whole_file(catalog, monkeypatch):
+    """The connection drops halfway through the weights, as a restart does
+    mid-download, such as a deploy's. What came is kept in the partial file,
+    which no node reads, and the next first use asks Hugging Face for the
+    rest alone, from where that file ends, through the redirect to its CDN.
+    The file it places is the whole file, checked against its digest, and
+    stamped; no partial file is left."""
+    from utk_curio.backend.app.packages.service import resolve_model_dirs
+
+    _hugging_face(monkeypatch, cut=OSError("Connection reset by peer"), cut_only=("model.safetensors",))
+    _add("guest", catalog)
+
+    message = _failed_first_use(catalog)
+
+    assert "Connection reset by peer" in message and SCRIPT in message, message
+    entry = catalog / DIR / ENTRY
+    half = len(WEIGHTS) // 2
+    partial = entry / ".model.safetensors.download.part"
+    assert partial.is_file(), (
+        f"the cut left no partial file to go on from, so the next use downloads the weights from zero: {_left_in(entry)}"
+    )
+    assert partial.read_bytes() == WEIGHTS[:half]
+    assert not (entry / "model.safetensors").exists()
+
+    hugging_face = _hugging_face(monkeypatch)
+    resolve_model_dirs("guest", [PACKAGE_ID])
+
+    # config.json, placed by the first use, is not asked for again.
+    assert hugging_face.urls == _urls()[1:]
+    assert _ranges(hugging_face) == [f"bytes={half}-", f"bytes={half}-"], "the next use did not go on from the partial file"
+    assert (entry / "model.safetensors").read_bytes() == WEIGHTS
+    assert _stamps(entry) == STAMPS
+    assert _left_in(entry) == [".config.json.digest", ".download.lock", ".model.safetensors.digest"]
+
+
+def test_a_resumed_file_that_does_not_match_its_digest_is_downloaded_again_whole(catalog, monkeypatch):
+    """A partial file whose bytes are not the start of the weights, as a
+    disk that lost what it was writing leaves one: going on from it makes a
+    file whose digest is not the one the block names. That file is never
+    placed, and the same first use downloads the weights again from their
+    first byte, so the node's run gets them."""
+    from utk_curio.backend.app.packages.service import resolve_model_dirs
+
+    entry = catalog / DIR / ENTRY
+    entry.mkdir(parents=True)
+    half = len(WEIGHTS) // 2
+    (entry / ".model.safetensors.download.part").write_bytes(WEIGHTS[::-1][:half])
+    hugging_face = _hugging_face(monkeypatch)
+    _add("guest", catalog)
+
+    resolve_model_dirs("guest", [PACKAGE_ID])
+
+    assert _ranges(hugging_face) == [None, f"bytes={half}-", f"bytes={half}-", None, None], (
+        "the partial file was not gone on from, or was not checked whole"
+    )
+    assert hugging_face.urls == [*_urls(), *_urls()[1:]]
+    assert {name: (entry / name).read_bytes() for name in FILES} == FILES
+    assert _stamps(entry) == STAMPS
+    assert _left_in(entry) == [".config.json.digest", ".download.lock", ".model.safetensors.digest"]
+
+
+def test_a_source_that_sends_no_ranges_sends_the_weights_whole_and_they_are_placed(catalog, monkeypatch):
+    """A host that ignores ``Range`` answers with the whole file: the partial
+    file is written over from the first byte, never added to."""
+    from utk_curio.backend.app.packages.service import resolve_model_dirs
+
+    entry = catalog / DIR / ENTRY
+    entry.mkdir(parents=True)
+    half = len(WEIGHTS) // 2
+    (entry / ".model.safetensors.download.part").write_bytes(WEIGHTS[:half])
+    hugging_face = _hugging_face(monkeypatch, ranges=False)
+    _add("guest", catalog)
+
+    resolve_model_dirs("guest", [PACKAGE_ID])
+
+    assert f"bytes={half}-" in _ranges(hugging_face), "the partial file was not gone on from"
+    assert (entry / "model.safetensors").read_bytes() == WEIGHTS
+    assert _stamps(entry) == STAMPS
+    assert _left_in(entry) == [".config.json.digest", ".download.lock", ".model.safetensors.digest"]
+
+
+def test_a_first_use_says_how_far_each_file_of_the_weights_has_come(catalog, monkeypatch):
+    """Whoever runs the node is told, as it downloads, which file of the
+    weights comes and how many of its bytes have, from the first to the
+    last, in steps of a whole percent at most, however many chunks the
+    bytes come in."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+    from utk_curio.backend.app.packages.service import resolve_model_dirs
+
+    reporting = getattr(left_out_files, "reporting", None)
+    assert reporting is not None, "a download on first use says nothing of how far it has come"
+    _hugging_face(monkeypatch, chunk_size=16)
+    _add("guest", catalog)
+    seen = []
+
+    with reporting(seen.append):
+        resolve_model_dirs("guest", [PACKAGE_ID])
+
+    weights = [progress for progress in seen if progress is not None and "model.safetensors" in progress.message]
+    assert weights, [getattr(progress, "message", progress) for progress in seen]
+    assert (weights[0].done, weights[-1].done, weights[-1].total) == (0, len(WEIGHTS), len(WEIGHTS))
+    assert [progress.done for progress in weights] == sorted(progress.done for progress in weights)
+    assert 3 <= len(weights) <= 101, len(weights)
+    assert f"a file of the weights of {PACKAGE_ID}" in weights[-1].message and "100%" in weights[-1].message
+    config = [progress for progress in seen if progress is not None and "config.json" in progress.message]
+    assert (config[0].done, config[-1].done) == (0, len(CONFIG))
+
+
 # ---------------------------------------------------------------------------
 # Stamps: which digest each placed file has
 # ---------------------------------------------------------------------------
@@ -693,6 +806,102 @@ def test_a_later_version_that_names_other_digests_downloads_those_files_again(ca
         **STAMPS, ".model.safetensors.digest": f"sha256 {hashlib.sha256(NEXT_WEIGHTS).hexdigest()}\n",
     }
     assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str(root)}
+    assert not weights_on_first_use(load_package_manifest(copy), copy)
+
+
+def test_two_curios_that_share_the_flags_folder_each_keep_their_versions_weights(
+    catalog, weights_dir, tmp_curio, monkeypatch,
+):
+    """Two stacks share one ``--model-weights-dir``, as dev and stable do:
+    one runs this version of the package, the other the next, whose block
+    names other weights at another revision. Each first use downloads its
+    own revision's weights, once, and a file both revisions name with one
+    digest is downloaded once for both. Neither download replaces the other
+    stack's weights, so a later run of either reads its own, asking Hugging
+    Face nothing."""
+    from utk_curio.backend.app.datasets.infrastructure import left_out_files
+    from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
+    from utk_curio.backend.tests._support.fetched_weights import CDN, FakeHuggingFace, resolve_url
+
+    next_catalog = tmp_curio / "catalog-next"
+    _write_package(next_catalog / DIR, _manifest(model=_block(fetch=NEXT_FETCH)))
+
+    def on(stack_catalog: Path) -> None:
+        monkeypatch.setenv("CURIO_PACKAGES_ROOT", str(stack_catalog))
+
+    def first_use_or_failure(user_key: str) -> dict:
+        with left_out_files.failures() as failed:
+            resolve_model_dirs(user_key, [PACKAGE_ID])
+        return failed
+
+    on(catalog)
+    _add("stable", catalog)
+    stable_source = _hugging_face(monkeypatch)
+    assert first_use_or_failure("stable") == {}
+    assert stable_source.urls == _urls()
+
+    on(next_catalog)
+    _add("dev", next_catalog)
+    dev_source = FakeHuggingFace(REPOSITORY, NEXT_REVISION, NEXT_FILES, redirect=("model.safetensors",)).serve(monkeypatch)
+    assert first_use_or_failure("dev") == {}
+    assert dev_source.urls == [resolve_url(REPOSITORY, NEXT_REVISION, "model.safetensors"), f"{CDN}/model.safetensors"], (
+        "a file both revisions name with one digest was downloaded again"
+    )
+
+    for user_key, stack_catalog in (("stable", catalog), ("dev", next_catalog)) * 2:
+        on(stack_catalog)
+        asked = _no_download(monkeypatch)
+        failed = first_use_or_failure(user_key)
+        assert asked.requests == [] and failed == {}, (
+            f"{user_key}'s weights were replaced by the other stack's download, so it downloaded its own again: {failed}"
+        )
+
+    on(catalog)
+    stable_root = (weights_dir / DIR / REVISION).resolve()
+    assert resolve_model_weights("stable", [PACKAGE_ID]) == {PACKAGE_ID: str(stable_root)}
+    on(next_catalog)
+    dev_root = (weights_dir / DIR / NEXT_REVISION).resolve()
+    assert resolve_model_weights("dev", [PACKAGE_ID]) == {PACKAGE_ID: str(dev_root)}
+    assert {name: (stable_root / ENTRY / name).read_bytes() for name in FILES} == FILES
+    assert {name: (dev_root / ENTRY / name).read_bytes() for name in NEXT_FILES} == NEXT_FILES
+    assert _stamps(stable_root / ENTRY) == STAMPS
+    assert _stamps(dev_root / ENTRY) == {
+        **STAMPS, ".model.safetensors.digest": f"sha256 {hashlib.sha256(NEXT_WEIGHTS).hexdigest()}\n",
+    }
+    # The one config.json both revisions name is one file, in both folders.
+    assert os.stat(dev_root / ENTRY / "config.json").st_ino == os.stat(stable_root / ENTRY / "config.json").st_ino
+    assert [_mode(folder) for folder in (stable_root, dev_root, dev_root / ENTRY)] == [0o755, 0o755, 0o755]
+
+
+def test_weights_a_curio_placed_before_folders_per_revision_are_found_and_never_downloaded_again(
+    catalog, weights_dir, monkeypatch,
+):
+    """A Curio before folders per revision kept the weights in
+    ``<dir>/<id>@<major>/<entry>``, stamped, as dev's 3.4 GB of SAM 3 are.
+    The Model Catalog does not say they download on first use; their first
+    use since finds them there and links each file into its revision's
+    folder, downloading nothing and copying no byte; and the folder it found
+    them in reads as it did, for a stack not updated yet."""
+    from utk_curio.backend.app.packages.application.model_packages import weights_on_first_use
+    from utk_curio.backend.app.packages.repositories.manifests import load_package_manifest
+    from utk_curio.backend.app.packages.service import resolve_model_dirs, resolve_model_weights
+
+    asked = _no_download(monkeypatch)
+    copy = _add("guest", catalog)
+    earlier = _fetch_into(weights_dir / DIR) / ENTRY
+    assert not weights_on_first_use(load_package_manifest(copy), copy)
+
+    assert resolve_model_dirs("guest", [PACKAGE_ID]) == {PACKAGE_ID: str((catalog / DIR).resolve())}
+
+    root = (weights_dir / DIR / REVISION).resolve()
+    assert resolve_model_weights("guest", [PACKAGE_ID]) == {PACKAGE_ID: str(root)}
+    assert asked.requests == []
+    entry = root / ENTRY
+    assert {name: (entry / name).read_bytes() for name in FILES} == FILES
+    assert [os.stat(entry / name).st_ino for name in FILES] == [os.stat(earlier / name).st_ino for name in FILES]
+    assert _stamps(entry) == _stamps(earlier) == STAMPS
+    assert [_mode(entry / name) for name in STAMPS] == [0o644, 0o644]
+    assert {name: (earlier / name).read_bytes() for name in FILES} == FILES
     assert not weights_on_first_use(load_package_manifest(copy), copy)
 
 
