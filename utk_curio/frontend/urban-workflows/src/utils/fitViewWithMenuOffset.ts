@@ -282,10 +282,11 @@ function planBoundsFit(nodeBounds: Rect, options?: MenuOffsetFitOptions): Viewpo
 
 /** The part of the pane the overlays leave in sight: its offset from the
  *  pane's top left corner and its size, in screen pixels. */
-type PaneInSight = { left: number; top: number; width: number; height: number };
+export type PaneInSight = { left: number; top: number; width: number; height: number };
 
-/** The part of the pane in sight, or null when the pane has no size. */
-function paneInSight(): PaneInSight | null {
+/** The part of the pane in sight, or null when the pane has no size. A node
+ *  the keyboard reaches is brought into it (`useFlowInSight`). */
+export function paneInSight(): PaneInSight | null {
     const container = document.querySelector<HTMLElement>(".react-flow");
     const paneRect = container?.getBoundingClientRect();
     if (!paneRect || paneRect.width === 0 || paneRect.height === 0) return null;

@@ -189,6 +189,14 @@ from .palettes import (  # noqa: F401
     close_tools_palette,
     tools_palette_is_open,
 )
+from .collection_cache import (  # noqa: F401
+    CARD,
+    DRAWER_ROOT,
+    bucket_collections_of,
+    cache_bucket_collections_from_the_drawer,
+    cache_collection_files,
+    data_catalog_drawer,
+)
 from .upload import upload_workflow  # noqa: F401
 from .canvas_authoring import (  # noqa: F401
     CANVAS_DROP_TARGET,
@@ -289,6 +297,13 @@ from .offline_install import (  # noqa: F401
     remove_catalog_package,
     offline_catalog_package,
     catalog_test_package,
+)
+from .stand_ins import (  # noqa: F401
+    STAND_INS,
+    declared_stand_ins,
+    fetched_weights_planted,
+    declared_bucket_collections,
+    cache_bucket_collections,
 )
 from .page import FrontendPage  # noqa: F401
 from .scripted_llm import (  # noqa: F401

@@ -343,7 +343,8 @@ class TestTheListing:
                 assert rows[month_row("snapshots", crossing, month)] == SNAPSHOTS
                 assert rows[month_row("detections", crossing, month)] == 1
                 assert rows[month_row("frames", crossing, month)] == 1
-        assert len(rows) == 3 * len(CROSSINGS) * len(MONTHS)
+                assert rows[month_row("records", crossing, month)] == 1
+        assert len(rows) == 4 * len(CROSSINGS) * len(MONTHS)
         assert not result.truncated
 
     def test_a_bucket_over_the_file_limit_lists_whole_when_each_row_is_under_it(self, idot):
@@ -352,7 +353,7 @@ class TestTheListing:
         from utk_curio.backend.app.discovery.application import scan
 
         manifest, _bucket, provider = idot
-        # Under the bucket's 6,008 matched files, over any one row's 1,500.
+        # Under the bucket's 6,012 matched files, over any one row's 1,500.
         limited = dataclasses.replace(manifest, max_files=2000)
         result = scan.scan(limited, provider)
 
@@ -362,7 +363,8 @@ class TestTheListing:
             rows.get(month_row("snapshots", crossing, month)) == SNAPSHOTS
             for crossing in CROSSINGS for month in MONTHS
         ), rows
-        assert result.matched == len(CROSSINGS) * len(MONTHS) * (SNAPSHOTS + 2)
+        # A month's file is matched by each of the three resources that read it.
+        assert result.matched == len(CROSSINGS) * len(MONTHS) * (SNAPSHOTS + 3)
 
     def test_a_row_over_the_file_limit_stops_alone_and_its_add_is_refused(self, idot):
         from utk_curio.backend.app.discovery.application import scan
@@ -388,7 +390,7 @@ class TestTheListing:
 
         manifest, _bucket, provider = idot
         # Each row's 1,500 snapshots under the row limit of 2,000, and the
-        # bucket's 6,008 matched files over a bound of 4,000.
+        # bucket's 6,012 matched files over a bound of 4,000.
         limited = dataclasses.replace(manifest, max_files=2000)
         bound = 4000
         monkeypatch.setattr(scan, "MAX_LISTING_FILES", bound, raising=False)
@@ -401,8 +403,9 @@ class TestTheListing:
         # The folders are read in key order, so the first crossing's rows are whole.
         assert all(rows[month_row("snapshots", "W042", month)] == SNAPSHOTS for month in MONTHS), rows
 
-        # A bucket of exactly the bound is listed whole.
-        total = len(CROSSINGS) * len(MONTHS) * (SNAPSHOTS + 2)
+        # A bucket of exactly the bound is listed whole: a month's file is
+        # matched by each of the three resources that read it.
+        total = len(CROSSINGS) * len(MONTHS) * (SNAPSHOTS + 3)
         monkeypatch.setattr(scan, "MAX_LISTING_FILES", total)
         whole = scan.scan(limited, provider)
         assert whole.matched == total and not whole.truncated, (whole.matched, whole.truncated)
@@ -625,7 +628,7 @@ class TestWhatIsListedAsBefore:
         result = scan.scan(manifest, FilesOnly())
 
         assert bucket.asked() == Counter({WHOLE_BUCKET: 7})
-        assert len(result.groups) == 3 * len(CROSSINGS) * len(MONTHS)
+        assert len(result.groups) == 4 * len(CROSSINGS) * len(MONTHS)
 
 
 class TestTheFolders:

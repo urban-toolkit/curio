@@ -1,0 +1,25 @@
+{
+  "id": "data.cities-in-motion.idot-cameras",
+  "name": "IDOT cameras: control points and zones",
+  "version": "1.0.0",
+  "format": "csv",
+  "description": "The three SAGE cameras at IDOT rail crossings as the Cities in Motion workshop team set them up, one row per point: 15 control points, each a pixel of the camera's snapshots (x_px, y_px) and where it lies on the ground in UTM zone 16N, EPSG:26916 (easting_m, northing_m), from Joao's scripts (joao_scripts/reprojection_w042.py, joao_scripts/animated_map_w065.py, joao_scripts/animated_map_w06E.py), and the 60 vertices of each camera's four zones in pixels, a lane before or after the crossing, from Zahra's files (zahra/W042_bounding_boxes.json, zahra/W065_bounding_boxes.json, zahra/W06E_bounding_boxes.json), their keys written in words. image_width and image_height are the size of the camera's snapshots, and day is the UTC day the team studied. Read from isalva2/cities-in-motion-video at commit cf66012d663f. Used with the permission of its authors.",
+  "publisher": "Cities in Motion workshop team (isalva2/cities-in-motion-video)",
+  "license": "",
+  "tags": [
+    "cities in motion",
+    "rail crossings",
+    "control points",
+    "zones"
+  ],
+  "dataFile": "data/cameras.csv",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Cities in Motion workshop team (isalva2/cities-in-motion-video)",
+  "createdAt": "2026-11-17T00:00:00Z",
+  "updatedAt": "2026-11-17T00:00:00Z",
+  "rowCount": 75,
+  "featureCount": null,
+  "schema": null
+}

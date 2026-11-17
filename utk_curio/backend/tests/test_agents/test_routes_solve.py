@@ -4,6 +4,8 @@ Solve, streamed Solve, Simulation Mode, run-node and validate-node."""
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from utk_curio.backend.app.agents.repositories import ledger
@@ -975,6 +977,44 @@ class TestALandedPlan:
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run-node",
             json={}, headers=_auth(token),
         ).status_code == 422
+
+    def test_run_node_raises_what_its_runs_thread_raised_past_every_except(
+        self, client, user_and_token, tmp_curio, alice_project, monkeypatch,
+    ):
+        """The run is on a thread of its own, which hands the stream its
+        report. What no Exception handler takes, as a test's network guard
+        raises for a socket it refuses, ended that thread with nothing handed
+        over, and the stream waited for ever. The stream raises it where it
+        waits. Read on a thread of its own, so a stream that still waits fails
+        this test rather than hanging the suite."""
+
+        class Refused(BaseException):
+            """What no Exception handler takes."""
+
+        def _exec(endpoint, payload):
+            raise Refused("a socket the test refuses")
+
+        user, token = user_and_token
+        monkeypatch.setattr("utk_curio.backend.app.execution.runner._http_exec", _exec)
+        att_id, card, _ids, _ = _landed_plan(client, user, token, alice_project, monkeypatch)
+        ref = card["plan"]["nodes"][0]["ref"]
+        raised = []
+
+        def _read():
+            response = client.post(
+                f"/api/agents/projects/{alice_project}/attachments/{att_id}/run-node",
+                json={"ref": ref}, headers=_auth(token),
+            )
+            try:
+                response.get_data()
+            except Refused as exc:
+                raised.append(exc)
+
+        reader = threading.Thread(target=_read, daemon=True)
+        reader.start()
+        reader.join(timeout=30)
+        assert not reader.is_alive(), "the run-node stream still waits for a run whose thread is gone"
+        assert [str(exc) for exc in raised] == ["a socket the test refuses"]
 
 
 class TestBuildAndValidate:

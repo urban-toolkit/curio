@@ -262,6 +262,37 @@ class TestVerifiedRounds:
         assert len(outcome["attempts"]) == 3 and len(inputs) == 3
         assert all(a["kind"] == "execution-error" for a in outcome["attempts"])
 
+    def test_a_run_that_raises_past_every_except_ends_the_round_with_it(self, app, tmp_curio):
+        """A round's run is on a thread of its own, which hands the round its
+        result. What no Exception handler takes, as a test's network guard
+        raises for a socket it refuses, ended that thread with nothing handed
+        over, and the round waited for ever: in run 44091823844 example 31's
+        reconstruction, whose model's weights download on first use, waited
+        so until its unit part timed out. The round raises it where it waits.
+        Driven on a thread of its own, so a round that still waits fails this
+        test rather than hanging the suite."""
+
+        class Refused(BaseException):
+            """What no Exception handler takes."""
+
+        def exec_fn(endpoint, payload):
+            raise Refused("a socket the test refuses")
+
+        node = {"id": "n1", "type": CA, "goal": "stats", "content": "df = input_0[0]\nreturn df.describe()"}
+        raised = []
+
+        def drive():
+            try:
+                _rounds(app, node, replies=[], exec_fn=exec_fn, start_from_current=True)
+            except Refused as exc:
+                raised.append(exc)
+
+        driver = threading.Thread(target=drive, daemon=True)
+        driver.start()
+        driver.join(timeout=30)
+        assert not driver.is_alive(), "the round still waits for a run whose thread is gone"
+        assert [str(exc) for exc in raised] == ["a socket the test refuses"]
+
 
 class TestFieldFixes20260908:
     """Live re-test against gemma4 (dev/115 A3, 2026-09-08), Task 3. The

@@ -317,6 +317,35 @@
       "Geometries"
     ]
   },
+  "31-sideseeing-objects-along-a-walk": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas",
+      "Computer vision"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "Imagery",
+      "OpenStreetMap",
+      "Video"
+    ]
+  },
+  "32-sage-idot-rail-crossings": {
+    "tags": [
+      "Autark",
+      "Vega-Lite",
+      "GeoPandas",
+      "Pandas"
+    ],
+    "data_type": [
+      "Tables",
+      "Geometries",
+      "Imagery"
+    ]
+  },
   "dataflows/autk-map": {
     "tags": [
       "Autark",

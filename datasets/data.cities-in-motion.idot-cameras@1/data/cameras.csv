@@ -1,0 +1,76 @@
+camera,day,image_width,image_height,kind,zone,point,x_px,y_px,easting_m,northing_m
+W042,2025-08-09,2560,1920,control point,,1,910,708,445447.469,4617438.348
+W042,2025-08-09,2560,1920,control point,,2,1502,708,445442.892,4617423.431
+W042,2025-08-09,2560,1920,control point,,3,1921,1724,445408.56,4617435.365
+W042,2025-08-09,2560,1920,control point,,4,296,1853,445409.454,4617442.861
+W042,2025-08-09,2560,1920,zone,"Westbound, before the crossing",1,915,676,,
+W042,2025-08-09,2560,1920,zone,"Westbound, before the crossing",2,1141,680,,
+W042,2025-08-09,2560,1920,zone,"Westbound, before the crossing",3,953,579,,
+W042,2025-08-09,2560,1920,zone,"Westbound, before the crossing",4,878,591,,
+W042,2025-08-09,2560,1920,zone,"Westbound, before the crossing",5,910,667,,
+W042,2025-08-09,2560,1920,zone,"Westbound, after the crossing",1,921,721,,
+W042,2025-08-09,2560,1920,zone,"Westbound, after the crossing",2,943,975,,
+W042,2025-08-09,2560,1920,zone,"Westbound, after the crossing",3,1361,975,,
+W042,2025-08-09,2560,1920,zone,"Westbound, after the crossing",4,1171,710,,
+W042,2025-08-09,2560,1920,zone,"Westbound, after the crossing",5,917,721,,
+W042,2025-08-09,2560,1920,zone,"Eastbound, after the crossing",1,1158,673,,
+W042,2025-08-09,2560,1920,zone,"Eastbound, after the crossing",2,1313,665,,
+W042,2025-08-09,2560,1920,zone,"Eastbound, after the crossing",3,1063,591,,
+W042,2025-08-09,2560,1920,zone,"Eastbound, after the crossing",4,1016,602,,
+W042,2025-08-09,2560,1920,zone,"Eastbound, after the crossing",5,1152,669,,
+W042,2025-08-09,2560,1920,zone,"Eastbound, before the crossing",1,1409,1032,,
+W042,2025-08-09,2560,1920,zone,"Eastbound, before the crossing",2,1179,712,,
+W042,2025-08-09,2560,1920,zone,"Eastbound, before the crossing",3,1516,708,,
+W042,2025-08-09,2560,1920,zone,"Eastbound, before the crossing",4,1902,962,,
+W042,2025-08-09,2560,1920,zone,"Eastbound, before the crossing",5,1417,1036,,
+W065,2025-08-17,2560,1920,control point,,1,1396,935,436606.877,4649769.77
+W065,2025-08-17,2560,1920,control point,,2,1786,899,436617.37,4649763.091
+W065,2025-08-17,2560,1920,control point,,3,2060,1336,436591.414,4649748.604
+W065,2025-08-17,2560,1920,control point,,4,933,1216,436586.549,4649763.644
+W065,2025-08-17,2560,1920,control point,,5,527,1429,436579.372,4649762.214
+W065,2025-08-17,2560,1920,control point,,6,326,1194,436579.87,4649774.438
+W065,2025-08-17,2560,1920,zone,"Eastbound, before the crossing",1,1113,935,,
+W065,2025-08-17,2560,1920,zone,"Eastbound, before the crossing",2,1393,967,,
+W065,2025-08-17,2560,1920,zone,"Eastbound, before the crossing",3,1913,809,,
+W065,2025-08-17,2560,1920,zone,"Eastbound, before the crossing",4,1687,809,,
+W065,2025-08-17,2560,1920,zone,"Eastbound, before the crossing",5,1124,922,,
+W065,2025-08-17,2560,1920,zone,"Eastbound, after the crossing",1,781,1032,,
+W065,2025-08-17,2560,1920,zone,"Eastbound, after the crossing",2,1191,1051,,
+W065,2025-08-17,2560,1920,zone,"Eastbound, after the crossing",3,531,1347,,
+W065,2025-08-17,2560,1920,zone,"Eastbound, after the crossing",4,155,1230,,
+W065,2025-08-17,2560,1920,zone,"Eastbound, after the crossing",5,776,1031,,
+W065,2025-08-17,2560,1920,zone,"Westbound, after the crossing",1,1681,958,,
+W065,2025-08-17,2560,1920,zone,"Westbound, after the crossing",2,2005,979,,
+W065,2025-08-17,2560,1920,zone,"Westbound, after the crossing",3,2189,825,,
+W065,2025-08-17,2560,1920,zone,"Westbound, after the crossing",4,1944,810,,
+W065,2025-08-17,2560,1920,zone,"Westbound, after the crossing",5,1685,954,,
+W065,2025-08-17,2560,1920,zone,"Westbound, before the crossing",1,554,1459,,
+W065,2025-08-17,2560,1920,zone,"Westbound, before the crossing",2,1428,1057,,
+W065,2025-08-17,2560,1920,zone,"Westbound, before the crossing",3,1974,1105,,
+W065,2025-08-17,2560,1920,zone,"Westbound, before the crossing",4,1525,1791,,
+W065,2025-08-17,2560,1920,zone,"Westbound, before the crossing",5,561,1459,,
+W06E,2025-12-02,2560,1920,control point,,1,1220,890,434756.062,4648444.831
+W06E,2025-12-02,2560,1920,control point,,2,819,765,434756.471,4648495.357
+W06E,2025-12-02,2560,1920,control point,,3,877,843,434749.445,4648456.21
+W06E,2025-12-02,2560,1920,control point,,4,2130,1185,434756.651,4648418.259
+W06E,2025-12-02,2560,1920,control point,,5,659,1185,434738.281,4648429.248
+W06E,2025-12-02,2560,1920,zone,"Northbound, before the crossing",1,1393,1101,,
+W06E,2025-12-02,2560,1920,zone,"Northbound, before the crossing",2,1797,1109,,
+W06E,2025-12-02,2560,1920,zone,"Northbound, before the crossing",3,2471,1389,,
+W06E,2025-12-02,2560,1920,zone,"Northbound, before the crossing",4,2074,1556,,
+W06E,2025-12-02,2560,1920,zone,"Northbound, before the crossing",5,1393,1103,,
+W06E,2025-12-02,2560,1920,zone,"Northbound, after the crossing",1,1109,922,,
+W06E,2025-12-02,2560,1920,zone,"Northbound, after the crossing",2,1311,917,,
+W06E,2025-12-02,2560,1920,zone,"Northbound, after the crossing",3,975,799,,
+W06E,2025-12-02,2560,1920,zone,"Northbound, after the crossing",4,902,816,,
+W06E,2025-12-02,2560,1920,zone,"Northbound, after the crossing",5,1096,917,,
+W06E,2025-12-02,2560,1920,zone,"Southbound, after the crossing",1,922,1088,,
+W06E,2025-12-02,2560,1920,zone,"Southbound, after the crossing",2,1389,1656,,
+W06E,2025-12-02,2560,1920,zone,"Southbound, after the crossing",3,2078,1553,,
+W06E,2025-12-02,2560,1920,zone,"Southbound, after the crossing",4,1348,1076,,
+W06E,2025-12-02,2560,1920,zone,"Southbound, after the crossing",5,932,1086,,
+W06E,2025-12-02,2560,1920,zone,"Southbound, before the crossing",1,750,883,,
+W06E,2025-12-02,2560,1920,zone,"Southbound, before the crossing",2,938,878,,
+W06E,2025-12-02,2560,1920,zone,"Southbound, before the crossing",3,755,766,,
+W06E,2025-12-02,2560,1920,zone,"Southbound, before the crossing",4,628,768,,
+W06E,2025-12-02,2560,1920,zone,"Southbound, before the crossing",5,742,880,,

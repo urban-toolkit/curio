@@ -54,6 +54,14 @@
       }
     },
     {
+      "id": "records",
+      "name": "Detection records",
+      "description": "Each crossing's month of records, its JSON Lines file as the bucket holds it: a line per image the models looked at, its value the JSON text of each YOLO model's detections, and a line per snapshot uploaded. Node code opens it from its row's path, where it is in the bucket.",
+      "kind": "files",
+      "path": "{crossing}/data/*_{month:%Y_%m}.jsonl",
+      "datasets": "per:crossing,month"
+    },
+    {
       "id": "frames",
       "name": "Frames by model",
       "description": "One row per image and YOLO model, also when the model saw nothing: its total_objects, its counts by class as JSON text, and its inference time. Lines of other kinds are skipped and counted.",
